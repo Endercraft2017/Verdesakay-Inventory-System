@@ -1,20 +1,43 @@
-'use strict';
+/**
+ * Database connection, schema creation, and first-run seeding.
+ * Uses Node's built-in SQLite (node:sqlite). The DB file path can be overridden with
+ * the DB_PATH env var so tests run against a throwaway database.
+ */
+import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+import bcrypt from 'bcryptjs';
 
-const path = require('path');
-const fs = require('fs');
-const crypto = require('crypto');
-const { DatabaseSync } = require('node:sqlite');
-const bcrypt = require('bcryptjs');
+const ROOT = path.join(import.meta.dirname, '..');
 
-const DB_PATH = path.join(__dirname, '..', 'data.db');
+export const DB_PATH = process.env.DB_PATH || path.join(ROOT, 'data.db');
+export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(ROOT, 'uploads');
 
-const db = new DatabaseSync(DB_PATH);
+export const db = new DatabaseSync(DB_PATH);
 
-// Pragmas for reliability + concurrency on a small LAN deployment.
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA foreign_keys = ON;');
 
-function init() {
+/** A value that can be bound to a SQL parameter. */
+export type Param = string | number | bigint | null | Uint8Array;
+
+/** Run a query and return the first row typed as T (or undefined). */
+export function queryOne<T>(sql: string, ...params: unknown[]): T | undefined {
+  return db.prepare(sql).get(...(params as Param[])) as unknown as T | undefined;
+}
+
+/** Run a query and return all rows typed as T[]. */
+export function queryAll<T>(sql: string, ...params: unknown[]): T[] {
+  return db.prepare(sql).all(...(params as Param[])) as unknown as T[];
+}
+
+/** Execute an INSERT/UPDATE/DELETE and return the run result. */
+export function run(sql: string, ...params: unknown[]) {
+  return db.prepare(sql).run(...(params as Param[]));
+}
+
+export function init(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS departments (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,11 +119,12 @@ function init() {
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
   `);
 
+  ensureUploadDir();
   seed();
 }
 
-function seed() {
-  const deptCount = db.prepare('SELECT COUNT(*) AS c FROM departments').get().c;
+function seed(): void {
+  const deptCount = (db.prepare('SELECT COUNT(*) AS c FROM departments').get() as { c: number }).c;
   if (deptCount === 0) {
     const insertDept = db.prepare('INSERT INTO departments (name) VALUES (?)');
     for (const name of ['Administration', 'Operations', 'Finance', 'Human Resources', 'IT']) {
@@ -108,9 +132,11 @@ function seed() {
     }
   }
 
-  const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
+  const userCount = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
   if (userCount === 0) {
-    const adminDept = db.prepare('SELECT id FROM departments WHERE name = ?').get('Administration');
+    const adminDept = db
+      .prepare('SELECT id FROM departments WHERE name = ?')
+      .get('Administration') as { id: number } | undefined;
     const password = process.env.ADMIN_PASSWORD || 'admin123';
     const hash = bcrypt.hashSync(password, 10);
     db.prepare(
@@ -118,28 +144,28 @@ function seed() {
        VALUES (?, ?, ?, 'admin', ?)`
     ).run('admin', 'System Administrator', hash, adminDept ? adminDept.id : null);
 
-    console.log('========================================================');
-    console.log('  Default admin account created:');
-    console.log('     username: admin');
-    console.log(`     password: ${password}`);
-    console.log('  >> Log in and change this password immediately. <<');
-    console.log('========================================================');
+    if (!process.env.DB_PATH) {
+      // Only print credentials for a real server start, not during tests.
+      console.log('========================================================');
+      console.log('  Default admin account created:');
+      console.log('     username: admin');
+      console.log(`     password: ${password}`);
+      console.log('  >> Log in and change this password immediately. <<');
+      console.log('========================================================');
+    }
   }
 }
 
-// Periodically clear expired sessions.
-function cleanupSessions() {
+export function cleanupSessions(): void {
   db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
 }
 
-function newToken() {
+export function newToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// Ensure the uploads directory exists.
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+function ensureUploadDir(): void {
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  }
 }
-
-module.exports = { db, init, cleanupSessions, newToken, UPLOAD_DIR, DB_PATH };

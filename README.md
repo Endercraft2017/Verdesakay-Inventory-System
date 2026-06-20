@@ -19,9 +19,26 @@ same network open it in a browser — no installation needed on the other machin
 
 ## Tech stack
 
-- Backend: Node.js + Express
+- Backend: Node.js + Express + **TypeScript** (run with `tsx`, no build step)
 - Database: SQLite (Node's built-in `node:sqlite`) — stored in `data.db`
 - Frontend: plain HTML, CSS, and JavaScript (no build step)
+- Validation: `zod` · Security: `helmet` + login rate-limiting · Tests: `vitest` + `supertest`
+
+## Developer docs
+
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — the codebase map: every file, the data
+  model, and the full API catalog. **Read this before adding code; keep it updated.**
+- **[docs/DECISIONS.md](docs/DECISIONS.md)** — why the stack is what it is.
+
+## Working on the code
+
+| Command | What it does |
+|---|---|
+| `npm start` | Run the server (`tsx server.ts`, port 3000). |
+| `npm run dev` | Run with auto-reload on file changes. |
+| `npm run typecheck` | Strict TypeScript check. |
+| `npm test` | Run the full automated test suite (headless, no server needed). |
+| `npm run check` | Typecheck **and** test — run this before every commit. |
 
 ## Running it
 
@@ -71,15 +88,20 @@ netsh advfirewall firewall add rule name="Verdesakay Office" dir=in action=allow
 ## Project layout
 
 ```
-server.js              Express app + server entry point
+server.ts              Server entry point (init DB, listen)
 src/
-  db.js                Database connection, schema, seed
-  auth.js              Session tokens + role middleware
+  app.ts               Express app factory (middleware, routes, errors)
+  db.ts                DB connection, schema, seed, typed query helpers
+  auth.ts              Session tokens + role middleware
+  types.ts             Shared domain types
+  validation.ts        zod request schemas
   routes/              REST API (auth, users, inventory, forms, messages)
 public/
   index.html           App shell + login
   css/styles.css
   js/                  api.js, ui.js, app.js + views/*
+tests/                 Vitest unit + integration tests
+docs/                  ARCHITECTURE.md (codebase map), DECISIONS.md
 uploads/               Uploaded form files (created at runtime)
 data.db                SQLite database (created at runtime)
 ```

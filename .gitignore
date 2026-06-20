@@ -6,3 +6,9 @@ data.db-shm
 uploads/
 .env
 *.log
+
+# Build / test artifacts
+dist/
+coverage/
+.tmp/
+tests/.tmp/
