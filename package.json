@@ -1,0 +1,19 @@
+{
+  "name": "verdesakay-office-system",
+  "version": "1.0.0",
+  "description": "Verdesakay local office system: inventory, forms, accounts, messaging",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "multer": "^2.2.0"
+  }
+}
