@@ -1,41 +1,67 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#2b7fff" />
   <title>Verdesakay Office System</title>
+  <!-- Apply the saved/system theme before first paint to avoid a flash. -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('vds_theme');
+        var dark = saved ? saved === 'dark'
+          : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      } catch (e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="/css/styles.css" />
 </head>
 <body>
   <!-- Login screen -->
   <div id="login-screen" class="login-wrap">
     <form class="login-card" id="login-form">
-      <h1>Verdesakay</h1>
-      <div class="brand-sub">Office Management System</div>
+      <div class="login-brand">
+        <div class="mark">V</div>
+        <div>
+          <h1>Verdesakay</h1>
+          <div class="brand-sub">Office Management System</div>
+        </div>
+      </div>
       <div id="login-error" class="form-error hidden"></div>
       <label for="login-username">Username</label>
       <input id="login-username" name="username" autocomplete="username" required autofocus />
       <label for="login-password">Password</label>
       <input id="login-password" name="password" type="password" autocomplete="current-password" required />
-      <button class="btn" type="submit" style="width:100%;justify-content:center;margin-top:18px;">Sign in</button>
+      <button class="btn" type="submit" style="width:100%;justify-content:center;margin-top:20px;">Sign in</button>
     </form>
   </div>
 
   <!-- Application shell -->
   <div id="app-screen" class="app hidden">
     <nav class="sidebar">
-      <div class="logo">Verdesakay<small>Office System</small></div>
-      <button class="nav-item" data-route="dashboard">📊 Dashboard</button>
-      <button class="nav-item" data-route="inventory">📦 Inventory</button>
-      <button class="nav-item" data-route="forms">📁 Forms &amp; Files</button>
-      <button class="nav-item" data-route="messages">✉️ Messages <span class="badge hidden" id="msg-badge">0</span></button>
-      <button class="nav-item admin-only" data-route="admin">👥 Accounts</button>
+      <div class="brand">
+        <div class="mark">V</div>
+        <div class="name">Verdesakay<small>Office System</small></div>
+      </div>
+      <button class="nav-item" data-route="dashboard" data-icon="dashboard">Dashboard</button>
+      <button class="nav-item" data-route="inventory" data-icon="inventory">Inventory</button>
+      <button class="nav-item" data-route="forms" data-icon="forms">Forms &amp; Files</button>
+      <button class="nav-item" data-route="messages" data-icon="messages">Messages <span class="badge hidden" id="msg-badge">0</span></button>
+      <button class="nav-item admin-only" data-route="admin" data-icon="users">Accounts</button>
       <div class="spacer"></div>
-      <button class="nav-item" data-route="account">⚙️ My Account</button>
+      <button class="nav-item" data-route="account" data-icon="settings">My Account</button>
       <div class="user-box">
-        <div class="name" id="me-name">—</div>
-        <div class="role"><span id="me-role"></span> · <span id="me-dept"></span></div>
-        <button class="nav-item" id="logout-btn" style="margin-top:8px;">🚪 Sign out</button>
+        <div class="who">
+          <div class="avatar" id="me-avatar">—</div>
+          <div style="min-width:0;flex:1">
+            <div class="name" id="me-name">—</div>
+            <div class="role"><span id="me-role"></span> · <span id="me-dept"></span></div>
+          </div>
+          <button class="icon-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"></button>
+          <button class="icon-btn" id="logout-btn" title="Sign out" aria-label="Sign out"></button>
+        </div>
       </div>
     </nav>
     <main class="main" id="view"></main>

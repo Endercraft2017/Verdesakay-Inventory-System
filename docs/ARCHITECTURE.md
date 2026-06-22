@@ -54,8 +54,8 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `public/index.html` | App shell: login screen + sidebar nav + `#view` container; loads all scripts in order. |
 | `public/css/styles.css` | All styling (green brand theme, layout, tables, modals, toasts, messages). |
 | `public/js/api.js` | **`API`** — fetch wrapper with token handling (`get/post/put/del/upload`), 401 → logout. |
-| `public/js/ui.js` | **`UI`** — `esc`, `toast`, `fmtDate/fmtDateShort/fmtBytes`, `initials`, **`modal()`**, `confirmDialog()`. |
-| `public/js/app.js` | **`App`** — auth (login/logout/session resume), hash router (`register`/`navigate`), shell wiring, unread-badge polling. |
+| `public/js/ui.js` | **`UI`** — `esc`, `toast`, `fmtDate/fmtDateShort/fmtBytes`, `initials`, **`modal()`**, `confirmDialog()`, **`icon(name,size)`** (inline SVG set), **`emptyState({icon,title,hint,action})`**. |
+| `public/js/app.js` | **`App`** — auth (login/logout/session resume), hash router (`register`/`navigate`), shell wiring, unread-badge polling, **theme** (`applyTheme`/`toggleTheme`, persisted in `localStorage('vds_theme')`). |
 | `public/js/views/dashboard.js` | Dashboard: stats cards, low-stock list, recent messages. |
 | `public/js/views/inventory.js` | Inventory table: search/filter, create/edit modal, stock adjust modal, history modal, delete. |
 | `public/js/views/forms.js` | Forms table: upload modal, authenticated blob download, delete. |
@@ -143,6 +143,14 @@ Bodies are validated by the named schema in `src/validation.ts`.
   (or anything with a numeric `status`) is shaped by the central handler in `app.ts`.
 - **Frontend:** views register with `App.register('name', async (view) => {...})` and reuse
   `API`, `UI.modal`, `UI.toast`, `UI.esc`. Always `UI.esc()` user data before inserting HTML.
+- **Icons:** use `UI.icon('name')` (inline SVG, inherits text color) — do not add emoji or
+  icon fonts. Add new glyphs to the `ICONS` map in `ui.js`.
+- **Theming:** all colors come from CSS variables defined in `public/css/styles.css` under
+  `:root`/`[data-theme='light']` (light) and `[data-theme='dark']` (dark). **Never hard-code
+  a hex color in a component** — add or reuse a token (`--surface`, `--text`, `--accent`, …)
+  so both themes stay correct. The active theme is the `data-theme` attribute on `<html>`,
+  set pre-paint by an inline script in `index.html` and toggled via the sidebar button.
+  Empty tab states use `UI.emptyState(...)`.
 
 ---
 

@@ -12,11 +12,11 @@ App.register('inventory', async (view) => {
     <div class="topbar">
       <h2>Inventory</h2>
       <div class="grow"></div>
-      <input class="search" id="inv-search" placeholder="Search name, SKU, location…" />
+      <div class="search-box search">${UI.icon('search', 16)}<input id="inv-search" placeholder="Search name, SKU, location…" /></div>
       <select id="inv-dept" style="width:170px">${deptOptions('')}</select>
       <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;">
         <input type="checkbox" id="inv-low" style="width:auto" /> Low stock</label>
-      <button class="btn" id="inv-add">＋ New Item</button>
+      <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
     </div>
     <div class="panel"><div id="inv-table"></div></div>`;
 
@@ -34,7 +34,15 @@ App.register('inventory', async (view) => {
 
   function render(items) {
     if (!items.length) {
-      tableEl.innerHTML = '<div class="empty">No items found.</div>';
+      const fresh = !state.q && !state.department_id && !state.low;
+      tableEl.innerHTML = UI.emptyState({
+        icon: 'inventory',
+        title: fresh ? 'No items yet' : 'No matching items',
+        hint: fresh ? 'Add your first inventory item to start tracking stock.' : 'Try a different search or filter.',
+        action: fresh ? `<button class="btn" id="inv-empty-add">${UI.icon('plus')} New item</button>` : '',
+      });
+      const ea = tableEl.querySelector('#inv-empty-add');
+      if (ea) ea.onclick = () => itemModal(null);
       return;
     }
     tableEl.innerHTML = `
@@ -54,10 +62,10 @@ App.register('inventory', async (view) => {
               ${i.low_stock ? `<div class="muted" style="font-size:11px">min ${i.min_quantity}</div>` : ''}
             </td>
             <td class="actions">
-              <button class="icon-btn" title="Stock in/out" data-adjust="${i.id}">⇅</button>
-              <button class="icon-btn" title="History" data-history="${i.id}">🕘</button>
-              <button class="icon-btn" title="Edit" data-edit="${i.id}">✏️</button>
-              <button class="icon-btn danger" title="Delete" data-del="${i.id}">🗑️</button>
+              <button class="icon-btn" title="Stock in/out" data-adjust="${i.id}">${UI.icon('adjust')}</button>
+              <button class="icon-btn" title="History" data-history="${i.id}">${UI.icon('history')}</button>
+              <button class="icon-btn" title="Edit" data-edit="${i.id}">${UI.icon('edit')}</button>
+              <button class="icon-btn danger" title="Delete" data-del="${i.id}">${UI.icon('trash')}</button>
             </td>
           </tr>`).join('')}
         </tbody>

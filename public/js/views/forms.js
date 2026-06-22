@@ -4,8 +4,8 @@ App.register('forms', async (view) => {
     <div class="topbar">
       <h2>Forms &amp; Files</h2>
       <div class="grow"></div>
-      <input class="search" id="forms-search" placeholder="Search title, category…" />
-      <button class="btn" id="forms-upload">⬆ Upload</button>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="forms-search" placeholder="Search title, category…" /></div>
+      <button class="btn" id="forms-upload">${UI.icon('upload')} Upload</button>
     </div>
     <div class="panel"><div id="forms-table"></div></div>`;
 
@@ -20,7 +20,14 @@ App.register('forms', async (view) => {
 
   function render(list) {
     if (!list.length) {
-      tableEl.innerHTML = '<div class="empty">No files uploaded yet.</div>';
+      tableEl.innerHTML = UI.emptyState({
+        icon: 'folder',
+        title: 'No files yet',
+        hint: 'Upload a form or document to share it with your team.',
+        action: `<button class="btn" id="forms-empty-upload">${UI.icon('upload')} Upload</button>`,
+      });
+      const eu = tableEl.querySelector('#forms-empty-upload');
+      if (eu) eu.onclick = uploadModal;
       return;
     }
     const me = App.getMe();
@@ -40,9 +47,9 @@ App.register('forms', async (view) => {
             <td>${UI.fmtBytes(f.size_bytes)}</td>
             <td>${UI.fmtDate(f.created_at)}<div class="muted" style="font-size:12px">${UI.esc(f.uploaded_by_name || '')}</div></td>
             <td class="actions">
-              <button class="icon-btn" title="Download" data-dl="${f.id}">⬇</button>
+              <button class="icon-btn" title="Download" data-dl="${f.id}">${UI.icon('download')}</button>
               ${(App.isAdmin() || f.uploaded_by_name === me.full_name)
-                ? `<button class="icon-btn danger" title="Delete" data-del="${f.id}">🗑️</button>` : ''}
+                ? `<button class="icon-btn danger" title="Delete" data-del="${f.id}">${UI.icon('trash')}</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>

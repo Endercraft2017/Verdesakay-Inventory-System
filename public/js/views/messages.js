@@ -6,7 +6,7 @@ App.register('messages', async (view) => {
     <div class="topbar">
       <h2>Messages</h2>
       <div class="grow"></div>
-      <button class="btn" id="msg-compose">✏️ Compose</button>
+      <button class="btn" id="msg-compose">${UI.icon('edit')} Compose</button>
     </div>
     <div class="msg-tabs">
       <button class="btn secondary small" data-box="inbox">Inbox</button>
@@ -26,7 +26,15 @@ App.register('messages', async (view) => {
     listEl.innerHTML = '<div class="empty">Loading…</div>';
     const msgs = await API.get('/messages?box=' + box);
     if (!msgs.length) {
-      listEl.innerHTML = `<div class="empty">${box === 'inbox' ? 'Your inbox is empty.' : 'You have not sent any messages.'}</div>`;
+      listEl.className = '';
+      listEl.innerHTML = UI.emptyState({
+        icon: box === 'inbox' ? 'inbox' : 'send',
+        title: box === 'inbox' ? 'Your inbox is empty' : 'No sent messages',
+        hint: box === 'inbox' ? 'Messages from your colleagues will show up here.' : 'Messages you send will appear here.',
+        action: `<button class="btn" id="msg-empty-compose">${UI.icon('edit')} Compose</button>`,
+      });
+      const ec = listEl.querySelector('#msg-empty-compose');
+      if (ec) ec.onclick = () => composeModal();
       return;
     }
     listEl.className = 'msg-list';

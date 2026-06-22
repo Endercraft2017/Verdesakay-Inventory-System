@@ -10,6 +10,25 @@ const App = (() => {
   function getDepartments() { return departments; }
   function isAdmin() { return me && me.role === 'admin'; }
 
+  /* ---------- Theme ---------- */
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const btn = document.getElementById('theme-btn');
+    if (btn) {
+      // Show the icon for the theme you'd switch TO.
+      btn.innerHTML = UI.icon(theme === 'dark' ? 'sun' : 'moon');
+      btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    }
+  }
+  function toggleTheme() {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('vds_theme', next); } catch (e) { /* ignore */ }
+    applyTheme(next);
+  }
+
   const loginScreen = () => document.getElementById('login-screen');
   const appScreen = () => document.getElementById('app-screen');
 
@@ -27,6 +46,7 @@ const App = (() => {
     document.getElementById('me-name').textContent = me.full_name;
     document.getElementById('me-role').textContent = me.role;
     document.getElementById('me-dept').textContent = me.department_name || 'No dept';
+    document.getElementById('me-avatar').textContent = UI.initials(me.full_name);
 
     // Toggle admin-only nav.
     document.querySelectorAll('.admin-only').forEach((el) =>
@@ -93,10 +113,21 @@ const App = (() => {
       }
     });
 
+    // Render nav icons (prepend SVG before each item's label).
+    document.querySelectorAll('.nav-item[data-icon]').forEach((b) => {
+      b.insertAdjacentHTML('afterbegin', UI.icon(b.dataset.icon, 18));
+    });
+
     // Nav buttons
     document.querySelectorAll('.nav-item[data-route]').forEach((b) =>
       b.addEventListener('click', () => navigate(b.dataset.route)));
-    document.getElementById('logout-btn').addEventListener('click', logout);
+
+    // Chrome buttons
+    const logoutBtn = document.getElementById('logout-btn');
+    logoutBtn.innerHTML = UI.icon('logout');
+    logoutBtn.addEventListener('click', logout);
+    document.getElementById('theme-btn').addEventListener('click', toggleTheme);
+    applyTheme(currentTheme()); // set the correct toggle icon
     window.addEventListener('hashchange', () => {
       const name = location.hash.slice(1);
       if (me && routes[name]) {

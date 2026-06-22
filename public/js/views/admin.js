@@ -9,8 +9,8 @@ App.register('admin', async (view) => {
     <div class="topbar">
       <h2>Accounts &amp; Departments</h2>
       <div class="grow"></div>
-      <button class="btn secondary" id="add-dept">＋ Department</button>
-      <button class="btn" id="add-user">＋ New Account</button>
+      <button class="btn secondary" id="add-dept">${UI.icon('building')} Department</button>
+      <button class="btn" id="add-user">${UI.icon('plus')} New account</button>
     </div>
     <div class="panel"><div id="users-table"></div></div>`;
 
@@ -37,8 +37,8 @@ App.register('admin', async (view) => {
             <td>${UI.esc(u.department_name || '—')}</td>
             <td>${u.active ? '<span class="badge-pill ok">Active</span>' : '<span class="badge-pill low">Disabled</span>'}</td>
             <td class="actions">
-              <button class="icon-btn" title="Edit" data-edit="${u.id}">✏️</button>
-              <button class="icon-btn" title="Reset password" data-pw="${u.id}">🔑</button>
+              <button class="icon-btn" title="Edit" data-edit="${u.id}">${UI.icon('edit')}</button>
+              <button class="icon-btn" title="Reset password" data-pw="${u.id}">${UI.icon('key')}</button>
             </td>
           </tr>`).join('')}
         </tbody>
