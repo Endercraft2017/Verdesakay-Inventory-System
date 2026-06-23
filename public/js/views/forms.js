@@ -5,26 +5,48 @@ App.register('forms', async (view) => {
       <h2>Forms &amp; Files</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="forms-search" placeholder="Search title, category…" /></div>
+      <select id="forms-cat" style="width:160px"><option value="">— Category —</option></select>
       <button class="btn" id="forms-upload">${UI.icon('upload')} Upload</button>
     </div>
     <div class="panel"><div id="forms-table"></div></div>`;
 
   const tableEl = view.querySelector('#forms-table');
   let all = [];
+  const filters = { q: '', category: '' };
 
   async function load() {
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     all = await API.get('/forms');
-    render(all);
+    refreshCategoryOptions();
+    applyFilters();
+  }
+
+  function refreshCategoryOptions() {
+    const cats = [...new Set(all.map((f) => f.category).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b));
+    const sel = view.querySelector('#forms-cat');
+    sel.innerHTML = '<option value="">— Category —</option>' +
+      cats.map((c) => `<option value="${UI.esc(c)}" ${c === filters.category ? 'selected' : ''}>${UI.esc(c)}</option>`).join('');
+  }
+
+  function applyFilters() {
+    const q = filters.q.toLowerCase();
+    render(all.filter((f) => {
+      const matchesQ = !q ||
+        (f.title + ' ' + (f.category || '') + ' ' + (f.original_name || '')).toLowerCase().includes(q);
+      const matchesCat = !filters.category || f.category === filters.category;
+      return matchesQ && matchesCat;
+    }));
   }
 
   function render(list) {
     if (!list.length) {
+      const filtered = all.length > 0;
       tableEl.innerHTML = UI.emptyState({
         icon: 'folder',
-        title: 'No files yet',
-        hint: 'Upload a form or document to share it with your team.',
-        action: `<button class="btn" id="forms-empty-upload">${UI.icon('upload')} Upload</button>`,
+        title: filtered ? 'No matching files' : 'No files yet',
+        hint: filtered ? 'Try a different search or category.' : 'Upload a form or document to share it with your team.',
+        action: filtered ? '' : `<button class="btn" id="forms-empty-upload">${UI.icon('upload')} Upload</button>`,
       });
       const eu = tableEl.querySelector('#forms-empty-upload');
       if (eu) eu.onclick = uploadModal;
@@ -36,9 +58,15 @@ App.register('forms', async (view) => {
         <thead><tr><th>Title</th><th>Category</th><th>Visibility</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
         <tbody>${list.map((f) => `
           <tr>
-            <td><strong>${UI.esc(f.title)}</strong>
-              <div class="muted">${UI.esc(f.original_name)}</div>
-              ${f.description ? `<div class="muted" style="font-size:12px">${UI.esc(f.description)}</div>` : ''}
+            <td>
+              <div style="display:flex;gap:10px;align-items:flex-start">
+                <span style="color:var(--text-faint);margin-top:1px">${UI.icon(UI.fileIconName(f.original_name), 18)}</span>
+                <div>
+                  <strong>${UI.esc(f.title)}</strong>
+                  <div class="muted">${UI.esc(f.original_name)}</div>
+                  ${f.description ? `<div class="muted" style="font-size:12px">${UI.esc(f.description)}</div>` : ''}
+                </div>
+              </div>
             </td>
             <td>${UI.esc(f.category || '—')}</td>
             <td>${f.department_name
@@ -120,9 +148,12 @@ App.register('forms', async (view) => {
   }
 
   view.querySelector('#forms-search').addEventListener('input', (e) => {
-    const q = e.target.value.trim().toLowerCase();
-    render(all.filter((f) =>
-      (f.title + ' ' + (f.category || '') + ' ' + (f.original_name || '')).toLowerCase().includes(q)));
+    filters.q = e.target.value.trim();
+    applyFilters();
+  });
+  view.querySelector('#forms-cat').addEventListener('change', (e) => {
+    filters.category = e.target.value;
+    applyFilters();
   });
   view.querySelector('#forms-upload').addEventListener('click', uploadModal);
 

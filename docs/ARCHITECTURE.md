@@ -102,14 +102,19 @@ Bodies are validated by the named schema in `src/validation.ts`.
 | POST `/auth/logout` | 🔑 | Invalidate current token | auth.routes | — |
 | GET `/auth/me` | 🔑 | Current user | auth.routes | — |
 | POST `/auth/change-password` | 🔑 | Change own password | auth.routes | changePasswordSchema |
+| PUT `/auth/profile` | 🔑 | Update own display name | auth.routes | updateProfileSchema |
 | GET `/users` | 🔑 | Directory (admins get full fields) | users.routes | — |
 | POST `/users` | 👑 | Create account | users.routes | createUserSchema |
 | PUT `/users/:id` | 👑 | Update name/role/dept/active | users.routes | updateUserSchema |
 | POST `/users/:id/reset-password` | 👑 | Reset a user's password | users.routes | resetPasswordSchema |
-| GET `/users/departments/list` | 🔑 | List departments | users.routes | — |
+| GET `/users/departments/list` | 🔑 | List departments (id+name, for selects) | users.routes | — |
+| GET `/users/departments` | 👑 | Departments + usage counts (manager) | users.routes | — |
 | POST `/users/departments` | 👑 | Add department | users.routes | createDepartmentSchema |
-| GET `/inventory` | 🔑 | List (`?q=`, `?department_id=`, `?low=1`) | inventory.routes | — |
+| PUT `/users/departments/:id` | 👑 | Rename department | users.routes | updateDepartmentSchema |
+| DELETE `/users/departments/:id` | 👑 | Delete department (FK sets refs null) | users.routes | — |
+| GET `/inventory` | 🔑 | List (`?q=`, `?department_id=`, `?category=`, `?low=1`) | inventory.routes | — |
 | GET `/inventory/stats` | 🔑 | Dashboard totals | inventory.routes | — |
+| GET `/inventory/categories` | 🔑 | Distinct categories (for filters) | inventory.routes | — |
 | GET `/inventory/:id` | 🔑 | Item + last 50 movements | inventory.routes | — |
 | POST `/inventory` | 🔑 | Create item | inventory.routes | createItemSchema |
 | PUT `/inventory/:id` | 🔑 | Update details (not qty) | inventory.routes | updateItemSchema |

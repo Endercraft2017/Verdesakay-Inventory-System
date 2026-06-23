@@ -102,4 +102,22 @@ describe('inventory', () => {
     expect(typeof res.body.items).toBe('number');
     expect(res.body.items).toBeGreaterThan(0);
   });
+
+  it('filters by category and lists distinct categories', async () => {
+    await createItem({ name: 'Cat Item A', category: 'Stationery' });
+    await createItem({ name: 'Cat Item B', category: 'Stationery' });
+    await createItem({ name: 'Cat Item C', category: 'Hardware' });
+
+    const filtered = await ctx.api.get('/api/inventory?category=Stationery').set(authHdr());
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.length).toBeGreaterThanOrEqual(2);
+    expect(filtered.body.every((i: { category: string }) => i.category === 'Stationery')).toBe(true);
+
+    const cats = await ctx.api.get('/api/inventory/categories').set(authHdr());
+    expect(cats.status).toBe(200);
+    expect(cats.body).toContain('Stationery');
+    expect(cats.body).toContain('Hardware');
+    // distinct — 'Stationery' appears once despite two items
+    expect(cats.body.filter((c: string) => c === 'Stationery')).toHaveLength(1);
+  });
 });

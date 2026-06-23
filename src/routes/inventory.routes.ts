@@ -17,7 +17,7 @@ const ITEM_SELECT = `
 
 // GET /api/inventory — list with optional search / filters
 router.get('/', (req, res) => {
-  const { q, department_id, low } = req.query;
+  const { q, department_id, category, low } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
 
@@ -29,6 +29,10 @@ router.get('/', (req, res) => {
   if (department_id) {
     where.push('i.department_id = ?');
     params.push(Number(department_id));
+  }
+  if (typeof category === 'string' && category.trim()) {
+    where.push('i.category = ?');
+    params.push(category.trim());
   }
   if (low === '1' || low === 'true') {
     where.push('i.quantity <= i.min_quantity');
@@ -51,6 +55,16 @@ router.get('/stats', (_req, res) => {
      FROM inventory_items`
   );
   res.json(totals);
+});
+
+// GET /api/inventory/categories — distinct non-empty categories (for filters)
+router.get('/categories', (_req, res) => {
+  const rows = queryAll<{ category: string }>(
+    `SELECT DISTINCT category FROM inventory_items
+     WHERE category IS NOT NULL AND TRIM(category) != ''
+     ORDER BY category COLLATE NOCASE`
+  );
+  res.json(rows.map((r) => r.category));
 });
 
 // GET /api/inventory/:id — single item with recent transactions

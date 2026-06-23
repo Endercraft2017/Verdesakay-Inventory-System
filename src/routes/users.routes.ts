@@ -9,6 +9,7 @@ import {
   updateUserSchema,
   resetPasswordSchema,
   createDepartmentSchema,
+  updateDepartmentSchema,
 } from '../validation';
 import type { UserRow, Department } from '../types';
 
@@ -148,6 +149,48 @@ router.post('/departments', requireRole('admin'), (req, res) => {
   }
   const info = run('INSERT INTO departments (name) VALUES (?)', name);
   res.status(201).json({ id: info.lastInsertRowid, name });
+});
+
+// GET /api/users/departments — admin: departments with usage counts (for management)
+router.get('/departments', requireRole('admin'), (_req, res) => {
+  const rows = queryAll(
+    `SELECT d.id, d.name,
+            (SELECT COUNT(*) FROM users u WHERE u.department_id = d.id) AS user_count,
+            (SELECT COUNT(*) FROM inventory_items i WHERE i.department_id = d.id) AS item_count,
+            (SELECT COUNT(*) FROM forms f WHERE f.department_id = d.id) AS form_count
+     FROM departments d
+     ORDER BY d.name COLLATE NOCASE`
+  );
+  res.json(rows);
+});
+
+// PUT /api/users/departments/:id — admin renames a department
+router.put('/departments/:id', requireRole('admin'), (req, res) => {
+  const id = Number(req.params.id);
+  const dept = queryOne('SELECT id FROM departments WHERE id = ?', id);
+  if (!dept) {
+    res.status(404).json({ error: 'Department not found' });
+    return;
+  }
+  const { name } = parseBody(updateDepartmentSchema, req.body);
+  const clash = queryOne('SELECT id FROM departments WHERE name = ? COLLATE NOCASE AND id != ?', name, id);
+  if (clash) {
+    res.status(409).json({ error: 'Another department already uses that name' });
+    return;
+  }
+  run('UPDATE departments SET name = ? WHERE id = ?', name, id);
+  res.json({ ok: true });
+});
+
+// DELETE /api/users/departments/:id — admin deletes a department.
+// FK is ON DELETE SET NULL, so members/items/forms are simply unassigned.
+router.delete('/departments/:id', requireRole('admin'), (req, res) => {
+  const info = run('DELETE FROM departments WHERE id = ?', Number(req.params.id));
+  if (info.changes === 0) {
+    res.status(404).json({ error: 'Department not found' });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 export default router;

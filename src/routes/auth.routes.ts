@@ -3,7 +3,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { queryOne, run } from '../db';
 import { createSession, destroySession, requireAuth } from '../auth';
-import { parseBody, loginSchema, changePasswordSchema } from '../validation';
+import { parseBody, loginSchema, changePasswordSchema, updateProfileSchema } from '../validation';
 import type { UserRow } from '../types';
 
 const router = Router();
@@ -60,6 +60,13 @@ router.post('/change-password', requireAuth, (req, res) => {
   // Keep the current session, drop the rest.
   run('DELETE FROM sessions WHERE user_id = ? AND token != ?', req.user!.id, req.token!);
   res.json({ ok: true });
+});
+
+// PUT /api/auth/profile — update your own display name
+router.put('/profile', requireAuth, (req, res) => {
+  const { full_name } = parseBody(updateProfileSchema, req.body);
+  run('UPDATE users SET full_name = ? WHERE id = ?', full_name, req.user!.id);
+  res.json({ ok: true, full_name });
 });
 
 export default router;

@@ -9,12 +9,15 @@ App.register('admin', async (view) => {
     <div class="topbar">
       <h2>Accounts &amp; Departments</h2>
       <div class="grow"></div>
-      <button class="btn secondary" id="add-dept">${UI.icon('building')} Department</button>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="user-search" placeholder="Search staff…" /></div>
+      <button class="btn secondary" id="manage-depts">${UI.icon('building')} Departments</button>
       <button class="btn" id="add-user">${UI.icon('plus')} New account</button>
     </div>
     <div class="panel"><div id="users-table"></div></div>`;
 
   const tableEl = view.querySelector('#users-table');
+  let allUsers = [];
+  let userQuery = '';
 
   function deptSelect(field, selected) {
     return `<select data-f="${field}"><option value="">— None —</option>` +
@@ -25,7 +28,18 @@ App.register('admin', async (view) => {
 
   async function load() {
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
-    const users = await API.get('/users');
+    allUsers = await API.get('/users');
+    renderUsers();
+  }
+
+  function renderUsers() {
+    const q = userQuery.toLowerCase();
+    const users = !q ? allUsers : allUsers.filter((u) =>
+      (u.full_name + ' ' + u.username + ' ' + (u.department_name || '') + ' ' + u.role).toLowerCase().includes(q));
+    if (!users.length) {
+      tableEl.innerHTML = UI.emptyState({ icon: 'users', title: 'No matching staff', hint: 'Try a different search.' });
+      return;
+    }
     tableEl.innerHTML = `
       <table>
         <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Department</th><th>Status</th><th></th></tr></thead>
@@ -43,8 +57,8 @@ App.register('admin', async (view) => {
           </tr>`).join('')}
         </tbody>
       </table>`;
-    tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => editUser(users.find((x) => x.id == b.dataset.edit)));
-    tableEl.querySelectorAll('[data-pw]').forEach((b) => b.onclick = () => resetPw(users.find((x) => x.id == b.dataset.pw)));
+    tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => editUser(allUsers.find((x) => x.id == b.dataset.edit)));
+    tableEl.querySelectorAll('[data-pw]').forEach((b) => b.onclick = () => resetPw(allUsers.find((x) => x.id == b.dataset.pw)));
   }
 
   function addUser() {
@@ -119,23 +133,91 @@ App.register('admin', async (view) => {
     });
   }
 
-  function addDept() {
+  function manageDepartments() {
+    const m = UI.modal({
+      title: 'Manage departments',
+      bodyHTML: '<div id="dept-mgr"><div class="empty">Loading…</div></div>',
+      cancelText: 'Close',
+    });
+    const box = m.overlay.querySelector('#dept-mgr');
+
+    async function renderList() {
+      const depts = await API.get('/users/departments');
+      box.innerHTML = `
+        <div class="field-row" style="align-items:flex-end">
+          <div style="flex:1;margin:0"><label>Add department</label><input id="nd-name" placeholder="Department name" /></div>
+          <button class="btn" id="nd-add">${UI.icon('plus')} Add</button>
+        </div>
+        <table style="margin-top:16px">
+          <thead><tr><th>Name</th><th class="right">Members</th><th class="right">Items</th><th class="right">Files</th><th></th></tr></thead>
+          <tbody>${depts.map((d) => `
+            <tr>
+              <td><strong>${UI.esc(d.name)}</strong></td>
+              <td class="right">${d.user_count}</td>
+              <td class="right">${d.item_count}</td>
+              <td class="right">${d.form_count}</td>
+              <td class="actions">
+                <button class="icon-btn" title="Rename" data-rn="${d.id}" data-name="${UI.esc(d.name)}">${UI.icon('edit')}</button>
+                <button class="icon-btn danger" title="Delete" data-dd="${d.id}" data-name="${UI.esc(d.name)}">${UI.icon('trash')}</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`;
+
+      box.querySelector('#nd-add').onclick = async () => {
+        const name = box.querySelector('#nd-name').value.trim();
+        if (!name) return;
+        try {
+          await API.post('/users/departments', { name });
+          UI.toast('Department added');
+          await App.reloadDepartments();
+          await renderList();
+          load();
+        } catch (e) { UI.toast(e.message, 'error'); }
+      };
+      box.querySelectorAll('[data-rn]').forEach((b) =>
+        b.onclick = () => renameDept(b.dataset.rn, b.dataset.name, renderList));
+      box.querySelectorAll('[data-dd]').forEach((b) =>
+        b.onclick = () => deleteDept(b.dataset.dd, b.dataset.name, renderList));
+    }
+    renderList();
+  }
+
+  function renameDept(id, current, after) {
     UI.modal({
-      title: 'New department',
-      bodyHTML: `<div><label>Department name *</label><input data-f="name" /></div>`,
-      confirmText: 'Add',
+      title: 'Rename department',
+      bodyHTML: `<label>Name</label><input data-f="name" value="${UI.esc(current)}" />`,
+      confirmText: 'Save',
       onConfirm: async (overlay, showErr) => {
         const name = overlay.querySelector('[data-f="name"]').value.trim();
         if (!name) { showErr('Name is required'); return false; }
-        const d = await API.post('/users/departments', { name });
-        App.getDepartments().push(d);
-        App.getDepartments().sort((a, b) => a.name.localeCompare(b.name));
-        UI.toast('Department added');
+        await API.put('/users/departments/' + id, { name });
+        UI.toast('Department renamed');
+        await App.reloadDepartments();
+        await after();
+        load();
       },
     });
   }
 
+  async function deleteDept(id, name, after) {
+    const ok = await UI.confirmDialog(
+      `Delete "${name}"? Its members, items and files stay but become unassigned (no department).`,
+      'Delete'
+    );
+    if (!ok) return;
+    await API.del('/users/departments/' + id);
+    UI.toast('Department deleted');
+    await App.reloadDepartments();
+    await after();
+    load();
+  }
+
   view.querySelector('#add-user').addEventListener('click', addUser);
-  view.querySelector('#add-dept').addEventListener('click', addDept);
+  view.querySelector('#manage-depts').addEventListener('click', manageDepartments);
+  view.querySelector('#user-search').addEventListener('input', (e) => {
+    userQuery = e.target.value.trim();
+    renderUsers();
+  });
   await load();
 });

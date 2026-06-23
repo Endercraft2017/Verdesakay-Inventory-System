@@ -1,18 +1,32 @@
-/* My Account: profile summary + change own password. */
+/* My Account: profile (with editable name) + change own password. */
 App.register('account', async (view) => {
   const me = App.getMe();
   view.innerHTML = `
     <div class="topbar"><h2>My Account</h2></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:760px;">
-      <div class="panel">
-        <div class="panel-head"><h3>Profile</h3></div>
-        <div class="panel-body">
-          <p><span class="muted">Name:</span> <strong>${UI.esc(me.full_name)}</strong></p>
-          <p><span class="muted">Username:</span> <span class="mono">@${UI.esc(me.username)}</span></p>
-          <p><span class="muted">Role:</span> <span class="badge-pill role-${me.role}">${me.role}</span></p>
-          <p><span class="muted">Department:</span> ${UI.esc(me.department_name || '—')}</p>
+
+    <div class="panel" style="max-width:760px;margin-bottom:18px">
+      <div class="panel-body" style="display:flex;align-items:center;gap:16px">
+        <div class="avatar" style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-hover));color:#fff;display:grid;place-items:center;font-weight:700;font-size:20px">${UI.esc(UI.initials(me.full_name))}</div>
+        <div>
+          <div style="font-size:18px;font-weight:700" id="acc-name">${UI.esc(me.full_name)}</div>
+          <div class="muted">@${UI.esc(me.username)} · <span class="badge-pill role-${me.role}">${me.role}</span> · ${UI.esc(me.department_name || 'No department')}</div>
         </div>
       </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:760px;">
+      <div class="panel">
+        <div class="panel-head"><h3>Profile details</h3></div>
+        <div class="panel-body">
+          <div class="form-error hidden" id="pf-err"></div>
+          <label>Display name</label><input id="pf-name" value="${UI.esc(me.full_name)}" />
+          <label>Username</label><input value="@${UI.esc(me.username)}" disabled />
+          <label>Department</label><input value="${UI.esc(me.department_name || '—')}" disabled />
+          <p class="muted" style="font-size:12px">Role and department are managed by an administrator.</p>
+          <button class="btn" id="pf-save" style="margin-top:8px">Save profile</button>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-head"><h3>Change password</h3></div>
         <div class="panel-body">
@@ -25,6 +39,23 @@ App.register('account', async (view) => {
       </div>
     </div>`;
 
+  // Update display name.
+  const pfErr = view.querySelector('#pf-err');
+  view.querySelector('#pf-save').addEventListener('click', async () => {
+    pfErr.classList.add('hidden');
+    const full_name = view.querySelector('#pf-name').value.trim();
+    if (!full_name) { pfErr.textContent = 'Name cannot be empty'; pfErr.classList.remove('hidden'); return; }
+    try {
+      await API.put('/auth/profile', { full_name });
+      App.setMe({ full_name });
+      view.querySelector('#acc-name').textContent = full_name;
+      UI.toast('Profile updated');
+    } catch (e) {
+      pfErr.textContent = e.message; pfErr.classList.remove('hidden');
+    }
+  });
+
+  // Change password.
   const err = view.querySelector('#pw-err');
   view.querySelector('#pw-save').addEventListener('click', async () => {
     err.classList.add('hidden');

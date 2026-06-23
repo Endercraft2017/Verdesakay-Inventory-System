@@ -1,6 +1,7 @@
 /* Inventory: list, search, filter, create/edit, stock in/out, history, delete. */
 App.register('inventory', async (view) => {
-  const state = { q: '', department_id: '', low: false };
+  const state = { q: '', department_id: '', category: '', low: false };
+  let lastItems = [];
 
   function deptOptions(selected) {
     return '<option value="">— Department —</option>' +
@@ -13,23 +14,47 @@ App.register('inventory', async (view) => {
       <h2>Inventory</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="inv-search" placeholder="Search name, SKU, location…" /></div>
-      <select id="inv-dept" style="width:170px">${deptOptions('')}</select>
+      <select id="inv-cat" style="width:150px"><option value="">— Category —</option></select>
+      <select id="inv-dept" style="width:160px">${deptOptions('')}</select>
       <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;">
         <input type="checkbox" id="inv-low" style="width:auto" /> Low stock</label>
+      <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
       <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
     </div>
     <div class="panel"><div id="inv-table"></div></div>`;
 
   const tableEl = view.querySelector('#inv-table');
 
+  async function loadCategories() {
+    try {
+      const cats = await API.get('/inventory/categories');
+      const sel = view.querySelector('#inv-cat');
+      const current = state.category;
+      sel.innerHTML = '<option value="">— Category —</option>' +
+        cats.map((c) => `<option value="${UI.esc(c)}" ${c === current ? 'selected' : ''}>${UI.esc(c)}</option>`).join('');
+    } catch { /* ignore */ }
+  }
+
   async function load() {
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.department_id) params.set('department_id', state.department_id);
+    if (state.category) params.set('category', state.category);
     if (state.low) params.set('low', '1');
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     const items = await API.get('/inventory?' + params.toString());
+    lastItems = items;
     render(items);
+  }
+
+  function exportCsv() {
+    if (!lastItems.length) { UI.toast('Nothing to export', 'error'); return; }
+    const headers = ['Name', 'SKU', 'Category', 'Department', 'Quantity', 'Unit', 'Min', 'Location'];
+    const rows = lastItems.map((i) => [
+      i.name, i.sku || '', i.category || '', i.department_name || '',
+      i.quantity, i.unit || '', i.min_quantity, i.location || '',
+    ]);
+    UI.downloadCsv('inventory.csv', headers, rows);
   }
 
   function render(items) {
@@ -118,6 +143,7 @@ App.register('inventory', async (view) => {
         else await API.post('/inventory', body);
         UI.toast(it ? 'Item updated' : 'Item created');
         load();
+        loadCategories();
       },
     });
   }
@@ -180,9 +206,11 @@ App.register('inventory', async (view) => {
     state.q = e.target.value.trim();
     searchTimer = setTimeout(load, 250);
   });
+  view.querySelector('#inv-cat').addEventListener('change', (e) => { state.category = e.target.value; load(); });
   view.querySelector('#inv-dept').addEventListener('change', (e) => { state.department_id = e.target.value; load(); });
   view.querySelector('#inv-low').addEventListener('change', (e) => { state.low = e.target.checked; load(); });
+  view.querySelector('#inv-export').addEventListener('click', exportCsv);
   view.querySelector('#inv-add').addEventListener('click', () => itemModal(null));
 
-  await load();
+  await Promise.all([load(), loadCategories()]);
 });

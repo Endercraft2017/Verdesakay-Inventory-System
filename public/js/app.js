@@ -10,6 +10,20 @@ const App = (() => {
   function getDepartments() { return departments; }
   function isAdmin() { return me && me.role === 'admin'; }
 
+  async function reloadDepartments() {
+    try { departments = await API.get('/users/departments/list'); } catch { /* ignore */ }
+    return departments;
+  }
+
+  /** Patch the current user and refresh the sidebar (used after profile edits). */
+  function setMe(patch) {
+    me = { ...me, ...patch };
+    const nameEl = document.getElementById('me-name');
+    const avEl = document.getElementById('me-avatar');
+    if (nameEl) nameEl.textContent = me.full_name;
+    if (avEl) avEl.textContent = UI.initials(me.full_name);
+  }
+
   /* ---------- Theme ---------- */
   function currentTheme() {
     return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
@@ -148,7 +162,10 @@ const App = (() => {
     showLogin();
   }
 
-  return { register, navigate, getMe, getDepartments, isAdmin, showLogin, refreshUnread, logout, boot };
+  return {
+    register, navigate, getMe, getDepartments, isAdmin, showLogin, refreshUnread,
+    logout, boot, reloadDepartments, setMe,
+  };
 })();
 
 document.addEventListener('DOMContentLoaded', () => App.boot());

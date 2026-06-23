@@ -79,6 +79,12 @@ export const createDepartmentSchema = z.object({
   name: trimmed.min(1, 'Department name is required').max(80),
 });
 
+export const updateDepartmentSchema = createDepartmentSchema;
+
+export const updateProfileSchema = z.object({
+  full_name: trimmed.min(1, 'Full name is required').max(120),
+});
+
 // ---- Inventory ----
 export const createItemSchema = z.object({
   name: trimmed.min(1, 'Item name is required').max(160),

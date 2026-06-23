@@ -1,10 +1,15 @@
-/* Dashboard: stats overview + low-stock list + recent messages. */
+/* Dashboard: stats overview, quick actions, low-stock list + recent messages. */
 App.register('dashboard', async (view) => {
   const me = App.getMe();
-  const [stats, items, inbox] = await Promise.all([
+  const admin = App.isAdmin();
+
+  const [stats, items, inbox, forms, unread, users] = await Promise.all([
     API.get('/inventory/stats'),
     API.get('/inventory?low=1'),
     API.get('/messages?box=inbox'),
+    API.get('/forms'),
+    API.get('/messages/unread-count'),
+    admin ? API.get('/users') : Promise.resolve(null),
   ]);
 
   const recent = inbox.slice(0, 5);
@@ -20,13 +25,18 @@ App.register('dashboard', async (view) => {
       <div><h2>Welcome back, ${UI.esc(me.full_name.split(' ')[0])}</h2>
       <div class="sub">Here's what's happening across the office.</div></div>
       <div class="grow"></div>
+      <button class="btn secondary" data-go="inventory">${UI.icon('plus')} Item</button>
+      <button class="btn secondary" data-go="forms">${UI.icon('upload')} Upload</button>
+      <button class="btn" data-go="messages">${UI.icon('edit')} Message</button>
     </div>
 
     <div class="cards">
       ${statCard('', 'inventory', 'Inventory items', stats.items)}
-      ${statCard('', 'dashboard', 'Total units', stats.total_units)}
       ${statCard('warn', 'alert', 'Low stock', stats.low_stock || 0)}
       ${statCard('alert', 'alert', 'Out of stock', stats.out_of_stock || 0)}
+      ${statCard('', 'forms', 'Files available', forms.length)}
+      ${statCard('', 'messages', 'Unread messages', unread.count)}
+      ${admin ? statCard('', 'users', 'Staff accounts', users.length) : ''}
     </div>
 
     <div class="grid-2">

@@ -74,6 +74,26 @@ describe('rbac', () => {
   });
 });
 
+describe('profile', () => {
+  it('lets a user update their own display name', async () => {
+    const adminToken = await login(ctx.api);
+    const emp = await createEmployee(ctx.api, adminToken, { username: 'nameuser' });
+    const res = await ctx.api
+      .put('/api/auth/profile')
+      .set('Authorization', `Bearer ${emp.token}`)
+      .send({ full_name: 'Renamed Person' });
+    expect(res.status).toBe(200);
+    const me = await ctx.api.get('/api/auth/me').set('Authorization', `Bearer ${emp.token}`);
+    expect(me.body.user.full_name).toBe('Renamed Person');
+  });
+
+  it('rejects an empty name', async () => {
+    const token = await login(ctx.api);
+    const res = await ctx.api.put('/api/auth/profile').set('Authorization', `Bearer ${token}`).send({ full_name: '  ' });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('change password', () => {
   it('lets a user change their own password and rejects the old one', async () => {
     const adminToken = await login(ctx.api);
