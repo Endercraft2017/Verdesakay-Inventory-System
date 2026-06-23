@@ -165,6 +165,7 @@ const App = (() => {
   return {
     register, navigate, getMe, getDepartments, isAdmin, showLogin, refreshUnread,
     logout, boot, reloadDepartments, setMe,
+    _routeNames: () => Object.keys(routes), // test/debug seam
   };
 })();
 

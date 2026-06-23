@@ -70,14 +70,16 @@
   <div id="modal-root"></div>
   <div id="toasts"></div>
 
+  <!-- Core (api, ui) then App (defines the router/registry) BEFORE the view modules,
+       since each view calls App.register(...) at load time. -->
   <script src="/js/api.js"></script>
   <script src="/js/ui.js"></script>
+  <script src="/js/app.js"></script>
   <script src="/js/views/dashboard.js"></script>
   <script src="/js/views/inventory.js"></script>
   <script src="/js/views/forms.js"></script>
   <script src="/js/views/messages.js"></script>
   <script src="/js/views/admin.js"></script>
   <script src="/js/views/account.js"></script>
-  <script src="/js/app.js"></script>
 </body>
 </html>
