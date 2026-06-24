@@ -1,6 +1,6 @@
 /* Messages: inbox/sent, read a thread, compose, delete. */
-App.register('messages', async (view) => {
-  let box = 'inbox';
+App.register('messages', async (view, filter) => {
+  let box = (filter && filter.box === 'sent') ? 'sent' : 'inbox';
 
   view.innerHTML = `
     <div class="topbar">

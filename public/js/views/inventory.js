@@ -1,6 +1,6 @@
 /* Inventory: list, search, filter, create/edit, stock in/out, history, delete. */
-App.register('inventory', async (view) => {
-  const state = { q: '', department_id: '', category: '', low: false };
+App.register('inventory', async (view, filter) => {
+  const state = { q: '', department_id: '', category: '', low: !!(filter && filter.low) };
   let lastItems = [];
 
   function deptOptions(selected) {
@@ -17,7 +17,7 @@ App.register('inventory', async (view) => {
       <select id="inv-cat" style="width:150px"><option value="">— Category —</option></select>
       <select id="inv-dept" style="width:160px">${deptOptions('')}</select>
       <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;">
-        <input type="checkbox" id="inv-low" style="width:auto" /> Low stock</label>
+        <input type="checkbox" id="inv-low" style="width:auto" ${state.low ? 'checked' : ''} /> Low stock</label>
       <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
       <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
     </div>

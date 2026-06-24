@@ -3,7 +3,7 @@
 > **This is the single source of truth for how the code is organized.**
 > Before adding code, check here for an existing function/route/type to reuse instead of
 > writing a duplicate. **When you change the code, update this file in the same commit.**
-> Last verified: 2026-06-20.
+> Last verified: 2026-06-23.
 
 ---
 
@@ -51,16 +51,17 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 ### Frontend (`public/`)
 | File | Responsibility |
 |---|---|
-| `public/index.html` | App shell: login screen + sidebar nav + `#view` container; loads all scripts in order. |
-| `public/css/styles.css` | All styling (green brand theme, layout, tables, modals, toasts, messages). |
+| `public/index.html` | App shell: login screen + **ECOUNT-style chrome** (utility bar w/ menu search + site map, top primary menu `#primary-nav`, secondary `#subnav`, workspace = `#tree-nav` \| `#view` \| `#rail`); loads all scripts in order (nav-config before app). |
+| `public/js/nav-config.js` | **`NAV`** (declarative 3-tier nav tree: primary → subtabs → leaves) + **`ROUTE_NAMES`**. The single source of truth for navigation; browser global + CommonJS export for tests. |
+| `public/css/styles.css` | All styling (green/blue brand theme via CSS tokens, ECOUNT chrome: util-bar/topnav/subnav/tree/rail, tables, modals, toasts, site map). |
 | `public/js/api.js` | **`API`** — fetch wrapper with token handling (`get/post/put/del/upload`), 401 → logout. |
 | `public/js/ui.js` | **`UI`** — `esc`, `toast`, `fmtDate/fmtDateShort/fmtBytes`, `initials`, **`modal()`**, `confirmDialog()`, **`icon(name,size)`** (inline SVG set), **`emptyState({icon,title,hint,action})`**. |
-| `public/js/app.js` | **`App`** — auth (login/logout/session resume), hash router (`register`/`navigate`), shell wiring, unread-badge polling, **theme** (`applyTheme`/`toggleTheme`, persisted in `localStorage('vds_theme')`). |
+| `public/js/app.js` | **`App`** — auth (login/logout/session resume), chrome rendering (`renderPrimaryNav`/`renderSubnav`/`renderTree` from `NAV`), hash router (`register`/**`navigate(name, filter)`**), menu search + site map, unread-badge (on rail), **theme** (`applyTheme`/`toggleTheme`, persisted in `localStorage('vds_theme')`). |
 | `public/js/views/dashboard.js` | Dashboard: stats cards, low-stock list, recent messages. |
-| `public/js/views/inventory.js` | Inventory table: search/filter, create/edit modal, stock adjust modal, history modal, delete. |
+| `public/js/views/inventory.js` | Inventory table: search/filter, create/edit modal, stock adjust modal, history modal, delete. Honors `filter.low` (Low-Stock tree leaf). |
 | `public/js/views/forms.js` | Forms table: upload modal, authenticated blob download, delete. |
-| `public/js/views/messages.js` | Inbox/sent tabs, open/read thread, compose/reply modal, delete. |
-| `public/js/views/admin.js` | Accounts (admin): user table, create/edit/reset-password, add department. |
+| `public/js/views/messages.js` | Inbox/sent tabs, open/read thread, compose/reply modal, delete. Honors `filter.box` (Inbox/Sent tree leaves). |
+| `public/js/views/admin.js` | Accounts (admin): user table, create/edit/reset-password, add department. Honors `filter.tab==='departments'` (opens manager). |
 | `public/js/views/account.js` | My Account: profile + change own password. |
 
 ### Tests (`tests/`)
@@ -68,6 +69,7 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 |---|---|
 | `tests/helpers.ts` | `setupApp()` (isolated temp DB + uploads), `login`, `createEmployee`, `cleanup`. |
 | `tests/unit.test.ts` | zod schemas + bcrypt (pure, no HTTP). |
+| `tests/frontend-nav.test.ts` | nav-config sanity: every tree leaf → registered route, admin-only correct, ids unique (loads `nav-config.js` in a sandbox). |
 | `tests/auth.test.ts` | login, me, logout, RBAC, last-admin guard, change-password. |
 | `tests/inventory.test.ts` | CRUD, stock in/out + history, negative-stock guard, low-stock filter, search, stats. |
 | `tests/forms.test.ts` | upload/download round-trip, department visibility, delete permissions. |
@@ -146,15 +148,23 @@ Bodies are validated by the named schema in `src/validation.ts`.
   `requireRole('admin')`. Read the caller via `req.user!`.
 - **Errors:** return `res.status(n).json({ error: 'message' })`. Thrown `ValidationError`
   (or anything with a numeric `status`) is shaped by the central handler in `app.ts`.
-- **Frontend:** views register with `App.register('name', async (view) => {...})` and reuse
-  `API`, `UI.modal`, `UI.toast`, `UI.esc`. Always `UI.esc()` user data before inserting HTML.
+- **Frontend:** views register with `App.register('name', async (view, filter) => {...})` and
+  reuse `API`, `UI.modal`, `UI.toast`, `UI.esc`. Always `UI.esc()` user data before inserting
+  HTML. The optional `filter` arg comes from the nav tree leaf (deep-link); honor it via the
+  view's existing internal state, never duplicate behavior.
+- **Navigation:** the chrome (top primary menu, sub-tabs, left tree, site map, menu search) is
+  generated entirely from **`NAV` in `public/js/nav-config.js`** — the single source of truth.
+  To add/move a destination, edit `NAV` (a leaf = `{label, icon, route, filter?}`); every
+  `route` must be a registered view (`ROUTE_NAMES`, enforced by `tests/frontend-nav.test.ts`).
+  Do **not** hand-wire nav buttons in `index.html`. Navigate programmatically via
+  `App.navigate(route, filter?)`.
 - **Icons:** use `UI.icon('name')` (inline SVG, inherits text color) — do not add emoji or
   icon fonts. Add new glyphs to the `ICONS` map in `ui.js`.
 - **Theming:** all colors come from CSS variables defined in `public/css/styles.css` under
   `:root`/`[data-theme='light']` (light) and `[data-theme='dark']` (dark). **Never hard-code
   a hex color in a component** — add or reuse a token (`--surface`, `--text`, `--accent`, …)
   so both themes stay correct. The active theme is the `data-theme` attribute on `<html>`,
-  set pre-paint by an inline script in `index.html` and toggled via the sidebar button.
+  set pre-paint by an inline script in `index.html` and toggled via the right icon rail button.
   Empty tab states use `UI.emptyState(...)`.
 
 ---
@@ -176,10 +186,12 @@ Bodies are validated by the named schema in `src/validation.ts`.
 5. Update §3 here.
 
 **A new frontend view/page**
-1. Create `public/js/views/<name>.js` calling `App.register('<name>', render)`.
-2. Add a `<button class="nav-item" data-route="<name>">` to `public/index.html` and a
-   `<script>` tag for the file.
-3. Update the frontend map in §2.
+1. Create `public/js/views/<name>.js` calling `App.register('<name>', (view, filter) => …)`.
+2. Add `<name>` to `ROUTE_NAMES` and add a leaf (and primary/subtab if needed) in
+   `public/js/nav-config.js` — do **not** hand-add a button to `index.html`.
+3. Add a `<script>` tag for the file in `public/index.html`.
+4. Update the frontend map in §2. (`tests/frontend-nav.test.ts` will fail if a leaf points
+   to an unregistered route.)
 
 ---
 

@@ -1,5 +1,5 @@
 /* Accounts (admin only): manage users + departments. */
-App.register('admin', async (view) => {
+App.register('admin', async (view, filter) => {
   if (!App.isAdmin()) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
@@ -220,4 +220,7 @@ App.register('admin', async (view) => {
     renderUsers();
   });
   await load();
+
+  // Deep-link: the "Departments" tree leaf opens the manager directly.
+  if (filter && filter.tab === 'departments') manageDepartments();
 });
