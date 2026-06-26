@@ -302,11 +302,13 @@ App.register('inventory', async (view, filter) => {
 
   /** Admin "Option" panel: show/hide, required, default per field — saved app-wide. */
   function openItemOptions(formOverlay, it) {
-    const groups = ITEM_FORM_TABS.map((t) => {
-      const fields = _itemFormConfig.filter((f) => f.tab === t.id);
-      if (!fields.length) return '';
-      return `<div class="opt-group"><div class="opt-group-head">${UI.esc(t.label)} <span class="opt-count">${fields.length}</span></div>
-        <div class="opt-grid">${fields.map((f) => `
+    const tabs = ITEM_FORM_TABS.filter((t) => _itemFormConfig.some((f) => f.tab === t.id));
+    const bar = tabs.map((t, i) => {
+      const n = _itemFormConfig.filter((f) => f.tab === t.id).length;
+      return `<button type="button" class="form-tab ${i === 0 ? 'active' : ''}" data-formtab="${t.id}">${UI.esc(t.label)} <span class="opt-count">${n}</span></button>`;
+    }).join('');
+    const panels = tabs.map((t, i) => {
+      const cards = _itemFormConfig.filter((f) => f.tab === t.id).map((f) => `
         <div class="opt-row" data-optkey="${f.key}">
           <div class="opt-name">${UI.esc(f.label)} ${f.core ? '<span class="badge-pill muted">core</span>' : ''}</div>
           <div class="opt-controls">
@@ -314,7 +316,8 @@ App.register('inventory', async (view, filter) => {
             <label class="check-opt"><input type="checkbox" data-opt="required" ${f.required ? 'checked' : ''} /> Required</label>
           </div>
           <input class="opt-default" data-opt="default" value="${UI.esc(f.default ?? '')}" placeholder="Default value" />
-        </div>`).join('')}</div></div>`;
+        </div>`).join('');
+      return `<div data-formpanel="${t.id}" class="form-panel ${i === 0 ? '' : 'hidden'}"><div class="opt-grid">${cards}</div></div>`;
     }).join('');
 
     UI.modal({
@@ -322,9 +325,10 @@ App.register('inventory', async (view, filter) => {
       size: 'lg',
       headActionHTML: `<button class="btn secondary small" id="opt-reset">Reset to defaults</button>`,
       bodyHTML: `<p class="muted" style="margin-top:0">Show or hide fields, mark them required, and set defaults. Saved for everyone.</p>
-        <div id="opt-list">${groups}</div>`,
+        <div class="form-tabs">${bar}</div>${panels}`,
       confirmText: 'Save layout',
       onOpen: (ov) => {
+        wireItemFormTabs(ov);
         const reset = ov.querySelector('#opt-reset');
         reset.addEventListener('click', async () => {
           reset.disabled = true;
