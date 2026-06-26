@@ -156,6 +156,51 @@ const UI = (() => {
     alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   };
 
+  /** A "?" help icon with a tooltip shown on hover (desktop) and tap (mobile).
+      The tip text lives in data-tip; a single delegated controller (below) shows
+      a body-level bubble so it never gets clipped by a scrolling modal. */
+  function helpIcon(text) {
+    if (!text) return '';
+    return `<button type="button" class="help-icon" aria-label="${esc(text)}" data-tip="${esc(text)}">?</button>`;
+  }
+
+  /* Tooltip controller: hover (mouse) + tap/click (touch) → floating bubble. */
+  (function initHelpTips() {
+    let tip = null;
+    const hide = () => { if (tip) { tip.remove(); tip = null; } };
+    function show(target) {
+      hide();
+      const text = target.getAttribute('data-tip');
+      if (!text) return;
+      tip = document.createElement('div');
+      tip.className = 'help-tip';
+      tip.textContent = text;
+      document.body.appendChild(tip);
+      const r = target.getBoundingClientRect();
+      const tr = tip.getBoundingClientRect();
+      let top = r.top - tr.height - 8;
+      if (top < 8) top = r.bottom + 8; // flip below if it would clip the top
+      let left = r.left + r.width / 2 - tr.width / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+      tip.style.top = `${Math.round(top)}px`;
+      tip.style.left = `${Math.round(left)}px`;
+    }
+    document.addEventListener('mouseover', (e) => {
+      const h = e.target.closest && e.target.closest('.help-icon');
+      if (h) show(h);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const h = e.target.closest && e.target.closest('.help-icon');
+      if (h && !(e.relatedTarget && h.contains(e.relatedTarget))) hide();
+    });
+    document.addEventListener('click', (e) => {
+      const h = e.target.closest && e.target.closest('.help-icon');
+      if (h) { e.preventDefault(); e.stopPropagation(); show(h); }
+      else hide();
+    });
+    window.addEventListener('scroll', hide, true);
+  })();
+
   /** Inline SVG icon by name. Inherits text color; size in px (default 18). */
   function icon(name, size = 18) {
     const body = ICONS[name] || '';
@@ -204,6 +249,6 @@ const UI = (() => {
 
   return {
     esc, toast, fmtDate, fmtDateShort, fmtBytes, initials, modal, confirmDialog,
-    icon, emptyState, fileIconName, downloadCsv,
+    icon, helpIcon, emptyState, fileIconName, downloadCsv,
   };
 })();

@@ -7,7 +7,7 @@ import path from 'node:path';
 
 type Field = {
   key: string; label: string; tab: string; type: string;
-  options?: string[]; core?: boolean; visible: boolean; required: boolean;
+  options?: string[]; core?: boolean; visible: boolean; required: boolean; help?: string;
 };
 type Tab = { id: string; label: string };
 
@@ -62,6 +62,12 @@ describe('item-form-config catalog', () => {
   it('all nine real columns are represented as core fields', () => {
     const coreKeys = ITEM_FORM_DEFAULTS.filter((f) => f.core).map((f) => f.key).sort();
     expect(coreKeys).toEqual([...REAL_COLUMNS].sort());
+  });
+
+  it('every field has help text (for the tooltip)', () => {
+    for (const f of ITEM_FORM_DEFAULTS) {
+      expect(typeof f.help === 'string' && f.help.trim().length > 0, `field "${f.key}" needs help text`).toBe(true);
+    }
   });
 
   it('radio/select fields declare a non-empty options list', () => {

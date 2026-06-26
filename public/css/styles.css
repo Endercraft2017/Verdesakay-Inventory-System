@@ -459,8 +459,26 @@ textarea { resize: vertical; min-height: 84px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; }
 .form-field { display: flex; flex-direction: column; min-width: 0; }
 .form-field.span2 { grid-column: 1 / -1; }
-.form-field label { margin: 10px 0 5px; }
+.form-field.inline { flex-direction: row; align-items: center; gap: 6px; margin: 6px 0; }
+.field-label { display: flex; align-items: center; gap: 5px; margin: 10px 0 5px; }
+.field-label label { margin: 0; }
 .form-field .req { color: var(--danger); }
+
+/* Help "?" icon + floating tooltip (hover on desktop, tap on mobile) */
+.help-icon {
+  flex-shrink: 0; width: 15px; height: 15px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-muted);
+  font-size: 10px; font-weight: 700; line-height: 1; font-family: inherit;
+  display: inline-grid; place-items: center; cursor: help; vertical-align: middle;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.help-icon:hover, .help-icon:focus { background: var(--accent-weak); color: var(--accent); border-color: var(--accent); outline: none; }
+.help-tip {
+  position: fixed; z-index: 200; max-width: 250px; pointer-events: none;
+  background: var(--text); color: var(--surface);
+  padding: 7px 10px; border-radius: 7px; font-size: 12px; font-weight: 500; line-height: 1.45;
+  box-shadow: var(--shadow-lg);
+}
 .field-with-suffix { display: flex; align-items: center; gap: 8px; }
 .field-with-suffix input { flex: 1; }
 .field-suffix { color: var(--text-faint); font-size: 13px; font-weight: 600; white-space: nowrap; }

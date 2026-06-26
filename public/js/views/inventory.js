@@ -57,11 +57,12 @@ function renderItemField(def, value, opts = {}) {
   const e = UI.esc;
   const v = value === null || value === undefined ? '' : value;
   const req = def.required ? ' <span class="req">*</span>' : '';
-  const head = `<label>${e(def.label)}${req}</label>`;
+  const help = UI.helpIcon(def.help);
+  const head = `<div class="field-label"><label>${e(def.label)}${req}</label>${help}</div>`;
 
   if (def.type === 'checkbox') {
-    return `<div class="form-field span2">
-      <label class="check-opt"><input type="checkbox" data-key="${def.key}" ${isChecked(v) ? 'checked' : ''} /> ${e(def.label)}</label>
+    return `<div class="form-field span2 inline">
+      <label class="check-opt"><input type="checkbox" data-key="${def.key}" ${isChecked(v) ? 'checked' : ''} /> ${e(def.label)}</label>${help}
     </div>`;
   }
   if (def.type === 'static') {
@@ -310,7 +311,7 @@ App.register('inventory', async (view, filter) => {
     const panels = tabs.map((t, i) => {
       const cards = _itemFormConfig.filter((f) => f.tab === t.id).map((f) => `
         <div class="opt-row" data-optkey="${f.key}">
-          <div class="opt-name">${UI.esc(f.label)} ${f.core ? '<span class="badge-pill muted">core</span>' : ''}</div>
+          <div class="opt-name">${UI.esc(f.label)} ${f.core ? '<span class="badge-pill muted">core</span>' : ''} ${UI.helpIcon(f.help)}</div>
           <div class="opt-controls">
             <label class="check-opt"><input type="checkbox" data-opt="visible" ${f.visible ? 'checked' : ''} /> Visible</label>
             <label class="check-opt"><input type="checkbox" data-opt="required" ${f.required ? 'checked' : ''} /> Required</label>
