@@ -1,4 +1,152 @@
 /* Inventory: list, search, filter, create/edit, stock in/out, history, delete. */
+
+/* ---------- ECOUNT-style Item form (data-driven from item-form-config.js) ---------- */
+// Cached merged config (defaults overlaid with the admin's saved customization).
+let _itemFormConfig = null;
+
+/** Merge the admin's saved per-field overrides over ITEM_FORM_DEFAULTS (by key). */
+function mergeFormConfig(saved) {
+  const base = ITEM_FORM_DEFAULTS.map((f) => ({ ...f }));
+  if (!Array.isArray(saved)) return base;
+  const byKey = {};
+  saved.forEach((s) => { if (s && s.key) byKey[s.key] = s; });
+  return base.map((f) => {
+    const s = byKey[f.key];
+    if (!s) return f;
+    return {
+      ...f,
+      visible: typeof s.visible === 'boolean' ? s.visible : f.visible,
+      required: typeof s.required === 'boolean' ? s.required : f.required,
+      default: (s.default !== undefined && s.default !== null && s.default !== '') ? s.default : f.default,
+    };
+  });
+}
+
+async function loadItemFormConfig(force) {
+  if (_itemFormConfig && !force) return _itemFormConfig;
+  let saved = null;
+  try { saved = await API.get('/inventory/form-config'); } catch { /* use defaults */ }
+  _itemFormConfig = mergeFormConfig(saved);
+  return _itemFormConfig;
+}
+
+function itemDeptOptions(selected) {
+  return '<option value="">— None —</option>' +
+    App.getDepartments().map((d) =>
+      `<option value="${d.id}" ${String(d.id) === String(selected) ? 'selected' : ''}>${UI.esc(d.name)}</option>`).join('');
+}
+
+/** Current value of a field for an item (or its default for a new item). */
+function itemFieldValue(def, it) {
+  if (!it) return def.default !== undefined ? def.default : (def.type === 'checkbox' ? false : '');
+  if (def.core) {
+    if (def.key === 'department_id') return it.department_id ?? '';
+    if (def.key === 'quantity') return it.quantity ?? 0;
+    if (def.key === 'min_quantity') return it.min_quantity ?? 0;
+    return it[def.key] ?? '';
+  }
+  const attrs = (it.attributes && typeof it.attributes === 'object') ? it.attributes : {};
+  if (Object.prototype.hasOwnProperty.call(attrs, def.key)) return attrs[def.key];
+  return def.default !== undefined ? def.default : (def.type === 'checkbox' ? false : '');
+}
+
+const isChecked = (v) => v === true || v === 'true' || v === 1 || v === '1';
+
+/** Render one labeled field row from its def + current value. */
+function renderItemField(def, value, opts = {}) {
+  const e = UI.esc;
+  const v = value === null || value === undefined ? '' : value;
+  const req = def.required ? ' <span class="req">*</span>' : '';
+  const head = `<label>${e(def.label)}${req}</label>`;
+
+  if (def.type === 'checkbox') {
+    return `<div class="form-field span2">
+      <label class="check-opt"><input type="checkbox" data-key="${def.key}" ${isChecked(v) ? 'checked' : ''} /> ${e(def.label)}</label>
+    </div>`;
+  }
+  if (def.type === 'static') {
+    return `<div class="form-field span2">${head}<div class="static-field muted">${e(def.placeholder || '—')}</div></div>`;
+  }
+  if (def.type === 'radio') {
+    const opts2 = (def.options || []).map((o) =>
+      `<label class="radio-opt"><input type="radio" name="f_${def.key}" value="${e(o)}" ${String(v) === String(o) ? 'checked' : ''} /> ${e(o)}</label>`).join('');
+    return `<div class="form-field span2">${head}<div class="radio-row">${opts2}</div></div>`;
+  }
+  if (def.type === 'select' || def.type === 'department') {
+    const inner = def.type === 'department'
+      ? itemDeptOptions(v)
+      : (def.options || []).map((o) => `<option value="${e(o)}" ${String(v) === String(o) ? 'selected' : ''}>${e(o)}</option>`).join('');
+    return `<div class="form-field">${head}<select data-key="${def.key}">${inner}</select></div>`;
+  }
+  if (def.type === 'textarea') {
+    return `<div class="form-field span2">${head}<textarea data-key="${def.key}" placeholder="${e(def.placeholder || '')}">${e(v)}</textarea></div>`;
+  }
+  if (def.type === 'search') {
+    return `<div class="form-field">${head}<div class="search-box">${UI.icon('search', 16)}<input data-key="${def.key}" value="${e(v)}" placeholder="${e(def.placeholder || '')}" /></div></div>`;
+  }
+
+  // text | number | money | percent
+  const numeric = def.type === 'number' || def.type === 'money' || def.type === 'percent';
+  const step = def.type === 'money' ? ' step="0.01"' : (def.type === 'percent' ? ' step="0.01"' : '');
+  const disabled = opts.disabled ? ' disabled' : '';
+  const suffix = def.type === 'percent' ? '<span class="field-suffix">%</span>'
+    : (def.suffix ? `<span class="field-suffix">${e(def.suffix)}</span>` : '');
+  const input = `<input data-key="${def.key}" type="${numeric ? 'number' : 'text'}"${step}${disabled} value="${e(v)}" placeholder="${e(def.placeholder || '')}" />`;
+  return `<div class="form-field">${head}<div class="field-with-suffix">${input}${suffix}</div></div>`;
+}
+
+/** Build the tabbed form body from the config for a given item (null = new). */
+function renderItemFormBody(cfg, it) {
+  const tabs = ITEM_FORM_TABS.filter((t) => cfg.some((f) => f.tab === t.id && f.visible));
+  const bar = tabs.map((t, i) =>
+    `<button type="button" class="form-tab ${i === 0 ? 'active' : ''}" data-formtab="${t.id}">${UI.esc(t.label)}</button>`).join('');
+  const panels = tabs.map((t, i) => {
+    const fields = cfg.filter((f) => f.tab === t.id && f.visible).map((f) => {
+      const editLocked = it && f.key === 'quantity'; // quantity changes go through the adjust modal
+      return renderItemField(f, itemFieldValue(f, it), { disabled: editLocked });
+    }).join('');
+    return `<div data-formpanel="${t.id}" class="form-panel ${i === 0 ? '' : 'hidden'}"><div class="form-grid">${fields}</div></div>`;
+  }).join('');
+  return `<div class="form-tabs">${bar}</div>${panels}`;
+}
+
+function wireItemFormTabs(overlay) {
+  overlay.querySelectorAll('[data-formtab]').forEach((btn) => {
+    btn.onclick = () => {
+      overlay.querySelectorAll('[data-formtab]').forEach((b) => b.classList.toggle('active', b === btn));
+      overlay.querySelectorAll('[data-formpanel]').forEach((p) =>
+        p.classList.toggle('hidden', p.dataset.formpanel !== btn.dataset.formtab));
+    };
+  });
+}
+
+/** Read a field's current value from the open form. */
+function readItemField(overlay, def) {
+  if (def.type === 'radio') {
+    const c = overlay.querySelector(`input[name="f_${def.key}"]:checked`);
+    return c ? c.value : '';
+  }
+  if (def.type === 'checkbox') {
+    const el = overlay.querySelector(`[data-key="${def.key}"]`);
+    return !!(el && el.checked);
+  }
+  const el = overlay.querySelector(`[data-key="${def.key}"]`);
+  return el ? el.value : '';
+}
+
+/** Collect core columns + attributes from the open form. */
+function collectItemForm(overlay, cfg, it) {
+  const core = {};
+  const attributes = (it && it.attributes && typeof it.attributes === 'object') ? { ...it.attributes } : {};
+  cfg.forEach((def) => {
+    if (!def.visible || def.type === 'static') return;
+    const val = readItemField(overlay, def);
+    if (def.core) core[def.key] = val;
+    else attributes[def.key] = val;
+  });
+  return { core, attributes };
+}
+
 App.register('inventory', async (view, filter) => {
   const state = { q: '', department_id: '', category: '', low: !!(filter && filter.low) };
   let lastItems = [];
@@ -102,48 +250,109 @@ App.register('inventory', async (view, filter) => {
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(items.find((x) => x.id == b.dataset.del)));
   }
 
-  function itemFormHTML(it) {
-    it = it || {};
-    return `
-      <div class="field-row">
-        <div><label>Item name *</label><input data-f="name" value="${UI.esc(it.name || '')}" /></div>
-        <div><label>SKU / Code</label><input data-f="sku" value="${UI.esc(it.sku || '')}" /></div>
-      </div>
-      <div class="field-row">
-        <div><label>Category</label><input data-f="category" value="${UI.esc(it.category || '')}" /></div>
-        <div><label>Department</label><select data-f="department_id">${
-          '<option value="">— None —</option>' + App.getDepartments().map((d) =>
-            `<option value="${d.id}" ${d.id === it.department_id ? 'selected' : ''}>${UI.esc(d.name)}</option>`).join('')
-        }</select></div>
-      </div>
-      <div class="field-row">
-        ${it.id ? '' : `<div><label>Starting quantity</label><input data-f="quantity" type="number" value="0" /></div>`}
-        <div><label>Unit</label><input data-f="unit" value="${UI.esc(it.unit || 'pcs')}" /></div>
-        <div><label>Reorder level (min)</label><input data-f="min_quantity" type="number" value="${it.min_quantity ?? 0}" /></div>
-      </div>
-      <div><label>Location</label><input data-f="location" value="${UI.esc(it.location || '')}" /></div>
-      <div><label>Notes</label><textarea data-f="notes">${UI.esc(it.notes || '')}</textarea></div>`;
-  }
-
-  function readForm(overlay) {
-    const body = {};
-    overlay.querySelectorAll('[data-f]').forEach((el) => { body[el.dataset.f] = el.value; });
-    return body;
-  }
-
-  function itemModal(it) {
-    UI.modal({
-      title: it ? 'Edit item' : 'New inventory item',
-      bodyHTML: itemFormHTML(it),
+  async function itemModal(it) {
+    const cfg = await loadItemFormConfig();
+    const canCustomize = App.isAdmin();
+    const m = UI.modal({
+      title: it ? 'Edit item' : 'New item',
+      size: 'lg',
+      headActionHTML: canCustomize ? `<button class="btn secondary small" id="item-option-btn">Option</button>` : '',
+      bodyHTML: `<div id="item-form-host">${renderItemFormBody(_itemFormConfig, it)}</div>`,
       confirmText: it ? 'Save changes' : 'Create item',
+      onOpen: (overlay) => {
+        wireItemFormTabs(overlay);
+        const opt = overlay.querySelector('#item-option-btn');
+        if (opt) opt.addEventListener('click', () => openItemOptions(overlay, it));
+      },
       onConfirm: async (overlay, showErr) => {
-        const body = readForm(overlay);
-        if (!body.name.trim()) { showErr('Item name is required'); return false; }
-        if (it) await API.put('/inventory/' + it.id, body);
-        else await API.post('/inventory', body);
+        // Required-field validation (visible fields only).
+        for (const def of _itemFormConfig) {
+          if (!def.visible || def.type === 'static' || !def.required) continue;
+          const val = readItemField(overlay, def);
+          if (val === '' || val === false || val === null || val === undefined) {
+            showErr(`${def.label} is required`);
+            const panelBtn = overlay.querySelector(`[data-formtab="${def.tab}"]`);
+            if (panelBtn) panelBtn.click();
+            return false;
+          }
+        }
+        const { core, attributes } = collectItemForm(overlay, _itemFormConfig, it);
+        const body = { ...core, attributes };
+        if (it) {
+          delete body.quantity; // stock changes go through the adjust modal
+          await API.put('/inventory/' + it.id, body);
+        } else {
+          await API.post('/inventory', body);
+        }
         UI.toast(it ? 'Item updated' : 'Item created');
         load();
         loadCategories();
+      },
+    });
+    return m;
+  }
+
+  /** Re-render the open form body after the layout changed (Option saved). */
+  function refreshItemFormBody(overlay, it) {
+    const host = overlay.querySelector('#item-form-host');
+    if (!host) return;
+    host.innerHTML = renderItemFormBody(_itemFormConfig, it);
+    wireItemFormTabs(overlay);
+  }
+
+  /** Admin "Option" panel: show/hide, required, default per field — saved app-wide. */
+  function openItemOptions(formOverlay, it) {
+    const groups = ITEM_FORM_TABS.map((t) => {
+      const fields = _itemFormConfig.filter((f) => f.tab === t.id);
+      if (!fields.length) return '';
+      return `<div class="opt-group"><div class="opt-group-head">${UI.esc(t.label)}</div>${fields.map((f) => `
+        <div class="opt-row" data-optkey="${f.key}">
+          <div class="opt-name">${UI.esc(f.label)} ${f.core ? '<span class="badge-pill muted">core</span>' : ''}</div>
+          <label class="check-opt"><input type="checkbox" data-opt="visible" ${f.visible ? 'checked' : ''} /> Visible</label>
+          <label class="check-opt"><input type="checkbox" data-opt="required" ${f.required ? 'checked' : ''} /> Required</label>
+          <input class="opt-default" data-opt="default" value="${UI.esc(f.default ?? '')}" placeholder="Default" />
+        </div>`).join('')}</div>`;
+    }).join('');
+
+    UI.modal({
+      title: 'Form Options',
+      size: 'lg',
+      headActionHTML: `<button class="btn secondary small" id="opt-reset">Reset to defaults</button>`,
+      bodyHTML: `<p class="muted" style="margin-top:0">Show or hide fields, mark them required, and set defaults. Saved for everyone.</p>
+        <div id="opt-list">${groups}</div>`,
+      confirmText: 'Save layout',
+      onOpen: (ov) => {
+        const reset = ov.querySelector('#opt-reset');
+        reset.addEventListener('click', async () => {
+          reset.disabled = true;
+          try {
+            const payload = ITEM_FORM_DEFAULTS.map((f) => ({
+              key: f.key, visible: f.visible, required: f.required, default: f.default ?? null,
+            }));
+            await API.put('/inventory/form-config', payload);
+            _itemFormConfig = mergeFormConfig(null);
+            UI.toast('Form layout reset to defaults');
+            refreshItemFormBody(formOverlay, it);
+            ov.remove();
+          } catch (e) { UI.toast(e.message, 'error'); reset.disabled = false; }
+        });
+      },
+      onConfirm: async (ov) => {
+        const newCfg = _itemFormConfig.map((f) => {
+          const row = ov.querySelector(`[data-optkey="${f.key}"]`);
+          if (!row) return f;
+          const visible = row.querySelector('[data-opt="visible"]').checked;
+          const required = row.querySelector('[data-opt="required"]').checked;
+          const def = row.querySelector('[data-opt="default"]').value;
+          return { ...f, visible, required, default: def === '' ? f.default : def };
+        });
+        const payload = newCfg.map((f) => ({
+          key: f.key, visible: f.visible, required: f.required, default: f.default ?? null,
+        }));
+        await API.put('/inventory/form-config', payload);
+        _itemFormConfig = newCfg;
+        UI.toast('Form layout saved');
+        refreshItemFormBody(formOverlay, it);
       },
     });
   }
@@ -212,5 +421,5 @@ App.register('inventory', async (view, filter) => {
   view.querySelector('#inv-export').addEventListener('click', exportCsv);
   view.querySelector('#inv-add').addEventListener('click', () => itemModal(null));
 
-  await Promise.all([load(), loadCategories()]);
+  await Promise.all([load(), loadCategories(), loadItemFormConfig()]);
 });

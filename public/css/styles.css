@@ -435,10 +435,56 @@ textarea { resize: vertical; min-height: 84px; }
   animation: pop 0.14s ease;
 }
 @keyframes pop { from { transform: scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
-.modal-head { padding: 17px 22px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
+.modal.lg { max-width: 880px; }
+.modal.xl { max-width: 1100px; }
+.modal-head { padding: 17px 22px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
 .modal-head h3 { margin: 0; font-size: 16.5px; font-weight: 650; }
-.modal-head .close { margin-left: auto; }
+.modal-head-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .modal-body { padding: 22px; }
+
+/* ---------- Tabbed / data-driven item form ---------- */
+.form-tabs {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); margin: -4px 0 18px; padding-bottom: 10px;
+}
+.form-tab {
+  border: none; background: none; cursor: pointer; font-family: inherit; white-space: nowrap;
+  color: var(--text-muted); font-size: 13px; font-weight: 500;
+  padding: 7px 13px; border-radius: 7px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.form-tab:hover { background: var(--surface-2); color: var(--text); }
+.form-tab.active { color: var(--accent); background: var(--accent-weak); font-weight: 600; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; }
+.form-field { display: flex; flex-direction: column; min-width: 0; }
+.form-field.span2 { grid-column: 1 / -1; }
+.form-field label { margin: 10px 0 5px; }
+.form-field .req { color: var(--danger); }
+.field-with-suffix { display: flex; align-items: center; gap: 8px; }
+.field-with-suffix input { flex: 1; }
+.field-suffix { color: var(--text-faint); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.static-field { padding: 9px 0; font-size: 13px; }
+
+.radio-row { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 4px 0; }
+.radio-opt, .check-opt {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0;
+  font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer;
+}
+.radio-opt input, .check-opt input { width: auto; }
+
+/* ---------- Form Options (admin customizer) ---------- */
+.opt-group { margin-bottom: 18px; }
+.opt-group-head {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-faint); font-weight: 700; margin-bottom: 6px;
+}
+.opt-row {
+  display: grid; grid-template-columns: 1fr auto auto 150px; gap: 12px; align-items: center;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 6px;
+}
+.opt-row .opt-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.opt-row .opt-default { padding: 6px 9px; font-size: 13px; }
 .modal-foot { padding: 15px 22px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
 
 /* ---------- Toast ---------- */
@@ -486,4 +532,6 @@ textarea { resize: vertical; min-height: 84px; }
   .menu-search input { width: 140px; }
   .grid-2 { grid-template-columns: 1fr; }
   .field-row { flex-direction: column; gap: 0; }
+  .form-grid { grid-template-columns: 1fr; }
+  .opt-row { grid-template-columns: 1fr; gap: 6px; }
 }

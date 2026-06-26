@@ -52,16 +52,20 @@ const UI = (() => {
     return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
   }
 
-  /* Modal: opts = { title, bodyHTML, confirmText, onConfirm(modalEl)->bool|Promise, size } */
+  /* Modal: opts = { title, bodyHTML, confirmText, onConfirm(modalEl)->bool|Promise,
+       size ('lg'|'xl'), headActionHTML (raw HTML placed left of the close button) } */
   function modal(opts) {
     const root = document.getElementById('modal-root');
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
-      <div class="modal">
+      <div class="modal${opts.size ? ' ' + opts.size : ''}">
         <div class="modal-head">
           <h3>${esc(opts.title)}</h3>
-          <button class="icon-btn close" data-close>${icon('close')}</button>
+          <div class="modal-head-actions">
+            ${opts.headActionHTML || ''}
+            <button class="icon-btn close" data-close>${icon('close')}</button>
+          </div>
         </div>
         <div class="modal-body">
           <div class="form-error hidden" data-modal-error></div>

@@ -1,8 +1,14 @@
 /** Inventory: items, search/filter, stock adjustments with history, dashboard stats. */
 import { Router } from 'express';
-import { db, queryOne, queryAll, run } from '../db';
-import { requireAuth } from '../auth';
-import { parseBody, createItemSchema, updateItemSchema, adjustStockSchema } from '../validation';
+import { db, queryOne, queryAll, run, getSetting, setSetting } from '../db';
+import { requireAuth, requireRole } from '../auth';
+import {
+  parseBody,
+  createItemSchema,
+  updateItemSchema,
+  adjustStockSchema,
+  formConfigSchema,
+} from '../validation';
 import type { InventoryItem, InventoryTransaction } from '../types';
 
 const router = Router();
@@ -14,6 +20,21 @@ const ITEM_SELECT = `
   FROM inventory_items i
   LEFT JOIN departments d ON d.id = i.department_id
 `;
+
+const FORM_CONFIG_KEY = 'item_form_config';
+
+/** Parse the stored `attributes` JSON string into an object for API responses. */
+function withParsedAttributes<T extends { attributes: unknown }>(item: T): T {
+  let attributes: Record<string, unknown> = {};
+  if (typeof item.attributes === 'string' && item.attributes) {
+    try {
+      attributes = JSON.parse(item.attributes) as Record<string, unknown>;
+    } catch {
+      attributes = {};
+    }
+  }
+  return { ...item, attributes };
+}
 
 // GET /api/inventory — list with optional search / filters
 router.get('/', (req, res) => {
@@ -42,7 +63,19 @@ router.get('/', (req, res) => {
     ITEM_SELECT +
     (where.length ? ' WHERE ' + where.join(' AND ') : '') +
     ' ORDER BY i.name COLLATE NOCASE';
-  res.json(queryAll<InventoryItem>(sql, ...params));
+  res.json(queryAll<InventoryItem>(sql, ...params).map(withParsedAttributes));
+});
+
+// GET /api/inventory/form-config — the saved Item-form customization (or null).
+router.get('/form-config', (_req, res) => {
+  res.json(getSetting(FORM_CONFIG_KEY) ?? null);
+});
+
+// PUT /api/inventory/form-config — save the customization (admin only).
+router.put('/form-config', requireRole('admin'), (req, res) => {
+  const config = parseBody(formConfigSchema, req.body);
+  setSetting(FORM_CONFIG_KEY, config);
+  res.json({ ok: true });
 });
 
 // GET /api/inventory/stats — dashboard summary
@@ -82,7 +115,7 @@ router.get('/:id', (req, res) => {
      ORDER BY t.id DESC LIMIT 50`,
     item.id
   );
-  res.json({ ...item, history });
+  res.json({ ...withParsedAttributes(item), history });
 });
 
 // POST /api/inventory — create item
@@ -98,8 +131,8 @@ router.post('/', (req, res) => {
 
   const info = run(
     `INSERT INTO inventory_items
-      (name, sku, category, department_id, quantity, unit, min_quantity, location, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (name, sku, category, department_id, quantity, unit, min_quantity, location, notes, attributes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.name,
     input.sku ?? null,
     input.category ?? null,
@@ -108,7 +141,8 @@ router.post('/', (req, res) => {
     input.unit ?? 'pcs',
     input.min_quantity,
     input.location ?? null,
-    input.notes ?? null
+    input.notes ?? null,
+    input.attributes ? JSON.stringify(input.attributes) : null
   );
 
   if (input.quantity !== 0) {
@@ -145,7 +179,7 @@ router.put('/:id', (req, res) => {
   run(
     `UPDATE inventory_items
      SET name = ?, sku = ?, category = ?, department_id = ?, unit = ?, min_quantity = ?,
-         location = ?, notes = ?, updated_at = datetime('now')
+         location = ?, notes = ?, attributes = ?, updated_at = datetime('now')
      WHERE id = ?`,
     input.name ?? item.name,
     sku,
@@ -155,6 +189,7 @@ router.put('/:id', (req, res) => {
     input.min_quantity !== undefined ? input.min_quantity : item.min_quantity,
     input.location !== undefined ? input.location : item.location,
     input.notes !== undefined ? input.notes : item.notes,
+    input.attributes !== undefined ? JSON.stringify(input.attributes) : (item.attributes ?? null),
     id
   );
   res.json({ ok: true });

@@ -74,8 +74,15 @@ export function init(): void {
       min_quantity  INTEGER NOT NULL DEFAULT 0,
       location      TEXT,
       notes         TEXT,
+      attributes    TEXT,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS inventory_transactions (
@@ -119,8 +126,38 @@ export function init(): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
   `);
 
+  migrate();
   ensureUploadDir();
   seed();
+}
+
+/** Idempotent schema upgrades for databases created before a column existed. */
+function migrate(): void {
+  const cols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (!cols.some((c) => c.name === 'attributes')) {
+    db.exec('ALTER TABLE inventory_items ADD COLUMN attributes TEXT');
+  }
+}
+
+/** Read a JSON-encoded setting, or undefined if unset / unparseable. */
+export function getSetting<T>(key: string): T | undefined {
+  const row = queryOne<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
+  if (!row) return undefined;
+  try {
+    return JSON.parse(row.value) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Upsert a setting, JSON-encoding the value. */
+export function setSetting(key: string, value: unknown): void {
+  run(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+    key,
+    JSON.stringify(value)
+  );
 }
 
 function seed(): void {

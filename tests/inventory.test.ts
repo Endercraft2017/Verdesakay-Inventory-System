@@ -1,6 +1,6 @@
 /** Integration tests: inventory CRUD, stock movements, history, stats, low-stock. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
@@ -119,5 +119,69 @@ describe('inventory', () => {
     expect(cats.body).toContain('Hardware');
     // distinct — 'Stationery' appears once despite two items
     expect(cats.body.filter((c: string) => c === 'Stationery')).toHaveLength(1);
+  });
+});
+
+describe('inventory: extended attributes (ECOUNT-style fields)', () => {
+  it('stores and returns attributes as a parsed object on create + get', async () => {
+    const res = await createItem({
+      name: 'Attr Item',
+      sku: 'ATTR-1',
+      attributes: { item_category: 'Merchandise', sale_price: '199.00', purchase_price_tax_incl: true },
+    });
+    expect(res.status).toBe(201);
+
+    const detail = await ctx.api.get(`/api/inventory/${res.body.id}`).set(authHdr());
+    expect(detail.body.attributes).toMatchObject({
+      item_category: 'Merchandise',
+      sale_price: '199.00',
+      purchase_price_tax_incl: true,
+    });
+
+    const list = await ctx.api.get('/api/inventory?q=Attr%20Item').set(authHdr());
+    const found = list.body.find((i: { sku: string }) => i.sku === 'ATTR-1');
+    expect(found.attributes.item_category).toBe('Merchandise');
+  });
+
+  it('updates attributes and defaults to an empty object when never set', async () => {
+    const { body } = await createItem({ name: 'Plain Item' });
+    const detail0 = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
+    expect(detail0.body.attributes).toEqual({});
+
+    await ctx.api.put(`/api/inventory/${body.id}`).set(authHdr())
+      .send({ attributes: { barcode: '4006381333931' } });
+    const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
+    expect(detail.body.attributes.barcode).toBe('4006381333931');
+  });
+});
+
+describe('inventory: item form-config', () => {
+  it('returns null before anything is saved', async () => {
+    const res = await ctx.api.get('/api/inventory/form-config').set(authHdr());
+    expect(res.status).toBe(200);
+    expect(res.body).toBeNull();
+  });
+
+  it('lets an admin save the layout and reads it back', async () => {
+    const payload = [
+      { key: 'sku', visible: true, required: true, default: null },
+      { key: 'barcode', visible: false, required: false, default: '' },
+    ];
+    const put = await ctx.api.put('/api/inventory/form-config').set(authHdr()).send(payload);
+    expect(put.status).toBe(200);
+
+    const res = await ctx.api.get('/api/inventory/form-config').set(authHdr());
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0]).toMatchObject({ key: 'sku', visible: true, required: true });
+    expect(res.body[1]).toMatchObject({ key: 'barcode', visible: false });
+  });
+
+  it('forbids a non-admin from saving the layout', async () => {
+    const emp = await createEmployee(ctx.api, token);
+    const res = await ctx.api
+      .put('/api/inventory/form-config')
+      .set({ Authorization: `Bearer ${emp.token}` })
+      .send([{ key: 'sku', visible: true, required: false }]);
+    expect(res.status).toBe(403);
   });
 });

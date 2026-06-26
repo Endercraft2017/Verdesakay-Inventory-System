@@ -86,6 +86,16 @@ export const updateProfileSchema = z.object({
 });
 
 // ---- Inventory ----
+/** Extended item fields (the ECOUNT-style catalog) stored as one JSON column.
+    Flat map of scalar values; keys are bounded to keep the blob sane. */
+export const attributesSchema = z
+  .record(
+    z.string().max(64),
+    z.union([z.string().max(2000), z.number(), z.boolean(), z.null()])
+  )
+  .refine((o) => Object.keys(o).length <= 200, 'Too many attributes')
+  .optional();
+
 export const createItemSchema = z.object({
   name: trimmed.min(1, 'Item name is required').max(160),
   sku: optionalText,
@@ -96,6 +106,7 @@ export const createItemSchema = z.object({
   min_quantity: intCoerce.min(0).default(0),
   location: optionalText,
   notes: optionalText,
+  attributes: attributesSchema,
 });
 
 export const updateItemSchema = z.object({
@@ -107,7 +118,21 @@ export const updateItemSchema = z.object({
   min_quantity: intCoerce.min(0).optional(),
   location: optionalText,
   notes: optionalText,
+  attributes: attributesSchema,
 });
+
+/** Admin-saved item-form customization: per-field visibility / required / default. */
+export const formConfigSchema = z
+  .array(
+    z
+      .object({
+        key: trimmed.min(1).max(64),
+        visible: boolish,
+        required: boolish,
+      })
+      .passthrough()
+  )
+  .max(500);
 
 export const adjustStockSchema = z.object({
   change: intCoerce.refine((n) => n !== 0, 'Change must be a non-zero whole number'),

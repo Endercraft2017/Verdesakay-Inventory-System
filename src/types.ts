@@ -51,6 +51,8 @@ export interface InventoryItem {
   min_quantity: number;
   location: string | null;
   notes: string | null;
+  /** Raw JSON string in the DB row; parsed to an object in API responses. */
+  attributes: string | Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
   department_name?: string | null;
