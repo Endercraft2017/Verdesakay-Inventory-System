@@ -305,13 +305,16 @@ App.register('inventory', async (view, filter) => {
     const groups = ITEM_FORM_TABS.map((t) => {
       const fields = _itemFormConfig.filter((f) => f.tab === t.id);
       if (!fields.length) return '';
-      return `<div class="opt-group"><div class="opt-group-head">${UI.esc(t.label)}</div>${fields.map((f) => `
+      return `<div class="opt-group"><div class="opt-group-head">${UI.esc(t.label)} <span class="opt-count">${fields.length}</span></div>
+        <div class="opt-grid">${fields.map((f) => `
         <div class="opt-row" data-optkey="${f.key}">
           <div class="opt-name">${UI.esc(f.label)} ${f.core ? '<span class="badge-pill muted">core</span>' : ''}</div>
-          <label class="check-opt"><input type="checkbox" data-opt="visible" ${f.visible ? 'checked' : ''} /> Visible</label>
-          <label class="check-opt"><input type="checkbox" data-opt="required" ${f.required ? 'checked' : ''} /> Required</label>
-          <input class="opt-default" data-opt="default" value="${UI.esc(f.default ?? '')}" placeholder="Default" />
-        </div>`).join('')}</div>`;
+          <div class="opt-controls">
+            <label class="check-opt"><input type="checkbox" data-opt="visible" ${f.visible ? 'checked' : ''} /> Visible</label>
+            <label class="check-opt"><input type="checkbox" data-opt="required" ${f.required ? 'checked' : ''} /> Required</label>
+          </div>
+          <input class="opt-default" data-opt="default" value="${UI.esc(f.default ?? '')}" placeholder="Default value" />
+        </div>`).join('')}</div></div>`;
     }).join('');
 
     UI.modal({

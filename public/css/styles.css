@@ -474,17 +474,27 @@ textarea { resize: vertical; min-height: 84px; }
 .radio-opt input, .check-opt input { width: auto; }
 
 /* ---------- Form Options (admin customizer) ---------- */
-.opt-group { margin-bottom: 18px; }
+.opt-group { margin-bottom: 16px; }
 .opt-group-head {
+  display: flex; align-items: center; gap: 8px;
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--text-faint); font-weight: 700; margin-bottom: 6px;
+  color: var(--text-faint); font-weight: 700; margin-bottom: 8px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--border);
 }
+.opt-count {
+  background: var(--surface-3); color: var(--text-muted);
+  border-radius: 999px; padding: 0 7px; font-size: 10.5px; font-weight: 700;
+}
+.opt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
 .opt-row {
-  display: grid; grid-template-columns: 1fr auto auto 150px; gap: 12px; align-items: center;
-  padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 6px;
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 9px 11px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface-2);
 }
-.opt-row .opt-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.opt-row .opt-default { padding: 6px 9px; font-size: 13px; }
+.opt-row .opt-name { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; line-height: 1.3; }
+.opt-controls { display: flex; align-items: center; gap: 14px; }
+.opt-controls .check-opt { font-size: 12.5px; }
+.opt-row .opt-default { padding: 5px 8px; font-size: 12.5px; }
 .modal-foot { padding: 15px 22px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
 
 /* ---------- Toast ---------- */
@@ -533,5 +543,5 @@ textarea { resize: vertical; min-height: 84px; }
   .grid-2 { grid-template-columns: 1fr; }
   .field-row { flex-direction: column; gap: 0; }
   .form-grid { grid-template-columns: 1fr; }
-  .opt-row { grid-template-columns: 1fr; gap: 6px; }
+  .opt-grid { grid-template-columns: 1fr; }
 }
