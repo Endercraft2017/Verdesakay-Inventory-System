@@ -80,8 +80,13 @@
         <button class="rail-btn" id="rail-messages" data-route="messages" title="Messages" aria-label="Messages">
           <span class="badge hidden" id="msg-badge">0</span>
         </button>
-        <button class="rail-btn" id="rail-account" data-route="account" title="My Account" aria-label="My Account"></button>
+        <button class="rail-btn" data-tool="ai" title="AI Assistant" aria-label="AI Assistant"></button>
+        <button class="rail-btn" data-tool="notes" title="Notes" aria-label="Notes"></button>
+        <button class="rail-btn" data-tool="email" title="Email" aria-label="Email"></button>
+        <button class="rail-btn" data-tool="scheduler" title="Scheduler" aria-label="Scheduler"></button>
+        <button class="rail-btn" data-tool="bookmarks" title="Bookmarks" aria-label="Bookmarks"></button>
         <div class="rail-spacer"></div>
+        <button class="rail-btn rail-avatar" id="rail-account" data-route="account" title="My Account" aria-label="My Account"></button>
         <button class="rail-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"></button>
         <button class="rail-btn" id="logout-btn" title="Sign out" aria-label="Sign out"></button>
       </aside>
@@ -89,6 +94,7 @@
   </div>
 
   <div id="modal-root"></div>
+  <div id="drawer-root"></div>
   <div id="toasts"></div>
 
   <!-- Core (api, ui) then App (defines the router/registry) BEFORE the view modules,
@@ -104,5 +110,6 @@
   <script src="/js/views/messages.js"></script>
   <script src="/js/views/admin.js"></script>
   <script src="/js/views/account.js"></script>
+  <script src="/js/tools.js"></script>
 </body>
 </html>

@@ -123,6 +123,89 @@ const UI = (() => {
     });
   }
 
+  /* ---------- Right-docked drawer (single instance) ---------- */
+  let currentDrawer = null;
+
+  /* opts = { title, bodyHTML, icon?, footHTML?, key?, onOpen(el) }
+     Reopening with the same `key` toggles it closed. Returns { el, close } or null. */
+  function drawer(opts) {
+    const root = document.getElementById('drawer-root') || document.body;
+    if (currentDrawer && opts.key && currentDrawer.key === opts.key) {
+      currentDrawer.close();
+      return null;
+    }
+    if (currentDrawer) currentDrawer.close();
+
+    const catcher = document.createElement('div');
+    catcher.className = 'drawer-catch';
+    const el = document.createElement('aside');
+    el.className = 'drawer';
+    el.innerHTML = `
+      <div class="drawer-head">
+        ${opts.icon ? icon(opts.icon, 18) : ''}
+        <h3>${esc(opts.title)}</h3>
+        <button class="icon-btn drawer-close" data-close aria-label="Close">${icon('close')}</button>
+      </div>
+      <div class="drawer-body">${opts.bodyHTML || ''}</div>
+      ${opts.footHTML ? `<div class="drawer-foot">${opts.footHTML}</div>` : ''}`;
+    root.appendChild(catcher);
+    root.appendChild(el);
+
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    function close() {
+      el.classList.remove('open');
+      catcher.remove();
+      document.removeEventListener('keydown', onKey);
+      if (currentDrawer && currentDrawer.el === el) currentDrawer = null;
+      setTimeout(() => el.remove(), 180); // let the slide-out finish
+    }
+    catcher.addEventListener('mousedown', close);
+    el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
+    document.addEventListener('keydown', onKey);
+    currentDrawer = { el, key: opts.key, close };
+    requestAnimationFrame(() => el.classList.add('open'));
+    if (opts.onOpen) opts.onOpen(el);
+    return { el, close };
+  }
+
+  /* ---------- Context menu ---------- */
+  let ctxState = null;
+  function closeContextMenu() {
+    if (!ctxState) return;
+    ctxState.menu.remove();
+    document.removeEventListener('mousedown', ctxState.onDoc);
+    document.removeEventListener('keydown', ctxState.onKey);
+    window.removeEventListener('scroll', closeContextMenu, true);
+    ctxState = null;
+  }
+  /* items = [{ label, icon?, onClick() }] shown at viewport (x, y). */
+  function contextMenu(x, y, items) {
+    closeContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.innerHTML = items
+      .map((it, i) => `<button class="context-item" data-i="${i}">${it.icon ? icon(it.icon, 15) : ''}<span>${esc(it.label)}</span></button>`)
+      .join('');
+    document.body.appendChild(menu);
+    const r = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - r.width - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - r.height - 8))}px`;
+    menu.querySelectorAll('[data-i]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const it = items[Number(b.dataset.i)];
+        closeContextMenu();
+        if (it && it.onClick) it.onClick();
+      }));
+    const onDoc = (e) => { if (!e.target.closest('.context-menu')) closeContextMenu(); };
+    const onKey = (e) => { if (e.key === 'Escape') closeContextMenu(); };
+    setTimeout(() => {
+      document.addEventListener('mousedown', onDoc);
+      document.addEventListener('keydown', onKey);
+      window.addEventListener('scroll', closeContextMenu, true);
+    }, 0);
+    ctxState = { menu, onDoc, onKey };
+  }
+
   /* ---------- Inline SVG icons (Lucide-style, stroke = currentColor) ---------- */
   const ICONS = {
     dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
@@ -154,6 +237,14 @@ const UI = (() => {
     archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
     filter: '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
     alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M6 21v-1a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v1"/>',
+    note: '<path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/><path d="M8 13h6"/><path d="M8 17h4"/>',
+    mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+    calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/><path d="m9 16 2 2 4-4"/>',
+    bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z"/>',
+    sparkles: '<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9Z"/><path d="M5 17l.8 2L8 19.8 6 20.6 5.2 23 4.4 20.6 2 19.8 4.4 19Z"/>',
+    star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+    check: '<polyline points="20 6 9 17 4 12"/>',
   };
 
   /** A "?" help icon with a tooltip shown on hover (desktop) and tap (mobile).
@@ -249,6 +340,7 @@ const UI = (() => {
 
   return {
     esc, toast, fmtDate, fmtDateShort, fmtBytes, initials, modal, confirmDialog,
+    drawer, contextMenu, closeContextMenu,
     icon, helpIcon, emptyState, fileIconName, downloadCsv,
   };
 })();

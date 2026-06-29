@@ -146,6 +146,33 @@ export const sendMessageSchema = z.object({
   body: trimmed.min(1, 'Message body is required').max(5000),
 });
 
+// ---- Personal tools (notes / tasks / bookmarks) ----
+export const noteSchema = z.object({
+  title: trimmed.max(200).optional().nullable(),
+  body: trimmed.min(1, 'Note cannot be empty').max(20000),
+});
+
+export const taskSchema = z.object({
+  title: trimmed.min(1, 'Task title is required').max(300),
+  due_date: trimmed.max(40).optional().nullable(),
+  done: boolish.optional(),
+});
+
+export const updateTaskSchema = z.object({
+  title: trimmed.min(1).max(300).optional(),
+  due_date: trimmed.max(40).optional().nullable(),
+  done: boolish.optional(),
+});
+
+export const bookmarkSchema = z.object({
+  label: trimmed.min(1, 'Bookmark label is required').max(200),
+  route: trimmed.min(1, 'Bookmark route is required').max(80),
+  params: z
+    .record(z.string().max(64), z.union([z.string().max(500), z.number(), z.boolean(), z.null()]))
+    .optional()
+    .nullable(),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type CreateItemInput = z.infer<typeof createItemSchema>;

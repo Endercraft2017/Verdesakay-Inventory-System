@@ -264,6 +264,80 @@ a { color: var(--accent); }
   background: var(--danger); color: #fff; border-radius: 999px;
   font-size: 10px; font-weight: 700; display: grid; place-items: center;
 }
+.rail-avatar {
+  border: 1px solid var(--border-strong); border-radius: 50%;
+  background: var(--accent-weak); color: var(--accent);
+}
+.rail-avatar:hover { background: var(--accent-weak); color: var(--accent-hover); }
+.acc-avatar {
+  width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+  background: var(--accent-weak); color: var(--accent);
+  border: 1px solid var(--border-strong); display: grid; place-items: center;
+}
+
+/* ---------- Right-docked drawer ---------- */
+.drawer-catch { position: fixed; inset: 0; z-index: 90; background: transparent; }
+.drawer {
+  position: fixed; top: 0; right: 0; z-index: 91;
+  width: 340px; max-width: 92vw; height: 100vh;
+  background: var(--surface); border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column;
+  transform: translateX(100%); transition: transform 0.18s ease;
+}
+.drawer.open { transform: none; }
+.drawer-head {
+  display: flex; align-items: center; gap: 9px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.drawer-head .ic { color: var(--accent); }
+.drawer-head h3 { margin: 0; font-size: 15.5px; font-weight: 650; flex: 1; }
+.drawer-body { flex: 1; overflow: auto; padding: 14px 16px; }
+.drawer-foot { padding: 12px 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.drawer-foot .btn { width: 100%; justify-content: center; }
+.tool-note {
+  background: var(--warn-weak); color: var(--warn);
+  padding: 9px 11px; border-radius: var(--radius-sm); font-size: 12.5px; margin-bottom: 12px;
+}
+
+/* Tool list rows (notes / tasks / bookmarks) */
+.tool-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  margin-bottom: 7px;
+}
+.tool-row-main { flex: 1; min-width: 0; cursor: pointer; }
+.tool-row-title { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.tool-row-sub { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.tool-row-sub.overdue { color: var(--danger); font-weight: 600; }
+.tool-row.task.done .tool-row-title { text-decoration: line-through; color: var(--text-faint); }
+.task-add { display: flex; gap: 6px; margin-bottom: 14px; }
+.task-add #task-title { flex: 1; }
+.task-add #task-date { width: 140px; }
+.task-add .btn { flex-shrink: 0; }
+
+/* AI chat */
+.ai-chat { display: flex; flex-direction: column; gap: 9px; }
+.ai-msg { max-width: 85%; padding: 8px 11px; border-radius: 12px; font-size: 13px; line-height: 1.45; }
+.ai-msg.bot { align-self: flex-start; background: var(--surface-2); color: var(--text); border-bottom-left-radius: 4px; }
+.ai-msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-contrast); border-bottom-right-radius: 4px; }
+.ai-input { display: flex; gap: 7px; }
+.ai-input input { flex: 1; }
+.ai-input .btn { flex-shrink: 0; }
+
+/* ---------- Context menu ---------- */
+.context-menu {
+  position: fixed; z-index: 210; min-width: 190px; padding: 5px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow-lg);
+}
+.context-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  border: none; background: none; cursor: pointer; font-family: inherit;
+  color: var(--text); font-size: 13px; padding: 8px 10px; border-radius: 7px;
+}
+.context-item .ic { color: var(--text-faint); flex-shrink: 0; }
+.context-item:hover { background: var(--surface-2); }
+.context-item:hover .ic { color: var(--accent); }
 
 /* Site map modal */
 .sitemap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; }
@@ -556,4 +630,5 @@ textarea { resize: vertical; min-height: 84px; }
   .field-row { flex-direction: column; gap: 0; }
   .form-grid { grid-template-columns: 1fr; }
   .opt-grid { grid-template-columns: 1fr; }
+  .drawer { width: 100vw; }
 }

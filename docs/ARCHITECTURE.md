@@ -3,7 +3,7 @@
 > **This is the single source of truth for how the code is organized.**
 > Before adding code, check here for an existing function/route/type to reuse instead of
 > writing a duplicate. **When you change the code, update this file in the same commit.**
-> Last verified: 2026-06-25.
+> Last verified: 2026-06-27.
 
 ---
 
@@ -47,6 +47,7 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `src/routes/inventory.routes.ts` | `/api/inventory` — list/search, stats, detail+history, create, update, **adjust (stock in/out, transactional)**, delete, **`attributes` JSON round-trip**, **`form-config` GET/PUT** (item-form customization). |
 | `src/routes/forms.routes.ts` | `/api/forms` — list (dept-visibility), upload (multer), download, delete. |
 | `src/routes/messages.routes.ts` | `/api/messages` — inbox/sent, unread-count, send, mark-read, delete. |
+| `src/routes/personal.routes.ts` | `/api/notes`, `/api/tasks`, `/api/bookmarks` — per-user CRUD for the right-rail tools (every query scoped to `req.user!.id`). Mounted at `/api`. |
 
 ### Frontend (`public/`)
 | File | Responsibility |
@@ -56,8 +57,9 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `public/js/item-form-config.js` | **`ITEM_FORM_DEFAULTS`** (the ECOUNT-style item field catalog: 7 tabs, per-field type/default/visible/required) + **`ITEM_FORM_TABS`** + **`ITEM_CORE_KEYS`**. Default layout for the New/Edit Item form; admin overrides saved server-side and merged over it. Browser global + CommonJS export for tests. |
 | `public/css/styles.css` | All styling (green/blue brand theme via CSS tokens, ECOUNT chrome: util-bar/topnav/subnav/tree/rail, tables, modals, toasts, site map). |
 | `public/js/api.js` | **`API`** — fetch wrapper with token handling (`get/post/put/del/upload`), 401 → logout. |
-| `public/js/ui.js` | **`UI`** — `esc`, `toast`, `fmtDate/fmtDateShort/fmtBytes`, `initials`, **`modal()`**, `confirmDialog()`, **`icon(name,size)`** (inline SVG set), **`emptyState({icon,title,hint,action})`**. |
-| `public/js/app.js` | **`App`** — auth (login/logout/session resume), chrome rendering (`renderPrimaryNav`/`renderSubnav`/`renderTree` from `NAV`), hash router (`register`/**`navigate(name, filter)`**), menu search + site map, unread-badge (on rail), **theme** (`applyTheme`/`toggleTheme`, persisted in `localStorage('vds_theme')`). |
+| `public/js/ui.js` | **`UI`** — `esc`, `toast`, `fmtDate/fmtDateShort/fmtBytes`, `initials`, **`modal()`**, `confirmDialog()`, **`drawer()`** (right-docked, single-instance), **`contextMenu(x,y,items)`**, **`helpIcon(text)`** (hover/tap tooltip), **`icon(name,size)`** (inline SVG set), **`emptyState(...)`**. |
+| `public/js/tools.js` | Right-rail personal tools: **AI assistant** + **Email** (UI-only previews), **Notes** / **Scheduler** (tasks) / **Bookmarks** (per-user, via `/api/notes\|tasks\|bookmarks`), and **right-click-to-bookmark** on nav items. |
+| `public/js/app.js` | **`App`** — auth (login/logout/session resume), chrome rendering (`renderPrimaryNav`/`renderSubnav`/`renderTree` from `NAV`), hash router (`register`/**`navigate(name, filter)`**), **`currentLocation()`** (for bookmarks), menu search + site map, unread-badge + tool rail, **theme** (`applyTheme`/`toggleTheme`, persisted in `localStorage('vds_theme')`). |
 | `public/js/views/dashboard.js` | Dashboard: stats cards, low-stock list, recent messages. |
 | `public/js/views/inventory.js` | Inventory table: search/filter, **config-driven 7-tab create/edit modal** (renders from `ITEM_FORM_DEFAULTS` merged with the saved layout; core fields → columns, the rest → `attributes`), **admin "Option" customizer** (show/hide·required·default, saved via `form-config`), stock adjust modal, history modal, delete. Honors `filter.low`. |
 | `public/js/views/forms.js` | Forms table: upload modal, authenticated blob download, delete. |
@@ -76,6 +78,7 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `tests/inventory.test.ts` | CRUD, stock in/out + history, negative-stock guard, low-stock filter, search, stats, **`attributes` round-trip, `form-config` GET/PUT + admin-only guard**. |
 | `tests/forms.test.ts` | upload/download round-trip, department visibility, delete permissions. |
 | `tests/messages.test.ts` | send, inbox/sent, unread count, mark-read, self-message guard, delete. |
+| `tests/personal.test.ts` | notes/tasks/bookmarks CRUD, **per-user isolation** (no cross-user read/update/delete), auth + validation. |
 
 ---
 
@@ -91,6 +94,9 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `forms` | id, title, …, stored_name, original_name, department_id (null=all staff), uploaded_by | File on disk in `uploads/`, metadata in DB. |
 | `messages` | id, sender_id, recipient_id, subject, body, read_at | Inbox = recipient, Sent = sender. |
 | `settings` | key (PK), value (JSON), updated_at | Generic app-wide key-value store (via `getSetting`/`setSetting`). Holds `item_form_config` (the saved item-form layout). |
+| `notes` | id, user_id→users (CASCADE), title, body, created_at, updated_at | Per-user notes (right-rail Notes tool). |
+| `tasks` | id, user_id→users (CASCADE), title, due_date, done, created_at | Per-user tasks (right-rail Scheduler). |
+| `bookmarks` | id, user_id→users (CASCADE), label, route, params (JSON), created_at | Per-user saved nav destinations (right-rail Bookmarks). |
 
 Foreign keys are ON; deleting a user/department cascades or nulls as defined per column.
 
@@ -136,6 +142,9 @@ Bodies are validated by the named schema in `src/validation.ts`.
 | POST `/messages` | 🔑 | Send message | messages.routes | sendMessageSchema |
 | POST `/messages/:id/read` | 🔑 | Mark read | messages.routes | — |
 | DELETE `/messages/:id` | 🔑 | Delete (sender/recipient) | messages.routes | — |
+| GET/POST `/notes`, PUT/DELETE `/notes/:id` | 🔑 | Per-user notes CRUD (scoped to caller) | personal.routes | noteSchema |
+| GET/POST `/tasks`, PUT/DELETE `/tasks/:id` | 🔑 | Per-user tasks CRUD (scoped to caller) | personal.routes | taskSchema / updateTaskSchema |
+| GET/POST `/bookmarks`, DELETE `/bookmarks/:id` | 🔑 | Per-user bookmarks (scoped to caller) | personal.routes | bookmarkSchema |
 | GET `/health` | 🔓 | Liveness check | app.ts | — |
 
 ---

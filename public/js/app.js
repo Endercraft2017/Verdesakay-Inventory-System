@@ -359,7 +359,7 @@ const App = (() => {
     railMsg.insertAdjacentHTML('afterbegin', UI.icon('messages'));
     railMsg.addEventListener('click', () => navigate('messages', { box: 'inbox' }));
     const railAcct = document.getElementById('rail-account');
-    railAcct.innerHTML = UI.icon('settings');
+    railAcct.innerHTML = UI.icon('user'); // default profile image icon
     railAcct.addEventListener('click', () => navigate('account'));
     const logoutBtn = document.getElementById('logout-btn');
     logoutBtn.innerHTML = UI.icon('logout');
@@ -386,9 +386,18 @@ const App = (() => {
     showLogin();
   }
 
+  /** Where the user is right now (for bookmarking the current page). */
+  function currentLocation() {
+    const { route, filter } = parseHash();
+    const r = routes[route] ? route : 'dashboard';
+    const loc = findLeaf(r, filter);
+    const label = loc ? `${loc.primary.label} › ${loc.leaf.label}` : r;
+    return { route: r, filter: filter || null, label };
+  }
+
   return {
     register, navigate, getMe, getDepartments, isAdmin, showLogin, refreshUnread,
-    logout, boot, reloadDepartments, setMe,
+    logout, boot, reloadDepartments, setMe, currentLocation,
     _routeNames: () => Object.keys(routes), // test/debug seam
   };
 })();

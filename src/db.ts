@@ -85,6 +85,33 @@ export function init(): void {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS notes (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title      TEXT,
+      body       TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS tasks (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title      TEXT NOT NULL,
+      due_date   TEXT,
+      done       INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      label      TEXT NOT NULL,
+      route      TEXT NOT NULL,
+      params     TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS inventory_transactions (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id       INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
@@ -124,6 +151,9 @@ export function init(): void {
     CREATE INDEX IF NOT EXISTS idx_txn_item ON inventory_transactions(item_id);
     CREATE INDEX IF NOT EXISTS idx_items_dept ON inventory_items(department_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
+    CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id);
   `);
 
   migrate();

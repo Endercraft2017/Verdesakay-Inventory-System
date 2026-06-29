@@ -94,6 +94,33 @@ export interface MessageRow {
   created_at: string;
 }
 
+export interface Note {
+  id: number;
+  user_id: number;
+  title: string | null;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Task {
+  id: number;
+  user_id: number;
+  title: string;
+  due_date: string | null;
+  done: number; // 0 | 1
+  created_at: string;
+}
+
+export interface Bookmark {
+  id: number;
+  user_id: number;
+  label: string;
+  route: string;
+  params: string | null;
+  created_at: string;
+}
+
 /** Augment Express so handlers can read req.user / req.token with types. */
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

@@ -12,6 +12,7 @@ import usersRoutes from './routes/users.routes';
 import inventoryRoutes from './routes/inventory.routes';
 import formsRoutes from './routes/forms.routes';
 import messagesRoutes from './routes/messages.routes';
+import personalRoutes from './routes/personal.routes';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -51,6 +52,7 @@ export function createApp() {
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/forms', formsRoutes);
   app.use('/api/messages', messagesRoutes);
+  app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
   });

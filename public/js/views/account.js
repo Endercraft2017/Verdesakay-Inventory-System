@@ -6,7 +6,7 @@ App.register('account', async (view) => {
 
     <div class="panel" style="max-width:760px;margin-bottom:18px">
       <div class="panel-body" style="display:flex;align-items:center;gap:16px">
-        <div class="avatar" style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-hover));color:#fff;display:grid;place-items:center;font-weight:700;font-size:20px">${UI.esc(UI.initials(me.full_name))}</div>
+        <div class="acc-avatar" title="Default profile image">${UI.icon('user', 30)}</div>
         <div>
           <div style="font-size:18px;font-weight:700" id="acc-name">${UI.esc(me.full_name)}</div>
           <div class="muted">@${UI.esc(me.username)} · <span class="badge-pill role-${me.role}">${me.role}</span> · ${UI.esc(me.department_name || 'No department')}</div>
