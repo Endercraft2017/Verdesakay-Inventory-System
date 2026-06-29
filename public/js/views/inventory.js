@@ -226,7 +226,7 @@ App.register('inventory', async (view, filter) => {
           <th class="right">Quantity</th><th></th>
         </tr></thead>
         <tbody>${items.map((i) => `
-          <tr>
+          <tr class="clickable" data-open="${i.id}">
             <td><strong>${UI.esc(i.name)}</strong><div class="muted mono">${UI.esc(i.sku || '—')}</div></td>
             <td>${UI.esc(i.category || '—')}</td>
             <td>${UI.esc(i.department_name || '—')}</td>
@@ -249,6 +249,10 @@ App.register('inventory', async (view, filter) => {
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => itemModal(items.find((x) => x.id == b.dataset.edit)));
     tableEl.querySelectorAll('[data-history]').forEach((b) => b.onclick = () => historyModal(b.dataset.history));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(items.find((x) => x.id == b.dataset.del)));
+    tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
+      if (e.target.closest('.actions')) return;
+      itemModal(items.find((x) => x.id == tr.dataset.open));
+    });
   }
 
   async function itemModal(it) {

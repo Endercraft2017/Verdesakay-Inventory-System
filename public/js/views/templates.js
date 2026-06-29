@@ -44,7 +44,7 @@ App.register('templates', async (view) => {
       <table>
         <thead><tr><th>Name</th><th>Type</th><th>Updated</th><th></th></tr></thead>
         <tbody>${list.map((t) => `
-          <tr>
+          <tr class="clickable" data-open="${t.id}">
             <td><strong>${UI.esc(t.name)}</strong></td>
             <td><span class="badge-pill muted">${UI.esc(t.type)}</span></td>
             <td>${UI.fmtDate(t.updated_at)}</td>
@@ -56,12 +56,20 @@ App.register('templates', async (view) => {
           </tr>`).join('')}
         </tbody>
       </table>`;
-    tableEl.querySelectorAll('[data-prev]').forEach((b) => b.onclick = async () => {
-      const t = await API.get('/templates/' + b.dataset.prev);
+    const openPreview = async (id) => {
+      const t = await API.get('/templates/' + id);
       UI.printDocument(renderTemplate(t.body, SAMPLE), t.name + ' (preview)');
-    });
-    tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = async () => editor(await API.get('/templates/' + b.dataset.edit)));
+    };
+    const openEdit = async (id) => editor(await API.get('/templates/' + id));
+
+    tableEl.querySelectorAll('[data-prev]').forEach((b) => b.onclick = () => openPreview(b.dataset.prev));
+    tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => openEdit(b.dataset.edit));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(b.dataset.del, list));
+    // Row click → edit (admins) or preview (everyone else).
+    tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
+      if (e.target.closest('.actions')) return;
+      if (admin) openEdit(tr.dataset.open); else openPreview(tr.dataset.open);
+    });
   }
 
   function paletteHTML() {

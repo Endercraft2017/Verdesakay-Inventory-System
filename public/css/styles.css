@@ -453,6 +453,7 @@ tbody tr { transition: background-color 0.12s ease; }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: var(--surface-2); }
 td.actions { white-space: nowrap; text-align: right; }
+tbody tr.clickable { cursor: pointer; }
 
 /* ---------- Empty states ---------- */
 .empty, .empty-state { padding: 46px 24px; text-align: center; color: var(--text-muted); }

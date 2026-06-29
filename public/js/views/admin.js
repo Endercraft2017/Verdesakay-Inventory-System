@@ -44,7 +44,7 @@ App.register('admin', async (view, filter) => {
       <table>
         <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Department</th><th>Status</th><th></th></tr></thead>
         <tbody>${users.map((u) => `
-          <tr>
+          <tr class="clickable" data-open="${u.id}">
             <td><strong>${UI.esc(u.full_name)}</strong></td>
             <td class="mono">@${UI.esc(u.username)}</td>
             <td><span class="badge-pill role-${u.role}">${u.role}</span></td>
@@ -59,6 +59,10 @@ App.register('admin', async (view, filter) => {
       </table>`;
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => editUser(allUsers.find((x) => x.id == b.dataset.edit)));
     tableEl.querySelectorAll('[data-pw]').forEach((b) => b.onclick = () => resetPw(allUsers.find((x) => x.id == b.dataset.pw)));
+    tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
+      if (e.target.closest('.actions')) return;
+      editUser(allUsers.find((x) => x.id == tr.dataset.open));
+    });
   }
 
   function addUser() {

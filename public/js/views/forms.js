@@ -57,7 +57,7 @@ App.register('forms', async (view) => {
       <table>
         <thead><tr><th>Title</th><th>Category</th><th>Visibility</th><th>Size</th><th>Uploaded</th><th></th></tr></thead>
         <tbody>${list.map((f) => `
-          <tr>
+          <tr class="clickable" data-open="${f.id}">
             <td>
               <div style="display:flex;gap:10px;align-items:flex-start">
                 <span style="color:var(--text-faint);margin-top:1px">${UI.icon(UI.fileIconName(f.original_name), 18)}</span>
@@ -87,6 +87,10 @@ App.register('forms', async (view) => {
     tableEl.querySelectorAll('[data-dl]').forEach((b) => b.onclick = () => download(b.dataset.dl));
     tableEl.querySelectorAll('[data-print]').forEach((b) => b.onclick = () => printFile(list.find((x) => x.id == b.dataset.print)));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(b.dataset.del, list));
+    tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
+      if (e.target.closest('.actions')) return;
+      download(tr.dataset.open);
+    });
   }
 
   const PRINTABLE_EXT = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];

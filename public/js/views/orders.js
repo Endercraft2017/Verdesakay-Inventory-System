@@ -41,7 +41,7 @@ App.register('orders', async (view, filter) => {
       <table>
         <thead><tr><th>Number</th><th>Customer</th><th>Date</th><th class="right">Total</th><th>Status</th><th></th></tr></thead>
         <tbody>${list.map((o) => `
-          <tr>
+          <tr class="clickable" data-open="${o.id}">
             <td><strong>${UI.esc(o.number)}</strong></td>
             <td>${UI.esc(o.customer_name || '—')}</td>
             <td>${UI.esc(o.order_date || UI.fmtDateShort(o.created_at))}</td>
@@ -58,6 +58,10 @@ App.register('orders', async (view, filter) => {
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => openOrder(b.dataset.edit));
     tableEl.querySelectorAll('[data-print]').forEach((b) => b.onclick = () => printOrder(b.dataset.print));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(b.dataset.del, list));
+    tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
+      if (e.target.closest('.actions')) return;
+      openOrder(tr.dataset.open);
+    });
   }
 
   async function openOrder(id) {
