@@ -206,6 +206,48 @@ const UI = (() => {
     ctxState = { menu, onDoc, onKey };
   }
 
+  /* ---------- Printing ---------- */
+  // Fixed black-on-white print stylesheet (independent of the app theme).
+  const PRINT_CSS = `
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #111; margin: 0; padding: 24px; font-size: 13px; }
+    img { max-width: 100%; }
+    .doc { max-width: 800px; margin: 0 auto; }
+    .doc-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 12px; margin-bottom: 16px; gap: 20px; }
+    .doc-company h1 { margin: 0 0 4px; font-size: 20px; }
+    .doc-meta { text-align: right; white-space: nowrap; }
+    .doc-meta h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 0.05em; }
+    .doc-parties { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
+    .doc-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    .doc-table th, .doc-table td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 12px; vertical-align: top; }
+    .doc-table th { background: #f0f0f0; }
+    .doc-table .r { text-align: right; }
+    .doc-totals { margin-left: auto; width: 280px; text-align: right; }
+    .doc-totals .grand { font-size: 15px; font-weight: 700; border-top: 2px solid #222; margin-top: 6px; padding-top: 6px; }
+    .doc-notes { margin-top: 14px; }
+    .doc-foot { margin-top: 28px; color: #666; font-size: 11px; border-top: 1px solid #ddd; padding-top: 8px; }
+    .muted { color: #777; font-size: 11px; }
+    @page { margin: 14mm; }
+  `;
+
+  /** Full standalone HTML doc (print stylesheet + body); used for print + preview. */
+  function printableHtml(html, title) {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(title || 'Document')}</title>` +
+      `<style>${PRINT_CSS}</style></head><body>${html}</body></html>`;
+  }
+
+  /** Open a print window for a chunk of HTML (uses the print stylesheet above). */
+  function printDocument(html, title) {
+    const w = window.open('', '_blank', 'width=900,height=1000');
+    if (!w) { toast('Allow pop-ups to print this document', 'error'); return; }
+    w.document.open();
+    w.document.write(
+      printableHtml(html, title).replace('</body>',
+        `<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},250);};<\/script></body>`)
+    );
+    w.document.close();
+  }
+
   /* ---------- Inline SVG icons (Lucide-style, stroke = currentColor) ---------- */
   const ICONS = {
     dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
@@ -245,6 +287,9 @@ const UI = (() => {
     sparkles: '<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9Z"/><path d="M5 17l.8 2L8 19.8 6 20.6 5.2 23 4.4 20.6 2 19.8 4.4 19Z"/>',
     star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
     check: '<polyline points="20 6 9 17 4 12"/>',
+    printer: '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
+    eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/>',
   };
 
   /** A "?" help icon with a tooltip shown on hover (desktop) and tap (mobile).
@@ -340,7 +385,7 @@ const UI = (() => {
 
   return {
     esc, toast, fmtDate, fmtDateShort, fmtBytes, initials, modal, confirmDialog,
-    drawer, contextMenu, closeContextMenu,
+    drawer, contextMenu, closeContextMenu, printDocument, printableHtml,
     icon, helpIcon, emptyState, fileIconName, downloadCsv,
   };
 })();

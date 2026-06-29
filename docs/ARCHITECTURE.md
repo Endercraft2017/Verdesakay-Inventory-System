@@ -3,7 +3,7 @@
 > **This is the single source of truth for how the code is organized.**
 > Before adding code, check here for an existing function/route/type to reuse instead of
 > writing a duplicate. **When you change the code, update this file in the same commit.**
-> Last verified: 2026-06-27.
+> Last verified: 2026-06-27 (Documents: orders + templates).
 
 ---
 
@@ -48,6 +48,8 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `src/routes/forms.routes.ts` | `/api/forms` — list (dept-visibility), upload (multer), download, delete. |
 | `src/routes/messages.routes.ts` | `/api/messages` — inbox/sent, unread-count, send, mark-read, delete. |
 | `src/routes/personal.routes.ts` | `/api/notes`, `/api/tasks`, `/api/bookmarks` — per-user CRUD for the right-rail tools (every query scoped to `req.user!.id`). Mounted at `/api`. |
+| `src/routes/orders.routes.ts` | `/api/orders` — Job & Sale orders CRUD (one router, `?type=sale\|job`). Auto numbers (`SO-#####`/`JO-#####`) + **server-computed totals**, line items in a transaction. |
+| `src/routes/templates.routes.ts` | `/api/templates` — document templates (read 🔑, write 👑) + `/company` profile (read 🔑, write 👑). |
 
 ### Frontend (`public/`)
 | File | Responsibility |
@@ -55,14 +57,17 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `public/index.html` | App shell: login screen + **ECOUNT-style chrome** (utility bar w/ menu search + site map, top primary menu `#primary-nav`, secondary `#subnav`, workspace = `#tree-nav` \| `#view` \| `#rail`); loads all scripts in order (nav-config before app). |
 | `public/js/nav-config.js` | **`NAV`** (declarative 3-tier nav tree: primary → subtabs → leaves) + **`ROUTE_NAMES`**. The single source of truth for navigation; browser global + CommonJS export for tests. |
 | `public/js/item-form-config.js` | **`ITEM_FORM_DEFAULTS`** (the ECOUNT-style item field catalog: 7 tabs, per-field type/default/visible/required) + **`ITEM_FORM_TABS`** + **`ITEM_CORE_KEYS`**. Default layout for the New/Edit Item form; admin overrides saved server-side and merged over it. Browser global + CommonJS export for tests. |
+| `public/js/doc-template.js` | **`renderTemplate(body, ctx)`** — safe `{{var}}` / `{{#items}}` / `{{#if}}` renderer (HTML-escaped) for printable docs + **`ORDER_VARIABLES`** (editor palette catalog). Browser global + CommonJS for tests. |
 | `public/css/styles.css` | All styling (green/blue brand theme via CSS tokens, ECOUNT chrome: util-bar/topnav/subnav/tree/rail, tables, modals, toasts, site map). |
 | `public/js/api.js` | **`API`** — fetch wrapper with token handling (`get/post/put/del/upload`), 401 → logout. |
-| `public/js/ui.js` | **`UI`** — `esc`, `toast`, `fmtDate/fmtDateShort/fmtBytes`, `initials`, **`modal()`**, `confirmDialog()`, **`drawer()`** (right-docked, single-instance), **`contextMenu(x,y,items)`**, **`helpIcon(text)`** (hover/tap tooltip), **`icon(name,size)`** (inline SVG set), **`emptyState(...)`**. |
+| `public/js/ui.js` | **`UI`** — `esc`, `toast`, `fmtDate/fmtDateShort/fmtBytes`, `initials`, **`modal()`**, `confirmDialog()`, **`drawer()`** (right-docked, single-instance), **`contextMenu(x,y,items)`**, **`helpIcon(text)`** (hover/tap tooltip), **`printDocument(html,title)`/`printableHtml(...)`** (print stylesheet), **`icon(name,size)`** (inline SVG set), **`emptyState(...)`**. |
 | `public/js/tools.js` | Right-rail personal tools: **AI assistant** + **Email** (UI-only previews), **Notes** / **Scheduler** (tasks) / **Bookmarks** (per-user, via `/api/notes\|tasks\|bookmarks`), and **right-click-to-bookmark** on nav items. |
 | `public/js/app.js` | **`App`** — auth (login/logout/session resume), chrome rendering (`renderPrimaryNav`/`renderSubnav`/`renderTree` from `NAV`), hash router (`register`/**`navigate(name, filter)`**), **`currentLocation()`** (for bookmarks), menu search + site map, unread-badge + tool rail, **theme** (`applyTheme`/`toggleTheme`, persisted in `localStorage('vds_theme')`). |
 | `public/js/views/dashboard.js` | Dashboard: stats cards, low-stock list, recent messages. |
 | `public/js/views/inventory.js` | Inventory table: search/filter, **config-driven 7-tab create/edit modal** (renders from `ITEM_FORM_DEFAULTS` merged with the saved layout; core fields → columns, the rest → `attributes`), **admin "Option" customizer** (show/hide·required·default, saved via `form-config`), stock adjust modal, history modal, delete. Honors `filter.low`. |
-| `public/js/views/forms.js` | Forms table: upload modal, authenticated blob download, delete. |
+| `public/js/views/forms.js` | Forms table: upload modal, authenticated blob download, delete, **Print** (PDF/images in-app; Office = download). |
+| `public/js/views/orders.js` | Job & Sale orders (route `orders`, `filter.type`): list, create/edit with **inventory-backed line-item editor** (live totals), **Print** (renders the type's template), delete. |
+| `public/js/views/templates.js` | Document templates (route `templates`): list, editor (variable **palette** + live iframe **preview**), preview/print, admin-only CRUD, **company profile** editor. |
 | `public/js/views/messages.js` | Inbox/sent tabs, open/read thread, compose/reply modal, delete. Honors `filter.box` (Inbox/Sent tree leaves). |
 | `public/js/views/admin.js` | Accounts (admin): user table, create/edit/reset-password, add department. Honors `filter.tab==='departments'` (opens manager). |
 | `public/js/views/account.js` | My Account: profile + change own password. |
@@ -79,6 +84,9 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `tests/forms.test.ts` | upload/download round-trip, department visibility, delete permissions. |
 | `tests/messages.test.ts` | send, inbox/sent, unread count, mark-read, self-message guard, delete. |
 | `tests/personal.test.ts` | notes/tasks/bookmarks CRUD, **per-user isolation** (no cross-user read/update/delete), auth + validation. |
+| `tests/orders.test.ts` | order create (auto number + **server-computed totals**, ignores client totals), list by type, update-replaces-items, delete cascade, validation, auth. |
+| `tests/templates.test.ts` | default seeds, **admin-only** template CRUD, company profile get/put (employee 403). |
+| `tests/doc-template.test.ts` | renderer: vars, items loop, `{{#if}}` (incl. nested), HTML-escaping, missing-var, palette catalog. |
 
 ---
 
@@ -97,6 +105,9 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `notes` | id, user_id→users (CASCADE), title, body, created_at, updated_at | Per-user notes (right-rail Notes tool). |
 | `tasks` | id, user_id→users (CASCADE), title, due_date, done, created_at | Per-user tasks (right-rail Scheduler). |
 | `bookmarks` | id, user_id→users (CASCADE), label, route, params (JSON), created_at | Per-user saved nav destinations (right-rail Bookmarks). |
+| `orders` | id, type(`sale`\|`job`), number (unique), customer_*, order_date, status, currency, subtotal, tax_percent, tax_amount, total, created_by | Job/Sale order header. Number from `settings` counters (`order_seq_sale\|job`); totals computed server-side. |
+| `order_items` | id, order_id→orders (CASCADE), item_id→inventory_items (null), name, sku, description, quantity, unit, unit_price, line_total, sort | Order line items; may link an inventory item or be custom. |
+| `doc_templates` | id, name, type(`sale`\|`job`\|`generic`), body (HTML+`{{vars}}`), created_by | Printable templates; default Sale/Job seeded on first run. |
 
 Foreign keys are ON; deleting a user/department cascades or nulls as defined per column.
 
@@ -145,6 +156,11 @@ Bodies are validated by the named schema in `src/validation.ts`.
 | GET/POST `/notes`, PUT/DELETE `/notes/:id` | 🔑 | Per-user notes CRUD (scoped to caller) | personal.routes | noteSchema |
 | GET/POST `/tasks`, PUT/DELETE `/tasks/:id` | 🔑 | Per-user tasks CRUD (scoped to caller) | personal.routes | taskSchema / updateTaskSchema |
 | GET/POST `/bookmarks`, DELETE `/bookmarks/:id` | 🔑 | Per-user bookmarks (scoped to caller) | personal.routes | bookmarkSchema |
+| GET `/orders?type=&q=`, GET `/orders/:id` | 🔑 | List / detail (+items) of Job/Sale orders | orders.routes | — |
+| POST `/orders`, PUT `/orders/:id`, DELETE `/orders/:id` | 🔑 | Create (auto number)/update/delete; totals computed server-side | orders.routes | create/updateOrderSchema |
+| GET `/templates?type=`, GET `/templates/:id` | 🔑 | List / detail document templates | templates.routes | — |
+| POST/PUT/DELETE `/templates(/:id)` | 👑 | Manage templates | templates.routes | templateSchema |
+| GET `/templates/company` · PUT `/templates/company` | 🔑 · 👑 | Company profile for `{{company.*}}` | templates.routes | companyProfileSchema |
 | GET `/health` | 🔓 | Liveness check | app.ts | — |
 
 ---
@@ -204,6 +220,13 @@ Bodies are validated by the named schema in `src/validation.ts`.
 3. Add the field to `InventoryItem` in `src/types.ts` and add `core: true` + the key to
    `ITEM_CORE_KEYS` in `item-form-config.js`.
 4. Update §3 here. (`tests/item-form-config.test.ts` enforces core keys ↔ real columns.)
+
+**A new document/template variable**
+1. Add the field to the render context built in `printOrder`/`buildContext`
+   ([public/js/views/orders.js](public/js/views/orders.js)) and to the editor `SAMPLE`
+   ([public/js/views/templates.js](public/js/views/templates.js)).
+2. List it in `ORDER_VARIABLES` ([public/js/doc-template.js](public/js/doc-template.js)) so it
+   shows in the palette. Templates reference it as `{{group.key}}` (or `{{key}}` inside `{{#items}}`).
 
 **A new frontend view/page**
 1. Create `public/js/views/<name>.js` calling `App.register('<name>', (view, filter) => …)`.

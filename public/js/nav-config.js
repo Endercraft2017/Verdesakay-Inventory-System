@@ -14,7 +14,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'inventory', 'forms', 'messages', 'admin', 'account'];
+const ROUTE_NAMES = ['dashboard', 'inventory', 'forms', 'orders', 'templates', 'messages', 'admin', 'account'];
 
 const NAV = [
   {
@@ -53,6 +53,19 @@ const NAV = [
         id: 'files', label: 'Files',
         tree: [
           { label: 'All Files', icon: 'folder', route: 'forms' },
+        ],
+      },
+      {
+        id: 'orders', label: 'Orders',
+        tree: [
+          { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
+          { label: 'Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
+        ],
+      },
+      {
+        id: 'templates', label: 'Templates',
+        tree: [
+          { label: 'Templates', icon: 'file', route: 'templates' },
         ],
       },
     ],

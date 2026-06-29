@@ -75,6 +75,7 @@ App.register('forms', async (view) => {
             <td>${UI.fmtBytes(f.size_bytes)}</td>
             <td>${UI.fmtDate(f.created_at)}<div class="muted" style="font-size:12px">${UI.esc(f.uploaded_by_name || '')}</div></td>
             <td class="actions">
+              ${isPrintable(f) ? `<button class="icon-btn" title="Print" data-print="${f.id}">${UI.icon('printer')}</button>` : ''}
               <button class="icon-btn" title="Download" data-dl="${f.id}">${UI.icon('download')}</button>
               ${(App.isAdmin() || f.uploaded_by_name === me.full_name)
                 ? `<button class="icon-btn danger" title="Delete" data-del="${f.id}">${UI.icon('trash')}</button>` : ''}
@@ -84,7 +85,35 @@ App.register('forms', async (view) => {
       </table>`;
 
     tableEl.querySelectorAll('[data-dl]').forEach((b) => b.onclick = () => download(b.dataset.dl));
+    tableEl.querySelectorAll('[data-print]').forEach((b) => b.onclick = () => printFile(list.find((x) => x.id == b.dataset.print)));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(b.dataset.del, list));
+  }
+
+  const PRINTABLE_EXT = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
+  function isPrintable(f) {
+    const ext = (f.original_name || '').split('.').pop().toLowerCase();
+    return PRINTABLE_EXT.includes(ext) || /pdf|image\//.test(f.mime_type || '');
+  }
+
+  // Fetch the file (auth) then open a print view: PDFs in the browser viewer, images inline.
+  async function printFile(f) {
+    try {
+      const res = await fetch('/api/forms/' + f.id + '/download', {
+        headers: { Authorization: 'Bearer ' + API.getToken() },
+      });
+      if (!res.ok) throw new Error('Could not open file');
+      const url = URL.createObjectURL(await res.blob());
+      const ext = (f.original_name || '').split('.').pop().toLowerCase();
+      if (ext === 'pdf' || /pdf/.test(f.mime_type || '')) {
+        const w = window.open(url, '_blank');
+        if (!w) UI.toast('Allow pop-ups to print this file', 'error');
+      } else {
+        UI.printDocument(`<img src="${url}" alt="${UI.esc(f.title)}" />`, f.title);
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      UI.toast(e.message, 'error');
+    }
   }
 
   async function download(id) {

@@ -173,6 +173,51 @@ export const bookmarkSchema = z.object({
     .nullable(),
 });
 
+// ---- Documents: orders + templates ----
+const numCoerce = z.coerce.number();
+
+const orderItemSchema = z.object({
+  item_id: optionalId,
+  name: trimmed.min(1, 'Line item name is required').max(200),
+  sku: optionalText,
+  description: optionalText,
+  quantity: numCoerce.min(0, 'Quantity cannot be negative').default(1),
+  unit: trimmed.max(40).optional().nullable(),
+  unit_price: numCoerce.min(0, 'Price cannot be negative').default(0),
+});
+
+const orderFields = {
+  customer_name: optionalText,
+  customer_contact: optionalText,
+  order_date: trimmed.max(40).optional().nullable(),
+  status: trimmed.max(40).optional().nullable(),
+  notes: optionalText,
+  currency: trimmed.max(10).optional().nullable(),
+  tax_percent: numCoerce.min(0).max(100).default(0),
+  items: z.array(orderItemSchema).min(1, 'Add at least one line item').max(300),
+};
+
+export const createOrderSchema = z.object({
+  type: z.enum(['sale', 'job']),
+  ...orderFields,
+});
+
+export const updateOrderSchema = z.object(orderFields);
+
+export const templateSchema = z.object({
+  name: trimmed.min(1, 'Template name is required').max(120),
+  type: z.enum(['sale', 'job', 'generic']).default('generic'),
+  body: trimmed.min(1, 'Template body cannot be empty').max(100000),
+});
+
+export const companyProfileSchema = z.object({
+  name: trimmed.max(200).optional().nullable(),
+  address: trimmed.max(500).optional().nullable(),
+  phone: trimmed.max(80).optional().nullable(),
+  email: trimmed.max(160).optional().nullable(),
+  logo_url: trimmed.max(500).optional().nullable(),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type CreateItemInput = z.infer<typeof createItemSchema>;

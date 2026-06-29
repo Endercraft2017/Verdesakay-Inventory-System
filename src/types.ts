@@ -121,6 +121,61 @@ export interface Bookmark {
   created_at: string;
 }
 
+export type OrderType = 'sale' | 'job';
+
+export interface Order {
+  id: number;
+  type: OrderType;
+  number: string;
+  customer_name: string | null;
+  customer_contact: string | null;
+  order_date: string | null;
+  status: string;
+  notes: string | null;
+  currency: string;
+  subtotal: number;
+  tax_percent: number;
+  tax_amount: number;
+  total: number;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  created_by_name?: string | null;
+  items?: OrderItem[];
+}
+
+export interface OrderItem {
+  id: number;
+  order_id: number;
+  item_id: number | null;
+  name: string;
+  sku: string | null;
+  description: string | null;
+  quantity: number;
+  unit: string | null;
+  unit_price: number;
+  line_total: number;
+  sort: number;
+}
+
+export interface DocTemplate {
+  id: number;
+  name: string;
+  type: 'sale' | 'job' | 'generic';
+  body: string;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyProfile {
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
+  logo_url: string;
+}
+
 /** Augment Express so handlers can read req.user / req.token with types. */
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

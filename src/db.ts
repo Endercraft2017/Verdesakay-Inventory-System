@@ -112,6 +112,49 @@ export function init(): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS orders (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      type             TEXT NOT NULL CHECK (type IN ('sale','job')),
+      number           TEXT NOT NULL UNIQUE,
+      customer_name    TEXT,
+      customer_contact TEXT,
+      order_date       TEXT,
+      status           TEXT NOT NULL DEFAULT 'open',
+      notes            TEXT,
+      currency         TEXT NOT NULL DEFAULT 'PHP',
+      subtotal         REAL NOT NULL DEFAULT 0,
+      tax_percent      REAL NOT NULL DEFAULT 0,
+      tax_amount       REAL NOT NULL DEFAULT 0,
+      total            REAL NOT NULL DEFAULT 0,
+      created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS order_items (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id    INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      item_id     INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      name        TEXT NOT NULL,
+      sku         TEXT,
+      description TEXT,
+      quantity    REAL NOT NULL DEFAULT 1,
+      unit        TEXT,
+      unit_price  REAL NOT NULL DEFAULT 0,
+      line_total  REAL NOT NULL DEFAULT 0,
+      sort        INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS doc_templates (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      type       TEXT NOT NULL DEFAULT 'generic' CHECK (type IN ('sale','job','generic')),
+      body       TEXT NOT NULL,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS inventory_transactions (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id       INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
@@ -154,6 +197,8 @@ export function init(): void {
     CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
     CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(type);
+    CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
   `);
 
   migrate();
@@ -221,6 +266,53 @@ function seed(): void {
       console.log('========================================================');
     }
   }
+
+  seedTemplates();
+}
+
+/** Seed a default Sale Order and Job Order template on first run. */
+function seedTemplates(): void {
+  const count = (db.prepare('SELECT COUNT(*) AS c FROM doc_templates').get() as { c: number }).c;
+  if (count > 0) return;
+  const insert = db.prepare('INSERT INTO doc_templates (name, type, body) VALUES (?, ?, ?)');
+  insert.run('Sale Order', 'sale', orderTemplateBody('SALES ORDER'));
+  insert.run('Job Order', 'job', orderTemplateBody('JOB ORDER'));
+}
+
+/** Default printable HTML for an order document (uses {{variables}} / {{#items}}). */
+function orderTemplateBody(title: string): string {
+  return `<div class="doc">
+  <header class="doc-head">
+    <div class="doc-company">
+      <h1>{{company.name}}</h1>
+      <div>{{company.address}}</div>
+      <div>{{company.phone}}{{#if company.email}} · {{company.email}}{{/if}}</div>
+    </div>
+    <div class="doc-meta">
+      <h2>${title}</h2>
+      <div>No: <strong>{{order.no}}</strong></div>
+      <div>Date: {{order.date}}</div>
+      <div>Status: {{order.status}}</div>
+    </div>
+  </header>
+  <section class="doc-parties">
+    <div><span class="muted">Customer</span><br/><strong>{{order.customer_name}}</strong></div>
+    <div>{{order.customer_contact}}</div>
+  </section>
+  <table class="doc-table">
+    <thead><tr><th>#</th><th>Item</th><th>SKU</th><th class="r">Qty</th><th>Unit</th><th class="r">Unit Price</th><th class="r">Total</th></tr></thead>
+    <tbody>
+      {{#items}}<tr><td>{{index}}</td><td>{{name}}{{#if description}}<div class="muted">{{description}}</div>{{/if}}</td><td>{{sku}}</td><td class="r">{{quantity}}</td><td>{{unit}}</td><td class="r">{{unit_price}}</td><td class="r">{{line_total}}</td></tr>{{/items}}
+    </tbody>
+  </table>
+  <section class="doc-totals">
+    <div>Subtotal: <strong>{{order.subtotal}}</strong></div>
+    {{#if order.tax_amount}}<div>Tax ({{order.tax_percent}}%): {{order.tax_amount}}</div>{{/if}}
+    <div class="grand">TOTAL: {{order.currency}} {{order.total}}</div>
+  </section>
+  {{#if order.notes}}<section class="doc-notes"><span class="muted">Notes</span><br/>{{order.notes}}</section>{{/if}}
+  <footer class="doc-foot">Prepared by {{user.name}} · {{today}}</footer>
+</div>`;
 }
 
 export function cleanupSessions(): void {
