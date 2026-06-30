@@ -46,14 +46,15 @@ export function init(): void {
     );
 
     CREATE TABLE IF NOT EXISTS users (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      username      TEXT NOT NULL UNIQUE,
-      full_name     TEXT NOT NULL,
-      password_hash TEXT NOT NULL,
-      role          TEXT NOT NULL DEFAULT 'employee' CHECK (role IN ('admin','employee')),
-      department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
-      active        INTEGER NOT NULL DEFAULT 1,
-      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      username             TEXT NOT NULL UNIQUE,
+      full_name            TEXT NOT NULL,
+      password_hash        TEXT NOT NULL,
+      role                 TEXT NOT NULL DEFAULT 'admin_staff',
+      department_id        INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+      active               INTEGER NOT NULL DEFAULT 1,
+      permission_overrides TEXT NOT NULL DEFAULT '{}',
+      created_at           TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
@@ -208,9 +209,37 @@ export function init(): void {
 
 /** Idempotent schema upgrades for databases created before a column existed. */
 function migrate(): void {
-  const cols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
-  if (!cols.some((c) => c.name === 'attributes')) {
+  const itemCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (!itemCols.some((c) => c.name === 'attributes')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN attributes TEXT');
+  }
+
+  // Rebuild users table to add permission_overrides and drop old two-role CHECK constraint.
+  const userCols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!userCols.some((c) => c.name === 'permission_overrides')) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE users_new (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        username             TEXT NOT NULL UNIQUE,
+        full_name            TEXT NOT NULL,
+        password_hash        TEXT NOT NULL,
+        role                 TEXT NOT NULL DEFAULT 'admin_staff',
+        department_id        INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+        active               INTEGER NOT NULL DEFAULT 1,
+        permission_overrides TEXT NOT NULL DEFAULT '{}',
+        created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO users_new
+        (id, username, full_name, password_hash, role, department_id, active, created_at)
+        SELECT id, username, full_name, password_hash,
+               CASE role WHEN 'employee' THEN 'admin_staff' ELSE role END,
+               department_id, active, created_at
+        FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_new RENAME TO users;
+      COMMIT;
+    `);
   }
 }
 

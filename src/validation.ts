@@ -54,19 +54,21 @@ export const changePasswordSchema = z.object({
 });
 
 // ---- Users / departments ----
+const roleEnum = z.enum(['admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing']);
+
 export const createUserSchema = z.object({
   username: trimmed
     .toLowerCase()
     .regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
   full_name: trimmed.min(1, 'Full name is required').max(120),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['admin', 'employee']).default('employee'),
+  role: roleEnum.default('admin_staff'),
   department_id: optionalId,
 });
 
 export const updateUserSchema = z.object({
   full_name: trimmed.min(1).max(120).optional(),
-  role: z.enum(['admin', 'employee']).optional(),
+  role: roleEnum.optional(),
   department_id: optionalId,
   active: boolish.optional(),
 });

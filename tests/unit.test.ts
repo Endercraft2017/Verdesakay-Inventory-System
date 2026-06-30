@@ -29,7 +29,7 @@ describe('validation: createUser', () => {
       password: 'secret1',
     });
     expect(out.username).toBe('jdoe');
-    expect(out.role).toBe('employee'); // default
+    expect(out.role).toBe('admin_staff'); // default
     expect(out.department_id).toBeNull();
   });
   it('rejects a too-short password', () => {

@@ -3,7 +3,18 @@
  * These mirror the database schema in src/db.ts and the JSON shapes the API returns.
  */
 
-export type Role = 'admin' | 'employee';
+export type Role =
+  | 'admin' | 'admin_staff' | 'accounting' | 'warehouse'
+  | 'releasing' | 'csr' | 'hr' | 'marketing';
+
+export type Permission =
+  | 'inventory.view' | 'inventory.create' | 'inventory.edit' | 'inventory.delete'
+  | 'inventory.adjust' | 'inventory.configure'
+  | 'orders.view' | 'orders.create' | 'orders.edit' | 'orders.delete'
+  | 'forms.view' | 'forms.upload' | 'forms.delete'
+  | 'messages.view' | 'messages.send'
+  | 'templates.view' | 'templates.edit' | 'templates.company'
+  | 'users.manage';
 
 export interface Department {
   id: number;
@@ -31,6 +42,7 @@ export interface AuthUser {
   department_id: number | null;
   active: number;
   department_name: string | null;
+  permissions: Permission[];
 }
 
 export interface SessionRow {

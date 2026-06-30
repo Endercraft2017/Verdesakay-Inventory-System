@@ -1,0 +1,90 @@
+/**
+ * Role defaults and effective-permission resolver.
+ * Routes call requirePermission('module.action') from auth.ts.
+ * Admins can override individual permissions per user via PUT /users/:id/permissions
+ * (stored as a sparse JSON diff in users.permission_overrides).
+ */
+import type { Role, Permission } from './types';
+
+export const ALL_PERMISSIONS: Permission[] = [
+  'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
+  'inventory.adjust', 'inventory.configure',
+  'orders.view', 'orders.create', 'orders.edit', 'orders.delete',
+  'forms.view', 'forms.upload', 'forms.delete',
+  'messages.view', 'messages.send',
+  'templates.view', 'templates.edit', 'templates.company',
+  'users.manage',
+];
+
+const ROLE_DEFAULTS: Record<Role, Permission[]> = {
+  admin: [...ALL_PERMISSIONS],
+  admin_staff: [
+    'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.adjust',
+    'orders.view', 'orders.create', 'orders.edit',
+    'forms.view', 'forms.upload', 'forms.delete',
+    'messages.view', 'messages.send',
+    'templates.view',
+  ],
+  accounting: [
+    'inventory.view',
+    'orders.view', 'orders.create', 'orders.edit',
+    'forms.view', 'forms.upload',
+    'messages.view', 'messages.send',
+    'templates.view',
+  ],
+  warehouse: [
+    'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.adjust',
+    'orders.view',
+    'forms.view', 'forms.upload',
+    'messages.view', 'messages.send',
+  ],
+  releasing: [
+    'inventory.view', 'inventory.adjust',
+    'orders.view', 'orders.create', 'orders.edit',
+    'forms.view', 'forms.upload',
+    'messages.view', 'messages.send',
+    'templates.view',
+  ],
+  csr: [
+    'inventory.view',
+    'orders.view', 'orders.create', 'orders.edit',
+    'forms.view', 'forms.upload',
+    'messages.view', 'messages.send',
+    'templates.view',
+  ],
+  hr: [
+    'forms.view', 'forms.upload', 'forms.delete',
+    'messages.view', 'messages.send',
+    'templates.view',
+  ],
+  marketing: [
+    'forms.view', 'forms.upload',
+    'messages.view', 'messages.send',
+    'templates.view',
+  ],
+};
+
+/**
+ * Compute effective permissions by merging role defaults with per-user overrides.
+ * overrides is a sparse map: true = explicitly grant, false = explicitly revoke.
+ * Missing key = use role default.
+ */
+export function resolvePermissions(
+  role: Role,
+  overrides: Record<string, boolean> = {}
+): Permission[] {
+  const defaults = new Set<string>(ROLE_DEFAULTS[role] ?? []);
+  const result: Permission[] = [];
+  for (const p of ALL_PERMISSIONS) {
+    const ov = overrides[p];
+    if (ov === true) result.push(p);
+    else if (ov === false) { /* explicitly revoked */ }
+    else if (defaults.has(p)) result.push(p);
+  }
+  return result;
+}
+
+/** Default permission list for a role with no overrides applied. */
+export function roleDefaults(role: Role): Permission[] {
+  return [...(ROLE_DEFAULTS[role] ?? [])];
+}

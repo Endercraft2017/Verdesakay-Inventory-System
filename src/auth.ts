@@ -5,8 +5,20 @@
 import type { Request, Response, NextFunction } from 'express';
 import { db, newToken } from './db';
 import type { AuthUser, Role } from './types';
+import { resolvePermissions } from './permissions';
 
 const SESSION_HOURS = 12;
+
+interface UserSessionRow {
+  id: number;
+  username: string;
+  full_name: string;
+  role: Role;
+  department_id: number | null;
+  active: number;
+  permission_overrides: string;
+  department_name: string | null;
+}
 
 export function createSession(userId: number): string {
   const token = newToken();
@@ -27,15 +39,18 @@ export function userFromToken(token: string | null): AuthUser | null {
   const row = db
     .prepare(
       `SELECT u.id, u.username, u.full_name, u.role, u.department_id, u.active,
-              d.name AS department_name
+              u.permission_overrides, d.name AS department_name
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        LEFT JOIN departments d ON d.id = u.department_id
        WHERE s.token = ? AND s.expires_at >= datetime('now')`
     )
-    .get(token) as AuthUser | undefined;
+    .get(token) as UserSessionRow | undefined;
   if (!row || row.active !== 1) return null;
-  return row;
+  let overrides: Record<string, boolean> = {};
+  try { overrides = JSON.parse(row.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
+  const { permission_overrides: _po, ...rest } = row;
+  return { ...rest, permissions: resolvePermissions(row.role, overrides) };
 }
 
 export function getToken(req: Request): string | null {

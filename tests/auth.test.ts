@@ -68,7 +68,7 @@ describe('rbac', () => {
     const res = await ctx.api
       .put(`/api/users/${me.body.user.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ role: 'employee' });
+      .send({ role: 'admin_staff' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/last active administrator/i);
   });

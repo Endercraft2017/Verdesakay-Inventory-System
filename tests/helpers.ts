@@ -61,7 +61,7 @@ export async function createEmployee(
   const res = await api
     .post('/api/users')
     .set('Authorization', `Bearer ${adminToken}`)
-    .send({ username, full_name: 'Test Employee', password, role: 'employee', ...overrides });
+    .send({ username, full_name: 'Test Employee', password, role: 'admin_staff', ...overrides });
   if (res.status !== 201) throw new Error('Failed to create employee: ' + JSON.stringify(res.body));
   const token = await login(api, username, password);
   return { id: res.body.id, token, username, password };
