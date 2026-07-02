@@ -1,7 +1,7 @@
 /** Inventory: items, search/filter, stock adjustments with history, dashboard stats. */
 import { Router } from 'express';
 import { db, queryOne, queryAll, run, getSetting, setSetting } from '../db';
-import { requireAuth, requireRole } from '../auth';
+import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody,
   createItemSchema,
@@ -72,7 +72,7 @@ router.get('/form-config', (_req, res) => {
 });
 
 // PUT /api/inventory/form-config — save the customization (admin only).
-router.put('/form-config', requireRole('admin'), (req, res) => {
+router.put('/form-config', requirePermission('inventory.configure'), (req, res) => {
   const config = parseBody(formConfigSchema, req.body);
   setSetting(FORM_CONFIG_KEY, config);
   res.json({ ok: true });

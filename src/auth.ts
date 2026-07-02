@@ -82,3 +82,14 @@ export function requireRole(role: Role) {
     next();
   };
 }
+
+/** Require a resolved permission key (use after requireAuth). Preferred over requireRole. */
+export function requirePermission(permission: import('./types').Permission) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user || !req.user.permissions.includes(permission)) {
+      res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+      return;
+    }
+    next();
+  };
+}

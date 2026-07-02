@@ -1,8 +1,8 @@
-/** User-account and department management. Listing is open to all; mutations are admin-only. */
+/** User-account and department management. Listing is open to all; mutations require users.manage. */
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run } from '../db';
-import { requireAuth, requireRole } from '../auth';
+import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody,
   createUserSchema,
@@ -10,7 +10,9 @@ import {
   resetPasswordSchema,
   createDepartmentSchema,
   updateDepartmentSchema,
+  permissionOverridesSchema,
 } from '../validation';
+import { ALL_PERMISSIONS } from '../permissions';
 import type { UserRow, Department } from '../types';
 
 const router = Router();
@@ -24,19 +26,20 @@ interface UserListRow {
   department_id: number | null;
   active: number;
   department_name: string | null;
+  permission_overrides: string;
 }
 
-// GET /api/users — everyone can see the directory; only admins get management fields.
+// GET /api/users — everyone can see the directory; users.manage get full management fields.
 router.get('/', (req, res) => {
   const rows = queryAll<UserListRow>(
     `SELECT u.id, u.username, u.full_name, u.role, u.department_id, u.active,
-            d.name AS department_name
+            u.permission_overrides, d.name AS department_name
      FROM users u
      LEFT JOIN departments d ON d.id = u.department_id
      ORDER BY u.full_name COLLATE NOCASE`
   );
 
-  if (req.user!.role !== 'admin') {
+  if (!req.user!.permissions.includes('users.manage')) {
     res.json(
       rows
         .filter((u) => u.active === 1)
@@ -52,8 +55,8 @@ router.get('/', (req, res) => {
   res.json(rows);
 });
 
-// POST /api/users — admin creates an account
-router.post('/', requireRole('admin'), (req, res) => {
+// POST /api/users — create an account
+router.post('/', requirePermission('users.manage'), (req, res) => {
   const input = parseBody(createUserSchema, req.body);
   const exists = queryOne('SELECT id FROM users WHERE username = ?', input.username);
   if (exists) {
@@ -73,8 +76,8 @@ router.post('/', requireRole('admin'), (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
-// PUT /api/users/:id — admin updates account details
-router.put('/:id', requireRole('admin'), (req, res) => {
+// PUT /api/users/:id — update account details
+router.put('/:id', requirePermission('users.manage'), (req, res) => {
   const id = Number(req.params.id);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', id);
   if (!user) {
@@ -114,8 +117,8 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/users/:id/reset-password — admin sets a new password
-router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
+// POST /api/users/:id/reset-password
+router.post('/:id/reset-password', requirePermission('users.manage'), (req, res) => {
   const id = Number(req.params.id);
   const { new_password } = parseBody(resetPasswordSchema, req.body);
   const user = queryOne('SELECT id FROM users WHERE id = ?', id);
@@ -129,6 +132,24 @@ router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+// PUT /api/users/:id/permissions — save sparse permission overrides for a user
+router.put('/:id/permissions', requirePermission('users.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  const user = queryOne('SELECT id FROM users WHERE id = ?', id);
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  const { overrides } = parseBody(permissionOverridesSchema, req.body);
+  // Strip any keys that aren't real permission keys.
+  const clean: Record<string, boolean> = {};
+  for (const key of ALL_PERMISSIONS) {
+    if (key in overrides) clean[key] = overrides[key];
+  }
+  run('UPDATE users SET permission_overrides = ? WHERE id = ?', JSON.stringify(clean), id);
+  res.json({ ok: true });
+});
+
 // ---- Departments ----
 
 // GET /api/users/departments/list
@@ -139,8 +160,8 @@ router.get('/departments/list', (_req, res) => {
   res.json(rows);
 });
 
-// POST /api/users/departments — admin adds a department
-router.post('/departments', requireRole('admin'), (req, res) => {
+// POST /api/users/departments
+router.post('/departments', requirePermission('users.manage'), (req, res) => {
   const { name } = parseBody(createDepartmentSchema, req.body);
   const exists = queryOne('SELECT id FROM departments WHERE name = ? COLLATE NOCASE', name);
   if (exists) {
@@ -151,8 +172,8 @@ router.post('/departments', requireRole('admin'), (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid, name });
 });
 
-// GET /api/users/departments — admin: departments with usage counts (for management)
-router.get('/departments', requireRole('admin'), (_req, res) => {
+// GET /api/users/departments — with usage counts (for management)
+router.get('/departments', requirePermission('users.manage'), (_req, res) => {
   const rows = queryAll(
     `SELECT d.id, d.name,
             (SELECT COUNT(*) FROM users u WHERE u.department_id = d.id) AS user_count,
@@ -164,8 +185,8 @@ router.get('/departments', requireRole('admin'), (_req, res) => {
   res.json(rows);
 });
 
-// PUT /api/users/departments/:id — admin renames a department
-router.put('/departments/:id', requireRole('admin'), (req, res) => {
+// PUT /api/users/departments/:id
+router.put('/departments/:id', requirePermission('users.manage'), (req, res) => {
   const id = Number(req.params.id);
   const dept = queryOne('SELECT id FROM departments WHERE id = ?', id);
   if (!dept) {
@@ -182,9 +203,8 @@ router.put('/departments/:id', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /api/users/departments/:id — admin deletes a department.
-// FK is ON DELETE SET NULL, so members/items/forms are simply unassigned.
-router.delete('/departments/:id', requireRole('admin'), (req, res) => {
+// DELETE /api/users/departments/:id — FK is ON DELETE SET NULL
+router.delete('/departments/:id', requirePermission('users.manage'), (req, res) => {
   const info = run('DELETE FROM departments WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) {
     res.status(404).json({ error: 'Department not found' });

@@ -15,6 +15,7 @@ const App = (() => {
   function getMe() { return me; }
   function getDepartments() { return departments; }
   function isAdmin() { return me && me.role === 'admin'; }
+  function hasPermission(key) { return me && Array.isArray(me.permissions) && me.permissions.includes(key); }
 
   async function reloadDepartments() {
     try { departments = await API.get('/users/departments/list'); } catch { /* ignore */ }
@@ -93,9 +94,19 @@ const App = (() => {
 
   /* ---------- Nav-config helpers ---------- */
 
-  /** Visible primaries (admin-only sections hidden from employees). */
+  /** Visible primaries — filtered by adminOnly (legacy) and requiredPermission. */
   function visiblePrimaries() {
-    return NAV.filter((p) => !p.adminOnly || isAdmin());
+    return NAV.filter((p) => {
+      if (p.adminOnly && !isAdmin()) return false;
+      if (p.requiredPermission && !hasPermission(p.requiredPermission)) return false;
+      return true;
+    });
+  }
+
+  /** Visible subtabs for a primary — filtered by requiredPermission. */
+  function visibleSubtabs(primary) {
+    return (primary.subtabs || []).filter((s) =>
+      !s.requiredPermission || hasPermission(s.requiredPermission));
   }
 
   function filtersEqual(a, b) {
@@ -173,12 +184,13 @@ const App = (() => {
     const el = document.getElementById('subnav');
     if (!el) return;
     if (!primary) { el.innerHTML = ''; return; }
-    el.innerHTML = primary.subtabs.map((s) =>
+    const subs = visibleSubtabs(primary);
+    el.innerHTML = subs.map((s) =>
       `<button class="subtab ${s.id === activeSubtabId ? 'active' : ''}" data-subtab="${s.id}">${UI.esc(s.label)}</button>`
     ).join('');
     el.querySelectorAll('[data-subtab]').forEach((b) =>
       b.addEventListener('click', () => {
-        const sub = primary.subtabs.find((s) => s.id === b.dataset.subtab);
+        const sub = subs.find((s) => s.id === b.dataset.subtab);
         const leaf = sub && sub.tree[0];
         if (leaf) navigate(leaf.route, leaf.filter);
       }));
@@ -245,7 +257,7 @@ const App = (() => {
   function allLeaves() {
     const out = [];
     visiblePrimaries().forEach((p) =>
-      p.subtabs.forEach((s) =>
+      visibleSubtabs(p).forEach((s) =>
         s.tree.forEach((leaf) =>
           out.push({ primary: p, subtab: s, leaf, path: `${p.label} › ${leaf.label}` }))));
     return out;
@@ -295,7 +307,7 @@ const App = (() => {
     const sections = visiblePrimaries().map((p) => `
       <div class="sitemap-col">
         <div class="sitemap-col-head">${UI.icon(p.icon, 16)}<span>${UI.esc(p.label)}</span></div>
-        ${p.subtabs.map((s) => `
+        ${visibleSubtabs(p).map((s) => `
           <div class="sitemap-sub">${UI.esc(s.label)}</div>
           ${s.tree.map((leaf) =>
             `<button class="sitemap-leaf" data-route="${leaf.route}"
@@ -396,7 +408,7 @@ const App = (() => {
   }
 
   return {
-    register, navigate, getMe, getDepartments, isAdmin, showLogin, refreshUnread,
+    register, navigate, getMe, getDepartments, isAdmin, hasPermission, showLogin, refreshUnread,
     logout, boot, reloadDepartments, setMe, currentLocation,
     _routeNames: () => Object.keys(routes), // test/debug seam
   };

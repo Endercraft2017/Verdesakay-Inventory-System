@@ -200,7 +200,7 @@ const orderFields = {
 };
 
 export const createOrderSchema = z.object({
-  type: z.enum(['sale', 'job']),
+  type: z.enum(['sale', 'job', 'purchase']),
   ...orderFields,
 });
 
@@ -208,8 +208,45 @@ export const updateOrderSchema = z.object(orderFields);
 
 export const templateSchema = z.object({
   name: trimmed.min(1, 'Template name is required').max(120),
-  type: z.enum(['sale', 'job', 'generic']).default('generic'),
+  type: z.enum(['sale', 'job', 'purchase', 'generic']).default('generic'),
   body: trimmed.min(1, 'Template body cannot be empty').max(100000),
+});
+
+// ---- Form builder ----
+
+const fieldTypeEnum = z.enum(['text', 'number', 'date', 'select', 'textarea', 'checkbox']);
+
+export const fieldDefSchema = z.object({
+  key: trimmed.min(1).max(64).regex(/^[a-z0-9_]+$/, 'Key must be lowercase letters, numbers, or underscores'),
+  label: trimmed.min(1).max(120),
+  type: fieldTypeEnum,
+  required: boolish.default(false),
+  options: z.array(trimmed.max(200)).max(100).default([]),
+  default: trimmed.max(500).default(''),
+});
+
+export const formDefinitionSchema = z.object({
+  name: trimmed.min(1, 'Form name is required').max(120),
+  slug: trimmed.min(1).max(60).regex(/^[a-z0-9_]+$/, 'Slug must be lowercase letters, numbers, or underscores'),
+  number_prefix: trimmed.min(1).max(10).regex(/^[A-Z0-9]+$/, 'Prefix must be uppercase letters or numbers').default('FM'),
+  icon: trimmed.max(40).default('file'),
+  fields: z.array(fieldDefSchema).max(100).default([]),
+});
+
+export const createFormRecordSchema = z.object({
+  form_def_id: z.coerce.number().int().positive('Form definition is required'),
+  data: z.record(z.string().max(64), z.union([z.string().max(10000), z.number(), z.boolean(), z.null()])).default({}),
+  status: trimmed.max(40).default('draft'),
+});
+
+export const updateFormRecordSchema = z.object({
+  data: z.record(z.string().max(64), z.union([z.string().max(10000), z.number(), z.boolean(), z.null()])).default({}),
+  status: trimmed.max(40).optional(),
+});
+
+export const globalVariableSchema = z.object({
+  label: trimmed.min(1, 'Label is required').max(120),
+  value: trimmed.max(2000).default(''),
 });
 
 export const companyProfileSchema = z.object({
@@ -218,6 +255,27 @@ export const companyProfileSchema = z.object({
   phone: trimmed.max(80).optional().nullable(),
   email: trimmed.max(160).optional().nullable(),
   logo_url: trimmed.max(500).optional().nullable(),
+});
+
+/** A document-template variable (constant / bound field / formula). */
+export const docVariableSchema = z.object({
+  scope: z.enum(['global', 'template']).default('global'),
+  template_id: optionalId,
+  category: trimmed.min(1).max(60).default('Custom'),
+  key: trimmed.regex(/^[a-zA-Z_][\w]{0,63}$/, 'Key must start with a letter and use only letters, numbers, _'),
+  label: trimmed.min(1, 'Label is required').max(120),
+  source_type: z.enum(['constant', 'field', 'formula']).default('constant'),
+  value: trimmed.max(2000).optional().nullable(),
+  field_path: trimmed.max(120).optional().nullable(),
+  formula: trimmed.max(2000).optional().nullable(),
+  data_type: z.enum(['text', 'number', 'currency', 'date']).default('text'),
+  sort: intCoerce.default(0),
+});
+
+/** Sparse permission overrides: keys are permission strings, values are booleans. */
+export const permissionOverridesSchema = z.object({
+  overrides: z.record(z.string().max(64), z.boolean())
+    .refine((o) => Object.keys(o).length <= 50, 'Too many overrides'),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

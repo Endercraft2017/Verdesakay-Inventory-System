@@ -77,7 +77,7 @@ App.register('forms', async (view) => {
             <td class="actions">
               ${isPrintable(f) ? `<button class="icon-btn" title="Print" data-print="${f.id}">${UI.icon('printer')}</button>` : ''}
               <button class="icon-btn" title="Download" data-dl="${f.id}">${UI.icon('download')}</button>
-              ${(App.isAdmin() || f.uploaded_by_name === me.full_name)
+              ${(App.hasPermission('forms.delete') || f.uploaded_by_name === me.full_name)
                 ? `<button class="icon-btn danger" title="Delete" data-del="${f.id}">${UI.icon('trash')}</button>` : ''}
             </td>
           </tr>`).join('')}

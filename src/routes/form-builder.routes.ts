@@ -1,0 +1,232 @@
+/** Form builder: admin-managed form definitions, per-form record CRUD, global variables. */
+import { Router } from 'express';
+import { db, queryOne, queryAll, run, getSetting, setSetting } from '../db';
+import { requireAuth, requirePermission } from '../auth';
+import {
+  parseBody,
+  formDefinitionSchema,
+  createFormRecordSchema,
+  updateFormRecordSchema,
+  globalVariableSchema,
+} from '../validation';
+import type { FormDefinition, FormRecord, GlobalVariable } from '../types';
+
+const router = Router();
+router.use(requireAuth);
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function parseFields(raw: string | null): unknown[] {
+  try { return JSON.parse(raw || '[]'); } catch { return []; }
+}
+
+function parseData(raw: string | null): Record<string, unknown> {
+  try { return JSON.parse(raw || '{}'); } catch { return {}; }
+}
+
+/** Next record number for a form definition, e.g. FM-00001 (counter in settings). */
+function nextRecordNumber(prefix: string, formId: number): string {
+  const key = `form_seq_${formId}`;
+  const next = (getSetting<number>(key) || 0) + 1;
+  setSetting(key, next);
+  return `${prefix}-${String(next).padStart(5, '0')}`;
+}
+
+// ─── Form Definitions ────────────────────────────────────────────────────────
+
+// GET /api/form-definitions — list all (any logged-in user)
+router.get('/form-definitions', (_req, res) => {
+  const rows = queryAll<FormDefinition & { record_count: number }>(
+    `SELECT fd.*,
+       (SELECT COUNT(*) FROM form_records fr WHERE fr.form_def_id = fd.id) AS record_count
+     FROM form_definitions fd
+     ORDER BY fd.name`
+  );
+  res.json(rows.map((r) => ({ ...r, fields: parseFields(r.fields as string) })));
+});
+
+// GET /api/form-definitions/:id — detail with parsed fields
+router.get('/form-definitions/:id', (req, res) => {
+  const row = queryOne<FormDefinition>(
+    'SELECT * FROM form_definitions WHERE id = ?',
+    Number(req.params.id)
+  );
+  if (!row) { res.status(404).json({ error: 'Form not found' }); return; }
+  res.json({ ...row, fields: parseFields(row.fields as string) });
+});
+
+// POST /api/form-definitions — create (forms.manage)
+router.post('/form-definitions', requirePermission('forms.manage'), (req, res) => {
+  const input = parseBody(formDefinitionSchema, req.body);
+  const info = run(
+    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, created_by)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    input.name,
+    input.slug,
+    input.number_prefix,
+    input.icon,
+    JSON.stringify(input.fields),
+    req.user!.id
+  );
+  res.status(201).json({ id: info.lastInsertRowid });
+});
+
+// PUT /api/form-definitions/:id — update (forms.manage)
+router.put('/form-definitions/:id', requirePermission('forms.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM form_definitions WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Form not found' }); return;
+  }
+  const input = parseBody(formDefinitionSchema, req.body);
+  run(
+    `UPDATE form_definitions
+     SET name = ?, slug = ?, number_prefix = ?, icon = ?, fields = ?, updated_at = datetime('now')
+     WHERE id = ?`,
+    input.name,
+    input.slug,
+    input.number_prefix,
+    input.icon,
+    JSON.stringify(input.fields),
+    id
+  );
+  res.json({ ok: true });
+});
+
+// DELETE /api/form-definitions/:id — delete + cascades records (forms.manage)
+router.delete('/form-definitions/:id', requirePermission('forms.manage'), (req, res) => {
+  const info = run('DELETE FROM form_definitions WHERE id = ?', Number(req.params.id));
+  if (info.changes === 0) { res.status(404).json({ error: 'Form not found' }); return; }
+  res.json({ ok: true });
+});
+
+// ─── Form Records ────────────────────────────────────────────────────────────
+
+// GET /api/form-definitions/:id/records — list records for a form (?q=, ?status=)
+router.get('/form-definitions/:id/records', (req, res) => {
+  const formId = Number(req.params.id);
+  if (!queryOne('SELECT id FROM form_definitions WHERE id = ?', formId)) {
+    res.status(404).json({ error: 'Form not found' }); return;
+  }
+  const { q, status } = req.query;
+  const where: string[] = ['fr.form_def_id = ?'];
+  const params: unknown[] = [formId];
+  if (typeof status === 'string' && status.trim()) {
+    where.push('fr.status = ?'); params.push(status.trim());
+  }
+  if (typeof q === 'string' && q.trim()) {
+    where.push('fr.number LIKE ?'); params.push(`%${q.trim()}%`);
+  }
+  const rows = queryAll<FormRecord>(
+    `SELECT fr.*, u.full_name AS created_by_name
+     FROM form_records fr LEFT JOIN users u ON u.id = fr.created_by
+     WHERE ${where.join(' AND ')}
+     ORDER BY fr.id DESC`,
+    ...params
+  );
+  res.json(rows.map((r) => ({ ...r, data: parseData(r.data as string) })));
+});
+
+// GET /api/form-records/:id — single record
+router.get('/form-records/:id', (req, res) => {
+  const row = queryOne<FormRecord & { form_name: string }>(
+    `SELECT fr.*, fd.name AS form_name, u.full_name AS created_by_name
+     FROM form_records fr
+     JOIN form_definitions fd ON fd.id = fr.form_def_id
+     LEFT JOIN users u ON u.id = fr.created_by
+     WHERE fr.id = ?`,
+    Number(req.params.id)
+  );
+  if (!row) { res.status(404).json({ error: 'Record not found' }); return; }
+  res.json({ ...row, data: parseData(row.data as string) });
+});
+
+// POST /api/form-records — create a record
+router.post('/form-records', (req, res) => {
+  const input = parseBody(createFormRecordSchema, req.body);
+  const form = queryOne<FormDefinition>(
+    'SELECT * FROM form_definitions WHERE id = ?',
+    input.form_def_id
+  );
+  if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
+
+  db.exec('BEGIN');
+  try {
+    const number = nextRecordNumber(form.number_prefix, form.id);
+    const info = run(
+      `INSERT INTO form_records (form_def_id, number, data, status, created_by)
+       VALUES (?, ?, ?, ?, ?)`,
+      input.form_def_id,
+      number,
+      JSON.stringify(input.data),
+      input.status,
+      req.user!.id
+    );
+    db.exec('COMMIT');
+    res.status(201).json({ id: info.lastInsertRowid, number });
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+});
+
+// PUT /api/form-records/:id — update data / status
+router.put('/form-records/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const existing = queryOne<FormRecord>('SELECT * FROM form_records WHERE id = ?', id);
+  if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
+  const input = parseBody(updateFormRecordSchema, req.body);
+  run(
+    `UPDATE form_records
+     SET data = ?, status = ?, updated_at = datetime('now')
+     WHERE id = ?`,
+    JSON.stringify(input.data),
+    input.status ?? existing.status,
+    id
+  );
+  res.json({ ok: true });
+});
+
+// DELETE /api/form-records/:id
+router.delete('/form-records/:id', (req, res) => {
+  const info = run('DELETE FROM form_records WHERE id = ?', Number(req.params.id));
+  if (info.changes === 0) { res.status(404).json({ error: 'Record not found' }); return; }
+  res.json({ ok: true });
+});
+
+// ─── Global Variables ─────────────────────────────────────────────────────────
+
+// GET /api/global-variables — list all (any user, for template rendering)
+router.get('/global-variables', (_req, res) => {
+  res.json(queryAll<GlobalVariable>('SELECT * FROM global_variables ORDER BY key'));
+});
+
+// PUT /api/global-variables/:key — upsert (forms.manage)
+router.put('/global-variables/:key', requirePermission('forms.manage'), (req, res) => {
+  const key = req.params.key.trim();
+  if (!/^[a-z0-9_]+$/.test(key)) {
+    res.status(400).json({ error: 'Key must be lowercase letters, numbers, or underscores' });
+    return;
+  }
+  const input = parseBody(globalVariableSchema, req.body);
+  run(
+    `INSERT INTO global_variables (key, label, value, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE
+       SET label = excluded.label, value = excluded.value,
+           updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+    key,
+    input.label,
+    input.value,
+    req.user!.id
+  );
+  res.json({ ok: true });
+});
+
+// DELETE /api/global-variables/:key (forms.manage)
+router.delete('/global-variables/:key', requirePermission('forms.manage'), (req, res) => {
+  const info = run('DELETE FROM global_variables WHERE key = ?', req.params.key);
+  if (info.changes === 0) { res.status(404).json({ error: 'Variable not found' }); return; }
+  res.json({ ok: true });
+});
+
+export default router;

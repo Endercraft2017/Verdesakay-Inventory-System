@@ -21,9 +21,9 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage, limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
 
-/** Forms visible to a user: shared (no dept) + own dept. Admins see all. */
+/** Forms visible to a user: shared (no dept) + own dept. users.manage sees all. */
 function visibilityClause(user: AuthUser): { sql: string; params: unknown[] } {
-  if (user.role === 'admin') return { sql: '', params: [] };
+  if (user.permissions.includes('users.manage')) return { sql: '', params: [] };
   return {
     sql: ' WHERE (f.department_id IS NULL OR f.department_id = ?)',
     params: [user.department_id],
@@ -85,7 +85,7 @@ router.get('/:id/download', (req, res) => {
     return;
   }
   if (
-    req.user!.role !== 'admin' &&
+    !req.user!.permissions.includes('users.manage') &&
     form.department_id &&
     form.department_id !== req.user!.department_id
   ) {
@@ -107,8 +107,8 @@ router.delete('/:id', (req, res) => {
     res.status(404).json({ error: 'Form not found' });
     return;
   }
-  if (req.user!.role !== 'admin' && form.uploaded_by !== req.user!.id) {
-    res.status(403).json({ error: 'Only the uploader or an admin can delete this file' });
+  if (!req.user!.permissions.includes('forms.delete') && form.uploaded_by !== req.user!.id) {
+    res.status(403).json({ error: 'Only the uploader or someone with delete permission can delete this file' });
     return;
   }
   run('DELETE FROM forms WHERE id = ?', form.id);

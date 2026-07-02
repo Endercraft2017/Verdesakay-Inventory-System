@@ -1,15 +1,18 @@
 /* Dashboard: stats overview, quick actions, low-stock list + recent messages. */
 App.register('dashboard', async (view) => {
   const me = App.getMe();
-  const admin = App.isAdmin();
+  const canInv = App.hasPermission('inventory.view');
+  const canMsg = App.hasPermission('messages.view');
+  const canForms = App.hasPermission('forms.view');
+  const canUsers = App.hasPermission('users.manage');
 
   const [stats, items, inbox, forms, unread, users] = await Promise.all([
-    API.get('/inventory/stats'),
-    API.get('/inventory?low=1'),
-    API.get('/messages?box=inbox'),
-    API.get('/forms'),
-    API.get('/messages/unread-count'),
-    admin ? API.get('/users') : Promise.resolve(null),
+    canInv ? API.get('/inventory/stats') : Promise.resolve({ total: 0, low_stock: 0, total_value: 0 }),
+    canInv ? API.get('/inventory?low=1') : Promise.resolve([]),
+    canMsg ? API.get('/messages?box=inbox') : Promise.resolve([]),
+    canForms ? API.get('/forms') : Promise.resolve([]),
+    canMsg ? API.get('/messages/unread-count') : Promise.resolve({ count: 0 }),
+    canUsers ? API.get('/users') : Promise.resolve(null),
   ]);
 
   const recent = inbox.slice(0, 5);
@@ -36,7 +39,7 @@ App.register('dashboard', async (view) => {
       ${statCard('alert', 'alert', 'Out of stock', stats.out_of_stock || 0)}
       ${statCard('', 'forms', 'Files available', forms.length)}
       ${statCard('', 'messages', 'Unread messages', unread.count)}
-      ${admin ? statCard('', 'users', 'Staff accounts', users.length) : ''}
+      ${canUsers ? statCard('', 'users', 'Staff accounts', users.length) : ''}
     </div>
 
     <div class="grid-2">

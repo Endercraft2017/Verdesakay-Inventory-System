@@ -257,7 +257,7 @@ App.register('inventory', async (view, filter) => {
 
   async function itemModal(it) {
     const cfg = await loadItemFormConfig();
-    const canCustomize = App.isAdmin();
+    const canCustomize = App.hasPermission('inventory.configure');
     const m = UI.modal({
       title: it ? 'Edit item' : 'New item',
       size: 'lg',

@@ -11,7 +11,7 @@ export type Permission =
   | 'inventory.view' | 'inventory.create' | 'inventory.edit' | 'inventory.delete'
   | 'inventory.adjust' | 'inventory.configure'
   | 'orders.view' | 'orders.create' | 'orders.edit' | 'orders.delete'
-  | 'forms.view' | 'forms.upload' | 'forms.delete'
+  | 'forms.view' | 'forms.upload' | 'forms.delete' | 'forms.manage'
   | 'messages.view' | 'messages.send'
   | 'templates.view' | 'templates.edit' | 'templates.company'
   | 'users.manage';
@@ -133,7 +133,7 @@ export interface Bookmark {
   created_at: string;
 }
 
-export type OrderType = 'sale' | 'job';
+export type OrderType = 'sale' | 'job' | 'purchase';
 
 export interface Order {
   id: number;
@@ -173,10 +173,57 @@ export interface OrderItem {
 export interface DocTemplate {
   id: number;
   name: string;
-  type: 'sale' | 'job' | 'generic';
+  type: 'sale' | 'job' | 'purchase' | 'generic';
   body: string;
   created_by: number | null;
   created_at: string;
+  updated_at: string;
+}
+
+/** One field definition stored in form_definitions.fields (JSON array). */
+export interface FieldDef {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox';
+  required: boolean;
+  options: string[];  // only for type = 'select'
+  default: string;
+}
+
+/** A custom form type created by an admin. */
+export interface FormDefinition {
+  id: number;
+  name: string;
+  slug: string;
+  number_prefix: string;
+  icon: string;
+  fields: string | FieldDef[];  // raw JSON string in DB; parsed array in API responses
+  created_by: number | null;
+  created_at: string;
+  updated_at: string | null;
+  record_count?: number;
+}
+
+/** A submitted record for a custom form. */
+export interface FormRecord {
+  id: number;
+  form_def_id: number;
+  number: string;
+  data: string | Record<string, unknown>;  // raw JSON string in DB; parsed in API responses
+  status: string;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string | null;
+  created_by_name?: string | null;
+  form_name?: string;
+}
+
+/** A global variable injectable into any template as {{global.key}}. */
+export interface GlobalVariable {
+  key: string;
+  label: string;
+  value: string;
+  updated_by: number | null;
   updated_at: string;
 }
 
@@ -187,6 +234,28 @@ export interface CompanyProfile {
   email: string;
   logo_url: string;
 }
+
+/** A document-template variable (registry row). */
+export interface DocVariable {
+  id: number;
+  scope: 'global' | 'template';
+  template_id: number | null;
+  category: string;
+  key: string;
+  label: string;
+  source_type: 'constant' | 'field' | 'formula';
+  value: string | null;
+  field_path: string | null;
+  formula: string | null;
+  data_type: 'text' | 'number' | 'currency' | 'date';
+  sort: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One bindable field in the data-source catalog. */
+export interface CatalogEntry { path: string; label: string; }
+export interface CatalogGroup { group: string; items: CatalogEntry[]; }
 
 /** Augment Express so handlers can read req.user / req.token with types. */
 declare global {

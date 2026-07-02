@@ -1,6 +1,6 @@
-/* Accounts (admin only): manage users + departments. */
+/* Accounts (users.manage permission): manage users + departments. */
 App.register('admin', async (view, filter) => {
-  if (!App.isAdmin()) {
+  if (!App.hasPermission('users.manage')) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
@@ -18,6 +18,47 @@ App.register('admin', async (view, filter) => {
   const tableEl = view.querySelector('#users-table');
   let allUsers = [];
   let userQuery = '';
+
+  const ROLE_LABELS = {
+    admin: 'Administrator',
+    admin_staff: 'Admin Staff',
+    accounting: 'Accounting',
+    warehouse: 'Warehouse',
+    releasing: 'Releasing',
+    csr: 'Customer Service',
+    hr: 'HR',
+    marketing: 'Marketing',
+  };
+
+  // Role defaults mirrored from src/permissions.ts (for ★ display in permission editor).
+  const ROLE_DEFAULTS = {
+    admin: ['inventory.view','inventory.create','inventory.edit','inventory.delete','inventory.adjust','inventory.configure','orders.view','orders.create','orders.edit','orders.delete','forms.view','forms.upload','forms.delete','forms.manage','messages.view','messages.send','templates.view','templates.edit','templates.company','users.manage'],
+    admin_staff: ['inventory.view','inventory.create','inventory.edit','inventory.adjust','orders.view','orders.create','orders.edit','forms.view','forms.upload','forms.delete','forms.manage','messages.view','messages.send','templates.view'],
+    accounting: ['inventory.view','orders.view','orders.create','orders.edit','forms.view','forms.upload','messages.view','messages.send','templates.view'],
+    warehouse: ['inventory.view','inventory.create','inventory.edit','inventory.adjust','orders.view','forms.view','forms.upload','messages.view','messages.send'],
+    releasing: ['inventory.view','inventory.adjust','orders.view','orders.create','orders.edit','forms.view','forms.upload','messages.view','messages.send','templates.view'],
+    csr: ['inventory.view','orders.view','orders.create','orders.edit','forms.view','forms.upload','messages.view','messages.send','templates.view'],
+    hr: ['forms.view','forms.upload','forms.delete','messages.view','messages.send','templates.view'],
+    marketing: ['forms.view','forms.upload','messages.view','messages.send','templates.view'],
+  };
+
+  const PERMISSION_GROUPS = [
+    { label: 'Inventory', keys: ['inventory.view','inventory.create','inventory.edit','inventory.delete','inventory.adjust','inventory.configure'] },
+    { label: 'Orders', keys: ['orders.view','orders.create','orders.edit','orders.delete'] },
+    { label: 'Files', keys: ['forms.view','forms.upload','forms.delete','forms.manage'] },
+    { label: 'Messages', keys: ['messages.view','messages.send'] },
+    { label: 'Templates', keys: ['templates.view','templates.edit','templates.company'] },
+    { label: 'Admin', keys: ['users.manage'] },
+  ];
+
+  const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((g) => g.keys);
+
+  function roleSelect(field, selected) {
+    return `<select data-f="${field}">${
+      Object.entries(ROLE_LABELS).map(([v, l]) =>
+        `<option value="${v}" ${v === selected ? 'selected' : ''}>${UI.esc(l)}</option>`).join('')
+    }</select>`;
+  }
 
   function deptSelect(field, selected) {
     return `<select data-f="${field}"><option value="">— None —</option>` +
@@ -47,7 +88,7 @@ App.register('admin', async (view, filter) => {
           <tr class="clickable" data-open="${u.id}">
             <td><strong>${UI.esc(u.full_name)}</strong></td>
             <td class="mono">@${UI.esc(u.username)}</td>
-            <td><span class="badge-pill role-${u.role}">${u.role}</span></td>
+            <td><span class="badge-pill role-${u.role}">${UI.esc(ROLE_LABELS[u.role] || u.role)}</span></td>
             <td>${UI.esc(u.department_name || '—')}</td>
             <td>${u.active ? '<span class="badge-pill ok">Active</span>' : '<span class="badge-pill low">Disabled</span>'}</td>
             <td class="actions">
@@ -74,7 +115,7 @@ App.register('admin', async (view, filter) => {
           <div><label>Username *</label><input data-f="username" placeholder="letters, numbers, . _ -" /></div>
         </div>
         <div class="field-row">
-          <div><label>Role</label><select data-f="role"><option value="employee">Employee</option><option value="admin">Administrator</option></select></div>
+          <div><label>Role</label>${roleSelect('role', 'admin_staff')}</div>
           <div><label>Department</label>${deptSelect('department_id', null)}</div>
         </div>
         <div><label>Temporary password *</label><input data-f="password" type="text" placeholder="min 6 characters" /></div>
@@ -101,15 +142,20 @@ App.register('admin', async (view, filter) => {
       bodyHTML: `
         <div><label>Full name</label><input data-f="full_name" value="${UI.esc(u.full_name)}" /></div>
         <div class="field-row">
-          <div><label>Role</label><select data-f="role">
-            <option value="employee" ${u.role === 'employee' ? 'selected' : ''}>Employee</option>
-            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrator</option></select></div>
+          <div><label>Role</label>${roleSelect('role', u.role)}</div>
           <div><label>Department</label>${deptSelect('department_id', u.department_id)}</div>
         </div>
         <div><label>Status</label><select data-f="active">
           <option value="1" ${u.active ? 'selected' : ''}>Active</option>
-          <option value="0" ${!u.active ? 'selected' : ''}>Disabled</option></select></div>`,
+          <option value="0" ${!u.active ? 'selected' : ''}>Disabled</option></select></div>
+        <hr style="margin:12px 0;border:none;border-top:1px solid var(--border)">
+        <button type="button" class="btn secondary" id="edit-perm-btn" style="width:100%">
+          ${UI.icon('key')} Customize permissions
+        </button>`,
       confirmText: 'Save',
+      onOpen: (overlay) => {
+        overlay.querySelector('#edit-perm-btn').onclick = () => openPermEditor(u);
+      },
       onConfirm: async (overlay) => {
         const get = (f) => overlay.querySelector(`[data-f="${f}"]`).value;
         await API.put('/users/' + u.id, {
@@ -118,6 +164,84 @@ App.register('admin', async (view, filter) => {
         });
         UI.toast('Account updated');
         load();
+      },
+    });
+  }
+
+  function openPermEditor(u) {
+    let overrides = {};
+    try { overrides = JSON.parse(u.permission_overrides || '{}'); } catch { /* ignore */ }
+    const roleDefaults = new Set(ROLE_DEFAULTS[u.role] || []);
+
+    function effectivePerms() {
+      const result = new Set();
+      for (const p of ALL_PERMISSIONS) {
+        const ov = overrides[p];
+        if (ov === true) result.add(p);
+        else if (ov === false) { /* revoked */ }
+        else if (roleDefaults.has(p)) result.add(p);
+      }
+      return result;
+    }
+
+    function renderEditor(container) {
+      const effective = effectivePerms();
+      container.innerHTML = PERMISSION_GROUPS.map((g) => `
+        <div style="margin-bottom:12px">
+          <div style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;color:var(--text-muted)">${UI.esc(g.label)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${g.keys.map((k) => {
+              const checked = effective.has(k);
+              const isOverride = k in overrides;
+              const shortKey = k.split('.')[1];
+              return `<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:3px 8px;border-radius:4px;background:var(--surface-raised)">
+                <input type="checkbox" data-perm="${k}" ${checked ? 'checked' : ''} />
+                ${UI.esc(shortKey)}${isOverride ? ' <span style="color:var(--accent)">★</span>' : ''}
+              </label>`;
+            }).join('')}
+          </div>
+        </div>`).join('');
+
+      container.querySelectorAll('[data-perm]').forEach((cb) => {
+        cb.addEventListener('change', () => {
+          const key = cb.dataset.perm;
+          const isDefault = roleDefaults.has(key);
+          const checked = cb.checked;
+          if (checked === isDefault) {
+            delete overrides[key]; // back to default, no override needed
+          } else {
+            overrides[key] = checked;
+          }
+          renderEditor(container); // re-render to update ★ markers
+        });
+      });
+    }
+
+    const editorId = 'perm-editor-' + u.id;
+    UI.drawer({
+      title: `Permissions — ${UI.esc(u.full_name)}`,
+      bodyHTML: `
+        <p class="muted" style="font-size:12px;margin-top:0">
+          Role: <strong>${UI.esc(ROLE_LABELS[u.role] || u.role)}</strong> · ★ = overridden from role default
+        </p>
+        <div id="${editorId}"></div>`,
+      footHTML: `
+        <button class="btn secondary" id="perm-reset">Reset to defaults</button>
+        <button class="btn" id="perm-save">Save permissions</button>`,
+      onOpen: (el) => {
+        renderEditor(el.querySelector(`#${editorId}`));
+        el.querySelector('#perm-reset').onclick = () => {
+          overrides = {};
+          renderEditor(el.querySelector(`#${editorId}`));
+          UI.toast('Reset to role defaults (not yet saved)');
+        };
+        el.querySelector('#perm-save').onclick = async () => {
+          await API.put(`/users/${u.id}/permissions`, { overrides });
+          // Refresh the user in allUsers to reflect new overrides.
+          const idx = allUsers.findIndex((x) => x.id === u.id);
+          if (idx >= 0) allUsers[idx] = { ...allUsers[idx], permission_overrides: JSON.stringify(overrides) };
+          UI.toast('Permissions saved');
+        };
       },
     });
   }

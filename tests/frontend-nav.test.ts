@@ -9,8 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 type Leaf = { label: string; icon: string; route: string; filter?: Record<string, string> };
-type Subtab = { id: string; label: string; tree: Leaf[] };
-type Primary = { id: string; label: string; icon: string; adminOnly?: boolean; subtabs: Subtab[] };
+type Subtab = { id: string; label: string; requiredPermission?: string; tree: Leaf[] };
+type Primary = { id: string; label: string; icon: string; adminOnly?: boolean; requiredPermission?: string; subtabs: Subtab[] };
 
 function loadNavConfig(): { NAV: Primary[]; ROUTE_NAMES: string[] } {
   const file = path.join(import.meta.dirname, '../public/js/nav-config.js');
@@ -22,7 +22,7 @@ function loadNavConfig(): { NAV: Primary[]; ROUTE_NAMES: string[] } {
 }
 
 // The routes actually registered by the view modules (public/js/views/*.js).
-const REGISTERED_ROUTES = ['dashboard', 'inventory', 'forms', 'orders', 'templates', 'messages', 'admin', 'account'];
+const REGISTERED_ROUTES = ['dashboard', 'inventory', 'forms', 'orders', 'templates', 'messages', 'admin', 'account', 'form-builder', 'form-records'];
 
 const { NAV, ROUTE_NAMES } = loadNavConfig();
 
@@ -75,9 +75,9 @@ describe('nav-config: structure', () => {
     }
   });
 
-  it('only the Admin section is admin-only', () => {
-    const adminOnly = NAV.filter((p) => p.adminOnly).map((p) => p.id);
-    expect(adminOnly).toEqual(['admin']);
+  it('the Admin section requires users.manage permission', () => {
+    const adminSection = NAV.find((p) => p.id === 'admin');
+    expect(adminSection?.requiredPermission).toBe('users.manage');
   });
 
   it('primary and subtab ids are unique', () => {

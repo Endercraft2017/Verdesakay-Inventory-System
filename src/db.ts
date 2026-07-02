@@ -115,7 +115,7 @@ export function init(): void {
 
     CREATE TABLE IF NOT EXISTS orders (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
-      type             TEXT NOT NULL CHECK (type IN ('sale','job')),
+      type             TEXT NOT NULL CHECK (type IN ('sale','job','purchase')),
       number           TEXT NOT NULL UNIQUE,
       customer_name    TEXT,
       customer_contact TEXT,
@@ -149,7 +149,7 @@ export function init(): void {
     CREATE TABLE IF NOT EXISTS doc_templates (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL,
-      type       TEXT NOT NULL DEFAULT 'generic' CHECK (type IN ('sale','job','generic')),
+      type       TEXT NOT NULL DEFAULT 'generic' CHECK (type IN ('sale','job','purchase','generic')),
       body       TEXT NOT NULL,
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -189,6 +189,60 @@ export function init(): void {
       read_at      TEXT,
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS form_definitions (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT NOT NULL,
+      slug          TEXT NOT NULL UNIQUE,
+      number_prefix TEXT NOT NULL DEFAULT 'FM',
+      icon          TEXT NOT NULL DEFAULT 'file',
+      fields        TEXT NOT NULL DEFAULT '[]',
+      created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS form_records (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      form_def_id INTEGER NOT NULL REFERENCES form_definitions(id) ON DELETE CASCADE,
+      number      TEXT NOT NULL UNIQUE,
+      data        TEXT NOT NULL DEFAULT '{}',
+      status      TEXT NOT NULL DEFAULT 'draft',
+      created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS global_variables (
+      key        TEXT PRIMARY KEY,
+      label      TEXT NOT NULL,
+      value      TEXT NOT NULL DEFAULT '',
+      updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Document-template variable registry: categorized, global or template-local,
+    -- each a constant / bound data field / formula. (Distinct from the form-builder's
+    -- flat global_variables above.)
+    CREATE TABLE IF NOT EXISTS doc_variables (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      scope       TEXT NOT NULL DEFAULT 'global' CHECK (scope IN ('global','template')),
+      template_id INTEGER REFERENCES doc_templates(id) ON DELETE CASCADE,
+      category    TEXT NOT NULL DEFAULT 'Custom',
+      key         TEXT NOT NULL,
+      label       TEXT NOT NULL,
+      source_type TEXT NOT NULL DEFAULT 'constant' CHECK (source_type IN ('constant','field','formula')),
+      value       TEXT,
+      field_path  TEXT,
+      formula     TEXT,
+      data_type   TEXT NOT NULL DEFAULT 'text' CHECK (data_type IN ('text','number','currency','date')),
+      sort        INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_form_records_def ON form_records(form_def_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_variables_key ON doc_variables(scope, IFNULL(template_id, 0), key);
 
     CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id);
     CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
@@ -238,6 +292,62 @@ function migrate(): void {
         FROM users;
       DROP TABLE users;
       ALTER TABLE users_new RENAME TO users;
+      COMMIT;
+    `);
+  }
+
+  // Rebuild orders table to add 'purchase' to the type CHECK constraint.
+  const ordersSchema = (db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'"
+  ).get() as { sql: string } | undefined)?.sql ?? '';
+  if (!ordersSchema.includes("'purchase'")) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE orders_new (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        type             TEXT NOT NULL CHECK (type IN ('sale','job','purchase')),
+        number           TEXT NOT NULL UNIQUE,
+        customer_name    TEXT,
+        customer_contact TEXT,
+        order_date       TEXT,
+        status           TEXT NOT NULL DEFAULT 'open',
+        notes            TEXT,
+        currency         TEXT NOT NULL DEFAULT 'PHP',
+        subtotal         REAL NOT NULL DEFAULT 0,
+        tax_percent      REAL NOT NULL DEFAULT 0,
+        tax_amount       REAL NOT NULL DEFAULT 0,
+        total            REAL NOT NULL DEFAULT 0,
+        created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO orders_new SELECT * FROM orders;
+      DROP TABLE orders;
+      ALTER TABLE orders_new RENAME TO orders;
+      CREATE INDEX IF NOT EXISTS idx_orders_type ON orders_new(type);
+      COMMIT;
+    `);
+  }
+
+  // Rebuild doc_templates to add 'purchase' to the type CHECK constraint.
+  const templatesSchema = (db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='doc_templates'"
+  ).get() as { sql: string } | undefined)?.sql ?? '';
+  if (!templatesSchema.includes("'purchase'")) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE doc_templates_new (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL,
+        type       TEXT NOT NULL DEFAULT 'generic' CHECK (type IN ('sale','job','purchase','generic')),
+        body       TEXT NOT NULL,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO doc_templates_new SELECT * FROM doc_templates;
+      DROP TABLE doc_templates;
+      ALTER TABLE doc_templates_new RENAME TO doc_templates;
       COMMIT;
     `);
   }
@@ -299,13 +409,14 @@ function seed(): void {
   seedTemplates();
 }
 
-/** Seed a default Sale Order and Job Order template on first run. */
+/** Seed default templates on first run (one per order type). */
 function seedTemplates(): void {
   const count = (db.prepare('SELECT COUNT(*) AS c FROM doc_templates').get() as { c: number }).c;
   if (count > 0) return;
   const insert = db.prepare('INSERT INTO doc_templates (name, type, body) VALUES (?, ?, ?)');
   insert.run('Sale Order', 'sale', orderTemplateBody('SALES ORDER'));
   insert.run('Job Order', 'job', orderTemplateBody('JOB ORDER'));
+  insert.run('Purchase Request', 'purchase', orderTemplateBody('PURCHASE REQUEST'));
 }
 
 /** Default printable HTML for an order document (uses {{variables}} / {{#items}}). */

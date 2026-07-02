@@ -14,7 +14,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'inventory', 'forms', 'orders', 'templates', 'messages', 'admin', 'account'];
+const ROUTE_NAMES = ['dashboard', 'inventory', 'forms', 'orders', 'templates', 'messages', 'admin', 'account', 'form-builder', 'form-records'];
 
 const NAV = [
   {
@@ -60,6 +60,13 @@ const NAV = [
         tree: [
           { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
           { label: 'Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
+          { label: 'Purchase Requests', icon: 'adjust', route: 'orders', filter: { type: 'purchase' } },
+        ],
+      },
+      {
+        id: 'custom-forms', label: 'Data Forms',
+        tree: [
+          { label: 'All Forms', icon: 'folder', route: 'form-records' },
         ],
       },
       {
@@ -83,13 +90,19 @@ const NAV = [
     ],
   },
   {
-    id: 'admin', label: 'Admin', icon: 'users', adminOnly: true,
+    id: 'admin', label: 'Admin', icon: 'users', requiredPermission: 'users.manage',
     subtabs: [
       {
         id: 'accounts', label: 'Accounts',
         tree: [
           { label: 'User Accounts', icon: 'users', route: 'admin' },
           { label: 'Departments', icon: 'building', route: 'admin', filter: { tab: 'departments' } },
+        ],
+      },
+      {
+        id: 'form-setup', label: 'Form Setup',
+        tree: [
+          { label: 'Form Builder', icon: 'edit', route: 'form-builder' },
         ],
       },
     ],

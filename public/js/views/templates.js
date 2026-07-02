@@ -1,7 +1,7 @@
 /* Document templates: list, editor (variable palette + live preview), company profile.
    Editing is admin-only; everyone can view/preview. */
 App.register('templates', async (view) => {
-  const admin = App.isAdmin();
+  const admin = App.hasPermission('templates.edit');
 
   // Sample data so the editor preview shows realistic output.
   const SAMPLE = {
@@ -72,75 +72,45 @@ App.register('templates', async (view) => {
     });
   }
 
-  function paletteHTML() {
-    return ORDER_VARIABLES.map((g) => `
-      <div class="pal-group"><div class="pal-head">${UI.esc(g.group)}</div>
-        ${g.items.map((v) => `<button type="button" class="pal-chip" data-token="${UI.esc(v.token)}" title="${UI.esc(v.label)}">${UI.esc(v.token)}</button>`).join('')}
-      </div>`).join('');
+  // Variables offered in the editor's picker (from the catalog; clean single tokens).
+  function editorVariables() {
+    return ORDER_VARIABLES.flatMap((g) => g.items
+      .filter((v) => /^\{\{[^# ]+\}\}$/.test(v.token))
+      .map((v) => ({ category: g.group, label: v.label, token: v.token })));
   }
+
+  const DEFAULT_BODY = `<div class="doc"><header class="doc-head">
+      <div class="doc-company"><h1>{{company.name}}</h1><div>{{company.address}}</div></div>
+      <div class="doc-meta"><h2>{{order.type}}</h2><div>No: {{order.no}}</div><div>{{order.date}}</div></div>
+    </header>
+    <p><strong>Customer:</strong> {{order.customer_name}}</p>
+    <table class="doc-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
+    <tbody>{{#items}}<tr><td>{{name}}</td><td>{{quantity}}</td><td>{{unit_price}}</td><td>{{line_total}}</td></tr>{{/items}}</tbody></table>
+    <p style="text-align:right"><strong>TOTAL: {{order.currency}} {{order.total}}</strong></p></div>`;
 
   function editor(tpl) {
     const editing = !!tpl;
-    const typeOpts = ['sale', 'job', 'generic']
-      .map((t) => `<option value="${t}" ${(editing ? tpl.type : 'sale') === t ? 'selected' : ''}>${t}</option>`).join('');
-    UI.modal({
-      title: editing ? 'Edit template' : 'New template',
-      size: 'xl',
-      bodyHTML: `
-        <div class="field-row">
-          <div><label>Name</label><input data-f="name" value="${UI.esc(editing ? tpl.name : '')}" placeholder="e.g. Sale Order" /></div>
-          <div style="max-width:160px"><label>Type</label><select data-f="type">${typeOpts}</select></div>
-        </div>
-        <div class="tpl-editor">
-          <div class="tpl-left">
-            <label>Template body (HTML + variables)</label>
-            <textarea data-f="body" class="tpl-body" spellcheck="false">${UI.esc(editing ? tpl.body : '')}</textarea>
-            <div class="tpl-palette">
-              <div class="muted" style="font-size:12px;margin-bottom:4px">Click to insert at cursor:</div>
-              ${paletteHTML()}
-            </div>
-          </div>
-          <div class="tpl-right">
-            <label>Live preview</label>
-            <iframe class="tpl-preview" id="tpl-preview"></iframe>
-          </div>
-        </div>`,
-      confirmText: editing ? 'Save template' : 'Create template',
-      onOpen: (ov) => {
-        const body = ov.querySelector('[data-f="body"]');
-        const frame = ov.querySelector('#tpl-preview');
-        const refresh = () => {
-          try { frame.srcdoc = UI.printableHtml(renderTemplate(body.value, SAMPLE), 'Preview'); }
-          catch { frame.srcdoc = '<p style="color:#b00">Template error</p>'; }
-        };
-        body.addEventListener('input', refresh);
-        ov.querySelectorAll('.pal-chip').forEach((c) => c.onclick = () => {
-          insertAtCursor(body, c.dataset.token);
-          refresh();
-        });
-        refresh();
-      },
-      onConfirm: async (ov, showErr) => {
-        const name = ov.querySelector('[data-f="name"]').value.trim();
-        const bodyVal = ov.querySelector('[data-f="body"]').value.trim();
-        if (!name) { showErr('Template name is required'); return false; }
-        if (!bodyVal) { showErr('Template body cannot be empty'); return false; }
-        const payload = { name, type: ov.querySelector('[data-f="type"]').value, body: bodyVal };
+    if (!window.DocEditor) { UI.toast('Editor failed to load', 'error'); return; }
+    window.DocEditor.open({
+      title: editing ? 'Edit Template' : 'New Template',
+      name: editing ? tpl.name : '',
+      type: editing ? tpl.type : 'sale',
+      typeOptions: ['sale', 'job', 'generic'],
+      body: editing ? tpl.body : DEFAULT_BODY,
+      getVariables: editorVariables,
+      sampleContext: SAMPLE,
+      renderPreview: (body) => UI.printableHtml(renderTemplate(body, SAMPLE), 'Preview'),
+      onSave: async ({ name, type, body }) => {
+        if (!name.trim()) return 'Template name is required';
+        if (!body.trim()) return 'Template body cannot be empty';
+        const payload = { name: name.trim(), type, body };
         if (editing) await API.put('/templates/' + tpl.id, payload);
         else await API.post('/templates', payload);
         UI.toast('Template saved');
         load();
+        return true;
       },
     });
-  }
-
-  function insertAtCursor(textarea, text) {
-    const start = textarea.selectionStart ?? textarea.value.length;
-    const end = textarea.selectionEnd ?? textarea.value.length;
-    textarea.value = textarea.value.slice(0, start) + text + textarea.value.slice(end);
-    const pos = start + text.length;
-    textarea.focus();
-    textarea.setSelectionRange(pos, pos);
   }
 
   async function del(id, list) {

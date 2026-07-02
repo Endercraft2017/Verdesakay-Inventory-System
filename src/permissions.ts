@@ -10,7 +10,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
   'inventory.adjust', 'inventory.configure',
   'orders.view', 'orders.create', 'orders.edit', 'orders.delete',
-  'forms.view', 'forms.upload', 'forms.delete',
+  'forms.view', 'forms.upload', 'forms.delete', 'forms.manage',
   'messages.view', 'messages.send',
   'templates.view', 'templates.edit', 'templates.company',
   'users.manage',

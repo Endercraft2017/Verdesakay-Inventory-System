@@ -76,7 +76,7 @@ describe('forms', () => {
   });
 
   it('only lets the uploader or an admin delete', async () => {
-    const emp = await createEmployee(ctx.api, adminToken, { username: 'delemp' });
+    const emp = await createEmployee(ctx.api, adminToken, { username: 'delemp', role: 'warehouse' });
     const up = await ctx.api
       .post('/api/forms')
       .set('Authorization', `Bearer ${adminToken}`)
