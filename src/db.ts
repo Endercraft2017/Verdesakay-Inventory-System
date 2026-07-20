@@ -324,7 +324,7 @@ function migrate(): void {
       INSERT INTO orders_new SELECT * FROM orders;
       DROP TABLE orders;
       ALTER TABLE orders_new RENAME TO orders;
-      CREATE INDEX IF NOT EXISTS idx_orders_type ON orders_new(type);
+      CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(type);
       COMMIT;
     `);
   }
@@ -340,16 +340,30 @@ function migrate(): void {
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
         name       TEXT NOT NULL,
         type       TEXT NOT NULL DEFAULT 'generic' CHECK (type IN ('sale','job','purchase','generic')),
+        period     TEXT,
         body       TEXT NOT NULL,
         created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
-      INSERT INTO doc_templates_new SELECT * FROM doc_templates;
+      INSERT INTO doc_templates_new (id,name,type,body,created_by,created_at,updated_at)
+        SELECT id,name,type,body,created_by,created_at,updated_at FROM doc_templates;
       DROP TABLE doc_templates;
       ALTER TABLE doc_templates_new RENAME TO doc_templates;
       COMMIT;
     `);
+  }
+
+  // Add period column for DBs that already had 'purchase' but not the period column.
+  const tplCols = db.prepare('PRAGMA table_info(doc_templates)').all() as { name: string }[];
+  if (!tplCols.some((c) => c.name === 'period')) {
+    db.exec('ALTER TABLE doc_templates ADD COLUMN period TEXT');
+  }
+
+  // Add period column to form_records for payroll-period grouping.
+  const frCols = db.prepare('PRAGMA table_info(form_records)').all() as { name: string }[];
+  if (!frCols.some((c) => c.name === 'period')) {
+    db.exec('ALTER TABLE form_records ADD COLUMN period TEXT');
   }
 }
 
@@ -409,14 +423,79 @@ function seed(): void {
   seedTemplates();
 }
 
-/** Seed default templates on first run (one per order type). */
+/** Seed default templates — each checked independently so adding a new default later
+    doesn't require a fresh database (unlike form_definitions, templates are meant to
+    ship with sensible defaults; see docs/ARCHITECTURE.md). */
 function seedTemplates(): void {
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM doc_templates').get() as { c: number }).c;
-  if (count > 0) return;
   const insert = db.prepare('INSERT INTO doc_templates (name, type, body) VALUES (?, ?, ?)');
-  insert.run('Sale Order', 'sale', orderTemplateBody('SALES ORDER'));
-  insert.run('Job Order', 'job', orderTemplateBody('JOB ORDER'));
-  insert.run('Purchase Request', 'purchase', orderTemplateBody('PURCHASE REQUEST'));
+  const hasType = (type: string) =>
+    (db.prepare('SELECT COUNT(*) AS c FROM doc_templates WHERE type = ?').get(type) as { c: number }).c > 0;
+  if (!hasType('sale') && !hasType('job') && !hasType('purchase')) {
+    insert.run('Sale Order', 'sale', orderTemplateBody('SALES ORDER'));
+    insert.run('Job Order', 'job', orderTemplateBody('JOB ORDER'));
+    insert.run('Purchase Request', 'purchase', orderTemplateBody('PURCHASE REQUEST'));
+  }
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('HR Payroll Slip')) {
+    insert.run('HR Payroll Slip', 'generic', payrollSlipTemplateBody());
+  }
+}
+
+/** Default printable HTML for one HR Payroll slip (self-contained: embeds its own
+    <style>, since it isn't built from the shared order-document CSS). Rendered against
+    a flat context matching the HR Payroll form's fields (see hr-payroll-print.js). */
+function payrollSlipTemplateBody(): string {
+  return `<style>
+  .slip { border: 1px solid #222; padding: 8px 10px; font-size: 11px; }
+  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.5px; letter-spacing: 0.04em; }
+  .slip-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
+  .slip-row .l { color: #333; }
+  .slip-row .v { font-weight: 600; text-align: right; }
+  .slip-cols { display: flex; gap: 10px; margin-top: 6px; }
+  .slip-col { flex: 1; min-width: 0; }
+  .slip-col h4 { margin: 0 0 4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px; }
+  .slip-line { display: flex; justify-content: space-between; gap: 4px; font-size: 10.5px; margin-bottom: 2px; }
+  .slip-total { display: flex; justify-content: space-between; font-weight: 700; border-top: 1px solid #999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }
+  .slip-net { display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid #222; margin-top: 8px; padding: 4px 0; }
+  .slip-sig { display: flex; justify-content: space-between; margin-top: 18px; font-size: 9.5px; color: #555; }
+  .slip-sig div { text-align: center; width: 46%; border-top: 1px solid #666; padding-top: 3px; }
+</style>
+<div class="slip">
+  <h3>EMPLOYEE PAYROLL SLIP</h3>
+  <div class="slip-row"><span class="l">Employee Name:</span><span class="v">{{employee_name}}</span></div>
+  <div class="slip-row"><span class="l">Dept./Position:</span><span class="v">{{dept_position}}</span></div>
+  <div class="slip-row"><span class="l">Payroll Period:</span><span class="v">{{payroll_period}}</span></div>
+  <div class="slip-row"><span class="l">Pay Date:</span><span class="v">{{pay_date}}</span></div>
+  <div class="slip-row"><span class="l">Daily Rate:</span><span class="v">{{daily_rate}}</span></div>
+  <div class="slip-row"><span class="l">Days Worked:</span><span class="v">{{days_worked}}</span></div>
+  <div class="slip-row"><span class="l">OT Hours:</span><span class="v">{{ot_hours}}</span></div>
+  <div class="slip-row"><span class="l">OT Rate/Hour:</span><span class="v">{{ot_rate_hour}}</span></div>
+  <div class="slip-cols">
+    <div class="slip-col">
+      <h4>EARNINGS</h4>
+      <div class="slip-line"><span>Basic Salary</span><span>{{basic_salary}}</span></div>
+      <div class="slip-line"><span>Overtime Pay</span><span>{{overtime_pay}}</span></div>
+      <div class="slip-line"><span>Undertime</span><span>{{undertime_pay}}</span></div>
+      <div class="slip-line"><span>Holiday Pay</span><span>{{holiday_pay}}</span></div>
+      <div class="slip-line"><span>Special Holiday 30%</span><span>{{special_holiday_30}}</span></div>
+      <div class="slip-line"><span>Rest Day OT</span><span>{{rest_day_ot}}</span></div>
+      <div class="slip-total"><span>Total Earnings</span><span>{{total_earnings}}</span></div>
+    </div>
+    <div class="slip-col">
+      <h4>DEDUCTIONS</h4>
+      <div class="slip-line"><span>SSS</span><span>{{sss}}</span></div>
+      <div class="slip-line"><span>PhilHealth</span><span>{{philhealth}}</span></div>
+      <div class="slip-line"><span>Pag-IBIG</span><span>{{pagibig}}</span></div>
+      <div class="slip-line"><span>Cash Advance</span><span>{{cash_advance}}</span></div>
+      <div class="slip-line"><span>Late / Absences</span><span>{{late_absences}}</span></div>
+      <div class="slip-total"><span>Total Deductions</span><span>{{total_deductions}}</span></div>
+    </div>
+  </div>
+  <div class="slip-net"><span>NET PAY</span><span>{{net_pay}}</span></div>
+  <div class="slip-sig">
+    <div>Employee Signature</div>
+    <div>Authorized Signature</div>
+  </div>
+</div>`;
 }
 
 /** Default printable HTML for an order document (uses {{variables}} / {{#items}}). */

@@ -123,11 +123,22 @@ function parseDoc(tokens) {
   return walk(null);
 }
 
+/** Evaluate an inline formula token ({{= expr }}) against the context. */
+function evalInlineFormula(expr, ctx) {
+  try {
+    const fn = (typeof evalFormula !== 'undefined') ? evalFormula : require('./doc-formula.js').evalFormula;
+    const v = fn(expr, ctx);
+    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    return v == null ? '' : String(v);
+  } catch { return ''; }
+}
+
 function renderNodes(nodes, ctx) {
   let out = '';
   for (const n of nodes) {
     if (n.t === 'text') out += n.v;
     else if (n.t === 'var') {
+      if (n.v[0] === '=') { out += escapeDocHtml(evalInlineFormula(n.v.slice(1), ctx)); continue; }
       const v = resolvePath(ctx, n.v);
       out += v === undefined || v === null ? '' : escapeDocHtml(v);
     } else if (n.t === 'if') {

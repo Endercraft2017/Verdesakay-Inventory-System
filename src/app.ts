@@ -15,6 +15,7 @@ import messagesRoutes from './routes/messages.routes';
 import personalRoutes from './routes/personal.routes';
 import ordersRoutes from './routes/orders.routes';
 import templatesRoutes from './routes/templates.routes';
+import formBuilderRoutes from './routes/form-builder.routes';
 import aiRoutes from './routes/ai.routes';
 
 const ROOT = path.join(import.meta.dirname, '..');
@@ -25,7 +26,7 @@ export function createApp() {
   // Security headers. Disable CSP defaults that would block our inline view scripts;
   // a tailored policy can be added later if the app is exposed beyond the LAN.
   app.use(helmet({ contentSecurityPolicy: false }));
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
   // Throttle login attempts to slow brute-force guessing.
@@ -58,6 +59,7 @@ export function createApp() {
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks
   app.use('/api/orders', ordersRoutes);
   app.use('/api/templates', templatesRoutes);
+  app.use('/api', formBuilderRoutes);
   app.use('/api/ai', aiRoutes);
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });

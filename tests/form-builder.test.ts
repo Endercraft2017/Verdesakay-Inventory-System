@@ -227,3 +227,85 @@ describe('global variables', () => {
     expect(res.body.find((x: { key: string }) => x.key === 'company_tin')).toBeUndefined();
   });
 });
+
+// ─── HR Payroll CSV import ────────────────────────────────────────────────────
+
+describe('hr payroll csv import', () => {
+  let payrollFormId: number;
+
+  // 45-column rows (matching the real "Summary" sheet's column count) built positionally
+  // so the fixed offsets in src/hr-payroll-import.ts stay honest — see that test file's
+  // row()/COL helpers for why this isn't hand-typed comma text.
+  const COLS = 45;
+  const COL = { no: 0, name: 1, totalDaysWork: 19, dailyRate: 23, hourlyRate: 24, otPay: 27, lateUndertimePay: 29 };
+  function csvRow(set: Record<number, string | number>): string {
+    const cells = new Array(COLS).fill('');
+    for (const [i, v] of Object.entries(set)) cells[Number(i)] = String(v);
+    return cells.map((v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)).join(',');
+  }
+
+  const SUMMARY_CSV = [
+    'June 16-30  2026,,,SUMMARY JUNE 01 -15 2026',
+    csvRow({ [COL.no]: 'No.', [COL.name]: 'Employee Name' }),
+    csvRow({ [COL.no]: 'WAREHOUSE' }),
+    csvRow({
+      [COL.no]: 1, [COL.name]: 'Dela Cruz, Juan', [COL.totalDaysWork]: 13,
+      [COL.dailyRate]: 600, [COL.hourlyRate]: 75, [COL.otPay]: 0, [COL.lateUndertimePay]: 3.3,
+    }),
+  ].join('\n');
+
+  beforeAll(async () => {
+    const res = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send({
+      name: 'HR Payroll', slug: 'hr_payroll', number_prefix: 'PAY', icon: 'users',
+      fields: [
+        { key: 'employee_name', label: 'Employee Name', type: 'text', required: true, options: [], default: '' },
+      ],
+    });
+    payrollFormId = res.body.id;
+  });
+
+  it('rejects import for a non-payroll form', async () => {
+    const other = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send(sampleForm2());
+    const res = await ctx.api.post(`/api/form-definitions/${other.body.id}/import`)
+      .set(hdr(adminToken)).attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(res.status).toBe(400);
+  });
+
+  it('requires a file', async () => {
+    const res = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken));
+    expect(res.status).toBe(400);
+  });
+
+  it('imports records from a summary CSV, stamping the given pay date', async () => {
+    const res = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`)
+      .set(hdr(adminToken)).field('pay_date', '2026-07-05')
+      .attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(res.status).toBe(201);
+    expect(res.body.created).toBe(1);
+
+    const records = await ctx.api
+      .get(`/api/form-definitions/${payrollFormId}/records`)
+      .set(hdr(empToken));
+    expect(records.body).toHaveLength(1);
+    expect(records.body[0].data.employee_name).toBe('Dela Cruz, Juan');
+    expect(records.body[0].data.dept_position).toBe('WAREHOUSE');
+    expect(records.body[0].data.daily_rate).toBe(600);
+    expect(records.body[0].data.total_earnings).toBe(600 * 13);
+    expect(records.body[0].data.pay_date).toBe('2026-07-05');
+    expect(records.body[0].status).toBe('completed');
+    expect(records.body[0].number).toMatch(/^PAY-\d{5}$/);
+  });
+
+  it('404s for a non-existent form', async () => {
+    const res = await ctx.api.post('/api/form-definitions/999999/import')
+      .set(hdr(adminToken)).attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(res.status).toBe(404);
+  });
+
+  function sampleForm2() {
+    return {
+      name: 'Overtime Request', slug: 'overtime_request', number_prefix: 'OT', icon: 'file',
+      fields: [{ key: 'hours', label: 'Hours', type: 'number', required: true, options: [], default: '' }],
+    };
+  }
+});

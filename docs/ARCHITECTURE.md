@@ -57,7 +57,8 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `src/routes/personal.routes.ts` | `/api/notes`, `/api/tasks`, `/api/bookmarks` — per-user CRUD for the right-rail tools (every query scoped to `req.user!.id`). Mounted at `/api`. |
 | `src/routes/orders.routes.ts` | `/api/orders` — Job, Sale & Purchase orders CRUD (one router, `?type=sale\|job\|purchase`). Auto numbers (`SO-#####`/`JO-#####`/`PR-#####`) + **server-computed totals**, line items in a transaction. |
 | `src/routes/templates.routes.ts` | `/api/templates` — document templates (read 🔑, write 👑) + `/company` profile (read 🔑, write 👑). |
-| `src/routes/form-builder.routes.ts` | `/api/form-definitions`, `/api/form-records`, `/api/global-variables` — admin-managed custom form types (with JSON field defs), per-form record CRUD (auto-numbered), and global template variables. |
+| `src/routes/form-builder.routes.ts` | `/api/form-definitions`, `/api/form-records`, `/api/global-variables` — admin-managed custom form types (with JSON field defs), per-form record CRUD (auto-numbered), and global template variables. Also `POST /form-definitions/:id/import` — bulk-create records from the payroll "Summary" CSV (multer memory storage; optional `pay_date` body field stamped onto every row); 400s unless the target form's slug is `hr_payroll`. |
+| `src/hr-payroll-import.ts` | `parseCsvRows()` (small RFC4180-ish CSV tokenizer) + `parsePayrollSummaryCsv()` — extracts `PayrollSlip` records from the payroll "Summary" CSV export: one row per employee (occasionally two, when a mid-cutoff rate change splits a row — the second has no No./Name of its own and inherits the last-seen employee), department taken from section-header rows scanned top-down, payroll period from the sheet's title cell. Every value is read at a **fixed column index** (`COL` map); `basic_salary`/`total_earnings`/`total_deductions` are **recomputed from the parts** rather than trusting the sheet's own totals, because the sheet nets the late/undertime deduction into its "BASIC PAY" column while our form (and the printed slip) treats it as a pure deduction line — reusing the sheet's totals as-is would double-count that deduction against NET PAY. Pure, no I/O — unit tested directly. |
 
 ### Frontend (`public/`)
 | File | Responsibility |
@@ -66,6 +67,7 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `public/js/nav-config.js` | **`NAV`** (declarative 3-tier nav tree: primary → subtabs → leaves) + **`ROUTE_NAMES`**. The single source of truth for navigation; browser global + CommonJS export for tests. |
 | `public/js/item-form-config.js` | **`ITEM_FORM_DEFAULTS`** (the ECOUNT-style item field catalog: 7 tabs, per-field type/default/visible/required) + **`ITEM_FORM_TABS`** + **`ITEM_CORE_KEYS`**. Default layout for the New/Edit Item form; admin overrides saved server-side and merged over it. Browser global + CommonJS export for tests. |
 | `public/js/doc-template.js` | **`renderTemplate(body, ctx)`** — safe `{{var}}` / `{{#items}}` / `{{#if}}` renderer (HTML-escaped) for printable docs + **`ORDER_VARIABLES`** (editor palette catalog). Browser global + CommonJS for tests. |
+| `public/js/hr-payroll-print.js` | **`buildPayrollSlipsHtml(dataList)`** — printable HTML for HR Payroll records: A4 pages, 2 employees per page × 2 identical copies each (2x2 CSS grid, column-major so each employee's copy-pair is cut together), NET PAY computed as `total_earnings - total_deductions`. Standalone (not the shared order-centric doc_template engine). Browser global + CommonJS for tests. |
 | `public/css/styles.css` | All styling (green/blue brand theme via CSS tokens, ECOUNT chrome: util-bar/topnav/subnav/tree/rail, tables, modals, toasts, site map). |
 | `public/js/api.js` | **`API`** — fetch wrapper with token handling (`get/post/put/del/upload`), 401 → logout. |
 | `public/js/ui.js` | **`UI`** — `esc`, `toast`, `fmtDate/fmtDateShort/fmtBytes`, `initials`, **`modal()`**, `confirmDialog()`, **`drawer()`** (right-docked, single-instance), **`contextMenu(x,y,items)`**, **`helpIcon(text)`** (hover/tap tooltip), **`printDocument(html,title)`/`printableHtml(...)`** (print stylesheet), **`icon(name,size)`** (inline SVG set), **`emptyState(...)`**. |
@@ -76,11 +78,12 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `public/js/views/forms.js` | Forms table: upload modal, authenticated blob download, delete, **Print** (PDF/images in-app; Office = download). |
 | `public/js/views/orders.js` | Job, Sale & Purchase orders (route `orders`, `filter.type`): list, create/edit with **inventory-backed line-item editor** (live totals), **Print** (renders the type's template), delete. |
 | `public/js/views/form-builder.js` | Form Builder admin view (route `form-builder`): manage form definitions (name, slug, prefix, icon, fields editor) + Global Variables manager. Requires `forms.manage`. |
-| `public/js/views/form-records.js` | Form Records view (route `form-records`): without `filter.form_id` shows a form index card grid; with `filter.form_id=X` shows records list + create/edit modal dynamically generated from the form's field definitions. |
+| `public/js/views/form-records.js` | Form Records view (route `form-records`): without `filter.form_id` shows a form index card grid; with `filter.form_id=X` shows records list + create/edit modal dynamically generated from the form's field definitions. When the form's slug is `hr_payroll`, adds **Upload CSV** (posts file + optional `pay_date` to the import route) and **Print Slips** toolbar buttons. Print Slips opens a **preview tab first** (no auto `window.print()`) with a floating Print/Close bar — printing (and the OS/browser print-settings dialog: paper, copies, printer) only happens once the user clicks Print. |
 | `public/js/views/templates.js` | Document templates (route `templates`): list, editor (variable **palette** + live iframe **preview**), preview/print, admin-only CRUD, **company profile** editor. |
 | `public/js/views/messages.js` | Inbox/sent tabs, open/read thread, compose/reply modal, delete. Honors `filter.box` (Inbox/Sent tree leaves). |
 | `public/js/views/admin.js` | Accounts (`users.manage` permission): user table with all 8 roles, create/edit/reset-password, add department. Honors `filter.tab==='departments'` (opens manager). Edit user has **"Customize Permissions"** button → `UI.drawer()` with grouped checkboxes per permission key, ★ marks current overrides, Reset/Save via `PUT /users/:id/permissions`. |
 | `public/js/views/account.js` | My Account: profile + change own password. |
+| `public/js/views/hr.js` | HR (route `hr`): **placeholder shell only** — a "Coming soon" module grid (Payroll/Employees/Attendance/Leave). No data wiring yet; a real HR Payroll data-entry form already exists via the generic Form Builder (see below). |
 
 ### Tests (`tests/`)
 | File | Covers |
@@ -96,7 +99,9 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `tests/personal.test.ts` | notes/tasks/bookmarks CRUD, **per-user isolation** (no cross-user read/update/delete), auth + validation. |
 | `tests/orders.test.ts` | order create (auto number + **server-computed totals**, ignores client totals), list by type, update-replaces-items, delete cascade, validation, auth. Covers `sale`, `job`, `purchase` types. |
 | `tests/templates.test.ts` | default seeds, **admin-only** template CRUD, company profile get/put (employee 403). |
-| `tests/form-builder.test.ts` | form definition CRUD + auth (`forms.manage` guards), record create/update/delete + auto-numbering per form, cascade on form delete, global variable upsert/delete. |
+| `tests/form-builder.test.ts` | form definition CRUD + auth (`forms.manage` guards), record create/update/delete + auto-numbering per form, cascade on form delete, global variable upsert/delete, **HR Payroll CSV import** (400 for non-`hr_payroll` forms, 404 unknown form, 400 missing file, pay-date stamping, correct field extraction + `completed` status on success). |
+| `tests/hr-payroll-import.test.ts` | `parsePayrollSummaryCsv` pure-function tests (rows built positionally via a `row()`/`COL` helper, not hand-typed comma strings, so column offsets can't silently drift): department tagging from header rows, mid-cutoff rate-change row splitting, computed (not sheet-trusted) earnings/deductions totals, footer-row rejection (label text landing in the days-worked column by coincidence), empty input. |
+| `tests/hr-payroll-print.test.ts` | `buildPayrollSlipsHtml` (sandbox-loaded like `doc-template.js`): NET PAY math, 2-copies-per-employee, 2-per-page grouping with blank-slot padding for odd counts, string/number coercion, empty-list handling. |
 | `tests/doc-template.test.ts` | renderer: vars, items loop, `{{#if}}` (incl. nested), HTML-escaping, missing-var, palette catalog. |
 
 ---
@@ -119,7 +124,7 @@ Browser (public/js/*) --fetch--> Express (src/app.ts)
 | `orders` | id, type(`sale`\|`job`\|`purchase`), number (unique), customer_*, order_date, status, currency, subtotal, tax_percent, tax_amount, total, created_by | Job/Sale/Purchase order header. Number from `settings` counters (`order_seq_sale\|job\|purchase`); totals computed server-side. |
 | `order_items` | id, order_id→orders (CASCADE), item_id→inventory_items (null), name, sku, description, quantity, unit, unit_price, line_total, sort | Order line items; may link an inventory item or be custom. |
 | `doc_templates` | id, name, type(`sale`\|`job`\|`purchase`\|`generic`), body (HTML+`{{vars}}`), created_by | Printable templates; default Sale/Job/Purchase seeded on first run. |
-| `form_definitions` | id, name, slug (unique), number_prefix, icon, fields (JSON `FieldDef[]`), created_by | Admin-created custom form types. Each field becomes a `{{key}}` template variable. |
+| `form_definitions` | id, name, slug (unique), number_prefix, icon, fields (JSON `FieldDef[]`), created_by | Admin-created custom form types. Each field becomes a `{{key}}` template variable. **Not auto-seeded** (`tests/form-builder.test.ts` asserts empty at start) — the one exception is a one-off, hand-inserted `HR Payroll` form (slug `hr_payroll`, prefix `PAY`, 21 fields: employee/period/rate/OT info + earnings + deductions breakdown) added directly to the dev `data.db`, mirroring what an admin would create via Form Builder. |
 | `form_records` | id, form_def_id→form_definitions (CASCADE), number (unique, auto `PREFIX-#####`), data (JSON key→value), status, created_by | Submitted records for any custom form. Auto-numbered per form via `settings` counter `form_seq_<id>`. |
 | `global_variables` | key (PK), label, value, updated_by | Admin-managed key-value pairs injectable as `{{global.key}}` in any template. |
 
@@ -186,6 +191,7 @@ Bodies are validated by the named schema in `src/validation.ts`.
 | GET `/global-variables` | 🔑 | List all global variables | form-builder.routes | — |
 | PUT `/global-variables/:key` | 🔐`forms.manage` | Upsert a global variable | form-builder.routes | globalVariableSchema |
 | DELETE `/global-variables/:key` | 🔐`forms.manage` | Delete a global variable | form-builder.routes | — |
+| POST `/form-definitions/:id/import` | 🔑 | Bulk-create records from the payroll "Summary" CSV; 400 unless form slug is `hr_payroll` | form-builder.routes | (multer `file` + optional `pay_date`, parsed by `hr-payroll-import.ts`) |
 | POST/PUT/DELETE `/templates(/:id)` | 🔐`templates.edit` | Manage templates | templates.routes | templateSchema |
 | GET `/templates/company` · PUT `/templates/company` | 🔑 · 🔐`templates.company` | Company profile for `{{company.*}}` | templates.routes | companyProfileSchema |
 | GET `/health` | 🔓 | Liveness check | app.ts | — |

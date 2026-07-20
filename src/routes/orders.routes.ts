@@ -25,12 +25,12 @@ function computeTotals(items: LineInput[], taxPercent: number) {
   return { lines, subtotal, tax_amount, total };
 }
 
-/** Next order number for a type, e.g. SO-00001 / JO-00001 (counter in settings). */
+/** Next order number for a type, e.g. SO-00001 / JO-00001 / PR-00001 (counter in settings). */
 function nextOrderNumber(type: OrderType): string {
   const key = `order_seq_${type}`;
   const next = (getSetting<number>(key) || 0) + 1;
   setSetting(key, next);
-  const prefix = type === 'sale' ? 'SO' : 'JO';
+  const prefix = type === 'sale' ? 'SO' : type === 'job' ? 'JO' : 'PR';
   return `${prefix}-${String(next).padStart(5, '0')}`;
 }
 

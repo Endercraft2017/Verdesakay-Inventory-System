@@ -174,6 +174,7 @@ export interface DocTemplate {
   id: number;
   name: string;
   type: 'sale' | 'job' | 'purchase' | 'generic';
+  period: string | null;
   body: string;
   created_by: number | null;
   created_at: string;
@@ -211,6 +212,7 @@ export interface FormRecord {
   number: string;
   data: string | Record<string, unknown>;  // raw JSON string in DB; parsed in API responses
   status: string;
+  period: string | null;
   created_by: number | null;
   created_at: string;
   updated_at: string | null;

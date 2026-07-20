@@ -51,6 +51,16 @@ describe('orders', () => {
     expect(res.body.number).toMatch(/^JO-\d{5}$/);
   });
 
+  it('creates a purchase request with the PR- prefix', async () => {
+    const res = await ctx.api.post('/api/orders').set(hdr())
+      .send({ type: 'purchase', items: [{ name: 'Bond Paper', quantity: 5, unit_price: 120 }] });
+    expect(res.status).toBe(201);
+    expect(res.body.number).toMatch(/^PR-\d{5}$/);
+    const detail = await ctx.api.get('/api/orders/' + res.body.id).set(hdr());
+    expect(detail.body.type).toBe('purchase');
+    expect(detail.body.total).toBe(600);
+  });
+
   it('lists by type', async () => {
     const sales = await ctx.api.get('/api/orders?type=sale').set(hdr());
     expect(sales.body.every((o: { type: string }) => o.type === 'sale')).toBe(true);

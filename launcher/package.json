@@ -1,0 +1,28 @@
+{
+  "name": "verdesakay-inventory-launcher",
+  "version": "1.0.0",
+  "description": "Verdesakay Inventory System desktop launcher",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.verdesakay.inventory",
+    "productName": "Verdesakay Inventory",
+    "win": {
+      "target": "portable",
+      "artifactName": "Verdesakay-Inventory.exe",
+      "sign": null,
+      "signAndEditExecutable": false
+    },
+    "files": [
+      "main.js",
+      "package.json"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

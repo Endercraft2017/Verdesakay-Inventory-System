@@ -1,5 +1,6 @@
 /** Form builder: admin-managed form definitions, per-form record CRUD, global variables. */
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import multer from 'multer';
 import { db, queryOne, queryAll, run, getSetting, setSetting } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import {
@@ -9,10 +10,13 @@ import {
   updateFormRecordSchema,
   globalVariableSchema,
 } from '../validation';
+import { parsePayrollSummaryCsv } from '../hr-payroll-import';
 import type { FormDefinition, FormRecord, GlobalVariable } from '../types';
 
 const router = Router();
 router.use(requireAuth);
+
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -99,6 +103,62 @@ router.delete('/form-definitions/:id', requirePermission('forms.manage'), (req, 
   res.json({ ok: true });
 });
 
+// POST /api/form-definitions/:id/import — bulk-create records from the payroll "Summary"
+// CSV export. body.period labels the payroll period (required); body.pay_date is optional.
+router.post('/form-definitions/:id/import', csvUpload.single('file'), (req, res) => {
+  const form = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', Number(req.params.id));
+  if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
+  if (form.slug !== 'hr_payroll') {
+    res.status(400).json({ error: 'CSV import is only available for the HR Payroll form' });
+    return;
+  }
+  if (!req.file) { res.status(400).json({ error: 'A CSV file is required' }); return; }
+
+  const period = typeof req.body?.period === 'string' ? req.body.period.trim() : '';
+  if (!period) { res.status(400).json({ error: 'Payroll period label is required' }); return; }
+  const payDate = typeof req.body?.pay_date === 'string' ? req.body.pay_date.trim() : '';
+  const slips = parsePayrollSummaryCsv(req.file.buffer.toString('utf8'), { payDate });
+  if (!slips.length) { res.status(400).json({ error: 'No employee rows found in that file' }); return; }
+
+  db.exec('BEGIN');
+  try {
+    const numbers: string[] = [];
+    for (const slip of slips) {
+      const number = nextRecordNumber(form.number_prefix, form.id);
+      run(
+        `INSERT INTO form_records (form_def_id, number, data, status, period, created_by)
+         VALUES (?, ?, ?, 'completed', ?, ?)`,
+        form.id,
+        number,
+        JSON.stringify(slip),
+        period,
+        req.user!.id
+      );
+      numbers.push(number);
+    }
+    db.exec('COMMIT');
+    res.status(201).json({ created: numbers.length, numbers, period });
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+});
+
+// GET /api/form-definitions/:id/periods — distinct period labels for this form
+router.get('/form-definitions/:id/periods', (req, res) => {
+  const formId = Number(req.params.id);
+  if (!queryOne('SELECT id FROM form_definitions WHERE id = ?', formId)) {
+    res.status(404).json({ error: 'Form not found' }); return;
+  }
+  const rows = queryAll<{ period: string }>(
+    `SELECT DISTINCT period FROM form_records
+     WHERE form_def_id = ? AND period IS NOT NULL AND period != ''
+     ORDER BY period DESC`,
+    formId
+  );
+  res.json(rows.map((r) => r.period));
+});
+
 // ─── Form Records ────────────────────────────────────────────────────────────
 
 // GET /api/form-definitions/:id/records — list records for a form (?q=, ?status=)
@@ -107,11 +167,14 @@ router.get('/form-definitions/:id/records', (req, res) => {
   if (!queryOne('SELECT id FROM form_definitions WHERE id = ?', formId)) {
     res.status(404).json({ error: 'Form not found' }); return;
   }
-  const { q, status } = req.query;
+  const { q, status, period } = req.query;
   const where: string[] = ['fr.form_def_id = ?'];
   const params: unknown[] = [formId];
   if (typeof status === 'string' && status.trim()) {
     where.push('fr.status = ?'); params.push(status.trim());
+  }
+  if (typeof period === 'string' && period.trim()) {
+    where.push('fr.period = ?'); params.push(period.trim());
   }
   if (typeof q === 'string' && q.trim()) {
     where.push('fr.number LIKE ?'); params.push(`%${q.trim()}%`);
@@ -227,6 +290,15 @@ router.delete('/global-variables/:key', requirePermission('forms.manage'), (req,
   const info = run('DELETE FROM global_variables WHERE key = ?', req.params.key);
   if (info.changes === 0) { res.status(404).json({ error: 'Variable not found' }); return; }
   res.json({ ok: true });
+});
+
+// Multer-specific error handling (file too large, etc.) for the CSV import route.
+router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    res.status(400).json({ error: `Upload failed: ${err.message}` });
+    return;
+  }
+  next(err);
 });
 
 export default router;

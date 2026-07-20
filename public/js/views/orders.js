@@ -1,8 +1,8 @@
 /* Job & Sale Orders: list, create/edit (line items from inventory), print via template.
    One view serves both types; filter.type = 'sale' | 'job'. */
 App.register('orders', async (view, filter) => {
-  const type = filter && filter.type === 'job' ? 'job' : 'sale';
-  const noun = type === 'sale' ? 'Sale Order' : 'Job Order';
+  const type = filter && filter.type === 'job' ? 'job' : filter && filter.type === 'purchase' ? 'purchase' : 'sale';
+  const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Job Order' : 'Purchase Request';
   const state = { q: '' };
 
   view.innerHTML = `
@@ -225,14 +225,17 @@ App.register('orders', async (view, filter) => {
   /* ---------- Print ---------- */
   async function printOrder(id) {
     try {
-      const [order, templates, company] = await Promise.all([
-        API.get('/orders/' + id),
-        API.get('/templates?type=' + type),
+      const order = await API.get('/orders/' + id);
+      const [templateList, company] = await Promise.all([
+        API.get('/templates?type=' + order.type),
         API.get('/templates/company'),
       ]);
-      const tpl = templates[0] ? templates[0].body : FALLBACK_TEMPLATE;
+      // List returns metadata only; fetch full body for the first matching template.
+      const tplBody = templateList[0]
+        ? (await API.get('/templates/' + templateList[0].id)).body
+        : FALLBACK_TEMPLATE;
       const ctx = buildContext(order, company, App.getMe());
-      UI.printDocument(renderTemplate(tpl, ctx), order.number);
+      UI.printDocument(renderTemplate(tplBody, ctx), order.number);
     } catch (e) {
       UI.toast(e.message, 'error');
     }
@@ -243,7 +246,7 @@ App.register('orders', async (view, filter) => {
       company,
       order: {
         no: order.number,
-        type: order.type === 'sale' ? 'Sale Order' : 'Job Order',
+        type: order.type === 'sale' ? 'Sale Order' : order.type === 'job' ? 'Job Order' : 'Purchase Request',
         date: order.order_date || '',
         status: order.status,
         customer_name: order.customer_name || '',

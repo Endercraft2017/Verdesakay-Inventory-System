@@ -48,10 +48,14 @@ async function renderIndex(view) {
 async function renderFormView(view, formId) {
   let formDef = null;
   let searchTimer;
-  const state = { q: '', status: '' };
+  let currentRecords = [];
+  let selectedIds = new Set();
+  const state = { q: '', status: '', period: '' };
 
   try { formDef = await API.get('/form-definitions/' + formId); }
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }
+
+  const isPayroll = formDef.slug === 'hr_payroll';
 
   view.innerHTML = `
     <div class="topbar">
@@ -64,7 +68,21 @@ async function renderFormView(view, formId) {
         ${['draft', 'submitted', 'approved', 'rejected', 'completed']
           .map((s) => `<option value="${s}">${s}</option>`).join('')}
       </select>
+      ${isPayroll ? `
+        <select id="fr-period" style="margin-left:8px;padding:6px 8px;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:13px" title="Filter by payroll period">
+          <option value="">All periods</option>
+        </select>
+        <button class="btn secondary" id="fr-import-csv" style="margin-left:8px">${UI.icon('upload')} Upload CSV</button>
+        <button class="btn secondary" id="fr-print-slips" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
+      <button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete Period</button>
       <button class="btn" id="fr-new" style="margin-left:8px">${UI.icon('plus')} New Record</button>
+    </div>
+    <div id="fr-bulk-bar" style="display:none;align-items:center;gap:8px;padding:7px 16px;background:var(--accent-weak,#e7f1ff);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0">
+      <span id="fr-sel-count" style="font-weight:700;font-size:13px;color:var(--accent,#2b7fff)">0 selected</span>
+      <div style="flex:1"></div>
+      ${isPayroll ? `<button class="btn secondary small" id="fr-bulk-print">${UI.icon('printer')} Print selected</button>` : ''}
+      <button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>
+      <button class="btn secondary small" id="fr-bulk-clear">✕ Clear</button>
     </div>
     <div class="panel"><div id="fr-table"></div></div>`;
 
@@ -79,6 +97,140 @@ async function renderFormView(view, formId) {
     state.status = e.target.value;
     load();
   });
+  if (isPayroll) {
+    view.querySelector('#fr-import-csv').onclick = () => importCsvModal();
+    view.querySelector('#fr-print-slips').onclick = () => printSlips();
+    view.querySelector('#fr-bulk-print').onclick = () => printSelected();
+    view.querySelector('#fr-period').addEventListener('change', (e) => {
+      state.period = e.target.value;
+      load();
+    });
+  }
+  view.querySelector('#fr-del-all').onclick = () => delAll();
+  view.querySelector('#fr-bulk-del').onclick = () => delSelected();
+  view.querySelector('#fr-bulk-clear').onclick = () => { selectedIds.clear(); syncSelection(); };
+
+  function updateBulkBar() {
+    const bar = view.querySelector('#fr-bulk-bar');
+    if (!bar) return;
+    if (selectedIds.size > 0) {
+      bar.style.display = 'flex';
+      view.querySelector('#fr-sel-count').textContent = `${selectedIds.size} selected`;
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+
+  function syncSelection() {
+    const tableEl = view.querySelector('#fr-table');
+    if (!tableEl) return;
+    tableEl.querySelectorAll('[data-row-check]').forEach((cb) => {
+      cb.checked = selectedIds.has(Number(cb.dataset.rowCheck));
+    });
+    const allCb = tableEl.querySelector('#fr-check-all');
+    if (allCb) {
+      allCb.checked = currentRecords.length > 0 && currentRecords.every((r) => selectedIds.has(r.id));
+      allCb.indeterminate = selectedIds.size > 0 && !allCb.checked;
+    }
+    updateBulkBar();
+  }
+
+  async function delSelected() {
+    if (!selectedIds.size) return;
+    const n = selectedIds.size;
+    if (!await UI.confirmDialog(`Delete ${n} selected record${n === 1 ? '' : 's'}? Cannot be undone.`, 'Delete')) return;
+    let failed = 0;
+    await Promise.all([...selectedIds].map((id) => API.del('/form-records/' + id).catch(() => { failed++; })));
+    selectedIds.clear();
+    UI.toast(failed ? `Deleted with ${failed} error${failed === 1 ? '' : 's'}` : `${n - failed} record${n - failed === 1 ? '' : 's'} deleted`);
+    load();
+  }
+
+  async function printSelected() {
+    if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
+    const list = currentRecords.filter((r) => selectedIds.has(r.id)).map((r) => r.data);
+    printSlips(list);
+  }
+
+  async function delAll() {
+    if (!currentRecords.length) { UI.toast('No records visible to delete', 'error'); return; }
+    const n = currentRecords.length;
+    const periodLabel = state.period ? `period "${state.period}"` : (state.q || state.status ? 'current filter' : 'all periods');
+    if (!await UI.confirmDialog(`Delete all ${n} record${n === 1 ? '' : 's'} for ${periodLabel}? Cannot be undone.`, 'Delete')) return;
+    let failed = 0;
+    await Promise.all(currentRecords.map((r) => API.del('/form-records/' + r.id).catch(() => { failed++; })));
+    selectedIds.clear();
+    // If we deleted a specific period, reset the period filter since it no longer exists.
+    if (state.period) { state.period = ''; }
+    UI.toast(failed ? `Deleted with ${failed} error${failed === 1 ? '' : 's'}` : `${n - failed} record${n - failed === 1 ? '' : 's'} deleted`);
+    load();
+  }
+
+  // Opens a floating preview (modal + iframe, no auto print) with a Print button the
+  // user triggers when ready — that opens the browser's native print dialog (preview +
+  // paper/copies/printer settings) scoped to just the iframe's content.
+  // dataList defaults to every currently-loaded/filtered record; pass a single-item array
+  // (from a row's Print button) to preview just that one employee's slip.
+  // The per-slip HTML comes from the "HR Payroll Slip" document template (editable later
+  // under Documents > Templates), not hardcoded — falls back to a plain layout if missing.
+  async function printSlips(dataList) {
+    const list = dataList || currentRecords.map((r) => r.data);
+    if (!list.length) { UI.toast('No records to print', 'error'); return; }
+    if (typeof buildPayrollSlipsHtml === 'undefined') { UI.toast('Print module failed to load', 'error'); return; }
+
+    let templateBody;
+    try {
+      const templates = await API.get('/templates');
+      const meta = templates.find((t) => t.name === 'HR Payroll Slip');
+      if (meta) templateBody = (await API.get('/templates/' + meta.id)).body;
+    } catch { /* fall back to the built-in default layout */ }
+
+    const html = buildPayrollSlipsHtml(list, templateBody);
+    const full = UI.printableHtml(html, formDef.name);
+
+    UI.modal({
+      title: 'Payslip Preview',
+      size: 'xl',
+      bodyHTML: `<iframe id="payslip-preview-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+      cancelText: 'Close',
+      confirmText: 'Print…',
+      onOpen: (ov) => { ov.querySelector('#payslip-preview-frame').srcdoc = full; },
+      onConfirm: (ov) => {
+        const ifr = ov.querySelector('#payslip-preview-frame');
+        ifr.contentWindow.focus();
+        ifr.contentWindow.print();
+        return false; // keep the preview open — printing shouldn't close it
+      },
+    });
+  }
+
+  function importCsvModal() {
+    UI.modal({
+      title: 'Upload payroll CSV',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">Upload the payroll "Summary" CSV for a cutoff — employee, rate, hours, earnings and deductions are pulled from the sheet automatically.</p>
+        <div><label>Payroll Period * <span class="muted" style="font-weight:400">(e.g. "1st Half June 2026")</span></label>
+          <input data-f="period" placeholder="e.g. 1st Half June 2026" autocomplete="off" /></div>
+        <div style="margin-top:10px"><label>CSV file *</label><input type="file" accept=".csv,text/csv" data-f="file" /></div>
+        <div style="margin-top:10px"><label>Pay Date <span class="muted">(applied to every record — not in the sheet)</span></label><input type="date" data-f="pay_date" /></div>`,
+      confirmText: 'Upload',
+      onConfirm: async (ov, showErr) => {
+        const period = ov.querySelector('[data-f="period"]').value.trim();
+        if (!period) { showErr('Payroll period label is required'); return false; }
+        const fileEl = ov.querySelector('[data-f="file"]');
+        if (!fileEl.files.length) { showErr('Please choose a CSV file'); return false; }
+        const fd = new FormData();
+        fd.append('file', fileEl.files[0]);
+        fd.append('period', period);
+        fd.append('pay_date', ov.querySelector('[data-f="pay_date"]').value);
+        const res = await API.upload('/form-definitions/' + formId + '/import', fd);
+        UI.toast(`Imported ${res.created} record${res.created === 1 ? '' : 's'} for "${res.period}"`);
+        // Auto-select the newly imported period.
+        state.period = res.period;
+        load();
+      },
+    });
+  }
 
   async function load() {
     const el = view.querySelector('#fr-table');
@@ -87,7 +239,23 @@ async function renderFormView(view, formId) {
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.status) params.set('status', state.status);
+    if (state.period) params.set('period', state.period);
     const records = await API.get('/form-definitions/' + formId + '/records?' + params.toString());
+    currentRecords = records;
+    selectedIds.clear();
+    updateBulkBar();
+    // Refresh the period dropdown with known periods (preserving selection).
+    if (isPayroll) {
+      const periodSel = view.querySelector('#fr-period');
+      if (periodSel) {
+        try {
+          const periods = await API.get('/form-definitions/' + formId + '/periods');
+          const cur = state.period;
+          periodSel.innerHTML = '<option value="">All periods</option>' +
+            periods.map((p) => `<option value="${UI.esc(p)}" ${p === cur ? 'selected' : ''}>${UI.esc(p)}</option>`).join('');
+        } catch { /* non-critical */ }
+      }
+    }
     renderRecords(records);
   }
 
@@ -110,23 +278,47 @@ async function renderFormView(view, formId) {
     const visibleFields = formDef.fields.slice(0, 4);
     el.innerHTML = `<table>
       <thead><tr>
+        <th style="width:36px;text-align:center"><input type="checkbox" id="fr-check-all" title="Select all" /></th>
         <th>Number</th>
         ${visibleFields.map((f) => `<th>${UI.esc(f.label)}</th>`).join('')}
         <th>Status</th><th>Date</th><th></th>
       </tr></thead>
       <tbody>${records.map((r) => `
         <tr class="clickable" data-id="${r.id}">
+          <td style="text-align:center"><input type="checkbox" data-row-check="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''} /></td>
           <td><strong>${UI.esc(r.number)}</strong></td>
           ${visibleFields.map((f) => `<td>${UI.esc(String(r.data[f.key] ?? ''))}</td>`).join('')}
           <td><span class="badge-pill status-${UI.esc(r.status)}">${UI.esc(r.status)}</span></td>
           <td>${UI.esc(UI.fmtDateShort(r.created_at))}</td>
           <td class="actions">
+            ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip">${UI.icon('printer')}</button>` : ''}
             <button class="icon-btn" data-edit="${r.id}" title="Edit">${UI.icon('edit')}</button>
             <button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>
           </td>
         </tr>`).join('')}
       </tbody></table>`;
 
+    // Select-all checkbox
+    el.querySelector('#fr-check-all').onchange = (e) => {
+      records.forEach((r) => e.target.checked ? selectedIds.add(r.id) : selectedIds.delete(r.id));
+      syncSelection();
+    };
+    // Per-row checkboxes
+    el.querySelectorAll('[data-row-check]').forEach((cb) => {
+      cb.onclick = (e) => e.stopPropagation();
+      cb.onchange = () => {
+        const id = Number(cb.dataset.rowCheck);
+        if (cb.checked) selectedIds.add(id); else selectedIds.delete(id);
+        syncSelection();
+      };
+    });
+
+    el.querySelectorAll('[data-print]').forEach((b) =>
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const r = records.find((x) => String(x.id) === String(b.dataset.print));
+        if (r) printSlips([r.data]);
+      });
     el.querySelectorAll('[data-edit]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); openRecord(b.dataset.edit, records); });
     el.querySelectorAll('[data-del]').forEach((b) =>

@@ -1,0 +1,5 @@
+
+Verdesakay Office System is running:
+   Local:   http://localhost:3000
+   Network: http://192.168.1.6:3000  (for other office PCs)
+

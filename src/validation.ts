@@ -209,7 +209,8 @@ export const updateOrderSchema = z.object(orderFields);
 export const templateSchema = z.object({
   name: trimmed.min(1, 'Template name is required').max(120),
   type: z.enum(['sale', 'job', 'purchase', 'generic']).default('generic'),
-  body: trimmed.min(1, 'Template body cannot be empty').max(100000),
+  period: trimmed.max(60).optional().nullable(),
+  body: trimmed.min(1, 'Template body cannot be empty').max(5000000),
 });
 
 // ---- Form builder ----

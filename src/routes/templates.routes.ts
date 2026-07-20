@@ -96,12 +96,19 @@ router.delete('/variables/:id', requirePermission('templates.edit'), (req, res) 
   res.json({ ok: true });
 });
 
-// GET /api/templates?type=
+// GET /api/templates?type=&period=
 router.get('/', (req, res) => {
-  const { type } = req.query;
-  const where = type === 'sale' || type === 'job' || type === 'generic' ? ' WHERE type = ?' : '';
-  const params = where ? [type] : [];
-  res.json(queryAll<DocTemplate>(`SELECT * FROM doc_templates${where} ORDER BY type, name`, ...params));
+  const { type, period } = req.query;
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (type === 'sale' || type === 'job' || type === 'purchase' || type === 'generic') {
+    conditions.push('type = ?'); params.push(type);
+  }
+  if (typeof period === 'string' && period) {
+    conditions.push('period = ?'); params.push(period);
+  }
+  const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+  res.json(queryAll<DocTemplate>(`SELECT id,name,type,period,created_at,updated_at FROM doc_templates${where} ORDER BY period DESC, type, name`, ...params));
 });
 
 // GET /api/templates/:id
@@ -118,9 +125,10 @@ router.get('/:id', (req, res) => {
 router.post('/', requirePermission('templates.edit'), (req, res) => {
   const input = parseBody(templateSchema, req.body);
   const info = run(
-    'INSERT INTO doc_templates (name, type, body, created_by) VALUES (?, ?, ?, ?)',
+    'INSERT INTO doc_templates (name, type, period, body, created_by) VALUES (?, ?, ?, ?, ?)',
     input.name,
     input.type,
+    input.period ?? null,
     input.body,
     req.user!.id
   );
@@ -131,9 +139,10 @@ router.post('/', requirePermission('templates.edit'), (req, res) => {
 router.put('/:id', requirePermission('templates.edit'), (req, res) => {
   const input = parseBody(templateSchema, req.body);
   const info = run(
-    "UPDATE doc_templates SET name = ?, type = ?, body = ?, updated_at = datetime('now') WHERE id = ?",
+    "UPDATE doc_templates SET name = ?, type = ?, period = ?, body = ?, updated_at = datetime('now') WHERE id = ?",
     input.name,
     input.type,
+    input.period ?? null,
     input.body,
     Number(req.params.id)
   );

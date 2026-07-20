@@ -69,3 +69,54 @@ describe('company profile', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('template variables (registry)', () => {
+  it('publishes a categorized data-source catalog', async () => {
+    const res = await ctx.api.get('/api/templates/variables/catalog').set(hdr(admin));
+    expect(res.status).toBe(200);
+    const groups = res.body.map((g: { group: string }) => g.group);
+    expect(groups).toContain('Company');
+    expect(groups).toContain('Order');
+    expect(res.body.find((g: { group: string }) => g.group === 'Order').items.some((i: { path: string }) => i.path === 'order.total')).toBe(true);
+  });
+
+  it('lets an admin create, edit and delete a global variable', async () => {
+    const c = await ctx.api.post('/api/templates/variables').set(hdr(admin))
+      .send({ scope: 'global', key: 'vat_percent', label: 'VAT %', category: 'Tax', source_type: 'constant', value: '12', data_type: 'number' });
+    expect(c.status).toBe(201);
+
+    const list = await ctx.api.get('/api/templates/variables').set(hdr(admin));
+    expect(list.body.find((v: { key: string }) => v.key === 'vat_percent').label).toBe('VAT %');
+
+    const u = await ctx.api.put('/api/templates/variables/' + c.body.id).set(hdr(admin))
+      .send({ key: 'vat_percent', label: 'VAT rate', category: 'Tax', source_type: 'constant', value: '10', data_type: 'number' });
+    expect(u.status).toBe(200);
+    const list2 = await ctx.api.get('/api/templates/variables').set(hdr(admin));
+    expect(list2.body.find((v: { key: string }) => v.key === 'vat_percent').label).toBe('VAT rate');
+
+    expect((await ctx.api.delete('/api/templates/variables/' + c.body.id).set(hdr(admin))).status).toBe(200);
+  });
+
+  it('rejects a duplicate key in the same scope', async () => {
+    await ctx.api.post('/api/templates/variables').set(hdr(admin)).send({ scope: 'global', key: 'dup_key', label: 'A', source_type: 'constant', value: '1' });
+    const dup = await ctx.api.post('/api/templates/variables').set(hdr(admin)).send({ scope: 'global', key: 'dup_key', label: 'B', source_type: 'constant', value: '2' });
+    expect(dup.status).toBe(409);
+  });
+
+  it('rejects an invalid key and forbids non-admins', async () => {
+    expect((await ctx.api.post('/api/templates/variables').set(hdr(admin)).send({ scope: 'global', key: '9 bad key', label: 'x', source_type: 'constant' })).status).toBe(400);
+    expect((await ctx.api.post('/api/templates/variables').set(hdr(emp.token)).send({ scope: 'global', key: 'nope', label: 'x', source_type: 'constant' })).status).toBe(403);
+  });
+
+  it('scopes template-local variables to their template', async () => {
+    const tpl = await ctx.api.post('/api/templates').set(hdr(admin)).send({ name: 'VarTpl', type: 'generic', body: 'x' });
+    const v = await ctx.api.post('/api/templates/variables').set(hdr(admin))
+      .send({ scope: 'template', template_id: tpl.body.id, key: 'local_note', label: 'Local note', source_type: 'formula', formula: 'order.subtotal * 2', data_type: 'currency' });
+    expect(v.status).toBe(201);
+    // visible when asking for that template, hidden otherwise
+    const withTpl = await ctx.api.get('/api/templates/variables?template_id=' + tpl.body.id).set(hdr(admin));
+    expect(withTpl.body.some((x: { key: string }) => x.key === 'local_note')).toBe(true);
+    const other = await ctx.api.get('/api/templates/variables?template_id=999999').set(hdr(admin));
+    expect(other.body.some((x: { key: string }) => x.key === 'local_note')).toBe(false);
+  });
+});
