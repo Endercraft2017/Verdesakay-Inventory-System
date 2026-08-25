@@ -55,6 +55,11 @@ describe('buildSlipContext', () => {
     const ctx = buildSlipContext(emp({ total_earnings: '7755', total_deductions: '128.8' }));
     expect(ctx.net_pay).toBe('7,626.20');
   });
+
+  it('uses the stored net_pay when available (from CSV import or manual edit)', () => {
+    const ctx = buildSlipContext(emp({ net_pay: 7626.25 }));
+    expect(ctx.net_pay).toBe('7,626.25'); // stored value, not computed 7755 - 128.8 = 7626.20
+  });
 });
 
 describe('buildPayrollSlipsHtml', () => {

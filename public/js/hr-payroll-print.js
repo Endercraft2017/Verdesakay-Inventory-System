@@ -51,6 +51,10 @@ function buildSlipContext(d) {
   d = d || {};
   const totalEarnings = _num(d.total_earnings);
   const totalDeductions = _num(d.total_deductions);
+  // Use stored net_pay (from CSV import or manual edit) when available;
+  // fall back to computing it for older records that don't have it.
+  const storedNetPay = d.net_pay != null && d.net_pay !== '' ? _num(d.net_pay) : NaN;
+  const netPay = Number.isFinite(storedNetPay) ? storedNetPay : (totalEarnings - totalDeductions);
   return {
     employee_name: d.employee_name || '',
     dept_position: d.dept_position || '',
@@ -73,7 +77,7 @@ function buildSlipContext(d) {
     cash_advance: _money(d.cash_advance),
     late_absences: _money(d.late_absences),
     total_deductions: _money(totalDeductions),
-    net_pay: _money(totalEarnings - totalDeductions),
+    net_pay: _money(netPay),
   };
 }
 

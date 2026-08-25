@@ -8,11 +8,11 @@
 import { describe, it, expect } from 'vitest';
 import { parseCsvRows, parsePayrollSummaryCsv } from '../src/hr-payroll-import';
 
-const COLS = 45;
+const COLS = 46;
 const COL = {
-  no: 0, name: 1, nickname: 2, totalDaysWork: 19, regHoliday: 20, dailyRate: 23,
-  hourlyRate: 24, otHours: 26, otPay: 27, lateUndertimePay: 29, specialHoliday30: 32,
-  rsd30: 34, sss: 37, hdmf: 38, phic: 39, tax: 40,
+  no: 0, name: 1, nickname: 2, totalDaysWork: 19, regHoliday: 20, specialHoliday30: 22,
+  dailyRate: 24, hourlyRate: 25, otHours: 27, otPay: 28, lateUndertimePay: 30,
+  rsd30: 35, basicPay: 36, sss: 38, hdmf: 39, phic: 40, tax: 41, totalDeductions: 42, totalSalary: 43,
 };
 
 function toCsvField(v: string): string {
@@ -38,23 +38,27 @@ const SUMMARY_CSV = [
     [COL.dailyRate]: 'Daily Rate', [COL.hourlyRate]: 'Hourly Rate',
     [COL.otHours]: 'REG OT (Hrs)', [COL.otPay]: 'Reg OT 25%',
     [COL.lateUndertimePay]: 'Late/ Undertime', [COL.specialHoliday30]: 'Special Holiday 30%',
-    [COL.rsd30]: 'RSD 30%', [COL.sss]: 'SSS', [COL.hdmf]: 'HDMF', [COL.phic]: 'PHIC', [COL.tax]: 'TAX',
+    [COL.rsd30]: 'RSD 30%', [COL.basicPay]: 'BASIC PAY',
+    [COL.sss]: 'SSS', [COL.hdmf]: 'HDMF', [COL.phic]: 'PHIC', [COL.tax]: 'TAX',
+    [COL.totalDeductions]: 'TOTAL DEDUCTIONS',
   }),
   deptHeader('HR ADMIN / FINANCE'),
   row({
     [COL.no]: 1, [COL.name]: 'Dela Cruz, Juan', [COL.nickname]: 'Juan',
     [COL.totalDaysWork]: 13, [COL.dailyRate]: 600, [COL.hourlyRate]: 75,
     [COL.otHours]: 0, [COL.otPay]: 0, [COL.lateUndertimePay]: 3.3,
+    [COL.basicPay]: 7800, [COL.totalDeductions]: 3.3, [COL.totalSalary]: 7796.7,
   }),
   deptHeader('PRODUCTION'),
   row({
     [COL.no]: 2, [COL.name]: 'Santos, Maria', [COL.nickname]: 'Maria',
     [COL.totalDaysWork]: 8, [COL.regHoliday]: 1, [COL.dailyRate]: 650, [COL.hourlyRate]: 81.25,
     [COL.otHours]: 4, [COL.otPay]: 325, [COL.specialHoliday30]: 195, [COL.rsd30]: 50,
-    [COL.sss]: 10, [COL.hdmf]: 20, [COL.phic]: 15, [COL.tax]: 45,
+    [COL.basicPay]: 5200, [COL.sss]: 10, [COL.hdmf]: 20, [COL.phic]: 15, [COL.tax]: 45,
+    [COL.totalDeductions]: 90, [COL.totalSalary]: 6320,
   }),
   // Mid-cutoff rate change: no No./Name of its own, continues the same employee.
-  row({ [COL.nickname]: 'Maria', [COL.totalDaysWork]: 9, [COL.dailyRate]: 700, [COL.hourlyRate]: 87.5 }),
+  row({ [COL.nickname]: 'Maria', [COL.totalDaysWork]: 9, [COL.dailyRate]: 700, [COL.hourlyRate]: 87.5, [COL.basicPay]: 6300, [COL.totalSalary]: 6300 }),
   row({}), // blank spacer row
   // Footer row: "Prepared by:" happens to land at the Total Days Work column position.
   row({ [COL.totalDaysWork]: 'Prepared by:', [COL.regHoliday]: 'Rowverta Buenaobra' }),
@@ -96,6 +100,7 @@ describe('parsePayrollSummaryCsv', () => {
     expect(s.total_earnings).toBe(7800);
     expect(s.late_absences).toBe(3.3);
     expect(s.total_deductions).toBe(3.3);
+    expect(s.net_pay).toBe(7796.7);
   });
 
   it('computes OT rate/hour as 1.25x the hourly rate and holiday pay as rate x holiday days', () => {
@@ -104,11 +109,12 @@ describe('parsePayrollSummaryCsv', () => {
     expect(s.holiday_pay).toBe(650); // 1 reg holiday day * daily rate
     expect(s.special_holiday_30).toBe(195);
     expect(s.rest_day_ot).toBe(50);
-    expect(s.total_earnings).toBe(650 * 8 + 325 + 650 + 195 + 50); // basic_salary + OT + holiday + special-hol + rest-day
+    expect(s.total_earnings).toBe(5200 + 325 + 650 + 195 + 50); // basic_salary(from CSV) + OT + holiday + special-hol + rest-day
     expect(s.sss).toBe(10);
     expect(s.pagibig).toBe(20);
     expect(s.philhealth).toBe(15);
-    expect(s.total_deductions).toBe(10 + 20 + 15 + 45); // sss + pagibig + philhealth + tax (0 late)
+    expect(s.total_deductions).toBe(90); // from TOTAL DEDUCTIONS column
+    expect(s.net_pay).toBe(6320);
   });
 
   it('splits a mid-cutoff rate change into a second record inheriting the employee name', () => {
@@ -117,6 +123,7 @@ describe('parsePayrollSummaryCsv', () => {
     expect(s.daily_rate).toBe(700);
     expect(s.days_worked).toBe(9);
     expect(s.basic_salary).toBe(6300);
+    expect(s.net_pay).toBe(6300);
   });
 
   it('does not mistake footer rows (label text landing in the days-worked column) for records', () => {

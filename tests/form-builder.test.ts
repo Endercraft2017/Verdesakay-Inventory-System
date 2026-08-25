@@ -233,11 +233,11 @@ describe('global variables', () => {
 describe('hr payroll csv import', () => {
   let payrollFormId: number;
 
-  // 45-column rows (matching the real "Summary" sheet's column count) built positionally
+  // 46-column rows (matching the real "Summary" sheet's column count) built positionally
   // so the fixed offsets in src/hr-payroll-import.ts stay honest — see that test file's
   // row()/COL helpers for why this isn't hand-typed comma text.
-  const COLS = 45;
-  const COL = { no: 0, name: 1, totalDaysWork: 19, dailyRate: 23, hourlyRate: 24, otPay: 27, lateUndertimePay: 29 };
+  const COLS = 46;
+  const COL = { no: 0, name: 1, totalDaysWork: 19, dailyRate: 24, hourlyRate: 25, otPay: 28, lateUndertimePay: 30, basicPay: 36, totalDeductions: 42, totalSalary: 43 };
   function csvRow(set: Record<number, string | number>): string {
     const cells = new Array(COLS).fill('');
     for (const [i, v] of Object.entries(set)) cells[Number(i)] = String(v);
@@ -251,6 +251,7 @@ describe('hr payroll csv import', () => {
     csvRow({
       [COL.no]: 1, [COL.name]: 'Dela Cruz, Juan', [COL.totalDaysWork]: 13,
       [COL.dailyRate]: 600, [COL.hourlyRate]: 75, [COL.otPay]: 0, [COL.lateUndertimePay]: 3.3,
+      [COL.basicPay]: 7800, [COL.totalDeductions]: 3.3, [COL.totalSalary]: 7796.7,
     }),
   ].join('\n');
 
@@ -278,7 +279,7 @@ describe('hr payroll csv import', () => {
 
   it('imports records from a summary CSV, stamping the given pay date', async () => {
     const res = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`)
-      .set(hdr(adminToken)).field('pay_date', '2026-07-05')
+      .set(hdr(adminToken)).field('pay_date', '2026-07-05').field('period', 'June 16-30 2026')
       .attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
     expect(res.status).toBe(201);
     expect(res.body.created).toBe(1);
@@ -290,7 +291,8 @@ describe('hr payroll csv import', () => {
     expect(records.body[0].data.employee_name).toBe('Dela Cruz, Juan');
     expect(records.body[0].data.dept_position).toBe('WAREHOUSE');
     expect(records.body[0].data.daily_rate).toBe(600);
-    expect(records.body[0].data.total_earnings).toBe(600 * 13);
+    expect(records.body[0].data.total_earnings).toBe(7800); // basic_salary from BASIC PAY column
+    expect(records.body[0].data.net_pay).toBe(7796.7);
     expect(records.body[0].data.pay_date).toBe('2026-07-05');
     expect(records.body[0].status).toBe('completed');
     expect(records.body[0].number).toMatch(/^PAY-\d{5}$/);

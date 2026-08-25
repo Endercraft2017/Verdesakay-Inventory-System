@@ -51,9 +51,37 @@ function toNum(v: string): number {
 
 // Fixed column indices in the Summary sheet (see docs/ARCHITECTURE.md for the full map).
 const COL = {
-  no: 0, name: 1, totalDaysWork: 19, regHoliday: 20, dailyRate: 23, hourlyRate: 24,
-  otHours: 26, otPay: 27, lateUndertimePay: 29, specialHoliday30: 32, rsd30: 34,
-  sss: 37, hdmf: 38, phic: 39, tax: 40,
+  no: 0,
+  name: 1,
+
+  totalDaysWork: 19,
+  regHoliday: 20,
+  specialHoliday30: 21,
+
+  absentAmt: 25,
+  dailyRate: 23,
+  hourlyRate: 24,
+
+  otHours: 26,
+  otPay: 27,
+
+  lateUndertimePay: 29,
+
+  holidayOtHrs: 30,
+  holidayOtPay: 31,
+
+  rsd30: 34,
+
+  basicPay: 35,
+  monthlyRate: 36,
+
+  sss: 37,
+  hdmf: 38,
+  phic: 39,
+  tax: 40,
+
+  totalDeductions: 41,
+  totalSalary: 42,
 } as const;
 
 export interface PayrollSlip {
@@ -78,6 +106,7 @@ export interface PayrollSlip {
   cash_advance: number;
   late_absences: number;
   total_deductions: number;
+  net_pay: number;
 }
 
 /** A row is a department header when its "No." cell holds text and every data cell is blank. */
@@ -138,7 +167,7 @@ export function parsePayrollSummaryCsv(text: string, opts: ParsePayrollSummaryOp
     const holidayPay = dailyRate * regHolidayDays;
     const specialHoliday30 = toNum(cell(row, COL.specialHoliday30));
     const restDayOt = toNum(cell(row, COL.rsd30));
-    const basicSalary = dailyRate * daysWorked;
+    const basicSalary = toNum(cell(row, COL.basicPay));
     const totalEarnings = basicSalary + overtimePay + holidayPay + specialHoliday30 + restDayOt;
 
     const sss = toNum(cell(row, COL.sss));
@@ -146,7 +175,8 @@ export function parsePayrollSummaryCsv(text: string, opts: ParsePayrollSummaryOp
     const pagibig = toNum(cell(row, COL.hdmf));
     const tax = toNum(cell(row, COL.tax));
     const lateAbsences = toNum(cell(row, COL.lateUndertimePay));
-    const totalDeductions = sss + philhealth + pagibig + tax + lateAbsences;
+    const totalDeductions = sss + philhealth + pagibig + tax +lateAbsences;
+    const netPay = toNum(cell(row, COL.totalSalary));
 
     slips.push({
       employee_name: employeeName,
@@ -170,6 +200,7 @@ export function parsePayrollSummaryCsv(text: string, opts: ParsePayrollSummaryOp
       cash_advance: 0,
       late_absences: lateAbsences,
       total_deductions: totalDeductions,
+      net_pay: netPay,
     });
   }
   return slips;

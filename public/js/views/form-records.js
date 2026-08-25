@@ -352,6 +352,15 @@ async function renderFormView(view, formId) {
       .map((s) => `<option value="${s}" ${(existing ? existing.status : 'draft') === s ? 'selected' : ''}>${s}</option>`)
       .join('');
 
+    // For payroll records, append a Net Pay field so users can correct the value.
+    const netPayField = isPayroll ? `
+      <div style="margin-bottom:12px;padding:10px;background:var(--surface-2,#f5f7fa);border-radius:8px">
+        <label for="fr-field-net_pay" style="font-weight:600">Net Pay</label>
+        <input data-field="net_pay" id="fr-field-net_pay" type="number" step="0.01"
+          value="${data.net_pay != null ? UI.esc(String(data.net_pay)) : ''}" />
+        <div class="muted" style="font-size:11px;margin-top:4px">Auto-filled from CSV. Edit to correct if needed.</div>
+      </div>` : '';
+
     UI.modal({
       title: editing ? `Edit ${existing.number}` : `New ${formDef.name}`,
       size: formDef.fields.length > 6 ? 'lg' : undefined,
@@ -361,7 +370,8 @@ async function renderFormView(view, formId) {
           <select data-f="status">${statusOpts}</select>
         </div>
         ${formDef.fields.map((field) => renderFieldInput(field, data)).join('')}
-        ${formDef.fields.length === 0
+        ${netPayField}
+        ${formDef.fields.length === 0 && !isPayroll
           ? '<div class="muted" style="text-align:center;padding:20px">This form has no fields yet. Edit it in Form Builder to add fields.</div>'
           : ''}`,
       confirmText: editing ? 'Save' : 'Create',
@@ -379,6 +389,11 @@ async function renderFormView(view, formId) {
           if (field.required && !collected[field.key] && collected[field.key] !== false) {
             showErr(`"${field.label}" is required`); return false;
           }
+        }
+        // For payroll forms, also capture the net_pay value.
+        if (isPayroll) {
+          const netPayInp = ov.querySelector('[data-field="net_pay"]');
+          if (netPayInp) collected.net_pay = netPayInp.value ? Number(netPayInp.value) : 0;
         }
         const status = ov.querySelector('[data-f="status"]').value;
 
