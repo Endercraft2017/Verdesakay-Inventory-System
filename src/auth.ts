@@ -93,3 +93,15 @@ export function requirePermission(permission: import('./types').Permission) {
     next();
   };
 }
+
+/** Require any one of several permission keys (use after requireAuth) — for an action that
+    more than one distinct area of the app is independently allowed to perform. */
+export function requireAnyPermission(permissions: import('./types').Permission[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user || !permissions.some((p) => req.user!.permissions.includes(p))) {
+      res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+      return;
+    }
+    next();
+  };
+}

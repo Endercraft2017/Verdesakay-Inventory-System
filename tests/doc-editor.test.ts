@@ -9,8 +9,9 @@ function load(): {
   bodyToEditorHtml: (b: string) => string;
   serializeEditor: (el: Element) => string;
   sanitizeHtml: (html: string, doc: Document) => string;
-  parsePageStyle: (b: string) => { size: string; orient: string; rest: string };
-  pageDims: (s: string, o: string) => [number, number];
+  parsePageStyle: (b: string) => { widthMm: number; heightMm: number; marginMm: number; preset: string; rest: string };
+  pageStyleTag: (w: number, h: number, m: number) => string;
+  pageDims: (widthMm: number, heightMm: number) => [number, number];
   replaceAllInSurface: (root: Element, find: string, repl: string) => number;
 } {
   const src = fs.readFileSync(path.join(import.meta.dirname, '../public/js/doc-editor.js'), 'utf8');
@@ -19,7 +20,7 @@ function load(): {
   new Function('module', 'exports', src)(mod, mod.exports);
   return mod.exports as never;
 }
-const { bodyToEditorHtml, serializeEditor, sanitizeHtml, parsePageStyle, pageDims, replaceAllInSurface } = load();
+const { bodyToEditorHtml, serializeEditor, sanitizeHtml, parsePageStyle, pageStyleTag, pageDims, replaceAllInSurface } = load();
 
 const norm = (s: string) => s.replace(/\s+/g, ' ').replace(/>\s+</g, '><').trim();
 
@@ -71,6 +72,28 @@ describe('doc-editor transforms', () => {
     const body = '{{#if order.notes}}Note: {{order.notes}}{{/if}}';
     expect(norm(roundTrip(body))).toBe(norm(body));
   });
+
+  it('does not inject a chip <span> into an <img src="{{var}}"> attribute (would break the HTML)', () => {
+    const html = bodyToEditorHtml('<img class="idcard-photo" src="{{employee.photo}}" alt="" />');
+    expect(html).not.toContain('<span'); // no chip markup leaked into the tag
+    expect(html).not.toContain('{{employee.photo}}"'); // src wasn't left as a literal unusable URL either
+    expect(html).toMatch(/<img[^>]*\ssrc="data:image\/svg\+xml,/); // shows a real placeholder image
+    expect(html).toMatch(/<img[^>]*\sdata-var-src="employee\.photo"/); // token preserved for save
+    expect(html).toMatch(/<img[^>]*\salt=""/); // rest of the tag's attributes survive untouched
+  });
+
+  it('round-trips an <img src="{{var}}"> back to the original token exactly', () => {
+    // The DOM serializes void elements without a trailing slash (harmless, standard HTML5) —
+    // what matters is the src token itself survives the round trip unchanged.
+    const body = '<img class="idcard-photo" src="{{employee.photo}}" alt="">';
+    expect(norm(roundTrip(body))).toBe(norm(body));
+  });
+
+  it('leaves an ordinary (non-variable) image src alone', () => {
+    const body = '<img src="https://example.com/logo.png" alt="Logo">';
+    expect(bodyToEditorHtml(body)).toContain('src="https://example.com/logo.png"');
+    expect(norm(roundTrip(body))).toBe(norm(body));
+  });
 });
 
 describe('sanitizeHtml (paste hardening)', () => {
@@ -112,23 +135,53 @@ describe('sanitizeHtml (paste hardening)', () => {
 describe('page setup + find/replace helpers', () => {
   const doc = new JSDOM('<!DOCTYPE html><body></body>').window.document;
 
-  it('parses and strips the @page style from a body', () => {
-    const body = '<style data-docpage>@page{size:letter landscape;margin:14mm}</style><p>hi</p>';
+  it('parses an mm-based @page style from a body', () => {
+    const body = '<style data-docpage>@page{size:215.9mm 279.4mm;margin:14mm}</style><p>hi</p>';
     const pg = parsePageStyle(body);
-    expect(pg.size).toBe('letter');
-    expect(pg.orient).toBe('landscape');
+    expect(pg.widthMm).toBeCloseTo(215.9);
+    expect(pg.heightMm).toBeCloseTo(279.4);
+    expect(pg.marginMm).toBe(14);
+    expect(pg.preset).toBe('letter');
     expect(pg.rest).toBe('<p>hi</p>');
   });
 
-  it('defaults to A4 portrait when no @page is present', () => {
-    const pg = parsePageStyle('<p>x</p>');
-    expect(pg.size).toBe('a4'); expect(pg.orient).toBe('portrait');
+  it('still understands the legacy keyword+orientation @page format from older saves', () => {
+    const pg = parsePageStyle('<style data-docpage>@page{size:letter landscape;margin:10mm}</style><p>hi</p>');
+    expect(pg.widthMm).toBeCloseTo(279.4); // swapped for landscape
+    expect(pg.heightMm).toBeCloseTo(215.9);
+    expect(pg.marginMm).toBe(10);
+    expect(pg.preset).toBe('letter');
   });
 
-  it('computes page dimensions incl. landscape swap', () => {
-    expect(pageDims('a4', 'portrait')).toEqual([794, 1123]);
-    expect(pageDims('a4', 'landscape')).toEqual([1123, 794]);
-    expect(pageDims('letter', 'portrait')).toEqual([816, 1056]);
+  it('defaults to A4 portrait, 14mm margin, when no @page is present', () => {
+    const pg = parsePageStyle('<p>x</p>');
+    expect(pg.preset).toBe('a4');
+    expect(pg.widthMm).toBeCloseTo(210);
+    expect(pg.heightMm).toBeCloseTo(297);
+    expect(pg.marginMm).toBe(14);
+  });
+
+  it('recognizes an arbitrary custom size as "custom", not a mismatched preset', () => {
+    const pg = parsePageStyle('<style data-docpage>@page{size:85.6mm 54mm;margin:5mm}</style>');
+    expect(pg.preset).toBe('custom');
+    expect(pg.widthMm).toBeCloseTo(85.6);
+    expect(pg.heightMm).toBeCloseTo(54);
+  });
+
+  it('round-trips pageStyleTag -> parsePageStyle for a custom size', () => {
+    const tag = pageStyleTag(85.6, 54, 5);
+    const pg = parsePageStyle(tag + '<div>card</div>');
+    expect(pg.widthMm).toBeCloseTo(85.6);
+    expect(pg.heightMm).toBeCloseTo(54);
+    expect(pg.marginMm).toBe(5);
+    expect(pg.rest).toBe('<div>card</div>');
+  });
+
+  it('computes page dimensions in px from mm (96dpi)', () => {
+    expect(pageDims(210, 297)).toEqual([794, 1123]); // A4 portrait
+    expect(pageDims(297, 210)).toEqual([1123, 794]); // A4 landscape
+    expect(pageDims(215.9, 279.4)).toEqual([816, 1056]); // Letter portrait
+    expect(pageDims(85.6, 54)).toEqual([324, 204]); // custom CR-80 card size
   });
 
   it('replaces text but never inside variable chips', () => {

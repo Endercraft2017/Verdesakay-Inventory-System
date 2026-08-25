@@ -14,7 +14,8 @@ export type Permission =
   | 'forms.view' | 'forms.upload' | 'forms.delete' | 'forms.manage'
   | 'messages.view' | 'messages.send'
   | 'templates.view' | 'templates.edit' | 'templates.company'
-  | 'users.manage';
+  | 'users.manage'
+  | 'hr.view' | 'hr.manage';
 
 export interface Department {
   id: number;
@@ -178,6 +179,60 @@ export interface DocTemplate {
   body: string;
   created_by: number | null;
   created_at: string;
+  updated_at: string;
+}
+
+export type EmployeeStatus = 'probationary' | 'regular' | 'resigned' | 'terminated';
+
+export interface Employee {
+  id: number;
+  employee_no: string | null;
+  name: string;
+  department_id: number | null;
+  position: string | null;
+  daily_rate: number;
+  status: EmployeeStatus;
+  start_date: string | null;
+  sss_no: string | null;
+  philhealth_no: string | null;
+  pagibig_no: string | null;
+  tin_no: string | null;
+  photo: string | null; // data: URI
+  created_at: string;
+  department_name?: string | null;
+}
+
+export interface EmployeeDocument {
+  id: number;
+  employee_id: number;
+  title: string;
+  stored_name: string;
+  original_name: string;
+  mime_type: string | null;
+  size_bytes: number;
+  uploaded_by: number | null;
+  created_at: string;
+  uploaded_by_name?: string | null;
+}
+
+export interface AttendancePeriod {
+  id: number;
+  label: string;
+  start_date: string;
+  end_date: string;
+  created_by: number | null;
+  created_at: string;
+  employee_count?: number;
+}
+
+export interface AttendanceRecord {
+  id: number;
+  period_id: number;
+  employee_id: number;
+  work_date: string;
+  time_in: string | null;
+  time_out: string | null;
+  notes: string | null;
   updated_at: string;
 }
 

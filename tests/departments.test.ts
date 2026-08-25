@@ -64,4 +64,41 @@ describe('departments', () => {
     const usage = await ctx.api.get('/api/users/departments').set({ Authorization: `Bearer ${emp.token}` });
     expect(usage.status).toBe(403);
   });
+
+  it('lets an hr.manage user create a department and delete it while unused, but never rename', async () => {
+    const hrUser = await createEmployee(ctx.api, adminToken, { username: 'depthr', role: 'hr' });
+    const hdr = { Authorization: `Bearer ${hrUser.token}` };
+
+    const created = await ctx.api.post('/api/users/departments').set(hdr).send({ name: 'HR-Made Dept' });
+    expect(created.status).toBe(201);
+
+    const rename = await ctx.api.put(`/api/users/departments/${created.body.id}`).set(hdr).send({ name: 'Renamed' });
+    expect(rename.status).toBe(403);
+
+    const del = await ctx.api.delete(`/api/users/departments/${created.body.id}`).set(hdr);
+    expect(del.status).toBe(200);
+    const list = await ctx.api.get('/api/users/departments/list').set(hdr);
+    expect(list.body.some((d: { id: number }) => d.id === created.body.id)).toBe(false);
+  });
+
+  it('blocks hr.manage from deleting a department still used outside HR (a user account)', async () => {
+    const dept = await ctx.api.post('/api/users/departments').set(admin()).send({ name: 'Used By User Dept' });
+    await createEmployee(ctx.api, adminToken, { username: 'usesdept', department_id: dept.body.id });
+
+    const hrUser = await createEmployee(ctx.api, adminToken, { username: 'depthr2', role: 'hr' });
+    const del = await ctx.api.delete(`/api/users/departments/${dept.body.id}`).set({ Authorization: `Bearer ${hrUser.token}` });
+    expect(del.status).toBe(409);
+
+    // An admin can still delete it (unconditional, as before).
+    expect((await ctx.api.delete(`/api/users/departments/${dept.body.id}`).set(admin())).status).toBe(200);
+  });
+
+  it('lets hr.manage delete a department only used by employees (HR\'s own domain)', async () => {
+    const dept = await ctx.api.post('/api/users/departments').set(admin()).send({ name: 'HR-Only Dept' });
+    await ctx.api.post('/api/hr/employees').set(admin()).send({ name: 'Dept User Employee', department_id: dept.body.id });
+
+    const hrUser = await createEmployee(ctx.api, adminToken, { username: 'depthr3', role: 'hr' });
+    const del = await ctx.api.delete(`/api/users/departments/${dept.body.id}`).set({ Authorization: `Bearer ${hrUser.token}` });
+    expect(del.status).toBe(200);
+  });
 });

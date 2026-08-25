@@ -3,6 +3,13 @@
 App.register('templates', async (view) => {
   const admin = App.hasPermission('templates.edit');
 
+  // A small neutral placeholder headshot so {{employee.photo}} renders something in previews.
+  const SAMPLE_PHOTO = 'data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+    '<rect width="100" height="100" fill="#dce6f2"/><circle cx="50" cy="38" r="18" fill="#9fb3c8"/>' +
+    '<path d="M20 88c4-22 18-32 30-32s26 10 30 32" fill="#9fb3c8"/></svg>'
+  );
+
   // Sample data so the editor preview shows realistic output.
   const SAMPLE = {
     company: { name: 'Verdesakay Inc.', address: '123 Main St, Cebu City', phone: '(032) 555-1234', email: 'hello@verdesakay.com' },
@@ -15,6 +22,10 @@ App.register('templates', async (view) => {
       { name: 'Bond Paper A4', sku: 'PPR-A4', description: '80gsm, white', quantity: 10, unit: 'reams', unit_price: '120.00', line_total: '1,200.00' },
       { name: 'Marker (black)', sku: 'MRK-BK', description: '', quantity: 5, unit: 'pcs', unit_price: '35.00', line_total: '175.00' },
     ],
+    employee: {
+      name: 'Juan Dela Cruz', employee_no: 'EMP-00001', position: 'Warehouse Staff',
+      department: 'Operations', photo: SAMPLE_PHOTO,
+    },
     user: { name: 'System Administrator' }, today: '2026-06-27',
   };
 
@@ -78,9 +89,27 @@ App.register('templates', async (view) => {
         <thead><tr><th>Name</th><th>Type</th><th>Updated</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
+    // Preview-modal + iframe, not window.open() — a new browser window/tab can be
+    // popup-blocked outright by some browsers/extensions regardless of gesture timing; an
+    // iframe inside a modal that's already part of the page never opens a new window, so
+    // there's nothing for a popup blocker to block.
     const openPreview = async (id) => {
       const t = await API.get('/templates/' + id);
-      UI.printDocument(renderTemplate(t.body, SAMPLE), t.name + ' (preview)');
+      const full = UI.printableHtml(renderTemplate(t.body, SAMPLE), t.name + ' (preview)');
+      UI.modal({
+        title: t.name + ' — Preview',
+        size: 'lg',
+        bodyHTML: `<iframe id="tpl-preview-frame" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+        cancelText: 'Close',
+        confirmText: 'Print…',
+        onOpen: (ov) => { ov.querySelector('#tpl-preview-frame').srcdoc = full; },
+        onConfirm: (ov) => {
+          const ifr = ov.querySelector('#tpl-preview-frame');
+          ifr.contentWindow.focus();
+          ifr.contentWindow.print();
+          return false; // keep the preview open — printing shouldn't close it
+        },
+      });
     };
     const openEdit = async (id) => editor(await API.get('/templates/' + id));
 

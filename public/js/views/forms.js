@@ -112,7 +112,23 @@ App.register('forms', async (view) => {
         const w = window.open(url, '_blank');
         if (!w) UI.toast('Allow pop-ups to print this file', 'error');
       } else {
-        UI.printDocument(`<img src="${url}" alt="${UI.esc(f.title)}" />`, f.title);
+        // Preview-modal + iframe, not window.open() — a new browser window/tab can be
+        // popup-blocked outright regardless of gesture timing; an iframe inside a modal
+        // that's already part of the page never opens a new window.
+        UI.modal({
+          title: f.title + ' — Preview',
+          size: 'lg',
+          bodyHTML: `<iframe id="file-preview-frame" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+          cancelText: 'Close',
+          confirmText: 'Print…',
+          onOpen: (ov) => { ov.querySelector('#file-preview-frame').srcdoc = UI.printableHtml(`<img src="${url}" alt="${UI.esc(f.title)}" style="max-width:100%">`, f.title); },
+          onConfirm: (ov) => {
+            const ifr = ov.querySelector('#file-preview-frame');
+            ifr.contentWindow.focus();
+            ifr.contentWindow.print();
+            return false; // keep the preview open — printing shouldn't close it
+          },
+        });
       }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {

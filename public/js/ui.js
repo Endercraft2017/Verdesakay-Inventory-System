@@ -236,18 +236,6 @@ const UI = (() => {
       `<style>${PRINT_CSS}</style></head><body>${html}</body></html>`;
   }
 
-  /** Open a print window for a chunk of HTML (uses the print stylesheet above). */
-  function printDocument(html, title) {
-    const w = window.open('', '_blank', 'width=900,height=1000');
-    if (!w) { toast('Allow pop-ups to print this document', 'error'); return; }
-    w.document.open();
-    w.document.write(
-      printableHtml(html, title).replace('</body>',
-        `<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},250);};<\/script></body>`)
-    );
-    w.document.close();
-  }
-
   /* ---------- Inline SVG icons (Lucide-style, stroke = currentColor) ---------- */
   const ICONS = {
     dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
@@ -290,6 +278,7 @@ const UI = (() => {
     printer: '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
     eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
     file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/>',
+    idcard: '<rect width="20" height="14" x="2" y="5" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M14 9h4"/><path d="M14 12h4"/><path d="M6 15.5c.6-1 1.3-1.5 2-1.5s1.4.5 2 1.5"/>',
   };
 
   /** A "?" help icon with a tooltip shown on hover (desktop) and tap (mobile).
@@ -385,7 +374,7 @@ const UI = (() => {
 
   return {
     esc, toast, fmtDate, fmtDateShort, fmtBytes, initials, modal, confirmDialog,
-    drawer, contextMenu, closeContextMenu, printDocument, printableHtml,
+    drawer, contextMenu, closeContextMenu, printableHtml,
     icon, helpIcon, emptyState, fileIconName, downloadCsv,
   };
 })();

@@ -22,7 +22,7 @@ function loadNavConfig(): { NAV: Primary[]; ROUTE_NAMES: string[] } {
 }
 
 // The routes actually registered by the view modules (public/js/views/*.js).
-const REGISTERED_ROUTES = ['dashboard', 'inventory', 'forms', 'orders', 'templates', 'messages', 'admin', 'account', 'form-builder', 'form-records', 'hr'];
+const REGISTERED_ROUTES = ['dashboard', 'inventory', 'forms', 'orders', 'templates', 'messages', 'admin', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping'];
 
 const { NAV, ROUTE_NAMES } = loadNavConfig();
 

@@ -241,6 +241,57 @@ export function init(): void {
       updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS employees (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_no   TEXT UNIQUE,
+      name          TEXT NOT NULL,
+      department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+      position      TEXT,
+      daily_rate    REAL NOT NULL DEFAULT 0,
+      status        TEXT NOT NULL DEFAULT 'probationary'
+                      CHECK (status IN ('probationary','regular','resigned','terminated')),
+      start_date    TEXT,
+      sss_no        TEXT,
+      philhealth_no TEXT,
+      pagibig_no    TEXT,
+      tin_no        TEXT,
+      photo         TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS employee_documents (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id   INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      title         TEXT NOT NULL,
+      stored_name   TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type     TEXT,
+      size_bytes    INTEGER NOT NULL DEFAULT 0,
+      uploaded_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS attendance_periods (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      label      TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date   TEXT NOT NULL,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS attendance_records (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      period_id   INTEGER NOT NULL REFERENCES attendance_periods(id) ON DELETE CASCADE,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,
+      work_date   TEXT NOT NULL,
+      time_in     TEXT,
+      time_out    TEXT,
+      notes       TEXT,
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(period_id, employee_id, work_date)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_form_records_def ON form_records(form_def_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_variables_key ON doc_variables(scope, IFNULL(template_id, 0), key);
 
@@ -254,6 +305,10 @@ export function init(): void {
     CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id);
     CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(type);
     CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+    CREATE INDEX IF NOT EXISTS idx_employees_dept ON employees(department_id);
+    CREATE INDEX IF NOT EXISTS idx_attendance_period ON attendance_records(period_id);
+    CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance_records(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_employee_documents_employee ON employee_documents(employee_id);
   `);
 
   migrate();
@@ -365,6 +420,52 @@ function migrate(): void {
   if (!frCols.some((c) => c.name === 'period')) {
     db.exec('ALTER TABLE form_records ADD COLUMN period TEXT');
   }
+
+  // Rebuild employees to replace the bare `active` flag with a proper employment-status
+  // enum plus the 201-file fields (employee_no, start_date, statutory numbers, photo).
+  // Foreign keys must be OFF for this: attendance_records.employee_id references employees,
+  // and SQLite enforces FK constraints across a DROP TABLE even mid-rebuild (PRAGMA can only
+  // be toggled outside a transaction, so it brackets the whole BEGIN/COMMIT below).
+  const empCols = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
+  if (empCols.length && !empCols.some((c) => c.name === 'status')) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    db.exec(`
+      BEGIN;
+      CREATE TABLE employees_new (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_no   TEXT UNIQUE,
+        name          TEXT NOT NULL,
+        department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+        position      TEXT,
+        daily_rate    REAL NOT NULL DEFAULT 0,
+        status        TEXT NOT NULL DEFAULT 'probationary'
+                        CHECK (status IN ('probationary','regular','resigned','terminated')),
+        start_date    TEXT,
+        sss_no        TEXT,
+        philhealth_no TEXT,
+        pagibig_no    TEXT,
+        tin_no        TEXT,
+        photo         TEXT,
+        created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO employees_new (id, employee_no, name, department_id, position, daily_rate, status, created_at)
+        SELECT id, 'EMP-' || printf('%05d', id), name, department_id, position, daily_rate,
+               CASE WHEN active = 1 THEN 'regular' ELSE 'terminated' END, created_at
+        FROM employees;
+      DROP TABLE employees;
+      ALTER TABLE employees_new RENAME TO employees;
+      CREATE INDEX IF NOT EXISTS idx_employees_dept ON employees(department_id);
+      COMMIT;
+    `);
+    db.exec('PRAGMA foreign_keys = ON;');
+
+    // Advance the employee_no counter past the backfilled EMP-##### numbers so the next
+    // employee created via nextEmployeeNumber() doesn't collide with one of them.
+    const maxId = (db.prepare('SELECT MAX(id) AS id FROM employees').get() as { id: number | null }).id;
+    if (maxId && maxId > (getSetting<number>('employee_seq') || 0)) {
+      setSetting('employee_seq', maxId);
+    }
+  }
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
@@ -421,6 +522,46 @@ function seed(): void {
   }
 
   seedTemplates();
+  seedHrPayrollForm();
+}
+
+/** Seed the "HR Payroll" form definition if no admin has already created one (matching
+    what an admin would build via Form Builder) — needed so Time Keeping's "Generate
+    Payslips" always has a target form, even on a fresh install. */
+function seedHrPayrollForm(): void {
+  if (db.prepare("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'").get()) return;
+  const textField = (key: string, label: string, required = false) =>
+    ({ key, label, type: 'text', required, options: [], default: '' });
+  const numField = (key: string, label: string) =>
+    ({ key, label, type: 'number', required: false, options: [], default: '' });
+  const fields = [
+    textField('employee_name', 'Employee Name', true),
+    textField('dept_position', 'Dept./Position'),
+    textField('payroll_period', 'Payroll Period'),
+    { key: 'pay_date', label: 'Pay Date', type: 'date', required: false, options: [], default: '' },
+    numField('daily_rate', 'Daily Rate'),
+    numField('days_worked', 'Days Worked'),
+    numField('ot_hours', 'OT Hours'),
+    numField('ot_rate_hour', 'OT Rate/Hour'),
+    numField('basic_salary', 'Basic Salary'),
+    numField('overtime_pay', 'Overtime Pay'),
+    numField('undertime_pay', 'Undertime Pay'),
+    numField('holiday_pay', 'Holiday Pay'),
+    numField('special_holiday_30', 'Special Holiday 30%'),
+    numField('rest_day_ot', 'Rest Day OT'),
+    numField('total_earnings', 'Total Earnings'),
+    numField('sss', 'SSS'),
+    numField('philhealth', 'PhilHealth'),
+    numField('pagibig', 'Pag-IBIG'),
+    numField('cash_advance', 'Cash Advance'),
+    numField('late_absences', 'Late / Absences'),
+    numField('total_deductions', 'Total Deductions'),
+    numField('net_pay', 'Net Pay'),
+  ];
+  db.prepare(
+    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields)
+     VALUES ('HR Payroll', 'hr_payroll', 'PAY', 'sheet', ?)`
+  ).run(JSON.stringify(fields));
 }
 
 /** Seed default templates — each checked independently so adding a new default later
@@ -438,6 +579,73 @@ function seedTemplates(): void {
   if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('HR Payroll Slip')) {
     insert.run('HR Payroll Slip', 'generic', payrollSlipTemplateBody());
   }
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Employee ID Card')) {
+    insert.run('Employee ID Card', 'generic', employeeIdTemplateBody());
+  }
+}
+
+/** Default printable HTML for one virtual employee ID — CR-80 card size (~85.6mm x 54mm),
+    **front and back side by side** on one landscape page (85.6*2 + 6mm gap = 177.2mm x 54mm,
+    set as the page's own @page size so it opens already sized correctly in the editor) so both
+    halves print together, ready to cut out and glue/laminate back-to-back. A ready-to-print
+    starting design (header band, photo + name/role, footer band on the front; return-if-lost
+    note + signature line on the back) meant to be edited in place (recolor, resize, swap which
+    side has the photo, flip to a portrait card via the Layout tab's Width/Height swap, …) rather
+    than built from scratch. Rendered against {company, employee, today} — see generateId() in
+    hr-employees.js. */
+function employeeIdTemplateBody(): string {
+  return `<style data-docpage>@page{size:177.2mm 54mm;margin:3mm}</style>
+<style>
+  .idcard-page { display: flex; gap: 6mm; }
+  .idcard { width: 85.6mm; height: 54mm; border-radius: 3mm; overflow: hidden; box-sizing: border-box;
+    font-family: Arial, sans-serif; display: flex; flex-direction: column; box-shadow: 0 0 0 1px #ccc; }
+  .idcard-head { background: #16243d; color: #fff; text-align: center; padding: 2.5mm 2mm 2mm; }
+  .idcard-co { font-weight: 800; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .idcard-tag { font-size: 6.5px; letter-spacing: 0.06em; opacity: 0.75; margin-top: 0.8mm; text-transform: uppercase; }
+  .idcard-body { flex: 1; display: flex; align-items: center; gap: 3mm; padding: 3mm 4mm; min-height: 0; }
+  .idcard-photo { width: 20mm; height: 20mm; border-radius: 50%; object-fit: cover; border: 2px solid #16243d; flex-shrink: 0; }
+  .idcard-info { flex: 1; min-width: 0; }
+  .idcard-name { font-weight: 800; font-size: 12px; color: #16243d; line-height: 1.25; }
+  .idcard-role { font-size: 9.5px; color: #333; margin-top: 0.5mm; }
+  .idcard-dept { font-size: 8.5px; color: #666; }
+  .idcard-foot { background: #eef4fb; border-top: 1px solid #c6d4e6; text-align: center;
+    padding: 1.3mm; font-size: 7.5px; color: #5d6b84; letter-spacing: 0.03em; }
+  .idcard-back-body { flex: 1; padding: 3mm 4mm; font-size: 8px; color: #333; line-height: 1.5; }
+  .idcard-back-body p { margin: 0 0 1.5mm; }
+  .idcard-back-label { font-weight: 700; color: #16243d; }
+  .idcard-sig { margin-top: 4mm; border-top: 1px solid #999; padding-top: 1mm; font-size: 7px;
+    color: #666; text-align: center; }
+</style>
+<div class="idcard-page">
+  <div class="idcard idcard-front">
+    <div class="idcard-head">
+      <div class="idcard-co">{{company.name}}</div>
+      <div class="idcard-tag">Employee Identification Card</div>
+    </div>
+    <div class="idcard-body">
+      <img class="idcard-photo" src="{{employee.photo}}" alt="" />
+      <div class="idcard-info">
+        <div class="idcard-name">{{employee.name}}</div>
+        <div class="idcard-role">{{employee.position}}</div>
+        <div class="idcard-dept">{{employee.department}}</div>
+      </div>
+    </div>
+    <div class="idcard-foot">{{employee.employee_no}} &middot; Issued {{today}}</div>
+  </div>
+  <div class="idcard idcard-back">
+    <div class="idcard-head">
+      <div class="idcard-co">{{company.name}}</div>
+      <div class="idcard-tag">If found, please return to</div>
+    </div>
+    <div class="idcard-back-body">
+      <p><span class="idcard-back-label">{{company.name}}</span></p>
+      <p>{{company.address}}</p>
+      <p>{{company.phone}}</p>
+      <div class="idcard-sig">Employee Signature</div>
+    </div>
+    <div class="idcard-foot">This card remains the property of {{company.name}}</div>
+  </div>
+</div>`;
 }
 
 /** Default printable HTML for one HR Payroll slip (self-contained: embeds its own

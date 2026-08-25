@@ -14,6 +14,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'messages.view', 'messages.send',
   'templates.view', 'templates.edit', 'templates.company',
   'users.manage',
+  'hr.view', 'hr.manage',
 ];
 
 const ROLE_DEFAULTS: Record<Role, Permission[]> = {
@@ -56,6 +57,7 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
     'forms.view', 'forms.upload', 'forms.delete',
     'messages.view', 'messages.send',
     'templates.view',
+    'hr.view', 'hr.manage',
   ],
   marketing: [
     'forms.view', 'forms.upload',

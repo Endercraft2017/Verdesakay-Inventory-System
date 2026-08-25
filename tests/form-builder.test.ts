@@ -256,13 +256,10 @@ describe('hr payroll csv import', () => {
   ].join('\n');
 
   beforeAll(async () => {
-    const res = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send({
-      name: 'HR Payroll', slug: 'hr_payroll', number_prefix: 'PAY', icon: 'users',
-      fields: [
-        { key: 'employee_name', label: 'Employee Name', type: 'text', required: true, options: [], default: '' },
-      ],
-    });
-    payrollFormId = res.body.id;
+    // The "HR Payroll" form is auto-seeded (src/db.ts seedHrPayrollForm()) rather than
+    // hand-created, so it already exists — just look it up by slug.
+    const forms = await ctx.api.get('/api/form-definitions').set(hdr(adminToken));
+    payrollFormId = forms.body.find((f: { slug: string }) => f.slug === 'hr_payroll').id;
   });
 
   it('rejects import for a non-payroll form', async () => {

@@ -273,6 +273,62 @@ export const docVariableSchema = z.object({
   sort: intCoerce.default(0),
 });
 
+// ---- HR: Employees / Time Keeping ----
+
+const employeeStatusEnum = z.enum(['probationary', 'regular', 'resigned', 'terminated']);
+const optionalIdText = trimmed.max(40).optional().nullable();
+
+export const employeeSchema = z.object({
+  name: trimmed.min(1, 'Employee name is required').max(160),
+  department_id: optionalId,
+  position: trimmed.max(120).optional().nullable(),
+  daily_rate: numCoerce.min(0, 'Daily rate cannot be negative').default(0),
+  status: employeeStatusEnum.default('probationary'),
+  start_date: trimmed.max(40).optional().nullable(),
+  sss_no: optionalIdText,
+  philhealth_no: optionalIdText,
+  pagibig_no: optionalIdText,
+  tin_no: optionalIdText,
+  photo: z.preprocess(
+    (v) => (v === '' ? null : v),
+    z.string().max(2_000_000).regex(/^data:image\//, 'Photo must be an image').optional().nullable()
+  ),
+});
+
+export const attendancePeriodSchema = z
+  .object({
+    label: trimmed.min(1, 'Cutoff label is required').max(120),
+    start_date: trimmed.min(1, 'Start date is required').max(40),
+    end_date: trimmed.min(1, 'End date is required').max(40),
+  })
+  .refine((v) => v.end_date >= v.start_date, {
+    message: 'End date must be on or after the start date',
+    path: ['end_date'],
+  });
+
+const timeOfDay = z.union([trimmed.max(20), z.null()]).optional();
+
+const attendanceDaySchema = z.object({
+  work_date: trimmed.min(1).max(40),
+  time_in: timeOfDay,
+  time_out: timeOfDay,
+  notes: optionalText,
+});
+
+export const saveAttendanceSchema = z.object({
+  employee_id: z.coerce.number().int().positive('Employee is required'),
+  days: z.array(attendanceDaySchema).max(62),
+});
+
+export const addRosterEmployeeSchema = z.object({
+  employee_id: z.coerce.number().int().positive('Employee is required'),
+});
+
+export const generatePayslipsSchema = z.object({
+  payroll_period: trimmed.min(1, 'Payroll period label is required').max(120),
+  pay_date: trimmed.max(40).optional().nullable(),
+});
+
 /** Sparse permission overrides: keys are permission strings, values are booleans. */
 export const permissionOverridesSchema = z.object({
   overrides: z.record(z.string().max(64), z.boolean())

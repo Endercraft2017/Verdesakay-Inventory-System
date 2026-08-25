@@ -22,16 +22,34 @@ function tokenChip(token) {
   return `<span class="${cls}" data-token="${escAttr(t)}" contenteditable="false">${escAttr(shown)}</span>`;
 }
 
+// Neutral placeholder shown in the editor canvas for an <img src="{{var}}">, since the real
+// value only exists at print time. Swapped back to the {{var}} token on save (data-var-src).
+const EDITOR_IMG_PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#dce6f2"/>' +
+  '<circle cx="50" cy="38" r="18" fill="#9fb3c8"/><path d="M20 88c4-22 18-32 30-32s26 10 30 32" fill="#9fb3c8"/></svg>'
+);
+
 function bodyToEditorHtml(body) {
   let html = String(body == null ? '' : body);
   html = html.replace(/\{\{#items\}\}\s*<tr/g, '<tr data-repeat="items"');
   html = html.replace(/<\/tr>\s*\{\{\/items\}\}/g, '</tr>');
-  html = html.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, tok) => tokenChip(tok));
+  // A variable inside an <img src="…"> can't become an inline chip without breaking that
+  // attribute's HTML (a chip is a <span>, which can't live inside a quoted attribute value) —
+  // show a placeholder image instead and remember the real token in data-var-src.
+  html = html.replace(/(<img\b[^>]*?)\bsrc=(["'])\{\{\s*([^}]+?)\s*\}\}\2([^>]*>)/gi,
+    (_m, pre, _q, tok, post) => `${pre}src="${EDITOR_IMG_PLACEHOLDER}" data-var-src="${escAttr(tok.trim())}"${post}`);
+  // Chip-ify remaining {{...}} that sit in text content — never inside a tag's attributes,
+  // since a whole <tag ...> is matched and passed through as one atomic (unmodified) unit.
+  html = html.replace(/(<[^>]*>)|\{\{\s*([^}]+?)\s*\}\}/g, (m, tag, tok) => (tag ? tag : tokenChip(tok)));
   return html;
 }
 
 function serializeEditor(root) {
   const clone = root.cloneNode(true);
+  clone.querySelectorAll('img[data-var-src]').forEach((img) => {
+    img.setAttribute('src', '{{' + img.getAttribute('data-var-src') + '}}');
+    img.removeAttribute('data-var-src');
+  });
   clone.querySelectorAll('.doc-chip').forEach((chip) => {
     chip.replaceWith(chip.ownerDocument.createTextNode('{{' + (chip.getAttribute('data-token') || '') + '}}'));
   });
@@ -51,7 +69,7 @@ function serializeEditor(root) {
 const SANITIZE_TAGS = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUP', 'SUB', 'H1', 'H2', 'H3', 'H4', 'UL', 'OL', 'LI', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'SPAN', 'DIV', 'A', 'IMG', 'HR', 'FONT', 'BLOCKQUOTE']);
 const SANITIZE_ATTR = { A: ['href'], IMG: ['src', 'alt'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
 const SANITIZE_STYLE = ['color', 'background-color', 'background', 'text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'width', 'page-break-after', 'break-after'];
-const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked'];
+const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src'];
 
 function filterStyle(s) {
   return String(s || '').split(';').map((x) => x.trim()).filter(Boolean)
@@ -95,22 +113,54 @@ function sanitizeHtml(html, doc) {
   return out.innerHTML;
 }
 
-/* ---- page setup (size/orientation travels in the saved body as an @page rule) ---- */
+/* ---- page setup: exact size (mm) + margin travel in the saved body as an @page rule,
+   so any custom size (e.g. a CR-80 ID card) is representable, not just A4/Letter. ---- */
+const PX_PER_MM = 96 / 25.4;
+const PAGE_PRESETS_MM = { a4: [210, 297], letter: [215.9, 279.4] };
+
+/** Which preset (if any) a widthMm x heightMm pair matches, in either orientation. */
+function matchPagePreset(widthMm, heightMm) {
+  const close = (a, b) => Math.abs(a - b) < 0.5;
+  for (const name of Object.keys(PAGE_PRESETS_MM)) {
+    const [pw, ph] = PAGE_PRESETS_MM[name];
+    if ((close(widthMm, pw) && close(heightMm, ph)) || (close(widthMm, ph) && close(heightMm, pw))) return name;
+  }
+  return 'custom';
+}
+
+/** Parses {widthMm, heightMm, marginMm, preset, rest} from a saved body. Understands both the
+    current `size: <W>mm <H>mm` format and the legacy `size: a4|letter portrait|landscape`
+    format saved by older versions of this editor, so old templates keep opening correctly. */
 function parsePageStyle(body) {
-  let size = 'a4', orient = 'portrait', rest = String(body == null ? '' : body);
+  let widthMm = PAGE_PRESETS_MM.a4[0], heightMm = PAGE_PRESETS_MM.a4[1], marginMm = 14;
+  let rest = String(body == null ? '' : body);
   const m = rest.match(/<style data-docpage>([\s\S]*?)<\/style>/i);
   if (m) {
     rest = rest.replace(m[0], '');
-    const mm = m[1].match(/size:\s*([a-z0-9]+)?\s*(portrait|landscape)?/i);
-    if (mm) { if (mm[1] && /letter/i.test(mm[1])) size = 'letter'; if (mm[2]) orient = mm[2].toLowerCase(); }
+    const mmSize = m[1].match(/size:\s*([\d.]+)mm\s+([\d.]+)mm/i);
+    if (mmSize) {
+      widthMm = parseFloat(mmSize[1]);
+      heightMm = parseFloat(mmSize[2]);
+    } else {
+      const legacy = m[1].match(/size:\s*([a-z0-9]+)?\s*(portrait|landscape)?/i);
+      if (legacy) {
+        const base = /letter/i.test(legacy[1] || '') ? PAGE_PRESETS_MM.letter : PAGE_PRESETS_MM.a4;
+        [widthMm, heightMm] = legacy[2] === 'landscape' ? [base[1], base[0]] : base;
+      }
+    }
+    const marginMatch = m[1].match(/margin:\s*([\d.]+)mm/i);
+    if (marginMatch) marginMm = parseFloat(marginMatch[1]);
   }
-  return { size, orient, rest };
+  return { widthMm, heightMm, marginMm, preset: matchPagePreset(widthMm, heightMm), rest };
 }
-function pageStyleTag(size, orient) { return `<style data-docpage>@page{size:${size} ${orient};margin:14mm}</style>`; }
-function pageDims(size, orient) {
-  const dims = { a4: [794, 1123], letter: [816, 1056] };
-  const [w, h] = dims[size] || dims.a4;
-  return orient === 'landscape' ? [h, w] : [w, h];
+
+function pageStyleTag(widthMm, heightMm, marginMm) {
+  return `<style data-docpage>@page{size:${widthMm}mm ${heightMm}mm;margin:${marginMm}mm}</style>`;
+}
+
+/** mm -> on-screen CSS px (96dpi), for sizing the editing canvas to match the real page. */
+function pageDims(widthMm, heightMm) {
+  return [Math.round(widthMm * PX_PER_MM), Math.round(heightMm * PX_PER_MM)];
 }
 
 /** Replace all occurrences of `find` with `repl` in editable text (skips variable chips). */
@@ -129,30 +179,51 @@ function ensureStyles() {
   if (typeof document === 'undefined' || document.getElementById('doc-editor-styles')) return;
   const css = `
     .doc-fs{position:fixed;inset:0;z-index:40;background:var(--bg,#f4f8fd);display:flex;flex-direction:column}
-    .doc-fs-bar{display:flex;align-items:center;gap:10px;padding:7px 14px;background:var(--surface,#fff);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0;flex-wrap:wrap}
-    .doc-fs-bar .grow{flex:1}
-    .doc-fs-title{font-weight:700;font-size:14px;color:var(--text,#16243d)}
-    .doc-fs-name{font-size:13.5px;font-weight:600;padding:6px 9px;min-width:200px;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d)}
-    .doc-fs-period{font-size:13px;padding:6px 9px;min-width:130px;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d)}
-    .doc-fs-type{padding:6px 7px;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d)}
-    .doc-modes{display:inline-flex;border:1px solid var(--border-strong,#c6d4e6);border-radius:7px;overflow:hidden}
-    .doc-modes button{border:none;background:var(--surface,#fff);padding:6px 12px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text-muted,#5d6b84);font-family:inherit}
+    .doc-fs-bar{display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--surface,#fff);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0}
+    .doc-fs-bar-scroll{display:flex;align-items:center;gap:6px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden}
+    .doc-fs-bar-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+    .doc-fs-title{font-weight:700;font-size:13px;color:var(--text,#16243d);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;flex-shrink:1}
+    .doc-fs-name{font-size:12.5px;font-weight:600;padding:4px 7px;width:120px;flex-shrink:0;border:1px solid var(--border-strong,#c6d4e6);border-radius:5px;background:var(--surface,#fff);color:var(--text,#16243d)}
+    .doc-fs-period{font-size:12px;padding:4px 7px;width:80px;flex-shrink:0;border:1px solid var(--border-strong,#c6d4e6);border-radius:5px;background:var(--surface,#fff);color:var(--text,#16243d)}
+    .doc-fs-type{padding:4px 5px;flex-shrink:0;border:1px solid var(--border-strong,#c6d4e6);border-radius:5px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:12.5px}
+    .doc-modes{display:inline-flex;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;overflow:hidden;flex-shrink:0}
+    .doc-modes button{border:none;background:var(--surface,#fff);padding:4px 9px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-muted,#5d6b84);font-family:inherit;white-space:nowrap}
     .doc-modes button.active{background:var(--accent,#2b7fff);color:#fff}
-    .doc-ribbon{display:flex;flex-wrap:wrap;gap:2px;align-items:center;padding:4px 10px;background:var(--surface-2,#eef4fb);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0}
-    .doc-ribbon.table-bar{background:var(--accent-weak,#e7f1ff)}
-    .doc-ribbon button{min-width:26px;height:26px;border:1px solid transparent;background:none;border-radius:5px;cursor:pointer;font-size:12.5px;color:var(--text,#16243d);padding:0 6px;font-family:inherit;display:inline-flex;align-items:center;justify-content:center}
-    .doc-ribbon button:hover{background:var(--surface-3,#e6eef8)}
-    .doc-ribbon button.active{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff)}
-    .doc-ribbon button:focus-visible,.doc-modes button:focus-visible{outline:2px solid var(--accent,#2b7fff);outline-offset:1px}
+    .doc-fs-bar .btn{flex-shrink:0;padding:4px 9px;font-size:12.5px;white-space:nowrap}
+    .doc-tabs{display:flex;gap:2px;padding:0 10px;background:var(--surface,#fff);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0;overflow-x:auto;overflow-y:hidden}
+    .doc-tab{border:none;background:none;padding:7px 14px 6px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text-muted,#5d6b84);font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px}
+    .doc-tab:hover{color:var(--text,#16243d)}
+    .doc-tab.active{color:var(--accent,#2b7fff);border-bottom-color:var(--accent,#2b7fff)}
+    .doc-panel{display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;align-items:stretch;padding:4px 8px;background:var(--surface-2,#eef4fb);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0}
+    .doc-panel.table-panel{background:var(--accent-weak,#e7f1ff)}
+    .doc-group{display:flex;flex-direction:column;align-items:center;justify-content:space-between;flex-shrink:0;padding:1px 9px;border-left:1px solid var(--border-strong,#c6d4e6)}
+    .doc-group:first-child{border-left:none;padding-left:2px}
+    .doc-group-row{display:flex;align-items:center;gap:1px}
+    .doc-group-cap{font-size:9.5px;color:var(--text-faint,#8a97ad);text-transform:uppercase;letter-spacing:.04em;margin-top:3px;white-space:nowrap}
+    .doc-panel button{min-width:23px;height:23px;flex-shrink:0;border:1px solid transparent;background:none;border-radius:4px;cursor:pointer;font-size:12px;color:var(--text,#16243d);padding:0 5px;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
+    .doc-panel button:hover{background:var(--surface-3,#e6eef8)}
+    .doc-panel button.active{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff)}
+    .doc-panel button:focus-visible,.doc-tab:focus-visible,.doc-modes button:focus-visible{outline:2px solid var(--accent,#2b7fff);outline-offset:1px}
     .doc-page .doc-pagebreak{border:none;border-top:2px dashed #c33;margin:16px 0;height:0}
-    .doc-ribbon select{height:26px;border:1px solid var(--border-strong,#c6d4e6);border-radius:5px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:12px;padding:0 3px}
-    .doc-ribbon .tb-sep{width:1px;align-self:stretch;background:var(--border-strong,#c6d4e6);margin:2px 4px}
-    .doc-ribbon .tb-color{display:inline-flex;align-items:center;gap:2px;font-size:12.5px;cursor:pointer;padding:0 3px;color:var(--text,#16243d);height:26px;border-radius:5px}
-    .doc-ribbon .tb-color:hover{background:var(--surface-3,#e6eef8)}
-    .doc-ribbon .tb-color input{width:18px;height:18px;border:none;background:none;padding:0;cursor:pointer}
-    .doc-ribbon .btn-variable{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff);font-weight:700}
-    .doc-ribbon .btn-fx{background:#eafaf0;color:#168f54;font-weight:700}
-    .doc-ribbon .tb-grouplbl{font-size:10px;color:var(--text-faint,#8a97ad);margin:0 4px 0 2px;text-transform:uppercase;letter-spacing:.04em}
+    .doc-panel select{height:23px;flex-shrink:0;border:1px solid var(--border-strong,#c6d4e6);border-radius:4px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:11.5px;padding:0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .doc-panel select[data-cmd="formatBlock"]{width:68px}
+    .doc-panel select[data-cmd="fontName"]{width:84px}
+    .doc-panel select[data-fontsize]{width:42px}
+    .doc-panel select[data-tblstyle]{width:86px}
+    .doc-panel .tb-sep{width:1px;flex-shrink:0;align-self:stretch;background:var(--border-strong,#c6d4e6);margin:2px 3px}
+    .doc-panel .tb-color{display:inline-flex;align-items:center;gap:2px;font-size:12px;cursor:pointer;padding:0 3px;color:var(--text,#16243d);height:23px;flex-shrink:0;border-radius:4px}
+    .doc-panel .tb-color:hover{background:var(--surface-3,#e6eef8)}
+    .doc-panel .tb-color input{width:18px;height:18px;border:none;background:none;padding:0;cursor:pointer}
+    .doc-panel .btn-variable{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff);font-weight:700}
+    .doc-panel .btn-fx{background:#eafaf0;color:#168f54;font-weight:700}
+    .doc-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:54px;height:44px;flex-shrink:0;border:1px solid transparent;background:none;border-radius:5px;cursor:pointer;font-family:inherit;color:var(--text,#16243d)}
+    .doc-tile:hover{background:var(--surface-3,#e6eef8)}
+    .doc-tile .doc-tile-ic{font-size:16px;line-height:1}
+    .doc-tile .doc-tile-lbl{font-size:9.5px;font-weight:600;line-height:1;white-space:nowrap}
+    .doc-tile-select{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;padding:0 4px}
+    .doc-tile-select .doc-tile-lbl{font-size:9.5px;font-weight:600;color:var(--text-muted,#5d6b84);white-space:nowrap}
+    .doc-tile-select select{width:80px}
+    .doc-tile-select input[type="number"]{width:56px;height:23px;border:1px solid var(--border-strong,#c6d4e6);border-radius:4px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:11.5px;padding:0 4px}
     .doc-canvas{flex:1;overflow:auto;background:#8c97a5;padding:26px;display:flex;justify-content:center;align-items:flex-start}
     .doc-code{flex:1;width:100%;border:none;outline:none;padding:18px 20px;font-family:Consolas,ui-monospace,monospace;font-size:13px;line-height:1.6;resize:none;background:var(--surface,#fff);color:var(--text,#16243d)}
     .doc-page{width:816px;max-width:100%;min-height:1056px;background:#fff;color:#111;padding:56px 64px;box-shadow:0 6px 30px rgba(0,0,0,.35);font-family:'Segoe UI',system-ui,Arial,sans-serif;font-size:13px;line-height:1.5}
@@ -223,11 +294,24 @@ function ensureStyles() {
 const FONTS = ['Segoe UI', 'Arial', 'Georgia', 'Times New Roman', 'Calibri', 'Courier New', 'Verdana'];
 const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72];
 
-function ribbonHTML() {
+/** One labeled ribbon group: a row of controls + a caption underneath (Word-style). */
+function groupHTML(caption, innerHtml) {
+  return `<div class="doc-group"><div class="doc-group-row">${innerHtml}</div><span class="doc-group-cap">${caption}</span></div>`;
+}
+
+function tabsHTML() {
   return `
+    <button type="button" class="doc-tab active" data-tab="home">Home</button>
+    <button type="button" class="doc-tab" data-tab="insert">Insert</button>
+    <button type="button" class="doc-tab" data-tab="layout">Layout</button>
+    <button type="button" class="doc-tab" data-tab="table" style="display:none">Table</button>`;
+}
+
+function homePanelHTML() {
+  const undo = groupHTML('Undo', `
     <button type="button" data-ex="undo" title="Undo">↶</button>
-    <button type="button" data-ex="redo" title="Redo">↷</button>
-    <span class="tb-sep"></span>
+    <button type="button" data-ex="redo" title="Redo">↷</button>`);
+  const font = groupHTML('Font', `
     <select data-cmd="formatBlock" title="Paragraph style">
       <option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option>
     </select>
@@ -242,7 +326,8 @@ function ribbonHTML() {
     <button type="button" data-ex="subscript" title="Subscript">x₂</button>
     <label class="tb-color" title="Text color"><b>A</b><input type="color" data-color="foreColor" value="#16243d"></label>
     <label class="tb-color" title="Highlight">▣<input type="color" data-color="hiliteColor" value="#fff3b0"></label>
-    <span class="tb-sep"></span>
+    <button type="button" data-ex="removeFormat" title="Clear formatting">⌫</button>`);
+  const paragraph = groupHTML('Paragraph', `
     <button type="button" data-ex="justifyLeft" title="Align left">⬅</button>
     <button type="button" data-ex="justifyCenter" title="Align center">⬌</button>
     <button type="button" data-ex="justifyRight" title="Align right">➡</button>
@@ -250,39 +335,68 @@ function ribbonHTML() {
     <button type="button" data-ex="insertUnorderedList" title="Bullet list">•≣</button>
     <button type="button" data-ex="insertOrderedList" title="Numbered list">1≣</button>
     <button type="button" data-ex="outdent" title="Decrease indent">⇤</button>
-    <button type="button" data-ex="indent" title="Increase indent">⇥</button>
-    <span class="tb-sep"></span>
-    <button type="button" data-ins="link" title="Insert link">🔗</button>
-    <button type="button" data-ins="hr" title="Horizontal line">―</button>
-    <button type="button" data-ins="pagebreak" title="Page break">⤓</button>
-    <button type="button" data-ins="table" title="Insert table">▦</button>
-    <button type="button" data-ins="image" title="Insert image">🖼</button>
-    <button type="button" data-ins="checkbox" title="Insert checkbox">☐</button>
-    <button type="button" data-ins="variable" class="btn-variable" title="Insert variable">{ }</button>
-    <button type="button" data-ins="formula" class="btn-fx" title="Insert formula">ƒx</button>
-    <span class="tb-sep"></span>
-    <button type="button" data-ex="removeFormat" title="Clear formatting">⌫</button>`;
+    <button type="button" data-ex="indent" title="Increase indent">⇥</button>`);
+  const editing = groupHTML('Editing', `
+    <button type="button" class="doc-tile" data-find title="Find &amp; replace (Ctrl+F)"><span class="doc-tile-ic">🔍</span><span class="doc-tile-lbl">Find</span></button>`);
+  return undo + font + paragraph + editing;
 }
 
-function tableBarHTML() {
-  return `
-    <span class="tb-grouplbl">Table</span>
+function tile(kind, value, icon, label, extraClass) {
+  return `<button type="button" data-${kind}="${value}" class="doc-tile ${extraClass || ''}" title="${label}">
+    <span class="doc-tile-ic">${icon}</span><span class="doc-tile-lbl">${label}</span></button>`;
+}
+
+function insertPanelHTML() {
+  const illustrations = groupHTML('Illustrations', tile('ins', 'image', '🖼', 'Picture'));
+  const tables = groupHTML('Tables', tile('ins', 'table', '▦', 'Table'));
+  const links = groupHTML('Links', tile('ins', 'link', '🔗', 'Link'));
+  const text = groupHTML('Text', tile('ins', 'checkbox', '☐', 'Checkbox') + tile('ins', 'hr', '―', 'Line')
+    + tile('ins', 'pagebreak', '⤓', 'Page Break') + tile('ins', 'textbox', '▭', 'Text Box') + tile('ins', 'signature', '✒', 'Signature Line'));
+  const symbols = groupHTML('Symbols', tile('ins', 'symbol', 'Ω', 'Symbol'));
+  const template = groupHTML('Template', tile('ins', 'variable', '{ }', 'Variable', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Formula', 'btn-fx'));
+  return illustrations + tables + links + text + symbols + template;
+}
+
+function layoutPanelHTML() {
+  const pageSetup = groupHTML('Page Setup', `
+    <div class="doc-tile-select"><span class="doc-tile-lbl">Size</span>
+      <select class="doc-fs-type doc-pagesize" title="Page size">
+        <option value="a4">A4</option><option value="letter">Letter</option><option value="custom">Custom</option>
+      </select></div>
+    <div class="doc-tile-select doc-orient-wrap"><span class="doc-tile-lbl">Orientation</span>
+      <select class="doc-fs-type doc-orient" title="Page orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></div>
+    <div class="doc-tile-select doc-custom-wrap" style="display:none"><span class="doc-tile-lbl">Width (mm)</span>
+      <input type="number" class="doc-fs-type doc-custom-w" min="10" max="2000" step="0.1"></div>
+    <div class="doc-tile-select doc-custom-wrap" style="display:none"><span class="doc-tile-lbl">Height (mm)</span>
+      <input type="number" class="doc-fs-type doc-custom-h" min="10" max="2000" step="0.1"></div>
+    <div class="doc-tile-select doc-custom-wrap" style="display:none"><span class="doc-tile-lbl">&nbsp;</span>
+      <button type="button" class="icon-btn" data-swap-wh title="Swap width/height (portrait ⇄ landscape)">⇄</button></div>
+    <div class="doc-tile-select"><span class="doc-tile-lbl">Margin (mm)</span>
+      <input type="number" class="doc-fs-type doc-margin" min="0" max="100" step="0.5"></div>`);
+  const previewGroup = groupHTML('Preview', `
+    <button type="button" class="doc-tile" data-preview title="Open a movable preview"><span class="doc-tile-ic">👁</span><span class="doc-tile-lbl">Preview</span></button>`);
+  return pageSetup + previewGroup;
+}
+
+function tablePanelHTML() {
+  const rowsCols = groupHTML('Rows &amp; Columns', `
     <button type="button" data-tbl="addRow" title="Insert row below">+Row</button>
     <button type="button" data-tbl="delRow" title="Delete row">−Row</button>
     <button type="button" data-tbl="addCol" title="Insert column right">+Col</button>
-    <button type="button" data-tbl="delCol" title="Delete column">−Col</button>
-    <span class="tb-sep"></span>
+    <button type="button" data-tbl="delCol" title="Delete column">−Col</button>`);
+  const merge = groupHTML('Merge', `
     <button type="button" data-tbl="mergeRight" title="Merge with cell on the right">Merge →</button>
     <button type="button" data-tbl="mergeDown" title="Merge with cell below">Merge ↓</button>
-    <button type="button" data-tbl="split" title="Split merged cell">Split</button>
-    <span class="tb-sep"></span>
+    <button type="button" data-tbl="split" title="Split merged cell">Split</button>`);
+  const design = groupHTML('Design', `
     <label class="tb-color" title="Cell shading">▮<input type="color" data-cellbg value="#ffffff"></label>
     <button type="button" data-tbl="width" title="Set column width">↔ Width</button>
-    <select data-tblstyle title="Table style"><option value="doc-table">Bordered</option><option value="doc-table striped">Striped</option><option value="doc-table shaded">Shaded header</option><option value="doc-table plain">Plain</option></select>
-    <span class="tb-sep"></span>
+    <select data-tblstyle title="Table style"><option value="doc-table">Bordered</option><option value="doc-table striped">Striped</option><option value="doc-table shaded">Shaded header</option><option value="doc-table plain">Plain</option></select>`);
+  const template = groupHTML('Template', `
     <button type="button" data-tbl="repeat" title="Repeat this row for each line item">↻ Item row</button>
     <button type="button" data-tbl="fxcell" class="btn-fx" title="Make this cell a formula (=)">= ƒx</button>
-    <button type="button" data-tbl="delTable" title="Delete table">🗑</button>`;
+    <button type="button" data-tbl="delTable" title="Delete table">🗑</button>`);
+  return rowsCols + merge + design + template;
 }
 
 /* ---- shared dialogs ---- */
@@ -321,6 +435,22 @@ function imageDialog(insertHtml, saveSel) {
       if (!file) { showErr('Provide a URL or choose a file'); return false; }
       const dataUrl = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(file); });
       insertHtml(`<img src="${escAttr(dataUrl)}" alt="${escAttr(file.name)}">`);
+    },
+  });
+}
+
+const SYMBOLS = ['₱', '$', '€', '£', '¥', '©', '®', '™', '°', '§', '¶', '•', '★', '✓', '✗', '½', '¼', '¾', '×', '÷', '±', '№'];
+
+function symbolDialog(insertHtml, saveSel) {
+  saveSel();
+  const m = UI.modal({
+    title: 'Insert symbol',
+    bodyHTML: `<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px">
+      ${SYMBOLS.map((s) => `<button type="button" class="btn secondary" data-sym="${escAttr(s)}" style="font-size:16px;padding:8px 0">${s}</button>`).join('')}
+    </div>`,
+    cancelText: 'Close',
+    onOpen: (ov) => {
+      ov.querySelectorAll('[data-sym]').forEach((b) => b.addEventListener('click', () => { insertHtml(b.dataset.sym + '&nbsp;'); m.close(); }));
     },
   });
 }
@@ -448,7 +578,7 @@ function formulaDialog(insertHtml, saveSel, getVariables, initial, sampleContext
 }
 
 /* ---- wiring ---- */
-function wireToolbar(ribbon, tableBar, surface, getVariables, onChange, sampleContext) {
+function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext, tabApi) {
   let savedRange = null;
   const saveSel = () => { const sel = window.getSelection(); if (sel && sel.rangeCount && surface.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange(); };
   const restoreSel = () => { surface.focus(); if (savedRange) { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); } };
@@ -458,12 +588,12 @@ function wireToolbar(ribbon, tableBar, surface, getVariables, onChange, sampleCo
 
   ['mouseup', 'keyup'].forEach((ev) => surface.addEventListener(ev, () => { saveSel(); updateTableBar(); }));
 
-  ribbon.querySelectorAll('[data-ex]').forEach((b) => b.addEventListener('mousedown', (e) => { e.preventDefault(); exec(b.dataset.ex); }));
-  ribbon.querySelectorAll('select[data-cmd]').forEach((sel) => sel.addEventListener('change', () => exec(sel.dataset.cmd, sel.value)));
-  ribbon.querySelectorAll('[data-color]').forEach((inp) => inp.addEventListener('input', () => exec(inp.dataset.color, inp.value)));
+  panelsRoot.querySelectorAll('[data-ex]').forEach((b) => b.addEventListener('mousedown', (e) => { e.preventDefault(); exec(b.dataset.ex); }));
+  panelsRoot.querySelectorAll('select[data-cmd]').forEach((sel) => sel.addEventListener('change', () => exec(sel.dataset.cmd, sel.value)));
+  panelsRoot.querySelectorAll('[data-color]').forEach((inp) => inp.addEventListener('input', () => exec(inp.dataset.color, inp.value)));
 
   // numeric font size (pt) via the size-7 hack + CSS
-  ribbon.querySelector('[data-fontsize]').addEventListener('change', (e) => {
+  panelsRoot.querySelector('[data-fontsize]').addEventListener('change', (e) => {
     restoreSel();
     document.execCommand('fontSize', false, '7');
     surface.querySelectorAll('font[size="7"]').forEach((f) => { f.removeAttribute('size'); f.style.fontSize = e.target.value + 'pt'; });
@@ -471,21 +601,25 @@ function wireToolbar(ribbon, tableBar, surface, getVariables, onChange, sampleCo
   });
 
   // inserts
-  ribbon.querySelector('[data-ins="link"]').addEventListener('click', () => { saveSel(); UI.modal({ title: 'Insert link', bodyHTML: `<label>URL</label><input id="lnk" placeholder="https://…">`, confirmText: 'Insert', onConfirm: (ov) => { const u = ov.querySelector('#lnk').value.trim(); if (!u) return false; exec('createLink', u); } }); });
-  ribbon.querySelector('[data-ins="hr"]').addEventListener('click', () => insertHtml('<hr>'));
-  ribbon.querySelector('[data-ins="pagebreak"]').addEventListener('click', () => insertHtml('<div class="doc-pagebreak" style="page-break-after:always"></div><p><br></p>'));
-  ribbon.querySelector('[data-ins="table"]').addEventListener('click', () => insertTableDialog(insertHtml, saveSel));
-  ribbon.querySelector('[data-ins="image"]').addEventListener('click', () => imageDialog(insertHtml, saveSel));
-  ribbon.querySelector('[data-ins="checkbox"]').addEventListener('click', () => insertHtml('<span class="doc-checkbox" data-checked="0">&#9744;</span>&nbsp;'));
-  ribbon.querySelector('[data-ins="variable"]').addEventListener('click', () => variableDialog(saveSel, getVariables, (tok) => insertHtml(tokenChip(tok.replace(/^\{\{|\}\}$/g, '')) + '&nbsp;')));
-  ribbon.querySelector('[data-ins="formula"]').addEventListener('click', () => formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext));
+  panelsRoot.querySelector('[data-ins="link"]').addEventListener('click', () => { saveSel(); UI.modal({ title: 'Insert link', bodyHTML: `<label>URL</label><input id="lnk" placeholder="https://…">`, confirmText: 'Insert', onConfirm: (ov) => { const u = ov.querySelector('#lnk').value.trim(); if (!u) return false; exec('createLink', u); } }); });
+  panelsRoot.querySelector('[data-ins="hr"]').addEventListener('click', () => insertHtml('<hr>'));
+  panelsRoot.querySelector('[data-ins="pagebreak"]').addEventListener('click', () => insertHtml('<div class="doc-pagebreak" style="page-break-after:always"></div><p><br></p>'));
+  panelsRoot.querySelector('[data-ins="table"]').addEventListener('click', () => insertTableDialog(insertHtml, saveSel));
+  panelsRoot.querySelector('[data-ins="image"]').addEventListener('click', () => imageDialog(insertHtml, saveSel));
+  panelsRoot.querySelector('[data-ins="checkbox"]').addEventListener('click', () => insertHtml('<span class="doc-checkbox" data-checked="0">&#9744;</span>&nbsp;'));
+  panelsRoot.querySelector('[data-ins="variable"]').addEventListener('click', () => variableDialog(saveSel, getVariables, (tok) => insertHtml(tokenChip(tok.replace(/^\{\{|\}\}$/g, '')) + '&nbsp;')));
+  panelsRoot.querySelector('[data-ins="formula"]').addEventListener('click', () => formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext));
+  panelsRoot.querySelector('[data-ins="symbol"]').addEventListener('click', () => symbolDialog(insertHtml, saveSel));
+  panelsRoot.querySelector('[data-ins="textbox"]').addEventListener('click', () =>
+    insertHtml('<div style="border:1px solid #999;padding:10px;margin:8px 0">Text box</div><p><br></p>'));
+  panelsRoot.querySelector('[data-ins="signature"]').addEventListener('click', () =>
+    insertHtml('<div style="margin-top:24px;width:220px;border-top:1px solid #333;padding-top:4px;text-align:center;font-size:11px">Signature over Printed Name</div><p><br></p>'));
 
   // ---- table helpers ----
   const cellOf = (node) => { let n = node; while (n && n !== surface) { if (n.nodeName === 'TD' || n.nodeName === 'TH') return n; n = n.parentNode; } return null; };
   const currentCell = () => cellOf(savedRange ? savedRange.startContainer : (window.getSelection().anchorNode));
   function updateTableBar() {
-    const inTable = !!currentCell();
-    tableBar.style.display = inTable ? '' : 'none';
+    tabApi.setTableTabVisible(!!currentCell());
   }
 
   const tbl = {
@@ -501,11 +635,11 @@ function wireToolbar(ribbon, tableBar, surface, getVariables, onChange, sampleCo
     fxcell() { const c = currentCell(); if (!c) return; formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext); },
     delTable() { const c = currentCell(); if (!c) return; const t = c.closest('table'); UI.confirmDialog('Delete this whole table?', 'Delete').then((ok) => { if (ok) { t.remove(); updateTableBar(); onChange(); } }); },
   };
-  tableBar.querySelectorAll('[data-tbl]').forEach((b) => b.addEventListener('mousedown', (e) => {
+  panelsRoot.querySelectorAll('[data-tbl]').forEach((b) => b.addEventListener('mousedown', (e) => {
     e.preventDefault(); const fn = tbl[b.dataset.tbl]; if (fn) { fn(); if (b.dataset.tbl !== 'delTable') onChange(); }
   }));
-  tableBar.querySelector('[data-cellbg]').addEventListener('input', (e) => { const c = currentCell(); if (c) { c.style.background = e.target.value; onChange(); } });
-  tableBar.querySelector('[data-tblstyle]').addEventListener('change', (e) => { const c = currentCell(); if (c) { c.closest('table').className = e.target.value; onChange(); } });
+  panelsRoot.querySelector('[data-cellbg]').addEventListener('input', (e) => { const c = currentCell(); if (c) { c.style.background = e.target.value; onChange(); } });
+  panelsRoot.querySelector('[data-tblstyle]').addEventListener('change', (e) => { const c = currentCell(); if (c) { c.closest('table').className = e.target.value; onChange(); } });
 
   // checkbox toggle
   surface.addEventListener('click', (e) => { const box = e.target.closest('.doc-checkbox'); if (!box) return; const on = box.getAttribute('data-checked') === '1'; box.setAttribute('data-checked', on ? '0' : '1'); box.innerHTML = on ? '&#9744;' : '&#9745;'; onChange(); });
@@ -698,7 +832,7 @@ function wireToolbar(ribbon, tableBar, surface, getVariables, onChange, sampleCo
     const sel = window.getSelection();
     if (!sel || !sel.anchorNode || !surface.contains(sel.anchorNode)) return;
     Object.keys(STATE).forEach((cmd) => {
-      const b = ribbon.querySelector(`[data-ex="${cmd}"]`);
+      const b = panelsRoot.querySelector(`[data-ex="${cmd}"]`);
       if (b) { try { b.classList.toggle('active', document.queryCommandState(cmd)); } catch (e) { /* ignore */ } }
     });
   };
@@ -715,28 +849,52 @@ function open(opts = {}) {
   fs.className = 'doc-fs';
   fs.innerHTML = `
     <div class="doc-fs-bar">
-      <span class="doc-fs-title">${UI.esc(opts.title || 'Template')}</span>
-      <input class="doc-fs-name" placeholder="Template name" value="${escAttr(opts.name || '')}">
-      <select class="doc-fs-type">${typeOptions.map((t) => `<option value="${t}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${t}</option>`).join('')}</select>
-      ${opts.periodLabel ? `<input class="doc-fs-period" placeholder="${escAttr(opts.periodLabel)}" value="${escAttr(opts.period || '')}" title="${escAttr(opts.periodLabel)}">` : ''}
-      <div class="doc-modes"><button type="button" data-mode="visual" class="active">Visual</button><button type="button" data-mode="code">HTML / CSS</button></div>
-      <select class="doc-fs-type doc-pagesize" title="Page size"><option value="a4">A4</option><option value="letter">Letter</option></select>
-      <select class="doc-fs-type doc-orient" title="Page orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select>
-      <button type="button" class="btn secondary" data-managevars title="Add / rename / remove variables">⚙ Variables</button>
-      <button type="button" class="btn secondary" data-find title="Find &amp; replace (Ctrl+F)">🔍 Find</button>
-      <button type="button" class="btn secondary" data-preview title="Open a movable preview">👁 Preview</button>
-      <div class="grow"></div>
-      <button type="button" class="btn" data-save>Save</button>
-      <button type="button" class="btn secondary" data-close>Close</button>
+      <div class="doc-fs-bar-scroll">
+        <span class="doc-fs-title">${UI.esc(opts.title || 'Template')}</span>
+        <input class="doc-fs-name" placeholder="Template name" value="${escAttr(opts.name || '')}">
+        <select class="doc-fs-type">${typeOptions.map((t) => `<option value="${t}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        ${opts.periodLabel ? `<input class="doc-fs-period" placeholder="${escAttr(opts.periodLabel)}" value="${escAttr(opts.period || '')}" title="${escAttr(opts.periodLabel)}">` : ''}
+        <div class="doc-modes"><button type="button" data-mode="visual" class="active">Visual</button><button type="button" data-mode="code">HTML / CSS</button></div>
+        <button type="button" class="btn secondary" data-managevars title="Add / rename / remove variables">⚙</button>
+      </div>
+      <div class="doc-fs-bar-actions">
+        <button type="button" class="btn" data-save>Save</button>
+        <button type="button" class="btn secondary" data-close title="Close (Esc)">✕ Close</button>
+      </div>
     </div>
-    <div class="doc-ribbon" role="toolbar" aria-label="Formatting">${ribbonHTML()}</div>
-    <div class="doc-ribbon table-bar" role="toolbar" aria-label="Table tools" style="display:none">${tableBarHTML()}</div>
+    <div class="doc-tabs" role="tablist">${tabsHTML()}</div>
+    <div class="doc-panel" data-panel="home" role="toolbar" aria-label="Home">${homePanelHTML()}</div>
+    <div class="doc-panel" data-panel="insert" role="toolbar" aria-label="Insert" style="display:none">${insertPanelHTML()}</div>
+    <div class="doc-panel" data-panel="layout" role="toolbar" aria-label="Layout" style="display:none">${layoutPanelHTML()}</div>
+    <div class="doc-panel table-panel" data-panel="table" role="toolbar" aria-label="Table tools" style="display:none">${tablePanelHTML()}</div>
     <div class="doc-canvas"><div class="doc-page doc-surface" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document body"></div></div>
     <textarea class="doc-code" spellcheck="false" style="display:none"></textarea>`;
   document.body.appendChild(fs);
 
-  const ribbon = fs.querySelector('.doc-ribbon:not(.table-bar)');
-  const tableBar = fs.querySelector('.doc-ribbon.table-bar');
+  const tabsEl = fs.querySelector('.doc-tabs');
+  const panels = {
+    home: fs.querySelector('[data-panel="home"]'),
+    insert: fs.querySelector('[data-panel="insert"]'),
+    layout: fs.querySelector('[data-panel="layout"]'),
+    table: fs.querySelector('[data-panel="table"]'),
+  };
+  const panelsRoot = fs; // wireToolbar's data-ex/data-ins/etc lookups span every panel at once
+  const tableTabBtn = tabsEl.querySelector('[data-tab="table"]');
+  let activeTab = 'home';
+  function switchTab(name) {
+    if (!panels[name]) return;
+    activeTab = name;
+    tabsEl.querySelectorAll('.doc-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+    Object.keys(panels).forEach((k) => { panels[k].style.display = k === name ? '' : 'none'; });
+  }
+  tabsEl.querySelectorAll('.doc-tab').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+  const tabApi = {
+    setTableTabVisible(visible) {
+      tableTabBtn.style.display = visible ? '' : 'none';
+      if (!visible && activeTab === 'table') switchTab('home');
+    },
+  };
+
   const surface = fs.querySelector('.doc-surface');
   const canvas = fs.querySelector('.doc-canvas');
   const code = fs.querySelector('.doc-code');
@@ -781,16 +939,49 @@ function open(opts = {}) {
 
   let dirty = false;
   const onChange = () => { dirty = true; refreshPreview(); };
-  const wired = wireToolbar(ribbon, tableBar, surface, opts.getVariables, onChange, opts.sampleContext);
+  const wired = wireToolbar(panelsRoot, surface, opts.getVariables, onChange, opts.sampleContext, tabApi);
 
-  // page setup (size/orientation)
+  // page setup: size (preset or custom mm) + orientation (presets only) + margin (mm)
   const sizeSel = fs.querySelector('.doc-pagesize');
   const orientSel = fs.querySelector('.doc-orient');
+  const orientWrap = fs.querySelector('.doc-orient-wrap');
+  const customWraps = fs.querySelectorAll('.doc-custom-wrap');
+  const customWInp = fs.querySelector('.doc-custom-w');
+  const customHInp = fs.querySelector('.doc-custom-h');
+  const marginInp = fs.querySelector('.doc-margin');
   const pg = parsePageStyle(opts.body || '');
-  sizeSel.value = pg.size; orientSel.value = pg.orient;
-  const applyCanvas = () => { const [w, h] = pageDims(sizeSel.value, orientSel.value); surface.style.width = w + 'px'; surface.style.minHeight = h + 'px'; };
-  sizeSel.addEventListener('change', () => { applyCanvas(); dirty = true; refreshPreview(); });
-  orientSel.addEventListener('change', () => { applyCanvas(); dirty = true; refreshPreview(); });
+
+  sizeSel.value = pg.preset;
+  orientSel.value = pg.heightMm >= pg.widthMm ? 'portrait' : 'landscape';
+  customWInp.value = pg.widthMm;
+  customHInp.value = pg.heightMm;
+  marginInp.value = pg.marginMm;
+
+  function currentPageMm() {
+    if (sizeSel.value === 'custom') {
+      return { widthMm: Number(customWInp.value) || pg.widthMm, heightMm: Number(customHInp.value) || pg.heightMm };
+    }
+    const [pw, ph] = PAGE_PRESETS_MM[sizeSel.value] || PAGE_PRESETS_MM.a4;
+    return orientSel.value === 'landscape' ? { widthMm: ph, heightMm: pw } : { widthMm: pw, heightMm: ph };
+  }
+  function syncSizeUI() {
+    const isCustom = sizeSel.value === 'custom';
+    orientWrap.style.display = isCustom ? 'none' : '';
+    customWraps.forEach((w) => { w.style.display = isCustom ? '' : 'none'; });
+  }
+  const applyCanvas = () => {
+    const { widthMm, heightMm } = currentPageMm();
+    const [w, h] = pageDims(widthMm, heightMm);
+    surface.style.width = w + 'px'; surface.style.minHeight = h + 'px';
+    surface.style.padding = Math.round((Number(marginInp.value) || 0) * PX_PER_MM) + 'px';
+  };
+  [sizeSel, orientSel, customWInp, customHInp, marginInp].forEach((el) =>
+    el.addEventListener('change', () => { syncSizeUI(); applyCanvas(); dirty = true; refreshPreview(); }));
+  fs.querySelector('[data-swap-wh]').addEventListener('click', () => {
+    const w = customWInp.value; customWInp.value = customHInp.value; customHInp.value = w;
+    applyCanvas(); dirty = true; refreshPreview();
+  });
+  syncSizeUI();
   applyCanvas();
 
   surface.innerHTML = bodyToEditorHtml(pg.rest); // initial load is not a "dirty" edit
@@ -817,8 +1008,8 @@ function open(opts = {}) {
 
   function setMode(next) {
     if (next === mode) return;
-    if (next === 'code') { code.value = serializeEditor(surface); code.style.display = ''; canvas.style.display = 'none'; ribbon.style.display = 'none'; tableBar.style.display = 'none'; }
-    else { surface.innerHTML = bodyToEditorHtml(code.value); code.style.display = 'none'; canvas.style.display = ''; ribbon.style.display = ''; }
+    if (next === 'code') { code.value = serializeEditor(surface); code.style.display = ''; canvas.style.display = 'none'; tabsEl.style.display = 'none'; Object.values(panels).forEach((p) => { p.style.display = 'none'; }); }
+    else { surface.innerHTML = bodyToEditorHtml(code.value); code.style.display = 'none'; canvas.style.display = ''; tabsEl.style.display = ''; switchTab(activeTab); }
     mode = next;
     fs.querySelectorAll('.doc-modes button').forEach((b) => b.classList.toggle('active', b.dataset.mode === next));
     refreshPreview();
@@ -843,7 +1034,8 @@ function open(opts = {}) {
   fs.querySelector('[data-save]').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     let body = mode === 'code' ? code.value : serializeEditor(surface);
-    body = pageStyleTag(sizeSel.value, orientSel.value) + body.replace(/<style data-docpage>[\s\S]*?<\/style>/i, '');
+    const { widthMm, heightMm } = currentPageMm();
+    body = pageStyleTag(widthMm, heightMm, Number(marginInp.value) || 0) + body.replace(/<style data-docpage>[\s\S]*?<\/style>/i, '');
     btn.disabled = true;
     try {
       const res = opts.onSave ? await opts.onSave({ name: nameInp.value, type: typeSel.value, period: periodInp ? periodInp.value : undefined, body }) : true;
@@ -857,7 +1049,7 @@ function open(opts = {}) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { bodyToEditorHtml, serializeEditor, sanitizeHtml, parsePageStyle, pageDims, replaceAllInSurface };
+  module.exports = { bodyToEditorHtml, serializeEditor, sanitizeHtml, parsePageStyle, pageStyleTag, pageDims, replaceAllInSurface };
 } else {
   window.DocEditor = { open, bodyToEditorHtml, serializeEditor, sanitizeHtml };
 }

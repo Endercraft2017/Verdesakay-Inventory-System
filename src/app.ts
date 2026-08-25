@@ -17,6 +17,7 @@ import ordersRoutes from './routes/orders.routes';
 import templatesRoutes from './routes/templates.routes';
 import formBuilderRoutes from './routes/form-builder.routes';
 import aiRoutes from './routes/ai.routes';
+import hrRoutes from './routes/hr.routes';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -61,6 +62,7 @@ export function createApp() {
   app.use('/api/templates', templatesRoutes);
   app.use('/api', formBuilderRoutes);
   app.use('/api/ai', aiRoutes);
+  app.use('/api/hr', hrRoutes);
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
   });

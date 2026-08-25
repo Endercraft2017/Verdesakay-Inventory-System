@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run } from '../db';
-import { requireAuth, requirePermission } from '../auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../auth';
 import {
   parseBody,
   createUserSchema,
@@ -160,8 +160,10 @@ router.get('/departments/list', (_req, res) => {
   res.json(rows);
 });
 
-// POST /api/users/departments
-router.post('/departments', requirePermission('users.manage'), (req, res) => {
+// POST /api/users/departments — users.manage (full admin) or hr.manage (HR builds out its own
+// department list without needing full account-management rights). Rename/delete stay
+// users.manage-only below since they touch existing users/items/forms company-wide.
+router.post('/departments', requireAnyPermission(['users.manage', 'hr.manage']), (req, res) => {
   const { name } = parseBody(createDepartmentSchema, req.body);
   const exists = queryOne('SELECT id FROM departments WHERE name = ? COLLATE NOCASE', name);
   if (exists) {
@@ -203,9 +205,26 @@ router.put('/departments/:id', requirePermission('users.manage'), (req, res) => 
   res.json({ ok: true });
 });
 
-// DELETE /api/users/departments/:id — FK is ON DELETE SET NULL
-router.delete('/departments/:id', requirePermission('users.manage'), (req, res) => {
-  const info = run('DELETE FROM departments WHERE id = ?', Number(req.params.id));
+// DELETE /api/users/departments/:id — FK is ON DELETE SET NULL. users.manage can delete any
+// department; hr.manage-only callers can delete one only if nothing outside HR's own domain
+// (user accounts, inventory items, files) references it — employees are fine, since that's
+// HR's own domain and just unassigns them, same as a users.manage delete would.
+router.delete('/departments/:id', requireAnyPermission(['users.manage', 'hr.manage']), (req, res) => {
+  const id = Number(req.params.id);
+  if (!req.user!.permissions.includes('users.manage')) {
+    const usage = queryOne<{ user_count: number; item_count: number; form_count: number }>(
+      `SELECT
+         (SELECT COUNT(*) FROM users u WHERE u.department_id = ?) AS user_count,
+         (SELECT COUNT(*) FROM inventory_items i WHERE i.department_id = ?) AS item_count,
+         (SELECT COUNT(*) FROM forms f WHERE f.department_id = ?) AS form_count`,
+      id, id, id
+    )!;
+    if (usage.user_count + usage.item_count + usage.form_count > 0) {
+      res.status(409).json({ error: 'Department is in use outside HR (accounts, items, or files) — ask an admin to remove it' });
+      return;
+    }
+  }
+  const info = run('DELETE FROM departments WHERE id = ?', id);
   if (info.changes === 0) {
     res.status(404).json({ error: 'Department not found' });
     return;

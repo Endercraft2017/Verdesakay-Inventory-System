@@ -2,7 +2,7 @@
    Route: form-records.  filter.form_id = <id> to open a specific form directly. */
 App.register('form-records', async (view, filter) => {
   if (filter && filter.form_id) {
-    await renderFormView(view, Number(filter.form_id));
+    await renderFormView(view, Number(filter.form_id), filter.period || '');
   } else {
     await renderIndex(view);
   }
@@ -45,12 +45,12 @@ async function renderIndex(view) {
 }
 
 /* ── Per-form records view ───────────────────────────────────────────────── */
-async function renderFormView(view, formId) {
+async function renderFormView(view, formId, initialPeriod) {
   let formDef = null;
   let searchTimer;
   let currentRecords = [];
   let selectedIds = new Set();
-  const state = { q: '', status: '', period: '' };
+  const state = { q: '', status: '', period: initialPeriod || '' };
 
   try { formDef = await API.get('/form-definitions/' + formId); }
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }

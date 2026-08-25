@@ -223,6 +223,9 @@ App.register('orders', async (view, filter) => {
   }
 
   /* ---------- Print ---------- */
+  // Preview-modal + iframe, not window.open() — a new browser window/tab can be popup-blocked
+  // outright by some browsers/extensions regardless of gesture timing; an iframe inside a
+  // modal that's already part of the page never opens a new window.
   async function printOrder(id) {
     try {
       const order = await API.get('/orders/' + id);
@@ -235,7 +238,22 @@ App.register('orders', async (view, filter) => {
         ? (await API.get('/templates/' + templateList[0].id)).body
         : FALLBACK_TEMPLATE;
       const ctx = buildContext(order, company, App.getMe());
-      UI.printDocument(renderTemplate(tplBody, ctx), order.number);
+      const full = UI.printableHtml(renderTemplate(tplBody, ctx), order.number);
+
+      UI.modal({
+        title: order.number + ' — Preview',
+        size: 'lg',
+        bodyHTML: `<iframe id="ord-preview-frame" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+        cancelText: 'Close',
+        confirmText: 'Print…',
+        onOpen: (ov) => { ov.querySelector('#ord-preview-frame').srcdoc = full; },
+        onConfirm: (ov) => {
+          const ifr = ov.querySelector('#ord-preview-frame');
+          ifr.contentWindow.focus();
+          ifr.contentWindow.print();
+          return false; // keep the preview open — printing shouldn't close it
+        },
+      });
     } catch (e) {
       UI.toast(e.message, 'error');
     }
