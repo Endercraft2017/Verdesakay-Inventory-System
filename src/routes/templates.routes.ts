@@ -52,27 +52,23 @@ router.get('/variables', (req, res) => {
 // POST /api/templates/variables
 router.post('/variables', requirePermission('templates.edit'), (req, res) => {
   const v = parseBody(docVariableSchema, req.body);
-  try {
-    const info = run(
-      `INSERT INTO doc_variables
-        (scope, template_id, category, key, label, source_type, value, field_path, formula, data_type, sort)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      v.scope,
-      v.scope === 'template' ? (v.template_id ?? null) : null,
-      v.category,
-      v.key,
-      v.label,
-      v.source_type,
-      v.value ?? null,
-      v.field_path ?? null,
-      v.formula ?? null,
-      v.data_type,
-      v.sort
-    );
-    res.status(201).json({ id: info.lastInsertRowid });
-  } catch (e) {
+  const templateId = v.scope === 'template' ? (v.template_id ?? null) : null;
+  const dupe = queryOne(
+    'SELECT id FROM doc_variables WHERE scope = ? AND IFNULL(template_id, 0) = IFNULL(?, 0) AND key = ?',
+    v.scope, templateId, v.key
+  );
+  if (dupe) {
     res.status(409).json({ error: 'A variable with that key already exists in this scope' });
+    return;
   }
+  const info = run(
+    `INSERT INTO doc_variables
+      (scope, template_id, category, key, label, source_type, value, field_path, formula, data_type, sort)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    v.scope, templateId, v.category, v.key, v.label, v.source_type,
+    v.value ?? null, v.field_path ?? null, v.formula ?? null, v.data_type, v.sort
+  );
+  res.status(201).json({ id: info.lastInsertRowid });
 });
 
 // PUT /api/templates/variables/:id (key + scope are fixed)

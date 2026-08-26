@@ -30,28 +30,33 @@ App.register('admin', async (view, filter) => {
     marketing: 'Marketing',
   };
 
-  // Role defaults mirrored from src/permissions.ts (for ★ display in permission editor).
-  const ROLE_DEFAULTS = {
-    admin: ['inventory.view','inventory.create','inventory.edit','inventory.delete','inventory.adjust','inventory.configure','orders.view','orders.create','orders.edit','orders.delete','forms.view','forms.upload','forms.delete','forms.manage','messages.view','messages.send','templates.view','templates.edit','templates.company','users.manage'],
-    admin_staff: ['inventory.view','inventory.create','inventory.edit','inventory.adjust','orders.view','orders.create','orders.edit','forms.view','forms.upload','forms.delete','forms.manage','messages.view','messages.send','templates.view'],
-    accounting: ['inventory.view','orders.view','orders.create','orders.edit','forms.view','forms.upload','messages.view','messages.send','templates.view'],
-    warehouse: ['inventory.view','inventory.create','inventory.edit','inventory.adjust','orders.view','forms.view','forms.upload','messages.view','messages.send'],
-    releasing: ['inventory.view','inventory.adjust','orders.view','orders.create','orders.edit','forms.view','forms.upload','messages.view','messages.send','templates.view'],
-    csr: ['inventory.view','orders.view','orders.create','orders.edit','forms.view','forms.upload','messages.view','messages.send','templates.view'],
-    hr: ['forms.view','forms.upload','forms.delete','messages.view','messages.send','templates.view'],
-    marketing: ['forms.view','forms.upload','messages.view','messages.send','templates.view'],
-  };
-
+  // Grouping/labels are a frontend-only presentation concern. The actual permission keys and
+  // per-role defaults are NOT duplicated here — they're fetched from GET /users/permissions/catalog
+  // (backed by src/permissions.ts) so this view can never drift from the backend's role defaults
+  // the way its old hand-copied ROLE_DEFAULTS did (it was missing the hr.view/hr.manage permissions
+  // entirely, so admins couldn't grant/revoke them here even though HR accounts had them).
   const PERMISSION_GROUPS = [
     { label: 'Inventory', keys: ['inventory.view','inventory.create','inventory.edit','inventory.delete','inventory.adjust','inventory.configure'] },
     { label: 'Orders', keys: ['orders.view','orders.create','orders.edit','orders.delete'] },
     { label: 'Files', keys: ['forms.view','forms.upload','forms.delete','forms.manage'] },
     { label: 'Messages', keys: ['messages.view','messages.send'] },
     { label: 'Templates', keys: ['templates.view','templates.edit','templates.company'] },
+    { label: 'HR', keys: ['hr.view','hr.manage'] },
     { label: 'Admin', keys: ['users.manage'] },
   ];
 
-  const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((g) => g.keys);
+  let permCatalog = null;
+  async function getPermCatalog() {
+    if (!permCatalog) permCatalog = await API.get('/users/permissions/catalog');
+    // Any backend permission key not covered by a group above still needs to be editable —
+    // surface it under "Other" rather than silently dropping it from the UI.
+    const known = new Set(PERMISSION_GROUPS.flatMap((g) => g.keys));
+    const extra = (permCatalog.permissions || []).filter((p) => !known.has(p));
+    permCatalog.groups = extra.length
+      ? [...PERMISSION_GROUPS, { label: 'Other', keys: extra }]
+      : PERMISSION_GROUPS;
+    return permCatalog;
+  }
 
   function roleSelect(field, selected) {
     return `<select data-f="${field}">${
@@ -168,14 +173,16 @@ App.register('admin', async (view, filter) => {
     });
   }
 
-  function openPermEditor(u) {
+  async function openPermEditor(u) {
+    const catalog = await getPermCatalog();
+    const allPermissions = catalog.groups.flatMap((g) => g.keys);
     let overrides = {};
     try { overrides = JSON.parse(u.permission_overrides || '{}'); } catch { /* ignore */ }
-    const roleDefaults = new Set(ROLE_DEFAULTS[u.role] || []);
+    const roleDefaults = new Set(catalog.roleDefaults[u.role] || []);
 
     function effectivePerms() {
       const result = new Set();
-      for (const p of ALL_PERMISSIONS) {
+      for (const p of allPermissions) {
         const ov = overrides[p];
         if (ov === true) result.add(p);
         else if (ov === false) { /* revoked */ }
@@ -186,7 +193,7 @@ App.register('admin', async (view, filter) => {
 
     function renderEditor(container) {
       const effective = effectivePerms();
-      container.innerHTML = PERMISSION_GROUPS.map((g) => `
+      container.innerHTML = catalog.groups.map((g) => `
         <div style="margin-bottom:12px">
           <div style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;color:var(--text-muted)">${UI.esc(g.label)}</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
@@ -196,7 +203,7 @@ App.register('admin', async (view, filter) => {
               const shortKey = k.split('.')[1];
               return `<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:3px 8px;border-radius:4px;background:var(--surface-raised)">
                 <input type="checkbox" data-perm="${k}" ${checked ? 'checked' : ''} />
-                ${UI.esc(shortKey)}${isOverride ? ' <span style="color:var(--accent)">★</span>' : ''}
+                ${UI.esc(shortKey)}${isOverride ? ` <span style="color:var(--accent)">${UI.icon('star', 11)}</span>` : ''}
               </label>`;
             }).join('')}
           </div>

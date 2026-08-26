@@ -1,6 +1,7 @@
 /* Right-rail personal tools: AI assistant, Notes, Email, Scheduler, Bookmarks.
    Notes / tasks / bookmarks persist per-user via /api/notes|tasks|bookmarks.
-   AI and Email are UI-only previews (no backend yet). */
+   AI talks to the real POST /api/ai/chat agentic backend (src/routes/ai.routes.ts +
+   src/ai-tools.ts) — see docs/AI-AGENT.md. Email is still a UI-only preview (no backend). */
 (function () {
   const TOOL_ICONS = { ai: 'sparkles', notes: 'note', email: 'mail', scheduler: 'calendar', bookmarks: 'bookmark' };
 
@@ -20,12 +21,29 @@
     else if (tool === 'bookmarks') openBookmarks();
   }
 
-  /* ---------------- AI assistant (preview) ---------------- */
+  /* ---------------- AI assistant ---------------- */
+  // Conversation history for the agentic loop — the server is stateless, so the client
+  // resends the full thread each turn. Cleared whenever the drawer is (re)opened.
+  let aiHistory = [];
+
+  function mdLite(s) {
+    // Light markdown over already-escaped text: **bold**, `code`, line breaks.
+    return UI.esc(s)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+?)`/g, '<code>$1</code>')
+      .replace(/\n/g, '<br>');
+  }
+
+  function toolLabel(name) {
+    return String(name || '').replace(/_/g, ' ');
+  }
+
   function openAI() {
+    aiHistory = [];
     UI.drawer({
       key: 'ai', icon: 'sparkles', title: 'AI Assistant',
       bodyHTML: `<div class="ai-chat" id="ai-chat">
-          <div class="ai-msg bot">Hi! I'm your assistant. ⚠️ AI isn't connected yet — this is a preview.</div>
+          <div class="ai-msg bot">Hi! I'm your assistant — ask me about inventory, orders, messages, or your notes and tasks.</div>
         </div>`,
       footHTML: `<form class="ai-input" id="ai-form">
           <input id="ai-text" placeholder="Ask me anything…" autocomplete="off" />
@@ -34,17 +52,47 @@
       onOpen: (el) => {
         const chat = el.querySelector('#ai-chat');
         const input = el.querySelector('#ai-text');
-        el.querySelector('#ai-form').addEventListener('submit', (e) => {
+        const form = el.querySelector('#ai-form');
+        const submitBtn = form.querySelector('button[type="submit"]');
+
+        form.addEventListener('submit', async (e) => {
           e.preventDefault();
           const t = input.value.trim();
           if (!t) return;
           chat.insertAdjacentHTML('beforeend', `<div class="ai-msg user">${UI.esc(t)}</div>`);
           input.value = '';
+          input.disabled = true;
+          submitBtn.disabled = true;
+          aiHistory.push({ role: 'user', content: t });
           chat.scrollTop = chat.scrollHeight;
-          setTimeout(() => {
-            chat.insertAdjacentHTML('beforeend', `<div class="ai-msg bot">⚠️ AI isn't connected yet — this is a preview.</div>`);
+
+          const typingId = 'ai-typing-' + Date.now();
+          chat.insertAdjacentHTML('beforeend',
+            `<div class="ai-msg bot ai-typing" id="${typingId}"><span></span><span></span><span></span></div>`);
+          chat.scrollTop = chat.scrollHeight;
+
+          try {
+            const res = await API.post('/ai/chat', { messages: aiHistory });
+            const typingEl = document.getElementById(typingId);
+            if (typingEl) typingEl.remove();
+
+            const chips = (res.steps || []).map((s) =>
+              `<span class="ai-chip">${UI.esc(toolLabel(s.tool))}</span>`).join('');
+            const chipsHTML = chips ? `<div class="ai-chips">${chips}</div>` : '';
+            chat.insertAdjacentHTML('beforeend',
+              `<div class="ai-msg bot">${chipsHTML}<div>${mdLite(res.reply || '')}</div></div>`);
+            aiHistory.push({ role: 'assistant', content: res.reply || '' });
+          } catch (err) {
+            const typingEl = document.getElementById(typingId);
+            if (typingEl) typingEl.remove();
+            chat.insertAdjacentHTML('beforeend', `<div class="ai-msg bot ai-error">${UI.esc(err.message)}</div>`);
+            aiHistory.pop(); // don't carry a failed turn's user message forward
+          } finally {
+            input.disabled = false;
+            submitBtn.disabled = false;
             chat.scrollTop = chat.scrollHeight;
-          }, 250);
+            input.focus();
+          }
         });
         input.focus();
       },

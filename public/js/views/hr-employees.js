@@ -5,16 +5,17 @@
    Templates), the same way payslips print from the "HR Payroll Slip" template.
    Route: hr-employees. */
 App.register('hr-employees', async (view) => {
+  if (!App.hasPermission('hr.view')) {
+    view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
+    return;
+  }
+  const canManage = App.hasPermission('hr.manage');
   const state = { q: '', department_id: '', status: '' };
   let depts = [];
 
   const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', resigned: 'Resigned', terminated: 'Terminated' };
   const STATUS_CLASS = { probationary: 'status-confirmed', regular: 'status-completed', resigned: 'muted', terminated: 'status-cancelled' };
-  const PLACEHOLDER_PHOTO = 'data:image/svg+xml,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
-    '<rect width="100" height="100" fill="#dce6f2"/><circle cx="50" cy="38" r="18" fill="#9fb3c8"/>' +
-    '<path d="M20 88c4-22 18-32 30-32s26 10 30 32" fill="#9fb3c8"/></svg>'
-  );
+  const PLACEHOLDER_PHOTO = UI.PLACEHOLDER_PHOTO;
 
   view.innerHTML = `
     <div class="topbar">
@@ -26,12 +27,12 @@ App.register('hr-employees', async (view) => {
         <option value="">All statuses</option>
         ${Object.keys(STATUS_LABELS).map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join('')}
       </select>
-      <button class="btn" id="emp-new" style="margin-left:8px">${UI.icon('plus')} New Employee</button>
+      ${canManage ? `<button class="btn" id="emp-new" style="margin-left:8px">${UI.icon('plus')} New Employee</button>` : ''}
     </div>
     <div class="panel"><div id="emp-table"></div></div>`;
 
   const tableEl = view.querySelector('#emp-table');
-  const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const money = UI.money;
 
   async function ensureDepts() {
     if (depts.length) return depts;
@@ -112,7 +113,7 @@ App.register('hr-employees', async (view) => {
         icon: 'users',
         title: state.q || state.department_id || state.status ? 'No matching employees' : 'No employees yet',
         hint: state.q || state.department_id || state.status ? 'Try a different search or filter.' : 'Add your first employee to start building cutoffs.',
-        action: state.q || state.department_id || state.status ? '' : `<button class="btn" id="emp-empty-new">${UI.icon('plus')} New Employee</button>`,
+        action: (state.q || state.department_id || state.status || !canManage) ? '' : `<button class="btn" id="emp-empty-new">${UI.icon('plus')} New Employee</button>`,
       });
       const en = tableEl.querySelector('#emp-empty-new');
       if (en) en.onclick = () => employeeModal(null);
@@ -419,7 +420,8 @@ App.register('hr-employees', async (view) => {
   });
   view.querySelector('#emp-dept-filter').addEventListener('change', (e) => { state.department_id = e.target.value; load(); });
   view.querySelector('#emp-status-filter').addEventListener('change', (e) => { state.status = e.target.value; load(); });
-  view.querySelector('#emp-new').addEventListener('click', () => employeeModal(null));
+  const newBtn = view.querySelector('#emp-new');
+  if (newBtn) newBtn.addEventListener('click', () => employeeModal(null));
 
   await load();
 });

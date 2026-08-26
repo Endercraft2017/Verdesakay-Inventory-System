@@ -20,7 +20,7 @@ Mounted with `app.use('/api', formBuilderRoutes)` (note: **not** prefixed `/form
 `formDefinitionSchema` (`src/validation.ts`): `name` (1-120), `slug` (lowercase/digits/underscore, 1-60), `number_prefix` (uppercase letters/digits, default `'FM'`), `icon` (default `'file'`), `fields: FieldDef[]` (each with `key` matching `/^[a-z0-9_]+$/`, `label`, `type` enum `text|number|date|select|textarea|checkbox`, `required`, `options[]`, `default`).
 
 ### CSV import (HR Payroll only)
-**`POST /form-definitions/:id/import`** — `csvUpload.single('file')` (multer, `memoryStorage`, 5 MB limit), no permission check beyond `requireAuth`.
+**`POST /form-definitions/:id/import`** — `requirePermission('hr.manage')` *(added 2026-08-25 — see Notes)*, then `csvUpload.single('file')` (multer, `memoryStorage`, 5 MB limit).
 
 Logic, in order:
 1. Look up the form definition by `:id` → `404` if missing.
@@ -74,7 +74,10 @@ A trailing `router.use((err, req, res, next) => ...)` catches `multer.MulterErro
 
 ## Notes / gotchas
 - The router is mounted at bare `/api`, not `/api/form-builder` — its route paths (`/form-definitions`, `/form-records`, `/global-variables`) are the full path segments after `/api`. Easy to misread given the filename.
-- The CSV import route has **no `requirePermission` check** — any authenticated user can bulk-import payroll records, unlike the rest of HR (`hr.routes.ts`) which gates writes behind `hr.manage`. The only gate is the slug check (`form.slug !== 'hr_payroll'` → 400), which restricts *which form* can be bulk-imported into, not *who* can do it.
+- **(Fixed 2026-08-25)** The CSV import route used to have no `requirePermission` check — any
+  authenticated user could bulk-import payroll records, unlike the rest of HR (`hr.routes.ts`)
+  which gates writes behind `hr.manage`. Now gated the same way; covered by a new test in
+  `tests/form-builder.test.ts` ("requires hr.manage — a caller without it is rejected").
 - `nextRecordNumber` and the record-numbering logic duplicated inline in `hr.routes.ts`'s `generate-payslips` handler (`form_seq_<id>` counter pattern) are two separate implementations of the same idea — `hr.routes.ts` does not call this file's `nextRecordNumber`, it reimplements the counter read/increment locally.
 - `POST /form-records` and `PUT /form-records/:id` accept a `data` object with arbitrary string keys (≤64 chars) — the route does **not** validate that those keys match the target form definition's `fields[].key` list, so it's possible to submit data for fields that don't exist on the form (or omit required ones) without a schema-level error.
 - Record status defaults to `'draft'` on create, but the CSV-imported records are explicitly forced to `status: 'completed'` in the import route, bypassing the normal default.

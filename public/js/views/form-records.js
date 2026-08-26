@@ -82,7 +82,7 @@ async function renderFormView(view, formId, initialPeriod) {
       <div style="flex:1"></div>
       ${isPayroll ? `<button class="btn secondary small" id="fr-bulk-print">${UI.icon('printer')} Print selected</button>` : ''}
       <button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>
-      <button class="btn secondary small" id="fr-bulk-clear">✕ Clear</button>
+      <button class="btn secondary small" id="fr-bulk-clear">${UI.icon('close', 12)} Clear</button>
     </div>
     <div class="panel"><div id="fr-table"></div></div>`;
 

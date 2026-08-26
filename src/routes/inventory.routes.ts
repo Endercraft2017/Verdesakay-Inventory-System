@@ -119,7 +119,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/inventory — create item
-router.post('/', (req, res) => {
+router.post('/', requirePermission('inventory.create'), (req, res) => {
   const input = parseBody(createItemSchema, req.body);
   if (input.sku) {
     const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ?', input.sku);
@@ -129,37 +129,47 @@ router.post('/', (req, res) => {
     }
   }
 
-  const info = run(
-    `INSERT INTO inventory_items
-      (name, sku, category, department_id, quantity, unit, min_quantity, location, notes, attributes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    input.name,
-    input.sku ?? null,
-    input.category ?? null,
-    input.department_id,
-    input.quantity,
-    input.unit ?? 'pcs',
-    input.min_quantity,
-    input.location ?? null,
-    input.notes ?? null,
-    input.attributes ? JSON.stringify(input.attributes) : null
-  );
-
-  if (input.quantity !== 0) {
-    run(
-      `INSERT INTO inventory_transactions (item_id, user_id, change, balance_after, reason)
-       VALUES (?, ?, ?, ?, 'Initial stock')`,
-      info.lastInsertRowid,
-      req.user!.id,
+  // Item + its initial-stock transaction must land together (same shape as /adjust below).
+  db.exec('BEGIN');
+  let itemId: number | bigint;
+  try {
+    const info = run(
+      `INSERT INTO inventory_items
+        (name, sku, category, department_id, quantity, unit, min_quantity, location, notes, attributes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      input.name,
+      input.sku ?? null,
+      input.category ?? null,
+      input.department_id,
       input.quantity,
-      input.quantity
+      input.unit ?? 'pcs',
+      input.min_quantity,
+      input.location ?? null,
+      input.notes ?? null,
+      input.attributes ? JSON.stringify(input.attributes) : null
     );
+    itemId = info.lastInsertRowid;
+
+    if (input.quantity !== 0) {
+      run(
+        `INSERT INTO inventory_transactions (item_id, user_id, change, balance_after, reason)
+         VALUES (?, ?, ?, ?, 'Initial stock')`,
+        itemId,
+        req.user!.id,
+        input.quantity,
+        input.quantity
+      );
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
   }
-  res.status(201).json({ id: info.lastInsertRowid });
+  res.status(201).json({ id: itemId });
 });
 
 // PUT /api/inventory/:id — update details (not quantity; use /adjust)
-router.put('/:id', (req, res) => {
+router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
   if (!item) {
@@ -196,7 +206,7 @@ router.put('/:id', (req, res) => {
 });
 
 // POST /api/inventory/:id/adjust — stock in / out, recorded as a transaction
-router.post('/:id/adjust', (req, res) => {
+router.post('/:id/adjust', requirePermission('inventory.adjust'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
   if (!item) {
@@ -232,7 +242,7 @@ router.post('/:id/adjust', (req, res) => {
 });
 
 // DELETE /api/inventory/:id
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requirePermission('inventory.delete'), (req, res) => {
   const info = run('DELETE FROM inventory_items WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) {
     res.status(404).json({ error: 'Item not found' });

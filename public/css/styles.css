@@ -323,6 +323,21 @@ a { color: var(--accent); }
 .ai-input { display: flex; gap: 7px; }
 .ai-input input { flex: 1; }
 .ai-input .btn { flex-shrink: 0; }
+.ai-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.ai-chip {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em;
+  padding: 2px 7px; border-radius: 100px; background: var(--surface); color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.ai-msg.ai-error { background: var(--danger-weak); color: var(--danger); }
+.ai-msg.ai-typing { display: flex; align-items: center; gap: 4px; padding: 11px; }
+.ai-msg.ai-typing span {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted);
+  animation: ai-bounce 1.2s infinite ease-in-out;
+}
+.ai-msg.ai-typing span:nth-child(2) { animation-delay: .15s; }
+.ai-msg.ai-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes ai-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-3px); opacity: 1; } }
 
 /* ---------- Orders: line-item editor + totals ---------- */
 .line-items { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: auto; margin-top: 4px; }

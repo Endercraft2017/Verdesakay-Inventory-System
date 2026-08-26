@@ -18,6 +18,7 @@ reachable by `hr.manage`. Mounted at `/api/users`.
 | `POST /` | 👑 `requirePermission('users.manage')` | `createUserSchema` | Checks `SELECT id FROM users WHERE username = ?`; `bcrypt.hashSync(password, 10)`; `INSERT INTO users (username, full_name, password_hash, role, department_id)` | `201 {id}` | `409 {error:'Username already taken'}` |
 | `PUT /:id` | 👑 | `updateUserSchema` | `SELECT * FROM users WHERE id = ?`; merges supplied fields over existing row; last-admin guard (see below); `UPDATE users SET full_name, role, department_id, active`; if deactivated, `DELETE FROM sessions WHERE user_id = ?` | `200 {ok: true}` | `404 {error:'User not found'}`; `400 {error:'Cannot remove the last active administrator'}` |
 | `POST /:id/reset-password` | 👑 | `resetPasswordSchema` | `SELECT id FROM users WHERE id = ?`; `bcrypt.hashSync`; `UPDATE users SET password_hash`; `DELETE FROM sessions WHERE user_id = ?` (force re-login) | `200 {ok: true}` | `404 {error:'User not found'}` |
+| `GET /permissions/catalog` | 👑 | — | Returns `{ permissions: ALL_PERMISSIONS, roleDefaults: allRoleDefaults() }` — the canonical permission-key list and per-role default map, straight from `src/permissions.ts`. Added 2026-08-25 so `admin.js`'s Customize Permissions editor can stop hand-copying this data (it had drifted, missing `hr.view`/`hr.manage`). | `200 {permissions, roleDefaults}` | — |
 | `PUT /:id/permissions` | 👑 | `permissionOverridesSchema` | `SELECT id FROM users WHERE id = ?`; strips `overrides` down to keys present in `ALL_PERMISSIONS`; `UPDATE users SET permission_overrides = ?` (JSON) | `200 {ok: true}` | `404 {error:'User not found'}` |
 
 ### Departments
@@ -47,7 +48,7 @@ reachable by `hr.manage`. Mounted at `/api/users`.
 - `../db` — `queryOne`, `queryAll`, `run`.
 - `../auth` — `requireAuth`, `requirePermission`, `requireAnyPermission`.
 - `../validation` — `parseBody` + the six schemas listed above.
-- `../permissions` — `ALL_PERMISSIONS` (used to sanitize the sparse overrides object before storing).
+- `../permissions` — `ALL_PERMISSIONS` (sanitizes the sparse overrides object before storing) and `allRoleDefaults` (backs `GET /permissions/catalog`).
 - `../types` — `UserRow`, `Department`.
 
 ## Used by

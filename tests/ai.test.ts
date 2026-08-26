@@ -279,4 +279,65 @@ describe('executeTool unit tests', () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/yourself/i);
   });
+
+  it('adjust_stock rejects a change that would drop quantity below zero', async () => {
+    const { executeTool } = await import('../src/ai-tools');
+    const { db } = await import('../src/db');
+    const user = db.prepare('SELECT u.id, u.role FROM users u LIMIT 1').get() as { id: number; role: string };
+    const admin = {
+      id: user.id, username: 'admin', full_name: 'Admin', role: user.role as 'admin',
+      department_id: null, active: 1, department_name: null,
+      permissions: ['inventory.adjust', 'inventory.create'] as const,
+    };
+    const created = await executeTool('create_inventory_item', {
+      name: 'AI Widget', sku: 'AI-NEG-1', category: 'General', quantity: 5, unit: 'pcs', min_quantity: 0,
+    }, { ...admin, permissions: [...admin.permissions] });
+    expect(created.success).toBe(true);
+    const itemId = (created.data as { id: number }).id;
+    const result = await executeTool('adjust_stock', { id: itemId, change: -10 }, { ...admin, permissions: [...admin.permissions] });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/not enough stock/i);
+  });
+
+  it('create_order supports purchase orders with a PR- number', async () => {
+    const { executeTool } = await import('../src/ai-tools');
+    const { db } = await import('../src/db');
+    const user = db.prepare('SELECT id FROM users LIMIT 1').get() as { id: number };
+    const result = await executeTool('create_order', {
+      type: 'purchase', items: [{ name: 'Bond paper', quantity: 2, unit_price: 150 }],
+    }, {
+      id: user.id, username: 'admin', full_name: 'Admin', role: 'admin',
+      department_id: null, active: 1, department_name: null,
+      permissions: ['orders.create'],
+    });
+    expect(result.success).toBe(true);
+    expect((result.data as { number: string }).number).toMatch(/^PR-\d{5}$/);
+  });
+
+  it('update_user refuses to demote the last active administrator', async () => {
+    const { executeTool } = await import('../src/ai-tools');
+    const { db } = await import('../src/db');
+    const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get() as { id: number };
+    const result = await executeTool('update_user', { id: admin.id, role: 'admin_staff' }, {
+      id: admin.id, username: 'admin', full_name: 'Admin', role: 'admin',
+      department_id: null, active: 1, department_name: null,
+      permissions: ['users.manage'],
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/last active administrator/i);
+  });
+
+  it('create_user rejects an invalid username via the same validation as the REST route', async () => {
+    const { executeTool } = await import('../src/ai-tools');
+    const { db } = await import('../src/db');
+    const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get() as { id: number };
+    const result = await executeTool('create_user', {
+      username: 'AN INVALID USERNAME!', full_name: 'Test', password: 'password123',
+    }, {
+      id: admin.id, username: 'admin', full_name: 'Admin', role: 'admin',
+      department_id: null, active: 1, department_name: null,
+      permissions: ['users.manage'],
+    });
+    expect(result.success).toBe(false);
+  });
 });

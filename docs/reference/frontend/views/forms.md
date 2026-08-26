@@ -28,12 +28,14 @@ Single route, no `filter` support (callback ignores a second argument).
   yet" (with an Upload CTA) from "no matching files" (filtered-empty, no CTA).
 - **`isPrintable(f)`** — true if the file extension is in `PRINTABLE_EXT` (`pdf, png, jpg,
   jpeg, gif, webp, bmp, svg`) or `mime_type` matches `/pdf|image\//`.
-- **`printFile(f)`** — authenticated `fetch` of the download endpoint (manual
-  `Authorization: Bearer` header, not `API.get`, because it needs the raw blob rather than
-  parsed JSON), builds an object URL. PDFs: `window.open(url, '_blank')` (toasts an error
-  if the popup is blocked — this path does **not** use the iframe-in-modal pattern the way
-  `hr-employees.js`/`form-records.js` do). Images: `UI.printDocument()` (which opens its own
-  print window internally). The object URL is revoked after 60s via `setTimeout`.
+- **`printFile(f)`** *(unified 2026-08-25 — see Notes)* — authenticated `fetch` of the download
+  endpoint (manual `Authorization: Bearer` header, not `API.get`, because it needs the raw blob
+  rather than parsed JSON), builds an object URL, then opens the same preview-modal + iframe used
+  elsewhere (`orders.js`, `form-records.js`'s `printSlips()`, `hr-employees.js`'s ID-card
+  preview): PDFs set `iframe.src = url` (renders in the browser's native PDF viewer, in-place);
+  images set `iframe.srcdoc = UI.printableHtml('<img src="...">', title)`. Either way, the modal's
+  "Print…" button calls `iframe.contentWindow.print()`. The object URL is revoked after 60s via
+  `setTimeout`.
 - **`download(id)`** — same authenticated blob fetch, but builds a synthetic `<a
   download>` from the `Content-Disposition` filename and clicks it to save, then revokes
   the object URL immediately.
@@ -73,12 +75,14 @@ downloads; `UI.icon`, `UI.esc`, `UI.fmtBytes`, `UI.fmtDate`, `UI.emptyState`, `U
 - **Downloads/prints bypass `API.get`** because `API`'s helpers assume JSON responses;
   file bytes need the raw `fetch` + manual bearer header + `.blob()` dance seen in both
   `printFile` and `download`.
-- **PDF printing uses `window.open`, not the iframe-in-modal pattern.** Unlike
-  `form-records.js`'s `printSlips()` or `hr-employees.js`'s ID-card preview, this file
-  still risks popup-blocker failures for PDFs specifically (it does toast an explanatory
-  error when `window.open` returns null, but doesn't fall back to an iframe). Image
-  printing goes through `UI.printDocument()` instead, which has its own internal
-  popup-based approach.
+- **(Fixed 2026-08-25)** PDF printing used to be the one place in the codebase still using
+  `window.open()` — popup-blocker-riskable, unlike every other print flow (`orders.js`,
+  `form-records.js`'s `printSlips()`, `hr-employees.js`'s ID-card preview). Now unified onto the
+  same iframe-in-modal pattern by pointing the iframe's `src` (not `srcdoc`) at the blob URL, so
+  the browser's native PDF viewer renders it in-place — not visually verified in a real browser
+  in this environment (no headless-browser tooling available here), but this is the same
+  technique used broadly to embed PDFs via iframe and matches the established pattern exactly;
+  worth a manual smoke test.
 - **Filtering is entirely client-side** after one `GET /forms` — search/category changes
   never re-hit the server. This keeps the list snappy but means very large file lists are
   filtered in-browser.

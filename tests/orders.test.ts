@@ -1,7 +1,7 @@
 /** Orders: create with auto number + server-computed totals, list by type, update
     (replace items + recompute), delete (cascades items), validation, auth. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
@@ -90,5 +90,27 @@ describe('orders', () => {
       .send({ type: 'sale', items: [{ name: 'Z', quantity: 1, unit_price: 1 }] });
     expect((await ctx.api.delete('/api/orders/' + created.body.id).set(hdr())).status).toBe(200);
     expect((await ctx.api.get('/api/orders/' + created.body.id).set(hdr())).status).toBe(404);
+  });
+});
+
+describe('orders: RBAC on mutations', () => {
+  it('a role with none of the orders.* permissions (hr) is rejected on create/update/delete', async () => {
+    const order = await ctx.api.post('/api/orders').set(hdr())
+      .send({ type: 'sale', items: [{ name: 'RBAC', quantity: 1, unit_price: 1 }] });
+    const hr = await createEmployee(ctx.api, token, { username: 'rbac_hr_orders', role: 'hr' });
+    const hrHdr = { Authorization: `Bearer ${hr.token}` };
+    expect((await ctx.api.post('/api/orders').set(hrHdr).send({ type: 'sale', items: [{ name: 'x', quantity: 1, unit_price: 1 }] })).status).toBe(403);
+    expect((await ctx.api.put(`/api/orders/${order.body.id}`).set(hrHdr).send({ items: [{ name: 'x', quantity: 1, unit_price: 1 }] })).status).toBe(403);
+    expect((await ctx.api.delete(`/api/orders/${order.body.id}`).set(hrHdr)).status).toBe(403);
+  });
+
+  it('a role with orders.create/edit but not orders.delete (accounting) can create/edit but not delete', async () => {
+    const staff = await createEmployee(ctx.api, token, { username: 'rbac_acct_orders', role: 'accounting' });
+    const staffHdr = { Authorization: `Bearer ${staff.token}` };
+    const created = await ctx.api.post('/api/orders').set(staffHdr)
+      .send({ type: 'sale', items: [{ name: 'Acct', quantity: 1, unit_price: 10 }] });
+    expect(created.status).toBe(201);
+    expect((await ctx.api.put(`/api/orders/${created.body.id}`).set(staffHdr).send({ items: [{ name: 'Acct2', quantity: 1, unit_price: 10 }] })).status).toBe(200);
+    expect((await ctx.api.delete(`/api/orders/${created.body.id}`).set(staffHdr)).status).toBe(403);
   });
 });

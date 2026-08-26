@@ -1,5 +1,14 @@
 /* Shared UI helpers: escaping, toasts, modals, formatting. */
 const UI = (() => {
+  // Neutral person-silhouette placeholder — used for employee/company photos before one is
+  // set. Was independently hand-copied (byte-identical) in templates.js, hr-employees.js,
+  // and doc-editor.js; hoisted here so the three can't drift.
+  const PLACEHOLDER_PHOTO = 'data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+    '<rect width="100" height="100" fill="#dce6f2"/><circle cx="50" cy="38" r="18" fill="#9fb3c8"/>' +
+    '<path d="M20 88c4-22 18-32 30-32s26 10 30 32" fill="#9fb3c8"/></svg>'
+  );
+
   function esc(s) {
     if (s === null || s === undefined) return '';
     return String(s)
@@ -38,6 +47,10 @@ const UI = (() => {
     if (d.toDateString() === today.toDateString())
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  function money(n) {
+    return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   function fmtBytes(n) {
@@ -210,7 +223,7 @@ const UI = (() => {
   // Fixed black-on-white print stylesheet (independent of the app theme).
   const PRINT_CSS = `
     * { box-sizing: border-box; }
-    body { font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #111; margin: 0; padding: 24px; font-size: 13px; }
+    body { position: relative; font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #111; margin: 0; padding: 24px; font-size: 13px; }
     img { max-width: 100%; }
     .doc { max-width: 800px; margin: 0 auto; }
     .doc-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 12px; margin-bottom: 16px; gap: 20px; }
@@ -279,6 +292,7 @@ const UI = (() => {
     eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
     file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/>',
     idcard: '<rect width="20" height="14" x="2" y="5" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M14 9h4"/><path d="M14 12h4"/><path d="M6 15.5c.6-1 1.3-1.5 2-1.5s1.4.5 2 1.5"/>',
+    'arrow-left': '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
   };
 
   /** A "?" help icon with a tooltip shown on hover (desktop) and tap (mobile).
@@ -373,7 +387,7 @@ const UI = (() => {
   }
 
   return {
-    esc, toast, fmtDate, fmtDateShort, fmtBytes, initials, modal, confirmDialog,
+    esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
     drawer, contextMenu, closeContextMenu, printableHtml,
     icon, helpIcon, emptyState, fileIconName, downloadCsv,
   };

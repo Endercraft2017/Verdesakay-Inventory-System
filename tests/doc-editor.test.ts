@@ -113,10 +113,16 @@ describe('sanitizeHtml (paste hardening)', () => {
   });
 
   it('filters style to a safe allowlist and keeps tables/formatting', () => {
-    const out = sanitizeHtml('<table><tr><td style="color:red;position:fixed">x</td></tr></table>', doc);
+    const out = sanitizeHtml('<table><tr><td style="color:red;outline:1px solid red">x</td></tr></table>', doc);
     expect(out).toMatch(/color:\s*red/);
-    expect(out).not.toMatch(/position/);
+    expect(out).not.toMatch(/outline/);
     expect(out).toMatch(/<table>/);
+  });
+
+  it('allows position:absolute (for floating objects) but blocks fixed/sticky', () => {
+    const out = sanitizeHtml('<div style="position:absolute;left:10%;top:5%">a</div><div style="position:fixed;top:0">b</div>', doc);
+    expect(out).toMatch(/position:\s*absolute/);
+    expect(out).not.toMatch(/position:\s*fixed/);
   });
 
   it('preserves our variable chips and checkboxes', () => {

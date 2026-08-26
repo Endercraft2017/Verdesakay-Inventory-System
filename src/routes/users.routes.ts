@@ -12,7 +12,7 @@ import {
   updateDepartmentSchema,
   permissionOverridesSchema,
 } from '../validation';
-import { ALL_PERMISSIONS } from '../permissions';
+import { ALL_PERMISSIONS, allRoleDefaults } from '../permissions';
 import type { UserRow, Department } from '../types';
 
 const router = Router();
@@ -132,6 +132,12 @@ router.post('/:id/reset-password', requirePermission('users.manage'), (req, res)
   res.json({ ok: true });
 });
 
+// GET /api/users/permissions/catalog — canonical permission keys + per-role defaults, for the
+// Customize Permissions editor (avoids hand-duplicating src/permissions.ts on the frontend).
+router.get('/permissions/catalog', requirePermission('users.manage'), (_req, res) => {
+  res.json({ permissions: ALL_PERMISSIONS, roleDefaults: allRoleDefaults() });
+});
+
 // PUT /api/users/:id/permissions — save sparse permission overrides for a user
 router.put('/:id/permissions', requirePermission('users.manage'), (req, res) => {
   const id = Number(req.params.id);
@@ -144,7 +150,8 @@ router.put('/:id/permissions', requirePermission('users.manage'), (req, res) => 
   // Strip any keys that aren't real permission keys.
   const clean: Record<string, boolean> = {};
   for (const key of ALL_PERMISSIONS) {
-    if (key in overrides) clean[key] = overrides[key];
+    const v = overrides[key];
+    if (v !== undefined) clean[key] = v;
   }
   run('UPDATE users SET permission_overrides = ? WHERE id = ?', JSON.stringify(clean), id);
   res.json({ ok: true });

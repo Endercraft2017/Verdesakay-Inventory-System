@@ -24,7 +24,7 @@ function tokenChip(token) {
 
 // Neutral placeholder shown in the editor canvas for an <img src="{{var}}">, since the real
 // value only exists at print time. Swapped back to the {{var}} token on save (data-var-src).
-const EDITOR_IMG_PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
+const EDITOR_IMG_PLACEHOLDER = (typeof UI !== 'undefined' && UI.PLACEHOLDER_PHOTO) || 'data:image/svg+xml,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#dce6f2"/>' +
   '<circle cx="50" cy="38" r="18" fill="#9fb3c8"/><path d="M20 88c4-22 18-32 30-32s26 10 30 32" fill="#9fb3c8"/></svg>'
 );
@@ -61,6 +61,8 @@ function serializeEditor(root) {
     if (tr.nextSibling) tr.parentNode.insertBefore(close, tr.nextSibling); else tr.parentNode.appendChild(close);
   });
   clone.querySelectorAll('.cell-sel').forEach((c) => c.classList.remove('cell-sel'));
+  clone.querySelectorAll('.doc-float-handle,.doc-float-toolbar,.doc-promote-bar').forEach((el) => el.remove());
+  clone.querySelectorAll('.doc-float.selected').forEach((el) => el.classList.remove('selected'));
   clone.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
   return clone.innerHTML.trim();
 }
@@ -68,12 +70,20 @@ function serializeEditor(root) {
 /* ---- paste sanitizer (allowlist; keeps our chips/tables, strips Word/web cruft) ---- */
 const SANITIZE_TAGS = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUP', 'SUB', 'H1', 'H2', 'H3', 'H4', 'UL', 'OL', 'LI', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'SPAN', 'DIV', 'A', 'IMG', 'HR', 'FONT', 'BLOCKQUOTE']);
 const SANITIZE_ATTR = { A: ['href'], IMG: ['src', 'alt'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
-const SANITIZE_STYLE = ['color', 'background-color', 'background', 'text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'width', 'page-break-after', 'break-after'];
-const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src'];
+const SANITIZE_STYLE = ['color', 'background-color', 'background', 'text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'width', 'page-break-after', 'break-after',
+  'position', 'left', 'top', 'right', 'bottom', 'height', 'z-index', 'border', 'border-color', 'border-radius'];
+const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src', 'data-float-kind', 'data-wrap'];
 
+// `position` is scoped to absolute/relative/static — `fixed`/`sticky` can escape the page and
+// overlay the app chrome, so a pasted style must not be able to smuggle those in.
 function filterStyle(s) {
   return String(s || '').split(';').map((x) => x.trim()).filter(Boolean)
-    .filter((d) => SANITIZE_STYLE.includes((d.split(':')[0] || '').trim().toLowerCase())).join('; ');
+    .filter((d) => {
+      const prop = (d.split(':')[0] || '').trim().toLowerCase();
+      if (!SANITIZE_STYLE.includes(prop)) return false;
+      if (prop === 'position') return /^(absolute|relative|static)$/i.test((d.split(':')[1] || '').trim());
+      return true;
+    }).join('; ');
 }
 
 function sanitizeNode(node, doc) {
@@ -90,7 +100,8 @@ function sanitizeNode(node, doc) {
     const n = a.name.toLowerCase();
     if (n.startsWith('on')) return;
     if (n === 'style') { const v = filterStyle(a.value); if (v) el.setAttribute('style', v); return; }
-    if (n === 'class') { const keep = (a.value.match(/doc-(chip|chip-ctrl|chip-fx|checkbox|pagebreak|table|striped|shaded|plain|is-repeat)/g) || []).join(' '); if (keep) el.setAttribute('class', keep); return; }
+    if (n === 'class') { const keep = (a.value.match(/doc-(chip|chip-ctrl|chip-fx|checkbox|pagebreak|table|striped|shaded|plain|is-repeat|float|float-body|float-shape)/g) || []).join(' '); if (keep) el.setAttribute('class', keep); return; }
+    if (n === 'contenteditable') { if (a.value === 'false' || a.value === 'true') el.setAttribute('contenteditable', a.value); return; }
     if (SANITIZE_DATA.includes(n)) { el.setAttribute(n, a.value); return; }
     if ((SANITIZE_ATTR[tag] || []).includes(n)) {
       if (n === 'href' && /^\s*javascript:/i.test(a.value)) return;
@@ -186,6 +197,7 @@ function ensureStyles() {
     .doc-fs-name{font-size:12.5px;font-weight:600;padding:4px 7px;width:120px;flex-shrink:0;border:1px solid var(--border-strong,#c6d4e6);border-radius:5px;background:var(--surface,#fff);color:var(--text,#16243d)}
     .doc-fs-period{font-size:12px;padding:4px 7px;width:80px;flex-shrink:0;border:1px solid var(--border-strong,#c6d4e6);border-radius:5px;background:var(--surface,#fff);color:var(--text,#16243d)}
     .doc-fs-type{padding:4px 5px;flex-shrink:0;border:1px solid var(--border-strong,#c6d4e6);border-radius:5px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:12.5px}
+    .doc-fs-type-top{width:74px}
     .doc-modes{display:inline-flex;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;overflow:hidden;flex-shrink:0}
     .doc-modes button{border:none;background:var(--surface,#fff);padding:4px 9px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-muted,#5d6b84);font-family:inherit;white-space:nowrap}
     .doc-modes button.active{background:var(--accent,#2b7fff);color:#fff}
@@ -225,8 +237,10 @@ function ensureStyles() {
     .doc-tile-select select{width:80px}
     .doc-tile-select input[type="number"]{width:56px;height:23px;border:1px solid var(--border-strong,#c6d4e6);border-radius:4px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:11.5px;padding:0 4px}
     .doc-canvas{flex:1;overflow:auto;background:#8c97a5;padding:26px;display:flex;justify-content:center;align-items:flex-start}
-    .doc-code{flex:1;width:100%;border:none;outline:none;padding:18px 20px;font-family:Consolas,ui-monospace,monospace;font-size:13px;line-height:1.6;resize:none;background:var(--surface,#fff);color:var(--text,#16243d)}
-    .doc-page{width:816px;max-width:100%;min-height:1056px;background:#fff;color:#111;padding:56px 64px;box-shadow:0 6px 30px rgba(0,0,0,.35);font-family:'Segoe UI',system-ui,Arial,sans-serif;font-size:13px;line-height:1.5}
+    .doc-code{flex:1;width:100%;min-height:0;overflow:hidden;background:var(--surface,#fff);color:var(--text,#16243d)}
+    .doc-code-cm .cm-editor{height:100%}
+    .doc-code-cm .cm-scroller{padding:8px 12px}
+    .doc-page{position:relative;width:816px;max-width:100%;min-height:1056px;background:#fff;color:#111;padding:56px 64px;box-shadow:0 6px 30px rgba(0,0,0,.35);font-family:'Segoe UI',system-ui,Arial,sans-serif;font-size:13px;line-height:1.5}
     .doc-page:focus{outline:none}
     .doc-page h1{font-size:22px;margin:0 0 4px}.doc-page h2{font-size:17px;margin:0 0 6px}.doc-page h3{font-size:15px}
     .doc-page table{border-collapse:collapse;margin:10px 0;width:100%}
@@ -285,6 +299,24 @@ function ensureStyles() {
     .doc-preview-head button{border:none;background:none;cursor:pointer;color:var(--text-muted,#5d6b84);font-size:15px;padding:2px 7px;border-radius:5px;line-height:1}
     .doc-preview-head button:hover{background:var(--surface-3,#e6eef8)}
     .doc-preview-float iframe{flex:1;border:none;width:100%;background:#fff}
+    /* ---- floating objects: shapes / text boxes / promoted images & tables ---- */
+    .doc-float{box-sizing:border-box}
+    .doc-float.selected{outline:2px solid var(--accent,#2b7fff)}
+    .doc-float-shape{width:100%;height:100%;box-sizing:border-box}
+    .doc-float-body{width:100%;height:100%;box-sizing:border-box;outline:none;overflow:auto;padding:4px}
+    .doc-float[data-float-kind="image"] img{width:100%;height:100%}
+    .doc-float-handle{position:absolute;width:9px;height:9px;background:var(--accent,#2b7fff);border:1px solid #fff;border-radius:2px;z-index:1000}
+    .doc-float-handle[data-h="nw"]{left:-5px;top:-5px;cursor:nwse-resize}
+    .doc-float-handle[data-h="n"]{left:50%;top:-5px;margin-left:-5px;cursor:ns-resize}
+    .doc-float-handle[data-h="ne"]{right:-5px;top:-5px;cursor:nesw-resize}
+    .doc-float-handle[data-h="e"]{right:-5px;top:50%;margin-top:-5px;cursor:ew-resize}
+    .doc-float-handle[data-h="se"]{right:-5px;bottom:-5px;cursor:nwse-resize}
+    .doc-float-handle[data-h="s"]{left:50%;bottom:-5px;margin-left:-5px;cursor:ns-resize}
+    .doc-float-handle[data-h="sw"]{left:-5px;bottom:-5px;cursor:nesw-resize}
+    .doc-float-handle[data-h="w"]{left:-5px;top:50%;margin-top:-5px;cursor:ew-resize}
+    .doc-float-toolbar,.doc-promote-bar{position:absolute;left:0;top:-30px;display:flex;gap:2px;background:var(--surface,#fff);border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;padding:3px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:1001;white-space:nowrap}
+    .doc-float-toolbar button,.doc-promote-bar button{border:none;background:transparent;cursor:pointer;font-size:12px;padding:3px 6px;border-radius:4px;color:var(--text,#16243d);font-family:inherit}
+    .doc-float-toolbar button:hover,.doc-promote-bar button:hover{background:var(--surface-2,#eef4fb)}
     @media (max-width:900px){.doc-page{padding:28px 22px}.doc-canvas{padding:10px}}
   `;
   const el = document.createElement('style'); el.id = 'doc-editor-styles'; el.textContent = css;
@@ -348,13 +380,14 @@ function tile(kind, value, icon, label, extraClass) {
 
 function insertPanelHTML() {
   const illustrations = groupHTML('Illustrations', tile('ins', 'image', '🖼', 'Picture'));
+  const shapes = groupHTML('Shapes', tile('ins', 'shape-rect', '▭', 'Rectangle') + tile('ins', 'shape-oval', '⬭', 'Oval') + tile('ins', 'shape-line', '—', 'Line'));
   const tables = groupHTML('Tables', tile('ins', 'table', '▦', 'Table'));
   const links = groupHTML('Links', tile('ins', 'link', '🔗', 'Link'));
   const text = groupHTML('Text', tile('ins', 'checkbox', '☐', 'Checkbox') + tile('ins', 'hr', '―', 'Line')
     + tile('ins', 'pagebreak', '⤓', 'Page Break') + tile('ins', 'textbox', '▭', 'Text Box') + tile('ins', 'signature', '✒', 'Signature Line'));
   const symbols = groupHTML('Symbols', tile('ins', 'symbol', 'Ω', 'Symbol'));
   const template = groupHTML('Template', tile('ins', 'variable', '{ }', 'Variable', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Formula', 'btn-fx'));
-  return illustrations + tables + links + text + symbols + template;
+  return illustrations + shapes + tables + links + text + symbols + template;
 }
 
 function layoutPanelHTML() {
@@ -610,8 +643,10 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   panelsRoot.querySelector('[data-ins="variable"]').addEventListener('click', () => variableDialog(saveSel, getVariables, (tok) => insertHtml(tokenChip(tok.replace(/^\{\{|\}\}$/g, '')) + '&nbsp;')));
   panelsRoot.querySelector('[data-ins="formula"]').addEventListener('click', () => formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext));
   panelsRoot.querySelector('[data-ins="symbol"]').addEventListener('click', () => symbolDialog(insertHtml, saveSel));
-  panelsRoot.querySelector('[data-ins="textbox"]').addEventListener('click', () =>
-    insertHtml('<div style="border:1px solid #999;padding:10px;margin:8px 0">Text box</div><p><br></p>'));
+  panelsRoot.querySelector('[data-ins="textbox"]').addEventListener('click', () => insertFloat('textbox'));
+  panelsRoot.querySelector('[data-ins="shape-rect"]').addEventListener('click', () => insertFloat('shape-rect'));
+  panelsRoot.querySelector('[data-ins="shape-oval"]').addEventListener('click', () => insertFloat('shape-oval'));
+  panelsRoot.querySelector('[data-ins="shape-line"]').addEventListener('click', () => insertFloat('shape-line'));
   panelsRoot.querySelector('[data-ins="signature"]').addEventListener('click', () =>
     insertHtml('<div style="margin-top:24px;width:220px;border-top:1px solid #333;padding-top:4px;text-align:center;font-size:11px">Signature over Printed Name</div><p><br></p>'));
 
@@ -838,8 +873,244 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   };
   document.addEventListener('selectionchange', reflect);
 
+  // ---- floating objects: shapes, text boxes, and images/tables "promoted" to wrap text ----
+  const FLOAT_DEFAULTS = {
+    'shape-rect': { w: 30, h: 15, html: '<div class="doc-float-shape" style="background:#dce6f2;border:1px solid #5d6b84"></div>' },
+    'shape-oval': { w: 30, h: 15, html: '<div class="doc-float-shape" style="border-radius:50%;background:#dce6f2;border:1px solid #5d6b84"></div>' },
+    'shape-line': { w: 40, h: 1.2, html: '<div class="doc-float-shape" style="background:#5d6b84"></div>' },
+    textbox: { w: 30, h: 12, html: '<div class="doc-float-body" contenteditable="true">Text box</div>' },
+  };
+  let floatZFront = 1;
+  let floatSeq = 0;
+  let selectedFloat = null;
+  let promoteBar = null;
+  let promoteTarget = null;
+  const nextFrontZ = () => ++floatZFront;
+  const pxToPct = (px, total) => (total ? (px / total) * 100 : 0);
+
+  function clearPromoteBar() { if (promoteBar) { promoteBar.remove(); promoteBar = null; } promoteTarget = null; }
+
+  function deselectFloat() {
+    if (!selectedFloat) return;
+    selectedFloat.classList.remove('selected');
+    selectedFloat.querySelectorAll(':scope > .doc-float-handle, :scope > .doc-float-toolbar').forEach((n) => n.remove());
+    selectedFloat = null;
+  }
+
+  function wrapToolbarHTML(floatEl) {
+    const wrap = floatEl.getAttribute('data-wrap');
+    const kind = floatEl.getAttribute('data-float-kind');
+    let html = `<button type="button" data-float-act="${wrap === 'behind' ? 'front' : 'behind'}" title="${wrap === 'behind' ? 'Bring in front of text' : 'Send behind text'}">${wrap === 'behind' ? '⬆' : '⬇'}</button>`;
+    if (kind === 'image' || kind === 'table') html += `<button type="button" data-float-act="inline" title="In line with text">↩</button>`;
+    if (kind.startsWith('shape-')) html += `<button type="button" data-float-act="fill" title="Fill color">🎨</button><button type="button" data-float-act="border" title="Border color">▢</button>`;
+    html += `<button type="button" data-float-act="delete" title="Delete">🗑</button>`;
+    return html;
+  }
+
+  const HANDLE_POS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+  function selectFloat(floatEl) {
+    if (selectedFloat === floatEl) return;
+    deselectFloat();
+    clearPromoteBar();
+    floatEl.classList.add('selected');
+    HANDLE_POS.forEach((h) => {
+      const hd = document.createElement('div');
+      hd.className = 'doc-float-handle'; hd.setAttribute('data-h', h); hd.setAttribute('contenteditable', 'false');
+      floatEl.appendChild(hd);
+    });
+    const tb = document.createElement('div');
+    tb.className = 'doc-float-toolbar'; tb.setAttribute('contenteditable', 'false');
+    tb.innerHTML = wrapToolbarHTML(floatEl);
+    floatEl.appendChild(tb);
+    selectedFloat = floatEl;
+  }
+
+  function insertFloat(kind) {
+    const def = FLOAT_DEFAULTS[kind];
+    if (!def) return;
+    const n = floatSeq++;
+    const left = 8 + (n % 6) * 4, top = 8 + (n % 6) * 4;
+    const el = document.createElement('div');
+    el.className = 'doc-float';
+    el.setAttribute('data-float-kind', kind);
+    el.setAttribute('data-wrap', 'front');
+    el.setAttribute('contenteditable', 'false');
+    el.style.cssText = `position:absolute;left:${left}%;top:${top}%;width:${def.w}%;height:${def.h}%;z-index:${nextFrontZ()}`;
+    el.innerHTML = def.html;
+    surface.appendChild(el);
+    selectFloat(el);
+    onChange();
+  }
+
+  function promoteToFloat(target, mode) {
+    const kind = target.nodeName === 'IMG' ? 'image' : 'table';
+    const rect = target.getBoundingClientRect();
+    const pageRect = surface.getBoundingClientRect();
+    const leftPct = pxToPct(rect.left - pageRect.left, pageRect.width);
+    const topPct = pxToPct(rect.top - pageRect.top, pageRect.height);
+    const wPct = pxToPct(rect.width, pageRect.width);
+    const hPct = pxToPct(rect.height, pageRect.height);
+    const wrap = document.createElement('div');
+    wrap.className = 'doc-float';
+    wrap.setAttribute('data-float-kind', kind);
+    wrap.setAttribute('data-wrap', mode);
+    wrap.setAttribute('contenteditable', 'false');
+    wrap.style.cssText = `position:absolute;left:${leftPct}%;top:${topPct}%;width:${wPct}%;height:${hPct}%;z-index:${mode === 'behind' ? -1 : nextFrontZ()}`;
+    target.parentNode.insertBefore(wrap, target);
+    wrap.appendChild(target);
+    if (kind === 'table') target.setAttribute('contenteditable', 'true');
+    target.style.width = '100%'; target.style.height = '100%';
+    selectFloat(wrap);
+    onChange();
+  }
+
+  function unpromoteFloat(floatEl) {
+    const inner = floatEl.querySelector(':scope > img, :scope > table');
+    if (!inner) { floatEl.remove(); deselectFloat(); onChange(); return; }
+    inner.style.width = ''; inner.style.height = '';
+    if (inner.nodeName === 'TABLE') inner.removeAttribute('contenteditable');
+    floatEl.parentNode.insertBefore(inner, floatEl);
+    floatEl.remove();
+    deselectFloat();
+    onChange();
+  }
+
+  function showPromoteBar(target) {
+    clearPromoteBar(); deselectFloat();
+    promoteTarget = target;
+    const rect = target.getBoundingClientRect();
+    const pageRect = surface.getBoundingClientRect();
+    promoteBar = document.createElement('div');
+    promoteBar.className = 'doc-promote-bar'; promoteBar.setAttribute('contenteditable', 'false');
+    promoteBar.style.left = (rect.left - pageRect.left) + 'px';
+    promoteBar.style.top = Math.max(0, rect.top - pageRect.top - 30) + 'px';
+    promoteBar.innerHTML = '<button type="button" data-promote="front" title="Wrap: in front of text">⬆ In front</button><button type="button" data-promote="behind" title="Wrap: behind text">⬇ Behind</button>';
+    surface.appendChild(promoteBar);
+  }
+
+  surface.addEventListener('click', (e) => {
+    const actBtn = e.target.closest('.doc-float-toolbar button');
+    if (actBtn && selectedFloat) {
+      const act = actBtn.dataset.floatAct;
+      if (act === 'delete') { const f = selectedFloat; selectedFloat = null; f.remove(); onChange(); return; }
+      if (act === 'inline') { unpromoteFloat(selectedFloat); return; }
+      if (act === 'front' || act === 'behind') {
+        selectedFloat.setAttribute('data-wrap', act);
+        selectedFloat.style.zIndex = act === 'behind' ? '-1' : String(nextFrontZ());
+        const tb = selectedFloat.querySelector(':scope > .doc-float-toolbar'); if (tb) tb.innerHTML = wrapToolbarHTML(selectedFloat);
+        onChange();
+        return;
+      }
+      if (act === 'fill' || act === 'border') {
+        const shape = selectedFloat.querySelector(':scope > .doc-float-shape');
+        if (shape) {
+          const prop = act === 'fill' ? 'backgroundColor' : 'borderColor';
+          pickColor(shape.style[prop] || (act === 'fill' ? '#dce6f2' : '#5d6b84'), (val) => { shape.style[prop] = val; onChange(); });
+        }
+        return;
+      }
+      return;
+    }
+    const promoteBtn = e.target.closest('.doc-promote-bar button');
+    if (promoteBtn) { const mode = promoteBtn.dataset.promote; const t = promoteTarget; clearPromoteBar(); if (t) promoteToFloat(t, mode); return; }
+
+    const floatEl = e.target.closest('.doc-float');
+    if (floatEl) { selectFloat(floatEl); return; }
+
+    deselectFloat();
+    const img = e.target.closest('img');
+    if (img && surface.contains(img) && !img.closest('.doc-float')) { showPromoteBar(img); return; }
+    const table = e.target.closest('table');
+    if (table && surface.contains(table) && !table.closest('.doc-float')) { showPromoteBar(table); return; }
+    clearPromoteBar();
+  });
+
+  let dragState = null;
+  surface.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const handle = e.target.closest('.doc-float-handle');
+    if (handle && selectedFloat) {
+      e.preventDefault(); e.stopPropagation();
+      const pageRect = surface.getBoundingClientRect();
+      const startRect = selectedFloat.getBoundingClientRect();
+      dragState = {
+        mode: 'resize', h: handle.dataset.h, floatEl: selectedFloat, pageRect,
+        startLeft: startRect.left - pageRect.left, startTop: startRect.top - pageRect.top,
+        startW: startRect.width, startH: startRect.height, x0: e.clientX, y0: e.clientY,
+      };
+      return;
+    }
+    const floatEl = e.target.closest('.doc-float');
+    if (!floatEl) return;
+    const kind = floatEl.getAttribute('data-float-kind');
+    const insideEditable = (kind === 'textbox' && e.target.closest('.doc-float-body'))
+      || (kind === 'table' && e.target.closest('table')) || e.target.closest('.doc-float-toolbar');
+    if (insideEditable) return;
+    e.preventDefault();
+    if (selectedFloat !== floatEl) selectFloat(floatEl);
+    const pageRect = surface.getBoundingClientRect();
+    const startRect = floatEl.getBoundingClientRect();
+    dragState = { mode: 'move', floatEl, pageRect, startLeft: startRect.left - pageRect.left, startTop: startRect.top - pageRect.top, x0: e.clientX, y0: e.clientY };
+  });
+  const onFloatMouseMove = (e) => {
+    if (!dragState) return;
+    const { floatEl, pageRect } = dragState;
+    const dx = e.clientX - dragState.x0, dy = e.clientY - dragState.y0;
+    if (dragState.mode === 'move') {
+      const left = Math.max(0, dragState.startLeft + dx), top = Math.max(0, dragState.startTop + dy);
+      floatEl.style.left = pxToPct(left, pageRect.width) + '%';
+      floatEl.style.top = pxToPct(top, pageRect.height) + '%';
+      return;
+    }
+    const { startLeft, startTop, startW, startH, h } = dragState;
+    let left = startLeft, top = startTop, w = startW, ht = startH;
+    if (h.includes('e')) w = Math.max(12, startW + dx);
+    if (h.includes('s')) ht = Math.max(12, startH + dy);
+    if (h.includes('w')) { w = Math.max(12, startW - dx); left = startLeft + (startW - w); }
+    if (h.includes('n')) { ht = Math.max(12, startH - dy); top = startTop + (startH - ht); }
+    floatEl.style.left = pxToPct(left, pageRect.width) + '%';
+    floatEl.style.top = pxToPct(top, pageRect.height) + '%';
+    floatEl.style.width = pxToPct(w, pageRect.width) + '%';
+    floatEl.style.height = pxToPct(ht, pageRect.height) + '%';
+  };
+  const onFloatMouseUp = () => { if (dragState) { dragState = null; onChange(); } };
+  document.addEventListener('mousemove', onFloatMouseMove);
+  document.addEventListener('mouseup', onFloatMouseUp);
+
+  const onFloatKeydown = (e) => {
+    if (!selectedFloat) return;
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    const active = document.activeElement;
+    if (active && selectedFloat.contains(active) && active !== selectedFloat) return;
+    e.preventDefault();
+    const f = selectedFloat; selectedFloat = null; f.remove(); onChange();
+  };
+  document.addEventListener('keydown', onFloatKeydown);
+
+  // Loaded/saved HTML never carries `contenteditable` (serializeEditor strips it from every
+  // element before saving, same as it does for the ambient surface) — re-apply it to floats
+  // after any full innerHTML reload (initial open + code->visual mode switch) so wrappers go
+  // back to being atomic drag/select targets and their editable islands (text box body,
+  // promoted table) become typable again.
+  function normalizeFloats() {
+    surface.querySelectorAll('.doc-float').forEach((el) => {
+      el.setAttribute('contenteditable', 'false');
+      const kind = el.getAttribute('data-float-kind');
+      if (kind === 'textbox') { const body = el.querySelector(':scope > .doc-float-body'); if (body) body.setAttribute('contenteditable', 'true'); }
+      if (kind === 'table') { const t = el.querySelector(':scope > table'); if (t) t.setAttribute('contenteditable', 'true'); }
+    });
+  }
+
   updateTableBar();
-  return { teardown() { document.removeEventListener('selectionchange', reflect); } };
+  return {
+    teardown() {
+      document.removeEventListener('selectionchange', reflect);
+      document.removeEventListener('mousemove', onFloatMouseMove);
+      document.removeEventListener('mouseup', onFloatMouseUp);
+      document.removeEventListener('keydown', onFloatKeydown);
+    },
+    normalizeFloats,
+  };
 }
 
 function open(opts = {}) {
@@ -852,9 +1123,10 @@ function open(opts = {}) {
       <div class="doc-fs-bar-scroll">
         <span class="doc-fs-title">${UI.esc(opts.title || 'Template')}</span>
         <input class="doc-fs-name" placeholder="Template name" value="${escAttr(opts.name || '')}">
-        <select class="doc-fs-type">${typeOptions.map((t) => `<option value="${t}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <select class="doc-fs-type doc-fs-type-top" title="Template type — which order type this template is used for (or Generic if it's not tied to one)">${typeOptions.map((t) => `<option value="${t}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${t}</option>`).join('')}</select>
         ${opts.periodLabel ? `<input class="doc-fs-period" placeholder="${escAttr(opts.periodLabel)}" value="${escAttr(opts.period || '')}" title="${escAttr(opts.periodLabel)}">` : ''}
         <div class="doc-modes"><button type="button" data-mode="visual" class="active">Visual</button><button type="button" data-mode="code">HTML / CSS</button></div>
+        <button type="button" class="btn secondary" data-preview title="Open a movable preview">👁</button>
         <button type="button" class="btn secondary" data-managevars title="Add / rename / remove variables">⚙</button>
       </div>
       <div class="doc-fs-bar-actions">
@@ -868,7 +1140,7 @@ function open(opts = {}) {
     <div class="doc-panel" data-panel="layout" role="toolbar" aria-label="Layout" style="display:none">${layoutPanelHTML()}</div>
     <div class="doc-panel table-panel" data-panel="table" role="toolbar" aria-label="Table tools" style="display:none">${tablePanelHTML()}</div>
     <div class="doc-canvas"><div class="doc-page doc-surface" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document body"></div></div>
-    <textarea class="doc-code" spellcheck="false" style="display:none"></textarea>`;
+    <div class="doc-code doc-code-cm" style="display:none"></div>`;
   document.body.appendChild(fs);
 
   const tabsEl = fs.querySelector('.doc-tabs');
@@ -897,15 +1169,36 @@ function open(opts = {}) {
 
   const surface = fs.querySelector('.doc-surface');
   const canvas = fs.querySelector('.doc-canvas');
-  const code = fs.querySelector('.doc-code');
+  const codeContainer = fs.querySelector('.doc-code-cm');
   const nameInp = fs.querySelector('.doc-fs-name');
   const typeSel = fs.querySelector('.doc-fs-type');
   const periodInp = fs.querySelector('.doc-fs-period');
   let mode = 'visual';
 
+  // ---- HTML/CSS code mode: a real CodeMirror editor (syntax highlighting + our own
+  // {{variable}}/{{=formula}} autocomplete on top of CM's built-in HTML/CSS completions) —
+  // mounted lazily on first switch to code mode, since mounting into a display:none
+  // container makes CM mismeasure line layout. ----
+  let cmEditor = null;
+  function ensureCodeEditor() {
+    if (cmEditor) return cmEditor;
+    if (typeof window.CMBundle === 'undefined') { UI.toast('Code editor failed to load', 'error'); return null; }
+    const theme = document.documentElement.getAttribute('data-theme');
+    const dark = theme === 'dark' || (!theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    cmEditor = window.CMBundle.mount(codeContainer, {
+      doc: '',
+      onChange: () => onChange(),
+      getVariables: opts.getVariables,
+      dark,
+    });
+    return cmEditor;
+  }
+  const getCode = () => (cmEditor ? cmEditor.getValue() : '');
+  const setCode = (text) => { const ed = ensureCodeEditor(); if (ed) ed.setValue(text || ''); };
+
   // ---- movable / resizable preview (hidden until toggled) ----
   let previewEl = null;
-  const currentBody = () => (mode === 'code' ? code.value : serializeEditor(surface));
+  const currentBody = () => (mode === 'code' ? getCode() : serializeEditor(surface));
   function refreshPreview() {
     if (!previewEl) return;
     const frame = previewEl.querySelector('iframe');
@@ -985,6 +1278,7 @@ function open(opts = {}) {
   applyCanvas();
 
   surface.innerHTML = bodyToEditorHtml(pg.rest); // initial load is not a "dirty" edit
+  wired.normalizeFloats();
 
   // find & replace bar
   let findBar = null;
@@ -1001,15 +1295,25 @@ function open(opts = {}) {
     findBar.querySelector('.doc-find-q').focus();
   }
   fs.querySelector('[data-find]').addEventListener('click', toggleFind);
-  fs.querySelector('[data-preview]').addEventListener('click', togglePreview);
+  fs.querySelectorAll('[data-preview]').forEach((b) => b.addEventListener('click', togglePreview));
   const mvBtn = fs.querySelector('[data-managevars]');
   if (opts.onManageVars) mvBtn.addEventListener('click', () => opts.onManageVars({ refresh: () => { refreshPreview(); } }));
   else mvBtn.style.display = 'none';
 
   function setMode(next) {
     if (next === mode) return;
-    if (next === 'code') { code.value = serializeEditor(surface); code.style.display = ''; canvas.style.display = 'none'; tabsEl.style.display = 'none'; Object.values(panels).forEach((p) => { p.style.display = 'none'; }); }
-    else { surface.innerHTML = bodyToEditorHtml(code.value); code.style.display = 'none'; canvas.style.display = ''; tabsEl.style.display = ''; switchTab(activeTab); }
+    if (next === 'code') {
+      const text = serializeEditor(surface);
+      codeContainer.style.display = ''; canvas.style.display = 'none'; tabsEl.style.display = 'none';
+      Object.values(panels).forEach((p) => { p.style.display = 'none'; });
+      setCode(text);
+      if (cmEditor) cmEditor.focus();
+    } else {
+      surface.innerHTML = bodyToEditorHtml(getCode());
+      wired.normalizeFloats();
+      codeContainer.style.display = 'none'; canvas.style.display = ''; tabsEl.style.display = '';
+      switchTab(activeTab);
+    }
     mode = next;
     fs.querySelectorAll('.doc-modes button').forEach((b) => b.classList.toggle('active', b.dataset.mode === next));
     refreshPreview();
@@ -1019,6 +1323,7 @@ function open(opts = {}) {
   async function close(force) {
     if (dirty && !force) { const ok = await UI.confirmDialog('Discard unsaved changes to this template?', 'Discard'); if (!ok) return; }
     if (wired && wired.teardown) wired.teardown();
+    if (cmEditor) cmEditor.destroy();
     if (previewEl) previewEl.remove();
     fs.remove();
     document.removeEventListener('keydown', onKey);
@@ -1033,7 +1338,7 @@ function open(opts = {}) {
 
   fs.querySelector('[data-save]').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
-    let body = mode === 'code' ? code.value : serializeEditor(surface);
+    let body = mode === 'code' ? getCode() : serializeEditor(surface);
     const { widthMm, heightMm } = currentPageMm();
     body = pageStyleTag(widthMm, heightMm, Number(marginInp.value) || 0) + body.replace(/<style data-docpage>[\s\S]*?<\/style>/i, '');
     btn.disabled = true;

@@ -1,8 +1,8 @@
 /** Job & Sale Orders: stored records with line items, auto numbers, server-computed
     totals. One router serves both types (?type=sale|job). */
 import { Router } from 'express';
-import { db, queryOne, queryAll, run, getSetting, setSetting } from '../db';
-import { requireAuth } from '../auth';
+import { db, queryOne, queryAll, run, nextSequence } from '../db';
+import { requireAuth, requirePermission } from '../auth';
 import { parseBody, createOrderSchema, updateOrderSchema } from '../validation';
 import type { Order, OrderItem, OrderType } from '../types';
 
@@ -27,11 +27,8 @@ function computeTotals(items: LineInput[], taxPercent: number) {
 
 /** Next order number for a type, e.g. SO-00001 / JO-00001 / PR-00001 (counter in settings). */
 function nextOrderNumber(type: OrderType): string {
-  const key = `order_seq_${type}`;
-  const next = (getSetting<number>(key) || 0) + 1;
-  setSetting(key, next);
   const prefix = type === 'sale' ? 'SO' : type === 'job' ? 'JO' : 'PR';
-  return `${prefix}-${String(next).padStart(5, '0')}`;
+  return nextSequence(`order_seq_${type}`, prefix);
 }
 
 function insertItems(orderId: number, lines: ReturnType<typeof computeTotals>['lines']): void {
@@ -59,7 +56,7 @@ router.get('/', (req, res) => {
   const { type, q } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
-  if (type === 'sale' || type === 'job') { where.push('o.type = ?'); params.push(type); }
+  if (type === 'sale' || type === 'job' || type === 'purchase') { where.push('o.type = ?'); params.push(type); }
   if (typeof q === 'string' && q.trim()) {
     where.push('(o.number LIKE ? OR o.customer_name LIKE ?)');
     const like = `%${q.trim()}%`;
@@ -94,7 +91,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/orders — create with auto number + computed totals
-router.post('/', (req, res) => {
+router.post('/', requirePermission('orders.create'), (req, res) => {
   const input = parseBody(createOrderSchema, req.body);
   const { lines, subtotal, tax_amount, total } = computeTotals(input.items, input.tax_percent);
 
@@ -130,7 +127,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/orders/:id — replace header + items, recompute totals (type/number unchanged)
-router.put('/:id', (req, res) => {
+router.put('/:id', requirePermission('orders.edit'), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order) {
@@ -170,7 +167,7 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/orders/:id (cascades items)
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requirePermission('orders.delete'), (req, res) => {
   const info = run('DELETE FROM orders WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) {
     res.status(404).json({ error: 'Order not found' });

@@ -1,7 +1,7 @@
 /** Form builder: admin-managed form definitions, per-form record CRUD, global variables. */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
-import { db, queryOne, queryAll, run, getSetting, setSetting } from '../db';
+import { db, queryOne, queryAll, run, nextSequence } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody,
@@ -30,10 +30,7 @@ function parseData(raw: string | null): Record<string, unknown> {
 
 /** Next record number for a form definition, e.g. FM-00001 (counter in settings). */
 function nextRecordNumber(prefix: string, formId: number): string {
-  const key = `form_seq_${formId}`;
-  const next = (getSetting<number>(key) || 0) + 1;
-  setSetting(key, next);
-  return `${prefix}-${String(next).padStart(5, '0')}`;
+  return nextSequence(`form_seq_${formId}`, prefix);
 }
 
 // ─── Form Definitions ────────────────────────────────────────────────────────
@@ -105,7 +102,7 @@ router.delete('/form-definitions/:id', requirePermission('forms.manage'), (req, 
 
 // POST /api/form-definitions/:id/import — bulk-create records from the payroll "Summary"
 // CSV export. body.period labels the payroll period (required); body.pay_date is optional.
-router.post('/form-definitions/:id/import', csvUpload.single('file'), (req, res) => {
+router.post('/form-definitions/:id/import', requirePermission('hr.manage'), csvUpload.single('file'), (req, res) => {
   const form = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', Number(req.params.id));
   if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
   if (form.slug !== 'hr_payroll') {
@@ -265,7 +262,7 @@ router.get('/global-variables', (_req, res) => {
 
 // PUT /api/global-variables/:key — upsert (forms.manage)
 router.put('/global-variables/:key', requirePermission('forms.manage'), (req, res) => {
-  const key = req.params.key.trim();
+  const key = String(req.params.key ?? '').trim();
   if (!/^[a-z0-9_]+$/.test(key)) {
     res.status(400).json({ error: 'Key must be lowercase letters, numbers, or underscores' });
     return;

@@ -49,39 +49,36 @@ function toNum(v: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-// Fixed column indices in the Summary sheet (see docs/ARCHITECTURE.md for the full map).
+// Fixed column indices in the Summary sheet (see docs/reference/backend/hr-payroll-import.md
+// for the full map — cross-checked against tests/hr-payroll-import.test.ts and the CSV-import
+// fixture in tests/form-builder.test.ts, which both encode the real sheet's header labels).
 const COL = {
   no: 0,
   name: 1,
 
   totalDaysWork: 19,
   regHoliday: 20,
-  specialHoliday30: 21,
+  specialHoliday30: 22,
 
-  absentAmt: 25,
-  dailyRate: 23,
-  hourlyRate: 24,
+  dailyRate: 24,
+  hourlyRate: 25,
 
-  otHours: 26,
-  otPay: 27,
+  otHours: 27,
+  otPay: 28,
 
-  lateUndertimePay: 29,
+  lateUndertimePay: 30,
 
-  holidayOtHrs: 30,
-  holidayOtPay: 31,
+  rsd30: 35,
 
-  rsd30: 34,
+  basicPay: 36,
 
-  basicPay: 35,
-  monthlyRate: 36,
+  sss: 38,
+  hdmf: 39,
+  phic: 40,
+  tax: 41,
 
-  sss: 37,
-  hdmf: 38,
-  phic: 39,
-  tax: 40,
-
-  totalDeductions: 41,
-  totalSalary: 42,
+  totalDeductions: 42,
+  totalSalary: 43,
 } as const;
 
 export interface PayrollSlip {

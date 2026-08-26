@@ -4,6 +4,10 @@
    Data Forms), reusing that module's print-ready payslip flow.
    Route: hr-timekeeping. filter.period_id = <id> opens a specific cutoff. */
 App.register('hr-timekeeping', async (view, filter) => {
+  if (!App.hasPermission('hr.view')) {
+    view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
+    return;
+  }
   if (filter && filter.period_id) {
     await renderPeriod(view, Number(filter.period_id));
   } else {
@@ -108,7 +112,7 @@ async function renderPeriod(view, periodId) {
 
   view.innerHTML = `
     <div class="topbar">
-      <button class="btn secondary small" id="tk-back">&larr; All Cutoffs</button>
+      <button class="btn secondary small" id="tk-back">${UI.icon('arrow-left', 14)} All Cutoffs</button>
       <h2 style="margin-left:10px">${UI.esc(period.label)}</h2>
       <span class="muted" style="margin-left:6px">${UI.esc(period.start_date)} &ndash; ${UI.esc(period.end_date)}</span>
       <div class="grow"></div>
@@ -150,7 +154,7 @@ async function renderPeriod(view, periodId) {
           <tr class="clickable" data-open="${r.employee_id}">
             <td><strong>${UI.esc(r.name)}</strong></td>
             <td>${UI.esc(r.department_name || '—')}</td>
-            <td class="right">${Number(r.daily_rate || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td class="right">${UI.money(r.daily_rate)}</td>
             <td class="right">${r.days_logged || 0} / ${r.days_total || 0}</td>
             <td class="actions"><button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
           </tr>`).join('')}

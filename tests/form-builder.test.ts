@@ -301,6 +301,13 @@ describe('hr payroll csv import', () => {
     expect(res.status).toBe(404);
   });
 
+  it('requires hr.manage — a caller without it is rejected', async () => {
+    const res = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`)
+      .set(hdr(empToken)).field('period', 'June 16-30 2026')
+      .attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(res.status).toBe(403);
+  });
+
   function sampleForm2() {
     return {
       name: 'Overtime Request', slug: 'overtime_request', number_prefix: 'OT', icon: 'file',

@@ -1,14 +1,14 @@
 /** Internal messaging: inbox/sent, unread count, send, mark read, delete. */
 import { Router } from 'express';
 import { queryOne, queryAll, run } from '../db';
-import { requireAuth } from '../auth';
+import { requireAuth, requirePermission } from '../auth';
 import { parseBody, sendMessageSchema } from '../validation';
 
 const router = Router();
 router.use(requireAuth);
 
 // GET /api/messages?box=inbox|sent
-router.get('/', (req, res) => {
+router.get('/', requirePermission('messages.view'), (req, res) => {
   const box = req.query.box === 'sent' ? 'sent' : 'inbox';
   const uid = req.user!.id;
   const rows =
@@ -33,7 +33,7 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/messages/unread-count
-router.get('/unread-count', (req, res) => {
+router.get('/unread-count', requirePermission('messages.view'), (req, res) => {
   const c = queryOne<{ c: number }>(
     'SELECT COUNT(*) AS c FROM messages WHERE recipient_id = ? AND read_at IS NULL',
     req.user!.id
@@ -42,7 +42,7 @@ router.get('/unread-count', (req, res) => {
 });
 
 // POST /api/messages — send a message
-router.post('/', (req, res) => {
+router.post('/', requirePermission('messages.send'), (req, res) => {
   const { recipient_id, subject, body } = parseBody(sendMessageSchema, req.body);
   if (recipient_id === req.user!.id) {
     res.status(400).json({ error: 'You cannot message yourself' });
@@ -64,7 +64,7 @@ router.post('/', (req, res) => {
 });
 
 // POST /api/messages/:id/read — mark a received message read
-router.post('/:id/read', (req, res) => {
+router.post('/:id/read', requirePermission('messages.view'), (req, res) => {
   const info = run(
     "UPDATE messages SET read_at = datetime('now') WHERE id = ? AND recipient_id = ? AND read_at IS NULL",
     Number(req.params.id),

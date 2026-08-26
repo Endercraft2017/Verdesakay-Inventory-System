@@ -72,18 +72,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   next();
 }
 
-/** Require a specific role (use after requireAuth). */
-export function requireRole(role: Role) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    if (!req.user || req.user.role !== role) {
-      res.status(403).json({ error: 'Forbidden: insufficient permissions' });
-      return;
-    }
-    next();
-  };
-}
-
-/** Require a resolved permission key (use after requireAuth). Preferred over requireRole. */
+/** Require a resolved permission key (use after requireAuth). */
 export function requirePermission(permission: import('./types').Permission) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user || !req.user.permissions.includes(permission)) {

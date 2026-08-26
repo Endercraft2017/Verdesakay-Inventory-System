@@ -11,7 +11,7 @@ duplicating DOM/CSS boilerplate.
 Attached as the global `const UI` (IIFE; no CommonJS export — browser-only).
 
 ```js
-{ esc, toast, fmtDate, fmtDateShort, fmtBytes, initials, modal, confirmDialog,
+{ esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog,
   drawer, contextMenu, closeContextMenu, printDocument, printableHtml,
   icon, helpIcon, emptyState, fileIconName, downloadCsv }
 ```
@@ -25,6 +25,7 @@ Attached as the global `const UI` (IIFE; no CommonJS export — browser-only).
 - **`fmtDateShort(s)`** → same UTC parsing, but shows just a time (`"2:30 PM"`) if the date
   is today, otherwise `"Aug 25"`-style short date. Used for message/notification lists.
 - **`fmtBytes(n)`** → human file size (`"0 B"`, `"512 B"`, `"1.5 KB"`, …), 1 decimal above B.
+- **`money(n)`** *(added 2026-08-25)* → `Number(n || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})`. Extracted here after `orders.js` and `hr-employees.js` were each found to independently define an identical local `money()` helper — both now alias `const money = UI.money`.
 - **`initials(name)`** → first letter of up to the first 2 space-separated words,
   uppercased — used for avatar bubbles. `'?'` if `name` is falsy.
 

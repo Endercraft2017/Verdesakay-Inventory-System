@@ -53,17 +53,19 @@ App.register('orders', async (view, filter) => { ... })
   shows up to 20 results, and calls `onPick(item)` then closes the picker (`m.close()`) on
   row click. Reused by both the "Add inventory item" flow above and structurally mirrored
   (not shared code) by `pickInventory()` in `hr-timekeeping.js` for employee picking.
-- **`printOrder(id)`** — fetches the order, the matching template list for `order.type`
-  (`GET /templates?type=`), and the company profile in parallel; takes the **first**
-  matching template's full body (`GET /templates/:id` — the list endpoint returns metadata
-  only) or falls back to `FALLBACK_TEMPLATE` if none exists; builds the render context via
-  `buildContext()` and calls `UI.printDocument(renderTemplate(tplBody, ctx), order.number)`.
-- **`buildContext(order, company, me)`** — assembles the `{{var}}` template context:
-  `company` (passed through as-is), `order.*` (number, type label, date, status, customer
-  fields, notes, currency, formatted subtotal/tax/total), `items[]` (one row per line item
-  with formatted price/total), `user.name`, `today`. This is the canonical example
-  referenced by `docs/ARCHITECTURE.md` §6 ("A new document/template variable" recipe) for
-  where to add new order-related template variables.
+- **`printOrder(id)`** *(fixed 2026-08-25 — see Notes)* — fetches the order, the matching
+  template list for `order.type` (`GET /templates?type=`), and the company profile in
+  parallel; takes the **first** matching template's full body (`GET /templates/:id` — the
+  list endpoint returns metadata only) or falls back to `FALLBACK_TEMPLATE` if none exists;
+  in parallel also fetches that template's variables (`GET /templates/variables?template_id=`,
+  or global-only when no template matched); builds the render context via
+  **`buildDocContext({ order, company, user, variables })`** (shared helper from
+  `public/js/doc-context.js`, not a local copy — see Notes) and renders into a **preview
+  modal with an iframe** (`UI.modal` + `UI.printableHtml`), not `UI.printDocument()`'s
+  `window.open()` — same popup-blocker-safe pattern used by `printSlips()` in
+  `form-records.js` and the ID-card preview in `hr-employees.js`. The modal's confirm button
+  ("Print…") calls `contentWindow.print()` on the iframe and returns `false` so the preview
+  stays open after printing.
 - **`FALLBACK_TEMPLATE`** — a minimal inline HTML template (module-level constant) used
   when no `doc_templates` row exists for the order's type, so printing never hard-fails on
   a fresh install before templates are seeded/customized.
@@ -81,6 +83,7 @@ App.register('orders', async (view, filter) => { ... })
 | `GET /templates?type=` | `printOrder()` (list, to find a matching template) |
 | `GET /templates/:id` | `printOrder()` (full body of the first matching template) |
 | `GET /templates/company` | `printOrder()` (company profile for the template context) |
+| `GET /templates/variables?template_id=` | `printOrder()` (custom `doc_variables` — global + this template's own — layered onto the print context) |
 
 ## Permissions honored
 None — this file contains no `App.hasPermission` checks. All order CRUD/print actions are
@@ -90,9 +93,11 @@ server-side (all `/orders` routes require only 🔑 any logged-in user, per
 
 ## Dependencies
 - `renderTemplate` from `public/js/doc-template.js` (template rendering engine).
+- **`buildDocContext`** from `public/js/doc-context.js` (shared order→print-context builder;
+  script-load order in `index.html` puts `doc-context.js` before `views/orders.js`).
 - `API.get/post/put/del`.
 - `UI.icon`, `UI.esc`, `UI.modal`, `UI.confirmDialog`, `UI.emptyState`, `UI.toast`,
-  `UI.printDocument`.
+  `UI.printableHtml`.
 - No `App.*` calls beyond what's implicit in the shared chrome — notably does **not** use
   `App.hasPermission` or `App.getDepartments()`.
 
@@ -112,3 +117,15 @@ server-side (all `/orders` routes require only 🔑 any logged-in user, per
 - **Order `type` is immutable in the UI** — the create path always posts the outer
   closure's `type` (determined by `filter.type` at registration), so there's no way to
   change an order's type after creation from this modal.
+- **(Fixed 2026-08-25)** `printOrder()` used to build its print context with a local,
+  hand-rolled `buildContext()` that duplicated `doc-context.js`'s `baseDocContext()` field-for-
+  field — meaning custom template variables (`doc_variables`, editable via the Templates admin
+  UI) were dead for real order printing even though the shared machinery for applying them
+  (`applyVariables()`) already existed and was used by the template editor's *preview*. Fixed
+  by switching to `buildDocContext({ order, company, user, variables })`; verified end-to-end
+  against a live server that a global `doc_variables` constant now actually substitutes into a
+  printed Sale Order. In the process, `doc-context.js`'s `baseDocContext()` was also fixed to
+  label a `purchase`-type order "Purchase Request" (it previously only distinguished `job` vs.
+  everything-else-is-"Sale Order", which this file's now-removed local copy already handled
+  correctly but the shared helper didn't — would have silently mislabeled Purchase Requests
+  had it been adopted without that fix).

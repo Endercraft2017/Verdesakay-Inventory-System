@@ -17,6 +17,11 @@ export const ALL_PERMISSIONS: Permission[] = [
   'hr.view', 'hr.manage',
 ];
 
+/** Canonical role list — the single source of truth for iterating all roles. */
+export const ROLES: Role[] = [
+  'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
+];
+
 const ROLE_DEFAULTS: Record<Role, Permission[]> = {
   admin: [...ALL_PERMISSIONS],
   admin_staff: [
@@ -89,4 +94,11 @@ export function resolvePermissions(
 /** Default permission list for a role with no overrides applied. */
 export function roleDefaults(role: Role): Permission[] {
   return [...(ROLE_DEFAULTS[role] ?? [])];
+}
+
+/** Default permissions for every role, keyed by role — for admin UI display. */
+export function allRoleDefaults(): Record<Role, Permission[]> {
+  const out = {} as Record<Role, Permission[]>;
+  for (const role of ROLES) out[role] = roleDefaults(role);
+  return out;
 }

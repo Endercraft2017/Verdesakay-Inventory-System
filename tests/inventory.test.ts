@@ -185,3 +185,25 @@ describe('inventory: item form-config', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('inventory: RBAC on mutations', () => {
+  it('a role with none of the inventory.* permissions (hr) is rejected on create/update/adjust/delete', async () => {
+    const item = await createItem({ name: 'RBAC Test Item', quantity: 5, unit: 'pcs', min_quantity: 1 });
+    const hr = await createEmployee(ctx.api, token, { username: 'rbac_hr', role: 'hr' });
+    const hdr = { Authorization: `Bearer ${hr.token}` };
+    expect((await ctx.api.post('/api/inventory').set(hdr).send({ name: 'x', quantity: 1, unit: 'pcs', min_quantity: 0 })).status).toBe(403);
+    expect((await ctx.api.put(`/api/inventory/${item.body.id}`).set(hdr).send({ name: 'y' })).status).toBe(403);
+    expect((await ctx.api.post(`/api/inventory/${item.body.id}/adjust`).set(hdr).send({ change: 1 })).status).toBe(403);
+    expect((await ctx.api.delete(`/api/inventory/${item.body.id}`).set(hdr)).status).toBe(403);
+  });
+
+  it('admin_staff (no inventory.delete by default) can create/edit/adjust but not delete', async () => {
+    const staff = await createEmployee(ctx.api, token, { username: 'rbac_staff', role: 'admin_staff' });
+    const hdr = { Authorization: `Bearer ${staff.token}` };
+    const created = await ctx.api.post('/api/inventory').set(hdr).send({ name: 'Staff Item', quantity: 2, unit: 'pcs', min_quantity: 0 });
+    expect(created.status).toBe(201);
+    expect((await ctx.api.put(`/api/inventory/${created.body.id}`).set(hdr).send({ name: 'Staff Item 2' })).status).toBe(200);
+    expect((await ctx.api.post(`/api/inventory/${created.body.id}/adjust`).set(hdr).send({ change: 1 })).status).toBe(200);
+    expect((await ctx.api.delete(`/api/inventory/${created.body.id}`).set(hdr)).status).toBe(403);
+  });
+});

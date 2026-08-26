@@ -72,3 +72,23 @@ describe('messages', () => {
     expect(del.status).toBe(200);
   });
 });
+
+describe('messages: RBAC honors per-user overrides', () => {
+  it('revoking messages.send via override blocks sending, without touching messages.view', async () => {
+    const bob = await createEmployee(ctx.api, adminToken, { username: 'bob_rbac' });
+    await ctx.api.put(`/api/users/${bob.id}/permissions`).set(bearer(adminToken))
+      .send({ overrides: { 'messages.send': false } });
+    const send = await ctx.api.post('/api/messages').set(bearer(bob.token)).send({ recipient_id: alice.id, body: 'blocked' });
+    expect(send.status).toBe(403);
+    // view was never revoked — inbox should still be reachable
+    expect((await ctx.api.get('/api/messages?box=inbox').set(bearer(bob.token))).status).toBe(200);
+  });
+
+  it('revoking messages.view via override blocks reading the inbox and unread count', async () => {
+    const carol = await createEmployee(ctx.api, adminToken, { username: 'carol_rbac' });
+    await ctx.api.put(`/api/users/${carol.id}/permissions`).set(bearer(adminToken))
+      .send({ overrides: { 'messages.view': false } });
+    expect((await ctx.api.get('/api/messages?box=inbox').set(bearer(carol.token))).status).toBe(403);
+    expect((await ctx.api.get('/api/messages/unread-count').set(bearer(carol.token))).status).toBe(403);
+  });
+});

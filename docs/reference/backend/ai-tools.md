@@ -112,9 +112,9 @@ Flow:
   in `a` (any explicitly-passed field, including explicit `null`, is written; omitted fields are
   left alone). Always bumps `updated_at`. Does **not** touch `quantity`.
 - `adjust_stock({id, change, reason?})` — `change` must coerce to non-zero (`Number(a.change)`);
-  404 if item missing; computes `newQty = item.quantity + change` (no floor-at-zero guard here,
-  unlike `inventory.routes.ts`'s `/adjust` endpoint which rejects negative balances — the AI tool
-  will let stock go negative). Wrapped in an explicit `db.exec('BEGIN')`/`COMMIT`/`ROLLBACK`
+  404 if item missing; computes `newQty = item.quantity + change`, rejected with an error if
+  negative *(fixed 2026-08-25 — see Notes)*, matching `inventory.routes.ts`'s `/adjust` endpoint.
+  Wrapped in an explicit `db.exec('BEGIN')`/`COMMIT`/`ROLLBACK`
   transaction across the `UPDATE inventory_items` + `INSERT inventory_transactions`.
 - `delete_inventory_item({id})` — 404 if missing; hard `DELETE FROM inventory_items` (cascades to
   transaction history via FK `ON DELETE CASCADE` defined in `src/db.ts`).
@@ -206,17 +206,23 @@ Flow:
   a DB transaction, unlike `adjust_stock`, `create_order`, and `update_order` which explicitly use
   `BEGIN`/`COMMIT`/`ROLLBACK`. A crash between the two inserts would leave an item with no matching
   "Initial stock" transaction row.
-- `adjust_stock` (AI tool) does **not** guard against a resulting negative balance — the
-  corresponding HTTP endpoint (`POST /api/inventory/:id/adjust` in `inventory.routes.ts`) does
-  reject a change that would drop `quantity` below zero. This is an intentional-looking asymmetry
-  worth knowing about if debugging unexpected negative stock via the AI assistant.
-- `create_user`/`update_user` (AI tools) skip zod validation entirely and skip the "don't strip the
-  last admin" guard that `users.routes.ts` enforces — they rely solely on the `users.manage`
-  permission gate plus whatever the LLM chooses to pass.
-- The `create_order`/`update_order` tool specs advertise only `type: 'sale'|'job'` (no
-  `'purchase'`), and `create_order`'s number-prefix logic treats any non-`'sale'` type as `'JO-'`
-  — so the AI cannot correctly create a purchase order with a `PR-` number the way the dedicated
-  `/api/orders` route can.
+- **(Fixed 2026-08-25)** `adjust_stock` (AI tool) used to skip the negative-balance guard that
+  `POST /api/inventory/:id/adjust` enforces — now rejects a change that would drop `quantity`
+  below zero, same as the HTTP route.
+- **(Fixed 2026-08-25)** `create_user`/`update_user` (AI tools) used to skip zod validation and
+  the "don't strip the last admin" guard entirely, relying only on the `users.manage` permission
+  gate plus whatever the LLM chose to pass. Both now run through `createUserSchema`/
+  `updateUserSchema` (`src/validation.ts`) and `update_user` replicates `users.routes.ts`'s
+  last-active-admin guard (blocks demoting/disabling the sole remaining `admin`, and clears
+  sessions on disable) — same behavior as the REST route.
+- **(Fixed 2026-08-25)** `create_order`'s tool spec used to advertise only `type: 'sale'|'job'`
+  and its number-prefix logic treated any non-`'sale'` type as `'JO-'` — the AI couldn't create a
+  purchase order with a correct `PR-` number the way `/api/orders` can (and a model that ignored
+  the enum and passed `'purchase'` anyway would have gotten a wrongly-prefixed `JO-` number).
+  `type` now accepts `'purchase'`, mapped to the `PR-` prefix and `order_seq_purchase` counter,
+  with an explicit rejection for anything else. `update_order` never took a `type` field (an
+  order's type is immutable after creation, matching the REST route and the frontend), so it
+  needed no change.
 - Every tool function returns plain, unescaped DB rows as `data` — the caller (Cerebras) receives
   this as a JSON tool-response message, and `ai.routes.ts`'s docstring notes this is deliberate
   (structured tool-response messages, not string-injected into the prompt) to reduce prompt-injection risk.

@@ -78,7 +78,7 @@ const NAV = [
     ],
   },
   {
-    id: 'hr', label: 'HR', icon: 'users',
+    id: 'hr', label: 'HR', icon: 'users', requiredPermission: 'hr.view',
     subtabs: [
       {
         id: 'overview', label: 'Overview',

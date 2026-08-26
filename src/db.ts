@@ -489,6 +489,17 @@ export function setSetting(key: string, value: unknown): void {
   );
 }
 
+/**
+ * Read-increment-write a named counter in `settings`, returning a zero-padded auto number
+ * (e.g. `SO-00001`). Shared by every route that auto-numbers a document — orders, form
+ * records, and HR employees — so the counter logic can't drift out of sync between them.
+ */
+export function nextSequence(key: string, prefix: string, pad = 5): string {
+  const next = (getSetting<number>(key) || 0) + 1;
+  setSetting(key, next);
+  return `${prefix}-${String(next).padStart(pad, '0')}`;
+}
+
 function seed(): void {
   const deptCount = (db.prepare('SELECT COUNT(*) AS c FROM departments').get() as { c: number }).c;
   if (deptCount === 0) {

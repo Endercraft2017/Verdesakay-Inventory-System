@@ -1,6 +1,10 @@
 /* HR: module launcher. Employees and Time Keeping are real modules; Payroll jumps
    straight into the existing "HR Payroll" Data Form; Leave Management is still planned. */
 App.register('hr', async (view) => {
+  if (!App.hasPermission('hr.view')) {
+    view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
+    return;
+  }
   const MODULES = [
     { icon: 'sheet', title: 'Payroll', hint: 'Payslips, earnings & deductions per cutoff.', action: openPayroll },
     { icon: 'users', title: 'Employees', hint: 'Master list: department, position, daily rate.', action: () => App.navigate('hr-employees') },

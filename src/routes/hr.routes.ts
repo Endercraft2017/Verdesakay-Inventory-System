@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
-import { db, queryOne, queryAll, run, getSetting, setSetting, UPLOAD_DIR } from '../db';
+import { db, queryOne, queryAll, run, nextSequence, UPLOAD_DIR } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody,
@@ -54,9 +54,7 @@ function ensureRosterDays(periodId: number, employeeId: number, start: string, e
 
 /** Next employee number, e.g. EMP-00001 (counter in settings). */
 function nextEmployeeNumber(): string {
-  const next = (getSetting<number>('employee_seq') || 0) + 1;
-  setSetting('employee_seq', next);
-  return `EMP-${String(next).padStart(5, '0')}`;
+  return nextSequence('employee_seq', 'EMP');
 }
 
 // GET /api/hr/employees?q=&department_id=&status=
@@ -118,13 +116,18 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
 
 // DELETE /api/hr/employees/:id
 router.delete('/employees/:id', requirePermission('hr.manage'), (req, res) => {
-  try {
-    const info = run('DELETE FROM employees WHERE id = ?', Number(req.params.id));
-    if (info.changes === 0) { res.status(404).json({ error: 'Employee not found' }); return; }
-    res.json({ ok: true });
-  } catch {
-    res.status(409).json({ error: 'Employee has attendance history — set status to resigned/terminated instead of deleting.' });
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM employees WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Employee not found' });
+    return;
   }
+  const hasAttendance = queryOne('SELECT id FROM attendance_records WHERE employee_id = ? LIMIT 1', id);
+  if (hasAttendance) {
+    res.status(409).json({ error: 'Employee has attendance history — set status to resigned/terminated instead of deleting.' });
+    return;
+  }
+  run('DELETE FROM employees WHERE id = ?', id);
+  res.json({ ok: true });
 });
 
 // ─── Employee 201 documents ─────────────────────────────────────────────────
@@ -381,10 +384,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
           JSON.stringify(data), existing.id);
         updated++;
       } else {
-        const key = `form_seq_${form.id}`;
-        const next = (getSetting<number>(key) || 0) + 1;
-        setSetting(key, next);
-        const number = `${form.number_prefix}-${String(next).padStart(5, '0')}`;
+        const number = nextSequence(`form_seq_${form.id}`, form.number_prefix);
         const data = {
           ...zeros,
           employee_name: emp.name, dept_position: deptPosition,

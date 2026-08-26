@@ -18,9 +18,8 @@ if (typeof module !== 'undefined' && module.exports)
 - **`baseDocContext(order, company, user)`** → the "raw" context object:
   `{ company, order: {no, type, date, status, customer_name, customer_contact, notes,
   currency, subtotal, tax_percent, tax_amount, total}, items: [...], user: {name}, today }`.
-  `order.type` is rendered as `'Job Order'` or `'Sale Order'` (only distinguishes those two
-  — a `purchase` order also gets `'Sale Order'` here, unlike `views/orders.js`'s own local
-  `buildContext`, which correctly labels `'Purchase Request'`; see Notes). Money fields
+  `order.type` is rendered as `'Job Order'`, `'Purchase Request'`, or `'Sale Order'`
+  (default) — see Notes for a fix made here on 2026-08-25. Money fields
   (`subtotal`, `tax_amount`, `total`, each item's `unit_price`/`line_total`) are formatted
   via the internal `_money()` (2-decimal, thousands-separated). `today` is
   `new Date().toLocaleDateString()`, wrapped in try/catch (empty string on failure).
@@ -68,29 +67,29 @@ which callers rely on: it also returns `ctx` for chaining).
 after `doc-template.js` and before `doc-editor.js`.
 
 ## Used by
-- **`public/js/views/templates.js`** — the *only* browser call site. `previewContext(custom)`
-  calls the bare global `applyVariables(ctx, custom || [])` (guarded by
-  `typeof applyVariables !== 'undefined'`) to layer a template's custom variables onto a
-  deep-cloned `SAMPLE` context for the editor's live preview and the "Preview" action.
-  `buildDocContext`/`baseDocContext` are **not called from any browser view** — see Notes.
+- **`public/js/views/templates.js`** — `previewContext(custom)` calls the bare global
+  `applyVariables(ctx, custom || [])` (guarded by `typeof applyVariables !== 'undefined'`)
+  to layer a template's custom variables onto a deep-cloned `SAMPLE` context for the editor's
+  live preview and the "Preview" action.
+- **`public/js/views/orders.js`** *(wired up 2026-08-25 — see Notes)* — `printOrder()` calls
+  `buildDocContext({ order, company, user, variables })` to build the real print context for
+  Sale/Job/Purchase orders, fetching that order's applicable `doc_variables` from
+  `GET /templates/variables?template_id=` first.
 - `tests/doc-context.test.ts` — exercises `buildDocContext`/`baseDocContext`/
   `applyVariables` directly via `require()`.
 
 ## Notes / gotchas
-- **`buildDocContext`/`baseDocContext` are effectively unused in the running app today.**
-  `public/js/views/orders.js`'s `printOrder()` builds its own equivalent context by hand
-  (a local `buildContext(order, company, me)` function) rather than calling
-  `buildDocContext()` from this file — and that local version also does **not** call
-  `applyVariables`, so custom/global template variables are never layered onto a printed
-  order's context, only onto the *template editor's preview*. Only `applyVariables` (the
-  bare global) is actually wired into a live UI flow, via `views/templates.js`. If you're
-  asked to make custom variables apply to real order printing, `orders.js`'s
-  `buildContext`/`printOrder` is the code to change (either call `buildDocContext` there
-  instead of duplicating the logic, or add an `applyVariables` call).
-- `baseDocContext`'s `order.type` label logic (`job` → `'Job Order'`, everything else →
-  `'Sale Order'`) does **not** special-case `purchase` orders the way `orders.js`'s own
-  `buildContext` does (`'Purchase Request'`) — a discrepancy to be aware of if this file's
-  `baseDocContext` is ever wired into the purchase-order print path.
+- **(Fixed 2026-08-25)** `buildDocContext`/`baseDocContext` used to be dead code as far as the
+  running app was concerned: `orders.js`'s `printOrder()` built its own equivalent context by
+  hand instead of calling this file, and that local version never called `applyVariables`, so
+  custom/global template variables (`doc_variables`) never applied to a real printed order —
+  only to the template editor's *preview* (via the bare `applyVariables` global). Fixed by
+  switching `orders.js` to call `buildDocContext()` here instead of duplicating the logic;
+  verified end-to-end against a live server that a global `doc_variables` constant now
+  substitutes into a printed Sale Order. As part of the same fix, `baseDocContext`'s
+  `order.type` label logic was extended to cover `purchase` → `'Purchase Request'` (it used to
+  only distinguish `job` vs. everything-else-is-`'Sale Order'`, which would have silently
+  mislabeled Purchase Requests once `orders.js` started calling this function).
 - Order money totals are described as "server-authoritative" (per the file's header
   comment) — formulas here are purely *display-derived* re-formatting/aliasing on top of
   values the server already computed; this module never recomputes an order's actual total.

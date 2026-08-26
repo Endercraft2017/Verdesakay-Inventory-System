@@ -15,7 +15,7 @@ App.register('orders', async (view, filter) => {
     <div class="panel"><div id="ord-table"></div></div>`;
 
   const tableEl = view.querySelector('#ord-table');
-  const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const money = UI.money;
 
   async function load() {
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
@@ -234,10 +234,13 @@ App.register('orders', async (view, filter) => {
         API.get('/templates/company'),
       ]);
       // List returns metadata only; fetch full body for the first matching template.
-      const tplBody = templateList[0]
-        ? (await API.get('/templates/' + templateList[0].id)).body
-        : FALLBACK_TEMPLATE;
-      const ctx = buildContext(order, company, App.getMe());
+      const tpl = templateList[0];
+      const [tplBody, variables] = await Promise.all([
+        tpl ? API.get('/templates/' + tpl.id).then((t) => t.body) : Promise.resolve(FALLBACK_TEMPLATE),
+        // Global variables always apply; template-scoped ones only when a real template matched.
+        API.get('/templates/variables' + (tpl ? `?template_id=${tpl.id}` : '')).catch(() => []),
+      ]);
+      const ctx = buildDocContext({ order, company, user: App.getMe(), variables });
       const full = UI.printableHtml(renderTemplate(tplBody, ctx), order.number);
 
       UI.modal({
@@ -257,33 +260,6 @@ App.register('orders', async (view, filter) => {
     } catch (e) {
       UI.toast(e.message, 'error');
     }
-  }
-
-  function buildContext(order, company, me) {
-    return {
-      company,
-      order: {
-        no: order.number,
-        type: order.type === 'sale' ? 'Sale Order' : order.type === 'job' ? 'Job Order' : 'Purchase Request',
-        date: order.order_date || '',
-        status: order.status,
-        customer_name: order.customer_name || '',
-        customer_contact: order.customer_contact || '',
-        notes: order.notes || '',
-        currency: order.currency || 'PHP',
-        subtotal: money(order.subtotal),
-        tax_percent: order.tax_percent,
-        tax_amount: money(order.tax_amount),
-        total: money(order.total),
-      },
-      items: (order.items || []).map((it) => ({
-        name: it.name, sku: it.sku || '', description: it.description || '',
-        quantity: it.quantity, unit: it.unit || '',
-        unit_price: money(it.unit_price), line_total: money(it.line_total),
-      })),
-      user: { name: me.full_name },
-      today: new Date().toLocaleDateString(),
-    };
   }
 
   async function del(id, list) {

@@ -334,9 +334,3 @@ export const permissionOverridesSchema = z.object({
   overrides: z.record(z.string().max(64), z.boolean())
     .refine((o) => Object.keys(o).length <= 50, 'Too many overrides'),
 });
-
-export type LoginInput = z.infer<typeof loginSchema>;
-export type CreateUserInput = z.infer<typeof createUserSchema>;
-export type CreateItemInput = z.infer<typeof createItemSchema>;
-export type AdjustStockInput = z.infer<typeof adjustStockSchema>;
-export type SendMessageInput = z.infer<typeof sendMessageSchema>;

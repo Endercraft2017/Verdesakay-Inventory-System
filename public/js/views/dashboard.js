@@ -7,7 +7,7 @@ App.register('dashboard', async (view) => {
   const canUsers = App.hasPermission('users.manage');
 
   const [stats, items, inbox, forms, unread, users] = await Promise.all([
-    canInv ? API.get('/inventory/stats') : Promise.resolve({ total: 0, low_stock: 0, total_value: 0 }),
+    canInv ? API.get('/inventory/stats') : Promise.resolve({ items: 0, total_units: 0, low_stock: 0, out_of_stock: 0 }),
     canInv ? API.get('/inventory?low=1') : Promise.resolve([]),
     canMsg ? API.get('/messages?box=inbox') : Promise.resolve([]),
     canForms ? API.get('/forms') : Promise.resolve([]),

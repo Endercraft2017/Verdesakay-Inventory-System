@@ -6,6 +6,8 @@
  * Tools are filtered to those the calling user actually holds before being sent to the LLM.
  */
 import { db, queryOne, queryAll, run, getSetting, setSetting } from './db';
+import { parseBody, createUserSchema, updateUserSchema, createItemSchema, updateItemSchema } from './validation';
+import { visibilityClause } from './routes/forms.routes';
 import type { AuthUser, Permission } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,11 +217,11 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
     type: 'function',
     function: {
       name: 'search_orders',
-      description: 'List job or sale orders. Filter by type and optional search keyword. Returns up to 30 orders.',
+      description: 'List job, sale, or purchase orders. Filter by type and optional search keyword. Returns up to 30 orders.',
       parameters: {
         type: 'object',
         properties: {
-          type: { type: 'string', enum: ['sale', 'job'], description: 'Order type.' },
+          type: { type: 'string', enum: ['sale', 'job', 'purchase'], description: 'Order type.' },
           query: { type: 'string', description: 'Keyword to search in order number or customer name.' },
         },
       },
@@ -245,11 +247,11 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
     type: 'function',
     function: {
       name: 'create_order',
-      description: 'Create a new sale or job order with line items. An order number (SO-##### / JO-#####) is auto-generated. Server computes subtotal, tax, and total.',
+      description: 'Create a new sale, job, or purchase order with line items. An order number (SO-##### / JO-##### / PR-#####) is auto-generated. Server computes subtotal, tax, and total.',
       parameters: {
         type: 'object',
         properties: {
-          type: { type: 'string', enum: ['sale', 'job'], description: 'Order type.' },
+          type: { type: 'string', enum: ['sale', 'job', 'purchase'], description: 'Order type.' },
           customer_name: { type: 'string' },
           customer_contact: { type: 'string' },
           order_date: { type: 'string', description: 'ISO date string, e.g. 2026-06-29.' },
@@ -672,17 +674,21 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'create_inventory_item': {
-        const qty = Number(a.quantity ?? 0);
+        const input = parseBody(createItemSchema, a);
+        if (input.sku) {
+          const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ?', input.sku);
+          if (dupe) return { success: false, error: 'An item with that SKU already exists.' };
+        }
         const r = run(
           `INSERT INTO inventory_items (name, sku, category, department_id, quantity, unit, min_quantity, location, notes, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-          a.name, a.sku ?? null, a.category ?? null, a.department_id ?? null,
-          qty, a.unit ?? 'pcs', Number(a.min_quantity ?? 0), a.location ?? null, a.notes ?? null,
+          input.name, input.sku ?? null, input.category ?? null, input.department_id ?? null,
+          input.quantity, input.unit ?? 'pcs', input.min_quantity, input.location ?? null, input.notes ?? null,
         );
-        if (qty !== 0) {
+        if (input.quantity !== 0) {
           run(
             `INSERT INTO inventory_transactions (item_id, user_id, change, balance_after, reason) VALUES (?, ?, ?, ?, ?)`,
-            r.lastInsertRowid, user.id, qty, qty, 'Initial stock',
+            r.lastInsertRowid, user.id, input.quantity, input.quantity, 'Initial stock',
           );
         }
         return { success: true, data: queryOne('SELECT * FROM inventory_items WHERE id = ?', r.lastInsertRowid) };
@@ -691,11 +697,16 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       case 'update_inventory_item': {
         if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', a.id))
           return { success: false, error: 'Item not found.' };
+        const input = parseBody(updateItemSchema, a);
+        if (input.sku !== undefined && input.sku !== null) {
+          const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ? AND id != ?', input.sku, a.id);
+          if (dupe) return { success: false, error: 'Another item already uses that SKU.' };
+        }
         const cols: string[] = ["updated_at = datetime('now')"];
         const vals: unknown[] = [];
         const map: Record<string, unknown> = {
-          name: a.name, sku: a.sku, category: a.category, department_id: a.department_id,
-          unit: a.unit, min_quantity: a.min_quantity, location: a.location, notes: a.notes,
+          name: input.name, sku: input.sku, category: input.category, department_id: input.department_id,
+          unit: input.unit, min_quantity: input.min_quantity, location: input.location, notes: input.notes,
         };
         for (const [k, v] of Object.entries(map)) {
           if (v !== undefined) { cols.push(`${k} = ?`); vals.push(v ?? null); }
@@ -710,6 +721,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
         const item = queryOne<{ quantity: number }>('SELECT quantity FROM inventory_items WHERE id = ?', a.id);
         if (!item) return { success: false, error: 'Item not found.' };
         const newQty = item.quantity + change;
+        if (newQty < 0) return { success: false, error: `Not enough stock. Only ${item.quantity} available.` };
         db.exec('BEGIN');
         try {
           run("UPDATE inventory_items SET quantity = ?, updated_at = datetime('now') WHERE id = ?", newQty, a.id);
@@ -761,10 +773,12 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
 
       case 'create_order': {
         const type = String(a.type ?? 'sale');
+        if (type !== 'sale' && type !== 'job' && type !== 'purchase')
+          return { success: false, error: "type must be 'sale', 'job', or 'purchase'." };
         const seqKey = `order_seq_${type}`;
         const next = ((getSetting<number>(seqKey) ?? 0) + 1);
         setSetting(seqKey, next);
-        const prefix = type === 'sale' ? 'SO' : 'JO';
+        const prefix = type === 'sale' ? 'SO' : type === 'job' ? 'JO' : 'PR';
         const orderNum = `${prefix}-${String(next).padStart(5, '0')}`;
         const lineItems = (a.items as LineItem[]) ?? [];
         const subtotal = lineItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
@@ -882,14 +896,20 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
 
       // ── Forms ──────────────────────────────────────────────────────────────
       case 'get_forms': {
-        const where = ['(f.department_id IS NULL OR f.department_id = ?)'];
-        const p: unknown[] = [user.department_id ?? -1];
-        if (a.category) { where.push('f.category = ?'); p.push(a.category); }
+        // Same visibility rule as GET /api/forms (users.manage sees every form, not just
+        // shared + own-department) — this used to be hand-rolled here without that bypass.
+        const vis = visibilityClause(user);
+        const p: unknown[] = [...vis.params];
+        let where = vis.sql; // '' or ' WHERE (...)'
+        if (a.category) {
+          where += where ? ' AND f.category = ?' : ' WHERE f.category = ?';
+          p.push(a.category);
+        }
         const sql =
           `SELECT f.id, f.title, f.description, f.category, f.original_name,
                   f.mime_type, f.size_bytes, f.created_at, d.name AS department_name
            FROM forms f LEFT JOIN departments d ON d.id = f.department_id
-           WHERE ${where.join(' AND ')} ORDER BY f.title COLLATE NOCASE`;
+           ${where} ORDER BY f.title COLLATE NOCASE`;
         return { success: true, data: queryAll(sql, ...p) };
       }
 
@@ -909,27 +929,45 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'create_user': {
+        const input = parseBody(createUserSchema, a);
+        const exists = queryOne('SELECT id FROM users WHERE username = ?', input.username);
+        if (exists) return { success: false, error: 'Username already taken.' };
         const { hashSync } = await import('bcryptjs');
-        const hash = hashSync(String(a.password), 10);
+        const hash = hashSync(input.password, 10);
         const r = run(
           'INSERT INTO users (username, full_name, password_hash, role, department_id) VALUES (?, ?, ?, ?, ?)',
-          String(a.username).toLowerCase().trim(), a.full_name, hash,
-          a.role ?? 'admin_staff', a.department_id ?? null,
+          input.username, input.full_name, hash, input.role, input.department_id,
         );
-        return { success: true, data: { id: Number(r.lastInsertRowid), username: a.username } };
+        return { success: true, data: { id: Number(r.lastInsertRowid), username: input.username } };
       }
 
       case 'update_user': {
-        if (!queryOne('SELECT id FROM users WHERE id = ?', a.id))
-          return { success: false, error: 'User not found.' };
+        const existing = queryOne<{ role: string; active: number }>('SELECT role, active FROM users WHERE id = ?', a.id);
+        if (!existing) return { success: false, error: 'User not found.' };
+        const input = parseBody(updateUserSchema, a);
+        const role = input.role ?? existing.role;
+        const active = input.active !== undefined ? (input.active ? 1 : 0) : existing.active;
+
+        // Never strip the last active administrator (mirrors PUT /users/:id in users.routes.ts).
+        const demoting = existing.role === 'admin' && role !== 'admin';
+        const disabling = existing.role === 'admin' && existing.active === 1 && active === 0;
+        if (demoting || disabling) {
+          const otherAdmins = queryOne<{ c: number }>(
+            "SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND active = 1 AND id != ?",
+            a.id,
+          )!.c;
+          if (otherAdmins === 0) return { success: false, error: 'Cannot remove the last active administrator.' };
+        }
+
         const cols: string[] = [];
         const vals: unknown[] = [];
-        if (a.full_name !== undefined) { cols.push('full_name = ?'); vals.push(a.full_name); }
-        if (a.role !== undefined) { cols.push('role = ?'); vals.push(a.role); }
-        if (a.department_id !== undefined) { cols.push('department_id = ?'); vals.push(a.department_id ?? null); }
-        if (a.active !== undefined) { cols.push('active = ?'); vals.push(a.active ? 1 : 0); }
+        if (input.full_name !== undefined) { cols.push('full_name = ?'); vals.push(input.full_name); }
+        if (input.role !== undefined) { cols.push('role = ?'); vals.push(input.role); }
+        if (input.department_id !== undefined) { cols.push('department_id = ?'); vals.push(input.department_id ?? null); }
+        if (input.active !== undefined) { cols.push('active = ?'); vals.push(active); }
         if (!cols.length) return { success: false, error: 'Nothing to update.' };
         run(`UPDATE users SET ${cols.join(', ')} WHERE id = ?`, ...vals, a.id);
+        if (active === 0) run('DELETE FROM sessions WHERE user_id = ?', a.id);
         return { success: true, data: { updated: true } };
       }
 

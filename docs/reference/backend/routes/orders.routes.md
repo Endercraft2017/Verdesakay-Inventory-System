@@ -9,7 +9,7 @@ All routes are mounted at `/api/orders` (`src/app.ts`) and require `requireAuth`
 
 | Method & path | Schema | What it does | Success response | Error cases |
 |---|---|---|---|---|
-| `GET /` | — | Lists orders, newest first. Optional `?type=sale\|job` filters by type (note: `purchase` is **not** matched by this filter check — see Notes). Optional `?q=` matches `o.number LIKE %q%` or `o.customer_name LIKE %q%`. Joins `users` for `created_by_name`. | `200` array of `Order` (no `items`) | — |
+| `GET /` | — | Lists orders, newest first. Optional `?type=sale\|job\|purchase` filters by type. Optional `?q=` matches `o.number LIKE %q%` or `o.customer_name LIKE %q%`. Joins `users` for `created_by_name`. | `200` array of `Order` (no `items`) | — |
 | `GET /:id` | — | Fetches one order header (with `created_by_name`) plus its `order_items` (`ORDER BY sort, id`). | `200` `Order` with `.items: OrderItem[]` | `404` if order id not found |
 | `POST /` | `createOrderSchema` | Validates body (`type` + `orderFields`: customer_name/contact, order_date, status, notes, currency, tax_percent, `items[]` min 1 max 300). Calls `computeTotals()` to derive `line_total` per item and `subtotal`/`tax_amount`/`total` from the raw quantities/prices/tax_percent (ignores any client-sent totals). Wrapped in `BEGIN`/`COMMIT`/`ROLLBACK`: gets the next order number via `nextOrderNumber(type)`, inserts the `orders` row, then `insertItems()` inserts each line into `order_items` with `sort` = array index. | `201 { id, number }` | Zod `ValidationError` (400, via central handler) on invalid body; DB error triggers `ROLLBACK` then rethrow (500) |
 | `PUT /:id` | `updateOrderSchema` | Looks up the order by id (404 if missing) **before** validating the body. Validates `orderFields` (no `type` — type/number are immutable on update). Recomputes totals via `computeTotals()`. Transaction: `UPDATE orders` (all header fields except type/number, plus `updated_at`), `DELETE FROM order_items WHERE order_id = ?`, then re-`insertItems()` — i.e. **line items are fully replaced**, not diffed/merged. | `200 { ok: true }` | `404` if order not found; validation errors 400; DB error → `ROLLBACK` + rethrow |
@@ -34,7 +34,10 @@ All routes are mounted at `/api/orders` (`src/app.ts`) and require `requireAuth`
 - Tests: `tests/orders.test.ts` — covers auto-numbering, server-computed totals (asserts client totals are ignored), list-by-type, update-replaces-items, delete cascade, validation, auth, and all three types (`sale`, `job`, `purchase`).
 
 ## Notes / gotchas
-- **`GET /` type filter only recognizes `sale` and `job`**: `if (type === 'sale' || type === 'job') { where.push('o.type = ?'); ... }`. A request for `?type=purchase` silently falls through with no type filter applied, returning orders of *all* types rather than just purchase orders. `GET /:id`, `POST /`, and `PUT /:id` all handle `purchase` correctly (via the zod enum and `nextOrderNumber`); only the list endpoint's filter has this gap.
+- **(Fixed 2026-08-25)** `GET /`'s type filter used to only recognize `sale`/`job` — a request
+  for `?type=purchase` silently fell through with no type filter applied, returning orders of
+  *all* types instead of just purchase orders (this is what the `orders` view's Purchase Orders
+  tab, `filter.type: 'purchase'`, relied on). Now matches all three types.
 - Totals are **always** server-derived from `items[].quantity * items[].unit_price` plus `tax_percent` — this is deliberate ("never trust the client", per the file's own top comment) and is explicitly exercised by `tests/orders.test.ts`.
 - `PUT /:id` does a full delete-and-reinsert of `order_items` rather than an upsert/diff, so item `id`s and any `inventory_transactions`-style history tied to a specific `order_items.id` do not survive an edit (a fresh set of rows/ids is created every time).
 - `type` and `number` cannot be changed via `PUT` — `updateOrderSchema` has no `type` field, and the `UPDATE orders` statement never touches `number`.

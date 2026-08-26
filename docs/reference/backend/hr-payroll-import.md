@@ -30,17 +30,17 @@ Returns `string[][]` — one array of raw (unquoted, unescaped) string cells per
 
 | Key | Index | Key | Index | Key | Index |
 |---|---|---|---|---|---|
-| `no` | 0 | `absentAmt` | 25 | `rsd30` | 34 |
-| `name` | 1 | `dailyRate` | 23 | `basicPay` | 35 |
-| `totalDaysWork` | 19 | `hourlyRate` | 24 | `monthlyRate` | 36 |
-| `regHoliday` | 20 | `otHours` | 26 | `sss` | 37 |
-| `specialHoliday30` | 21 | `otPay` | 27 | `hdmf` | 38 |
-| | | `lateUndertimePay` | 29 | `phic` | 39 |
-| | | `holidayOtHrs` | 30 | `tax` | 40 |
-| | | `holidayOtPay` | 31 | `totalDeductions` | 41 |
-| | | | | `totalSalary` | 42 |
+| `no` | 0 | `specialHoliday30` | 22 | `basicPay` | 36 |
+| `name` | 1 | `dailyRate` | 24 | `sss` | 38 |
+| `totalDaysWork` | 19 | `hourlyRate` | 25 | `hdmf` | 39 |
+| `regHoliday` | 20 | `otHours` | 27 | `phic` | 40 |
+| | | `otPay` | 28 | `tax` | 41 |
+| | | `lateUndertimePay` | 30 | `totalDeductions` | 42 |
+| | | `rsd30` | 35 | `totalSalary` | 43 |
 
-Every value the parser reads comes from one of these fixed offsets via the `cell(row, index)` helper (`(row?.[index] ?? '').trim()` — out-of-range or missing cells become `''`, never `undefined`/throw). `COL.absentAmt`, `COL.holidayOtHrs`, `COL.holidayOtPay`, and `COL.monthlyRate` are defined but **not actually read** anywhere in `parsePayrollSummaryCsv` — they document known columns in the sheet that the app doesn't currently map into a `PayrollSlip` field.
+Every value the parser reads comes from one of these fixed offsets via the `cell(row, index)` helper (`(row?.[index] ?? '').trim()` — out-of-range or missing cells become `''`, never `undefined`/throw).
+
+> **Fixed 2026-08-25**: every index from `specialHoliday30` onward used to be off by one (e.g. `dailyRate` was `23` instead of `24`), which meant real CSV imports silently read the wrong column for daily rate, hourly rate, OT, holiday pay, basic pay, and every deduction field — `daily_rate`/`basic_salary` etc. would come back as `0` or from the neighboring column. This was caught because `tests/hr-payroll-import.test.ts` and the CSV-import fixture in `tests/form-builder.test.ts` — two independently-written fixtures that both encode the real sheet's header labels — agreed with each other and disagreed with the source, and 3 of those tests were failing on `main`. The map above is the corrected version; the dead `absentAmt`/`holidayOtHrs`/`holidayOtPay`/`monthlyRate` entries (defined but never read by `parsePayrollSummaryCsv`) were removed rather than re-numbered.
 
 **Department scanning** (`isDeptHeader`): as the scan walks rows top-to-bottom, a row is classified as a department-section header when its `no` cell (column 0) holds non-empty, non-purely-numeric text (`!/^\d+$/.test(no)`) **and** both the `name` cell and `totalDaysWork` cell are blank. When a header row is found, `dept` is set to that `no` cell's text and the loop `continue`s (no slip is emitted for the header itself). Every subsequent employee row is tagged with the *last* seen `dept` value until the next header row changes it — so department attribution is purely positional/sequential, not looked up from any other column.
 
@@ -86,7 +86,7 @@ None — no imports at all. Pure TypeScript/JavaScript over strings, arrays, and
 - Not used by `src/routes/hr.routes.ts` — that file's `generate-payslips` endpoint builds its own zeroed/prefilled payslip data independently (see `hr.routes.md`) and has nothing to do with CSV import.
 
 ## Notes / gotchas
-- **The current `COL` map does not match the fixture used by its own test suite.** Running `npx vitest run tests/hr-payroll-import.test.ts` against the committed code (`main` @ `66fc3d4`, no local modifications to either file) fails **3 of 8 tests**: `daily_rate`/`basic_salary` come back `0` instead of the expected `600`/`7800`, `ot_rate_hour` comes back `812.5` instead of `~101.56`, and the mid-cutoff rate-change slip's `daily_rate` comes back `0` instead of `700`. The test file builds its fixture rows using its *own* local `COL` constant, and from `specialHoliday30` onward every one of its indices is **exactly one column higher** than the corresponding index in `src/hr-payroll-import.ts`'s `COL` (e.g. test `dailyRate: 24` vs. source `dailyRate: 23`; test `totalSalary: 43` vs. source `totalSalary: 42`), while `no`, `name`, `totalDaysWork`, and `regHoliday` (columns 0/1/19/20) still agree. That means either the real Summary sheet has one more column between "Reg Holiday" (20) and "Special Holiday 30%" than `COL` currently accounts for (and `COL` needs every index from 21 onward bumped by one), or the test fixture has a phantom extra column that doesn't belong. Either way, **this is a live discrepancy in the committed code, not an artifact of this documentation pass** — worth fixing or investigating before relying on CSV import against a real current-format export.
+- **(Fixed 2026-08-25)** The `COL` map used to be off by one from `specialHoliday30` onward, disagreeing with both `tests/hr-payroll-import.test.ts`'s fixture and the CSV-import fixture in `tests/form-builder.test.ts` — 3 tests in the former and 1 in the latter were failing against real CSV data (`daily_rate`/`basic_salary` reading back as `0`, etc.). Corrected; all 8 + import tests now pass. See the map above for the current (correct) indices.
 - `parseCsvRows` has no header-arity validation — it will happily parse a CSV whose rows have fewer or more than 43 columns; short rows just read back as `''` at any missing index (via `cell()`'s `row?.[c] ?? ''`), so a truncated/malformed export fails silently (all-zero fields) rather than erroring.
 - Because department is tracked purely by "most recent header row seen," a CSV that starts with employee rows before any department header (malformed input, or a header type the `isDeptHeader` check doesn't recognize) will produce slips with `dept_position: ''` for those rows rather than an error.
 - `isContinuationRow` vs. footer-row disambiguation hinges entirely on whether the `totalDaysWork` cell parses as `/^\d+(\.\d+)?$/` — a footer/summary row that happens to place a numeric-looking string in that exact column (not just label text) would be misread as a continuation row inheriting `lastEmployeeName`. The existing footer-rejection test only covers the case where a label string lands there, not a stray number.

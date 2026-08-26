@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
 
 /** Forms visible to a user: shared (no dept) + own dept. users.manage sees all. */
-function visibilityClause(user: AuthUser): { sql: string; params: unknown[] } {
+export function visibilityClause(user: AuthUser): { sql: string; params: unknown[] } {
   if (user.permissions.includes('users.manage')) return { sql: '', params: [] };
   return {
     sql: ' WHERE (f.department_id IS NULL OR f.department_id = ?)',
