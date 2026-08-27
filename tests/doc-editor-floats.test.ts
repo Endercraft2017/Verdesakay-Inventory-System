@@ -83,7 +83,7 @@ describe('DocEditor floating objects', () => {
     expect(floats.length).toBe(1);
     const el = floats[0] as HTMLElement;
     expect(el.getAttribute('data-float-kind')).toBe('shape-rect');
-    expect(el.getAttribute('data-wrap')).toBe('front');
+    expect(el.style.zIndex).toBe('1');
     expect(el.getAttribute('contenteditable')).toBe('false');
     expect(el.style.position).toBe('absolute');
     // selected immediately on insert -> handles + toolbar present
@@ -101,21 +101,19 @@ describe('DocEditor floating objects', () => {
     expect(body.getAttribute('contenteditable')).toBe('true');
   });
 
-  it('toggling wrap mode flips data-wrap and the z-index sign', () => {
+  it('z-up/z-down nudge the z-index by ±1 from its current value, repeatably', () => {
     const { fs, surface } = openEditor();
     click(fs.querySelector('[data-ins="shape-rect"]')!);
     const el = surface.querySelector('.doc-float')! as HTMLElement;
-    expect(el.getAttribute('data-wrap')).toBe('front');
-    const behindBtn = el.querySelector('[data-float-act="behind"]') as HTMLElement;
-    expect(behindBtn).toBeTruthy();
-    click(behindBtn);
-    expect(el.getAttribute('data-wrap')).toBe('behind');
+    expect(el.style.zIndex).toBe('1'); // fresh insert defaults to "in front" (z=1)
+    const up = () => click(el.querySelector('[data-float-act="z-up"]') as HTMLElement);
+    const down = () => click(el.querySelector('[data-float-act="z-down"]') as HTMLElement);
+    down(); down(); down();
+    expect(el.style.zIndex).toBe('-2'); // 1 -> 0 -> -1 -> -2, not a fixed jump to -1
+    up();
     expect(el.style.zIndex).toBe('-1');
-    const frontBtn = el.querySelector('[data-float-act="front"]') as HTMLElement;
-    expect(frontBtn).toBeTruthy();
-    click(frontBtn);
-    expect(el.getAttribute('data-wrap')).toBe('front');
-    expect(Number(el.style.zIndex)).toBeGreaterThan(0);
+    up(); up();
+    expect(el.style.zIndex).toBe('1');
   });
 
   it('the delete toolbar button removes the float', () => {
@@ -160,18 +158,21 @@ describe('DocEditor floating objects', () => {
     expect(el.style.height).not.toBe(startH);
   });
 
-  it('promotes a plain inline image to a floating "behind text" object', () => {
+  it('promotes a plain inline image to a floating object, then z-down sends it behind text', () => {
     const { fs, surface } = openEditor('<p>text <img src="data:image/png;base64,x" alt="pic"> more</p>');
     const img = surface.querySelector('img')!;
-    click(img); // shows the promote bar
-    const behindBtn = surface.querySelector('.doc-promote-bar [data-promote="behind"]') as HTMLElement;
-    expect(behindBtn).toBeTruthy();
-    click(behindBtn);
+    click(img); // shows the single "make movable" promote bar (no more front/behind wording)
+    const makeBtn = surface.querySelector('.doc-promote-bar [data-promote="make"]') as HTMLElement;
+    expect(makeBtn).toBeTruthy();
+    click(makeBtn);
     const floatEl = surface.querySelector('.doc-float[data-float-kind="image"]')! as HTMLElement;
     expect(floatEl).toBeTruthy();
-    expect(floatEl.getAttribute('data-wrap')).toBe('behind');
-    expect(floatEl.style.zIndex).toBe('-1');
+    expect(floatEl.style.zIndex).toBe('1'); // starts in front
     expect(floatEl.contains(img)).toBe(true);
+    // the float's own toolbar sends it behind, one step at a time
+    click(floatEl.querySelector('[data-float-act="z-down"]') as HTMLElement);
+    click(floatEl.querySelector('[data-float-act="z-down"]') as HTMLElement);
+    expect(floatEl.style.zIndex).toBe('-1');
     void fs;
   });
 
@@ -179,19 +180,65 @@ describe('DocEditor floating objects', () => {
     const { surface } = openEditor('<table class="doc-table"><tbody><tr><td>a</td></tr></tbody></table>');
     const table = surface.querySelector('table')!;
     click(table);
-    const frontBtn = surface.querySelector('.doc-promote-bar [data-promote="front"]') as HTMLElement;
-    click(frontBtn);
+    click(surface.querySelector('.doc-promote-bar [data-promote="make"]') as HTMLElement);
     const floatEl = surface.querySelector('.doc-float[data-float-kind="table"]')! as HTMLElement;
     expect(floatEl).toBeTruthy();
     expect(floatEl.contains(table)).toBe(true);
     expect(table.getAttribute('contenteditable')).toBe('true');
   });
 
+  it('promotes an arbitrary element (e.g. an ID card field <div>) to a movable object', () => {
+    const { surface } = openEditor('<div class="idcard-name">Jane Doe</div>');
+    const nameEl = surface.querySelector('.idcard-name')!;
+    click(nameEl);
+    const bar = surface.querySelector('.doc-promote-bar');
+    expect(bar).toBeTruthy(); // any element, not just <img>/<table>, gets the promote bar
+    click(surface.querySelector('.doc-promote-bar [data-promote="make"]') as HTMLElement);
+    const floatEl = surface.querySelector('.doc-float[data-float-kind="text"]')! as HTMLElement;
+    expect(floatEl).toBeTruthy();
+    expect(floatEl.contains(nameEl)).toBe(true);
+    expect(nameEl.getAttribute('contenteditable')).toBe('true');
+    // it can now be dragged like any other float
+    mousedown(floatEl, { clientX: 50, clientY: 50 });
+    mousemove(document, { clientX: 90, clientY: 70 });
+    mouseup(document);
+    expect(floatEl.style.left).not.toBe('');
+  });
+
+  it('does not force width/height:100% on a promoted non-image element (would squash its own CSS-driven sizing)', () => {
+    const { surface } = openEditor('<div class="idcard-photo" style="width:20mm;height:20mm;border-radius:50%">x</div>');
+    const photoLike = surface.querySelector('.idcard-photo')!;
+    click(photoLike);
+    click(surface.querySelector('.doc-promote-bar [data-promote="make"]') as HTMLElement);
+    // its own width/height (from the style attribute it already had) must survive untouched
+    expect((photoLike as HTMLElement).style.width).toBe('20mm');
+    expect((photoLike as HTMLElement).style.height).toBe('20mm');
+  });
+
+  it('DOES stretch a promoted <img> to fill its wrapper (matches Word picture-resize behavior)', () => {
+    const { surface } = openEditor('<img src="data:image/png;base64,x" alt="pic">');
+    const img = surface.querySelector('img')!;
+    click(img);
+    click(surface.querySelector('.doc-promote-bar [data-promote="make"]') as HTMLElement);
+    expect((img as HTMLElement).style.width).toBe('100%');
+    expect((img as HTMLElement).style.height).toBe('100%');
+  });
+
+  it('does not offer promotion for inline formatting runs or table cells (avoids breaking prose/tables)', () => {
+    const { surface } = openEditor('<p>a <b>bold word</b> b</p><table class="doc-table"><tbody><tr><td>cell</td></tr></tbody></table>');
+    const b = surface.querySelector('b')!;
+    click(b);
+    expect(surface.querySelector('.doc-promote-bar')).toBeFalsy();
+    const td = surface.querySelector('td')!;
+    click(td);
+    expect(surface.querySelector('.doc-promote-bar')).toBeFalsy();
+  });
+
   it('"in line with text" unwraps a promoted image back to a plain inline <img>', () => {
     const { surface } = openEditor('<p><img src="data:image/png;base64,x" alt="pic"></p>');
     const img = surface.querySelector('img')!;
     click(img);
-    click(surface.querySelector('.doc-promote-bar [data-promote="front"]') as HTMLElement);
+    click(surface.querySelector('.doc-promote-bar [data-promote="make"]') as HTMLElement);
     expect(surface.querySelector('.doc-float')).toBeTruthy();
     click(img); // re-select the (now floating) image to open its toolbar
     const inlineBtn = surface.querySelector('.doc-float-toolbar [data-float-act="inline"]') as HTMLElement;

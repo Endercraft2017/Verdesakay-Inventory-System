@@ -1,17 +1,19 @@
-/** Form builder: admin-managed form definitions, per-form record CRUD, global variables. */
+/** Form builder: per-section-managed form definitions, per-form record CRUD, global variables. */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { db, queryOne, queryAll, run, nextSequence } from '../db';
-import { requireAuth, requirePermission } from '../auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../auth';
 import {
   parseBody,
   formDefinitionSchema,
+  linkFormTemplateSchema,
+  templateSchema,
   createFormRecordSchema,
   updateFormRecordSchema,
   globalVariableSchema,
 } from '../validation';
 import { parsePayrollSummaryCsv } from '../hr-payroll-import';
-import type { FormDefinition, FormRecord, GlobalVariable } from '../types';
+import type { FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../types';
 
 const router = Router();
 router.use(requireAuth);
@@ -31,6 +33,24 @@ function parseData(raw: string | null): Record<string, unknown> {
 /** Next record number for a form definition, e.g. FM-00001 (counter in settings). */
 function nextRecordNumber(prefix: string, formId: number): string {
   return nextSequence(`form_seq_${formId}`, prefix);
+}
+
+const FORM_SCOPES: FormScope[] = ['hr', 'inventory', 'admin', 'accounting'];
+const ANY_FORMS_MANAGE: Permission[] = FORM_SCOPES.map((s) => `forms.manage.${s}` as Permission);
+
+/** A form's required permission depends on its own `scope`, not just the route — so this is a
+    plain check called inline rather than a static requirePermission(...) middleware. General
+    (null-scope) forms require *all four* forms.manage.* — deliberately stricter than any single
+    section, so a form nobody explicitly sectioned doesn't become manageable by whichever role
+    happens to hold just one scope. In practice only admin holds all four by default, making
+    General effectively admin-managed, the right default for an unowned bucket. Writes the 403
+    itself and returns whether the caller may proceed. */
+function canManageScope(req: Request, res: Response, scope: FormScope | null): boolean {
+  const ok = scope
+    ? req.user!.permissions.includes(`forms.manage.${scope}` as Permission)
+    : FORM_SCOPES.every((s) => req.user!.permissions.includes(`forms.manage.${s}` as Permission));
+  if (!ok) res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+  return ok;
 }
 
 // ─── Form Definitions ────────────────────────────────────────────────────────
@@ -56,47 +76,99 @@ router.get('/form-definitions/:id', (req, res) => {
   res.json({ ...row, fields: parseFields(row.fields as string) });
 });
 
-// POST /api/form-definitions — create (forms.manage)
-router.post('/form-definitions', requirePermission('forms.manage'), (req, res) => {
+// POST /api/form-definitions — create (forms.manage.<scope>)
+router.post('/form-definitions', (req, res) => {
   const input = parseBody(formDefinitionSchema, req.body);
+  if (!canManageScope(req, res, input.scope)) return;
   const info = run(
-    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, created_by)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     input.name,
     input.slug,
     input.number_prefix,
     input.icon,
     JSON.stringify(input.fields),
+    input.scope,
     req.user!.id
   );
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
-// PUT /api/form-definitions/:id — update (forms.manage)
-router.put('/form-definitions/:id', requirePermission('forms.manage'), (req, res) => {
+// PUT /api/form-definitions/:id — update (forms.manage.<scope> for its current scope, and for
+// the new scope too if the request is moving it into a different section)
+router.put('/form-definitions/:id', (req, res) => {
   const id = Number(req.params.id);
-  if (!queryOne('SELECT id FROM form_definitions WHERE id = ?', id)) {
-    res.status(404).json({ error: 'Form not found' }); return;
-  }
+  const existing = queryOne<FormDefinition>('SELECT scope FROM form_definitions WHERE id = ?', id);
+  if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
   const input = parseBody(formDefinitionSchema, req.body);
+  if (!canManageScope(req, res, existing.scope)) return;
+  if (input.scope !== existing.scope && !canManageScope(req, res, input.scope)) return;
   run(
     `UPDATE form_definitions
-     SET name = ?, slug = ?, number_prefix = ?, icon = ?, fields = ?, updated_at = datetime('now')
+     SET name = ?, slug = ?, number_prefix = ?, icon = ?, fields = ?, scope = ?, updated_at = datetime('now')
      WHERE id = ?`,
     input.name,
     input.slug,
     input.number_prefix,
     input.icon,
     JSON.stringify(input.fields),
+    input.scope,
     id
   );
   res.json({ ok: true });
 });
 
-// DELETE /api/form-definitions/:id — delete + cascades records (forms.manage)
-router.delete('/form-definitions/:id', requirePermission('forms.manage'), (req, res) => {
-  const info = run('DELETE FROM form_definitions WHERE id = ?', Number(req.params.id));
-  if (info.changes === 0) { res.status(404).json({ error: 'Form not found' }); return; }
+// PUT /api/form-definitions/:id/template — link/unlink the doc_template used to print this
+// form's records (forms.manage.<scope> for the form's own scope). Separate from the full-form
+// update above since this only needs the id, not a resend of every field.
+router.put('/form-definitions/:id/template', (req, res) => {
+  const id = Number(req.params.id);
+  const existing = queryOne<FormDefinition>('SELECT scope FROM form_definitions WHERE id = ?', id);
+  if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
+  if (!canManageScope(req, res, existing.scope)) return;
+  const input = parseBody(linkFormTemplateSchema, req.body);
+  if (input.template_id !== null && !queryOne('SELECT id FROM doc_templates WHERE id = ?', input.template_id)) {
+    res.status(404).json({ error: 'Template not found' }); return;
+  }
+  run(`UPDATE form_definitions SET template_id = ?, updated_at = datetime('now') WHERE id = ?`, input.template_id, id);
+  res.json({ ok: true });
+});
+
+// PUT /api/form-definitions/:id/template-body — create (first use) or update the *content* of
+// the doc_template linked to this form (forms.manage.<scope> for the form's own scope — NOT
+// templates.edit). This is what lets every section design its own forms' printable look, not
+// just users with the broader "edit any document template" permission — deliberately separate
+// from `/api/templates` (templates.routes.ts), which stays templates.edit-gated for the
+// Sale/Job/Purchase Order and other hand-authored templates unrelated to any one form.
+router.put('/form-definitions/:id/template-body', (req, res) => {
+  const id = Number(req.params.id);
+  const existing = queryOne<FormDefinition>('SELECT template_id, scope FROM form_definitions WHERE id = ?', id);
+  if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
+  if (!canManageScope(req, res, existing.scope)) return;
+  const input = parseBody(templateSchema, req.body);
+  if (existing.template_id) {
+    run(
+      `UPDATE doc_templates SET name = ?, type = ?, period = ?, body = ?, updated_at = datetime('now') WHERE id = ?`,
+      input.name, input.type, input.period ?? null, input.body, existing.template_id
+    );
+    res.json({ id: existing.template_id });
+  } else {
+    const info = run(
+      'INSERT INTO doc_templates (name, type, period, body, created_by) VALUES (?, ?, ?, ?, ?)',
+      input.name, input.type, input.period ?? null, input.body, req.user!.id
+    );
+    run(`UPDATE form_definitions SET template_id = ?, updated_at = datetime('now') WHERE id = ?`, info.lastInsertRowid, id);
+    res.status(201).json({ id: info.lastInsertRowid });
+  }
+});
+
+// DELETE /api/form-definitions/:id — delete + cascades records (forms.manage.<scope> for its scope)
+router.delete('/form-definitions/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const existing = queryOne<FormDefinition>('SELECT scope FROM form_definitions WHERE id = ?', id);
+  if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
+  if (!canManageScope(req, res, existing.scope)) return;
+  run('DELETE FROM form_definitions WHERE id = ?', id);
   res.json({ ok: true });
 });
 
@@ -260,8 +332,9 @@ router.get('/global-variables', (_req, res) => {
   res.json(queryAll<GlobalVariable>('SELECT * FROM global_variables ORDER BY key'));
 });
 
-// PUT /api/global-variables/:key — upsert (forms.manage)
-router.put('/global-variables/:key', requirePermission('forms.manage'), (req, res) => {
+// PUT /api/global-variables/:key — upsert (any forms.manage.* — genuinely global/shared, not
+// owned by one section)
+router.put('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), (req, res) => {
   const key = String(req.params.key ?? '').trim();
   if (!/^[a-z0-9_]+$/.test(key)) {
     res.status(400).json({ error: 'Key must be lowercase letters, numbers, or underscores' });
@@ -282,8 +355,8 @@ router.put('/global-variables/:key', requirePermission('forms.manage'), (req, re
   res.json({ ok: true });
 });
 
-// DELETE /api/global-variables/:key (forms.manage)
-router.delete('/global-variables/:key', requirePermission('forms.manage'), (req, res) => {
+// DELETE /api/global-variables/:key (any forms.manage.*)
+router.delete('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), (req, res) => {
   const info = run('DELETE FROM global_variables WHERE key = ?', req.params.key);
   if (info.changes === 0) { res.status(404).json({ error: 'Variable not found' }); return; }
   res.json({ ok: true });

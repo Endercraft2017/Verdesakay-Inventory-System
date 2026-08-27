@@ -44,6 +44,20 @@ const NAV = [
           { label: 'All Items', icon: 'adjust', route: 'inventory' },
         ],
       },
+      {
+        id: 'orders', label: 'Orders',
+        tree: [
+          { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
+          { label: 'Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
+          { label: 'Purchase Requests', icon: 'adjust', route: 'orders', filter: { type: 'purchase' } },
+        ],
+      },
+      {
+        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.inventory',
+        tree: [
+          { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'inventory' } },
+        ],
+      },
     ],
   },
   {
@@ -53,14 +67,6 @@ const NAV = [
         id: 'files', label: 'Files',
         tree: [
           { label: 'All Files', icon: 'folder', route: 'forms' },
-        ],
-      },
-      {
-        id: 'orders', label: 'Orders',
-        tree: [
-          { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
-          { label: 'Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
-          { label: 'Purchase Requests', icon: 'adjust', route: 'orders', filter: { type: 'purchase' } },
         ],
       },
       {
@@ -98,6 +104,23 @@ const NAV = [
           { label: 'Time Keeping', icon: 'calendar', route: 'hr-timekeeping' },
         ],
       },
+      {
+        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.hr',
+        tree: [
+          { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'hr' } },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'accounting', label: 'Accounting', icon: 'sheet', requiredPermission: 'forms.manage.accounting',
+    subtabs: [
+      {
+        id: 'form-setup', label: 'Form Builder',
+        tree: [
+          { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'accounting' } },
+        ],
+      },
     ],
   },
   {
@@ -123,9 +146,9 @@ const NAV = [
         ],
       },
       {
-        id: 'form-setup', label: 'Form Setup',
+        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.admin',
         tree: [
-          { label: 'Form Builder', icon: 'edit', route: 'form-builder' },
+          { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'admin' } },
         ],
       },
     ],

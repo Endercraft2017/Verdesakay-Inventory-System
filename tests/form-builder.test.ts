@@ -91,6 +91,196 @@ describe('form definitions', () => {
   it('stores formId for later tests', () => { expect(formId).toBeGreaterThan(0); });
 });
 
+// ─── Per-section access control (forms.manage.<scope>) ─────────────────────────
+
+describe('form definition scope-based access control', () => {
+  let hrToken: string;
+  let accountingToken: string;
+  let adminStaffToken: string;
+
+  beforeAll(async () => {
+    hrToken = (await createEmployee(ctx.api, adminToken, { role: 'hr' })).token;
+    accountingToken = (await createEmployee(ctx.api, adminToken, { role: 'accounting' })).token;
+    adminStaffToken = (await createEmployee(ctx.api, adminToken, { role: 'admin_staff' })).token;
+  });
+
+  const formFor = (scope: string | null, slugSuffix: string) => ({
+    name: 'Scope Test ' + slugSuffix, slug: 'scope_test_' + slugSuffix, number_prefix: 'ST', icon: 'file',
+    fields: [{ key: 'note', label: 'Note', type: 'text', required: false, options: [], default: '' }],
+    scope,
+  });
+
+  it('hr can create an hr-scoped form; warehouse (inventory) cannot', async () => {
+    const okRes = await ctx.api.post('/api/form-definitions').set(hdr(hrToken)).send(formFor('hr', 'a'));
+    expect(okRes.status).toBe(201);
+    const forbidden = await ctx.api.post('/api/form-definitions').set(hdr(empToken)).send(formFor('hr', 'b'));
+    expect(forbidden.status).toBe(403);
+  });
+
+  it('warehouse can create an inventory-scoped form; accounting cannot', async () => {
+    const okRes = await ctx.api.post('/api/form-definitions').set(hdr(empToken)).send(formFor('inventory', 'c'));
+    expect(okRes.status).toBe(201);
+    const forbidden = await ctx.api.post('/api/form-definitions').set(hdr(accountingToken)).send(formFor('inventory', 'd'));
+    expect(forbidden.status).toBe(403);
+  });
+
+  it('accounting can create an accounting-scoped form; hr cannot', async () => {
+    const okRes = await ctx.api.post('/api/form-definitions').set(hdr(accountingToken)).send(formFor('accounting', 'e'));
+    expect(okRes.status).toBe(201);
+    const forbidden = await ctx.api.post('/api/form-definitions').set(hdr(hrToken)).send(formFor('accounting', 'f'));
+    expect(forbidden.status).toBe(403);
+  });
+
+  it('admin_staff can create an admin-scoped form; accounting cannot', async () => {
+    const okRes = await ctx.api.post('/api/form-definitions').set(hdr(adminStaffToken)).send(formFor('admin', 'g'));
+    expect(okRes.status).toBe(201);
+    const forbidden = await ctx.api.post('/api/form-definitions').set(hdr(accountingToken)).send(formFor('admin', 'h'));
+    expect(forbidden.status).toBe(403);
+  });
+
+  it('General (null scope) requires every forms.manage.* — a single-section role is not enough', async () => {
+    const res = await ctx.api.post('/api/form-definitions').set(hdr(hrToken)).send(formFor(null, 'i'));
+    expect(res.status).toBe(403);
+    const okRes = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send(formFor(null, 'j'));
+    expect(okRes.status).toBe(201);
+  });
+
+  it('a section role cannot edit or delete a form in a different section (403), even though it exists', async () => {
+    const created = await ctx.api.post('/api/form-definitions').set(hdr(hrToken)).send(formFor('hr', 'k'));
+    const id = created.body.id;
+    const editForbidden = await ctx.api.put('/api/form-definitions/' + id).set(hdr(empToken)).send(formFor('hr', 'k'));
+    expect(editForbidden.status).toBe(403);
+    const delForbidden = await ctx.api.delete('/api/form-definitions/' + id).set(hdr(empToken));
+    expect(delForbidden.status).toBe(403);
+    // the owning section can still edit/delete it
+    const editOk = await ctx.api.put('/api/form-definitions/' + id).set(hdr(hrToken)).send(formFor('hr', 'k'));
+    expect(editOk.status).toBe(200);
+  });
+
+  it('moving a form to a section you cannot manage is rejected, even though you own its current section', async () => {
+    const created = await ctx.api.post('/api/form-definitions').set(hdr(hrToken)).send(formFor('hr', 'l'));
+    const id = created.body.id;
+    const res = await ctx.api.put('/api/form-definitions/' + id).set(hdr(hrToken)).send(formFor('accounting', 'l'));
+    expect(res.status).toBe(403);
+  });
+
+  it('the seeded HR Payroll form was backfilled to scope "hr" by the migration', async () => {
+    const forms = await ctx.api.get('/api/form-definitions').set(hdr(adminToken));
+    const payroll = forms.body.find((f: { slug: string }) => f.slug === 'hr_payroll');
+    expect(payroll.scope).toBe('hr');
+  });
+});
+
+// ─── Form definition <-> print template link ───────────────────────────────────
+
+describe('form definition template link', () => {
+  let formId: number;
+  let templateId: number;
+
+  beforeAll(async () => {
+    const form = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send({
+      name: 'Overtime Slip', slug: 'overtime_slip', number_prefix: 'OS', icon: 'file',
+      fields: [{ key: 'hours', label: 'Hours', type: 'number', required: true, options: [], default: '' }],
+    });
+    formId = form.body.id;
+    const tpl = await ctx.api.post('/api/templates').set(hdr(adminToken))
+      .send({ name: 'Overtime Slip Template', type: 'generic', body: '<p>{{hours}}</p>' });
+    templateId = tpl.body.id;
+  });
+
+  it('starts unlinked', async () => {
+    const res = await ctx.api.get('/api/form-definitions/' + formId).set(hdr(empToken));
+    expect(res.body.template_id).toBeNull();
+  });
+
+  it('employee cannot link a template (403)', async () => {
+    const res = await ctx.api.put(`/api/form-definitions/${formId}/template`)
+      .set(hdr(empToken)).send({ template_id: templateId });
+    expect(res.status).toBe(403);
+  });
+
+  it('admin can link a template, reflected on GET', async () => {
+    const res = await ctx.api.put(`/api/form-definitions/${formId}/template`)
+      .set(hdr(adminToken)).send({ template_id: templateId });
+    expect(res.status).toBe(200);
+    const detail = await ctx.api.get('/api/form-definitions/' + formId).set(hdr(empToken));
+    expect(detail.body.template_id).toBe(templateId);
+  });
+
+  it('404s linking a non-existent template', async () => {
+    const res = await ctx.api.put(`/api/form-definitions/${formId}/template`)
+      .set(hdr(adminToken)).send({ template_id: 999999 });
+    expect(res.status).toBe(404);
+  });
+
+  it('404s for a non-existent form', async () => {
+    const res = await ctx.api.put('/api/form-definitions/999999/template')
+      .set(hdr(adminToken)).send({ template_id: templateId });
+    expect(res.status).toBe(404);
+  });
+
+  it('admin can unlink with template_id: null', async () => {
+    const res = await ctx.api.put(`/api/form-definitions/${formId}/template`)
+      .set(hdr(adminToken)).send({ template_id: null });
+    expect(res.status).toBe(200);
+    const detail = await ctx.api.get('/api/form-definitions/' + formId).set(hdr(empToken));
+    expect(detail.body.template_id).toBeNull();
+  });
+
+  it('deleting the linked template un-links it automatically (ON DELETE SET NULL)', async () => {
+    await ctx.api.put(`/api/form-definitions/${formId}/template`)
+      .set(hdr(adminToken)).send({ template_id: templateId });
+    await ctx.api.delete('/api/templates/' + templateId).set(hdr(adminToken));
+    const detail = await ctx.api.get('/api/form-definitions/' + formId).set(hdr(empToken));
+    expect(detail.body.template_id).toBeNull();
+  });
+});
+
+// ─── /form-definitions/:id/template-body — design a form's own print template without
+// needing the separate, broader templates.edit permission ───────────────────────────
+
+describe('form definition template-body (design print template, scope-authorized not templates.edit)', () => {
+  let hrToken: string;
+  let hrFormId: number;
+
+  beforeAll(async () => {
+    hrToken = (await createEmployee(ctx.api, adminToken, { role: 'hr' })).token;
+    const form = await ctx.api.post('/api/form-definitions').set(hdr(hrToken)).send({
+      name: 'Leave Slip', slug: 'leave_slip_tplbody', number_prefix: 'LS', icon: 'file', scope: 'hr',
+      fields: [{ key: 'reason', label: 'Reason', type: 'text', required: true, options: [], default: '' }],
+    });
+    hrFormId = form.body.id;
+  });
+
+  it('hr (no templates.edit) can create the template body for its own hr-scoped form', async () => {
+    const res = await ctx.api.put(`/api/form-definitions/${hrFormId}/template-body`)
+      .set(hdr(hrToken)).send({ name: 'Leave Slip Template', type: 'generic', body: '<p>{{reason}}</p>' });
+    expect(res.status).toBe(201);
+    const detail = await ctx.api.get('/api/form-definitions/' + hrFormId).set(hdr(hrToken));
+    expect(detail.body.template_id).toBe(res.body.id);
+    const tpl = await ctx.api.get('/api/templates/' + res.body.id).set(hdr(hrToken));
+    expect(tpl.body.body).toBe('<p>{{reason}}</p>');
+  });
+
+  it('calling it again updates the same template (upsert), not a second one', async () => {
+    const first = await ctx.api.get('/api/form-definitions/' + hrFormId).set(hdr(hrToken));
+    const res = await ctx.api.put(`/api/form-definitions/${hrFormId}/template-body`)
+      .set(hdr(hrToken)).send({ name: 'Leave Slip Template v2', type: 'generic', body: '<p>updated {{reason}}</p>' });
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(first.body.template_id);
+    const tpl = await ctx.api.get('/api/templates/' + res.body.id).set(hdr(hrToken));
+    expect(tpl.body.body).toBe('<p>updated {{reason}}</p>');
+    expect(tpl.body.name).toBe('Leave Slip Template v2');
+  });
+
+  it('a different section (accounting) cannot design this hr form\'s template (403)', async () => {
+    const accToken = (await createEmployee(ctx.api, adminToken, { role: 'accounting' })).token;
+    const res = await ctx.api.put(`/api/form-definitions/${hrFormId}/template-body`)
+      .set(hdr(accToken)).send({ name: 'Hijack', type: 'generic', body: '<p>x</p>' });
+    expect(res.status).toBe(403);
+  });
+});
+
 // ─── Form Records ────────────────────────────────────────────────────────────
 
 describe('form records', () => {
@@ -182,16 +372,30 @@ describe('form records', () => {
 // ─── Global Variables ─────────────────────────────────────────────────────────
 
 describe('global variables', () => {
+  let marketingToken: string;
+  beforeAll(async () => {
+    // marketing has no forms.manage.* by default — the one role left with no section forms
+    // access, useful for testing the "holds none of the four" 403 case.
+    marketingToken = (await createEmployee(ctx.api, adminToken, { role: 'marketing' })).token;
+  });
+
   it('any user can list global variables', async () => {
     const res = await ctx.api.get('/api/global-variables').set(hdr(empToken));
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  it('employee cannot upsert a global variable (403)', async () => {
+  it('a role with no forms.manage.* at all cannot upsert a global variable (403)', async () => {
     const res = await ctx.api.put('/api/global-variables/company_tin')
-      .set(hdr(empToken)).send({ label: 'TIN', value: '123' });
+      .set(hdr(marketingToken)).send({ label: 'TIN', value: '123' });
     expect(res.status).toBe(403);
+  });
+
+  it('a role with forms.manage for just one section can still upsert (globals are shared)', async () => {
+    // empToken = warehouse -> forms.manage.inventory only, but globals aren't scoped
+    const res = await ctx.api.put('/api/global-variables/warehouse_note')
+      .set(hdr(empToken)).send({ label: 'Warehouse Note', value: 'x' });
+    expect(res.status).toBe(200);
   });
 
   it('admin can create a global variable', async () => {

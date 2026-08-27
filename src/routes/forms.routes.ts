@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { queryOne, queryAll, run, UPLOAD_DIR } from '../db';
-import { requireAuth } from '../auth';
+import { requireAuth, requirePermission } from '../auth';
 import type { AuthUser, FormRow } from '../types';
 
 const router = Router();
@@ -31,7 +31,7 @@ export function visibilityClause(user: AuthUser): { sql: string; params: unknown
 }
 
 // GET /api/forms — list forms the user can see
-router.get('/', (req, res) => {
+router.get('/', requirePermission('forms.view'), (req, res) => {
   const vis = visibilityClause(req.user!);
   const rows = queryAll(
     `SELECT f.id, f.title, f.description, f.category, f.original_name, f.mime_type,
@@ -48,7 +48,7 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/forms — upload a form/document
-router.post('/', upload.single('file'), (req, res) => {
+router.post('/', requirePermission('forms.upload'), upload.single('file'), (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'A file is required' });
     return;
@@ -78,7 +78,7 @@ router.post('/', upload.single('file'), (req, res) => {
 });
 
 // GET /api/forms/:id/download
-router.get('/:id/download', (req, res) => {
+router.get('/:id/download', requirePermission('forms.view'), (req, res) => {
   const form = queryOne<FormRow>('SELECT * FROM forms WHERE id = ?', Number(req.params.id));
   if (!form) {
     res.status(404).json({ error: 'Form not found' });

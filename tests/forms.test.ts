@@ -90,3 +90,25 @@ describe('forms', () => {
     expect(adminDel.status).toBe(200);
   });
 });
+
+describe('forms: RBAC honors per-user overrides', () => {
+  it('revoking forms.upload via override blocks uploads, without touching forms.view', async () => {
+    const dave = await createEmployee(ctx.api, adminToken, { username: 'dave_rbac' });
+    await ctx.api.put(`/api/users/${dave.id}/permissions`).set('Authorization', `Bearer ${adminToken}`)
+      .send({ overrides: { 'forms.upload': false } });
+    const up = await ctx.api.post('/api/forms').set('Authorization', `Bearer ${dave.token}`)
+      .field('title', 'Blocked').attach('file', Buffer.from('x'), 'x.txt');
+    expect(up.status).toBe(403);
+    expect((await ctx.api.get('/api/forms').set('Authorization', `Bearer ${dave.token}`)).status).toBe(200);
+  });
+
+  it('revoking forms.view via override blocks listing and downloading', async () => {
+    const erin = await createEmployee(ctx.api, adminToken, { username: 'erin_rbac' });
+    const up = await ctx.api.post('/api/forms').set('Authorization', `Bearer ${adminToken}`)
+      .field('title', 'Visible').attach('file', Buffer.from('x'), 'x.txt');
+    await ctx.api.put(`/api/users/${erin.id}/permissions`).set('Authorization', `Bearer ${adminToken}`)
+      .send({ overrides: { 'forms.view': false } });
+    expect((await ctx.api.get('/api/forms').set('Authorization', `Bearer ${erin.token}`)).status).toBe(403);
+    expect((await ctx.api.get(`/api/forms/${up.body.id}/download`).set('Authorization', `Bearer ${erin.token}`)).status).toBe(403);
+  });
+});

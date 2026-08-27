@@ -1,11 +1,229 @@
-/* Form Builder (admin): manage form definitions (fields) + global variables.
+/* Form Builder (per-section): manage form definitions (fields) + global variables. Each nav
+   entry (HR/Inventory/Admin/Accounting → Form Builder) opens this same route scoped to its own
+   section via filter.scope — forms.manage.<scope> gates which sections a given user can reach.
    Route: form-builder. Tab driven: Forms | Global Variables. */
-App.register('form-builder', async (view) => {
+const FORM_SCOPE_LABELS = { hr: 'HR', inventory: 'Inventory', admin: 'Admin', accounting: 'Accounting' };
+App.register('form-builder', async (view, filter) => {
+  const scope = filter && filter.scope;
+  if (!scope || !App.hasPermission('forms.manage.' + scope)) {
+    view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
+    return;
+  }
   let activeTab = 'forms';
+
+  // ── Common HR form starting points ("Quick Add") ─────────────────────────────
+  // Prefills New Form with a sensible name/slug/prefix/field set for a common request type —
+  // the admin still reviews and confirms in the normal form modal before anything is created.
+  const req = (key, label, type, opts) => ({ key, label, type, required: true, options: opts || [], default: '' });
+  const opt = (key, label, type, opts) => ({ key, label, type, required: false, options: opts || [], default: '' });
+  const FORM_TEMPLATES = [
+    {
+      key: 'leave', label: 'Leave Form', icon: 'calendar',
+      name: 'Leave Request', slug: 'leave_request', number_prefix: 'LV',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('leave_type', 'Leave Type', 'select', ['Vacation Leave', 'Sick Leave', 'Emergency Leave', 'Maternity/Paternity Leave', 'Bereavement Leave', 'Unpaid Leave']),
+        req('date_from', 'Date From', 'date'),
+        req('date_to', 'Date To', 'date'),
+        req('days', 'Number of Days', 'number'),
+        req('reason', 'Reason', 'textarea'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'halfday', label: 'Half Day Form', icon: 'calendar',
+      name: 'Half Day Request', slug: 'halfday_request', number_prefix: 'HD',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('date', 'Date', 'date'),
+        req('session', 'Session', 'select', ['Morning (AM)', 'Afternoon (PM)']),
+        req('reason', 'Reason', 'textarea'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'undertime', label: 'Undertime Form', icon: 'calendar',
+      name: 'Undertime Request', slug: 'undertime_request', number_prefix: 'UT',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('date', 'Date', 'date'),
+        req('time_out', 'Time Out', 'text'),
+        opt('minutes_short', 'Minutes Short', 'number'),
+        req('reason', 'Reason', 'textarea'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'holiday', label: 'Holiday Work Form', icon: 'calendar',
+      name: 'Holiday Work Request', slug: 'holiday_work_request', number_prefix: 'HW',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('holiday_name', 'Holiday Name', 'text'),
+        req('date', 'Date', 'date'),
+        req('holiday_type', 'Holiday Type', 'select', ['Regular Holiday', 'Special Non-Working Holiday']),
+        req('hours_worked', 'Hours Worked', 'number'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'overtime', label: 'Overtime Form', icon: 'calendar',
+      name: 'Overtime Request', slug: 'overtime_request', number_prefix: 'OT',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('date', 'Date', 'date'),
+        req('time_start', 'Time Start', 'text'),
+        req('time_end', 'Time End', 'text'),
+        req('hours', 'Total Hours', 'number'),
+        req('reason', 'Reason', 'textarea'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'travel', label: 'Travel Order Form', icon: 'calendar',
+      name: 'Travel Order', slug: 'travel_order', number_prefix: 'TO',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('destination', 'Destination', 'text'),
+        req('purpose', 'Purpose', 'textarea'),
+        req('date_from', 'Date From', 'date'),
+        req('date_to', 'Date To', 'date'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'coe', label: 'Certificate of Employment Request', icon: 'file',
+      name: 'Certificate of Employment Request', slug: 'coe_request', number_prefix: 'COE',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('purpose', 'Purpose', 'select', ['Loan Application', 'Visa Application', 'New Employer', 'Government Requirement', 'Other']),
+        req('date_needed', 'Date Needed', 'date'),
+        opt('include_salary', 'Include Salary Details?', 'select', ['Yes', 'No']),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'resignation', label: 'Resignation & Clearance', icon: 'file',
+      name: 'Resignation & Clearance', slug: 'resignation_clearance', number_prefix: 'RC',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('last_working_day', 'Last Working Day', 'date'),
+        req('reason', 'Reason', 'textarea'),
+        opt('turnover_notes', 'Turnover Notes', 'textarea'),
+        opt('clearance_status', 'Clearance Status', 'select', ['Pending', 'Cleared']),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'incident', label: 'Incident Report', icon: 'alert',
+      name: 'Incident Report', slug: 'incident_report', number_prefix: 'IR',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('incident_date', 'Date of Incident', 'date'),
+        opt('location', 'Location', 'text'),
+        req('description', 'Description', 'textarea'),
+        opt('witnesses', 'Witnesses', 'text'),
+        opt('action_taken', 'Action Taken', 'textarea'),
+        opt('reported_by', 'Reported By', 'text'),
+      ],
+    },
+    {
+      key: 'reimbursement', label: 'Reimbursement Request', icon: 'sheet',
+      name: 'Reimbursement Request', slug: 'reimbursement_request', number_prefix: 'RB',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('expense_type', 'Expense Type', 'select', ['Transportation', 'Medical', 'Meals', 'Supplies', 'Other']),
+        req('amount', 'Amount', 'number'),
+        req('date_incurred', 'Date Incurred', 'date'),
+        opt('receipt_ref', 'Receipt Reference', 'text'),
+        opt('description', 'Description', 'textarea'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'infoupdate', label: '201 File Update', icon: 'users',
+      name: '201 File Update', slug: '201_file_update', number_prefix: 'IU',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        req('update_type', 'Update Type', 'select', ['Address', 'Civil Status', 'Dependents', 'Emergency Contact', 'Contact Number', 'Other']),
+        opt('old_info', 'Current Information', 'textarea'),
+        req('new_info', 'New Information', 'textarea'),
+        opt('effective_date', 'Effective Date', 'date'),
+      ],
+    },
+    {
+      key: 'loan', label: 'Loan Application', icon: 'sheet',
+      name: 'Loan Application', slug: 'loan_application', number_prefix: 'LN',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('loan_type', 'Loan Type', 'select', ['SSS Salary Loan', 'SSS Calamity Loan', 'Pag-IBIG Multi-Purpose Loan', 'Company Loan', 'Other']),
+        req('amount', 'Amount', 'number'),
+        opt('purpose', 'Purpose', 'textarea'),
+        opt('terms_months', 'Terms (months)', 'number'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'training', label: 'Training / Seminar Request', icon: 'calendar',
+      name: 'Training / Seminar Request', slug: 'training_request', number_prefix: 'TR',
+      fields: [
+        req('employee_name', 'Employee Name', 'text'),
+        opt('department', 'Department', 'text'),
+        req('training_title', 'Training / Seminar Title', 'text'),
+        opt('provider', 'Provider', 'text'),
+        req('date_from', 'Date From', 'date'),
+        req('date_to', 'Date To', 'date'),
+        opt('cost', 'Cost', 'number'),
+        opt('justification', 'Justification', 'textarea'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+  ];
+
+  async function quickAddModal() {
+    // Checked against ALL forms (not just this scope) — the slug is globally unique in the DB,
+    // so a catalog entry can be unavailable here even if a different section created it.
+    const existing = await API.get('/form-definitions').catch(() => []);
+    const usedSlugs = new Set(existing.map((f) => f.slug));
+    const m = UI.modal({
+      title: `Quick Add: Common HR Forms (${FORM_SCOPE_LABELS[scope]})`,
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">Pick a starting point — you'll still review and confirm the fields before it's created.</p>
+        <div class="form-card-grid">${FORM_TEMPLATES.map((t) => {
+          const already = usedSlugs.has(t.slug);
+          return `<div class="form-card ${already ? '' : 'clickable'}" data-tpl="${t.key}" style="${already ? 'opacity:.5' : ''}">
+            <div class="form-card-icon">${UI.icon(t.icon, 32)}</div>
+            <div class="form-card-info">
+              <div class="form-card-name">${UI.esc(t.label)}</div>
+              <div class="form-card-meta">${t.fields.length} fields</div>
+              ${already ? `<div class="muted" style="font-size:12px">Slug already taken</div>` : ''}
+            </div>
+          </div>`;
+        }).join('')}</div>`,
+      cancelText: 'Close',
+      onOpen: (ov) => {
+        ov.querySelectorAll('.form-card[data-tpl]').forEach((card) => {
+          const tpl = FORM_TEMPLATES.find((t) => t.key === card.dataset.tpl);
+          if (usedSlugs.has(tpl.slug)) return;
+          card.onclick = () => { m.close(); formModal(null, tpl); };
+        });
+      },
+    });
+  }
 
   view.innerHTML = `
     <div class="topbar">
-      <h2>Form Builder</h2>
+      <h2>Form Builder — ${UI.esc(FORM_SCOPE_LABELS[scope])}</h2>
     </div>
     <div class="subnav-tabs" id="fb-tabs">
       <button class="subtab active" data-tab="forms">Form Definitions</button>
@@ -29,10 +247,12 @@ App.register('form-builder', async (view) => {
     content.innerHTML = `
       <div class="topbar" style="padding:12px 20px">
         <span class="grow"></span>
+        <button class="btn secondary" id="fb-quick-add">${UI.icon('calendar', 14)} Quick Add (Common HR Forms)</button>
         <button class="btn" id="fb-new-form">${UI.icon('plus')} New Form</button>
       </div>
       <div class="panel"><div id="fb-forms-table"></div></div>`;
     content.querySelector('#fb-new-form').onclick = () => formModal(null);
+    content.querySelector('#fb-quick-add').onclick = () => quickAddModal();
     await loadForms();
   }
 
@@ -40,11 +260,11 @@ App.register('form-builder', async (view) => {
     const el = content.querySelector('#fb-forms-table');
     if (!el) return;
     el.innerHTML = '<div class="empty">Loading…</div>';
-    const forms = await API.get('/form-definitions');
+    const forms = (await API.get('/form-definitions')).filter((f) => f.scope === scope);
     if (!forms.length) {
       el.innerHTML = UI.emptyState({
         icon: 'file',
-        title: 'No custom forms yet',
+        title: `No ${FORM_SCOPE_LABELS[scope]} forms yet`,
         hint: 'Create your first form to start collecting structured data.',
         action: `<button class="btn" id="fb-empty-new">${UI.icon('plus')} New Form</button>`,
       });
@@ -63,6 +283,7 @@ App.register('form-builder', async (view) => {
           <td>${f.record_count}</td>
           <td class="actions">
             <button class="btn secondary small" data-records="${f.id}" title="View Records">${UI.icon('forms', 14)} Records</button>
+            <button class="icon-btn" data-tpl="${f.id}" title="${f.template_id ? 'Edit print template' : 'Design print template'}">${UI.icon(f.template_id ? 'file' : 'plus', 16)}</button>
             <button class="icon-btn" data-edit="${f.id}" title="Edit">${UI.icon('edit')}</button>
             <button class="icon-btn danger" data-del="${f.id}" title="Delete">${UI.icon('trash')}</button>
           </td>
@@ -75,6 +296,8 @@ App.register('form-builder', async (view) => {
       b.onclick = (e) => { e.stopPropagation(); delForm(b.dataset.del, forms); });
     el.querySelectorAll('[data-records]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); App.navigate('form-records', { form_id: b.dataset.records }); });
+    el.querySelectorAll('[data-tpl]').forEach((b) =>
+      b.onclick = (e) => { e.stopPropagation(); openFormTemplate(forms.find((f) => String(f.id) === String(b.dataset.tpl))); });
     el.querySelectorAll('tr[data-open]').forEach((tr) =>
       tr.onclick = (e) => {
         if (e.target.closest('.actions')) return;
@@ -100,11 +323,120 @@ App.register('form-builder', async (view) => {
     loadForms();
   }
 
+  // ── Print template link (Design/Edit print template) ────────────────────────
+  // Opens (creating on first use) the doc_template linked to this form, with its own fields
+  // exposed as {{variables}} — the same DocEditor used for Sale/Job/Purchase order templates.
+
+  function formTemplateVariables(form) {
+    const vars = form.fields.map((f) => ({ category: 'Form Fields', label: f.label, token: `{{${f.key}}}` }));
+    vars.push(
+      { category: 'Record', label: 'Record Number', token: '{{record.number}}' },
+      { category: 'Record', label: 'Status', token: '{{record.status}}' },
+      { category: 'Record', label: 'Date Created', token: '{{record.created_at}}' },
+      { category: 'Company', label: 'Company Name', token: '{{company.name}}' },
+      { category: 'Company', label: 'Company Address', token: '{{company.address}}' },
+      { category: 'Company', label: 'Company Phone', token: '{{company.phone}}' },
+    );
+    return vars;
+  }
+
+  function sampleFieldValue(field) {
+    if (field.default) return field.default;
+    switch (field.type) {
+      case 'number': return 1;
+      case 'date': return new Date().toLocaleDateString();
+      case 'checkbox': return true;
+      case 'select': return (field.options && field.options[0]) || '';
+      default: return field.label || 'Sample';
+    }
+  }
+
+  function sampleContextFor(form) {
+    const ctx = {};
+    form.fields.forEach((f) => { ctx[f.key] = sampleFieldValue(f); });
+    ctx.record = { number: form.number_prefix + '-00001', status: 'submitted', created_at: new Date().toLocaleDateString() };
+    ctx.company = { name: 'Verdesakay Inc.', address: '123 Main St, Cebu City', phone: '(032) 555-1234' };
+    return ctx;
+  }
+
+  // A proper printable "official form" layout, generated from any field list — not just a bare
+  // list of labels, but a bordered card with a company/title header, dotted label:value rows,
+  // and a two-signature footer (matching the visual language already used by the Employee ID
+  // Card / HR Payroll Slip templates elsewhere in this codebase). Used both as the starting
+  // point when someone clicks "Design print template" on a hand-built form, and stamped
+  // automatically onto every Quick Add form the moment it's created.
+  function defaultFormTemplateBody(form) {
+    const rows = form.fields.map((f) => `
+      <div class="ff-row"><span class="ff-label">${UI.esc(f.label)}</span><span class="ff-value">{{${f.key}}}</span></div>`).join('');
+    return `<style>
+  .ff-card { border: 1px solid #222; padding: 14px 18px; font-size: 12.5px; }
+  .ff-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 12px; }
+  .ff-co { font-weight: 800; font-size: 15px; }
+  .ff-title { text-align: right; }
+  .ff-title h2 { margin: 0 0 4px; font-size: 14px; letter-spacing: .05em; }
+  .ff-ref { color: #555; font-size: 11px; }
+  .ff-fields { display: flex; flex-direction: column; gap: 7px; margin-bottom: 20px; }
+  .ff-row { display: flex; gap: 10px; border-bottom: 1px dotted #bbb; padding-bottom: 5px; }
+  .ff-label { font-weight: 700; width: 160px; flex-shrink: 0; color: #333; }
+  .ff-value { flex: 1; }
+  .ff-sig { display: flex; justify-content: space-between; margin-top: 32px; gap: 24px; }
+  .ff-sig div { text-align: center; width: 45%; border-top: 1px solid #333; padding-top: 5px; font-size: 11px; color: #444; }
+</style>
+<div class="ff-card">
+  <div class="ff-head">
+    <div class="ff-co">{{company.name}}</div>
+    <div class="ff-title"><h2>${UI.esc(form.name.toUpperCase())}</h2><div class="ff-ref">No: {{record.number}} &middot; {{record.created_at}}</div></div>
+  </div>
+  <div class="ff-fields">${rows}</div>
+  <div class="ff-sig">
+    <div>Requested By</div>
+    <div>Approved By</div>
+  </div>
+</div>`;
+  }
+
+  // Any user who can reach this Form Builder (forms.manage.<scope>) can also design its forms'
+  // print templates — deliberately NOT gated by the separate templates.edit permission, which
+  // stays reserved for the hand-authored Sale/Job/Purchase Order etc. templates. Creation is
+  // deferred to Save (not eagerly POSTed the moment the button is clicked), so opening the
+  // editor and just closing it doesn't leave an orphan template behind.
+  async function openFormTemplate(form) {
+    if (!form) return;
+    if (!window.DocEditor) { UI.toast('Editor failed to load', 'error'); return; }
+    const existingTpl = form.template_id ? await API.get('/templates/' + form.template_id).catch(() => null) : null;
+    const isNew = !existingTpl;
+    const tpl = existingTpl || { name: `${form.name} Template`, type: 'generic', body: defaultFormTemplateBody(form) };
+    const sample = sampleContextFor(form);
+    window.DocEditor.open({
+      title: isNew ? 'New Print Template' : 'Edit Print Template',
+      name: tpl.name,
+      type: tpl.type,
+      typeOptions: ['sale', 'job', 'purchase', 'generic'],
+      body: tpl.body,
+      getVariables: () => formTemplateVariables(form),
+      sampleContext: sample,
+      renderPreview: (body) => UI.printableHtml(renderTemplate(body, sample), 'Preview'),
+      onSave: async ({ name, type, body }) => {
+        if (!name.trim()) return 'Template name is required';
+        if (!body.trim()) return 'Template body cannot be empty';
+        const res = await API.put(`/form-definitions/${form.id}/template-body`, { name: name.trim(), type, body });
+        form.template_id = res.id; // keep the in-memory row in sync until the next loadForms()
+        UI.toast('Template saved');
+        loadForms();
+        return true;
+      },
+    });
+  }
+
   // ── Form definition modal ──────────────────────────────────────────────────
 
-  function formModal(existing) {
+  // `prefill` (no .id) seeds a brand-new form from a Quick Add template — still POSTs on save
+  // like any new form, just pre-populated for review instead of blank. `existing` (has .id) is
+  // a real edit and always wins if somehow both were passed.
+  function formModal(existing, prefill) {
     const editing = !!existing;
-    const fields = editing ? JSON.parse(JSON.stringify(existing.fields)) : [];
+    const seed = existing || prefill || null;
+    const fields = seed ? JSON.parse(JSON.stringify(seed.fields)) : [];
 
     UI.modal({
       title: editing ? `Edit: ${existing.name}` : 'New Form',
@@ -113,21 +445,21 @@ App.register('form-builder', async (view) => {
         <div class="field-row">
           <div style="flex:2">
             <label>Form name</label>
-            <input data-f="name" value="${UI.esc(existing ? existing.name : '')}" placeholder="e.g. Leave Request" />
+            <input data-f="name" value="${UI.esc(seed ? seed.name : '')}" placeholder="e.g. Leave Request" />
           </div>
           <div>
             <label>Slug <span class="muted">(unique ID)</span></label>
-            <input data-f="slug" value="${UI.esc(existing ? existing.slug : '')}" placeholder="leave_request" class="mono" />
+            <input data-f="slug" value="${UI.esc(seed ? seed.slug : '')}" placeholder="leave_request" class="mono" />
           </div>
         </div>
         <div class="field-row">
           <div>
             <label>Number prefix</label>
-            <input data-f="number_prefix" value="${UI.esc(existing ? existing.number_prefix : 'FM')}" placeholder="FM" class="mono" style="width:90px" />
+            <input data-f="number_prefix" value="${UI.esc(seed ? seed.number_prefix : 'FM')}" placeholder="FM" class="mono" style="width:90px" />
           </div>
           <div>
             <label>Icon</label>
-            <input data-f="icon" value="${UI.esc(existing ? existing.icon : 'file')}" placeholder="file" style="width:100px" />
+            <input data-f="icon" value="${UI.esc(seed ? seed.icon : 'file')}" placeholder="file" style="width:100px" />
           </div>
         </div>
         <div style="margin-top:16px;display:flex;align-items:center;gap:12px;margin-bottom:8px">
@@ -136,15 +468,18 @@ App.register('form-builder', async (view) => {
         </div>
         <div id="fb-fields-list"></div>
         <p class="muted" style="font-size:12px;margin-top:8px">
-          Each field becomes a template variable: <span class="mono">{{field_key}}</span>
+          Each field becomes a template variable: <span class="mono">{{field_key}}</span> —
+          this form belongs to <strong>${UI.esc(FORM_SCOPE_LABELS[scope])}</strong>.
         </p>`,
       confirmText: editing ? 'Save form' : 'Create form',
       onOpen: (ov) => {
         const nameEl = ov.querySelector('[data-f="name"]');
         const slugEl = ov.querySelector('[data-f="slug"]');
 
-        // Auto-fill slug from name for new forms.
-        if (!editing) {
+        // Auto-fill slug from name for brand-new, blank forms only — a Quick Add template
+        // already ships a sensible slug that typing in the name field shouldn't silently
+        // overwrite, and editing an existing form must never rewrite its slug either.
+        if (!editing && !prefill) {
           nameEl.addEventListener('input', () => {
             slugEl.value = nameEl.value.toLowerCase()
               .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
@@ -175,10 +510,20 @@ App.register('form-builder', async (view) => {
         const body = {
           name: f('name'), slug: f('slug'),
           number_prefix: f('number_prefix'), icon: f('icon') || 'file',
-          fields,
+          fields, scope,
         };
-        if (editing) await API.put('/form-definitions/' + existing.id, body);
-        else await API.post('/form-definitions', body);
+        if (editing) {
+          await API.put('/form-definitions/' + existing.id, body);
+        } else {
+          const created = await API.post('/form-definitions', body);
+          // Quick Add forms come with a ready-made print template already, not just field
+          // defaults — no separate "Design template" click required before it's printable.
+          if (prefill) {
+            await API.put(`/form-definitions/${created.id}/template-body`,
+              { name: `${body.name} Template`, type: 'generic', body: defaultFormTemplateBody(body) })
+              .catch(() => { /* form itself still created fine; template can be designed later */ });
+          }
+        }
         UI.toast(editing ? 'Form saved' : 'Form created');
         loadForms();
       },

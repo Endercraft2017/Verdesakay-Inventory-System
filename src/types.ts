@@ -11,11 +11,17 @@ export type Permission =
   | 'inventory.view' | 'inventory.create' | 'inventory.edit' | 'inventory.delete'
   | 'inventory.adjust' | 'inventory.configure'
   | 'orders.view' | 'orders.create' | 'orders.edit' | 'orders.delete'
-  | 'forms.view' | 'forms.upload' | 'forms.delete' | 'forms.manage'
+  | 'forms.view' | 'forms.upload' | 'forms.delete'
+  | 'forms.manage.hr' | 'forms.manage.inventory' | 'forms.manage.admin' | 'forms.manage.accounting'
   | 'messages.view' | 'messages.send'
   | 'templates.view' | 'templates.edit' | 'templates.company'
   | 'users.manage'
   | 'hr.view' | 'hr.manage';
+
+/** Which section a Form Builder form belongs to — drives per-section access control
+    (see `forms.manage.*` permissions) and where it's organized in the nav/Data Forms.
+    `null` (not part of this union) means "General" — an unowned, admin-only bucket. */
+export type FormScope = 'hr' | 'inventory' | 'admin' | 'accounting';
 
 export interface Department {
   id: number;
@@ -254,6 +260,8 @@ export interface FormDefinition {
   number_prefix: string;
   icon: string;
   fields: string | FieldDef[];  // raw JSON string in DB; parsed array in API responses
+  template_id: number | null;   // linked doc_templates.id used to print this form's records
+  scope: FormScope | null;      // which section owns this form; null = General (admin-only)
   created_by: number | null;
   created_at: string;
   updated_at: string | null;

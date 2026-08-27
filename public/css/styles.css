@@ -453,6 +453,29 @@ a { color: var(--accent); }
 .panel-head .grow { flex: 1; }
 .panel-body { padding: 18px; }
 
+/* ---------- Form cards (Data Forms index, Form Builder Quick Add gallery) ---------- */
+.fr-scope-group:not(:first-child) { border-top: 1px solid var(--border); }
+.fr-scope-heading {
+  padding: 12px 16px 0; font-weight: 700; font-size: 12px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.form-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; padding: 16px; }
+.form-card {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 12px;
+}
+.form-card.clickable { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.form-card.clickable:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+.form-card-icon {
+  width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  background: var(--accent-weak); color: var(--accent);
+}
+.form-card-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; width: 100%; }
+.form-card-name { font-weight: 650; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form-card-meta { color: var(--text-muted); font-size: 12px; }
+.form-card-prefix { font-size: 11.5px; }
+
 /* ---------- Tables ---------- */
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border); }

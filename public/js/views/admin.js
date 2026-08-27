@@ -38,7 +38,8 @@ App.register('admin', async (view, filter) => {
   const PERMISSION_GROUPS = [
     { label: 'Inventory', keys: ['inventory.view','inventory.create','inventory.edit','inventory.delete','inventory.adjust','inventory.configure'] },
     { label: 'Orders', keys: ['orders.view','orders.create','orders.edit','orders.delete'] },
-    { label: 'Files', keys: ['forms.view','forms.upload','forms.delete','forms.manage'] },
+    { label: 'Files', keys: ['forms.view','forms.upload','forms.delete'] },
+    { label: 'Form Builder', keys: ['forms.manage.hr','forms.manage.inventory','forms.manage.admin','forms.manage.accounting'] },
     { label: 'Messages', keys: ['messages.view','messages.send'] },
     { label: 'Templates', keys: ['templates.view','templates.edit','templates.company'] },
     { label: 'HR', keys: ['hr.view','hr.manage'] },
@@ -200,7 +201,10 @@ App.register('admin', async (view, filter) => {
             ${g.keys.map((k) => {
               const checked = effective.has(k);
               const isOverride = k in overrides;
-              const shortKey = k.split('.')[1];
+              // "forms.view" -> "view"; "forms.manage.hr" -> "manage hr" (a 2-segment key would
+              // otherwise collide with its siblings — all four forms.manage.* keys showed as
+              // just "manage" under the same group, indistinguishable from one another).
+              const shortKey = k.split('.').slice(1).join(' ');
               return `<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;padding:3px 8px;border-radius:4px;background:var(--surface-raised)">
                 <input type="checkbox" data-perm="${k}" ${checked ? 'checked' : ''} />
                 ${UI.esc(shortKey)}${isOverride ? ` <span style="color:var(--accent)">${UI.icon('star', 11)}</span>` : ''}

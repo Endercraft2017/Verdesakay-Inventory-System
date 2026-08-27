@@ -421,6 +421,22 @@ function migrate(): void {
     db.exec('ALTER TABLE form_records ADD COLUMN period TEXT');
   }
 
+  // Link a form definition to a doc_template for printing its records — ON DELETE SET NULL so
+  // deleting the template directly (from Documents > Templates) just un-links it gracefully.
+  const fdCols = db.prepare('PRAGMA table_info(form_definitions)').all() as { name: string }[];
+  if (!fdCols.some((c) => c.name === 'template_id')) {
+    db.exec('ALTER TABLE form_definitions ADD COLUMN template_id INTEGER REFERENCES doc_templates(id) ON DELETE SET NULL');
+  }
+
+  // Which section owns a form (drives forms.manage.<scope> access control + nav placement).
+  // NULL = "General", an unowned bucket manageable only by admin (see canManageScope()).
+  if (!fdCols.some((c) => c.name === 'scope')) {
+    db.exec("ALTER TABLE form_definitions ADD COLUMN scope TEXT CHECK (scope IN ('hr','inventory','admin','accounting'))");
+  }
+  // The one existing form whose section is unambiguous — everything else stays General rather
+  // than guessing.
+  db.exec("UPDATE form_definitions SET scope = 'hr' WHERE slug = 'hr_payroll' AND scope IS NULL");
+
   // Rebuild employees to replace the bare `active` flag with a proper employment-status
   // enum plus the 201-file fields (employee_no, start_date, statutory numbers, photo).
   // Foreign keys must be OFF for this: attendance_records.employee_id references employees,
@@ -570,8 +586,8 @@ function seedHrPayrollForm(): void {
     numField('net_pay', 'Net Pay'),
   ];
   db.prepare(
-    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields)
-     VALUES ('HR Payroll', 'hr_payroll', 'PAY', 'sheet', ?)`
+    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope)
+     VALUES ('HR Payroll', 'hr_payroll', 'PAY', 'sheet', ?, 'hr')`
   ).run(JSON.stringify(fields));
 }
 

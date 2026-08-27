@@ -72,7 +72,7 @@ const SANITIZE_TAGS = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'S
 const SANITIZE_ATTR = { A: ['href'], IMG: ['src', 'alt'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
 const SANITIZE_STYLE = ['color', 'background-color', 'background', 'text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'width', 'page-break-after', 'break-after',
   'position', 'left', 'top', 'right', 'bottom', 'height', 'z-index', 'border', 'border-color', 'border-radius'];
-const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src', 'data-float-kind', 'data-wrap'];
+const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src', 'data-float-kind'];
 
 // `position` is scoped to absolute/relative/static — `fixed`/`sticky` can escape the page and
 // overlay the app chrome, so a pasted style must not be able to smuggle those in.
@@ -880,13 +880,17 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     'shape-line': { w: 40, h: 1.2, html: '<div class="doc-float-shape" style="background:#5d6b84"></div>' },
     textbox: { w: 30, h: 12, html: '<div class="doc-float-body" contenteditable="true">Text box</div>' },
   };
-  let floatZFront = 1;
   let floatSeq = 0;
   let selectedFloat = null;
   let promoteBar = null;
   let promoteTarget = null;
-  const nextFrontZ = () => ++floatZFront;
   const pxToPct = (px, total) => (total ? (px / total) * 100 : 0);
+  // Tag names that are almost always a short inline run inside running prose (bold word, link,
+  // …), never a standalone "field" someone would want to pull out and move — excluded from the
+  // generic "click anything to make it a floating/wrap-text object" promotion below, so clicking
+  // a bold word mid-sentence doesn't rip it out of the paragraph. TD/TH are excluded too: a table
+  // cell should stay a cell (promote the whole <table> instead).
+  const PROMOTE_EXCLUDE_TAGS = new Set(['BR', 'HR', 'TD', 'TH', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUP', 'SUB', 'A', 'FONT']);
 
   function clearPromoteBar() { if (promoteBar) { promoteBar.remove(); promoteBar = null; } promoteTarget = null; }
 
@@ -898,10 +902,10 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   }
 
   function wrapToolbarHTML(floatEl) {
-    const wrap = floatEl.getAttribute('data-wrap');
     const kind = floatEl.getAttribute('data-float-kind');
-    let html = `<button type="button" data-float-act="${wrap === 'behind' ? 'front' : 'behind'}" title="${wrap === 'behind' ? 'Bring in front of text' : 'Send behind text'}">${wrap === 'behind' ? '⬆' : '⬇'}</button>`;
-    if (kind === 'image' || kind === 'table') html += `<button type="button" data-float-act="inline" title="In line with text">↩</button>`;
+    let html = `<button type="button" data-float-act="z-up" title="Bring forward (z-index +1)">⬆</button>`
+      + `<button type="button" data-float-act="z-down" title="Send backward (z-index -1)">⬇</button>`;
+    if (kind === 'image' || kind === 'table' || kind === 'text') html += `<button type="button" data-float-act="inline" title="In line with text">↩</button>`;
     if (kind.startsWith('shape-')) html += `<button type="button" data-float-act="fill" title="Fill color">🎨</button><button type="button" data-float-act="border" title="Border color">▢</button>`;
     html += `<button type="button" data-float-act="delete" title="Delete">🗑</button>`;
     return html;
@@ -933,17 +937,23 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     const el = document.createElement('div');
     el.className = 'doc-float';
     el.setAttribute('data-float-kind', kind);
-    el.setAttribute('data-wrap', 'front');
     el.setAttribute('contenteditable', 'false');
-    el.style.cssText = `position:absolute;left:${left}%;top:${top}%;width:${def.w}%;height:${def.h}%;z-index:${nextFrontZ()}`;
+    el.style.cssText = `position:absolute;left:${left}%;top:${top}%;width:${def.w}%;height:${def.h}%;z-index:1`;
     el.innerHTML = def.html;
     surface.appendChild(el);
     selectFloat(el);
     onChange();
   }
 
-  function promoteToFloat(target, mode) {
-    const kind = target.nodeName === 'IMG' ? 'image' : 'table';
+  // New floats always start at z:1 (one step in front of the implicit z:0 of normal text) —
+  // from there the toolbar's ⬆/⬇ adjust it by ±1 from whatever it currently is, never a fixed
+  // jump. Only IMG gets stretched to fill its wrapper (matching how Word resizes a picture) —
+  // TABLE/generic elements keep whatever size their own CSS already gives them (a promoted
+  // element often has meaningful sizing of its own, e.g. a circular photo mask or a fixed-size
+  // card layout — forcing width/height:100% here used to squash/stretch those, since an inline
+  // style always wins over a class rule).
+  function promoteToFloat(target) {
+    const kind = target.nodeName === 'IMG' ? 'image' : target.nodeName === 'TABLE' ? 'table' : 'text';
     const rect = target.getBoundingClientRect();
     const pageRect = surface.getBoundingClientRect();
     const leftPct = pxToPct(rect.left - pageRect.left, pageRect.width);
@@ -953,22 +963,21 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     const wrap = document.createElement('div');
     wrap.className = 'doc-float';
     wrap.setAttribute('data-float-kind', kind);
-    wrap.setAttribute('data-wrap', mode);
     wrap.setAttribute('contenteditable', 'false');
-    wrap.style.cssText = `position:absolute;left:${leftPct}%;top:${topPct}%;width:${wPct}%;height:${hPct}%;z-index:${mode === 'behind' ? -1 : nextFrontZ()}`;
+    wrap.style.cssText = `position:absolute;left:${leftPct}%;top:${topPct}%;width:${wPct}%;height:${hPct}%;z-index:1`;
     target.parentNode.insertBefore(wrap, target);
     wrap.appendChild(target);
-    if (kind === 'table') target.setAttribute('contenteditable', 'true');
-    target.style.width = '100%'; target.style.height = '100%';
+    if (kind === 'table' || kind === 'text') target.setAttribute('contenteditable', 'true');
+    if (kind === 'image') { target.style.width = '100%'; target.style.height = '100%'; }
     selectFloat(wrap);
     onChange();
   }
 
   function unpromoteFloat(floatEl) {
-    const inner = floatEl.querySelector(':scope > img, :scope > table');
+    const inner = floatEl.firstElementChild;
     if (!inner) { floatEl.remove(); deselectFloat(); onChange(); return; }
     inner.style.width = ''; inner.style.height = '';
-    if (inner.nodeName === 'TABLE') inner.removeAttribute('contenteditable');
+    inner.removeAttribute('contenteditable');
     floatEl.parentNode.insertBefore(inner, floatEl);
     floatEl.remove();
     deselectFloat();
@@ -984,7 +993,10 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     promoteBar.className = 'doc-promote-bar'; promoteBar.setAttribute('contenteditable', 'false');
     promoteBar.style.left = (rect.left - pageRect.left) + 'px';
     promoteBar.style.top = Math.max(0, rect.top - pageRect.top - 30) + 'px';
-    promoteBar.innerHTML = '<button type="button" data-promote="front" title="Wrap: in front of text">⬆ In front</button><button type="button" data-promote="behind" title="Wrap: behind text">⬇ Behind</button>';
+    // One action — "make this a movable object". It starts in front (z:1); once selected, the
+    // float's own toolbar ⬆/⬇ buttons send it further back/forward, so this bar doesn't need to
+    // ask front-vs-behind up front too.
+    promoteBar.innerHTML = '<button type="button" data-promote="make" title="Make this a movable object">⛶ Make movable</button>';
     surface.appendChild(promoteBar);
   }
 
@@ -994,10 +1006,9 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       const act = actBtn.dataset.floatAct;
       if (act === 'delete') { const f = selectedFloat; selectedFloat = null; f.remove(); onChange(); return; }
       if (act === 'inline') { unpromoteFloat(selectedFloat); return; }
-      if (act === 'front' || act === 'behind') {
-        selectedFloat.setAttribute('data-wrap', act);
-        selectedFloat.style.zIndex = act === 'behind' ? '-1' : String(nextFrontZ());
-        const tb = selectedFloat.querySelector(':scope > .doc-float-toolbar'); if (tb) tb.innerHTML = wrapToolbarHTML(selectedFloat);
+      if (act === 'z-up' || act === 'z-down') {
+        const cur = parseInt(selectedFloat.style.zIndex, 10) || 0;
+        selectedFloat.style.zIndex = String(cur + (act === 'z-up' ? 1 : -1));
         onChange();
         return;
       }
@@ -1012,16 +1023,19 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       return;
     }
     const promoteBtn = e.target.closest('.doc-promote-bar button');
-    if (promoteBtn) { const mode = promoteBtn.dataset.promote; const t = promoteTarget; clearPromoteBar(); if (t) promoteToFloat(t, mode); return; }
+    if (promoteBtn) { const t = promoteTarget; clearPromoteBar(); if (t) promoteToFloat(t); return; }
 
     const floatEl = e.target.closest('.doc-float');
     if (floatEl) { selectFloat(floatEl); return; }
 
     deselectFloat();
-    const img = e.target.closest('img');
-    if (img && surface.contains(img) && !img.closest('.doc-float')) { showPromoteBar(img); return; }
-    const table = e.target.closest('table');
-    if (table && surface.contains(table) && !table.closest('.doc-float')) { showPromoteBar(table); return; }
+    const target = e.target;
+    if (target && target !== surface && surface.contains(target) && !target.closest('.doc-float')
+      && !target.closest('.doc-chip') && !target.classList.contains('doc-checkbox')
+      && !PROMOTE_EXCLUDE_TAGS.has(target.nodeName)) {
+      showPromoteBar(target);
+      return;
+    }
     clearPromoteBar();
   });
 
@@ -1043,8 +1057,13 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     const floatEl = e.target.closest('.doc-float');
     if (!floatEl) return;
     const kind = floatEl.getAttribute('data-float-kind');
-    const insideEditable = (kind === 'textbox' && e.target.closest('.doc-float-body'))
-      || (kind === 'table' && e.target.closest('table')) || e.target.closest('.doc-float-toolbar');
+    // Shapes/images have no editable inner content, so any click on them (including their inner
+    // <div>/<img>) starts a drag. Text boxes/tables/promoted text have a re-enabled editable
+    // island inside — a click landing in *that* should place a caret, not start a drag.
+    let editableRoot = null;
+    if (kind === 'textbox') editableRoot = floatEl.querySelector(':scope > .doc-float-body');
+    else if (kind === 'table' || kind === 'text') editableRoot = floatEl.firstElementChild;
+    const insideEditable = (editableRoot && (e.target === editableRoot || editableRoot.contains(e.target))) || e.target.closest('.doc-float-toolbar');
     if (insideEditable) return;
     e.preventDefault();
     if (selectedFloat !== floatEl) selectFloat(floatEl);
@@ -1097,7 +1116,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       el.setAttribute('contenteditable', 'false');
       const kind = el.getAttribute('data-float-kind');
       if (kind === 'textbox') { const body = el.querySelector(':scope > .doc-float-body'); if (body) body.setAttribute('contenteditable', 'true'); }
-      if (kind === 'table') { const t = el.querySelector(':scope > table'); if (t) t.setAttribute('contenteditable', 'true'); }
+      else if (kind === 'table' || kind === 'text') { const inner = el.firstElementChild; if (inner) inner.setAttribute('contenteditable', 'true'); }
     });
   }
 

@@ -1,5 +1,8 @@
 /* Form Records: index of all custom forms, or records list for a specific form.
    Route: form-records.  filter.form_id = <id> to open a specific form directly. */
+const FORM_RECORDS_SCOPE_LABELS = { hr: 'HR', inventory: 'Inventory', admin: 'Admin', accounting: 'Accounting' };
+const FORM_RECORDS_SCOPE_ORDER = ['hr', 'inventory', 'admin', 'accounting', null];
+
 App.register('form-records', async (view, filter) => {
   if (filter && filter.form_id) {
     await renderFormView(view, Number(filter.form_id), filter.period || '');
@@ -8,7 +11,18 @@ App.register('form-records', async (view, filter) => {
   }
 });
 
-/* ── Form index: pick which form to open ─────────────────────────────────── */
+function formCardHTML(f) {
+  return `<div class="form-card clickable" data-id="${f.id}">
+    <div class="form-card-icon">${UI.icon(f.icon || 'file', 32)}</div>
+    <div class="form-card-info">
+      <div class="form-card-name">${UI.esc(f.name)}</div>
+      <div class="form-card-meta">${f.fields.length} field${f.fields.length !== 1 ? 's' : ''} · ${f.record_count} record${f.record_count !== 1 ? 's' : ''}</div>
+      <div class="form-card-prefix muted mono">${UI.esc(f.number_prefix)}-#####</div>
+    </div>
+  </div>`;
+}
+
+/* ── Form index: pick which form to open, grouped by the section that owns it ────── */
 async function renderIndex(view) {
   view.innerHTML = `
     <div class="topbar"><h2>Data Forms</h2></div>
@@ -17,28 +31,32 @@ async function renderIndex(view) {
   el.innerHTML = '<div class="empty">Loading…</div>';
 
   const forms = await API.get('/form-definitions');
+  // Which section (if any) this user could jump into Form Builder for, for the empty-state
+  // shortcut below — every Form Builder entry now requires a scope, so "open Form Builder" with
+  // none no longer resolves to anything.
+  const manageableScope = ['hr', 'inventory', 'admin', 'accounting'].find((s) => App.hasPermission('forms.manage.' + s));
+
   if (!forms.length) {
     el.innerHTML = UI.emptyState({
       icon: 'file',
       title: 'No forms defined yet',
-      hint: App.isAdmin() ? 'Go to Admin → Form Builder to create your first form.' : 'Ask an admin to create a form.',
-      action: App.isAdmin()
+      hint: manageableScope ? 'Go to Form Builder (in its section’s nav) to create your first form.' : 'Ask an admin to create a form.',
+      action: manageableScope
         ? `<button class="btn" id="fr-goto-builder">${UI.icon('edit')} Open Form Builder</button>` : '',
     });
     const btn = el.querySelector('#fr-goto-builder');
-    if (btn) btn.onclick = () => App.navigate('form-builder');
+    if (btn) btn.onclick = () => App.navigate('form-builder', { scope: manageableScope });
     return;
   }
 
-  el.innerHTML = `<div class="form-card-grid">${forms.map((f) => `
-    <div class="form-card clickable" data-id="${f.id}">
-      <div class="form-card-icon">${UI.icon(f.icon || 'file', 32)}</div>
-      <div class="form-card-info">
-        <div class="form-card-name">${UI.esc(f.name)}</div>
-        <div class="form-card-meta">${f.fields.length} field${f.fields.length !== 1 ? 's' : ''} · ${f.record_count} record${f.record_count !== 1 ? 's' : ''}</div>
-        <div class="form-card-prefix muted mono">${UI.esc(f.number_prefix)}-#####</div>
-      </div>
-    </div>`).join('')}</div>`;
+  const groups = {};
+  forms.forEach((f) => { const k = f.scope || 'general'; (groups[k] = groups[k] || []).push(f); });
+  const order = [...FORM_RECORDS_SCOPE_ORDER.map((s) => s || 'general')];
+  el.innerHTML = order.filter((k) => groups[k] && groups[k].length).map((k) => `
+    <div class="fr-scope-group">
+      <div class="fr-scope-heading">${UI.esc(FORM_RECORDS_SCOPE_LABELS[k] || 'General')}</div>
+      <div class="form-card-grid">${groups[k].map(formCardHTML).join('')}</div>
+    </div>`).join('');
 
   el.querySelectorAll('.form-card[data-id]').forEach((card) =>
     card.onclick = () => App.navigate('form-records', { form_id: card.dataset.id }));
@@ -56,6 +74,9 @@ async function renderFormView(view, formId, initialPeriod) {
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }
 
   const isPayroll = formDef.slug === 'hr_payroll';
+  // Any other form with a linked print template gets the same "Print All"/"Print selected"
+  // bulk actions payroll has always had — payroll keeps its own dedicated 2-up slip buttons.
+  const canBulkPrint = !isPayroll && !!formDef.template_id;
 
   view.innerHTML = `
     <div class="topbar">
@@ -74,6 +95,7 @@ async function renderFormView(view, formId, initialPeriod) {
         </select>
         <button class="btn secondary" id="fr-import-csv" style="margin-left:8px">${UI.icon('upload')} Upload CSV</button>
         <button class="btn secondary" id="fr-print-slips" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
+      ${canBulkPrint ? `<button class="btn secondary" id="fr-print-all-tpl" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
       <button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete Period</button>
       <button class="btn" id="fr-new" style="margin-left:8px">${UI.icon('plus')} New Record</button>
     </div>
@@ -81,6 +103,7 @@ async function renderFormView(view, formId, initialPeriod) {
       <span id="fr-sel-count" style="font-weight:700;font-size:13px;color:var(--accent,#2b7fff)">0 selected</span>
       <div style="flex:1"></div>
       ${isPayroll ? `<button class="btn secondary small" id="fr-bulk-print">${UI.icon('printer')} Print selected</button>` : ''}
+      ${canBulkPrint ? `<button class="btn secondary small" id="fr-bulk-print-tpl">${UI.icon('printer')} Print selected</button>` : ''}
       <button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>
       <button class="btn secondary small" id="fr-bulk-clear">${UI.icon('close', 12)} Clear</button>
     </div>
@@ -105,6 +128,11 @@ async function renderFormView(view, formId, initialPeriod) {
       state.period = e.target.value;
       load();
     });
+  }
+  if (canBulkPrint) {
+    view.querySelector('#fr-print-all-tpl').onclick = () => printRecordsViaTemplate(currentRecords);
+    view.querySelector('#fr-bulk-print-tpl').onclick = () =>
+      printRecordsViaTemplate(currentRecords.filter((r) => selectedIds.has(r.id)));
   }
   view.querySelector('#fr-del-all').onclick = () => delAll();
   view.querySelector('#fr-bulk-del').onclick = () => delSelected();
@@ -204,6 +232,81 @@ async function renderFormView(view, formId, initialPeriod) {
     });
   }
 
+  // Print one or many records through the form's linked template (data filled in) — additive
+  // to, not a replacement for, the payroll-specific printSlips() above (which stays the
+  // specialized 2-up slip layout for hr_payroll). Any other form that has a template linked in
+  // Form Builder can print its records this way, including "Print All"/"Print selected" — each
+  // record renders as its own page (page-break-after between them), unlike payroll's 2-up grid.
+  async function printRecordsViaTemplate(records) {
+    if (!formDef.template_id) { UI.toast('No print template linked to this form', 'error'); return; }
+    if (!records.length) { UI.toast('No records to print', 'error'); return; }
+    let tpl;
+    try { tpl = await API.get('/templates/' + formDef.template_id); }
+    catch { UI.toast('The linked template could not be loaded', 'error'); return; }
+    let company = {};
+    try { company = await API.get('/templates/company'); } catch { /* optional */ }
+    const pages = records.map((r) => {
+      const ctx = { ...r.data, record: { number: r.number, status: r.status, created_at: r.created_at }, company };
+      return renderTemplate(tpl.body, ctx);
+    });
+    const html = pages.map((p, i) => (i < pages.length - 1 ? `<div style="page-break-after:always">${p}</div>` : p)).join('');
+    const title = records.length > 1 ? `${formDef.name} (${records.length})` : formDef.name + ' - ' + records[0].number;
+    const full = UI.printableHtml(html, title);
+    // Attaching a saved PDF to Files only makes sense for a single record — a bulk print's
+    // output doesn't map to any one record's identity.
+    const canAttach = records.length === 1 && App.hasPermission('forms.upload');
+
+    UI.modal({
+      title: records.length > 1 ? `${records.length} records — Preview` : records[0].number + ' — Preview',
+      size: 'lg',
+      bodyHTML: `
+        ${canAttach ? `<div style="margin-bottom:8px"><button type="button" class="btn secondary small" id="fr-attach-pdf">${UI.icon('upload', 14)} Attach saved PDF to Files</button></div>` : ''}
+        <iframe id="fr-tpl-preview-frame" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+      cancelText: 'Close',
+      confirmText: 'Print…',
+      onOpen: (ov) => {
+        ov.querySelector('#fr-tpl-preview-frame').srcdoc = full;
+        const attachBtn = ov.querySelector('#fr-attach-pdf');
+        if (attachBtn) attachBtn.onclick = () => attachPdfModal(records[0]);
+      },
+      onConfirm: (ov) => {
+        const ifr = ov.querySelector('#fr-tpl-preview-frame');
+        ifr.contentWindow.focus();
+        ifr.contentWindow.print();
+        return false; // keep the preview open — printing shouldn't close it
+      },
+    });
+  }
+
+  // Manual hand-off, not automation: the browser's own print dialog already lets the user pick
+  // "Save as PDF" as the destination, but JS has no way to capture those bytes back — there's no
+  // API for it. So this just uploads whatever PDF the user saved, through the same endpoint the
+  // Files "Upload" button already uses (public/js/views/forms.js's uploadModal()).
+  function attachPdfModal(record) {
+    const deptOpts = '<option value="">All staff (shared)</option>' +
+      App.getDepartments().map((d) => `<option value="${d.id}">${UI.esc(d.name)} only</option>`).join('');
+    UI.modal({
+      title: 'Attach saved PDF to Files',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">Print the document and choose <strong>Save as PDF</strong> as the destination, then pick that saved file below.</p>
+        <div><label>PDF file *</label><input type="file" accept="application/pdf" data-f="file" /></div>
+        <div style="margin-top:10px"><label>Title</label><input data-f="title" value="${UI.esc(formDef.name + ' - ' + record.number)}" /></div>
+        <div style="margin-top:10px"><label>Visible to</label><select data-f="department_id">${deptOpts}</select></div>`,
+      confirmText: 'Attach',
+      onConfirm: async (ov, showErr) => {
+        const fileEl = ov.querySelector('[data-f="file"]');
+        if (!fileEl.files[0]) { showErr('Choose the PDF file you just saved'); return false; }
+        const fd = new FormData();
+        fd.append('file', fileEl.files[0]);
+        fd.append('title', ov.querySelector('[data-f="title"]').value);
+        fd.append('category', formDef.name);
+        fd.append('department_id', ov.querySelector('[data-f="department_id"]').value);
+        await API.upload('/forms', fd);
+        UI.toast('Attached to Files');
+      },
+    });
+  }
+
   function importCsvModal() {
     UI.modal({
       title: 'Upload payroll CSV',
@@ -292,6 +395,7 @@ async function renderFormView(view, formId, initialPeriod) {
           <td>${UI.esc(UI.fmtDateShort(r.created_at))}</td>
           <td class="actions">
             ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip">${UI.icon('printer')}</button>` : ''}
+            ${!isPayroll && formDef.template_id ? `<button class="icon-btn" data-print-tpl="${r.id}" title="Print">${UI.icon('printer')}</button>` : ''}
             <button class="icon-btn" data-edit="${r.id}" title="Edit">${UI.icon('edit')}</button>
             <button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>
           </td>
@@ -318,6 +422,12 @@ async function renderFormView(view, formId, initialPeriod) {
         e.stopPropagation();
         const r = records.find((x) => String(x.id) === String(b.dataset.print));
         if (r) printSlips([r.data]);
+      });
+    el.querySelectorAll('[data-print-tpl]').forEach((b) =>
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const r = records.find((x) => String(x.id) === String(b.dataset.printTpl));
+        if (r) printRecordsViaTemplate([r]);
       });
     el.querySelectorAll('[data-edit]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); openRecord(b.dataset.edit, records); });

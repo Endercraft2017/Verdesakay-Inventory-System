@@ -232,6 +232,11 @@ export const formDefinitionSchema = z.object({
   number_prefix: trimmed.min(1).max(10).regex(/^[A-Z0-9]+$/, 'Prefix must be uppercase letters or numbers').default('FM'),
   icon: trimmed.max(40).default('file'),
   fields: z.array(fieldDefSchema).max(100).default([]),
+  scope: z.enum(['hr', 'inventory', 'admin', 'accounting']).nullable().default(null),
+});
+
+export const linkFormTemplateSchema = z.object({
+  template_id: z.coerce.number().int().positive().nullable(),
 });
 
 export const createFormRecordSchema = z.object({

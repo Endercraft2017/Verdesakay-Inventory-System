@@ -10,7 +10,8 @@ export const ALL_PERMISSIONS: Permission[] = [
   'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
   'inventory.adjust', 'inventory.configure',
   'orders.view', 'orders.create', 'orders.edit', 'orders.delete',
-  'forms.view', 'forms.upload', 'forms.delete', 'forms.manage',
+  'forms.view', 'forms.upload', 'forms.delete',
+  'forms.manage.hr', 'forms.manage.inventory', 'forms.manage.admin', 'forms.manage.accounting',
   'messages.view', 'messages.send',
   'templates.view', 'templates.edit', 'templates.company',
   'users.manage',
@@ -27,21 +28,21 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
   admin_staff: [
     'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.adjust',
     'orders.view', 'orders.create', 'orders.edit',
-    'forms.view', 'forms.upload', 'forms.delete',
+    'forms.view', 'forms.upload', 'forms.delete', 'forms.manage.admin',
     'messages.view', 'messages.send',
     'templates.view',
   ],
   accounting: [
     'inventory.view',
     'orders.view', 'orders.create', 'orders.edit',
-    'forms.view', 'forms.upload',
+    'forms.view', 'forms.upload', 'forms.manage.accounting',
     'messages.view', 'messages.send',
     'templates.view',
   ],
   warehouse: [
     'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.adjust',
     'orders.view',
-    'forms.view', 'forms.upload',
+    'forms.view', 'forms.upload', 'forms.manage.inventory',
     'messages.view', 'messages.send',
   ],
   releasing: [
@@ -59,7 +60,7 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
     'templates.view',
   ],
   hr: [
-    'forms.view', 'forms.upload', 'forms.delete',
+    'forms.view', 'forms.upload', 'forms.delete', 'forms.manage.hr',
     'messages.view', 'messages.send',
     'templates.view',
     'hr.view', 'hr.manage',
