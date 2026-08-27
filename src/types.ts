@@ -196,7 +196,9 @@ export interface Employee {
   name: string;
   department_id: number | null;
   position: string | null;
-  daily_rate: number;
+  daily_rate: number; // always the effective daily rate, regardless of rate_type — payroll math reads only this
+  rate_type: 'daily' | 'monthly';
+  monthly_rate: number | null; // set when rate_type === 'monthly'; daily_rate is derived from this
   status: EmployeeStatus;
   start_date: string | null;
   sss_no: string | null;
@@ -206,6 +208,47 @@ export interface Employee {
   photo: string | null; // data: URI
   created_at: string;
   department_name?: string | null;
+  default_shift_id: number | null; // usual shift — a UI pre-fill only, never enforced
+  user_id: number | null; // linked login account, 1:1 (enforced by a partial unique index)
+  linked_username?: string | null;
+  linked_full_name?: string | null;
+}
+
+/** Company-wide format for the RECOMMENDED employee number (settings key "employee_no_policy") —
+    employee_no itself is a freely editable text field, this only shapes the suggestion offered
+    when adding a new employee. 'sequential' recommends {prefix}-{running count + 1}; 'hire_date'
+    recommends {prefix}{hire date}-{suffix count of employees already numbered for that date + 1},
+    so multiple same-day hires get distinct suffixes. */
+export interface EmployeeNumberPolicy {
+  prefix: string;
+  mode: 'sequential' | 'hire_date';
+  pad: number; // zero-padding width of the incrementing part
+  date_format: 'YYYYMMDD' | 'YYMMDD'; // only used in 'hire_date' mode
+}
+
+/** A named shift (e.g. "Morning 06:00-14:00") — attendance days reference one by id so a
+    rotating employee just gets a different shift_id on different days. */
+export interface Shift {
+  id: number;
+  name: string;
+  start_time: string; // "HH:MM"
+  end_time: string;   // "HH:MM"
+  is_default: boolean;
+}
+
+/** Company-wide payroll computation rules (settings key "payroll_policy") — how lateness/OT are
+    computed, as opposed to *when* a shift runs (that's per-Shift). Rounding is always "round up"
+    (against the employee for lateness, in their favor for OT) — not itself configurable. */
+export interface PayrollPolicy {
+  grace_minutes: number;
+  late_unit: 'minute' | 'hour';
+  ot_unit: 'minute' | '30min' | 'hour';
+  ot_rate_percent: number;
+  night_diff_enabled: boolean;
+  night_diff_percent: number;
+  night_start: string; // "HH:MM"
+  night_end: string;   // "HH:MM", wraps midnight if < night_start
+  monthly_rate_divisor: number; // effective daily_rate = monthly_rate / this, e.g. 26
 }
 
 export interface EmployeeDocument {
@@ -239,6 +282,8 @@ export interface AttendanceRecord {
   time_in: string | null;
   time_out: string | null;
   notes: string | null;
+  shift_id: number | null;
+  form_record_id: number | null;
   updated_at: string;
 }
 
@@ -246,7 +291,7 @@ export interface AttendanceRecord {
 export interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox';
+  type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox' | 'employee';
   required: boolean;
   options: string[];  // only for type = 'select'
   default: string;

@@ -89,6 +89,24 @@ describe('form definitions', () => {
 
   // Records + delete tests follow so we reuse formId.
   it('stores formId for later tests', () => { expect(formId).toBeGreaterThan(0); });
+
+  it('accepts an "employee" field type (live employee dropdown, not free text)', async () => {
+    const res = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send({
+      name: 'Employee Field Test', slug: 'employee_field_test', number_prefix: 'EF', icon: 'file',
+      fields: [{ key: 'employee_name', label: 'Employee Name', type: 'employee', required: true, options: [], default: '' }],
+    });
+    expect(res.status).toBe(201);
+    const detail = await ctx.api.get('/api/form-definitions/' + res.body.id).set(hdr(empToken));
+    expect(detail.body.fields[0].type).toBe('employee');
+  });
+
+  it('rejects an unknown field type', async () => {
+    const res = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send({
+      name: 'Bad Field Type', slug: 'bad_field_type', number_prefix: 'BF', icon: 'file',
+      fields: [{ key: 'x', label: 'X', type: 'bogus', required: false, options: [], default: '' }],
+    });
+    expect(res.status).toBe(400);
+  });
 });
 
 // ─── Per-section access control (forms.manage.<scope>) ─────────────────────────

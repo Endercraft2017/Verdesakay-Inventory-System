@@ -21,9 +21,10 @@ App.register('form-builder', async (view, filter) => {
       key: 'leave', label: 'Leave Form', icon: 'calendar',
       name: 'Leave Request', slug: 'leave_request', number_prefix: 'LV',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('leave_type', 'Leave Type', 'select', ['Vacation Leave', 'Sick Leave', 'Emergency Leave', 'Maternity/Paternity Leave', 'Bereavement Leave', 'Unpaid Leave']),
+        req('with_pay', 'With Pay?', 'select', ['Yes', 'No']),
         req('date_from', 'Date From', 'date'),
         req('date_to', 'Date To', 'date'),
         req('days', 'Number of Days', 'number'),
@@ -35,7 +36,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'halfday', label: 'Half Day Form', icon: 'calendar',
       name: 'Half Day Request', slug: 'halfday_request', number_prefix: 'HD',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('date', 'Date', 'date'),
         req('session', 'Session', 'select', ['Morning (AM)', 'Afternoon (PM)']),
@@ -47,7 +48,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'undertime', label: 'Undertime Form', icon: 'calendar',
       name: 'Undertime Request', slug: 'undertime_request', number_prefix: 'UT',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('date', 'Date', 'date'),
         req('time_out', 'Time Out', 'text'),
@@ -57,10 +58,34 @@ App.register('form-builder', async (view, filter) => {
       ],
     },
     {
+      key: 'offset', label: 'Offset Form', icon: 'calendar',
+      name: 'Offset Request', slug: 'offset_form', number_prefix: 'OF',
+      fields: [
+        req('employee_name', 'Employee Name', 'employee'),
+        opt('department', 'Department', 'text'),
+        req('offset_date', 'Date', 'date'),
+        req('late_arrival_time', 'Late Arrival Time', 'text'),
+        req('new_time_out', 'Adjusted Time Out', 'text'),
+        req('reason', 'Reason', 'textarea'),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
+      key: 'nowork', label: 'No Work Memo', icon: 'alert',
+      name: 'No Work Memo', slug: 'no_work_memo', number_prefix: 'NW',
+      fields: [
+        req('date_from', 'Date From', 'date'),
+        req('date_to', 'Date To', 'date'),
+        req('reason', 'Reason', 'textarea'),
+        req('paid', 'Paid?', 'select', ['Yes', 'No']),
+        opt('approved_by', 'Approved By', 'text'),
+      ],
+    },
+    {
       key: 'holiday', label: 'Holiday Work Form', icon: 'calendar',
       name: 'Holiday Work Request', slug: 'holiday_work_request', number_prefix: 'HW',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('holiday_name', 'Holiday Name', 'text'),
         req('date', 'Date', 'date'),
@@ -73,7 +98,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'overtime', label: 'Overtime Form', icon: 'calendar',
       name: 'Overtime Request', slug: 'overtime_request', number_prefix: 'OT',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('date', 'Date', 'date'),
         req('time_start', 'Time Start', 'text'),
@@ -87,7 +112,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'travel', label: 'Travel Order Form', icon: 'calendar',
       name: 'Travel Order', slug: 'travel_order', number_prefix: 'TO',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('destination', 'Destination', 'text'),
         req('purpose', 'Purpose', 'textarea'),
@@ -100,7 +125,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'coe', label: 'Certificate of Employment Request', icon: 'file',
       name: 'Certificate of Employment Request', slug: 'coe_request', number_prefix: 'COE',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('purpose', 'Purpose', 'select', ['Loan Application', 'Visa Application', 'New Employer', 'Government Requirement', 'Other']),
         req('date_needed', 'Date Needed', 'date'),
@@ -112,7 +137,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'resignation', label: 'Resignation & Clearance', icon: 'file',
       name: 'Resignation & Clearance', slug: 'resignation_clearance', number_prefix: 'RC',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('last_working_day', 'Last Working Day', 'date'),
         req('reason', 'Reason', 'textarea'),
@@ -125,7 +150,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'incident', label: 'Incident Report', icon: 'alert',
       name: 'Incident Report', slug: 'incident_report', number_prefix: 'IR',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('incident_date', 'Date of Incident', 'date'),
         opt('location', 'Location', 'text'),
@@ -139,7 +164,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'reimbursement', label: 'Reimbursement Request', icon: 'sheet',
       name: 'Reimbursement Request', slug: 'reimbursement_request', number_prefix: 'RB',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('expense_type', 'Expense Type', 'select', ['Transportation', 'Medical', 'Meals', 'Supplies', 'Other']),
         req('amount', 'Amount', 'number'),
@@ -153,7 +178,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'infoupdate', label: '201 File Update', icon: 'users',
       name: '201 File Update', slug: '201_file_update', number_prefix: 'IU',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         req('update_type', 'Update Type', 'select', ['Address', 'Civil Status', 'Dependents', 'Emergency Contact', 'Contact Number', 'Other']),
         opt('old_info', 'Current Information', 'textarea'),
         req('new_info', 'New Information', 'textarea'),
@@ -164,7 +189,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'loan', label: 'Loan Application', icon: 'sheet',
       name: 'Loan Application', slug: 'loan_application', number_prefix: 'LN',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('loan_type', 'Loan Type', 'select', ['SSS Salary Loan', 'SSS Calamity Loan', 'Pag-IBIG Multi-Purpose Loan', 'Company Loan', 'Other']),
         req('amount', 'Amount', 'number'),
@@ -177,7 +202,7 @@ App.register('form-builder', async (view, filter) => {
       key: 'training', label: 'Training / Seminar Request', icon: 'calendar',
       name: 'Training / Seminar Request', slug: 'training_request', number_prefix: 'TR',
       fields: [
-        req('employee_name', 'Employee Name', 'text'),
+        req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('training_title', 'Training / Seminar Title', 'text'),
         opt('provider', 'Provider', 'text'),
@@ -536,8 +561,8 @@ App.register('form-builder', async (view, filter) => {
       el.innerHTML = `<div class="muted" style="text-align:center;padding:12px">No fields yet — add one above.</div>`;
       return;
     }
-    const typeOptions = ['text', 'number', 'date', 'select', 'textarea', 'checkbox']
-      .map((t) => `<option value="${t}">${t}</option>`).join('');
+    const typeOptions = ['text', 'number', 'date', 'select', 'textarea', 'checkbox', 'employee']
+      .map((t) => `<option value="${t}">${t === 'employee' ? 'employee (dropdown)' : t}</option>`).join('');
 
     el.innerHTML = `<table class="line-table"><thead><tr>
       <th>Key <span class="muted">(variable name)</span></th>
@@ -550,7 +575,9 @@ App.register('form-builder', async (view, filter) => {
         <td style="text-align:center"><input type="checkbox" data-k="required" ${f.required ? 'checked' : ''} /></td>
         <td>${f.type === 'select'
           ? `<input data-k="options" value="${UI.esc((f.options || []).join(', '))}" placeholder="Option 1, Option 2, …" />`
-          : `<input data-k="default" value="${UI.esc(f.default || '')}" placeholder="default value" />`}
+          : f.type === 'employee'
+            ? `<span class="muted" style="font-size:12px">Live employee list — no options needed</span>`
+            : `<input data-k="default" value="${UI.esc(f.default || '')}" placeholder="default value" />`}
         </td>
         <td><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
       </tr>`).join('')}

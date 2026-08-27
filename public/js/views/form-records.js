@@ -78,6 +78,13 @@ async function renderFormView(view, formId, initialPeriod) {
   // bulk actions payroll has always had — payroll keeps its own dedicated 2-up slip buttons.
   const canBulkPrint = !isPayroll && !!formDef.template_id;
 
+  // Fetched once, lazily, only if this form actually has an 'employee' field — most forms don't.
+  let employeesCache = null;
+  async function getEmployees() {
+    if (!employeesCache) employeesCache = await API.get('/hr/employees').catch(() => []);
+    return employeesCache;
+  }
+
   view.innerHTML = `
     <div class="topbar">
       <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} All Forms</button>
@@ -96,6 +103,7 @@ async function renderFormView(view, formId, initialPeriod) {
         <button class="btn secondary" id="fr-import-csv" style="margin-left:8px">${UI.icon('upload')} Upload CSV</button>
         <button class="btn secondary" id="fr-print-slips" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
       ${canBulkPrint ? `<button class="btn secondary" id="fr-print-all-tpl" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
+      <button class="btn secondary" id="fr-download-csv" style="margin-left:8px" title="Download the currently filtered records as a CSV file">${UI.icon('download')} Download CSV</button>
       <button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete Period</button>
       <button class="btn" id="fr-new" style="margin-left:8px">${UI.icon('plus')} New Record</button>
     </div>
@@ -134,6 +142,7 @@ async function renderFormView(view, formId, initialPeriod) {
     view.querySelector('#fr-bulk-print-tpl').onclick = () =>
       printRecordsViaTemplate(currentRecords.filter((r) => selectedIds.has(r.id)));
   }
+  view.querySelector('#fr-download-csv').onclick = () => downloadCsv();
   view.querySelector('#fr-del-all').onclick = () => delAll();
   view.querySelector('#fr-bulk-del').onclick = () => delSelected();
   view.querySelector('#fr-bulk-clear').onclick = () => { selectedIds.clear(); syncSelection(); };
@@ -178,6 +187,33 @@ async function renderFormView(view, formId, initialPeriod) {
     if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
     const list = currentRecords.filter((r) => selectedIds.has(r.id)).map((r) => r.data);
     printSlips(list);
+  }
+
+  // Generic — works for any form, not just payroll. Exports whatever's currently filtered
+  // (search/status/period), one row per record, columns driven by the form's own field list.
+  function csvEscape(v) {
+    const s = v == null ? '' : String(v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function downloadCsv() {
+    if (!currentRecords.length) { UI.toast('No records to export', 'error'); return; }
+    const headers = ['Number', ...formDef.fields.map((f) => f.label), 'Status', 'Date'];
+    const rows = currentRecords.map((r) => [
+      r.number,
+      ...formDef.fields.map((f) => r.data[f.key] ?? ''),
+      r.status,
+      UI.fmtDateShort(r.created_at),
+    ]);
+    const csv = [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }); // BOM so Excel reads UTF-8 correctly
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(formDef.slug || 'records') + (state.period ? '-' + state.period : '')}.csv`.replace(/[^a-z0-9._-]+/gi, '_');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   async function delAll() {
@@ -454,13 +490,18 @@ async function renderFormView(view, formId, initialPeriod) {
     load();
   }
 
+  // An 'employee' field auto-fills these sibling fields (if the form has them) from the
+  // selected employee — still fully editable afterward, this just saves re-typing the common case.
+  const EMPLOYEE_AUTOFILL_MAP = { department: 'department_name', position: 'position', employee_no: 'employee_no', daily_rate: 'daily_rate' };
+
   /* ── Record create / edit modal ─────────────────────────────────────────── */
-  function recordModal(existing) {
+  async function recordModal(existing) {
     const editing = !!existing;
     const data = editing ? { ...existing.data } : {};
     const statusOpts = ['draft', 'submitted', 'approved', 'rejected', 'completed']
       .map((s) => `<option value="${s}" ${(existing ? existing.status : 'draft') === s ? 'selected' : ''}>${s}</option>`)
       .join('');
+    const employees = formDef.fields.some((f) => f.type === 'employee') ? await getEmployees() : [];
 
     // For payroll records, append a Net Pay field so users can correct the value.
     const netPayField = isPayroll ? `
@@ -479,11 +520,25 @@ async function renderFormView(view, formId, initialPeriod) {
           <label>Status</label>
           <select data-f="status">${statusOpts}</select>
         </div>
-        ${formDef.fields.map((field) => renderFieldInput(field, data)).join('')}
+        ${formDef.fields.map((field) => renderFieldInput(field, data, employees)).join('')}
         ${netPayField}
         ${formDef.fields.length === 0 && !isPayroll
           ? '<div class="muted" style="text-align:center;padding:20px">This form has no fields yet. Edit it in Form Builder to add fields.</div>'
           : ''}`,
+      onOpen: (ov) => {
+        ov.querySelectorAll('select[data-field]').forEach((sel) => {
+          const field = formDef.fields.find((f) => f.key === sel.dataset.field);
+          if (!field || field.type !== 'employee') return;
+          sel.addEventListener('change', () => {
+            const emp = employees.find((e) => e.name === sel.value);
+            if (!emp) return;
+            Object.entries(EMPLOYEE_AUTOFILL_MAP).forEach(([formKey, empKey]) => {
+              const target = ov.querySelector(`[data-field="${formKey}"]`);
+              if (target && emp[empKey] != null) target.value = String(emp[empKey]);
+            });
+          });
+        });
+      },
       confirmText: editing ? 'Save' : 'Create',
       onConfirm: async (ov, showErr) => {
         // Collect field values from the modal.
@@ -518,7 +573,7 @@ async function renderFormView(view, formId, initialPeriod) {
     });
   }
 
-  function renderFieldInput(field, data) {
+  function renderFieldInput(field, data, employees) {
     const val = data[field.key] ?? field.default ?? '';
     const id = `fr-field-${field.key}`;
     const req = field.required ? '<span class="req">*</span>' : '';
@@ -537,6 +592,15 @@ async function renderFormView(view, formId, initialPeriod) {
       ).join('');
       input = `<select data-field="${UI.esc(field.key)}" id="${id}">
         <option value="">— select —</option>${opts}
+      </select>`;
+    } else if (field.type === 'employee') {
+      // Only real employees are selectable (never free text), so this always matches an actual
+      // record — critical since Time Keeping/payroll match attendance to forms by exact name.
+      const opts = (employees || []).map((e) =>
+        `<option value="${UI.esc(e.name)}" ${String(val) === e.name ? 'selected' : ''}>${UI.esc(e.name)}</option>`
+      ).join('');
+      input = `<select data-field="${UI.esc(field.key)}" id="${id}">
+        <option value="">— select employee —</option>${opts}
       </select>`;
     } else {
       input = `<input data-field="${UI.esc(field.key)}" id="${id}" type="${field.type}"

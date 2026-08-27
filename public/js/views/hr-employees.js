@@ -27,12 +27,29 @@ App.register('hr-employees', async (view) => {
         <option value="">All statuses</option>
         ${Object.keys(STATUS_LABELS).map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join('')}
       </select>
+      ${canManage ? `<button class="btn secondary" id="emp-no-settings" style="margin-left:8px" title="Employee numbering format">${UI.icon('settings', 15)}</button>` : ''}
       ${canManage ? `<button class="btn" id="emp-new" style="margin-left:8px">${UI.icon('plus')} New Employee</button>` : ''}
     </div>
     <div class="panel"><div id="emp-table"></div></div>`;
 
   const tableEl = view.querySelector('#emp-table');
   const money = UI.money;
+  let monthlyRateDivisor = 26;
+
+  async function ensurePolicyDivisor() {
+    try { monthlyRateDivisor = (await API.get('/hr/payroll-policy')).monthly_rate_divisor || 26; } catch { /* keep default */ }
+    return monthlyRateDivisor;
+  }
+
+  /** Fetches a recommended employee_no for the given hire date (blank = today) — a pure
+      suggestion, never reserved server-side, so it's safe to call as often as needed. */
+  async function suggestEmployeeNo(startDate) {
+    try {
+      const qs = startDate ? `?start_date=${encodeURIComponent(startDate)}` : '';
+      const res = await API.get(`/hr/employees/suggest-number${qs}`);
+      return res.employee_no || '';
+    } catch { return ''; }
+  }
 
   async function ensureDepts() {
     if (depts.length) return depts;
@@ -121,7 +138,7 @@ App.register('hr-employees', async (view) => {
     }
     tableEl.innerHTML = `
       <table>
-        <thead><tr><th></th><th>Name</th><th>Employee No.</th><th>Department</th><th>Position</th><th class="right">Daily Rate</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th></th><th>Name</th><th>Employee No.</th><th>Department</th><th>Position</th><th class="right">Rate</th><th>Status</th><th></th></tr></thead>
         <tbody>${list.map((e) => `
           <tr class="clickable" data-open="${e.id}">
             <td><img src="${UI.esc(e.photo || PLACEHOLDER_PHOTO)}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle" /></td>
@@ -129,7 +146,9 @@ App.register('hr-employees', async (view) => {
             <td class="mono muted">${UI.esc(e.employee_no || '—')}</td>
             <td>${UI.esc(e.department_name || '—')}</td>
             <td>${UI.esc(e.position || '—')}</td>
-            <td class="right">${money(e.daily_rate)}</td>
+            <td class="right">${e.rate_type === 'monthly'
+              ? `${money(e.monthly_rate)}<span class="muted">/mo</span>`
+              : `${money(e.daily_rate)}<span class="muted">/day</span>`}</td>
             <td><span class="badge-pill ${STATUS_CLASS[e.status] || 'muted'}">${STATUS_LABELS[e.status] || e.status}</span></td>
             <td class="actions">
               <button class="icon-btn" title="Generate ID" data-id-card="${e.id}">${UI.icon('idcard')}</button>
@@ -187,20 +206,25 @@ App.register('hr-employees', async (view) => {
     const editing = !!existing;
     let photoData = editing ? (existing.photo || '') : '';
 
-    ensureDepts().then((deptList) => {
+    Promise.all([
+      ensureDepts(),
+      ensurePolicyDivisor(),
+      editing ? Promise.resolve(existing.employee_no || '') : suggestEmployeeNo(''),
+    ]).then(([deptList, , suggestedNo]) => {
       const deptOpts = ['<option value="">— none —</option>']
         .concat(deptList.map((d) => `<option value="${d.id}" ${editing && existing.department_id === d.id ? 'selected' : ''}>${UI.esc(d.name)}</option>`))
         .join('');
       const statusOpts = Object.keys(STATUS_LABELS)
         .map((s) => `<option value="${s}" ${(editing ? existing.status : 'probationary') === s ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`)
         .join('');
+      const rateType = editing ? (existing.rate_type || 'daily') : 'daily';
+      const rateAmount = editing ? (rateType === 'monthly' ? existing.monthly_rate : existing.daily_rate) : 0;
 
       UI.modal({
         title: editing ? `Edit ${existing.name}` : 'New Employee',
         size: 'lg',
         headActionHTML: editing ? `<button type="button" class="btn secondary small" id="emp-gen-id">${UI.icon('idcard', 15)} Generate ID</button>` : '',
         bodyHTML: `
-          ${editing ? `<div class="muted mono" style="margin-bottom:10px">${UI.esc(existing.employee_no || '')}</div>` : ''}
           <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px">
             <div style="text-align:center">
               <img id="emp-photo-preview" src="${UI.esc(photoData || PLACEHOLDER_PHOTO)}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:1px solid var(--border-strong)" />
@@ -211,7 +235,15 @@ App.register('hr-employees', async (view) => {
               </div>
             </div>
             <div style="flex:1">
-              <label>Full name *</label><input data-f="name" value="${UI.esc(editing ? existing.name : '')}" autofocus />
+              <div class="field-row">
+                <div><label>Employee No. *</label>
+                  <div style="display:flex;gap:6px">
+                    <input data-f="employee_no" class="mono" style="flex:1" value="${UI.esc(suggestedNo)}" autofocus />
+                    <button type="button" class="icon-btn" id="emp-no-suggest" title="Suggest a number">${UI.icon('sparkles', 15)}</button>
+                  </div>
+                </div>
+                <div><label>Full name *</label><input data-f="name" value="${UI.esc(editing ? existing.name : '')}" /></div>
+              </div>
               <div class="field-row" style="margin-top:10px">
                 <div><label>Department</label>
                   <div style="display:flex;gap:6px">
@@ -225,7 +257,16 @@ App.register('hr-employees', async (view) => {
             </div>
           </div>
           <div class="field-row">
-            <div><label>Daily rate</label><input data-f="daily_rate" type="number" step="0.01" min="0" value="${editing ? UI.esc(String(existing.daily_rate)) : '0'}" /></div>
+            <div><label>Rate type</label><select data-f="rate_type">
+              <option value="daily" ${rateType === 'daily' ? 'selected' : ''}>Daily</option>
+              <option value="monthly" ${rateType === 'monthly' ? 'selected' : ''}>Monthly</option>
+            </select></div>
+            <div><label id="emp-rate-label">${rateType === 'monthly' ? 'Monthly rate' : 'Daily rate'}</label>
+              <input data-f="rate_amount" type="number" step="0.01" min="0" value="${UI.esc(String(rateAmount || 0))}" />
+              <div class="muted" id="emp-rate-hint" style="font-size:12px;margin-top:3px"></div>
+            </div>
+          </div>
+          <div class="field-row">
             <div><label>Status</label><select data-f="status">${statusOpts}</select></div>
             <div><label>Start date</label><input data-f="start_date" type="date" value="${UI.esc(editing ? (existing.start_date || '') : '')}" /></div>
           </div>
@@ -249,6 +290,40 @@ App.register('hr-employees', async (view) => {
         onOpen: (ov) => {
           const genBtn = ov.querySelector('#emp-gen-id');
           if (genBtn) genBtn.onclick = () => generateId(existing);
+
+          const empNoInp = ov.querySelector('[data-f="employee_no"]');
+          ov.querySelector('#emp-no-suggest').onclick = async () => {
+            empNoInp.value = await suggestEmployeeNo(ov.querySelector('[data-f="start_date"]').value);
+            userEditedEmpNo = false;
+          };
+          let userEditedEmpNo = editing; // don't auto-refresh over a real, already-assigned number
+          empNoInp.addEventListener('input', () => { userEditedEmpNo = true; });
+          if (!editing) {
+            ov.querySelector('[data-f="start_date"]').addEventListener('change', async (e) => {
+              if (userEditedEmpNo) return;
+              empNoInp.value = await suggestEmployeeNo(e.target.value);
+            });
+          }
+
+          const rateTypeSel = ov.querySelector('[data-f="rate_type"]');
+          const rateLabel = ov.querySelector('#emp-rate-label');
+          const rateHint = ov.querySelector('#emp-rate-hint');
+          const rateAmountInp = ov.querySelector('[data-f="rate_amount"]');
+          function updateRateUI() {
+            if (rateTypeSel.value === 'monthly') {
+              rateLabel.textContent = 'Monthly rate';
+              const amt = Number(rateAmountInp.value) || 0;
+              rateHint.textContent = amt
+                ? `≈ ${money(amt / monthlyRateDivisor)} / day (monthly ÷ ${monthlyRateDivisor})`
+                : `Divided by ${monthlyRateDivisor} to get the daily rate used in payroll.`;
+            } else {
+              rateLabel.textContent = 'Daily rate';
+              rateHint.textContent = '';
+            }
+          }
+          rateTypeSel.addEventListener('change', updateRateUI);
+          rateAmountInp.addEventListener('input', updateRateUI);
+          updateRateUI();
 
           ov.querySelector('#emp-dept-new').onclick = () => addDepartmentInline(ov.querySelector('[data-f="department_id"]'));
           ov.querySelector('#emp-dept-del').onclick = () => removeDepartmentInline(ov.querySelector('[data-f="department_id"]'));
@@ -309,11 +384,19 @@ App.register('hr-employees', async (view) => {
         onConfirm: async (ov, showErr) => {
           const name = ov.querySelector('[data-f="name"]').value.trim();
           if (!name) { showErr('Employee name is required'); return false; }
+          const employeeNo = ov.querySelector('[data-f="employee_no"]').value.trim();
+          if (!employeeNo) { showErr('Employee number is required'); return false; }
+          const rateTypeVal = ov.querySelector('[data-f="rate_type"]').value;
+          const rateAmountVal = Number(ov.querySelector('[data-f="rate_amount"]').value) || 0;
+          if (rateTypeVal === 'monthly' && rateAmountVal <= 0) { showErr('Monthly rate is required'); return false; }
           const body = {
+            employee_no: employeeNo,
             name,
             department_id: ov.querySelector('[data-f="department_id"]').value || null,
             position: ov.querySelector('[data-f="position"]').value.trim(),
-            daily_rate: Number(ov.querySelector('[data-f="daily_rate"]').value) || 0,
+            rate_type: rateTypeVal,
+            daily_rate: rateTypeVal === 'daily' ? rateAmountVal : 0,
+            monthly_rate: rateTypeVal === 'monthly' ? rateAmountVal : null,
             status: ov.querySelector('[data-f="status"]').value,
             start_date: ov.querySelector('[data-f="start_date"]').value,
             sss_no: ov.querySelector('[data-f="sss_no"]').value.trim(),
@@ -328,6 +411,75 @@ App.register('hr-employees', async (view) => {
           load();
         },
       });
+    });
+  }
+
+  /* ---------- Employee-number format settings (admin-configured, purely a suggestion) ---------- */
+  async function numberSettingsModal() {
+    const policy = await API.get('/hr/employee-number-policy').catch(() => null);
+
+    UI.modal({
+      title: 'Employee Numbering Format',
+      bodyHTML: `
+        <p class="muted" style="font-size:13px;margin-top:0">
+          Shapes the RECOMMENDED number offered when adding a new employee — the field itself
+          always stays editable, so the company can still type its own number instead.
+        </p>
+        <div class="field-row">
+          <div><label>Prefix</label><input data-p="prefix" maxlength="20" placeholder="e.g. EMP (optional)" /></div>
+          <div><label>Numbering</label><select data-p="mode">
+            <option value="sequential">Increasing number</option>
+            <option value="hire_date">Based on hire date</option>
+          </select></div>
+        </div>
+        <div class="field-row" style="margin-top:10px">
+          <div><label>Digits (zero-padded)</label><input data-p="pad" type="number" min="1" max="8" /></div>
+          <div data-date-fmt-row><label>Hire date format</label><select data-p="date_format">
+            <option value="YYYYMMDD">YYYYMMDD (e.g. 20260827)</option>
+            <option value="YYMMDD">YYMMDD (e.g. 260827)</option>
+          </select></div>
+        </div>
+        <p class="muted" style="font-size:12px" id="emp-no-preview"></p>
+        <button type="button" class="btn" id="emp-no-save" style="margin-top:6px">${UI.icon('sheet', 14)} Save</button>`,
+      cancelText: 'Close',
+      onOpen: (ov) => {
+        const p = (k) => ov.querySelector(`[data-p="${k}"]`);
+        if (policy) {
+          p('prefix').value = policy.prefix;
+          p('mode').value = policy.mode;
+          p('pad').value = policy.pad;
+          p('date_format').value = policy.date_format;
+        }
+        const dateFmtRow = ov.querySelector('[data-date-fmt-row]');
+        const preview = ov.querySelector('#emp-no-preview');
+        function currentPolicy() {
+          return {
+            prefix: p('prefix').value.trim(),
+            mode: p('mode').value,
+            pad: Number(p('pad').value) || 5,
+            date_format: p('date_format').value,
+          };
+        }
+        function updatePreview() {
+          const pol = currentPolicy();
+          dateFmtRow.style.display = pol.mode === 'hire_date' ? '' : 'none';
+          const padded = String(1).padStart(pol.pad, '0');
+          preview.textContent = pol.mode === 'hire_date'
+            ? `Example: ${pol.prefix}20260827-${padded} (second same-day hire becomes -${String(2).padStart(pol.pad, '0')})`
+            : `Example: ${pol.prefix ? pol.prefix + '-' : ''}${padded}`;
+        }
+        ['prefix', 'mode', 'pad', 'date_format'].forEach((k) => p(k).addEventListener('input', updatePreview));
+        updatePreview();
+
+        ov.querySelector('#emp-no-save').onclick = async () => {
+          try {
+            await API.put('/hr/employee-number-policy', currentPolicy());
+            UI.toast('Numbering format saved');
+          } catch (e) {
+            UI.toast(e.message, 'error');
+          }
+        };
+      },
     });
   }
 
@@ -422,6 +574,8 @@ App.register('hr-employees', async (view) => {
   view.querySelector('#emp-status-filter').addEventListener('change', (e) => { state.status = e.target.value; load(); });
   const newBtn = view.querySelector('#emp-new');
   if (newBtn) newBtn.addEventListener('click', () => employeeModal(null));
+  const noSettingsBtn = view.querySelector('#emp-no-settings');
+  if (noSettingsBtn) noSettingsBtn.addEventListener('click', () => numberSettingsModal());
 
   await load();
 });

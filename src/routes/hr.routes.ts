@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
-import { db, queryOne, queryAll, run, nextSequence, UPLOAD_DIR } from '../db';
+import { db, queryOne, queryAll, run, nextSequence, UPLOAD_DIR, getSetting, setSetting } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody,
@@ -15,9 +15,15 @@ import {
   attendancePeriodSchema,
   saveAttendanceSchema,
   addRosterEmployeeSchema,
+  addRosterEmployeesBulkSchema,
   generatePayslipsSchema,
+  shiftSchema,
+  payrollPolicySchema,
+  employeeNumberPolicySchema,
 } from '../validation';
-import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord } from '../types';
+import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord, Shift, PayrollPolicy, EmployeeNumberPolicy } from '../types';
+import { computeAttendanceForEmployee, type AttendanceDay } from '../hr-payroll-compute';
+import { suggestEmployeeNumber } from '../hr-employee-numbering';
 
 const router = Router();
 router.use(requireAuth);
@@ -52,10 +58,37 @@ function ensureRosterDays(periodId: number, employeeId: number, start: string, e
 
 // ─── Employees ──────────────────────────────────────────────────────────────
 
-/** Next employee number, e.g. EMP-00001 (counter in settings). */
-function nextEmployeeNumber(): string {
-  return nextSequence('employee_seq', 'EMP');
+const DEFAULT_EMP_NO_POLICY: EmployeeNumberPolicy = {
+  prefix: 'EMP', mode: 'sequential', pad: 5, date_format: 'YYYYMMDD',
+};
+
+function currentEmpNoPolicy(): EmployeeNumberPolicy {
+  return { ...DEFAULT_EMP_NO_POLICY, ...(getSetting<Partial<EmployeeNumberPolicy>>('employee_no_policy') || {}) };
 }
+
+// GET /api/hr/employee-number-policy
+router.get('/employee-number-policy', requirePermission('hr.view'), (_req, res) => {
+  res.json(currentEmpNoPolicy());
+});
+
+// PUT /api/hr/employee-number-policy
+router.put('/employee-number-policy', requirePermission('hr.manage'), (req, res) => {
+  const input = parseBody(employeeNumberPolicySchema, req.body);
+  setSetting('employee_no_policy', input);
+  res.json(input);
+});
+
+// GET /api/hr/employees/suggest-number?start_date=YYYY-MM-DD — a RECOMMENDATION only, computed
+// fresh from current data each call (no counter reserved/mutated), since employee_no is a plain
+// editable field and the caller is free to ignore this and type their own.
+router.get('/employees/suggest-number', requirePermission('hr.view'), (req, res) => {
+  const startDate = typeof req.query.start_date === 'string' && req.query.start_date.trim()
+    ? req.query.start_date.trim()
+    : new Date().toISOString().slice(0, 10);
+  const existing = queryAll<{ employee_no: string | null }>('SELECT employee_no FROM employees')
+    .map((r) => r.employee_no).filter((n): n is string => !!n);
+  res.json({ employee_no: suggestEmployeeNumber(existing, currentEmpNoPolicy(), startDate) });
+});
 
 // GET /api/hr/employees?q=&department_id=&status=
 router.get('/employees', requirePermission('hr.view'), (req, res) => {
@@ -72,8 +105,10 @@ router.get('/employees', requirePermission('hr.view'), (req, res) => {
     where.push('e.status = ?'); params.push(status.trim());
   }
   const rows = queryAll<Employee>(
-    `SELECT e.*, d.name AS department_name
-     FROM employees e LEFT JOIN departments d ON d.id = e.department_id
+    `SELECT e.*, d.name AS department_name, u.username AS linked_username, u.full_name AS linked_full_name
+     FROM employees e
+     LEFT JOIN departments d ON d.id = e.department_id
+     LEFT JOIN users u ON u.id = e.user_id
      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY e.name`,
     ...params
@@ -81,15 +116,43 @@ router.get('/employees', requirePermission('hr.view'), (req, res) => {
   res.json(rows);
 });
 
+// Resolves the effective daily_rate to store: the entered value for rate_type 'daily', or
+// monthly_rate / policy.monthly_rate_divisor for 'monthly' — computed once here so every other
+// consumer (payroll compute, payslip generation) can keep reading daily_rate unchanged.
+function effectiveDailyRate(input: { rate_type: 'daily' | 'monthly'; daily_rate: number; monthly_rate?: number | null }): number {
+  if (input.rate_type !== 'monthly') return input.daily_rate;
+  const divisor = currentPolicy().monthly_rate_divisor;
+  return round2((input.monthly_rate || 0) / divisor);
+}
+
+// Validates a to-be-linked user_id: must exist, and must not already be linked to a DIFFERENT
+// employee (the partial unique index would also catch this, but a named 409 beats a raw
+// constraint-violation error). excludeEmployeeId lets an employee keep its own existing link
+// when re-saving unrelated fields (PUT), and is omitted entirely on create.
+function checkLinkedUser(userId: number | null, excludeEmployeeId?: number): string | null {
+  if (userId == null) return null;
+  if (!queryOne('SELECT id FROM users WHERE id = ?', userId)) return 'Linked account not found';
+  const clash = excludeEmployeeId != null
+    ? queryOne<{ name: string }>('SELECT name FROM employees WHERE user_id = ? AND id != ?', userId, excludeEmployeeId)
+    : queryOne<{ name: string }>('SELECT name FROM employees WHERE user_id = ?', userId);
+  return clash ? `That account is already linked to ${clash.name}` : null;
+}
+
 // POST /api/hr/employees
 router.post('/employees', requirePermission('hr.manage'), (req, res) => {
   const input = parseBody(employeeSchema, req.body);
+  if (queryOne('SELECT id FROM employees WHERE employee_no = ?', input.employee_no)) {
+    res.status(409).json({ error: `Employee number "${input.employee_no}" is already in use` }); return;
+  }
+  const linkErr = checkLinkedUser(input.user_id);
+  if (linkErr) { res.status(409).json({ error: linkErr }); return; }
   const info = run(
     `INSERT INTO employees
-      (employee_no, name, department_id, position, daily_rate, status, start_date,
+      (employee_no, name, department_id, position, user_id, daily_rate, rate_type, monthly_rate, status, start_date,
        sss_no, philhealth_no, pagibig_no, tin_no, photo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    nextEmployeeNumber(), input.name, input.department_id, input.position ?? null, input.daily_rate,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input),
+    input.rate_type, input.rate_type === 'monthly' ? input.monthly_rate : null,
     input.status, input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
     input.pagibig_no ?? null, input.tin_no ?? null, input.photo ?? null
   );
@@ -103,11 +166,18 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
     res.status(404).json({ error: 'Employee not found' }); return;
   }
   const input = parseBody(employeeSchema, req.body);
+  const dup = queryOne<{ id: number }>('SELECT id FROM employees WHERE employee_no = ? AND id != ?', input.employee_no, id);
+  if (dup) {
+    res.status(409).json({ error: `Employee number "${input.employee_no}" is already in use` }); return;
+  }
+  const linkErr = checkLinkedUser(input.user_id, id);
+  if (linkErr) { res.status(409).json({ error: linkErr }); return; }
   run(
-    `UPDATE employees SET name = ?, department_id = ?, position = ?, daily_rate = ?, status = ?,
-       start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?, photo = ?
+    `UPDATE employees SET employee_no = ?, name = ?, department_id = ?, position = ?, user_id = ?, daily_rate = ?, rate_type = ?,
+       monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?, photo = ?
      WHERE id = ?`,
-    input.name, input.department_id, input.position ?? null, input.daily_rate, input.status,
+    input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input), input.rate_type,
+    input.rate_type === 'monthly' ? input.monthly_rate : null, input.status,
     input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
     input.pagibig_no ?? null, input.tin_no ?? null, input.photo ?? null, id
   );
@@ -188,6 +258,72 @@ router.delete('/employees/:id/documents/:docId', requirePermission('hr.manage'),
   res.json({ ok: true });
 });
 
+// ─── Shifts (named, assignable per attendance day — this is how rotating shifts are handled:
+// a day just points at whichever shift applied that day, not a fixed per-employee schedule) ────
+
+// GET /api/hr/shifts
+router.get('/shifts', requirePermission('hr.view'), (_req, res) => {
+  const rows = queryAll<Omit<Shift, 'is_default'> & { is_default: number }>('SELECT * FROM shifts ORDER BY start_time');
+  res.json(rows.map((r) => ({ ...r, is_default: !!r.is_default })));
+});
+
+// POST /api/hr/shifts
+router.post('/shifts', requirePermission('hr.manage'), (req, res) => {
+  const input = parseBody(shiftSchema, req.body);
+  if (input.is_default) run('UPDATE shifts SET is_default = 0');
+  const info = run(
+    'INSERT INTO shifts (name, start_time, end_time, is_default) VALUES (?, ?, ?, ?)',
+    input.name, input.start_time, input.end_time, input.is_default ? 1 : 0
+  );
+  res.status(201).json({ id: info.lastInsertRowid });
+});
+
+// PUT /api/hr/shifts/:id
+router.put('/shifts/:id', requirePermission('hr.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM shifts WHERE id = ?', id)) { res.status(404).json({ error: 'Shift not found' }); return; }
+  const input = parseBody(shiftSchema, req.body);
+  if (input.is_default) run('UPDATE shifts SET is_default = 0');
+  run(
+    'UPDATE shifts SET name = ?, start_time = ?, end_time = ?, is_default = ? WHERE id = ?',
+    input.name, input.start_time, input.end_time, input.is_default ? 1 : 0, id
+  );
+  res.json({ ok: true });
+});
+
+// DELETE /api/hr/shifts/:id — attendance rows / employees.default_shift_id referencing it are
+// gracefully un-linked (ON DELETE SET NULL), not blocked.
+router.delete('/shifts/:id', requirePermission('hr.manage'), (req, res) => {
+  const info = run('DELETE FROM shifts WHERE id = ?', Number(req.params.id));
+  if (info.changes === 0) { res.status(404).json({ error: 'Shift not found' }); return; }
+  res.json({ ok: true });
+});
+
+// ─── Payroll policy (company-wide rules — grace period, late/OT rounding, OT %, night diff;
+// *when* a shift runs lives in the shifts table above, this is the *rules* for judging it) ──────
+
+const DEFAULT_POLICY: PayrollPolicy = {
+  grace_minutes: 10, late_unit: 'hour', ot_unit: 'hour', ot_rate_percent: 125,
+  night_diff_enabled: false, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
+  monthly_rate_divisor: 26,
+};
+
+function currentPolicy(): PayrollPolicy {
+  return { ...DEFAULT_POLICY, ...(getSetting<Partial<PayrollPolicy>>('payroll_policy') || {}) };
+}
+
+// GET /api/hr/payroll-policy
+router.get('/payroll-policy', requirePermission('hr.view'), (_req, res) => {
+  res.json(currentPolicy());
+});
+
+// PUT /api/hr/payroll-policy
+router.put('/payroll-policy', requirePermission('hr.manage'), (req, res) => {
+  const input = parseBody(payrollPolicySchema, req.body);
+  setSetting('payroll_policy', input);
+  res.json(input);
+});
+
 // ─── Cutoff periods ─────────────────────────────────────────────────────────
 
 // GET /api/hr/periods
@@ -207,7 +343,8 @@ router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', id);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
   const roster = queryAll(
-    `SELECT e.id AS employee_id, e.name, e.position, e.daily_rate, d.name AS department_name,
+    `SELECT e.id AS employee_id, e.name, e.position, e.daily_rate, e.default_shift_id,
+       e.department_id, d.name AS department_name, e.status,
        COUNT(*) AS days_total,
        SUM(CASE WHEN ar.time_in IS NOT NULL AND ar.time_in != '' THEN 1 ELSE 0 END) AS days_logged
      FROM attendance_records ar
@@ -280,6 +417,39 @@ router.post('/periods/:id/employees', requirePermission('hr.manage'), (req, res)
   res.status(201).json({ ok: true });
 });
 
+// POST /api/hr/periods/:id/employees/bulk — add many employees at once: either an explicit
+// employee_ids list (checkbox multi-select) or a department/status/name filter ("Add All"),
+// resolved server-side so it always reflects the true matching set. Idempotent per employee
+// (ensureRosterDays uses INSERT OR IGNORE), so re-adding someone already on the roster is a no-op.
+router.post('/periods/:id/employees/bulk', requirePermission('hr.manage'), (req, res) => {
+  const periodId = Number(req.params.id);
+  const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
+  if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
+  const input = parseBody(addRosterEmployeesBulkSchema, req.body);
+
+  let ids: number[];
+  if (input.employee_ids && input.employee_ids.length) {
+    ids = input.employee_ids;
+  } else {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (input.department_id != null) { where.push('department_id = ?'); params.push(input.department_id); }
+    if (input.status) { where.push('status = ?'); params.push(input.status); }
+    if (input.q) { where.push('name LIKE ?'); params.push(`%${input.q}%`); }
+    ids = queryAll<{ id: number }>(
+      `SELECT id FROM employees ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`,
+      ...params
+    ).map((r) => r.id);
+  }
+  const already = new Set(
+    queryAll<{ employee_id: number }>('SELECT DISTINCT employee_id FROM attendance_records WHERE period_id = ?', periodId)
+      .map((r) => r.employee_id)
+  );
+  const newlyAdded = ids.filter((id) => !already.has(id)).length;
+  for (const id of ids) ensureRosterDays(periodId, id, period.start_date, period.end_date);
+  res.status(201).json({ added: newlyAdded, matched: ids.length });
+});
+
 // DELETE /api/hr/periods/:id/employees/:employeeId — remove an employee from the roster
 router.delete('/periods/:id/employees/:employeeId', requirePermission('hr.manage'), (req, res) => {
   const info = run(
@@ -316,11 +486,14 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res)
   try {
     run('DELETE FROM attendance_records WHERE period_id = ? AND employee_id = ?', periodId, input.employee_id);
     const insert = db.prepare(
-      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes, shift_id, form_record_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const d of input.days) {
-      insert.run(periodId, input.employee_id, d.work_date, d.time_in || null, d.time_out || null, d.notes || null);
+      insert.run(
+        periodId, input.employee_id, d.work_date, d.time_in || null, d.time_out || null, d.notes || null,
+        d.shift_id || null, d.form_record_id || null
+      );
     }
     db.exec('COMMIT');
     res.json({ ok: true });
@@ -331,6 +504,10 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res)
 });
 
 // ─── Generate payslips ──────────────────────────────────────────────────────
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 // POST /api/hr/periods/:id/generate-payslips
 router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (req, res) => {
@@ -353,6 +530,22 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
   );
   if (!roster.length) { res.status(400).json({ error: 'This cutoff has no employees yet' }); return; }
 
+  const policy = currentPolicy();
+
+  // Company-wide "No Work Memo" records (form slug 'no_work_memo') — resolved once, not per
+  // employee, since these apply to everyone automatically with no per-day linking required.
+  const noWorkForm = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'no_work_memo'");
+  const noWorkMemos = noWorkForm
+    ? queryAll<FormRecord>('SELECT data FROM form_records WHERE form_def_id = ?', noWorkForm.id)
+        .map((r) => { try { return JSON.parse(r.data as string); } catch { return null; } })
+        .filter((d): d is { date_from: string; date_to: string; paid: string } => !!d && !!d.date_from && !!d.date_to)
+    : [];
+  function noWorkFor(workDate: string): 'paid' | 'unpaid' | null {
+    const memo = noWorkMemos.find((m) => workDate >= m.date_from && workDate <= m.date_to);
+    if (!memo) return null;
+    return memo.paid === 'Yes' ? 'paid' : 'unpaid';
+  }
+
   let created = 0;
   let updated = 0;
   db.exec('BEGIN');
@@ -364,6 +557,37 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, total_earnings: 0,
         sss: 0, philhealth: 0, pagibig: 0, cash_advance: 0, late_absences: 0, total_deductions: 0, net_pay: 0,
       };
+
+      // Attendance + whatever OT/Half Day/Leave/Undertime/Offset form (and its resolved shift)
+      // is linked to each day — the compute engine itself never touches the DB, this is exactly
+      // the resolution step src/hr-payroll-compute.ts expects its caller to do.
+      const attendanceRows = queryAll<{
+        work_date: string; time_in: string | null; time_out: string | null;
+        shift_start: string | null; shift_end: string | null;
+        fr_data: string | null; fd_slug: string | null;
+      }>(
+        `SELECT ar.work_date, ar.time_in, ar.time_out,
+           s.start_time AS shift_start, s.end_time AS shift_end,
+           fr.data AS fr_data, fd.slug AS fd_slug
+         FROM attendance_records ar
+         LEFT JOIN shifts s ON s.id = ar.shift_id
+         LEFT JOIN form_records fr ON fr.id = ar.form_record_id
+         LEFT JOIN form_definitions fd ON fd.id = fr.form_def_id
+         WHERE ar.period_id = ? AND ar.employee_id = ?
+         ORDER BY ar.work_date`,
+        periodId, emp.employee_id
+      );
+      const attendanceDays: AttendanceDay[] = attendanceRows.map((r) => ({
+        work_date: r.work_date,
+        time_in: r.time_in,
+        time_out: r.time_out,
+        shift: r.shift_start && r.shift_end ? { start_time: r.shift_start, end_time: r.shift_end } : null,
+        linkedForm: r.fd_slug ? { slug: r.fd_slug, data: JSON.parse(r.fr_data || '{}') } : null,
+        noWork: noWorkFor(r.work_date),
+      }));
+      const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy);
+      const basicSalary = emp.daily_rate * computed.days_worked;
+
       const existing = queryAll<FormRecord>(
         `SELECT * FROM form_records WHERE form_def_id = ? AND period = ?`,
         form.id, payrollPeriod
@@ -371,26 +595,50 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         try { return (JSON.parse(r.data as string).employee_name ?? '') === emp.name; }
         catch { return false; }
       });
+      // Regenerating recomputes every attendance-derived field fresh — that's the point of
+      // "generate payslips" (pick up the latest attendance/link edits) — but purely-manual
+      // fields with no computed source (statutory deductions, cash advance, rest-day OT, the
+      // OT peso rate, and the final net pay) are carried over from a previous generation rather
+      // than reset to zero, same as the un-computed fields always did before this feature.
+      const prevManual = existing ? (() => {
+        try {
+          const prev = JSON.parse(existing.data as string);
+          return {
+            sss: prev.sss, philhealth: prev.philhealth, pagibig: prev.pagibig,
+            cash_advance: prev.cash_advance, rest_day_ot: prev.rest_day_ot,
+            ot_rate_hour: prev.ot_rate_hour, total_deductions: prev.total_deductions,
+            net_pay: prev.net_pay, pay_date: prev.pay_date,
+          };
+        } catch { return {}; }
+      })() : {};
+
+      const data = {
+        ...zeros,
+        ...prevManual,
+        employee_name: emp.name, dept_position: deptPosition,
+        payroll_period: payrollPeriod, pay_date: input.pay_date || (prevManual as { pay_date?: string }).pay_date || '',
+        daily_rate: emp.daily_rate,
+        days_worked: computed.days_worked,
+        ot_hours: computed.ot_hours,
+        overtime_pay: round2(computed.overtime_pay),
+        undertime_pay: round2(computed.undertime_pay),
+        holiday_pay: round2(computed.holiday_pay),
+        special_holiday_30: round2(computed.special_holiday_30),
+        late_absences: round2(computed.late_deduction),
+        basic_salary: round2(basicSalary),
+        total_earnings: round2(
+          basicSalary + computed.overtime_pay + computed.undertime_pay
+          + computed.holiday_pay + computed.special_holiday_30
+          + (Number((prevManual as { rest_day_ot?: number }).rest_day_ot) || 0)
+        ),
+      };
 
       if (existing) {
-        const prev = JSON.parse(existing.data as string);
-        const data = {
-          ...zeros, ...prev,
-          employee_name: emp.name, dept_position: deptPosition,
-          payroll_period: payrollPeriod, pay_date: input.pay_date || prev.pay_date || '',
-          daily_rate: emp.daily_rate,
-        };
         run(`UPDATE form_records SET data = ?, updated_at = datetime('now') WHERE id = ?`,
           JSON.stringify(data), existing.id);
         updated++;
       } else {
         const number = nextSequence(`form_seq_${form.id}`, form.number_prefix);
-        const data = {
-          ...zeros,
-          employee_name: emp.name, dept_position: deptPosition,
-          payroll_period: payrollPeriod, pay_date: input.pay_date || '',
-          daily_rate: emp.daily_rate,
-        };
         run(
           `INSERT INTO form_records (form_def_id, number, data, status, period, created_by)
            VALUES (?, ?, ?, 'draft', ?, ?)`,

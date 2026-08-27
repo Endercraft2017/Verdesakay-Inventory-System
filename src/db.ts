@@ -271,6 +271,14 @@ export function init(): void {
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS shifts (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time   TEXT NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS attendance_periods (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       label      TEXT NOT NULL,
@@ -482,6 +490,47 @@ function migrate(): void {
       setSetting('employee_seq', maxId);
     }
   }
+
+  // Optional per-day shift assignment (covers rotating shifts — a day just points at whichever
+  // shift applied that day) and an optional reference link to the OT/Half Day/Leave/Undertime/
+  // Offset form record backing that day, both ON DELETE SET NULL (deleting a shift or a form
+  // record gracefully un-links rather than blocking, same pattern as form_definitions.template_id).
+  const arCols = db.prepare('PRAGMA table_info(attendance_records)').all() as { name: string }[];
+  if (!arCols.some((c) => c.name === 'shift_id')) {
+    db.exec('ALTER TABLE attendance_records ADD COLUMN shift_id INTEGER REFERENCES shifts(id) ON DELETE SET NULL');
+  }
+  if (!arCols.some((c) => c.name === 'form_record_id')) {
+    db.exec('ALTER TABLE attendance_records ADD COLUMN form_record_id INTEGER REFERENCES form_records(id) ON DELETE SET NULL');
+  }
+
+  // An employee's *usual* shift — purely a UI pre-fill for new attendance days, never enforced,
+  // so a rotating employee can still be assigned a different shift on any given day.
+  const empCols2 = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
+  if (!empCols2.some((c) => c.name === 'default_shift_id')) {
+    db.exec('ALTER TABLE employees ADD COLUMN default_shift_id INTEGER REFERENCES shifts(id) ON DELETE SET NULL');
+  }
+
+  // Rate can be entered as a true daily rate or as a monthly salary; when monthly, daily_rate is
+  // kept as the always-correct EFFECTIVE daily rate (computed at save time from monthly_rate /
+  // payroll_policy.monthly_rate_divisor) so the payroll engine downstream never has to care which
+  // way it was entered — it just reads daily_rate like it always has.
+  const empCols3 = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
+  if (!empCols3.some((c) => c.name === 'rate_type')) {
+    db.exec("ALTER TABLE employees ADD COLUMN rate_type TEXT NOT NULL DEFAULT 'daily'");
+  }
+  if (!empCols3.some((c) => c.name === 'monthly_rate')) {
+    db.exec('ALTER TABLE employees ADD COLUMN monthly_rate REAL');
+  }
+
+  // Optional link from an HR employee record to the login account they use — lets an employee's
+  // 201-file data and their user account be traced to each other. A partial unique index (rather
+  // than a UNIQUE column, which SQLite's ADD COLUMN can't express directly) keeps the 1:1
+  // relationship enforced at the DB level while still allowing any number of unlinked (NULL) rows.
+  const empCols4 = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
+  if (!empCols4.some((c) => c.name === 'user_id')) {
+    db.exec('ALTER TABLE employees ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_user_id ON employees(user_id) WHERE user_id IS NOT NULL');
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
@@ -556,13 +605,27 @@ function seed(): void {
     what an admin would build via Form Builder) — needed so Time Keeping's "Generate
     Payslips" always has a target form, even on a fresh install. */
 function seedHrPayrollForm(): void {
-  if (db.prepare("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'").get()) return;
+  const existing = db.prepare("SELECT id, fields FROM form_definitions WHERE slug = 'hr_payroll'").get() as
+    { id: number; fields: string } | undefined;
+  if (existing) {
+    // Touch up an install that already had hr_payroll seeded before employee_name became an
+    // 'employee' dropdown field, so old and new installs end up consistent either way.
+    try {
+      const fields = JSON.parse(existing.fields) as { key: string; type: string }[];
+      const nameField = fields.find((f) => f.key === 'employee_name');
+      if (nameField && nameField.type !== 'employee') {
+        nameField.type = 'employee';
+        db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
+      }
+    } catch { /* leave as-is if the stored fields are somehow unparseable */ }
+    return;
+  }
   const textField = (key: string, label: string, required = false) =>
     ({ key, label, type: 'text', required, options: [], default: '' });
   const numField = (key: string, label: string) =>
     ({ key, label, type: 'number', required: false, options: [], default: '' });
   const fields = [
-    textField('employee_name', 'Employee Name', true),
+    { key: 'employee_name', label: 'Employee Name', type: 'employee', required: true, options: [], default: '' },
     textField('dept_position', 'Dept./Position'),
     textField('payroll_period', 'Payroll Period'),
     { key: 'pay_date', label: 'Pay Date', type: 'date', required: false, options: [], default: '' },

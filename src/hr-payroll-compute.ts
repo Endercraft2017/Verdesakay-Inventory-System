@@ -1,0 +1,185 @@
+/** Pure payroll computation from one employee's attendance days + whatever HR forms (OT/Half
+    Day/Leave/Undertime/Offset) are optionally linked to each day + any company-wide No Work
+    Memo covering that date + the company's payroll policy. No DB access here — the caller
+    (src/routes/hr.routes.ts) resolves shift_id -> {start_time, end_time}, form_record_id ->
+    {slug, data}, and work_date -> a matching No Work Memo (if any) first, mirroring how
+    src/hr-payroll-import.ts keeps its own parsing logic free of DB access so it stays
+    independently unit-testable. */
+import type { PayrollPolicy } from './types';
+
+export interface AttendanceDay {
+  work_date: string;
+  time_in: string | null;  // "HH:MM"
+  time_out: string | null; // "HH:MM"
+  shift: { start_time: string; end_time: string } | null;
+  linkedForm: { slug: string; data: Record<string, unknown> } | null;
+  // Company-wide "No Work Memo" covering this date (unrelated to linkedForm — that's a form an
+  // individual employee is linked to; this is a blanket declaration that applies automatically
+  // to everyone, no per-employee linking needed). Omitted/null = no memo covers this date.
+  noWork?: 'paid' | 'unpaid' | null;
+}
+
+export interface AttendanceComputation {
+  days_worked: number;
+  late_deduction: number;
+  ot_hours: number;
+  overtime_pay: number;
+  undertime_pay: number; // negative — matches the existing "Undertime" earnings-line convention
+  holiday_pay: number;
+  special_holiday_30: number;
+}
+
+const DAY_MIN = 24 * 60;
+
+/** "HH:MM" -> minutes since 00:00. Anything unparseable is treated as absent/unknown. */
+function toMinutes(t: string | null | undefined): number | null {
+  if (!t) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t).trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  if (h > 23 || mm > 59) return null;
+  return h * 60 + mm;
+}
+
+function unitMinutesFor(unit: 'minute' | '30min' | 'hour'): number {
+  return unit === 'hour' ? 60 : unit === '30min' ? 30 : 1;
+}
+
+/** Round `minutes` UP to the nearest `unitMinutes` block — confirmed convention: any partial
+    block counts as a full block, in both directions (against the employee for lateness/
+    undertime, in their favor for OT). 0 or negative stays 0. */
+function roundUpToUnit(minutes: number, unitMinutes: number): number {
+  if (minutes <= 0) return 0;
+  return Math.ceil(minutes / unitMinutes) * unitMinutes;
+}
+
+/** Overlap (in minutes) between the span [fromMin, toMin) — wall-clock minutes, `toMin` may
+    exceed 1440 if the span crosses midnight — and the night-differential window [nightStart,
+    nightEnd), which may itself wrap midnight (e.g. 22:00-06:00). Checks both the window's
+    "today" and "tomorrow" instance so a span crossing midnight is still caught. */
+function nightOverlapMinutes(fromMin: number, toMin: number, nightStart: number, nightEnd: number): number {
+  if (toMin <= fromMin) return 0;
+  const base: Array<[number, number]> = nightStart <= nightEnd
+    ? [[nightStart, nightEnd]]
+    : [[nightStart, DAY_MIN], [0, nightEnd]];
+  const windows = [...base, ...base.map(([s, e]): [number, number] => [s + DAY_MIN, e + DAY_MIN])];
+  let total = 0;
+  for (const [ws, we] of windows) {
+    const overlap = Math.min(toMin, we) - Math.max(fromMin, ws);
+    if (overlap > 0) total += overlap;
+  }
+  return total;
+}
+
+const ZERO: AttendanceComputation = {
+  days_worked: 0, late_deduction: 0, ot_hours: 0, overtime_pay: 0,
+  undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0,
+};
+
+export function computeAttendanceForEmployee(
+  days: AttendanceDay[],
+  dailyRate: number,
+  policy: PayrollPolicy
+): AttendanceComputation {
+  const hourlyRate = dailyRate / 8;
+  const out: AttendanceComputation = { ...ZERO };
+  const nightStart = toMinutes(policy.night_start) ?? 0;
+  const nightEnd = toMinutes(policy.night_end) ?? 0;
+
+  for (const day of days) {
+    const slug = day.linkedForm?.slug;
+    const timeIn = toMinutes(day.time_in);
+    const timeOut = toMinutes(day.time_out);
+
+    if (timeIn == null || timeOut == null) {
+      // No usable time logged. In order of precedence: a linked, paid Leave form makes it a
+      // full paid day; otherwise a company-wide "No Work Memo" covering this date (management
+      // declared no work — a typhoon suspension, equipment failure, etc.) means it's automatically
+      // *not* counted as an absence at all, regardless of whether the employee filed anything —
+      // paid if the memo says so, contributing nothing either way if unpaid (same as a plain
+      // absence numerically, but distinguished here for anyone reading/extending this later:
+      // it was an excused, management-declared non-workday, not an unexplained no-show).
+      // Otherwise it's a genuine unpaid absence and contributes nothing.
+      if (slug === 'leave_request' && day.linkedForm?.data?.with_pay === 'Yes') {
+        out.days_worked += 1;
+      } else if (day.noWork === 'paid') {
+        out.days_worked += 1;
+      }
+      continue;
+    }
+
+    out.days_worked += slug === 'halfday_request' ? 0.5 : 1;
+    if (!day.shift) continue; // no shift assigned -> nothing to judge late/OT/undertime against
+
+    const shiftStart = toMinutes(day.shift.start_time);
+    let shiftEnd = toMinutes(day.shift.end_time);
+    if (shiftStart == null || shiftEnd == null) continue;
+    const overnight = shiftEnd < shiftStart;
+    if (overnight) shiftEnd += DAY_MIN; // e.g. 22:00-06:00 -> end normalized to 30:00
+
+    // Put every clock reading on the SAME continuous timeline as shiftStart, so a shift that
+    // wraps midnight doesn't break the arithmetic below — a raw reading earlier than shiftStart
+    // is treated as having happened after midnight, i.e. "later" on this timeline, not earlier.
+    const relTo = (min: number) => (overnight && min < shiftStart ? min + DAY_MIN : min);
+    const timeInRel = relTo(timeIn);
+    const timeOutRel = relTo(timeOut);
+
+    // An Offset form shifts this day's expected time-out (e.g. arrived late, agreed to leave
+    // later instead) — the effective end used for both the OT and undertime checks below.
+    let effectiveEnd = shiftEnd;
+    if (slug === 'offset_form') {
+      const offsetEndRaw = toMinutes(day.linkedForm?.data?.new_time_out as string | undefined);
+      if (offsetEndRaw != null) effectiveEnd = relTo(offsetEndRaw);
+    }
+
+    // Late arrival: grace is a threshold, not a subtracted buffer while under it — but once
+    // exceeded, only the minutes *past* grace are rounded to a block (confirmed: 125 min late
+    // with a 10 min grace and a 1-hour block -> 115 min past grace -> rounds up to 2 hours, not
+    // 3 — rounding the full 125 raw minutes would over-penalize).
+    const lateRaw = timeInRel - shiftStart;
+    if (lateRaw > policy.grace_minutes) {
+      const pastGrace = lateRaw - policy.grace_minutes;
+      const lateBlocked = roundUpToUnit(pastGrace, unitMinutesFor(policy.late_unit));
+      out.late_deduction += (lateBlocked / 60) * hourlyRate;
+    }
+
+    if (slug === 'overtime_request') {
+      // OT is only credited when authorized by a linked Overtime form — a raw late clock-out by
+      // itself isn't auto-paid overtime.
+      const otRaw = timeOutRel - effectiveEnd;
+      if (otRaw > 0) {
+        const otBlocked = roundUpToUnit(otRaw, unitMinutesFor(policy.ot_unit));
+        const otHours = otBlocked / 60;
+        out.ot_hours += otHours;
+        let pay = otHours * hourlyRate * (policy.ot_rate_percent / 100);
+        if (policy.night_diff_enabled) {
+          // Convert back to wall-clock (mod 24h) for the night-window check — effectiveEnd/
+          // timeOutRel may be on the shift's extended "past midnight" timeline.
+          const wallStart = effectiveEnd % DAY_MIN;
+          const nightMin = nightOverlapMinutes(wallStart, wallStart + otRaw, nightStart, nightEnd);
+          pay += (nightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
+        }
+        out.overtime_pay += pay;
+      }
+    } else if (timeOutRel < effectiveEnd) {
+      // Left before the expected end with nothing (like an Offset form) covering it.
+      const shortRaw = effectiveEnd - timeOutRel;
+      const shortBlocked = roundUpToUnit(shortRaw, unitMinutesFor(policy.late_unit));
+      out.undertime_pay -= (shortBlocked / 60) * hourlyRate;
+    }
+
+    if (slug === 'holiday_work_request') {
+      const hours = Number(day.linkedForm?.data?.hours_worked) || 0;
+      const isRegular = day.linkedForm?.data?.holiday_type === 'Regular Holiday';
+      // PH convention: the linked form's hours already earned basic pay via days_worked/basic_
+      // salary above — this is just the *additional* premium on top (100% for Regular Holiday,
+      // 30% for Special Non-Working — the latter is why the field is literally named "...30").
+      const premium = hours * hourlyRate * (isRegular ? 1.0 : 0.3);
+      if (isRegular) out.holiday_pay += premium;
+      else out.special_holiday_30 += premium;
+    }
+  }
+
+  return out;
+}

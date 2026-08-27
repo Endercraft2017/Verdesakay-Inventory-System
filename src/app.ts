@@ -67,10 +67,59 @@ export function createApp() {
     res.json({ ok: true, time: new Date().toISOString() });
   });
 
-  // Static frontend + SPA fallback.
-  app.use(express.static(path.join(ROOT, 'public')));
-  app.get(/^(?!\/api).*/, (_req, res) => {
-    res.sendFile(path.join(ROOT, 'public', 'index.html'));
+  // Static assets (css/js/images and the mobile/* bundle). `index: false` so that
+  // "/" falls through to the SPA fallback below, where device detection runs.
+  app.use(express.static(path.join(ROOT, 'public'), { index: false }));
+
+  // SPA fallback + mobile routing.
+  //
+  //   - Phones/tablets are auto-redirected from any desktop page to the mobile
+  //     app at /m (a separate, stripped-down frontend sharing this same API).
+  //   - `?view=desktop` (or `?view=mobile`) overrides detection and is remembered
+  //     in the `vds_view` cookie, so a user can force either experience.
+  //   - Desktop browsers can still open /m directly (handy for testing); only the
+  //     mobile-first redirect is automatic.
+  const MOBILE_UA =
+    /Android|iPhone|iPod|iPad|Windows Phone|webOS|BlackBerry|Opera Mini|IEMobile|Mobile Safari/i;
+
+  function readCookie(req: Request, name: string): string | undefined {
+    const raw = req.headers.cookie;
+    if (!raw) return undefined;
+    for (const part of raw.split(';')) {
+      const eq = part.indexOf('=');
+      if (eq === -1) continue;
+      if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+    }
+    return undefined;
+  }
+
+  app.get(/^(?!\/api).*/, (req, res) => {
+    const onMobilePath = req.path === '/m' || req.path.startsWith('/m/');
+
+    // Explicit override -> persist in a cookie, then redirect to the matching root.
+    const override = typeof req.query.view === 'string' ? req.query.view : undefined;
+    if (override === 'desktop' || override === 'mobile') {
+      res.cookie('vds_view', override, {
+        maxAge: 365 * 24 * 60 * 60 * 1000,
+        sameSite: 'lax',
+        httpOnly: false,
+      });
+      res.redirect(override === 'mobile' ? '/m' : '/');
+      return;
+    }
+
+    const pref = readCookie(req, 'vds_view');
+    const wantsMobile = pref
+      ? pref === 'mobile'
+      : MOBILE_UA.test(req.headers['user-agent'] || '');
+
+    // Only auto-redirect INTO the mobile app; never force a desktop browser out of /m.
+    if (wantsMobile && !onMobilePath) {
+      res.redirect('/m');
+      return;
+    }
+
+    res.sendFile(path.join(ROOT, 'public', onMobilePath ? 'mobile/index.html' : 'index.html'));
   });
 
   // Central error handler: validation errors -> 400, anything with a numeric status is

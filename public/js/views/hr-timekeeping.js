@@ -21,9 +21,12 @@ async function renderList(view) {
     <div class="topbar">
       <h2>Time Keeping</h2>
       <div class="grow"></div>
-      <button class="btn" id="tk-new">${UI.icon('plus')} New Cutoff</button>
+      <button class="btn secondary" id="tk-policy">${UI.icon('settings')} Policy Settings</button>
+      <button class="btn" id="tk-new" style="margin-left:8px">${UI.icon('plus')} New Cutoff</button>
     </div>
     <div class="panel"><div id="tk-table"></div></div>`;
+
+  view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
 
   const tableEl = view.querySelector('#tk-table');
 
@@ -104,6 +107,151 @@ function periodModal(existing, onSaved) {
   });
 }
 
+/* ── Shift create/edit modal ──────────────────────────────────────────────── */
+function shiftModal(existing, onSaved) {
+  const editing = !!existing;
+  UI.modal({
+    title: editing ? `Edit ${existing.name}` : 'New Shift',
+    bodyHTML: `
+      <div><label>Name *</label><input data-f="name" value="${UI.esc(editing ? existing.name : '')}" placeholder="e.g. Morning" autofocus /></div>
+      <div class="field-row" style="margin-top:10px">
+        <div><label>Start time *</label><input data-f="start_time" type="time" value="${UI.esc(editing ? existing.start_time : '')}" /></div>
+        <div><label>End time *</label><input data-f="end_time" type="time" value="${UI.esc(editing ? existing.end_time : '')}" /></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">An end time earlier than the start time is treated as an overnight shift (e.g. 22:00 &rarr; 06:00).</p>
+      <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" data-f="is_default" style="width:auto" ${editing && existing.is_default ? 'checked' : ''} /> Default shift
+      </label></div>`,
+    confirmText: editing ? 'Save' : 'Create',
+    onConfirm: async (ov, showErr) => {
+      const name = ov.querySelector('[data-f="name"]').value.trim();
+      const start_time = ov.querySelector('[data-f="start_time"]').value;
+      const end_time = ov.querySelector('[data-f="end_time"]').value;
+      const is_default = ov.querySelector('[data-f="is_default"]').checked;
+      if (!name) { showErr('Shift name is required'); return false; }
+      if (!start_time || !end_time) { showErr('Start and end time are required'); return false; }
+      if (editing) await API.put('/hr/shifts/' + existing.id, { name, start_time, end_time, is_default });
+      else await API.post('/hr/shifts', { name, start_time, end_time, is_default });
+      UI.toast(editing ? 'Shift saved' : 'Shift created');
+      if (onSaved) onSaved();
+    },
+  });
+}
+
+/* ── Policy Settings: shifts list (add/edit/delete/default) + company-wide payroll rules ──── */
+async function policySettingsModal() {
+  const [shiftsInit, policy] = await Promise.all([
+    API.get('/hr/shifts').catch(() => []),
+    API.get('/hr/payroll-policy').catch(() => null),
+  ]);
+  let shifts = shiftsInit;
+
+  UI.modal({
+    title: 'Policy Settings',
+    size: 'lg',
+    bodyHTML: `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <strong>Shifts</strong>
+        <button type="button" class="btn secondary small" id="tk-shift-add">${UI.icon('plus', 14)} Add Shift</button>
+      </div>
+      <div id="tk-shifts-list"></div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">Each attendance day can be assigned one of these shifts —
+        a rotating employee just gets a different shift on different days.</p>
+      <hr style="margin:18px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
+      <strong>Payroll Rules</strong>
+      <p class="muted" style="font-size:12px;margin-top:2px">Applies uniformly across every shift — grace period,
+        rounding and OT/night-differential rules aren't set per shift.</p>
+      <div class="field-row" style="margin-top:8px">
+        <div><label>Grace period (minutes)</label><input data-p="grace_minutes" type="number" min="0" /></div>
+        <div><label>Late deduction block</label>
+          <select data-p="late_unit"><option value="minute">Per minute</option><option value="hour">Per hour</option></select></div>
+      </div>
+      <div class="field-row" style="margin-top:10px">
+        <div><label>OT credit block</label>
+          <select data-p="ot_unit"><option value="minute">Per minute</option><option value="30min">Per 30 minutes</option><option value="hour">Per hour</option></select></div>
+        <div><label>OT rate (% of hourly)</label><input data-p="ot_rate_percent" type="number" min="0" /></div>
+        <div><label>Monthly rate divisor</label><input data-p="monthly_rate_divisor" type="number" min="1" max="31" /></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">For employees paid a monthly rate, their effective
+        daily rate used in payroll is monthly rate ÷ this number (e.g. 26 working days/month).</p>
+      <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" data-p="night_diff_enabled" style="width:auto" /> Enable night differential
+      </label></div>
+      <div class="field-row" style="margin-top:10px">
+        <div><label>Night diff (%)</label><input data-p="night_diff_percent" type="number" min="0" /></div>
+        <div><label>Night start</label><input data-p="night_start" type="time" /></div>
+        <div><label>Night end</label><input data-p="night_end" type="time" /></div>
+      </div>
+      <button type="button" class="btn" id="tk-policy-save" style="margin-top:14px">${UI.icon('sheet', 14)} Save Rules</button>`,
+    cancelText: 'Close',
+    onOpen: (ov) => {
+      const p = (k) => ov.querySelector(`[data-p="${k}"]`);
+      if (policy) {
+        p('grace_minutes').value = policy.grace_minutes;
+        p('late_unit').value = policy.late_unit;
+        p('ot_unit').value = policy.ot_unit;
+        p('ot_rate_percent').value = policy.ot_rate_percent;
+        p('monthly_rate_divisor').value = policy.monthly_rate_divisor;
+        p('night_diff_enabled').checked = policy.night_diff_enabled;
+        p('night_diff_percent').value = policy.night_diff_percent;
+        p('night_start').value = policy.night_start;
+        p('night_end').value = policy.night_end;
+      }
+
+      function renderShifts() {
+        const listEl = ov.querySelector('#tk-shifts-list');
+        if (!shifts.length) {
+          listEl.innerHTML = '<p class="muted" style="font-size:13px">No shifts defined yet.</p>';
+          return;
+        }
+        listEl.innerHTML = `<table class="line-table"><thead><tr>
+            <th>Name</th><th>Start</th><th>End</th><th>Default</th><th></th>
+          </tr></thead><tbody>${shifts.map((s) => `
+            <tr>
+              <td>${UI.esc(s.name)}</td><td>${UI.esc(s.start_time)}</td><td>${UI.esc(s.end_time)}</td>
+              <td>${s.is_default ? '✓' : ''}</td>
+              <td class="actions">
+                <button type="button" class="icon-btn" data-shift-edit="${s.id}" title="Edit">${UI.icon('edit')}</button>
+                <button type="button" class="icon-btn danger" data-shift-del="${s.id}" title="Delete">${UI.icon('trash')}</button>
+              </td>
+            </tr>`).join('')}</tbody></table>`;
+        listEl.querySelectorAll('[data-shift-edit]').forEach((b) => b.onclick = () => {
+          const s = shifts.find((x) => String(x.id) === b.dataset.shiftEdit);
+          shiftModal(s, refreshShifts);
+        });
+        listEl.querySelectorAll('[data-shift-del]').forEach((b) => b.onclick = async () => {
+          if (!await UI.confirmDialog('Delete this shift? Any attendance days using it just become unassigned.', 'Delete')) return;
+          await API.del('/hr/shifts/' + b.dataset.shiftDel);
+          UI.toast('Shift deleted');
+          refreshShifts();
+        });
+      }
+      async function refreshShifts() {
+        shifts = await API.get('/hr/shifts').catch(() => []);
+        renderShifts();
+      }
+      renderShifts();
+
+      ov.querySelector('#tk-shift-add').onclick = () => shiftModal(null, refreshShifts);
+      ov.querySelector('#tk-policy-save').onclick = async () => {
+        const body = {
+          grace_minutes: Number(p('grace_minutes').value) || 0,
+          late_unit: p('late_unit').value,
+          ot_unit: p('ot_unit').value,
+          ot_rate_percent: Number(p('ot_rate_percent').value) || 0,
+          monthly_rate_divisor: Number(p('monthly_rate_divisor').value) || 26,
+          night_diff_enabled: p('night_diff_enabled').checked,
+          night_diff_percent: Number(p('night_diff_percent').value) || 0,
+          night_start: p('night_start').value,
+          night_end: p('night_end').value,
+        };
+        await API.put('/hr/payroll-policy', body);
+        UI.toast('Payroll rules saved');
+      };
+    },
+  });
+}
+
 /* ── Cutoff detail: roster + daily grid ──────────────────────────────────── */
 async function renderPeriod(view, periodId) {
   let period = null;
@@ -121,6 +269,21 @@ async function renderPeriod(view, periodId) {
     </div>
     <div class="panel">
       <div class="topbar" style="padding:0 0 14px;background:none;border:none">
+        <label class="muted" style="font-size:12.5px;margin-right:4px">Group by</label>
+        <select id="tk-roster-group">
+          <option value="none">None</option>
+          <option value="department">Department</option>
+          <option value="status">Status</option>
+        </select>
+        <label class="muted" style="font-size:12.5px;margin:0 4px 0 12px">Sort by</label>
+        <select id="tk-roster-sort">
+          <option value="name">Name</option>
+          <option value="department">Department</option>
+          <option value="status">Status</option>
+          <option value="daily_rate">Daily Rate</option>
+          <option value="days_logged">Days Logged</option>
+        </select>
+        <button type="button" class="icon-btn" id="tk-roster-sort-dir" title="Reverse sort order">${UI.icon('adjust', 15)}</button>
         <div class="grow"></div>
         <button class="btn secondary" id="tk-add-emp">${UI.icon('plus')} Add Employee</button>
       </div>
@@ -136,6 +299,47 @@ async function renderPeriod(view, periodId) {
   view.querySelector('#tk-add-emp').onclick = () => addEmployeeModal();
 
   const rosterEl = view.querySelector('#tk-roster');
+  const groupSel = view.querySelector('#tk-roster-group');
+  const sortSel = view.querySelector('#tk-roster-sort');
+  const sortDirBtn = view.querySelector('#tk-roster-sort-dir');
+  const rosterView = { groupBy: 'none', sortBy: 'name', sortDir: 'asc' };
+
+  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', resigned: 'Resigned', terminated: 'Terminated' };
+  const SORTERS = {
+    name: (r) => (r.name || '').toLowerCase(),
+    department: (r) => (r.department_name || '').toLowerCase(),
+    status: (r) => (r.status || ''),
+    daily_rate: (r) => r.daily_rate || 0,
+    days_logged: (r) => r.days_logged || 0,
+  };
+
+  function sortRoster(list) {
+    const key = SORTERS[rosterView.sortBy] || SORTERS.name;
+    const dir = rosterView.sortDir === 'desc' ? -1 : 1;
+    return [...list].sort((a, b) => {
+      const va = key(a), vb = key(b);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return (a.name || '').localeCompare(b.name || '') * dir;
+    });
+  }
+
+  function rosterTableHtml(list) {
+    return `
+      <table>
+        <thead><tr><th>Employee</th><th>Department</th><th>Status</th><th class="right">Daily Rate</th><th class="right">Days Logged</th><th></th></tr></thead>
+        <tbody>${list.map((r) => `
+          <tr class="clickable" data-open="${r.employee_id}">
+            <td><strong>${UI.esc(r.name)}</strong></td>
+            <td>${UI.esc(r.department_name || '—')}</td>
+            <td>${UI.esc(STATUS_LABELS[r.status] || r.status || '—')}</td>
+            <td class="right">${UI.money(r.daily_rate)}</td>
+            <td class="right">${r.days_logged || 0} / ${r.days_total || 0}</td>
+            <td class="actions"><button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
 
   function renderRoster() {
     const roster = period.roster || [];
@@ -147,19 +351,27 @@ async function renderPeriod(view, periodId) {
       });
       return;
     }
-    rosterEl.innerHTML = `
-      <table>
-        <thead><tr><th>Employee</th><th>Department</th><th class="right">Daily Rate</th><th class="right">Days Logged</th><th></th></tr></thead>
-        <tbody>${roster.map((r) => `
-          <tr class="clickable" data-open="${r.employee_id}">
-            <td><strong>${UI.esc(r.name)}</strong></td>
-            <td>${UI.esc(r.department_name || '—')}</td>
-            <td class="right">${UI.money(r.daily_rate)}</td>
-            <td class="right">${r.days_logged || 0} / ${r.days_total || 0}</td>
-            <td class="actions"><button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
-          </tr>`).join('')}
-        </tbody>
-      </table>`;
+
+    if (rosterView.groupBy === 'none') {
+      rosterEl.innerHTML = rosterTableHtml(sortRoster(roster));
+    } else {
+      const groupLabel = (r) => rosterView.groupBy === 'department'
+        ? (r.department_name || 'No Department')
+        : (STATUS_LABELS[r.status] || r.status || 'Unknown');
+      const groups = new Map();
+      roster.forEach((r) => {
+        const key = groupLabel(r);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(r);
+      });
+      const groupNames = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b));
+      rosterEl.innerHTML = groupNames.map((name) => `
+        <div class="muted" style="font-weight:600;margin:14px 0 6px;text-transform:uppercase;font-size:12px">
+          ${UI.esc(name)} <span style="font-weight:400">(${groups.get(name).length})</span>
+        </div>
+        ${rosterTableHtml(sortRoster(groups.get(name)))}`).join('');
+    }
+
     rosterEl.querySelectorAll('[data-rm]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); removeEmployee(b.dataset.rm, roster); });
     rosterEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;
@@ -167,6 +379,13 @@ async function renderPeriod(view, periodId) {
       if (r) dailyGridModal(r);
     });
   }
+
+  groupSel.addEventListener('change', () => { rosterView.groupBy = groupSel.value; renderRoster(); });
+  sortSel.addEventListener('change', () => { rosterView.sortBy = sortSel.value; renderRoster(); });
+  sortDirBtn.addEventListener('click', () => {
+    rosterView.sortDir = rosterView.sortDir === 'asc' ? 'desc' : 'asc';
+    renderRoster();
+  });
 
   async function reload() {
     period = await API.get('/hr/periods/' + periodId);
@@ -182,8 +401,6 @@ async function renderPeriod(view, periodId) {
   }
 
   /* ---- Add employee (search existing master list, filter by department/status) ---- */
-  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', resigned: 'Resigned', terminated: 'Terminated' };
-
   async function addEmployeeModal() {
     const onRoster = new Set((period.roster || []).map((r) => r.employee_id));
     const depts = await API.get('/users/departments/list').catch(() => []);
@@ -191,13 +408,23 @@ async function renderPeriod(view, periodId) {
       depts.map((d) => `<option value="${d.id}">${UI.esc(d.name)}</option>`).join('');
     const statusOpts = '<option value="">All statuses</option>' +
       Object.keys(STATUS_LABELS).map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join('');
+    const checked = new Set();
 
     const m = UI.modal({
-      title: 'Add employee to cutoff',
+      title: 'Add employees to cutoff',
+      size: 'lg',
       bodyHTML: `<div class="search-box">${UI.icon('search', 16)}<input id="tk-pick-q" placeholder="Search employees…" autofocus /></div>
         <div class="field-row" style="margin-top:8px">
           <div><select id="tk-pick-dept">${deptOpts}</select></div>
           <div><select id="tk-pick-status">${statusOpts}</select></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+          <label style="display:flex;align-items:center;gap:6px;font-weight:normal">
+            <input type="checkbox" id="tk-pick-all" style="width:auto" /> Select all shown
+          </label>
+          <div class="grow"></div>
+          <button type="button" class="btn secondary small" id="tk-pick-add-selected" disabled>Add Selected (0)</button>
+          <button type="button" class="btn small" id="tk-pick-add-all">Add All Matching</button>
         </div>
         <div id="tk-pick-results" style="margin-top:12px"><div class="empty">Loading…</div></div>`,
       cancelText: 'Close',
@@ -206,7 +433,18 @@ async function renderPeriod(view, periodId) {
         const deptSel = ov.querySelector('#tk-pick-dept');
         const statusSel = ov.querySelector('#tk-pick-status');
         const out = ov.querySelector('#tk-pick-results');
+        const selectAll = ov.querySelector('#tk-pick-all');
+        const addSelectedBtn = ov.querySelector('#tk-pick-add-selected');
+        const addAllBtn = ov.querySelector('#tk-pick-add-all');
         let timer;
+        let shownIds = [];
+
+        function refreshSelectionUi() {
+          addSelectedBtn.textContent = `Add Selected (${checked.size})`;
+          addSelectedBtn.disabled = checked.size === 0;
+          selectAll.checked = shownIds.length > 0 && shownIds.every((id) => checked.has(id));
+        }
+
         async function search() {
           const params = new URLSearchParams();
           if (q.value.trim()) params.set('q', q.value.trim());
@@ -214,59 +452,173 @@ async function renderPeriod(view, periodId) {
           if (statusSel.value) params.set('status', statusSel.value);
           const items = (await API.get('/hr/employees?' + params.toString()))
             .filter((it) => !onRoster.has(it.id));
-          if (!items.length) { out.innerHTML = '<div class="empty">No matching employees</div>'; return; }
+          shownIds = items.map((it) => it.id);
+          if (!items.length) {
+            out.innerHTML = '<div class="empty">No matching employees</div>';
+            addAllBtn.textContent = 'Add All Matching';
+            addAllBtn.disabled = true;
+            refreshSelectionUi();
+            return;
+          }
+          addAllBtn.disabled = false;
+          addAllBtn.textContent = `Add All Matching (${items.length})`;
           out.innerHTML = items.map((it) => `
-            <div class="pick-row" data-id="${it.id}">
-              <div><strong>${UI.esc(it.name)}</strong> <span class="muted">${UI.esc(it.department_name || '')}</span></div>
-              <div class="muted">${UI.esc(it.position || '')} &middot; ${UI.esc(STATUS_LABELS[it.status] || it.status)}</div>
-            </div>`).join('');
-          out.querySelectorAll('[data-id]').forEach((row) => row.onclick = async () => {
-            await API.post(`/hr/periods/${periodId}/employees`, { employee_id: Number(row.dataset.id) });
-            UI.toast('Employee added to cutoff');
-            m.close();
-            reload();
-          });
+            <label class="pick-row" data-id="${it.id}" style="display:flex;justify-content:flex-start;align-items:center;gap:10px;cursor:pointer">
+              <input type="checkbox" data-check="${it.id}" style="width:auto" ${checked.has(it.id) ? 'checked' : ''} />
+              <div>
+                <div><strong>${UI.esc(it.name)}</strong> <span class="muted">${UI.esc(it.department_name || '')}</span></div>
+                <div class="muted">${UI.esc(it.position || '')} &middot; ${UI.esc(STATUS_LABELS[it.status] || it.status)}</div>
+              </div>
+            </label>`).join('');
+          out.querySelectorAll('[data-check]').forEach((cb) => cb.addEventListener('change', () => {
+            const id = Number(cb.dataset.check);
+            if (cb.checked) checked.add(id); else checked.delete(id);
+            refreshSelectionUi();
+          }));
+          refreshSelectionUi();
         }
+
+        async function addBulk(body) {
+          const res = await API.post(`/hr/periods/${periodId}/employees/bulk`, body);
+          const skipped = res.matched - res.added;
+          UI.toast(
+            `Added ${res.added} employee${res.added === 1 ? '' : 's'} to the cutoff` +
+            (skipped > 0 ? ` (${skipped} already on it)` : '')
+          );
+          m.close();
+          reload();
+        }
+
         q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 250); });
         deptSel.addEventListener('change', search);
         statusSel.addEventListener('change', search);
+        selectAll.addEventListener('change', () => {
+          if (selectAll.checked) shownIds.forEach((id) => checked.add(id));
+          else shownIds.forEach((id) => checked.delete(id));
+          search();
+        });
+        addSelectedBtn.onclick = () => addBulk({ employee_ids: Array.from(checked) });
+        addAllBtn.onclick = () => addBulk({
+          q: q.value.trim() || undefined, department_id: deptSel.value || undefined, status: statusSel.value || undefined,
+        });
         search();
       },
     });
   }
 
-  /* ---- Daily time-in/out grid for one roster employee ---- */
+  /* ---- Daily time-in/out grid for one roster employee ----
+     Each day can also be assigned a Shift (covers rotating shifts — a day just points at
+     whichever shift applied) and optionally linked to an OT/Half Day/Leave/Undertime/Offset
+     form record, both purely optional — Generate Payslips picks these up automatically, but
+     nothing here is required to just log plain time-in/out like before. */
   async function dailyGridModal(rosterRow) {
     const employeeId = rosterRow.employee_id;
-    const days = await API.get(`/hr/periods/${periodId}/attendance?employee_id=${employeeId}`);
+    const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form'];
+    const [days, shifts] = await Promise.all([
+      API.get(`/hr/periods/${periodId}/attendance?employee_id=${employeeId}`),
+      API.get('/hr/shifts').catch(() => []),
+    ]);
+    const defaultShift = shifts.find((s) => s.is_default) || null;
+    days.forEach((d) => {
+      if (d.shift_id == null) d.shift_id = rosterRow.default_shift_id || (defaultShift ? defaultShift.id : null);
+    });
+
+    const shiftOptions = (selectedId) => '<option value="">— No shift —</option>' +
+      shifts.map((s) => `<option value="${s.id}" ${String(s.id) === String(selectedId) ? 'selected' : ''}>${UI.esc(s.name)} (${UI.esc(s.start_time)}-${UI.esc(s.end_time)})</option>`).join('');
 
     UI.modal({
       title: `Daily time — ${rosterRow.name}`,
-      size: 'lg',
+      size: 'xl',
       bodyHTML: `<div class="line-items"><table class="line-table"><thead><tr>
-          <th>Date</th><th>Time In</th><th>Time Out</th><th>Notes</th>
+          <th>Date</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Notes</th><th>Linked Form</th>
         </tr></thead><tbody id="tk-days"></tbody></table></div>`,
       confirmText: 'Save',
       onOpen: (ov) => {
         const body = ov.querySelector('#tk-days');
-        body.innerHTML = days.map((d, i) => `
-          <tr data-row="${i}">
-            <td>${UI.esc(d.work_date)}</td>
-            <td><input data-k="time_in" type="time" value="${UI.esc(d.time_in || '')}" /></td>
-            <td><input data-k="time_out" type="time" value="${UI.esc(d.time_out || '')}" /></td>
-            <td><input data-k="notes" value="${UI.esc(d.notes || '')}" placeholder="optional" /></td>
-          </tr>`).join('');
-        body.querySelectorAll('input[data-k]').forEach((inp) => {
-          inp.addEventListener('input', () => {
-            const row = Number(inp.closest('[data-row]').dataset.row);
-            days[row][inp.dataset.k] = inp.value;
+
+        function renderRows() {
+          body.innerHTML = days.map((d, i) => `
+            <tr data-row="${i}">
+              <td>${UI.esc(d.work_date)}</td>
+              <td><select data-k="shift_id">${shiftOptions(d.shift_id)}</select></td>
+              <td><input data-k="time_in" type="time" value="${UI.esc(d.time_in || '')}" /></td>
+              <td><input data-k="time_out" type="time" value="${UI.esc(d.time_out || '')}" /></td>
+              <td><input data-k="notes" value="${UI.esc(d.notes || '')}" placeholder="optional" /></td>
+              <td>${d._linkLabel
+                ? `<span class="badge-pill" data-unlink="${i}" title="Click to unlink" style="cursor:pointer">${UI.esc(d._linkLabel)} ✕</span>`
+                : `<button type="button" class="icon-btn" data-link="${i}" title="Link an OT/Half Day/Leave/Undertime/Offset form (optional)">${UI.icon('edit', 14)}</button>`}
+              </td>
+            </tr>`).join('');
+          body.querySelectorAll('input[data-k], select[data-k]').forEach((inp) => {
+            const evt = inp.tagName === 'SELECT' ? 'change' : 'input';
+            inp.addEventListener(evt, () => {
+              const row = Number(inp.closest('[data-row]').dataset.row);
+              days[row][inp.dataset.k] = inp.value;
+            });
           });
-        });
+          body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.link)));
+          body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = () => {
+            const i = Number(b.dataset.unlink);
+            days[i].form_record_id = null;
+            days[i]._linkLabel = null;
+            renderRows();
+          });
+        }
+
+        async function linkFormModal(rowIndex) {
+          const forms = await API.get('/form-definitions').catch(() => []);
+          const relevant = forms.filter((f) => FORM_LINK_SLUGS.includes(f.slug));
+          const lists = await Promise.all(relevant.map((f) => API.get(`/form-definitions/${f.id}/records`).catch(() => [])));
+          const options = [];
+          relevant.forEach((f, fi) => {
+            (lists[fi] || []).forEach((r) => {
+              const name = (r.data && r.data.employee_name) || '';
+              if (String(name).trim() === String(rosterRow.name).trim()) options.push({ form: f, record: r });
+            });
+          });
+          const m2 = UI.modal({
+            title: `Link a form — ${rosterRow.name}`,
+            headActionHTML: `<button type="button" class="btn secondary small" id="tk-link-goto">${UI.icon('forms', 14)} Data Forms</button>`,
+            bodyHTML: options.length
+              ? `<div class="var-pick-list">${options.map((o, i) => `
+                  <button type="button" class="var-pick" data-pick="${i}">
+                    <span>${UI.esc(o.form.name)} — ${UI.esc(o.record.number)}</span>
+                    <span class="muted">${UI.esc(o.record.status)}</span>
+                  </button>`).join('')}</div>`
+              : `<p class="muted">No OT/Half Day/Leave/Undertime/Offset records found for ${UI.esc(rosterRow.name)} yet — create one in Data Forms first.</p>`,
+            cancelText: 'Close',
+            onOpen: (ov2) => {
+              ov2.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
+                const o = options[Number(b.dataset.pick)];
+                days[rowIndex].form_record_id = o.record.id;
+                days[rowIndex]._linkLabel = `${o.form.name} ${o.record.number}`;
+                m2.close();
+                renderRows();
+              });
+              ov2.querySelector('#tk-link-goto').onclick = () => App.navigate('form-records');
+            },
+          });
+        }
+
+        // Resolve a readable label for whatever's already linked (form_record_id came back from
+        // GET as a bare id — fetch each once to show "Overtime Request OT-00003" etc.).
+        Promise.all(days.map(async (d) => {
+          if (d.form_record_id) {
+            try {
+              const r = await API.get('/form-records/' + d.form_record_id);
+              d._linkLabel = `${r.form_name || 'Form'} ${r.number || ''}`.trim();
+            } catch { d._linkLabel = 'Linked'; }
+          }
+        })).then(renderRows);
+        renderRows();
       },
       onConfirm: async () => {
         await API.put(`/hr/periods/${periodId}/attendance`, {
           employee_id: employeeId,
-          days: days.map((d) => ({ work_date: d.work_date, time_in: d.time_in || '', time_out: d.time_out || '', notes: d.notes || '' })),
+          days: days.map((d) => ({
+            work_date: d.work_date, time_in: d.time_in || '', time_out: d.time_out || '', notes: d.notes || '',
+            shift_id: d.shift_id || null, form_record_id: d.form_record_id || null,
+          })),
         });
         UI.toast('Attendance saved');
         reload();
@@ -279,9 +631,10 @@ async function renderPeriod(view, periodId) {
     UI.modal({
       title: 'Generate payslips',
       bodyHTML: `
-        <p class="muted" style="margin-top:0">Creates or updates one HR Payroll record per employee on this cutoff, pre-filled
-          with name, department/position, and daily rate. Hours, earnings and deductions are left for you to fill in by hand —
-          use the daily log above as reference.</p>
+        <p class="muted" style="margin-top:0">Creates or updates one HR Payroll record per employee on this cutoff — days worked,
+          late deductions, and OT/Holiday pay are computed automatically from the daily log and any linked forms (per the
+          Policy Settings rules). Statutory deductions (SSS/PhilHealth/Pag-IBIG), cash advances, and net pay still need your review —
+          re-running this after editing attendance safely refreshes the computed fields without touching those.</p>
         <div><label>Payroll period label</label><input data-f="payroll_period" value="${UI.esc(period.label)}" /></div>
         <div style="margin-top:10px"><label>Pay date</label><input data-f="pay_date" type="date" /></div>`,
       confirmText: 'Generate',

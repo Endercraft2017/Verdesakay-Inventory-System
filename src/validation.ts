@@ -215,7 +215,10 @@ export const templateSchema = z.object({
 
 // ---- Form builder ----
 
-const fieldTypeEnum = z.enum(['text', 'number', 'date', 'select', 'textarea', 'checkbox']);
+// 'employee' renders as a live dropdown of current employees (never a stale, form-design-time
+// options list) — its stored value is still just the employee's name, the same plain string
+// convention every other form already relies on (e.g. matching attendance to a form record).
+const fieldTypeEnum = z.enum(['text', 'number', 'date', 'select', 'textarea', 'checkbox', 'employee']);
 
 export const fieldDefSchema = z.object({
   key: trimmed.min(1).max(64).regex(/^[a-z0-9_]+$/, 'Key must be lowercase letters, numbers, or underscores'),
@@ -284,10 +287,14 @@ const employeeStatusEnum = z.enum(['probationary', 'regular', 'resigned', 'termi
 const optionalIdText = trimmed.max(40).optional().nullable();
 
 export const employeeSchema = z.object({
+  employee_no: trimmed.min(1, 'Employee number is required').max(40),
   name: trimmed.min(1, 'Employee name is required').max(160),
   department_id: optionalId,
   position: trimmed.max(120).optional().nullable(),
+  user_id: optionalId,
+  rate_type: z.enum(['daily', 'monthly']).default('daily'),
   daily_rate: numCoerce.min(0, 'Daily rate cannot be negative').default(0),
+  monthly_rate: numCoerce.min(0, 'Monthly rate cannot be negative').optional().nullable(),
   status: employeeStatusEnum.default('probationary'),
   start_date: trimmed.max(40).optional().nullable(),
   sss_no: optionalIdText,
@@ -298,7 +305,10 @@ export const employeeSchema = z.object({
     (v) => (v === '' ? null : v),
     z.string().max(2_000_000).regex(/^data:image\//, 'Photo must be an image').optional().nullable()
   ),
-});
+}).refine(
+  (v) => v.rate_type !== 'monthly' || (v.monthly_rate != null && v.monthly_rate > 0),
+  { message: 'Monthly rate is required when rate type is monthly', path: ['monthly_rate'] }
+);
 
 export const attendancePeriodSchema = z
   .object({
@@ -312,12 +322,15 @@ export const attendancePeriodSchema = z
   });
 
 const timeOfDay = z.union([trimmed.max(20), z.null()]).optional();
+const nullableId = z.coerce.number().int().positive().nullable().optional();
 
 const attendanceDaySchema = z.object({
   work_date: trimmed.min(1).max(40),
   time_in: timeOfDay,
   time_out: timeOfDay,
   notes: optionalText,
+  shift_id: nullableId,
+  form_record_id: nullableId,
 });
 
 export const saveAttendanceSchema = z.object({
@@ -329,9 +342,51 @@ export const addRosterEmployeeSchema = z.object({
   employee_id: z.coerce.number().int().positive('Employee is required'),
 });
 
+/** Either an explicit id list (checkbox multi-select in the picker) or a department/status/name
+    filter ("Add All" — the route resolves the matching employees itself, same filter semantics
+    as GET /hr/employees, so "Add All" always reflects the true matching set, not just whatever
+    happened to be rendered client-side). All fields optional; no filter at all means every
+    employee in the company. */
+export const addRosterEmployeesBulkSchema = z.object({
+  employee_ids: z.array(z.coerce.number().int().positive()).max(1000).optional(),
+  q: trimmed.max(160).optional(),
+  department_id: optionalId,
+  status: employeeStatusEnum.optional(),
+});
+
 export const generatePayslipsSchema = z.object({
   payroll_period: trimmed.min(1, 'Payroll period label is required').max(120),
   pay_date: trimmed.max(40).optional().nullable(),
+});
+
+// ---- Shifts + payroll policy ----
+
+const hhmm = trimmed.regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Must be HH:MM, 24-hour');
+
+export const shiftSchema = z.object({
+  name: trimmed.min(1, 'Shift name is required').max(80),
+  start_time: hhmm,
+  end_time: hhmm,
+  is_default: boolish.default(false),
+});
+
+export const employeeNumberPolicySchema = z.object({
+  prefix: trimmed.max(20).default('EMP'),
+  mode: z.enum(['sequential', 'hire_date']).default('sequential'),
+  pad: z.coerce.number().int().min(1).max(8).default(5),
+  date_format: z.enum(['YYYYMMDD', 'YYMMDD']).default('YYYYMMDD'),
+});
+
+export const payrollPolicySchema = z.object({
+  grace_minutes: z.coerce.number().int().min(0).max(240).default(10),
+  late_unit: z.enum(['minute', 'hour']).default('hour'),
+  ot_unit: z.enum(['minute', '30min', 'hour']).default('hour'),
+  ot_rate_percent: z.coerce.number().min(0).max(1000).default(125),
+  night_diff_enabled: boolish.default(false),
+  night_diff_percent: z.coerce.number().min(0).max(200).default(10),
+  night_start: hhmm.default('22:00'),
+  night_end: hhmm.default('06:00'),
+  monthly_rate_divisor: z.coerce.number().min(1).max(31).default(26),
 });
 
 /** Sparse permission overrides: keys are permission strings, values are booleans. */
