@@ -242,7 +242,7 @@ None of this exists yet; all enforceable cheaply per-tenant because the data is 
 1. ~~**Connection registry + async context** (§2). No behaviour change — single-tenant
    still works, it's just "tenant `default`".~~ ✅ **done 2026-08-28.**
 2. **Tenant resolution middleware + `platform.db` with `tenants`** (§6, §8). Subdomain
-   only to start. ← next
+   only to start. ← next — **researched approach in §11**
 3. **Provisioning / de-provisioning commands** (§7) + per-tenant upload folders (§5).
 4. **BYO AI key** mirroring mail (§6). Small, high value.
 5. **`users.email` + password reset** (§3).
@@ -251,6 +251,91 @@ None of this exists yet; all enforceable cheaply per-tenant because the data is 
 8. **Backups job, deploy-time migration runner** (§5, §7).
 
 Steps 1–3 are "multi-tenant at all". 4–8 are "a product you can sell".
+
+---
+
+## 11. Phase 2 — researched recommendation (2026-08-28)
+
+Question: what's the industry standard for tenant identification, the control plane, and
+provisioning? Findings and the pick for this codebase.
+
+### Tenant identification → **subdomain, resolved in middleware, + a dev-only fallback**
+
+Industry standard for B2B SaaS is **subdomain per tenant** (`acme.verdesakay.app`),
+resolved as early as possible in middleware, with the tenant then carried in the
+session/JWT for the rest of the request. Path-based (`/acme/…`) is the fallback when
+wildcard DNS/TLS isn't practical (e.g. Vercel); header-based (`X-Tenant`) is for pure
+API products. ([zenn.dev SaaS 2025](https://zenn.dev/shineos/articles/saas-multi-tenant-architecture-2025?locale=en),
+[hafiz.dev](https://hafiz.dev/blog/laravel-multi-tenancy-database-vs-subdomain-vs-path-routing-strategies),
+[AWS tenant routing](https://aws.amazon.com/blogs/networking-and-content-delivery/tenant-routing-strategies-for-saas-applications-on-aws))
+
+**Pick:** subdomain-primary. Extend the Phase-1 middleware in `src/app.ts` to derive
+`slug` from `Host` (first label; reject reserved: `www app api admin static _platform`).
+Also accept `X-Tenant` / `?tenant=` **when `NODE_ENV !== 'production'`** so tests and
+`localhost` dev work with no DNS. Custom domains (`inventory.acme.com`) come in Phase 7
+as a `tenant_domains` lookup feeding the *same* resolver. Wildcard TLS (`*.verdesakay.app`)
+is an ops task, not code.
+
+### Control plane → **a dedicated `platform.db`, off the request path**
+
+Standard practice: a **separate catalog/registry database** holding tenant metadata +
+tenant→location mapping, with onboarding/provisioning logic deliberately unreachable from
+tenant-facing code (it runs with provisioning privileges).
+([Azure control planes](https://learn.microsoft.com/en-us/azure/architecture/guide/multitenant/approaches/control-planes),
+[Azure catalog/provisioning](https://learn.microsoft.com/en-us/azure/azure-sql/database/saas-dbpertenant-provision-and-catalog?view=azuresql))
+Some pure per-file SQLite setups let the filesystem *be* the registry
+([uradical](https://uradical.io/latest-news/how-we-build-multi-tenant-services-with-per-tenant-sqlite)) —
+fine until you need status/plan/billing, which we do.
+
+**Pick:** `platform.db` (its own SQLite file, its own connection — **not** via
+`tenantStore`), wrapped by a new `src/platform.ts`. Tables now: `tenants`
+(`id, slug UNIQUE, name, status, plan, created_at, trial_ends_at`), `provisioning_log`.
+Later: `platform_users`, `tenant_domains`, `subscriptions`. Control-plane routes live
+under `/_platform` (later `admin.verdesakay.app`), guarded separately. The tenant
+resolver reads `tenants` on each request and fast-rejects unknown / `suspended` /
+`purged` before opening any tenant DB.
+
+### Provisioning → **explicit `createTenant()`, self-serve behind a flag**
+
+Standard: **automate provisioning from day one** (manual becomes the bottleneck fast);
+self-serve signup is the PLG norm, optionally with an approval/waitlist gate.
+([Northflank 2026](https://northflank.com/blog/multi-tenant-saas-platform-deployment),
+[Auth0 onboarding](https://auth0.com/blog/user-onboarding-strategies-b2b-saas/),
+[Alibaba B2B auth guide](https://smartbuy.alibaba.com/b2b/how-to-build-a-scalable-multitenant-authentication-for-b2b-saas))
+
+**Pick:** `createTenant({slug, name, adminEmail, adminPassword, plan})` — inserts the
+`tenants` row, then `withTenant(slug, …)` to create + seed the file and the **first admin
+from the signup payload** (not `ADMIN_PASSWORD`), then writes `provisioning_log`. Expose
+it two ways: a `POST /signup` route **gated by a `SIGNUPS_OPEN` env flag** (off ⇒ you
+provision via `/_platform` or a `npm run tenant:create` script), and the script itself.
+De-provision = export (`VACUUM INTO` + zip `uploads/<slug>`) → `status=purged` → delete
+after a grace period.
+
+### Migrations → **keep lazy per-file + add a batch runner**
+
+Standard for per-file SQLite: migrate per tenant, tracked per tenant, lazily on first
+connect after a deploy — "no migration runner to schedule"
+([uradical](https://uradical.io/latest-news/how-we-build-multi-tenant-services-with-per-tenant-sqlite)) —
+while big table-rebuilds are better done proactively
+([Azure](https://learn.microsoft.com/en-us/azure/azure-sql/database/saas-tenancy-app-design-patterns?view=azuresql)).
+
+**Pick:** Phase 1 already migrates on first `getDb(slug)` — keep it. Add `settings.schema_version`
+to skip the PRAGMA probes on warm opens, and a `npm run migrate:all` that walks
+`tenants` and opens each once so a deploy pays the cost, not the first unlucky request.
+
+### Not doing
+
+Shared-schema `tenant_id` columns — research is explicit that it fights SQLite's single
+writer ("all tenants fighting each other to get the single write lock")
+([DEV: SQLite isolation](https://dev.to/helperx/multi-tenant-data-isolation-in-sqlite-per-user-database-files-vs-row-level-5glm),
+[High Performance SQLite](https://highperformancesqlite.com/watch/multi-tenancy)).
+
+### Open questions for the owner
+
+- Root domain for tenant subdomains? (`*.verdesakay.app`? something else?)
+- Self-serve signup **open** at launch, or **flag-off** and you provision each tenant?
+- Control-plane admin: a `/_platform` page in this same app now, or just the CLI script
+  until it's needed?
 
 ---
 
