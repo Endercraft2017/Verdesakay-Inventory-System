@@ -324,6 +324,7 @@ a { color: var(--accent); }
 .ai-input input { flex: 1; }
 .ai-input .btn { flex-shrink: 0; }
 .ai-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.ai-reports { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .ai-chip {
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em;
   padding: 2px 7px; border-radius: 100px; background: var(--surface); color: var(--text-muted);

@@ -38,6 +38,35 @@
     return String(name || '').replace(/_/g, ' ');
   }
 
+  /** Collect any report files the assistant generated this turn. */
+  function reportFiles(steps) {
+    const out = [];
+    (steps || []).forEach((s) => {
+      const files = s && s.result && s.result.data && s.result.data.files;
+      if (Array.isArray(files)) files.forEach((f) => f && f.url && out.push(f));
+    });
+    return out;
+  }
+  function reportLinksHTML(steps) {
+    const files = reportFiles(steps);
+    if (!files.length) return '';
+    return `<div class="ai-reports">${files.map((f) =>
+      `<button type="button" class="btn secondary small ai-report-dl" data-url="${UI.esc(f.url)}" data-name="${UI.esc(f.name)}">${UI.icon('download', 14)} ${UI.esc((f.format || 'file').toUpperCase())}</button>`
+    ).join('')}</div>`;
+  }
+  function wireReportLinks(msgEl) {
+    if (!msgEl) return;
+    msgEl.querySelectorAll('.ai-report-dl').forEach((b) => b.onclick = async () => {
+      try {
+        const url = await API.blobUrl(b.dataset.url);
+        const a = document.createElement('a');
+        a.href = url; a.download = b.dataset.name.replace(/^ai-report-/, '').replace(/-\d{10,}-[a-f0-9]+(\.\w+)$/, '$1');
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+      } catch (e) { UI.toast(e.message, 'error'); }
+    });
+  }
+
   function openAI() {
     aiHistory = [];
     UI.drawer({
@@ -80,7 +109,8 @@
               `<span class="ai-chip">${UI.esc(toolLabel(s.tool))}</span>`).join('');
             const chipsHTML = chips ? `<div class="ai-chips">${chips}</div>` : '';
             chat.insertAdjacentHTML('beforeend',
-              `<div class="ai-msg bot">${chipsHTML}<div>${mdLite(res.reply || '')}</div></div>`);
+              `<div class="ai-msg bot">${chipsHTML}<div>${mdLite(res.reply || '')}</div>${reportLinksHTML(res.steps)}</div>`);
+            wireReportLinks(chat.lastElementChild);
             aiHistory.push({ role: 'assistant', content: res.reply || '' });
           } catch (err) {
             const typingEl = document.getElementById(typingId);

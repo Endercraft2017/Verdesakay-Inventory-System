@@ -46,13 +46,13 @@
           return '<li><span>' + mEsc(b.location_name) + '</span><b>' + b.quantity + '</b></li>';
         }).join('') + '</ul>'
       : '<div class="m-hint">No stock in any location.</div>';
-    head.querySelector('.m-detail').appendChild(mEl('<h3 class="m-h3">By location</h3>'));
-    head.querySelector('.m-detail').appendChild(mEl('<div>' + locHtml + '</div>'));
+    head.appendChild(mEl('<h3 class="m-h3">By location</h3>'));
+    head.appendChild(mEl('<div>' + locHtml + '</div>'));
 
     // recent movements
     var hist = (it.history || []).slice(0, 8);
     if (hist.length) {
-      head.querySelector('.m-detail').appendChild(mEl('<h3 class="m-h3">Recent movements</h3>'));
+      head.appendChild(mEl('<h3 class="m-h3">Recent movements</h3>'));
       var ul = mEl('<ul class="m-moves"></ul>');
       hist.forEach(function (h) {
         var cls = h.change < 0 ? 'out' : 'in';
@@ -62,7 +62,7 @@
           '<span class="m-move-t">' + mEsc((h.created_at || '').slice(0, 16).replace('T', ' ')) + '</span></li>'
         ));
       });
-      head.querySelector('.m-detail').appendChild(ul);
+      head.appendChild(ul);
     }
 
     // actions
@@ -80,7 +80,7 @@
       b.onclick = a[1];
       acts.appendChild(b);
     });
-    head.querySelector('.m-detail').appendChild(acts);
+    head.appendChild(acts);
 
     view.appendChild(head);
   }

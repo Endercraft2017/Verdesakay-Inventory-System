@@ -10,6 +10,7 @@ import { applyStockChange, stockAt, getDefaultLocationId } from './inventory-sto
 import { parseBody, createUserSchema, updateUserSchema, createItemSchema, updateItemSchema } from './validation';
 import { visibilityClause } from './routes/forms.routes';
 import { analyticsToolsForUser, isAnalyticsTool, executeAnalyticsTool } from './ai-analytics';
+import { reportingToolsForUser, isReportingTool, executeReportingTool } from './ai-reporting';
 import type { AuthUser, Permission } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -592,7 +593,7 @@ export function getToolsForUser(user: AuthUser): CerebrasTool[] {
       return perm === null || user.permissions.includes(perm);
     })
     .map((name) => TOOL_SPECS[name]);
-  return [...core, ...analyticsToolsForUser(user)];
+  return [...core, ...analyticsToolsForUser(user), ...reportingToolsForUser(user)];
 }
 
 type LineItem = {
@@ -1054,6 +1055,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
 
       default:
         if (isAnalyticsTool(name)) return executeAnalyticsTool(name, a, user);
+        if (isReportingTool(name)) return await executeReportingTool(name, a, user);
         return { success: false, error: `Unknown tool: ${name}` };
     }
   } catch (e) {

@@ -9,7 +9,11 @@ import path from 'node:path';
 import { JSDOM } from 'jsdom';
 
 const PUBLIC = path.join(import.meta.dirname, '..', 'public');
-const EXPECTED_ROUTES = ['home', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan'];
+const EXPECTED_ROUTES = [
+  'home', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
+  'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
+  'batch', 'job-orders', 'qc', 'report-problem', 'settings',
+];
 
 describe('mobile bootstrap', () => {
   const html = fs.readFileSync(path.join(PUBLIC, 'mobile', 'index.html'), 'utf8');

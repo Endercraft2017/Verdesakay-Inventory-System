@@ -10,7 +10,7 @@ MApp.route('settings', function (view) {
   var wrap = mEl(
     '<div class="m-form">' +
     '  <div class="m-set-who"><b>' + mEsc(me.full_name) + '</b><span>' + mEsc(me.username) +
-    ' · ' + mEsc(me.role || '') + '</span></div>' +
+    ' · <span class="m-role">' + mEsc(me.role || '') + '</span></span></div>' +
 
     '  <div class="m-set-row"><span>Dark mode</span>' +
     '    <button class="m-toggle" data-theme-btn aria-pressed="' + (currentTheme() === 'dark') + '">' +

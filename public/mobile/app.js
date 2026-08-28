@@ -52,6 +52,7 @@ window.MApp = (function () {
 
   function render() {
     if (!me) return;
+    if (!can('inventory.mobile')) { showBlocked(); return; }
     var parsed = parseHash();
     var fn = routes[parsed.name] || routes.home;
     document.getElementById('m-back').classList.toggle('hidden', parsed.name === 'home');
@@ -104,9 +105,7 @@ window.MApp = (function () {
   function boot() {
     // Wire chrome
     document.getElementById('m-back').onclick = back;
-    document.getElementById('m-signout').onclick = function () {
-      API.post('/auth/logout').catch(function () {}).finally(showLogin);
-    };
+    document.getElementById('m-settings').onclick = function () { go('settings'); };
     document.getElementById('m-login-form').addEventListener('submit', function (e) {
       e.preventDefault();
       var err = document.getElementById('m-login-error');

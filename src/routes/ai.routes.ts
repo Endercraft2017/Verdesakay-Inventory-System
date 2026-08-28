@@ -9,14 +9,34 @@
  * results back, and continues until the model stops calling tools (or MAX_ITERATIONS hit).
  * All tool access is gated by the caller's effective permissions from auth.ts.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../auth';
 import { getToolsForUser, executeTool } from '../ai-tools';
+import { REPORT_FILE_RE } from '../ai-reporting';
+import { UPLOAD_DIR } from '../db';
 import type { AuthUser } from '../types';
 
 const router = Router();
 router.use(requireAuth);
+
+// GET /api/ai/reports/:name — download a report the assistant generated
+router.get('/reports/:name', (req, res) => {
+  const name = req.params.name;
+  if (!REPORT_FILE_RE.test(name)) {
+    res.status(400).json({ error: 'Bad report name' });
+    return;
+  }
+  const file = path.join(UPLOAD_DIR, name);
+  if (!fs.existsSync(file)) {
+    res.status(404).json({ error: 'Report not found — it may have been cleared.' });
+    return;
+  }
+  const nice = name.replace(/^ai-report-/, '').replace(/-\d{10,}-[a-f0-9]+(\.\w+)$/, '$1');
+  res.download(file, nice);
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config

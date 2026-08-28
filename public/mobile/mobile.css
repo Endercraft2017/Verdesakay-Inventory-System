@@ -286,3 +286,146 @@ input, select, button, textarea { font-family: inherit; }
 @media (min-width: 620px) {
   .m-topbar { max-width: 560px; margin: 0 auto; border-left: 1px solid var(--m-border); border-right: 1px solid var(--m-border); }
 }
+
+/* ============================================================================
+   Additions for the expanded app (lookups, tasks, job orders, settings, report)
+   ============================================================================ */
+
+/* ---------- Home: stats strip + section headers + report button ---------- */
+.m-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 4px 0 8px; }
+.m-stat {
+  background: var(--m-surface); border: 1px solid var(--m-border); border-radius: 12px;
+  padding: 10px 4px; text-align: center;
+}
+.m-stat b { display: block; font-size: 18px; }
+.m-stat span { font-size: 11px; color: var(--m-muted); }
+.m-stat.warn b { color: var(--m-warn); }
+.m-stat.bad b { color: var(--m-error-text); }
+.m-sec { margin: 18px 2px 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--m-muted); }
+.m-report { margin-top: 22px; }
+
+/* ---------- Generic lists ---------- */
+.m-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.m-list-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border: 1px solid var(--m-border); border-radius: 12px;
+  background: var(--m-surface); cursor: pointer;
+}
+.m-list-row:active { background: var(--m-surface-2); }
+.m-list-row > div:first-child { flex: 1; min-width: 0; }
+.m-list-row b { display: block; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-list-row span { color: var(--m-muted); font-size: 12.5px; }
+.m-list-qty { flex: none; text-align: right; font-weight: 600; font-size: 14px; }
+.m-list-qty.low { color: var(--m-warn); }
+.m-empty { text-align: center; color: var(--m-muted); padding: 40px 16px; font-size: 15px; line-height: 1.5; }
+
+/* ---------- Item detail ---------- */
+.m-detail { display: flex; flex-direction: column; gap: 4px; }
+.m-detail-top { display: flex; gap: 12px; align-items: flex-start; }
+.m-detail-photo {
+  width: 76px; height: 76px; flex: none; border-radius: 12px; overflow: hidden;
+  background: var(--m-surface-2); border: 1px solid var(--m-border);
+}
+.m-detail-photo img { width: 100%; height: 100%; object-fit: cover; }
+.m-detail-photo.empty { display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--m-muted); text-align: center; }
+.m-detail-top h2 { margin: 0 0 2px; font-size: 18px; }
+.m-detail-sku { color: var(--m-muted); font-size: 13px; }
+.m-detail-qty { margin-top: 8px; font-size: 20px; font-weight: 700; }
+.m-detail-qty.low { color: var(--m-warn); }
+.m-detail-qty span { display: block; font-size: 12px; font-weight: 400; color: var(--m-muted); }
+.m-h3 { margin: 18px 0 8px; font-size: 14px; }
+.m-kv { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.m-kv li { display: flex; justify-content: space-between; padding: 8px 12px; background: var(--m-surface-2); border-radius: 8px; font-size: 13.5px; }
+.m-moves { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.m-moves li { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border-bottom: 1px solid var(--m-border); font-size: 13px; }
+.m-move-d { flex: none; min-width: 40px; text-align: right; font-weight: 700; }
+.m-move-d.in { color: var(--m-ok); }
+.m-move-d.out { color: var(--m-error-text); }
+.m-move-r, .m-move-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-move-main { display: flex; flex-direction: column; white-space: normal; }
+.m-move-main span { color: var(--m-muted); font-size: 12px; }
+.m-move-t { flex: none; color: var(--m-muted); font-size: 11.5px; }
+.m-detail-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.m-chip {
+  padding: 9px 14px; border: 1px solid var(--m-border); border-radius: 999px;
+  background: var(--m-surface); color: var(--m-text); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.m-chip:active { background: var(--m-surface-2); }
+
+/* ---------- Count / fulfil rows ---------- */
+.m-count-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.m-count-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--m-border); border-radius: 12px; background: var(--m-surface);
+}
+.m-count-row.muted { opacity: 0.55; }
+.m-count-row.done { border-color: var(--m-ok); }
+.m-count-name { flex: 1; min-width: 0; }
+.m-count-name b { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-count-name span { color: var(--m-muted); font-size: 12px; }
+.m-count-in { width: 68px; flex: none; text-align: center; padding: 8px; font-size: 15px; }
+.m-count-diff { flex: none; min-width: 36px; text-align: right; font-weight: 700; font-size: 13px; color: var(--m-muted); }
+.m-count-diff.up { color: var(--m-ok); }
+.m-count-diff.down { color: var(--m-error-text); }
+.m-count-x { flex: none; border: 0; background: none; color: var(--m-muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 4px; }
+.m-btn-sm { width: auto; padding: 8px 12px; font-size: 13px; flex: none; }
+.m-qty.sm { grid-template-columns: 34px 52px 34px; gap: 4px; }
+.m-qty.sm button { font-size: 16px; }
+.m-qty.sm input { font-size: 14px; }
+
+/* ---------- Job orders ---------- */
+.m-jo-head h2 { margin: 0 0 4px; font-size: 18px; }
+.m-jo-meta { color: var(--m-muted); font-size: 13px; }
+.m-jo-status {
+  display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  text-transform: capitalize; background: var(--m-surface-2); color: var(--m-text);
+}
+.m-jo-status.released { background: #dbeafe; color: #1e40af; }
+.m-jo-status.in_progress { background: #fef9c3; color: #854d0e; }
+.m-jo-status.paused { background: #f3e8ff; color: #6b21a8; }
+:root[data-theme="dark"] .m-jo-status.released { background: #1e3a8a; color: #bfdbfe; }
+:root[data-theme="dark"] .m-jo-status.in_progress { background: #713f12; color: #fde68a; }
+:root[data-theme="dark"] .m-jo-status.paused { background: #581c87; color: #e9d5ff; }
+.m-jo-progress { margin-top: 14px; }
+
+/* ---------- QC ---------- */
+.m-qc-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; border: 1px solid var(--m-border); border-radius: 12px; background: var(--m-surface);
+}
+.m-qc-id { font-size: 13px; }
+.m-qc-btns { display: flex; gap: 6px; flex: none; }
+.m-qc-prompt { display: flex; flex-direction: column; gap: 12px; }
+.m-qc-prompt-t { font-weight: 700; font-size: 15px; }
+
+/* ---------- Settings ---------- */
+.m-set-who { padding: 12px 14px; background: var(--m-surface-2); border-radius: 12px; }
+.m-set-who b { display: block; font-size: 15px; }
+.m-set-who span { color: var(--m-muted); font-size: 12.5px; }
+.m-set-who .m-role { text-transform: capitalize; }
+.m-set-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; font-size: 15px; }
+.m-toggle {
+  min-width: 56px; padding: 8px 14px; border: 1px solid var(--m-border); border-radius: 999px;
+  background: var(--m-surface); color: var(--m-text); font-weight: 600; cursor: pointer;
+}
+.m-toggle[aria-pressed="true"] { background: var(--m-accent); color: var(--m-accent-text); border-color: var(--m-accent); }
+a.m-btn { text-align: center; text-decoration: none; display: block; }
+
+/* ---------- Picker "Recent" heading ---------- */
+.m-picker-head { padding: 8px 4px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--m-muted); }
+
+/* ---------- Scanner: torch + head buttons ---------- */
+.m-scan-head-btns { display: flex; align-items: center; gap: 6px; }
+.m-scan-torch {
+  border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.1); color: #fff;
+  width: 34px; height: 34px; border-radius: 8px; font-size: 16px; cursor: pointer;
+}
+.m-scan-torch.on { background: #fde68a; color: #111; border-color: #fde68a; }
+
+/* ---------- Textarea ---------- */
+textarea.m-input { resize: vertical; min-height: 84px; line-height: 1.4; }
+
+/* ---------- Small phones: stats strip 2x2 ---------- */
+@media (max-width: 360px) {
+  .m-stats { grid-template-columns: repeat(2, 1fr); }
+}
