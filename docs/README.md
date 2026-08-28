@@ -14,6 +14,7 @@ Start here. This folder has two layers:
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | **The map.** System overview, roles/permissions model, one-line-per-file directory map, full DB schema, full API catalog, coding conventions, "how to add X" recipes, run/test commands. Read this first. |
 | [AI-AGENT.md](AI-AGENT.md) | The AI Assistant feature: agentic loop, tool catalogue, permission gating, Cerebras integration, how to add a new AI tool. |
+| [EMAIL-SETUP.md](EMAIL-SETUP.md) | **Admin how-to** for turning on email: the BYO-SMTP settings fields, a per-provider quick reference (Gmail, M365, Brevo, …), the "I have a domain name" cases, and troubleshooting. |
 | [DECISIONS.md](DECISIONS.md) | Why the stack is what it is (TypeScript, `tsx`, `node:sqlite`, `zod`, `vitest`, etc.) — the reasoning behind big choices, not a changelog. |
 
 ## Reference docs (per source file)
