@@ -20,7 +20,10 @@
       '<div class="m-scan">' +
       '  <div class="m-scan-head">' +
       '    <span>' + mEsc(opts.title || 'Scan barcode or QR') + '</span>' +
-      '    <button class="m-scan-x" aria-label="Close">&times;</button>' +
+      '    <span class="m-scan-head-btns">' +
+      '      <button class="m-scan-torch" aria-label="Toggle light" hidden>&#9728;</button>' +
+      '      <button class="m-scan-x" aria-label="Close">&times;</button>' +
+      '    </span>' +
       '  </div>' +
       '  <div class="m-scan-stage">' +
       '    <video playsinline muted></video>' +
@@ -64,6 +67,24 @@
     }
 
     overlay.querySelector('.m-scan-x').onclick = stop;
+
+    // Torch / flashlight — offered only when the running video track supports it.
+    var torchOn = false;
+    function wireTorch() {
+      if (done) return;
+      var src = stream || video.srcObject;
+      var track = src && src.getVideoTracks && src.getVideoTracks()[0];
+      var caps = track && track.getCapabilities ? track.getCapabilities() : {};
+      if (!track || !caps.torch) return;
+      var btn = overlay.querySelector('.m-scan-torch');
+      btn.hidden = false;
+      btn.onclick = function () {
+        torchOn = !torchOn;
+        btn.classList.toggle('on', torchOn);
+        track.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(function () {});
+      };
+    }
+
     overlay.querySelector('.m-scan-manual').onsubmit = function (e) {
       e.preventDefault();
       var v = e.target.querySelector('input').value.trim();
@@ -83,6 +104,7 @@
       navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
         .then(function (s) { stream = s; video.srcObject = s; return video.play(); })
         .then(function () {
+          wireTorch();
           var firstTry = true;
           timer = setInterval(function () {
             if (done) return;
@@ -106,7 +128,7 @@
         { video: { facingMode: { ideal: 'environment' } } },
         video,
         function (result) { if (result && !done) finish(result.getText ? result.getText() : result.text); }
-      ).catch(camError);
+      ).then(function () { setTimeout(wireTorch, 400); }).catch(camError);
     }
 
     if (!secureCamera()) {

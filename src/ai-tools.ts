@@ -9,6 +9,7 @@ import { db, queryOne, queryAll, run, getSetting, setSetting } from './db';
 import { applyStockChange, stockAt, getDefaultLocationId } from './inventory-stock';
 import { parseBody, createUserSchema, updateUserSchema, createItemSchema, updateItemSchema } from './validation';
 import { visibilityClause } from './routes/forms.routes';
+import { analyticsToolsForUser, isAnalyticsTool, executeAnalyticsTool } from './ai-analytics';
 import type { AuthUser, Permission } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -585,12 +586,13 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
 
 /** Return the subset of tools the authenticated user is permitted to call. */
 export function getToolsForUser(user: AuthUser): CerebrasTool[] {
-  return (Object.keys(TOOL_SPECS) as ToolName[])
+  const core = (Object.keys(TOOL_SPECS) as ToolName[])
     .filter((name) => {
       const perm = TOOL_PERMISSION[name];
       return perm === null || user.permissions.includes(perm);
     })
     .map((name) => TOOL_SPECS[name]);
+  return [...core, ...analyticsToolsForUser(user)];
 }
 
 type LineItem = {
@@ -1051,6 +1053,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       default:
+        if (isAnalyticsTool(name)) return executeAnalyticsTool(name, a, user);
         return { success: false, error: `Unknown tool: ${name}` };
     }
   } catch (e) {

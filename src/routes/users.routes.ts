@@ -40,6 +40,8 @@ router.get('/', (req, res) => {
   );
 
   if (!req.user!.permissions.includes('users.manage')) {
+    // Directory view: enough to address a message (role lets the mobile app group
+    // "supervisors" first in its report-a-problem picker). No sensitive fields.
     res.json(
       rows
         .filter((u) => u.active === 1)
@@ -47,6 +49,7 @@ router.get('/', (req, res) => {
           id: u.id,
           username: u.username,
           full_name: u.full_name,
+          role: u.role,
           department_name: u.department_name,
         }))
     );

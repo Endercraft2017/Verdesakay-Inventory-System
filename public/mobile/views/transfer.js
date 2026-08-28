@@ -80,4 +80,5 @@
   }
 
   MApp.route('transfer', function (view) { pick(view); });
+  window.mTransferForm = form; // also used from the item-detail screen
 })();

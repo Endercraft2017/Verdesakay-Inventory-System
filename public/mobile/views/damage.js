@@ -73,4 +73,5 @@
   }
 
   MApp.route('damage', function (view) { pick(view); });
+  window.mDamageForm = form; // also used from the item-detail screen
 })();

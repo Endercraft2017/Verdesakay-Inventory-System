@@ -24,7 +24,7 @@ router.use(requireAuth);
 
 const CEREBRAS_URL = 'https://api.cerebras.ai/v1/chat/completions';
 const MODEL = process.env.CEREBRAS_MODEL ?? 'llama-4-scout-17b-16e-instruct';
-const MAX_ITERATIONS = 8;
+const MAX_ITERATIONS = 12; // room for multi-step report building
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request schema
@@ -83,6 +83,8 @@ function buildSystemPrompt(user: AuthUser, today: string): string {
     ``,
     `You have access to the following tools: ${toolNames}.`,
     `Use tools whenever the user asks about real data — never guess at quantities, IDs, or names. If a lookup returns nothing, say so clearly.`,
+    `For any count, ranking, total, or "who/what always…" question, call an analytics/report tool (or run_analytics_query) — never estimate a number from memory or prose.`,
+    `For reports, gather the data with tools first, then present it as a clear titled summary with sections and tables.`,
     `When you take an action (create, update, delete, send), confirm what was done with the key details.`,
     `Format numbers clearly. Keep responses concise. If something is outside your permitted tools, say so politely.`,
   ].join('\n');

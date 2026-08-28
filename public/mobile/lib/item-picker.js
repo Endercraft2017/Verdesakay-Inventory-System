@@ -1,5 +1,6 @@
 /* Reusable "find an item" control: type-ahead search + a Scan button.
-   mItemPicker({ label, onPick }) -> { el }. onPick(item) fires on selection. */
+   mItemPicker({ label, onPick }) -> { el }. onPick(item) fires on selection.
+   When the search box is empty it shows recently-used items (mRecent). */
 (function () {
   function itemPicker(opts) {
     opts = opts || {};
@@ -19,12 +20,18 @@
     var list = box.querySelector('.m-picker-list');
     var timer = null;
 
+    function pick(it) {
+      if (window.mRecent) mRecent.push(it);
+      opts.onPick(it);
+    }
+
     function clear() { list.innerHTML = ''; }
 
-    function rowsFor(items) {
+    function rowsFor(items, heading) {
       clear();
+      if (heading) list.appendChild(mEl('<li class="m-picker-head">' + mEsc(heading) + '</li>'));
       if (!items.length) {
-        list.appendChild(mEl('<li class="m-picker-empty">No matches</li>'));
+        if (!heading) list.appendChild(mEl('<li class="m-picker-empty">No matches</li>'));
         return;
       }
       items.forEach(function (it) {
@@ -34,15 +41,20 @@
           '<li class="m-picker-item"><b>' + mEsc(it.name) + '</b>' +
           (sub ? '<span>' + mEsc(sub) + '</span>' : '') + '</li>'
         );
-        li.onclick = function () { opts.onPick(it); };
+        li.onclick = function () { pick(it); };
         list.appendChild(li);
       });
     }
 
+    function showRecent() {
+      var r = window.mRecent ? mRecent.read() : [];
+      if (r.length) rowsFor(r, 'Recent'); else clear();
+    }
+
     function search(q) {
-      if (!q) { clear(); return; }
+      if (!q) { showRecent(); return; }
       API.get('/inventory?q=' + encodeURIComponent(q) + '&limit=20')
-        .then(rowsFor)
+        .then(function (items) { rowsFor(items); })
         .catch(function (e) { mToast(e.message || 'Search failed', 'err'); });
     }
 
@@ -57,12 +69,13 @@
         title: 'Scan item',
         onResult: function (code) {
           API.get('/inventory/lookup?code=' + encodeURIComponent(code))
-            .then(function (it) { opts.onPick(it); })
+            .then(function (it) { pick(it); })
             .catch(function (e) { mToast(e.message || 'No item for that code', 'err'); });
         },
       });
     };
 
+    showRecent();
     return { el: box, focus: function () { input.focus(); } };
   }
 
