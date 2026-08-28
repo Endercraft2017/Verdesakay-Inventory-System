@@ -429,3 +429,21 @@ textarea.m-input { resize: vertical; min-height: 84px; line-height: 1.4; }
 @media (max-width: 360px) {
   .m-stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---------- Offline queue: top-bar badge + queue rows ---------- */
+.m-qbadge {
+  flex: none; height: 30px; min-width: 30px; padding: 0 8px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid var(--m-border); border-radius: 999px;
+  background: var(--m-surface-2); color: var(--m-text);
+  font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.m-qbadge::before { content: "\21bb"; font-weight: 400; }
+.m-qbadge.offline { background: var(--m-warn-bg); color: var(--m-warn); border-color: var(--m-warn); }
+.m-q-row { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--m-border); border-radius: 12px; background: var(--m-surface); }
+.m-q-row.err { border-color: var(--m-error-text); }
+.m-q-main { flex: 1; min-width: 0; }
+.m-q-main b { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-q-main span { color: var(--m-muted); font-size: 12px; }
+.m-q-row.err .m-q-main span { color: var(--m-error-text); }
+.m-q-btns { display: flex; gap: 6px; flex: none; }

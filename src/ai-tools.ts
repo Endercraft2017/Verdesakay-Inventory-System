@@ -12,6 +12,7 @@ import { visibilityClause } from './routes/forms.routes';
 import { analyticsToolsForUser, isAnalyticsTool, executeAnalyticsTool } from './ai-analytics';
 import { reportingToolsForUser, isReportingTool, executeReportingTool } from './ai-reporting';
 import { ragToolsForUser, isRagTool, executeRagTool } from './ai-rag';
+import { mailToolsForUser, isMailTool, executeMailTool } from './ai-mail';
 import type { AuthUser, Permission } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -599,6 +600,7 @@ export function getToolsForUser(user: AuthUser): CerebrasTool[] {
     ...analyticsToolsForUser(user),
     ...reportingToolsForUser(user),
     ...ragToolsForUser(user),
+    ...mailToolsForUser(user),
   ];
 }
 
@@ -1063,6 +1065,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
         if (isAnalyticsTool(name)) return executeAnalyticsTool(name, a, user);
         if (isReportingTool(name)) return await executeReportingTool(name, a, user);
         if (isRagTool(name)) return executeRagTool(name, a, user);
+        if (isMailTool(name)) return await executeMailTool(name, a, user);
         return { success: false, error: `Unknown tool: ${name}` };
     }
   } catch (e) {

@@ -40,7 +40,7 @@ App.register('admin', async (view, filter) => {
     { label: 'Orders', keys: ['orders.view','orders.create','orders.edit','orders.delete'] },
     { label: 'Files', keys: ['forms.view','forms.upload','forms.delete'] },
     { label: 'Form Builder', keys: ['forms.manage.hr','forms.manage.inventory','forms.manage.admin','forms.manage.accounting'] },
-    { label: 'Messages', keys: ['messages.view','messages.send'] },
+    { label: 'Messages & Email', keys: ['messages.view','messages.send','mail.send'] },
     { label: 'Templates', keys: ['templates.view','templates.edit','templates.company'] },
     { label: 'HR', keys: ['hr.view','hr.manage'] },
     { label: 'Admin', keys: ['users.manage'] },

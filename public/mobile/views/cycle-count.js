@@ -75,18 +75,20 @@
       var todo = rows.filter(function (r) { return r.counted !== r.system; });
       if (!todo.length) return;
       bar.querySelector('[data-post]').disabled = true;
-      var ok = 0, fail = 0;
+      var ok = 0, queued = 0, fail = 0;
       var chain = todo.reduce(function (p, r) {
         return p.then(function () {
-          return API.post('/inventory/' + r.item.id + '/adjust', {
+          return mSubmit('/inventory/' + r.item.id + '/adjust', {
             change: r.counted - r.system, location_id: locId, reason: 'Cycle count (' + locName + ')',
-          }).then(function () { ok++; }).catch(function () { fail++; });
+          }, { label: 'Cycle count — ' + r.item.name + ' ' + (r.counted - r.system > 0 ? '+' : '') + (r.counted - r.system) })
+            .then(function (res) { res.queued ? queued++ : ok++; }).catch(function () { fail++; });
         });
       }, Promise.resolve());
       chain.then(function () {
         mSuccess(view, {
           title: 'Count posted',
-          lines: [ok + ' adjustment(s) applied at ' + locName].concat(fail ? [fail + ' failed'] : []),
+          lines: [ok + ' applied at ' + locName].concat(queued ? [queued + ' queued (offline)'] : [])
+            .concat(fail ? [fail + ' failed'] : []),
           actions: [
             { label: 'Count another location', onClick: function () { MApp.go('cycle-count'); } },
             { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },

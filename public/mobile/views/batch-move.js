@@ -63,17 +63,20 @@
         if (!todo.length) return;
         bar.querySelector('[data-go]').disabled = true;
         var reason = note.querySelector('input').value.trim() || null;
-        var ok = 0, fail = 0;
+        var ok = 0, queued = 0, fail = 0;
         todo.reduce(function (p, r) {
           return p.then(function () {
-            return API.post('/inventory/' + r.item.id + '/adjust', {
+            return mSubmit('/inventory/' + r.item.id + '/adjust', {
               change: mode === 'out' ? -r.qty : r.qty, location_id: loc.value(), reason: reason,
-            }).then(function () { ok++; }).catch(function () { fail++; });
+            }, { label: label + ' — ' + r.item.name + ' ×' + r.qty })
+              .then(function (res) { res.queued ? queued++ : ok++; })
+              .catch(function () { fail++; });
           });
         }, Promise.resolve()).then(function () {
           mSuccess(view, {
             title: label + ' done',
-            lines: [ok + ' item(s) posted'].concat(fail ? [fail + ' failed — check stock levels'] : []),
+            lines: [ok + ' posted'].concat(queued ? [queued + ' queued (offline)'] : [])
+              .concat(fail ? [fail + ' failed — check stock levels'] : []),
             actions: [
               { label: 'New batch', onClick: function () { MApp.go('batch', { mode: mode }); } },
               { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },

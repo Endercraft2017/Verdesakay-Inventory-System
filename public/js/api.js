@@ -6,10 +6,13 @@ const API = (() => {
   function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
   function clearToken() { localStorage.removeItem(TOKEN_KEY); }
 
-  async function request(method, path, body, isForm) {
+  async function request(method, path, body, isForm, opts) {
     const headers = {};
     const token = getToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
+    // Opt-in idempotency: a caller (e.g. the mobile offline queue) passes a stable
+    // key so a retried request is de-duplicated server-side instead of re-applied.
+    if (opts && opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
 
     let payload;
     if (isForm) {
@@ -19,7 +22,15 @@ const API = (() => {
       payload = JSON.stringify(body);
     }
 
-    const res = await fetch('/api' + path, { method, headers, body: payload });
+    let res;
+    try {
+      res = await fetch('/api' + path, { method, headers, body: payload });
+    } catch (e) {
+      // fetch only throws on a genuine network failure (offline, DNS, connection reset).
+      const err = new Error('Network unavailable');
+      err.offline = true;
+      throw err;
+    }
 
     if (res.status === 401) {
       clearToken();
@@ -55,8 +66,8 @@ const API = (() => {
   return {
     getToken, setToken, clearToken,
     get: (p) => request('GET', p),
-    post: (p, b) => request('POST', p, b),
-    put: (p, b) => request('PUT', p, b),
+    post: (p, b, opts) => request('POST', p, b, false, opts),
+    put: (p, b, opts) => request('PUT', p, b, false, opts),
     del: (p) => request('DELETE', p),
     upload: (p, formData) => request('POST', p, formData, true),
     blobUrl,

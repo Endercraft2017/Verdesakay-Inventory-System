@@ -17,7 +17,8 @@ export type Permission =
   | 'templates.view' | 'templates.edit' | 'templates.company'
   | 'users.manage'
   | 'hr.view' | 'hr.manage'
-  | 'audit.view';
+  | 'audit.view'
+  | 'mail.send';
 
 /** Which section a Form Builder form belongs to — drives per-section access control
     (see `forms.manage.*` permissions) and where it's organized in the nav/Data Forms.
@@ -189,6 +190,29 @@ export interface JobOrderUnit {
   remarks: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface MailSettings {
+  transport: 'off' | 'smtp';
+  from_name: string;
+  from_email: string;
+  reply_to: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_secure: boolean;
+  smtp_user: string;
+}
+
+export interface MailLogRow {
+  id: number;
+  to_addr: string;
+  subject: string | null;
+  status: 'sent' | 'failed';
+  provider_id: string | null;
+  error: string | null;
+  sent_by: number | null;
+  created_at: string;
+  sent_by_name?: string | null;
 }
 
 export interface QcRecord {

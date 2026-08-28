@@ -106,6 +106,22 @@ window.MApp = (function () {
     // Wire chrome
     document.getElementById('m-back').onclick = back;
     document.getElementById('m-settings').onclick = function () { go('settings'); };
+
+    // Offline-queue badge in the top bar.
+    var qbadge = document.getElementById('m-qbadge');
+    qbadge.onclick = function () { go('queue'); };
+    function refreshQueueBadge() {
+      if (!window.mQueue) return;
+      mQueue.count().then(function (n) {
+        qbadge.classList.toggle('hidden', !n && navigator.onLine);
+        qbadge.classList.toggle('offline', !navigator.onLine);
+        qbadge.querySelector('span').textContent = navigator.onLine ? n : (n || '·');
+      }).catch(function () {});
+    }
+    if (window.mQueue) mQueue.onChange(refreshQueueBadge);
+    window.addEventListener('online', refreshQueueBadge);
+    window.addEventListener('offline', refreshQueueBadge);
+    refreshQueueBadge();
     document.getElementById('m-login-form').addEventListener('submit', function (e) {
       e.preventDefault();
       var err = document.getElementById('m-login-error');

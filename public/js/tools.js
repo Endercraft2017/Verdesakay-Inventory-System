@@ -131,15 +131,106 @@
 
   /* ---------------- Email (preview) ---------------- */
   function openEmail() {
+    const canSend = App.hasPermission('mail.send');
+    const canConfig = App.hasPermission('users.manage');
     UI.drawer({
       key: 'email', icon: 'mail', title: 'Email',
-      bodyHTML: `
-        <div class="tool-note">Email sending isn't connected yet — this is a preview.</div>
-        <label>To</label><input placeholder="name@example.com" disabled />
-        <label>Subject</label><input placeholder="Subject" disabled />
-        <label>Message</label><textarea placeholder="Write your email…" disabled style="min-height:160px"></textarea>`,
-      footHTML: `<button class="btn" disabled>${UI.icon('send', 16)} Send</button>`,
+      bodyHTML: canSend
+        ? `<label>To</label><input id="em-to" type="email" placeholder="name@example.com" />
+           <label>Subject</label><input id="em-subj" placeholder="Subject" />
+           <label>Message</label><textarea id="em-body" placeholder="Write your email…" style="min-height:180px"></textarea>
+           <div id="em-status" class="muted" style="font-size:12px;margin-top:6px"></div>`
+        : `<div class="tool-note">You don't have permission to send email.${canConfig ? ' You can still configure the mailbox below.' : ''}</div>`,
+      footHTML: `${canConfig ? `<button class="btn secondary" id="em-config">${UI.icon('settings', 15)} Settings</button>` : ''}
+        ${canSend ? `<button class="btn" id="em-send">${UI.icon('send', 16)} Send</button>` : ''}`,
+      onOpen: (el) => {
+        const cfg = el.querySelector('#em-config');
+        if (cfg) cfg.onclick = () => mailSettingsModal();
+        const send = el.querySelector('#em-send');
+        if (send) send.onclick = async () => {
+          const g = (id) => el.querySelector(id);
+          const to = g('#em-to').value.trim(), subject = g('#em-subj').value.trim(), body = g('#em-body').value.trim();
+          const st = g('#em-status');
+          if (!to || !subject || !body) { st.textContent = 'Fill in all three fields.'; return; }
+          send.disabled = true; st.textContent = 'Sending…';
+          try {
+            await API.post('/mail/send', { to, subject, body });
+            st.textContent = 'Sent ✓';
+            g('#em-to').value = ''; g('#em-subj').value = ''; g('#em-body').value = '';
+          } catch (e) { st.textContent = e.message; }
+          finally { send.disabled = false; }
+        };
+      },
     });
+  }
+
+  async function mailSettingsModal() {
+    let s;
+    try { s = await API.get('/mail/settings'); } catch (e) { UI.toast(e.message, 'error'); return; }
+    const chk = (b) => (b ? 'checked' : '');
+    UI.modal({
+      title: 'Email settings',
+      size: 'lg',
+      bodyHTML: `<div class="form-grid">
+        <div class="form-field span2"><div class="field-label"><label>Send email via</label></div>
+          <select data-f="transport">
+            <option value="off" ${s.transport === 'off' ? 'selected' : ''}>Off — email disabled</option>
+            <option value="smtp" ${s.transport === 'smtp' ? 'selected' : ''}>SMTP — your company mailbox</option>
+          </select></div>
+        <div class="form-field"><div class="field-label"><label>From name</label></div>
+          <input data-f="from_name" value="${UI.esc(s.from_name || '')}" placeholder="Verdesakay Office" /></div>
+        <div class="form-field"><div class="field-label"><label>From email <span class="req">*</span></label></div>
+          <input data-f="from_email" type="email" value="${UI.esc(s.from_email || '')}" placeholder="office@yourcompany.com" /></div>
+        <div class="form-field span2"><div class="field-label"><label>Reply-to (optional)</label></div>
+          <input data-f="reply_to" type="email" value="${UI.esc(s.reply_to || '')}" /></div>
+        <div class="form-field"><div class="field-label"><label>SMTP host <span class="req">*</span></label></div>
+          <input data-f="smtp_host" value="${UI.esc(s.smtp_host || '')}" placeholder="smtp.gmail.com" /></div>
+        <div class="form-field"><div class="field-label"><label>Port</label></div>
+          <input data-f="smtp_port" type="number" value="${s.smtp_port || 587}" /></div>
+        <div class="form-field inline"><label class="check-opt">
+          <input type="checkbox" data-f="smtp_secure" ${chk(s.smtp_secure)} /> Use SSL (port 465)</label></div>
+        <div class="form-field"><div class="field-label"><label>SMTP username</label></div>
+          <input data-f="smtp_user" value="${UI.esc(s.smtp_user || '')}" placeholder="usually the From email" /></div>
+        <div class="form-field span2"><div class="field-label"><label>SMTP password / app-password
+          ${s.has_password ? '<span class="muted">— saved; leave blank to keep</span>' : ''}</label></div>
+          <input data-f="smtp_pass" type="password" placeholder="${s.has_password ? '••••••••' : ''}" autocomplete="new-password" /></div>
+        <div class="form-field span2"><div class="field-label"><label>Send a test email to</label></div>
+          <div style="display:flex;gap:8px">
+            <input data-f="test_to" type="email" placeholder="you@example.com" style="flex:1" />
+            <button type="button" class="btn secondary" id="ms-test">Save &amp; test</button></div>
+          <div id="ms-teststatus" class="muted" style="font-size:12px;margin-top:4px"></div></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Gmail and Microsoft 365 need a 2-factor <strong>app password</strong>, not your normal login password.</p>`,
+      confirmText: 'Save',
+      onOpen: (ov) => {
+        ov.querySelector('#ms-test').onclick = async () => {
+          const to = ov.querySelector('[data-f="test_to"]').value.trim();
+          const st = ov.querySelector('#ms-teststatus');
+          if (!to) { st.textContent = 'Enter a recipient for the test.'; return; }
+          st.textContent = 'Saving and sending…';
+          try { await saveMail(ov); await API.post('/mail/test', { to }); st.textContent = 'Test email sent ✓'; }
+          catch (e) { st.textContent = e.message; }
+        };
+      },
+      onConfirm: async (ov) => { await saveMail(ov); UI.toast('Email settings saved'); },
+    });
+
+    async function saveMail(ov) {
+      const g = (k) => ov.querySelector(`[data-f="${k}"]`);
+      const body = {
+        transport: g('transport').value,
+        from_name: g('from_name').value.trim(),
+        from_email: g('from_email').value.trim(),
+        reply_to: g('reply_to').value.trim(),
+        smtp_host: g('smtp_host').value.trim(),
+        smtp_port: Number(g('smtp_port').value) || 587,
+        smtp_secure: g('smtp_secure').checked,
+        smtp_user: g('smtp_user').value.trim(),
+      };
+      const pw = g('smtp_pass').value;
+      if (pw) body.smtp_pass = pw;
+      await API.put('/mail/settings', body);
+    }
   }
 
   /* ---------------- Notes ---------------- */

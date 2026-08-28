@@ -23,7 +23,9 @@ import formBuilderRoutes from './routes/form-builder.routes';
 import aiRoutes from './routes/ai.routes';
 import hrRoutes from './routes/hr.routes';
 import activityRoutes from './routes/activity.routes';
+import mailRoutes from './routes/mail.routes';
 import { recordActivity } from './activity';
+import { idempotency } from './idempotency';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -67,6 +69,10 @@ export function createApp() {
     next();
   });
 
+  // De-duplicate retried mutating requests that carry an Idempotency-Key header
+  // (used by the mobile offline queue). No-op for requests without the header.
+  app.use('/api', idempotency);
+
   app.use('/api/auth/login', loginLimiter);
   app.use('/api/auth', authRoutes);
   app.use('/api/users', usersRoutes);
@@ -84,6 +90,7 @@ export function createApp() {
   app.use('/api/ai', aiRoutes);
   app.use('/api/hr', hrRoutes);
   app.use('/api/activity', activityRoutes);
+  app.use('/api/mail', mailRoutes);
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
   });

@@ -39,17 +39,16 @@
           if (n < 1) { mToast('Enter a quantity', 'err'); return; }
           var btn = f.querySelector('button[type=submit]');
           btn.disabled = true;
-          API.post('/inventory/' + item.id + '/damage', {
+          mSubmit('/inventory/' + item.id + '/damage', {
             quantity: n, location_id: loc.value(), reason: note,
-          })
-            .then(function (res) {
+          }, { label: 'Damage — ' + item.name + ' ×' + n })
+            .then(function (r) {
+              var head = 'Moved ' + n + ' ' + (item.unit || '') + ' of ' + item.name + ' to the damage record';
               mSuccess(view, {
-                title: 'Damage reported',
-                lines: [
-                  'Moved ' + n + ' ' + (item.unit || '') + ' of ' + item.name + ' to the damage record',
-                  'Good stock remaining: ' + res.source_quantity,
-                  'Damage record total: ' + res.twin_quantity,
-                ],
+                title: r.queued ? 'Saved — will sync' : 'Damage reported',
+                lines: r.queued
+                  ? [head, 'You’re offline. It will send automatically when back online.']
+                  : [head, 'Good stock remaining: ' + r.response.source_quantity, 'Damage record total: ' + r.response.twin_quantity],
                 actions: [
                   { label: 'Report another', onClick: function () { pick(view); } },
                   { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },

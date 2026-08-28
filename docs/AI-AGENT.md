@@ -180,6 +180,7 @@ Read-only report tools, merged into `getToolsForUser` / `executeTool` and gated 
 | `qc_report` | `inventory.view` | QA/QC pass–fail counts, pass rate, top failure remarks. |
 | `run_analytics_query` | `audit.view` | Escape hatch: one read-only `SELECT`/`WITH` (no writes, no stacked statements, no `users`/`sessions`). |
 | `create_report_document` | *(any user)* | `src/ai-reporting.ts` — turns a Markdown report into HTML + `.docx` files under `UPLOAD_DIR`; downloaded via `GET /api/ai/reports/:name` (auth-checked, name-allowlisted). |
+| `send_email` | `mail.send` | `src/ai-mail.ts` — sends an email through the company mailbox (`src/mailer.ts`, BYO SMTP; recorded in `mail_log`). Offered only when configured *and* the user holds `mail.send`. |
 
 ### Knowledge search / RAG (`src/rag.ts`, `src/ai-rag.ts`)
 

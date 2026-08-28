@@ -53,15 +53,18 @@
       var ref = f.querySelector('[data-ref]').value.trim();
       var btn = f.querySelector('button[type=submit]');
       btn.disabled = true;
-      API.post('/messages', {
+      var toName = sel.options[sel.selectedIndex].text;
+      mSubmit('/messages', {
         recipient_id: to,
         subject: '⚠ Warehouse: ' + cat + (ref ? ' — ' + ref : ''),
         body: body + (ref ? '\n\nRe: ' + ref : '') + '\n\n— reported from the warehouse app',
-      })
-        .then(function () {
+      }, { label: 'Report to ' + toName + ' — ' + cat })
+        .then(function (r) {
           mSuccess(view, {
-            title: 'Report sent',
-            lines: ['Sent to ' + sel.options[sel.selectedIndex].text, cat],
+            title: r.queued ? 'Saved — will send' : 'Report sent',
+            lines: r.queued
+              ? ['To ' + toName + ' · ' + cat, 'You’re offline. It will send when back online.']
+              : ['Sent to ' + toName, cat],
             actions: [
               { label: 'Report another', onClick: function () { MApp.render(); } },
               { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },

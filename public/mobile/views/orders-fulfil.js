@@ -88,12 +88,12 @@
       if (L.qty < 1) { mToast('Enter a quantity', 'err'); return; }
       var btn = row ? row.querySelector('button') : null;
       if (btn) btn.disabled = true;
-      return API.post('/inventory/' + L.it.item_id + '/adjust', {
+      return mSubmit('/inventory/' + L.it.item_id + '/adjust', {
         change: cfg.sign * L.qty,
         location_id: loc.value(),
         reason: cfg.reason + ' ' + order.number,
-      })
-        .then(function () { L.done = true; draw(); })
+      }, { label: cfg.verb + ' ' + order.number + ' — ' + L.it.name + ' ×' + L.qty })
+        .then(function (r) { L.done = true; L.queued = !!r.queued; draw(); })
         .catch(function (ex) { mToast(L.it.name + ': ' + (ex.message || 'failed'), 'err'); if (btn) btn.disabled = false; });
     }
 
@@ -103,10 +103,12 @@
       bar.querySelector('[data-all]').disabled = true;
       todo.reduce(function (p, L) { return p.then(function () { return postLine(L); }); }, Promise.resolve())
         .then(function () {
-          var ok = lines.filter(function (L) { return L.done; }).length;
+          var done = lines.filter(function (L) { return L.done; });
+          var q = done.filter(function (L) { return L.queued; }).length;
           mSuccess(view, {
             title: cfg.verb + ' — ' + order.number,
-            lines: [ok + ' line(s) posted at ' + loc.select.options[loc.select.selectedIndex].text.split(' — ')[0]],
+            lines: [done.length + ' line(s) at ' + loc.select.options[loc.select.selectedIndex].text.split(' — ')[0]]
+              .concat(q ? [q + ' queued (offline)'] : []),
             actions: [
               { label: 'Back to list', onClick: function () { list(view, mode); } },
               { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },

@@ -40,19 +40,18 @@
           if (n < 1) { mToast('Enter a quantity', 'err'); return; }
           var btn = form.querySelector('button[type=submit]');
           btn.disabled = true;
-          API.post('/inventory/' + item.id + '/adjust', {
+          mSubmit('/inventory/' + item.id + '/adjust', {
             change: mode === 'out' ? -n : n,
             location_id: loc.value(),
             reason: form.querySelector('[data-note]').value.trim() || null,
-          })
-            .then(function (res) {
+          }, { label: label(mode) + ' — ' + item.name + ' ×' + n })
+            .then(function (r) {
+              var qtyLine = item.name + '  ' + (mode === 'out' ? '−' : '+') + n + ' ' + (item.unit || '');
               mSuccess(view, {
-                title: label(mode) + ' recorded',
-                lines: [
-                  item.name + '  ' + (mode === 'out' ? '−' : '+') + n + ' ' + (item.unit || ''),
-                  'On hand here: ' + res.location_quantity,
-                  'Total on hand: ' + res.quantity,
-                ],
+                title: r.queued ? 'Saved — will sync' : label(mode) + ' recorded',
+                lines: r.queued
+                  ? [qtyLine, 'You’re offline. It will send automatically when back online.']
+                  : [qtyLine, 'On hand here: ' + r.response.location_quantity, 'Total on hand: ' + r.response.quantity],
                 actions: [
                   { label: 'Another ' + label(mode), onClick: function () { pick(view, mode); } },
                   { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },

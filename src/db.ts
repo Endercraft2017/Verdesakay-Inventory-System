@@ -64,6 +64,19 @@ export function init(): void {
       expires_at TEXT NOT NULL
     );
 
+    -- Idempotency for retried mutating requests (the mobile offline queue supplies an
+    -- Idempotency-Key header). A replayed key returns the first response verbatim
+    -- instead of applying the change again. See src/idempotency.ts.
+    CREATE TABLE IF NOT EXISTS idempotency_keys (
+      key         TEXT PRIMARY KEY,
+      user_id     INTEGER,
+      method      TEXT NOT NULL,
+      path        TEXT NOT NULL,
+      status_code INTEGER NOT NULL,
+      response    TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS suppliers (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       name           TEXT NOT NULL,
@@ -451,6 +464,18 @@ export function init(): void {
     CREATE INDEX IF NOT EXISTS idx_attendance_period ON attendance_records(period_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance_records(employee_id);
     CREATE INDEX IF NOT EXISTS idx_employee_documents_employee ON employee_documents(employee_id);
+
+    CREATE TABLE IF NOT EXISTS mail_log (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      to_addr     TEXT NOT NULL,
+      subject     TEXT,
+      status      TEXT NOT NULL,
+      provider_id TEXT,
+      error       TEXT,
+      sent_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_mail_log_created ON mail_log(created_at);
 
     -- Full-text index for the AI knowledge search (RAG). Rebuilt by src/rag.ts;
     -- rows carry an ACL (permission key) + optional dept_id for retrieval filtering.
@@ -1024,6 +1049,9 @@ function orderTemplateBody(title: string): string {
 
 export function cleanupSessions(): void {
   db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+  // Idempotency keys are only useful for as long as a client might still be retrying;
+  // a week is far more than enough for a flaky-LAN offline queue.
+  db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();
 }
 
 export function newToken(): string {

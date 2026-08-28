@@ -41,22 +41,21 @@
           if (n < 1) { mToast('Enter an amount', 'err'); return; }
           var btn = f.querySelector('button[type=submit]');
           btn.disabled = true;
-          API.post('/inventory/' + item.id + '/transfer', {
+          var fromName = from.select.options[from.select.selectedIndex].text.split(' — ')[0];
+          var toName = to.select.options[to.select.selectedIndex].text.split(' — ')[0];
+          mSubmit('/inventory/' + item.id + '/transfer', {
             from_location_id: from.value(),
             to_location_id: to.value(),
             amount: n,
             reason: f.querySelector('[data-note]').value.trim() || null,
-          })
-            .then(function (res) {
-              var fromName = from.select.options[from.select.selectedIndex].text.split(' — ')[0];
-              var toName = to.select.options[to.select.selectedIndex].text.split(' — ')[0];
+          }, { label: 'Transfer — ' + item.name + ' ×' + n + ' (' + fromName + '→' + toName + ')' })
+            .then(function (r) {
+              var head = n + ' ' + (item.unit || '') + ' of ' + item.name;
               mSuccess(view, {
-                title: 'Transfer done',
-                lines: [
-                  n + ' ' + (item.unit || '') + ' of ' + item.name,
-                  fromName + ': ' + res.from + ' left',
-                  toName + ': ' + res.to + ' now',
-                ],
+                title: r.queued ? 'Saved — will sync' : 'Transfer done',
+                lines: r.queued
+                  ? [head, fromName + ' → ' + toName, 'You’re offline. It will send when back online.']
+                  : [head, fromName + ': ' + r.response.from + ' left', toName + ': ' + r.response.to + ' now'],
                 actions: [
                   { label: 'Another transfer', onClick: function () { pick(view); } },
                   { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },

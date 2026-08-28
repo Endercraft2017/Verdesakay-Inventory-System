@@ -517,3 +517,22 @@ export const permissionOverridesSchema = z.object({
   overrides: z.record(z.string().max(64), z.boolean())
     .refine((o) => Object.keys(o).length <= 50, 'Too many overrides'),
 });
+
+// ---- Email ----
+export const mailSettingsSchema = z.object({
+  transport: z.enum(['off', 'smtp']).default('off'),
+  from_name: trimmed.max(120).default(''),
+  from_email: z.union([z.literal(''), z.string().trim().email('From address must be a valid email')]).default(''),
+  reply_to: z.union([z.literal(''), z.string().trim().email('Reply-to must be a valid email')]).default(''),
+  smtp_host: trimmed.max(200).default(''),
+  smtp_port: z.coerce.number().int().min(1).max(65535).default(587),
+  smtp_secure: boolish.default(false),
+  smtp_user: trimmed.max(200).default(''),
+  smtp_pass: z.string().max(500).optional(),
+});
+
+export const sendMailSchema = z.object({
+  to: z.string().trim().email('A valid recipient email is required').max(200),
+  subject: trimmed.min(1, 'Subject is required').max(200),
+  body: trimmed.min(1, 'Message body is required').max(20000),
+});
