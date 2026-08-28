@@ -16,6 +16,7 @@ Start here. This folder has two layers:
 | [AI-AGENT.md](AI-AGENT.md) | The AI Assistant feature: agentic loop, tool catalogue, permission gating, Cerebras integration, how to add a new AI tool. |
 | [EMAIL-SETUP.md](EMAIL-SETUP.md) | **Admin how-to** for turning on email: the BYO-SMTP settings fields, a per-provider quick reference (Gmail, M365, Brevo, …), the "I have a domain name" cases, and troubleshooting. |
 | [SAAS-READINESS.md](SAAS-READINESS.md) | Assessment of what it takes to run this as a multi-tenant SaaS: database-per-tenant vs shared schema, a table-by-table schema sweep, the connection-singleton blocker, control-plane tables, and a phased plan. |
+| [GO-TO-MARKET.md](GO-TO-MARKET.md) | Who to sell to and at what price (PH upper-SMB / low-mid-market first), the positioning vs ECOUNT / Sprout / Dynamics, the feature pillars that close deals, and a prioritized list of what to build/harden vs what can wait. |
 | [DECISIONS.md](DECISIONS.md) | Why the stack is what it is (TypeScript, `tsx`, `node:sqlite`, `zod`, `vitest`, etc.) — the reasoning behind big choices, not a changelog. |
 
 ## Reference docs (per source file)
