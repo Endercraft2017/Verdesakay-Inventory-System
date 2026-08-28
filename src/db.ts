@@ -2,10 +2,17 @@
  * Database connection, schema creation, and first-run seeding.
  * Uses Node's built-in SQLite (node:sqlite). The DB file path can be overridden with
  * the DB_PATH env var so tests run against a throwaway database.
+ *
+ * Multi-tenancy (see docs/SAAS-READINESS.md): one SQLite file per tenant. A request
+ * runs inside `tenantStore` (AsyncLocalStorage) carrying that tenant's connection;
+ * `activeDb()` resolves it, and the exported `db` is a thin proxy onto `activeDb()`
+ * so the many existing `db.prepare(...)` / `db.exec(...)` call sites stay unchanged.
+ * With a single tenant (the default), everything behaves exactly as before.
  */
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
 
@@ -13,11 +20,73 @@ const ROOT = path.join(import.meta.dirname, '..');
 
 export const DB_PATH = process.env.DB_PATH || path.join(ROOT, 'data.db');
 export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(ROOT, 'uploads');
+/** Where non-default tenant DB files live (`<DATA_DIR>/<slug>.db`). */
+export const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
+/** The tenant used when nothing else is resolved — the single-tenant install. */
+export const DEFAULT_TENANT = 'default';
 
-export const db = new DatabaseSync(DB_PATH);
+export interface TenantContext {
+  db: DatabaseSync;
+  slug: string;
+}
 
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
+/** Set for the duration of a request by the tenant-resolution middleware. */
+export const tenantStore = new AsyncLocalStorage<TenantContext>();
+
+/** Open connections, keyed by tenant slug. Opened + migrated on first use. */
+const registry = new Map<string, DatabaseSync>();
+
+function connectionPath(slug: string): string {
+  return slug === DEFAULT_TENANT ? DB_PATH : path.join(DATA_DIR, `${slug}.db`);
+}
+
+function openConnection(slug: string): DatabaseSync {
+  if (slug !== DEFAULT_TENANT && !fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  const conn = new DatabaseSync(connectionPath(slug));
+  conn.exec('PRAGMA journal_mode = WAL;');
+  conn.exec('PRAGMA foreign_keys = ON;');
+  return conn;
+}
+
+/** The connection for `slug`, opening + creating/migrating its schema on first use. */
+export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
+  const existing = registry.get(slug);
+  if (existing) return existing;
+  const conn = openConnection(slug);
+  registry.set(slug, conn);
+  // Run schema setup with this connection active so the db.exec / getSetting calls
+  // inside createSchema/migrate/seed resolve to it via activeDb().
+  tenantStore.run({ db: conn, slug }, () => {
+    createSchema();
+    migrate();
+    ensureUploadDir();
+    seed();
+  });
+  return conn;
+}
+
+/** The active tenant's connection — the request's, or the default outside a request. */
+export function activeDb(): DatabaseSync {
+  return tenantStore.getStore()?.db ?? getDb(DEFAULT_TENANT);
+}
+
+/** Run `fn` with `slug` as the active tenant. For background jobs / provisioning that
+    aren't inside a request (`cleanupSessions`, RAG reindex, mail retry, …). */
+export function withTenant<T>(slug: string, fn: () => T): T {
+  return tenantStore.run({ db: getDb(slug), slug }, fn);
+}
+
+/** Proxy onto `activeDb()` so `import { db }` call sites don't each need to resolve
+    the tenant. Only `.prepare()` / `.exec()` are ever used on it. */
+export const db: DatabaseSync = new Proxy({} as DatabaseSync, {
+  get(_target, prop) {
+    const real = activeDb() as unknown as Record<string | symbol, unknown>;
+    const value = real[prop];
+    return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(real) : value;
+  },
+});
 
 /** A value that can be bound to a SQL parameter. */
 export type Param = string | number | bigint | null | Uint8Array;
@@ -37,7 +106,12 @@ export function run(sql: string, ...params: unknown[]) {
   return db.prepare(sql).run(...(params as Param[]));
 }
 
+/** Open (if needed) + migrate the default tenant's database. Safe to call repeatedly. */
 export function init(): void {
+  getDb(DEFAULT_TENANT);
+}
+
+function createSchema(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS departments (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -489,10 +563,6 @@ export function init(): void {
       tokenize = 'porter unicode61'
     );
   `);
-
-  migrate();
-  ensureUploadDir();
-  seed();
 }
 
 /** Idempotent schema upgrades for databases created before a column existed. */
@@ -1048,10 +1118,15 @@ function orderTemplateBody(title: string): string {
 }
 
 export function cleanupSessions(): void {
-  db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
-  // Idempotency keys are only useful for as long as a client might still be retrying;
-  // a week is far more than enough for a flaky-LAN offline queue.
-  db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();
+  // Runs on a timer, outside any request — sweep every open tenant connection.
+  for (const slug of registry.keys()) {
+    withTenant(slug, () => {
+      db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+      // Idempotency keys are only useful for as long as a client might still be retrying;
+      // a week is far more than enough for a flaky-LAN offline queue.
+      db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();
+    });
+  }
 }
 
 export function newToken(): string {

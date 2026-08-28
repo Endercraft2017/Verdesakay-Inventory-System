@@ -26,6 +26,7 @@ import activityRoutes from './routes/activity.routes';
 import mailRoutes from './routes/mail.routes';
 import { recordActivity } from './activity';
 import { idempotency } from './idempotency';
+import { tenantStore, getDb, DEFAULT_TENANT } from './db';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -38,6 +39,16 @@ export function createApp() {
   app.use(helmet({ contentSecurityPolicy: false, hsts: false }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
+
+  // Resolve the tenant and pin its DB connection for the rest of the request
+  // (see src/db.ts + docs/SAAS-READINESS.md). Single-tenant today, so this is
+  // always the default; host/subdomain resolution slots in here later. Must run
+  // before anything that touches the DB — the request logger's activity write,
+  // the idempotency store, and every route.
+  app.use((req, _res, next) => {
+    const slug = DEFAULT_TENANT;
+    tenantStore.run({ db: getDb(slug), slug }, () => next());
+  });
 
   // Throttle login attempts to slow brute-force guessing.
   const loginLimiter = rateLimit({
@@ -93,6 +104,15 @@ export function createApp() {
   app.use('/api/mail', mailRoutes);
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
+  });
+
+  // The mobile service worker lives under /mobile/ but must control /m — the
+  // Service-Worker-Allowed header lets it claim that broader scope.
+  app.get('/mobile/sw.js', (_req, res) => {
+    res.set('Service-Worker-Allowed', '/m');
+    res.set('Cache-Control', 'no-cache');
+    res.type('text/javascript');
+    res.sendFile(path.join(ROOT, 'public', 'mobile', 'sw.js'));
   });
 
   // Static assets (css/js/images and the mobile/* bundle). `index: false` so that

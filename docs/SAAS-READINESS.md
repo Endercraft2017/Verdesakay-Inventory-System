@@ -1,6 +1,7 @@
 # SaaS / Multi-Tenancy Readiness — Schema Sweep
 
-> **Status:** assessment only — nothing here is built yet.
+> **Status:** Phase 1 (§10 step 1) landed 2026-08-28 — connection registry + async
+> context are in, single-tenant behaves exactly as before. Steps 2+ not started.
 > **Last updated:** 2026-08-28
 > **Question asked:** "Can this be a SaaS (many companies on one deployment)?"
 
@@ -31,33 +32,34 @@ The rest of this document assumes **A**.
 
 ---
 
-## 2. The one hard blocker
+## 2. The one hard blocker — ✅ done (Phase 1)
 
-[src/db.ts:17](../src/db.ts#L17) opens a **single process-wide connection at import time**:
+`src/db.ts` used to open a **single process-wide connection at import time**
+(`export const db = new DatabaseSync(DB_PATH)`). Every module (**26 files**, **~159**
+`db.prepare` / `db.exec` call sites) imported that singleton or the helpers bound to it.
+Nothing carried a tenant.
 
-```ts
-export const db = new DatabaseSync(DB_PATH);
-```
+**What was done (commit after this doc's Phase-1 update):**
 
-Every module (`grep` counts **26 files**, **~159** `db.prepare` / `db.exec` call sites)
-imports that singleton or the helpers bound to it (`queryOne`, `queryAll`, `run`,
-`getSetting`, `setSetting`, `nextSequence`). Nothing carries a tenant.
+1. **Connection registry** — `getDb(slug)` opens `<DATA_DIR>/<slug>.db` (or `DB_PATH`
+   for `default`) on first use, runs `createSchema()` + `migrate()` + `seed()` against it,
+   caches the handle in a `Map`.
+2. **Request context** — `tenantStore = new AsyncLocalStorage<{db, slug}>()`. A
+   middleware in `src/app.ts` (right after the body parsers, before the request logger
+   and idempotency store) does `tenantStore.run({ db: getDb(slug), slug }, next)`. Today
+   `slug` is always `default`; host/subdomain resolution slots in at §6.
+3. **`db` is now a `Proxy`** onto `activeDb()` (`= tenantStore.getStore()?.db ?? getDb('default')`).
+   The ~159 `db.prepare(...)` / `db.exec('BEGIN')` call sites are **unchanged** — they
+   just resolve to the active connection. `queryOne`/`queryAll`/`run`/`getSetting`/
+   `setSetting`/`nextSequence` go through the same proxy, so they're tenant-aware too.
+4. **Background jobs** — `cleanupSessions()` now loops `registry.keys()` via
+   `withTenant(slug, fn)`. RAG `maybeReindex` / mail retry still assume the default
+   tenant — fine until step 2, revisit then.
 
-**What has to change:**
+Single-tenant behaviour is byte-for-byte the same: `DB_PATH` still points at `data.db`,
+`init()` still works, all 452 tests green, live login + authed routes verified.
 
-1. A **connection registry**: `getDb(tenantSlug)` → opens `data/<slug>.db` on first use,
-   runs `init()` + `migrate()` for that file, caches the handle (LRU with a cap; close
-   idle handles).
-2. A **request context** via `AsyncLocalStorage<{ db, tenant }>`. Middleware resolves the
-   tenant (§6), stashes the connection, and every request downstream reads it from the
-   store instead of importing a module global.
-3. `queryOne` / `queryAll` / `run` / `getSetting` / `setSetting` / `nextSequence` become
-   thin wrappers that pull `db` from the async store. This is the bulk of the diff, but
-   it's **mechanical** — the SQL itself doesn't change.
-4. Background jobs (`cleanupSessions`, RAG `maybeReindex`, mail retry) must loop over
-   tenants explicitly instead of assuming one DB.
-
-Everything below is small by comparison.
+Everything below is small by comparison and **not yet started**.
 
 ---
 
@@ -237,10 +239,10 @@ None of this exists yet; all enforceable cheaply per-tenant because the data is 
 
 ## 10. Suggested phasing
 
-1. **Connection registry + async context** (§2). No behaviour change — single-tenant
-   still works, it's just "tenant `default`". Biggest diff; do it first, land it green.
+1. ~~**Connection registry + async context** (§2). No behaviour change — single-tenant
+   still works, it's just "tenant `default`".~~ ✅ **done 2026-08-28.**
 2. **Tenant resolution middleware + `platform.db` with `tenants`** (§6, §8). Subdomain
-   only to start.
+   only to start. ← next
 3. **Provisioning / de-provisioning commands** (§7) + per-tenant upload folders (§5).
 4. **BYO AI key** mirroring mail (§6). Small, high value.
 5. **`users.email` + password reset** (§3).
