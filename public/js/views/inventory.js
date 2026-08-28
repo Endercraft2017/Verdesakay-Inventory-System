@@ -282,6 +282,7 @@ App.register('inventory', async (view, filter) => {
         <input type="checkbox" id="inv-low" style="width:auto" ${state.low ? 'checked' : ''} /> Low stock</label>
       <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;" title="Show damaged-stock records (hidden by default)">
         <input type="checkbox" id="inv-damaged" style="width:auto" ${state.include_damaged ? 'checked' : ''} /> Show damaged</label>
+      <button class="btn secondary" id="inv-import" title="Create or update items from a CSV file">${UI.icon('upload')} Import</button>
       <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
       <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
     </div>
@@ -336,6 +337,85 @@ App.register('inventory', async (view, filter) => {
       i.quantity, i.unit || '', i.min_quantity, i.location || '',
     ]);
     UI.downloadCsv('inventory.csv', headers, rows);
+  }
+
+  const IMPORT_TEMPLATE =
+    'name,sku,category,department,supplier,unit,min_quantity,quantity,location,notes\r\n' +
+    'Hex Bolt M8,HB-M8,Fasteners,,Acme Supply,pcs,100,500,Rack A1,\r\n';
+
+  function importCsv() {
+    const m = UI.modal({
+      title: 'Import items from CSV',
+      size: 'lg',
+      confirmText: 'Import',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">
+          Columns: <code>name</code> (required), <code>sku</code>, <code>category</code>,
+          <code>department</code>, <code>supplier</code>, <code>unit</code>,
+          <code>min_quantity</code>, <code>quantity</code>, <code>location</code>, <code>notes</code>.
+          Rows are matched to existing items by <strong>SKU</strong> — a match updates details
+          (never quantity); no match creates the item, using <code>quantity</code> as its
+          starting stock. <code>department</code> and <code>supplier</code> must already exist.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <button type="button" class="btn secondary small" data-tmpl>${UI.icon('download')} Download template</button>
+          <button type="button" class="btn secondary small" data-all>${UI.icon('download')} Export all items</button>
+          <label class="btn secondary small" style="cursor:pointer">
+            ${UI.icon('upload')} Choose file…
+            <input type="file" accept=".csv,text/csv" hidden data-file>
+          </label>
+        </div>
+        <textarea data-csv rows="10" style="width:100%;font-family:monospace;font-size:12px"
+          placeholder="Paste CSV here, or choose a file above"></textarea>
+        <label style="display:flex;align-items:center;gap:6px;margin:8px 0 0;font-weight:500">
+          <input type="checkbox" data-dry style="width:auto" checked> Check first (validate, don't save)
+        </label>
+        <div data-result style="margin-top:10px"></div>`,
+      onConfirm: async (overlay, showErr) => {
+        const csv = overlay.querySelector('[data-csv]').value.trim();
+        if (!csv) { showErr('Paste some CSV or choose a file first.'); return false; }
+        const dry_run = overlay.querySelector('[data-dry]').checked;
+        const res = await API.post('/inventory/import', { csv, dry_run });
+        const resEl = overlay.querySelector('[data-result]');
+        const errs = (res.errors || []).map((e) => `<li>Row ${e.row}${e.sku ? ` (${UI.esc(e.sku)})` : ''}: ${UI.esc(e.message)}</li>`).join('');
+        resEl.innerHTML =
+          `<div class="panel" style="padding:10px">
+             <strong>${dry_run ? 'Dry run — nothing saved' : 'Done'}</strong><br>
+             ${res.created} created · ${res.updated} updated · ${res.skipped} skipped (of ${res.total})
+             ${errs ? `<ul style="margin:6px 0 0;color:var(--danger)">${errs}</ul>` : ''}
+           </div>`;
+        if (dry_run) {
+          overlay.querySelector('[data-dry]').checked = false;
+          UI.toast(res.skipped ? `${res.skipped} row(s) need fixing` : 'Looks good — click Import to save', res.skipped ? 'error' : 'success');
+          return false; // keep modal open so they can run it for real
+        }
+        UI.toast(`Imported: ${res.created} new, ${res.updated} updated`, 'success');
+        load();
+        return true;
+      },
+      onOpen: (overlay) => {
+        overlay.querySelector('[data-tmpl]').onclick = () =>
+          UI.downloadCsv('inventory-template.csv',
+            IMPORT_TEMPLATE.split('\r\n')[0].split(','),
+            [IMPORT_TEMPLATE.split('\r\n')[1].split(',')]);
+        overlay.querySelector('[data-all]').onclick = async () => {
+          try {
+            const url = await API.blobUrl('/inventory/export');
+            const a = document.createElement('a');
+            a.href = url; a.download = 'inventory.csv'; a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+          } catch (e) { UI.toast(e.message, 'error'); }
+        };
+        overlay.querySelector('[data-file]').onchange = (e) => {
+          const f = e.target.files[0];
+          if (!f) return;
+          const r = new FileReader();
+          r.onload = () => { overlay.querySelector('[data-csv]').value = String(r.result || ''); };
+          r.readAsText(f);
+        };
+      },
+    });
+    return m;
   }
 
   function render(items) {
@@ -774,6 +854,7 @@ App.register('inventory', async (view, filter) => {
   view.querySelector('#inv-low').addEventListener('change', (e) => { state.low = e.target.checked; load(); });
   view.querySelector('#inv-damaged').addEventListener('change', (e) => { state.include_damaged = e.target.checked; load(); });
   view.querySelector('#inv-export').addEventListener('click', exportCsv);
+  view.querySelector('#inv-import').addEventListener('click', importCsv);
   view.querySelector('#inv-add').addEventListener('click', () => itemModal(null));
 
   await Promise.all([

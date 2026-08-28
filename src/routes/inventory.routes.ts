@@ -14,6 +14,7 @@ import {
   damageStockSchema,
   transferStockSchema,
   formConfigSchema,
+  importInventorySchema,
 } from '../validation';
 import {
   applyStockChange,
@@ -22,6 +23,8 @@ import {
   stockBreakdown,
   getDefaultLocationId,
 } from '../inventory-stock';
+import { notifyLowStockCrossed } from '../push';
+import { parseCsvTable, toCsv } from '../csv';
 import type { InventoryItem, InventoryTransaction } from '../types';
 
 const router = Router();
@@ -228,6 +231,171 @@ router.get('/lookup', requirePermission('inventory.view'), (req, res) => {
   res.json(withParsedAttributes(item));
 });
 
+// ---- CSV import / export ----------------------------------------------------
+// Column set shared by both directions. `department` / `supplier` are matched/emitted
+// by name; `quantity` is only honoured on import when creating a new item (initial
+// stock) — existing items' quantity is never changed by an import (use /adjust).
+const CSV_COLUMNS = [
+  'name', 'sku', 'category', 'department', 'supplier',
+  'unit', 'min_quantity', 'quantity', 'location', 'notes',
+] as const;
+
+// Accept a few friendly header spellings for the two numeric columns.
+const HEADER_ALIASES: Record<string, string> = {
+  min: 'min_quantity', minimum: 'min_quantity', 'reorder level': 'min_quantity', reorder: 'min_quantity',
+  qty: 'quantity', stock: 'quantity', 'on hand': 'quantity',
+};
+
+// GET /api/inventory/export — every non-damage item as a CSV (round-trips with import)
+router.get('/export', requirePermission('inventory.view'), (_req, res) => {
+  const rows = queryAll<Record<string, unknown>>(
+    `SELECT i.name, i.sku, i.category, d.name AS department, s.name AS supplier,
+            i.unit, i.min_quantity, i.quantity, i.location, i.notes
+     FROM inventory_items i
+     LEFT JOIN departments d ON d.id = i.department_id
+     LEFT JOIN suppliers s ON s.id = i.supplier_id
+     WHERE IFNULL(i.category, '') <> ?
+     ORDER BY i.name COLLATE NOCASE`,
+    DAMAGE_CATEGORY
+  );
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="inventory-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(toCsv([...CSV_COLUMNS], rows));
+});
+
+// POST /api/inventory/import — create/update items from CSV text.
+// Body: { csv: string, dry_run?: boolean }. Upsert key is `sku`; rows without a SKU
+// (or with an unknown SKU) are created. Returns a per-row report; a bad row is
+// skipped with an error, it doesn't abort the batch. `dry_run` validates + rolls back.
+router.post('/import', requirePermission('inventory.create'), (req, res) => {
+  const { csv, dry_run } = parseBody(importInventorySchema, req.body);
+  const table = parseCsvTable(csv);
+  if (table.headers.length === 0) {
+    res.status(400).json({ error: 'The CSV is empty.' });
+    return;
+  }
+  const norm = (h: string) => HEADER_ALIASES[h.toLowerCase()] ?? h.toLowerCase();
+  const present = new Set(table.headers.map(norm));
+  if (!present.has('name')) {
+    res.status(400).json({ error: 'The CSV must have a "name" column.' });
+    return;
+  }
+  const get = (row: Record<string, string>, col: string): string => {
+    for (const [k, v] of Object.entries(row)) if (norm(k) === col) return v;
+    return '';
+  };
+
+  const errors: { row: number; sku: string; message: string }[] = [];
+  let created = 0;
+  let updated = 0;
+
+  db.exec('BEGIN');
+  try {
+    table.rows.forEach((raw, idx) => {
+      const rowNo = idx + 1; // 1-based data row (header is row 0)
+      const sku = get(raw, 'sku').trim();
+      try {
+        const parsed = createItemSchema.safeParse({
+          name: get(raw, 'name'),
+          sku: sku || undefined,
+          category: get(raw, 'category') || undefined,
+          unit: get(raw, 'unit') || undefined,
+          min_quantity: get(raw, 'min_quantity') || 0,
+          quantity: get(raw, 'quantity') || 0,
+          location: get(raw, 'location') || undefined,
+          notes: get(raw, 'notes') || undefined,
+        });
+        if (!parsed.success) {
+          errors.push({ row: rowNo, sku, message: parsed.error.issues[0]?.message ?? 'Invalid row' });
+          return;
+        }
+        const data = parsed.data;
+
+        // Resolve department / supplier by name (optional columns).
+        const deptName = get(raw, 'department').trim();
+        const supName = get(raw, 'supplier').trim();
+        let departmentId: number | null = null;
+        let supplierId: number | null = null;
+        if (deptName) {
+          const d = queryOne<{ id: number }>('SELECT id FROM departments WHERE name = ? COLLATE NOCASE', deptName);
+          if (!d) { errors.push({ row: rowNo, sku, message: `Unknown department "${deptName}"` }); return; }
+          departmentId = d.id;
+        }
+        if (supName) {
+          const s = queryOne<{ id: number }>('SELECT id FROM suppliers WHERE name = ? COLLATE NOCASE', supName);
+          if (!s) { errors.push({ row: rowNo, sku, message: `Unknown supplier "${supName}"` }); return; }
+          supplierId = s.id;
+        }
+
+        const existing = sku
+          ? queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE sku = ?', sku)
+          : undefined;
+
+        if (existing) {
+          run(
+            `UPDATE inventory_items SET
+               name = ?, category = ?, department_id = ?, supplier_id = ?,
+               unit = ?, min_quantity = ?, location = ?, notes = ?, updated_at = datetime('now')
+             WHERE id = ?`,
+            data.name,
+            data.category ?? existing.category ?? null,
+            departmentId ?? existing.department_id ?? null,
+            supplierId ?? existing.supplier_id ?? null,
+            data.unit ?? existing.unit ?? 'pcs',
+            data.min_quantity,
+            data.location ?? existing.location ?? null,
+            data.notes ?? existing.notes ?? null,
+            existing.id
+          );
+          updated++;
+        } else {
+          const info = run(
+            `INSERT INTO inventory_items
+               (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, location, notes)
+             VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+            data.name,
+            data.sku ?? null,
+            data.category ?? null,
+            departmentId,
+            supplierId,
+            data.unit ?? 'pcs',
+            data.min_quantity,
+            data.location ?? null,
+            data.notes ?? null
+          );
+          if (data.quantity && data.quantity !== 0) {
+            applyStockChange({
+              itemId: Number(info.lastInsertRowid),
+              locationId: getDefaultLocationId(),
+              change: data.quantity,
+              reason: 'Import: initial stock',
+              userId: req.user!.id,
+            });
+          }
+          created++;
+        }
+      } catch (rowErr) {
+        errors.push({ row: rowNo, sku, message: rowErr instanceof Error ? rowErr.message : 'Row failed' });
+      }
+    });
+
+    if (dry_run) db.exec('ROLLBACK');
+    else db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+
+  res.json({
+    dry_run: !!dry_run,
+    total: table.rows.length,
+    created,
+    updated,
+    skipped: errors.length,
+    errors: errors.slice(0, 200),
+  });
+});
+
 // GET /api/inventory/:id/stock — this item's quantity at every location (for adjust/transfer UI)
 router.get('/:id/stock', requirePermission('inventory.view'), (req, res) => {
   const id = Number(req.params.id);
@@ -394,6 +562,7 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), (req, res) => 
     db.exec('ROLLBACK');
     throw e;
   }
+  notifyLowStockCrossed(item, item.quantity, result.total);
   res.json({ ok: true, quantity: result.total, location_quantity: result.locationQty });
 });
 
@@ -476,6 +645,7 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), (req, res) => 
     db.exec('ROLLBACK');
     throw e;
   }
+  notifyLowStockCrossed(source, source.quantity, out.total);
   res.json({
     ok: true,
     twin_id: twinId,

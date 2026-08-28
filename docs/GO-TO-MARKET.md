@@ -200,7 +200,9 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    only a wedge if it produces filable documents. Biggest single revenue unlock.
 2. **Data import tools (CSV) for items, stock, BOMs, employees, opening balances.**
    Onboarding is impossible without this; it's also billable services. Blocks *every*
-   deal.
+   deal. — *Inventory items done 2026-08-28 (`GET /inventory/export`, `POST
+   /inventory/import`, upsert-by-SKU, dry-run, `src/csv.ts`). Still to do: suppliers,
+   employees, opening stock levels, BOM components.*
 3. **SaaS multi-tenancy Phases 2–3** (SAAS-READINESS.md) — tenant resolution, provisioning,
    per-tenant uploads. Required to sell the cloud model at all.
 4. **Manufacturing hardening** (Pillar 3): multi-level BOM, per-unit cost roll-up,

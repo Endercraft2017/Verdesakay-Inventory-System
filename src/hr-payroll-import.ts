@@ -4,41 +4,9 @@
  * with a title cell that carries the payroll period. Pure, dependency-free: easy to
  * unit test in isolation.
  */
+import { parseCsvRows } from './csv';
 
-/** Minimal RFC4180-ish CSV parser: quoted fields, "" escapes, embedded commas. */
-export function parseCsvRows(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++; }
-        else inQuotes = false;
-      } else {
-        field += ch;
-      }
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ',') {
-      row.push(field);
-      field = '';
-    } else if (ch === '\r') {
-      // skip
-    } else if (ch === '\n') {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-    } else {
-      field += ch;
-    }
-  }
-  if (field.length || row.length) { row.push(field); rows.push(row); }
-  return rows;
-}
+export { parseCsvRows };
 
 function cell(row: string[] | undefined, c: number): string {
   return (row?.[c] ?? '').trim();

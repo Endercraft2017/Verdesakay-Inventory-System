@@ -134,6 +134,12 @@ export const updateItemSchema = z.object({
   attributes: attributesSchema,
 });
 
+/** POST /api/inventory/import — raw CSV text (~5 MB cap) + an optional validate-only flag. */
+export const importInventorySchema = z.object({
+  csv: z.string().min(1, 'A CSV body is required').max(5_000_000, 'CSV is too large (5 MB max)'),
+  dry_run: boolish.optional(),
+});
+
 // ---- Suppliers ----
 export const createSupplierSchema = z.object({
   name: trimmed.min(1, 'Supplier name is required').max(160),
@@ -535,4 +541,18 @@ export const sendMailSchema = z.object({
   to: z.string().trim().email('A valid recipient email is required').max(200),
   subject: trimmed.min(1, 'Subject is required').max(200),
   body: trimmed.min(1, 'Message body is required').max(20000),
+});
+
+// ---- Web push ----
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.string().url().max(2000),
+  expirationTime: z.union([z.number(), z.null()]).optional(),
+  keys: z.object({
+    p256dh: z.string().min(1).max(200),
+    auth: z.string().min(1).max(100),
+  }),
+});
+
+export const pushUnsubscribeSchema = z.object({
+  endpoint: z.string().url().max(2000),
 });
