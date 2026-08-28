@@ -13,14 +13,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth';
+import { requireAuth, requirePermission } from '../auth';
 import { getToolsForUser, executeTool } from '../ai-tools';
 import { REPORT_FILE_RE } from '../ai-reporting';
+import { reindex } from '../rag';
 import { UPLOAD_DIR } from '../db';
 import type { AuthUser } from '../types';
 
 const router = Router();
 router.use(requireAuth);
+
+// POST /api/ai/reindex — rebuild the knowledge-search index now (admin).
+router.post('/reindex', requirePermission('audit.view'), (_req, res) => {
+  try {
+    res.json({ ok: true, chunks: reindex() });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Reindex failed' });
+  }
+});
 
 // GET /api/ai/reports/:name — download a report the assistant generated
 router.get('/reports/:name', (req, res) => {
@@ -104,7 +114,8 @@ function buildSystemPrompt(user: AuthUser, today: string): string {
     `You have access to the following tools: ${toolNames}.`,
     `Use tools whenever the user asks about real data — never guess at quantities, IDs, or names. If a lookup returns nothing, say so clearly.`,
     `For any count, ranking, total, or "who/what always…" question, call an analytics/report tool (or run_analytics_query) — never estimate a number from memory or prose.`,
-    `For reports, gather the data with tools first, then present it as a clear titled summary with sections and tables.`,
+    `For questions about policies, uploaded files, notes, or QC/failure reasons, call search_knowledge and answer from the returned passages (cite their ref labels).`,
+    `For reports, gather the data with tools first, then present it as a clear titled summary with sections and tables. Offer create_report_document if the user wants a file.`,
     `When you take an action (create, update, delete, send), confirm what was done with the key details.`,
     `Format numbers clearly. Keep responses concise. If something is outside your permitted tools, say so politely.`,
   ].join('\n');

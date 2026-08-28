@@ -11,6 +11,7 @@ import { parseBody, createUserSchema, updateUserSchema, createItemSchema, update
 import { visibilityClause } from './routes/forms.routes';
 import { analyticsToolsForUser, isAnalyticsTool, executeAnalyticsTool } from './ai-analytics';
 import { reportingToolsForUser, isReportingTool, executeReportingTool } from './ai-reporting';
+import { ragToolsForUser, isRagTool, executeRagTool } from './ai-rag';
 import type { AuthUser, Permission } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -593,7 +594,12 @@ export function getToolsForUser(user: AuthUser): CerebrasTool[] {
       return perm === null || user.permissions.includes(perm);
     })
     .map((name) => TOOL_SPECS[name]);
-  return [...core, ...analyticsToolsForUser(user), ...reportingToolsForUser(user)];
+  return [
+    ...core,
+    ...analyticsToolsForUser(user),
+    ...reportingToolsForUser(user),
+    ...ragToolsForUser(user),
+  ];
 }
 
 type LineItem = {
@@ -1056,6 +1062,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       default:
         if (isAnalyticsTool(name)) return executeAnalyticsTool(name, a, user);
         if (isReportingTool(name)) return await executeReportingTool(name, a, user);
+        if (isRagTool(name)) return executeRagTool(name, a, user);
         return { success: false, error: `Unknown tool: ${name}` };
     }
   } catch (e) {

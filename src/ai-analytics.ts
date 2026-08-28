@@ -78,7 +78,8 @@ function safeSelect(sqlRaw: unknown): string | null {
   if (!s || !/^(select|with)\b/i.test(s)) return null;
   if (/;/.test(s)) return null; // no stacked statements
   if (/\b(insert|update|delete|drop|alter|create|replace|attach|detach|pragma|vacuum|reindex|truncate|grant)\b/i.test(s)) return null;
-  if (/password_hash|\bsessions\b|permission_overrides|\bfrom\s+users\b/i.test(s)) return null;
+  if (/pragma_|sqlite_/i.test(s)) return null; // schema-introspection functions / tables
+  if (/password_hash|\bsessions\b|permission_overrides|\b(from|join)\s+(main\.)?users\b/i.test(s)) return null;
   return s;
 }
 

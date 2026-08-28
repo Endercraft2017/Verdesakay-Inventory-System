@@ -161,6 +161,34 @@ All tools are defined in `src/ai-tools.ts`. The full list by category:
 | `update_task` | Update title, due date, or done status. |
 | `delete_task` | Delete a task. |
 
+### Analytics & reporting (`src/ai-analytics.ts`)
+
+Read-only report tools, merged into `getToolsForUser` / `executeTool` and gated the same way.
+
+| Tool | Permission | Description |
+|---|---|---|
+| `attendance_report` | `hr.view` | Per-employee days recorded / present / absent / late + late minutes over a range. |
+| `chronic_lateness` | `hr.view` | Employees late on ≥ N days (time-in later than shift start + grace). |
+| `absence_report` | `hr.view` | Ranked unexcused absences (no time-in, no linked leave/OT form). |
+| `leave_ot_summary` | `hr.view` | Counts of leave / OT / half-day / offset / holiday-work forms per employee. |
+| `activity_report` | `audit.view` | What happened: counts by action / user / module + a sample. `date` or from/to. |
+| `low_stock_report` | `inventory.view` | Items at/under reorder level, with shortfall + supplier. |
+| `reorder_suggestions` | `inventory.view` | Low-stock items + suggested order qty (to `min × target_multiple`). |
+| `dead_stock` | `inventory.view` | Items with stock but no movement in N days. |
+| `stock_movement_summary` | `inventory.view` | Total in / out / net over a range + biggest movers. |
+| `job_order_report` | `inventory.view` | MO counts by status + units ordered/done/scrapped. |
+| `qc_report` | `inventory.view` | QA/QC pass–fail counts, pass rate, top failure remarks. |
+| `run_analytics_query` | `audit.view` | Escape hatch: one read-only `SELECT`/`WITH` (no writes, no stacked statements, no `users`/`sessions`). |
+| `create_report_document` | *(any user)* | `src/ai-reporting.ts` — turns a Markdown report into HTML + `.docx` files under `UPLOAD_DIR`; downloaded via `GET /api/ai/reports/:name` (auth-checked, name-allowlisted). |
+
+### Knowledge search / RAG (`src/rag.ts`, `src/ai-rag.ts`)
+
+| Tool | Permission | Description |
+|---|---|---|
+| `search_knowledge` | *(any user)* | FTS5/BM25 search over unstructured text — uploaded files & policies (text files' bodies are indexed; binaries are metadata-only), item / order / job-order notes, QC failure remarks, form-record details, and the `docs/*.md` + `README.md`. Each chunk carries an ACL (permission key) + optional `dept_id`; results are filtered per-chunk to what the caller may see. |
+
+The index (`doc_chunks` FTS5 virtual table) is **rebuilt lazily** — `retrieve()` re-indexes if it's older than 5 minutes — and can be forced with **`POST /api/ai/reindex`** (`audit.view`).
+
 ---
 
 ## API Reference

@@ -451,6 +451,18 @@ export function init(): void {
     CREATE INDEX IF NOT EXISTS idx_attendance_period ON attendance_records(period_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance_records(employee_id);
     CREATE INDEX IF NOT EXISTS idx_employee_documents_employee ON employee_documents(employee_id);
+
+    -- Full-text index for the AI knowledge search (RAG). Rebuilt by src/rag.ts;
+    -- rows carry an ACL (permission key) + optional dept_id for retrieval filtering.
+    CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks USING fts5(
+      body,
+      ref_label   UNINDEXED,
+      source_type UNINDEXED,
+      source_id   UNINDEXED,
+      acl         UNINDEXED,
+      dept_id     UNINDEXED,
+      tokenize = 'porter unicode61'
+    );
   `);
 
   migrate();
