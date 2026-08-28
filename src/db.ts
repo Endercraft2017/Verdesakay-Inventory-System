@@ -183,6 +183,39 @@ export function init(): void {
       sort        INTEGER NOT NULL DEFAULT 0
     );
 
+    -- Manufacturing job orders (Phase B). Consume a product's BOM to build N units.
+    CREATE TABLE IF NOT EXISTS job_orders (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      number             TEXT NOT NULL UNIQUE,
+      order_id           INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      product_item_id    INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      product_name       TEXT NOT NULL,
+      qty_ordered        INTEGER NOT NULL,
+      qty_done           INTEGER NOT NULL DEFAULT 0,
+      qty_scrapped       INTEGER NOT NULL DEFAULT 0,
+      status             TEXT NOT NULL DEFAULT 'draft',
+      source_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      output_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      qc_stages          INTEGER NOT NULL DEFAULT 0,
+      notes              TEXT,
+      created_by         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      released_at        TEXT,
+      closed_at          TEXT,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS job_order_components (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id      INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      component_item_id INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      component_name    TEXT NOT NULL,
+      qty_per_unit      INTEGER NOT NULL,
+      qty_planned       INTEGER NOT NULL,
+      qty_consumed      INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(job_order_id, component_item_id)
+    );
+
     CREATE TABLE IF NOT EXISTS doc_templates (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL,
@@ -383,6 +416,9 @@ export function init(): void {
     CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id);
     CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(type);
     CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+    CREATE INDEX IF NOT EXISTS idx_job_orders_status ON job_orders(status);
+    CREATE INDEX IF NOT EXISTS idx_job_orders_order ON job_orders(order_id);
+    CREATE INDEX IF NOT EXISTS idx_joc_job_order ON job_order_components(job_order_id);
     CREATE INDEX IF NOT EXISTS idx_employees_dept ON employees(department_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_period ON attendance_records(period_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance_records(employee_id);

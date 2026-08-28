@@ -13,6 +13,7 @@ import inventoryRoutes from './routes/inventory.routes';
 import suppliersRoutes from './routes/suppliers.routes';
 import locationsRoutes from './routes/locations.routes';
 import bomRoutes from './routes/bom.routes';
+import jobOrdersRoutes from './routes/job-orders.routes';
 import formsRoutes from './routes/forms.routes';
 import messagesRoutes from './routes/messages.routes';
 import personalRoutes from './routes/personal.routes';
@@ -73,6 +74,7 @@ export function createApp() {
   app.use('/api/suppliers', suppliersRoutes);
   app.use('/api/locations', locationsRoutes);
   app.use('/api/finished-products', bomRoutes);
+  app.use('/api/job-orders', jobOrdersRoutes);
   app.use('/api/forms', formsRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks

@@ -174,12 +174,49 @@ export const saveBomSchema = z.object({
     .array(
       z.object({
         component_item_id: z.coerce.number().int().positive(),
-        quantity: z.coerce.number().positive('Component quantity must be greater than 0'),
+        quantity: z.coerce.number().int().positive('Component quantity must be a whole number above 0'),
         notes: trimmed.max(300).optional().nullable(),
       })
     )
     .max(200),
 });
+
+// ---- Manufacturing job orders ----
+export const createJobOrderSchema = z.object({
+  product_item_id: z.coerce.number().int().positive(),
+  qty_ordered: z.coerce.number().int().positive('Quantity to build must be at least 1'),
+  order_id: optionalId,
+  source_location_id: optionalId,
+  output_location_id: optionalId,
+  qc_stages: z.coerce.number().int().min(0).max(2).default(0),
+  notes: optionalText,
+});
+
+export const updateJobOrderSchema = z.object({
+  qty_ordered: z.coerce.number().int().positive().optional(),
+  source_location_id: optionalId,
+  output_location_id: optionalId,
+  qc_stages: z.coerce.number().int().min(0).max(2).optional(),
+  notes: optionalText,
+});
+
+export const jobOrderComponentsSchema = z.object({
+  components: z
+    .array(
+      z.object({
+        component_item_id: z.coerce.number().int().positive(),
+        qty_planned: z.coerce.number().int().min(0),
+      })
+    )
+    .max(200),
+});
+
+export const jobOrderProgressSchema = z
+  .object({
+    done_delta: z.coerce.number().int().min(0).default(0),
+    scrapped_delta: z.coerce.number().int().min(0).default(0),
+  })
+  .refine((d) => d.done_delta + d.scrapped_delta > 0, 'Enter a finished or scrapped quantity');
 
 /** Admin-saved item-form customization: per-field visibility / required / default. */
 export const formConfigSchema = z

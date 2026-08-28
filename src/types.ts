@@ -135,6 +135,46 @@ export interface BomComponent {
   component_on_hand?: number;
 }
 
+export type JobOrderStatus = 'draft' | 'released' | 'in_progress' | 'paused' | 'completed' | 'cancelled';
+
+export interface JobOrder {
+  id: number;
+  number: string;
+  order_id: number | null;
+  product_item_id: number | null;
+  product_name: string;
+  qty_ordered: number;
+  qty_done: number;
+  qty_scrapped: number;
+  status: JobOrderStatus;
+  source_location_id: number | null;
+  output_location_id: number | null;
+  qc_stages: number;
+  notes: string | null;
+  created_by: number | null;
+  released_at: string | null;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by_name?: string | null;
+  order_number?: string | null;
+  source_location_name?: string | null;
+  output_location_name?: string | null;
+  components?: JobOrderComponent[];
+}
+
+export interface JobOrderComponent {
+  id: number;
+  job_order_id: number;
+  component_item_id: number | null;
+  component_name: string;
+  qty_per_unit: number;
+  qty_planned: number;
+  qty_consumed: number;
+  /** Joined: the component's current grand total on hand. */
+  component_on_hand?: number;
+}
+
 export interface InventoryTransaction {
   id: number;
   item_id: number;

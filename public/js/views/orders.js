@@ -48,6 +48,7 @@ App.register('orders', async (view, filter) => {
             <td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>
             <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span></td>
             <td class="actions">
+              ${type === 'job' && App.hasPermission('inventory.adjust') ? `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
               <button class="icon-btn" title="Edit" data-edit="${o.id}">${UI.icon('edit')}</button>
               <button class="icon-btn danger" title="Delete" data-del="${o.id}">${UI.icon('trash')}</button>
@@ -57,6 +58,7 @@ App.register('orders', async (view, filter) => {
       </table>`;
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => openOrder(b.dataset.edit));
     tableEl.querySelectorAll('[data-print]').forEach((b) => b.onclick = () => printOrder(b.dataset.print));
+    tableEl.querySelectorAll('[data-produce]').forEach((b) => b.onclick = () => startProduction(b.dataset.produce));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(b.dataset.del, list));
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;
@@ -67,6 +69,43 @@ App.register('orders', async (view, filter) => {
   async function openOrder(id) {
     const order = await API.get('/orders/' + id);
     orderModal(order);
+  }
+
+  /* ---------- Start a production run linked to this job order ---------- */
+  async function startProduction(orderId) {
+    const [order, products, locations] = await Promise.all([
+      API.get('/orders/' + orderId),
+      API.get('/finished-products'),
+      API.get('/locations'),
+    ]);
+    if (!products.length) { UI.toast('Define a finished product with a BOM first (Inventory → Finished Products)', 'error'); return; }
+    // Prefill from a line item that maps to a finished product, if any.
+    const match = (order.items || []).find((li) => products.some((p) => p.id === li.item_id));
+    const locOpts = locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('');
+    UI.modal({
+      title: `Start production — ${order.number}`,
+      bodyHTML: `<div class="form-grid">
+        <div class="form-field span2"><div class="field-label"><label>Product to build <span class="req">*</span></label></div>
+          <select data-f="product">${products.map((p) => `<option value="${p.id}" ${match && match.item_id === p.id ? 'selected' : ''}>${UI.esc(p.name)} — ${p.max_buildable} buildable</option>`).join('')}</select></div>
+        <div class="form-field"><div class="field-label"><label>Quantity <span class="req">*</span></label></div>
+          <input data-f="qty" type="number" min="1" value="${match ? Math.max(1, Math.round(match.quantity)) : 1}" /></div>
+        <div class="form-field"><div class="field-label"><label>Pull components from</label></div><select data-f="source">${locOpts}</select></div>
+        <div class="form-field"><div class="field-label"><label>Put finished units in</label></div><select data-f="output">${locOpts}</select></div>
+      </div>`,
+      confirmText: 'Create job order',
+      onConfirm: async (ov, showErr) => {
+        const g = (k) => ov.querySelector(`[data-f="${k}"]`).value;
+        const qty = parseInt(g('qty'), 10);
+        if (!g('product')) { showErr('Pick a product'); return false; }
+        if (!qty || qty < 1) { showErr('Quantity must be at least 1'); return false; }
+        const r = await API.post('/job-orders', {
+          product_item_id: Number(g('product')), qty_ordered: qty, order_id: Number(orderId),
+          source_location_id: Number(g('source')) || null, output_location_id: Number(g('output')) || null,
+        });
+        UI.toast(`Job order ${r.number} created`);
+        App.navigate('job-orders');
+      },
+    });
   }
 
   /* ---------- Create / edit ---------- */

@@ -75,7 +75,7 @@ App.register('finished-products', async (view) => {
   function compRow(productId, c) {
     return `<div class="bom-row">
       <select data-c="item">${componentSelect(productId, c && c.component_item_id)}</select>
-      <input data-c="qty" type="number" min="0" step="any" value="${c ? c.quantity : 1}" style="width:90px" />
+      <input data-c="qty" type="number" min="1" step="1" value="${c ? c.quantity : 1}" style="width:90px" title="Quantity per 1 finished unit" />
       <input data-c="notes" placeholder="Notes (optional)" value="${UI.esc(c && c.notes || '')}" />
       <button type="button" class="icon-btn danger" data-c="rm" title="Remove">${UI.icon('trash')}</button>
     </div>`;
@@ -133,10 +133,10 @@ App.register('finished-products', async (view) => {
         const components = [];
         for (const row of ov.querySelectorAll('.bom-row')) {
           const item = row.querySelector('[data-c="item"]').value;
-          const qty = parseFloat(row.querySelector('[data-c="qty"]').value);
+          const qty = parseInt(row.querySelector('[data-c="qty"]').value, 10);
           const notes = row.querySelector('[data-c="notes"]').value.trim();
           if (!item) continue;
-          if (!qty || qty <= 0) { showErr('Every component needs a quantity above 0'); return false; }
+          if (!qty || qty <= 0) { showErr('Every component needs a whole quantity above 0'); return false; }
           components.push({ component_item_id: Number(item), quantity: qty, notes: notes || null });
         }
         if (!components.length) { showErr('Add at least one component'); return false; }
