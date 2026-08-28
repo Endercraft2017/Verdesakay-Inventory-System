@@ -9,14 +9,15 @@ export type Role =
 
 export type Permission =
   | 'inventory.view' | 'inventory.create' | 'inventory.edit' | 'inventory.delete'
-  | 'inventory.adjust' | 'inventory.configure'
+  | 'inventory.adjust' | 'inventory.configure' | 'inventory.mobile'
   | 'orders.view' | 'orders.create' | 'orders.edit' | 'orders.delete'
   | 'forms.view' | 'forms.upload' | 'forms.delete'
   | 'forms.manage.hr' | 'forms.manage.inventory' | 'forms.manage.admin' | 'forms.manage.accounting'
   | 'messages.view' | 'messages.send'
   | 'templates.view' | 'templates.edit' | 'templates.company'
   | 'users.manage'
-  | 'hr.view' | 'hr.manage';
+  | 'hr.view' | 'hr.manage'
+  | 'audit.view';
 
 /** Which section a Form Builder form belongs to — drives per-section access control
     (see `forms.manage.*` permissions) and where it's organized in the nav/Data Forms.
@@ -59,12 +60,48 @@ export interface SessionRow {
   expires_at: string;
 }
 
+export interface Supplier {
+  id: number;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined in by GET /api/suppliers (count of items pointing at this supplier). */
+  item_count?: number;
+}
+
+export interface LocationRow {
+  id: number;
+  name: string;
+  type: string;
+  address: string | null;
+  notes: string | null;
+  is_default: number;
+  created_at: string;
+  updated_at: string;
+  /** Joined in by GET /api/locations. */
+  total_units?: number;
+  item_count?: number;
+}
+
+export interface InventoryStockRow {
+  id: number;
+  item_id: number;
+  location_id: number;
+  quantity: number;
+}
+
 export interface InventoryItem {
   id: number;
   name: string;
   sku: string | null;
   category: string | null;
   department_id: number | null;
+  supplier_id: number | null;
   quantity: number;
   unit: string | null;
   min_quantity: number;
@@ -72,10 +109,30 @@ export interface InventoryItem {
   notes: string | null;
   /** Raw JSON string in the DB row; parsed to an object in API responses. */
   attributes: string | Record<string, unknown> | null;
+  /** Stored filename under UPLOAD_DIR; served by GET /api/inventory/:id/image. */
+  image_path: string | null;
+  /** 1 ⇒ this item is a built product with a BOM (bom_components). */
+  is_finished_product: number;
   created_at: string;
   updated_at: string;
   department_name?: string | null;
+  supplier_name?: string | null;
   low_stock?: number;
+}
+
+export interface BomComponent {
+  id: number;
+  product_item_id: number;
+  component_item_id: number;
+  quantity: number;
+  notes: string | null;
+  sort: number;
+  /** Joined for API responses. */
+  component_name?: string;
+  component_sku?: string | null;
+  component_unit?: string | null;
+  /** Current on-hand grand total of the component. */
+  component_on_hand?: number;
 }
 
 export interface InventoryTransaction {
@@ -85,8 +142,32 @@ export interface InventoryTransaction {
   change: number;
   balance_after: number;
   reason: string | null;
+  location_id: number | null;
+  location_balance_after: number | null;
   created_at: string;
   user_name?: string | null;
+  /** Joined in by GET /api/inventory/movements (the cross-item feed). */
+  item_name?: string;
+  item_sku?: string | null;
+  location_name?: string | null;
+}
+
+export interface ActivityLogRow {
+  id: number;
+  created_at: string;
+  user_id: number | null;
+  /** Snapshot of the actor's name at the time — survives user deletion. */
+  user_name: string | null;
+  method: string;
+  path: string;
+  entity: string | null;
+  entity_id: string | null;
+  action: string | null;
+  status_code: number | null;
+  ip: string | null;
+  summary: string | null;
+  /** Redacted JSON snapshot of the request body (string in the row). */
+  meta: string | null;
 }
 
 export interface FormRow {

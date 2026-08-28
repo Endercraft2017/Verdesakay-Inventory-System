@@ -6,6 +6,7 @@
  * Tools are filtered to those the calling user actually holds before being sent to the LLM.
  */
 import { db, queryOne, queryAll, run, getSetting, setSetting } from './db';
+import { applyStockChange, stockAt, getDefaultLocationId } from './inventory-stock';
 import { parseBody, createUserSchema, updateUserSchema, createItemSchema, updateItemSchema } from './validation';
 import { visibilityClause } from './routes/forms.routes';
 import type { AuthUser, Permission } from './types';
@@ -679,19 +680,28 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
           const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ?', input.sku);
           if (dupe) return { success: false, error: 'An item with that SKU already exists.' };
         }
-        const r = run(
-          `INSERT INTO inventory_items (name, sku, category, department_id, quantity, unit, min_quantity, location, notes, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-          input.name, input.sku ?? null, input.category ?? null, input.department_id ?? null,
-          input.quantity, input.unit ?? 'pcs', input.min_quantity, input.location ?? null, input.notes ?? null,
-        );
-        if (input.quantity !== 0) {
-          run(
-            `INSERT INTO inventory_transactions (item_id, user_id, change, balance_after, reason) VALUES (?, ?, ?, ?, ?)`,
-            r.lastInsertRowid, user.id, input.quantity, input.quantity, 'Initial stock',
+        let newId: number | bigint;
+        db.exec('BEGIN');
+        try {
+          const r = run(
+            `INSERT INTO inventory_items (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, location, notes, updated_at)
+             VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, datetime('now'))`,
+            input.name, input.sku ?? null, input.category ?? null, input.department_id ?? null,
+            input.supplier_id ?? null, input.unit ?? 'pcs', input.min_quantity, input.location ?? null, input.notes ?? null,
           );
-        }
-        return { success: true, data: queryOne('SELECT * FROM inventory_items WHERE id = ?', r.lastInsertRowid) };
+          newId = r.lastInsertRowid;
+          if (input.quantity !== 0) {
+            applyStockChange({
+              itemId: Number(newId),
+              locationId: input.location_id ?? getDefaultLocationId(),
+              change: input.quantity,
+              reason: 'Initial stock',
+              userId: user.id,
+            });
+          }
+          db.exec('COMMIT');
+        } catch (e) { db.exec('ROLLBACK'); throw e; }
+        return { success: true, data: queryOne('SELECT * FROM inventory_items WHERE id = ?', newId) };
       }
 
       case 'update_inventory_item': {
@@ -720,18 +730,27 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
         if (change === 0) return { success: false, error: 'Change must be non-zero.' };
         const item = queryOne<{ quantity: number }>('SELECT quantity FROM inventory_items WHERE id = ?', a.id);
         if (!item) return { success: false, error: 'Item not found.' };
-        const newQty = item.quantity + change;
-        if (newQty < 0) return { success: false, error: `Not enough stock. Only ${item.quantity} available.` };
+        const locId = a.location_id ? Number(a.location_id) : getDefaultLocationId();
+        if (!queryOne('SELECT id FROM locations WHERE id = ?', locId)) {
+          return { success: false, error: 'Location not found.' };
+        }
+        const atLoc = stockAt(Number(a.id), locId);
+        if (atLoc + change < 0) {
+          return { success: false, error: `Not enough stock at that location. Only ${atLoc} available.` };
+        }
         db.exec('BEGIN');
+        let result;
         try {
-          run("UPDATE inventory_items SET quantity = ?, updated_at = datetime('now') WHERE id = ?", newQty, a.id);
-          run(
-            'INSERT INTO inventory_transactions (item_id, user_id, change, balance_after, reason) VALUES (?, ?, ?, ?, ?)',
-            a.id, user.id, change, newQty, a.reason ?? null,
-          );
+          result = applyStockChange({
+            itemId: Number(a.id), locationId: locId, change,
+            reason: typeof a.reason === 'string' ? a.reason : null, userId: user.id,
+          });
           db.exec('COMMIT');
         } catch (e) { db.exec('ROLLBACK'); throw e; }
-        return { success: true, data: { item_id: a.id, change, new_quantity: newQty } };
+        return {
+          success: true,
+          data: { item_id: a.id, change, new_quantity: result.total, location_quantity: result.locationQty },
+        };
       }
 
       case 'delete_inventory_item': {

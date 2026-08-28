@@ -8,7 +8,7 @@ import type { Role, Permission } from './types';
 
 export const ALL_PERMISSIONS: Permission[] = [
   'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
-  'inventory.adjust', 'inventory.configure',
+  'inventory.adjust', 'inventory.configure', 'inventory.mobile',
   'orders.view', 'orders.create', 'orders.edit', 'orders.delete',
   'forms.view', 'forms.upload', 'forms.delete',
   'forms.manage.hr', 'forms.manage.inventory', 'forms.manage.admin', 'forms.manage.accounting',
@@ -16,6 +16,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'templates.view', 'templates.edit', 'templates.company',
   'users.manage',
   'hr.view', 'hr.manage',
+  'audit.view',
 ];
 
 /** Canonical role list — the single source of truth for iterating all roles. */
@@ -40,7 +41,7 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
     'templates.view',
   ],
   warehouse: [
-    'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.adjust',
+    'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.adjust', 'inventory.mobile',
     'orders.view',
     'forms.view', 'forms.upload', 'forms.manage.inventory',
     'messages.view', 'messages.send',

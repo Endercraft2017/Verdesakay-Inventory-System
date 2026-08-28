@@ -14,7 +14,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'inventory', 'forms', 'orders', 'templates', 'messages', 'admin', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping'];
+const ROUTE_NAMES = ['dashboard', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'forms', 'orders', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping'];
 
 const NAV = [
   {
@@ -41,7 +41,25 @@ const NAV = [
       {
         id: 'movements', label: 'Stock Movements',
         tree: [
-          { label: 'All Items', icon: 'adjust', route: 'inventory' },
+          { label: 'All Movements', icon: 'adjust', route: 'inventory-movements' },
+        ],
+      },
+      {
+        id: 'finished', label: 'Finished Products',
+        tree: [
+          { label: 'Finished Products', icon: 'sparkles', route: 'finished-products' },
+        ],
+      },
+      {
+        id: 'suppliers', label: 'Suppliers',
+        tree: [
+          { label: 'Suppliers', icon: 'building', route: 'suppliers' },
+        ],
+      },
+      {
+        id: 'locations', label: 'Locations',
+        tree: [
+          { label: 'Locations', icon: 'building', route: 'locations' },
         ],
       },
       {
@@ -143,6 +161,12 @@ const NAV = [
         tree: [
           { label: 'User Accounts', icon: 'users', route: 'admin' },
           { label: 'Departments', icon: 'building', route: 'admin', filter: { tab: 'departments' } },
+        ],
+      },
+      {
+        id: 'activity', label: 'Activity', requiredPermission: 'audit.view',
+        tree: [
+          { label: 'Activity Log', icon: 'history', route: 'activity' },
         ],
       },
       {

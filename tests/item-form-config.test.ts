@@ -6,12 +6,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 type Field = {
-  key: string; label: string; tab: string; type: string;
-  options?: string[]; core?: boolean; visible: boolean; required: boolean; help?: string;
+  key: string; label: string; tab: string; section: string; type: string;
+  options?: string[]; source?: string; core?: boolean; visible: boolean; required: boolean; help?: string;
 };
 type Tab = { id: string; label: string };
 
-function loadCatalog(): { ITEM_FORM_TABS: Tab[]; ITEM_CORE_KEYS: string[]; ITEM_FORM_DEFAULTS: Field[] } {
+function loadCatalog(): {
+  ITEM_FORM_TABS: Tab[]; ITEM_FORM_SECTIONS: Tab[]; ITEM_CORE_KEYS: string[]; ITEM_FORM_DEFAULTS: Field[];
+} {
   const file = path.join(import.meta.dirname, '../public/js/item-form-config.js');
   const src = fs.readFileSync(file, 'utf8');
   const mod: { exports: Record<string, unknown> } = { exports: {} };
@@ -21,9 +23,9 @@ function loadCatalog(): { ITEM_FORM_TABS: Tab[]; ITEM_CORE_KEYS: string[]; ITEM_
 }
 
 // The columns that actually exist on inventory_items (src/db.ts).
-const REAL_COLUMNS = ['name', 'sku', 'category', 'department_id', 'quantity', 'unit', 'min_quantity', 'location', 'notes'];
+const REAL_COLUMNS = ['name', 'sku', 'category', 'department_id', 'supplier_id', 'quantity', 'unit', 'min_quantity', 'location', 'notes'];
 
-const { ITEM_FORM_TABS, ITEM_CORE_KEYS, ITEM_FORM_DEFAULTS } = loadCatalog();
+const { ITEM_FORM_TABS, ITEM_FORM_SECTIONS, ITEM_CORE_KEYS, ITEM_FORM_DEFAULTS } = loadCatalog();
 
 describe('item-form-config catalog', () => {
   it('has the 7 ECOUNT tabs', () => {
@@ -59,7 +61,7 @@ describe('item-form-config catalog', () => {
     }
   });
 
-  it('all nine real columns are represented as core fields', () => {
+  it('all real columns are represented as core fields', () => {
     const coreKeys = ITEM_FORM_DEFAULTS.filter((f) => f.core).map((f) => f.key).sort();
     expect(coreKeys).toEqual([...REAL_COLUMNS].sort());
   });
@@ -75,6 +77,58 @@ describe('item-form-config catalog', () => {
       if (f.type === 'radio' || f.type === 'select') {
         expect(Array.isArray(f.options) && f.options.length > 0, `field ${f.key} needs options`).toBe(true);
       }
+    }
+  });
+
+  it('combobox fields declare a source', () => {
+    for (const f of ITEM_FORM_DEFAULTS) {
+      if (f.type === 'combobox') {
+        expect(typeof f.source === 'string' && f.source.length > 0, `field ${f.key} needs a source`).toBe(true);
+      }
+    }
+  });
+
+  // The form ships trimmed to what the app actually uses; everything else stays in
+  // the catalog but hidden, to be re-enabled per-field when its ERP module lands.
+  it('only the essential + optional fields are visible by default', () => {
+    const visible = ITEM_FORM_DEFAULTS.filter((f) => f.visible).map((f) => f.key).sort();
+    expect(visible).toEqual(
+      [
+        // essentials
+        'category', 'department_id', 'supplier_id', 'name', 'notes', 'quantity',
+        'min_quantity', 'location', 'sku', 'spec', 'unit',
+        // optional reference set
+        'currency', 'barcode', 'image', 'manufacturer', 'model_no', 'purchase_price',
+        'sale_price',
+      ].sort()
+    );
+  });
+
+  it('every visible field still sits on a real tab', () => {
+    const tabIds = new Set(ITEM_FORM_TABS.map((t) => t.id));
+    for (const f of ITEM_FORM_DEFAULTS.filter((x) => x.visible)) {
+      expect(tabIds.has(f.tab), `visible field ${f.key} on unknown tab`).toBe(true);
+    }
+  });
+
+  // `section` groups fields under headings in the admin Option panel (capability groups).
+  it('section ids are unique', () => {
+    const ids = ITEM_FORM_SECTIONS.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const s of ITEM_FORM_SECTIONS) expect(s.label, `section ${s.id} needs a label`).toBeTruthy();
+  });
+
+  it('every field has a section that exists in ITEM_FORM_SECTIONS', () => {
+    const sectionIds = new Set(ITEM_FORM_SECTIONS.map((s) => s.id));
+    for (const f of ITEM_FORM_DEFAULTS) {
+      expect(sectionIds.has(f.section), `field ${f.key} has unknown section "${f.section}"`).toBe(true);
+    }
+  });
+
+  it('no section is defined but unused', () => {
+    const used = new Set(ITEM_FORM_DEFAULTS.map((f) => f.section));
+    for (const s of ITEM_FORM_SECTIONS) {
+      expect(used.has(s.id), `section "${s.id}" is declared but no field uses it`).toBe(true);
     }
   });
 });

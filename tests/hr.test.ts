@@ -61,6 +61,57 @@ describe('hr', () => {
     expect(detail.employee_no).toBe('TEST-RENUM-A2');
   });
 
+  it('links an employee to a user account, rejects double-linking, allows unlinking, and reflects it on GET', async () => {
+    const acct1 = await createEmployee(ctx.api, token, { username: 'link_acct_1' });
+    const acct2 = await createEmployee(ctx.api, token, { username: 'link_acct_2' });
+
+    const created = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LINK-A', name: 'Link Test A', user_id: acct1.id });
+    expect(created.status).toBe(201);
+    let list = await ctx.api.get('/api/hr/employees').set(hdr());
+    let a = list.body.find((e: { id: number }) => e.id === created.body.id);
+    expect(a.user_id).toBe(acct1.id);
+    expect(a.linked_username).toBe('link_acct_1');
+
+    // A second employee can't claim the same account.
+    const clash = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LINK-B', name: 'Link Test B', user_id: acct1.id });
+    expect(clash.status).toBe(409);
+
+    // Linking to a nonexistent user is rejected.
+    const missing = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LINK-C', name: 'Link Test C', user_id: 999999 });
+    expect(missing.status).toBe(409);
+
+    // The second employee CAN link to a different, still-free account.
+    const b = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LINK-B', name: 'Link Test B', user_id: acct2.id });
+    expect(b.status).toBe(201);
+
+    // Re-saving employee A with its own existing link is fine (not a false self-collision).
+    const resave = await ctx.api.put(`/api/hr/employees/${created.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-LINK-A', name: 'Link Test A', user_id: acct1.id });
+    expect(resave.status).toBe(200);
+
+    // Employee A can't steal B's account either.
+    const stealAttempt = await ctx.api.put(`/api/hr/employees/${created.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-LINK-A', name: 'Link Test A', user_id: acct2.id });
+    expect(stealAttempt.status).toBe(409);
+
+    // Unlinking (user_id omitted / null) works.
+    const unlink = await ctx.api.put(`/api/hr/employees/${created.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-LINK-A', name: 'Link Test A' });
+    expect(unlink.status).toBe(200);
+    list = await ctx.api.get('/api/hr/employees').set(hdr());
+    a = list.body.find((e: { id: number }) => e.id === created.body.id);
+    expect(a.user_id).toBeNull();
+
+    // Now that A is unlinked, acct1 is free again for B to switch to.
+    const switchToFreed = await ctx.api.put(`/api/hr/employees/${b.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-LINK-B', name: 'Link Test B', user_id: acct1.id });
+    expect(switchToFreed.status).toBe(200);
+  });
+
   it('suggests a sequential number by default, and a hire-date-based one with per-day suffixes once configured', async () => {
     const seq1 = await ctx.api.get('/api/hr/employees/suggest-number').set(hdr());
     expect(seq1.status).toBe(200);

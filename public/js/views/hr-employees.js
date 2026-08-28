@@ -51,6 +51,17 @@ App.register('hr-employees', async (view) => {
     } catch { return ''; }
   }
 
+  /** User accounts (for the "Linked Account" picker) and a fresh, unfiltered employee list (so
+      already-linked accounts can be flagged/disabled in the picker) — fetched fresh each time
+      the modal opens rather than cached, since links can change between opens. */
+  async function loadLinkPickerData() {
+    const [users, allEmployees] = await Promise.all([
+      API.get('/users').catch(() => []),
+      API.get('/hr/employees').catch(() => []),
+    ]);
+    return { users, allEmployees };
+  }
+
   async function ensureDepts() {
     if (depts.length) return depts;
     try { depts = await API.get('/users/departments/list'); } catch { depts = []; }
@@ -142,7 +153,7 @@ App.register('hr-employees', async (view) => {
         <tbody>${list.map((e) => `
           <tr class="clickable" data-open="${e.id}">
             <td><img src="${UI.esc(e.photo || PLACEHOLDER_PHOTO)}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle" /></td>
-            <td><strong>${UI.esc(e.name)}</strong></td>
+            <td><strong>${UI.esc(e.name)}</strong>${e.user_id ? ` <span class="muted" title="Linked to account: ${UI.esc(e.linked_username || '')}" style="vertical-align:middle">${UI.icon('key', 13)}</span>` : ''}</td>
             <td class="mono muted">${UI.esc(e.employee_no || '—')}</td>
             <td>${UI.esc(e.department_name || '—')}</td>
             <td>${UI.esc(e.position || '—')}</td>
@@ -210,7 +221,8 @@ App.register('hr-employees', async (view) => {
       ensureDepts(),
       ensurePolicyDivisor(),
       editing ? Promise.resolve(existing.employee_no || '') : suggestEmployeeNo(''),
-    ]).then(([deptList, , suggestedNo]) => {
+      loadLinkPickerData(),
+    ]).then(([deptList, , suggestedNo, { users, allEmployees }]) => {
       const deptOpts = ['<option value="">— none —</option>']
         .concat(deptList.map((d) => `<option value="${d.id}" ${editing && existing.department_id === d.id ? 'selected' : ''}>${UI.esc(d.name)}</option>`))
         .join('');
@@ -219,6 +231,21 @@ App.register('hr-employees', async (view) => {
         .join('');
       const rateType = editing ? (existing.rate_type || 'daily') : 'daily';
       const rateAmount = editing ? (rateType === 'monthly' ? existing.monthly_rate : existing.daily_rate) : 0;
+
+      const currentUserId = editing ? existing.user_id : null;
+      const linkedElsewhere = new Map(); // user_id -> employee name, excluding this employee
+      allEmployees.forEach((e) => {
+        if (e.user_id != null && (!editing || e.id !== existing.id)) linkedElsewhere.set(e.user_id, e.name);
+      });
+      const userOpts = ['<option value="">— none —</option>']
+        .concat(users.map((u) => {
+          const taken = linkedElsewhere.get(u.id);
+          const label = `${u.full_name} (${u.username})${taken ? ` — linked to ${taken}` : ''}`;
+          const selected = currentUserId === u.id ? 'selected' : '';
+          const disabled = taken && currentUserId !== u.id ? 'disabled' : '';
+          return `<option value="${u.id}" ${selected} ${disabled}>${UI.esc(label)}</option>`;
+        }))
+        .join('');
 
       UI.modal({
         title: editing ? `Edit ${existing.name}` : 'New Employee',
@@ -269,6 +296,11 @@ App.register('hr-employees', async (view) => {
           <div class="field-row">
             <div><label>Status</label><select data-f="status">${statusOpts}</select></div>
             <div><label>Start date</label><input data-f="start_date" type="date" value="${UI.esc(editing ? (existing.start_date || '') : '')}" /></div>
+          </div>
+          <div class="field-row" style="margin-top:10px">
+            <div><label>Linked user account</label><select data-f="user_id">${userOpts}</select>
+              <div class="muted" style="font-size:12px;margin-top:3px">Ties this employee's 201-file record to their login account (optional).</div>
+            </div>
           </div>
           <label style="margin-top:12px;display:block">Statutory numbers</label>
           <div class="field-row">
@@ -394,6 +426,7 @@ App.register('hr-employees', async (view) => {
             name,
             department_id: ov.querySelector('[data-f="department_id"]').value || null,
             position: ov.querySelector('[data-f="position"]').value.trim(),
+            user_id: ov.querySelector('[data-f="user_id"]').value || null,
             rate_type: rateTypeVal,
             daily_rate: rateTypeVal === 'daily' ? rateAmountVal : 0,
             monthly_rate: rateTypeVal === 'monthly' ? rateAmountVal : null,

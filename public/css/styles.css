@@ -636,6 +636,67 @@ textarea { resize: vertical; min-height: 84px; }
 }
 .radio-opt input, .check-opt input { width: auto; }
 
+/* ---------- Combobox (type-to-filter picker) ---------- */
+.combobox { position: relative; }
+.combobox > input { width: 100%; }
+.combo-list {
+  position: absolute; z-index: 60; left: 0; right: 0; top: calc(100% + 2px);
+  max-height: 240px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-md);
+}
+.combo-list.hidden { display: none; }
+.combo-opt { padding: 7px 10px; font-size: 13px; cursor: pointer; }
+.combo-opt:hover { background: var(--accent-weak); }
+.combo-opt.muted { cursor: default; }
+.combo-opt.muted:hover { background: none; }
+
+/* ---------- Item image field ---------- */
+.image-field { display: flex; flex-direction: column; gap: 8px; }
+.image-preview {
+  width: 140px; height: 140px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); display: grid; place-items: center;
+}
+.image-preview[hidden] { display: none; }
+.image-preview img { width: 100%; height: 100%; object-fit: cover; }
+.image-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- Item detail modal (read-only) ---------- */
+.item-detail .idt-head { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
+.item-detail .idt-head h3 { margin: 0 0 4px; }
+.idt-img {
+  width: 120px; height: 120px; flex: 0 0 auto; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); display: grid; place-items: center;
+}
+.idt-img img { width: 100%; height: 100%; object-fit: cover; }
+.item-detail h4 {
+  margin: 16px 0 6px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted);
+}
+.item-detail table { margin-top: 4px; }
+
+/* ---------- BOM component editor rows ---------- */
+.bom-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.bom-row select[data-c="item"] { flex: 2 1 0; min-width: 0; }
+.bom-row input[data-c="notes"] { flex: 1 1 0; min-width: 0; }
+.bom-row .icon-btn { flex: 0 0 auto; }
+
+/* ---------- Pager + inline date filters (list views) ---------- */
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+.inline-date { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 500; white-space: nowrap; font-size: 13px; }
+.inline-date input { width: auto; }
+
+/* ---------- Key/value grid + code block (detail modals) ---------- */
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; }
+.kv > div > span.muted { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.code-block {
+  white-space: pre-wrap; word-break: break-word;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px 12px; max-height: 320px; overflow: auto; font-size: 12px; margin: 6px 0 0;
+}
+
 /* ---------- Form Options (admin customizer) ---------- */
 .opt-count {
   background: var(--surface-3); color: var(--text-muted);
@@ -652,6 +713,13 @@ textarea { resize: vertical; min-height: 84px; }
 .opt-controls { display: flex; align-items: center; gap: 14px; }
 .opt-controls .check-opt { font-size: 12.5px; }
 .opt-row .opt-default { padding: 5px 8px; font-size: 12.5px; }
+.opt-section {
+  grid-column: 1 / -1; margin: 14px 0 2px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted); display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--border); padding-bottom: 5px;
+}
+.opt-section:first-child { margin-top: 0; }
 .modal-foot { padding: 15px 22px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
 
 /* ---------- Toast ---------- */

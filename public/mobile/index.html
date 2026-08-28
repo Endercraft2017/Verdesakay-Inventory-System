@@ -2,9 +2,9 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
   <meta name="theme-color" content="#2b7fff" />
-  <title>Verdesakay Mobile</title>
+  <title>Verdesakay Warehouse</title>
   <script>
     (function () {
       try {
@@ -24,7 +24,7 @@
       <div class="m-brand">
         <div class="m-mark">V</div>
         <h1>Verdesakay</h1>
-        <div class="m-sub">Mobile</div>
+        <div class="m-sub">Warehouse</div>
       </div>
       <div id="m-login-error" class="m-error hidden"></div>
       <label for="m-username">Username</label>
@@ -35,17 +35,33 @@
     </form>
   </div>
 
-  <!-- Home: just the account holder's name, centered -->
-  <div id="m-home" class="m-screen m-home hidden">
-    <button class="m-logout" id="m-logout">Sign out</button>
-    <div class="m-name-wrap">
-      <div class="m-hello">Signed in as</div>
-      <div class="m-name" id="m-name">—</div>
-      <div class="m-meta" id="m-meta"></div>
-    </div>
+  <!-- App -->
+  <div id="m-app" class="hidden">
+    <header class="m-topbar">
+      <button class="m-back hidden" id="m-back" aria-label="Back">&#8249;</button>
+      <div class="m-title" id="m-title">Warehouse</div>
+      <button class="m-signout" id="m-signout" aria-label="Sign out">&#x23FB;</button>
+    </header>
+    <main class="m-view" id="m-view"></main>
   </div>
 
+  <div id="m-overlay-root"></div>
+  <div id="m-toasts"></div>
+
   <script src="/js/api.js"></script>
-  <script src="/mobile/mobile.js"></script>
+  <script src="/mobile/vendor/qrcode.js"></script>
+  <script src="/mobile/vendor/jsqr.js"></script>
+  <script src="/mobile/app.js"></script>
+  <script src="/mobile/lib/dom.js"></script>
+  <script src="/mobile/lib/locations.js"></script>
+  <script src="/mobile/lib/scanner.js"></script>
+  <script src="/mobile/lib/item-picker.js"></script>
+  <script src="/mobile/views/home.js"></script>
+  <script src="/mobile/views/stock-move.js"></script>
+  <script src="/mobile/views/damage.js"></script>
+  <script src="/mobile/views/transfer.js"></script>
+  <script src="/mobile/views/new-item.js"></script>
+  <script src="/mobile/views/assign-qr.js"></script>
+  <script src="/mobile/views/scan.js"></script>
 </body>
 </html>

@@ -36,6 +36,31 @@ function itemDeptOptions(selected) {
       `<option value="${d.id}" ${String(d.id) === String(selected) ? 'selected' : ''}>${UI.esc(d.name)}</option>`).join('');
 }
 
+// Suppliers registry — cached module-wide, refreshed when an item form opens.
+let _suppliers = [];
+async function loadSuppliers(force) {
+  if (_suppliers.length && !force) return _suppliers;
+  try { _suppliers = await API.get('/suppliers'); } catch { _suppliers = []; }
+  return _suppliers;
+}
+function itemSupplierOptions(selected) {
+  return '<option value="">— None —</option>' +
+    _suppliers.map((s) =>
+      `<option value="${s.id}" ${String(s.id) === String(selected) ? 'selected' : ''}>${UI.esc(s.name)}</option>`).join('');
+}
+
+// Locations registry — same caching pattern.
+let _locations = [];
+async function loadLocations(force) {
+  if (_locations.length && !force) return _locations;
+  try { _locations = await API.get('/locations'); } catch { _locations = []; }
+  return _locations;
+}
+function locationOptions(selected, list) {
+  return (list || _locations).map((l) =>
+    `<option value="${l.id}" ${String(l.id) === String(selected) ? 'selected' : ''}>${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+}
+
 /** Current value of a field for an item (or its default for a new item). */
 function itemFieldValue(def, it) {
   if (!it) return def.default !== undefined ? def.default : (def.type === 'checkbox' ? false : '');
@@ -61,22 +86,21 @@ function renderItemField(def, value, opts = {}) {
   const head = `<div class="field-label"><label>${e(def.label)}${req}</label>${help}</div>`;
 
   if (def.type === 'checkbox') {
-    return `<div class="form-field span2 inline">
+    return `<div class="form-field inline">
       <label class="check-opt"><input type="checkbox" data-key="${def.key}" ${isChecked(v) ? 'checked' : ''} /> ${e(def.label)}</label>${help}
     </div>`;
   }
   if (def.type === 'static') {
     return `<div class="form-field span2">${head}<div class="static-field muted">${e(def.placeholder || '—')}</div></div>`;
   }
-  if (def.type === 'radio') {
-    const opts2 = (def.options || []).map((o) =>
-      `<label class="radio-opt"><input type="radio" name="f_${def.key}" value="${e(o)}" ${String(v) === String(o) ? 'checked' : ''} /> ${e(o)}</label>`).join('');
-    return `<div class="form-field span2">${head}<div class="radio-row">${opts2}</div></div>`;
-  }
-  if (def.type === 'select' || def.type === 'department') {
+  // radio is rendered as a compact dropdown too — a single pick from a short list
+  // doesn't need a full row of dots.
+  if (def.type === 'select' || def.type === 'department' || def.type === 'supplier' || def.type === 'radio') {
     const inner = def.type === 'department'
       ? itemDeptOptions(v)
-      : (def.options || []).map((o) => `<option value="${e(o)}" ${String(v) === String(o) ? 'selected' : ''}>${e(o)}</option>`).join('');
+      : def.type === 'supplier'
+        ? itemSupplierOptions(v)
+        : (def.options || []).map((o) => `<option value="${e(o)}" ${String(v) === String(o) ? 'selected' : ''}>${e(o)}</option>`).join('');
     return `<div class="form-field">${head}<select data-key="${def.key}">${inner}</select></div>`;
   }
   if (def.type === 'textarea') {
@@ -84,6 +108,25 @@ function renderItemField(def, value, opts = {}) {
   }
   if (def.type === 'search') {
     return `<div class="form-field">${head}<div class="search-box">${UI.icon('search', 16)}<input data-key="${def.key}" value="${e(v)}" placeholder="${e(def.placeholder || '')}" /></div></div>`;
+  }
+  if (def.type === 'combobox') {
+    return `<div class="form-field">${head}
+      <div class="combobox" data-combo-src="${e(def.source || '')}">
+        <input data-key="${def.key}" value="${e(v)}" autocomplete="off" placeholder="${e(def.placeholder || 'Type to search…')}" />
+        <div class="combo-list hidden"></div>
+      </div></div>`;
+  }
+  if (def.type === 'image') {
+    return `<div class="form-field span2">${head}
+      <div class="image-field" data-image>
+        <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden />
+        <div class="image-actions">
+          <button type="button" class="btn secondary small" data-img-pick>Choose image</button>
+          <button type="button" class="btn secondary small" data-img-remove hidden>Remove</button>
+          <span class="muted" style="font-size:11px">${e(def.placeholder || '')}</span>
+        </div>
+        <div class="image-preview" hidden></div>
+      </div></div>`;
   }
 
   // text | number | money | percent
@@ -121,12 +164,80 @@ function wireItemFormTabs(overlay) {
   });
 }
 
+/** Named option sources for `combobox` fields. */
+const COMBO_SOURCES = {
+  currencies: () => (typeof CURRENCIES !== 'undefined' ? CURRENCIES : [])
+    .map((c) => ({ value: c.code, label: `${c.code} — ${c.name}` })),
+};
+
+/** Wire every combobox in the open form: type to filter, click a row to pick. */
+function wireItemComboboxes(root) {
+  root.querySelectorAll('.combobox').forEach((box) => {
+    const input = box.querySelector('input[data-key]');
+    const list = box.querySelector('.combo-list');
+    const opts = (COMBO_SOURCES[box.dataset.comboSrc] || (() => []))();
+
+    const render = (filter) => {
+      const q = (filter || '').trim().toLowerCase();
+      const hits = (q ? opts.filter((o) => o.label.toLowerCase().includes(q)) : opts).slice(0, 60);
+      list.innerHTML = hits.length
+        ? hits.map((o) => `<div class="combo-opt" data-val="${UI.esc(o.value)}">${UI.esc(o.label)}</div>`).join('')
+        : '<div class="combo-opt muted">No match</div>';
+    };
+    input.addEventListener('focus', () => { render(input.value); list.classList.remove('hidden'); });
+    input.addEventListener('input', () => { render(input.value); list.classList.remove('hidden'); });
+    input.addEventListener('blur', () => setTimeout(() => list.classList.add('hidden'), 150));
+    list.addEventListener('mousedown', (e) => {
+      const opt = e.target.closest('.combo-opt[data-val]');
+      if (!opt) return;
+      input.value = opt.dataset.val;
+      list.classList.add('hidden');
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  });
+}
+
+/** Wire the item image widget. Returns a state obj read by the modal's onConfirm. */
+function wireItemImageField(root, it) {
+  const wrap = root.querySelector('[data-image]');
+  if (!wrap) return null;
+  const preview = wrap.querySelector('.image-preview');
+  const fileInput = wrap.querySelector('input[type="file"]');
+  const pickBtn = wrap.querySelector('[data-img-pick]');
+  const removeBtn = wrap.querySelector('[data-img-remove]');
+  const st = { file: null, remove: false, objUrl: null };
+
+  const showImg = (src) => {
+    preview.innerHTML = `<img alt="" src="${src}" />`;
+    preview.hidden = false;
+    removeBtn.hidden = false;
+  };
+  const showEmpty = () => {
+    if (st.objUrl) { URL.revokeObjectURL(st.objUrl); st.objUrl = null; }
+    preview.innerHTML = '';
+    preview.hidden = true;
+    removeBtn.hidden = true;
+  };
+
+  if (it && it.image_path) {
+    API.blobUrl(`/inventory/${it.id}/image`).then((u) => { st.objUrl = u; showImg(u); }).catch(() => {});
+    removeBtn.hidden = false;
+  }
+  pickBtn.onclick = () => fileInput.click();
+  fileInput.onchange = () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) { UI.toast('Image is larger than 5 MB', 'error'); fileInput.value = ''; return; }
+    if (st.objUrl) URL.revokeObjectURL(st.objUrl);
+    st.file = f; st.remove = false; st.objUrl = URL.createObjectURL(f);
+    showImg(st.objUrl);
+  };
+  removeBtn.onclick = () => { st.file = null; st.remove = !!(it && it.image_path); fileInput.value = ''; showEmpty(); };
+  return st;
+}
+
 /** Read a field's current value from the open form. */
 function readItemField(overlay, def) {
-  if (def.type === 'radio') {
-    const c = overlay.querySelector(`input[name="f_${def.key}"]:checked`);
-    return c ? c.value : '';
-  }
   if (def.type === 'checkbox') {
     const el = overlay.querySelector(`[data-key="${def.key}"]`);
     return !!(el && el.checked);
@@ -140,7 +251,7 @@ function collectItemForm(overlay, cfg, it) {
   const core = {};
   const attributes = (it && it.attributes && typeof it.attributes === 'object') ? { ...it.attributes } : {};
   cfg.forEach((def) => {
-    if (!def.visible || def.type === 'static') return;
+    if (!def.visible || def.type === 'static' || def.type === 'image') return;
     const val = readItemField(overlay, def);
     if (def.core) core[def.key] = val;
     else attributes[def.key] = val;
@@ -149,7 +260,7 @@ function collectItemForm(overlay, cfg, it) {
 }
 
 App.register('inventory', async (view, filter) => {
-  const state = { q: '', department_id: '', category: '', low: !!(filter && filter.low) };
+  const state = { q: '', department_id: '', supplier_id: '', location_id: '', category: '', low: !!(filter && filter.low), include_damaged: false };
   let lastItems = [];
 
   function deptOptions(selected) {
@@ -162,17 +273,35 @@ App.register('inventory', async (view, filter) => {
     <div class="topbar">
       <h2>Inventory</h2>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="inv-search" placeholder="Search name, SKU, location…" /></div>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="inv-search" placeholder="Search name, SKU, spec, location…" /></div>
       <select id="inv-cat" style="width:150px"><option value="">— Category —</option></select>
       <select id="inv-dept" style="width:160px">${deptOptions('')}</select>
+      <select id="inv-supplier" style="width:150px"><option value="">— Supplier —</option></select>
+      <select id="inv-location" style="width:150px"><option value="">— Location —</option></select>
       <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;">
         <input type="checkbox" id="inv-low" style="width:auto" ${state.low ? 'checked' : ''} /> Low stock</label>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;" title="Show damaged-stock records (hidden by default)">
+        <input type="checkbox" id="inv-damaged" style="width:auto" ${state.include_damaged ? 'checked' : ''} /> Show damaged</label>
       <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
       <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
     </div>
     <div class="panel"><div id="inv-table"></div></div>`;
 
   const tableEl = view.querySelector('#inv-table');
+
+  function fillSupplierFilter() {
+    const sel = view.querySelector('#inv-supplier');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Supplier —</option>' +
+      _suppliers.map((s) => `<option value="${s.id}" ${String(s.id) === String(state.supplier_id) ? 'selected' : ''}>${UI.esc(s.name)}</option>`).join('');
+  }
+
+  function fillLocationFilter() {
+    const sel = view.querySelector('#inv-location');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Location —</option>' +
+      _locations.map((l) => `<option value="${l.id}" ${String(l.id) === String(state.location_id) ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('');
+  }
 
   async function loadCategories() {
     try {
@@ -188,8 +317,11 @@ App.register('inventory', async (view, filter) => {
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.department_id) params.set('department_id', state.department_id);
+    if (state.supplier_id) params.set('supplier_id', state.supplier_id);
+    if (state.location_id) params.set('location_id', state.location_id);
     if (state.category) params.set('category', state.category);
     if (state.low) params.set('low', '1');
+    if (state.include_damaged) params.set('include_damaged', '1');
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     const items = await API.get('/inventory?' + params.toString());
     lastItems = items;
@@ -198,9 +330,9 @@ App.register('inventory', async (view, filter) => {
 
   function exportCsv() {
     if (!lastItems.length) { UI.toast('Nothing to export', 'error'); return; }
-    const headers = ['Name', 'SKU', 'Category', 'Department', 'Quantity', 'Unit', 'Min', 'Location'];
+    const headers = ['Name', 'SKU', 'Category', 'Department', 'Supplier', 'Quantity', 'Unit', 'Min', 'Location'];
     const rows = lastItems.map((i) => [
-      i.name, i.sku || '', i.category || '', i.department_name || '',
+      i.name, i.sku || '', i.category || '', i.department_name || '', i.supplier_name || '',
       i.quantity, i.unit || '', i.min_quantity, i.location || '',
     ]);
     UI.downloadCsv('inventory.csv', headers, rows);
@@ -208,7 +340,7 @@ App.register('inventory', async (view, filter) => {
 
   function render(items) {
     if (!items.length) {
-      const fresh = !state.q && !state.department_id && !state.low;
+      const fresh = !state.q && !state.department_id && !state.supplier_id && !state.location_id && !state.category && !state.low && !state.include_damaged;
       tableEl.innerHTML = UI.emptyState({
         icon: 'inventory',
         title: fresh ? 'No items yet' : 'No matching items',
@@ -222,7 +354,7 @@ App.register('inventory', async (view, filter) => {
     tableEl.innerHTML = `
       <table>
         <thead><tr>
-          <th>Item</th><th>Category</th><th>Department</th><th>Location</th>
+          <th>Item</th><th>Category</th><th>Department</th><th>Supplier</th><th>Location</th>
           <th class="right">Quantity</th><th></th>
         </tr></thead>
         <tbody>${items.map((i) => `
@@ -230,6 +362,7 @@ App.register('inventory', async (view, filter) => {
             <td><strong>${UI.esc(i.name)}</strong><div class="muted mono">${UI.esc(i.sku || '—')}</div></td>
             <td>${UI.esc(i.category || '—')}</td>
             <td>${UI.esc(i.department_name || '—')}</td>
+            <td>${UI.esc(i.supplier_name || '—')}</td>
             <td>${UI.esc(i.location || '—')}</td>
             <td class="right">
               <span class="badge-pill ${i.low_stock ? 'low' : 'ok'}">${i.quantity} ${UI.esc(i.unit || '')}</span>
@@ -237,6 +370,7 @@ App.register('inventory', async (view, filter) => {
             </td>
             <td class="actions">
               <button class="icon-btn" title="Stock in/out" data-adjust="${i.id}">${UI.icon('adjust')}</button>
+              <button class="icon-btn" title="Transfer between locations" data-transfer="${i.id}">${UI.icon('archive')}</button>
               <button class="icon-btn" title="History" data-history="${i.id}">${UI.icon('history')}</button>
               <button class="icon-btn" title="Edit" data-edit="${i.id}">${UI.icon('edit')}</button>
               <button class="icon-btn danger" title="Delete" data-del="${i.id}">${UI.icon('trash')}</button>
@@ -246,18 +380,128 @@ App.register('inventory', async (view, filter) => {
       </table>`;
 
     tableEl.querySelectorAll('[data-adjust]').forEach((b) => b.onclick = () => adjustModal(b.dataset.adjust, items));
+    tableEl.querySelectorAll('[data-transfer]').forEach((b) => b.onclick = () => transferModal(b.dataset.transfer, items));
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => itemModal(items.find((x) => x.id == b.dataset.edit)));
     tableEl.querySelectorAll('[data-history]').forEach((b) => b.onclick = () => historyModal(b.dataset.history));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(items.find((x) => x.id == b.dataset.del)));
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;
-      itemModal(items.find((x) => x.id == tr.dataset.open));
+      detailModal(items.find((x) => x.id == tr.dataset.open));
     });
+  }
+
+  /** Read-only "everything about this item" view. Editing is via the Edit button only. */
+  async function detailModal(row) {
+    let full = row;
+    const canEdit = App.hasPermission('inventory.edit');
+    const opts = {
+      title: 'Item details',
+      size: 'lg',
+      bodyHTML: `<div id="idt-host"><div class="empty">Loading…</div></div>`,
+      cancelText: 'Close',
+      onOpen: async (overlay) => {
+        try { full = await API.get('/inventory/' + row.id); } catch { full = row; }
+        renderItemDetail(overlay.querySelector('#idt-host'), full);
+      },
+    };
+    if (canEdit) {
+      opts.confirmText = 'Edit item';
+      opts.onConfirm = () => { itemModal(full); };
+    }
+    UI.modal(opts);
+  }
+
+  async function renderItemDetail(host, it) {
+    const e = UI.esc;
+    const cfg = (await loadItemFormConfig()) || ITEM_FORM_DEFAULTS;
+    const labelOf = {};
+    cfg.forEach((f) => { labelOf[f.key] = f.label; });
+    const attrs = (it.attributes && typeof it.attributes === 'object') ? it.attributes : {};
+
+    const rows = [];
+    const push = (label, v) => {
+      if (v !== '' && v !== null && v !== undefined) rows.push([label, String(v)]);
+    };
+    push('Spec.', attrs.spec);
+    push('Category', it.category);
+    push('Department', it.department_name);
+    push('Supplier', it.supplier_name);
+    push('Unit', it.unit);
+    push('Location', it.location);
+    push('Currency', attrs.currency);
+    push('Purchase price', attrs.purchase_price);
+    push('Sale price', attrs.sale_price);
+    push('Vendor', attrs.vendor);
+    push('Barcode', attrs.barcode);
+    push('Manufacturer', attrs.manufacturer);
+    push('Model No.', attrs.model_no);
+
+    const shown = new Set(['spec', 'currency', 'purchase_price', 'sale_price', 'vendor', 'barcode', 'manufacturer', 'model_no']);
+    const extra = Object.entries(attrs).filter(([k, v]) =>
+      !shown.has(k) && v !== '' && v !== null && v !== undefined && typeof v !== 'object');
+
+    const hist = Array.isArray(it.history) ? it.history : [];
+
+    host.innerHTML = `
+      <div class="item-detail">
+        <div class="idt-head">
+          ${it.image_path ? '<div class="idt-img" data-idt-img><div class="empty">…</div></div>' : ''}
+          <div>
+            <h3>${e(it.name)}</h3>
+            <div class="muted mono">${e(it.sku || '—')}</div>
+            <div style="margin-top:8px">
+              <span class="badge-pill ${it.low_stock ? 'low' : 'ok'}">${it.quantity} ${e(it.unit || '')}</span>
+              <span class="muted" style="font-size:12px;margin-left:6px">reorder at ${it.min_quantity}</span>
+            </div>
+          </div>
+        </div>
+        ${rows.length ? `<div class="kv">${rows.map(([l, v]) =>
+          `<div><span class="muted">${e(l)}</span><div>${e(v)}</div></div>`).join('')}</div>` : ''}
+        ${extra.length ? `<h4>Other details</h4><div class="kv">${extra.map(([k, v]) =>
+          `<div><span class="muted">${e(labelOf[k] || k)}</span><div>${e(String(v))}</div></div>`).join('')}</div>` : ''}
+        ${Array.isArray(it.stock) && it.stock.length ? `
+          <h4>Stock by location</h4>
+          <table>
+            <thead><tr><th>Location</th><th>Type</th><th class="right">Qty</th></tr></thead>
+            <tbody>${it.stock.map((s, idx) => `
+              <tr>
+                <td>${idx === 0 ? `<strong>${e(s.location_name)}</strong>` : e(s.location_name)}</td>
+                <td style="text-transform:capitalize">${e(s.location_type)}</td>
+                <td class="right">${idx === 0 ? `<strong>${s.quantity}</strong>` : s.quantity} ${e(it.unit || '')}</td>
+              </tr>`).join('')}</tbody>
+          </table>` : ''}
+        ${it.notes ? `<h4>Notes</h4><p style="white-space:pre-wrap;margin:0">${e(it.notes)}</p>` : ''}
+        ${hist.length ? `
+          <h4>Recent movements</h4>
+          <table>
+            <thead><tr><th>When</th><th>Location</th><th class="right">Change</th><th class="right">Total</th><th>Reason</th><th>By</th></tr></thead>
+            <tbody>${hist.slice(0, 8).map((h) => `
+              <tr>
+                <td>${UI.fmtDate(h.created_at)}</td>
+                <td>${e(h.location_name || '—')}</td>
+                <td class="right"><strong style="color:${h.change < 0 ? 'var(--danger)' : 'var(--success)'}">${h.change > 0 ? '+' : ''}${h.change}</strong></td>
+                <td class="right">${h.balance_after}</td>
+                <td>${e(h.reason || '—')}</td>
+                <td>${e(h.user_name || '—')}</td>
+              </tr>`).join('')}</tbody>
+          </table>` : ''}
+      </div>`;
+
+    if (it.image_path) {
+      API.blobUrl('/inventory/' + it.id + '/image')
+        .then((u) => {
+          const el = host.querySelector('[data-idt-img]');
+          if (el) el.innerHTML = `<img alt="" src="${u}" />`;
+        })
+        .catch(() => { const el = host.querySelector('[data-idt-img]'); if (el) el.remove(); });
+    }
   }
 
   async function itemModal(it) {
     const cfg = await loadItemFormConfig();
+    await loadSuppliers(true); // pick list must be current when the form renders
     const canCustomize = App.hasPermission('inventory.configure');
+    let imageState = null;
     const m = UI.modal({
       title: it ? 'Edit item' : 'New item',
       size: 'lg',
@@ -266,13 +510,15 @@ App.register('inventory', async (view, filter) => {
       confirmText: it ? 'Save changes' : 'Create item',
       onOpen: (overlay) => {
         wireItemFormTabs(overlay);
+        wireItemComboboxes(overlay);
+        imageState = wireItemImageField(overlay, it);
         const opt = overlay.querySelector('#item-option-btn');
         if (opt) opt.addEventListener('click', () => openItemOptions(overlay, it));
       },
       onConfirm: async (overlay, showErr) => {
         // Required-field validation (visible fields only).
         for (const def of _itemFormConfig) {
-          if (!def.visible || def.type === 'static' || !def.required) continue;
+          if (!def.visible || def.type === 'static' || def.type === 'image' || !def.required) continue;
           const val = readItemField(overlay, def);
           if (val === '' || val === false || val === null || val === undefined) {
             showErr(`${def.label} is required`);
@@ -283,11 +529,23 @@ App.register('inventory', async (view, filter) => {
         }
         const { core, attributes } = collectItemForm(overlay, _itemFormConfig, it);
         const body = { ...core, attributes };
+        let id;
         if (it) {
           delete body.quantity; // stock changes go through the adjust modal
           await API.put('/inventory/' + it.id, body);
+          id = it.id;
         } else {
-          await API.post('/inventory', body);
+          const created = await API.post('/inventory', body);
+          id = created.id;
+        }
+        // Item photo: upload a staged file, or clear an existing one.
+        if (imageState && imageState.file) {
+          const fd = new FormData();
+          fd.append('image', imageState.file);
+          try { await API.upload('/inventory/' + id + '/image', fd); }
+          catch (err) { UI.toast('Item saved, but image upload failed: ' + err.message, 'error'); }
+        } else if (imageState && imageState.remove) {
+          try { await API.del('/inventory/' + id + '/image'); } catch { /* already gone */ }
         }
         UI.toast(it ? 'Item updated' : 'Item created');
         load();
@@ -303,6 +561,8 @@ App.register('inventory', async (view, filter) => {
     if (!host) return;
     host.innerHTML = renderItemFormBody(_itemFormConfig, it);
     wireItemFormTabs(overlay);
+    wireItemComboboxes(overlay);
+    wireItemImageField(overlay, it);
   }
 
   /** Admin "Option" panel: show/hide, required, default per field — saved app-wide. */
@@ -312,17 +572,33 @@ App.register('inventory', async (view, filter) => {
       const n = _itemFormConfig.filter((f) => f.tab === t.id).length;
       return `<button type="button" class="form-tab ${i === 0 ? 'active' : ''}" data-formtab="${t.id}">${UI.esc(t.label)} <span class="opt-count">${n}</span></button>`;
     }).join('');
+    const optCard = (f) => `
+      <div class="opt-row" data-optkey="${f.key}">
+        <div class="opt-name">${UI.esc(f.label)} ${f.core ? '<span class="badge-pill muted">core</span>' : ''} ${UI.helpIcon(f.help)}</div>
+        <div class="opt-controls">
+          <label class="check-opt"><input type="checkbox" data-opt="visible" ${f.visible ? 'checked' : ''} /> Visible</label>
+          <label class="check-opt"><input type="checkbox" data-opt="required" ${f.required ? 'checked' : ''} /> Required</label>
+        </div>
+        <input class="opt-default" data-opt="default" value="${UI.esc(f.default ?? '')}" placeholder="Default value" />
+      </div>`;
+
     const panels = tabs.map((t, i) => {
-      const cards = _itemFormConfig.filter((f) => f.tab === t.id).map((f) => `
-        <div class="opt-row" data-optkey="${f.key}">
-          <div class="opt-name">${UI.esc(f.label)} ${f.core ? '<span class="badge-pill muted">core</span>' : ''} ${UI.helpIcon(f.help)}</div>
-          <div class="opt-controls">
-            <label class="check-opt"><input type="checkbox" data-opt="visible" ${f.visible ? 'checked' : ''} /> Visible</label>
-            <label class="check-opt"><input type="checkbox" data-opt="required" ${f.required ? 'checked' : ''} /> Required</label>
-          </div>
-          <input class="opt-default" data-opt="default" value="${UI.esc(f.default ?? '')}" placeholder="Default value" />
-        </div>`).join('');
-      return `<div data-formpanel="${t.id}" class="form-panel ${i === 0 ? '' : 'hidden'}"><div class="opt-grid">${cards}</div></div>`;
+      const tabFields = _itemFormConfig.filter((f) => f.tab === t.id);
+      // Group the tab's fields under capability-section headings (ITEM_FORM_SECTIONS order),
+      // so an admin can enable a whole capability (e.g. "Standard costing") at once.
+      const groups = ITEM_FORM_SECTIONS
+        .filter((s) => tabFields.some((f) => f.section === s.id))
+        .map((s) => {
+          const group = tabFields.filter((f) => f.section === s.id);
+          const on = group.filter((f) => f.visible).length;
+          return `<div class="opt-section">${UI.esc(s.label)}<span class="opt-count">${on}/${group.length}</span></div>` +
+            group.map(optCard).join('');
+        }).join('');
+      const orphans = tabFields.filter((f) => !ITEM_FORM_SECTIONS.some((s) => s.id === f.section));
+      const orphanBlock = orphans.length
+        ? `<div class="opt-section">Other</div>${orphans.map(optCard).join('')}`
+        : '';
+      return `<div data-formpanel="${t.id}" class="form-panel ${i === 0 ? '' : 'hidden'}"><div class="opt-grid">${groups}${orphanBlock}</div></div>`;
     }).join('');
 
     UI.modal({
@@ -369,27 +645,88 @@ App.register('inventory', async (view, filter) => {
     });
   }
 
-  function adjustModal(id, items) {
+  async function adjustModal(id, items) {
     const it = items.find((x) => x.id == id);
+    const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
+    const rows = breakdown.map((b) => ({ id: b.location_id, name: b.location_name, is_default: b.is_default }));
+    const qtyAt = (locId) => (breakdown.find((b) => String(b.location_id) === String(locId)) || {}).quantity || 0;
+    const top = [...breakdown].filter((b) => b.quantity > 0).sort((a, b) => b.quantity - a.quantity)[0];
+    const initial = (top || breakdown.find((b) => b.is_default) || breakdown[0] || {}).location_id;
+
     UI.modal({
       title: `Adjust stock — ${it.name}`,
       bodyHTML: `
-        <p class="muted">Current: <strong>${it.quantity} ${UI.esc(it.unit || '')}</strong></p>
+        <p class="muted">Total on hand: <strong>${it.quantity} ${UI.esc(it.unit || '')}</strong></p>
         <div class="field-row">
+          <div><label>Location</label><select data-f="loc">${locationOptions(initial, rows)}</select></div>
           <div><label>Action</label><select data-f="dir">
             <option value="in">Stock IN (＋)</option><option value="out">Stock OUT (−)</option></select></div>
-          <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
         </div>
-        <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Purchase, Released to Dept" /></div>`,
+        <div class="field-row">
+          <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
+          <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Purchase, Released to Dept" /></div>
+        </div>
+        <p class="muted" data-at style="margin-bottom:0">At this location: <strong>${qtyAt(initial)}</strong></p>`,
       confirmText: 'Apply',
+      onOpen: (overlay) => {
+        const sel = overlay.querySelector('[data-f="loc"]');
+        const at = overlay.querySelector('[data-at] strong');
+        sel.addEventListener('change', () => { at.textContent = qtyAt(sel.value); });
+      },
       onConfirm: async (overlay, showErr) => {
+        const location_id = overlay.querySelector('[data-f="loc"]').value;
         const dir = overlay.querySelector('[data-f="dir"]').value;
         const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
         const reason = overlay.querySelector('[data-f="reason"]').value;
+        if (!location_id) { showErr('Pick a location'); return false; }
         if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
         const change = dir === 'out' ? -amount : amount;
-        const r = await API.post(`/inventory/${id}/adjust`, { change, reason });
-        UI.toast(`Stock updated — new balance ${r.quantity}`);
+        const r = await API.post(`/inventory/${id}/adjust`, { change, reason, location_id });
+        UI.toast(`Stock updated — ${r.location_quantity} here, ${r.quantity} total`);
+        load();
+      },
+    });
+  }
+
+  async function transferModal(id, items) {
+    const it = items.find((x) => x.id == id);
+    const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
+    if (breakdown.length < 2) { UI.toast('Add a second location first (Inventory → Locations)', 'error'); return; }
+    const rows = breakdown.map((b) => ({ id: b.location_id, name: b.location_name, is_default: b.is_default }));
+    const qtyAt = (locId) => (breakdown.find((b) => String(b.location_id) === String(locId)) || {}).quantity || 0;
+    const top = [...breakdown].filter((b) => b.quantity > 0).sort((a, b) => b.quantity - a.quantity)[0];
+    const fromInit = (top || breakdown[0]).location_id;
+    const toInit = (breakdown.find((b) => b.location_id !== fromInit) || {}).location_id;
+
+    UI.modal({
+      title: `Transfer stock — ${it.name}`,
+      bodyHTML: `
+        <div class="field-row">
+          <div><label>From</label><select data-f="from">${locationOptions(fromInit, rows)}</select>
+            <p class="muted" data-fromat style="margin:4px 0 0;font-size:12px">Available: <strong>${qtyAt(fromInit)}</strong></p></div>
+          <div><label>To</label><select data-f="to">${locationOptions(toInit, rows)}</select>
+            <p class="muted" data-toat style="margin:4px 0 0;font-size:12px">Currently: <strong>${qtyAt(toInit)}</strong></p></div>
+        </div>
+        <div class="field-row">
+          <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
+          <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Restock branch" /></div>
+        </div>`,
+      confirmText: 'Transfer',
+      onOpen: (overlay) => {
+        const from = overlay.querySelector('[data-f="from"]');
+        const to = overlay.querySelector('[data-f="to"]');
+        from.addEventListener('change', () => { overlay.querySelector('[data-fromat] strong').textContent = qtyAt(from.value); });
+        to.addEventListener('change', () => { overlay.querySelector('[data-toat] strong').textContent = qtyAt(to.value); });
+      },
+      onConfirm: async (overlay, showErr) => {
+        const from_location_id = overlay.querySelector('[data-f="from"]').value;
+        const to_location_id = overlay.querySelector('[data-f="to"]').value;
+        const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
+        const reason = overlay.querySelector('[data-f="reason"]').value;
+        if (from_location_id === to_location_id) { showErr('Pick two different locations'); return false; }
+        if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
+        const r = await API.post(`/inventory/${id}/transfer`, { from_location_id, to_location_id, amount, reason });
+        UI.toast(`Transferred — ${r.from} left at source, ${r.to} now at destination`);
         load();
       },
     });
@@ -399,14 +736,17 @@ App.register('inventory', async (view, filter) => {
     const it = await API.get('/inventory/' + id);
     const rows = it.history.map((h) => `
       <tr><td>${UI.fmtDate(h.created_at)}</td>
-      <td class="${h.change < 0 ? '' : ''}"><strong style="color:${h.change < 0 ? 'var(--danger)' : 'var(--green-700)'}">${h.change > 0 ? '+' : ''}${h.change}</strong></td>
+      <td>${UI.esc(h.location_name || '—')}</td>
+      <td><strong style="color:${h.change < 0 ? 'var(--danger)' : 'var(--success)'}">${h.change > 0 ? '+' : ''}${h.change}</strong></td>
+      <td class="right">${h.location_balance_after ?? '—'}</td>
       <td class="right">${h.balance_after}</td>
       <td>${UI.esc(h.reason || '—')}</td>
       <td>${UI.esc(h.user_name || '—')}</td></tr>`).join('');
     UI.modal({
       title: `History — ${it.name}`,
+      size: 'lg',
       bodyHTML: it.history.length
-        ? `<table><thead><tr><th>When</th><th>Change</th><th class="right">Balance</th><th>Reason</th><th>By</th></tr></thead><tbody>${rows}</tbody></table>`
+        ? `<table><thead><tr><th>When</th><th>Location</th><th>Change</th><th class="right">At loc.</th><th class="right">Total</th><th>Reason</th><th>By</th></tr></thead><tbody>${rows}</tbody></table>`
         : '<div class="empty">No movements recorded yet.</div>',
       cancelText: 'Close',
     });
@@ -429,9 +769,16 @@ App.register('inventory', async (view, filter) => {
   });
   view.querySelector('#inv-cat').addEventListener('change', (e) => { state.category = e.target.value; load(); });
   view.querySelector('#inv-dept').addEventListener('change', (e) => { state.department_id = e.target.value; load(); });
+  view.querySelector('#inv-supplier').addEventListener('change', (e) => { state.supplier_id = e.target.value; load(); });
+  view.querySelector('#inv-location').addEventListener('change', (e) => { state.location_id = e.target.value; load(); });
   view.querySelector('#inv-low').addEventListener('change', (e) => { state.low = e.target.checked; load(); });
+  view.querySelector('#inv-damaged').addEventListener('change', (e) => { state.include_damaged = e.target.checked; load(); });
   view.querySelector('#inv-export').addEventListener('click', exportCsv);
   view.querySelector('#inv-add').addEventListener('click', () => itemModal(null));
 
-  await Promise.all([load(), loadCategories(), loadItemFormConfig()]);
+  await Promise.all([
+    load(), loadCategories(), loadItemFormConfig(),
+    loadSuppliers(true).then(fillSupplierFilter),
+    loadLocations(true).then(fillLocationFilter),
+  ]);
 });

@@ -35,6 +35,16 @@ describe('inventory', () => {
     expect(res.status).toBe(409);
   });
 
+  it('allows multiple items with a blank SKU (stored as null, not "")', async () => {
+    const a = await createItem({ name: 'No SKU A', sku: '', quantity: 1 });
+    const b = await createItem({ name: 'No SKU B', sku: '   ', quantity: 1 });
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+
+    const detail = await ctx.api.get(`/api/inventory/${b.body.id}`).set(authHdr());
+    expect(detail.body.sku).toBeNull();
+  });
+
   it('stocks in and out, tracking the running balance', async () => {
     const { body } = await createItem({ name: 'Markers', quantity: 20 });
     const id = body.id;
@@ -76,6 +86,13 @@ describe('inventory', () => {
     await createItem({ name: 'Unique Widget XZ', sku: 'WID-XZ' });
     const res = await ctx.api.get('/api/inventory?q=widget%20xz').set(authHdr());
     expect(res.body.some((i: { sku: string }) => i.sku === 'WID-XZ')).toBe(true);
+  });
+
+  it('searches by spec (stored in attributes JSON)', async () => {
+    await createItem({ name: 'Bottled Water', sku: 'BW-1', attributes: { spec: '500ml Clear PET' } });
+    const res = await ctx.api.get('/api/inventory?q=500ml').set(authHdr());
+    expect(res.status).toBe(200);
+    expect(res.body.some((i: { sku: string }) => i.sku === 'BW-1')).toBe(true);
   });
 
   it('updates item details without touching quantity', async () => {
@@ -152,6 +169,196 @@ describe('inventory: extended attributes (ECOUNT-style fields)', () => {
       .send({ attributes: { barcode: '4006381333931' } });
     const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
     expect(detail.body.attributes.barcode).toBe('4006381333931');
+  });
+});
+
+describe('inventory: supplier link', () => {
+  async function mkSupplier(name: string) {
+    const r = await ctx.api.post('/api/suppliers').set(authHdr()).send({ name });
+    return r.body.id as number;
+  }
+
+  it('stores supplier_id on create and returns supplier_name in list + detail', async () => {
+    const sid = await mkSupplier('Widget Works');
+    const { body } = await createItem({ name: 'Sourced Widget', sku: 'SRC-1', quantity: 3, supplier_id: sid });
+
+    const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
+    expect(detail.body.supplier_id).toBe(sid);
+    expect(detail.body.supplier_name).toBe('Widget Works');
+
+    const list = await ctx.api.get('/api/inventory?q=Sourced%20Widget').set(authHdr());
+    expect(list.body[0].supplier_name).toBe('Widget Works');
+  });
+
+  it('filters the item list by supplier_id', async () => {
+    const a = await mkSupplier('Supplier Filter A');
+    const b = await mkSupplier('Supplier Filter B');
+    await createItem({ name: 'SF item a', sku: 'SF-A', supplier_id: a });
+    await createItem({ name: 'SF item b', sku: 'SF-B', supplier_id: b });
+
+    const res = await ctx.api.get(`/api/inventory?supplier_id=${a}`).set(authHdr());
+    expect(res.body.some((i: { sku: string }) => i.sku === 'SF-A')).toBe(true);
+    expect(res.body.some((i: { sku: string }) => i.sku === 'SF-B')).toBe(false);
+  });
+
+  it('can clear the supplier link via update (supplier_id = null)', async () => {
+    const sid = await mkSupplier('Temp Supplier');
+    const { body } = await createItem({ name: 'Unlink me', sku: 'UNL-1', supplier_id: sid });
+    await ctx.api.put(`/api/inventory/${body.id}`).set(authHdr()).send({ supplier_id: null });
+    const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
+    expect(detail.body.supplier_id).toBeNull();
+  });
+});
+
+describe('inventory: per-location stock', () => {
+  const defaultLoc = async () =>
+    (await ctx.api.get('/api/locations').set(authHdr())).body.find((l: { is_default: number }) => l.is_default === 1);
+  const mkLoc = async (name: string, type = 'warehouse') =>
+    (await ctx.api.post('/api/locations').set(authHdr()).send({ name, type })).body.id as number;
+
+  it('initial stock lands at the default location and shows in the breakdown', async () => {
+    const def = await defaultLoc();
+    const { body } = await createItem({ name: 'PL Item 1', quantity: 12 });
+
+    const stock = await ctx.api.get(`/api/inventory/${body.id}/stock`).set(authHdr());
+    expect(stock.status).toBe(200);
+    const here = stock.body.find((s: { location_id: number }) => s.location_id === def.id);
+    expect(here.quantity).toBe(12);
+
+    const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
+    expect(detail.body.quantity).toBe(12); // grand total cache still right
+    expect(detail.body.stock[0].location_id).toBe(def.id);
+    expect(detail.body.stock[0].quantity).toBe(12);
+  });
+
+  it('adjust at a chosen location moves both the location qty and the grand total', async () => {
+    const loc = await mkLoc('PL Branch');
+    const { body } = await createItem({ name: 'PL Item 2', quantity: 0 });
+
+    const inn = await ctx.api.post(`/api/inventory/${body.id}/adjust`).set(authHdr())
+      .send({ change: 7, reason: 'Receive at branch', location_id: loc });
+    expect(inn.status).toBe(200);
+    expect(inn.body.location_quantity).toBe(7);
+    expect(inn.body.quantity).toBe(7);
+
+    const short = await ctx.api.post(`/api/inventory/${body.id}/adjust`).set(authHdr())
+      .send({ change: -10, location_id: loc });
+    expect(short.status).toBe(400);
+    expect(short.body.error).toMatch(/Only 7 available/);
+  });
+
+  it('transfers stock between locations without changing the grand total', async () => {
+    const a = await mkLoc('PL Warehouse A');
+    const b = await mkLoc('PL Warehouse B');
+    const { body } = await createItem({ name: 'PL Item 3', quantity: 20, location_id: a });
+
+    const t = await ctx.api.post(`/api/inventory/${body.id}/transfer`).set(authHdr())
+      .send({ from_location_id: a, to_location_id: b, amount: 8, reason: 'Rebalance' });
+    expect(t.status).toBe(200);
+    expect(t.body.from).toBe(12);
+    expect(t.body.to).toBe(8);
+
+    const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
+    expect(detail.body.quantity).toBe(20); // total unchanged
+    const byLoc = Object.fromEntries(detail.body.stock.map((s: { location_id: number; quantity: number }) => [s.location_id, s.quantity]));
+    expect(byLoc[a]).toBe(12);
+    expect(byLoc[b]).toBe(8);
+    // two paired transactions were logged
+    expect(detail.body.history.filter((h: { reason: string }) => /Transfer/.test(h.reason || '')).length).toBe(2);
+  });
+
+  it('rejects an over-sized or same-location transfer', async () => {
+    const a = await mkLoc('PL X');
+    const b = await mkLoc('PL Y');
+    const { body } = await createItem({ name: 'PL Item 4', quantity: 3, location_id: a });
+    expect((await ctx.api.post(`/api/inventory/${body.id}/transfer`).set(authHdr())
+      .send({ from_location_id: a, to_location_id: b, amount: 5 })).status).toBe(400);
+    expect((await ctx.api.post(`/api/inventory/${body.id}/transfer`).set(authHdr())
+      .send({ from_location_id: a, to_location_id: a, amount: 1 })).status).toBe(400);
+  });
+
+  it('filters the item list and the movements feed by location', async () => {
+    const loc = await mkLoc('PL Only Here');
+    const { body } = await createItem({ name: 'PL Item 5', sku: 'PL-5', quantity: 6, location_id: loc });
+
+    const list = await ctx.api.get(`/api/inventory?location_id=${loc}`).set(authHdr());
+    expect(list.body.some((i: { sku: string }) => i.sku === 'PL-5')).toBe(true);
+
+    const moves = await ctx.api.get(`/api/inventory/movements?location_id=${loc}`).set(authHdr());
+    expect(moves.body.rows.every((r: { location_name: string }) => r.location_name === 'PL Only Here')).toBe(true);
+    expect(moves.body.rows[0].location_balance_after).toBe(6);
+  });
+});
+
+describe('inventory: cross-item movements feed', () => {
+  it('lists movements across every item, newest first, with item + user names', async () => {
+    const a = await createItem({ name: 'Feed Item A', sku: 'FEED-A', quantity: 10 });
+    const b = await createItem({ name: 'Feed Item B', sku: 'FEED-B', quantity: 0 });
+    await ctx.api.post(`/api/inventory/${a.body.id}/adjust`).set(authHdr()).send({ change: -3, reason: 'Released' });
+    await ctx.api.post(`/api/inventory/${b.body.id}/adjust`).set(authHdr()).send({ change: 5, reason: 'Purchase' });
+
+    const res = await ctx.api.get('/api/inventory/movements').set(authHdr());
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBeGreaterThanOrEqual(3); // A initial + A out + B in
+    const first = res.body.rows[0];
+    expect(first.item_name).toBe('Feed Item B');
+    expect(first.change).toBe(5);
+    expect(first.user_name).toBeTruthy();
+  });
+
+  it('filters by direction and item', async () => {
+    const c = await createItem({ name: 'Feed Item C', sku: 'FEED-C', quantity: 20 });
+    await ctx.api.post(`/api/inventory/${c.body.id}/adjust`).set(authHdr()).send({ change: -4, reason: 'out1' });
+    await ctx.api.post(`/api/inventory/${c.body.id}/adjust`).set(authHdr()).send({ change: 2, reason: 'in1' });
+
+    const out = await ctx.api.get(`/api/inventory/movements?item_id=${c.body.id}&dir=out`).set(authHdr());
+    expect(out.body.rows.every((r: { change: number }) => r.change < 0)).toBe(true);
+    expect(out.body.rows.some((r: { reason: string }) => r.reason === 'out1')).toBe(true);
+
+    const ins = await ctx.api.get(`/api/inventory/movements?item_id=${c.body.id}&dir=in`).set(authHdr());
+    expect(ins.body.rows.every((r: { change: number }) => r.change > 0)).toBe(true);
+  });
+});
+
+describe('inventory: item image', () => {
+  it('uploads, serves, and clears an item photo', async () => {
+    const { body } = await createItem({ name: 'Photographed Item', quantity: 1 });
+
+    const up = await ctx.api
+      .post(`/api/inventory/${body.id}/image`)
+      .set(authHdr())
+      .attach('image', Buffer.from('fake-png-bytes'), 'photo.png');
+    expect(up.status).toBe(200);
+    expect(up.body.image_path).toMatch(/^item-.*\.png$/);
+
+    const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
+    expect(detail.body.image_path).toBe(up.body.image_path);
+
+    const img = await ctx.api.get(`/api/inventory/${body.id}/image`).set(authHdr());
+    expect(img.status).toBe(200);
+    expect(img.headers['content-type']).toContain('image/png');
+
+    const del = await ctx.api.delete(`/api/inventory/${body.id}/image`).set(authHdr());
+    expect(del.status).toBe(200);
+    const after = await ctx.api.get(`/api/inventory/${body.id}/image`).set(authHdr());
+    expect(after.status).toBe(404);
+  });
+
+  it('rejects a non-image upload', async () => {
+    const { body } = await createItem({ name: 'No Photo Item', quantity: 1 });
+    const up = await ctx.api
+      .post(`/api/inventory/${body.id}/image`)
+      .set(authHdr())
+      .attach('image', Buffer.from('just text'), 'notes.txt');
+    expect(up.status).toBe(400);
+  });
+
+  it('404s uploading a photo to a missing item', async () => {
+    const up = await ctx.api
+      .post('/api/inventory/999999/image')
+      .set(authHdr())
+      .attach('image', Buffer.from('x'), 'x.png');
+    expect(up.status).toBe(404);
   });
 });
 

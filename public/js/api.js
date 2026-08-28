@@ -37,6 +37,21 @@ const API = (() => {
     return data;
   }
 
+  /** Fetch a binary endpoint with auth and return an object URL (caller revokes it). */
+  async function blobUrl(path) {
+    const token = getToken();
+    const res = await fetch('/api' + path, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    if (res.status === 401) {
+      clearToken();
+      if (window.App) window.App.showLogin();
+      throw new Error('Session expired. Please sign in again.');
+    }
+    if (!res.ok) throw new Error('Request failed (' + res.status + ')');
+    return URL.createObjectURL(await res.blob());
+  }
+
   return {
     getToken, setToken, clearToken,
     get: (p) => request('GET', p),
@@ -44,5 +59,6 @@ const API = (() => {
     put: (p, b) => request('PUT', p, b),
     del: (p) => request('DELETE', p),
     upload: (p, formData) => request('POST', p, formData, true),
+    blobUrl,
   };
 })();

@@ -64,20 +64,57 @@ export function init(): void {
       expires_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      name           TEXT NOT NULL,
+      contact_person TEXT,
+      phone          TEXT,
+      email          TEXT,
+      address        TEXT,
+      notes          TEXT,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS locations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL,
+      type        TEXT NOT NULL DEFAULT 'warehouse',
+      address     TEXT,
+      notes       TEXT,
+      is_default  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS inventory_items (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       name          TEXT NOT NULL,
       sku           TEXT UNIQUE,
       category      TEXT,
       department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+      supplier_id   INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
       quantity      INTEGER NOT NULL DEFAULT 0,
       unit          TEXT DEFAULT 'pcs',
       min_quantity  INTEGER NOT NULL DEFAULT 0,
       location      TEXT,
       notes         TEXT,
       attributes    TEXT,
+      image_path    TEXT,
+      is_finished_product INTEGER NOT NULL DEFAULT 0,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Bill of materials: the components an item flagged is_finished_product is built from.
+    CREATE TABLE IF NOT EXISTS bom_components (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_item_id   INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      component_item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      quantity          REAL NOT NULL DEFAULT 1,
+      notes             TEXT,
+      sort              INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(product_item_id, component_item_id)
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -163,7 +200,35 @@ export function init(): void {
       change        INTEGER NOT NULL,
       balance_after INTEGER NOT NULL,
       reason        TEXT,
+      location_id           INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      location_balance_after INTEGER,
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Per-location stock. inventory_items.quantity stays the cached grand total;
+    -- this is the breakdown, kept in sync by src/inventory-stock.ts.
+    CREATE TABLE IF NOT EXISTS inventory_stock (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id     INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+      quantity    INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(item_id, location_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_log (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      user_name   TEXT,
+      method      TEXT NOT NULL,
+      path        TEXT NOT NULL,
+      entity      TEXT,
+      entity_id   TEXT,
+      action      TEXT,
+      status_code INTEGER,
+      ip          TEXT,
+      summary     TEXT,
+      meta        TEXT
     );
 
     CREATE TABLE IF NOT EXISTS forms (
@@ -307,6 +372,11 @@ export function init(): void {
     CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
     CREATE INDEX IF NOT EXISTS idx_txn_item ON inventory_transactions(item_id);
     CREATE INDEX IF NOT EXISTS idx_items_dept ON inventory_items(department_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_item ON inventory_stock(item_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_location ON inventory_stock(location_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
+    CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log(user_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_entity ON activity_log(entity);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
@@ -330,6 +400,50 @@ function migrate(): void {
   if (!itemCols.some((c) => c.name === 'attributes')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN attributes TEXT');
   }
+  if (!itemCols.some((c) => c.name === 'image_path')) {
+    db.exec('ALTER TABLE inventory_items ADD COLUMN image_path TEXT');
+  }
+  if (!itemCols.some((c) => c.name === 'supplier_id')) {
+    db.exec('ALTER TABLE inventory_items ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL');
+  }
+  if (!itemCols.some((c) => c.name === 'is_finished_product')) {
+    db.exec('ALTER TABLE inventory_items ADD COLUMN is_finished_product INTEGER NOT NULL DEFAULT 0');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_items_supplier ON inventory_items(supplier_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_bom_product ON bom_components(product_item_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_bom_component ON bom_components(component_item_id)');
+
+  // ---- Per-location stock (Phase 4) ----
+  const txnCols = db.prepare('PRAGMA table_info(inventory_transactions)').all() as { name: string }[];
+  if (!txnCols.some((c) => c.name === 'location_id')) {
+    db.exec('ALTER TABLE inventory_transactions ADD COLUMN location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL');
+  }
+  if (!txnCols.some((c) => c.name === 'location_balance_after')) {
+    db.exec('ALTER TABLE inventory_transactions ADD COLUMN location_balance_after INTEGER');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_txn_location ON inventory_transactions(location_id)');
+
+  // Every install needs exactly one default location. Seed it, then move each item's
+  // existing single-column quantity into a per-location row there (once).
+  const locCount = (db.prepare('SELECT COUNT(*) AS n FROM locations').get() as { n: number }).n;
+  if (locCount === 0) {
+    db.prepare("INSERT INTO locations (name, type, is_default) VALUES ('Main', 'warehouse', 1)").run();
+  } else if ((db.prepare('SELECT COUNT(*) AS n FROM locations WHERE is_default = 1').get() as { n: number }).n === 0) {
+    db.exec('UPDATE locations SET is_default = 1 WHERE id = (SELECT MIN(id) FROM locations)');
+  }
+  const defaultLoc = (db.prepare('SELECT id FROM locations WHERE is_default = 1 LIMIT 1').get() as { id: number }).id;
+  db.prepare(
+    `INSERT INTO inventory_stock (item_id, location_id, quantity)
+     SELECT i.id, ?, i.quantity FROM inventory_items i
+     WHERE i.quantity <> 0
+       AND NOT EXISTS (SELECT 1 FROM inventory_stock s WHERE s.item_id = i.id)`
+  ).run(defaultLoc);
+  db.prepare('UPDATE inventory_transactions SET location_id = ? WHERE location_id IS NULL').run(defaultLoc);
+
+  // Blank SKUs must be stored as NULL, never '': the UNIQUE constraint on sku exempts only
+  // NULL, so two items both saved with an empty SKU would collide. Older rows predate the
+  // validation layer normalizing this (see optionalSku in validation.ts).
+  db.exec("UPDATE inventory_items SET sku = NULL WHERE sku = ''");
 
   // Rebuild users table to add permission_overrides and drop old two-role CHECK constraint.
   const userCols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];

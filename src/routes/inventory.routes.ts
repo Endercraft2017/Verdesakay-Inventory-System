@@ -1,27 +1,65 @@
 /** Inventory: items, search/filter, stock adjustments with history, dashboard stats. */
-import { Router } from 'express';
-import { db, queryOne, queryAll, run, getSetting, setSetting } from '../db';
+import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import multer from 'multer';
+import { db, queryOne, queryAll, run, getSetting, setSetting, UPLOAD_DIR } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody,
   createItemSchema,
   updateItemSchema,
   adjustStockSchema,
+  damageStockSchema,
+  transferStockSchema,
   formConfigSchema,
 } from '../validation';
+import {
+  applyStockChange,
+  transferStock,
+  stockAt,
+  stockBreakdown,
+  getDefaultLocationId,
+} from '../inventory-stock';
 import type { InventoryItem, InventoryTransaction } from '../types';
 
 const router = Router();
 router.use(requireAuth);
 
+// ---- Item image upload (JPG/PNG/GIF/WebP, 5 MB) — stored under UPLOAD_DIR ----
+const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).slice(0, 12) || '.img';
+      cb(null, `item-${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, IMAGE_MIME.has(file.mimetype)),
+});
+
+/** Delete a stored image file, ignoring "already gone". */
+function unlinkImage(name: string | null | undefined): void {
+  if (name) fs.promises.unlink(path.join(UPLOAD_DIR, name)).catch(() => {});
+}
+
 const ITEM_SELECT = `
-  SELECT i.*, d.name AS department_name,
+  SELECT i.*, d.name AS department_name, s.name AS supplier_name,
          (i.quantity <= i.min_quantity) AS low_stock
   FROM inventory_items i
   LEFT JOIN departments d ON d.id = i.department_id
+  LEFT JOIN suppliers s ON s.id = i.supplier_id
 `;
 
 const FORM_CONFIG_KEY = 'item_form_config';
+
+/** Items with this category are "damage twins" — copies auto-created when stock is
+    reported damaged (see POST /:id/damage). Hidden from the normal list/stats unless
+    explicitly requested, so day-to-day inventory isn't cluttered by damage records. */
+const DAMAGE_CATEGORY = 'Damage';
 
 /** Parse the stored `attributes` JSON string into an object for API responses. */
 function withParsedAttributes<T extends { attributes: unknown }>(item: T): T {
@@ -38,18 +76,30 @@ function withParsedAttributes<T extends { attributes: unknown }>(item: T): T {
 
 // GET /api/inventory — list with optional search / filters
 router.get('/', (req, res) => {
-  const { q, department_id, category, low } = req.query;
+  const { q, department_id, supplier_id, category, low } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
 
   if (typeof q === 'string' && q.trim()) {
-    where.push('(i.name LIKE ? OR i.sku LIKE ? OR i.category LIKE ? OR i.location LIKE ?)');
+    // `spec` lives in the attributes JSON, not a column — reach it with json_extract.
+    where.push(
+      "(i.name LIKE ? OR i.sku LIKE ? OR i.category LIKE ? OR i.location LIKE ?" +
+        " OR json_extract(i.attributes, '$.spec') LIKE ?)"
+    );
     const like = `%${q.trim()}%`;
-    params.push(like, like, like, like);
+    params.push(like, like, like, like, like);
   }
   if (department_id) {
     where.push('i.department_id = ?');
     params.push(Number(department_id));
+  }
+  if (supplier_id) {
+    where.push('i.supplier_id = ?');
+    params.push(Number(supplier_id));
+  }
+  if (req.query.location_id) {
+    where.push('EXISTS (SELECT 1 FROM inventory_stock s WHERE s.item_id = i.id AND s.location_id = ? AND s.quantity <> 0)');
+    params.push(Number(req.query.location_id));
   }
   if (typeof category === 'string' && category.trim()) {
     where.push('i.category = ?');
@@ -57,6 +107,17 @@ router.get('/', (req, res) => {
   }
   if (low === '1' || low === 'true') {
     where.push('i.quantity <= i.min_quantity');
+  }
+  // Damage twins are excluded by default; `?damaged=only` isolates them,
+  // `?include_damaged=1` returns everything.
+  const damaged = req.query.damaged;
+  const includeDamaged = req.query.include_damaged === '1' || req.query.include_damaged === 'true';
+  if (damaged === 'only') {
+    where.push('i.category = ?');
+    params.push(DAMAGE_CATEGORY);
+  } else if (!includeDamaged) {
+    where.push('(i.category IS NULL OR i.category <> ?)');
+    params.push(DAMAGE_CATEGORY);
   }
 
   const sql =
@@ -85,7 +146,9 @@ router.get('/stats', (_req, res) => {
             COALESCE(SUM(quantity), 0) AS total_units,
             COALESCE(SUM(CASE WHEN quantity <= min_quantity THEN 1 ELSE 0 END), 0) AS low_stock,
             COALESCE(SUM(CASE WHEN quantity = 0 THEN 1 ELSE 0 END), 0) AS out_of_stock
-     FROM inventory_items`
+     FROM inventory_items
+     WHERE category IS NULL OR category <> ?`,
+    DAMAGE_CATEGORY
   );
   res.json(totals);
 });
@@ -94,13 +157,88 @@ router.get('/stats', (_req, res) => {
 router.get('/categories', (_req, res) => {
   const rows = queryAll<{ category: string }>(
     `SELECT DISTINCT category FROM inventory_items
-     WHERE category IS NOT NULL AND TRIM(category) != ''
-     ORDER BY category COLLATE NOCASE`
+     WHERE category IS NOT NULL AND TRIM(category) != '' AND category <> ?
+     ORDER BY category COLLATE NOCASE`,
+    DAMAGE_CATEGORY
   );
   res.json(rows.map((r) => r.category));
 });
 
-// GET /api/inventory/:id — single item with recent transactions
+// GET /api/inventory/movements — the cross-item stock movement feed (all items)
+router.get('/movements', requirePermission('inventory.view'), (req, res) => {
+  const { item_id, user_id, dir, from, to, q } = req.query;
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (item_id) { where.push('t.item_id = ?'); params.push(Number(item_id)); }
+  if (user_id) { where.push('t.user_id = ?'); params.push(Number(user_id)); }
+  if (req.query.location_id) { where.push('t.location_id = ?'); params.push(Number(req.query.location_id)); }
+  if (dir === 'in') where.push('t.change > 0');
+  else if (dir === 'out') where.push('t.change < 0');
+  if (typeof from === 'string' && from.trim()) { where.push('t.created_at >= ?'); params.push(from.trim()); }
+  if (typeof to === 'string' && to.trim()) { where.push('t.created_at <= ?'); params.push(to.trim()); }
+  if (typeof q === 'string' && q.trim()) {
+    where.push('(i.name LIKE ? OR i.sku LIKE ? OR t.reason LIKE ?)');
+    const like = `%${q.trim()}%`;
+    params.push(like, like, like);
+  }
+  const whereSql = where.length ? ' WHERE ' + where.join(' AND ') : '';
+  const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+
+  const total =
+    queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM inventory_transactions t JOIN inventory_items i ON i.id = t.item_id${whereSql}`,
+      ...params
+    )?.n ?? 0;
+  const rows = queryAll<InventoryTransaction>(
+    `SELECT t.*, i.name AS item_name, i.sku AS item_sku, u.full_name AS user_name, l.name AS location_name
+     FROM inventory_transactions t
+     JOIN inventory_items i ON i.id = t.item_id
+     LEFT JOIN users u ON u.id = t.user_id
+     LEFT JOIN locations l ON l.id = t.location_id
+     ${whereSql}
+     ORDER BY t.id DESC
+     LIMIT ? OFFSET ?`,
+    ...params,
+    limit,
+    offset
+  );
+  res.json({ rows, total, limit, offset });
+});
+
+// GET /api/inventory/lookup?code=... — resolve a scanned/typed code (SKU or the
+// `barcode` attribute) to exactly one item. Used by the mobile scanner.
+// Declared before `/:id` so "lookup" isn't captured as an id.
+router.get('/lookup', requirePermission('inventory.view'), (req, res) => {
+  const code = typeof req.query.code === 'string' ? req.query.code.trim() : '';
+  if (!code) {
+    res.status(400).json({ error: 'A code is required' });
+    return;
+  }
+  const item = queryOne<InventoryItem>(
+    ITEM_SELECT + " WHERE i.sku = ? OR json_extract(i.attributes, '$.barcode') = ? LIMIT 1",
+    code,
+    code
+  );
+  if (!item) {
+    res.status(404).json({ error: 'No item matches that code' });
+    return;
+  }
+  res.json(withParsedAttributes(item));
+});
+
+// GET /api/inventory/:id/stock — this item's quantity at every location (for adjust/transfer UI)
+router.get('/:id/stock', requirePermission('inventory.view'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Item not found' });
+    return;
+  }
+  res.json(stockBreakdown(id));
+});
+
+// GET /api/inventory/:id — single item with recent transactions + per-location breakdown
 router.get('/:id', (req, res) => {
   const item = queryOne<InventoryItem>(ITEM_SELECT + ' WHERE i.id = ?', Number(req.params.id));
   if (!item) {
@@ -108,14 +246,22 @@ router.get('/:id', (req, res) => {
     return;
   }
   const history = queryAll<InventoryTransaction>(
-    `SELECT t.*, u.full_name AS user_name
+    `SELECT t.*, u.full_name AS user_name, l.name AS location_name
      FROM inventory_transactions t
      LEFT JOIN users u ON u.id = t.user_id
+     LEFT JOIN locations l ON l.id = t.location_id
      WHERE t.item_id = ?
      ORDER BY t.id DESC LIMIT 50`,
     item.id
   );
-  res.json({ ...withParsedAttributes(item), history });
+  const stock = queryAll(
+    `SELECT s.location_id, l.name AS location_name, l.type AS location_type, s.quantity
+     FROM inventory_stock s JOIN locations l ON l.id = s.location_id
+     WHERE s.item_id = ? AND s.quantity <> 0
+     ORDER BY s.quantity DESC, l.name COLLATE NOCASE`,
+    item.id
+  );
+  res.json({ ...withParsedAttributes(item), history, stock });
 });
 
 // POST /api/inventory — create item
@@ -129,19 +275,30 @@ router.post('/', requirePermission('inventory.create'), (req, res) => {
     }
   }
 
-  // Item + its initial-stock transaction must land together (same shape as /adjust below).
+  // Where the starting stock lands: an explicit location, or the default one.
+  let startLoc: number | null = null;
+  if (input.quantity !== 0) {
+    startLoc = input.location_id ?? getDefaultLocationId();
+    if (!queryOne('SELECT id FROM locations WHERE id = ?', startLoc)) {
+      res.status(400).json({ error: 'Starting-stock location not found' });
+      return;
+    }
+  }
+
+  // Item is inserted at qty 0; applyStockChange bumps both the total and the
+  // per-location row so the two can never disagree.
   db.exec('BEGIN');
   let itemId: number | bigint;
   try {
     const info = run(
       `INSERT INTO inventory_items
-        (name, sku, category, department_id, quantity, unit, min_quantity, location, notes, attributes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, location, notes, attributes)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
       input.name,
       input.sku ?? null,
       input.category ?? null,
       input.department_id,
-      input.quantity,
+      input.supplier_id,
       input.unit ?? 'pcs',
       input.min_quantity,
       input.location ?? null,
@@ -150,15 +307,14 @@ router.post('/', requirePermission('inventory.create'), (req, res) => {
     );
     itemId = info.lastInsertRowid;
 
-    if (input.quantity !== 0) {
-      run(
-        `INSERT INTO inventory_transactions (item_id, user_id, change, balance_after, reason)
-         VALUES (?, ?, ?, ?, 'Initial stock')`,
-        itemId,
-        req.user!.id,
-        input.quantity,
-        input.quantity
-      );
+    if (startLoc !== null) {
+      applyStockChange({
+        itemId: Number(itemId),
+        locationId: startLoc,
+        change: input.quantity,
+        reason: 'Initial stock',
+        userId: req.user!.id,
+      });
     }
     db.exec('COMMIT');
   } catch (e) {
@@ -188,13 +344,14 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
 
   run(
     `UPDATE inventory_items
-     SET name = ?, sku = ?, category = ?, department_id = ?, unit = ?, min_quantity = ?,
+     SET name = ?, sku = ?, category = ?, department_id = ?, supplier_id = ?, unit = ?, min_quantity = ?,
          location = ?, notes = ?, attributes = ?, updated_at = datetime('now')
      WHERE id = ?`,
     input.name ?? item.name,
     sku,
     input.category !== undefined ? input.category : item.category,
     input.department_id !== undefined ? input.department_id : item.department_id,
+    input.supplier_id !== undefined ? input.supplier_id : item.supplier_id,
     input.unit !== undefined ? (input.unit ?? 'pcs') : item.unit,
     input.min_quantity !== undefined ? input.min_quantity : item.min_quantity,
     input.location !== undefined ? input.location : item.location,
@@ -205,7 +362,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/inventory/:id/adjust — stock in / out, recorded as a transaction
+// POST /api/inventory/:id/adjust — stock in / out at one location, recorded as a transaction
 router.post('/:id/adjust', requirePermission('inventory.adjust'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
@@ -213,42 +370,233 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), (req, res) => 
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  const { change, reason } = parseBody(adjustStockSchema, req.body);
-  const balance = item.quantity + change;
-  if (balance < 0) {
-    res.status(400).json({ error: `Not enough stock. Only ${item.quantity} available.` });
+  const { change, reason, location_id } = parseBody(adjustStockSchema, req.body);
+  const locId = location_id ?? getDefaultLocationId();
+  const loc = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', locId);
+  if (!loc) {
+    res.status(400).json({ error: 'Location not found' });
+    return;
+  }
+  const atLoc = stockAt(id, locId);
+  if (atLoc + change < 0) {
+    res.status(400).json({ error: `Not enough stock at ${loc.name}. Only ${atLoc} available.` });
     return;
   }
 
-  // Update the balance and record the movement atomically.
   db.exec('BEGIN');
+  let result;
   try {
-    run("UPDATE inventory_items SET quantity = ?, updated_at = datetime('now') WHERE id = ?", balance, id);
-    run(
-      `INSERT INTO inventory_transactions (item_id, user_id, change, balance_after, reason)
-       VALUES (?, ?, ?, ?, ?)`,
-      id,
-      req.user!.id,
-      change,
-      balance,
-      reason ?? null
-    );
+    result = applyStockChange({
+      itemId: id, locationId: locId, change, reason: reason ?? null, userId: req.user!.id,
+    });
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
-  res.json({ ok: true, quantity: balance });
+  res.json({ ok: true, quantity: result.total, location_quantity: result.locationQty });
+});
+
+// POST /api/inventory/:id/damage — move damaged units out of an item into its
+// "damage twin": a copy row with category 'Damage', created on first use and topped
+// up afterwards. The twin is linked back via attributes.damaged_of. Grand total of
+// units is preserved (leaves the source, enters the twin).
+router.post('/:id/damage', requirePermission('inventory.adjust'), (req, res) => {
+  const id = Number(req.params.id);
+  const source = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
+  if (!source) {
+    res.status(404).json({ error: 'Item not found' });
+    return;
+  }
+  if (source.category === DAMAGE_CATEGORY) {
+    res.status(400).json({ error: 'That is already a damage record' });
+    return;
+  }
+  const { quantity, reason, location_id } = parseBody(damageStockSchema, req.body);
+  const locId = location_id ?? getDefaultLocationId();
+  const loc = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', locId);
+  if (!loc) {
+    res.status(400).json({ error: 'Location not found' });
+    return;
+  }
+  const atLoc = stockAt(id, locId);
+  if (quantity > atLoc) {
+    res.status(400).json({ error: `Not enough stock at ${loc.name}. Only ${atLoc} available.` });
+    return;
+  }
+  const tail = reason ? ` — ${reason}` : '';
+
+  db.exec('BEGIN');
+  let out;
+  let inn;
+  let twinId: number;
+  try {
+    // Find or create the damage twin.
+    const twin = queryOne<{ id: number }>(
+      `SELECT id FROM inventory_items
+       WHERE category = ? AND json_extract(attributes, '$.damaged_of') = ?`,
+      DAMAGE_CATEGORY,
+      id
+    );
+    if (twin) {
+      twinId = twin.id;
+    } else {
+      let srcAttrs: Record<string, unknown> = {};
+      if (typeof source.attributes === 'string' && source.attributes) {
+        try { srcAttrs = JSON.parse(source.attributes) as Record<string, unknown>; } catch { /* ignore */ }
+      }
+      const twinAttrs = { ...srcAttrs, damaged_of: id };
+      delete (twinAttrs as { barcode?: unknown }).barcode; // the twin isn't separately scannable
+      const info = run(
+        `INSERT INTO inventory_items
+          (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, location, notes, attributes)
+         VALUES (?, NULL, ?, ?, ?, 0, ?, 0, ?, ?, ?)`,
+        source.name,
+        DAMAGE_CATEGORY,
+        source.department_id,
+        source.supplier_id,
+        source.unit ?? 'pcs',
+        source.location ?? null,
+        source.notes ?? null,
+        JSON.stringify(twinAttrs)
+      );
+      twinId = Number(info.lastInsertRowid);
+    }
+
+    out = applyStockChange({
+      itemId: id, locationId: locId, change: -quantity, userId: req.user!.id,
+      reason: `Damaged${tail}`,
+    });
+    inn = applyStockChange({
+      itemId: twinId, locationId: locId, change: quantity, userId: req.user!.id,
+      reason: `Damaged stock from #${id}${tail}`,
+    });
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  res.json({
+    ok: true,
+    twin_id: twinId,
+    twin_quantity: inn.total,
+    source_quantity: out.total,
+    location_quantity: out.locationQty,
+  });
+});
+
+// POST /api/inventory/:id/transfer — move stock from one location to another
+router.post('/:id/transfer', requirePermission('inventory.adjust'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Item not found' });
+    return;
+  }
+  const { from_location_id, to_location_id, amount, reason } = parseBody(transferStockSchema, req.body);
+  if (from_location_id === to_location_id) {
+    res.status(400).json({ error: 'Pick two different locations' });
+    return;
+  }
+  const from = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', from_location_id);
+  const to = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', to_location_id);
+  if (!from || !to) {
+    res.status(400).json({ error: 'Location not found' });
+    return;
+  }
+  const available = stockAt(id, from_location_id);
+  if (amount > available) {
+    res.status(400).json({ error: `Only ${available} available at ${from.name} to transfer.` });
+    return;
+  }
+
+  db.exec('BEGIN');
+  let result;
+  try {
+    result = transferStock({
+      itemId: id, fromId: from_location_id, toId: to_location_id, amount,
+      reason: reason ?? null, userId: req.user!.id,
+    });
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  res.json({ ok: true, from: result.from, to: result.to });
 });
 
 // DELETE /api/inventory/:id
 router.delete('/:id', requirePermission('inventory.delete'), (req, res) => {
+  const item = queryOne<InventoryItem>('SELECT image_path FROM inventory_items WHERE id = ?', Number(req.params.id));
   const info = run('DELETE FROM inventory_items WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) {
     res.status(404).json({ error: 'Item not found' });
     return;
   }
+  unlinkImage(item?.image_path);
   res.json({ ok: true });
+});
+
+// GET /api/inventory/:id/image — stream the item's photo (auth via the shared client)
+router.get('/:id/image', (req, res) => {
+  const item = queryOne<InventoryItem>(
+    'SELECT image_path FROM inventory_items WHERE id = ?',
+    Number(req.params.id)
+  );
+  if (!item || !item.image_path) {
+    res.status(404).json({ error: 'No image for this item' });
+    return;
+  }
+  const file = path.join(UPLOAD_DIR, item.image_path);
+  if (!fs.existsSync(file)) {
+    res.status(404).json({ error: 'Image file missing' });
+    return;
+  }
+  res.sendFile(file);
+});
+
+// POST /api/inventory/:id/image — upload / replace the item's photo
+router.post('/:id/image', requirePermission('inventory.edit'), imageUpload.single('image'), (req, res) => {
+  const id = Number(req.params.id);
+  const item = queryOne<InventoryItem>('SELECT image_path FROM inventory_items WHERE id = ?', id);
+  if (!item) {
+    if (req.file) unlinkImage(req.file.filename);
+    res.status(404).json({ error: 'Item not found' });
+    return;
+  }
+  if (!req.file) {
+    res.status(400).json({ error: 'An image file is required (JPG, PNG, GIF or WebP)' });
+    return;
+  }
+  run(
+    "UPDATE inventory_items SET image_path = ?, updated_at = datetime('now') WHERE id = ?",
+    req.file.filename,
+    id
+  );
+  unlinkImage(item.image_path); // drop the previous file, if any
+  res.json({ ok: true, image_path: req.file.filename });
+});
+
+// DELETE /api/inventory/:id/image — remove the item's photo
+router.delete('/:id/image', requirePermission('inventory.edit'), (req, res) => {
+  const id = Number(req.params.id);
+  const item = queryOne<InventoryItem>('SELECT image_path FROM inventory_items WHERE id = ?', id);
+  if (!item) {
+    res.status(404).json({ error: 'Item not found' });
+    return;
+  }
+  run("UPDATE inventory_items SET image_path = NULL, updated_at = datetime('now') WHERE id = ?", id);
+  unlinkImage(item.image_path);
+  res.json({ ok: true });
+});
+
+// Turn multer's upload errors into clean 400s (mirrors forms.routes.ts).
+router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    const msg = err.code === 'LIMIT_FILE_SIZE' ? 'Image is larger than 5 MB' : err.message;
+    res.status(400).json({ error: msg });
+    return;
+  }
+  next(err);
 });
 
 export default router;

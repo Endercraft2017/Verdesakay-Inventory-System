@@ -10,6 +10,9 @@ import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.routes';
 import usersRoutes from './routes/users.routes';
 import inventoryRoutes from './routes/inventory.routes';
+import suppliersRoutes from './routes/suppliers.routes';
+import locationsRoutes from './routes/locations.routes';
+import bomRoutes from './routes/bom.routes';
 import formsRoutes from './routes/forms.routes';
 import messagesRoutes from './routes/messages.routes';
 import personalRoutes from './routes/personal.routes';
@@ -18,6 +21,8 @@ import templatesRoutes from './routes/templates.routes';
 import formBuilderRoutes from './routes/form-builder.routes';
 import aiRoutes from './routes/ai.routes';
 import hrRoutes from './routes/hr.routes';
+import activityRoutes from './routes/activity.routes';
+import { recordActivity } from './activity';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -26,7 +31,8 @@ export function createApp() {
 
   // Security headers. Disable CSP defaults that would block our inline view scripts;
   // a tailored policy can be added later if the app is exposed beyond the LAN.
-  app.use(helmet({ contentSecurityPolicy: false }));
+  // HSTS is off so a device can be pointed back at plain HTTP without getting stuck.
+  app.use(helmet({ contentSecurityPolicy: false, hsts: false }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
@@ -40,13 +46,22 @@ export function createApp() {
     message: { error: 'Too many login attempts. Please wait a few minutes and try again.' },
   });
 
-  // Lightweight API request log.
+  // Lightweight API request log + persistent activity log (mutations only; see activity.ts).
   app.use((req, res, next) => {
     const start = Date.now();
+    // Capture a created record's id from the JSON response so the audit row can point at it.
+    const sendJson = res.json.bind(res);
+    res.json = (body: unknown) => {
+      if (body && typeof body === 'object' && 'id' in body) {
+        res.locals.createdId = (body as { id: unknown }).id;
+      }
+      return sendJson(body);
+    };
     res.on('finish', () => {
       if (req.path.startsWith('/api')) {
         console.log(`${req.method} ${req.path} -> ${res.statusCode} (${Date.now() - start}ms)`);
       }
+      recordActivity(req, res);
     });
     next();
   });
@@ -55,6 +70,9 @@ export function createApp() {
   app.use('/api/auth', authRoutes);
   app.use('/api/users', usersRoutes);
   app.use('/api/inventory', inventoryRoutes);
+  app.use('/api/suppliers', suppliersRoutes);
+  app.use('/api/locations', locationsRoutes);
+  app.use('/api/finished-products', bomRoutes);
   app.use('/api/forms', formsRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks
@@ -63,6 +81,7 @@ export function createApp() {
   app.use('/api', formBuilderRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/hr', hrRoutes);
+  app.use('/api/activity', activityRoutes);
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
   });

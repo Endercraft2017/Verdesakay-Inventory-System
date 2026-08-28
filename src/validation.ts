@@ -98,11 +98,21 @@ export const attributesSchema = z
   .refine((o) => Object.keys(o).length <= 200, 'Too many attributes')
   .optional();
 
+/** Like optionalText, but a blank / whitespace-only value collapses to null rather than
+    `''` — the DB's UNIQUE constraint on inventory_items.sku exempts only NULL, so two items
+    both saved with an empty SKU would otherwise collide. */
+const optionalSku = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  optionalText
+);
+
 export const createItemSchema = z.object({
   name: trimmed.min(1, 'Item name is required').max(160),
-  sku: optionalText,
+  sku: optionalSku,
   category: optionalText,
   department_id: optionalId,
+  supplier_id: optionalId,
+  location_id: optionalId, // where the starting stock lands (default: the default location)
   quantity: intCoerce.default(0),
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).default(0),
@@ -113,14 +123,62 @@ export const createItemSchema = z.object({
 
 export const updateItemSchema = z.object({
   name: trimmed.min(1, 'Item name is required').max(160).optional(),
-  sku: optionalText,
+  sku: optionalSku,
   category: optionalText,
   department_id: optionalId,
+  supplier_id: optionalId,
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).optional(),
   location: optionalText,
   notes: optionalText,
   attributes: attributesSchema,
+});
+
+// ---- Suppliers ----
+export const createSupplierSchema = z.object({
+  name: trimmed.min(1, 'Supplier name is required').max(160),
+  contact_person: trimmed.max(160).optional().nullable(),
+  phone: trimmed.max(80).optional().nullable(),
+  email: trimmed.max(160).optional().nullable(),
+  address: trimmed.max(500).optional().nullable(),
+  notes: optionalText,
+});
+
+export const updateSupplierSchema = createSupplierSchema.partial().extend({
+  name: trimmed.min(1, 'Supplier name is required').max(160).optional(),
+});
+
+// ---- Locations ----
+const locationType = z.enum(['warehouse', 'branch', 'store', 'truck', 'other']);
+export const createLocationSchema = z.object({
+  name: trimmed.min(1, 'Location name is required').max(120),
+  type: locationType.default('warehouse'),
+  address: trimmed.max(500).optional().nullable(),
+  notes: optionalText,
+  is_default: boolish.optional(),
+});
+export const updateLocationSchema = createLocationSchema.partial().extend({
+  name: trimmed.min(1, 'Location name is required').max(120).optional(),
+});
+
+export const transferStockSchema = z.object({
+  from_location_id: z.coerce.number().int().positive(),
+  to_location_id: z.coerce.number().int().positive(),
+  amount: z.coerce.number().int().positive('Amount must be a positive whole number'),
+  reason: optionalText,
+});
+
+// ---- Bill of materials (finished products) ----
+export const saveBomSchema = z.object({
+  components: z
+    .array(
+      z.object({
+        component_item_id: z.coerce.number().int().positive(),
+        quantity: z.coerce.number().positive('Component quantity must be greater than 0'),
+        notes: trimmed.max(300).optional().nullable(),
+      })
+    )
+    .max(200),
 });
 
 /** Admin-saved item-form customization: per-field visibility / required / default. */
@@ -139,6 +197,15 @@ export const formConfigSchema = z
 export const adjustStockSchema = z.object({
   change: intCoerce.refine((n) => n !== 0, 'Change must be a non-zero whole number'),
   reason: optionalText,
+  location_id: optionalId, // defaults server-side to the default location
+});
+
+/** Report damaged stock: moves `quantity` units out of the item into its "damage twin"
+    (a copy row with category 'Damage'). See POST /api/inventory/:id/damage. */
+export const damageStockSchema = z.object({
+  quantity: z.coerce.number().int().positive('Quantity must be a positive whole number'),
+  reason: optionalText,
+  location_id: optionalId, // defaults server-side to the default location
 });
 
 // ---- Messages ----
