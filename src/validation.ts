@@ -218,6 +218,25 @@ export const jobOrderProgressSchema = z
   })
   .refine((d) => d.done_delta + d.scrapped_delta > 0, 'Enter a finished or scrapped quantity');
 
+/** An alphanumeric identifier for a produced unit (serial / chassis / motor no.).
+    Not required to be unique — several units may share one. */
+const unitIdentifier = trimmed
+  .max(80)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9 ._/-]*$/, 'Identifier must be alphanumeric')
+  .optional()
+  .nullable();
+
+export const inspectUnitsSchema = z.object({
+  unit_ids: z.array(z.coerce.number().int().positive()).min(1).max(500),
+  result: z.enum(['pass', 'fail']),
+  remarks: trimmed.max(2000).optional().nullable(),
+  identifier: unitIdentifier,
+});
+
+export const setUnitIdentifierSchema = z.object({
+  identifier: unitIdentifier,
+});
+
 /** Admin-saved item-form customization: per-field visibility / required / default. */
 export const formConfigSchema = z
   .array(

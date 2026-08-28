@@ -54,7 +54,20 @@ router.get('/:id', requirePermission('inventory.view'), (req, res) => {
      WHERE b.product_item_id = ?`,
     id
   )?.n ?? 0;
-  res.json({ ...item, bom, max_buildable });
+
+  // "Explode" the in-stock quantity by unit identifier (serial / chassis / motor no.).
+  const units = queryAll<{ identifier: string; quantity: number }>(
+    `SELECT COALESCE(NULLIF(TRIM(identifier), ''), '') AS identifier, COUNT(*) AS quantity
+     FROM job_order_units
+     WHERE product_item_id = ? AND status = 'in_stock'
+     GROUP BY COALESCE(NULLIF(TRIM(identifier), ''), '')
+     ORDER BY quantity DESC, identifier`,
+    id
+  );
+  const serialized_total = units.reduce((s, u) => s + u.quantity, 0);
+  const bulk_untracked = Math.max(0, item.quantity - serialized_total);
+
+  res.json({ ...item, bom, max_buildable, units, serialized_total, bulk_untracked });
 });
 
 // PUT /api/finished-products/:id — mark as a finished product + replace its BOM

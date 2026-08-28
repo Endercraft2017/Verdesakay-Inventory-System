@@ -216,6 +216,31 @@ export function init(): void {
       UNIQUE(job_order_id, component_item_id)
     );
 
+    -- Phase C: one row per physical unit produced by a job order, plus its QA/QC log.
+    CREATE TABLE IF NOT EXISTS job_order_units (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id    INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      product_item_id INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      identifier      TEXT,
+      status          TEXT NOT NULL DEFAULT 'pending',
+      stage           INTEGER NOT NULL DEFAULT 0,
+      location_id     INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      remarks         TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS qc_records (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      unit_id      INTEGER REFERENCES job_order_units(id) ON DELETE CASCADE,
+      stage        INTEGER NOT NULL,
+      result       TEXT NOT NULL,
+      remarks      TEXT,
+      inspector_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS doc_templates (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL,
@@ -419,6 +444,9 @@ export function init(): void {
     CREATE INDEX IF NOT EXISTS idx_job_orders_status ON job_orders(status);
     CREATE INDEX IF NOT EXISTS idx_job_orders_order ON job_orders(order_id);
     CREATE INDEX IF NOT EXISTS idx_joc_job_order ON job_order_components(job_order_id);
+    CREATE INDEX IF NOT EXISTS idx_jou_job_order ON job_order_units(job_order_id);
+    CREATE INDEX IF NOT EXISTS idx_jou_product ON job_order_units(product_item_id, status);
+    CREATE INDEX IF NOT EXISTS idx_qc_job_order ON qc_records(job_order_id);
     CREATE INDEX IF NOT EXISTS idx_employees_dept ON employees(department_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_period ON attendance_records(period_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance_records(employee_id);

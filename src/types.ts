@@ -175,6 +175,36 @@ export interface JobOrderComponent {
   component_on_hand?: number;
 }
 
+export type JobOrderUnitStatus = 'pending' | 'in_stock' | 'failed' | 'scrapped';
+
+export interface JobOrderUnit {
+  id: number;
+  job_order_id: number;
+  product_item_id: number | null;
+  identifier: string | null;
+  status: JobOrderUnitStatus;
+  /** Number of inspection stages this unit has passed so far. */
+  stage: number;
+  location_id: number | null;
+  remarks: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QcRecord {
+  id: number;
+  job_order_id: number;
+  unit_id: number | null;
+  /** 1 = QA, 2 = QC. */
+  stage: number;
+  result: 'pass' | 'fail';
+  remarks: string | null;
+  inspector_id: number | null;
+  created_at: string;
+  inspector_name?: string | null;
+  unit_identifier?: string | null;
+}
+
 export interface InventoryTransaction {
   id: number;
   item_id: number;

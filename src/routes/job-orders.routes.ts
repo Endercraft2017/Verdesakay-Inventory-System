@@ -11,9 +11,11 @@ import {
   updateJobOrderSchema,
   jobOrderComponentsSchema,
   jobOrderProgressSchema,
+  inspectUnitsSchema,
+  setUnitIdentifierSchema,
 } from '../validation';
 import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory-stock';
-import type { JobOrder, JobOrderComponent, InventoryItem } from '../types';
+import type { JobOrder, JobOrderComponent, JobOrderUnit, InventoryItem } from '../types';
 
 const router = Router();
 router.use(requireAuth);
@@ -42,10 +44,47 @@ function loadJobOrder(id: number): JobOrder | null {
      ORDER BY c.id`,
     id
   );
+  const counts = queryAll<{ status: string; n: number }>(
+    'SELECT status, COUNT(*) AS n FROM job_order_units WHERE job_order_id = ? GROUP BY status',
+    id
+  );
+  const summary: Record<string, number> = { pending: 0, in_stock: 0, failed: 0, scrapped: 0 };
+  for (const c of counts) summary[c.status] = c.n;
+  (jo as JobOrder & { units_summary: Record<string, number> }).units_summary = summary;
   return jo;
 }
 
 const OPEN_STATES = new Set(['draft', 'released', 'in_progress', 'paused']);
+
+function pendingCount(joId: number): number {
+  return queryOne<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM job_order_units WHERE job_order_id = ? AND status = 'pending'",
+    joId
+  )?.n ?? 0;
+}
+
+/** Consume `units` units' worth of every component, capped at what was reserved. */
+function consumeComponents(joId: number, units: number): void {
+  if (units <= 0) return;
+  for (const c of queryAll<JobOrderComponent>('SELECT * FROM job_order_components WHERE job_order_id = ?', joId)) {
+    const add = Math.min(c.qty_per_unit * units, c.qty_planned - c.qty_consumed);
+    if (add > 0) run('UPDATE job_order_components SET qty_consumed = qty_consumed + ? WHERE id = ?', add, c.id);
+  }
+}
+
+/** If every ordered unit is accounted for and nothing is still in inspection, close
+    the job order out and return the components that were reserved but never used. */
+function maybeComplete(joId: number, userId: number): void {
+  const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', joId);
+  if (!jo || jo.status === 'completed' || jo.status === 'cancelled') return;
+  if (jo.qty_done + jo.qty_scrapped >= jo.qty_ordered && pendingCount(joId) === 0) {
+    returnUnused(joId, jo.number, jo.source_location_id, userId);
+    run(
+      "UPDATE job_orders SET status = 'completed', closed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+      joId
+    );
+  }
+}
 
 // GET /api/job-orders — list, filterable by ?status= / ?order_id= / ?product_item_id=
 router.get('/', readGate, (req, res) => {
@@ -289,59 +328,66 @@ router.post('/:id/progress', writeGate, (req, res) => {
     res.status(409).json({ error: `Job order must be released before recording progress (it is ${jo.status})` });
     return;
   }
-  if (jo.qc_stages > 0) {
-    res.status(400).json({ error: 'QA/QC inspection is not available yet — set this job order to 0 inspection stages.' });
-    return;
-  }
   const { done_delta, scrapped_delta } = parseBody(jobOrderProgressSchema, req.body);
-  const newDone = jo.qty_done + done_delta;
-  const newScrapped = jo.qty_scrapped + scrapped_delta;
-  if (newDone + newScrapped > jo.qty_ordered) {
+  const madeUnits = done_delta + scrapped_delta; // every unit off the line consumes components
+  const outputLoc = jo.output_location_id ?? getDefaultLocationId();
+  // "Accounted for" = in stock + scrapped + still under inspection.
+  const accounted = jo.qty_done + jo.qty_scrapped + pendingCount(id);
+  if (accounted + madeUnits > jo.qty_ordered) {
     res.status(400).json({
-      error: `That exceeds the ${jo.qty_ordered} ordered (already ${jo.qty_done} done, ${jo.qty_scrapped} scrapped).`,
+      error: `That exceeds the ${jo.qty_ordered} ordered (${accounted} already produced).`,
     });
     return;
   }
-  const madeUnits = done_delta + scrapped_delta; // both consume components
-  const outputLoc = jo.output_location_id ?? getDefaultLocationId();
-  const fullyAccounted = newDone + newScrapped >= jo.qty_ordered;
 
   db.exec('BEGIN');
   try {
-    // Consume components for the units just built (capped at what was reserved).
-    for (const c of jo.components ?? []) {
-      const add = Math.min(c.qty_per_unit * madeUnits, c.qty_planned - c.qty_consumed);
-      if (add > 0) {
-        run('UPDATE job_order_components SET qty_consumed = qty_consumed + ? WHERE id = ?', add, c.id);
+    consumeComponents(id, madeUnits);
+
+    if (jo.qc_stages > 0) {
+      // Units queue for inspection instead of going straight to stock.
+      for (let i = 0; i < done_delta; i++) {
+        run(
+          `INSERT INTO job_order_units (job_order_id, product_item_id, status, stage, location_id)
+           VALUES (?, ?, 'pending', 0, ?)`,
+          id,
+          jo.product_item_id,
+          outputLoc
+        );
       }
-    }
-    // Finished units go into stock (no QC gate at qc_stages = 0).
-    if (done_delta > 0 && jo.product_item_id != null) {
-      applyStockChange({
-        itemId: jo.product_item_id,
-        locationId: outputLoc,
-        change: done_delta,
-        reason: `${jo.number}: produced`,
-        userId: req.user!.id,
-      });
-    }
-    // On completion, return whatever was reserved but never consumed.
-    if (fullyAccounted) {
-      returnUnused(id, jo.number, jo.source_location_id, req.user!.id);
+      for (let i = 0; i < scrapped_delta; i++) {
+        run(
+          `INSERT INTO job_order_units (job_order_id, product_item_id, status, stage, location_id, remarks)
+           VALUES (?, ?, 'scrapped', 0, ?, 'Scrapped on the line')`,
+          id,
+          jo.product_item_id,
+          outputLoc
+        );
+      }
       run(
-        "UPDATE job_orders SET qty_done = ?, qty_scrapped = ?, status = 'completed', closed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-        newDone,
-        newScrapped,
+        "UPDATE job_orders SET qty_scrapped = qty_scrapped + ?, status = 'in_progress', updated_at = datetime('now') WHERE id = ?",
+        scrapped_delta,
         id
       );
     } else {
+      // No inspection gate — finished units land in stock now.
+      if (done_delta > 0 && jo.product_item_id != null) {
+        applyStockChange({
+          itemId: jo.product_item_id,
+          locationId: outputLoc,
+          change: done_delta,
+          reason: `${jo.number}: produced`,
+          userId: req.user!.id,
+        });
+      }
       run(
-        "UPDATE job_orders SET qty_done = ?, qty_scrapped = ?, status = 'in_progress', updated_at = datetime('now') WHERE id = ?",
-        newDone,
-        newScrapped,
+        "UPDATE job_orders SET qty_done = qty_done + ?, qty_scrapped = qty_scrapped + ?, status = 'in_progress', updated_at = datetime('now') WHERE id = ?",
+        done_delta,
+        scrapped_delta,
         id
       );
     }
+    maybeComplete(id, req.user!.id);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -453,6 +499,153 @@ router.delete('/:id', writeGate, (req, res) => {
     return;
   }
   run('DELETE FROM job_orders WHERE id = ?', id);
+  res.json({ ok: true });
+});
+
+// ----- Phase C: per-unit tracking + QA/QC -----
+
+// GET /api/job-orders/:id/units — every unit this job order produced
+router.get('/:id/units', readGate, (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM job_orders WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Job order not found' });
+    return;
+  }
+  res.json(
+    queryAll<JobOrderUnit>(
+      'SELECT * FROM job_order_units WHERE job_order_id = ? ORDER BY id',
+      id
+    )
+  );
+});
+
+// GET /api/job-orders/:id/qc — the inspection log
+router.get('/:id/qc', readGate, (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM job_orders WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Job order not found' });
+    return;
+  }
+  res.json(
+    queryAll(
+      `SELECT q.*, u.full_name AS inspector_name, un.identifier AS unit_identifier
+       FROM qc_records q
+       LEFT JOIN users u ON u.id = q.inspector_id
+       LEFT JOIN job_order_units un ON un.id = q.unit_id
+       WHERE q.job_order_id = ?
+       ORDER BY q.id DESC`,
+      id
+    )
+  );
+});
+
+// POST /api/job-orders/:id/units/inspect — pass/fail one or more pending units
+router.post('/:id/units/inspect', writeGate, (req, res) => {
+  const id = Number(req.params.id);
+  const jo = loadJobOrder(id);
+  if (!jo) {
+    res.status(404).json({ error: 'Job order not found' });
+    return;
+  }
+  const { unit_ids, result, remarks, identifier } = parseBody(inspectUnitsSchema, req.body);
+  const units = queryAll<JobOrderUnit>(
+    `SELECT * FROM job_order_units WHERE job_order_id = ? AND id IN (${unit_ids.map(() => '?').join(',')})`,
+    id,
+    ...unit_ids
+  );
+  if (units.length !== unit_ids.length) {
+    res.status(400).json({ error: 'One or more units were not found on this job order' });
+    return;
+  }
+  const notPending = units.filter((u) => u.status !== 'pending');
+  if (notPending.length) {
+    res.status(409).json({ error: 'Only units still under inspection can be passed or failed' });
+    return;
+  }
+  const outputLoc = jo.output_location_id ?? getDefaultLocationId();
+  const stages = Math.max(1, jo.qc_stages || 1);
+
+  db.exec('BEGIN');
+  try {
+    for (const u of units) {
+      const stage = u.stage + 1;
+      run(
+        `INSERT INTO qc_records (job_order_id, unit_id, stage, result, remarks, inspector_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        id,
+        u.id,
+        stage,
+        result,
+        remarks ?? null,
+        req.user!.id
+      );
+      if (result === 'fail') {
+        run(
+          "UPDATE job_order_units SET status = 'failed', stage = ?, remarks = ?, updated_at = datetime('now') WHERE id = ?",
+          stage,
+          remarks ?? u.remarks,
+          u.id
+        );
+        run('UPDATE job_orders SET qty_scrapped = qty_scrapped + 1, updated_at = datetime(\'now\') WHERE id = ?', id);
+      } else {
+        const identSql = identifier !== undefined && identifier !== null ? identifier : u.identifier;
+        if (stage >= stages) {
+          run(
+            "UPDATE job_order_units SET status = 'in_stock', stage = ?, identifier = ?, remarks = ?, updated_at = datetime('now') WHERE id = ?",
+            stage,
+            identSql,
+            remarks ?? u.remarks,
+            u.id
+          );
+          if (jo.product_item_id != null) {
+            applyStockChange({
+              itemId: jo.product_item_id,
+              locationId: u.location_id ?? outputLoc,
+              change: 1,
+              reason: `${jo.number}: unit passed QC`,
+              userId: req.user!.id,
+            });
+          }
+          run('UPDATE job_orders SET qty_done = qty_done + 1, updated_at = datetime(\'now\') WHERE id = ?', id);
+        } else {
+          run(
+            "UPDATE job_order_units SET stage = ?, identifier = ?, remarks = ?, updated_at = datetime('now') WHERE id = ?",
+            stage,
+            identSql,
+            remarks ?? u.remarks,
+            u.id
+          );
+        }
+      }
+    }
+    maybeComplete(id, req.user!.id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  res.json({ ok: true, job_order: loadJobOrder(id) });
+});
+
+// PUT /api/job-orders/:id/units/:unitId/identifier — set / clear a unit's identifier
+router.put('/:id/units/:unitId/identifier', writeGate, (req, res) => {
+  const id = Number(req.params.id);
+  const unitId = Number(req.params.unitId);
+  const unit = queryOne<JobOrderUnit>(
+    'SELECT * FROM job_order_units WHERE id = ? AND job_order_id = ?',
+    unitId,
+    id
+  );
+  if (!unit) {
+    res.status(404).json({ error: 'Unit not found' });
+    return;
+  }
+  const { identifier } = parseBody(setUnitIdentifierSchema, req.body);
+  run(
+    "UPDATE job_order_units SET identifier = ?, updated_at = datetime('now') WHERE id = ?",
+    identifier ?? null,
+    unitId
+  );
   res.json({ ok: true });
 });
 

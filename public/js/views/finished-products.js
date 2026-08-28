@@ -175,7 +175,16 @@ App.register('finished-products', async (view) => {
             <td class="right">${c.quantity} ${UI.esc(c.component_unit || '')}</td>
             <td class="right">${c.component_on_hand ?? 0}</td>
             <td>${UI.esc(c.notes || '—')}</td>
-          </tr>`).join('')}</tbody></table>` : '<div class="empty">No components defined.</div>'}`,
+          </tr>`).join('')}</tbody></table>` : '<div class="empty">No components defined.</div>'}
+
+        <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">In stock by identifier</h4>
+        ${(p.units && p.units.length) || p.bulk_untracked ? `<table>
+          <thead><tr><th>Identifier</th><th class="right">Quantity</th></tr></thead>
+          <tbody>
+            ${(p.units || []).map((u) => `<tr><td class="mono">${u.identifier ? UI.esc(u.identifier) : '<span class="muted">— no identifier —</span>'}</td><td class="right">${u.quantity}</td></tr>`).join('')}
+            ${p.bulk_untracked ? `<tr><td class="muted">Bulk / not from a tracked run</td><td class="right">${p.bulk_untracked}</td></tr>` : ''}
+          </tbody>
+        </table>` : '<div class="empty">No stock on hand.</div>'}`,
     });
   }
 

@@ -84,6 +84,12 @@ App.register('job-orders', async (view) => {
           <select data-f="source">${locOptions()}</select></div>
         <div class="form-field"><div class="field-label"><label>Put finished units in</label></div>
           <select data-f="output">${locOptions()}</select></div>
+        <div class="form-field"><div class="field-label"><label>Inspection before stock</label></div>
+          <select data-f="qc">
+            <option value="0">None — straight to stock</option>
+            <option value="1">1 step (QA/QC)</option>
+            <option value="2">2 steps — QA then QC</option>
+          </select></div>
         <div class="form-field span2"><div class="field-label"><label>Notes</label></div>
           <textarea data-f="notes"></textarea></div>
       </div>`,
@@ -97,6 +103,7 @@ App.register('job-orders', async (view) => {
           product_item_id: Number(g('product')), qty_ordered: qty,
           source_location_id: Number(g('source')) || null,
           output_location_id: Number(g('output')) || null,
+          qc_stages: Number(g('qc')) || 0,
           notes: g('notes').trim() || null,
         });
         UI.toast('Job order created (draft)');
@@ -107,14 +114,22 @@ App.register('job-orders', async (view) => {
 
   async function trackModal(id) {
     let jo = await API.get('/job-orders/' + id);
+    let units = [];
 
     const m = UI.modal({ title: `Job order ${jo.number}`, size: 'lg', cancelText: 'Close', bodyHTML: '<div id="jo-body"></div>' });
     const host = () => m.overlay ? m.overlay.querySelector('#jo-body') : document.querySelector('#jo-body');
+
+    async function refreshUnits() {
+      if (jo.qc_stages > 0) {
+        try { units = await API.get('/job-orders/' + id + '/units'); } catch { units = []; }
+      }
+    }
 
     const act = async (path, body) => {
       try {
         const r = await API.post('/job-orders/' + id + path, body || {});
         jo = r.job_order || (await API.get('/job-orders/' + id));
+        await refreshUnits();
         UI.toast('Done');
         draw();
         load();
@@ -127,6 +142,9 @@ App.register('job-orders', async (view) => {
       const isDraft = jo.status === 'draft';
       const running = jo.status === 'released' || jo.status === 'in_progress';
       const comps = jo.components || [];
+      const sum = jo.units_summary || { pending: 0, in_stock: 0, failed: 0, scrapped: 0 };
+      const qc = jo.qc_stages > 0;
+      const pending = units.filter((u) => u.status === 'pending');
       el.innerHTML = `
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
           ${badge(jo.status)}
@@ -138,6 +156,8 @@ App.register('job-orders', async (view) => {
           <div><span class="muted">Done</span><div>${jo.qty_done}</div></div>
           <div><span class="muted">Scrapped</span><div>${jo.qty_scrapped}</div></div>
           <div><span class="muted">Remaining</span><div>${jo.qty_ordered - jo.qty_done - jo.qty_scrapped}</div></div>
+          <div><span class="muted">Inspection</span><div>${qc ? `${jo.qc_stages}-step` : 'none'}</div></div>
+          ${qc ? `<div><span class="muted">Under inspection</span><div>${sum.pending}</div></div>` : ''}
           <div><span class="muted">Pull from</span><div>${UI.esc(jo.source_location_name || '—')}</div></div>
           <div><span class="muted">Output to</span><div>${UI.esc(jo.output_location_name || '—')}</div></div>
         </div>
@@ -159,12 +179,36 @@ App.register('job-orders', async (view) => {
         ${isDraft && canWrite ? `<button type="button" class="btn secondary small" id="jo-save-plan" style="margin-top:8px">Save planned quantities</button>` : ''}
 
         ${running && canWrite ? `
-          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Record progress</h4>
+          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Record production</h4>
           <div class="field-row">
-            <div><label>Finished now</label><input id="jo-done" type="number" min="0" value="0" /></div>
+            <div><label>${qc ? 'Off the line (to inspect)' : 'Finished now'}</label><input id="jo-done" type="number" min="0" value="0" /></div>
             <div><label>Scrapped now</label><input id="jo-scrap" type="number" min="0" value="0" /></div>
             <div style="display:flex;align-items:flex-end"><button type="button" class="btn" id="jo-progress">Apply</button></div>
           </div>` : ''}
+
+        ${qc && canWrite && (pending.length || running) ? `
+          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Inspection queue — ${pending.length} pending</h4>
+          ${pending.length ? `
+            <table>
+              <thead><tr>
+                <th style="width:28px"><input type="checkbox" id="jo-chk-all" /></th>
+                <th>Unit</th><th>Stage</th><th>Identifier</th>
+              </tr></thead>
+              <tbody>${pending.map((u) => `<tr>
+                <td><input type="checkbox" class="jo-chk" value="${u.id}" /></td>
+                <td>#${u.id}</td>
+                <td>${u.stage} / ${jo.qc_stages}</td>
+                <td class="mono">${UI.esc(u.identifier || '—')}</td>
+              </tr>`).join('')}</tbody>
+            </table>
+            <div class="field-row" style="margin-top:8px">
+              <div><label>Identifier (optional, applies to passed units)</label><input id="jo-ident" placeholder="e.g. chassis / serial no." /></div>
+              <div><label>Remarks</label><input id="jo-remarks" placeholder="Reason if failing…" /></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button type="button" class="btn" id="jo-pass">Pass selected</button>
+              <button type="button" class="btn secondary danger" id="jo-fail">Fail selected</button>
+            </div>` : '<p class="muted">No units waiting for inspection.</p>'}` : ''}
 
         ${canWrite ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           ${isDraft ? `<button type="button" class="btn" data-do="release">Release</button>
@@ -192,6 +236,21 @@ App.register('job-orders', async (view) => {
         if (done_delta + scrapped_delta <= 0) { UI.toast('Enter a finished or scrapped quantity', 'error'); return; }
         act('/progress', { done_delta, scrapped_delta });
       };
+
+      const chkAll = el.querySelector('#jo-chk-all');
+      if (chkAll) chkAll.onclick = () => el.querySelectorAll('.jo-chk').forEach((c) => { c.checked = chkAll.checked; });
+      const inspect = (result) => {
+        const unit_ids = [...el.querySelectorAll('.jo-chk:checked')].map((c) => Number(c.value));
+        if (!unit_ids.length) { UI.toast('Select one or more units', 'error'); return; }
+        const identifier = (el.querySelector('#jo-ident').value || '').trim() || undefined;
+        const remarks = (el.querySelector('#jo-remarks').value || '').trim() || undefined;
+        if (result === 'fail' && !remarks) { UI.toast('Add a remark when failing units', 'error'); return; }
+        API.post('/job-orders/' + id + '/units/inspect', { unit_ids, result, identifier, remarks })
+          .then(async (r) => { jo = r.job_order; await refreshUnits(); UI.toast(result === 'pass' ? 'Units passed' : 'Units failed'); draw(); load(); })
+          .catch((e) => UI.toast(e.message, 'error'));
+      };
+      const pb = el.querySelector('#jo-pass'); if (pb) pb.onclick = () => inspect('pass');
+      const fb = el.querySelector('#jo-fail'); if (fb) fb.onclick = () => inspect('fail');
       el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => {
         const d = b.dataset.do;
         if (d === '_delete') {
@@ -208,6 +267,7 @@ App.register('job-orders', async (view) => {
       });
     }
 
+    await refreshUnits();
     draw();
   }
 
