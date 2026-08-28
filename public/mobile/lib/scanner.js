@@ -1,8 +1,15 @@
-/* QR scanner overlay. Uses the native BarcodeDetector when available, otherwise the
-   vendored jsQR on a canvas. Always offers manual code entry as a fallback (and the
-   only path when the camera is blocked or the origin isn't secure). */
+/* Barcode / QR scanner overlay. Reads BOTH 1D barcodes and 2D QR codes.
+   Prefers the native BarcodeDetector (fast, low battery — Android Chrome); falls back
+   to the vendored ZXing multi-format reader (iOS Safari, older browsers). Always offers
+   manual code entry as a last resort (and the only path on an insecure origin). */
 (function () {
-  function supported() {
+  // 1D + 2D formats we care about, in the BarcodeDetector vocabulary.
+  var WANT_FORMATS = [
+    'qr_code', 'code_128', 'code_39', 'code_93', 'ean_13', 'ean_8',
+    'upc_a', 'upc_e', 'itf', 'codabar', 'data_matrix', 'aztec', 'pdf417',
+  ];
+
+  function secureCamera() {
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 
@@ -12,7 +19,7 @@
     var overlay = mEl(
       '<div class="m-scan">' +
       '  <div class="m-scan-head">' +
-      '    <span>' + mEsc(opts.title || 'Scan code') + '</span>' +
+      '    <span>' + mEsc(opts.title || 'Scan barcode or QR') + '</span>' +
       '    <button class="m-scan-x" aria-label="Close">&times;</button>' +
       '  </div>' +
       '  <div class="m-scan-stage">' +
@@ -31,18 +38,21 @@
     var video = overlay.querySelector('video');
     var msg = overlay.querySelector('.m-scan-msg');
     var stream = null;
-    var raf = null;
     var timer = null;
+    var zx = null;
     var done = false;
-    var canvas = document.createElement('canvas');
-    var detector = null;
 
     function say(text) { msg.hidden = false; msg.textContent = text; }
+    function manualOnly(text) {
+      say(text);
+      overlay.querySelector('.m-scan-stage').hidden = true;
+      overlay.querySelector('input').focus();
+    }
 
     function stop() {
       done = true;
-      if (raf) cancelAnimationFrame(raf);
       if (timer) clearInterval(timer);
+      if (zx) { try { zx.reset(); } catch (e) { /* ignore */ } }
       if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
       overlay.remove();
     }
@@ -60,68 +70,67 @@
       if (v) finish(v);
     };
 
-    function scanLoopJsQR() {
-      if (done) return;
-      var w = video.videoWidth, h = video.videoHeight;
-      if (w && h) {
-        canvas.width = w; canvas.height = h;
-        var ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(video, 0, 0, w, h);
-        try {
-          var img = ctx.getImageData(0, 0, w, h);
-          var code = window.jsQR ? window.jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' }) : null;
-          if (code && code.data) return finish(code.data);
-        } catch (e) { /* keep trying */ }
-      }
-      raf = requestAnimationFrame(scanLoopJsQR);
+    function camError(err) {
+      var denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      manualOnly(denied
+        ? 'Camera permission denied. Type the code below instead.'
+        : 'Could not start the camera. Type the code below instead.');
     }
 
-    function scanLoopNative() {
-      timer = setInterval(function () {
-        if (done) return;
-        detector.detect(video)
-          .then(function (codes) { if (codes && codes.length) finish(codes[0].rawValue); })
-          .catch(function () { /* transient */ });
-      }, 350);
+    /* ---- Native BarcodeDetector: our own stream + a polling loop ---- */
+    function startNative(formats) {
+      var detector = new BarcodeDetector({ formats: formats });
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+        .then(function (s) { stream = s; video.srcObject = s; return video.play(); })
+        .then(function () {
+          var firstTry = true;
+          timer = setInterval(function () {
+            if (done) return;
+            detector.detect(video)
+              .then(function (codes) { if (codes && codes.length) finish(codes[0].rawValue); })
+              .catch(function () {
+                // Some engines declare BarcodeDetector but throw on detect() —
+                // bail to ZXing on the very first failure.
+                if (firstTry && window.ZXing) { clearInterval(timer); timer = null; startZXing(); }
+              })
+              .finally(function () { firstTry = false; });
+          }, 300);
+        })
+        .catch(camError);
     }
 
-    if (!supported()) {
-      say('Camera needs a secure (HTTPS) connection. Type the code below instead.');
-      overlay.querySelector('.m-scan-stage').hidden = true;
-      overlay.querySelector('input').focus();
+    /* ---- ZXing fallback: the reader owns the camera; reset() tears it down ---- */
+    function startZXing() {
+      zx = new ZXing.BrowserMultiFormatReader();
+      zx.decodeFromConstraints(
+        { video: { facingMode: { ideal: 'environment' } } },
+        video,
+        function (result) { if (result && !done) finish(result.getText ? result.getText() : result.text); }
+      ).catch(camError);
+    }
+
+    if (!secureCamera()) {
+      manualOnly('Camera needs a secure (HTTPS) connection. Type the code below instead.');
       return { close: stop };
     }
 
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
-      .then(function (s) {
-        stream = s;
-        video.srcObject = s;
-        return video.play();
-      })
-      .then(function () {
-        if (window.BarcodeDetector) {
-          return BarcodeDetector.getSupportedFormats().then(function (fmts) {
-            if (fmts.indexOf('qr_code') !== -1) {
-              detector = new BarcodeDetector({ formats: ['qr_code'] });
-              scanLoopNative();
-            } else {
-              scanLoopJsQR();
-            }
-          });
-        }
-        scanLoopJsQR();
-      })
-      .catch(function (err) {
-        var m = err && err.name === 'NotAllowedError'
-          ? 'Camera permission denied. Type the code below instead.'
-          : 'Could not start the camera. Type the code below instead.';
-        say(m);
-        overlay.querySelector('.m-scan-stage').hidden = true;
-        overlay.querySelector('input').focus();
-      });
+    if (window.BarcodeDetector && BarcodeDetector.getSupportedFormats) {
+      BarcodeDetector.getSupportedFormats()
+        .then(function (supported) {
+          var use = WANT_FORMATS.filter(function (f) { return supported.indexOf(f) !== -1; });
+          if (use.length) startNative(use);
+          else if (window.ZXing) startZXing();
+          else manualOnly('This browser can’t scan. Type the code below instead.');
+        })
+        .catch(function () { if (window.ZXing) startZXing(); else manualOnly('This browser can’t scan. Type the code below instead.'); });
+    } else if (window.ZXing) {
+      startZXing();
+    } else {
+      manualOnly('This browser can’t scan. Type the code below instead.');
+    }
 
     return { close: stop };
   }
 
-  window.mScanner = { open: open, supported: supported };
+  window.mScanner = { open: open, supported: secureCamera };
 })();

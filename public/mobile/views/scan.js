@@ -26,7 +26,7 @@
     MApp.setTitle('Scan');
     view.innerHTML =
       '<div class="m-scan-intro">' +
-      '<p>Point the camera at an item\'s QR code.</p>' +
+      '<p>Point the camera at an item\'s barcode or QR code.</p>' +
       '<button class="m-btn" id="m-open-scan">Open scanner</button>' +
       '<button class="m-btn m-btn-secondary" id="m-scan-home">Back</button></div>';
     var run = function () {

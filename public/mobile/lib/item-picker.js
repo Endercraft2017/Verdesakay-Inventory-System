@@ -8,7 +8,9 @@
       '  <span class="m-label">' + mEsc(opts.label || 'Item') + '</span>' +
       '  <div class="m-picker-row">' +
       '    <input type="search" class="m-input" placeholder="Search name or SKU" autocomplete="off" />' +
-      '    <button type="button" class="m-scan-btn" aria-label="Scan">&#9783;</button>' +
+      '    <button type="button" class="m-scan-btn" aria-label="Scan barcode or QR" title="Scan">' +
+      '      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M4 12h16"/></svg>' +
+      '    </button>' +
       '  </div>' +
       '  <ul class="m-picker-list"></ul>' +
       '</div>'
