@@ -1,14 +1,14 @@
 /* Check stock — scan / search an item, then see everything about it and act on it. */
 (function () {
-  function detail(view, id) {
+  function detail(view, id, unit) {
     MApp.setTitle('Item');
     view.innerHTML = '<div class="m-hint">Loading…</div>';
     Promise.all([API.get('/inventory/' + id), API.get('/inventory/' + id + '/stock')])
-      .then(function (r) { render(view, r[0], r[1]); })
+      .then(function (r) { render(view, r[0], r[1], unit); })
       .catch(function (ex) { view.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div>'; });
   }
 
-  function render(view, it, breakdown) {
+  function render(view, it, breakdown, unit) {
     if (window.mRecent) mRecent.push(it);
     MApp.setTitle(it.name.length > 22 ? it.name.slice(0, 21) + '…' : it.name);
     view.innerHTML = '';
@@ -27,6 +27,14 @@
       '  </div>' +
       '</div>'
     );
+
+    // scanned a serialized unit's QR label — show which unit it is
+    if (unit && unit.identifier) {
+      head.appendChild(mEl(
+        '<div class="m-hint" style="margin-top:8px">Scanned unit <b>' + mEsc(unit.identifier) + '</b> · ' +
+        mEsc(unit.status || '') + (unit.job_order_number ? ' · from ' + mEsc(unit.job_order_number) : '') + '</div>'
+      ));
+    }
 
     // photo
     var pbox = head.querySelector('[data-photo]');
@@ -89,7 +97,7 @@
     if (params && params.id) { detail(view, params.id); return; }
     MApp.setTitle('Check stock');
     view.innerHTML = '';
-    var picker = mItemPicker({ label: 'Scan or search an item', onPick: function (it) { detail(view, it.id); } });
+    var picker = mItemPicker({ label: 'Scan or search an item', onPick: function (it) { detail(view, it.id, it.unit); } });
     view.appendChild(picker.el);
     picker.focus();
   }

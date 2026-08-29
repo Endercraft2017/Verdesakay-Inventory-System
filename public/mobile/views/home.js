@@ -43,6 +43,7 @@ MApp.route('home', function (view) {
       { icon: '🚚', label: 'Pick Order', go: ['pick'] },
       { icon: '🏭', label: 'Job Orders', go: ['job-orders'] },
       { icon: '🔬', label: 'QA / QC', go: ['qc'] },
+      { icon: '🚀', label: 'Ship Units', go: ['allocate'] },
     ] },
     { title: 'Codes', tiles: [
       { icon: '▦', label: 'Add QR', go: ['assign-qr'] },
