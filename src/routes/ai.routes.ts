@@ -18,6 +18,8 @@ import { getToolsForUser, executeTool } from '../ai-tools';
 import { REPORT_FILE_RE } from '../ai-reporting';
 import { reindex } from '../rag';
 import { uploadDir } from '../db';
+import { getAiConfig, activeAiConfig, saveAiConfig } from '../ai-config';
+import { parseBody, aiConfigSchema } from '../validation';
 import type { AuthUser } from '../types';
 
 const router = Router();
@@ -52,9 +54,18 @@ router.get('/reports/:name', (req, res) => {
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CEREBRAS_URL = 'https://api.cerebras.ai/v1/chat/completions';
-const MODEL = process.env.CEREBRAS_MODEL ?? 'llama-4-scout-17b-16e-instruct';
 const MAX_ITERATIONS = 12; // room for multi-step report building
+
+// GET /api/ai/config — model / endpoint / whether a key is set (key never returned)
+router.get('/config', requirePermission('users.manage'), (_req, res) => {
+  res.json(getAiConfig());
+});
+
+// PUT /api/ai/config — { model?, base_url?, api_key? }  (api_key '' clears → env fallback)
+router.put('/config', requirePermission('users.manage'), (req, res) => {
+  saveAiConfig(parseBody(aiConfigSchema, req.body));
+  res.json(getAiConfig());
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request schema
@@ -125,9 +136,11 @@ async function callCerebras(
   messages: CerebrasMessage[],
   tools: object[],
   apiKey: string,
+  baseUrl: string,
+  model: string,
 ): Promise<CerebrasResponse> {
   const body: Record<string, unknown> = {
-    model: MODEL,
+    model,
     messages,
     max_tokens: 2048,
     temperature: 0.2,
@@ -137,7 +150,7 @@ async function callCerebras(
     body.tool_choice = 'auto';
   }
 
-  const res = await fetch(CEREBRAS_URL, {
+  const res = await fetch(baseUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -168,9 +181,9 @@ router.post('/chat', async (req, res, next) => {
     const { messages } = parsed.data;
     const user = req.user!;
 
-    const apiKey = process.env.CEREBRAS_API_KEY ?? '';
+    const { api_key: apiKey, base_url: baseUrl, model } = activeAiConfig();
     if (!apiKey) {
-      res.status(503).json({ error: 'AI is not configured — set CEREBRAS_API_KEY on the server.' });
+      res.status(503).json({ error: 'AI is not configured. An admin can add an API key under the AI Assistant settings.' });
       return;
     }
 
@@ -185,7 +198,7 @@ router.post('/chat', async (req, res, next) => {
     const steps: Array<{ tool: string; args: unknown; result: unknown }> = [];
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const response = await callCerebras(cebrasMsgs, tools, apiKey);
+      const response = await callCerebras(cebrasMsgs, tools, apiKey, baseUrl, model);
       const choice = response.choices[0];
       if (!choice) break;
       const msg = choice.message;

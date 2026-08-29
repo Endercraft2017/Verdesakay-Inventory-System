@@ -286,6 +286,8 @@
           <li>It only sees and does what <b>your account</b> can. It won't do bulk edits.</li>
           <li>If it made a file, a <b>download</b> button appears under the reply.</li>
           <li><b>Check anything that matters</b> against the real screen — it can be wrong.</li>
+          <li>Admins: <b>AI settings</b> (button in the assistant panel) sets the API key,
+              model, and endpoint — any OpenAI-compatible provider works.</li>
         </ul>`,
     },
     {

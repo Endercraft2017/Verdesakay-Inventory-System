@@ -144,6 +144,13 @@ export const csvImportSchema = z.object({
   dry_run: boolish.optional(),
 });
 
+/** PUT /api/ai/config — per-tenant LLM settings. `api_key` write-only ('' clears → env). */
+export const aiConfigSchema = z.object({
+  model: trimmed.max(120).optional(),
+  base_url: z.union([z.literal(''), z.string().trim().url('Endpoint must be a valid URL')]).optional(),
+  api_key: z.string().max(500).optional(),
+});
+
 /** POST /api/signup — create a new tenant workspace (self-serve, gated by SIGNUPS_OPEN). */
 export const signupSchema = z.object({
   company_name: trimmed.min(1, 'Company name is required').max(120),

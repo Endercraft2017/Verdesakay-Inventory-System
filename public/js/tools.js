@@ -75,7 +75,8 @@
       bodyHTML: `<div class="ai-chat" id="ai-chat">
           <div class="ai-msg bot">Hi! I'm your assistant — ask me about inventory, orders, messages, or your notes and tasks.</div>
         </div>`,
-      footHTML: `<form class="ai-input" id="ai-form">
+      footHTML: `${App.hasPermission('users.manage') ? `<button class="btn secondary" id="ai-config" style="margin-bottom:8px">${UI.icon('settings', 15)} AI settings</button>` : ''}
+        <form class="ai-input" id="ai-form">
           <input id="ai-text" placeholder="Ask me anything…" autocomplete="off" />
           <button class="btn" type="submit" aria-label="Send">${UI.icon('send', 16)}</button>
         </form>`,
@@ -84,6 +85,8 @@
         const input = el.querySelector('#ai-text');
         const form = el.querySelector('#ai-form');
         const submitBtn = form.querySelector('button[type="submit"]');
+        const cfgBtn = el.querySelector('#ai-config');
+        if (cfgBtn) cfgBtn.onclick = () => aiSettingsModal();
 
         form.addEventListener('submit', async (e) => {
           e.preventDefault();
@@ -126,6 +129,40 @@
           }
         });
         input.focus();
+      },
+    });
+  }
+
+  async function aiSettingsModal() {
+    let c;
+    try { c = await API.get('/ai/config'); } catch (e) { UI.toast(e.message, 'error'); return; }
+    const srcNote = c.key_source === 'tenant' ? 'a key is set for this workspace'
+      : c.key_source === 'platform' ? 'using the platform key (no workspace key set)'
+      : 'no key set — the assistant is disabled';
+    UI.modal({
+      title: 'AI Assistant settings',
+      size: 'lg',
+      bodyHTML: `<div class="form-grid">
+        <div class="form-field span2"><div class="field-label"><label>API key
+          <span class="muted">— ${srcNote}; leave blank to keep${c.key_source === 'tenant' ? '' : ' the platform key'}</span></label></div>
+          <input data-f="api_key" type="password" autocomplete="new-password"
+            placeholder="${c.key_source === 'tenant' ? '••••••••' : 'sk-… / csk-…'}" /></div>
+        <div class="form-field"><div class="field-label"><label>Model</label></div>
+          <input data-f="model" value="${UI.esc(c.model || '')}" placeholder="llama-4-scout-17b-16e-instruct" /></div>
+        <div class="form-field"><div class="field-label"><label>Endpoint</label></div>
+          <input data-f="base_url" value="${UI.esc(c.base_url || '')}" placeholder="https://api.cerebras.ai/v1/chat/completions" /></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Any OpenAI-compatible chat-completions API works
+        (Cerebras, OpenAI, Groq, OpenRouter, a local server…). Set the matching model and endpoint.
+        Clearing the key falls back to the platform key if one is configured.</p>`,
+      confirmText: 'Save',
+      onConfirm: async (ov) => {
+        const g = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
+        const body = { model: g('model'), base_url: g('base_url') };
+        const key = g('api_key');
+        if (key) body.api_key = key;
+        await API.put('/ai/config', body);
+        UI.toast('AI settings saved');
       },
     });
   }

@@ -256,7 +256,9 @@ None of this exists yet; all enforceable cheaply per-tenant because the data is 
    `SCHEMA_VERSION` + `settings.schema_version` short-circuit in `getDb()` and a
    `npm run migrate:all` deploy-time runner (`scripts/migrate-all.ts`, `db.forceMigrate`).
    Still to do: per-tenant upload *quota* accounting (§9).
-4. **BYO AI key** mirroring mail (§6). Small, high value.
+4. ~~**BYO AI key** mirroring mail (§6).~~ ✅ 2026-08-29 — `src/ai-config.ts`
+   (`settings.ai_config` + AES `ai_api_key`), `GET/PUT /api/ai/config` (`users.manage`),
+   AI Assistant → AI settings modal; falls back to the `CEREBRAS_*` env key.
 5. **`users.email` + password reset** (§3).
 6. **Plans, quotas, lifecycle states, retention** (§9).
 7. **Custom domains, per-tenant branding, billing integration** (§8).

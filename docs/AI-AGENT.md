@@ -49,10 +49,18 @@ public/js/tools.js  openAI()
 
 ## Configuration
 
+**Per-tenant, BYO key.** Settings live in the `settings` k/v store (key `ai_config` + the
+AES-encrypted `ai_api_key`) via `src/ai-config.ts`, editable at **AI Assistant → AI
+settings** (`users.manage`) or `PUT /api/ai/config` — `{model, base_url, api_key}`. Any
+OpenAI-compatible chat-completions endpoint works. The env vars below are the **fallback**
+when a tenant hasn't set its own key. `GET /api/ai/config` returns
+`{model, base_url, has_key, key_source: 'tenant'|'platform'|'none'}` — never the key.
+
 | Environment variable | Default | Description |
 |---|---|---|
-| `CEREBRAS_API_KEY` | *(required)* | Your Cerebras API key. The assistant returns a 503 if this is unset. |
-| `CEREBRAS_MODEL` | `llama-4-scout-17b-16e-instruct` | Cerebras model to use. |
+| `CEREBRAS_API_KEY` | *(fallback)* | Platform API key, used when a tenant has no key of its own. 503 if neither is set. |
+| `CEREBRAS_MODEL` | `llama-4-scout-17b-16e-instruct` | Default model. |
+| `CEREBRAS_URL` | `https://api.cerebras.ai/v1/chat/completions` | Default chat-completions endpoint. |
 
 Set these before starting the server:
 
