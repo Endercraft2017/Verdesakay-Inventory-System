@@ -561,7 +561,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(rec.data.basic_salary).toBeCloseTo(800, 6);
   });
 
-  it('regenerating refreshes computed fields but preserves manually-entered statutory deductions', async () => {
+  it('regenerating refreshes computed fields but preserves purely-manual ones (cash advance, rest-day OT)', async () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-REGEN', name: 'Regen Test Employee', daily_rate: 800 });
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -577,15 +577,53 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const records1 = await ctx.api.get(`/api/form-definitions/${gen1.body.form_id}/records`).query({ period: 'Regen Cutoff' }).set(hdr());
     const rec1 = records1.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Regen Test Employee');
 
-    await ctx.api.put(`/api/form-records/${rec1.id}`).set(hdr()).send({ data: { ...rec1.data, sss: 150 } });
+    await ctx.api.put(`/api/form-records/${rec1.id}`).set(hdr()).send({ data: { ...rec1.data, cash_advance: 500, rest_day_ot: 250 } });
 
     const gen2 = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
       .send({ payroll_period: 'Regen Cutoff' });
     expect(gen2.body.updated).toBe(1);
     const records2 = await ctx.api.get(`/api/form-definitions/${gen1.body.form_id}/records`).query({ period: 'Regen Cutoff' }).set(hdr());
     const rec2 = records2.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Regen Test Employee');
-    expect(rec2.data.sss).toBe(150);
+    expect(rec2.data.cash_advance).toBe(500);
+    expect(rec2.data.rest_day_ot).toBe(250);
     expect(rec2.data.days_worked).toBe(1);
+  });
+
+  it('computes SSS / PhilHealth / Pag-IBIG / withholding tax; auto_statutory:false keeps them manual', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-STAT', name: 'Statutory Employee', daily_rate: 1000 }); // ~26k/mo
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Stat Cutoff', start_date: '2026-08-04', end_date: '2026-08-04' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-04', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Stat Cutoff', pay_date: '2026-08-10' });
+    const recs = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Stat Cutoff' }).set(hdr());
+    const rec = recs.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Statutory Employee');
+
+    // monthly comp = 1000 * 26 = 26,000 -> MSC 26,000; semi-monthly split (/2)
+    expect(rec.data.sss).toBe(650);         // 26000*0.05 / 2
+    expect(rec.data.philhealth).toBe(325);  // 26000*0.05*0.5 / 2
+    expect(rec.data.pagibig).toBe(100);     // min(10000*0.02,200) / 2
+    expect(rec.data.withholding_tax).toBeGreaterThanOrEqual(0);
+    expect(rec.data.total_deductions).toBe(
+      Math.round((rec.data.sss + rec.data.philhealth + rec.data.pagibig + rec.data.withholding_tax + rec.data.late_absences + 0) * 100) / 100
+    );
+    expect(rec.data.net_pay).toBe(Math.round((rec.data.total_earnings - rec.data.total_deductions) * 100) / 100);
+
+    // Turn auto off, set a manual value, regenerate -> preserved.
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ auto_statutory: false });
+    await ctx.api.put(`/api/form-records/${rec.id}`).set(hdr()).send({ data: { ...rec.data, sss: 999, net_pay: 12345 } });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Stat Cutoff' });
+    const recs2 = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Stat Cutoff' }).set(hdr());
+    const rec2 = recs2.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Statutory Employee');
+    expect(rec2.data.sss).toBe(999);
+    expect(rec2.data.net_pay).toBe(12345);
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ auto_statutory: true }); // restore for other tests
   });
 
   it('rotating shifts: the same employee can have a different shift on different days within one cutoff', async () => {

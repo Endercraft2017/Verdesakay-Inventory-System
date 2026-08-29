@@ -15,6 +15,8 @@ const POLICY: PayrollPolicy = {
   night_start: '22:00',
   night_end: '06:00',
   monthly_rate_divisor: 26,
+  pay_frequency: 'semi_monthly',
+  auto_statutory: true,
 };
 const DAILY_RATE = 800; // hourly = 100
 const SHIFT = { start_time: '08:00', end_time: '17:00' };

@@ -289,12 +289,16 @@ export const noteSchema = z.object({
 export const taskSchema = z.object({
   title: trimmed.min(1, 'Task title is required').max(300),
   due_date: trimmed.max(40).optional().nullable(),
+  notes: trimmed.max(2000).optional().nullable(),
+  remind_at: trimmed.max(40).optional().nullable(),
   done: boolish.optional(),
 });
 
 export const updateTaskSchema = z.object({
   title: trimmed.min(1).max(300).optional(),
   due_date: trimmed.max(40).optional().nullable(),
+  notes: trimmed.max(2000).optional().nullable(),
+  remind_at: trimmed.max(40).optional().nullable(),
   done: boolish.optional(),
 });
 
@@ -528,6 +532,8 @@ export const payrollPolicySchema = z.object({
   night_start: hhmm.default('22:00'),
   night_end: hhmm.default('06:00'),
   monthly_rate_divisor: z.coerce.number().min(1).max(31).default(26),
+  pay_frequency: z.enum(['monthly', 'semi_monthly', 'weekly', 'daily']).default('semi_monthly'),
+  auto_statutory: boolish.default(true),
 });
 
 /** Sparse permission overrides: keys are permission strings, values are booleans. */

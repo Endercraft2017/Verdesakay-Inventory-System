@@ -248,12 +248,15 @@ function createSchema(): void {
     );
 
     CREATE TABLE IF NOT EXISTS tasks (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      title      TEXT NOT NULL,
-      due_date   TEXT,
-      done       INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title       TEXT NOT NULL,
+      due_date    TEXT,               -- "YYYY-MM-DD" or "YYYY-MM-DD HH:MM" (scheduler)
+      notes       TEXT,
+      remind_at   TEXT,               -- "YYYY-MM-DD HH:MM" local; fires one push then clears
+      remind_sent INTEGER NOT NULL DEFAULT 0,
+      done        INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS bookmarks (
@@ -627,6 +630,12 @@ function migrate(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_bom_product ON bom_components(product_item_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_bom_component ON bom_components(component_item_id)');
 
+  // ---- Tasks: scheduling + reminders ----
+  const taskCols = db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[];
+  if (!taskCols.some((c) => c.name === 'notes')) db.exec('ALTER TABLE tasks ADD COLUMN notes TEXT');
+  if (!taskCols.some((c) => c.name === 'remind_at')) db.exec('ALTER TABLE tasks ADD COLUMN remind_at TEXT');
+  if (!taskCols.some((c) => c.name === 'remind_sent')) db.exec('ALTER TABLE tasks ADD COLUMN remind_sent INTEGER NOT NULL DEFAULT 0');
+
   // ---- Per-location stock (Phase 4) ----
   const txnCols = db.prepare('PRAGMA table_info(inventory_transactions)').all() as { name: string }[];
   if (!txnCols.some((c) => c.name === 'location_id')) {
@@ -957,15 +966,21 @@ function seedHrPayrollForm(): void {
   const existing = db.prepare("SELECT id, fields FROM form_definitions WHERE slug = 'hr_payroll'").get() as
     { id: number; fields: string } | undefined;
   if (existing) {
-    // Touch up an install that already had hr_payroll seeded before employee_name became an
-    // 'employee' dropdown field, so old and new installs end up consistent either way.
+    // Touch up an install that already had hr_payroll seeded: employee_name became an
+    // 'employee' dropdown field, and a 'withholding_tax' field was added (auto-computed
+    // BIR withholding — see src/ph-statutory.ts). Keep old and new installs consistent.
     try {
-      const fields = JSON.parse(existing.fields) as { key: string; type: string }[];
+      const fields = JSON.parse(existing.fields) as { key: string; label?: string; type: string }[];
+      let touched = false;
       const nameField = fields.find((f) => f.key === 'employee_name');
-      if (nameField && nameField.type !== 'employee') {
-        nameField.type = 'employee';
-        db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
+      if (nameField && nameField.type !== 'employee') { nameField.type = 'employee'; touched = true; }
+      if (!fields.some((f) => f.key === 'withholding_tax')) {
+        const at = fields.findIndex((f) => f.key === 'pagibig');
+        const wt = { key: 'withholding_tax', label: 'Withholding Tax', type: 'number', required: false, options: [], default: '' };
+        fields.splice(at >= 0 ? at + 1 : fields.length, 0, wt);
+        touched = true;
       }
+      if (touched) db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
     } catch { /* leave as-is if the stored fields are somehow unparseable */ }
     return;
   }
@@ -992,6 +1007,7 @@ function seedHrPayrollForm(): void {
     numField('sss', 'SSS'),
     numField('philhealth', 'PhilHealth'),
     numField('pagibig', 'Pag-IBIG'),
+    numField('withholding_tax', 'Withholding Tax'),
     numField('cash_advance', 'Cash Advance'),
     numField('late_absences', 'Late / Absences'),
     numField('total_deductions', 'Total Deductions'),
@@ -1132,6 +1148,7 @@ function payrollSlipTemplateBody(): string {
       <div class="slip-line"><span>SSS</span><span>{{sss}}</span></div>
       <div class="slip-line"><span>PhilHealth</span><span>{{philhealth}}</span></div>
       <div class="slip-line"><span>Pag-IBIG</span><span>{{pagibig}}</span></div>
+      <div class="slip-line"><span>Withholding Tax</span><span>{{withholding_tax}}</span></div>
       <div class="slip-line"><span>Cash Advance</span><span>{{cash_advance}}</span></div>
       <div class="slip-line"><span>Late / Absences</span><span>{{late_absences}}</span></div>
       <div class="slip-total"><span>Total Deductions</span><span>{{total_deductions}}</span></div>

@@ -29,6 +29,7 @@ import { suggestEmployeeNumber } from '../hr-employee-numbering';
 import { toCsv } from '../csv';
 import { resolveImport, importLoop } from '../csv-import';
 import { listPayrollTables, effectiveTables, upsertPayrollTable, deletePayrollTable } from '../payroll-tables';
+import { statutoryDeductions, taxableCompensation, withholdingTax } from '../ph-statutory';
 
 const EMP_CSV_COLUMNS = [
   'employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate',
@@ -439,7 +440,12 @@ router.delete('/shifts/:id', requirePermission('hr.manage'), (req, res) => {
 const DEFAULT_POLICY: PayrollPolicy = {
   grace_minutes: 10, late_unit: 'hour', ot_unit: 'hour', ot_rate_percent: 125,
   night_diff_enabled: false, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
-  monthly_rate_divisor: 26,
+  monthly_rate_divisor: 26, pay_frequency: 'semi_monthly', auto_statutory: true,
+};
+
+/** How many pay periods per month, for splitting the monthly statutory contribution. */
+const PERIODS_PER_MONTH: Record<PayrollPolicy['pay_frequency'], number> = {
+  monthly: 1, semi_monthly: 2, weekly: 4, daily: 22,
 };
 
 function currentPolicy(): PayrollPolicy {
@@ -654,8 +660,12 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
   const form = queryOne<FormDefinition>("SELECT * FROM form_definitions WHERE slug = 'hr_payroll'");
   if (!form) { res.status(400).json({ error: 'HR Payroll form is missing — check Admin > Form Builder' }); return; }
 
-  const roster = queryAll<{ employee_id: number; name: string; position: string | null; daily_rate: number; department_name: string | null }>(
-    `SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.daily_rate, d.name AS department_name
+  const roster = queryAll<{
+    employee_id: number; name: string; position: string | null; daily_rate: number;
+    rate_type: 'daily' | 'monthly'; monthly_rate: number | null; department_name: string | null;
+  }>(
+    `SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.daily_rate,
+            e.rate_type, e.monthly_rate, d.name AS department_name
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -679,6 +689,10 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
     if (!memo) return null;
     return memo.paid === 'Yes' ? 'paid' : 'unpaid';
   }
+
+  // Statutory rate tables in force for this run (by pay date, else the cutoff end).
+  const statTables = effectiveTables(input.pay_date || period.end_date);
+  const periodsPerMonth = PERIODS_PER_MONTH[policy.pay_frequency];
 
   let created = 0;
   let updated = 0;
@@ -734,23 +748,47 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       // fields with no computed source (statutory deductions, cash advance, rest-day OT, the
       // OT peso rate, and the final net pay) are carried over from a previous generation rather
       // than reset to zero, same as the un-computed fields always did before this feature.
-      const prevManual = existing ? (() => {
-        try {
-          const prev = JSON.parse(existing.data as string);
-          return {
-            sss: prev.sss, philhealth: prev.philhealth, pagibig: prev.pagibig,
-            cash_advance: prev.cash_advance, rest_day_ot: prev.rest_day_ot,
-            ot_rate_hour: prev.ot_rate_hour, total_deductions: prev.total_deductions,
-            net_pay: prev.net_pay, pay_date: prev.pay_date,
-          };
-        } catch { return {}; }
-      })() : {};
+      const prev = existing ? (() => { try { return JSON.parse(existing.data as string) as Record<string, unknown>; } catch { return {}; } })() : {};
+      const num = (v: unknown): number => Number(v) || 0;
+      // Purely-manual fields with no computed source are carried over rather than reset.
+      const prevManual = {
+        cash_advance: prev.cash_advance, rest_day_ot: prev.rest_day_ot,
+        ot_rate_hour: prev.ot_rate_hour, pay_date: prev.pay_date,
+      };
+
+      const restDayOt = num(prevManual.rest_day_ot);
+      const cashAdvance = num(prevManual.cash_advance);
+      const totalEarnings = round2(
+        basicSalary + computed.overtime_pay + computed.undertime_pay
+        + computed.holiday_pay + computed.special_holiday_30 + restDayOt
+      );
+
+      // SSS / PhilHealth / Pag-IBIG + BIR withholding. When policy.auto_statutory is off,
+      // keep whatever a previous generation / manual edit left (old behaviour).
+      let sss = num(prev.sss), philhealth = num(prev.philhealth), pagibig = num(prev.pagibig);
+      let withholding_tax = num(prev.withholding_tax);
+      if (policy.auto_statutory) {
+        const monthlyComp = emp.rate_type === 'monthly' && emp.monthly_rate
+          ? emp.monthly_rate
+          : round2(emp.daily_rate * policy.monthly_rate_divisor);
+        const ded = statutoryDeductions(monthlyComp, monthlyComp, statTables);
+        sss = round2(ded.sss.employee / periodsPerMonth);
+        philhealth = round2(ded.philhealth.employee / periodsPerMonth);
+        pagibig = round2(ded.pagibig.employee / periodsPerMonth);
+        const taxable = taxableCompensation(totalEarnings, 0, round2(sss + philhealth + pagibig));
+        withholding_tax = withholdingTax(taxable, policy.pay_frequency, statTables.rwt);
+      }
+
+      const totalDeductions = policy.auto_statutory
+        ? round2(sss + philhealth + pagibig + withholding_tax + computed.late_deduction + cashAdvance)
+        : num(prev.total_deductions);
+      const netPay = policy.auto_statutory ? round2(totalEarnings - totalDeductions) : num(prev.net_pay);
 
       const data = {
         ...zeros,
         ...prevManual,
         employee_name: emp.name, dept_position: deptPosition,
-        payroll_period: payrollPeriod, pay_date: input.pay_date || (prevManual as { pay_date?: string }).pay_date || '',
+        payroll_period: payrollPeriod, pay_date: input.pay_date || (prevManual.pay_date as string) || '',
         daily_rate: emp.daily_rate,
         days_worked: computed.days_worked,
         ot_hours: computed.ot_hours,
@@ -760,11 +798,10 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         special_holiday_30: round2(computed.special_holiday_30),
         late_absences: round2(computed.late_deduction),
         basic_salary: round2(basicSalary),
-        total_earnings: round2(
-          basicSalary + computed.overtime_pay + computed.undertime_pay
-          + computed.holiday_pay + computed.special_holiday_30
-          + (Number((prevManual as { rest_day_ot?: number }).rest_day_ot) || 0)
-        ),
+        total_earnings: totalEarnings,
+        sss, philhealth, pagibig, withholding_tax,
+        total_deductions: totalDeductions,
+        net_pay: netPay,
       };
 
       if (existing) {

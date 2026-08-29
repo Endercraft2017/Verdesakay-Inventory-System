@@ -155,7 +155,13 @@
               correctly.</li>
           <li><b>Generate Payslips</b> creates records in the HR Payroll form for the
               period, which you then print.</li>
-        </ul>`,
+        </ul>
+        <p><b>Statutory deductions:</b> in <b>Payroll Rules</b>, set your <b>pay frequency</b>
+        and leave <b>“Auto-compute SSS / PhilHealth / Pag-IBIG / withholding tax”</b> on —
+        Generate Payslips then fills those lines from the current government rate tables
+        (the monthly contribution is split across your cutoffs). Turn it off to type them
+        by hand. Cash advance and rest-day OT are always entered manually and are kept when
+        you re-generate.</p>`,
     },
     {
       id: 'form-builder', title: 'Form Builder & Data Forms', group: 'Documents',

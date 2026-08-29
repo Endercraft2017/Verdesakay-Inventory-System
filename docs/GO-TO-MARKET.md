@@ -200,11 +200,12 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    only a wedge if it produces filable documents. Biggest single revenue unlock.
    Scoped with current 2026 figures + a 4-phase plan in
    [PH-PAYROLL-COMPLIANCE.md](PH-PAYROLL-COMPLIANCE.md).
-   *Phase A (statutory engine) done 2026-08-29: `payroll_tables` versioned data +
-   `src/ph-statutory.ts` (SSS/PhilHealth/Pag-IBIG + BIR withholding math) +
-   `src/payroll-tables.ts` (effective-date resolution) + `GET/POST /hr/payroll-tables`.
-   Next: wire it into payslip generation (Phase B), then BIR 2316 / 1601-C / 1604-C /
-   Alphalist (Phase C).*
+   *Phase A + B-step-1 done 2026-08-29: `payroll_tables` versioned data,
+   `src/ph-statutory.ts` (SSS/PhilHealth/Pag-IBIG + BIR withholding math),
+   `src/payroll-tables.ts` (effective-date resolution), `GET/POST /hr/payroll-tables`,
+   and **generate-payslips now auto-fills the statutory + withholding-tax lines**
+   (policy toggle `auto_statutory`, `pay_frequency`). Next: 13th-month + final-pay
+   worksheets, a rate-tables admin screen, then BIR 2316 / 1601-C / 1604-C / Alphalist.*
 2. **Data import tools (CSV) for items, stock, BOMs, employees, opening balances.**
    Onboarding is impossible without this; it's also billable services. Blocks *every*
    deal. — *Items, suppliers, employees done 2026-08-29 (export + import, upsert by

@@ -3,10 +3,11 @@
 The system computes statutory deductions from a set of **rate tables** that the
 government updates from time to time. This guide is for the admin who keeps them current.
 
-> **Status:** the calculation engine and the API are in. The screen to view/edit tables
-> in the app arrives with payslip integration (Phase B) — until then, updates go through
-> the API or with help from us. The **2026** schedule ships built-in, so payroll works
-> out of the box.
+> **Status:** the engine, the API, and **payslip integration** are in — Generate Payslips
+> auto-fills SSS / PhilHealth / Pag-IBIG / withholding tax from these tables (toggle in
+> Time Keeping → Payroll Rules → *Auto-compute…*, alongside your **pay frequency**). The
+> screen to view/edit the tables themselves in the app is still to come — until then,
+> updates go through the API or with our help. The **2026** schedule ships built-in.
 
 ## What's in a table
 

@@ -424,6 +424,12 @@ export interface PayrollPolicy {
   night_start: string; // "HH:MM"
   night_end: string;   // "HH:MM", wraps midnight if < night_start
   monthly_rate_divisor: number; // effective daily_rate = monthly_rate / this, e.g. 26
+  /** How often payroll is run — picks the BIR withholding table and how the monthly
+      SSS/PhilHealth/Pag-IBIG contribution is split across cutoffs. */
+  pay_frequency: 'monthly' | 'semi_monthly' | 'weekly' | 'daily';
+  /** When true, generate-payslips computes SSS/PhilHealth/Pag-IBIG + withholding tax
+      from the statutory rate tables. When false, those stay manual (carried over). */
+  auto_statutory: boolean;
 }
 
 export interface EmployeeDocument {

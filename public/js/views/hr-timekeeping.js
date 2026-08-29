@@ -174,6 +174,21 @@ async function policySettingsModal() {
       </div>
       <p class="muted" style="font-size:12px;margin:2px 0 0">For employees paid a monthly rate, their effective
         daily rate used in payroll is monthly rate ÷ this number (e.g. 26 working days/month).</p>
+      <div class="field-row" style="margin-top:10px">
+        <div><label>Pay frequency</label>
+          <select data-p="pay_frequency">
+            <option value="monthly">Monthly</option>
+            <option value="semi_monthly">Semi-monthly (twice a month)</option>
+            <option value="weekly">Weekly</option>
+            <option value="daily">Daily</option>
+          </select></div>
+        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <input type="checkbox" data-p="auto_statutory" style="width:auto" /> Auto-compute SSS / PhilHealth / Pag-IBIG / withholding tax
+        </label></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">When on, "Generate Payslips" fills the statutory deduction
+        and withholding-tax lines from the current rate tables (the monthly contribution is split across the cutoffs
+        per the pay frequency). Turn off to keep entering those by hand.</p>
       <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
         <input type="checkbox" data-p="night_diff_enabled" style="width:auto" /> Enable night differential
       </label></div>
@@ -192,6 +207,8 @@ async function policySettingsModal() {
         p('ot_unit').value = policy.ot_unit;
         p('ot_rate_percent').value = policy.ot_rate_percent;
         p('monthly_rate_divisor').value = policy.monthly_rate_divisor;
+        p('pay_frequency').value = policy.pay_frequency || 'semi_monthly';
+        p('auto_statutory').checked = policy.auto_statutory !== false;
         p('night_diff_enabled').checked = policy.night_diff_enabled;
         p('night_diff_percent').value = policy.night_diff_percent;
         p('night_start').value = policy.night_start;
@@ -240,6 +257,8 @@ async function policySettingsModal() {
           ot_unit: p('ot_unit').value,
           ot_rate_percent: Number(p('ot_rate_percent').value) || 0,
           monthly_rate_divisor: Number(p('monthly_rate_divisor').value) || 26,
+          pay_frequency: p('pay_frequency').value,
+          auto_statutory: p('auto_statutory').checked,
           night_diff_enabled: p('night_diff_enabled').checked,
           night_diff_percent: Number(p('night_diff_percent').value) || 0,
           night_start: p('night_start').value,
@@ -265,6 +284,7 @@ async function renderPeriod(view, periodId) {
       <span class="muted" style="margin-left:6px">${UI.esc(period.start_date)} &ndash; ${UI.esc(period.end_date)}</span>
       <div class="grow"></div>
       <button class="btn secondary" id="tk-edit-period">${UI.icon('edit')} Edit Cutoff</button>
+      <button class="btn secondary" id="tk-import-punches" style="margin-left:8px" title="Fill time-in/out from time-clock punches">${UI.icon('calendar')} Import Punches</button>
       <button class="btn" id="tk-generate" style="margin-left:8px">${UI.icon('sheet')} Generate Payslips</button>
     </div>
     <div class="panel">
@@ -296,6 +316,25 @@ async function renderPeriod(view, periodId) {
     renderRoster();
   });
   view.querySelector('#tk-generate').onclick = () => generateModal();
+  view.querySelector('#tk-import-punches').onclick = async (e) => {
+    if (!App.hasPermission('hr.manage')) { UI.toast('Needs HR manage', 'error'); return; }
+    const ok = await UI.confirmDialog(
+      'Fill each roster day’s time-in / time-out from the employee’s clock punches for that date. Days you’ve already set by hand are left untouched.',
+      'Import'
+    );
+    if (!ok) return;
+    e.target.disabled = true;
+    try {
+      const r = await API.post(`/hr/clock/import/${periodId}`);
+      UI.toast(`Filled ${r.filled} day(s) across ${r.dates} date(s)`, 'success');
+      period = await API.get('/hr/periods/' + periodId);
+      renderRoster();
+    } catch (ex) {
+      UI.toast(ex.message || 'Import failed', 'error');
+    } finally {
+      e.target.disabled = false;
+    }
+  };
   view.querySelector('#tk-add-emp').onclick = () => addEmployeeModal();
 
   const rosterEl = view.querySelector('#tk-roster');

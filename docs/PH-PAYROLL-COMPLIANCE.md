@@ -1,6 +1,7 @@
 # Philippine Payroll & Statutory Compliance — scope + current figures
 
-> **Status:** Phase A (statutory engine) **built 2026-08-29** — see §3. Phases B–D pending.
+> **Status:** Phase A (engine) + Phase B step 1 (payslip wiring) **built 2026-08-29** —
+> see §3. 13th-month / final-pay + Phases C–D pending.
 > This is GO-TO-MARKET §6 item #1 — the payroll "wedge".
 > **Figures verified:** 2026 rates, August 2026. **Re-check every January** — SSS and
 > PhilHealth schedules change by circular; BIR form versions change by RMC.
@@ -116,9 +117,27 @@ Store the 5-row RWT table (per frequency) as versioned data keyed by effective d
 - Tests: `tests/ph-statutory.test.ts` (math vs the 2026 schedules),
   `tests/payroll-tables.test.ts` (seeding, effective-date resolution, RBAC).
 
-**Still to wire (Phase B):** feed `statutoryDeductions` + `withholdingTax` into
-`src/hr-payroll-compute.ts` / payslip generation so a generated slip carries the real
-EE/ER lines instead of manual fields. Config for which pay frequency a run uses.
+### Phase B — payslip wiring  ✅ step 1 done 2026-08-29 (13th-month / final-pay pending)
+
+- `PayrollPolicy` gains `pay_frequency` (`monthly` / `semi_monthly` / `weekly` / `daily`,
+  default semi-monthly) and `auto_statutory` (default **on**). Both editable in
+  Time Keeping → **Payroll Rules**.
+- `POST /hr/periods/:id/generate-payslips`: when `auto_statutory` is on, each slip's
+  `sss` / `philhealth` / `pagibig` / **`withholding_tax`** come from
+  `statutoryDeductions()` + `withholdingTax()` on the tables effective for the pay date.
+  Monthly comp basis = `monthly_rate` (monthly employees) or `daily_rate ×
+  monthly_rate_divisor`. The monthly contribution is divided by periods-per-month
+  (semi-monthly → ÷2, etc.). `total_deductions` and `net_pay` are then rolled up
+  (earnings − SSS − PhilHealth − Pag-IBIG − withholding − late − cash advance).
+- `auto_statutory` off → those four stay manual (carried over on re-generate, as before).
+  `cash_advance` / `rest_day_ot` / `ot_rate_hour` are always manual + carried over.
+- `withholding_tax` field added to the `hr_payroll` form (seed + idempotent migration for
+  existing installs) and to the seeded payslip template.
+- Tests in `tests/hr.test.ts` ("computes SSS / PhilHealth / Pag-IBIG / withholding tax;
+  auto_statutory:false keeps them manual").
+
+**Still to do in Phase B:** 13th-month worksheet, final-pay / back-pay worksheet, and an
+admin **screen** for the rate tables (`/hr/payroll-tables` is API-only today).
 
 ### Phase B — payslip, 13th-month, final pay
 
