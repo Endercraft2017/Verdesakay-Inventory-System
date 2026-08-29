@@ -347,6 +347,7 @@ Bodies are validated by the named schema in `src/validation.ts`.
 | GET `/hr/payroll-tables` | 🔐`hr.view` | Versioned PH statutory rate tables + the set resolved for `?date=` → `{rows, effective, as_of}` | hr.routes | — |
 | POST `/hr/payroll-tables` | 🔐`hr.manage` | Add/replace a rate-table version `{kind, effective_from, data, note?}` | hr.routes | payrollTableSchema |
 | DELETE `/hr/payroll-tables/:id` | 🔐`hr.manage` | Remove a rate-table version | hr.routes | — |
+| GET `/hr/thirteenth-month?year=` | 🔐`hr.view` | 13th-month pay per employee = Σ `basic_salary` of that year's `hr_payroll` records ÷ 12 → `{year, rows, total}` | hr.routes | — |
 | GET `/activity` | 🔐`audit.view` | App-wide action log, filtered + paginated (`?user_id=`,`?entity=`,`?action=`,`?from=`,`?to=`,`?q=`,`?limit=`,`?offset=`) → `{rows,total}` | activity.routes | — |
 | GET `/activity/options` | 🔐`audit.view` | Distinct entities · actions · users for the filter dropdowns | activity.routes | — |
 | DELETE `/activity?before=<date>` | 🔐`audit.view` | Prune entries older than the cutoff → `{deleted}` | activity.routes | — |

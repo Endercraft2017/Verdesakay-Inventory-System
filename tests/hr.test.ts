@@ -699,4 +699,33 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(rec.data.days_worked).toBe(0);
     expect(rec.data.basic_salary).toBeCloseTo(0, 6);
   });
+
+  it('13th-month = total basic salary that year / 12, from the generated payslips', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-13TH', name: '13th Month Employee', daily_rate: 1000 });
+
+    for (const [i, d] of [['2026-03-15', '2026-03-14'], ['2026-04-15', '2026-04-14']].entries()) {
+      const [payDate, workDate] = d;
+      const period = await ctx.api.post('/api/hr/periods').set(hdr())
+        .send({ label: `13th P${i}`, start_date: workDate, end_date: workDate });
+      await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+      await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+        employee_id: emp.body.id,
+        days: [{ work_date: workDate, time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+      });
+      await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+        .send({ payroll_period: `13th P${i}`, pay_date: payDate });
+    }
+
+    const r = await ctx.api.get('/api/hr/thirteenth-month?year=2026').set(hdr());
+    expect(r.status).toBe(200);
+    const row = r.body.rows.find((x: { employee_name: string }) => x.employee_name === '13th Month Employee');
+    expect(row.payslip_count).toBe(2);
+    expect(row.basic_total).toBe(2000);       // 1000/day * 1 day * 2 periods
+    expect(row.amount).toBe(166.67);          // 2000 / 12
+
+    // A different year sees nothing.
+    const other = await ctx.api.get('/api/hr/thirteenth-month?year=2025').set(hdr());
+    expect(other.body.rows.find((x: { employee_name: string }) => x.employee_name === '13th Month Employee')).toBeUndefined();
+  });
 });

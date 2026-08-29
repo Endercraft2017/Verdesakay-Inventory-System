@@ -203,9 +203,10 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    *Phase A + B-step-1 done 2026-08-29: `payroll_tables` versioned data,
    `src/ph-statutory.ts` (SSS/PhilHealth/Pag-IBIG + BIR withholding math),
    `src/payroll-tables.ts` (effective-date resolution), `GET/POST /hr/payroll-tables`,
-   and **generate-payslips now auto-fills the statutory + withholding-tax lines**
-   (policy toggle `auto_statutory`, `pay_frequency`). Next: 13th-month + final-pay
-   worksheets, a rate-tables admin screen, then BIR 2316 / 1601-C / 1604-C / Alphalist.*
+   generate-payslips auto-fills the statutory + withholding-tax lines (policy toggle
+   `auto_statutory`, `pay_frequency`), a **rate-tables admin screen** (Time Keeping →
+   Policy Settings), and a **13th-month worksheet** (`GET /hr/thirteenth-month`). Next:
+   final-pay worksheet, then BIR 2316 / 1601-C / 1604-C / Alphalist (Phase C).*
 2. **Data import tools (CSV) for items, stock, BOMs, employees, opening balances.**
    Onboarding is impossible without this; it's also billable services. Blocks *every*
    deal. — *Items, suppliers, employees done 2026-08-29 (export + import, upsert by

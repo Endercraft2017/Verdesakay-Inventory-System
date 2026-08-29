@@ -21,12 +21,14 @@ async function renderList(view) {
     <div class="topbar">
       <h2>Time Keeping</h2>
       <div class="grow"></div>
-      <button class="btn secondary" id="tk-policy">${UI.icon('settings')} Policy Settings</button>
+      <button class="btn secondary" id="tk-13th">${UI.icon('sheet')} 13th-Month</button>
+      <button class="btn secondary" id="tk-policy" style="margin-left:8px">${UI.icon('settings')} Policy Settings</button>
       <button class="btn" id="tk-new" style="margin-left:8px">${UI.icon('plus')} New Cutoff</button>
     </div>
     <div class="panel"><div id="tk-table"></div></div>`;
 
   view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
+  view.querySelector('#tk-13th').addEventListener('click', () => thirteenthMonthModal());
 
   const tableEl = view.querySelector('#tk-table');
 
@@ -197,10 +199,17 @@ async function policySettingsModal() {
         <div><label>Night start</label><input data-p="night_start" type="time" /></div>
         <div><label>Night end</label><input data-p="night_end" type="time" /></div>
       </div>
-      <button type="button" class="btn" id="tk-policy-save" style="margin-top:14px">${UI.icon('sheet', 14)} Save Rules</button>`,
+      <button type="button" class="btn" id="tk-policy-save" style="margin-top:14px">${UI.icon('sheet', 14)} Save Rules</button>
+      <hr style="margin:18px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
+      <strong>Statutory Rate Tables</strong>
+      <p class="muted" style="font-size:12px;margin-top:2px">The SSS / PhilHealth / Pag-IBIG / BIR-withholding
+        figures the payslip computation uses. The 2026 schedule is built in; add a new dated version each January
+        if the government changes the rates.</p>
+      <button type="button" class="btn secondary small" id="tk-rate-tables" style="margin-top:8px">${UI.icon('sheet', 14)} Open rate tables</button>`,
     cancelText: 'Close',
     onOpen: (ov) => {
       const p = (k) => ov.querySelector(`[data-p="${k}"]`);
+      ov.querySelector('#tk-rate-tables').onclick = () => rateTablesModal();
       if (policy) {
         p('grace_minutes').value = policy.grace_minutes;
         p('late_unit').value = policy.late_unit;
@@ -269,6 +278,133 @@ async function policySettingsModal() {
       };
     },
   });
+}
+
+/* ── 13th-month pay worksheet ────────────────────────────────────────────── */
+async function thirteenthMonthModal() {
+  const thisYear = new Date().getFullYear();
+  const m = UI.modal({
+    title: '13th-Month Pay',
+    size: 'lg',
+    cancelText: 'Close',
+    bodyHTML: `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <label style="margin:0">Year</label>
+        <select id="tm-year">${[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}" ${y === thisYear ? 'selected' : ''}>${y}</option>`).join('')}</select>
+        <div class="grow"></div>
+        <button type="button" class="btn secondary small" id="tm-csv">${UI.icon('download', 14)} Export CSV</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:0">Mandatory 13th-month pay = total <b>basic salary</b>
+        actually earned in the calendar year ÷ 12. Computed from the payslips generated for that year
+        (dated by pay date). Deductions and allowances don't affect it.</p>
+      <div id="tm-body"><div class="empty">Loading…</div></div>`,
+    onOpen: (ov) => {
+      const yearSel = ov.querySelector('#tm-year');
+      let last = { rows: [], total: 0, year: '' };
+      async function load() {
+        ov.querySelector('#tm-body').innerHTML = '<div class="empty">Loading…</div>';
+        last = await API.get('/hr/thirteenth-month?year=' + yearSel.value).catch(() => ({ rows: [], total: 0, year: yearSel.value }));
+        const b = ov.querySelector('#tm-body');
+        if (!last.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
+        b.innerHTML = `<table class="line-table"><thead><tr>
+            <th>Employee</th><th class="right">Payslips</th><th class="right">Total basic salary</th><th class="right">13th-month</th>
+          </tr></thead><tbody>${last.rows.map((r) => `
+            <tr><td>${UI.esc(r.employee_name)}</td>
+              <td class="right">${r.payslip_count}</td>
+              <td class="right">${UI.money ? UI.money(r.basic_total) : r.basic_total.toFixed(2)}</td>
+              <td class="right"><strong>${UI.money ? UI.money(r.amount) : r.amount.toFixed(2)}</strong></td></tr>`).join('')}
+          </tbody><tfoot><tr><th colspan="3" class="right">Total</th>
+            <th class="right">${UI.money ? UI.money(last.total) : last.total.toFixed(2)}</th></tr></tfoot></table>`;
+      }
+      yearSel.addEventListener('change', load);
+      ov.querySelector('#tm-csv').onclick = () => {
+        if (!last.rows.length) { UI.toast('Nothing to export', 'error'); return; }
+        UI.downloadCsv(`13th-month-${last.year}.csv`,
+          ['Employee', 'Payslips', 'Total basic salary', '13th-month pay'],
+          last.rows.map((r) => [r.employee_name, r.payslip_count, r.basic_total, r.amount]));
+      };
+      load();
+    },
+  });
+  return m;
+}
+
+/* ── Statutory rate tables (SSS / PhilHealth / Pag-IBIG / BIR withholding) ──── */
+const RATE_KIND_LABEL = { sss: 'SSS', philhealth: 'PhilHealth', pagibig: 'Pag-IBIG', rwt: 'BIR withholding tax' };
+
+async function rateTablesModal() {
+  async function load() {
+    return API.get('/hr/payroll-tables').catch(() => ({ rows: [], effective: {}, as_of: '' }));
+  }
+  let state = await load();
+
+  const m = UI.modal({
+    title: 'Statutory rate tables',
+    size: 'lg',
+    cancelText: 'Close',
+    bodyHTML: `
+      <p class="muted" style="margin-top:0">These feed the payslip computation. Each table is stored with an
+        <b>effective date</b> — payroll uses the newest one on or before the pay date. To apply a new government
+        schedule, paste the updated figures and save with next year's <code>YYYY-01-01</code> date. Never edit a
+        past year in place. Cross-check the first run against the agency's own calculator.</p>
+      <div id="rt-body"></div>`,
+    onOpen: (ov) => render(ov),
+  });
+
+  function render(ov) {
+    const box = ov.querySelector('#rt-body');
+    box.innerHTML = ['sss', 'philhealth', 'pagibig', 'rwt'].map((kind) => {
+      const versions = state.rows.filter((r) => r.kind === kind);
+      const eff = state.effective[kind];
+      return `
+        <div class="panel" style="padding:12px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <strong>${RATE_KIND_LABEL[kind]}</strong>
+            <span class="muted" style="font-size:12px">in force as of ${UI.esc(state.as_of || 'today')}</span>
+          </div>
+          <div style="font-size:12px;margin:6px 0">
+            ${versions.map((v) => `
+              <span class="chip" style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border,#dce6f2);border-radius:12px;padding:1px 8px;margin:2px 4px 2px 0">
+                ${UI.esc(v.effective_from)}${v.note ? ` · ${UI.esc(v.note)}` : ''}
+                <button type="button" class="icon-btn" data-del-ver="${v.id}" title="Delete this version" style="padding:0">${UI.icon('trash', 12)}</button>
+              </span>`).join('') || '<span class="muted">no stored versions — using the built-in 2026 seed</span>'}
+          </div>
+          <label style="font-size:12px">Effective figures (JSON)</label>
+          <textarea data-json="${kind}" rows="7" style="width:100%;font-family:monospace;font-size:12px">${UI.esc(JSON.stringify(eff, null, 2))}</textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+            <input type="date" data-date="${kind}" value="${new Date().getFullYear() + 1}-01-01" style="width:150px" />
+            <input type="text" data-note="${kind}" placeholder="Note (e.g. 'per SSS Circular 2027-001')" style="flex:1" />
+            <button type="button" class="btn secondary small" data-save="${kind}">Save as new version</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    box.querySelectorAll('[data-save]').forEach((b) => b.onclick = async () => {
+      const kind = b.dataset.save;
+      let data;
+      try { data = JSON.parse(box.querySelector(`[data-json="${kind}"]`).value); }
+      catch { UI.toast('That JSON is not valid', 'error'); return; }
+      const effective_from = box.querySelector(`[data-date="${kind}"]`).value;
+      const note = box.querySelector(`[data-note="${kind}"]`).value.trim();
+      try {
+        await API.post('/hr/payroll-tables', { kind, effective_from, data, note: note || undefined });
+        UI.toast(`${RATE_KIND_LABEL[kind]} version saved`);
+        state = await load();
+        render(ov);
+      } catch (e) { UI.toast(e.message, 'error'); }
+    });
+
+    box.querySelectorAll('[data-del-ver]').forEach((b) => b.onclick = async () => {
+      if (!await UI.confirmDialog('Delete this rate-table version?', 'Delete')) return;
+      try {
+        await API.del('/hr/payroll-tables/' + b.dataset.delVer);
+        state = await load();
+        render(ov);
+      } catch (e) { UI.toast(e.message, 'error'); }
+    });
+  }
+
+  return m;
 }
 
 /* ── Cutoff detail: roster + daily grid ──────────────────────────────────── */

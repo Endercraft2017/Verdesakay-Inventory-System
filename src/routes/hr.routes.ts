@@ -251,6 +251,43 @@ router.delete('/payroll-tables/:id', requirePermission('hr.manage'), (req, res) 
   res.json({ ok: true });
 });
 
+// GET /api/hr/thirteenth-month?year=YYYY — 13th-month pay per employee = total basic
+// salary earned that calendar year / 12. Reads the generated hr_payroll records; each is
+// dated by its pay_date (falling back to created_at).
+router.get('/thirteenth-month', requirePermission('hr.view'), (req, res) => {
+  const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
+  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
+  if (!form) { res.json({ year, rows: [], total: 0 }); return; }
+
+  const records = queryAll<{ data: string; created_at: string }>(
+    'SELECT data, created_at FROM form_records WHERE form_def_id = ?',
+    form.id
+  );
+  const byEmp = new Map<string, { basic_total: number; payslip_count: number }>();
+  for (const r of records) {
+    let d: Record<string, unknown>;
+    try { d = JSON.parse(r.data); } catch { continue; }
+    const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
+    if (String(payDate).slice(0, 4) !== year) continue;
+    const name = String(d.employee_name ?? '').trim();
+    if (!name) continue;
+    const cur = byEmp.get(name) ?? { basic_total: 0, payslip_count: 0 };
+    cur.basic_total += Number(d.basic_salary) || 0;
+    cur.payslip_count += 1;
+    byEmp.set(name, cur);
+  }
+
+  const rows = [...byEmp.entries()]
+    .map(([employee_name, v]) => ({
+      employee_name,
+      basic_total: round2(v.basic_total),
+      payslip_count: v.payslip_count,
+      amount: round2(v.basic_total / 12),
+    }))
+    .sort((a, b) => a.employee_name.localeCompare(b.employee_name));
+  res.json({ year, rows, total: round2(rows.reduce((s, r) => s + r.amount, 0)) });
+});
+
 // Resolves the effective daily_rate to store: the entered value for rate_type 'daily', or
 // monthly_rate / policy.monthly_rate_divisor for 'monthly' — computed once here so every other
 // consumer (payroll compute, payslip generation) can keep reading daily_rate unchanged.

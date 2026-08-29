@@ -136,8 +136,17 @@ Store the 5-row RWT table (per frequency) as versioned data keyed by effective d
 - Tests in `tests/hr.test.ts` ("computes SSS / PhilHealth / Pag-IBIG / withholding tax;
   auto_statutory:false keeps them manual").
 
-**Still to do in Phase B:** 13th-month worksheet, final-pay / back-pay worksheet, and an
-admin **screen** for the rate tables (`/hr/payroll-tables` is API-only today).
+**Phase B step 2 — done 2026-08-29:**
+- **Rate-tables admin screen** — Time Keeping → Policy Settings → *Statutory Rate Tables →
+  Open rate tables* (`rateTablesModal()`): per kind, the effective figures as editable
+  JSON + effective date + note → "Save as new version" (`POST /hr/payroll-tables`);
+  historical versions listed with delete. In-app Help topic "Payroll rate tables".
+- **13th-month worksheet** — Time Keeping → *13th-Month*: `GET /hr/thirteenth-month?year=`
+  sums `basic_salary` across that year's generated `hr_payroll` records per employee
+  (dated by `pay_date`, else `created_at`), ÷ 12; table + CSV export.
+
+**Still to do in Phase B:** final-pay / back-pay worksheet (needs a call on leave-balance
+tracking first).
 
 ### Phase B — payslip, 13th-month, final pay
 

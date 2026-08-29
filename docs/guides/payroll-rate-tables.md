@@ -3,11 +3,11 @@
 The system computes statutory deductions from a set of **rate tables** that the
 government updates from time to time. This guide is for the admin who keeps them current.
 
-> **Status:** the engine, the API, and **payslip integration** are in — Generate Payslips
-> auto-fills SSS / PhilHealth / Pag-IBIG / withholding tax from these tables (toggle in
-> Time Keeping → Payroll Rules → *Auto-compute…*, alongside your **pay frequency**). The
-> screen to view/edit the tables themselves in the app is still to come — until then,
-> updates go through the API or with our help. The **2026** schedule ships built-in.
+> **Status:** fully in. Generate Payslips auto-fills SSS / PhilHealth / Pag-IBIG /
+> withholding tax from these tables (toggle in Time Keeping → Policy Settings → Payroll
+> Rules → *Auto-compute…*, alongside your **pay frequency**). Edit the tables at
+> **Time Keeping → Policy Settings → Statutory Rate Tables → Open rate tables** (HR
+> manage). The **2026** schedule ships built-in.
 
 ## What's in a table
 
@@ -22,6 +22,16 @@ Each table is stored **with an effective date**. A payroll run uses the newest t
 whose effective date is on or before the pay date — so when a new rate takes effect on
 1 January, you add the new version dated `YYYY-01-01` and last year's runs still use last
 year's numbers.
+
+## How to update a table
+
+1. **Time Keeping → Policy Settings → Statutory Rate Tables → Open rate tables.**
+2. Find the table that changed. Its current figures show as JSON — edit the numbers to
+   match the new circular (the field names stay the same).
+3. Set the **effective date** (usually `YYYY-01-01`) and a **note** (e.g. the circular
+   number).
+4. **Save as new version.** The old version stays for past payroll.
+5. Run one payslip on the new period and check it against the agency's calculator.
 
 ## When to act
 

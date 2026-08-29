@@ -164,6 +164,24 @@
         you re-generate.</p>`,
     },
     {
+      id: 'payroll-rate-tables', title: 'Payroll rate tables (SSS/PhilHealth/etc.)', group: 'HR', routes: [],
+      html: `
+        <p>The government contribution and withholding-tax figures the payslip computation
+        uses. Open them from <b>Time Keeping → Policy Settings → Statutory Rate Tables →
+        Open rate tables</b> (needs HR manage).</p>
+        <ul>
+          <li>The <b>2026</b> schedule is built in — payroll works out of the box.</li>
+          <li>Each table is stored with an <b>effective date</b>; a payroll run uses the
+              newest one on or before the pay date.</li>
+          <li><b>Every January</b>, if SSS / PhilHealth issue a new circular or the BIR a
+              new withholding table, paste the new figures and <b>Save as new version</b>
+              dated <code>YYYY-01-01</code>. Don't edit last year's in place — past runs
+              must keep their old numbers.</li>
+          <li>Always cross-check the first run on a new schedule against the agency's own
+              calculator before releasing payslips.</li>
+        </ul>`,
+    },
+    {
       id: 'form-builder', title: 'Form Builder & Data Forms', group: 'Documents',
       routes: ['form-builder', 'form-records'], html: `
         <p><b>Form Builder</b> lets an admin design a custom form type — its fields, an
