@@ -112,6 +112,22 @@
         </ol>`,
     },
     {
+      id: 'quickbooks', title: 'QuickBooks Online', group: 'Orders', routes: [],
+      html: `
+        <p>Push <b>sale / job orders</b> to QuickBooks as <b>Invoices</b> and
+        <b>purchase requests</b> as <b>Bills</b>. One-way, on demand or automatic.</p>
+        <ul>
+          <li>Admins: the <b>QuickBooks</b> button on the Orders screen → <b>Connect</b>
+              (a popup signs you in to Intuit and picks the company).</li>
+          <li>Once connected, each order row has a <b>QuickBooks</b> icon — click to
+              create or update that Invoice / Bill. Re-pushing updates, never duplicates.</li>
+          <li><b>Auto-push</b> (a checkbox in the QuickBooks window) sends every saved
+              order in the background.</li>
+          <li>It's per-workspace and one-way. Your accountant may need to set a default
+              income/expense account in QuickBooks for lines to post cleanly.</li>
+        </ul>`,
+    },
+    {
       id: 'orders', title: 'Sale / Job / Purchase orders', group: 'Orders',
       routes: ['orders'], html: `
         <p>Three document types share one screen, filtered by tab:</p>

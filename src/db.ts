@@ -281,6 +281,7 @@ function createSchema(): void {
       attributes    TEXT,
       image_path    TEXT,
       is_finished_product INTEGER NOT NULL DEFAULT 0,
+      qc_checklist_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -381,6 +382,7 @@ function createSchema(): void {
       qc_stages          INTEGER NOT NULL DEFAULT 0,
       notes              TEXT,
       created_by         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      released_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
       released_at        TEXT,
       closed_at          TEXT,
       created_at         TEXT NOT NULL DEFAULT (datetime('now')),
@@ -419,8 +421,23 @@ function createSchema(): void {
       stage        INTEGER NOT NULL,
       result       TEXT NOT NULL,
       remarks      TEXT,
+      -- JSON snapshot of the checklist the inspector filled: [{label, ok, note}].
+      checklist    TEXT,
       inspector_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Named QA/QC checklist templates. A finished product points at one via
+    -- inventory_items.qc_checklist_id; the is_default row is used for products
+    -- with none attached. The items column is JSON: [{label, required, stage}].
+    CREATE TABLE IF NOT EXISTS qc_checklists (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      items      TEXT NOT NULL DEFAULT '[]',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS doc_templates (
@@ -660,6 +677,18 @@ function createSchema(): void {
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_mail_log_created ON mail_log(created_at);
+
+    -- Links between a local record and its QuickBooks Online counterpart, so a re-push
+    -- updates rather than duplicates. See src/quickbooks.ts.
+    CREATE TABLE IF NOT EXISTS qbo_links (
+      entity     TEXT NOT NULL,   -- 'order' | 'customer' | 'item' | 'vendor'
+      local_id   TEXT NOT NULL,   -- our id (order id, "name:Acme", "sku:HB-M8"…)
+      qbo_type   TEXT NOT NULL,   -- 'Invoice' | 'Bill' | 'Customer' | 'Item' | 'Vendor'
+      qbo_id     TEXT NOT NULL,
+      sync_token TEXT,            -- QBO optimistic-lock token from the last write
+      synced_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (entity, local_id)
+    );
 
     -- Full-text index for the AI knowledge search (RAG). Rebuilt by src/rag.ts;
     -- rows carry an ACL (permission key) + optional dept_id for retrieval filtering.
@@ -941,6 +970,31 @@ function migrate(): void {
   const deptCols = db.prepare('PRAGMA table_info(departments)').all() as { name: string }[];
   if (!deptCols.some((c) => c.name === 'head_user_id')) {
     db.exec('ALTER TABLE departments ADD COLUMN head_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+
+  // QA/QC: who released a job order + the filled-checklist snapshot per inspection.
+  const joCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
+  if (!joCols.some((c) => c.name === 'released_by')) {
+    db.exec('ALTER TABLE job_orders ADD COLUMN released_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+  const qcCols = db.prepare('PRAGMA table_info(qc_records)').all() as { name: string }[];
+  if (!qcCols.some((c) => c.name === 'checklist')) {
+    db.exec('ALTER TABLE qc_records ADD COLUMN checklist TEXT');
+  }
+  // Named QA/QC checklists + per-product attachment (replaces the single settings key).
+  const iiCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (!iiCols.some((c) => c.name === 'qc_checklist_id')) {
+    db.exec('ALTER TABLE inventory_items ADD COLUMN qc_checklist_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL');
+  }
+  // Carry a pre-existing single checklist (settings key `qc_checklist`) into a named row.
+  const legacy = getSetting<{ items?: unknown[] } | unknown[]>('qc_checklist');
+  const legacyItems = Array.isArray(legacy) ? legacy : (legacy && Array.isArray(legacy.items) ? legacy.items : null);
+  if (legacyItems && legacyItems.length) {
+    const have = db.prepare('SELECT COUNT(*) AS n FROM qc_checklists').get() as { n: number };
+    if (have.n === 0) {
+      db.prepare("INSERT INTO qc_checklists (name, items, is_default) VALUES ('Default checklist', ?, 1)")
+        .run(JSON.stringify(legacyItems));
+    }
   }
 }
 

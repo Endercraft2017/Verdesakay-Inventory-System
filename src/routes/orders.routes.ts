@@ -4,12 +4,26 @@ import { Router } from 'express';
 import { db, queryOne, queryAll, run, nextSequence } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import { parseBody, createOrderSchema, updateOrderSchema } from '../validation';
+import { getQboStatus, pushOrder } from '../quickbooks';
 import type { Order, OrderItem, OrderType } from '../types';
 
 const router = Router();
 router.use(requireAuth);
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+/** Best-effort background push after a save when the tenant has QuickBooks auto-push on.
+    Never blocks the response; failures are logged only. */
+function maybeAutoPush(orderId: number): void {
+  try {
+    if (!getQboStatus().auto_push || !getQboStatus().connected) return;
+  } catch { return; }
+  const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
+  if (!order) return;
+  const items = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', orderId);
+  Promise.resolve(pushOrder(order, items)).catch((e) =>
+    console.warn(`[qbo] auto-push order ${orderId} failed: ${(e as Error).message}`));
+}
 
 type LineInput = {
   item_id?: number | null; name: string; sku?: string | null; description?: string | null;
@@ -120,6 +134,7 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
     insertItems(Number(info.lastInsertRowid), lines);
     db.exec('COMMIT');
     res.status(201).json({ id: info.lastInsertRowid, number });
+    maybeAutoPush(Number(info.lastInsertRowid));
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
@@ -160,6 +175,7 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
     insertItems(id, lines);
     db.exec('COMMIT');
     res.json({ ok: true });
+    maybeAutoPush(id);
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;

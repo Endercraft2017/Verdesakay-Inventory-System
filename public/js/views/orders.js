@@ -4,15 +4,23 @@ App.register('orders', async (view, filter) => {
   const type = filter && filter.type === 'job' ? 'job' : filter && filter.type === 'purchase' ? 'purchase' : 'sale';
   const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Job Order' : 'Purchase Request';
   const state = { q: '' };
+  const qbDoc = type === 'purchase' ? 'Bill' : 'Invoice';
+  let qb = { connected: false };
+  try { qb = await API.get('/quickbooks/status'); } catch { /* not configured */ }
+  const canQbPush = qb.connected && App.hasPermission('orders.edit');
 
   view.innerHTML = `
     <div class="topbar">
       <h2>${noun}s</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" placeholder="Search number, customer…" /></div>
+      ${App.hasPermission('users.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
       <button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>
     </div>
     <div class="panel"><div id="ord-table"></div></div>`;
+
+  const qbBtn = view.querySelector('#ord-qb');
+  if (qbBtn) qbBtn.onclick = () => quickbooksModal(() => App.navigate('orders', filter));
 
   const tableEl = view.querySelector('#ord-table');
   const money = UI.money;
@@ -49,6 +57,7 @@ App.register('orders', async (view, filter) => {
             <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span></td>
             <td class="actions">
               ${type === 'job' && App.hasPermission('inventory.adjust') ? `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>` : ''}
+              ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
               <button class="icon-btn" title="Edit" data-edit="${o.id}">${UI.icon('edit')}</button>
               <button class="icon-btn danger" title="Delete" data-del="${o.id}">${UI.icon('trash')}</button>
@@ -58,6 +67,14 @@ App.register('orders', async (view, filter) => {
       </table>`;
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => openOrder(b.dataset.edit));
     tableEl.querySelectorAll('[data-print]').forEach((b) => b.onclick = () => printOrder(b.dataset.print));
+    tableEl.querySelectorAll('[data-qbpush]').forEach((b) => b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await API.post(`/quickbooks/push/order/${b.dataset.qbpush}`);
+        UI.toast(`${r.updated ? 'Updated' : 'Created'} in QuickBooks (${r.qbo_type}${r.doc_number ? ' ' + r.doc_number : ''})`, 'success');
+      } catch (e) { UI.toast(e.message, 'error'); }
+      finally { b.disabled = false; }
+    });
     tableEl.querySelectorAll('[data-produce]').forEach((b) => b.onclick = () => startProduction(b.dataset.produce));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(b.dataset.del, list));
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
@@ -314,6 +331,53 @@ App.register('orders', async (view, filter) => {
     <table class="doc-table"><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Total</th></tr></thead>
     <tbody>{{#items}}<tr><td>{{name}}</td><td class="r">{{quantity}}</td><td class="r">{{unit_price}}</td><td class="r">{{line_total}}</td></tr>{{/items}}</tbody></table>
     <div class="doc-totals"><div class="grand">TOTAL: {{order.currency}} {{order.total}}</div></div></div>`;
+
+  async function quickbooksModal(onChange) {
+    let s;
+    try { s = await API.get('/quickbooks/status'); } catch (e) { UI.toast(e.message, 'error'); return; }
+    const m = UI.modal({
+      title: 'QuickBooks Online',
+      bodyHTML: `<div id="qb-body"></div>`,
+      cancelText: 'Close',
+      onOpen: (ov) => {
+        function render() {
+          ov.querySelector('#qb-body').innerHTML = s.connected
+            ? `<p>Connected to <strong>${UI.esc(s.company_name || 'your company')}</strong>${s.sandbox ? ' <span class="muted">(sandbox)</span>' : ''}.</p>
+               <label class="check-opt" style="display:flex;align-items:center;gap:6px;margin:8px 0">
+                 <input type="checkbox" id="qb-auto" ${s.auto_push ? 'checked' : ''}> Auto-push orders to QuickBooks when saved</label>
+               <button type="button" class="btn secondary" id="qb-disc" style="margin-top:8px">Disconnect</button>
+               <p class="muted" style="font-size:12px;margin-top:10px">Sale &amp; job orders post as Invoices, purchase requests as Bills. Re-pushing an order updates it. If a line won't post, set a default income/expense account in QuickBooks.</p>`
+            : `<p>Link this workspace to a QuickBooks Online company to push orders as invoices and bills.</p>
+               <button type="button" class="btn" id="qb-conn">${UI.icon('sheet', 15)} Connect QuickBooks</button>`;
+          const conn = ov.querySelector('#qb-conn');
+          if (conn) conn.onclick = async () => {
+            try {
+              const { url } = await API.get('/quickbooks/connect');
+              const w = window.open(url, 'qbo', 'width=620,height=760');
+              const onMsg = async (ev) => {
+                if (typeof ev.data !== 'string' || !ev.data.startsWith('qbo:')) return;
+                window.removeEventListener('message', onMsg);
+                try { w && w.close(); } catch (e) {}
+                s = await API.get('/quickbooks/status');
+                render();
+                if (s.connected) { UI.toast('Connected to QuickBooks', 'success'); if (onChange) onChange(); }
+              };
+              window.addEventListener('message', onMsg);
+            } catch (e) { UI.toast(e.message, 'error'); }
+          };
+          const disc = ov.querySelector('#qb-disc');
+          if (disc) disc.onclick = async () => {
+            await API.post('/quickbooks/disconnect'); s = await API.get('/quickbooks/status'); render();
+            UI.toast('Disconnected'); if (onChange) onChange();
+          };
+          const auto = ov.querySelector('#qb-auto');
+          if (auto) auto.onchange = () => API.put('/quickbooks/auto-push', { enabled: auto.checked }).catch((e) => UI.toast(e.message, 'error'));
+        }
+        render();
+      },
+    });
+    return m;
+  }
 
   let searchTimer;
   view.querySelector('#ord-search').addEventListener('input', (e) => {

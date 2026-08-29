@@ -31,6 +31,7 @@ import meRoutes from './routes/me.routes';
 import announcementsRoutes from './routes/announcements.routes';
 import signupRoutes from './routes/signup.routes';
 import tenantRoutes from './routes/tenant.routes';
+import quickbooksRoutes from './routes/quickbooks.routes';
 import { recordActivity } from './activity';
 import { idempotency } from './idempotency';
 import { tenantStore, getDb, DEFAULT_TENANT } from './db';
@@ -121,6 +122,9 @@ export function createApp() {
   app.use('/api/auth', authRoutes);
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
   app.use('/api/tenant', tenantRoutes); // current workspace plan / status / usage
+  // Mounted here (before the bare-'/api' routers below) so its public OAuth /callback
+  // isn't shadowed by another router's top-level requireAuth.
+  app.use('/api/quickbooks', quickbooksRoutes);
   app.use('/api/users', usersRoutes);
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/suppliers', suppliersRoutes);

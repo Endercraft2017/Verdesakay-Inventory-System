@@ -245,10 +245,11 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
 
 Not needed for first sales; each opens a segment or raises price.
 
-- **Accounting module or tight integration** — GL, AR/AP, bank rec, financial statements,
-  or a clean two-way sync with QuickBooks / Xero / a local package. ECOUNT bundles
-  accounting; we currently do not. Decide: *"operations + HR system that feeds your
-  accountant"* (integrate) vs *"true ERP"* (build). Integrate first.
+- **Accounting integration** — *v1 shipped 2026-08-29: QuickBooks Online (`src/quickbooks.ts`),
+  one Intuit app, per-tenant OAuth, one-way push of sale orders → Invoices / purchase
+  requests → Bills, manual button + auto-push. Beta.* Next on this line: Xero, a
+  two-way sync (payments/status back), and deeper AR/AP if a segment demands it. We
+  stay "operations + HR that feeds your accountant", not a GL.
 - **e-Invoicing / BIR EIS readiness** — the e-invoice mandate is expanding; being ready is
   a differentiator and eventually a requirement.
 - **e-Commerce connectors** — Shopee / Lazada / Shopify / TikTok Shop stock + order sync.
