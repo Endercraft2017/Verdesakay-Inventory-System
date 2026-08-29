@@ -5,7 +5,7 @@
  *   Body: { messages: [{role:'user'|'assistant', content:string}][] }
  *   Response: { reply: string, steps: [{tool:string, args:object, result:object}][] }
  *
- * The route runs an agentic loop: it calls Cerebras, executes any tool calls, feeds the
+ * The route runs an agentic loop: it calls the LLM, executes any tool calls, feeds the
  * results back, and continues until the model stops calling tools (or MAX_ITERATIONS hit).
  * All tool access is gated by the caller's effective permissions from auth.ts.
  */
@@ -132,7 +132,7 @@ function buildSystemPrompt(user: AuthUser, today: string): string {
   ].join('\n');
 }
 
-async function callCerebras(
+async function callLlm(
   messages: CerebrasMessage[],
   tools: object[],
   apiKey: string,
@@ -161,7 +161,7 @@ async function callCerebras(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Cerebras API error ${res.status}: ${text.slice(0, 400)}`);
+    throw new Error(`LLM API error ${res.status}: ${text.slice(0, 400)}`);
   }
   return res.json() as Promise<CerebrasResponse>;
 }
@@ -198,7 +198,7 @@ router.post('/chat', async (req, res, next) => {
     const steps: Array<{ tool: string; args: unknown; result: unknown }> = [];
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const response = await callCerebras(cebrasMsgs, tools, apiKey, baseUrl, model);
+      const response = await callLlm(cebrasMsgs, tools, apiKey, baseUrl, model);
       const choice = response.choices[0];
       if (!choice) break;
       const msg = choice.message;

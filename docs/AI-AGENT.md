@@ -2,7 +2,7 @@
 
 > **Last updated:** 2026-06-29
 
-The AI Assistant is a right-rail tool in the Verdesakay Office System that lets users query data and take actions using natural language. It is powered by **Cerebras** (OpenAI-compatible API) and runs a server-side agentic loop that executes tools against the live SQLite database on the user's behalf.
+The AI Assistant is a right-rail tool in the Verdesakay Office System that lets users query data and take actions using natural language. It is powered by any OpenAI-compatible LLM (Gemini Flash-Lite by default) and runs a server-side agentic loop that executes tools against the live SQLite database on the user's behalf.
 
 ---
 
@@ -18,10 +18,10 @@ POST /api/ai/chat  (Bearer token)
 src/routes/ai.routes.ts
   - builds system prompt with user context
   - filters tools to those user can call (via effective permissions)
-  - calls Cerebras API with tool specs
+  - calls the LLM API with tool specs
        │
        ▼
-Cerebras (llama-4-scout-17b-16e-instruct)
+The LLM (default: gemini-2.5-flash-lite)
   - may call 0-N tools per turn
        │
        ▼
@@ -31,7 +31,7 @@ src/ai-tools.ts  executeTool()
   - returns ToolResult {success, data|error}
        │
        ▼
-Tool result fed back to Cerebras
+Tool result fed back to the LLM
   - loop continues up to 8 iterations
   - stops when model returns no tool_calls
        │
@@ -52,24 +52,32 @@ public/js/tools.js  openAI()
 **Per-tenant, BYO key.** Settings live in the `settings` k/v store (key `ai_config` + the
 AES-encrypted `ai_api_key`) via `src/ai-config.ts`, editable at **AI Assistant → AI
 settings** (`users.manage`) or `PUT /api/ai/config` — `{model, base_url, api_key}`. Any
-OpenAI-compatible chat-completions endpoint works. The env vars below are the **fallback**
+**OpenAI-compatible** chat-completions endpoint works; the modal has presets for Gemini /
+OpenAI / Groq / Cerebras / OpenRouter. The env vars below are the **platform fallback**
 when a tenant hasn't set its own key. `GET /api/ai/config` returns
 `{model, base_url, has_key, key_source: 'tenant'|'platform'|'none'}` — never the key.
 
+**Platform default: Google Gemini Flash-Lite** ("mini") — modest reasoning, ~1M-token
+context, cheap — via its OpenAI-compatibility endpoint. Point a tenant/env at any other
+provider as needed.
+
 | Environment variable | Default | Description |
 |---|---|---|
-| `CEREBRAS_API_KEY` | *(fallback)* | Platform API key, used when a tenant has no key of its own. 503 if neither is set. |
-| `CEREBRAS_MODEL` | `llama-4-scout-17b-16e-instruct` | Default model. |
-| `CEREBRAS_URL` | `https://api.cerebras.ai/v1/chat/completions` | Default chat-completions endpoint. |
+| `AI_API_KEY` (or legacy `CEREBRAS_API_KEY`) | *(fallback)* | Platform API key, used when a tenant has none. 503 if neither is set. |
+| `AI_MODEL` (or `CEREBRAS_MODEL`) | `gemini-2.5-flash-lite` | Default model. |
+| `AI_BASE_URL` (or `CEREBRAS_URL`) | `…/v1beta/openai/chat/completions` (Gemini) | Default chat-completions endpoint. |
 
-Set these before starting the server:
+Gemini config: model `gemini-2.5-flash-lite`, endpoint
+`https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`, an
+`AIza…` API key.
+
+Set the platform fallback key before starting the server (or leave it unset and have each
+tenant add their own under **AI Assistant → AI settings**):
 
 ```bash
-# Windows PowerShell
-$env:CEREBRAS_API_KEY = "csk-..."
+# Windows PowerShell — Gemini (the default provider)
+$env:AI_API_KEY = "AIza..."
 npm start
-
-# Or in a .env-style wrapper / Windows environment variables
 ```
 
 ---

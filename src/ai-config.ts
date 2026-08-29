@@ -17,15 +17,24 @@ export interface AiConfig {
   base_url: string;
 }
 
+/** Platform default: Google Gemini Flash-Lite ("mini") via its OpenAI-compatible endpoint
+    — modest reasoning, very large context window, cheap. Any OpenAI-compatible provider
+    works; a tenant sets its own under AI Assistant → AI settings. Env vars
+    (`AI_*`, or the legacy `CEREBRAS_*`) override the platform defaults. */
 const DEFAULTS: AiConfig = {
-  model: process.env.CEREBRAS_MODEL || 'llama-4-scout-17b-16e-instruct',
-  base_url: process.env.CEREBRAS_URL || 'https://api.cerebras.ai/v1/chat/completions',
+  model: process.env.AI_MODEL || process.env.CEREBRAS_MODEL || 'gemini-2.5-flash-lite',
+  base_url: process.env.AI_BASE_URL || process.env.CEREBRAS_URL
+    || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
 };
 
 /** The API key actually used: the tenant's stored one, else the platform env key. */
 export function resolvedAiKey(): string {
   const stored = decryptSecret(getSetting<string>(SECRET_KEY) || '');
-  return stored || process.env.CEREBRAS_API_KEY || '';
+  return stored || process.env.AI_API_KEY || process.env.CEREBRAS_API_KEY || '';
+}
+
+function envKeyPresent(): boolean {
+  return !!(process.env.AI_API_KEY || process.env.CEREBRAS_API_KEY);
 }
 
 export function aiReady(): boolean {
@@ -37,7 +46,7 @@ export function aiReady(): boolean {
 export function getAiConfig(): AiConfig & { has_key: boolean; key_source: 'tenant' | 'platform' | 'none' } {
   const s = { ...DEFAULTS, ...(getSetting<Partial<AiConfig>>(CONFIG_KEY) || {}) };
   const tenantKey = !!decryptSecret(getSetting<string>(SECRET_KEY) || '');
-  const envKey = !!process.env.CEREBRAS_API_KEY;
+  const envKey = envKeyPresent();
   return {
     ...s,
     has_key: tenantKey || envKey,

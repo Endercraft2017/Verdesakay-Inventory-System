@@ -146,16 +146,42 @@
         <div class="form-field span2"><div class="field-label"><label>API key
           <span class="muted">— ${srcNote}; leave blank to keep${c.key_source === 'tenant' ? '' : ' the platform key'}</span></label></div>
           <input data-f="api_key" type="password" autocomplete="new-password"
-            placeholder="${c.key_source === 'tenant' ? '••••••••' : 'sk-… / csk-…'}" /></div>
+            placeholder="${c.key_source === 'tenant' ? '••••••••' : 'AIza… / sk-… / csk-…'}" /></div>
+        <div class="form-field span2"><div class="field-label"><label>Preset</label></div>
+          <select data-f="preset">
+            <option value="">— choose a provider to fill the fields below —</option>
+            <option value="gemini">Google Gemini — Flash-Lite ("mini")</option>
+            <option value="gemini-flash">Google Gemini — 2.5 Flash</option>
+            <option value="openai">OpenAI — GPT-4o mini</option>
+            <option value="groq">Groq — Llama 3.1 8B</option>
+            <option value="cerebras">Cerebras — Llama 4 Scout</option>
+            <option value="openrouter">OpenRouter</option>
+          </select></div>
         <div class="form-field"><div class="field-label"><label>Model</label></div>
-          <input data-f="model" value="${UI.esc(c.model || '')}" placeholder="llama-4-scout-17b-16e-instruct" /></div>
+          <input data-f="model" value="${UI.esc(c.model || '')}" placeholder="gemini-2.5-flash-lite" /></div>
         <div class="form-field"><div class="field-label"><label>Endpoint</label></div>
-          <input data-f="base_url" value="${UI.esc(c.base_url || '')}" placeholder="https://api.cerebras.ai/v1/chat/completions" /></div>
+          <input data-f="base_url" value="${UI.esc(c.base_url || '')}" placeholder="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions" /></div>
       </div>
-      <p class="muted" style="font-size:12px;margin:10px 0 0">Any OpenAI-compatible chat-completions API works
-        (Cerebras, OpenAI, Groq, OpenRouter, a local server…). Set the matching model and endpoint.
-        Clearing the key falls back to the platform key if one is configured.</p>`,
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Any OpenAI-compatible chat-completions API works.
+        The default is <strong>Gemini Flash-Lite</strong> — high context, low cost. Clearing the key falls back
+        to the platform key if one is configured.</p>`,
       confirmText: 'Save',
+      onOpen: (ov) => {
+        const PRESETS = {
+          gemini: ['gemini-2.5-flash-lite', 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'],
+          'gemini-flash': ['gemini-2.5-flash', 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'],
+          openai: ['gpt-4o-mini', 'https://api.openai.com/v1/chat/completions'],
+          groq: ['llama-3.1-8b-instant', 'https://api.groq.com/openai/v1/chat/completions'],
+          cerebras: ['llama-4-scout-17b-16e-instruct', 'https://api.cerebras.ai/v1/chat/completions'],
+          openrouter: ['google/gemini-2.5-flash-lite', 'https://openrouter.ai/api/v1/chat/completions'],
+        };
+        ov.querySelector('[data-f="preset"]').addEventListener('change', (e) => {
+          const p = PRESETS[e.target.value];
+          if (!p) return;
+          ov.querySelector('[data-f="model"]').value = p[0];
+          ov.querySelector('[data-f="base_url"]').value = p[1];
+        });
+      },
       onConfirm: async (ov) => {
         const g = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
         const body = { model: g('model'), base_url: g('base_url') };
