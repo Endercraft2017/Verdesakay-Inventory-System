@@ -87,6 +87,39 @@ describe('employee self-service', () => {
   });
 });
 
+describe('GET /api/me/today', () => {
+  it('returns a greeting + a ranked stack, high-urgency first', async () => {
+    const a = await linked();
+    const h = { Authorization: `Bearer ${a.token}` };
+    // an overdue task -> high; a pending request -> medium
+    await ctx.api.post('/api/tasks').set(h).send({ title: 'Overdue thing', due_date: '2000-01-01' });
+    const leaveId = await formBySlug('leave_request');
+    await ctx.api.post('/api/form-records').set(h)
+      .send({ form_def_id: leaveId, data: { employee_name: a.name }, status: 'pending' });
+
+    const res = await ctx.api.get('/api/me/today').set(h);
+    expect(res.status).toBe(200);
+    expect(res.body.greeting).toHaveProperty('part_of_day');
+    expect(Array.isArray(res.body.stack)).toBe(true);
+    const kinds = res.body.stack.map((s: { kind: string }) => s.kind);
+    expect(kinds).toContain('task');
+    expect(kinds).toContain('request');
+    // not clocked in -> a high-urgency punch item leads the stack
+    expect(res.body.stack[0].urgency).toBe('high');
+    expect(res.body.clock).toMatchObject({ linked: true, clocked_in: false });
+  });
+
+  it('works for a non-employee account (no clock, still lists tasks)', async () => {
+    const acc = await createEmployee(ctx.api, adminToken, { role: 'warehouse' });
+    const h = { Authorization: `Bearer ${acc.token}` };
+    await ctx.api.post('/api/tasks').set(h).send({ title: 'Due today', due_date: new Date().toISOString().slice(0, 10) });
+    const res = await ctx.api.get('/api/me/today').set(h);
+    expect(res.status).toBe(200);
+    expect(res.body.clock).toBeNull();
+    expect(res.body.stack.some((s: { kind: string }) => s.kind === 'task')).toBe(true);
+  });
+});
+
 describe('task scheduling', () => {
   it('accepts due_date / remind_at / notes and re-arms the reminder on change', async () => {
     const acc = await createEmployee(ctx.api, adminToken, { role: 'warehouse' });

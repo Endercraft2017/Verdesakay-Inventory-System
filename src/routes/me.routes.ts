@@ -6,6 +6,7 @@ import { queryOne, queryAll, run } from '../db';
 import { requireAuth } from '../auth';
 import { parseBody, timeCorrectionSchema, approvalDecisionSchema } from '../validation';
 import { notifyUser, notifyPermission } from '../push';
+import { myClockStatus } from '../clock';
 import type { FormDefinition, FormRecord, TimeCorrection } from '../types';
 
 const router = Router();
@@ -298,6 +299,196 @@ router.post('/approvals/time-corrections/:id/decide', (req, res) => {
     });
   }
   res.json({ ok: true, status: decision, applied });
+});
+
+/* ─── Home "Today" feed (mobile) ────────────────────────────────────────────── */
+
+type Urgency = 'high' | 'medium' | 'low';
+interface StackItem {
+  kind: string;
+  title: string;
+  subtitle?: string;
+  urgency: Urgency;
+  route: string;
+  count?: number;
+}
+const URGENCY_RANK: Record<Urgency, number> = { high: 0, medium: 1, low: 2 };
+
+/** "today" / "yesterday" / "N days ago" from a YYYY-MM-DD(...) string. */
+function relDays(dateStr: string | null | undefined): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr.slice(0, 10) + 'T00:00:00');
+  const now = new Date();
+  const days = Math.round((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return `${days} days ago`;
+}
+
+// GET /api/me/today — a ranked, actionable "what's on my plate" stack for the
+// mobile home. Works for any logged-in user; HR/clock items only when linked.
+router.get('/today', (req, res) => {
+  const hour = new Date().getHours();
+  const partOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+  const firstName = (req.user!.full_name || req.user!.username || '').trim().split(/\s+/)[0];
+  const stack: StackItem[] = [];
+  const emp = me(req.user!.id);
+
+  let clock: null | { linked: boolean; clocked_in: boolean; since: string | null; hours_today: number;
+    shift: { name: string | null; start_time: string; end_time: string } | null } = null;
+  let nextShift: { work_date: string; start_time: string | null; end_time: string | null } | null = null;
+
+  if (emp) {
+    const st = myClockStatus(emp.id);
+    const todayShift = queryOne<{ start_time: string; end_time: string; name: string | null }>(
+      `SELECT s.start_time, s.end_time, s.name
+       FROM attendance_records ar
+       JOIN attendance_periods p ON p.id = ar.period_id
+       LEFT JOIN shifts s ON s.id = ar.shift_id
+       WHERE ar.employee_id = ? AND ar.work_date = date('now','localtime')
+       ORDER BY ar.id DESC LIMIT 1`,
+      emp.id
+    );
+    const defShift = emp.default_shift_id
+      ? queryOne<{ start_time: string; end_time: string; name: string }>('SELECT start_time, end_time, name FROM shifts WHERE id = ?', emp.default_shift_id)
+      : null;
+    const shift = (todayShift && todayShift.start_time) ? todayShift : defShift;
+    clock = {
+      linked: true,
+      clocked_in: st.clocked_in,
+      since: st.since,
+      hours_today: st.hours_today,
+      shift: shift ? { name: shift.name ?? null, start_time: shift.start_time, end_time: shift.end_time } : null,
+    };
+
+    if (!st.clocked_in) {
+      stack.push({
+        kind: 'punch', route: 'clock', urgency: 'high',
+        title: 'Not clocked in',
+        subtitle: shift ? `${shift.start_time} – ${shift.end_time} · Today's shift` : 'Scan the office code to clock in',
+      });
+    } else {
+      stack.push({
+        kind: 'punch', route: 'clock', urgency: 'low',
+        title: `Clocked in since ${st.since}`,
+        subtitle: `${st.hours_today} h today`,
+      });
+    }
+
+    nextShift = queryOne<{ work_date: string; start_time: string | null; end_time: string | null }>(
+      `SELECT ar.work_date, s.start_time, s.end_time
+       FROM attendance_records ar
+       JOIN attendance_periods p ON p.id = ar.period_id
+       LEFT JOIN shifts s ON s.id = ar.shift_id
+       WHERE ar.employee_id = ? AND ar.work_date > date('now','localtime')
+       ORDER BY ar.work_date LIMIT 1`,
+      emp.id
+    ) ?? null;
+
+    // Pending attendance corrections this user filed
+    const tc = queryOne<{ n: number; oldest: string | null }>(
+      "SELECT COUNT(*) AS n, MIN(work_date) AS oldest FROM time_corrections WHERE user_id = ? AND status = 'pending'",
+      req.user!.id
+    );
+    if (tc && tc.n > 0) {
+      stack.push({
+        kind: 'correction', route: 'time-fix', urgency: 'low', count: tc.n,
+        title: tc.n === 1 ? 'Punch fix pending review' : `${tc.n} punch fixes pending`,
+        subtitle: tc.oldest ? `for ${tc.oldest}` : undefined,
+      });
+    }
+  } else {
+    clock = null;
+  }
+
+  // Tasks due today or overdue (any user)
+  const tasks = queryOne<{ n: number; overdue: number }>(
+    `SELECT COUNT(*) AS n,
+            SUM(CASE WHEN substr(due_date,1,10) < date('now','localtime') THEN 1 ELSE 0 END) AS overdue
+     FROM tasks
+     WHERE user_id = ? AND done = 0 AND due_date IS NOT NULL
+       AND substr(due_date,1,10) <= date('now','localtime')`,
+    req.user!.id
+  );
+  if (tasks && tasks.n > 0) {
+    stack.push({
+      kind: 'task', route: 'tasks', count: tasks.n,
+      urgency: tasks.overdue > 0 ? 'high' : 'medium',
+      title: `${tasks.n} task${tasks.n === 1 ? '' : 's'} due today`,
+      subtitle: tasks.overdue > 0 ? `${tasks.overdue} overdue` : 'View your tasks',
+    });
+  }
+
+  // My requests still awaiting a decision (any user who has filed one)
+  const myReq = queryOne<{ n: number; oldest: string | null }>(
+    `SELECT COUNT(*) AS n, MIN(fr.created_at) AS oldest
+     FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+     WHERE fr.created_by = ? AND fr.status = 'pending'
+       AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})`,
+    req.user!.id, ...REQUEST_SLUGS
+  );
+  if (myReq && myReq.n > 0) {
+    stack.push({
+      kind: 'request', route: 'requests', count: myReq.n, urgency: 'medium',
+      title: myReq.n === 1 ? 'Request awaiting review' : `${myReq.n} requests awaiting review`,
+      subtitle: myReq.oldest ? `Submitted ${relDays(myReq.oldest)}` : undefined,
+    });
+  }
+
+  // Approvals waiting on the caller (department head or hr.manage)
+  const isHrManager = req.user!.permissions.includes('hr.manage');
+  const heads = headedDeptIds(req.user!.id);
+  if (isHrManager || heads.length) {
+    const inScope = (deptId: number | null) => isHrManager || (deptId != null && heads.includes(deptId));
+    const pendReq = queryAll<{ department_id: number | null }>(
+      `SELECT e.department_id
+       FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+       LEFT JOIN employees e ON e.user_id = fr.created_by
+       WHERE fr.status = 'pending' AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
+         AND (fr.created_by IS NULL OR fr.created_by != ?)`,
+      ...REQUEST_SLUGS, req.user!.id
+    ).filter((r) => inScope(r.department_id)).length;
+    const pendTc = queryAll<{ department_id: number | null }>(
+      `SELECT e.department_id FROM time_corrections tc JOIN employees e ON e.id = tc.employee_id
+       WHERE tc.status = 'pending' AND (tc.user_id IS NULL OR tc.user_id != ?)`,
+      req.user!.id
+    ).filter((r) => inScope(r.department_id)).length;
+    const n = pendReq + pendTc;
+    if (n > 0) {
+      stack.push({
+        kind: 'approval', route: 'approvals', count: n, urgency: 'medium',
+        title: n === 1 ? '1 approval waiting on you' : `${n} approvals waiting on you`,
+        subtitle: 'Requests & time fixes',
+      });
+    }
+  }
+
+  // Unread messages
+  const unread = queryOne<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM messages WHERE recipient_id = ? AND read_at IS NULL', req.user!.id
+  );
+  if (unread && unread.n > 0) {
+    stack.push({
+      kind: 'message', route: 'inbox', count: unread.n, urgency: 'low',
+      title: `${unread.n} unread message${unread.n === 1 ? '' : 's'}`, subtitle: 'Open your inbox',
+    });
+  }
+
+  stack.sort((a, b) => URGENCY_RANK[a.urgency] - URGENCY_RANK[b.urgency]);
+
+  const announcement = queryOne<{ id: number; title: string; body: string; pinned: number }>(
+    `SELECT id, title, body, pinned FROM announcements
+     WHERE expires_at IS NULL OR expires_at >= datetime('now','localtime')
+     ORDER BY pinned DESC, id DESC LIMIT 1`
+  ) ?? null;
+
+  res.json({
+    greeting: { name: firstName, part_of_day: partOfDay },
+    clock,
+    next_shift: nextShift,
+    stack,
+    announcement,
+  });
 });
 
 export default router;

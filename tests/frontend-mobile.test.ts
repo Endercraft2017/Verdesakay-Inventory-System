@@ -10,7 +10,7 @@ import { JSDOM } from 'jsdom';
 
 const PUBLIC = path.join(import.meta.dirname, '..', 'public');
 const EXPECTED_ROUTES = [
-  'home', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
+  'home', 'work', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
   'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
   'batch', 'job-orders', 'qc', 'report-problem', 'settings', 'queue', 'clock',
   'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks',

@@ -43,16 +43,59 @@
   <!-- App -->
   <div id="m-app" class="hidden">
     <header class="m-topbar">
-      <button class="m-back hidden" id="m-back" aria-label="Back" title="Back">
+      <button class="m-icbtn m-back hidden" id="m-back" aria-label="Back" title="Back">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      <div class="m-title" id="m-title">Warehouse</div>
-      <button class="m-qbadge hidden" id="m-qbadge" aria-label="Pending sync" title="Pending sync"><span>0</span></button>
-      <button class="m-signout" id="m-settings" aria-label="Settings" title="Settings">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.31.22.65.22 1s-.08.69-.22 1z"/></svg>
+      <div class="m-ctx">
+        <div class="m-ctx-line">
+          <span id="m-ctx-role">Warehouse</span>
+          <span class="m-ctx-sep">·</span><span id="m-ctx-place">Main</span>
+          <span class="m-ctx-dot" id="m-ctx-dot"></span><span id="m-ctx-status">Online</span>
+        </div>
+        <div class="m-title" id="m-title">Home</div>
+      </div>
+      <button class="m-icbtn m-top-inbox" id="m-inbox-top" aria-label="Inbox">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 8h4l2 3h4l2-3h4"/></svg>
+        <span class="m-badge hidden" id="m-inbox-badge">0</span>
+      </button>
+      <button class="m-icbtn m-top-sync" id="m-qbadge" aria-label="Sync queue" title="Sync queue">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10a5 5 0 0 0-4.9-4A6 6 0 0 0 2 8.5 4.5 4.5 0 0 0 6.5 18H18a4 4 0 0 0 0-8z"/></svg>
+        <span class="m-sync-n" id="m-qcount">0</span>
       </button>
     </header>
+
+    <nav class="m-segments hidden" id="m-segments">
+      <button data-seg="me">Me</button>
+      <button data-seg="approvals">Approvals</button>
+      <button data-seg="people">People</button>
+      <button data-seg="warehouse">Warehouse</button>
+    </nav>
+
     <main class="m-view" id="m-view"></main>
+
+    <nav class="m-tabbar" id="m-tabbar">
+      <button class="m-tab" data-tab="home">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="m-tab" data-tab="work">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6l1 3H8z"/><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 12h18"/></svg>
+        <span>Work</span>
+      </button>
+      <button class="m-tab m-tab-fab" data-tab="center" id="m-fab">
+        <span class="m-fab-in" id="m-fab-icon"></span>
+        <span class="m-fab-lbl" id="m-fab-lbl">Scan</span>
+      </button>
+      <button class="m-tab" data-tab="inbox">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4z"/><path d="m4 7 8 6 8-6"/></svg>
+        <span>Inbox</span>
+        <span class="m-badge hidden" id="m-tab-inbox-badge">0</span>
+      </button>
+      <button class="m-tab" data-tab="profile">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+        <span>Profile</span>
+      </button>
+    </nav>
   </div>
 
   <div id="m-overlay-root"></div>
@@ -73,6 +116,7 @@
   <script src="/mobile/lib/scanner.js"></script>
   <script src="/mobile/lib/item-picker.js"></script>
   <script src="/mobile/views/home.js"></script>
+  <script src="/mobile/views/work.js"></script>
   <script src="/mobile/views/stock-move.js"></script>
   <script src="/mobile/views/damage.js"></script>
   <script src="/mobile/views/transfer.js"></script>
