@@ -386,9 +386,83 @@ const UI = (() => {
     URL.revokeObjectURL(url);
   }
 
+  /**
+   * Reusable "import rows from a CSV" dialog for the list screens.
+   * opts: { title, importPath, exportPath, columnsHtml, templateHeaders:[], templateRow:[], onDone }
+   * The server endpoint takes { csv, dry_run } and returns
+   * { dry_run, total, created, updated, skipped, errors:[{row,key,message}] }.
+   */
+  function csvImportModal(opts) {
+    return modal({
+      title: opts.title || 'Import from CSV',
+      size: 'lg',
+      confirmText: 'Import',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">${opts.columnsHtml || ''}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <button type="button" class="btn secondary small" data-tmpl>${icon('download')} Download template</button>
+          ${opts.exportPath ? `<button type="button" class="btn secondary small" data-all>${icon('download')} Export current data</button>` : ''}
+          <label class="btn secondary small" style="cursor:pointer">
+            ${icon('upload')} Choose file…
+            <input type="file" accept=".csv,text/csv" hidden data-file>
+          </label>
+        </div>
+        <textarea data-csv rows="10" style="width:100%;font-family:monospace;font-size:12px"
+          placeholder="Paste CSV here, or choose a file above"></textarea>
+        <label style="display:flex;align-items:center;gap:6px;margin:8px 0 0;font-weight:500">
+          <input type="checkbox" data-dry style="width:auto" checked> Check first (validate, don't save)
+        </label>
+        <div data-result style="margin-top:10px"></div>`,
+      onConfirm: async (overlay, showErr) => {
+        const csv = overlay.querySelector('[data-csv]').value.trim();
+        if (!csv) { showErr('Paste some CSV or choose a file first.'); return false; }
+        const dry_run = overlay.querySelector('[data-dry]').checked;
+        const res = await API.post(opts.importPath, { csv, dry_run });
+        const errs = (res.errors || [])
+          .map((e) => `<li>Row ${e.row}${e.key ? ` (${esc(e.key)})` : ''}: ${esc(e.message)}</li>`).join('');
+        overlay.querySelector('[data-result]').innerHTML =
+          `<div class="panel" style="padding:10px">
+             <strong>${dry_run ? 'Dry run — nothing saved' : 'Done'}</strong><br>
+             ${res.created} created · ${res.updated} updated · ${res.skipped} skipped (of ${res.total})
+             ${errs ? `<ul style="margin:6px 0 0;color:var(--danger)">${errs}</ul>` : ''}
+           </div>`;
+        if (dry_run) {
+          overlay.querySelector('[data-dry]').checked = false;
+          toast(res.skipped ? `${res.skipped} row(s) need fixing` : 'Looks good — click Import to save',
+            res.skipped ? 'error' : 'success');
+          return false;
+        }
+        toast(`Imported: ${res.created} new, ${res.updated} updated`, 'success');
+        if (opts.onDone) opts.onDone(res);
+        return true;
+      },
+      onOpen: (overlay) => {
+        overlay.querySelector('[data-tmpl]').onclick = () =>
+          downloadCsv((opts.title || 'import').toLowerCase().replace(/\s+/g, '-') + '-template.csv',
+            opts.templateHeaders || [], [opts.templateRow || []]);
+        const allBtn = overlay.querySelector('[data-all]');
+        if (allBtn) allBtn.onclick = async () => {
+          try {
+            const url = await API.blobUrl(opts.exportPath);
+            const a = document.createElement('a');
+            a.href = url; a.download = opts.exportPath.split('/').pop() + '.csv'; a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+          } catch (e) { toast(e.message, 'error'); }
+        };
+        overlay.querySelector('[data-file]').onchange = (e) => {
+          const f = e.target.files[0];
+          if (!f) return;
+          const r = new FileReader();
+          r.onload = () => { overlay.querySelector('[data-csv]').value = String(r.result || ''); };
+          r.readAsText(f);
+        };
+      },
+    });
+  }
+
   return {
     esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
     drawer, contextMenu, closeContextMenu, printableHtml,
-    icon, helpIcon, emptyState, fileIconName, downloadCsv,
+    icon, helpIcon, emptyState, fileIconName, downloadCsv, csvImportModal,
   };
 })();

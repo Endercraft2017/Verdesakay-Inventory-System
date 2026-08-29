@@ -2,11 +2,15 @@
 import { Router } from 'express';
 import { queryOne, queryAll, run } from '../db';
 import { requireAuth, requirePermission } from '../auth';
-import { parseBody, createSupplierSchema, updateSupplierSchema } from '../validation';
+import { parseBody, createSupplierSchema, updateSupplierSchema, csvImportSchema } from '../validation';
+import { toCsv } from '../csv';
+import { resolveImport, importLoop } from '../csv-import';
 import type { Supplier } from '../types';
 
 const router = Router();
 router.use(requireAuth);
+
+const CSV_COLUMNS = ['name', 'contact_person', 'phone', 'email', 'address', 'notes'] as const;
 
 const LIST_SQL = `
   SELECT s.*, (SELECT COUNT(*) FROM inventory_items i WHERE i.supplier_id = s.id) AS item_count
@@ -25,6 +29,69 @@ router.get('/', requirePermission('inventory.view'), (req, res) => {
   }
   sql += ' ORDER BY s.name COLLATE NOCASE';
   res.json(queryAll<Supplier>(sql, ...params));
+});
+
+// GET /api/suppliers/export — all suppliers as CSV (round-trips with import)
+router.get('/export', requirePermission('inventory.view'), (_req, res) => {
+  const rows = queryAll<Record<string, unknown>>(
+    `SELECT name, contact_person, phone, email, address, notes FROM suppliers ORDER BY name COLLATE NOCASE`
+  );
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="suppliers-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(toCsv([...CSV_COLUMNS], rows));
+});
+
+// POST /api/suppliers/import — create/update suppliers from CSV. Upsert key: name.
+router.post('/import', requirePermission('inventory.create'), (req, res) => {
+  const { csv, dry_run } = parseBody(csvImportSchema, req.body);
+  let resolved;
+  try {
+    resolved = resolveImport(csv, [
+      { key: 'name', aliases: ['supplier', 'supplier name', 'company'], required: true },
+      { key: 'contact_person', aliases: ['contact', 'contact person'] },
+      { key: 'phone', aliases: ['tel', 'telephone', 'mobile'] },
+      { key: 'email' },
+      { key: 'address' },
+      { key: 'notes', aliases: ['remarks'] },
+    ]);
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : 'Bad CSV' });
+    return;
+  }
+
+  const report = importLoop(resolved.rows, !!dry_run, (row) => {
+    const name = resolved.get(row, 'name');
+    const parsed = createSupplierSchema.safeParse({
+      name,
+      contact_person: resolved.get(row, 'contact_person') || undefined,
+      phone: resolved.get(row, 'phone') || undefined,
+      email: resolved.get(row, 'email') || undefined,
+      address: resolved.get(row, 'address') || undefined,
+      notes: resolved.get(row, 'notes') || undefined,
+    });
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid row', key: name };
+    const d = parsed.data;
+    const existing = queryOne<Supplier>('SELECT * FROM suppliers WHERE name = ? COLLATE NOCASE', name);
+    if (existing) {
+      run(
+        `UPDATE suppliers SET contact_person = ?, phone = ?, email = ?, address = ?, notes = ?,
+           updated_at = datetime('now') WHERE id = ?`,
+        d.contact_person ?? existing.contact_person ?? null,
+        d.phone ?? existing.phone ?? null,
+        d.email ?? existing.email ?? null,
+        d.address ?? existing.address ?? null,
+        d.notes ?? existing.notes ?? null,
+        existing.id
+      );
+      return 'updated';
+    }
+    run(
+      `INSERT INTO suppliers (name, contact_person, phone, email, address, notes) VALUES (?, ?, ?, ?, ?, ?)`,
+      d.name, d.contact_person ?? null, d.phone ?? null, d.email ?? null, d.address ?? null, d.notes ?? null
+    );
+    return 'created';
+  });
+  res.json(report);
 });
 
 // GET /api/suppliers/:id — one supplier + the items it supplies

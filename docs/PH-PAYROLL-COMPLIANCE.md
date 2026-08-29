@@ -1,0 +1,151 @@
+# Philippine Payroll & Statutory Compliance — scope + current figures
+
+> **Status:** research + build plan. Not implemented yet. This is GO-TO-MARKET §6 item #1
+> — the payroll "wedge".
+> **Figures verified:** 2026 rates, August 2026. **Re-check every January** — SSS and
+> PhilHealth schedules change by circular; BIR form versions change by RMC.
+
+The system today has the *inputs* (employee 201 file with SSS/PhilHealth/Pag-IBIG/TIN
+fields, shifts, timekeeping, payroll periods) and a payslip generator. It does **not**
+compute statutory deductions from current tables, withholding tax, 13th-month, or produce
+any **BIR / agency filing output**. That gap is what this covers.
+
+---
+
+## 1. Current rates (2026)
+
+### SSS
+
+| Item | 2026 value |
+|---|---|
+| Total contribution rate | **15%** of the Monthly Salary Credit (MSC) |
+| Split | Employer **10%**, Employee **5%** |
+| MSC range | floor **₱5,000** → ceiling **₱35,000** (₱500 brackets) |
+| On top (employer) | EC (Employees' Compensation) ₱10–₱30; and the WISP / provident portion for MSC above ₱20,000 |
+
+The full table is ~35 brackets with exact peso EE / ER / EC / WISP amounts per bracket —
+load it verbatim from the current **SSS Circular** (contribution schedule effective
+Jan 2025, unchanged for 2026). Don't compute it with a formula; store the table.
+
+### PhilHealth
+
+| Item | 2026 value |
+|---|---|
+| Premium rate | **5%** of monthly basic salary |
+| Split | **2.5%** employee, **2.5%** employer |
+| Income floor / ceiling | **₱10,000** → **₱100,000** |
+| Employee share range | ₱250 → ₱2,500 per month |
+
+Computable by formula (rate × capped basic ÷ 2). No bracket table needed.
+
+### Pag-IBIG (HDMF)
+
+| Item | 2026 value |
+|---|---|
+| Rate | **2%** employee + **2%** employer |
+| Monthly compensation ceiling | **₱10,000** → contribution **capped at ₱200 each** |
+| Below ₱1,500 monthly | employee rate 1% (employer stays 2%) |
+
+Computable by formula.
+
+### Withholding tax on compensation (TRAIN)
+
+- **Unchanged since 1 Jan 2023** (TRAIN second phase); 2026 table = 2025 table.
+- Annual taxable compensation **≤ ₱250,000 is exempt**; above that, graduated **15% – 35%**.
+- Apply the **daily / weekly / semi-monthly / monthly Revised Withholding Tax table**
+  matching the payroll frequency.
+- **Taxable compensation** = gross − non-taxable items − employee statutory shares
+  (SSS + PhilHealth + Pag-IBIG + union dues).
+- **13th-month pay + other benefits** are non-taxable up to a combined **₱90,000/year**;
+  the excess is taxable.
+
+Store the 5-row RWT table (per frequency) as versioned data keyed by effective date.
+
+**Sources:** [KAMI Workforce — SSS/PhilHealth/Pag-IBIG 2026](https://kamiworkforce.com/ph/blog/sss-philhealth-pagibig-contribution-tables-2026/) ·
+[KAMI Workforce — Withholding tax 2026](https://kamiworkforce.com/ph/blog/bir-withholding-tax-compensation-2026/) ·
+[Taxumo — BIR tax + contribution 2026](https://www.taxumo.com/blog/bir-tax-table-2026/) ·
+[Pesohub — RWT table 2026](https://pesohub.ph/government/bir/withholding-tax-table-philippines/) ·
+[Philippine Payroll HR Matters — 2026 tables](https://philippinepayrollhrmatters.com/sss-philhealth-and-pag-ibig-contribution-tables-2026-a-complete-guide-for-philippine-employers/)
+
+---
+
+## 2. Required outputs (what a customer actually files)
+
+| Output | What / who | Deadline | Format |
+|---|---|---|---|
+| **Payslip** | per employee, per cutoff | each payday | already have — needs statutory line items added |
+| **BIR 2316** | Certificate of Compensation Payment / Tax Withheld — one per employee who got pay in the year | give to employee by **Jan 31**; employer files copies to BIR by **Feb 28** | official BIR form layout; submitted electronically / as 1604-C attachment |
+| **BIR 1601-C** | Monthly Remittance Return of Income Taxes Withheld on Compensation | monthly (10th/15th following month; eFPS varies) | eBIRForms / eFPS; we produce the figures + a worksheet |
+| **BIR 1604-C** | Annual Information Return of Income Taxes Withheld on Compensation | **Jan 31** | eBIRForms; includes the Alphalist |
+| **Alphalist of Employees** | schedules under 1604-C — every employee paid during the year (even if they left in January) | with 1604-C | **electronic only** — BIR Online Submission Portal or the **Data Entry Module** `.DAT` file. No paper. |
+| **SSS R-3 / contribution collection list** | monthly employer remittance detail | monthly | via My.SSS / e-payment; we produce the schedule |
+| **PhilHealth RF-1 / EPRS** | monthly employer remittance report | monthly | via EPRS; we produce the schedule |
+| **Pag-IBIG MCRF** | Membership Contribution Remittance Form | monthly | via Virtual Pag-IBIG; we produce the schedule |
+| **13th-month pay** | mandatory, ≥ 1/12 of basic annual salary | on or before **Dec 24** | worksheet + payslip line |
+| **Final pay / back pay** | on separation | within 30 days of clearance | worksheet |
+
+**Sources:** [Mercans — BIR Form 2316 guide 2026](https://mercans.com/glossary/bir-form-2316/) ·
+[Sprout — 1604-C & Alphalist 2026](https://sprout.ph/articles/first-time-bir-1604c-alphalist-filing-guide/) ·
+[HashMicro — BIR Alphalist 2026](https://www.hashmicro.com/ph/blog/bir-alphalist/) ·
+[GreatDay HR — BIR forms for employers 2026](https://greatdayhr.ph/blog/complete-guide-to-bir-forms-for-employers-in-the-philippines-2026-update/) ·
+[Payroll Solutions PH — 2316 deadline 2026](https://www.payrollsolutions.ph/articles/156)
+
+---
+
+## 3. Build plan
+
+### Phase A — the statutory engine  *(start here)*
+
+- New table `payroll_tables` — versioned reference data keyed by `kind`
+  (`sss` / `philhealth` / `pagibig` / `rwt`) + `effective_from` date + a JSON `data`
+  blob. Seed 2026. Admin screen to view/duplicate-and-edit for the next year.
+- `src/ph-statutory.ts`:
+  - `sssContribution(mscBasis)` → `{ ee, er, ec, wisp_ee, wisp_er }` (table lookup)
+  - `philhealthContribution(basicSalary)` → `{ ee, er }` (formula, floor/ceiling)
+  - `pagibigContribution(monthlyComp)` → `{ ee, er }` (formula, cap)
+  - `withholdingTax(taxableCompForPeriod, frequency)` → tax (RWT table)
+  - `taxableCompensation(gross, nonTaxable, statutoryEE)` helper
+- Wire into `src/hr-payroll-compute.ts` so a generated payslip carries real EE/ER lines.
+- Config: which table year a payroll run uses (default = latest effective on the pay date).
+
+### Phase B — payslip, 13th-month, final pay
+
+- Payslip: add SSS / PhilHealth / Pag-IBIG / withholding lines from the engine; show ER
+  share on the employer copy.
+- 13th-month worksheet: per employee, `basic earned Jan–Dec ÷ 12`, with a run/export.
+- Final-pay worksheet: last salary + pro-rated 13th month + unused leave conversion −
+  outstanding balances.
+
+### Phase C — BIR outputs
+
+- **2316:** per-employee generation using the official form layout (printable HTML → PDF),
+  populated from the year's payslips. Batch for all employees.
+- **1601-C worksheet:** monthly totals (taxable comp, tax withheld, headcount) matching
+  the return's lines.
+- **1604-C + Alphalist:** annual reconciliation (Σ 1601-C = 1604-C) + the Alphalist
+  schedules. **Export as the `.DAT` the BIR Data Entry Module / Online Submission Portal
+  accepts** — this needs the current BIR Alphalist file spec (from the governing RMC) and
+  must be checked against the BIR's own validation module before release.
+- ⚠️ Phase C depends on the **current official form version + file spec**, which change by
+  RMC. Get the live spec at build time; don't hard-code last year's layout.
+
+### Phase D — agency remittance schedules
+
+- SSS R-3, PhilHealth RF-1/EPRS, Pag-IBIG MCRF as monthly schedules/exports in each
+  agency's expected column order.
+
+---
+
+## 4. Notes / decisions
+
+- **Table-driven, not formula-driven, for SSS.** The SSS schedule has non-linear brackets
+  + EC + WISP; encode the published table, don't approximate.
+- **Everything versioned by effective date.** A payroll run for March 2026 must use the
+  table effective then, even if edited later. Never mutate a past year's table in place —
+  duplicate it forward.
+- **Semi-monthly is the common PH cutoff.** The engine must support monthly, semi-monthly,
+  and the "compute monthly, split across two cutoffs" convention for tax.
+- **Keep the existing "HR Payroll" form + print pipeline.** Phase B enriches it rather
+  than replacing it.
+- Localisation hook: this whole module is the template for a future "country pack"
+  (GO-TO-MARKET §7) — keep PH specifics behind `src/ph-statutory.ts` + the tables.

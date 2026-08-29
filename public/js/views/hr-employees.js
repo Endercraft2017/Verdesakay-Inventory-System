@@ -28,6 +28,7 @@ App.register('hr-employees', async (view) => {
         ${Object.keys(STATUS_LABELS).map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join('')}
       </select>
       ${canManage ? `<button class="btn secondary" id="emp-no-settings" style="margin-left:8px" title="Employee numbering format">${UI.icon('settings', 15)}</button>` : ''}
+      ${canManage ? `<button class="btn secondary" id="emp-import" style="margin-left:8px" title="Create or update employees from a CSV file">${UI.icon('upload')} Import</button>` : ''}
       ${canManage ? `<button class="btn" id="emp-new" style="margin-left:8px">${UI.icon('plus')} New Employee</button>` : ''}
     </div>
     <div class="panel"><div id="emp-table"></div></div>`;
@@ -609,6 +610,22 @@ App.register('hr-employees', async (view) => {
   if (newBtn) newBtn.addEventListener('click', () => employeeModal(null));
   const noSettingsBtn = view.querySelector('#emp-no-settings');
   if (noSettingsBtn) noSettingsBtn.addEventListener('click', () => numberSettingsModal());
+  const importBtn = view.querySelector('#emp-import');
+  if (importBtn) importBtn.addEventListener('click', () => UI.csvImportModal({
+    title: 'Import employees',
+    importPath: '/hr/employees/import',
+    exportPath: '/hr/employees/export',
+    columnsHtml:
+      'Columns: <code>employee_no</code> and <code>name</code> (required), plus <code>department</code> ' +
+      '(must already exist), <code>position</code>, <code>rate_type</code> (daily / monthly), ' +
+      '<code>daily_rate</code> or <code>monthly_rate</code>, <code>status</code>, <code>start_date</code>, ' +
+      '<code>sss_no</code>, <code>philhealth_no</code>, <code>pagibig_no</code>, <code>tin_no</code>. ' +
+      'Matched to existing staff by <strong>employee_no</strong>. Never changes the linked login or photo, ' +
+      'and does not touch payroll history.',
+    templateHeaders: ['employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate', 'status', 'start_date', 'sss_no', 'philhealth_no', 'pagibig_no', 'tin_no'],
+    templateRow: ['EMP-0001', 'Maria Santos', 'Operations', 'Machinist', 'daily', '850', '', 'regular', '2024-03-01', '34-1234567-8', '1234-5678-9012', '1234-5678-9012', '123-456-789-000'],
+    onDone: () => load(),
+  }));
 
   await load();
 });

@@ -17,6 +17,8 @@ Start here. This folder has two layers:
 | [EMAIL-SETUP.md](EMAIL-SETUP.md) | **Admin how-to** for turning on email: the BYO-SMTP settings fields, a per-provider quick reference (Gmail, M365, Brevo, …), the "I have a domain name" cases, and troubleshooting. |
 | [SAAS-READINESS.md](SAAS-READINESS.md) | Assessment of what it takes to run this as a multi-tenant SaaS: database-per-tenant vs shared schema, a table-by-table schema sweep, the connection-singleton blocker, control-plane tables, and a phased plan. |
 | [GO-TO-MARKET.md](GO-TO-MARKET.md) | Who to sell to and at what price (PH upper-SMB / low-mid-market first), the positioning vs ECOUNT / Sprout / Dynamics, the feature pillars that close deals, and a prioritized list of what to build/harden vs what can wait. |
+| [PH-PAYROLL-COMPLIANCE.md](PH-PAYROLL-COMPLIANCE.md) | Current (2026) SSS / PhilHealth / Pag-IBIG / withholding-tax figures, the BIR & agency outputs a customer must file (2316, 1601-C, 1604-C, Alphalist, R-3, RF-1, MCRF), and the phased plan to build the statutory payroll engine. |
+| [guides/](guides/) | **User-facing how-tos** — plain-language, task-focused guides for training staff on each feature. One per feature, added when the feature ships. |
 | [DECISIONS.md](DECISIONS.md) | Why the stack is what it is (TypeScript, `tsx`, `node:sqlite`, `zod`, `vitest`, etc.) — the reasoning behind big choices, not a changelog. |
 
 ## Reference docs (per source file)

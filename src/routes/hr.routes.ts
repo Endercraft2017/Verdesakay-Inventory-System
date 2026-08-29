@@ -12,6 +12,7 @@ import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody,
   employeeSchema,
+  csvImportSchema,
   attendancePeriodSchema,
   saveAttendanceSchema,
   addRosterEmployeeSchema,
@@ -24,6 +25,13 @@ import {
 import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord, Shift, PayrollPolicy, EmployeeNumberPolicy } from '../types';
 import { computeAttendanceForEmployee, type AttendanceDay } from '../hr-payroll-compute';
 import { suggestEmployeeNumber } from '../hr-employee-numbering';
+import { toCsv } from '../csv';
+import { resolveImport, importLoop } from '../csv-import';
+
+const EMP_CSV_COLUMNS = [
+  'employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate',
+  'status', 'start_date', 'sss_no', 'philhealth_no', 'pagibig_no', 'tin_no',
+] as const;
 
 const router = Router();
 router.use(requireAuth);
@@ -114,6 +122,103 @@ router.get('/employees', requirePermission('hr.view'), (req, res) => {
     ...params
   );
   res.json(rows);
+});
+
+// GET /api/hr/employees/export — 201-file master data as CSV (round-trips with import)
+router.get('/employees/export', requirePermission('hr.view'), (_req, res) => {
+  const rows = queryAll<Record<string, unknown>>(
+    `SELECT e.employee_no, e.name, d.name AS department, e.position, e.rate_type,
+            e.daily_rate, e.monthly_rate, e.status, e.start_date,
+            e.sss_no, e.philhealth_no, e.pagibig_no, e.tin_no
+     FROM employees e LEFT JOIN departments d ON d.id = e.department_id
+     ORDER BY e.name`
+  );
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="employees-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(toCsv([...EMP_CSV_COLUMNS], rows));
+});
+
+// POST /api/hr/employees/import — create/update the 201-file master from CSV.
+// Upsert key: employee_no. `department` matched by name. Never touches the linked
+// login account or photo. Payroll history is unaffected (this is master data only).
+router.post('/employees/import', requirePermission('hr.manage'), (req, res) => {
+  const { csv, dry_run } = parseBody(csvImportSchema, req.body);
+  let resolved;
+  try {
+    resolved = resolveImport(csv, [
+      { key: 'employee_no', aliases: ['employee no', 'emp no', 'id', 'employee id'], required: true },
+      { key: 'name', aliases: ['employee name', 'full name'], required: true },
+      { key: 'department', aliases: ['dept'] },
+      { key: 'position', aliases: ['title', 'designation'] },
+      { key: 'rate_type', aliases: ['rate type'] },
+      { key: 'daily_rate', aliases: ['daily rate', 'rate'] },
+      { key: 'monthly_rate', aliases: ['monthly rate', 'salary', 'monthly salary'] },
+      { key: 'status' },
+      { key: 'start_date', aliases: ['start date', 'date hired', 'hire date'] },
+      { key: 'sss_no', aliases: ['sss', 'sss no'] },
+      { key: 'philhealth_no', aliases: ['philhealth', 'philhealth no'] },
+      { key: 'pagibig_no', aliases: ['pagibig', 'pag-ibig', 'pag-ibig no', 'hdmf'] },
+      { key: 'tin_no', aliases: ['tin', 'tin no'] },
+    ]);
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : 'Bad CSV' });
+    return;
+  }
+
+  const report = importLoop(resolved.rows, !!dry_run, (row) => {
+    const empNo = resolved.get(row, 'employee_no');
+    const deptName = resolved.get(row, 'department');
+    let departmentId: number | null = null;
+    if (deptName) {
+      const d = queryOne<{ id: number }>('SELECT id FROM departments WHERE name = ? COLLATE NOCASE', deptName);
+      if (!d) return { error: `Unknown department "${deptName}"`, key: empNo };
+      departmentId = d.id;
+    }
+    const rateType = (resolved.get(row, 'rate_type') || 'daily').toLowerCase();
+    const parsed = employeeSchema.safeParse({
+      employee_no: empNo,
+      name: resolved.get(row, 'name'),
+      department_id: departmentId ?? undefined,
+      position: resolved.get(row, 'position') || undefined,
+      rate_type: rateType === 'monthly' ? 'monthly' : 'daily',
+      daily_rate: resolved.get(row, 'daily_rate') || 0,
+      monthly_rate: resolved.get(row, 'monthly_rate') || undefined,
+      status: resolved.get(row, 'status') || undefined,
+      start_date: resolved.get(row, 'start_date') || undefined,
+      sss_no: resolved.get(row, 'sss_no') || undefined,
+      philhealth_no: resolved.get(row, 'philhealth_no') || undefined,
+      pagibig_no: resolved.get(row, 'pagibig_no') || undefined,
+      tin_no: resolved.get(row, 'tin_no') || undefined,
+    });
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid row', key: empNo };
+    const d = parsed.data;
+    const existing = queryOne<Employee>('SELECT * FROM employees WHERE employee_no = ?', empNo);
+    if (existing) {
+      run(
+        `UPDATE employees SET name = ?, department_id = ?, position = ?, daily_rate = ?, rate_type = ?,
+           monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?
+         WHERE id = ?`,
+        d.name, departmentId ?? existing.department_id ?? null, d.position ?? existing.position ?? null,
+        effectiveDailyRate(d), d.rate_type, d.rate_type === 'monthly' ? d.monthly_rate : null,
+        d.status, d.start_date ?? existing.start_date ?? null,
+        d.sss_no ?? existing.sss_no ?? null, d.philhealth_no ?? existing.philhealth_no ?? null,
+        d.pagibig_no ?? existing.pagibig_no ?? null, d.tin_no ?? existing.tin_no ?? null,
+        existing.id
+      );
+      return 'updated';
+    }
+    run(
+      `INSERT INTO employees
+        (employee_no, name, department_id, position, daily_rate, rate_type, monthly_rate, status, start_date,
+         sss_no, philhealth_no, pagibig_no, tin_no)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      d.employee_no, d.name, departmentId, d.position ?? null, effectiveDailyRate(d), d.rate_type,
+      d.rate_type === 'monthly' ? d.monthly_rate : null, d.status, d.start_date ?? null,
+      d.sss_no ?? null, d.philhealth_no ?? null, d.pagibig_no ?? null, d.tin_no ?? null
+    );
+    return 'created';
+  });
+  res.json(report);
 });
 
 // Resolves the effective daily_rate to store: the entered value for rate_type 'daily', or

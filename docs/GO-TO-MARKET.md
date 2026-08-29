@@ -198,11 +198,15 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
 
 1. **BIR / statutory output forms + current contribution tables** (Pillar 1). The wedge is
    only a wedge if it produces filable documents. Biggest single revenue unlock.
+   Scoped with current 2026 figures + a 4-phase plan in
+   [PH-PAYROLL-COMPLIANCE.md](PH-PAYROLL-COMPLIANCE.md) — start with the statutory engine
+   (`payroll_tables` + `src/ph-statutory.ts`).
 2. **Data import tools (CSV) for items, stock, BOMs, employees, opening balances.**
    Onboarding is impossible without this; it's also billable services. Blocks *every*
-   deal. — *Inventory items done 2026-08-28 (`GET /inventory/export`, `POST
-   /inventory/import`, upsert-by-SKU, dry-run, `src/csv.ts`). Still to do: suppliers,
-   employees, opening stock levels, BOM components.*
+   deal. — *Items, suppliers, employees done 2026-08-29 (export + import, upsert by
+   natural key, dry-run, per-row errors; `src/csv.ts` + `src/csv-import.ts`;
+   `UI.csvImportModal`). User guide: `docs/guides/csv-import-export.md`. Still to do:
+   opening stock levels, BOM components.*
 3. **SaaS multi-tenancy Phases 2–3** (SAAS-READINESS.md) — tenant resolution, provisioning,
    per-tenant uploads. Required to sell the cloud model at all.
 4. **Manufacturing hardening** (Pillar 3): multi-level BOM, per-unit cost roll-up,

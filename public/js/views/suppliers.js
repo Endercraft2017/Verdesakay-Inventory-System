@@ -9,6 +9,7 @@ App.register('suppliers', async (view) => {
       <h2>Suppliers</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="sup-search" placeholder="Search name, contact, email…" /></div>
+      ${canWrite ? `<button class="btn secondary" id="sup-import" title="Create or update suppliers from a CSV file">${UI.icon('upload')} Import</button>` : ''}
       ${canWrite ? `<button class="btn" id="sup-add">${UI.icon('plus')} New supplier</button>` : ''}
     </div>
     <div class="panel"><div id="sup-table"></div></div>`;
@@ -141,6 +142,20 @@ App.register('suppliers', async (view) => {
   });
   const addBtn = view.querySelector('#sup-add');
   if (addBtn) addBtn.onclick = () => supplierModal(null);
+
+  const importBtn = view.querySelector('#sup-import');
+  if (importBtn) importBtn.onclick = () => UI.csvImportModal({
+    title: 'Import suppliers',
+    importPath: '/suppliers/import',
+    exportPath: '/suppliers/export',
+    columnsHtml:
+      'Columns: <code>name</code> (required), <code>contact_person</code>, <code>phone</code>, ' +
+      '<code>email</code>, <code>address</code>, <code>notes</code>. Rows are matched to existing ' +
+      'suppliers by <strong>name</strong> (case-insensitive) — a match updates, no match creates.',
+    templateHeaders: ['name', 'contact_person', 'phone', 'email', 'address', 'notes'],
+    templateRow: ['Acme Steel', 'Jo Cruz', '+63 2 8123 4567', 'sales@acme.test', '12 Ortigas Ave, Pasig', ''],
+    onDone: () => load(),
+  });
 
   await load();
 });

@@ -134,11 +134,14 @@ export const updateItemSchema = z.object({
   attributes: attributesSchema,
 });
 
-/** POST /api/inventory/import — raw CSV text (~5 MB cap) + an optional validate-only flag. */
-export const importInventorySchema = z.object({
+/** Body for the CSV import endpoints: raw CSV text (~5 MB cap) + an optional
+    validate-only flag. Shared by /inventory/import, /suppliers/import, /hr/employees/import. */
+export const csvImportSchema = z.object({
   csv: z.string().min(1, 'A CSV body is required').max(5_000_000, 'CSV is too large (5 MB max)'),
   dry_run: boolish.optional(),
 });
+/** @deprecated alias — use csvImportSchema. */
+export const importInventorySchema = csvImportSchema;
 
 // ---- Suppliers ----
 export const createSupplierSchema = z.object({
