@@ -51,6 +51,11 @@ function openConnection(slug: string): DatabaseSync {
   return conn;
 }
 
+/** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
+    (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
+    `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+export const SCHEMA_VERSION = 3;
+
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
   const existing = registry.get(slug);
@@ -61,11 +66,24 @@ export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
   // inside createSchema/migrate/seed resolve to it via activeDb().
   tenantStore.run({ db: conn, slug }, () => {
     createSchema();
-    migrate();
+    if ((getSetting<number>('schema_version') ?? 0) < SCHEMA_VERSION) {
+      migrate();
+      setSetting('schema_version', SCHEMA_VERSION);
+    }
     ensureUploadDir();
     seed();
   });
   return conn;
+}
+
+/** Force `createSchema()` + `migrate()` on an open tenant, ignoring `schema_version`.
+    Used by the deploy-time `migrate:all` runner. */
+export function forceMigrate(slug: string): void {
+  withTenant(slug, () => {
+    createSchema();
+    migrate();
+    setSetting('schema_version', SCHEMA_VERSION);
+  });
 }
 
 /** The active tenant's connection — the request's, or the default outside a request. */
@@ -115,9 +133,12 @@ export function init(): void {
 function createSchema(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS departments (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      name       TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT NOT NULL UNIQUE,
+      -- The user who approves this department's mobile requests / attendance
+      -- corrections (see src/routes/me.routes.ts). NULL ⇒ only hr.manage holders can.
+      head_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS users (
@@ -178,6 +199,39 @@ function createSchema(): void {
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_punch_emp_date ON time_punches(employee_id, work_date);
+
+    -- Company-wide announcements shown on the mobile home + an announcements view.
+    -- Anyone can read the active ones; posting/editing needs the 'announce' permission.
+    CREATE TABLE IF NOT EXISTS announcements (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      pinned     INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT,                 -- "YYYY-MM-DD HH:MM" local; hidden once past
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Employee-filed fixes for a missed / wrong time punch. An approver (the
+    -- filer's department head, or any hr.manage holder) decides; on approval the
+    -- matching attendance_records row for that work_date is filled in.
+    CREATE TABLE IF NOT EXISTS time_corrections (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id   INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      work_date     TEXT NOT NULL,
+      requested_in  TEXT,              -- "HH:MM" or NULL
+      requested_out TEXT,              -- "HH:MM" or NULL
+      reason        TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending','approved','rejected','cancelled')),
+      decided_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at    TEXT,
+      decision_note TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_time_corrections_emp ON time_corrections(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_time_corrections_status ON time_corrections(status);
 
     CREATE TABLE IF NOT EXISTS suppliers (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -868,6 +922,12 @@ function migrate(): void {
     db.exec('ALTER TABLE employees ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
   }
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_user_id ON employees(user_id) WHERE user_id IS NOT NULL');
+
+  // Department head — approves that department's mobile requests / attendance corrections.
+  const deptCols = db.prepare('PRAGMA table_info(departments)').all() as { name: string }[];
+  if (!deptCols.some((c) => c.name === 'head_user_id')) {
+    db.exec('ALTER TABLE departments ADD COLUMN head_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
@@ -1291,4 +1351,15 @@ function ensureUploadDir(): void {
   if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
   }
+}
+
+/** The upload folder for the current request's tenant — `UPLOAD_DIR` for the `default`
+    tenant, `UPLOAD_DIR/<slug>` otherwise. Created on demand. All file read/write/delete
+    for stored uploads (item images, form files, 201 docs, AI reports) goes through this
+    so one tenant's files can be quota'd, exported, or deleted as a unit. */
+export function uploadDir(slug?: string): string {
+  const s = slug ?? tenantStore.getStore()?.slug ?? DEFAULT_TENANT;
+  const dir = s === DEFAULT_TENANT ? UPLOAD_DIR : path.join(UPLOAD_DIR, s);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }

@@ -249,7 +249,13 @@ None of this exists yet; all enforceable cheaply per-tenant because the data is 
    or `X-Tenant`/`?tenant` in non-prod; `default` needs no row; unknown → 404, suspended
    → 403), `scripts/tenant.ts` (`npm run tenant:create|list|status|purge`), and
    `POST /api/signup` gated by `SIGNUPS_OPEN`. Tests: `tests/multitenancy.test.ts`.
-3. **Provisioning / de-provisioning commands** (§7) + per-tenant upload folders (§5).
+3. Provisioning / de-provisioning (done with phase 2) + **per-tenant upload folders**
+   (§5) ✅ 2026-08-29 — `db.uploadDir()` resolves `UPLOAD_DIR` for `default`,
+   `UPLOAD_DIR/<slug>` otherwise; all item-image / form-file / 201-doc / AI-report
+   read/write/delete goes through it; `purgeTenant` deletes the folder. Plus
+   `SCHEMA_VERSION` + `settings.schema_version` short-circuit in `getDb()` and a
+   `npm run migrate:all` deploy-time runner (`scripts/migrate-all.ts`, `db.forceMigrate`).
+   Still to do: per-tenant upload *quota* accounting (§9).
 4. **BYO AI key** mirroring mail (§6). Small, high value.
 5. **`users.email` + password reset** (§3).
 6. **Plans, quotas, lifecycle states, retention** (§9).

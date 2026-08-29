@@ -1,11 +1,13 @@
 /** SaaS phase 2: tenant resolution, provisioning, isolation, lifecycle.
     The `default` tenant works with no catalog row; a named tenant needs one. */
+import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let platform: typeof import('../src/platform');
 let provisioning: typeof import('../src/provisioning');
+let dbmod: typeof import('../src/db');
 
 const asTenant = (slug: string) => ({ 'X-Tenant': slug });
 
@@ -13,6 +15,7 @@ beforeAll(async () => {
   ctx = await setupApp();
   platform = await import('../src/platform');
   provisioning = await import('../src/provisioning');
+  dbmod = await import('../src/db');
 });
 afterAll(() => cleanup(ctx));
 
@@ -90,5 +93,22 @@ describe('POST /api/signup', () => {
       company_name: 'Trial Co', slug: 'trialco', admin_username: 'owner', admin_password: 'trialpass1',
     });
     expect(r.status).toBe(404);
+  });
+});
+
+describe('per-tenant upload folders', () => {
+  it('uploadDir() is the base for default and a sub-folder per tenant', () => {
+    const base = dbmod.withTenant('default', () => dbmod.uploadDir());
+    const acme = dbmod.withTenant('acme', () => dbmod.uploadDir());
+    expect(path.basename(acme)).toBe('acme');
+    expect(path.dirname(acme)).toBe(base);
+    expect(base).not.toContain(`${path.sep}acme`);
+  });
+});
+
+describe('schema_version', () => {
+  it('the default tenant is stamped at the current version after init', () => {
+    const v = dbmod.withTenant('default', () => dbmod.getSetting<number>('schema_version'));
+    expect(v).toBe(dbmod.SCHEMA_VERSION);
   });
 });

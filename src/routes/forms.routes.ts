@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
-import { queryOne, queryAll, run, UPLOAD_DIR } from '../db';
+import { queryOne, queryAll, run, uploadDir } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import type { AuthUser, FormRow } from '../types';
 
@@ -12,7 +12,7 @@ const router = Router();
 router.use(requireAuth);
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  destination: (_req, _file, cb) => cb(null, uploadDir()),
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname).slice(0, 12);
     cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
@@ -92,7 +92,7 @@ router.get('/:id/download', requirePermission('forms.view'), (req, res) => {
     res.status(403).json({ error: 'You do not have access to this file' });
     return;
   }
-  const filePath = path.join(UPLOAD_DIR, form.stored_name);
+  const filePath = path.join(uploadDir(), form.stored_name);
   if (!fs.existsSync(filePath)) {
     res.status(410).json({ error: 'File is missing on disk' });
     return;
@@ -112,7 +112,7 @@ router.delete('/:id', (req, res) => {
     return;
   }
   run('DELETE FROM forms WHERE id = ?', form.id);
-  fs.promises.unlink(path.join(UPLOAD_DIR, form.stored_name)).catch(() => {});
+  fs.promises.unlink(path.join(uploadDir(), form.stored_name)).catch(() => {});
   res.json({ ok: true });
 });
 

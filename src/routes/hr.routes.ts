@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
-import { db, queryOne, queryAll, run, nextSequence, UPLOAD_DIR, getSetting, setSetting } from '../db';
+import { db, queryOne, queryAll, run, nextSequence, uploadDir, getSetting, setSetting } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody,
@@ -45,7 +45,7 @@ const router = Router();
 router.use(requireAuth);
 
 const docStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  destination: (_req, _file, cb) => cb(null, uploadDir()),
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname).slice(0, 12);
     cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
@@ -597,7 +597,7 @@ router.get('/employees/:id/documents/:docId/download', requirePermission('hr.vie
     Number(req.params.docId), Number(req.params.id)
   );
   if (!doc) { res.status(404).json({ error: 'Document not found' }); return; }
-  const filePath = path.join(UPLOAD_DIR, doc.stored_name);
+  const filePath = path.join(uploadDir(), doc.stored_name);
   if (!fs.existsSync(filePath)) { res.status(410).json({ error: 'File is missing on disk' }); return; }
   res.download(filePath, doc.original_name);
 });
@@ -610,7 +610,7 @@ router.delete('/employees/:id/documents/:docId', requirePermission('hr.manage'),
   );
   if (!doc) { res.status(404).json({ error: 'Document not found' }); return; }
   run('DELETE FROM employee_documents WHERE id = ?', doc.id);
-  fs.promises.unlink(path.join(UPLOAD_DIR, doc.stored_name)).catch(() => {});
+  fs.promises.unlink(path.join(uploadDir(), doc.stored_name)).catch(() => {});
   res.json({ ok: true });
 });
 

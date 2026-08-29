@@ -221,8 +221,10 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    opening stock levels, BOM components.*
 3. **SaaS multi-tenancy** (SAAS-READINESS.md). *Phase 1 (per-tenant DB connections) +
    Phase 2 (`platform.db` catalog, sub-domain tenant resolution, `tenant:*` CLI,
-   `/api/signup`) done 2026-08-29. Phase 3 = per-tenant upload folders, deploy-time
-   migration runner; then plans/quotas/lifecycle + custom domains.*
+   `/api/signup`) + Phase 3 (per-tenant upload folders via `db.uploadDir()`,
+   `schema_version` short-circuit, `npm run migrate:all`) done 2026-08-29. Then BYO
+   per-tenant AI key, `users.email` + password reset, plans/quotas/lifecycle, custom
+   domains.*
 4. **Manufacturing hardening** (Pillar 3): multi-level BOM, per-unit cost roll-up,
    basic scheduling. Turns "nice demo" into "runs our shop."
 5. **Purchasing depth** (Pillar 8): PO → goods receipt → match; supplier records.

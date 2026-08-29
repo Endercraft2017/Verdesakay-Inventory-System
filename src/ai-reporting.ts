@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { UPLOAD_DIR } from './db';
+import { uploadDir } from './db';
 import { parseMarkdown, renderHtml, renderDocx } from './reporting';
 import type { CerebrasTool, ToolResult } from './ai-tools';
 import type { AuthUser } from './types';
@@ -60,13 +60,13 @@ export async function executeReportingTool(name: string, args: unknown, _user: A
     if (fmt === 'html' || fmt === 'both') {
       const fn = `ai-report-${stamp}.html`;
       const buf = Buffer.from(renderHtml(title, blocks), 'utf8');
-      await fs.promises.writeFile(path.join(UPLOAD_DIR, fn), buf);
+      await fs.promises.writeFile(path.join(uploadDir(), fn), buf);
       files.push({ name: fn, url: `/api/ai/reports/${fn}`, format: 'html', bytes: buf.length });
     }
     if (fmt === 'docx' || fmt === 'both') {
       const fn = `ai-report-${stamp}.docx`;
       const buf = await renderDocx(title, blocks);
-      await fs.promises.writeFile(path.join(UPLOAD_DIR, fn), buf);
+      await fs.promises.writeFile(path.join(uploadDir(), fn), buf);
       files.push({ name: fn, url: `/api/ai/reports/${fn}`, format: 'docx', bytes: buf.length });
     }
   } catch (e) {

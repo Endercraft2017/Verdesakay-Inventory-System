@@ -17,7 +17,7 @@ import { requireAuth, requirePermission } from '../auth';
 import { getToolsForUser, executeTool } from '../ai-tools';
 import { REPORT_FILE_RE } from '../ai-reporting';
 import { reindex } from '../rag';
-import { UPLOAD_DIR } from '../db';
+import { uploadDir } from '../db';
 import type { AuthUser } from '../types';
 
 const router = Router();
@@ -39,7 +39,7 @@ router.get('/reports/:name', (req, res) => {
     res.status(400).json({ error: 'Bad report name' });
     return;
   }
-  const file = path.join(UPLOAD_DIR, name);
+  const file = path.join(uploadDir(), name);
   if (!fs.existsSync(file)) {
     res.status(404).json({ error: 'Report not found — it may have been cleared.' });
     return;

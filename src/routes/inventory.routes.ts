@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
-import { db, queryOne, queryAll, run, getSetting, setSetting, UPLOAD_DIR } from '../db';
+import { db, queryOne, queryAll, run, getSetting, setSetting, uploadDir } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody,
@@ -34,7 +34,7 @@ router.use(requireAuth);
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 const imageUpload = multer({
   storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+    destination: (_req, _file, cb) => cb(null, uploadDir()),
     filename: (_req, file, cb) => {
       const ext = path.extname(file.originalname).slice(0, 12) || '.img';
       cb(null, `item-${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
@@ -46,7 +46,7 @@ const imageUpload = multer({
 
 /** Delete a stored image file, ignoring "already gone". */
 function unlinkImage(name: string | null | undefined): void {
-  if (name) fs.promises.unlink(path.join(UPLOAD_DIR, name)).catch(() => {});
+  if (name) fs.promises.unlink(path.join(uploadDir(), name)).catch(() => {});
 }
 
 const ITEM_SELECT = `
@@ -716,7 +716,7 @@ router.get('/:id/image', (req, res) => {
     res.status(404).json({ error: 'No image for this item' });
     return;
   }
-  const file = path.join(UPLOAD_DIR, item.image_path);
+  const file = path.join(uploadDir(), item.image_path);
   if (!fs.existsSync(file)) {
     res.status(404).json({ error: 'Image file missing' });
     return;

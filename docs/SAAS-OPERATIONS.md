@@ -12,8 +12,9 @@ one `default` tenant, exactly as before.
 - **`platform.db`** (`PLATFORM_DB_PATH`) is the control plane — the `tenants` catalog and
   `provisioning_log`. It is **not** a tenant database and is never reachable from
   tenant-facing request code.
-- Uploaded files: `UPLOAD_DIR` for `default`; `UPLOAD_DIR/<slug>/` per tenant (rolling out
-  with SAAS-READINESS phase 3).
+- Uploaded files: `UPLOAD_DIR` for `default`; `UPLOAD_DIR/<slug>/` per tenant (item images,
+  form files, 201-file documents, AI reports — all resolved through `db.uploadDir()`).
+  `tenant:purge` deletes the folder.
 
 ## Environment
 
@@ -60,6 +61,18 @@ letter then letters/numbers/hyphens — and not a reserved word.
 With `SIGNUPS_OPEN=true`, `POST /api/signup` (`{company_name, slug, admin_username,
 admin_password, admin_email?}`) creates a `trial` tenant and returns
 `{ slug, url }`. It's rate-limited (10/hour/IP). Leave it off to keep provisioning manual.
+
+## Deploys
+
+Each tenant DB migrates itself on first open after a release (a `schema_version` stamp
+in `settings` skips the work when it's already current). To apply schema changes up front
+across every tenant instead of on the first request:
+
+```
+npm run migrate:all
+```
+
+Run it as part of the deploy, after pulling the new release.
 
 ## Backups
 

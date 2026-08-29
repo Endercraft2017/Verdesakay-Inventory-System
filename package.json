@@ -14,7 +14,8 @@
     "tenant:create": "tsx scripts/tenant.ts create",
     "tenant:list": "tsx scripts/tenant.ts list",
     "tenant:status": "tsx scripts/tenant.ts status",
-    "tenant:purge": "tsx scripts/tenant.ts purge"
+    "tenant:purge": "tsx scripts/tenant.ts purge",
+    "migrate:all": "tsx scripts/migrate-all.ts"
   },
   "engines": {
     "node": ">=22"
