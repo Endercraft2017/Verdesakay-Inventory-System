@@ -39,11 +39,19 @@ describe('frontend bootstrap', () => {
     // Concatenate the scripts in declared order — same single global scope a browser uses.
     let code = srcs.map((s) => fs.readFileSync(path.join(PUBLIC, s.replace(/^\//, '')), 'utf8')).join('\n;\n');
     code += '\n;window.__routeNames = App._routeNames();\n;window.__hasApp = typeof App;';
+    code += '\n;window.__help = window.Help ? { has: true, ids: Help.topics.map(function(t){return t.id;}),' +
+            ' routes: Help.topics.reduce(function(a,t){(t.routes||[]).forEach(function(r){a.push(r);});return a;}, []) } : { has: false };';
 
     expect(() => win.eval(code)).not.toThrow();
 
     expect(win.__hasApp).toBe('object');
     const routes = win.__routeNames as string[];
     for (const r of EXPECTED_ROUTES) expect(routes).toContain(r);
+
+    // In-app Help loaded, and every route a help topic claims is a real registered route.
+    const help = win.__help as { has: boolean; ids: string[]; routes: string[] };
+    expect(help.has).toBe(true);
+    expect(help.ids).toContain('getting-started');
+    for (const r of help.routes) expect(routes).toContain(r);
   });
 });

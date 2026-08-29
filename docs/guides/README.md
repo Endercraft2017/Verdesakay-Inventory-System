@@ -4,6 +4,12 @@ Plain-language how-tos for the people who use the system day to day — not deve
 Each guide is short, task-focused, and safe to hand to a new hire or attach to a training
 session.
 
+> **In the app:** users don't need these files day to day — the **Help** button on the
+> right-hand icon rail opens an explainer for whatever screen they're on, plus an index
+> to every other topic. That content lives in [`public/js/help.js`](../../public/js/help.js).
+> These markdown guides are the longer-form version for trainers and onboarding packs;
+> keep the two in step when a feature changes.
+
 > Admins: the setup/config side of some of these lives in the concept docs
 > ([../EMAIL-SETUP.md](../EMAIL-SETUP.md), [../PH-PAYROLL-COMPLIANCE.md](../PH-PAYROLL-COMPLIANCE.md)).
 

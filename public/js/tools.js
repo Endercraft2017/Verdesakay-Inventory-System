@@ -3,7 +3,7 @@
    AI talks to the real POST /api/ai/chat agentic backend (src/routes/ai.routes.ts +
    src/ai-tools.ts) — see docs/AI-AGENT.md. Email is still a UI-only preview (no backend). */
 (function () {
-  const TOOL_ICONS = { ai: 'sparkles', notes: 'note', email: 'mail', scheduler: 'calendar', bookmarks: 'bookmark' };
+  const TOOL_ICONS = { ai: 'sparkles', notes: 'note', email: 'mail', scheduler: 'calendar', bookmarks: 'bookmark', help: 'help' };
 
   function init() {
     document.querySelectorAll('.rail-btn[data-tool]').forEach((b) => {
@@ -19,6 +19,7 @@
     else if (tool === 'email') openEmail();
     else if (tool === 'scheduler') openScheduler();
     else if (tool === 'bookmarks') openBookmarks();
+    else if (tool === 'help' && window.Help) window.Help.open();
   }
 
   /* ---------------- AI assistant ---------------- */
