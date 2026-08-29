@@ -207,8 +207,10 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    `auto_statutory`, `pay_frequency`), a **rate-tables admin screen** (Time Keeping →
    Policy Settings), a **13th-month worksheet** (`GET /hr/thirteenth-month`), and
    **BIR 2316** (per-employee year-end certificate — `src/ph-2316.ts`, `GET /hr/bir-2316`,
-   printable template, Time Keeping → BIR 2316). Next: final-pay worksheet, then
-   BIR 1601-C / 1604-C / Alphalist.*
+   printable template, Time Keeping → BIR 2316), and a **BIR 1601-C monthly worksheet**
+   (`GET /hr/bir-1601c`). Government agencies have **no filing APIs** — we generate the
+   upload files, customer submits via the portals (PH-PAYROLL-COMPLIANCE §3b). Next:
+   final-pay worksheet, then 1604-C + Alphalist `.DAT`.*
 2. **Data import tools (CSV) for items, stock, BOMs, employees, opening balances.**
    Onboarding is impossible without this; it's also billable services. Blocks *every*
    deal. — *Items, suppliers, employees done 2026-08-29 (export + import, upsert by

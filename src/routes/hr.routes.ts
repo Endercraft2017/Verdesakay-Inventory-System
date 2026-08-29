@@ -289,6 +289,67 @@ router.get('/thirteenth-month', requirePermission('hr.view'), (req, res) => {
   res.json({ year, rows, total: round2(rows.reduce((s, r) => s + r.amount, 0)) });
 });
 
+// GET /api/hr/bir-1601c?year=YYYY — BIR 1601-C monthly withholding worksheet: per month,
+// aggregated across all employees, the lines that go on the return (compensation,
+// non-taxable, taxable, tax to remit). From the generated hr_payroll records, by pay-date
+// month. 13th-month pay isn't a payslip line, so the monthly non-taxable here is the
+// statutory employee shares only — note it on the worksheet.
+router.get('/bir-1601c', requirePermission('hr.view'), (req, res) => {
+  const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
+  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    employee_count: 0,
+    gross_compensation: 0,
+    non_taxable: 0,
+    taxable_compensation: 0,
+    tax_withheld: 0,
+    _names: new Set<string>(),
+  }));
+
+  if (form) {
+    const records = queryAll<{ data: string; created_at: string }>(
+      'SELECT data, created_at FROM form_records WHERE form_def_id = ?', form.id
+    );
+    for (const r of records) {
+      let d: Record<string, unknown>;
+      try { d = JSON.parse(r.data); } catch { continue; }
+      const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
+      if (String(payDate).slice(0, 4) !== year) continue;
+      const mi = Number(String(payDate).slice(5, 7)) - 1;
+      if (mi < 0 || mi > 11) continue;
+      const m = months[mi]!;
+      const name = String(d.employee_name ?? '').trim();
+      if (name) m._names.add(name);
+      const gross = Number(d.total_earnings) || 0;
+      const stat = (Number(d.sss) || 0) + (Number(d.philhealth) || 0) + (Number(d.pagibig) || 0);
+      m.gross_compensation = round2(m.gross_compensation + gross);
+      m.non_taxable = round2(m.non_taxable + stat);
+      m.taxable_compensation = round2(m.taxable_compensation + Math.max(0, gross - stat));
+      m.tax_withheld = round2(m.tax_withheld + (Number(d.withholding_tax) || 0));
+    }
+  }
+
+  const out = months.map((m) => ({
+    month: m.month,
+    employee_count: m._names.size,
+    gross_compensation: m.gross_compensation,
+    non_taxable: m.non_taxable,
+    taxable_compensation: m.taxable_compensation,
+    tax_withheld: m.tax_withheld,
+  }));
+  const totals = out.reduce(
+    (t, m) => ({
+      gross_compensation: round2(t.gross_compensation + m.gross_compensation),
+      non_taxable: round2(t.non_taxable + m.non_taxable),
+      taxable_compensation: round2(t.taxable_compensation + m.taxable_compensation),
+      tax_withheld: round2(t.tax_withheld + m.tax_withheld),
+    }),
+    { gross_compensation: 0, non_taxable: 0, taxable_compensation: 0, tax_withheld: 0 }
+  );
+  res.json({ year, months: out, totals });
+});
+
 // --- BIR Form 2316 (Certificate of Compensation Payment / Tax Withheld) ---
 // Year-end figures per employee, computed from that year's generated hr_payroll records
 // + the annual income-tax table. This is a worksheet — the payslips don't carry a

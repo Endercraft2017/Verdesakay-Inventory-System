@@ -764,4 +764,31 @@ describe('generate-payslips computes real numbers from attendance + linked forms
 
     expect((await ctx.api.get('/api/hr/bir-2316/99999?year=2026').set(hdr())).status).toBe(404);
   });
+
+  it('BIR 1601-C: monthly withholding totals from the generated payslips', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-1601C', name: '1601C Employee', daily_rate: 1500 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: '1601C Cutoff', start_date: '2026-09-14', end_date: '2026-09-14' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-09-14', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: '1601C Cutoff', pay_date: '2026-09-25' });
+    const recs = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: '1601C Cutoff' }).set(hdr());
+    const rec = recs.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === '1601C Employee');
+
+    const r = await ctx.api.get('/api/hr/bir-1601c?year=2026').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.months).toHaveLength(12);
+    const sep = r.body.months.find((m: { month: number }) => m.month === 9);
+    expect(sep.employee_count).toBeGreaterThanOrEqual(1);
+    expect(sep.gross_compensation).toBeGreaterThanOrEqual(rec.data.total_earnings);
+    expect(sep.tax_withheld).toBeGreaterThanOrEqual(rec.data.withholding_tax);
+    expect(r.body.totals.tax_withheld).toBeGreaterThanOrEqual(sep.tax_withheld);
+    // A month with no payrun is all zeros.
+    expect(r.body.months.find((m: { month: number }) => m.month === 1)).toMatchObject({ employee_count: 0, gross_compensation: 0 });
+  });
 });

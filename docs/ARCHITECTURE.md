@@ -353,6 +353,7 @@ Bodies are validated by the named schema in `src/validation.ts`.
 | GET `/hr/thirteenth-month?year=` | 🔐`hr.view` | 13th-month pay per employee = Σ `basic_salary` of that year's `hr_payroll` records ÷ 12 → `{year, rows, total}` | hr.routes | — |
 | GET `/hr/bir-2316?year=` | 🔐`hr.view` | BIR 2316 summary line per employee (+ `company`); `opts` via query | hr.routes | — |
 | GET `/hr/bir-2316/:employeeId?year=` | 🔐`hr.view` | One employee's full 2316 figures + 201 data + `company` | hr.routes | — |
+| GET `/hr/bir-1601c?year=` | 🔐`hr.view` | BIR 1601-C monthly withholding worksheet → `{year, months[12], totals}` from the payslips by pay-date month | hr.routes | — |
 | GET `/activity` | 🔐`audit.view` | App-wide action log, filtered + paginated (`?user_id=`,`?entity=`,`?action=`,`?from=`,`?to=`,`?q=`,`?limit=`,`?offset=`) → `{rows,total}` | activity.routes | — |
 | GET `/activity/options` | 🔐`audit.view` | Distinct entities · actions · users for the filter dropdowns | activity.routes | — |
 | DELETE `/activity?before=<date>` | 🔐`audit.view` | Prune entries older than the cutoff → `{deleted}` | activity.routes | — |

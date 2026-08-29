@@ -169,8 +169,11 @@ tracking first).
   **worksheet** — de-minimis / allowances / previous-employer aren't in payroll; the doc
   says so and to validate against the official BIR form. Tests: `tests/ph-2316.test.ts` +
   an hr.test.ts endpoint case.
-- **1601-C worksheet:** monthly totals (taxable comp, tax withheld, headcount) matching
-  the return's lines.
+- **1601-C worksheet** ✅ done 2026-08-29. `GET /api/hr/bir-1601c?year=` → 12 months of
+  `{employee_count, gross_compensation, non_taxable, taxable_compensation, tax_withheld}`
+  from the payslips (by pay-date month) + year totals. Time Keeping → 1601-C (table +
+  CSV). Non-taxable = statutory EE shares only (13th-month isn't a payslip line — noted
+  in the UI + guide). `tests/hr.test.ts` endpoint case.
 - **1604-C + Alphalist:** annual reconciliation (Σ 1601-C = 1604-C) + the Alphalist
   schedules. **Export as the `.DAT` the BIR Data Entry Module / Online Submission Portal
   accepts** — this needs the current BIR Alphalist file spec (from the governing RMC) and
@@ -182,6 +185,36 @@ tracking first).
 
 - SSS R-3, PhilHealth RF-1/EPRS, Pag-IBIG MCRF as monthly schedules/exports in each
   agency's expected column order.
+
+---
+
+## 3b. Government integration — APIs vs file formats (researched 2026-08-29)
+
+**There are no public developer APIs from BIR / SSS / PhilHealth / Pag-IBIG for payroll
+or tax filing.** Every PH payroll product generates the required artifact and the
+employer uploads it through the agency portal. The plan is the same: **produce the exact
+file each portal accepts; do not design around an API that doesn't exist.**
+
+| Agency / output | Channel | Machine interface | We target |
+|---|---|---|---|
+| BIR returns (1601-C, 1604-C, 2550/2551…) | eBIRForms (offline Java app → encrypted file) or eFPS (web) | none | the figures; customer files in eBIRForms/eFPS |
+| BIR **Alphalist** (1604-C attachment) | Data Entry / validation module → pipe-delimited **`.DAT`**, via eSubmission / email | none (file spec) | generate the `.DAT` to the current RMC layout, validate with BIR's tool |
+| BIR **2316** batch | eSubmission accepts a 2316 `.DAT` | none (file spec) | `.DAT` alongside the printed certificate |
+| BIR **EIS** (e-invoicing, RR 11-2025) | **real JSON API** to transmit *invoice* data; mandatory for covered taxpayers, deadline 31 Dec 2026 | **✅ yes** | only the **sales-invoice / accounting** track, not payroll; needs BIR certification |
+| SSS R-3 collection list | My.SSS portal; **R-3 File Generator** (offline) for 10+ employees; older EDInet for accredited employers | none (file spec) | generate the R-3 file |
+| PhilHealth RF-1 | **EPRS** portal — has a **CSV bulk-upload** module (PIN, salary, status, effectivity, DOB) | none (CSV spec) | generate the EPRS CSV |
+| Pag-IBIG MCRF | Virtual Pag-IBIG; **eSRS** bulk upload of the remittance schedule | none (file spec) | generate the eSRS/MCRF file |
+
+Notes:
+- No aggregator ("Plaid for PH gov") exists; third-party "integrations" are portal RPA,
+  unsanctioned and brittle. No public sandboxes — testing is against the live portals.
+- Each file spec must be pulled from the **current** agency PDF / RMC at build time and
+  checked against that agency's own validator before release.
+- **BIR EIS** is the one real API and becomes mandatory (large taxpayers first) — a
+  genuine integration project *if* we sell the invoicing/accounting side to a covered
+  customer. Track it on the QuickBooks / accounting line, not here.
+- Payment rails (GCash for Business, Maya, bank APIs) do have APIs, but that's *paying*
+  contributions, not filing — separate scope (merchant onboarding). Not early.
 
 ---
 

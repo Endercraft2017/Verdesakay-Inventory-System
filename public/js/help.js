@@ -164,6 +164,23 @@
         you re-generate.</p>`,
     },
     {
+      id: 'bir-1601c', title: 'BIR Form 1601-C (monthly)', group: 'HR', routes: [],
+      html: `
+        <p>The <b>Monthly Remittance Return of Income Taxes Withheld on Compensation</b> —
+        what you file and remit every month. Open it from <b>Time Keeping → 1601-C</b>.</p>
+        <ul>
+          <li>Pick the year; the table shows all 12 months: employees paid, gross
+              compensation, non-taxable, taxable, and <b>tax withheld</b> (the amount to
+              remit for that month).</li>
+          <li>The 12 monthly figures should reconcile to the annual <b>1604-C</b>.</li>
+          <li><b>Export CSV</b> for your records or your accountant.</li>
+        </ul>
+        <p>Non-taxable here is the SSS / PhilHealth / Pag-IBIG employee shares only.
+        <b>13th-month pay isn't a payslip line</b>, so if you pay it in December, add it to
+        that month's return by hand. Deadline: the 10th of the following month (15th on
+        eFPS).</p>`,
+    },
+    {
       id: 'bir-2316', title: 'BIR Form 2316 (year-end)', group: 'HR', routes: [],
       html: `
         <p>The <b>Certificate of Compensation Payment / Tax Withheld</b> each employee gets
