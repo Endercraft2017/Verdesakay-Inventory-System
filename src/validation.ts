@@ -56,11 +56,15 @@ export const changePasswordSchema = z.object({
 // ---- Users / departments ----
 const roleEnum = z.enum(['admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing']);
 
+const emailOpt = z.union([z.literal(''), z.string().trim().toLowerCase().email('Enter a valid email')])
+  .optional().nullable();
+
 export const createUserSchema = z.object({
   username: trimmed
     .toLowerCase()
     .regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
   full_name: trimmed.min(1, 'Full name is required').max(120),
+  email: emailOpt,
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: roleEnum.default('admin_staff'),
   department_id: optionalId,
@@ -68,12 +72,24 @@ export const createUserSchema = z.object({
 
 export const updateUserSchema = z.object({
   full_name: trimmed.min(1).max(120).optional(),
+  email: emailOpt,
   role: roleEnum.optional(),
   department_id: optionalId,
   active: boolish.optional(),
 });
 
 export const resetPasswordSchema = z.object({
+  new_password: z.string().min(6, 'New password must be at least 6 characters'),
+});
+
+/** POST /api/auth/forgot-password — username or email. Always answered with 200. */
+export const forgotPasswordSchema = z.object({
+  identifier: trimmed.min(1, 'Enter your username or email').max(200),
+});
+
+/** POST /api/auth/reset-password — the emailed token + a new password. */
+export const selfResetPasswordSchema = z.object({
+  token: trimmed.min(10).max(200),
   new_password: z.string().min(6, 'New password must be at least 6 characters'),
 });
 

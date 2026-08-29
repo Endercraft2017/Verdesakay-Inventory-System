@@ -343,6 +343,43 @@ const App = (() => {
     showLogin();
   }
 
+  function forgotPassword() {
+    UI.modal({
+      title: 'Reset your password',
+      bodyHTML: `<p class="muted" style="margin-top:0">Enter your username or email. If we have an
+        address on file and email is set up, you'll get a reset link.</p>
+        <label>Username or email</label><input data-f="id" autocomplete="username" />`,
+      confirmText: 'Send reset link',
+      onConfirm: async (ov, showErr) => {
+        const id = ov.querySelector('[data-f="id"]').value.trim();
+        if (!id) { showErr('Enter your username or email.'); return false; }
+        const r = await API.post('/auth/forgot-password', { identifier: id });
+        UI.toast(r.sent ? 'Check your email for the reset link.'
+          : (r.reason ? 'Could not send: ' + r.reason : 'If that account exists, a link is on its way.'),
+          r.sent ? 'success' : 'error');
+      },
+    });
+  }
+
+  function setNewPassword(token) {
+    UI.modal({
+      title: 'Set a new password',
+      bodyHTML: `<label>New password</label>
+        <input data-f="pw" type="password" autocomplete="new-password" placeholder="at least 6 characters" />`,
+      confirmText: 'Save & sign in',
+      cancelText: 'Cancel',
+      onConfirm: async (ov, showErr) => {
+        const pw = ov.querySelector('[data-f="pw"]').value;
+        if ((pw || '').length < 6) { showErr('Password must be at least 6 characters.'); return false; }
+        try {
+          await API.post('/auth/reset-password', { token, new_password: pw });
+        } catch (e) { showErr(e.message); return false; }
+        history.replaceState(null, '', location.pathname + location.hash);
+        UI.toast('Password updated — please sign in.', 'success');
+      },
+    });
+  }
+
   async function boot() {
     // Wire login form
     document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -358,6 +395,13 @@ const App = (() => {
         errEl.classList.remove('hidden');
       }
     });
+
+    const forgotLink = document.getElementById('forgot-link');
+    if (forgotLink) forgotLink.addEventListener('click', forgotPassword);
+
+    // Arriving from a "reset your password" email link.
+    const resetToken = new URLSearchParams(location.search).get('reset');
+    if (resetToken) setNewPassword(resetToken);
 
     // Utility bar: menu search + site map + pin glyph.
     document.getElementById('menu-search')

@@ -22,6 +22,7 @@ interface UserListRow {
   id: number;
   username: string;
   full_name: string;
+  email: string | null;
   role: string;
   department_id: number | null;
   active: number;
@@ -32,7 +33,7 @@ interface UserListRow {
 // GET /api/users — everyone can see the directory; users.manage get full management fields.
 router.get('/', (req, res) => {
   const rows = queryAll<UserListRow>(
-    `SELECT u.id, u.username, u.full_name, u.role, u.department_id, u.active,
+    `SELECT u.id, u.username, u.full_name, u.email, u.role, u.department_id, u.active,
             u.permission_overrides, d.name AS department_name
      FROM users u
      LEFT JOIN departments d ON d.id = u.department_id
@@ -68,10 +69,11 @@ router.post('/', requirePermission('users.manage'), (req, res) => {
   }
   const hash = bcrypt.hashSync(input.password, 10);
   const info = run(
-    `INSERT INTO users (username, full_name, password_hash, role, department_id)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO users (username, full_name, email, password_hash, role, department_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     input.username,
     input.full_name,
+    input.email || null,
     hash,
     input.role,
     input.department_id
@@ -89,6 +91,7 @@ router.put('/:id', requirePermission('users.manage'), (req, res) => {
   }
   const input = parseBody(updateUserSchema, req.body);
   const full_name = input.full_name ?? user.full_name;
+  const email = input.email !== undefined ? (input.email || null) : user.email;
   const role = input.role ?? user.role;
   const department_id = input.department_id !== undefined ? input.department_id : user.department_id;
   const active = input.active !== undefined ? (input.active ? 1 : 0) : user.active;
@@ -108,8 +111,9 @@ router.put('/:id', requirePermission('users.manage'), (req, res) => {
   }
 
   run(
-    'UPDATE users SET full_name = ?, role = ?, department_id = ?, active = ? WHERE id = ?',
+    'UPDATE users SET full_name = ?, email = ?, role = ?, department_id = ?, active = ? WHERE id = ?',
     full_name,
+    email,
     role,
     department_id,
     active,
@@ -187,11 +191,13 @@ router.post('/departments', requireAnyPermission(['users.manage', 'hr.manage']),
 // GET /api/users/departments — with usage counts (for management)
 router.get('/departments', requirePermission('users.manage'), (_req, res) => {
   const rows = queryAll(
-    `SELECT d.id, d.name,
+    `SELECT d.id, d.name, d.head_user_id,
+            h.full_name AS head_name,
             (SELECT COUNT(*) FROM users u WHERE u.department_id = d.id) AS user_count,
             (SELECT COUNT(*) FROM inventory_items i WHERE i.department_id = d.id) AS item_count,
             (SELECT COUNT(*) FROM forms f WHERE f.department_id = d.id) AS form_count
      FROM departments d
+     LEFT JOIN users h ON h.id = d.head_user_id
      ORDER BY d.name COLLATE NOCASE`
   );
   res.json(rows);
@@ -205,13 +211,21 @@ router.put('/departments/:id', requirePermission('users.manage'), (req, res) => 
     res.status(404).json({ error: 'Department not found' });
     return;
   }
-  const { name } = parseBody(updateDepartmentSchema, req.body);
+  const { name, head_user_id } = parseBody(updateDepartmentSchema, req.body);
   const clash = queryOne('SELECT id FROM departments WHERE name = ? COLLATE NOCASE AND id != ?', name, id);
   if (clash) {
     res.status(409).json({ error: 'Another department already uses that name' });
     return;
   }
-  run('UPDATE departments SET name = ? WHERE id = ?', name, id);
+  if (head_user_id !== undefined) {
+    if (head_user_id !== null && !queryOne('SELECT id FROM users WHERE id = ? AND active = 1', head_user_id)) {
+      res.status(400).json({ error: 'Department head must be an active user' });
+      return;
+    }
+    run('UPDATE departments SET name = ?, head_user_id = ? WHERE id = ?', name, head_user_id, id);
+  } else {
+    run('UPDATE departments SET name = ? WHERE id = ?', name, id);
+  }
   res.json({ ok: true });
 });
 

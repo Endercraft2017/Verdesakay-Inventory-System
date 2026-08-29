@@ -273,6 +273,9 @@
               revoke individual permissions per user in the permission editor.</li>
           <li><b>Departments</b> are managed here (and inline from HR).</li>
           <li>The <b>admin</b> role always has every permission.</li>
+          <li>Set each person's <b>email</b> so they can use <b>“Forgot password?”</b> on
+              the sign-in screen (needs email set up under the Email tool). Without an
+              email, only an admin can reset their password here.</li>
         </ul>`,
     },
     {

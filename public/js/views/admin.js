@@ -120,6 +120,8 @@ App.register('admin', async (view, filter) => {
           <div><label>Full name *</label><input data-f="full_name" /></div>
           <div><label>Username *</label><input data-f="username" placeholder="letters, numbers, . _ -" /></div>
         </div>
+        <div><label>Email <span class="muted">(for password resets)</span></label>
+          <input data-f="email" type="email" placeholder="name@company.com" /></div>
         <div class="field-row">
           <div><label>Role</label>${roleSelect('role', 'admin_staff')}</div>
           <div><label>Department</label>${deptSelect('department_id', null)}</div>
@@ -134,7 +136,7 @@ App.register('admin', async (view, filter) => {
         }
         await API.post('/users', {
           full_name: get('full_name'), username: get('username'), password: get('password'),
-          role: get('role'), department_id: get('department_id') || null,
+          email: get('email').trim(), role: get('role'), department_id: get('department_id') || null,
         });
         UI.toast('Account created');
         load();
@@ -147,6 +149,8 @@ App.register('admin', async (view, filter) => {
       title: 'Edit ' + u.full_name,
       bodyHTML: `
         <div><label>Full name</label><input data-f="full_name" value="${UI.esc(u.full_name)}" /></div>
+        <div><label>Email <span class="muted">(for password resets)</span></label>
+          <input data-f="email" type="email" value="${UI.esc(u.email || '')}" placeholder="name@company.com" /></div>
         <div class="field-row">
           <div><label>Role</label>${roleSelect('role', u.role)}</div>
           <div><label>Department</label>${deptSelect('department_id', u.department_id)}</div>
@@ -165,7 +169,7 @@ App.register('admin', async (view, filter) => {
       onConfirm: async (overlay) => {
         const get = (f) => overlay.querySelector(`[data-f="${f}"]`).value;
         await API.put('/users/' + u.id, {
-          full_name: get('full_name'), role: get('role'),
+          full_name: get('full_name'), email: get('email').trim(), role: get('role'),
           department_id: get('department_id') || null, active: get('active') === '1',
         });
         UI.toast('Account updated');
@@ -288,15 +292,16 @@ App.register('admin', async (view, filter) => {
           <button class="btn" id="nd-add">${UI.icon('plus')} Add</button>
         </div>
         <table style="margin-top:16px">
-          <thead><tr><th>Name</th><th class="right">Members</th><th class="right">Items</th><th class="right">Files</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Head (approves requests)</th><th class="right">Members</th><th class="right">Items</th><th class="right">Files</th><th></th></tr></thead>
           <tbody>${depts.map((d) => `
             <tr>
               <td><strong>${UI.esc(d.name)}</strong></td>
+              <td>${d.head_name ? UI.esc(d.head_name) : '<span class="muted">—</span>'}</td>
               <td class="right">${d.user_count}</td>
               <td class="right">${d.item_count}</td>
               <td class="right">${d.form_count}</td>
               <td class="actions">
-                <button class="icon-btn" title="Rename" data-rn="${d.id}" data-name="${UI.esc(d.name)}">${UI.icon('edit')}</button>
+                <button class="icon-btn" title="Edit" data-rn="${d.id}" data-name="${UI.esc(d.name)}" data-head="${d.head_user_id || ''}">${UI.icon('edit')}</button>
                 <button class="icon-btn danger" title="Delete" data-dd="${d.id}" data-name="${UI.esc(d.name)}">${UI.icon('trash')}</button>
               </td>
             </tr>`).join('')}
@@ -315,23 +320,30 @@ App.register('admin', async (view, filter) => {
         } catch (e) { UI.toast(e.message, 'error'); }
       };
       box.querySelectorAll('[data-rn]').forEach((b) =>
-        b.onclick = () => renameDept(b.dataset.rn, b.dataset.name, renderList));
+        b.onclick = () => renameDept(b.dataset.rn, b.dataset.name, b.dataset.head, renderList));
       box.querySelectorAll('[data-dd]').forEach((b) =>
         b.onclick = () => deleteDept(b.dataset.dd, b.dataset.name, renderList));
     }
     renderList();
   }
 
-  function renameDept(id, current, after) {
+  function renameDept(id, current, currentHead, after) {
+    const headOpts = '<option value="">— None (HR approves) —</option>' +
+      (allUsers || []).filter((u) => u.active)
+        .map((u) => `<option value="${u.id}" ${String(u.id) === String(currentHead || '') ? 'selected' : ''}>${UI.esc(u.full_name)}</option>`).join('');
     UI.modal({
-      title: 'Rename department',
-      bodyHTML: `<label>Name</label><input data-f="name" value="${UI.esc(current)}" />`,
+      title: 'Edit department',
+      bodyHTML: `<label>Name</label><input data-f="name" value="${UI.esc(current)}" />
+        <label style="margin-top:12px">Department head</label>
+        <select data-f="head_user_id">${headOpts}</select>
+        <p class="muted" style="margin-top:6px">The head approves this department's mobile requests and attendance corrections.</p>`,
       confirmText: 'Save',
       onConfirm: async (overlay, showErr) => {
         const name = overlay.querySelector('[data-f="name"]').value.trim();
         if (!name) { showErr('Name is required'); return false; }
-        await API.put('/users/departments/' + id, { name });
-        UI.toast('Department renamed');
+        const head = overlay.querySelector('[data-f="head_user_id"]').value;
+        await API.put('/users/departments/' + id, { name, head_user_id: head || null });
+        UI.toast('Department saved');
         await App.reloadDepartments();
         await after();
         load();

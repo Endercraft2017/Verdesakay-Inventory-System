@@ -259,7 +259,10 @@ None of this exists yet; all enforceable cheaply per-tenant because the data is 
 4. ~~**BYO AI key** mirroring mail (§6).~~ ✅ 2026-08-29 — `src/ai-config.ts`
    (`settings.ai_config` + AES `ai_api_key`), `GET/PUT /api/ai/config` (`users.manage`),
    AI Assistant → AI settings modal; falls back to the `CEREBRAS_*` env key.
-5. **`users.email` + password reset** (§3).
+5. ~~**`users.email` + password reset** (§3).~~ ✅ 2026-08-29 — `users.email` column +
+   admin-UI field; `password_resets` table; `POST /auth/forgot-password` (no
+   account-existence leak, emails a 1 h link via the tenant mailbox) + `/auth/reset-password`;
+   "Forgot password?" on the login screen + a `?reset=<token>` set-new-password flow.
 6. **Plans, quotas, lifecycle states, retention** (§9).
 7. **Custom domains, per-tenant branding, billing integration** (§8).
 8. **Backups job, deploy-time migration runner** (§5, §7).

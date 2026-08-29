@@ -1,12 +1,20 @@
-/** Authentication routes: login, logout, current user, self password change. */
+/** Authentication routes: login, logout, current user, self password change, password reset. */
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { queryOne, run } from '../db';
+import { queryOne, queryAll, run, newToken } from '../db';
 import { createSession, destroySession, requireAuth } from '../auth';
-import { parseBody, loginSchema, changePasswordSchema, updateProfileSchema } from '../validation';
+import {
+  parseBody, loginSchema, changePasswordSchema, updateProfileSchema,
+  forgotPasswordSchema, selfResetPasswordSchema,
+} from '../validation';
+import { sendMail, mailReady } from '../mailer';
 import type { UserRow } from '../types';
 
 const router = Router();
+
+const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
+const RESET_TTL_MIN = 60;
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
@@ -44,7 +52,17 @@ router.post('/logout', requireAuth, (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: req.user });
+  // Which employee record (if any) this login is tied to — the mobile app uses it
+  // to decide whether to show the self-service tiles (time clock, payslip, …).
+  const emp = queryOne<{ id: number; name: string; employee_no: string | null }>(
+    'SELECT id, name, employee_no FROM employees WHERE user_id = ?',
+    req.user!.id
+  );
+  // Whether to show the mobile "To Approve" tile: any hr.manage holder, or the
+  // registered head of at least one department.
+  const headsDept = queryOne('SELECT 1 AS x FROM departments WHERE head_user_id = ?', req.user!.id);
+  const canApprove = req.user!.permissions.includes('hr.manage') || !!headsDept;
+  res.json({ user: { ...req.user, employee: emp ?? null, can_approve: canApprove } });
 });
 
 // POST /api/auth/change-password
@@ -59,6 +77,62 @@ router.post('/change-password', requireAuth, (req, res) => {
   run('UPDATE users SET password_hash = ? WHERE id = ?', hash, req.user!.id);
   // Keep the current session, drop the rest.
   run('DELETE FROM sessions WHERE user_id = ? AND token != ?', req.user!.id, req.token!);
+  res.json({ ok: true });
+});
+
+// POST /api/auth/forgot-password — { identifier }  (username or email).
+// Always 200 (never reveal whether an account exists). Emails a one-hour reset link if
+// the account has an email and this workspace has email configured.
+router.post('/forgot-password', async (req, res, next) => {
+  try {
+    const { identifier } = parseBody(forgotPasswordSchema, req.body);
+    const id = identifier.toLowerCase();
+    const user = queryAll<UserRow>(
+      'SELECT * FROM users WHERE active = 1 AND (username = ? OR (email IS NOT NULL AND lower(email) = ?)) LIMIT 1',
+      id, id
+    )[0];
+
+    const done = { ok: true, sent: false as boolean, reason: '' as string };
+    if (user && user.email && mailReady()) {
+      const raw = newToken();
+      run(
+        "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, datetime('now', ?))",
+        sha256(raw), user.id, `+${RESET_TTL_MIN} minutes`
+      );
+      const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0];
+      const link = `${proto}://${req.get('host')}/?reset=${raw}`;
+      const r = await sendMail({
+        to: user.email,
+        subject: 'Password reset',
+        text: `Hi ${user.full_name},\n\nUse this link within ${RESET_TTL_MIN} minutes to set a new password:\n${link}\n\nIf you didn't ask for this, ignore this email.`,
+      }, user.id);
+      done.sent = r.ok;
+      if (!r.ok) done.reason = r.error || 'send failed';
+    } else if (user && !user.email) {
+      done.reason = 'no email on file — ask an admin to reset it';
+    } else if (!mailReady()) {
+      done.reason = 'email is not configured — ask an admin to reset it';
+    }
+    res.json(done);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /api/auth/reset-password — { token, new_password }
+router.post('/reset-password', (req, res) => {
+  const { token, new_password } = parseBody(selfResetPasswordSchema, req.body);
+  const row = queryOne<{ user_id: number }>(
+    "SELECT user_id FROM password_resets WHERE token_hash = ? AND used = 0 AND expires_at > datetime('now')",
+    sha256(token)
+  );
+  if (!row) {
+    res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
+    return;
+  }
+  run('UPDATE users SET password_hash = ? WHERE id = ?', bcrypt.hashSync(new_password, 10), row.user_id);
+  run('UPDATE password_resets SET used = 1 WHERE token_hash = ?', sha256(token));
+  run('DELETE FROM sessions WHERE user_id = ?', row.user_id); // force re-login everywhere
   res.json({ ok: true });
 });
 

@@ -224,8 +224,9 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    `/api/signup`) + Phase 3 (per-tenant upload folders via `db.uploadDir()`,
    `schema_version` short-circuit, `npm run migrate:all`) + BYO per-tenant AI key
    (`src/ai-config.ts`, `GET/PUT /api/ai/config`, AI Assistant → AI settings) done
-   2026-08-29. Then `users.email` + password reset, plans/quotas/lifecycle, custom
-   domains.*
+   2026-08-29. + Phase 5 `users.email` + self-serve password reset (forgot/reset flow,
+   1 h emailed link) done 2026-08-29. Then plans/quotas/lifecycle, custom domains,
+   per-tenant backups job.*
 4. **Manufacturing hardening** (Pillar 3): multi-level BOM, per-unit cost roll-up,
    basic scheduling. Turns "nice demo" into "runs our shop."
 5. **Purchasing depth** (Pillar 8): PO → goods receipt → match; supplier records.

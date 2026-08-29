@@ -54,7 +54,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -145,12 +145,22 @@ function createSchema(): void {
       id                   INTEGER PRIMARY KEY AUTOINCREMENT,
       username             TEXT NOT NULL UNIQUE,
       full_name            TEXT NOT NULL,
+      email                TEXT,
       password_hash        TEXT NOT NULL,
       role                 TEXT NOT NULL DEFAULT 'admin_staff',
       department_id        INTEGER REFERENCES departments(id) ON DELETE SET NULL,
       active               INTEGER NOT NULL DEFAULT 1,
       permission_overrides TEXT NOT NULL DEFAULT '{}',
       created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- One-time password-reset tokens (hashed). See src/routes/auth.routes.ts.
+    CREATE TABLE IF NOT EXISTS password_resets (
+      token_hash TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TEXT NOT NULL,
+      used       INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
@@ -749,6 +759,10 @@ function migrate(): void {
       COMMIT;
     `);
   }
+  // Optional contact email (password reset, billing contact).
+  if (!db.prepare('PRAGMA table_info(users)').all().some((c) => (c as { name: string }).name === 'email')) {
+    db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+  }
 
   // Rebuild orders table to add 'purchase' to the type CHECK constraint.
   const ordersSchema = (db.prepare(
@@ -1339,6 +1353,7 @@ export function cleanupSessions(): void {
       // Idempotency keys are only useful for as long as a client might still be retrying;
       // a week is far more than enough for a flaky-LAN offline queue.
       db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();
+      db.prepare("DELETE FROM password_resets WHERE used = 1 OR expires_at < datetime('now')").run();
     });
   }
 }

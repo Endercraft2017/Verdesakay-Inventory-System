@@ -18,7 +18,8 @@ export type Permission =
   | 'users.manage'
   | 'hr.view' | 'hr.manage'
   | 'audit.view'
-  | 'mail.send';
+  | 'mail.send'
+  | 'announce';
 
 /** Which section a Form Builder form belongs to — drives per-section access control
     (see `forms.manage.*` permissions) and where it's organized in the nav/Data Forms.
@@ -28,13 +29,49 @@ export type FormScope = 'hr' | 'inventory' | 'admin' | 'accounting';
 export interface Department {
   id: number;
   name: string;
+  head_user_id: number | null;
   created_at: string;
+  /** Joined in by GET /api/users/departments. */
+  head_name?: string | null;
+}
+
+/** A company-wide announcement (see src/routes/announcements.routes.ts). */
+export interface Announcement {
+  id: number;
+  title: string;
+  body: string;
+  pinned: number; // 0 | 1
+  expires_at: string | null;
+  created_by: number | null;
+  created_at: string;
+  created_by_name?: string | null;
+}
+
+export type TimeCorrectionStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+/** An employee's request to fix a missed / wrong time punch. */
+export interface TimeCorrection {
+  id: number;
+  employee_id: number;
+  user_id: number | null;
+  work_date: string;
+  requested_in: string | null;
+  requested_out: string | null;
+  reason: string;
+  status: TimeCorrectionStatus;
+  decided_by: number | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  created_at: string;
+  employee_name?: string;
+  department_id?: number | null;
 }
 
 export interface UserRow {
   id: number;
   username: string;
   full_name: string;
+  email: string | null;
   password_hash: string;
   role: Role;
   department_id: number | null;
