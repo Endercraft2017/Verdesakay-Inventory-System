@@ -791,4 +791,32 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     // A month with no payrun is all zeros.
     expect(r.body.months.find((m: { month: number }) => m.month === 1)).toMatchObject({ employee_count: 0, gross_compensation: 0 });
   });
+
+  it('BIR 1604-C Alphalist: one Schedule-1 row per employee, header/cell alignment', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ALPHA', name: 'Alpha, Beta Gamma', daily_rate: 2000, tin_no: '111-222-333-000', status: 'regular' });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Alpha Cutoff', start_date: '2026-10-14', end_date: '2026-10-14' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-10-14', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Alpha Cutoff', pay_date: '2026-10-25' });
+
+    const r = await ctx.api.get('/api/hr/bir-alphalist?year=2026').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.headers.length).toBeGreaterThan(20);
+    expect(r.body.cells.every((c: unknown[]) => c.length === r.body.headers.length)).toBe(true);
+
+    const row = r.body.rows.find((x: { last_name: string }) => x.last_name === 'Alpha');
+    expect(row).toBeTruthy();
+    expect(row.first_name).toBe('Beta');
+    expect(row.middle_name).toBe('Gamma');
+    expect(row.tin).toBe('111-222-333-000');
+    expect(row.status).toBe('R');
+    expect(row.nt_total).toBe(Math.round((row.nt_13th_month + row.nt_de_minimis + row.nt_statutory + row.nt_salaries_250k_below) * 100) / 100);
+    expect(row.seq).toBe(r.body.rows.indexOf(row) + 1);
+  });
 });

@@ -31,6 +31,10 @@ import { resolveImport, importLoop } from '../csv-import';
 import { listPayrollTables, effectiveTables, upsertPayrollTable, deletePayrollTable } from '../payroll-tables';
 import { statutoryDeductions, taxableCompensation, withholdingTax } from '../ph-statutory';
 import { compute2316, type PayslipYearRow, type Bir2316Options } from '../ph-2316';
+import {
+  alphalistScheduleRow, alphalistRowCells, ALPHALIST_SCHEDULE1_HEADERS,
+  splitName, statusCode, separationCode,
+} from '../ph-alphalist';
 
 const EMP_CSV_COLUMNS = [
   'employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate',
@@ -413,6 +417,45 @@ router.get('/bir-2316', requirePermission('hr.view'), (req, res) => {
     })
     .sort((a, b) => a.employee_name.localeCompare(b.employee_name));
   res.json({ year, company: companyProfile(), rows });
+});
+
+// GET /api/hr/bir-alphalist?year= — BIR 1604-C Alphalist, Schedule 1 (employees), in the
+// BIR's published column order. Emits CSV-ready rows; DAT conversion + validation is done
+// with BIR's ADES tool (see docs/PH-PAYROLL-COMPLIANCE.md §3b). Schedule 2 (MWE) omitted.
+router.get('/bir-alphalist', requirePermission('hr.view'), (req, res) => {
+  const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
+  const opts = optsFromQuery(req.query as Record<string, unknown>);
+  const rwt = effectiveTables(`${year}-12-31`).rwt;
+  const byEmp = yearPayslipRowsByEmployee(year);
+
+  const rows = [...byEmp.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, list], i) => {
+      const e = queryOne<{ tin_no: string | null; status: string | null; start_date: string | null }>(
+        'SELECT tin_no, status, start_date FROM employees WHERE name = ? COLLATE NOCASE', name
+      );
+      const nm = splitName(name);
+      const figures = compute2316(list, rwt, year, opts);
+      return alphalistScheduleRow(i + 1, {
+        ...nm,
+        tin: e?.tin_no ?? '',
+        status_code: statusCode(e?.status),
+        separation_code: separationCode(e?.status),
+        period_from: '01/01',
+        period_to: '12/31',
+        nationality: '',
+      }, figures);
+    });
+
+  res.json({
+    year,
+    headers: ALPHALIST_SCHEDULE1_HEADERS,
+    rows,
+    cells: rows.map(alphalistRowCells),
+    note: 'BIR 1604-C Alphalist — Schedule 1. Complete de-minimis / allowances / previous-employer '
+      + 'columns, then convert to a .DAT with BIR\'s Alphalist Data Entry & Validation Module and clear '
+      + 'every error before submitting. Schedule 2 (minimum-wage earners) is not generated.',
+  });
 });
 
 // GET /api/hr/bir-2316/:employeeId?year= — one employee's full 2316 figures + 201 data

@@ -21,7 +21,8 @@ async function renderList(view) {
     <div class="topbar">
       <h2>Time Keeping</h2>
       <div class="grow"></div>
-      <button class="btn secondary" id="tk-1601c">${UI.icon('sheet')} 1601-C</button>
+      <button class="btn secondary" id="tk-alphalist">${UI.icon('sheet')} Alphalist</button>
+      <button class="btn secondary" id="tk-1601c" style="margin-left:8px">${UI.icon('sheet')} 1601-C</button>
       <button class="btn secondary" id="tk-2316" style="margin-left:8px">${UI.icon('sheet')} BIR 2316</button>
       <button class="btn secondary" id="tk-13th" style="margin-left:8px">${UI.icon('sheet')} 13th-Month</button>
       <button class="btn secondary" id="tk-policy" style="margin-left:8px">${UI.icon('settings')} Policy Settings</button>
@@ -33,6 +34,7 @@ async function renderList(view) {
   view.querySelector('#tk-13th').addEventListener('click', () => thirteenthMonthModal());
   view.querySelector('#tk-2316').addEventListener('click', () => bir2316Modal());
   view.querySelector('#tk-1601c').addEventListener('click', () => bir1601cModal());
+  view.querySelector('#tk-alphalist').addEventListener('click', () => birAlphalistModal());
 
   const tableEl = view.querySelector('#tk-table');
 
@@ -331,6 +333,63 @@ async function thirteenthMonthModal() {
     },
   });
   return m;
+}
+
+/* ── BIR 1604-C Alphalist (Schedule 1 — Alphalist of Employees) ───────────── */
+async function birAlphalistModal() {
+  const thisYear = new Date().getFullYear();
+  const peso = (n) => (UI.money ? UI.money(n) : Number(n || 0).toFixed(2));
+
+  UI.modal({
+    title: 'BIR 1604-C Alphalist (Schedule 1)',
+    size: 'lg',
+    cancelText: 'Close',
+    bodyHTML: `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <label style="margin:0">Year</label>
+        <select id="al-year">${[thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
+        <div class="grow"></div>
+        <button type="button" class="btn secondary small" id="al-csv">${UI.icon('download', 14)} Export CSV (BIR layout)</button>
+      </div>
+      <div id="al-note" class="muted" style="font-size:12px;margin-top:0"></div>
+      <div id="al-body"><div class="empty">Loading…</div></div>`,
+    onOpen: (ov) => {
+      const yearSel = ov.querySelector('#al-year');
+      let state = { headers: [], rows: [], cells: [], note: '', year: '' };
+
+      async function load() {
+        ov.querySelector('#al-body').innerHTML = '<div class="empty">Loading…</div>';
+        state = await API.get('/hr/bir-alphalist?year=' + yearSel.value).catch(() => ({ headers: [], rows: [], cells: [], note: '', year: yearSel.value }));
+        ov.querySelector('#al-note').textContent = state.note || '';
+        const b = ov.querySelector('#al-body');
+        if (!state.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
+        b.innerHTML = `<p class="muted" style="font-size:12px">${state.rows.length} employee(s). The CSV has all
+            ${state.headers.length} BIR Schedule-1 columns — this is a summary preview.</p>
+          <div style="overflow:auto"><table class="line-table"><thead><tr>
+            <th>#</th><th>Name</th><th>TIN</th><th class="right">Gross</th><th class="right">Non-taxable</th>
+            <th class="right">Taxable</th><th class="right">Tax due</th><th class="right">Withheld (adj.)</th><th>Subst.</th>
+          </tr></thead><tbody>${state.rows.map((r) => `
+            <tr>
+              <td>${r.seq}</td>
+              <td>${UI.esc([r.last_name, r.first_name, r.middle_name].filter(Boolean).join(', '))}</td>
+              <td>${UI.esc(r.tin || '—')}</td>
+              <td class="right">${peso(r.gross_compensation)}</td>
+              <td class="right">${peso(r.nt_total)}</td>
+              <td class="right">${peso(r.total_taxable_present_prev)}</td>
+              <td class="right">${peso(r.tax_due)}</td>
+              <td class="right">${peso(r.tax_withheld_adjusted)}</td>
+              <td>${r.substituted_filing}</td>
+            </tr>`).join('')}</tbody></table></div>`;
+      }
+
+      yearSel.addEventListener('change', load);
+      ov.querySelector('#al-csv').onclick = () => {
+        if (!state.cells.length) { UI.toast('Nothing to export', 'error'); return; }
+        UI.downloadCsv(`bir-1604c-alphalist-schedule1-${state.year}.csv`, state.headers, state.cells);
+      };
+      load();
+    },
+  });
 }
 
 /* ── BIR Form 1601-C — monthly withholding-tax remittance worksheet ───────── */

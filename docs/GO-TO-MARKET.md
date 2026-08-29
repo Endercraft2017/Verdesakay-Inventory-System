@@ -208,9 +208,11 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    Policy Settings), a **13th-month worksheet** (`GET /hr/thirteenth-month`), and
    **BIR 2316** (per-employee year-end certificate — `src/ph-2316.ts`, `GET /hr/bir-2316`,
    printable template, Time Keeping → BIR 2316), and a **BIR 1601-C monthly worksheet**
-   (`GET /hr/bir-1601c`). Government agencies have **no filing APIs** — we generate the
-   upload files, customer submits via the portals (PH-PAYROLL-COMPLIANCE §3b). Next:
-   final-pay worksheet, then 1604-C + Alphalist `.DAT`.*
+   (`GET /hr/bir-1601c`), and the **1604-C Alphalist Schedule-1** CSV in the BIR column
+   order (`src/ph-alphalist.ts`, `GET /hr/bir-alphalist`; the `.DAT` conversion isn't a
+   public spec, so customer runs BIR's validation tool). Government agencies have **no
+   filing APIs** — we generate the upload files (PH-PAYROLL-COMPLIANCE §3b). Next:
+   final-pay worksheet + the 1604-C return face; then agency schedules (SSS R-3 etc.).*
 2. **Data import tools (CSV) for items, stock, BOMs, employees, opening balances.**
    Onboarding is impossible without this; it's also billable services. Blocks *every*
    deal. — *Items, suppliers, employees done 2026-08-29 (export + import, upsert by

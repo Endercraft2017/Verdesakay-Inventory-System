@@ -174,10 +174,17 @@ tracking first).
   from the payslips (by pay-date month) + year totals. Time Keeping → 1601-C (table +
   CSV). Non-taxable = statutory EE shares only (13th-month isn't a payslip line — noted
   in the UI + guide). `tests/hr.test.ts` endpoint case.
-- **1604-C + Alphalist:** annual reconciliation (Σ 1601-C = 1604-C) + the Alphalist
-  schedules. **Export as the `.DAT` the BIR Data Entry Module / Online Submission Portal
-  accepts** — this needs the current BIR Alphalist file spec (from the governing RMC) and
-  must be checked against the BIR's own validation module before release.
+- **1604-C + Alphalist** ✅ Schedule 1 done 2026-08-29. `src/ph-alphalist.ts`
+  `alphalistScheduleRow(seq, emp, figures)` → the BIR's published Schedule-1 column set
+  (per the "1604C Alphalist Format" annex — gross, non-taxable 7b–7f, taxable 7g–7j,
+  previous-employer, tax due, withheld, YEA, adjusted, substituted-filing). `GET
+  /api/hr/bir-alphalist?year=` → `{headers, rows, cells, note}`; Time Keeping → Alphalist
+  (summary table + **CSV in the exact BIR column order**). **The machine `.DAT` record
+  layout is NOT publicly published** (it lives in BIR's Alphalist Data Entry & Validation
+  Module) — so we emit the column-exact CSV and the customer converts + validates with
+  BIR's tool (or an Excel→DAT converter that takes this layout). Schedule 2 (MWE) not
+  generated. Tests: `tests/ph-alphalist.test.ts` + hr.test.ts endpoint case.
+  **Still to do:** the 1604-C return face itself (Σ 1601-C reconciliation summary).
 - ⚠️ Phase C depends on the **current official form version + file spec**, which change by
   RMC. Get the live spec at build time; don't hard-code last year's layout.
 

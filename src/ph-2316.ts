@@ -44,7 +44,8 @@ export interface Bir2316Figures {
 
   // Part IV-B — Non-Taxable / Exempt Compensation Income
   sss_gsis_phic_pagibig_union: number;      // Σ employee statutory shares (+ union dues if tracked)
-  thirteenth_month_and_other_benefits: number; // Σ(basic)/12, capped at the ceiling
+  thirteenth_month_raw: number;             // Σ(basic)/12 before the ceiling
+  thirteenth_month_and_other_benefits: number; // non-taxable portion (13th-month + de-minimis, capped)
   thirteenth_month_ceiling: number;
   de_minimis: number;
   total_non_taxable: number;
@@ -110,6 +111,7 @@ export function compute2316(
     year,
     payslip_count: rows.length,
     sss_gsis_phic_pagibig_union: statutory,
+    thirteenth_month_raw: thirteenthRaw,
     thirteenth_month_and_other_benefits: benefitsNonTaxable,
     thirteenth_month_ceiling: ceiling,
     de_minimis: deMinimis,

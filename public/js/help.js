@@ -164,6 +164,25 @@
         you re-generate.</p>`,
     },
     {
+      id: 'bir-alphalist', title: 'BIR 1604-C Alphalist', group: 'HR', routes: [],
+      html: `
+        <p>The <b>Alphabetical List of Employees</b> that goes with the annual
+        <b>1604-C</b> return (due Jan 31). Open it from <b>Time Keeping → Alphalist</b>.</p>
+        <ul>
+          <li>Pick the year. One row per employee, in the BIR's <b>Schedule 1</b> column
+              order.</li>
+          <li><b>Export CSV (BIR layout)</b> gives every column (gross, non-taxable
+              breakdown, taxable breakdown, tax due, tax withheld, year-end adjustment,
+              substituted-filing flag).</li>
+        </ul>
+        <p><b>Then:</b> complete the columns payroll can't fill (de-minimis, allowances,
+        any previous-employer figures), open the BIR <b>Alphalist Data Entry &amp;
+        Validation Module</b>, bring in this data (type it, or use an Excel→DAT converter
+        that takes this layout), and clear <b>every</b> validation error before you submit
+        the <code>.DAT</code>. Schedule 2 (minimum-wage earners) isn't generated — add it
+        in the module if you have MWEs.</p>`,
+    },
+    {
       id: 'bir-1601c', title: 'BIR Form 1601-C (monthly)', group: 'HR', routes: [],
       html: `
         <p>The <b>Monthly Remittance Return of Income Taxes Withheld on Compensation</b> —
