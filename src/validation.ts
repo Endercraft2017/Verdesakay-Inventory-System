@@ -81,7 +81,10 @@ export const createDepartmentSchema = z.object({
   name: trimmed.min(1, 'Department name is required').max(80),
 });
 
-export const updateDepartmentSchema = createDepartmentSchema;
+export const updateDepartmentSchema = createDepartmentSchema.extend({
+  // Absent ⇒ leave the head unchanged; '' / null ⇒ clear it; an id ⇒ set it.
+  head_user_id: optionalId.optional(),
+});
 
 export const updateProfileSchema = z.object({
   full_name: trimmed.min(1, 'Full name is required').max(120),
@@ -139,6 +142,15 @@ export const updateItemSchema = z.object({
 export const csvImportSchema = z.object({
   csv: z.string().min(1, 'A CSV body is required').max(5_000_000, 'CSV is too large (5 MB max)'),
   dry_run: boolish.optional(),
+});
+
+/** POST /api/signup — create a new tenant workspace (self-serve, gated by SIGNUPS_OPEN). */
+export const signupSchema = z.object({
+  company_name: trimmed.min(1, 'Company name is required').max(120),
+  slug: trimmed.toLowerCase().regex(/^[a-z][a-z0-9-]{1,30}$/, 'Workspace name: a letter then letters/numbers/hyphens, 2–31 chars'),
+  admin_username: trimmed.toLowerCase().regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
+  admin_password: z.string().min(6, 'Password must be at least 6 characters'),
+  admin_email: z.union([z.literal(''), z.string().trim().email()]).optional(),
 });
 /** @deprecated alias — use csvImportSchema. */
 export const importInventorySchema = csvImportSchema;
@@ -584,4 +596,38 @@ export const kioskPunchSchema = z.object({
   code: z.string().trim().length(10, 'The office code has changed — the screen shows a fresh one'),
   employee_no: trimmed.min(1, 'Employee number is required').max(40),
   name: trimmed.min(1, 'Name is required').max(160),
+});
+
+// ---- Announcements ----
+export const announcementSchema = z.object({
+  title: trimmed.min(1, 'Title is required').max(160),
+  body: trimmed.min(1, 'Announcement body is required').max(5000),
+  pinned: boolish.default(false),
+  expires_at: trimmed.max(40).optional().nullable(),
+  /** POST only: also send a web-push to everyone. */
+  notify: boolish.default(false),
+});
+export const updateAnnouncementSchema = announcementSchema;
+
+// ---- Attendance corrections ----
+const clockTime = z.preprocess(
+  (v) => (v === '' || v === undefined ? null : v),
+  z.union([trimmed.regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Time must be HH:MM, 24-hour'), z.null()])
+);
+
+export const timeCorrectionSchema = z
+  .object({
+    work_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'work_date must be YYYY-MM-DD'),
+    requested_in: clockTime,
+    requested_out: clockTime,
+    reason: trimmed.min(3, 'A short reason is required').max(1000),
+  })
+  .refine((v) => v.requested_in || v.requested_out, {
+    message: 'Enter at least a time-in or a time-out',
+    path: ['requested_in'],
+  });
+
+export const approvalDecisionSchema = z.object({
+  decision: z.enum(['approved', 'rejected']),
+  note: trimmed.max(1000).optional().nullable(),
 });

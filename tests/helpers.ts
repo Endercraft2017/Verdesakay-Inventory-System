@@ -20,12 +20,16 @@ export interface TestContext {
 
 export async function setupApp(): Promise<TestContext> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-test-'));
-  process.env.DB_PATH = path.join(tmpDir, 'test.db');
+  process.env.DB_PATH = path.join(tmpDir, 'test.db');           // the `default` tenant DB
   process.env.UPLOAD_DIR = path.join(tmpDir, 'uploads');
+  process.env.DATA_DIR = path.join(tmpDir, 'data');             // non-default tenant DBs
+  process.env.PLATFORM_DB_PATH = path.join(tmpDir, 'platform.db'); // the SaaS control plane
   delete process.env.ADMIN_PASSWORD;
 
   const db = await import('../src/db');
   db.init();
+  const platform = await import('../src/platform');
+  platform._resetPlatformDb(); // drop any cached handle from a previous test file
   const { createApp } = await import('../src/app');
   const app = createApp();
   return { app, api: supertest(app), tmpDir };

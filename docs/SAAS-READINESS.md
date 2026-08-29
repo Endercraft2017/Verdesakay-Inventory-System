@@ -1,8 +1,10 @@
 # SaaS / Multi-Tenancy Readiness — Schema Sweep
 
-> **Status:** Phase 1 (§10 step 1) landed 2026-08-28 — connection registry + async
-> context are in, single-tenant behaves exactly as before. Steps 2+ not started.
-> **Last updated:** 2026-08-28
+> **Status:** Phases 1–2 landed (§10). Connection registry + async context (2026-08-28),
+> then the `platform.db` catalog + tenant-resolution middleware + provisioning CLI +
+> `/api/signup` (2026-08-29). Single-tenant / self-hosted still behaves exactly as before
+> (the `default` tenant needs no catalog row). Steps 3+ not started.
+> **Last updated:** 2026-08-29
 > **Question asked:** "Can this be a SaaS (many companies on one deployment)?"
 
 **Short answer:** yes, and the current design is closer than it looks — *because* it's
@@ -239,10 +241,14 @@ None of this exists yet; all enforceable cheaply per-tenant because the data is 
 
 ## 10. Suggested phasing
 
-1. ~~**Connection registry + async context** (§2). No behaviour change — single-tenant
-   still works, it's just "tenant `default`".~~ ✅ **done 2026-08-28.**
-2. **Tenant resolution middleware + `platform.db` with `tenants`** (§6, §8). Subdomain
-   only to start. ← next — **researched approach in §11**
+1. ~~**Connection registry + async context** (§2).~~ ✅ **done 2026-08-28.**
+2. ~~**Tenant resolution middleware + `platform.db` with `tenants`** (§6, §8).~~ ✅ **done
+   2026-08-29** — `src/platform.ts` (`platform.db`: `tenants` + `provisioning_log`,
+   `resolveTenantSlug`, catalog helpers), `src/provisioning.ts` (`createTenant` /
+   `suspend` / `resume` / `purge`), the resolver middleware in `src/app.ts` (sub-domain,
+   or `X-Tenant`/`?tenant` in non-prod; `default` needs no row; unknown → 404, suspended
+   → 403), `scripts/tenant.ts` (`npm run tenant:create|list|status|purge`), and
+   `POST /api/signup` gated by `SIGNUPS_OPEN`. Tests: `tests/multitenancy.test.ts`.
 3. **Provisioning / de-provisioning commands** (§7) + per-tenant upload folders (§5).
 4. **BYO AI key** mirroring mail (§6). Small, high value.
 5. **`users.email` + password reset** (§3).

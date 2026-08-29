@@ -24,9 +24,15 @@ import aiRoutes from './routes/ai.routes';
 import hrRoutes from './routes/hr.routes';
 import activityRoutes from './routes/activity.routes';
 import mailRoutes from './routes/mail.routes';
+import pushRoutes from './routes/push.routes';
+import clockRoutes from './routes/clock.routes';
+import meRoutes from './routes/me.routes';
+import announcementsRoutes from './routes/announcements.routes';
+import signupRoutes from './routes/signup.routes';
 import { recordActivity } from './activity';
 import { idempotency } from './idempotency';
 import { tenantStore, getDb, DEFAULT_TENANT } from './db';
+import { resolveTenantSlug, getTenant } from './platform';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -40,13 +46,28 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // Resolve the tenant and pin its DB connection for the rest of the request
-  // (see src/db.ts + docs/SAAS-READINESS.md). Single-tenant today, so this is
-  // always the default; host/subdomain resolution slots in here later. Must run
-  // before anything that touches the DB — the request logger's activity write,
-  // the idempotency store, and every route.
-  app.use((req, _res, next) => {
-    const slug = DEFAULT_TENANT;
+  // Resolve the tenant from the request (sub-domain, or X-Tenant / ?tenant in non-prod)
+  // and pin its DB connection for the rest of the request (see src/platform.ts + src/db.ts
+  // + docs/SAAS-READINESS.md). Must run before anything that touches the DB — the request
+  // logger's activity write, the idempotency store, and every route. The `default` tenant
+  // resolves with no catalog row, so single-tenant / self-hosted installs are unaffected.
+  app.use((req, res, next) => {
+    const slug = resolveTenantSlug(
+      req.headers.host,
+      req.get('x-tenant'),
+      typeof req.query.tenant === 'string' ? req.query.tenant : undefined
+    );
+    if (slug !== DEFAULT_TENANT) {
+      const tenant = getTenant(slug);
+      if (!tenant) {
+        res.status(404).json({ error: 'Unknown workspace.' });
+        return;
+      }
+      if (tenant.status === 'suspended' || tenant.status === 'purged') {
+        res.status(403).json({ error: 'This workspace is not active. Please contact your administrator.' });
+        return;
+      }
+    }
     tenantStore.run({ db: getDb(slug), slug }, () => next());
   });
 
@@ -86,6 +107,7 @@ export function createApp() {
 
   app.use('/api/auth/login', loginLimiter);
   app.use('/api/auth', authRoutes);
+  app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
   app.use('/api/users', usersRoutes);
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/suppliers', suppliersRoutes);
@@ -99,9 +121,13 @@ export function createApp() {
   app.use('/api/templates', templatesRoutes);
   app.use('/api', formBuilderRoutes);
   app.use('/api/ai', aiRoutes);
+  app.use('/api/hr/clock', clockRoutes);
   app.use('/api/hr', hrRoutes);
+  app.use('/api/me', meRoutes);
+  app.use('/api/announcements', announcementsRoutes);
   app.use('/api/activity', activityRoutes);
   app.use('/api/mail', mailRoutes);
+  app.use('/api/push', pushRoutes);
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
   });
