@@ -284,6 +284,7 @@ App.register('inventory', async (view, filter) => {
         <input type="checkbox" id="inv-damaged" style="width:auto" ${state.include_damaged ? 'checked' : ''} /> Show damaged</label>
       <button class="btn secondary" id="inv-import" title="Create or update items from a CSV file">${UI.icon('upload')} Import</button>
       <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
+      <button class="btn secondary" id="inv-labels" title="Print barcode labels for the current list">${UI.icon('printer')} Labels</button>
       <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
     </div>
     <div class="panel"><div id="inv-table"></div></div>`;
@@ -358,6 +359,102 @@ App.register('inventory', async (view, filter) => {
         ['Cutting Disc 4in', 'CD-4', 'Consumables', '', '', 'pcs', '24', '0', '', 'No opening stock yet — will receive later'],
       ],
       onDone: () => load(),
+    });
+  }
+
+  /* ---------- Barcode label printing (Code 128, dependency-free) ---------- */
+  // What a label encodes: the item's own `attributes.barcode` if set, else its SKU.
+  const labelCode = (i) => (i.attributes && String(i.attributes.barcode || '').trim()) || (i.sku || '').trim();
+
+  const LABEL_SIZES = {
+    small: { w: 38, h: 22, mod: 0.26, bh: 34, fs: 7 },
+    medium: { w: 52, h: 30, mod: 0.33, bh: 48, fs: 8 },
+    large: { w: 70, h: 38, mod: 0.42, bh: 60, fs: 9 },
+  };
+
+  /** Open a print-sheet window of Code 128 labels for `items`. */
+  function printLabelSheet(items, opts) {
+    opts = opts || {};
+    if (!window.Barcode) { UI.toast('Barcode generator failed to load — reload the page', 'error'); return false; }
+    const list = items.filter((i) => labelCode(i));
+    if (!list.length) { UI.toast('No SKU or barcode to print', 'error'); return false; }
+    const copies = Math.max(1, opts.copies || 1);
+    const withName = opts.withName !== false;
+    const sz = LABEL_SIZES[opts.size] || LABEL_SIZES.medium;
+
+    const cells = [];
+    list.forEach((i) => {
+      const svg = window.Barcode.code128svg(labelCode(i), {
+        height: sz.bh, moduleWidth: sz.mod, margin: 6, showText: true, textHeight: sz.fs + 4,
+      });
+      const cell = `<div class="lbl">${withName ? `<div class="lbl-name">${UI.esc(i.name)}</div>` : ''}<div class="lbl-bc">${svg}</div></div>`;
+      for (let c = 0; c < copies; c++) cells.push(cell);
+    });
+
+    const w = window.open('', '_blank');
+    if (!w) { UI.toast('Allow pop-ups to open the print sheet', 'error'); return false; }
+    w.document.write(`<!doctype html><html><head><title>Barcode labels</title><style>
+      *{box-sizing:border-box} body{margin:0;font-family:system-ui,Arial,sans-serif}
+      .sheet{display:flex;flex-wrap:wrap;gap:3mm;padding:5mm}
+      .lbl{width:${sz.w}mm;height:${sz.h}mm;border:1px solid #ddd;border-radius:1.5mm;padding:1.5mm;
+           display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1mm;page-break-inside:avoid}
+      .lbl-name{font-size:${sz.fs}pt;font-weight:700;text-align:center;line-height:1.1;
+                max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .lbl-bc{width:100%;flex:1;display:flex;align-items:center;justify-content:center}
+      .lbl-bc svg{max-width:100%;max-height:100%}
+      @media print{.lbl{border-color:#999}}
+    </style></head><body><div class="sheet">${cells.join('')}</div>
+    <script>window.onload=function(){window.print()}<\/script></body></html>`);
+    w.document.close();
+    UI.toast(`${cells.length} label${cells.length === 1 ? '' : 's'} ready`);
+    return true;
+  }
+
+  function barcodeLabelsModal() {
+    const printable = lastItems.filter((i) => labelCode(i));
+    const skipped = lastItems.length - printable.length;
+    if (!printable.length) {
+      UI.toast('No items in the list have a SKU or barcode to print', 'error');
+      return;
+    }
+    UI.modal({
+      title: 'Print barcode labels',
+      size: 'lg',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">${printable.length} item${printable.length === 1 ? '' : 's'} in the current list have a code.${skipped ? ` ${skipped} without a SKU/barcode will be skipped.` : ''} Each label is a Code 128 barcode that this system's scanner reads back.</p>
+        <div class="field-row">
+          <div><label>Label size</label><select data-f="size">
+            <option value="small">Small — 38 × 22 mm</option>
+            <option value="medium" selected>Medium — 52 × 30 mm</option>
+            <option value="large">Large — 70 × 38 mm</option>
+          </select></div>
+          <div><label>Copies per item</label><input data-f="copies" type="number" min="1" value="1" style="width:90px" /></div>
+          <div><label>Show name</label><select data-f="name"><option value="1" selected>Yes</option><option value="0">No</option></select></div>
+        </div>
+        <h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Items <button type="button" class="btn secondary small" id="lbl-all" style="margin-left:8px">Toggle all</button></h4>
+        <div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+          <table><tbody>${printable.map((i, n) => `
+            <tr><td style="width:34px"><input type="checkbox" class="lbl-pick" value="${n}" checked /></td>
+            <td>${UI.esc(i.name)}<div class="muted mono">${UI.esc(labelCode(i))}</div></td>
+            <td class="right muted">${i.quantity} ${UI.esc(i.unit || '')}</td></tr>`).join('')}</tbody></table>
+        </div>`,
+      confirmText: 'Open print sheet',
+      onOpen: (ov) => {
+        ov.querySelector('#lbl-all').onclick = () => {
+          const boxes = [...ov.querySelectorAll('.lbl-pick')];
+          const target = !boxes.every((b) => b.checked);
+          boxes.forEach((b) => { b.checked = target; });
+        };
+      },
+      onConfirm: (ov, showErr) => {
+        const picked = [...ov.querySelectorAll('.lbl-pick:checked')].map((b) => printable[Number(b.value)]);
+        if (!picked.length) { showErr('Tick at least one item'); return false; }
+        return printLabelSheet(picked, {
+          copies: parseInt(ov.querySelector('[data-f="copies"]').value, 10) || 1,
+          withName: ov.querySelector('[data-f="name"]').value === '1',
+          size: ov.querySelector('[data-f="size"]').value,
+        }) !== false;
+      },
     });
   }
 
@@ -476,6 +573,10 @@ App.register('inventory', async (view, filter) => {
               <span class="badge-pill ${it.low_stock ? 'low' : 'ok'}">${it.quantity} ${e(it.unit || '')}</span>
               <span class="muted" style="font-size:12px;margin-left:6px">reorder at ${it.min_quantity}</span>
             </div>
+            ${labelCode(it) && window.Barcode ? `<div style="margin-top:10px;display:flex;align-items:center;gap:10px">
+              <div style="max-width:180px">${window.Barcode.code128svg(labelCode(it), { height: 42, moduleWidth: 1.4, margin: 4, textHeight: 13 })}</div>
+              <button type="button" class="btn secondary small" data-idt-label>${UI.icon('printer', 14)} Print label</button>
+            </div>` : ''}
           </div>
         </div>
         ${rows.length ? `<div class="kv">${rows.map(([l, v]) =>
@@ -518,6 +619,9 @@ App.register('inventory', async (view, filter) => {
         })
         .catch(() => { const el = host.querySelector('[data-idt-img]'); if (el) el.remove(); });
     }
+
+    const lblBtn = host.querySelector('[data-idt-label]');
+    if (lblBtn) lblBtn.onclick = () => printLabelSheet([it], { copies: 1, withName: true, size: 'medium' });
   }
 
   async function itemModal(it) {
@@ -797,6 +901,7 @@ App.register('inventory', async (view, filter) => {
   view.querySelector('#inv-low').addEventListener('change', (e) => { state.low = e.target.checked; load(); });
   view.querySelector('#inv-damaged').addEventListener('change', (e) => { state.include_damaged = e.target.checked; load(); });
   view.querySelector('#inv-export').addEventListener('click', exportCsv);
+  view.querySelector('#inv-labels').addEventListener('click', barcodeLabelsModal);
   view.querySelector('#inv-import').addEventListener('click', importCsv);
   view.querySelector('#inv-add').addEventListener('click', () => itemModal(null));
 

@@ -115,11 +115,16 @@ The reason a buyer can't leave, and the reason finance + HR + owner all say yes.
 
 ECOUNT's weakest flank. Demos extremely well.
 
-- **Have:** `/m` phone app, QR scanning, offline queue with idempotent sync, stock moves,
-  transfers, cycle count, order fulfilment, damage reporting (damage-twin model),
-  `inventory.mobile` permission gate.
-- **Gap (harden):** barcode (1D) support not just QR, label/barcode **printing**, bin/
-  location-level scanning, receiving against a PO on the phone, batch/serial capture at
+- **Have:** `/m` phone app, **1D + 2D scanning** (`scanner.js` — native `BarcodeDetector`
+  for code_128/ean/upc/qr/…, ZXing fallback, manual entry), offline queue with idempotent
+  sync, stock moves, transfers, cycle count, order fulfilment (receive PR / pick SO-JO),
+  ship/move finished units, damage reporting (damage-twin model), `inventory.mobile` gate.
+- **Added 2026-08-29:** **barcode-label printing** — dependency-free Code 128 generator
+  (`public/js/lib/barcode.js`) + a batch/per-item label print sheet on the desktop
+  Inventory screen (`printLabelSheet()`), scannable by the phone app.
+- **Gap (harden):** **route the phone "Receive PR" through the new `/api/purchasing`
+  GRN + 3-way-match flow** (it currently posts a raw `/inventory/:id/adjust`, bypassing
+  goods_receipts + the match), bin/location-level scanning, batch/serial capture at
   scan time, spotty-connection stress testing.
 - **Selling line:** "Your stockroom runs off a ₱6,000 Android phone, online or not."
 
@@ -244,7 +249,11 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    `src/purchasing-match.ts`, `/api/purchasing/*`, Inventory → Purchasing)*. Still to do:
    PO approval workflow, landed cost, partial-invoice AP aging report.
 6. **Accounting integration** (see §7) — decide partner-vs-build now; it shapes the pitch.
-7. **Mobile hardening** (Pillar 2): 1D barcodes, label printing, receive-against-PO.
+7. **Mobile hardening** (Pillar 2): ~~1D barcodes~~ *(already in `scanner.js`)*, ~~label
+   printing~~ *(shipped 2026-08-29 — Code 128, `public/js/lib/barcode.js` + Inventory →
+   Labels)*. Still to do: **route the phone "Receive PR" through `/api/purchasing`** so
+   phone receipts create a GRN and feed the 3-way match (today it's a raw stock adjust);
+   bin-level scanning; batch/serial capture at scan.
 8. **Reporting & dashboards** beyond the AI: ~~fixed operational dashboards (stock value,
    production throughput, payroll cost, aging)~~ *(shipped 2026-08-29 — Home → Reports,
    `GET /api/analytics/overview`: inventory value / dead stock, production throughput +

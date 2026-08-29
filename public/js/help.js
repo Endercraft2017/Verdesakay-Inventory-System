@@ -59,6 +59,12 @@
           <li><b>Low Stock</b> filter — everything at or below its reorder level.</li>
           <li><b>Import / Export</b> — bulk-load or update items from a spreadsheet
               (see the <i>Bulk import & export</i> topic).</li>
+          <li><b>Labels</b> — print <b>Code 128 barcode labels</b> for the items in the
+              current list. Each label encodes the item's <b>Barcode</b> field if it has
+              one, otherwise its <b>SKU</b>; items with neither are skipped. Pick a label
+              size and copies, tick which items, then <b>Open print sheet</b>. A single
+              item's detail view also has a <b>Print label</b> button. The labels scan
+              back with this system's phone scanner.</li>
         </ul>
         <p><b>Damage:</b> reporting damaged units moves them into a separate "damage"
         record so they leave sellable stock without vanishing from the books.</p>`,
