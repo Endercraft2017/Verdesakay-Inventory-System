@@ -728,4 +728,40 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const other = await ctx.api.get('/api/hr/thirteenth-month?year=2025').set(hdr());
     expect(other.body.rows.find((x: { employee_name: string }) => x.employee_name === '13th Month Employee')).toBeUndefined();
   });
+
+  it('BIR 2316: year-end figures per employee from the generated payslips', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-2316', name: '2316 Employee', daily_rate: 1000, tin_no: '123-456-789-000' });
+
+    for (const [i, [payDate, workDate]] of [['2026-06-15', '2026-06-14'], ['2026-07-15', '2026-07-14']].entries()) {
+      const period = await ctx.api.post('/api/hr/periods').set(hdr())
+        .send({ label: `2316 P${i}`, start_date: workDate, end_date: workDate });
+      await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+      await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+        employee_id: emp.body.id,
+        days: [{ work_date: workDate, time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+      });
+      await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+        .send({ payroll_period: `2316 P${i}`, pay_date: payDate });
+    }
+
+    const one = await ctx.api.get(`/api/hr/bir-2316/${emp.body.id}?year=2026`).set(hdr());
+    expect(one.status).toBe(200);
+    expect(one.body.employee.name).toBe('2316 Employee');
+    expect(one.body.employee.tin_no).toBe('123-456-789-000');
+    const f = one.body.figures;
+    expect(f.payslip_count).toBe(2);
+    expect(f.basic_salary).toBe(2000);                       // 1000/day * 1 day * 2
+    expect(f.thirteenth_month_and_other_benefits).toBe(166.67); // 2000 / 12
+    expect(f.gross_compensation).toBe(2166.67);              // earnings 2000 + 13th month
+    expect(f.sss_gsis_phic_pagibig_union).toBeGreaterThan(0);
+    expect(f.taxable_compensation_present).toBe(0);          // tiny sample: statutory > gross
+    expect(f.tax_due).toBe(0);                               // well under the 250k exemption
+    expect(f.total_tax_withheld).toBe(f.tax_withheld_present);
+
+    const list = await ctx.api.get('/api/hr/bir-2316?year=2026').set(hdr());
+    expect(list.body.rows.some((r: { employee_name: string }) => r.employee_name === '2316 Employee')).toBe(true);
+
+    expect((await ctx.api.get('/api/hr/bir-2316/99999?year=2026').set(hdr())).status).toBe(404);
+  });
 });

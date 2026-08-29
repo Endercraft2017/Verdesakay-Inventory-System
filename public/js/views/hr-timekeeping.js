@@ -21,7 +21,8 @@ async function renderList(view) {
     <div class="topbar">
       <h2>Time Keeping</h2>
       <div class="grow"></div>
-      <button class="btn secondary" id="tk-13th">${UI.icon('sheet')} 13th-Month</button>
+      <button class="btn secondary" id="tk-2316">${UI.icon('sheet')} BIR 2316</button>
+      <button class="btn secondary" id="tk-13th" style="margin-left:8px">${UI.icon('sheet')} 13th-Month</button>
       <button class="btn secondary" id="tk-policy" style="margin-left:8px">${UI.icon('settings')} Policy Settings</button>
       <button class="btn" id="tk-new" style="margin-left:8px">${UI.icon('plus')} New Cutoff</button>
     </div>
@@ -29,6 +30,7 @@ async function renderList(view) {
 
   view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
   view.querySelector('#tk-13th').addEventListener('click', () => thirteenthMonthModal());
+  view.querySelector('#tk-2316').addEventListener('click', () => bir2316Modal());
 
   const tableEl = view.querySelector('#tk-table');
 
@@ -327,6 +329,97 @@ async function thirteenthMonthModal() {
     },
   });
   return m;
+}
+
+/* ── BIR Form 2316 (Certificate of Compensation Payment / Tax Withheld) ────── */
+async function bir2316Modal() {
+  const thisYear = new Date().getFullYear();
+  const peso = (n) => (UI.money ? UI.money(n) : Number(n || 0).toFixed(2));
+
+  UI.modal({
+    title: 'BIR Form 2316',
+    size: 'lg',
+    cancelText: 'Close',
+    bodyHTML: `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <label style="margin:0">Year</label>
+        <select id="b16-year">${[thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
+        <div class="grow"></div>
+        <button type="button" class="btn secondary small" id="b16-csv">${UI.icon('download', 14)} Export CSV</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:0">Year-end Certificate of Compensation Payment / Tax Withheld,
+        computed from the payslips generated for the year + the annual tax table. <b>Worksheet only</b> — de-minimis,
+        allowances and previous-employer amounts aren't tracked in payroll; complete and validate against the official
+        BIR form before issuing.</p>
+      <div id="b16-body"><div class="empty">Loading…</div></div>`,
+    onOpen: (ov) => {
+      const yearSel = ov.querySelector('#b16-year');
+      let state = { rows: [], company: {}, year: '' };
+      let templates = [];
+
+      async function load() {
+        ov.querySelector('#b16-body').innerHTML = '<div class="empty">Loading…</div>';
+        [state, templates] = await Promise.all([
+          API.get('/hr/bir-2316?year=' + yearSel.value).catch(() => ({ rows: [], company: {}, year: yearSel.value })),
+          templates.length ? Promise.resolve(templates) : API.get('/templates').catch(() => []),
+        ]);
+        const b = ov.querySelector('#b16-body');
+        if (!state.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
+        b.innerHTML = `<table class="line-table"><thead><tr>
+            <th>Employee</th><th class="right">Gross comp.</th><th class="right">Taxable</th>
+            <th class="right">Tax due</th><th class="right">Withheld</th><th class="right">Over / (under)</th><th></th>
+          </tr></thead><tbody>${state.rows.map((r, i) => `
+            <tr>
+              <td>${UI.esc(r.employee_name)}</td>
+              <td class="right">${peso(r.figures.gross_compensation)}</td>
+              <td class="right">${peso(r.figures.gross_taxable_compensation)}</td>
+              <td class="right">${peso(r.figures.tax_due)}</td>
+              <td class="right">${peso(r.figures.total_tax_withheld)}</td>
+              <td class="right">${peso(r.figures.over_withheld)}</td>
+              <td class="right"><button type="button" class="btn secondary small" data-print="${i}" ${r.employee_id ? '' : 'disabled title="No matching employee record"'}>${UI.icon('printer', 13)} Print</button></td>
+            </tr>`).join('')}</tbody></table>`;
+
+        b.querySelectorAll('[data-print]').forEach((btn) => btn.onclick = () => printOne(state.rows[Number(btn.dataset.print)]));
+      }
+
+      async function printOne(row) {
+        try {
+          const detail = await API.get(`/hr/bir-2316/${row.employee_id}?year=${yearSel.value}`);
+          const meta = templates.find((t) => t.name === 'BIR 2316');
+          if (!meta) { UI.toast('BIR 2316 template not found (Documents → Templates)', 'error'); return; }
+          const tplBody = (await API.get('/templates/' + meta.id)).body;
+          const g = detail.figures;
+          const f = {};
+          Object.keys(g).forEach((k) => { f[k] = typeof g[k] === 'number' ? peso(g[k]) : g[k]; });
+          f.payslip_count = g.payslip_count;
+          f.thirteenth_month_ceiling = peso(g.thirteenth_month_ceiling);
+          f.over_withheld_label = g.over_withheld >= 0 ? 'OVER-WITHHELD (refund to employee)' : 'TAX STILL DUE FROM EMPLOYEE';
+          f.over_withheld_abs = peso(Math.abs(g.over_withheld));
+          const ctx = { company: detail.company || {}, employee: detail.employee || {}, f, year: detail.year, today: new Date().toLocaleDateString() };
+          const full = UI.printableHtml(renderTemplate(tplBody, ctx), '2316 - ' + (detail.employee.name || ''));
+          UI.modal({
+            title: `BIR 2316 — ${detail.employee.name || ''}`,
+            size: 'lg',
+            cancelText: 'Close',
+            confirmText: 'Print…',
+            bodyHTML: `<iframe id="b16-frame" style="width:100%;height:56vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+            onOpen: (o2) => { o2.querySelector('#b16-frame').srcdoc = full; },
+            onConfirm: (o2) => { const ifr = o2.querySelector('#b16-frame'); ifr.contentWindow.focus(); ifr.contentWindow.print(); return false; },
+          });
+        } catch (e) { UI.toast(e.message, 'error'); }
+      }
+
+      yearSel.addEventListener('change', load);
+      ov.querySelector('#b16-csv').onclick = () => {
+        if (!state.rows.length) { UI.toast('Nothing to export', 'error'); return; }
+        UI.downloadCsv(`bir-2316-${state.year}.csv`,
+          ['Employee', 'TIN', 'Gross compensation', 'Total non-taxable', 'Gross taxable', 'Tax due', 'Tax withheld', 'Over/(under) withheld'],
+          state.rows.map((r) => [r.employee_name, r.tin_no || '', r.figures.gross_compensation, r.figures.total_non_taxable,
+            r.figures.gross_taxable_compensation, r.figures.tax_due, r.figures.total_tax_withheld, r.figures.over_withheld]));
+      };
+      load();
+    },
+  });
 }
 
 /* ── Statutory rate tables (SSS / PhilHealth / Pag-IBIG / BIR withholding) ──── */

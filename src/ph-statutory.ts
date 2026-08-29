@@ -11,7 +11,7 @@
  * Figures & method: see docs/PH-PAYROLL-COMPLIANCE.md.
  */
 
-export type PayFrequency = 'monthly' | 'semi_monthly' | 'weekly' | 'daily';
+export type PayFrequency = 'monthly' | 'semi_monthly' | 'weekly' | 'daily' | 'annual';
 
 export interface SssParams {
   /** Employee share of the Monthly Salary Credit (0.05 in 2026). */
@@ -218,6 +218,16 @@ export const RWT_2026: RwtParams = {
     { over: 2_192, base: 280.85, rate: 0.25 },
     { over: 5_479, base: 1_102.60, rate: 0.30 },
     { over: 21_918, base: 6_034.30, rate: 0.35 },
+  ],
+  // Annual graduated income-tax table (TRAIN, 2023 onwards) — used for the BIR 2316
+  // year-end "tax due" and payroll annualisation.
+  annual: [
+    { over: 0, base: 0, rate: 0 },
+    { over: 250_000, base: 0, rate: 0.15 },
+    { over: 400_000, base: 22_500, rate: 0.20 },
+    { over: 800_000, base: 102_500, rate: 0.25 },
+    { over: 2_000_000, base: 402_500, rate: 0.30 },
+    { over: 8_000_000, base: 2_202_500, rate: 0.35 },
   ],
 };
 

@@ -205,8 +205,10 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    `src/payroll-tables.ts` (effective-date resolution), `GET/POST /hr/payroll-tables`,
    generate-payslips auto-fills the statutory + withholding-tax lines (policy toggle
    `auto_statutory`, `pay_frequency`), a **rate-tables admin screen** (Time Keeping →
-   Policy Settings), and a **13th-month worksheet** (`GET /hr/thirteenth-month`). Next:
-   final-pay worksheet, then BIR 2316 / 1601-C / 1604-C / Alphalist (Phase C).*
+   Policy Settings), a **13th-month worksheet** (`GET /hr/thirteenth-month`), and
+   **BIR 2316** (per-employee year-end certificate — `src/ph-2316.ts`, `GET /hr/bir-2316`,
+   printable template, Time Keeping → BIR 2316). Next: final-pay worksheet, then
+   BIR 1601-C / 1604-C / Alphalist.*
 2. **Data import tools (CSV) for items, stock, BOMs, employees, opening balances.**
    Onboarding is impossible without this; it's also billable services. Blocks *every*
    deal. — *Items, suppliers, employees done 2026-08-29 (export + import, upsert by

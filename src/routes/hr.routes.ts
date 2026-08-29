@@ -30,6 +30,7 @@ import { toCsv } from '../csv';
 import { resolveImport, importLoop } from '../csv-import';
 import { listPayrollTables, effectiveTables, upsertPayrollTable, deletePayrollTable } from '../payroll-tables';
 import { statutoryDeductions, taxableCompensation, withholdingTax } from '../ph-statutory';
+import { compute2316, type PayslipYearRow, type Bir2316Options } from '../ph-2316';
 
 const EMP_CSV_COLUMNS = [
   'employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate',
@@ -286,6 +287,85 @@ router.get('/thirteenth-month', requirePermission('hr.view'), (req, res) => {
     }))
     .sort((a, b) => a.employee_name.localeCompare(b.employee_name));
   res.json({ year, rows, total: round2(rows.reduce((s, r) => s + r.amount, 0)) });
+});
+
+// --- BIR Form 2316 (Certificate of Compensation Payment / Tax Withheld) ---
+// Year-end figures per employee, computed from that year's generated hr_payroll records
+// + the annual income-tax table. This is a worksheet — the payslips don't carry a
+// de-minimis / allowance / previous-employer breakdown, so those come in as query params.
+
+function yearPayslipRowsByEmployee(year: string): Map<string, PayslipYearRow[]> {
+  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
+  const out = new Map<string, PayslipYearRow[]>();
+  if (!form) return out;
+  const records = queryAll<{ data: string; created_at: string }>(
+    'SELECT data, created_at FROM form_records WHERE form_def_id = ?', form.id
+  );
+  for (const r of records) {
+    let d: Record<string, unknown>;
+    try { d = JSON.parse(r.data); } catch { continue; }
+    const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
+    if (String(payDate).slice(0, 4) !== year) continue;
+    const name = String(d.employee_name ?? '').trim();
+    if (!name) continue;
+    const list = out.get(name) ?? [];
+    list.push(d as PayslipYearRow);
+    out.set(name, list);
+  }
+  return out;
+}
+
+function optsFromQuery(q: Record<string, unknown>): Bir2316Options {
+  const n = (v: unknown): number | undefined => {
+    const x = Number(v);
+    return Number.isFinite(x) && x !== 0 ? x : undefined;
+  };
+  return {
+    de_minimis: n(q.de_minimis),
+    taxable_previous: n(q.taxable_previous),
+    tax_withheld_previous: n(q.tax_withheld_previous),
+    thirteenth_month_ceiling: n(q.thirteenth_month_ceiling),
+  };
+}
+
+function companyProfile(): Record<string, unknown> {
+  return getSetting<Record<string, unknown>>('company_profile') || {};
+}
+
+// GET /api/hr/bir-2316?year= — summary line per employee with payslips that year
+router.get('/bir-2316', requirePermission('hr.view'), (req, res) => {
+  const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
+  const opts = optsFromQuery(req.query as Record<string, unknown>);
+  const byEmp = yearPayslipRowsByEmployee(year);
+  const rwt = effectiveTables(`${year}-12-31`).rwt;
+  const rows = [...byEmp.entries()]
+    .map(([employee_name, list]) => {
+      const e = queryOne<{ id: number; tin_no: string | null; employee_no: string | null }>(
+        'SELECT id, tin_no, employee_no FROM employees WHERE name = ? COLLATE NOCASE', employee_name
+      );
+      return {
+        employee_name,
+        employee_id: e?.id ?? null,
+        tin_no: e?.tin_no ?? null,
+        figures: compute2316(list, rwt, year, opts),
+      };
+    })
+    .sort((a, b) => a.employee_name.localeCompare(b.employee_name));
+  res.json({ year, company: companyProfile(), rows });
+});
+
+// GET /api/hr/bir-2316/:employeeId?year= — one employee's full 2316 figures + 201 data
+router.get('/bir-2316/:employeeId', requirePermission('hr.view'), (req, res) => {
+  const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
+  const emp = queryOne<Employee & { department_name?: string }>(
+    `SELECT e.*, d.name AS department_name FROM employees e
+     LEFT JOIN departments d ON d.id = e.department_id WHERE e.id = ?`,
+    Number(req.params.employeeId)
+  );
+  if (!emp) { res.status(404).json({ error: 'Employee not found' }); return; }
+  const rows = yearPayslipRowsByEmployee(year).get(emp.name) ?? [];
+  const figures = compute2316(rows, effectiveTables(`${year}-12-31`).rwt, year, optsFromQuery(req.query as Record<string, unknown>));
+  res.json({ year, company: companyProfile(), employee: emp, figures });
 });
 
 // Resolves the effective daily_rate to store: the entered value for rate_type 'daily', or

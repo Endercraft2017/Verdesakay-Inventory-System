@@ -1037,6 +1037,79 @@ function seedTemplates(): void {
   if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Employee ID Card')) {
     insert.run('Employee ID Card', 'generic', employeeIdTemplateBody());
   }
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('BIR 2316')) {
+    insert.run('BIR 2316', 'generic', bir2316TemplateBody());
+  }
+}
+
+/** Printable BIR-2316-style Certificate of Compensation Payment / Tax Withheld.
+    Rendered against {company, employee, f (pre-formatted figures), year, today} — see
+    bir2316Modal() in hr-timekeeping.js. A worksheet layout, not the pixel-exact BIR form. */
+function bir2316TemplateBody(): string {
+  return `<style>
+  .f2316 { font-family: Arial, sans-serif; font-size: 11px; color: #111; max-width: 720px; margin: 0 auto; }
+  .f2316 h2 { text-align: center; font-size: 14px; margin: 0 0 2px; letter-spacing: .04em; }
+  .f2316 .sub { text-align: center; font-size: 10px; color: #555; margin-bottom: 10px; }
+  .f2316 .part { font-weight: 700; background: #eef4fb; border: 1px solid #c6d4e6; padding: 3px 6px; margin: 10px 0 4px; }
+  .f2316 .row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 4px; border-bottom: 1px dotted #ccc; }
+  .f2316 .row .l { color: #333; }
+  .f2316 .row .v { font-weight: 600; text-align: right; white-space: nowrap; }
+  .f2316 .tot { border-bottom: 2px solid #222; font-weight: 700; }
+  .f2316 .grand { display: flex; justify-content: space-between; font-size: 12px; font-weight: 800;
+    border-top: 2px solid #222; border-bottom: 2px solid #222; padding: 4px; margin-top: 6px; }
+  .f2316 .sig { display: flex; justify-content: space-between; margin-top: 26px; font-size: 10px; color: #444; }
+  .f2316 .sig div { width: 46%; border-top: 1px solid #666; padding-top: 3px; text-align: center; }
+  .f2316 .note { font-size: 9px; color: #777; margin-top: 14px; }
+</style>
+<div class="f2316">
+  <h2>CERTIFICATE OF COMPENSATION PAYMENT / TAX WITHHELD</h2>
+  <div class="sub">BIR Form 2316 &mdash; For the Year {{year}} &nbsp;&middot;&nbsp; (worksheet generated {{today}})</div>
+
+  <div class="part">Part I &mdash; Employee</div>
+  <div class="row"><span class="l">Name</span><span class="v">{{employee.name}}</span></div>
+  <div class="row"><span class="l">TIN</span><span class="v">{{employee.tin_no}}</span></div>
+  <div class="row"><span class="l">Employee No.</span><span class="v">{{employee.employee_no}}</span></div>
+  <div class="row"><span class="l">Position / Department</span><span class="v">{{employee.position}} / {{employee.department}}</span></div>
+  <div class="row"><span class="l">SSS / PhilHealth / Pag-IBIG</span><span class="v">{{employee.sss_no}} / {{employee.philhealth_no}} / {{employee.pagibig_no}}</span></div>
+
+  <div class="part">Part II &mdash; Employer</div>
+  <div class="row"><span class="l">Name</span><span class="v">{{company.name}}</span></div>
+  <div class="row"><span class="l">TIN</span><span class="v">{{company.tin}}</span></div>
+  <div class="row"><span class="l">Registered address</span><span class="v">{{company.address}}</span></div>
+
+  <div class="part">Part IV-B &mdash; Non-Taxable / Exempt Compensation Income</div>
+  <div class="row"><span class="l">SSS, PhilHealth, Pag-IBIG &amp; union dues (employee share)</span><span class="v">{{f.sss_gsis_phic_pagibig_union}}</span></div>
+  <div class="row"><span class="l">13th-month pay and other benefits (max {{f.thirteenth_month_ceiling}})</span><span class="v">{{f.thirteenth_month_and_other_benefits}}</span></div>
+  <div class="row"><span class="l">De-minimis benefits</span><span class="v">{{f.de_minimis}}</span></div>
+  <div class="row tot"><span class="l">Total Non-Taxable / Exempt Compensation Income</span><span class="v">{{f.total_non_taxable}}</span></div>
+
+  <div class="part">Part IV-B &mdash; Taxable Compensation Income (present employer)</div>
+  <div class="row"><span class="l">Basic salary</span><span class="v">{{f.basic_salary}}</span></div>
+  <div class="row"><span class="l">Overtime pay</span><span class="v">{{f.overtime_pay}}</span></div>
+  <div class="row"><span class="l">Holiday pay</span><span class="v">{{f.holiday_pay}}</span></div>
+  <div class="row"><span class="l">Night differential / rest-day / other</span><span class="v">{{f.night_diff_and_other}}</span></div>
+  <div class="row"><span class="l">Taxable 13th-month &amp; other benefits (excess over ceiling)</span><span class="v">{{f.taxable_13th_month_excess}}</span></div>
+
+  <div class="part">Part IV-A &mdash; Summary</div>
+  <div class="row"><span class="l">Gross Compensation Income (present employer)</span><span class="v">{{f.gross_compensation}}</span></div>
+  <div class="row"><span class="l">Less: Total Non-Taxable / Exempt</span><span class="v">{{f.total_non_taxable}}</span></div>
+  <div class="row"><span class="l">Taxable Compensation Income (present employer)</span><span class="v">{{f.taxable_compensation_present}}</span></div>
+  <div class="row"><span class="l">Add: Taxable Compensation (previous employer)</span><span class="v">{{f.taxable_compensation_previous}}</span></div>
+  <div class="row tot"><span class="l">Gross Taxable Compensation Income</span><span class="v">{{f.gross_taxable_compensation}}</span></div>
+  <div class="row"><span class="l">Tax Due</span><span class="v">{{f.tax_due}}</span></div>
+  <div class="row"><span class="l">Amount of Taxes Withheld &mdash; present employer</span><span class="v">{{f.tax_withheld_present}}</span></div>
+  <div class="row"><span class="l">Amount of Taxes Withheld &mdash; previous employer</span><span class="v">{{f.tax_withheld_previous}}</span></div>
+  <div class="row tot"><span class="l">Total Amount of Taxes Withheld</span><span class="v">{{f.total_tax_withheld}}</span></div>
+  <div class="grand"><span>{{f.over_withheld_label}}</span><span>{{f.over_withheld_abs}}</span></div>
+
+  <div class="sig">
+    <div>{{employee.name}}<br/><span style="font-size:9px">Employee signature over printed name</span></div>
+    <div>{{company.name}}<br/><span style="font-size:9px">Authorized employer representative</span></div>
+  </div>
+  <p class="note">Worksheet computed from {{f.payslip_count}} payslip(s) for {{year}}. De-minimis, allowances and
+    previous-employer amounts are not tracked in payroll &mdash; verify and complete them, and validate against the
+    official BIR form before issuing or filing.</p>
+</div>`;
 }
 
 /** Default printable HTML for one virtual employee ID — CR-80 card size (~85.6mm x 54mm),

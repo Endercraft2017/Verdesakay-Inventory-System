@@ -20,6 +20,7 @@ session.
 | [The Mobile Warehouse App](mobile-warehouse-app.md) | Warehouse / stockroom | Scan, move, count, receive, and report damage from a phone — online or offline |
 | [Sending email from the system](sending-email.md) | Staff with the Email tool | Send a message, payslip, or PO by email; what to do when it fails |
 | [Payroll rate tables](payroll-rate-tables.md) | Payroll admin | The SSS / PhilHealth / Pag-IBIG / BIR withholding tables the system uses; when and how to update them each year |
+| [BIR Form 2316](bir-2316.md) | Payroll admin | Generating the year-end Certificate of Compensation Payment / Tax Withheld per employee; what it doesn't track |
 
 ## Writing a new guide
 

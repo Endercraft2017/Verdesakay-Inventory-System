@@ -1,7 +1,8 @@
 # Philippine Payroll & Statutory Compliance — scope + current figures
 
-> **Status:** Phase A (engine) + Phase B step 1 (payslip wiring) **built 2026-08-29** —
-> see §3. 13th-month / final-pay + Phases C–D pending.
+> **Status:** Phase A (engine), Phase B (payslip wiring, rate-tables screen, 13th-month),
+> and **Phase C step 1 — BIR 2316** all built 2026-08-29 (see §3). Final-pay worksheet +
+> BIR 1601-C / 1604-C / Alphalist + agency schedules pending.
 > This is GO-TO-MARKET §6 item #1 — the payroll "wedge".
 > **Figures verified:** 2026 rates, August 2026. **Re-check every January** — SSS and
 > PhilHealth schedules change by circular; BIR form versions change by RMC.
@@ -158,8 +159,16 @@ tracking first).
 
 ### Phase C — BIR outputs
 
-- **2316:** per-employee generation using the official form layout (printable HTML → PDF),
-  populated from the year's payslips. Batch for all employees.
+- **2316** ✅ step 1 done 2026-08-29. `src/ph-2316.ts` `compute2316(payslipRows, rwt, year,
+  opts)` → Part IV-A / IV-B lines (gross comp, non-taxable = Σ statutory + 13th-month up to
+  the ceiling, taxable comp, annual `tax_due` via the new `rwt.annual` bracket table, tax
+  withheld, over/under). `GET /api/hr/bir-2316?year=` (list) + `/bir-2316/:employeeId?year=`
+  (`hr.view`; `opts` — `de_minimis`, `taxable_previous`, `tax_withheld_previous`,
+  `thirteenth_month_ceiling` — via query). Printable **"BIR 2316" doc-template** (seeded)
+  rendered per employee in Time Keeping → BIR 2316 (table + per-row Print + CSV). It's a
+  **worksheet** — de-minimis / allowances / previous-employer aren't in payroll; the doc
+  says so and to validate against the official BIR form. Tests: `tests/ph-2316.test.ts` +
+  an hr.test.ts endpoint case.
 - **1601-C worksheet:** monthly totals (taxable comp, tax withheld, headcount) matching
   the return's lines.
 - **1604-C + Alphalist:** annual reconciliation (Σ 1601-C = 1604-C) + the Alphalist

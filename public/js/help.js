@@ -164,6 +164,25 @@
         you re-generate.</p>`,
     },
     {
+      id: 'bir-2316', title: 'BIR Form 2316 (year-end)', group: 'HR', routes: [],
+      html: `
+        <p>The <b>Certificate of Compensation Payment / Tax Withheld</b> each employee gets
+        at year-end (and the employer files with the BIR). Open it from
+        <b>Time Keeping → BIR 2316</b>.</p>
+        <ul>
+          <li>Pick the year. The table shows each employee's gross compensation, taxable
+              amount, tax due, tax withheld, and the over/under difference.</li>
+          <li><b>Print</b> on a row renders that employee's certificate (from the editable
+              "BIR 2316" template under Documents → Templates).</li>
+          <li><b>Export CSV</b> gives the whole list.</li>
+        </ul>
+        <p><b>It's a worksheet.</b> The figures come from the payslips generated that year
+        plus the annual tax table. Payroll doesn't track de-minimis benefits, allowances,
+        or a previous employer's numbers — add those and check against the official BIR
+        form before you issue or file. Deadlines: give to employees by <b>Jan 31</b>,
+        file with the BIR by <b>Feb 28</b>.</p>`,
+    },
+    {
       id: 'payroll-rate-tables', title: 'Payroll rate tables (SSS/PhilHealth/etc.)', group: 'HR', routes: [],
       html: `
         <p>The government contribution and withholding-tax figures the payslip computation
