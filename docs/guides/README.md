@@ -15,7 +15,7 @@ session.
 
 | Guide | For | What it covers |
 |---|---|---|
-| [Bulk import & export (CSV)](csv-import-export.md) | Inventory / HR staff | Load or update many items, suppliers, or employees from a spreadsheet; export data back out |
+| [Bulk import & export (CSV)](csv-import-export.md) | Inventory / HR staff | Load or update many items, suppliers, or employees from a spreadsheet; export data back out. Fill-in [templates/](templates/) included. |
 | [Using the AI Assistant](ai-assistant.md) | Everyone | Ask questions about your data, get reports and Word documents, take quick actions |
 | [The Mobile Warehouse App](mobile-warehouse-app.md) | Warehouse / stockroom | Scan, move, count, receive, and report damage from a phone — online or offline |
 | [Sending email from the system](sending-email.md) | Staff with the Email tool | Send a message, payslip, or PO by email; what to do when it fails |

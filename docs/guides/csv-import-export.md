@@ -27,8 +27,11 @@ Export sits next to Import (or inside the Import window as **Export current data
 ## Steps — importing
 
 1. Open the list screen and click **Import**.
-2. Click **Download template** to get a `.csv` with the correct column headers and one
-   example row. Fill it in with your data (keep the header row).
+2. Click **Download template** to get a `.csv` with the correct column headers and a few
+   example rows. Fill it in with your data (keep the header row; replace the examples).
+   The same templates are in [templates/](templates/) if you'd rather grab them up front
+   or send one to a customer — [templates/README.md](templates/README.md) explains every
+   column.
 3. Back in the Import window, either **Choose file…** or paste the CSV text into the box.
 4. Leave **“Check first (validate, don’t save)”** ticked and click **Import**. Nothing is
    saved yet — you get a report: how many rows would be *created*, *updated*, or

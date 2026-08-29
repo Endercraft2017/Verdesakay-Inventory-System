@@ -389,7 +389,8 @@ const UI = (() => {
 
   /**
    * Reusable "import rows from a CSV" dialog for the list screens.
-   * opts: { title, importPath, exportPath, columnsHtml, templateHeaders:[], templateRow:[], onDone }
+   * opts: { title, importPath, exportPath, columnsHtml, templateHeaders:[],
+   *         templateRows:[[...],[...]] (or a single templateRow:[]), onDone }
    * The server endpoint takes { csv, dry_run } and returns
    * { dry_run, total, created, updated, skipped, errors:[{row,key,message}] }.
    */
@@ -440,7 +441,8 @@ const UI = (() => {
       onOpen: (overlay) => {
         overlay.querySelector('[data-tmpl]').onclick = () =>
           downloadCsv((opts.title || 'import').toLowerCase().replace(/\s+/g, '-') + '-template.csv',
-            opts.templateHeaders || [], [opts.templateRow || []]);
+            opts.templateHeaders || [],
+            opts.templateRows || (opts.templateRow ? [opts.templateRow] : []));
         const allBtn = overlay.querySelector('[data-all]');
         if (allBtn) allBtn.onclick = async () => {
           try {

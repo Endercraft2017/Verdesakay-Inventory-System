@@ -623,7 +623,11 @@ App.register('hr-employees', async (view) => {
       'Matched to existing staff by <strong>employee_no</strong>. Never changes the linked login or photo, ' +
       'and does not touch payroll history.',
     templateHeaders: ['employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate', 'status', 'start_date', 'sss_no', 'philhealth_no', 'pagibig_no', 'tin_no'],
-    templateRow: ['EMP-0001', 'Maria Santos', 'Operations', 'Machinist', 'daily', '850', '', 'regular', '2024-03-01', '34-1234567-8', '1234-5678-9012', '1234-5678-9012', '123-456-789-000'],
+    templateRows: [
+      ['EMP-0001', 'Maria Santos', 'Operations', 'Machinist', 'daily', '850', '', 'regular', '2024-03-01', '34-1234567-8', '12-345678901-2', '1234-5678-9012', '123-456-789-000'],
+      ['EMP-0002', 'Ben Reyes', 'Finance', 'Accounting Clerk', 'monthly', '', '25000', 'regular', '2023-11-15', '34-7654321-0', '11-223344556-7', '9876-5432-1098', '456-789-123-000'],
+      ['EMP-0003', 'Ana Dela Cruz', 'Operations', 'Helper', 'daily', '610', '', 'probationary', '2026-06-01', '', '', '', ''],
+    ],
     onDone: () => load(),
   }));
 

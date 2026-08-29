@@ -352,7 +352,11 @@ App.register('inventory', async (view, filter) => {
         '(never quantity); no match creates the item, using <code>quantity</code> as its starting ' +
         'stock. <code>department</code> and <code>supplier</code> must already exist.',
       templateHeaders: ['name', 'sku', 'category', 'department', 'supplier', 'unit', 'min_quantity', 'quantity', 'location', 'notes'],
-      templateRow: ['Hex Bolt M8', 'HB-M8', 'Fasteners', '', 'Acme Supply', 'pcs', '100', '500', 'Rack A1', ''],
+      templateRows: [
+        ['Hex Bolt M8 x 40mm', 'HB-M8-40', 'Fasteners', 'Operations', 'Acme Supply', 'pcs', '100', '500', 'Rack A1', 'Zinc-plated'],
+        ['Steel Plate 4x8 3mm', 'SP-4X8-3', 'Raw Material', 'Operations', 'Metro Steel', 'sheet', '5', '20', 'Yard', ''],
+        ['Cutting Disc 4in', 'CD-4', 'Consumables', '', '', 'pcs', '24', '0', '', 'No opening stock yet — will receive later'],
+      ],
       onDone: () => load(),
     });
   }

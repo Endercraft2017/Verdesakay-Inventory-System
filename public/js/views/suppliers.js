@@ -153,7 +153,11 @@ App.register('suppliers', async (view) => {
       '<code>email</code>, <code>address</code>, <code>notes</code>. Rows are matched to existing ' +
       'suppliers by <strong>name</strong> (case-insensitive) — a match updates, no match creates.',
     templateHeaders: ['name', 'contact_person', 'phone', 'email', 'address', 'notes'],
-    templateRow: ['Acme Steel', 'Jo Cruz', '+63 2 8123 4567', 'sales@acme.test', '12 Ortigas Ave, Pasig', ''],
+    templateRows: [
+      ['Acme Steel Supply', 'Jo Cruz', '+63 2 8123 4567', 'sales@acmesteel.test', '12 Ortigas Ave, Pasig City', 'Net 30 terms'],
+      ['Metro Fasteners Inc', 'Rina Lim', '0917 555 0102', 'orders@metrofast.test', 'Cebu City', ''],
+      ['Local Hardware', '', '', '', '', 'Walk-in / cash only'],
+    ],
     onDone: () => load(),
   });
 
