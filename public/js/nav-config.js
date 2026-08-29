@@ -14,7 +14,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
 
 const NAV = [
   {
@@ -24,6 +24,7 @@ const NAV = [
         id: 'overview', label: 'Overview',
         tree: [
           { label: 'Dashboard', icon: 'dashboard', route: 'dashboard' },
+          { label: 'Reports', icon: 'sheet', route: 'analytics' },
           { label: 'Announcements', icon: 'messages', route: 'announcements' },
         ],
       },

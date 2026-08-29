@@ -245,8 +245,12 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    PO approval workflow, landed cost, partial-invoice AP aging report.
 6. **Accounting integration** (see §7) — decide partner-vs-build now; it shapes the pitch.
 7. **Mobile hardening** (Pillar 2): 1D barcodes, label printing, receive-against-PO.
-8. **Reporting & dashboards** beyond the AI: fixed operational dashboards (stock value,
-   production throughput, payroll cost, aging) that don't require asking the assistant.
+8. **Reporting & dashboards** beyond the AI: ~~fixed operational dashboards (stock value,
+   production throughput, payroll cost, aging)~~ *(shipped 2026-08-29 — Home → Reports,
+   `GET /api/analytics/overview`: inventory value / dead stock, production throughput +
+   scrap rate, purchasing & AP aging, sales volume, payroll trend; permission-gated
+   sections. `src/routes/analytics.routes.ts`, `public/js/views/analytics.js`)*. Still
+   to do: date-range pickers, CSV export per panel, drill-through.
 9. **SSO + 2FA** (Pillar 6) — the moment a 150+ employee prospect appears.
 10. **Backups + per-tenant restore + data export** (SAAS-READINESS §5) — "no lock-in" is a
     sales answer, not just ops hygiene.

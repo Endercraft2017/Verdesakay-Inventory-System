@@ -18,6 +18,7 @@ session.
 | [Bulk import & export (CSV)](csv-import-export.md) | Inventory / HR staff | Load or update many items, suppliers, or employees from a spreadsheet; export data back out. Fill-in [templates/](templates/) included. |
 | [Multi-level BOMs, costing & where-used](multi-level-bom.md) | Production / purchasing | Explode a product through sub-assemblies to raw materials, roll up standard cost, find where a part is used |
 | [Purchasing: receiving & vendor bills](purchasing.md) | Warehouse / purchasing / AP | Record goods receipts against a PO (posts stock), enter vendor bills, and the 3-way match that gates approval |
+| [Reports (operational dashboards)](reports.md) | Owners / ops / purchasing / HR | The fixed Home → Reports snapshot: stock value, production throughput, purchasing & payables aging, sales, payroll |
 | [Using the AI Assistant](ai-assistant.md) | Everyone | Ask questions about your data, get reports and Word documents, take quick actions |
 | [The Mobile Warehouse App](mobile-warehouse-app.md) | Warehouse / stockroom | Scan, move, count, receive, and report damage from a phone — online or offline |
 | [Sending email from the system](sending-email.md) | Staff with the Email tool | Send a message, payslip, or PO by email; what to do when it fails |

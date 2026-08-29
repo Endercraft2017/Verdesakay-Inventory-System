@@ -22,6 +22,29 @@
         other topic.</p>`,
     },
     {
+      id: 'analytics', title: 'Reports (operational dashboards)', group: 'Basics', routes: ['analytics'],
+      html: `
+        <p><b>Home → Reports</b> is a fixed, at-a-glance snapshot of the business — no
+        need to ask the AI assistant. You see only the sections your role allows.</p>
+        <ul>
+          <li><b>Inventory</b> — total <b>stock value</b> (quantity × each item's
+              standard cost, falling back to purchase price), low / out-of-stock counts,
+              <b>dead stock</b> (on hand but no movement in 90 days), value by location,
+              and the highest-value items.</li>
+          <li><b>Production</b> — work in progress, units finished in the last 30 / 90
+              days, <b>scrap rate</b>, job orders by status, recently completed MOs.</li>
+          <li><b>Purchasing &amp; payables</b> — open POs and their value, <b>received
+              but not invoiced</b>, bills waiting for approval, and <b>payables aging</b>
+              (approved vendor bills bucketed by how overdue they are).</li>
+          <li><b>Sales orders</b> — open orders and value, a breakdown by status, and the
+              last 8 weeks of order volume.</li>
+          <li><b>Payroll</b> (HR) — the latest period's headcount, gross, net, statutory
+              and tax, plus the last six periods.</li>
+        </ul>
+        <p>The figures are live — hit <b>Refresh</b> after entering new data. Numbers are
+        rounded for display.</p>`,
+    },
+    {
       id: 'inventory', title: 'Inventory — items & stock', group: 'Inventory', routes: ['inventory', 'inventory-movements'],
       html: `
         <p>The item list is your catalogue. Each row is one product or material with a
