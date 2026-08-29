@@ -9,6 +9,10 @@ App.register('orders', async (view, filter) => {
   try { qb = await API.get('/quickbooks/status'); } catch { /* not configured */ }
   const canQbPush = qb.connected && App.hasPermission('orders.edit');
 
+  let suppliers = [];
+  if (type === 'purchase') { try { suppliers = await API.get('/suppliers'); } catch { /* optional */ } }
+  const partyLabel = type === 'purchase' ? 'Vendor' : 'Customer';
+
   view.innerHTML = `
     <div class="topbar">
       <h2>${noun}s</h2>
@@ -57,6 +61,7 @@ App.register('orders', async (view, filter) => {
             <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span></td>
             <td class="actions">
               ${type === 'job' && App.hasPermission('inventory.adjust') ? `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>` : ''}
+              ${type === 'purchase' ? `<button class="icon-btn" title="Receiving & bills" data-purch="${o.id}">${UI.icon('inbox')}</button>` : ''}
               ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
               <button class="icon-btn" title="Edit" data-edit="${o.id}">${UI.icon('edit')}</button>
@@ -76,6 +81,7 @@ App.register('orders', async (view, filter) => {
       finally { b.disabled = false; }
     });
     tableEl.querySelectorAll('[data-produce]').forEach((b) => b.onclick = () => startProduction(b.dataset.produce));
+    tableEl.querySelectorAll('[data-purch]').forEach((b) => b.onclick = () => App.navigate('purchasing', { order: b.dataset.purch }));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(b.dataset.del, list));
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;
@@ -139,9 +145,14 @@ App.register('orders', async (view, filter) => {
       size: 'lg',
       bodyHTML: `
         <div class="field-row">
-          <div><label>Customer name</label><input data-f="customer_name" value="${UI.esc(get('customer_name', ''))}" /></div>
-          <div><label>Customer contact</label><input data-f="customer_contact" value="${UI.esc(get('customer_contact', ''))}" /></div>
+          <div><label>${partyLabel} name</label><input data-f="customer_name" value="${UI.esc(get('customer_name', ''))}" /></div>
+          <div><label>${partyLabel} contact</label><input data-f="customer_contact" value="${UI.esc(get('customer_contact', ''))}" /></div>
         </div>
+        ${type === 'purchase' ? `<div class="field-row">
+          <div><label>Supplier (on file)</label><select data-f="supplier_id"><option value="">— none —</option>
+            ${suppliers.map((s) => `<option value="${s.id}" ${String(get('supplier_id', '')) === String(s.id) ? 'selected' : ''}>${UI.esc(s.name)}</option>`).join('')}</select></div>
+          <div><label>Expected delivery</label><input data-f="expected_date" type="date" value="${UI.esc(get('expected_date', ''))}" /></div>
+        </div>` : ''}
         <div class="field-row">
           <div><label>Order date</label><input data-f="order_date" type="date" value="${UI.esc(get('order_date', ''))}" /></div>
           <div><label>Status</label><select data-f="status">${statusOpts}</select></div>
@@ -236,11 +247,16 @@ App.register('orders', async (view, filter) => {
           }))
           .filter((l) => l.name);
         if (!cleaned.length) { showErr('Add at least one line item (with a name)'); return false; }
+        const fOpt = (k) => { const el = ov.querySelector(`[data-f="${k}"]`); return el ? el.value : null; };
         const body = {
           customer_name: f('customer_name'), customer_contact: f('customer_contact'),
           order_date: f('order_date'), status: f('status'), currency: f('currency'),
           tax_percent: Number(f('tax_percent')) || 0, notes: f('notes'), items: cleaned,
         };
+        if (type === 'purchase') {
+          body.supplier_id = fOpt('supplier_id') || null;
+          body.expected_date = fOpt('expected_date') || null;
+        }
         if (editing) await API.put('/orders/' + order.id, body);
         else await API.post('/orders', { type, ...body });
         UI.toast(editing ? 'Order saved' : 'Order created');

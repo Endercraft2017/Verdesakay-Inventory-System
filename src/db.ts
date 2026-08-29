@@ -54,7 +54,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -693,6 +693,72 @@ function createSchema(): void {
       PRIMARY KEY (entity, local_id)
     );
 
+    -- Purchasing: goods receipts against a purchase order + vendor bills + 3-way match.
+    -- A purchase order is an orders row with type = 'purchase'.
+    CREATE TABLE IF NOT EXISTS goods_receipts (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      number        TEXT NOT NULL UNIQUE,               -- GRN-00001
+      order_id      INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      supplier_id   INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+      location_id   INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      received_date TEXT,
+      notes         TEXT,
+      received_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS goods_receipt_items (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      receipt_id    INTEGER NOT NULL REFERENCES goods_receipts(id) ON DELETE CASCADE,
+      order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+      item_id       INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      name          TEXT NOT NULL,
+      sku           TEXT,
+      quantity      REAL NOT NULL DEFAULT 0,
+      unit          TEXT,
+      sort          INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS vendor_bills (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      number        TEXT NOT NULL UNIQUE,               -- BILL-00001 (our internal ref)
+      vendor_ref    TEXT,                               -- the supplier's own invoice no.
+      order_id      INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      supplier_id   INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+      bill_date     TEXT,
+      due_date      TEXT,
+      currency      TEXT NOT NULL DEFAULT 'PHP',
+      subtotal      REAL NOT NULL DEFAULT 0,
+      tax_percent   REAL NOT NULL DEFAULT 0,
+      tax_amount    REAL NOT NULL DEFAULT 0,
+      total         REAL NOT NULL DEFAULT 0,
+      status        TEXT NOT NULL DEFAULT 'draft'
+                      CHECK (status IN ('draft','approved','disputed')),
+      match_json    TEXT,                               -- snapshot of the last 3-way match
+      dispute_note  TEXT,
+      approved_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      approved_at   TEXT,
+      notes         TEXT,
+      created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS vendor_bill_items (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      bill_id       INTEGER NOT NULL REFERENCES vendor_bills(id) ON DELETE CASCADE,
+      order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+      item_id       INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      name          TEXT NOT NULL,
+      sku           TEXT,
+      quantity      REAL NOT NULL DEFAULT 0,
+      unit          TEXT,
+      unit_price    REAL NOT NULL DEFAULT 0,
+      line_total    REAL NOT NULL DEFAULT 0,
+      sort          INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_grn_order ON goods_receipts(order_id);
+    CREATE INDEX IF NOT EXISTS idx_grn_items_receipt ON goods_receipt_items(receipt_id);
+    CREATE INDEX IF NOT EXISTS idx_vbills_order ON vendor_bills(order_id);
+    CREATE INDEX IF NOT EXISTS idx_vbills_status ON vendor_bills(status);
+    CREATE INDEX IF NOT EXISTS idx_vbill_items_bill ON vendor_bill_items(bill_id);
+
     -- Full-text index for the AI knowledge search (RAG). Rebuilt by src/rag.ts;
     -- rows carry an ACL (permission key) + optional dept_id for retrieval filtering.
     CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks USING fts5(
@@ -994,6 +1060,18 @@ function migrate(): void {
   if (!jouCols.some((c) => c.name === 'order_id')) {
     db.exec('ALTER TABLE job_order_units ADD COLUMN order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL');
   }
+
+  // Purchasing: a purchase order can name the supplier it's raised against + an
+  // expected delivery date (both optional; older POs just carried the vendor name in
+  // customer_name). goods_receipts / vendor_bills tables come from createSchema().
+  const orderCols = db.prepare('PRAGMA table_info(orders)').all() as { name: string }[];
+  if (!orderCols.some((c) => c.name === 'supplier_id')) {
+    db.exec('ALTER TABLE orders ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL');
+  }
+  if (!orderCols.some((c) => c.name === 'expected_date')) {
+    db.exec('ALTER TABLE orders ADD COLUMN expected_date TEXT');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_orders_supplier ON orders(supplier_id)');
 
   // Carry a pre-existing single checklist (settings key `qc_checklist`) into a named row.
   const legacy = getSetting<{ items?: unknown[] } | unknown[]>('qc_checklist');

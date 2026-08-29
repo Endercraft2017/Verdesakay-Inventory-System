@@ -150,11 +150,52 @@
         <ul>
           <li><b>Sale Orders</b> — what a customer is buying.</li>
           <li><b>Job Orders</b> — work to be performed (can link to a production Job Order).</li>
-          <li><b>Purchase Requests</b> — what you're buying from a supplier.</li>
+          <li><b>Purchase Orders</b> — what you're buying from a supplier. Pick the
+              <b>Supplier</b> and an <b>Expected delivery</b> date so Purchasing can
+              track it. The row's <b>Receiving &amp; bills</b> icon opens its receipts
+              and vendor bills.</li>
         </ul>
         <p>Numbers (SO-#####, JO-#####, PR-#####) are assigned automatically. Totals and
         tax are computed for you. Use <b>Templates</b> to control how the printed
         document looks.</p>`,
+    },
+    {
+      id: 'purchasing', title: 'Purchasing — receiving & vendor bills', group: 'Orders',
+      routes: ['purchasing'], html: `
+        <p>Purchasing turns a <b>Purchase Order</b> into a controlled flow:</p>
+        <p><b>PO → Goods Receipt → Vendor Bill</b>, with a <b>3-way match</b> before any
+        bill is approved for payment.</p>
+        <h4>Receiving what arrived</h4>
+        <ul>
+          <li>Open a purchase order (Orders → Purchase Orders → <b>Receiving &amp; bills</b>),
+              then <b>Record receipt</b>.</li>
+          <li>Pick the location stock lands in and enter the quantity that actually
+              arrived per line. Posting the receipt <b>moves that stock in</b> and shows
+              in the item's history.</li>
+          <li>The PO shows <b>received vs ordered</b> per line and an overall status
+              (not received / partial / received / over-received). Receive as many times
+              as deliveries come.</li>
+          <li>Wrong receipt? <b>Delete</b> it — the stock it posted is reversed.</li>
+        </ul>
+        <h4>Vendor bills &amp; the 3-way match</h4>
+        <ul>
+          <li><b>New vendor bill</b> records the supplier's invoice — their invoice
+              number, dates, lines and prices.</li>
+          <li><b>Approve</b> runs the 3-way match: every billed line must be covered by
+              what was <b>received</b> (counting earlier approved bills), and the price
+              must be within tolerance of the <b>PO price</b>. Charges not on the PO are
+              flagged.</li>
+          <li>A clean match approves straight away. Exceptions block approval — receive
+              the shortfall, fix the bill, or <b>Force approve</b> (your override is
+              recorded against your name).</li>
+          <li><b>Dispute</b> parks a bill with a reason; editing a disputed bill returns
+              it to draft.</li>
+        </ul>
+        <p>Match tolerance (default 2% on price) is a workspace setting via
+        <code>PUT /api/purchasing/tolerance</code>.</p>
+        <p><b>Who can do what:</b> receiving needs <i>Adjust inventory</i>; raising and
+        approving bills needs <i>Edit orders</i> — so the warehouse receives and
+        accounting approves.</p>`,
     },
     {
       id: 'hr-employees', title: 'Employees (201 file)', group: 'HR',

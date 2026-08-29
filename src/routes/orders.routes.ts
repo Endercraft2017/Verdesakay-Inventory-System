@@ -77,8 +77,10 @@ router.get('/', (req, res) => {
     params.push(like, like);
   }
   const rows = queryAll<Order>(
-    `SELECT o.*, u.full_name AS created_by_name
-     FROM orders o LEFT JOIN users u ON u.id = o.created_by
+    `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name
+     FROM orders o
+     LEFT JOIN users u ON u.id = o.created_by
+     LEFT JOIN suppliers s ON s.id = o.supplier_id
      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY o.id DESC`,
     ...params
@@ -89,8 +91,11 @@ router.get('/', (req, res) => {
 // GET /api/orders/:id — order + line items
 router.get('/:id', (req, res) => {
   const order = queryOne<Order>(
-    `SELECT o.*, u.full_name AS created_by_name
-     FROM orders o LEFT JOIN users u ON u.id = o.created_by WHERE o.id = ?`,
+    `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name
+     FROM orders o
+     LEFT JOIN users u ON u.id = o.created_by
+     LEFT JOIN suppliers s ON s.id = o.supplier_id
+     WHERE o.id = ?`,
     Number(req.params.id)
   );
   if (!order) {
@@ -115,8 +120,8 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
     const info = run(
       `INSERT INTO orders
         (type, number, customer_name, customer_contact, order_date, status, notes, currency,
-         subtotal, tax_percent, tax_amount, total, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         subtotal, tax_percent, tax_amount, total, created_by, supplier_id, expected_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.type,
       number,
       input.customer_name ?? null,
@@ -129,7 +134,9 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
       input.tax_percent,
       tax_amount,
       total,
-      req.user!.id
+      req.user!.id,
+      input.type === 'purchase' ? (input.supplier_id ?? null) : null,
+      input.type === 'purchase' ? (input.expected_date ?? null) : null
     );
     insertItems(Number(info.lastInsertRowid), lines);
     db.exec('COMMIT');
@@ -157,7 +164,7 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
     run(
       `UPDATE orders SET customer_name = ?, customer_contact = ?, order_date = ?, status = ?,
          notes = ?, currency = ?, subtotal = ?, tax_percent = ?, tax_amount = ?, total = ?,
-         updated_at = datetime('now')
+         supplier_id = ?, expected_date = ?, updated_at = datetime('now')
        WHERE id = ?`,
       input.customer_name ?? null,
       input.customer_contact ?? null,
@@ -169,6 +176,8 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
       input.tax_percent,
       tax_amount,
       total,
+      order.type === 'purchase' ? (input.supplier_id ?? null) : null,
+      order.type === 'purchase' ? (input.expected_date ?? null) : null,
       id
     );
     run('DELETE FROM order_items WHERE order_id = ?', id);

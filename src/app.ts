@@ -19,6 +19,7 @@ import formsRoutes from './routes/forms.routes';
 import messagesRoutes from './routes/messages.routes';
 import personalRoutes from './routes/personal.routes';
 import ordersRoutes from './routes/orders.routes';
+import purchasingRoutes from './routes/purchasing.routes';
 import templatesRoutes from './routes/templates.routes';
 import formBuilderRoutes from './routes/form-builder.routes';
 import aiRoutes from './routes/ai.routes';
@@ -136,6 +137,7 @@ export function createApp() {
   app.use('/api/messages', messagesRoutes);
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks
   app.use('/api/orders', ordersRoutes);
+  app.use('/api/purchasing', purchasingRoutes);
   app.use('/api/templates', templatesRoutes);
   app.use('/api', formBuilderRoutes);
   app.use('/api/ai', aiRoutes);

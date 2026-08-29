@@ -417,7 +417,11 @@ export interface Order {
   created_by: number | null;
   created_at: string;
   updated_at: string;
+  /** Purchase orders only: the supplier this PO is raised against + expected delivery. */
+  supplier_id: number | null;
+  expected_date: string | null;
   created_by_name?: string | null;
+  supplier_name?: string | null;
   items?: OrderItem[];
 }
 
@@ -428,6 +432,79 @@ export interface OrderItem {
   name: string;
   sku: string | null;
   description: string | null;
+  quantity: number;
+  unit: string | null;
+  unit_price: number;
+  line_total: number;
+  sort: number;
+}
+
+/** A goods receipt (GRN) recording what physically arrived against a purchase order.
+    Posting one moves stock in at `location_id`. See src/routes/purchasing.routes.ts. */
+export interface GoodsReceipt {
+  id: number;
+  number: string;
+  order_id: number;
+  supplier_id: number | null;
+  location_id: number | null;
+  received_date: string | null;
+  notes: string | null;
+  received_by: number | null;
+  created_at: string;
+  received_by_name?: string | null;
+  location_name?: string | null;
+  order_number?: string | null;
+  items?: GoodsReceiptItem[];
+}
+
+export interface GoodsReceiptItem {
+  id: number;
+  receipt_id: number;
+  order_item_id: number | null;
+  item_id: number | null;
+  name: string;
+  sku: string | null;
+  quantity: number;
+  unit: string | null;
+  sort: number;
+}
+
+/** A vendor bill / supplier invoice against a purchase order, gated on a 3-way match
+    (PO ↔ goods receipts ↔ bill) before it can be approved for payment. */
+export interface VendorBill {
+  id: number;
+  number: string;
+  vendor_ref: string | null;
+  order_id: number;
+  supplier_id: number | null;
+  bill_date: string | null;
+  due_date: string | null;
+  currency: string;
+  subtotal: number;
+  tax_percent: number;
+  tax_amount: number;
+  total: number;
+  status: 'draft' | 'approved' | 'disputed';
+  match_json: string | null;
+  dispute_note: string | null;
+  approved_by: number | null;
+  approved_at: string | null;
+  notes: string | null;
+  created_by: number | null;
+  created_at: string;
+  approved_by_name?: string | null;
+  supplier_name?: string | null;
+  order_number?: string | null;
+  items?: VendorBillItem[];
+}
+
+export interface VendorBillItem {
+  id: number;
+  bill_id: number;
+  order_item_id: number | null;
+  item_id: number | null;
+  name: string;
+  sku: string | null;
   quantity: number;
   unit: string | null;
   unit_price: number;

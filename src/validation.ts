@@ -417,6 +417,9 @@ const orderFields = {
   currency: trimmed.max(10).optional().nullable(),
   tax_percent: numCoerce.min(0).max(100).default(0),
   items: z.array(orderItemSchema).min(1, 'Add at least one line item').max(300),
+  // Purchase orders: which supplier + expected delivery date.
+  supplier_id: optionalId,
+  expected_date: trimmed.max(40).optional().nullable(),
 };
 
 export const createOrderSchema = z.object({
@@ -425,6 +428,60 @@ export const createOrderSchema = z.object({
 });
 
 export const updateOrderSchema = z.object(orderFields);
+
+// ---- Purchasing: goods receipts + vendor bills (3-way match) ----
+const receiptLineSchema = z.object({
+  order_item_id: optionalId,
+  item_id: optionalId,
+  name: trimmed.min(1).max(200),
+  sku: optionalText,
+  unit: trimmed.max(40).optional().nullable(),
+  quantity: numCoerce.min(0, 'Quantity cannot be negative').default(0),
+});
+
+export const createReceiptSchema = z.object({
+  received_date: trimmed.max(40).optional().nullable(),
+  location_id: z.coerce.number().int().positive('Pick the location stock is received into'),
+  notes: optionalText,
+  lines: z.array(receiptLineSchema).min(1, 'Add at least one line').max(300)
+    .refine((ls) => ls.some((l) => (l.quantity || 0) > 0), 'Enter a received quantity on at least one line'),
+});
+
+const billLineSchema = z.object({
+  order_item_id: optionalId,
+  item_id: optionalId,
+  name: trimmed.min(1, 'Line item name is required').max(200),
+  sku: optionalText,
+  unit: trimmed.max(40).optional().nullable(),
+  quantity: numCoerce.min(0, 'Quantity cannot be negative').default(0),
+  unit_price: numCoerce.min(0, 'Price cannot be negative').default(0),
+});
+
+export const vendorBillSchema = z.object({
+  vendor_ref: trimmed.max(80).optional().nullable(),
+  bill_date: trimmed.max(40).optional().nullable(),
+  due_date: trimmed.max(40).optional().nullable(),
+  currency: trimmed.max(10).optional().nullable(),
+  tax_percent: numCoerce.min(0).max(100).default(0),
+  notes: optionalText,
+  lines: z.array(billLineSchema).min(1, 'Add at least one line').max(300),
+});
+
+export const approveBillSchema = z.object({
+  /** Approve despite match exceptions (records who overrode). */
+  force: boolish.default(false),
+  note: trimmed.max(1000).optional().nullable(),
+});
+
+export const disputeBillSchema = z.object({
+  note: trimmed.min(3, 'Say what the problem is').max(1000),
+});
+
+export const matchToleranceSchema = z.object({
+  price_pct: numCoerce.min(0).max(100).default(2),
+  price_abs: numCoerce.min(0).default(0),
+  qty_pct: numCoerce.min(0).max(100).default(0),
+});
 
 export const templateSchema = z.object({
   name: trimmed.min(1, 'Template name is required').max(120),

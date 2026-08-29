@@ -1,7 +1,7 @@
 # Go-To-Market & Feature Strategy
 
 > **Status:** working plan, revise as the market talks back.
-> **Last updated:** 2026-08-28
+> **Last updated:** 2026-08-29
 > Companion to [SAAS-READINESS.md](SAAS-READINESS.md) (the technical side of the SaaS pivot).
 
 ---
@@ -188,9 +188,12 @@ Great in the sales meeting; do not bet the roadmap on it.
 ### Pillar 8 — Orders (sale / job / purchase)  △ ADEQUATE, needs depth for the ICP
 
 - **Have:** three order types, auto-numbering, line items, totals/tax, currency,
-  print templates, links from job orders.
-- **Gap (invest — see §6):** purchase order → **goods receipt** → 3-way match, partial
-  fulfilment / backorders on sale orders, customer & supplier records (light CRM),
+  print templates, links from job orders. **Purchasing (2026-08-29):** PO carries a
+  supplier + expected date; **goods receipts** post stock against the PO; **vendor
+  bills** are gated on a **3-way match** (PO ↔ receipts ↔ bill, price/qty tolerance,
+  recorded force-approve). `src/purchasing-match.ts`, `/api/purchasing/*`.
+- **Gap (invest — see §6):** PO approval workflow, landed cost, partial
+  fulfilment / backorders on sale orders, customer records (light CRM),
   AR/AP aging, payment/collection tracking, quotations → SO conversion, price lists.
 
 ---
@@ -235,7 +238,11 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    *(shipped 2026-08-29 — explosion, standard-cost roll-up, where-used, cycle detection)*;
    still to do: basic scheduling / calendar, labor+overhead in the roll-up. Turns "nice
    demo" into "runs our shop."
-5. **Purchasing depth** (Pillar 8): PO → goods receipt → match; supplier records.
+5. **Purchasing depth** (Pillar 8): ~~PO → goods receipt → 3-way match~~ *(shipped
+   2026-08-29 — `goods_receipts` post stock against a PO, `vendor_bills` gated on a
+   PO↔receipts↔bill match with a price/qty tolerance and a recorded force-approve;
+   `src/purchasing-match.ts`, `/api/purchasing/*`, Inventory → Purchasing)*. Still to do:
+   PO approval workflow, landed cost, partial-invoice AP aging report.
 6. **Accounting integration** (see §7) — decide partner-vs-build now; it shapes the pitch.
 7. **Mobile hardening** (Pillar 2): 1D barcodes, label printing, receive-against-PO.
 8. **Reporting & dashboards** beyond the AI: fixed operational dashboards (stock value,

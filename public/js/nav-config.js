@@ -14,7 +14,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
+const ROUTE_NAMES = ['dashboard', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
 
 const NAV = [
   {
@@ -68,7 +68,14 @@ const NAV = [
         tree: [
           { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
           { label: 'Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
-          { label: 'Purchase Requests', icon: 'adjust', route: 'orders', filter: { type: 'purchase' } },
+          { label: 'Purchase Orders', icon: 'adjust', route: 'orders', filter: { type: 'purchase' } },
+        ],
+      },
+      {
+        id: 'purchasing', label: 'Purchasing', requiredPermission: 'orders.view',
+        tree: [
+          { label: 'Goods Receipts', icon: 'inbox', route: 'purchasing', filter: { tab: 'receipts' } },
+          { label: 'Vendor Bills', icon: 'sheet', route: 'purchasing', filter: { tab: 'bills' } },
         ],
       },
       {
