@@ -14,6 +14,7 @@ import suppliersRoutes from './routes/suppliers.routes';
 import locationsRoutes from './routes/locations.routes';
 import bomRoutes from './routes/bom.routes';
 import jobOrdersRoutes from './routes/job-orders.routes';
+import qcRoutes from './routes/qc.routes';
 import formsRoutes from './routes/forms.routes';
 import messagesRoutes from './routes/messages.routes';
 import personalRoutes from './routes/personal.routes';
@@ -29,6 +30,7 @@ import clockRoutes from './routes/clock.routes';
 import meRoutes from './routes/me.routes';
 import announcementsRoutes from './routes/announcements.routes';
 import signupRoutes from './routes/signup.routes';
+import tenantRoutes from './routes/tenant.routes';
 import { recordActivity } from './activity';
 import { idempotency } from './idempotency';
 import { tenantStore, getDb, DEFAULT_TENANT } from './db';
@@ -65,6 +67,16 @@ export function createApp() {
       }
       if (tenant.status === 'suspended' || tenant.status === 'purged') {
         res.status(403).json({ error: 'This workspace is not active. Please contact your administrator.' });
+        return;
+      }
+      // A lapsed trial is treated as past_due: reads still work, writes are blocked
+      // (except auth, so they can log in and see the billing banner).
+      const lapsedTrial = tenant.status === 'trial' && !!tenant.trial_ends_at
+        && tenant.trial_ends_at < new Date().toISOString();
+      const readOnly = tenant.status === 'past_due' || lapsedTrial;
+      if (readOnly && req.method !== 'GET' && req.method !== 'HEAD'
+        && !req.path.startsWith('/api/auth') && req.path !== '/api/tenant') {
+        res.status(402).json({ error: 'This workspace is past due — it is read-only until billing is resolved.' });
         return;
       }
     }
@@ -108,12 +120,14 @@ export function createApp() {
   app.use('/api/auth/login', loginLimiter);
   app.use('/api/auth', authRoutes);
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
+  app.use('/api/tenant', tenantRoutes); // current workspace plan / status / usage
   app.use('/api/users', usersRoutes);
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/suppliers', suppliersRoutes);
   app.use('/api/locations', locationsRoutes);
   app.use('/api/finished-products', bomRoutes);
   app.use('/api/job-orders', jobOrdersRoutes);
+  app.use('/api/qc', qcRoutes);
   app.use('/api/forms', formsRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks

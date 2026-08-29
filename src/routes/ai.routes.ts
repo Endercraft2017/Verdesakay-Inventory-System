@@ -19,6 +19,7 @@ import { REPORT_FILE_RE } from '../ai-reporting';
 import { reindex } from '../rag';
 import { uploadDir } from '../db';
 import { getAiConfig, activeAiConfig, saveAiConfig } from '../ai-config';
+import { enforceQuota, recordAiCall } from '../quota';
 import { parseBody, aiConfigSchema } from '../validation';
 import type { AuthUser } from '../types';
 
@@ -186,6 +187,8 @@ router.post('/chat', async (req, res, next) => {
       res.status(503).json({ error: 'AI is not configured. An admin can add an API key under the AI Assistant settings.' });
       return;
     }
+    enforceQuota('ai_calls_month');
+    recordAiCall();
 
     const tools = getToolsForUser(user);
     const today = new Date().toISOString().slice(0, 10);

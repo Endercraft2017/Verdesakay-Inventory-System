@@ -72,6 +72,7 @@ const App = (() => {
     try { departments = await API.get('/users/departments/list'); } catch { departments = []; }
 
     renderPrimaryNav(); // (re)build chrome; honours admin-only visibility
+    showWorkspaceBanner();
 
     refreshUnread();
     if (App._unreadTimer) clearInterval(App._unreadTimer);
@@ -80,6 +81,26 @@ const App = (() => {
     const parsed = parseHash();
     const start = routes[parsed.route] ? parsed.route : 'dashboard';
     navigate(start, parsed.route === start ? parsed.filter : undefined);
+  }
+
+  async function showWorkspaceBanner() {
+    let t;
+    try { t = await API.get('/tenant'); } catch { return; }
+    document.getElementById('ws-banner')?.remove();
+    let msg = '', tone = 'warn';
+    if (t.read_only) { msg = `${t.name} is past due — the workspace is read-only until billing is resolved.`; tone = 'danger'; }
+    else if (t.status === 'suspended') { msg = `${t.name} is suspended.`; tone = 'danger'; }
+    else if (t.trial_days_left != null && t.trial_days_left <= 14) {
+      msg = t.trial_days_left <= 0 ? `${t.name}'s trial has ended.`
+        : `${t.name} — trial: ${t.trial_days_left} day${t.trial_days_left === 1 ? '' : 's'} left.`;
+    }
+    if (!msg) return;
+    const bar = document.createElement('div');
+    bar.id = 'ws-banner';
+    bar.style.cssText = `padding:6px 14px;font-size:13px;text-align:center;color:#fff;`
+      + `background:${tone === 'danger' ? 'var(--danger,#d64545)' : 'var(--warn,#b8860b)'}`;
+    bar.textContent = msg;
+    appScreen().prepend(bar);
   }
 
   async function refreshUnread() {

@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir } from '../db';
+import { enforceQuota } from '../quota';
 import { requireAuth, requirePermission } from '../auth';
 import type { AuthUser, FormRow } from '../types';
 
@@ -53,6 +54,8 @@ router.post('/', requirePermission('forms.upload'), upload.single('file'), (req,
     res.status(400).json({ error: 'A file is required' });
     return;
   }
+  try { enforceQuota('storage_mb', req.file.size); }
+  catch (e) { fs.promises.unlink(path.join(uploadDir(), req.file.filename)).catch(() => {}); throw e; }
   const body = req.body as Record<string, string>;
   const title = (body.title || '').trim() || req.file.originalname;
   const description = body.description ? body.description.trim() : null;

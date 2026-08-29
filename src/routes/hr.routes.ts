@@ -35,6 +35,7 @@ import {
   alphalistScheduleRow, alphalistRowCells, ALPHALIST_SCHEDULE1_HEADERS,
   splitName, statusCode, separationCode,
 } from '../ph-alphalist';
+import { enforceQuota } from '../quota';
 
 const EMP_CSV_COLUMNS = [
   'employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate',
@@ -580,6 +581,8 @@ router.post('/employees/:id/documents', requirePermission('hr.manage'), uploadDo
     res.status(404).json({ error: 'Employee not found' }); return;
   }
   if (!req.file) { res.status(400).json({ error: 'A file is required' }); return; }
+  try { enforceQuota('storage_mb', req.file.size); }
+  catch (e) { fs.promises.unlink(path.join(uploadDir(), req.file.filename)).catch(() => {}); throw e; }
   const title = (req.body?.title || '').trim() || req.file.originalname;
   const info = run(
     `INSERT INTO employee_documents

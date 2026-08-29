@@ -4,10 +4,13 @@
  *   npm run tenant:create -- --slug acme --name "Acme Mfg" --admin owner --password s3cret [--plan starter]
  *   npm run tenant:list
  *   npm run tenant:status -- --slug acme --status suspended        (active|suspended|trial|past_due)
+ *   npm run tenant:plan   -- --slug acme --plan operations         (trial|starter|operations|complete)
  *   npm run tenant:purge  -- --slug acme                           (deletes the tenant DB + uploads!)
  */
 import { createTenant, purgeTenant } from '../src/provisioning';
-import { listTenants, setTenantStatus, getTenant, type TenantStatus } from '../src/platform';
+import { listTenants, setTenantStatus, setTenantPlan, getTenant, type TenantStatus } from '../src/platform';
+import { withTenant } from '../src/db';
+import { tenantUsage, planFor } from '../src/quota';
 
 function flags(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -56,13 +59,30 @@ try {
       console.log(ok ? `${f.slug} → ${f.status}` : 'No change (invalid status?)');
       break;
     }
+    case 'plan': {
+      if (!f.slug || !f.plan) die('Usage: tenant:plan -- --slug <slug> --plan <trial|starter|operations|complete>');
+      if (!getTenant(f.slug)) die(`No such tenant: ${f.slug}`);
+      console.log(setTenantPlan(f.slug, f.plan) ? `${f.slug} → plan ${f.plan}` : 'No change');
+      break;
+    }
+    case 'usage': {
+      if (!f.slug) die('Usage: tenant:usage -- --slug <slug>');
+      if (!getTenant(f.slug)) die(`No such tenant: ${f.slug}`);
+      const { plan, limits } = planFor(f.slug);
+      const used = withTenant(f.slug, () => tenantUsage(f.slug));
+      console.log(`${f.slug}  (plan: ${plan})`);
+      for (const k of Object.keys(limits) as (keyof typeof limits)[]) {
+        console.log(`  ${k.padEnd(16)} ${String(used[k]).padStart(8)} / ${limits[k]}`);
+      }
+      break;
+    }
     case 'purge': {
       if (!f.slug) die('Usage: tenant:purge -- --slug <slug>');
       console.log(purgeTenant(f.slug) ? `Purged ${f.slug} (DB + uploads deleted).` : `No such tenant: ${f.slug}`);
       break;
     }
     default:
-      die('Commands: create | list | status | purge');
+      die('Commands: create | list | status | plan | usage | purge');
   }
 } catch (e) {
   die((e as Error).message);

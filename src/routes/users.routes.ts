@@ -3,6 +3,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run } from '../db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../auth';
+import { enforceQuota } from '../quota';
 import {
   parseBody,
   createUserSchema,
@@ -67,6 +68,7 @@ router.post('/', requirePermission('users.manage'), (req, res) => {
     res.status(409).json({ error: 'Username already taken' });
     return;
   }
+  enforceQuota('users');
   const hash = bcrypt.hashSync(input.password, 10);
   const info = run(
     `INSERT INTO users (username, full_name, email, password_hash, role, department_id)

@@ -43,12 +43,26 @@ Each request is mapped to a tenant before auth:
 Wildcard DNS (`*.APP_DOMAIN → server`) and a wildcard TLS cert are an ops task, not code.
 Custom domains (`inventory.acme.com`) are a later phase.
 
+## Plans & quotas
+
+Each tenant has a `plan` (`trial` / `starter` / `operations` / `complete`; the `default`
+tenant is always `unlimited`). Limits — active users, inventory items, upload storage MB,
+AI chats/month — are in `src/plans.ts`. A `POST` that would exceed a limit gets a **402**
+with an "upgrade the plan" message. `GET /api/tenant` returns the plan + limits + current
+usage; the frontend shows a trial-countdown / past-due banner from it.
+
+**Lifecycle:** a `trial` whose `trial_ends_at` has passed, or a `past_due` tenant, becomes
+**read-only** — reads and login still work, every write returns 402 until the status is
+cleared. `suspended` / `purged` → the whole workspace 403s.
+
 ## Provisioning (CLI)
 
 ```
 npm run tenant:create -- --slug acme --name "Acme Mfg" --admin owner --password s3cret [--plan starter]
 npm run tenant:list
 npm run tenant:status -- --slug acme --status suspended       # active | suspended | trial | past_due
+npm run tenant:plan   -- --slug acme --plan operations        # trial | starter | operations | complete
+npm run tenant:usage  -- --slug acme                          # current counts vs the plan limits
 npm run tenant:purge  -- --slug acme                          # deletes the tenant DB + uploads — irreversible
 ```
 

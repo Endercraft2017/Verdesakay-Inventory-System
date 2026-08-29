@@ -263,7 +263,11 @@ None of this exists yet; all enforceable cheaply per-tenant because the data is 
    admin-UI field; `password_resets` table; `POST /auth/forgot-password` (no
    account-existence leak, emails a 1 h link via the tenant mailbox) + `/auth/reset-password`;
    "Forgot password?" on the login screen + a `?reset=<token>` set-new-password flow.
-6. **Plans, quotas, lifecycle states, retention** (§9).
+6. ~~**Plans, quotas, lifecycle states** (§9).~~ ✅ 2026-08-29 — `src/plans.ts` +
+   `src/quota.ts`: `enforceQuota()` (402) at `POST /users` / `/inventory` / file uploads /
+   `/ai/chat`; `GET /api/tenant` + a frontend trial/past-due banner; a lapsed `trial` or
+   `past_due` → writes blocked (reads + auth still work); `npm run tenant:plan|usage`.
+   *Retention policies still TODO.*
 7. **Custom domains, per-tenant branding, billing integration** (§8).
 8. **Backups job, deploy-time migration runner** (§5, §7).
 

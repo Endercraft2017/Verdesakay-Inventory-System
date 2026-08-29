@@ -24,6 +24,7 @@ import {
   getDefaultLocationId,
 } from '../inventory-stock';
 import { notifyLowStockCrossed } from '../push';
+import { enforceQuota } from '../quota';
 import { parseCsvTable, toCsv } from '../csv';
 import type { InventoryItem, InventoryTransaction } from '../types';
 
@@ -434,6 +435,7 @@ router.get('/:id', (req, res) => {
 
 // POST /api/inventory — create item
 router.post('/', requirePermission('inventory.create'), (req, res) => {
+  enforceQuota('inventory_items');
   const input = parseBody(createItemSchema, req.body);
   if (input.sku) {
     const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ?', input.sku);
@@ -736,6 +738,12 @@ router.post('/:id/image', requirePermission('inventory.edit'), imageUpload.singl
   if (!req.file) {
     res.status(400).json({ error: 'An image file is required (JPG, PNG, GIF or WebP)' });
     return;
+  }
+  try {
+    enforceQuota('storage_mb', req.file.size);
+  } catch (e) {
+    unlinkImage(req.file.filename);
+    throw e;
   }
   run(
     "UPDATE inventory_items SET image_path = ?, updated_at = datetime('now') WHERE id = ?",

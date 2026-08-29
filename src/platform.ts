@@ -102,6 +102,15 @@ export function setTenantStatus(slug: string, status: TenantStatus): boolean {
   return pdb().prepare('UPDATE tenants SET status = ? WHERE slug = ?').run(status, slug).changes > 0;
 }
 
+export function setTenantPlan(slug: string, plan: string): boolean {
+  return pdb().prepare('UPDATE tenants SET plan = ? WHERE slug = ?').run(plan, slug).changes > 0;
+}
+
+/** ISO datetime string, or null to clear the trial end. */
+export function setTrialEndsAt(slug: string, when: string | null): boolean {
+  return pdb().prepare('UPDATE tenants SET trial_ends_at = ? WHERE slug = ?').run(when, slug).changes > 0;
+}
+
 export function logProvisioning(slug: string, action: string, detail?: string): void {
   pdb().prepare('INSERT INTO provisioning_log (slug, action, detail) VALUES (?, ?, ?)')
     .run(slug, action, detail ?? null);
