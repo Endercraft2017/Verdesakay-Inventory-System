@@ -13,6 +13,7 @@ import {
   parseBody,
   employeeSchema,
   csvImportSchema,
+  payrollTableSchema,
   attendancePeriodSchema,
   saveAttendanceSchema,
   addRosterEmployeeSchema,
@@ -27,6 +28,7 @@ import { computeAttendanceForEmployee, type AttendanceDay } from '../hr-payroll-
 import { suggestEmployeeNumber } from '../hr-employee-numbering';
 import { toCsv } from '../csv';
 import { resolveImport, importLoop } from '../csv-import';
+import { listPayrollTables, effectiveTables, upsertPayrollTable, deletePayrollTable } from '../payroll-tables';
 
 const EMP_CSV_COLUMNS = [
   'employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate',
@@ -219,6 +221,33 @@ router.post('/employees/import', requirePermission('hr.manage'), (req, res) => {
     return 'created';
   });
   res.json(report);
+});
+
+// ---- PH statutory rate tables (SSS / PhilHealth / Pag-IBIG / BIR withholding) ----
+// Versioned reference data used by the payroll engine (src/ph-statutory.ts). See
+// docs/PH-PAYROLL-COMPLIANCE.md.
+
+// GET /api/hr/payroll-tables?date=YYYY-MM-DD — every stored version + the set resolved for `date`
+router.get('/payroll-tables', requirePermission('hr.view'), (req, res) => {
+  const date = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+    ? req.query.date : undefined;
+  res.json({ rows: listPayrollTables(), effective: effectiveTables(date), as_of: date || new Date().toISOString().slice(0, 10) });
+});
+
+// POST /api/hr/payroll-tables — add/replace a version { kind, effective_from, data, note? }
+router.post('/payroll-tables', requirePermission('hr.manage'), (req, res) => {
+  const input = parseBody(payrollTableSchema, req.body);
+  upsertPayrollTable(input.kind, input.effective_from, input.data, input.note ?? null, req.user!.id);
+  res.status(201).json({ ok: true });
+});
+
+// DELETE /api/hr/payroll-tables/:id
+router.delete('/payroll-tables/:id', requirePermission('hr.manage'), (req, res) => {
+  if (!deletePayrollTable(Number(req.params.id))) {
+    res.status(404).json({ error: 'Rate table version not found' });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 // Resolves the effective daily_rate to store: the entered value for rate_type 'daily', or

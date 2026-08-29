@@ -509,6 +509,15 @@ export const employeeNumberPolicySchema = z.object({
   date_format: z.enum(['YYYYMMDD', 'YYMMDD']).default('YYYYMMDD'),
 });
 
+/** POST /api/hr/payroll-tables — one versioned statutory rate table. `data` shape is
+    validated loosely here (it's kind-specific); src/ph-statutory.ts is the contract. */
+export const payrollTableSchema = z.object({
+  kind: z.enum(['sss', 'philhealth', 'pagibig', 'rwt']),
+  effective_from: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'effective_from must be YYYY-MM-DD'),
+  data: z.record(z.string(), z.unknown()).refine((o) => Object.keys(o).length > 0, 'data cannot be empty'),
+  note: trimmed.max(500).optional().nullable(),
+});
+
 export const payrollPolicySchema = z.object({
   grace_minutes: z.coerce.number().int().min(0).max(240).default(10),
   late_unit: z.enum(['minute', 'hour']).default('hour'),
@@ -558,4 +567,15 @@ export const pushSubscriptionSchema = z.object({
 
 export const pushUnsubscribeSchema = z.object({
   endpoint: z.string().url().max(2000),
+});
+
+// ---- Time clock ----
+export const phonePunchSchema = z.object({
+  code: z.string().trim().length(10, 'Scan the current office code'),
+});
+
+export const kioskPunchSchema = z.object({
+  code: z.string().trim().length(10, 'The office code has changed — the screen shows a fresh one'),
+  employee_no: trimmed.min(1, 'Employee number is required').max(40),
+  name: trimmed.min(1, 'Name is required').max(160),
 });

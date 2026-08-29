@@ -1,7 +1,7 @@
 # Philippine Payroll & Statutory Compliance — scope + current figures
 
-> **Status:** research + build plan. Not implemented yet. This is GO-TO-MARKET §6 item #1
-> — the payroll "wedge".
+> **Status:** Phase A (statutory engine) **built 2026-08-29** — see §3. Phases B–D pending.
+> This is GO-TO-MARKET §6 item #1 — the payroll "wedge".
 > **Figures verified:** 2026 rates, August 2026. **Re-check every January** — SSS and
 > PhilHealth schedules change by circular; BIR form versions change by RMC.
 
@@ -94,19 +94,31 @@ Store the 5-row RWT table (per frequency) as versioned data keyed by effective d
 
 ## 3. Build plan
 
-### Phase A — the statutory engine  *(start here)*
+### Phase A — the statutory engine  ✅ **done 2026-08-29**
 
-- New table `payroll_tables` — versioned reference data keyed by `kind`
-  (`sss` / `philhealth` / `pagibig` / `rwt`) + `effective_from` date + a JSON `data`
-  blob. Seed 2026. Admin screen to view/duplicate-and-edit for the next year.
-- `src/ph-statutory.ts`:
-  - `sssContribution(mscBasis)` → `{ ee, er, ec, wisp_ee, wisp_er }` (table lookup)
-  - `philhealthContribution(basicSalary)` → `{ ee, er }` (formula, floor/ceiling)
-  - `pagibigContribution(monthlyComp)` → `{ ee, er }` (formula, cap)
-  - `withholdingTax(taxableCompForPeriod, frequency)` → tax (RWT table)
-  - `taxableCompensation(gross, nonTaxable, statutoryEE)` helper
-- Wire into `src/hr-payroll-compute.ts` so a generated payslip carries real EE/ER lines.
-- Config: which table year a payroll run uses (default = latest effective on the pay date).
+- `payroll_tables` table — versioned reference data: `(kind, effective_from)` unique,
+  JSON `data` blob, `note`. Seeded with the 2026 schedule (`INSERT OR IGNORE`, idempotent
+  per kind). `src/db.ts`.
+- `src/payroll-tables.ts` — `effectiveTables(date?)` resolves each kind to the latest row
+  whose `effective_from ≤ date` (falls back to the built-in 2026 seed); `listPayrollTables`,
+  `upsertPayrollTable` (replace on same kind+date), `deletePayrollTable`.
+- `src/ph-statutory.ts` — pure, DB-free:
+  - `monthlySalaryCredit(comp)` + `sssContribution(comp)` → `{ msc, employee, employer, ec, total }`
+    (5 % / 10 % of MSC; WISP above ₱20 k is the same split; EC ₱10 / ₱30 employer-only)
+  - `philHealthContribution(basic)` → `{ employee, employer, total }` (5 %, half each, ₱10 k–₱100 k)
+  - `pagIbigContribution(comp)` → `{ employee, employer, total }` (2 %, ₱200 cap, 1 % EE ≤ ₱1.5 k)
+  - `withholdingTax(taxableForPeriod, frequency)` → tax (RWT bracket table, monthly /
+    semi-monthly / weekly / daily)
+  - `taxableCompensation(gross, nonTaxable, employeeStatutory)` and
+    `statutoryDeductions(comp, basic, tables)` roll-up
+- API (`src/routes/hr.routes.ts`): `GET /api/hr/payroll-tables?date=` (list + resolved set,
+  `hr.view`), `POST` (add/replace a version, `hr.manage`), `DELETE /:id` (`hr.manage`).
+- Tests: `tests/ph-statutory.test.ts` (math vs the 2026 schedules),
+  `tests/payroll-tables.test.ts` (seeding, effective-date resolution, RBAC).
+
+**Still to wire (Phase B):** feed `statutoryDeductions` + `withholdingTax` into
+`src/hr-payroll-compute.ts` / payslip generation so a generated slip carries the real
+EE/ER lines instead of manual fields. Config for which pay frequency a run uses.
 
 ### Phase B — payslip, 13th-month, final pay
 

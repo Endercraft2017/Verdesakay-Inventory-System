@@ -15,6 +15,7 @@ import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
+import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from './ph-statutory';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -150,6 +151,33 @@ function createSchema(): void {
       response    TEXT NOT NULL,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Web-push subscriptions (one per browser/device). See src/push.ts.
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      endpoint   TEXT NOT NULL UNIQUE,
+      p256dh     TEXT NOT NULL,
+      auth       TEXT NOT NULL,
+      user_agent TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Raw time-clock events. Employees punch by scanning the office kiosk's rotating
+    -- QR (from the mobile app) or by typing their employee no. + name at the kiosk.
+    -- HR reconciles these into attendance_records per cutoff. See src/clock.ts.
+    CREATE TABLE IF NOT EXISTS time_punches (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      ts          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      work_date   TEXT NOT NULL,
+      kind        TEXT NOT NULL,     -- 'in' | 'out'
+      segment     TEXT NOT NULL,     -- morning_in | lunch_out | afternoon_in | afternoon_out | other_in | other_out
+      source      TEXT NOT NULL,     -- 'phone' | 'kiosk'
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_punch_emp_date ON time_punches(employee_id, work_date);
 
     CREATE TABLE IF NOT EXISTS suppliers (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -487,6 +515,21 @@ function createSchema(): void {
       start_time TEXT NOT NULL,
       end_time   TEXT NOT NULL,
       is_default INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- Versioned PH statutory rate tables (SSS / PhilHealth / Pag-IBIG / BIR withholding).
+    -- One row per (kind, effective_from); the payroll engine uses the latest row whose
+    -- effective_from is on or before the pay date. Admin-editable — see src/ph-statutory.ts
+    -- and docs/PH-PAYROLL-COMPLIANCE.md.
+    CREATE TABLE IF NOT EXISTS payroll_tables (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind           TEXT NOT NULL CHECK (kind IN ('sss','philhealth','pagibig','rwt')),
+      effective_from TEXT NOT NULL,
+      data           TEXT NOT NULL,
+      note           TEXT,
+      created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(kind, effective_from)
     );
 
     CREATE TABLE IF NOT EXISTS attendance_periods (
@@ -884,6 +927,27 @@ function seed(): void {
 
   seedTemplates();
   seedHrPayrollForm();
+  seedPayrollTables();
+}
+
+/** Seed the 2026 PH statutory rate tables if none exist yet. Idempotent per kind so a
+    later addition doesn't need a fresh DB. See src/ph-statutory.ts. */
+function seedPayrollTables(): void {
+  const seeds: Array<{ kind: string; data: unknown }> = [
+    { kind: 'sss', data: SSS_2026 },
+    { kind: 'philhealth', data: PHILHEALTH_2026 },
+    { kind: 'pagibig', data: PAGIBIG_2026 },
+    { kind: 'rwt', data: RWT_2026 },
+  ];
+  const ins = db.prepare(
+    `INSERT OR IGNORE INTO payroll_tables (kind, effective_from, data, note)
+     VALUES (?, '2026-01-01', ?, 'Seed — 2026 schedule. Verify against the current SSS circular / BIR RMC.')`
+  );
+  for (const s of seeds) {
+    if (!db.prepare('SELECT 1 FROM payroll_tables WHERE kind = ?').get(s.kind)) {
+      ins.run(s.kind, JSON.stringify(s.data));
+    }
+  }
 }
 
 /** Seed the "HR Payroll" form definition if no admin has already created one (matching
