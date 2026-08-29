@@ -50,6 +50,10 @@
       '<h2>' + mEsc(jo.product_name) + '</h2>' +
       '<div class="m-jo-meta"><span class="m-jo-status ' + jo.status + '">' + jo.status.replace('_', ' ') + '</span>' +
       ' · done ' + jo.qty_done + ' · scrap ' + jo.qty_scrapped + ' · of ' + jo.qty_ordered + '</div>' +
+      (jo.released_by_name
+        ? '<div class="m-hint">Released from warehouse by ' + mEsc(jo.released_by_name) +
+          (jo.released_at ? ' · ' + mEsc((jo.released_at || '').slice(0, 16).replace('T', ' ')) : '') + '</div>'
+        : '') +
       '</div>'
     ));
 

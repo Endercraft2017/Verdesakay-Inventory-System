@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { queryOne, queryAll, run } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import { parseBody, sendMessageSchema } from '../validation';
+import { notifyUser } from '../push';
 
 const router = Router();
 router.use(requireAuth);
@@ -60,6 +61,12 @@ router.post('/', requirePermission('messages.send'), (req, res) => {
     subject ?? null,
     body
   );
+  void notifyUser(recipient_id, {
+    title: subject ? `Message: ${subject}` : `New message from ${req.user!.full_name}`,
+    body: body.length > 140 ? body.slice(0, 137) + '…' : body,
+    url: '#/home',
+    tag: 'msg',
+  });
   res.status(201).json({ id: info.lastInsertRowid });
 });
 

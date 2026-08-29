@@ -50,6 +50,15 @@ describe('job orders — QA/QC', () => {
     expect(units.every((u) => u.status === 'pending' && u.stage === 0)).toBe(true);
   });
 
+  it('the job-order list carries units_pending for the mobile QA/QC worklist', async () => {
+    const { mo } = await releasedMO('QCLIST', 5, 1);
+    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 3 });
+    const list = await ctx.api.get('/api/job-orders').set(authHdr());
+    const row = list.body.find((j: { id: number }) => j.id === mo);
+    expect(row.units_pending).toBe(3);
+    expect(row.qc_stages).toBe(1);
+  });
+
   it('a single-stage pass puts the unit in stock; a fail scraps it with remarks', async () => {
     const { mo, product } = await releasedMO('QC2', 5, 1);
     await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 3 });

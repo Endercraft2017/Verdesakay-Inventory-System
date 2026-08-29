@@ -12,9 +12,11 @@ import https from 'node:https';
 import { spawnSync } from 'node:child_process';
 import { init, cleanupSessions } from './src/db';
 import { createApp } from './src/app';
+import { sendDueTaskReminders } from './src/push';
 
 init();
 setInterval(cleanupSessions, 60 * 60 * 1000).unref(); // hourly
+setInterval(() => { void sendDueTaskReminders(); }, 60 * 1000).unref(); // task reminders
 
 const app = createApp();
 const PORT = Number(process.env.PORT) || 3000;

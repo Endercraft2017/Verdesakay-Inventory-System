@@ -52,7 +52,7 @@ window.MApp = (function () {
 
   function render() {
     if (!me) return;
-    if (!can('inventory.mobile')) { showBlocked(); return; }
+    if (!hasAccess()) { showBlocked(); return; }
     var parsed = parseHash();
     var fn = routes[parsed.name] || routes.home;
     document.getElementById('m-back').classList.toggle('hidden', parsed.name === 'home');
@@ -76,6 +76,12 @@ window.MApp = (function () {
     if (pw) pw.value = '';
   }
 
+  /** Warehouse users, and anyone with a linked employee record (time clock, payslip…). */
+  function hasAccess() {
+    return can('inventory.mobile') || !!(me && me.employee);
+  }
+  function isEmployee() { return !!(me && me.employee); }
+
   function showBlocked() {
     appScreen().classList.remove('hidden');
     loginScreen().classList.add('hidden');
@@ -84,22 +90,30 @@ window.MApp = (function () {
     viewEl().innerHTML =
       '<div class="m-blocked">' +
       '<div class="m-blocked-icon">&#128683;</div>' +
-      '<h2>No mobile access</h2>' +
-      '<p>This account can\'t use the warehouse app. Please use the desktop system, ' +
-      'or ask an administrator for the <b>inventory.mobile</b> permission.</p>' +
+      '<h2>Nothing here for you yet</h2>' +
+      '<p>This account has no mobile features. Ask an administrator for the ' +
+      '<b>inventory.mobile</b> permission, or ask HR to link your account to your employee record.</p>' +
       '<button class="m-btn m-btn-secondary" id="m-blocked-out">Sign out</button></div>';
     document.getElementById('m-blocked-out').onclick = function () {
       API.post('/auth/logout').catch(function () {}).finally(showLogin);
     };
   }
 
+  var ME_KEY = 'vds_m_me';
+
   function enterApp(user) {
     me = user;
-    if (!can('inventory.mobile')) { showBlocked(); return; }
+    try { localStorage.setItem(ME_KEY, JSON.stringify(user)); } catch (e) { /* ignore */ }
+    if (window.mQueue) mQueue.setToken(API.getToken()); // let the SW replay the queue in the background
+    if (!hasAccess()) { showBlocked(); return; }
     loginScreen().classList.add('hidden');
     appScreen().classList.remove('hidden');
     if (!location.hash || location.hash === '#' || location.hash === '#/') location.hash = '#/home';
     else render();
+  }
+
+  function cachedMe() {
+    try { return JSON.parse(localStorage.getItem(ME_KEY) || 'null'); } catch (e) { return null; }
   }
 
   function boot() {
@@ -143,7 +157,13 @@ window.MApp = (function () {
     window.addEventListener('hashchange', render);
 
     if (API.getToken()) {
-      API.get('/auth/me').then(function (res) { enterApp(res.user); }).catch(showLogin);
+      API.get('/auth/me').then(function (res) { enterApp(res.user); }).catch(function (ex) {
+        // Offline with a saved session + cached identity → stay in the app so queued
+        // work can keep going. A real 401 (expired token) still falls through to login.
+        var m = cachedMe();
+        if (ex && ex.offline && m) { enterApp(m); mToast && mToast('Offline — working from cache'); }
+        else showLogin();
+      });
     } else {
       showLogin();
     }
@@ -152,12 +172,28 @@ window.MApp = (function () {
   // api.js calls window.App.showLogin() on a 401.
   window.App = { showLogin: showLogin };
 
+  // Register the service worker (offline launch + background sync). Its scope is
+  // broadened to /m via the Service-Worker-Allowed header on /mobile/sw.js.
+  if ('serviceWorker' in navigator) {
+    var hadController = !!navigator.serviceWorker.controller;
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/mobile/sw.js', { scope: '/m' }).catch(function () {});
+    });
+    var reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      // Reload once when a NEW app version takes over (not on the very first install).
+      if (reloaded || !hadController) return;
+      reloaded = true;
+      location.reload();
+    });
+  }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 
   return {
     route: route, go: go, back: back, nav: hashFor,
-    getMe: getMe, can: can, setTitle: setTitle, render: render,
+    getMe: getMe, can: can, isEmployee: isEmployee, setTitle: setTitle, render: render,
     routes: function () { return Object.keys(routes); },
   };
 })();

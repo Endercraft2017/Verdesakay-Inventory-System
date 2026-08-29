@@ -19,7 +19,8 @@ export type Permission =
   | 'hr.view' | 'hr.manage'
   | 'audit.view'
   | 'mail.send'
-  | 'announce';
+  | 'announce'
+  | 'qc.configure';
 
 /** Which section a Form Builder form belongs to — drives per-section access control
     (see `forms.manage.*` permissions) and where it's organized in the nav/Data Forms.
@@ -151,11 +152,14 @@ export interface InventoryItem {
   image_path: string | null;
   /** 1 ⇒ this item is a built product with a BOM (bom_components). */
   is_finished_product: number;
+  /** Finished products only: which QA/QC checklist applies (else the default). */
+  qc_checklist_id: number | null;
   created_at: string;
   updated_at: string;
   department_name?: string | null;
   supplier_name?: string | null;
   low_stock?: number;
+  qc_checklist_name?: string | null;
 }
 
 export interface BomComponent {
@@ -194,11 +198,45 @@ export interface JobOrder {
   closed_at: string | null;
   created_at: string;
   updated_at: string;
+  released_by: number | null;
   created_by_name?: string | null;
+  released_by_name?: string | null;
   order_number?: string | null;
   source_location_name?: string | null;
   output_location_name?: string | null;
   components?: JobOrderComponent[];
+  /** Resolved at load time: the checklist for this MO's product (or the default). */
+  qc_checklist?: { id: number; name: string; items: QcChecklistItem[] } | null;
+}
+
+/** One configurable QA/QC checklist line.
+    stage: 0 = every inspection, 1 = QA (first) stage only, 2 = QC (final) stage only. */
+export interface QcChecklistItem {
+  label: string;
+  required: boolean;
+  stage: 0 | 1 | 2;
+}
+
+/** A named, reusable QA/QC checklist. Finished products point at one via
+    `inventory_items.qc_checklist_id`; the `is_default` row covers products with none. */
+export interface QcChecklist {
+  id: number;
+  name: string;
+  /** JSON string in the row; parsed to QcChecklistItem[] in API responses. */
+  items: string | QcChecklistItem[];
+  is_default: number; // 0 | 1
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined into list responses. */
+  item_count?: number;
+}
+
+/** What the inspector actually ticked for one check, snapshotted onto the qc_record. */
+export interface QcChecklistResult {
+  label: string;
+  ok: boolean;
+  note?: string | null;
 }
 
 export interface JobOrderComponent {
@@ -213,7 +251,7 @@ export interface JobOrderComponent {
   component_on_hand?: number;
 }
 
-export type JobOrderUnitStatus = 'pending' | 'in_stock' | 'failed' | 'scrapped';
+export type JobOrderUnitStatus = 'pending' | 'in_stock' | 'failed' | 'scrapped' | 'sold';
 
 export interface JobOrderUnit {
   id: number;
@@ -224,9 +262,15 @@ export interface JobOrderUnit {
   /** Number of inspection stages this unit has passed so far. */
   stage: number;
   location_id: number | null;
+  /** Sales order that sold or relocated this unit (nullable). */
+  order_id: number | null;
   remarks: string | null;
   created_at: string;
   updated_at: string;
+  /** Joined into GET /finished-products/:id/units. */
+  job_order_number?: string;
+  location_name?: string | null;
+  order_number?: string | null;
 }
 
 export interface MailSettings {
@@ -260,6 +304,8 @@ export interface QcRecord {
   stage: number;
   result: 'pass' | 'fail';
   remarks: string | null;
+  /** JSON string in the row; parsed to QcChecklistResult[] in API responses. */
+  checklist: string | QcChecklistResult[] | null;
   inspector_id: number | null;
   created_at: string;
   inspector_name?: string | null;

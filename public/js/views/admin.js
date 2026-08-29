@@ -36,7 +36,7 @@ App.register('admin', async (view, filter) => {
   // the way its old hand-copied ROLE_DEFAULTS did (it was missing the hr.view/hr.manage permissions
   // entirely, so admins couldn't grant/revoke them here even though HR accounts had them).
   const PERMISSION_GROUPS = [
-    { label: 'Inventory', keys: ['inventory.view','inventory.create','inventory.edit','inventory.delete','inventory.adjust','inventory.configure'] },
+    { label: 'Inventory', keys: ['inventory.view','inventory.create','inventory.edit','inventory.delete','inventory.adjust','inventory.configure','inventory.mobile','qc.configure'] },
     { label: 'Orders', keys: ['orders.view','orders.create','orders.edit','orders.delete'] },
     { label: 'Files', keys: ['forms.view','forms.upload','forms.delete'] },
     { label: 'Form Builder', keys: ['forms.manage.hr','forms.manage.inventory','forms.manage.admin','forms.manage.accounting'] },

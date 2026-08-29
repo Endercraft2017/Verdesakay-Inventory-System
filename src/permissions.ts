@@ -18,6 +18,8 @@ export const ALL_PERMISSIONS: Permission[] = [
   'hr.view', 'hr.manage',
   'audit.view',
   'mail.send',
+  'announce',
+  'qc.configure',
 ];
 
 /** Canonical role list — the single source of truth for iterating all roles. */
@@ -34,6 +36,7 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
     'messages.view', 'messages.send',
     'templates.view',
     'mail.send',
+    'announce',
   ],
   accounting: [
     'inventory.view',
@@ -67,11 +70,13 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
     'messages.view', 'messages.send',
     'templates.view',
     'hr.view', 'hr.manage',
+    'announce',
   ],
   marketing: [
     'forms.view', 'forms.upload',
     'messages.view', 'messages.send',
     'templates.view',
+    'announce',
   ],
 };
 

@@ -8,14 +8,16 @@
 (function () {
   var DB_NAME = 'vds_mobile';
   var STORE = 'ops';
+  var META = 'meta'; // { k, v } — holds the bearer token so the service worker can replay
   var dbP = null;
 
   function db() {
     if (dbP) return dbP;
     dbP = new Promise(function (resolve, reject) {
-      var req = indexedDB.open(DB_NAME, 1);
+      var req = indexedDB.open(DB_NAME, 2);
       req.onupgradeneeded = function () {
         if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: 'key' });
+        if (!req.result.objectStoreNames.contains(META)) req.result.createObjectStore(META, { keyPath: 'k' });
       };
       req.onsuccess = function () { resolve(req.result); };
       req.onerror = function () { reject(req.error); };
@@ -23,11 +25,11 @@
     return dbP;
   }
 
-  function tx(mode, fn) {
+  function tx(mode, fn, storeName) {
     return db().then(function (d) {
       return new Promise(function (resolve, reject) {
-        var t = d.transaction(STORE, mode);
-        var store = t.objectStore(STORE);
+        var t = d.transaction(storeName || STORE, mode);
+        var store = t.objectStore(storeName || STORE);
         var out = fn(store);
         t.oncomplete = function () { resolve(out && out.result !== undefined ? out.result : out); };
         t.onerror = function () { reject(t.error); };
@@ -47,11 +49,27 @@
     });
   }
 
+  /** Ask the browser to replay us in the background once it has connectivity. */
+  function requestBackgroundSync() {
+    if (!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
+    navigator.serviceWorker.ready.then(function (reg) {
+      if (reg.sync) reg.sync.register('vds-flush').catch(function () {});
+    }).catch(function () {});
+  }
+
   var mQueue = {
+    /** Mirror the bearer token into IndexedDB so the service worker can replay. */
+    setToken: function (t) {
+      return tx('readwrite', function (s) { s.put({ k: 'token', v: t }); }, META).catch(function () {});
+    },
     enqueue: function (op) {
       op.created = op.created || Date.now();
       op.attempts = 0;
-      return tx('readwrite', function (s) { s.put(op); }).then(function () { emit(); return op.key; });
+      return tx('readwrite', function (s) { s.put(op); }).then(function () {
+        emit();
+        requestBackgroundSync();
+        return op.key;
+      });
     },
     all: function () {
       return tx('readonly', function (s) { return s.getAll(); }).then(function (rows) {
@@ -121,6 +139,13 @@
   window.addEventListener('online', function () { mQueue.flush(); });
   setInterval(function () { if (navigator.onLine) mQueue.flush(); }, 25000);
   if (navigator.onLine) setTimeout(function () { mQueue.flush(); }, 1500);
+
+  // The service worker tells us when it drained the queue in the background.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', function (ev) {
+      if (ev.data === 'queue-changed') emit();
+    });
+  }
 
   window.mQueue = mQueue;
   window.mSubmit = mSubmit;

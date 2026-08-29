@@ -66,10 +66,12 @@ router.get('/tasks', (req, res) => {
 router.post('/tasks', (req, res) => {
   const input = parseBody(taskSchema, req.body);
   const info = run(
-    'INSERT INTO tasks (user_id, title, due_date, done) VALUES (?, ?, ?, ?)',
+    'INSERT INTO tasks (user_id, title, due_date, notes, remind_at, done) VALUES (?, ?, ?, ?, ?, ?)',
     req.user!.id,
     input.title,
     input.due_date ?? null,
+    input.notes ?? null,
+    input.remind_at ?? null,
     input.done ? 1 : 0
   );
   res.status(201).json({ id: info.lastInsertRowid });
@@ -83,10 +85,17 @@ router.put('/tasks/:id', (req, res) => {
     return;
   }
   const input = parseBody(updateTaskSchema, req.body);
+  const t = task as Task & { remind_at?: string | null; notes?: string | null; remind_sent?: number };
+  const remindAt = input.remind_at !== undefined ? input.remind_at ?? null : t.remind_at ?? null;
+  // A changed reminder time re-arms the one-shot push.
+  const remindSent = remindAt === (t.remind_at ?? null) ? t.remind_sent ?? 0 : 0;
   run(
-    'UPDATE tasks SET title = ?, due_date = ?, done = ? WHERE id = ? AND user_id = ?',
+    'UPDATE tasks SET title = ?, due_date = ?, notes = ?, remind_at = ?, remind_sent = ?, done = ? WHERE id = ? AND user_id = ?',
     input.title ?? task.title,
     input.due_date !== undefined ? input.due_date : task.due_date,
+    input.notes !== undefined ? input.notes ?? null : t.notes ?? null,
+    remindAt,
+    remindSent,
     input.done !== undefined ? (input.done ? 1 : 0) : task.done,
     id,
     req.user!.id

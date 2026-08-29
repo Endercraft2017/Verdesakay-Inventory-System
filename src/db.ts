@@ -401,6 +401,8 @@ function createSchema(): void {
     );
 
     -- Phase C: one row per physical unit produced by a job order, plus its QA/QC log.
+    -- status: pending | in_stock | failed | scrapped | sold. order_id ties a
+    -- sold / relocated unit to the sales order that consumed or moved it.
     CREATE TABLE IF NOT EXISTS job_order_units (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       job_order_id    INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
@@ -409,6 +411,7 @@ function createSchema(): void {
       status          TEXT NOT NULL DEFAULT 'pending',
       stage           INTEGER NOT NULL DEFAULT 0,
       location_id     INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      order_id        INTEGER REFERENCES orders(id) ON DELETE SET NULL,
       remarks         TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
@@ -986,6 +989,12 @@ function migrate(): void {
   if (!iiCols.some((c) => c.name === 'qc_checklist_id')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN qc_checklist_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL');
   }
+  // Serialized-unit lifecycle: link a sold / relocated finished unit to its sales order.
+  const jouCols = db.prepare('PRAGMA table_info(job_order_units)').all() as { name: string }[];
+  if (!jouCols.some((c) => c.name === 'order_id')) {
+    db.exec('ALTER TABLE job_order_units ADD COLUMN order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL');
+  }
+
   // Carry a pre-existing single checklist (settings key `qc_checklist`) into a named row.
   const legacy = getSetting<{ items?: unknown[] } | unknown[]>('qc_checklist');
   const legacyItems = Array.isArray(legacy) ? legacy : (legacy && Array.isArray(legacy.items) ? legacy.items : null);

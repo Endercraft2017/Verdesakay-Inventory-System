@@ -92,7 +92,23 @@
         unit.</p>
         <p>When you release a <b>Job Order</b> for that product, the system reserves and
         consumes those parts from stock automatically. Keep the BOM accurate and job-order
-        consumption takes care of itself.</p>`,
+        consumption takes care of itself.</p>
+        <h4>Multi-level BOMs &amp; costing</h4>
+        <p>A component can itself be a finished product with its own BOM — a
+        <b>sub-assembly</b> (e.g. a wheel that goes into a bike). Open any finished
+        product to see:</p>
+        <ul>
+          <li><b>Std. material cost / unit</b> — the parts cost to build one, with
+              sub-assembly costs rolled up from <i>their</i> components. Costs come from
+              each item's <i>Standard cost</i> (falling back to <i>Purchase price</i>).</li>
+          <li><b>Full material requirements (all levels)</b> — type a build quantity and
+              the system explodes every sub-assembly down to raw materials, adds up the
+              quantities, and totals the cost. Use this for purchasing and quoting.</li>
+          <li><b>Where used</b> — on any BOM line, see every product that consumes that
+              part, directly or through a sub-assembly, before you change or discontinue it.</li>
+        </ul>
+        <p>If a BOM ever refers back to itself, the explosion stops at the loop and shows
+        a warning — fix the BOM so it forms a tree.</p>`,
     },
     {
       id: 'job-orders', title: 'Job Orders (production)', group: 'Manufacturing',

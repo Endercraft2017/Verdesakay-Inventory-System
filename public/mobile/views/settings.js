@@ -16,6 +16,10 @@ MApp.route('settings', function (view) {
     '    <button class="m-toggle" data-theme-btn aria-pressed="' + (currentTheme() === 'dark') + '">' +
     (currentTheme() === 'dark' ? 'On' : 'Off') + '</button></div>' +
 
+    '  <div class="m-set-row"><span>Notifications</span>' +
+    '    <button class="m-toggle" data-notif disabled>…</button></div>' +
+    '  <div class="m-hint" data-notif-hint></div>' +
+
     '  <h3 class="m-h3">Change password</h3>' +
     '  <form data-pw>' +
     '    <label class="m-field"><span class="m-label">Current password</span>' +
@@ -40,6 +44,35 @@ MApp.route('settings', function (view) {
     this.textContent = next === 'dark' ? 'On' : 'Off';
     this.setAttribute('aria-pressed', next === 'dark');
   };
+
+  // Notifications toggle
+  var notifBtn = wrap.querySelector('[data-notif]');
+  var notifHint = wrap.querySelector('[data-notif-hint]');
+  function paintNotif(state) {
+    var labels = { on: 'On', off: 'Off', denied: 'Blocked', unsupported: 'N/A', 'no-sw': 'Off' };
+    notifBtn.textContent = labels[state] || 'Off';
+    notifBtn.setAttribute('aria-pressed', state === 'on');
+    notifBtn.disabled = state === 'unsupported' || state === 'denied';
+    notifHint.textContent =
+      state === 'denied' ? 'Notifications are blocked in your browser settings for this site.' :
+      state === 'unsupported' ? 'This device can’t show push notifications.' :
+      state === 'on' ? 'You’ll get alerts for low stock and new messages.' : '';
+    notifBtn.dataset.state = state;
+  }
+  if (window.mPush) {
+    mPush.status().then(paintNotif).catch(function () { paintNotif('off'); });
+    notifBtn.onclick = function () {
+      var cur = notifBtn.dataset.state;
+      notifBtn.disabled = true;
+      var op = cur === 'on' ? mPush.disable() : mPush.enable();
+      op.then(function (s) {
+        paintNotif(s);
+        if (s === 'on') { mPush.test().catch(function () {}); mToast('Notifications on'); }
+      }).catch(function (ex) { mToast(ex.message || 'Could not change notifications', 'err'); paintNotif(cur); });
+    };
+  } else {
+    paintNotif('unsupported');
+  }
 
   wrap.querySelector('[data-pw]').onsubmit = function (e) {
     e.preventDefault();

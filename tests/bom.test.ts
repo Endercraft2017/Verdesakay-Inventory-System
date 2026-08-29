@@ -15,6 +15,13 @@ afterAll(() => cleanup(ctx));
 const mkItem = async (name: string, quantity = 0) =>
   (await ctx.api.post('/api/inventory').set(authHdr()).send({ name, quantity })).body.id as number;
 
+const mkCosted = async (name: string, cost: number, quantity = 0) =>
+  (await ctx.api.post('/api/inventory').set(authHdr())
+    .send({ name, quantity, attributes: { standard_cost: cost } })).body.id as number;
+
+const setBom = (product: number, components: { component_item_id: number; quantity: number }[]) =>
+  ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({ components });
+
 describe('finished products + BOM', () => {
   it('marks an item as a finished product and stores its BOM', async () => {
     const product = await mkItem('Prado — Black');
@@ -106,5 +113,59 @@ describe('finished products + BOM', () => {
     const res = await ctx.api.put(`/api/finished-products/${product}`).set('Authorization', `Bearer ${acct.token}`)
       .send({ components: [{ component_item_id: c, quantity: 1 }] });
     expect(res.status).toBe(403);
+  });
+});
+
+describe('multi-level BOM: explode / cost / where-used', () => {
+  // Bike ─ 2× Wheel(sub) ─ [1× Rim@100, 32× Spoke@2] ; 1× Frame@500 ; 2× Spoke@2
+  let bike = 0, wheel = 0, rim = 0, spoke = 0, frame = 0;
+
+  beforeAll(async () => {
+    bike = await mkItem('ML Bicycle');
+    wheel = await mkItem('ML Wheel');
+    rim = await mkCosted('ML Rim', 100, 50);
+    spoke = await mkCosted('ML Spoke', 2, 5000);
+    frame = await mkCosted('ML Frame', 500, 10);
+    await setBom(wheel, [
+      { component_item_id: rim, quantity: 1 },
+      { component_item_id: spoke, quantity: 32 },
+    ]);
+    await setBom(bike, [
+      { component_item_id: wheel, quantity: 2 },
+      { component_item_id: frame, quantity: 1 },
+      { component_item_id: spoke, quantity: 2 },
+    ]);
+  });
+
+  it('explodes the whole tree to raw materials', async () => {
+    const res = await ctx.api.get(`/api/finished-products/${bike}/explode?qty=10`).set(authHdr());
+    expect(res.status).toBe(200);
+    const byName = Object.fromEntries(res.body.materials.map((m: { name: string }) => [m.name, m]));
+    expect(byName['ML Spoke'].total_qty).toBe(660); // (2×32 + 2) × 10
+    expect(byName['ML Rim'].total_qty).toBe(20);
+    expect(byName['ML Frame'].total_qty).toBe(10);
+    expect(res.body.subassemblies).toEqual([{ item_id: wheel, name: 'ML Wheel', total_qty: 20 }]);
+    expect(res.body.material_cost).toBe(8320); // 832 per bike × 10
+  });
+
+  it('rolls sub-assembly cost up in /cost', async () => {
+    const res = await ctx.api.get(`/api/finished-products/${bike}/cost`).set(authHdr());
+    expect(res.status).toBe(200);
+    const wheelLine = res.body.lines.find((l: { item_id: number }) => l.item_id === wheel);
+    expect(wheelLine.unit_cost).toBe(164); // 100 + 32×2
+    expect(wheelLine.is_subassembly).toBe(true);
+    expect(res.body.unit_material_cost).toBe(832);
+  });
+
+  it('reports where a component is used, direct vs indirect', async () => {
+    const res = await ctx.api.get(`/api/inventory/${rim}/where-used`).set(authHdr());
+    expect(res.status).toBe(200);
+    const byId = Object.fromEntries(res.body.map((r: { id: number; indirect: boolean }) => [r.id, r.indirect]));
+    expect(byId[wheel]).toBe(false); // direct
+    expect(byId[bike]).toBe(true);   // only via Wheel
+  });
+
+  it('404s explode for a missing item', async () => {
+    expect((await ctx.api.get('/api/finished-products/999999/explode').set(authHdr())).status).toBe(404);
   });
 });

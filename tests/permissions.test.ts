@@ -18,3 +18,17 @@ describe('inventory.mobile permission', () => {
     expect(resolvePermissions('warehouse', { 'inventory.mobile': false })).not.toContain('inventory.mobile');
   });
 });
+
+describe('announce permission', () => {
+  it('is part of the canonical catalog', () => {
+    expect(ALL_PERMISSIONS).toContain('announce');
+  });
+
+  it('defaults for admin, admin_staff, hr and marketing — not for warehouse', () => {
+    expect(roleDefaults('admin')).toContain('announce');
+    expect(roleDefaults('admin_staff')).toContain('announce');
+    expect(roleDefaults('hr')).toContain('announce');
+    expect(roleDefaults('marketing')).toContain('announce');
+    expect(roleDefaults('warehouse')).not.toContain('announce');
+  });
+});

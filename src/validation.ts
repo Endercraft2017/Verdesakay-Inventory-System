@@ -223,7 +223,33 @@ export const saveBomSchema = z.object({
       })
     )
     .max(200),
+  // Which QA/QC checklist this product uses. Absent = leave unchanged; '' / null = clear.
+  qc_checklist_id: optionalId.optional(),
 });
+
+/** POST /api/finished-products/:id/units/allocate — sell or relocate in-stock units.
+    Provide either explicit `unit_ids` (serialized) or a `quantity` of bulk units. */
+export const allocateUnitsSchema = z
+  .object({
+    action: z.enum(['sell', 'move']),
+    unit_ids: z.array(z.coerce.number().int().positive()).max(500).optional(),
+    quantity: z.coerce.number().int().positive().max(500).optional(),
+    order_id: optionalId,
+    to_location_id: optionalId,
+    reason: optionalText,
+  })
+  .refine((v) => (v.unit_ids && v.unit_ids.length) || v.quantity, {
+    message: 'Pick units or a quantity',
+    path: ['unit_ids'],
+  })
+  .refine((v) => v.action !== 'sell' || v.order_id != null, {
+    message: 'A sales order is required to sell units',
+    path: ['order_id'],
+  })
+  .refine((v) => v.action !== 'move' || v.to_location_id != null, {
+    message: 'A destination location is required to move units',
+    path: ['to_location_id'],
+  });
 
 // ---- Manufacturing job orders ----
 export const createJobOrderSchema = z.object({
@@ -270,11 +296,34 @@ const unitIdentifier = trimmed
   .optional()
   .nullable();
 
+/** One filled checklist line submitted with an inspection. */
+const checklistResultSchema = z.object({
+  label: trimmed.min(1).max(200),
+  ok: boolish,
+  note: trimmed.max(500).optional().nullable(),
+});
+
 export const inspectUnitsSchema = z.object({
   unit_ids: z.array(z.coerce.number().int().positive()).min(1).max(500),
   result: z.enum(['pass', 'fail']),
   remarks: trimmed.max(2000).optional().nullable(),
   identifier: unitIdentifier,
+  checklist: z.array(checklistResultSchema).max(60).optional(),
+});
+
+/** POST/PUT /api/qc/checklists/:id — one named, reusable QA/QC checklist. */
+export const qcChecklistSchema = z.object({
+  name: trimmed.min(1, 'Give the checklist a name').max(120),
+  is_default: boolish.default(false),
+  items: z
+    .array(
+      z.object({
+        label: trimmed.min(1, 'Each check needs a label').max(200),
+        required: boolish.default(false),
+        stage: z.coerce.number().int().min(0).max(2).default(0),
+      })
+    )
+    .max(60, 'Keep the checklist under 60 items'),
 });
 
 export const setUnitIdentifierSchema = z.object({

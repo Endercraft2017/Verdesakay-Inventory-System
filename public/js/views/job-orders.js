@@ -115,6 +115,7 @@ App.register('job-orders', async (view) => {
   async function trackModal(id) {
     let jo = await API.get('/job-orders/' + id);
     let units = [];
+    let qcLog = [];
 
     const m = UI.modal({ title: `Job order ${jo.number}`, size: 'lg', cancelText: 'Close', bodyHTML: '<div id="jo-body"></div>' });
     const host = () => m.overlay ? m.overlay.querySelector('#jo-body') : document.querySelector('#jo-body');
@@ -122,6 +123,7 @@ App.register('job-orders', async (view) => {
     async function refreshUnits() {
       if (jo.qc_stages > 0) {
         try { units = await API.get('/job-orders/' + id + '/units'); } catch { units = []; }
+        try { qcLog = await API.get('/job-orders/' + id + '/qc'); } catch { qcLog = []; }
       }
     }
 
@@ -145,6 +147,12 @@ App.register('job-orders', async (view) => {
       const sum = jo.units_summary || { pending: 0, in_stock: 0, failed: 0, scrapped: 0 };
       const qc = jo.qc_stages > 0;
       const pending = units.filter((u) => u.status === 'pending');
+      // Checklist items scoped to the stage(s) of the units currently pending.
+      const totalStages = Math.max(1, jo.qc_stages || 1);
+      const firstP = pending.some((u) => u.stage + 1 === 1);
+      const finalP = pending.some((u) => u.stage + 1 >= totalStages);
+      const qcCl = ((jo.qc_checklist && jo.qc_checklist.items) || []).filter((it) =>
+        it.stage === 0 || (it.stage === 1 && firstP) || (it.stage === 2 && finalP));
       el.innerHTML = `
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
           ${badge(jo.status)}
@@ -160,6 +168,7 @@ App.register('job-orders', async (view) => {
           ${qc ? `<div><span class="muted">Under inspection</span><div>${sum.pending}</div></div>` : ''}
           <div><span class="muted">Pull from</span><div>${UI.esc(jo.source_location_name || '—')}</div></div>
           <div><span class="muted">Output to</span><div>${UI.esc(jo.output_location_name || '—')}</div></div>
+          ${jo.released_by_name ? `<div><span class="muted">Released by</span><div>${UI.esc(jo.released_by_name)}${jo.released_at ? ` <span class="muted">${UI.esc(jo.released_at.slice(0, 16).replace('T', ' '))}</span>` : ''}</div></div>` : ''}
         </div>
         ${jo.notes ? `<p class="muted" style="white-space:pre-wrap">${UI.esc(jo.notes)}</p>` : ''}
 
@@ -201,14 +210,40 @@ App.register('job-orders', async (view) => {
                 <td class="mono">${UI.esc(u.identifier || '—')}</td>
               </tr>`).join('')}</tbody>
             </table>
+            ${qcCl.length ? `
+              <div style="margin-top:10px">
+                <label style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">QA/QC checklist${jo.qc_checklist ? ` — ${UI.esc(jo.qc_checklist.name)}` : ''}</label>
+                <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+                  ${qcCl.map((it, i) => `
+                    <label class="check"><input type="checkbox" class="jo-chk-item" data-i="${i}" data-label="${UI.esc(it.label)}" />
+                      ${UI.esc(it.label)}${it.required ? ' <span style="color:var(--danger,#dc2626)">*</span>' : ''}
+                      <span class="muted" style="font-size:11px">${it.stage === 1 ? '(QA)' : it.stage === 2 ? '(QC)' : ''}</span></label>`).join('')}
+                </div>
+              </div>` : ''}
             <div class="field-row" style="margin-top:8px">
               <div><label>Identifier (optional, applies to passed units)</label><input id="jo-ident" placeholder="e.g. chassis / serial no." /></div>
-              <div><label>Remarks</label><input id="jo-remarks" placeholder="Reason if failing…" /></div>
+              <div><label>Remarks</label><input id="jo-remarks" placeholder="Notes / reason if failing…" /></div>
             </div>
             <div style="display:flex;gap:8px;margin-top:8px">
               <button type="button" class="btn" id="jo-pass">Pass selected</button>
               <button type="button" class="btn secondary danger" id="jo-fail">Fail selected</button>
             </div>` : '<p class="muted">No units waiting for inspection.</p>'}` : ''}
+
+        ${qc && qcLog.length ? `
+          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Inspection history</h4>
+          <table>
+            <thead><tr><th>When</th><th>Unit</th><th>Result</th><th>Inspector</th><th>Remarks / issues</th></tr></thead>
+            <tbody>${qcLog.slice(0, 50).map((q) => {
+              const issues = (Array.isArray(q.checklist) ? q.checklist : []).filter((c) => c.ok === false).map((c) => c.label).join(', ');
+              return `<tr>
+                <td class="muted" style="white-space:nowrap">${UI.esc((q.created_at || '').slice(0, 16).replace('T', ' '))}</td>
+                <td>#${q.unit_id || '—'}${q.stage ? ` <span class="muted">s${q.stage}</span>` : ''}</td>
+                <td>${q.result === 'pass' ? '<span class="badge-pill ok">pass</span>' : '<span class="badge-pill low">fail</span>'}</td>
+                <td>${UI.esc(q.inspector_name || '—')}</td>
+                <td>${UI.esc(q.remarks || '')}${issues ? `<div class="muted" style="font-size:11px">✗ ${UI.esc(issues)}</div>` : ''}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>` : ''}
 
         ${canWrite ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           ${isDraft ? `<button type="button" class="btn" data-do="release">Release</button>
@@ -245,7 +280,18 @@ App.register('job-orders', async (view) => {
         const identifier = (el.querySelector('#jo-ident').value || '').trim() || undefined;
         const remarks = (el.querySelector('#jo-remarks').value || '').trim() || undefined;
         if (result === 'fail' && !remarks) { UI.toast('Add a remark when failing units', 'error'); return; }
-        API.post('/job-orders/' + id + '/units/inspect', { unit_ids, result, identifier, remarks })
+
+        let checklist;
+        const boxes = [...el.querySelectorAll('.jo-chk-item')];
+        if (boxes.length) {
+          checklist = boxes.map((b) => ({ label: b.dataset.label, ok: b.checked }));
+          if (result === 'pass') {
+            const missing = boxes.filter((b, i) => qcCl[i] && qcCl[i].required && !b.checked)
+              .map((b) => b.dataset.label);
+            if (missing.length) { UI.toast('Tick the required checks first: ' + missing.join(', '), 'error'); return; }
+          }
+        }
+        API.post('/job-orders/' + id + '/units/inspect', { unit_ids, result, identifier, remarks, checklist })
           .then(async (r) => { jo = r.job_order; await refreshUnits(); UI.toast(result === 'pass' ? 'Units passed' : 'Units failed'); draw(); load(); })
           .catch((e) => UI.toast(e.message, 'error'));
       };

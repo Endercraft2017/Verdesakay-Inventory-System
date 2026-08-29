@@ -26,6 +26,8 @@ import {
 import { notifyLowStockCrossed } from '../push';
 import { enforceQuota } from '../quota';
 import { parseCsvTable, toCsv } from '../csv';
+import { whereUsed } from '../bom-explode';
+import { dbBomResolvers } from '../bom-resolvers';
 import type { InventoryItem, InventoryTransaction } from '../types';
 
 const router = Router();
@@ -225,11 +227,32 @@ router.get('/lookup', requirePermission('inventory.view'), (req, res) => {
     code,
     code
   );
-  if (!item) {
-    res.status(404).json({ error: 'No item matches that code' });
+  if (item) {
+    res.json(withParsedAttributes(item));
     return;
   }
-  res.json(withParsedAttributes(item));
+
+  // Not a SKU / barcode — try a serialized finished-product unit's identifier
+  // (the codes printed on QR labels for units that passed QA/QC).
+  const unit = queryOne<{ id: number; identifier: string; status: string; product_item_id: number; job_order_number: string | null }>(
+    `SELECT u.id, u.identifier, u.status, u.product_item_id, jo.number AS job_order_number
+     FROM job_order_units u LEFT JOIN job_orders jo ON jo.id = u.job_order_id
+     WHERE u.identifier = ? AND u.product_item_id IS NOT NULL
+     ORDER BY u.id DESC LIMIT 1`,
+    code
+  );
+  if (unit) {
+    const prod = queryOne<InventoryItem>(ITEM_SELECT + ' WHERE i.id = ? LIMIT 1', unit.product_item_id);
+    if (prod) {
+      res.json({
+        ...withParsedAttributes(prod),
+        unit: { id: unit.id, identifier: unit.identifier, status: unit.status, job_order_number: unit.job_order_number },
+      });
+      return;
+    }
+  }
+
+  res.status(404).json({ error: 'No item matches that code' });
 });
 
 // ---- CSV import / export ----------------------------------------------------
@@ -405,6 +428,26 @@ router.get('/:id/stock', requirePermission('inventory.view'), (req, res) => {
     return;
   }
   res.json(stockBreakdown(id));
+});
+
+// GET /api/inventory/:id/where-used — finished products / sub-assemblies whose BOM
+// consumes this item, directly or indirectly.
+router.get('/:id/where-used', requirePermission('inventory.view'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Item not found' });
+    return;
+  }
+  const used = whereUsed(id, dbBomResolvers());
+  if (!used.length) { res.json([]); return; }
+  const byId = new Map(used.map((u) => [u.product_id, u.indirect]));
+  const rows = queryAll<InventoryItem>(
+    `SELECT id, name, sku, unit, quantity, is_finished_product
+     FROM inventory_items WHERE id IN (${[...byId.keys()].map(() => '?').join(',')})
+     ORDER BY name COLLATE NOCASE`,
+    ...byId.keys()
+  );
+  res.json(rows.map((r) => ({ ...r, indirect: byId.get(r.id) ?? false })));
 });
 
 // GET /api/inventory/:id — single item with recent transactions + per-location breakdown

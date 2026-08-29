@@ -15,6 +15,7 @@ import {
   setUnitIdentifierSchema,
 } from '../validation';
 import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory-stock';
+import { checklistForProduct } from './qc.routes';
 import type { JobOrder, JobOrderComponent, JobOrderUnit, InventoryItem } from '../types';
 
 const router = Router();
@@ -25,10 +26,12 @@ const writeGate = requirePermission('inventory.adjust');
 
 function loadJobOrder(id: number): JobOrder | null {
   const jo = queryOne<JobOrder>(
-    `SELECT j.*, u.full_name AS created_by_name, o.number AS order_number,
+    `SELECT j.*, u.full_name AS created_by_name, rb.full_name AS released_by_name,
+            o.number AS order_number,
             sl.name AS source_location_name, ol.name AS output_location_name
      FROM job_orders j
      LEFT JOIN users u ON u.id = j.created_by
+     LEFT JOIN users rb ON rb.id = j.released_by
      LEFT JOIN orders o ON o.id = j.order_id
      LEFT JOIN locations sl ON sl.id = j.source_location_id
      LEFT JOIN locations ol ON ol.id = j.output_location_id
@@ -51,6 +54,7 @@ function loadJobOrder(id: number): JobOrder | null {
   const summary: Record<string, number> = { pending: 0, in_stock: 0, failed: 0, scrapped: 0 };
   for (const c of counts) summary[c.status] = c.n;
   (jo as JobOrder & { units_summary: Record<string, number> }).units_summary = summary;
+  jo.qc_checklist = jo.qc_stages > 0 ? checklistForProduct(jo.product_item_id) : null;
   return jo;
 }
 
@@ -94,9 +98,11 @@ router.get('/', readGate, (req, res) => {
   if (typeof status === 'string' && status.trim()) { where.push('j.status = ?'); params.push(status.trim()); }
   if (order_id) { where.push('j.order_id = ?'); params.push(Number(order_id)); }
   if (product_item_id) { where.push('j.product_item_id = ?'); params.push(Number(product_item_id)); }
-  const rows = queryAll<JobOrder & { remaining: number }>(
+  const rows = queryAll<JobOrder & { remaining: number; units_pending: number }>(
     `SELECT j.*, o.number AS order_number,
-            (j.qty_ordered - j.qty_done - j.qty_scrapped) AS remaining
+            (j.qty_ordered - j.qty_done - j.qty_scrapped) AS remaining,
+            (SELECT COUNT(*) FROM job_order_units u
+              WHERE u.job_order_id = j.id AND u.status = 'pending') AS units_pending
      FROM job_orders j LEFT JOIN orders o ON o.id = j.order_id
      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY j.id DESC`,
@@ -305,8 +311,8 @@ router.post('/:id/release', writeGate, (req, res) => {
       });
     }
     run(
-      "UPDATE job_orders SET status = 'released', released_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-      id
+      "UPDATE job_orders SET status = 'released', released_by = ?, released_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+      req.user!.id, id
     );
     db.exec('COMMIT');
   } catch (e) {
@@ -526,16 +532,21 @@ router.get('/:id/qc', readGate, (req, res) => {
     res.status(404).json({ error: 'Job order not found' });
     return;
   }
+  const rows = queryAll<{ checklist: string | null }>(
+    `SELECT q.*, u.full_name AS inspector_name, un.identifier AS unit_identifier
+     FROM qc_records q
+     LEFT JOIN users u ON u.id = q.inspector_id
+     LEFT JOIN job_order_units un ON un.id = q.unit_id
+     WHERE q.job_order_id = ?
+     ORDER BY q.id DESC`,
+    id
+  );
   res.json(
-    queryAll(
-      `SELECT q.*, u.full_name AS inspector_name, un.identifier AS unit_identifier
-       FROM qc_records q
-       LEFT JOIN users u ON u.id = q.inspector_id
-       LEFT JOIN job_order_units un ON un.id = q.unit_id
-       WHERE q.job_order_id = ?
-       ORDER BY q.id DESC`,
-      id
-    )
+    rows.map((r) => {
+      let checklist: unknown = null;
+      try { checklist = r.checklist ? JSON.parse(r.checklist) : null; } catch { checklist = null; }
+      return { ...r, checklist };
+    })
   );
 });
 
@@ -547,7 +558,7 @@ router.post('/:id/units/inspect', writeGate, (req, res) => {
     res.status(404).json({ error: 'Job order not found' });
     return;
   }
-  const { unit_ids, result, remarks, identifier } = parseBody(inspectUnitsSchema, req.body);
+  const { unit_ids, result, remarks, identifier, checklist } = parseBody(inspectUnitsSchema, req.body);
   const units = queryAll<JobOrderUnit>(
     `SELECT * FROM job_order_units WHERE job_order_id = ? AND id IN (${unit_ids.map(() => '?').join(',')})`,
     id,
@@ -565,18 +576,43 @@ router.post('/:id/units/inspect', writeGate, (req, res) => {
   const outputLoc = jo.output_location_id ?? getDefaultLocationId();
   const stages = Math.max(1, jo.qc_stages || 1);
 
+  // A checklist item is scoped to a stage: 0 = every inspection, 1 = the QA/first
+  // pass, 2 = the QC/final pass (which completes the unit). On a single-stage MO the
+  // one inspection is both first and final, so stage-1 and stage-2 items both apply.
+  const isFirstPass = units.some((u) => u.stage + 1 === 1);
+  const isFinalPass = units.some((u) => u.stage + 1 >= stages);
+  const stageApplies = (s: number) =>
+    s === 0 || (s === 1 && isFirstPass) || (s === 2 && isFinalPass);
+
+  // A unit can only become finished stock once its checklist is complete — every
+  // configured *required* check that applies to this pass must be ticked OK.
+  if (result === 'pass') {
+    const activeChecklist = checklistForProduct(jo.product_item_id)?.items ?? [];
+    const required = activeChecklist.filter((it) => it.required && stageApplies(it.stage));
+    if (required.length) {
+      const ticked = new Map((checklist ?? []).map((c) => [c.label, c.ok]));
+      const missing = required.filter((it) => ticked.get(it.label) !== true).map((it) => it.label);
+      if (missing.length) {
+        res.status(400).json({ error: `Complete the required QA/QC checks before passing: ${missing.join(', ')}` });
+        return;
+      }
+    }
+  }
+  const checklistJson = checklist && checklist.length ? JSON.stringify(checklist) : null;
+
   db.exec('BEGIN');
   try {
     for (const u of units) {
       const stage = u.stage + 1;
       run(
-        `INSERT INTO qc_records (job_order_id, unit_id, stage, result, remarks, inspector_id)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO qc_records (job_order_id, unit_id, stage, result, remarks, checklist, inspector_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         id,
         u.id,
         stage,
         result,
         remarks ?? null,
+        checklistJson,
         req.user!.id
       );
       if (result === 'fail') {
@@ -590,17 +626,19 @@ router.post('/:id/units/inspect', writeGate, (req, res) => {
       } else {
         const identSql = identifier !== undefined && identifier !== null ? identifier : u.identifier;
         if (stage >= stages) {
+          const unitLoc = u.location_id ?? outputLoc;
           run(
-            "UPDATE job_order_units SET status = 'in_stock', stage = ?, identifier = ?, remarks = ?, updated_at = datetime('now') WHERE id = ?",
+            "UPDATE job_order_units SET status = 'in_stock', stage = ?, identifier = ?, remarks = ?, location_id = ?, updated_at = datetime('now') WHERE id = ?",
             stage,
             identSql,
             remarks ?? u.remarks,
+            unitLoc,
             u.id
           );
           if (jo.product_item_id != null) {
             applyStockChange({
               itemId: jo.product_item_id,
-              locationId: u.location_id ?? outputLoc,
+              locationId: unitLoc,
               change: 1,
               reason: `${jo.number}: unit passed QC`,
               userId: req.user!.id,

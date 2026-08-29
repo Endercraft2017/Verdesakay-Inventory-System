@@ -133,10 +133,13 @@ hardening.
   return), QA/QC pass–fail with free-text remarks and multi-stage support, one row per
   physical unit with an alphanumeric identifier (serial / chassis / motor no.), explode
   view of a finished product into its serialized units.
+- **Added 2026-08-29:** **multi-level BOM** (sub-assembly / BOM-within-BOM) with recursive
+  explosion to raw materials, **per-unit standard material cost roll-up** (sub-assembly
+  cost rolled up from its own parts), **where-used**, and BOM cycle detection.
+  `src/bom-explode.ts`; `/api/finished-products/:id/explode|cost|where-used`.
 - **Gap (harden / extend):** production **scheduling / calendar**, work centers &
-  routings, capacity view, per-unit cost roll-up (materials + labor + overhead),
-  scrap/rework reporting, subcontracting, WIP valuation, multi-level BOM (BOM within BOM),
-  where-used, BOM versioning/effectivity.
+  routings, capacity view, cost roll-up extended to **labor + overhead** (materials done),
+  scrap/rework reporting, subcontracting, WIP valuation, BOM versioning/effectivity.
 - **Selling line:** "Every unit tracked from parts issued to QC passed, by serial number."
 
 ### Pillar 4 — Inventory core (multi-location, transfers, movements)  ✔ STRONG
@@ -228,8 +231,10 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    `src/plans.ts` + `enforceQuota` 402s at the create endpoints, `GET /api/tenant` +
    trial/past-due banner, lapsed-trial read-only, `npm run tenant:plan|usage`) done
    2026-08-29. Then custom domains + billing, per-tenant backups job.*
-4. **Manufacturing hardening** (Pillar 3): multi-level BOM, per-unit cost roll-up,
-   basic scheduling. Turns "nice demo" into "runs our shop."
+4. **Manufacturing hardening** (Pillar 3): ~~multi-level BOM, per-unit cost roll-up~~
+   *(shipped 2026-08-29 — explosion, standard-cost roll-up, where-used, cycle detection)*;
+   still to do: basic scheduling / calendar, labor+overhead in the roll-up. Turns "nice
+   demo" into "runs our shop."
 5. **Purchasing depth** (Pillar 8): PO → goods receipt → match; supplier records.
 6. **Accounting integration** (see §7) — decide partner-vs-build now; it shapes the pitch.
 7. **Mobile hardening** (Pillar 2): 1D barcodes, label printing, receive-against-PO.
