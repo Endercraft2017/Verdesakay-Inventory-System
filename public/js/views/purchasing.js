@@ -5,6 +5,8 @@ App.register('purchasing', async (view, filter) => {
   const money = UI.money;
   const canReceive = App.hasPermission('inventory.adjust');
   const canBill = App.hasPermission('orders.edit');
+  let taxCodes = [];
+  try { taxCodes = await API.get('/accounting/tax-codes?active=1'); } catch { /* needs accounting.view */ }
   const tab = filter && filter.tab === 'receipts' ? 'receipts' : 'bills';
   const LABEL = 'margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)';
 
@@ -236,6 +238,8 @@ App.register('purchasing', async (view, filter) => {
         </div>
         <div class="field-row">
           <div><label>Tax %</label><input data-f="tax" type="number" min="0" max="100" step="any" value="${existing ? existing.tax_percent : 0}" style="width:90px" /></div>
+          ${taxCodes.length ? `<div><label>Tax code</label><select data-f="tcode"><option value="">— unclassified —</option>
+            ${taxCodes.map((t) => `<option value="${t.id}" ${existing && String(existing.tax_code_id) === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)} — ${UI.esc(t.name)}</option>`).join('')}</select></div>` : ''}
           <div style="flex:1"><label>Note</label><input data-f="note" value="${UI.esc(existing ? existing.notes || '' : '')}" /></div>
         </div>
         <h4 style="${LABEL}">Lines</h4>
@@ -266,11 +270,13 @@ App.register('purchasing', async (view, filter) => {
           });
         });
         if (!lines.length) { showErr('Add at least one line'); return false; }
+        const tcodeEl = ov.querySelector('[data-f="tcode"]');
         const body = {
           vendor_ref: ov.querySelector('[data-f="ref"]').value.trim() || null,
           bill_date: ov.querySelector('[data-f="bdate"]').value || null,
           due_date: ov.querySelector('[data-f="ddate"]').value || null,
           tax_percent: parseFloat(ov.querySelector('[data-f="tax"]').value) || 0,
+          tax_code_id: tcodeEl && tcodeEl.value ? Number(tcodeEl.value) : null,
           notes: ov.querySelector('[data-f="note"]').value.trim() || null,
           lines,
         };

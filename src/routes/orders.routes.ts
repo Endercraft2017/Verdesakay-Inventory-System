@@ -146,14 +146,15 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
     const number = nextOrderNumber(input.type);
     const info = run(
       `INSERT INTO orders
-        (type, number, customer_name, customer_contact, customer_id, order_date, status, notes, currency,
+        (type, number, customer_name, customer_contact, customer_id, tax_code_id, order_date, status, notes, currency,
          subtotal, tax_percent, tax_amount, total, created_by, supplier_id, expected_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.type,
       number,
       cust.customer_name,
       cust.customer_contact,
       cust.customer_id,
+      input.tax_code_id ?? null,
       input.order_date ?? null,
       input.status || 'open',
       input.notes ?? null,
@@ -192,13 +193,14 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
   db.exec('BEGIN');
   try {
     run(
-      `UPDATE orders SET customer_name = ?, customer_contact = ?, customer_id = ?, order_date = ?, status = ?,
+      `UPDATE orders SET customer_name = ?, customer_contact = ?, customer_id = ?, tax_code_id = ?, order_date = ?, status = ?,
          notes = ?, currency = ?, subtotal = ?, tax_percent = ?, tax_amount = ?, total = ?,
          supplier_id = ?, expected_date = ?, updated_at = datetime('now')
        WHERE id = ?`,
       cust.customer_name,
       cust.customer_contact,
       cust.customer_id,
+      input.tax_code_id ?? null,
       input.order_date ?? null,
       input.status || 'open',
       input.notes ?? null,

@@ -14,7 +14,7 @@ import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody, statutoryDeductionsSchema, pettyCashFundSchema, pettyCashEntrySchema,
   ledgerSetupSchema, accountSchema, journalEntrySchema, glPeriodSchema, postingRulesSchema,
-  paymentSchema, creditNoteSchema,
+  paymentSchema, creditNoteSchema, taxCodeSchema,
 } from '../validation';
 import { toCsv } from '../csv';
 import { validateJournalLines, accountBalance, DEFAULT_COA, type JournalLineInput } from '../ledger';
@@ -23,7 +23,7 @@ import {
   maybeAutoPostPayment, maybeAutoPostCreditNote, unpostSource,
 } from '../accounting-autopost';
 import { POSTING_RULE_KEYS, type PostingRules } from '../accounting-posting';
-import type { Payment, PaymentAllocation, CreditNote } from '../types';
+import type { Payment, PaymentAllocation, CreditNote, TaxCode } from '../types';
 import type {
   PettyCashFund, PettyCashEntry, Account, JournalEntry, JournalLine, AccountingPeriod,
   AccountRootType,
@@ -1255,11 +1255,11 @@ router.post('/credit-notes', requirePermission('accounting.manage'), (req, res) 
     b.kind === 'customer' ? 'CN' : 'DN', 5);
   const info = run(
     `INSERT INTO credit_notes
-      (number, kind, party_id, party_name, note_date, source_doc_type, source_doc_id, reason,
+      (number, kind, party_id, party_name, note_date, source_doc_type, source_doc_id, tax_code_id, reason,
        subtotal, tax_amount, total, status, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?)`,
     number, b.kind, b.party_id ?? null, partyName, b.note_date,
-    b.source_doc_type ?? null, b.source_doc_id ?? null, b.reason ?? null,
+    b.source_doc_type ?? null, b.source_doc_id ?? null, b.tax_code_id ?? null, b.reason ?? null,
     round2(b.subtotal || 0), round2(b.tax_amount || 0), total, req.user!.id
   );
   const noteId = Number(info.lastInsertRowid);
@@ -1469,6 +1469,172 @@ router.get('/party-ledger', (req, res) => {
     total_payments: round2(events.reduce((s, e) => s + e.payment, 0)),
     balance,
   });
+});
+
+/* =========================================================== tax codes + BIR journals (Phase 2) === */
+/* tax_codes classify a document for VAT / withholding. They drive which account the GL
+   auto-post hits and which column the BIR sales / purchase journals put the amount in. */
+
+// GET /api/accounting/tax-codes?kind=&active=
+router.get('/tax-codes', (req, res) => {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (typeof req.query.kind === 'string') { where.push('t.kind = ?'); params.push(req.query.kind); }
+  if (req.query.active === '1') where.push('t.active = 1');
+  res.json(queryAll<TaxCode>(`
+    SELECT t.*, a.name AS account_name FROM tax_codes t
+    LEFT JOIN accounts a ON a.id = t.account_id
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ORDER BY t.kind, t.code`, ...params));
+});
+
+router.post('/tax-codes', requirePermission('accounting.manage'), (req, res) => {
+  const b = parseBody(taxCodeSchema, req.body);
+  if (queryOne('SELECT id FROM tax_codes WHERE code = ?', b.code)) {
+    res.status(409).json({ error: `Tax code ${b.code} already exists.` }); return;
+  }
+  const info = run(
+    `INSERT INTO tax_codes (code, name, kind, rate, account_id, atc, active)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    b.code, b.name, b.kind, b.rate ?? 0, b.account_id ?? null, b.atc ?? null, b.active === false ? 0 : 1
+  );
+  res.status(201).json({ id: Number(info.lastInsertRowid) });
+});
+
+router.put('/tax-codes/:id', requirePermission('accounting.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  const cur = queryOne<TaxCode>('SELECT * FROM tax_codes WHERE id = ?', id);
+  if (!cur) { res.status(404).json({ error: 'Tax code not found' }); return; }
+  const b = parseBody(taxCodeSchema, req.body);
+  const dupe = queryOne<{ id: number }>('SELECT id FROM tax_codes WHERE code = ? AND id <> ?', b.code, id);
+  if (dupe) { res.status(409).json({ error: `Tax code ${b.code} already exists.` }); return; }
+  run(
+    `UPDATE tax_codes SET code = ?, name = ?, kind = ?, rate = ?, account_id = ?, atc = ?, active = ? WHERE id = ?`,
+    b.code, b.name, b.kind, b.rate ?? 0, b.account_id ?? null, b.atc ?? null,
+    b.active === false ? 0 : 1, id
+  );
+  res.json({ ok: true });
+});
+
+router.delete('/tax-codes/:id', requirePermission('accounting.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  const used = (queryOne<{ n: number }>(`
+    SELECT (SELECT COUNT(*) FROM orders WHERE tax_code_id = ?)
+         + (SELECT COUNT(*) FROM vendor_bills WHERE tax_code_id = ?)
+         + (SELECT COUNT(*) FROM credit_notes WHERE tax_code_id = ?) AS n`, id, id, id)?.n ?? 0) > 0;
+  if (used) { res.status(409).json({ error: 'This tax code is in use — deactivate it instead.' }); return; }
+  const info = run('DELETE FROM tax_codes WHERE id = ?', id);
+  if (!info.changes) { res.status(404).json({ error: 'Tax code not found' }); return; }
+  res.json({ ok: true });
+});
+
+/* ---------------------------------------------------------------- BIR sales / purchase journals --- */
+
+type VatColumns = { gross: number; vatable: number; exempt: number; zero_rated: number; vat: number };
+function classify(
+  taxKind: string | null, subtotal: number, taxAmount: number, total: number
+): VatColumns & { unclassified: boolean } {
+  const z = { gross: round2(total), vatable: 0, exempt: 0, zero_rated: 0, vat: 0, unclassified: false };
+  if (taxKind === 'output_vat' || taxKind === 'input_vat') {
+    return { ...z, vatable: round2(subtotal), vat: round2(taxAmount) };
+  }
+  if (taxKind === 'exempt') return { ...z, exempt: round2(total) };
+  if (taxKind === 'zero_rated') return { ...z, zero_rated: round2(total) };
+  // no / non-VAT code: infer from the tax amount
+  if (round2(taxAmount) > 0) return { ...z, vatable: round2(subtotal), vat: round2(taxAmount), unclassified: true };
+  return { ...z, exempt: round2(total), unclassified: true };
+}
+function sumCols(rows: { cols: VatColumns }[]): VatColumns {
+  const t: VatColumns = { gross: 0, vatable: 0, exempt: 0, zero_rated: 0, vat: 0 };
+  for (const r of rows) for (const k of Object.keys(t) as (keyof VatColumns)[]) t[k] = round2(t[k] + r.cols[k]);
+  return t;
+}
+
+interface JournalSrc {
+  date: string | null; ref: string; name: string | null; tin?: string | null;
+  subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
+}
+function journalRow(r: JournalSrc, doc: string, sign: 1 | -1) {
+  const c = classify(r.tax_kind, r.subtotal, r.tax_amount, r.total);
+  const cols: VatColumns = sign === 1 ? c : {
+    gross: -c.gross, vatable: -c.vatable, exempt: -c.exempt, zero_rated: -c.zero_rated, vat: -c.vat,
+  };
+  return {
+    date: r.date, ref: r.ref, name: r.name, tin: r.tin ?? null,
+    doc, unclassified: c.unclassified, cols,
+  };
+}
+
+// GET /api/accounting/sales-journal?from=&to= — BIR Sales Book columns per sale + credit note.
+router.get('/sales-journal', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
+
+  const sales = queryAll<{
+    date: string | null; ref: string; name: string | null; tin: string | null;
+    subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
+  }>(`
+    SELECT o.order_date AS date, o.number AS ref, COALESCE(c.name, o.customer_name) AS name, c.tin AS tin,
+           o.subtotal, o.tax_amount, o.total, tc.kind AS tax_kind
+    FROM orders o
+    LEFT JOIN customers c ON c.id = o.customer_id
+    LEFT JOIN tax_codes tc ON tc.id = o.tax_code_id
+    WHERE ${CONFIRMED_SALE_SQL} AND o.order_date >= ? AND o.order_date <= ?`, from, to);
+
+  const notes = queryAll<{
+    date: string; ref: string; name: string | null; tin: string | null;
+    subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
+  }>(`
+    SELECT n.note_date AS date, n.number AS ref, COALESCE(c.name, n.party_name) AS name, c.tin AS tin,
+           n.subtotal, n.tax_amount, n.total, tc.kind AS tax_kind
+    FROM credit_notes n
+    LEFT JOIN customers c ON c.id = n.party_id
+    LEFT JOIN tax_codes tc ON tc.id = n.tax_code_id
+    WHERE n.kind = 'customer' AND n.status = 'issued' AND n.note_date >= ? AND n.note_date <= ?`, from, to);
+
+  const rows = [
+    ...sales.map((r) => journalRow(r, 'sale', 1)),
+    ...notes.map((r) => journalRow(r, 'credit_note', -1)),
+  ].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.ref.localeCompare(b.ref));
+
+  res.json({ from, to, rows, totals: sumCols(rows) });
+});
+
+// GET /api/accounting/purchase-journal?from=&to= — BIR Purchase Book columns per bill + debit note.
+router.get('/purchase-journal', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
+
+  const bills = queryAll<{
+    date: string | null; ref: string; name: string | null;
+    subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
+  }>(`
+    SELECT COALESCE(b.bill_date, b.created_at) AS date, b.number AS ref, s.name AS name,
+           b.subtotal, b.tax_amount, b.total, tc.kind AS tax_kind
+    FROM vendor_bills b
+    LEFT JOIN suppliers s ON s.id = b.supplier_id
+    LEFT JOIN tax_codes tc ON tc.id = b.tax_code_id
+    WHERE b.status = 'approved' AND COALESCE(b.bill_date, b.created_at) >= ? AND COALESCE(b.bill_date, b.created_at) <= ?`, from, to);
+
+  const notes = queryAll<{
+    date: string; ref: string; name: string | null;
+    subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
+  }>(`
+    SELECT n.note_date AS date, n.number AS ref, COALESCE(s.name, n.party_name) AS name,
+           n.subtotal, n.tax_amount, n.total, tc.kind AS tax_kind
+    FROM credit_notes n
+    LEFT JOIN suppliers s ON s.id = n.party_id
+    LEFT JOIN tax_codes tc ON tc.id = n.tax_code_id
+    WHERE n.kind = 'supplier' AND n.status = 'issued' AND n.note_date >= ? AND n.note_date <= ?`, from, to);
+
+  const rows = [
+    ...bills.map((r) => journalRow(r, 'bill', 1)),
+    ...notes.map((r) => journalRow(r, 'debit_note', -1)),
+  ].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.ref.localeCompare(b.ref));
+
+  res.json({ from, to, rows, totals: sumCols(rows) });
 });
 
 export default router;

@@ -492,3 +492,78 @@ describe('accounting: receivables & payables (Phase 1b)', () => {
     expect(bad.status).toBe(400);
   });
 });
+
+describe('accounting: tax codes + BIR journals (Phase 2)', () => {
+  let vatCode = 0, exemptCode = 0, custId = 0;
+
+  it('ships the standard PH tax codes, VAT ones linked to GL accounts at setup', async () => {
+    const r = await ctx.api.get('/api/accounting/tax-codes').set(hdr());
+    expect(r.status).toBe(200);
+    const byCode = Object.fromEntries(r.body.map((t: { code: string }) => [t.code, t]));
+    expect(byCode.VAT.kind).toBe('output_vat');
+    expect(byCode.VAT.rate).toBe(12);
+    expect(byCode['VAT-EX'].kind).toBe('exempt');
+    expect(byCode.EWT2.atc).toBe('WI100');
+    // ledger/setup ran in the Phase 0 block, so the VAT codes are wired to 2120 / 1160
+    const accs = (await ctx.api.get('/api/accounting/ledger/accounts').set(hdr())).body;
+    expect(byCode.VAT.account_id).toBe(accs.find((a: { code: string }) => a.code === '2120').id);
+    expect(byCode['VAT-IN'].account_id).toBe(accs.find((a: { code: string }) => a.code === '1160').id);
+    vatCode = byCode.VAT.id;
+    exemptCode = byCode['VAT-EX'].id;
+  });
+
+  it('CRUD a custom tax code; deleting one in use is blocked', async () => {
+    const c = await ctx.api.post('/api/accounting/tax-codes').set(hdr())
+      .send({ code: 'VAT-GOV', name: 'Sales to government (5% final)', kind: 'output_vat', rate: 12 });
+    expect(c.status).toBe(201);
+    expect((await ctx.api.put(`/api/accounting/tax-codes/${c.body.id}`).set(hdr())
+      .send({ code: 'VAT-GOV', name: 'Gov sales', kind: 'output_vat', rate: 12, active: false })).status).toBe(200);
+    expect((await ctx.api.delete(`/api/accounting/tax-codes/${c.body.id}`).set(hdr())).status).toBe(200);
+
+    // now attach VAT-EX to an order, then it can't be deleted
+    custId = (await ctx.api.post('/api/customers').set(hdr()).send({ name: 'TaxCo', tin: '111-222-333-000' })).body.id;
+    await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'sale', customer_id: custId, tax_code_id: exemptCode, order_date: '2026-06-03', status: 'confirmed',
+      items: [{ name: 'Exempt goods', quantity: 1, unit_price: 500 }],
+    });
+    expect((await ctx.api.delete(`/api/accounting/tax-codes/${exemptCode}`).set(hdr())).status).toBe(409);
+  });
+
+  it('a VAT-exempt sale posts with no VAT leg and lands in the exempt column of the sales journal', async () => {
+    const so = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'sale', customer_id: custId, tax_code_id: exemptCode, order_date: '2026-06-05', status: 'confirmed',
+      items: [{ name: 'More exempt goods', quantity: 2, unit_price: 300 }], // total 600, no tax
+    });
+    const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'sale_order', source_id: so.body.id }).set(hdr());
+    const je = (await ctx.api.get(`/api/accounting/ledger/journal-entries/${jes.body[0].id}`).set(hdr())).body;
+    expect(je.lines).toHaveLength(2); // DR AR / CR Sales, no output VAT
+
+    const sj = await ctx.api.get('/api/accounting/sales-journal?from=2026-06-01&to=2026-06-30').set(hdr());
+    expect(sj.status).toBe(200);
+    const row = sj.body.rows.find((r: { ref: string }) => r.ref === so.body.number);
+    expect(row.cols.exempt).toBe(600);
+    expect(row.cols.vat).toBe(0);
+    expect(row.tin).toBe('111-222-333-000');
+    expect(sj.body.totals.exempt).toBeGreaterThanOrEqual(1100); // 500 + 600 from the two exempt sales
+  });
+
+  it('a VAT sale splits into vatable + output VAT columns', async () => {
+    const so = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'sale', customer_id: custId, tax_code_id: vatCode, order_date: '2026-06-10', status: 'confirmed',
+      tax_percent: 12, items: [{ name: 'Vatable goods', quantity: 10, unit_price: 100 }], // sub 1000, VAT 120
+    });
+    const sj = await ctx.api.get('/api/accounting/sales-journal?from=2026-06-01&to=2026-06-30').set(hdr());
+    const row = sj.body.rows.find((r: { ref: string }) => r.ref === so.body.number);
+    expect(row.cols.vatable).toBe(1000);
+    expect(row.cols.vat).toBe(120);
+    expect(row.cols.gross).toBe(1120);
+  });
+
+  it('purchase journal lists approved bills with their VAT split', async () => {
+    const pj = await ctx.api.get('/api/accounting/purchase-journal?from=2026-01-01&to=2026-12-31').set(hdr());
+    expect(pj.status).toBe(200);
+    expect(Array.isArray(pj.body.rows)).toBe(true);
+    expect(pj.body.totals).toHaveProperty('vatable');
+  });
+});

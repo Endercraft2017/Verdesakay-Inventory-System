@@ -166,10 +166,24 @@ export interface PaymentAllocation {
   doc_number?: string | null;
 }
 
+export interface TaxCode {
+  id: number;
+  code: string;
+  name: string;
+  kind: 'output_vat' | 'input_vat' | 'exempt' | 'zero_rated' | 'ewt';
+  rate: number;
+  account_id: number | null;
+  atc: string | null;
+  active: number;
+  created_at: string;
+  account_name?: string | null;
+}
+
 export interface CreditNote {
   id: number;
   number: string;
   kind: 'customer' | 'supplier';
+  tax_code_id?: number | null;
   party_id: number | null;
   party_name: string | null;
   note_date: string;
@@ -540,6 +554,8 @@ export interface Order {
   expected_date: string | null;
   /** Sale orders only: the customer this order is raised for. */
   customer_id: number | null;
+  /** Optional VAT / tax classification (drives the GL post + the BIR journals). */
+  tax_code_id: number | null;
   created_by_name?: string | null;
   supplier_name?: string | null;
   items?: OrderItem[];
@@ -605,6 +621,7 @@ export interface VendorBill {
   tax_amount: number;
   total: number;
   status: 'draft' | 'approved' | 'disputed';
+  tax_code_id: number | null;
   match_json: string | null;
   dispute_note: string | null;
   approved_by: number | null;

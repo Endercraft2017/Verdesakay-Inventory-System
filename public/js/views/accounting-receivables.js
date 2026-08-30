@@ -284,13 +284,16 @@ App.register('accounting-receivables', async (view, filter) => {
   }
 
   async function creditNoteModal() {
-    const [customers, suppliers] = await Promise.all([
+    const [customers, suppliers, allCodes] = await Promise.all([
       API.get('/customers').catch(() => []),
       API.get('/suppliers').catch(() => []),
+      API.get('/accounting/tax-codes?active=1').catch(() => []),
     ]);
     let kind = 'customer';
     const render = () => {
       const parties = kind === 'customer' ? customers : suppliers;
+      const vatKind = kind === 'customer' ? 'output_vat' : 'input_vat';
+      const codes = allCodes.filter((t) => t.kind === vatKind || t.kind === 'exempt' || t.kind === 'zero_rated');
       return `<div class="form-grid">
         <div class="form-field"><div class="field-label"><label>Kind</label></div>
           <select data-f="kind">
@@ -306,6 +309,9 @@ App.register('accounting-receivables', async (view, filter) => {
           <input data-f="subtotal" type="number" step="0.01" min="0" value="" /></div>
         <div class="form-field"><div class="field-label"><label>VAT amount</label></div>
           <input data-f="tax_amount" type="number" step="0.01" min="0" value="0" /></div>
+        ${codes.length ? `<div class="form-field span2"><div class="field-label"><label>Tax code</label></div>
+          <select data-f="tax_code_id"><option value="">— unclassified —</option>
+            ${codes.map((t) => `<option value="${t.id}">${UI.esc(t.code)} — ${UI.esc(t.name)}</option>`).join('')}</select></div>` : ''}
         <div class="form-field span2"><div class="field-label"><label>Reason</label></div>
           <input data-f="reason" placeholder="Sales return / allowance / overbilling" /></div>
       </div>`;
@@ -325,12 +331,14 @@ App.register('accounting-receivables', async (view, filter) => {
       },
       onConfirm: async (ov, showErr) => {
         const g = (k) => ov.querySelector(`[data-f="${k}"]`);
+        const tc = g('tax_code_id');
         const b = {
           kind: g('kind').value,
           party_id: g('party_id').value ? Number(g('party_id').value) : null,
           note_date: g('note_date').value,
           subtotal: Number(g('subtotal').value) || 0,
           tax_amount: Number(g('tax_amount').value) || 0,
+          tax_code_id: tc && tc.value ? Number(tc.value) : null,
           reason: g('reason').value.trim() || null,
         };
         if (b.subtotal + b.tax_amount <= 0) { showErr('Enter an amount'); return false; }

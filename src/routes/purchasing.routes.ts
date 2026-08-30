@@ -319,10 +319,10 @@ router.post('/orders/:id/bills', requirePermission('orders.edit'), (req, res) =>
     const number = nextSequence('vbill_seq', 'BILL');
     const info = run(
       `INSERT INTO vendor_bills
-        (number, vendor_ref, order_id, supplier_id, bill_date, due_date, currency,
+        (number, vendor_ref, order_id, supplier_id, tax_code_id, bill_date, due_date, currency,
          subtotal, tax_percent, tax_amount, total, status, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)`,
-      number, input.vendor_ref ?? null, order.id, order.supplier_id ?? null,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)`,
+      number, input.vendor_ref ?? null, order.id, order.supplier_id ?? null, input.tax_code_id ?? null,
       input.bill_date ?? null, input.due_date ?? null,
       input.currency || order.currency || 'PHP',
       subtotal, input.tax_percent, tax_amount, total, input.notes ?? null, req.user!.id
@@ -359,13 +359,13 @@ router.put('/bills/:id', requirePermission('orders.edit'), (req, res) => {
   db.exec('BEGIN');
   try {
     run(
-      `UPDATE vendor_bills SET vendor_ref = ?, bill_date = ?, due_date = ?, currency = ?,
+      `UPDATE vendor_bills SET vendor_ref = ?, bill_date = ?, due_date = ?, currency = ?, tax_code_id = ?,
          subtotal = ?, tax_percent = ?, tax_amount = ?, total = ?, notes = ?,
          status = CASE WHEN status = 'disputed' THEN 'draft' ELSE status END,
          dispute_note = NULL
        WHERE id = ?`,
       input.vendor_ref ?? null, input.bill_date ?? null, input.due_date ?? null,
-      input.currency || bill.currency, subtotal, input.tax_percent, tax_amount, total,
+      input.currency || bill.currency, input.tax_code_id ?? null, subtotal, input.tax_percent, tax_amount, total,
       input.notes ?? null, bill.id
     );
     run('DELETE FROM vendor_bill_items WHERE bill_id = ?', bill.id);

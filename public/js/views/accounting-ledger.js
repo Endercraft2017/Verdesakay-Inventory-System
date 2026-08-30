@@ -9,7 +9,7 @@ App.register('accounting-ledger', async (view, filter) => {
 
   if (!settings.enabled) { renderSetup(); return; }
 
-  const tabs = ['Chart of Accounts', 'Journal', 'Trial Balance', 'Profit & Loss', 'Balance Sheet', 'General Ledger', 'Posting Rules'];
+  const tabs = ['Chart of Accounts', 'Journal', 'Sales Journal', 'Purchase Journal', 'Trial Balance', 'Profit & Loss', 'Balance Sheet', 'General Ledger', 'Posting Rules'];
   let active = filter && filter.tab ? tabs.find((t) => t.toLowerCase().replace(/[^a-z]/g, '') === filter.tab) || tabs[0] : tabs[0];
 
   view.innerHTML = `
@@ -39,6 +39,8 @@ App.register('accounting-ledger', async (view, filter) => {
   function route() {
     if (active === 'Chart of Accounts') return coa();
     if (active === 'Journal') return journal();
+    if (active === 'Sales Journal') return birJournal('sales');
+    if (active === 'Purchase Journal') return birJournal('purchase');
     if (active === 'Trial Balance') return trialBalance();
     if (active === 'Profit & Loss') return pnl();
     if (active === 'Balance Sheet') return balanceSheet();
@@ -322,6 +324,43 @@ App.register('accounting-ledger', async (view, filter) => {
       ${ids.includes('from') ? `<label class="muted" style="font-size:12px">From</label><input type="date" id="r-from" />` : ''}
       ${ids.includes('to') ? `<label class="muted" style="font-size:12px">${ids.includes('from') ? 'To' : 'As of'}</label><input type="date" id="r-to" value="${new Date().toISOString().slice(0, 10)}" />` : ''}
       <button class="btn secondary small" id="r-go">Refresh</button></div>`;
+  }
+
+  async function birJournal(kind) {
+    const isSales = kind === 'sales';
+    const who = isSales ? 'Customer' : 'Supplier';
+    body.innerHTML = dateControls(['from', 'to']) + '<div id="r-out" class="empty">Loading…</div>';
+    const today = new Date();
+    body.querySelector('#r-from').value = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    const run = async () => {
+      const from = body.querySelector('#r-from').value, to = body.querySelector('#r-to').value;
+      const d = await API.get(`/accounting/${isSales ? 'sales' : 'purchase'}-journal?from=${from}&to=${to}`);
+      const c = (n) => (n ? money(n) : '—');
+      body.querySelector('#r-out').outerHTML = `<div id="r-out">
+        <p class="muted" style="margin:0 0 8px">${isSales ? 'Sales Book' : 'Purchase Book'} — ${UI.esc(from)} to ${UI.esc(to)}. Rows in <em>italic</em> have no tax code (classification inferred).</p>
+        <div style="overflow-x:auto"><table><thead><tr>
+          <th>Date</th><th>Ref</th><th>${who}</th><th>TIN</th>
+          <th class="right">Gross</th><th class="right">VATable</th><th class="right">Exempt</th><th class="right">Zero-rated</th><th class="right">${isSales ? 'Output' : 'Input'} VAT</th>
+        </tr></thead>
+        <tbody>${d.rows.map((r) => `<tr${r.unclassified ? ' style="font-style:italic"' : ''}>
+          <td>${UI.esc(r.date || '—')}</td><td class="mono">${UI.esc(r.ref)}</td>
+          <td>${UI.esc(r.name || '—')}</td><td class="mono">${UI.esc(r.tin || '—')}</td>
+          <td class="right">${c(r.cols.gross)}</td><td class="right">${c(r.cols.vatable)}</td>
+          <td class="right">${c(r.cols.exempt)}</td><td class="right">${c(r.cols.zero_rated)}</td><td class="right">${c(r.cols.vat)}</td>
+        </tr>`).join('') || `<tr><td colspan="9" class="muted" style="text-align:center;padding:14px">No documents in this range.</td></tr>`}</tbody>
+        <tfoot><tr><th colspan="4">Totals</th>
+          <th class="right">${money(d.totals.gross)}</th><th class="right">${money(d.totals.vatable)}</th>
+          <th class="right">${money(d.totals.exempt)}</th><th class="right">${money(d.totals.zero_rated)}</th><th class="right">${money(d.totals.vat)}</th>
+        </tr></tfoot></table></div>
+        <button class="btn secondary small" id="r-csv" style="margin-top:10px">${UI.icon('download')} CSV</button></div>`;
+      body.querySelector('#r-go').onclick = run;
+      body.querySelector('#r-csv').onclick = () => UI.downloadCsv(
+        `${kind}-journal-${from}_${to}.csv`,
+        ['Date', 'Ref', who, 'TIN', 'Gross', 'VATable', 'Exempt', 'ZeroRated', 'VAT'],
+        d.rows.map((r) => [r.date || '', r.ref, r.name || '', r.tin || '', r.cols.gross, r.cols.vatable, r.cols.exempt, r.cols.zero_rated, r.cols.vat])
+      );
+    };
+    body.querySelector('#r-go').onclick = run; run();
   }
 
   async function trialBalance() {

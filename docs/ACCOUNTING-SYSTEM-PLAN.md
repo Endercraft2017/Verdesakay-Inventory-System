@@ -13,9 +13,11 @@
 > **Phase 1b (2026-08-30)** adds a **`customers`** party registry, **payments** (customer
 > receipts / supplier disbursements that settle invoices and auto-post to the cash books),
 > **credit / debit notes**, and **AR / AP aging** (net of on-account credits) + a
-> per-party statement — all under Accounting → Receivables & Payables. Phases 2–5 (BIR
-> columnar journals + VAT/EWT registers, payroll & inventory into the GL, financial-
-> statement polish, CAS export) are the roadmap.
+> per-party statement — all under Accounting → Receivables & Payables.
+> **Phase 2a (2026-08-31)** adds **`tax_codes`** (VAT / withholding classifications on a
+> sale, bill or note) and the **BIR Sales & Purchase Journals** (columnar books).
+> Phases 2b–5 (EWT register + re-sourced VAT returns, payroll & inventory into the GL,
+> financial-statement polish, CAS export) are the roadmap.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -256,10 +258,23 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
 - **1b — still to do.** **Sales Journal / Purchase Journal** in BIR columnar format
   (moves to Phase 2 alongside re-sourcing 2550M/2550Q from the journals).
 
-**Phase 2 — VAT + withholding, properly.** `tax_codes` on lines; **input/output VAT**
-accounts driven by the codes; **EWT** tagging on AP → the **withholding register**.
-Re-source **2550M/2550Q** from the journals; add **SLSP `.DAT`**, **1601-EQ + QAP**,
-**2307 printing**, **1604-E**. Cash receipts / disbursements books.
+**Phase 2 — VAT + withholding, properly.**
+
+- **2a — tax codes + BIR sales / purchase journals. ✅ SHIPPED 2026-08-31.** New
+  **`tax_codes`** table (`kind` output_vat / input_vat / exempt / zero_rated / ewt, rate,
+  optional GL `account_id` + `atc`), seeded with the standard PH set; **`orders`**,
+  **`vendor_bills`** and **`credit_notes`** gained an optional `tax_code_id`
+  (SCHEMA_VERSION 8). The GL auto-post uses a VAT code's `account_id` in place of the
+  default posting-rule VAT account. **`GET /api/accounting/sales-journal`** and
+  **`purchase-journal`** produce the BIR columnar books — per document: date, ref, party
+  + TIN, gross, VATable / exempt / zero-rated, output|input VAT — inferring the split from
+  the tax amount when a document has no code. `tax_codes` CRUD at Accounting → Tax &
+  Compliance → **Tax codes**; the journals are tabs in **Books**; the sale / bill / note
+  forms gained a tax-code picker. `tests/accounting.test.ts` ("tax codes + BIR journals").
+- **2b — still to do.** `tax_codes` on *lines* (mixed-rate docs); **EWT** posting on AP +
+  the **withholding register** / 2307; re-source **2550M / 2550Q** from the journals; add
+  **SLSP `.DAT`**, **1601-EQ + QAP**, **1604-E**; the dedicated **Cash Receipts / Cash
+  Disbursements** books (the payment auto-post already fills those journals).
 
 **Phase 3 — payroll & inventory into the GL.** Post the **payroll journal** from each
 payslip batch (this is where the *"enable/disable the SSS/PhilHealth/Pag-IBIG deduction
@@ -458,7 +473,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | `PurchaseInvoice` + `PurchaseInvoiceItem` | `vendor_bills` | 🟡 — **Phase 1a** auto-posts an *approved* bill to the purchase journal (DR Purchases / DR Input VAT / CR AP); reverses on dispute |
 | `SalesQuote` + items | — | ⬜ (quotation → SO) |
 | `Payment` + `PaymentFor` (allocation) + `PaymentMethod` | `payments` + `payment_allocations` (Phase 1b) | ✅ — receipt / disbursement, applied to sale orders / vendor bills, auto-posts to the cash books, void = reversal |
-| `Tax` + `TaxDetail` + `TaxSummary` (tax templates) | `tax_percent` on docs + the VAT/EWT worksheets | 🟡 → `tax_codes` on lines (Phase 2) |
+| `Tax` + `TaxDetail` + `TaxSummary` (tax templates) | `tax_codes` table + `tax_code_id` on `orders` / `vendor_bills` / `credit_notes` (Phase 2a); `tax_percent` still on the doc | 🟡 — per-document code done; per-*line* codes for mixed-rate docs still ⬜ (Phase 2b) |
 | `AppliedCouponCodes` / `CouponCode` / `PricingRule` | — | ➖ |
 
 ### Inventory (`schemas/app/inventory`)
@@ -486,7 +501,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Balance Sheet | `.../reports/balance-sheet` | ✅ **Phase 0** |
 | Cash Flow Statement | — | ⬜ Phase 4 |
 | Stock Ledger / Stock Balance | analytics dashboard (stock value) | 🟡 |
-| Sales / Purchase Register, Party Ledger | `party-ledger` statement (Phase 1b); AR/AP aging | 🟡 — party statement done; BIR-columnar sales/purchase registers still ⬜ |
+| Sales / Purchase Register, Party Ledger | `sales-journal` / `purchase-journal` (Phase 2a, BIR columnar); `party-ledger` statement (Phase 1b); AR/AP aging | ✅ — registers + party statement done |
 | GST reports | our BIR VAT/EWT worksheets + (Phase 2) SLSP / 1601-EQ / QAP | 🟡 |
 
 ### Cross-cutting

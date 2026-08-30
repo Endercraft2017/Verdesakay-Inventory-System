@@ -54,7 +54,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -967,6 +967,21 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_credit_notes_party ON credit_notes(kind, party_id);
 
+    -- Tax codes: the VAT / withholding classifications a document can carry. Drives the
+    -- GL auto-post (which VAT account) and the BIR sales / purchase journals (which
+    -- column). Seeded with the standard PH set below; editable. See accounting.routes.ts.
+    CREATE TABLE IF NOT EXISTS tax_codes (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      code       TEXT NOT NULL UNIQUE,
+      name       TEXT NOT NULL,
+      kind       TEXT NOT NULL CHECK (kind IN ('output_vat','input_vat','exempt','zero_rated','ewt')),
+      rate       REAL NOT NULL DEFAULT 0,
+      account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+      atc        TEXT,
+      active     INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Full-text index for the AI knowledge search (RAG). Rebuilt by src/rag.ts;
     -- rows carry an ACL (permission key) + optional dept_id for retrieval filtering.
     CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks USING fts5(
@@ -1297,6 +1312,20 @@ function migrate(): void {
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id)');
 
+  // A sale order / vendor bill can carry a tax code (VAT 12 / exempt / zero-rated / EWT),
+  // used by the GL auto-post and the BIR sales / purchase journals. (SCHEMA_VERSION 8)
+  if (!orderCols.some((c) => c.name === 'tax_code_id')) {
+    db.exec('ALTER TABLE orders ADD COLUMN tax_code_id INTEGER REFERENCES tax_codes(id) ON DELETE SET NULL');
+  }
+  const vbillCols = db.prepare('PRAGMA table_info(vendor_bills)').all() as { name: string }[];
+  if (!vbillCols.some((c) => c.name === 'tax_code_id')) {
+    db.exec('ALTER TABLE vendor_bills ADD COLUMN tax_code_id INTEGER REFERENCES tax_codes(id) ON DELETE SET NULL');
+  }
+  const cnoteCols = db.prepare('PRAGMA table_info(credit_notes)').all() as { name: string }[];
+  if (cnoteCols.length && !cnoteCols.some((c) => c.name === 'tax_code_id')) {
+    db.exec('ALTER TABLE credit_notes ADD COLUMN tax_code_id INTEGER REFERENCES tax_codes(id) ON DELETE SET NULL');
+  }
+
   // Carry a pre-existing single checklist (settings key `qc_checklist`) into a named row.
   const legacy = getSetting<{ items?: unknown[] } | unknown[]>('qc_checklist');
   const legacyItems = Array.isArray(legacy) ? legacy : (legacy && Array.isArray(legacy.items) ? legacy.items : null);
@@ -1376,6 +1405,27 @@ function seed(): void {
   seedTemplates();
   seedHrPayrollForm();
   seedPayrollTables();
+  seedTaxCodes();
+}
+
+/** Standard PH tax classifications. Idempotent (INSERT OR IGNORE by code). `account_id`
+    is filled in at ledger setup (seedPostingRulesFromCoa). */
+function seedTaxCodes(): void {
+  const rows: [string, string, string, number, string | null][] = [
+    ['VAT',     'Output VAT 12%',            'output_vat', 12, null],
+    ['VAT-IN',  'Input VAT 12%',             'input_vat',  12, null],
+    ['VAT-EX',  'VAT-exempt',                'exempt',      0, null],
+    ['VAT-ZR',  'Zero-rated (0%)',           'zero_rated',  0, null],
+    ['EWT1',    'Expanded withholding 1%',   'ewt',         1, 'WI010'],
+    ['EWT2',    'Expanded withholding 2%',   'ewt',         2, 'WI100'],
+    ['EWT5',    'Expanded withholding 5%',   'ewt',         5, 'WI040'],
+    ['EWT10',   'Expanded withholding 10%',  'ewt',        10, 'WI070'],
+    ['EWT15',   'Expanded withholding 15%',  'ewt',        15, 'WI090'],
+  ];
+  const ins = db.prepare(
+    'INSERT OR IGNORE INTO tax_codes (code, name, kind, rate, atc) VALUES (?, ?, ?, ?, ?)'
+  );
+  for (const r of rows) ins.run(...r);
 }
 
 /** Seed the 2026 PH statutory rate tables if none exist yet. Idempotent per kind so a

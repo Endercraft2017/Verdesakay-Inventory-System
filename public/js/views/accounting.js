@@ -10,6 +10,7 @@ App.register('accounting', async (view) => {
   const SECTIONS = [
     ['Value-added tax', [
       ['sheet', 'BIR 2550M', 'Monthly VAT — output VAT (sales) less input VAT (purchases).', bir2550mModal],
+      ['adjust', 'Tax codes', 'VAT / withholding classifications a sale, bill or note can carry.', taxCodesModal],
     ]],
     ['Expanded withholding (suppliers)', [
       ['sheet', 'BIR 0619-E', 'Monthly remittance of expanded / creditable withholding tax, per ATC.', bir0619eModal],
@@ -62,6 +63,108 @@ App.register('accounting', async (view) => {
     el.onclick = () => byName[el.dataset.card][3]();
   });
 });
+
+/* ── Tax codes — VAT / withholding classifications ───────────────────────── */
+async function taxCodesModal() {
+  const canManage = App.hasPermission('accounting.manage');
+  const KINDS = ['output_vat', 'input_vat', 'exempt', 'zero_rated', 'ewt'];
+  const KIND_LABEL = {
+    output_vat: 'Output VAT', input_vat: 'Input VAT', exempt: 'VAT-exempt',
+    zero_rated: 'Zero-rated', ewt: 'Expanded withholding',
+  };
+  let list = [];
+  let bodyEl = null;
+
+  const rowHtml = (t) => `<tr data-id="${t.id}" ${t.active ? '' : 'style="opacity:.5"'}>
+    <td class="mono">${UI.esc(t.code)}</td><td>${UI.esc(t.name)}</td>
+    <td class="muted">${KIND_LABEL[t.kind] || t.kind}</td>
+    <td class="right">${t.rate ? t.rate + '%' : '—'}</td>
+    <td class="mono">${UI.esc(t.atc || '—')}</td>
+    <td class="muted">${UI.esc(t.account_name || '—')}</td>
+    <td class="actions">${canManage ? `<button class="icon-btn" data-edit="${t.id}">${UI.icon('edit')}</button>` : ''}</td>
+  </tr>`;
+
+  async function reload() {
+    list = await API.get('/accounting/tax-codes');
+    if (!bodyEl) return;
+    bodyEl.innerHTML = list.map(rowHtml).join('');
+    bodyEl.querySelectorAll('[data-edit]').forEach((b) =>
+      b.onclick = () => editTaxCode(list.find((x) => x.id == b.dataset.edit)));
+  }
+
+  async function editTaxCode(t) {
+    let accts = [];
+    try { accts = (await API.get('/accounting/ledger/accounts')).filter((a) => !a.is_group); } catch { /* ledger maybe off */ }
+    UI.modal({
+      title: t ? `Edit ${t.code}` : 'New tax code',
+      bodyHTML: `<div class="form-grid">
+        <div class="form-field"><div class="field-label"><label>Code <span class="req">*</span></label></div>
+          <input data-f="code" value="${UI.esc(t ? t.code : '')}" style="width:120px" /></div>
+        <div class="form-field"><div class="field-label"><label>Kind</label></div>
+          <select data-f="kind">${KINDS.map((k) => `<option value="${k}" ${t && t.kind === k ? 'selected' : ''}>${KIND_LABEL[k]}</option>`).join('')}</select></div>
+        <div class="form-field span2"><div class="field-label"><label>Name <span class="req">*</span></label></div>
+          <input data-f="name" value="${UI.esc(t ? t.name : '')}" /></div>
+        <div class="form-field"><div class="field-label"><label>Rate %</label></div>
+          <input data-f="rate" type="number" step="0.01" min="0" max="100" value="${t ? (t.rate || 0) : 0}" /></div>
+        <div class="form-field"><div class="field-label"><label>ATC (withholding)</label></div>
+          <input data-f="atc" value="${UI.esc(t && t.atc || '')}" style="width:120px" /></div>
+        <div class="form-field span2"><div class="field-label"><label>GL account (VAT codes)</label></div>
+          <select data-f="account_id"><option value="">— use posting-rule default —</option>
+            ${accts.map((a) => `<option value="${a.id}" ${t && String(t.account_id) === String(a.id) ? 'selected' : ''}>${a.code} · ${UI.esc(a.name)}</option>`).join('')}</select></div>
+        ${t ? `<div class="form-field"><label class="check" style="margin-top:22px"><input type="checkbox" data-f="active" ${t.active ? 'checked' : ''} /> Active</label></div>` : ''}
+      </div>
+      ${t && canManage ? `<div style="margin-top:10px"><button type="button" class="btn danger small" id="tc-del">Delete</button></div>` : ''}`,
+      confirmText: t ? 'Save' : 'Create',
+      onOpen: (ov) => {
+        const del = ov.querySelector('#tc-del');
+        if (del) del.onclick = async () => {
+          if (!(await UI.confirmDialog(`Delete tax code ${t.code}?`, 'Delete'))) return;
+          try {
+            await API.del('/accounting/tax-codes/' + t.id); UI.toast('Deleted'); reload();
+            const c = ov.querySelector('[data-close]'); if (c) c.click();
+          } catch (e) { UI.toast(e.message, 'error'); }
+        };
+      },
+      onConfirm: async (ov, showErr) => {
+        const g = (k) => ov.querySelector(`[data-f="${k}"]`);
+        const body = {
+          code: g('code').value.trim(), name: g('name').value.trim(),
+          kind: g('kind').value, rate: Number(g('rate').value) || 0,
+          atc: g('atc').value.trim() || null,
+          account_id: g('account_id').value ? Number(g('account_id').value) : null,
+        };
+        if (t) body.active = !!(g('active') && g('active').checked);
+        if (!body.code || !body.name) { showErr('Code and name are required'); return false; }
+        try {
+          if (t) await API.put('/accounting/tax-codes/' + t.id, body);
+          else await API.post('/accounting/tax-codes', body);
+          UI.toast('Saved'); reload();
+        } catch (e) { showErr(e.message); return false; }
+      },
+    });
+  }
+
+  try { list = await API.get('/accounting/tax-codes'); }
+  catch (e) { UI.toast(e.message, 'error'); return; }
+
+  UI.modal({
+    title: 'Tax codes',
+    size: 'lg',
+    cancelText: 'Close',
+    confirmText: canManage ? 'New tax code' : null,
+    onConfirm: canManage ? () => { editTaxCode(null); return false; } : undefined,
+    bodyHTML: `
+      <p class="muted" style="margin-top:0;font-size:12px">A sale order, vendor bill or credit / debit note can carry one of these.
+      It picks the GL VAT account for the auto-post and the column in the BIR sales / purchase journals.</p>
+      <table class="line-table"><thead><tr><th>Code</th><th>Name</th><th>Kind</th><th class="right">Rate</th><th>ATC</th><th>GL account</th><th></th></tr></thead>
+        <tbody id="tc-body">${list.map(rowHtml).join('')}</tbody></table>`,
+    onOpen: (ov) => {
+      bodyEl = ov.querySelector('#tc-body');
+      bodyEl.querySelectorAll('[data-edit]').forEach((b) =>
+        b.onclick = () => editTaxCode(list.find((x) => x.id == b.dataset.edit)));
+    },
+  });
+}
 
 /* ── Statutory deductions — per-employee SSS / PhilHealth / Pag-IBIG / WT switches ── */
 async function statutoryDeductionsModal() {

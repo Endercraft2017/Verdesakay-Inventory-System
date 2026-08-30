@@ -430,6 +430,7 @@ const orderFields = {
   customer_name: optionalText,
   customer_contact: optionalText,
   customer_id: optionalId,
+  tax_code_id: optionalId,
   order_date: trimmed.max(40).optional().nullable(),
   status: trimmed.max(40).optional().nullable(),
   notes: optionalText,
@@ -482,6 +483,7 @@ export const vendorBillSchema = z.object({
   due_date: trimmed.max(40).optional().nullable(),
   currency: trimmed.max(10).optional().nullable(),
   tax_percent: numCoerce.min(0).max(100).default(0),
+  tax_code_id: optionalId,
   notes: optionalText,
   lines: z.array(billLineSchema).min(1, 'Add at least one line').max(300),
 });
@@ -598,9 +600,21 @@ export const creditNoteSchema = z.object({
   note_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   source_doc_type: z.enum(['sale_order', 'vendor_bill']).optional().nullable(),
   source_doc_id: optionalId,
+  tax_code_id: optionalId,
   reason: optionalText,
   subtotal: numCoerce.min(0).default(0),
   tax_amount: numCoerce.min(0).default(0),
+});
+
+// ---- Tax codes (Phase 2): VAT / withholding classifications ----
+export const taxCodeSchema = z.object({
+  code: trimmed.min(1, 'Code is required').max(20),
+  name: trimmed.min(1, 'Name is required').max(80),
+  kind: z.enum(['output_vat', 'input_vat', 'exempt', 'zero_rated', 'ewt']),
+  rate: numCoerce.min(0).max(100).default(0),
+  account_id: optionalId,
+  atc: trimmed.max(20).optional().nullable(),
+  active: boolish.optional(),
 });
 
 // ---- Auto-posting rules (Phase 1): which account each posted amount lands on ----

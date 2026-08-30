@@ -13,6 +13,8 @@ App.register('orders', async (view, filter) => {
   if (type === 'purchase') { try { suppliers = await API.get('/suppliers'); } catch { /* optional */ } }
   let customers = [];
   if (type === 'sale') { try { customers = await API.get('/customers'); } catch { /* optional */ } }
+  let taxCodes = [];
+  if (type !== 'job') { try { taxCodes = await API.get('/accounting/tax-codes?active=1'); } catch { /* needs accounting.view */ } }
   const partyLabel = type === 'purchase' ? 'Vendor' : 'Customer';
 
   view.innerHTML = `
@@ -149,6 +151,8 @@ App.register('orders', async (view, filter) => {
         ${type === 'sale' ? `<div class="field-row">
           <div><label>Customer (on file)</label><select data-f="customer_id"><option value="">— none / walk-in —</option>
             ${customers.map((c) => `<option value="${c.id}" ${String(get('customer_id', '')) === String(c.id) ? 'selected' : ''}>${UI.esc(c.name)}</option>`).join('')}</select></div>
+          ${taxCodes.length ? `<div><label>Tax code</label><select data-f="tax_code_id"><option value="">— unclassified —</option>
+            ${taxCodes.map((t) => `<option value="${t.id}" ${String(get('tax_code_id', '')) === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)} — ${UI.esc(t.name)}</option>`).join('')}</select></div>` : ''}
         </div>` : ''}
         <div class="field-row">
           <div><label>${partyLabel} name</label><input data-f="customer_name" value="${UI.esc(get('customer_name', ''))}" placeholder="${type === 'sale' ? 'auto-filled from the customer if left blank' : ''}" /></div>
@@ -264,6 +268,7 @@ App.register('orders', async (view, filter) => {
           body.expected_date = fOpt('expected_date') || null;
         }
         if (type === 'sale') body.customer_id = fOpt('customer_id') || null;
+        if (taxCodes.length) body.tax_code_id = fOpt('tax_code_id') || null;
         if (editing) await API.put('/orders/' + order.id, body);
         else await API.post('/orders', { type, ...body });
         UI.toast(editing ? 'Order saved' : 'Order created');

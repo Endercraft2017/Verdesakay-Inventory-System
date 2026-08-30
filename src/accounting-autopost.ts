@@ -55,6 +55,13 @@ export function seedPostingRulesFromCoa(): PostingRules {
     if (!cur[key] && byCode.has(code)) { cur[key] = byCode.get(code)!; touched = true; }
   }
   if (touched) setSetting(RULES_KEY, cur);
+
+  // Link the seeded VAT tax codes to their GL accounts so a document tagged VAT / VAT-IN
+  // posts to the right account without the user wiring anything.
+  const outVat = byCode.get('2120'), inVat = byCode.get('1160');
+  if (outVat) run("UPDATE tax_codes SET account_id = ? WHERE code = 'VAT' AND account_id IS NULL", outVat);
+  if (inVat) run("UPDATE tax_codes SET account_id = ? WHERE code = 'VAT-IN' AND account_id IS NULL", inVat);
+
   return cur;
 }
 
@@ -114,11 +121,24 @@ export interface AutoPostOutcome {
   entry?: { id: number; number: string };
 }
 
+/** If the document carries a tax code that names its own VAT account, use it in place of
+ *  the default posting-rule VAT account (exempt / zero-rated / EWT codes change nothing). */
+function rulesForTaxCode(taxCodeId: number | null | undefined, base: PostingRules): PostingRules {
+  if (!taxCodeId) return base;
+  const tc = queryOne<{ kind: string; account_id: number | null }>(
+    'SELECT kind, account_id FROM tax_codes WHERE id = ?', taxCodeId);
+  if (!tc || !tc.account_id) return base;
+  if (tc.kind === 'output_vat') return { ...base, output_vat_account_id: tc.account_id };
+  if (tc.kind === 'input_vat') return { ...base, input_vat_account_id: tc.account_id };
+  return base;
+}
+
 function autoPost(
   sourceType: 'sale_order' | 'vendor_bill',
   sourceId: number,
   doc: PostableDoc,
-  userId: number | null
+  userId: number | null,
+  rules: PostingRules = getPostingRules()
 ): AutoPostOutcome {
   if (!ledgerEnabled()) return { posted: false, skipped: 'ledger_off' };
   if (postedEntryForSource(sourceType, sourceId)) return { posted: false, skipped: 'already_posted' };
@@ -127,8 +147,8 @@ function autoPost(
   if (closed) return { posted: false, skipped: 'period_closed' };
 
   const built = sourceType === 'sale_order'
-    ? buildSalesEntry(doc, getPostingRules(), sourceId)
-    : buildPurchaseEntry(doc, getPostingRules(), sourceId);
+    ? buildSalesEntry(doc, rules, sourceId)
+    : buildPurchaseEntry(doc, rules, sourceId);
   if (!built.ok) return { posted: false, error: built.error };
 
   try {
@@ -205,7 +225,7 @@ export function maybeAutoPostSale(orderId: number, userId: number | null): AutoP
       date: o.order_date || o.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
       subtotal: o.subtotal, tax_amount: o.tax_amount, total: o.total,
       party_id: o.customer_id ?? null, memo: o.customer_name ?? null,
-    }, userId);
+    }, userId, rulesForTaxCode(o.tax_code_id, getPostingRules()));
   } catch (e) {
     console.warn(`[gl] auto-post sale ${orderId} failed: ${(e as Error).message}`);
     return { posted: false, error: (e as Error).message };
@@ -223,7 +243,7 @@ export function maybeAutoPostVendorBill(billId: number, userId: number | null): 
       date: b.bill_date || b.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
       subtotal: b.subtotal, tax_amount: b.tax_amount, total: b.total,
       party_id: b.supplier_id ?? null, memo: b.vendor_ref ?? null,
-    }, userId);
+    }, userId, rulesForTaxCode(b.tax_code_id, getPostingRules()));
   } catch (e) {
     console.warn(`[gl] auto-post bill ${billId} failed: ${(e as Error).message}`);
     return { posted: false, error: (e as Error).message };
@@ -269,7 +289,7 @@ export function maybeAutoPostCreditNote(noteId: number, userId: number | null): 
       number: n.number, date: n.note_date, kind: n.kind,
       subtotal: n.subtotal, tax_amount: n.tax_amount, total: n.total,
       party_id: n.party_id ?? null, memo: n.party_name ?? n.reason ?? null,
-    }, getPostingRules(), noteId);
+    }, rulesForTaxCode(n.tax_code_id, getPostingRules()), noteId);
     if (!built.ok) return { posted: false, error: built.error };
     const entry = writePosted(built.entry, userId);
     return { posted: true, entry };
