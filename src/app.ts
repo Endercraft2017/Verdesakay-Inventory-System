@@ -15,6 +15,7 @@ import locationsRoutes from './routes/locations.routes';
 import bomRoutes from './routes/bom.routes';
 import jobOrdersRoutes from './routes/job-orders.routes';
 import qcRoutes from './routes/qc.routes';
+import attachmentsRoutes from './routes/attachments.routes';
 import formsRoutes from './routes/forms.routes';
 import messagesRoutes from './routes/messages.routes';
 import personalRoutes from './routes/personal.routes';
@@ -135,6 +136,7 @@ export function createApp() {
   app.use('/api/finished-products', bomRoutes);
   app.use('/api/job-orders', jobOrdersRoutes);
   app.use('/api/qc', qcRoutes);
+  app.use('/api/attachments', attachmentsRoutes);
   app.use('/api/forms', formsRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks

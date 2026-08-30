@@ -240,6 +240,21 @@ export interface QcChecklistResult {
   note?: string | null;
 }
 
+/** A photo hung off another record (QC unit inspection, damage report, …).
+    See src/routes/attachments.routes.ts. */
+export interface Attachment {
+  id: number;
+  kind: 'qc_unit' | 'damage' | 'problem';
+  ref_id: number;
+  image_path: string;
+  caption: string | null;
+  uploaded_by: number | null;
+  created_at: string;
+  uploaded_by_name?: string | null;
+  /** Synthesised in list responses. */
+  url?: string;
+}
+
 export interface JobOrderComponent {
   id: number;
   job_order_id: number;

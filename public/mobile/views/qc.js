@@ -151,6 +151,7 @@
         checklistSheet(view, {
           title: 'Checklist — Unit #' + u.id,
           items: itemsForStage(checklist, uStage, stages),
+          unitId: u.id,
           onCancel: function () { load(view, id); },
           onConfirm: function (payload) {
             var body = { unit_ids: [u.id], result: 'pass', checklist: payload.checklist, remarks: payload.remarks };
@@ -196,6 +197,10 @@
     });
     var remarks = mEl('<label class="m-field"><span class="m-label">Remarks</span><textarea class="m-input" data-remarks rows="2" placeholder="overall notes (optional)"></textarea></label>');
     box.appendChild(remarks);
+    if (opts.unitId) {
+      box.appendChild(mEl('<div class="m-label" style="margin-top:6px">Photos</div>'));
+      box.appendChild(mPhoto.thumbs('qc_unit', opts.unitId, { editable: true }));
+    }
     var acts = mEl('<div class="m-actions"><button class="m-btn" data-ok>Confirm pass</button>' +
       '<button class="m-btn m-btn-secondary" data-cancel>Cancel</button></div>');
     box.appendChild(acts);
@@ -229,6 +234,8 @@
       var r = mEl('<label class="m-check m-qc-check-lbl"><input type="checkbox" data-ok /> ' + mEsc(it.label) + '</label>');
       r._item = it; rows.push(r); box.appendChild(r);
     });
+    box.appendChild(mEl('<div class="m-label" style="margin-top:6px">Photos (e.g. where the defect is)</div>'));
+    box.appendChild(mPhoto.thumbs('qc_unit', unit.id, { editable: true }));
     var acts = mEl('<div class="m-actions"><button class="m-btn m-btn-warn" data-ok>Confirm fail</button>' +
       '<button class="m-btn m-btn-secondary" data-cancel>Cancel</button></div>');
     box.appendChild(acts);
@@ -250,10 +257,11 @@
   /* ---------- inspection history (who did what) ---------- */
   function historyBlock(log) {
     var wrap = mEl('<div class="m-qc-log"><h3 class="m-h3">Inspection history</h3></div>');
+    var seenUnits = {};
     log.slice(0, 40).forEach(function (q) {
       var fails = (q.checklist || []).filter(function (c) { return c.ok === false; })
         .map(function (c) { return c.label; }).join(', ');
-      wrap.appendChild(mEl(
+      var row = mEl(
         '<div class="m-qc-log-row">' +
         '<div><b class="m-qc-log-' + (q.result === 'pass' ? 'ok' : 'bad') + '">' + (q.result === 'pass' ? 'PASS' : 'FAIL') + '</b> ' +
         'Unit #' + (q.unit_id || '?') + (q.stage ? ' · stage ' + q.stage : '') + '</div>' +
@@ -261,7 +269,12 @@
         (q.remarks ? '<div class="m-qc-log-note">' + mEsc(q.remarks) + '</div>' : '') +
         (fails ? '<div class="m-qc-log-note">Checklist issues: ' + mEsc(fails) + '</div>' : '') +
         '</div>'
-      ));
+      );
+      if (q.unit_id && !seenUnits[q.unit_id]) {
+        seenUnits[q.unit_id] = 1;
+        row.appendChild(mPhoto.thumbs('qc_unit', q.unit_id, { editable: false }));
+      }
+      wrap.appendChild(row);
     });
     return wrap;
   }

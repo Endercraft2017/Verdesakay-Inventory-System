@@ -54,6 +54,10 @@
                   { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
                 ],
               });
+              if (!r.queued && r.response && r.response.twin_id) {
+                view.appendChild(mEl('<div class="m-sectitle" style="text-align:center">Attach photos of the damage</div>'));
+                view.appendChild(mPhoto.thumbs('damage', r.response.twin_id, { editable: true, caption: note }));
+              }
             })
             .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); btn.disabled = false; });
         };

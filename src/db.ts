@@ -681,6 +681,20 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_mail_log_created ON mail_log(created_at);
 
+    -- Photo attachments hung off another record for documentation (QC unit
+    -- inspections, damage reports, problem reports). Files live under UPLOAD_DIR;
+    -- served by GET /api/attachments/:id/image. See src/routes/attachments.routes.ts.
+    CREATE TABLE IF NOT EXISTS attachments (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind        TEXT NOT NULL,      -- 'qc_unit' | 'damage' | 'problem'
+      ref_id      INTEGER NOT NULL,
+      image_path  TEXT NOT NULL,
+      caption     TEXT,
+      uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_attachments_ref ON attachments(kind, ref_id);
+
     -- Links between a local record and its QuickBooks Online counterpart, so a re-push
     -- updates rather than duplicates. See src/quickbooks.ts.
     CREATE TABLE IF NOT EXISTS qbo_links (
