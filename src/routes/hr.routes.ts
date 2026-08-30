@@ -29,12 +29,10 @@ import { suggestEmployeeNumber } from '../hr-employee-numbering';
 import { toCsv } from '../csv';
 import { resolveImport, importLoop } from '../csv-import';
 import { listPayrollTables, effectiveTables, upsertPayrollTable, deletePayrollTable } from '../payroll-tables';
-import { statutoryDeductions, taxableCompensation, withholdingTax } from '../ph-statutory';
-import { compute2316, type PayslipYearRow, type Bir2316Options } from '../ph-2316';
-import {
-  alphalistScheduleRow, alphalistRowCells, ALPHALIST_SCHEDULE1_HEADERS,
-  splitName, statusCode, separationCode,
-} from '../ph-alphalist';
+import { statutoryDeductions, taxableCompensation, withholdingTax, RWT_2026 } from '../ph-statutory';
+import type { PayslipYearRow } from '../ph-2316';
+import { computeFinalPay, type FinalPayInput } from '../ph-final-pay';
+import { yearPayslipRowsByEmployee, companyProfile } from '../ph-payroll-report-data';
 import { enforceQuota } from '../quota';
 
 const EMP_CSV_COLUMNS = [
@@ -294,183 +292,62 @@ router.get('/thirteenth-month', requirePermission('hr.view'), (req, res) => {
   res.json({ year, rows, total: round2(rows.reduce((s, r) => s + r.amount, 0)) });
 });
 
-// GET /api/hr/bir-1601c?year=YYYY — BIR 1601-C monthly withholding worksheet: per month,
-// aggregated across all employees, the lines that go on the return (compensation,
-// non-taxable, taxable, tax to remit). From the generated hr_payroll records, by pay-date
-// month. 13th-month pay isn't a payslip line, so the monthly non-taxable here is the
-// statutory employee shares only — note it on the worksheet.
-router.get('/bir-1601c', requirePermission('hr.view'), (req, res) => {
-  const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
-  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
-  const months = Array.from({ length: 12 }, (_, i) => ({
-    month: i + 1,
-    employee_count: 0,
-    gross_compensation: 0,
-    non_taxable: 0,
-    taxable_compensation: 0,
-    tax_withheld: 0,
-    _names: new Set<string>(),
-  }));
-
-  if (form) {
-    const records = queryAll<{ data: string; created_at: string }>(
-      'SELECT data, created_at FROM form_records WHERE form_def_id = ?', form.id
-    );
-    for (const r of records) {
-      let d: Record<string, unknown>;
-      try { d = JSON.parse(r.data); } catch { continue; }
-      const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
-      if (String(payDate).slice(0, 4) !== year) continue;
-      const mi = Number(String(payDate).slice(5, 7)) - 1;
-      if (mi < 0 || mi > 11) continue;
-      const m = months[mi]!;
-      const name = String(d.employee_name ?? '').trim();
-      if (name) m._names.add(name);
-      const gross = Number(d.total_earnings) || 0;
-      const stat = (Number(d.sss) || 0) + (Number(d.philhealth) || 0) + (Number(d.pagibig) || 0);
-      m.gross_compensation = round2(m.gross_compensation + gross);
-      m.non_taxable = round2(m.non_taxable + stat);
-      m.taxable_compensation = round2(m.taxable_compensation + Math.max(0, gross - stat));
-      m.tax_withheld = round2(m.tax_withheld + (Number(d.withholding_tax) || 0));
-    }
-  }
-
-  const out = months.map((m) => ({
-    month: m.month,
-    employee_count: m._names.size,
-    gross_compensation: m.gross_compensation,
-    non_taxable: m.non_taxable,
-    taxable_compensation: m.taxable_compensation,
-    tax_withheld: m.tax_withheld,
-  }));
-  const totals = out.reduce(
-    (t, m) => ({
-      gross_compensation: round2(t.gross_compensation + m.gross_compensation),
-      non_taxable: round2(t.non_taxable + m.non_taxable),
-      taxable_compensation: round2(t.taxable_compensation + m.taxable_compensation),
-      tax_withheld: round2(t.tax_withheld + m.tax_withheld),
-    }),
-    { gross_compensation: 0, non_taxable: 0, taxable_compensation: 0, tax_withheld: 0 }
-  );
-  res.json({ year, months: out, totals });
-});
-
-// --- BIR Form 2316 (Certificate of Compensation Payment / Tax Withheld) ---
-// Year-end figures per employee, computed from that year's generated hr_payroll records
-// + the annual income-tax table. This is a worksheet — the payslips don't carry a
-// de-minimis / allowance / previous-employer breakdown, so those come in as query params.
-
-function yearPayslipRowsByEmployee(year: string): Map<string, PayslipYearRow[]> {
-  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
-  const out = new Map<string, PayslipYearRow[]>();
-  if (!form) return out;
-  const records = queryAll<{ data: string; created_at: string }>(
-    'SELECT data, created_at FROM form_records WHERE form_def_id = ?', form.id
-  );
-  for (const r of records) {
-    let d: Record<string, unknown>;
-    try { d = JSON.parse(r.data); } catch { continue; }
-    const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
-    if (String(payDate).slice(0, 4) !== year) continue;
-    const name = String(d.employee_name ?? '').trim();
-    if (!name) continue;
-    const list = out.get(name) ?? [];
-    list.push(d as PayslipYearRow);
-    out.set(name, list);
-  }
-  return out;
-}
-
-function optsFromQuery(q: Record<string, unknown>): Bir2316Options {
-  const n = (v: unknown): number | undefined => {
-    const x = Number(v);
-    return Number.isFinite(x) && x !== 0 ? x : undefined;
-  };
-  return {
-    de_minimis: n(q.de_minimis),
-    taxable_previous: n(q.taxable_previous),
-    tax_withheld_previous: n(q.tax_withheld_previous),
-    thirteenth_month_ceiling: n(q.thirteenth_month_ceiling),
-  };
-}
-
-function companyProfile(): Record<string, unknown> {
-  return getSetting<Record<string, unknown>>('company_profile') || {};
-}
-
-// GET /api/hr/bir-2316?year= — summary line per employee with payslips that year
-router.get('/bir-2316', requirePermission('hr.view'), (req, res) => {
-  const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
-  const opts = optsFromQuery(req.query as Record<string, unknown>);
-  const byEmp = yearPayslipRowsByEmployee(year);
-  const rwt = effectiveTables(`${year}-12-31`).rwt;
-  const rows = [...byEmp.entries()]
-    .map(([employee_name, list]) => {
-      const e = queryOne<{ id: number; tin_no: string | null; employee_no: string | null }>(
-        'SELECT id, tin_no, employee_no FROM employees WHERE name = ? COLLATE NOCASE', employee_name
-      );
-      return {
-        employee_name,
-        employee_id: e?.id ?? null,
-        tin_no: e?.tin_no ?? null,
-        figures: compute2316(list, rwt, year, opts),
-      };
-    })
-    .sort((a, b) => a.employee_name.localeCompare(b.employee_name));
-  res.json({ year, company: companyProfile(), rows });
-});
-
-// GET /api/hr/bir-alphalist?year= — BIR 1604-C Alphalist, Schedule 1 (employees), in the
-// BIR's published column order. Emits CSV-ready rows; DAT conversion + validation is done
-// with BIR's ADES tool (see docs/PH-PAYROLL-COMPLIANCE.md §3b). Schedule 2 (MWE) omitted.
-router.get('/bir-alphalist', requirePermission('hr.view'), (req, res) => {
-  const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
-  const opts = optsFromQuery(req.query as Record<string, unknown>);
-  const rwt = effectiveTables(`${year}-12-31`).rwt;
-  const byEmp = yearPayslipRowsByEmployee(year);
-
-  const rows = [...byEmp.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, list], i) => {
-      const e = queryOne<{ tin_no: string | null; status: string | null; start_date: string | null }>(
-        'SELECT tin_no, status, start_date FROM employees WHERE name = ? COLLATE NOCASE', name
-      );
-      const nm = splitName(name);
-      const figures = compute2316(list, rwt, year, opts);
-      return alphalistScheduleRow(i + 1, {
-        ...nm,
-        tin: e?.tin_no ?? '',
-        status_code: statusCode(e?.status),
-        separation_code: separationCode(e?.status),
-        period_from: '01/01',
-        period_to: '12/31',
-        nationality: '',
-      }, figures);
-    });
-
-  res.json({
-    year,
-    headers: ALPHALIST_SCHEDULE1_HEADERS,
-    rows,
-    cells: rows.map(alphalistRowCells),
-    note: 'BIR 1604-C Alphalist — Schedule 1. Complete de-minimis / allowances / previous-employer '
-      + 'columns, then convert to a .DAT with BIR\'s Alphalist Data Entry & Validation Module and clear '
-      + 'every error before submitting. Schedule 2 (minimum-wage earners) is not generated.',
-  });
-});
-
-// GET /api/hr/bir-2316/:employeeId?year= — one employee's full 2316 figures + 201 data
-router.get('/bir-2316/:employeeId', requirePermission('hr.view'), (req, res) => {
-  const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
+// GET /api/hr/final-pay/:employeeId — final-pay / back-pay worksheet for a separated
+// employee. Operator inputs come in as query params (leave balances, loans, unpaid days
+// aren't derivable from the payslips). Read-only — the accountant reviews before release.
+router.get('/final-pay/:employeeId', requirePermission('hr.view'), (req, res) => {
   const emp = queryOne<Employee & { department_name?: string }>(
     `SELECT e.*, d.name AS department_name FROM employees e
      LEFT JOIN departments d ON d.id = e.department_id WHERE e.id = ?`,
     Number(req.params.employeeId)
   );
   if (!emp) { res.status(404).json({ error: 'Employee not found' }); return; }
-  const rows = yearPayslipRowsByEmployee(year).get(emp.name) ?? [];
-  const figures = compute2316(rows, effectiveTables(`${year}-12-31`).rwt, year, optsFromQuery(req.query as Record<string, unknown>));
-  res.json({ year, company: companyProfile(), employee: emp, figures });
+
+  const q = req.query as Record<string, unknown>;
+  const numq = (v: unknown, dflt = 0): number => {
+    const x = Number(v);
+    return Number.isFinite(x) ? x : dflt;
+  };
+  const sep = typeof q.separation_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(q.separation_date)
+    ? q.separation_date : new Date().toISOString().slice(0, 10);
+  const year = sep.slice(0, 4);
+
+  const slips = yearPayslipRowsByEmployee(year).get(emp.name) ?? [];
+  const sum = (pick: (r: PayslipYearRow) => number | undefined) =>
+    round2(slips.reduce((s, r) => s + (Number(pick(r)) || 0), 0));
+
+  const dailyRate = effectiveDailyRate({
+    rate_type: emp.rate_type, daily_rate: emp.daily_rate, monthly_rate: emp.monthly_rate,
+  });
+
+  const input: FinalPayInput = {
+    employee_name: emp.name,
+    daily_rate: dailyRate,
+    separation_date: sep,
+    last_day_paid: typeof q.last_day_paid === 'string' ? q.last_day_paid : null,
+    unpaid_days: Math.max(0, numq(q.unpaid_days)),
+    unused_leave_days: Math.max(0, numq(q.unused_leave_days)),
+    other_earnings: Math.max(0, numq(q.other_earnings)),
+    outstanding_advance: Math.max(0, numq(q.outstanding_advance, sum((r) => r.cash_advance))),
+    other_deductions: Math.max(0, numq(q.other_deductions)),
+    ytd: {
+      basic_earned: sum((r) => r.basic_salary),
+      gross_earned: sum((r) => r.total_earnings),
+      employee_statutory: round2(sum((r) => r.sss) + sum((r) => r.philhealth) + sum((r) => r.pagibig)),
+      tax_withheld: sum((r) => r.withholding_tax),
+      thirteenth_month_paid: Math.max(0, numq(q.thirteenth_month_paid)),
+    },
+    rwt: effectiveTables(`${year}-12-31`).rwt || RWT_2026,
+    thirteenth_month_ceiling: numq(q.thirteenth_month_ceiling, 90_000),
+  };
+
+  res.json({
+    year,
+    company: companyProfile(),
+    employee: emp,
+    inputs: input,
+    worksheet: computeFinalPay(input),
+  });
 });
 
 // Resolves the effective daily_rate to store: the entered value for rate_type 'daily', or

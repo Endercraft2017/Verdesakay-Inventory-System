@@ -266,10 +266,10 @@
         you re-generate.</p>`,
     },
     {
-      id: 'bir-alphalist', title: 'BIR 1604-C Alphalist', group: 'HR', routes: [],
+      id: 'bir-alphalist', title: 'BIR 1604-C Alphalist', group: 'Accounting', routes: [],
       html: `
         <p>The <b>Alphabetical List of Employees</b> that goes with the annual
-        <b>1604-C</b> return (due Jan 31). Open it from <b>Time Keeping → Alphalist</b>.</p>
+        <b>1604-C</b> return (due Jan 31). Open it from <b>Accounting → Tax &amp; Compliance</b>.</p>
         <ul>
           <li>Pick the year. One row per employee, in the BIR's <b>Schedule 1</b> column
               order.</li>
@@ -285,10 +285,10 @@
         in the module if you have MWEs.</p>`,
     },
     {
-      id: 'bir-1601c', title: 'BIR Form 1601-C (monthly)', group: 'HR', routes: [],
+      id: 'bir-1601c', title: 'BIR Form 1601-C (monthly)', group: 'Accounting', routes: [],
       html: `
         <p>The <b>Monthly Remittance Return of Income Taxes Withheld on Compensation</b> —
-        what you file and remit every month. Open it from <b>Time Keeping → 1601-C</b>.</p>
+        what you file and remit every month. Open it from <b>Accounting → Tax &amp; Compliance</b>.</p>
         <ul>
           <li>Pick the year; the table shows all 12 months: employees paid, gross
               compensation, non-taxable, taxable, and <b>tax withheld</b> (the amount to
@@ -302,11 +302,11 @@
         eFPS).</p>`,
     },
     {
-      id: 'bir-2316', title: 'BIR Form 2316 (year-end)', group: 'HR', routes: [],
+      id: 'bir-2316', title: 'BIR Form 2316 (year-end)', group: 'Accounting', routes: [],
       html: `
         <p>The <b>Certificate of Compensation Payment / Tax Withheld</b> each employee gets
         at year-end (and the employer files with the BIR). Open it from
-        <b>Time Keeping → BIR 2316</b>.</p>
+        <b>Accounting → Tax &amp; Compliance</b>.</p>
         <ul>
           <li>Pick the year. The table shows each employee's gross compensation, taxable
               amount, tax due, tax withheld, and the over/under difference.</li>
@@ -319,6 +319,38 @@
         or a previous employer's numbers — add those and check against the official BIR
         form before you issue or file. Deadlines: give to employees by <b>Jan 31</b>,
         file with the BIR by <b>Feb 28</b>.</p>`,
+    },
+    {
+      id: 'gov-forms', title: 'Tax & Compliance (BIR + agency forms)', group: 'Accounting',
+      routes: ['accounting'],
+      html: `
+        <p><b>Accounting → Tax &amp; Compliance</b> builds every statutory return from your
+        payroll, sales and purchase records. All are <b>worksheets</b> — review and adjust
+        before filing in eBIRForms / eFPS or each agency's portal (PH agencies have no
+        direct filing API). Payroll <i>processing</i> (13th-month, final pay) stays under
+        <b>HR → Time Keeping → Payroll Worksheets</b>.</p>
+        <ul>
+          <li><b>2550M</b> — Monthly VAT declaration: output VAT from the month's sale
+              orders, input VAT from approved vendor bills. Adjust for exempt / zero-rated
+              sales and disallowed input. Deadline: 20th of the following month.</li>
+          <li><b>0619-E</b> — Monthly remittance of expanded / creditable withholding tax.
+              Add one line per <b>ATC</b> (type of income payment: rent, professional
+              fees, contractors, TWA purchases) with its base and rate; the payee detail
+              goes on the quarterly 1601-EQ. Deadline: 10th of the following month.</li>
+          <li><b>1601-C</b> — monthly withholding tax on compensation; the 12 months
+              reconcile to the annual 1604-C.</li>
+          <li><b>1604-C</b> — the annual return face: the 12-month schedule plus a
+              <b>reconciliation</b> against the year-end tax due per the Alphalist. Clear
+              any under-remittance before filing (deadline Jan 31).</li>
+          <li><b>1604-C Alphalist</b> — Schedule 1, every employee paid in the year, in
+              the BIR column layout; CSV → <code>.DAT</code> via BIR's validation module.</li>
+          <li><b>BIR 2316</b> — the year-end certificate per employee; Print renders it
+              from the editable "BIR 2316" template.</li>
+          <li><b>Contribution schedule</b> — the monthly <b>SSS R-3</b> /
+              <b>PhilHealth RF-1·EPRS</b> / <b>Pag-IBIG MCRF·eSRS</b> collection list.
+              EE + ER (+ EC for SSS) recomputed from the rate tables on each person's
+              month-total pay. Export the CSV and upload in the agency portal.</li>
+        </ul>`,
     },
     {
       id: 'payroll-rate-tables', title: 'Payroll rate tables (SSS/PhilHealth/etc.)', group: 'HR', routes: [],

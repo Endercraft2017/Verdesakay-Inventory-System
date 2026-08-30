@@ -1,8 +1,15 @@
 # Philippine Payroll & Statutory Compliance — scope + current figures
 
-> **Status:** Phase A (engine), Phase B (payslip wiring, rate-tables screen, 13th-month),
-> and **Phase C step 1 — BIR 2316** all built 2026-08-29 (see §3). Final-pay worksheet +
-> BIR 1601-C / 1604-C / Alphalist + agency schedules pending.
+> **Status:** Phase A (engine), Phase B (payslip wiring, rate-tables screen, 13th-month,
+> **final-pay worksheet** — `src/ph-final-pay.ts`, 2026-08-30), Phase C (BIR 2316, 1601-C,
+> **1604-C return face + reconciliation** — `GET /hr/bir-1604c`, 2026-08-30, Alphalist
+> Schedule 1), and Phase D (**SSS R-3 / PhilHealth RF-1·EPRS / Pag-IBIG MCRF·eSRS monthly
+> contribution schedules** — `src/ph-contributions.ts`, 2026-08-30) all built. **The tax
+> filings then moved to Accounting → Tax & Compliance** (`accounting.view`,
+> `src/routes/accounting.routes.ts`, `/api/accounting/bir-*`) — plus **BIR 0619-E**
+> (expanded WT) and **2550M** (monthly VAT) worksheets (`src/ph-vat-ewt.ts`). HR keeps
+> 13th-month + final pay. Remaining: leave balances/accrual, BIR 2307 + 1601-EQ/QAP,
+> loan ledger, agency proprietary `.DAT` formats (we emit CSV; convert in-portal).
 > This is GO-TO-MARKET §6 item #1 — the payroll "wedge".
 > **Figures verified:** 2026 rates, August 2026. **Re-check every January** — SSS and
 > PhilHealth schedules change by circular; BIR form versions change by RMC.

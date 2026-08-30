@@ -14,7 +14,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
 
 const NAV = [
   {
@@ -147,10 +147,16 @@ const NAV = [
     ],
   },
   {
-    id: 'accounting', label: 'Accounting', icon: 'sheet', requiredPermission: 'forms.manage.accounting',
+    id: 'accounting', label: 'Accounting', icon: 'sheet',
     subtabs: [
       {
-        id: 'form-setup', label: 'Form Builder',
+        id: 'tax', label: 'Tax & Compliance', requiredPermission: 'accounting.view',
+        tree: [
+          { label: 'BIR & Statutory Forms', icon: 'sheet', route: 'accounting' },
+        ],
+      },
+      {
+        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.accounting',
         tree: [
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'accounting' } },
         ],

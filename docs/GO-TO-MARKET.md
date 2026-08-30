@@ -101,13 +101,19 @@ for engineering effort.
 The reason a buyer can't leave, and the reason finance + HR + owner all say yes.
 
 - **Have:** employee 201 files, shifts + per-day shift assignment, timekeeping /
-  attendance with grace-period lateness, payroll periods, payslip generation, statutory
-  number fields (SSS / PhilHealth / Pag-IBIG / TIN), monthly-vs-daily rate handling,
-  payroll policy (grace minutes, monthly divisor), employee ID card templates.
-- **Gap (invest heavily — see §6):** actual **government output forms** — BIR **2316**,
-  **1601-C**, **1604-C / alphalist**, SSS R-3 / contribution files, PhilHealth RF-1,
-  Pag-IBIG MCRF. Current-year contribution tables shipped and updated. 13th-month
-  computation. Final-pay / back-pay worksheet. Leave balances & accrual.
+  attendance with grace-period lateness, payroll periods, payslip generation with
+  **auto statutory + withholding** from versioned rate tables, monthly-vs-daily rate
+  handling, employee ID card templates. **Payroll worksheets** (HR → Time Keeping):
+  13th-month, final-pay / back-pay with year-end tax annualisation. **Tax & Compliance**
+  (Accounting, `accounting.view`): **BIR 2316, 1601-C, 1604-C (return face + Alphalist
+  reconciliation), 1604-C Alphalist, 0619-E (expanded WT), 2550M (monthly VAT), and the
+  SSS R-3 / PhilHealth RF-1·EPRS / Pag-IBIG MCRF·eSRS contribution schedules**. Pure
+  modules `src/ph-*.ts`, CSV export throughout — the filings live under Accounting, the
+  payroll processing under HR.
+- **Gap (smaller now):** leave balances & accrual; BIR 2307 per-payee certificates +
+  1601-EQ / QAP quarterly; loan-ledger tracking; the agency `.DAT`/proprietary upload
+  formats (we emit the column-exact CSV — the employer converts in each portal's own
+  tool, since no PH agency has a filing API).
 - **Selling line:** "Payroll that produces the forms you actually file, kept current with
   the tables — not a spreadsheet with SSS as a column."
 
@@ -222,8 +228,16 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    (`GET /hr/bir-1601c`), and the **1604-C Alphalist Schedule-1** CSV in the BIR column
    order (`src/ph-alphalist.ts`, `GET /hr/bir-alphalist`; the `.DAT` conversion isn't a
    public spec, so customer runs BIR's validation tool). Government agencies have **no
-   filing APIs** — we generate the upload files (PH-PAYROLL-COMPLIANCE §3b). Next:
-   final-pay worksheet + the 1604-C return face; then agency schedules (SSS R-3 etc.).*
+   filing APIs** — we generate the upload files (PH-PAYROLL-COMPLIANCE §3b). **2026-08-30:
+   + 1604-C return face with Alphalist reconciliation (`GET /hr/bir-1604c`), final-pay /
+   back-pay worksheet with year-end tax annualisation (`src/ph-final-pay.ts`,
+   `GET /hr/final-pay/:id`), and the monthly SSS R-3 / PhilHealth RF-1·EPRS / Pag-IBIG
+   MCRF·eSRS contribution schedules with CSV (`src/ph-contributions.ts`).** **2026-08-30
+   (later): the tax filings moved to their own Accounting → Tax & Compliance section
+   (`accounting.view` perm, `src/routes/accounting.routes.ts`) + added BIR 0619-E
+   (expanded WT) and 2550M (monthly VAT) worksheets (`src/ph-vat-ewt.ts`). HR keeps
+   13th-month + final pay.** Remaining: leave balances/accrual, BIR 2307 + 1601-EQ/QAP,
+   loan ledger.*
 2. **Data import tools (CSV) for items, stock, BOMs, employees, opening balances.**
    Onboarding is impossible without this; it's also billable services. Blocks *every*
    deal. — *Items, suppliers, employees done 2026-08-29 (export + import, upsert by

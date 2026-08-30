@@ -25,6 +25,7 @@ export interface PayslipYearRow {
   philhealth?: number;
   pagibig?: number;
   withholding_tax?: number;
+  cash_advance?: number;
 }
 
 export interface Bir2316Options {

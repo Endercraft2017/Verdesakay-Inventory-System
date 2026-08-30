@@ -21,20 +21,14 @@ async function renderList(view) {
     <div class="topbar">
       <h2>Time Keeping</h2>
       <div class="grow"></div>
-      <button class="btn secondary" id="tk-alphalist">${UI.icon('sheet')} Alphalist</button>
-      <button class="btn secondary" id="tk-1601c" style="margin-left:8px">${UI.icon('sheet')} 1601-C</button>
-      <button class="btn secondary" id="tk-2316" style="margin-left:8px">${UI.icon('sheet')} BIR 2316</button>
-      <button class="btn secondary" id="tk-13th" style="margin-left:8px">${UI.icon('sheet')} 13th-Month</button>
+      <button class="btn secondary" id="tk-govforms">${UI.icon('sheet')} Payroll Worksheets ▾</button>
       <button class="btn secondary" id="tk-policy" style="margin-left:8px">${UI.icon('settings')} Policy Settings</button>
       <button class="btn" id="tk-new" style="margin-left:8px">${UI.icon('plus')} New Cutoff</button>
     </div>
     <div class="panel"><div id="tk-table"></div></div>`;
 
   view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
-  view.querySelector('#tk-13th').addEventListener('click', () => thirteenthMonthModal());
-  view.querySelector('#tk-2316').addEventListener('click', () => bir2316Modal());
-  view.querySelector('#tk-1601c').addEventListener('click', () => bir1601cModal());
-  view.querySelector('#tk-alphalist').addEventListener('click', () => birAlphalistModal());
+  view.querySelector('#tk-govforms').addEventListener('click', () => govFormsModal());
 
   const tableEl = view.querySelector('#tk-table');
 
@@ -335,221 +329,118 @@ async function thirteenthMonthModal() {
   return m;
 }
 
-/* ── BIR 1604-C Alphalist (Schedule 1 — Alphalist of Employees) ───────────── */
-async function birAlphalistModal() {
-  const thisYear = new Date().getFullYear();
+
+/* ── Payroll worksheets menu ────────────────────────────────────────────── */
+// BIR returns, Alphalist and the agency contribution schedules moved to
+// Accounting → Tax & Compliance (they're the finance team's to file). What
+// stays here is payroll processing: 13th-month and the final-pay worksheet.
+function govFormsModal() {
+  const items = [
+    ['13th-month pay', 'Per-employee 13th-month computation', thirteenthMonthModal],
+    ['Final pay worksheet', 'Back-pay for a separated employee (unpaid salary, pro-rated 13th, tax true-up)', finalPayModal],
+  ];
+  const m = UI.modal({
+    title: 'Payroll worksheets',
+    cancelText: 'Close',
+    confirmText: null,
+    bodyHTML: `<div class="gov-menu">${items.map((it, i) => `
+      <button type="button" class="gov-menu-item" data-i="${i}">
+        <strong>${UI.esc(it[0])}</strong><span>${UI.esc(it[1])}</span>
+      </button>`).join('')}</div>
+      <style>.gov-menu{display:flex;flex-direction:column;gap:6px}
+        .gov-menu-item{text-align:left;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer}
+        .gov-menu-item:hover{border-color:var(--accent);background:var(--accent-weak)}
+        .gov-menu-item strong{display:block;font-size:13px}
+        .gov-menu-item span{display:block;font-size:11px;color:var(--text-muted);margin-top:2px}</style>`,
+  });
+  m.overlay.querySelectorAll('.gov-menu-item').forEach((b) => b.onclick = () => {
+    if (m.close) m.close();
+    items[Number(b.dataset.i)][2]();
+  });
+}
+
+
+/* ── Final-pay / back-pay worksheet ──────────────────────────────────────── */
+async function finalPayModal() {
   const peso = (n) => (UI.money ? UI.money(n) : Number(n || 0).toFixed(2));
+  let employees = [];
+  try { employees = await API.get('/hr/employees'); } catch { /* leave empty */ }
+  const separated = employees.filter((e) => e.status === 'resigned' || e.status === 'terminated');
+  const pool = separated.length ? separated : employees;
 
   UI.modal({
-    title: 'BIR 1604-C Alphalist (Schedule 1)',
+    title: 'Final-pay / back-pay worksheet',
     size: 'lg',
     cancelText: 'Close',
+    confirmText: null,
     bodyHTML: `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <label style="margin:0">Year</label>
-        <select id="al-year">${[thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
-        <div class="grow"></div>
-        <button type="button" class="btn secondary small" id="al-csv">${UI.icon('download', 14)} Export CSV (BIR layout)</button>
+      <div class="field-row">
+        <div style="flex:1"><label>Employee</label>
+          <select id="fp-emp"><option value="">— pick —</option>
+            ${pool.map((e) => `<option value="${e.id}">${UI.esc(e.name)}${e.status && e.status !== 'regular' && e.status !== 'probationary' ? ' · ' + UI.esc(e.status) : ''}</option>`).join('')}</select></div>
+        <div><label>Separation date</label><input id="fp-sep" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
       </div>
-      <div id="al-note" class="muted" style="font-size:12px;margin-top:0"></div>
-      <div id="al-body"><div class="empty">Loading…</div></div>`,
+      <div class="field-row">
+        <div><label>Unpaid days worked</label><input id="fp-days" type="number" min="0" step="0.5" value="0" /></div>
+        <div><label>Unused leave (days)</label><input id="fp-leave" type="number" min="0" step="0.5" value="0" /></div>
+        <div><label>Other earnings</label><input id="fp-other" type="number" min="0" step="0.01" value="0" /></div>
+      </div>
+      <div class="field-row">
+        <div><label>Outstanding advance / loan</label><input id="fp-adv" type="number" min="0" step="0.01" placeholder="from payslips" /></div>
+        <div><label>Other deductions</label><input id="fp-ded" type="number" min="0" step="0.01" value="0" /></div>
+        <div><label>13th-month already paid</label><input id="fp-13th" type="number" min="0" step="0.01" value="0" /></div>
+      </div>
+      <button type="button" class="btn" id="fp-run" style="margin-top:8px">Compute worksheet</button>
+      <div id="fp-out" style="margin-top:14px"></div>`,
     onOpen: (ov) => {
-      const yearSel = ov.querySelector('#al-year');
-      let state = { headers: [], rows: [], cells: [], note: '', year: '' };
-
-      async function load() {
-        ov.querySelector('#al-body').innerHTML = '<div class="empty">Loading…</div>';
-        state = await API.get('/hr/bir-alphalist?year=' + yearSel.value).catch(() => ({ headers: [], rows: [], cells: [], note: '', year: yearSel.value }));
-        ov.querySelector('#al-note').textContent = state.note || '';
-        const b = ov.querySelector('#al-body');
-        if (!state.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
-        b.innerHTML = `<p class="muted" style="font-size:12px">${state.rows.length} employee(s). The CSV has all
-            ${state.headers.length} BIR Schedule-1 columns — this is a summary preview.</p>
-          <div style="overflow:auto"><table class="line-table"><thead><tr>
-            <th>#</th><th>Name</th><th>TIN</th><th class="right">Gross</th><th class="right">Non-taxable</th>
-            <th class="right">Taxable</th><th class="right">Tax due</th><th class="right">Withheld (adj.)</th><th>Subst.</th>
-          </tr></thead><tbody>${state.rows.map((r) => `
-            <tr>
-              <td>${r.seq}</td>
-              <td>${UI.esc([r.last_name, r.first_name, r.middle_name].filter(Boolean).join(', '))}</td>
-              <td>${UI.esc(r.tin || '—')}</td>
-              <td class="right">${peso(r.gross_compensation)}</td>
-              <td class="right">${peso(r.nt_total)}</td>
-              <td class="right">${peso(r.total_taxable_present_prev)}</td>
-              <td class="right">${peso(r.tax_due)}</td>
-              <td class="right">${peso(r.tax_withheld_adjusted)}</td>
-              <td>${r.substituted_filing}</td>
-            </tr>`).join('')}</tbody></table></div>`;
-      }
-
-      yearSel.addEventListener('change', load);
-      ov.querySelector('#al-csv').onclick = () => {
-        if (!state.cells.length) { UI.toast('Nothing to export', 'error'); return; }
-        UI.downloadCsv(`bir-1604c-alphalist-schedule1-${state.year}.csv`, state.headers, state.cells);
+      const out = ov.querySelector('#fp-out');
+      ov.querySelector('#fp-run').onclick = async () => {
+        const id = ov.querySelector('#fp-emp').value;
+        if (!id) { UI.toast('Pick an employee', 'error'); return; }
+        const q = new URLSearchParams({
+          separation_date: ov.querySelector('#fp-sep').value,
+          unpaid_days: ov.querySelector('#fp-days').value || 0,
+          unused_leave_days: ov.querySelector('#fp-leave').value || 0,
+          other_earnings: ov.querySelector('#fp-other').value || 0,
+          other_deductions: ov.querySelector('#fp-ded').value || 0,
+          thirteenth_month_paid: ov.querySelector('#fp-13th').value || 0,
+        });
+        const adv = ov.querySelector('#fp-adv').value;
+        if (adv !== '') q.set('outstanding_advance', adv);
+        out.innerHTML = '<div class="empty">Computing…</div>';
+        let r;
+        try { r = await API.get('/hr/final-pay/' + id + '?' + q.toString()); }
+        catch (e) { out.innerHTML = `<div class="m-error">${UI.esc(e.message)}</div>`; return; }
+        const w = r.worksheet;
+        const e2 = w.earnings, d2 = w.deductions, t2 = w.tax_annualisation;
+        out.innerHTML = `
+          <h4 style="margin:0 0 6px">${UI.esc(r.employee.name)} — final pay as of ${UI.esc(w.separation_date)}</h4>
+          <table class="line-table"><tbody>
+            <tr><td>Unpaid salary</td><td class="right">${peso(e2.unpaid_salary)}</td></tr>
+            <tr><td>Pro-rated 13th-month pay</td><td class="right">${peso(e2.prorated_13th_month)}</td></tr>
+            <tr><td>Unused leave conversion</td><td class="right">${peso(e2.leave_conversion)}</td></tr>
+            <tr><td>Other earnings</td><td class="right">${peso(e2.other_earnings)}</td></tr>
+            <tr><th>Gross final pay</th><th class="right">${peso(e2.gross)}</th></tr>
+            <tr><td colspan="2" style="padding-top:8px"><b>Year-end tax annualisation</b></td></tr>
+            <tr><td>Taxable income (YTD)</td><td class="right">${peso(t2.taxable_income)}</td></tr>
+            <tr><td>Annual tax due</td><td class="right">${peso(t2.annual_tax_due)}</td></tr>
+            <tr><td>Tax already withheld</td><td class="right">${peso(t2.tax_already_withheld)}</td></tr>
+            <tr><td>Adjustment ${t2.adjustment >= 0 ? '(collect)' : '(refund)'}</td><td class="right">${peso(Math.abs(t2.adjustment))}</td></tr>
+            <tr><td colspan="2" style="padding-top:8px"><b>Less deductions</b></td></tr>
+            <tr><td>Outstanding advance / loan</td><td class="right">${peso(d2.outstanding_advance)}</td></tr>
+            <tr><td>Other deductions</td><td class="right">${peso(d2.other_deductions)}</td></tr>
+            <tr><td>Tax still due</td><td class="right">${peso(d2.tax_still_due)}</td></tr>
+            <tr><td>Add: tax refund</td><td class="right">${peso(w.additions.tax_refund)}</td></tr>
+            <tr><th>Net final pay</th><th class="right">${peso(w.net_final_pay)}</th></tr>
+          </tbody></table>
+          ${w.notes.length ? `<ul class="muted" style="font-size:12px;margin:10px 0 0;padding-left:18px">${w.notes.map((n) => `<li>${UI.esc(n)}</li>`).join('')}</ul>` : ''}
+          <p class="muted" style="font-size:11px;margin-top:10px">Worksheet only — review against the 201 file and company policy before releasing. Final pay is due within 30 days of separation (DOLE LA 06-20).</p>`;
       };
-      load();
     },
   });
 }
 
-/* ── BIR Form 1601-C — monthly withholding-tax remittance worksheet ───────── */
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
 
-async function bir1601cModal() {
-  const thisYear = new Date().getFullYear();
-  const peso = (n) => (UI.money ? UI.money(n) : Number(n || 0).toFixed(2));
-
-  UI.modal({
-    title: 'BIR Form 1601-C — monthly withholding',
-    size: 'lg',
-    cancelText: 'Close',
-    bodyHTML: `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <label style="margin:0">Year</label>
-        <select id="c16-year">${[thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
-        <div class="grow"></div>
-        <button type="button" class="btn secondary small" id="c16-csv">${UI.icon('download', 14)} Export CSV</button>
-      </div>
-      <p class="muted" style="font-size:12px;margin-top:0">Monthly Remittance Return of Income Taxes Withheld on
-        Compensation. Each month's <b>Tax Withheld</b> is what you remit on that month's return; the 12 months
-        should reconcile to the annual 1604-C. Non-taxable here is the statutory employee shares only —
-        <b>13th-month pay isn't a payslip line</b>, so add it to December's return manually.</p>
-      <div id="c16-body"><div class="empty">Loading…</div></div>`,
-    onOpen: (ov) => {
-      const yearSel = ov.querySelector('#c16-year');
-      let state = { months: [], totals: {}, year: '' };
-
-      async function load() {
-        ov.querySelector('#c16-body').innerHTML = '<div class="empty">Loading…</div>';
-        state = await API.get('/hr/bir-1601c?year=' + yearSel.value).catch(() => ({ months: [], totals: {}, year: yearSel.value }));
-        const b = ov.querySelector('#c16-body');
-        const anyData = state.months.some((m) => m.employee_count || m.gross_compensation);
-        if (!anyData) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
-        b.innerHTML = `<table class="line-table"><thead><tr>
-            <th>Month</th><th class="right">Employees</th><th class="right">Gross compensation</th>
-            <th class="right">Non-taxable</th><th class="right">Taxable</th><th class="right">Tax withheld</th>
-          </tr></thead><tbody>${state.months.map((m) => `
-            <tr>
-              <td>${MONTH_NAMES[m.month - 1]}</td>
-              <td class="right">${m.employee_count || ''}</td>
-              <td class="right">${m.gross_compensation ? peso(m.gross_compensation) : ''}</td>
-              <td class="right">${m.non_taxable ? peso(m.non_taxable) : ''}</td>
-              <td class="right">${m.taxable_compensation ? peso(m.taxable_compensation) : ''}</td>
-              <td class="right"><strong>${m.tax_withheld ? peso(m.tax_withheld) : ''}</strong></td>
-            </tr>`).join('')}</tbody>
-          <tfoot><tr>
-            <th>Year total</th><th></th>
-            <th class="right">${peso(state.totals.gross_compensation)}</th>
-            <th class="right">${peso(state.totals.non_taxable)}</th>
-            <th class="right">${peso(state.totals.taxable_compensation)}</th>
-            <th class="right">${peso(state.totals.tax_withheld)}</th>
-          </tr></tfoot></table>`;
-      }
-
-      yearSel.addEventListener('change', load);
-      ov.querySelector('#c16-csv').onclick = () => {
-        if (!state.months.length) { UI.toast('Nothing to export', 'error'); return; }
-        UI.downloadCsv(`bir-1601c-${state.year}.csv`,
-          ['Month', 'Employees', 'Gross compensation', 'Non-taxable', 'Taxable compensation', 'Tax withheld'],
-          [...state.months.map((m) => [MONTH_NAMES[m.month - 1], m.employee_count, m.gross_compensation, m.non_taxable, m.taxable_compensation, m.tax_withheld]),
-           ['Year total', '', state.totals.gross_compensation, state.totals.non_taxable, state.totals.taxable_compensation, state.totals.tax_withheld]]);
-      };
-      load();
-    },
-  });
-}
-
-/* ── BIR Form 2316 (Certificate of Compensation Payment / Tax Withheld) ────── */
-async function bir2316Modal() {
-  const thisYear = new Date().getFullYear();
-  const peso = (n) => (UI.money ? UI.money(n) : Number(n || 0).toFixed(2));
-
-  UI.modal({
-    title: 'BIR Form 2316',
-    size: 'lg',
-    cancelText: 'Close',
-    bodyHTML: `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <label style="margin:0">Year</label>
-        <select id="b16-year">${[thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
-        <div class="grow"></div>
-        <button type="button" class="btn secondary small" id="b16-csv">${UI.icon('download', 14)} Export CSV</button>
-      </div>
-      <p class="muted" style="font-size:12px;margin-top:0">Year-end Certificate of Compensation Payment / Tax Withheld,
-        computed from the payslips generated for the year + the annual tax table. <b>Worksheet only</b> — de-minimis,
-        allowances and previous-employer amounts aren't tracked in payroll; complete and validate against the official
-        BIR form before issuing.</p>
-      <div id="b16-body"><div class="empty">Loading…</div></div>`,
-    onOpen: (ov) => {
-      const yearSel = ov.querySelector('#b16-year');
-      let state = { rows: [], company: {}, year: '' };
-      let templates = [];
-
-      async function load() {
-        ov.querySelector('#b16-body').innerHTML = '<div class="empty">Loading…</div>';
-        [state, templates] = await Promise.all([
-          API.get('/hr/bir-2316?year=' + yearSel.value).catch(() => ({ rows: [], company: {}, year: yearSel.value })),
-          templates.length ? Promise.resolve(templates) : API.get('/templates').catch(() => []),
-        ]);
-        const b = ov.querySelector('#b16-body');
-        if (!state.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
-        b.innerHTML = `<table class="line-table"><thead><tr>
-            <th>Employee</th><th class="right">Gross comp.</th><th class="right">Taxable</th>
-            <th class="right">Tax due</th><th class="right">Withheld</th><th class="right">Over / (under)</th><th></th>
-          </tr></thead><tbody>${state.rows.map((r, i) => `
-            <tr>
-              <td>${UI.esc(r.employee_name)}</td>
-              <td class="right">${peso(r.figures.gross_compensation)}</td>
-              <td class="right">${peso(r.figures.gross_taxable_compensation)}</td>
-              <td class="right">${peso(r.figures.tax_due)}</td>
-              <td class="right">${peso(r.figures.total_tax_withheld)}</td>
-              <td class="right">${peso(r.figures.over_withheld)}</td>
-              <td class="right"><button type="button" class="btn secondary small" data-print="${i}" ${r.employee_id ? '' : 'disabled title="No matching employee record"'}>${UI.icon('printer', 13)} Print</button></td>
-            </tr>`).join('')}</tbody></table>`;
-
-        b.querySelectorAll('[data-print]').forEach((btn) => btn.onclick = () => printOne(state.rows[Number(btn.dataset.print)]));
-      }
-
-      async function printOne(row) {
-        try {
-          const detail = await API.get(`/hr/bir-2316/${row.employee_id}?year=${yearSel.value}`);
-          const meta = templates.find((t) => t.name === 'BIR 2316');
-          if (!meta) { UI.toast('BIR 2316 template not found (Documents → Templates)', 'error'); return; }
-          const tplBody = (await API.get('/templates/' + meta.id)).body;
-          const g = detail.figures;
-          const f = {};
-          Object.keys(g).forEach((k) => { f[k] = typeof g[k] === 'number' ? peso(g[k]) : g[k]; });
-          f.payslip_count = g.payslip_count;
-          f.thirteenth_month_ceiling = peso(g.thirteenth_month_ceiling);
-          f.over_withheld_label = g.over_withheld >= 0 ? 'OVER-WITHHELD (refund to employee)' : 'TAX STILL DUE FROM EMPLOYEE';
-          f.over_withheld_abs = peso(Math.abs(g.over_withheld));
-          const ctx = { company: detail.company || {}, employee: detail.employee || {}, f, year: detail.year, today: new Date().toLocaleDateString() };
-          const full = UI.printableHtml(renderTemplate(tplBody, ctx), '2316 - ' + (detail.employee.name || ''));
-          UI.modal({
-            title: `BIR 2316 — ${detail.employee.name || ''}`,
-            size: 'lg',
-            cancelText: 'Close',
-            confirmText: 'Print…',
-            bodyHTML: `<iframe id="b16-frame" style="width:100%;height:56vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
-            onOpen: (o2) => { o2.querySelector('#b16-frame').srcdoc = full; },
-            onConfirm: (o2) => { const ifr = o2.querySelector('#b16-frame'); ifr.contentWindow.focus(); ifr.contentWindow.print(); return false; },
-          });
-        } catch (e) { UI.toast(e.message, 'error'); }
-      }
-
-      yearSel.addEventListener('change', load);
-      ov.querySelector('#b16-csv').onclick = () => {
-        if (!state.rows.length) { UI.toast('Nothing to export', 'error'); return; }
-        UI.downloadCsv(`bir-2316-${state.year}.csv`,
-          ['Employee', 'TIN', 'Gross compensation', 'Total non-taxable', 'Gross taxable', 'Tax due', 'Tax withheld', 'Over/(under) withheld'],
-          state.rows.map((r) => [r.employee_name, r.tin_no || '', r.figures.gross_compensation, r.figures.total_non_taxable,
-            r.figures.gross_taxable_compensation, r.figures.tax_due, r.figures.total_tax_withheld, r.figures.over_withheld]));
-      };
-      load();
-    },
-  });
-}
 
 /* ── Statutory rate tables (SSS / PhilHealth / Pag-IBIG / BIR withholding) ──── */
 const RATE_KIND_LABEL = { sss: 'SSS', philhealth: 'PhilHealth', pagibig: 'Pag-IBIG', rwt: 'BIR withholding tax' };

@@ -745,7 +745,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
         .send({ payroll_period: `2316 P${i}`, pay_date: payDate });
     }
 
-    const one = await ctx.api.get(`/api/hr/bir-2316/${emp.body.id}?year=2026`).set(hdr());
+    const one = await ctx.api.get(`/api/accounting/bir-2316/${emp.body.id}?year=2026`).set(hdr());
     expect(one.status).toBe(200);
     expect(one.body.employee.name).toBe('2316 Employee');
     expect(one.body.employee.tin_no).toBe('123-456-789-000');
@@ -759,10 +759,10 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(f.tax_due).toBe(0);                               // well under the 250k exemption
     expect(f.total_tax_withheld).toBe(f.tax_withheld_present);
 
-    const list = await ctx.api.get('/api/hr/bir-2316?year=2026').set(hdr());
+    const list = await ctx.api.get('/api/accounting/bir-2316?year=2026').set(hdr());
     expect(list.body.rows.some((r: { employee_name: string }) => r.employee_name === '2316 Employee')).toBe(true);
 
-    expect((await ctx.api.get('/api/hr/bir-2316/99999?year=2026').set(hdr())).status).toBe(404);
+    expect((await ctx.api.get('/api/accounting/bir-2316/99999?year=2026').set(hdr())).status).toBe(404);
   });
 
   it('BIR 1601-C: monthly withholding totals from the generated payslips', async () => {
@@ -780,7 +780,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const recs = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: '1601C Cutoff' }).set(hdr());
     const rec = recs.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === '1601C Employee');
 
-    const r = await ctx.api.get('/api/hr/bir-1601c?year=2026').set(hdr());
+    const r = await ctx.api.get('/api/accounting/bir-1601c?year=2026').set(hdr());
     expect(r.status).toBe(200);
     expect(r.body.months).toHaveLength(12);
     const sep = r.body.months.find((m: { month: number }) => m.month === 9);
@@ -805,7 +805,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
       .send({ payroll_period: 'Alpha Cutoff', pay_date: '2026-10-25' });
 
-    const r = await ctx.api.get('/api/hr/bir-alphalist?year=2026').set(hdr());
+    const r = await ctx.api.get('/api/accounting/bir-alphalist?year=2026').set(hdr());
     expect(r.status).toBe(200);
     expect(r.body.headers.length).toBeGreaterThan(20);
     expect(r.body.cells.every((c: unknown[]) => c.length === r.body.headers.length)).toBe(true);
@@ -818,5 +818,84 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(row.status).toBe('R');
     expect(row.nt_total).toBe(Math.round((row.nt_13th_month + row.nt_de_minimis + row.nt_statutory + row.nt_salaries_250k_below) * 100) / 100);
     expect(row.seq).toBe(r.body.rows.indexOf(row) + 1);
+  });
+
+  it('BIR 1604-C: annual return face + Alphalist reconciliation', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-1604C', name: '1604C Employee', daily_rate: 1800, status: 'regular' });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: '1604C Cutoff', start_date: '2026-11-16', end_date: '2026-11-16' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-11-16', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: '1604C Cutoff', pay_date: '2026-11-25' });
+
+    const r = await ctx.api.get('/api/accounting/bir-1604c?year=2026').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.months).toHaveLength(12);
+    expect(r.body.reconciliation).toHaveProperty('tax_remitted_per_1601c');
+    expect(r.body.reconciliation).toHaveProperty('tax_due_per_alphalist');
+    // remitted − due split cleanly into over/under, one of them zero
+    const { over_remittance, under_remittance } = r.body.reconciliation;
+    expect(Math.min(over_remittance, under_remittance)).toBe(0);
+  });
+
+  it('final-pay worksheet: unpaid days + pro-rated 13th month + tax annualisation', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-FINAL', name: 'Leaver, Last', daily_rate: 1500, status: 'resigned' });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Final Cutoff', start_date: '2026-05-15', end_date: '2026-05-15' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-05-15', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Final Cutoff', pay_date: '2026-05-20' });
+
+    const r = await ctx.api.get(`/api/hr/final-pay/${emp.body.id}`)
+      .query({ separation_date: '2026-05-31', unpaid_days: 10, unused_leave_days: 3, outstanding_advance: 2000 })
+      .set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.worksheet.earnings.unpaid_salary).toBe(15_000);      // 10 × 1500
+    expect(r.body.worksheet.earnings.leave_conversion).toBe(4_500);    // 3 × 1500
+    expect(r.body.worksheet.earnings.prorated_13th_month).toBeGreaterThan(0);
+    expect(r.body.worksheet.deductions.outstanding_advance).toBe(2_000);
+    expect(r.body.worksheet).toHaveProperty('net_final_pay');
+    expect(Array.isArray(r.body.worksheet.notes)).toBe(true);
+    expect((await ctx.api.get('/api/hr/final-pay/99999').set(hdr())).status).toBe(404);
+  });
+
+  it('contribution schedule: SSS/PhilHealth/Pag-IBIG collection list + CSV', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-CONTRIB', name: 'Payer, Reg', daily_rate: 1600, sss_no: '34-9999999-9', philhealth_no: '11-222222222-3', pagibig_no: '1234-5678-9012' });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Contrib Cutoff', start_date: '2026-07-15', end_date: '2026-07-15' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-07-15', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Contrib Cutoff', pay_date: '2026-07-25' });
+
+    const sss = await ctx.api.get('/api/accounting/contribution-schedule').query({ month: '2026-07', agency: 'sss' }).set(hdr());
+    expect(sss.status).toBe(200);
+    expect(sss.body.agency).toBe('sss');
+    expect(sss.body.headers).toContain('EC ER');
+    const row = sss.body.rows.find((x: { name: string }) => x.name === 'Payer, Reg');
+    expect(row.id_number).toBe('34-9999999-9');
+    expect(row.total).toBeCloseTo(row.employee + row.employer + row.ec, 2);
+
+    const phic = await ctx.api.get('/api/accounting/contribution-schedule').query({ month: '2026-07', agency: 'philhealth' }).set(hdr());
+    expect(phic.body.rows.find((x: { name: string }) => x.name === 'Payer, Reg').id_number).toBe('11-222222222-3');
+
+    const csv = await ctx.api.get('/api/accounting/contribution-schedule').query({ month: '2026-07', agency: 'pagibig', format: 'csv' }).set(hdr());
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.text).toContain('Pag-IBIG MID No.');
+    expect(csv.text).toContain('1234-5678-9012');
   });
 });

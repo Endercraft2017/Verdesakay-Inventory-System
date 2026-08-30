@@ -26,6 +26,7 @@ import aiRoutes from './routes/ai.routes';
 import hrRoutes from './routes/hr.routes';
 import activityRoutes from './routes/activity.routes';
 import analyticsRoutes from './routes/analytics.routes';
+import accountingRoutes from './routes/accounting.routes';
 import mailRoutes from './routes/mail.routes';
 import pushRoutes from './routes/push.routes';
 import clockRoutes from './routes/clock.routes';
@@ -148,6 +149,7 @@ export function createApp() {
   app.use('/api/announcements', announcementsRoutes);
   app.use('/api/activity', activityRoutes);
   app.use('/api/analytics', analyticsRoutes);
+  app.use('/api/accounting', accountingRoutes);
   app.use('/api/mail', mailRoutes);
   app.use('/api/push', pushRoutes);
   app.get('/api/health', (_req, res) => {

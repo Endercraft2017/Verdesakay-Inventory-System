@@ -27,6 +27,7 @@ session.
 | [BIR Form 2316](bir-2316.md) | Payroll admin | Generating the year-end Certificate of Compensation Payment / Tax Withheld per employee; what it doesn't track |
 | [BIR Form 1601-C](bir-1601c.md) | Payroll admin | The monthly withholding-tax remittance worksheet; how it reconciles to 1604-C |
 | [BIR 1604-C Alphalist](bir-alphalist.md) | Payroll admin | Generating the Schedule 1 Alphalist of Employees CSV, and how to turn it into the `.DAT` |
+| [Tax & compliance (BIR + agency forms)](final-pay-and-contributions.md) | Accounting / payroll admin | Accounting → Tax & Compliance (1601-C, 1604-C + reconciliation, Alphalist, 2316, 0619-E, 2550M, SSS/PhilHealth/Pag-IBIG schedules) and HR's final-pay / 13th-month worksheets |
 
 ## Writing a new guide
 
