@@ -741,13 +741,26 @@ router.post('/:id/transfer', requirePermission('inventory.adjust'), (req, res) =
 
 // DELETE /api/inventory/:id
 router.delete('/:id', requirePermission('inventory.delete'), (req, res) => {
-  const item = queryOne<InventoryItem>('SELECT image_path FROM inventory_items WHERE id = ?', Number(req.params.id));
-  const info = run('DELETE FROM inventory_items WHERE id = ?', Number(req.params.id));
-  if (info.changes === 0) {
-    res.status(404).json({ error: 'Item not found' });
+  const id = Number(req.params.id);
+  const item = queryOne<InventoryItem & { quantity: number }>(
+    'SELECT image_path, quantity FROM inventory_items WHERE id = ?', id);
+  if (!item) { res.status(404).json({ error: 'Item not found' }); return; }
+
+  // An item that still holds stock can't be deleted — zero it out (or transfer/damage it)
+  // first, so stock never silently disappears from the books.
+  const onHand = queryOne<{ q: number }>(
+    'SELECT COALESCE(SUM(quantity), 0) AS q FROM inventory_stock WHERE item_id = ?', id)?.q ?? 0;
+  const stockLeft = Math.max(Number(item.quantity) || 0, onHand);
+  if (stockLeft > 0) {
+    res.status(409).json({
+      error: `This item still has ${stockLeft} in stock. Set its quantity to 0 (stock out / transfer / damage) before deleting.`,
+    });
     return;
   }
-  unlinkImage(item?.image_path);
+
+  const info = run('DELETE FROM inventory_items WHERE id = ?', id);
+  if (info.changes === 0) { res.status(404).json({ error: 'Item not found' }); return; }
+  unlinkImage(item.image_path);
   res.json({ ok: true });
 });
 

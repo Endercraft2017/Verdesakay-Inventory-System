@@ -880,11 +880,17 @@ App.register('inventory', async (view, filter) => {
   }
 
   async function del(it) {
+    if ((Number(it.quantity) || 0) > 0) {
+      UI.toast(`"${it.name}" still has ${it.quantity} in stock — set it to 0 before deleting.`, 'error');
+      return;
+    }
     const ok = await UI.confirmDialog(`Delete "${it.name}"? This also removes its stock history.`, 'Delete');
     if (!ok) return;
-    await API.del('/inventory/' + it.id);
-    UI.toast('Item deleted');
-    load();
+    try {
+      await API.del('/inventory/' + it.id);
+      UI.toast('Item deleted');
+      load();
+    } catch (e) { UI.toast(e.message, 'error'); }
   }
 
   // Wire toolbar

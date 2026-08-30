@@ -113,6 +113,18 @@ describe('inventory', () => {
     expect(detail.status).toBe(404);
   });
 
+  it('refuses to delete an item that still has stock', async () => {
+    const { body } = await createItem({ name: 'StockedItem', quantity: 12 });
+    const blocked = await ctx.api.delete(`/api/inventory/${body.id}`).set(authHdr());
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toMatch(/in stock/i);
+
+    // zero it out, then it deletes
+    await ctx.api.post(`/api/inventory/${body.id}/adjust`).set(authHdr())
+      .send({ change: -12, reason: 'clear before delete' });
+    expect((await ctx.api.delete(`/api/inventory/${body.id}`).set(authHdr())).status).toBe(200);
+  });
+
   it('reports dashboard stats', async () => {
     const res = await ctx.api.get('/api/inventory/stats').set(authHdr());
     expect(res.status).toBe(200);
