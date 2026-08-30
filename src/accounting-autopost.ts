@@ -9,11 +9,11 @@
  */
 import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } from './db';
 import {
-  buildSalesEntry, buildPurchaseEntry, POSTING_RULE_KEYS,
+  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, POSTING_RULE_KEYS,
   type PostingRules, type PostableDoc, type BuiltEntry,
 } from './accounting-posting';
 import { round2 } from './ledger';
-import type { Order, VendorBill } from './types';
+import type { Order, VendorBill, Payment } from './types';
 
 const RULES_KEY = 'accounting_posting_rules';
 
@@ -203,7 +203,7 @@ export function maybeAutoPostSale(orderId: number, userId: number | null): AutoP
       number: o.number,
       date: o.order_date || o.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
       subtotal: o.subtotal, tax_amount: o.tax_amount, total: o.total,
-      party_id: null, memo: o.customer_name ?? null,
+      party_id: o.customer_id ?? null, memo: o.customer_name ?? null,
     }, userId);
   } catch (e) {
     console.warn(`[gl] auto-post sale ${orderId} failed: ${(e as Error).message}`);
@@ -225,6 +225,31 @@ export function maybeAutoPostVendorBill(billId: number, userId: number | null): 
     }, userId);
   } catch (e) {
     console.warn(`[gl] auto-post bill ${billId} failed: ${(e as Error).message}`);
+    return { posted: false, error: (e as Error).message };
+  }
+}
+
+/** Called after a payment is recorded. Posts it to the cash receipts / disbursements book. */
+export function maybeAutoPostPayment(paymentId: number, userId: number | null): AutoPostOutcome {
+  try {
+    if (!ledgerEnabled()) return { posted: false, skipped: 'ledger_off' };
+    const p = queryOne<Payment>('SELECT * FROM payments WHERE id = ?', paymentId);
+    if (!p || p.status !== 'posted') return { posted: false, skipped: 'nothing_to_post' };
+    if (postedEntryForSource('payment', paymentId)) return { posted: false, skipped: 'already_posted' };
+    if (round2(p.amount || 0) <= 0) return { posted: false, skipped: 'nothing_to_post' };
+    if (periodClosedOn(p.payment_date)) return { posted: false, skipped: 'period_closed' };
+    if (!p.deposit_account_id) return { posted: false, error: 'No cash / bank account on the payment.' };
+
+    const built = buildPaymentEntry({
+      number: p.number, date: p.payment_date, direction: p.direction, amount: p.amount,
+      deposit_account_id: p.deposit_account_id, party_type: p.party_type,
+      party_id: p.party_id ?? null, memo: p.party_name ?? p.memo ?? null,
+    }, getPostingRules(), paymentId);
+    if (!built.ok) return { posted: false, error: built.error };
+    const entry = writePosted(built.entry, userId);
+    return { posted: true, entry };
+  } catch (e) {
+    console.warn(`[gl] auto-post payment ${paymentId} failed: ${(e as Error).message}`);
     return { posted: false, error: (e as Error).message };
   }
 }

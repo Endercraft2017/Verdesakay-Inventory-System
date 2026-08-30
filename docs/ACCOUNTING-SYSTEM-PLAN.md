@@ -9,9 +9,12 @@
 > stack (SQLite + Node/JS); AGPL, so design reference only (reimplemented).
 > **Phase 1a (2026-08-30)** adds **auto-posting**: a confirmed sale order and an approved
 > vendor bill post themselves to the sales / purchase journals via editable **posting
-> rules** (Books → Posting Rules), and reverse when the document is pulled back. Phases
-> 1b–5 (AR/AP subledgers + payments, VAT/EWT registers, payroll & inventory into the GL,
-> financial-statement polish, CAS export) are the roadmap.
+> rules** (Books → Posting Rules), and reverse when the document is pulled back.
+> **Phase 1b (2026-08-30)** adds a **`customers`** party registry, **payments** (customer
+> receipts / supplier disbursements that settle invoices and auto-post to the cash books),
+> and **AR / AP aging** + a per-party statement (Accounting → Receivables & Payables).
+> Phases 1b-rest–5 (credit/debit notes + BIR columnar journals, VAT/EWT registers, payroll
+> & inventory into the GL, financial-statement polish, CAS export) are the roadmap.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -227,10 +230,20 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   (`GET`/`PUT /api/accounting/ledger/posting-rules`). Skips silently when the ledger is off
   or the entry date is in a closed period. `tests/accounting-posting.test.ts` +
   `tests/accounting.test.ts` ("auto-posting sales & purchases (Phase 1)").
-- **1b — still to do.** Customer & supplier as first-class **parties with a ledger**;
-  ledger-backed **AR / AP aging**; **credit / debit notes**; **Payments**
-  (receive-from-customer, pay-supplier) as cash entries that settle invoices; **Sales
-  Journal / Purchase Journal** in BIR columnar format.
+- **1b — parties, payments, aging. ✅ SHIPPED 2026-08-30.** New **`customers`** table +
+  `/api/customers` CRUD (the AR-side counterpart of `suppliers`), `orders.customer_id`
+  FK (SCHEMA_VERSION 7). **`payments`** + **`payment_allocations`** — a receipt (money in
+  from a customer) / disbursement (money out to a supplier), optionally applied against
+  specific sale orders / vendor bills; auto-posts to the **cash receipts / disbursements**
+  book (`buildPaymentEntry` + `maybeAutoPostPayment`), void writes a reversal. Reports:
+  **`GET /api/accounting/ar-aging`** / **`ap-aging`** (per party, five buckets — current /
+  1–30 / 31–60 / 61–90 / 90+, aged by customer terms or the bill due date, net of
+  allocations) and **`party-ledger`** (a running charges-less-payments statement). UI:
+  **Accounting → Receivables & Payables** (`public/js/views/accounting-receivables.js`) +
+  **Inventory → Customers** (`customers.js`); the sale-order form gained a customer picker.
+  `tests/customers.test.ts` + `tests/accounting.test.ts` ("receivables & payables (Phase 1b)").
+- **1b — still to do.** **Credit / debit notes**; **Sales Journal / Purchase Journal** in
+  BIR columnar format; unapplied-credit handling in the aging (currently doc-level only).
 
 **Phase 2 — VAT + withholding, properly.** `tax_codes` on lines; **input/output VAT**
 accounts driven by the codes; **EWT** tagging on AP → the **withholding register**.
@@ -421,7 +434,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 ### Parties, items, pricing
 | Frappe Books | Verdesakay | Status |
 |---|---|---|
-| `Party` (customer/supplier) + `Address` | `suppliers` (customers implicit on `orders`) | 🟡 — needs a real `customers` party ledger (Phase 1) |
+| `Party` (customer/supplier) + `Address` | `suppliers` + **`customers`** (Phase 1b) + `orders.customer_id` | ✅ — both sides are first-class; AR/AP aging + party statement net against them |
 | `Item` + `ItemGroup` + `UOM` + `UOMConversionItem` | `inventory_items` (category, unit) | 🟡 |
 | `PriceList` + `PriceListItem` | `attributes.sale_price` per item | 🟡 |
 | `PricingRule` (+ detail/item) | — | ⬜ |
@@ -433,7 +446,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | `SalesInvoice` + `SalesInvoiceItem` | `orders` type `sale` | 🟡 — **Phase 1a** auto-posts a *confirmed* sale to the sales journal (DR AR / CR Sales / CR Output VAT); reverses on re-open |
 | `PurchaseInvoice` + `PurchaseInvoiceItem` | `vendor_bills` | 🟡 — **Phase 1a** auto-posts an *approved* bill to the purchase journal (DR Purchases / DR Input VAT / CR AP); reverses on dispute |
 | `SalesQuote` + items | — | ⬜ (quotation → SO) |
-| `Payment` + `PaymentFor` (allocation) + `PaymentMethod` | — | ⬜ **Phase 1** — receive-from-customer / pay-supplier, settle invoices |
+| `Payment` + `PaymentFor` (allocation) + `PaymentMethod` | `payments` + `payment_allocations` (Phase 1b) | ✅ — receipt / disbursement, applied to sale orders / vendor bills, auto-posts to the cash books, void = reversal |
 | `Tax` + `TaxDetail` + `TaxSummary` (tax templates) | `tax_percent` on docs + the VAT/EWT worksheets | 🟡 → `tax_codes` on lines (Phase 2) |
 | `AppliedCouponCodes` / `CouponCode` / `PricingRule` | — | ➖ |
 
@@ -462,7 +475,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Balance Sheet | `.../reports/balance-sheet` | ✅ **Phase 0** |
 | Cash Flow Statement | — | ⬜ Phase 4 |
 | Stock Ledger / Stock Balance | analytics dashboard (stock value) | 🟡 |
-| Sales / Purchase Register, Party Ledger | — | ⬜ Phase 1 |
+| Sales / Purchase Register, Party Ledger | `party-ledger` statement (Phase 1b); AR/AP aging | 🟡 — party statement done; BIR-columnar sales/purchase registers still ⬜ |
 | GST reports | our BIR VAT/EWT worksheets + (Phase 2) SLSP / 1601-EQ / QAP | 🟡 |
 
 ### Cross-cutting

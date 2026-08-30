@@ -35,11 +35,11 @@ export interface PostableDoc {
 }
 
 export interface BuiltEntry {
-  book: 'sales' | 'purchase';
+  book: 'sales' | 'purchase' | 'cash_receipts' | 'cash_disbursements';
   entry_date: string;
   memo: string;
   reference: string;
-  source_type: 'sale_order' | 'vendor_bill';
+  source_type: 'sale_order' | 'vendor_bill' | 'payment';
   source_id: number;
   lines: JournalLineInput[];
 }
@@ -119,6 +119,56 @@ export function buildPurchaseEntry(doc: PostableDoc, rules: PostingRules, source
       memo: `Bill ${doc.number}`,
       reference: doc.number,
       source_type: 'vendor_bill',
+      source_id: sourceId,
+      lines,
+    },
+  };
+}
+
+export interface PaymentDoc {
+  number: string;
+  date: string;
+  direction: 'in' | 'out';        // in = receive from customer, out = pay supplier
+  amount: number;
+  deposit_account_id: number;     // the cash / bank GL account the money moves through
+  party_type: 'customer' | 'supplier';
+  party_id?: number | null;
+  memo?: string | null;
+}
+
+/**
+ * A payment. Receipt (`in`): DR Cash/Bank / CR Accounts Receivable.
+ * Disbursement (`out`): DR Accounts Payable / CR Cash/Bank. The control-account leg
+ * carries the party so the AR / AP subledger nets down.
+ */
+export function buildPaymentEntry(doc: PaymentDoc, rules: PostingRules, sourceId: number): BuildResult {
+  const controlKey: keyof PostingRules = doc.direction === 'in' ? 'ar_account_id' : 'ap_account_id';
+  const gap = missing(rules, [controlKey]);
+  if (gap) return { ok: false, error: gap };
+  if (!doc.deposit_account_id) return { ok: false, error: `${doc.number}: choose the cash / bank account.` };
+  const amount = round2(doc.amount || 0);
+  if (amount <= 0) return { ok: false, error: `${doc.number}: amount must be greater than zero.` };
+
+  const control = rules[controlKey]!;
+  const party = { party_type: doc.party_type, party_id: doc.party_id ?? null, memo: doc.memo ?? null };
+  const lines: JournalLineInput[] = doc.direction === 'in'
+    ? [
+        { account_id: doc.deposit_account_id, debit: amount, credit: 0 },
+        { account_id: control, debit: 0, credit: amount, ...party },
+      ]
+    : [
+        { account_id: control, debit: amount, credit: 0, ...party },
+        { account_id: doc.deposit_account_id, debit: 0, credit: amount },
+      ];
+
+  return {
+    ok: true,
+    entry: {
+      book: doc.direction === 'in' ? 'cash_receipts' : 'cash_disbursements',
+      entry_date: doc.date,
+      memo: `${doc.direction === 'in' ? 'Receipt' : 'Payment'} ${doc.number}`,
+      reference: doc.number,
+      source_type: 'payment',
       source_id: sourceId,
       lines,
     },

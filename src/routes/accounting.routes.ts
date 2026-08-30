@@ -14,13 +14,16 @@ import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody, statutoryDeductionsSchema, pettyCashFundSchema, pettyCashEntrySchema,
   ledgerSetupSchema, accountSchema, journalEntrySchema, glPeriodSchema, postingRulesSchema,
+  paymentSchema,
 } from '../validation';
 import { toCsv } from '../csv';
 import { validateJournalLines, accountBalance, DEFAULT_COA, type JournalLineInput } from '../ledger';
 import {
   getPostingRules, setPostingRules, seedPostingRulesFromCoa,
+  maybeAutoPostPayment, unpostSource,
 } from '../accounting-autopost';
 import { POSTING_RULE_KEYS, type PostingRules } from '../accounting-posting';
+import type { Payment, PaymentAllocation } from '../types';
 import type {
   PettyCashFund, PettyCashEntry, Account, JournalEntry, JournalLine, AccountingPeriod,
   AccountRootType,
@@ -1034,6 +1037,296 @@ router.get('/ledger/reports/balance-sheet', (req, res) => {
     total_assets: assets.total,
     total_liabilities_and_equity: round2(liabilities.total + equityWithEarnings),
     balanced: Math.abs(assets.total - (liabilities.total + equityWithEarnings)) < 0.01,
+  });
+});
+
+/* ================================================ receivables & payables (Phase 1b) === */
+/* Customer receipts / supplier payments settle open sale orders & vendor bills; the
+   subledger reports age what's still outstanding. Read = accounting.view; write =
+   accounting.manage. Needs the ledger set up (payments auto-post a cash-book entry). */
+
+const CONFIRMED_SALE_SQL =
+  "o.type = 'sale' AND lower(o.status) IN ('confirmed','completed','fulfilled','invoiced','paid')";
+
+/** allocated-so-far per document, from non-void payments. */
+function allocatedFor(docType: 'sale_order' | 'vendor_bill', docId: number): number {
+  return round2(queryOne<{ a: number }>(
+    `SELECT COALESCE(SUM(pa.amount), 0) AS a FROM payment_allocations pa
+     JOIN payments p ON p.id = pa.payment_id AND p.status = 'posted'
+     WHERE pa.doc_type = ? AND pa.doc_id = ?`, docType, docId
+  )?.a ?? 0);
+}
+
+// GET /api/accounting/cash-accounts — cash / bank leaf accounts for the "deposit to" picker.
+router.get('/cash-accounts', (_req, res) => {
+  if (!requireLedger(res)) return;
+  res.json(queryAll(
+    `SELECT id, code, name, account_type FROM accounts
+     WHERE is_group = 0 AND archived = 0 AND account_type IN ('cash','bank') ORDER BY code`
+  ));
+});
+
+// GET /api/accounting/payments?direction=&party_type=&party_id=&from=&to=&status=
+router.get('/payments', (req, res) => {
+  if (!requireLedger(res)) return;
+  const where: string[] = [];
+  const params: unknown[] = [];
+  const q = req.query;
+  for (const [k, col] of [['direction', 'p.direction'], ['party_type', 'p.party_type'], ['status', 'p.status']] as const) {
+    if (typeof q[k] === 'string') { where.push(`${col} = ?`); params.push(q[k]); }
+  }
+  if (q.party_id != null && q.party_id !== '') { where.push('p.party_id = ?'); params.push(Number(q.party_id)); }
+  if (typeof q.from === 'string') { where.push('p.payment_date >= ?'); params.push(q.from); }
+  if (typeof q.to === 'string') { where.push('p.payment_date <= ?'); params.push(q.to); }
+  res.json(queryAll<Payment>(`
+    SELECT p.*, u.full_name AS created_by_name, a.name AS deposit_account_name,
+           (SELECT COALESCE(SUM(amount), 0) FROM payment_allocations WHERE payment_id = p.id) AS allocated
+    FROM payments p
+    LEFT JOIN users u ON u.id = p.created_by
+    LEFT JOIN accounts a ON a.id = p.deposit_account_id
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ORDER BY p.payment_date DESC, p.id DESC LIMIT 500`, ...params));
+});
+
+// GET /api/accounting/payments/:id — a payment + its allocations (with the doc numbers)
+router.get('/payments/:id', (req, res) => {
+  if (!requireLedger(res)) return;
+  const p = queryOne<Payment>(`
+    SELECT p.*, u.full_name AS created_by_name, a.name AS deposit_account_name
+    FROM payments p LEFT JOIN users u ON u.id = p.created_by
+    LEFT JOIN accounts a ON a.id = p.deposit_account_id WHERE p.id = ?`, Number(req.params.id));
+  if (!p) { res.status(404).json({ error: 'Payment not found' }); return; }
+  const allocs = queryAll<PaymentAllocationRow>(
+    'SELECT * FROM payment_allocations WHERE payment_id = ? ORDER BY id', p.id);
+  p.allocations = allocs.map((al) => {
+    const doc = al.doc_type === 'sale_order'
+      ? queryOne<{ number: string }>("SELECT number FROM orders WHERE id = ?", al.doc_id)
+      : queryOne<{ number: string }>('SELECT number FROM vendor_bills WHERE id = ?', al.doc_id);
+    return { ...al, doc_number: doc?.number ?? null };
+  }) as PaymentAllocation[];
+  res.json(p);
+});
+
+interface PaymentAllocationRow {
+  id: number; payment_id: number; doc_type: 'sale_order' | 'vendor_bill'; doc_id: number; amount: number;
+}
+
+// POST /api/accounting/payments — record a receipt (in) / disbursement (out) + auto-post.
+router.post('/payments', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const b = parseBody(paymentSchema, req.body);
+
+  const deposit = queryOne<{ is_group: number; archived: number }>(
+    'SELECT is_group, archived FROM accounts WHERE id = ?', b.deposit_account_id);
+  if (!deposit || deposit.is_group || deposit.archived) {
+    res.status(400).json({ error: 'Pick a postable cash / bank account to deposit to / pay from.' });
+    return;
+  }
+
+  // Resolve the party name (snapshot) + validate any allocations belong to this party & direction.
+  let partyName = b.party_name ?? null;
+  if (b.party_id != null) {
+    const row = b.party_type === 'customer'
+      ? queryOne<{ name: string }>('SELECT name FROM customers WHERE id = ?', b.party_id)
+      : queryOne<{ name: string }>('SELECT name FROM suppliers WHERE id = ?', b.party_id);
+    if (!row) { res.status(400).json({ error: `${b.party_type} not found.` }); return; }
+    partyName = partyName ?? row.name;
+  }
+  const wantDocType = b.direction === 'in' ? 'sale_order' : 'vendor_bill';
+  const allocs = b.allocations ?? [];
+  let allocTotal = 0;
+  for (const al of allocs) {
+    if (al.doc_type !== wantDocType) {
+      res.status(400).json({ error: `A ${b.direction === 'in' ? 'receipt' : 'payment'} can only be applied to ${wantDocType.replace('_', ' ')}s.` });
+      return;
+    }
+    const exists = al.doc_type === 'sale_order'
+      ? queryOne('SELECT id FROM orders WHERE id = ?', al.doc_id)
+      : queryOne('SELECT id FROM vendor_bills WHERE id = ?', al.doc_id);
+    if (!exists) { res.status(400).json({ error: `Allocation target #${al.doc_id} not found.` }); return; }
+    allocTotal = round2(allocTotal + al.amount);
+  }
+  if (allocTotal > round2(b.amount) + 0.005) {
+    res.status(400).json({ error: `Allocations (${allocTotal}) exceed the payment amount (${round2(b.amount)}).` });
+    return;
+  }
+
+  db.exec('BEGIN');
+  let paymentId: number;
+  try {
+    const number = nextSequence(b.direction === 'in' ? 'payment_in' : 'payment_out',
+      b.direction === 'in' ? 'RCT' : 'DV', 5);
+    const info = run(
+      `INSERT INTO payments
+        (number, direction, party_type, party_id, party_name, payment_date, amount, method,
+         reference, deposit_account_id, memo, status, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?)`,
+      number, b.direction, b.party_type, b.party_id ?? null, partyName, b.payment_date,
+      round2(b.amount), b.method ?? null, b.reference ?? null, b.deposit_account_id, b.memo ?? null,
+      req.user!.id
+    );
+    paymentId = Number(info.lastInsertRowid);
+    for (const al of allocs) {
+      run('INSERT INTO payment_allocations (payment_id, doc_type, doc_id, amount) VALUES (?, ?, ?, ?)',
+        paymentId, al.doc_type, al.doc_id, round2(al.amount));
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  const posted = maybeAutoPostPayment(paymentId, req.user!.id);
+  res.status(201).json({ id: paymentId, posted: posted.posted, entry: posted.entry ?? null, error: posted.error ?? null });
+});
+
+// POST /api/accounting/payments/:id/void — reverse the cash-book entry, mark it void.
+router.post('/payments/:id/void', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const id = Number(req.params.id);
+  const p = queryOne<Payment>('SELECT * FROM payments WHERE id = ?', id);
+  if (!p) { res.status(404).json({ error: 'Payment not found' }); return; }
+  if (p.status === 'void') { res.status(409).json({ error: 'Already void.' }); return; }
+  const rev = unpostSource('payment', id, req.user!.id);
+  if (rev.error) { res.status(409).json({ error: `Could not reverse the ledger entry: ${rev.error}` }); return; }
+  run("UPDATE payments SET status = 'void' WHERE id = ?", id);
+  res.json({ ok: true, reversal: rev.entry ?? null });
+});
+
+/* ---------------------------------------------------------------------- aging + statement --- */
+
+const AGE_BUCKETS = ['current', '1_30', '31_60', '61_90', '90_plus'] as const;
+type AgeBucket = typeof AGE_BUCKETS[number];
+function bucketFor(dueDate: string | null, asOf: string): AgeBucket {
+  if (!dueDate) return 'current';
+  const days = Math.floor((Date.parse(asOf) - Date.parse(dueDate)) / 86_400_000);
+  if (days <= 0) return 'current';
+  if (days <= 30) return '1_30';
+  if (days <= 60) return '31_60';
+  if (days <= 90) return '61_90';
+  return '90_plus';
+}
+const emptyBuckets = () => Object.fromEntries(AGE_BUCKETS.map((b) => [b, 0])) as Record<AgeBucket, number>;
+
+// GET /api/accounting/ar-aging?as_of= — open sale orders per customer, aged by due date.
+router.get('/ar-aging', (req, res) => {
+  if (!requireLedger(res)) return;
+  const asOf = typeof req.query.as_of === 'string' ? req.query.as_of : new Date().toISOString().slice(0, 10);
+  const rows = queryAll<{
+    id: number; number: string; order_date: string | null; total: number;
+    customer_id: number | null; customer_name: string | null; terms: number | null;
+  }>(`
+    SELECT o.id, o.number, o.order_date, o.total, o.customer_id,
+           COALESCE(c.name, o.customer_name) AS customer_name, c.payment_terms_days AS terms
+    FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+    WHERE ${CONFIRMED_SALE_SQL} AND o.total > 0`);
+  res.json(agingPayload(rows.map((r) => ({
+    doc_id: r.id, doc_number: r.number, party_key: r.customer_id ? `c${r.customer_id}` : `n:${r.customer_name ?? '—'}`,
+    party_id: r.customer_id, party_name: r.customer_name ?? 'No customer',
+    doc_total: r.total, allocated: allocatedFor('sale_order', r.id),
+    due_date: addDays(r.order_date, r.terms ?? 0),
+  })), asOf, 'sale_order'));
+});
+
+// GET /api/accounting/ap-aging?as_of= — open vendor bills per supplier, aged by due date.
+router.get('/ap-aging', (req, res) => {
+  if (!requireLedger(res)) return;
+  const asOf = typeof req.query.as_of === 'string' ? req.query.as_of : new Date().toISOString().slice(0, 10);
+  const rows = queryAll<{
+    id: number; number: string; bill_date: string | null; due_date: string | null;
+    total: number; supplier_id: number | null; supplier_name: string | null;
+  }>(`
+    SELECT b.id, b.number, b.bill_date, b.due_date, b.total, b.supplier_id, s.name AS supplier_name
+    FROM vendor_bills b LEFT JOIN suppliers s ON s.id = b.supplier_id
+    WHERE b.status = 'approved' AND b.total > 0`);
+  res.json(agingPayload(rows.map((r) => ({
+    doc_id: r.id, doc_number: r.number, party_key: r.supplier_id ? `s${r.supplier_id}` : `n:${r.supplier_name ?? '—'}`,
+    party_id: r.supplier_id, party_name: r.supplier_name ?? 'No supplier',
+    doc_total: r.total, allocated: allocatedFor('vendor_bill', r.id),
+    due_date: r.due_date || r.bill_date,
+  })), asOf, 'vendor_bill'));
+});
+
+function addDays(date: string | null, days: number): string | null {
+  if (!date) return null;
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return date;
+  d.setDate(d.getDate() + (Number(days) || 0));
+  return d.toISOString().slice(0, 10);
+}
+
+interface AgingInput {
+  doc_id: number; doc_number: string; party_key: string; party_id: number | null; party_name: string;
+  doc_total: number; allocated: number; due_date: string | null;
+}
+function agingPayload(items: AgingInput[], asOf: string, docType: 'sale_order' | 'vendor_bill') {
+  const byParty = new Map<string, {
+    party_id: number | null; party_name: string; buckets: Record<AgeBucket, number>;
+    total: number; docs: { doc_id: number; doc_number: string; due_date: string | null; outstanding: number; bucket: AgeBucket }[];
+  }>();
+  for (const it of items) {
+    const outstanding = round2(it.doc_total - it.allocated);
+    if (outstanding <= 0.005) continue;
+    const bucket = bucketFor(it.due_date, asOf);
+    let p = byParty.get(it.party_key);
+    if (!p) {
+      p = { party_id: it.party_id, party_name: it.party_name, buckets: emptyBuckets(), total: 0, docs: [] };
+      byParty.set(it.party_key, p);
+    }
+    p.buckets[bucket] = round2(p.buckets[bucket] + outstanding);
+    p.total = round2(p.total + outstanding);
+    p.docs.push({ doc_id: it.doc_id, doc_number: it.doc_number, due_date: it.due_date, outstanding, bucket });
+  }
+  const parties = [...byParty.values()].sort((a, b) => b.total - a.total);
+  const totals = emptyBuckets();
+  let grand = 0;
+  for (const p of parties) {
+    for (const bk of AGE_BUCKETS) totals[bk] = round2(totals[bk] + p.buckets[bk]);
+    grand = round2(grand + p.total);
+  }
+  return { as_of: asOf, doc_type: docType, buckets: AGE_BUCKETS, parties, totals, grand_total: grand };
+}
+
+// GET /api/accounting/party-ledger?party_type=customer|supplier&party_id=&from=&to=
+// A running statement: charges (invoices/bills) less payments.
+router.get('/party-ledger', (req, res) => {
+  if (!requireLedger(res)) return;
+  const partyType = req.query.party_type === 'supplier' ? 'supplier' : 'customer';
+  const partyId = Number(req.query.party_id);
+  if (!partyId) { res.status(400).json({ error: 'party_id is required.' }); return; }
+  const from = typeof req.query.from === 'string' ? req.query.from : null;
+  const to = typeof req.query.to === 'string' ? req.query.to : null;
+  const inRange = (d: string | null) => (!d) || ((!from || d >= from) && (!to || d <= to));
+
+  const party = partyType === 'customer'
+    ? queryOne<{ name: string }>('SELECT name FROM customers WHERE id = ?', partyId)
+    : queryOne<{ name: string }>('SELECT name FROM suppliers WHERE id = ?', partyId);
+  if (!party) { res.status(404).json({ error: `${partyType} not found.` }); return; }
+
+  const charges = partyType === 'customer'
+    ? queryAll<{ date: string | null; ref: string; amount: number }>(`
+        SELECT o.order_date AS date, o.number AS ref, o.total AS amount FROM orders o
+        WHERE o.customer_id = ? AND ${CONFIRMED_SALE_SQL}`, partyId)
+    : queryAll<{ date: string | null; ref: string; amount: number }>(`
+        SELECT COALESCE(bill_date, created_at) AS date, number AS ref, total AS amount
+        FROM vendor_bills WHERE supplier_id = ? AND status = 'approved'`, partyId);
+
+  const pays = queryAll<{ date: string; ref: string; amount: number; status: string }>(`
+    SELECT payment_date AS date, number AS ref, amount, status FROM payments
+    WHERE party_type = ? AND party_id = ? AND status = 'posted'`, partyType, partyId);
+
+  const events = [
+    ...charges.filter((c) => inRange(c.date)).map((c) => ({ date: c.date, ref: c.ref, kind: 'charge' as const, charge: round2(c.amount), payment: 0 })),
+    ...pays.filter((p) => inRange(p.date)).map((p) => ({ date: p.date, ref: p.ref, kind: 'payment' as const, charge: 0, payment: round2(p.amount) })),
+  ].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.ref.localeCompare(b.ref));
+
+  let balance = 0;
+  const lines = events.map((e) => { balance = round2(balance + e.charge - e.payment); return { ...e, balance }; });
+  res.json({
+    party_type: partyType, party_id: partyId, party_name: party.name, from, to,
+    lines,
+    total_charges: round2(events.reduce((s, e) => s + e.charge, 0)),
+    total_payments: round2(events.reduce((s, e) => s + e.payment, 0)),
+    balance,
   });
 });
 

@@ -345,3 +345,120 @@ describe('accounting: statutory deductions per employee', () => {
     expect(row2).toMatchObject({ deduct_sss: false, deduct_philhealth: true, deduct_pagibig: false, deduct_withholding_tax: true });
   });
 });
+
+describe('accounting: receivables & payables (Phase 1b)', () => {
+  // Ledger already set up by the Phase 0 block.
+  let cashAcct = 0, custId = 0, soId = 0, receiptId = 0;
+
+  it('exposes cash / bank accounts for the deposit picker', async () => {
+    const r = await ctx.api.get('/api/accounting/cash-accounts').set(hdr());
+    expect(r.status).toBe(200);
+    cashAcct = r.body.find((a: { code: string }) => a.code === '1110').id;
+    expect(cashAcct).toBeGreaterThan(0);
+  });
+
+  it('a confirmed sale for a customer shows in AR aging, aged by the customer terms', async () => {
+    custId = (await ctx.api.post('/api/customers').set(hdr())
+      .send({ name: 'Aging Co', payment_terms_days: 30 })).body.id;
+    soId = (await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'sale', customer_id: custId, order_date: '2026-05-01', status: 'confirmed',
+      items: [{ name: 'Widget', quantity: 10, unit_price: 100 }], // total 1000, no tax
+    })).body.id;
+
+    const near = await ctx.api.get('/api/accounting/ar-aging?as_of=2026-05-15').set(hdr());
+    const p1 = near.body.parties.find((p: { party_id: number }) => p.party_id === custId);
+    expect(p1.total).toBe(1000);
+    expect(p1.buckets.current).toBe(1000); // due 2026-05-31, not yet overdue
+
+    const later = await ctx.api.get('/api/accounting/ar-aging?as_of=2026-07-15').set(hdr());
+    const p2 = later.body.parties.find((p: { party_id: number }) => p.party_id === custId);
+    expect(p2.buckets['31_60']).toBe(1000); // 45 days past due
+  });
+
+  it('a receipt allocated to the order reduces the open balance and posts a cash-book entry', async () => {
+    const r = await ctx.api.post('/api/accounting/payments').set(hdr()).send({
+      direction: 'in', party_type: 'customer', party_id: custId, payment_date: '2026-05-20',
+      amount: 400, deposit_account_id: cashAcct,
+      allocations: [{ doc_type: 'sale_order', doc_id: soId, amount: 400 }],
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.posted).toBe(true);
+    receiptId = r.body.id;
+
+    const aging = await ctx.api.get('/api/accounting/ar-aging?as_of=2026-05-25').set(hdr());
+    const p = aging.body.parties.find((x: { party_id: number }) => x.party_id === custId);
+    expect(p.total).toBe(600);
+
+    const list = await ctx.api.get('/api/accounting/payments?direction=in').set(hdr());
+    expect(list.body.find((x: { id: number }) => x.id === receiptId).allocated).toBe(400);
+
+    const je = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'payment', source_id: receiptId }).set(hdr());
+    expect(je.body.length).toBe(1);
+    expect(je.body[0].book).toBe('cash_receipts');
+  });
+
+  it('party ledger runs charges less payments to a balance', async () => {
+    const s = await ctx.api.get(`/api/accounting/party-ledger?party_type=customer&party_id=${custId}`).set(hdr());
+    expect(s.body.total_charges).toBe(1000);
+    expect(s.body.total_payments).toBe(400);
+    expect(s.body.balance).toBe(600);
+  });
+
+  it('voiding the receipt restores the open balance and reverses the entry', async () => {
+    const v = await ctx.api.post(`/api/accounting/payments/${receiptId}/void`).set(hdr()).send({});
+    expect(v.status).toBe(200);
+    const aging = await ctx.api.get('/api/accounting/ar-aging?as_of=2026-05-25').set(hdr());
+    const p = aging.body.parties.find((x: { party_id: number }) => x.party_id === custId);
+    expect(p.total).toBe(1000);
+    const je = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'payment', source_id: receiptId }).set(hdr());
+    expect(je.body.length).toBe(2); // original + reversal
+    const tb = await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr());
+    expect(tb.body.balanced).toBe(true);
+  });
+
+  it('AP aging + a disbursement against an approved vendor bill', async () => {
+    const loc = (await ctx.api.get('/api/locations').set(hdr())).body
+      .find((l: { is_default: number }) => l.is_default === 1).id;
+    const item = (await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'AP Widget', quantity: 0 })).body.id;
+    const supplierId = (await ctx.api.post('/api/suppliers').set(hdr()).send({ name: 'AP Vendor Inc' })).body.id;
+    const po = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'purchase', order_date: '2026-05-02', supplier_id: supplierId,
+      items: [{ item_id: item, name: 'AP Widget', quantity: 4, unit_price: 250 }], // total 1000
+    });
+    const oi = (await ctx.api.get(`/api/orders/${po.body.id}`).set(hdr())).body.items[0].id;
+    await ctx.api.post(`/api/purchasing/orders/${po.body.id}/receipts`).set(hdr())
+      .send({ location_id: loc, lines: [{ order_item_id: oi, item_id: item, name: 'AP Widget', quantity: 4 }] });
+    const bill = await ctx.api.post(`/api/purchasing/orders/${po.body.id}/bills`).set(hdr())
+      .send({ bill_date: '2026-05-02', due_date: '2026-05-20',
+        lines: [{ order_item_id: oi, item_id: item, name: 'AP Widget', quantity: 4, unit_price: 250 }] });
+    await ctx.api.post(`/api/purchasing/bills/${bill.body.id}/approve`).set(hdr()).send({});
+
+    const aging = await ctx.api.get('/api/accounting/ap-aging?as_of=2026-06-01').set(hdr());
+    const p = aging.body.parties.find((x: { party_id: number | null }) => x.party_id === supplierId);
+    expect(p.total).toBe(1000);
+    expect(p.buckets['1_30']).toBe(1000); // due 2026-05-20, ~12 days past on 2026-06-01
+
+    const pay = await ctx.api.post('/api/accounting/payments').set(hdr()).send({
+      direction: 'out', party_type: 'supplier', party_id: supplierId, payment_date: '2026-05-18',
+      amount: 1000, deposit_account_id: cashAcct,
+      allocations: [{ doc_type: 'vendor_bill', doc_id: bill.body.id, amount: 1000 }],
+    });
+    expect(pay.status).toBe(201);
+    const after = await ctx.api.get('/api/accounting/ap-aging?as_of=2026-06-01').set(hdr());
+    expect(after.body.parties.find((x: { party_id: number | null }) => x.party_id === supplierId)).toBeUndefined();
+
+    const tb = await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr());
+    expect(tb.body.balanced).toBe(true);
+  });
+
+  it('rejects an allocation whose type does not match the direction', async () => {
+    const bad = await ctx.api.post('/api/accounting/payments').set(hdr()).send({
+      direction: 'in', party_type: 'customer', party_id: custId, payment_date: '2026-05-20',
+      amount: 100, deposit_account_id: cashAcct,
+      allocations: [{ doc_type: 'vendor_bill', doc_id: 1, amount: 100 }],
+    });
+    expect(bad.status).toBe(400);
+  });
+});

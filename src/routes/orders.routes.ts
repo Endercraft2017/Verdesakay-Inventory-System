@@ -40,6 +40,30 @@ function computeTotals(items: LineInput[], taxPercent: number) {
   return { lines, subtotal, tax_amount, total };
 }
 
+/** Resolve the customer link for a sale order — pull name/contact from the customers row
+ *  when a `customer_id` is given and the caller didn't type its own. Non-sale orders never
+ *  carry a customer_id. */
+function resolveCustomer(
+  type: OrderType,
+  input: { customer_id?: number | null; customer_name?: string | null; customer_contact?: string | null }
+): { customer_id: number | null; customer_name: string | null; customer_contact: string | null } {
+  if (type !== 'sale' || input.customer_id == null) {
+    return {
+      customer_id: null,
+      customer_name: input.customer_name ?? null,
+      customer_contact: input.customer_contact ?? null,
+    };
+  }
+  const c = queryOne<{ name: string; contact_person: string | null; phone: string | null }>(
+    'SELECT name, contact_person, phone FROM customers WHERE id = ?', input.customer_id
+  );
+  return {
+    customer_id: c ? input.customer_id : null,
+    customer_name: input.customer_name ?? c?.name ?? null,
+    customer_contact: input.customer_contact ?? c?.contact_person ?? c?.phone ?? null,
+  };
+}
+
 /** Next order number for a type, e.g. SO-00001 / JO-00001 / PR-00001 (counter in settings). */
 function nextOrderNumber(type: OrderType): string {
   const prefix = type === 'sale' ? 'SO' : type === 'job' ? 'JO' : 'PR';
@@ -115,18 +139,21 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
   const input = parseBody(createOrderSchema, req.body);
   const { lines, subtotal, tax_amount, total } = computeTotals(input.items, input.tax_percent);
 
+  const cust = resolveCustomer(input.type, input);
+
   db.exec('BEGIN');
   try {
     const number = nextOrderNumber(input.type);
     const info = run(
       `INSERT INTO orders
-        (type, number, customer_name, customer_contact, order_date, status, notes, currency,
+        (type, number, customer_name, customer_contact, customer_id, order_date, status, notes, currency,
          subtotal, tax_percent, tax_amount, total, created_by, supplier_id, expected_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.type,
       number,
-      input.customer_name ?? null,
-      input.customer_contact ?? null,
+      cust.customer_name,
+      cust.customer_contact,
+      cust.customer_id,
       input.order_date ?? null,
       input.status || 'open',
       input.notes ?? null,
@@ -160,16 +187,18 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
   }
   const input = parseBody(updateOrderSchema, req.body);
   const { lines, subtotal, tax_amount, total } = computeTotals(input.items, input.tax_percent);
+  const cust = resolveCustomer(order.type, input);
 
   db.exec('BEGIN');
   try {
     run(
-      `UPDATE orders SET customer_name = ?, customer_contact = ?, order_date = ?, status = ?,
+      `UPDATE orders SET customer_name = ?, customer_contact = ?, customer_id = ?, order_date = ?, status = ?,
          notes = ?, currency = ?, subtotal = ?, tax_percent = ?, tax_amount = ?, total = ?,
          supplier_id = ?, expected_date = ?, updated_at = datetime('now')
        WHERE id = ?`,
-      input.customer_name ?? null,
-      input.customer_contact ?? null,
+      cust.customer_name,
+      cust.customer_contact,
+      cust.customer_id,
       input.order_date ?? null,
       input.status || 'open',
       input.notes ?? null,

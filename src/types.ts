@@ -115,6 +115,57 @@ export interface Supplier {
   item_count?: number;
 }
 
+export interface Customer {
+  id: number;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  tin: string | null;
+  payment_terms_days: number;
+  notes: string | null;
+  archived: number;
+  created_at: string;
+  updated_at: string;
+  /** Joined in by GET /api/customers. */
+  order_count?: number;
+  open_balance?: number;
+  /** GET /api/customers/:id attaches recent sale orders. */
+  orders?: { id: number; number: string; order_date: string | null; status: string; total: number }[];
+}
+
+export interface Payment {
+  id: number;
+  number: string;
+  direction: 'in' | 'out';
+  party_type: 'customer' | 'supplier';
+  party_id: number | null;
+  party_name: string | null;
+  payment_date: string;
+  amount: number;
+  method: string | null;
+  reference: string | null;
+  deposit_account_id: number | null;
+  memo: string | null;
+  status: 'posted' | 'void';
+  created_by: number | null;
+  created_at: string;
+  allocations?: PaymentAllocation[];
+  created_by_name?: string | null;
+  deposit_account_name?: string | null;
+}
+
+export interface PaymentAllocation {
+  id: number;
+  payment_id: number;
+  doc_type: 'sale_order' | 'vendor_bill';
+  doc_id: number;
+  amount: number;
+  /** GET /api/accounting/payments/:id resolves the target document number. */
+  doc_number?: string | null;
+}
+
 export interface LocationRow {
   id: number;
   name: string;
@@ -467,6 +518,8 @@ export interface Order {
   /** Purchase orders only: the supplier this PO is raised against + expected delivery. */
   supplier_id: number | null;
   expected_date: string | null;
+  /** Sale orders only: the customer this order is raised for. */
+  customer_id: number | null;
   created_by_name?: string | null;
   supplier_name?: string | null;
   items?: OrderItem[];

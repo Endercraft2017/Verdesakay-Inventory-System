@@ -11,6 +11,8 @@ App.register('orders', async (view, filter) => {
 
   let suppliers = [];
   if (type === 'purchase') { try { suppliers = await API.get('/suppliers'); } catch { /* optional */ } }
+  let customers = [];
+  if (type === 'sale') { try { customers = await API.get('/customers'); } catch { /* optional */ } }
   const partyLabel = type === 'purchase' ? 'Vendor' : 'Customer';
 
   view.innerHTML = `
@@ -144,8 +146,12 @@ App.register('orders', async (view, filter) => {
       title: editing ? `Edit ${order.number}` : `New ${noun}`,
       size: 'lg',
       bodyHTML: `
+        ${type === 'sale' ? `<div class="field-row">
+          <div><label>Customer (on file)</label><select data-f="customer_id"><option value="">— none / walk-in —</option>
+            ${customers.map((c) => `<option value="${c.id}" ${String(get('customer_id', '')) === String(c.id) ? 'selected' : ''}>${UI.esc(c.name)}</option>`).join('')}</select></div>
+        </div>` : ''}
         <div class="field-row">
-          <div><label>${partyLabel} name</label><input data-f="customer_name" value="${UI.esc(get('customer_name', ''))}" /></div>
+          <div><label>${partyLabel} name</label><input data-f="customer_name" value="${UI.esc(get('customer_name', ''))}" placeholder="${type === 'sale' ? 'auto-filled from the customer if left blank' : ''}" /></div>
           <div><label>${partyLabel} contact</label><input data-f="customer_contact" value="${UI.esc(get('customer_contact', ''))}" /></div>
         </div>
         ${type === 'purchase' ? `<div class="field-row">
@@ -257,6 +263,7 @@ App.register('orders', async (view, filter) => {
           body.supplier_id = fOpt('supplier_id') || null;
           body.expected_date = fOpt('expected_date') || null;
         }
+        if (type === 'sale') body.customer_id = fOpt('customer_id') || null;
         if (editing) await API.put('/orders/' + order.id, body);
         else await API.post('/orders', { type, ...body });
         UI.toast(editing ? 'Order saved' : 'Order created');

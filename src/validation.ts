@@ -193,6 +193,23 @@ export const updateSupplierSchema = createSupplierSchema.partial().extend({
   name: trimmed.min(1, 'Supplier name is required').max(160).optional(),
 });
 
+// ---- Customers (AR-side party registry) ----
+export const createCustomerSchema = z.object({
+  name: trimmed.min(1, 'Customer name is required').max(160),
+  contact_person: trimmed.max(160).optional().nullable(),
+  phone: trimmed.max(80).optional().nullable(),
+  email: trimmed.max(160).optional().nullable(),
+  address: trimmed.max(500).optional().nullable(),
+  tin: trimmed.max(40).optional().nullable(),
+  payment_terms_days: z.coerce.number().int().min(0).max(365).default(0),
+  notes: optionalText,
+  archived: boolish.optional(),
+});
+
+export const updateCustomerSchema = createCustomerSchema.partial().extend({
+  name: trimmed.min(1, 'Customer name is required').max(160).optional(),
+});
+
 // ---- Locations ----
 const locationType = z.enum(['warehouse', 'branch', 'store', 'truck', 'other']);
 export const createLocationSchema = z.object({
@@ -412,6 +429,7 @@ const orderItemSchema = z.object({
 const orderFields = {
   customer_name: optionalText,
   customer_contact: optionalText,
+  customer_id: optionalId,
   order_date: trimmed.max(40).optional().nullable(),
   status: trimmed.max(40).optional().nullable(),
   notes: optionalText,
@@ -549,6 +567,27 @@ export const glPeriodSchema = z.object({
   name: trimmed.min(1).max(60),
   start_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/),
   end_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+// ---- Payments (Phase 1b): money in from a customer / out to a supplier ----
+const paymentAllocationSchema = z.object({
+  doc_type: z.enum(['sale_order', 'vendor_bill']),
+  doc_id: z.coerce.number().int().positive(),
+  amount: numCoerce.positive(),
+});
+
+export const paymentSchema = z.object({
+  direction: z.enum(['in', 'out']),
+  party_type: z.enum(['customer', 'supplier']),
+  party_id: optionalId,
+  party_name: trimmed.max(200).optional().nullable(),
+  payment_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  amount: numCoerce.positive('Amount must be greater than zero'),
+  method: trimmed.max(40).optional().nullable(),
+  reference: trimmed.max(120).optional().nullable(),
+  deposit_account_id: z.coerce.number().int().positive(),
+  memo: optionalText,
+  allocations: z.array(paymentAllocationSchema).max(200).optional(),
 });
 
 // ---- Auto-posting rules (Phase 1): which account each posted amount lands on ----

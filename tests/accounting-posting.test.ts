@@ -1,6 +1,8 @@
 /** Pure tests for the posting engine (src/accounting-posting.ts) — Phase 1. */
 import { describe, it, expect } from 'vitest';
-import { buildSalesEntry, buildPurchaseEntry, type PostingRules } from '../src/accounting-posting';
+import {
+  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, type PostingRules,
+} from '../src/accounting-posting';
 
 const RULES: PostingRules = {
   ar_account_id: 11, sales_income_account_id: 41, output_vat_account_id: 21,
@@ -63,6 +65,50 @@ describe('buildSalesEntry', () => {
       { number: 'SO-5', date: '2026-03-01', subtotal: 0, tax_amount: 0, total: 0 }, RULES, 5
     );
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('buildPaymentEntry', () => {
+  it('receipt (in): DR cash / CR AR, party on the AR leg', () => {
+    const r = buildPaymentEntry(
+      { number: 'RCT-1', date: '2026-04-02', direction: 'in', amount: 1120,
+        deposit_account_id: 99, party_type: 'customer', party_id: 5 },
+      RULES, 1
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.book).toBe('cash_receipts');
+    expect(r.entry.lines.find((l) => l.account_id === 99)!.debit).toBe(1120);
+    const ar = r.entry.lines.find((l) => l.account_id === 11)!;
+    expect(ar.credit).toBe(1120);
+    expect(ar.party_type).toBe('customer');
+    expect(ar.party_id).toBe(5);
+  });
+
+  it('disbursement (out): DR AP / CR cash', () => {
+    const r = buildPaymentEntry(
+      { number: 'DV-1', date: '2026-04-02', direction: 'out', amount: 800,
+        deposit_account_id: 99, party_type: 'supplier', party_id: 8 },
+      RULES, 2
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.book).toBe('cash_disbursements');
+    const ap = r.entry.lines.find((l) => l.account_id === 22)!;
+    expect(ap.debit).toBe(800);
+    expect(ap.party_type).toBe('supplier');
+    expect(r.entry.lines.find((l) => l.account_id === 99)!.credit).toBe(800);
+  });
+
+  it('fails without a deposit account or a control-account rule', () => {
+    expect(buildPaymentEntry(
+      { number: 'RCT-2', date: '2026-04-02', direction: 'in', amount: 10, deposit_account_id: 0, party_type: 'customer' },
+      RULES, 3
+    ).ok).toBe(false);
+    expect(buildPaymentEntry(
+      { number: 'RCT-3', date: '2026-04-02', direction: 'in', amount: 10, deposit_account_id: 99, party_type: 'customer' },
+      { ...RULES, ar_account_id: null }, 4
+    ).ok).toBe(false);
   });
 });
 

@@ -14,7 +14,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
 
 const NAV = [
   {
@@ -56,6 +56,12 @@ const NAV = [
         id: 'suppliers', label: 'Suppliers',
         tree: [
           { label: 'Suppliers', icon: 'building', route: 'suppliers' },
+        ],
+      },
+      {
+        id: 'customers', label: 'Customers', requiredPermission: 'orders.view',
+        tree: [
+          { label: 'Customers', icon: 'users', route: 'customers' },
         ],
       },
       {
@@ -159,6 +165,13 @@ const NAV = [
         id: 'ledger', label: 'General Ledger', requiredPermission: 'accounting.view',
         tree: [
           { label: 'Books', icon: 'sheet', route: 'accounting-ledger' },
+        ],
+      },
+      {
+        id: 'receivables', label: 'Receivables & Payables', requiredPermission: 'accounting.view',
+        tree: [
+          { label: 'AR / AP Aging', icon: 'sheet', route: 'accounting-receivables' },
+          { label: 'Payments', icon: 'adjust', route: 'accounting-receivables', filter: { tab: 'payments' } },
         ],
       },
       {

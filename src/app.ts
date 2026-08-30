@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.routes';
 import usersRoutes from './routes/users.routes';
 import inventoryRoutes from './routes/inventory.routes';
 import suppliersRoutes from './routes/suppliers.routes';
+import customersRoutes from './routes/customers.routes';
 import locationsRoutes from './routes/locations.routes';
 import bomRoutes from './routes/bom.routes';
 import jobOrdersRoutes from './routes/job-orders.routes';
@@ -133,6 +134,7 @@ export function createApp() {
   app.use('/api/users', usersRoutes);
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/suppliers', suppliersRoutes);
+  app.use('/api/customers', customersRoutes);
   app.use('/api/locations', locationsRoutes);
   app.use('/api/finished-products', bomRoutes);
   app.use('/api/job-orders', jobOrdersRoutes);

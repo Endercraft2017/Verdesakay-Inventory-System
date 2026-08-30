@@ -26,6 +26,7 @@ App.register('accounting', async (view) => {
     ]],
     ['General ledger', [
       ['sheet', 'Books', 'Double-entry general ledger — chart of accounts, journal entries, trial balance, P&L, balance sheet.', () => App.navigate('accounting-ledger')],
+      ['sheet', 'Receivables & Payables', 'AR / AP aging, customer receipts & supplier payments, per-party statement.', () => App.navigate('accounting-receivables')],
       ['sheet', 'Petty cash', 'Named cash funds with a running money-in / money-out register.', () => App.navigate('accounting-petty-cash')],
     ]],
   ];

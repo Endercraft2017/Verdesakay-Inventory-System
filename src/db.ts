@@ -54,7 +54,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -896,6 +896,55 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_jl_entry ON journal_lines(entry_id);
     CREATE INDEX IF NOT EXISTS idx_jl_account ON journal_lines(account_id);
 
+    -- Customers registry (the AR-side counterpart of suppliers). Sale orders point
+    -- at one via orders.customer_id. See src/routes/customers.routes.ts.
+    CREATE TABLE IF NOT EXISTS customers (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      name               TEXT NOT NULL,
+      contact_person     TEXT,
+      phone              TEXT,
+      email              TEXT,
+      address            TEXT,
+      tin                TEXT,
+      payment_terms_days INTEGER NOT NULL DEFAULT 0,
+      notes              TEXT,
+      archived           INTEGER NOT NULL DEFAULT 0,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Money received from a customer / paid to a supplier. Auto-posts to the cash
+    -- receipts / disbursements book and settles the AR / AP control account.
+    -- payment_allocations optionally pins a payment against specific sale orders /
+    -- vendor bills so AR / AP aging can compute an open balance per document.
+    -- See src/routes/accounting.routes.ts (payments) + src/accounting-autopost.ts.
+    CREATE TABLE IF NOT EXISTS payments (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      number             TEXT NOT NULL UNIQUE,
+      direction          TEXT NOT NULL CHECK (direction IN ('in','out')),
+      party_type         TEXT NOT NULL CHECK (party_type IN ('customer','supplier')),
+      party_id           INTEGER,
+      party_name         TEXT,
+      payment_date       TEXT NOT NULL,
+      amount             REAL NOT NULL,
+      method             TEXT,
+      reference          TEXT,
+      deposit_account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+      memo               TEXT,
+      status             TEXT NOT NULL DEFAULT 'posted' CHECK (status IN ('posted','void')),
+      created_by         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_payments_party ON payments(party_type, party_id);
+    CREATE TABLE IF NOT EXISTS payment_allocations (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      payment_id INTEGER NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+      doc_type   TEXT NOT NULL CHECK (doc_type IN ('sale_order','vendor_bill')),
+      doc_id     INTEGER NOT NULL,
+      amount     REAL NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pay_alloc_doc ON payment_allocations(doc_type, doc_id);
+
     -- Full-text index for the AI knowledge search (RAG). Rebuilt by src/rag.ts;
     -- rows carry an ACL (permission key) + optional dept_id for retrieval filtering.
     CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks USING fts5(
@@ -1218,6 +1267,13 @@ function migrate(): void {
     db.exec('ALTER TABLE orders ADD COLUMN expected_date TEXT');
   }
   db.exec('CREATE INDEX IF NOT EXISTS idx_orders_supplier ON orders(supplier_id)');
+
+  // Sale orders can name the customer they're raised for (customers table comes from
+  // createSchema()). Older orders just carried the name in customer_name. (SCHEMA_VERSION 7)
+  if (!orderCols.some((c) => c.name === 'customer_id')) {
+    db.exec('ALTER TABLE orders ADD COLUMN customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id)');
 
   // Carry a pre-existing single checklist (settings key `qc_checklist`) into a named row.
   const legacy = getSetting<{ items?: unknown[] } | unknown[]>('qc_checklist');
