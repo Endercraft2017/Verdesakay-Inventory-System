@@ -57,6 +57,7 @@ App.register('accounting-ledger', async (view, filter) => {
       ap_account_id: 'Accounts Payable (bill → credit)',
       purchase_expense_account_id: 'Purchases / expense (bill → debit)',
       input_vat_account_id: 'Input VAT (bill → debit)',
+      sales_returns_account_id: 'Sales returns & allowances (credit note → debit)',
     };
     const keys = Object.keys(LABELS);
     const opts = (root, sel) => ['<option value="">— not set —</option>'].concat(

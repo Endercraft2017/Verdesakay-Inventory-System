@@ -166,6 +166,26 @@ export interface PaymentAllocation {
   doc_number?: string | null;
 }
 
+export interface CreditNote {
+  id: number;
+  number: string;
+  kind: 'customer' | 'supplier';
+  party_id: number | null;
+  party_name: string | null;
+  note_date: string;
+  source_doc_type: 'sale_order' | 'vendor_bill' | null;
+  source_doc_id: number | null;
+  reason: string | null;
+  subtotal: number;
+  tax_amount: number;
+  total: number;
+  status: 'issued' | 'void';
+  created_by: number | null;
+  created_at: string;
+  created_by_name?: string | null;
+  source_doc_number?: string | null;
+}
+
 export interface LocationRow {
   id: number;
   name: string;

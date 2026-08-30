@@ -14,16 +14,16 @@ import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody, statutoryDeductionsSchema, pettyCashFundSchema, pettyCashEntrySchema,
   ledgerSetupSchema, accountSchema, journalEntrySchema, glPeriodSchema, postingRulesSchema,
-  paymentSchema,
+  paymentSchema, creditNoteSchema,
 } from '../validation';
 import { toCsv } from '../csv';
 import { validateJournalLines, accountBalance, DEFAULT_COA, type JournalLineInput } from '../ledger';
 import {
   getPostingRules, setPostingRules, seedPostingRulesFromCoa,
-  maybeAutoPostPayment, unpostSource,
+  maybeAutoPostPayment, maybeAutoPostCreditNote, unpostSource,
 } from '../accounting-autopost';
 import { POSTING_RULE_KEYS, type PostingRules } from '../accounting-posting';
-import type { Payment, PaymentAllocation } from '../types';
+import type { Payment, PaymentAllocation, CreditNote } from '../types';
 import type {
   PettyCashFund, PettyCashEntry, Account, JournalEntry, JournalLine, AccountingPeriod,
   AccountRootType,
@@ -714,6 +714,7 @@ const POSTING_RULE_ROOT: Record<keyof PostingRules, AccountRootType> = {
   ap_account_id: 'liability',
   purchase_expense_account_id: 'expense',
   input_vat_account_id: 'asset',
+  sales_returns_account_id: 'income',
 };
 
 function postingRulesPayload() {
@@ -1192,6 +1193,93 @@ router.post('/payments/:id/void', requirePermission('accounting.manage'), (req, 
   res.json({ ok: true, reversal: rev.entry ?? null });
 });
 
+/* ------------------------------------------------------------------- credit / debit notes --- */
+/* Customer credit note (kind 'customer') -> reduces AR; supplier debit note ('supplier')
+   -> reduces AP. Header-only; total = subtotal + tax_amount. Auto-posts a contra entry. */
+
+// GET /api/accounting/credit-notes?kind=&party_id=&from=&to=&status=
+router.get('/credit-notes', (req, res) => {
+  if (!requireLedger(res)) return;
+  const where: string[] = [];
+  const params: unknown[] = [];
+  const q = req.query;
+  if (typeof q.kind === 'string') { where.push('n.kind = ?'); params.push(q.kind); }
+  if (typeof q.status === 'string') { where.push('n.status = ?'); params.push(q.status); }
+  if (q.party_id != null && q.party_id !== '') { where.push('n.party_id = ?'); params.push(Number(q.party_id)); }
+  if (typeof q.from === 'string') { where.push('n.note_date >= ?'); params.push(q.from); }
+  if (typeof q.to === 'string') { where.push('n.note_date <= ?'); params.push(q.to); }
+  res.json(queryAll<CreditNote>(`
+    SELECT n.*, u.full_name AS created_by_name
+    FROM credit_notes n LEFT JOIN users u ON u.id = n.created_by
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ORDER BY n.note_date DESC, n.id DESC LIMIT 500`, ...params));
+});
+
+router.get('/credit-notes/:id', (req, res) => {
+  if (!requireLedger(res)) return;
+  const n = queryOne<CreditNote>(`
+    SELECT n.*, u.full_name AS created_by_name FROM credit_notes n
+    LEFT JOIN users u ON u.id = n.created_by WHERE n.id = ?`, Number(req.params.id));
+  if (!n) { res.status(404).json({ error: 'Credit note not found' }); return; }
+  if (n.source_doc_type && n.source_doc_id) {
+    const src = n.source_doc_type === 'sale_order'
+      ? queryOne<{ number: string }>('SELECT number FROM orders WHERE id = ?', n.source_doc_id)
+      : queryOne<{ number: string }>('SELECT number FROM vendor_bills WHERE id = ?', n.source_doc_id);
+    n.source_doc_number = src?.number ?? null;
+  }
+  res.json(n);
+});
+
+// POST /api/accounting/credit-notes — issue a credit / debit note + auto-post.
+router.post('/credit-notes', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const b = parseBody(creditNoteSchema, req.body);
+  const total = round2((b.subtotal || 0) + (b.tax_amount || 0));
+  if (total <= 0) { res.status(400).json({ error: 'A note needs a positive amount.' }); return; }
+
+  let partyName = b.party_name ?? null;
+  if (b.party_id != null) {
+    const row = b.kind === 'customer'
+      ? queryOne<{ name: string }>('SELECT name FROM customers WHERE id = ?', b.party_id)
+      : queryOne<{ name: string }>('SELECT name FROM suppliers WHERE id = ?', b.party_id);
+    if (!row) { res.status(400).json({ error: `${b.kind} not found.` }); return; }
+    partyName = partyName ?? row.name;
+  }
+  const wantSrc = b.kind === 'customer' ? 'sale_order' : 'vendor_bill';
+  if (b.source_doc_type && b.source_doc_type !== wantSrc) {
+    res.status(400).json({ error: `A ${b.kind} note links to a ${wantSrc.replace('_', ' ')}.` });
+    return;
+  }
+
+  const number = nextSequence(b.kind === 'customer' ? 'credit_note' : 'debit_note',
+    b.kind === 'customer' ? 'CN' : 'DN', 5);
+  const info = run(
+    `INSERT INTO credit_notes
+      (number, kind, party_id, party_name, note_date, source_doc_type, source_doc_id, reason,
+       subtotal, tax_amount, total, status, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?)`,
+    number, b.kind, b.party_id ?? null, partyName, b.note_date,
+    b.source_doc_type ?? null, b.source_doc_id ?? null, b.reason ?? null,
+    round2(b.subtotal || 0), round2(b.tax_amount || 0), total, req.user!.id
+  );
+  const noteId = Number(info.lastInsertRowid);
+  const posted = maybeAutoPostCreditNote(noteId, req.user!.id);
+  res.status(201).json({ id: noteId, number, posted: posted.posted, entry: posted.entry ?? null, error: posted.error ?? null });
+});
+
+// POST /api/accounting/credit-notes/:id/void
+router.post('/credit-notes/:id/void', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const id = Number(req.params.id);
+  const n = queryOne<CreditNote>('SELECT * FROM credit_notes WHERE id = ?', id);
+  if (!n) { res.status(404).json({ error: 'Credit note not found' }); return; }
+  if (n.status === 'void') { res.status(409).json({ error: 'Already void.' }); return; }
+  const rev = unpostSource('credit_note', id, req.user!.id);
+  if (rev.error) { res.status(409).json({ error: `Could not reverse the ledger entry: ${rev.error}` }); return; }
+  run("UPDATE credit_notes SET status = 'void' WHERE id = ?", id);
+  res.json({ ok: true, reversal: rev.entry ?? null });
+});
+
 /* ---------------------------------------------------------------------- aging + statement --- */
 
 const AGE_BUCKETS = ['current', '1_30', '31_60', '61_90', '90_plus'] as const;
@@ -1224,7 +1312,7 @@ router.get('/ar-aging', (req, res) => {
     party_id: r.customer_id, party_name: r.customer_name ?? 'No customer',
     doc_total: r.total, allocated: allocatedFor('sale_order', r.id),
     due_date: addDays(r.order_date, r.terms ?? 0),
-  })), asOf, 'sale_order'));
+  })), asOf, 'sale_order', partyCredits('ar')));
 });
 
 // GET /api/accounting/ap-aging?as_of= — open vendor bills per supplier, aged by due date.
@@ -1239,11 +1327,11 @@ router.get('/ap-aging', (req, res) => {
     FROM vendor_bills b LEFT JOIN suppliers s ON s.id = b.supplier_id
     WHERE b.status = 'approved' AND b.total > 0`);
   res.json(agingPayload(rows.map((r) => ({
-    doc_id: r.id, doc_number: r.number, party_key: r.supplier_id ? `s${r.supplier_id}` : `n:${r.supplier_name ?? '—'}`,
+    doc_id: r.id, doc_number: r.number, party_key: r.supplier_id ? `c${r.supplier_id}` : `n:${r.supplier_name ?? '—'}`,
     party_id: r.supplier_id, party_name: r.supplier_name ?? 'No supplier',
     doc_total: r.total, allocated: allocatedFor('vendor_bill', r.id),
     due_date: r.due_date || r.bill_date,
-  })), asOf, 'vendor_bill'));
+  })), asOf, 'vendor_bill', partyCredits('ap')));
 });
 
 function addDays(date: string | null, days: number): string | null {
@@ -1254,36 +1342,83 @@ function addDays(date: string | null, days: number): string | null {
   return d.toISOString().slice(0, 10);
 }
 
+/** On-account credit per party_id: issued credit/debit notes + the unapplied portion of
+ *  posted payments. Reduces (or reverses) what the aged documents say is owed. Only
+ *  covers parties with a real party_id (name-only rows stay un-netted). */
+function partyCredits(side: 'ar' | 'ap'): Map<number, { name: string; credit_notes: number; unapplied_payments: number }> {
+  const kind = side === 'ar' ? 'customer' : 'supplier';
+  const direction = side === 'ar' ? 'in' : 'out';
+  const m = new Map<number, { name: string; credit_notes: number; unapplied_payments: number }>();
+  for (const r of queryAll<{ party_id: number; party_name: string | null; t: number }>(
+    "SELECT party_id, party_name, COALESCE(SUM(total),0) AS t FROM credit_notes WHERE kind = ? AND status = 'issued' AND party_id IS NOT NULL GROUP BY party_id",
+    kind
+  )) m.set(r.party_id, { name: r.party_name ?? '', credit_notes: round2(r.t), unapplied_payments: 0 });
+  for (const r of queryAll<{ party_id: number; party_name: string | null; unapplied: number }>(
+    `SELECT p.party_id, p.party_name,
+            COALESCE(SUM(p.amount),0) - COALESCE(SUM((SELECT COALESCE(SUM(amount),0) FROM payment_allocations WHERE payment_id = p.id)),0) AS unapplied
+     FROM payments p
+     WHERE p.party_type = ? AND p.direction = ? AND p.status = 'posted' AND p.party_id IS NOT NULL
+     GROUP BY p.party_id`,
+    kind, direction
+  )) {
+    const cur = m.get(r.party_id) ?? { name: r.party_name ?? '', credit_notes: 0, unapplied_payments: 0 };
+    cur.unapplied_payments = round2(Math.max(0, r.unapplied));
+    if (!cur.name) cur.name = r.party_name ?? '';
+    m.set(r.party_id, cur);
+  }
+  return m;
+}
+
 interface AgingInput {
   doc_id: number; doc_number: string; party_key: string; party_id: number | null; party_name: string;
   doc_total: number; allocated: number; due_date: string | null;
 }
-function agingPayload(items: AgingInput[], asOf: string, docType: 'sale_order' | 'vendor_bill') {
-  const byParty = new Map<string, {
+function agingPayload(
+  items: AgingInput[], asOf: string, docType: 'sale_order' | 'vendor_bill',
+  credits: Map<number, { name: string; credit_notes: number; unapplied_payments: number }>
+) {
+  interface Row {
     party_id: number | null; party_name: string; buckets: Record<AgeBucket, number>;
-    total: number; docs: { doc_id: number; doc_number: string; due_date: string | null; outstanding: number; bucket: AgeBucket }[];
-  }>();
+    open: number; credits: number; total: number;
+    docs: { doc_id: number; doc_number: string; due_date: string | null; outstanding: number; bucket: AgeBucket }[];
+  }
+  const byParty = new Map<string, Row>();
+  const ensure = (key: string, id: number | null, name: string): Row => {
+    let p = byParty.get(key);
+    if (!p) {
+      p = { party_id: id, party_name: name, buckets: emptyBuckets(), open: 0, credits: 0, total: 0, docs: [] };
+      byParty.set(key, p);
+    }
+    return p;
+  };
   for (const it of items) {
     const outstanding = round2(it.doc_total - it.allocated);
     if (outstanding <= 0.005) continue;
     const bucket = bucketFor(it.due_date, asOf);
-    let p = byParty.get(it.party_key);
-    if (!p) {
-      p = { party_id: it.party_id, party_name: it.party_name, buckets: emptyBuckets(), total: 0, docs: [] };
-      byParty.set(it.party_key, p);
-    }
+    const p = ensure(it.party_key, it.party_id, it.party_name);
     p.buckets[bucket] = round2(p.buckets[bucket] + outstanding);
-    p.total = round2(p.total + outstanding);
+    p.open = round2(p.open + outstanding);
     p.docs.push({ doc_id: it.doc_id, doc_number: it.doc_number, due_date: it.due_date, outstanding, bucket });
   }
-  const parties = [...byParty.values()].sort((a, b) => b.total - a.total);
+  for (const [pid, c] of credits) {
+    const credit = round2(c.credit_notes + c.unapplied_payments);
+    if (credit <= 0.005) continue;
+    const p = ensure(`c${pid}`, pid, c.name || 'Unknown');
+    p.credits = round2(p.credits + credit);
+  }
+  const parties = [...byParty.values()].map((p) => ({ ...p, total: round2(p.open - p.credits) }))
+    .sort((a, b) => b.total - a.total);
   const totals = emptyBuckets();
-  let grand = 0;
+  let open = 0, cr = 0;
   for (const p of parties) {
     for (const bk of AGE_BUCKETS) totals[bk] = round2(totals[bk] + p.buckets[bk]);
-    grand = round2(grand + p.total);
+    open = round2(open + p.open);
+    cr = round2(cr + p.credits);
   }
-  return { as_of: asOf, doc_type: docType, buckets: AGE_BUCKETS, parties, totals, grand_total: grand };
+  return {
+    as_of: asOf, doc_type: docType, buckets: AGE_BUCKETS, parties, totals,
+    total_open: open, total_credits: cr, grand_total: round2(open - cr),
+  };
 }
 
 // GET /api/accounting/party-ledger?party_type=customer|supplier&party_id=&from=&to=
@@ -1314,8 +1449,14 @@ router.get('/party-ledger', (req, res) => {
     SELECT payment_date AS date, number AS ref, amount, status FROM payments
     WHERE party_type = ? AND party_id = ? AND status = 'posted'`, partyType, partyId);
 
+  // A credit / debit note behaves like a negative charge (reduces what is owed).
+  const notes = queryAll<{ date: string; ref: string; amount: number }>(`
+    SELECT note_date AS date, number AS ref, total AS amount FROM credit_notes
+    WHERE kind = ? AND party_id = ? AND status = 'issued'`, partyType, partyId);
+
   const events = [
     ...charges.filter((c) => inRange(c.date)).map((c) => ({ date: c.date, ref: c.ref, kind: 'charge' as const, charge: round2(c.amount), payment: 0 })),
+    ...notes.filter((n) => inRange(n.date)).map((n) => ({ date: n.date, ref: n.ref, kind: 'credit_note' as const, charge: round2(-n.amount), payment: 0 })),
     ...pays.filter((p) => inRange(p.date)).map((p) => ({ date: p.date, ref: p.ref, kind: 'payment' as const, charge: 0, payment: round2(p.amount) })),
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.ref.localeCompare(b.ref));
 

@@ -590,6 +590,19 @@ export const paymentSchema = z.object({
   allocations: z.array(paymentAllocationSchema).max(200).optional(),
 });
 
+// ---- Credit / debit notes (Phase 1b): sales / purchase returns & allowances ----
+export const creditNoteSchema = z.object({
+  kind: z.enum(['customer', 'supplier']),
+  party_id: optionalId,
+  party_name: trimmed.max(200).optional().nullable(),
+  note_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  source_doc_type: z.enum(['sale_order', 'vendor_bill']).optional().nullable(),
+  source_doc_id: optionalId,
+  reason: optionalText,
+  subtotal: numCoerce.min(0).default(0),
+  tax_amount: numCoerce.min(0).default(0),
+});
+
 // ---- Auto-posting rules (Phase 1): which account each posted amount lands on ----
 export const postingRulesSchema = z.object({
   ar_account_id: optionalId,
@@ -598,6 +611,7 @@ export const postingRulesSchema = z.object({
   ap_account_id: optionalId,
   purchase_expense_account_id: optionalId,
   input_vat_account_id: optionalId,
+  sales_returns_account_id: optionalId,
 });
 
 export const matchToleranceSchema = z.object({

@@ -13,7 +13,7 @@ App.register('accounting-receivables', async (view, filter) => {
     return;
   }
 
-  const tabs = ['Receivables', 'Payables', 'Payments', 'Statement'];
+  const tabs = ['Receivables', 'Payables', 'Payments', 'Credit Notes', 'Statement'];
   let active = filter && filter.tab
     ? tabs.find((t) => t.toLowerCase() === String(filter.tab).toLowerCase()) || tabs[0] : tabs[0];
 
@@ -44,6 +44,7 @@ App.register('accounting-receivables', async (view, filter) => {
     if (active === 'Receivables') return aging('ar');
     if (active === 'Payables') return aging('ap');
     if (active === 'Payments') return payments();
+    if (active === 'Credit Notes') return creditNotes();
     return statement();
   }
 
@@ -59,24 +60,28 @@ App.register('accounting-receivables', async (view, filter) => {
       body.innerHTML = UI.emptyState({ icon: 'sheet', title: `Nothing outstanding`, hint: `No open ${kind === 'ar' ? 'customer invoices' : 'vendor bills'} as of ${asOf}.` });
       return;
     }
+    const hasCredits = d.parties.some((p) => p.credits);
     body.innerHTML = `
-      <p class="muted" style="margin-top:0">Open ${kind === 'ar' ? 'sale orders' : 'vendor bills'} as of <b>${asOf}</b>, aged by due date.</p>
-      <table><thead><tr><th>${who}</th>${d.buckets.map((b) => `<th class="right">${BUCKET_LABEL[b]}</th>`).join('')}<th class="right">Total</th></tr></thead>
+      <p class="muted" style="margin-top:0">Open ${kind === 'ar' ? 'sale orders' : 'vendor bills'} as of <b>${asOf}</b>, aged by due date${hasCredits ? '; less on-account credits (credit/debit notes + unapplied payments)' : ''}.</p>
+      <table><thead><tr><th>${who}</th>${d.buckets.map((b) => `<th class="right">${BUCKET_LABEL[b]}</th>`).join('')}${hasCredits ? '<th class="right">Credits</th>' : ''}<th class="right">Net</th></tr></thead>
         <tbody>${d.parties.map((p, i) => `
           <tr class="clickable" data-party="${i}">
             <td>${UI.esc(p.party_name)}</td>
             ${d.buckets.map((b) => `<td class="right ${b !== 'current' && p.buckets[b] ? 'rp-over' : ''}">${p.buckets[b] ? money(p.buckets[b]) : '—'}</td>`).join('')}
+            ${hasCredits ? `<td class="right">${p.credits ? '(' + money(p.credits) + ')' : '—'}</td>` : ''}
             <td class="right"><strong>${money(p.total)}</strong></td>
           </tr>`).join('')}</tbody>
-        <tfoot><tr><th>Total</th>${d.buckets.map((b) => `<th class="right">${money(d.totals[b])}</th>`).join('')}<th class="right">${money(d.grand_total)}</th></tr></tfoot>
+        <tfoot><tr><th>Total</th>${d.buckets.map((b) => `<th class="right">${money(d.totals[b])}</th>`).join('')}${hasCredits ? `<th class="right">(${money(d.total_credits)})</th>` : ''}<th class="right">${money(d.grand_total)}</th></tr></tfoot>
       </table>`;
     body.querySelectorAll('[data-party]').forEach((tr) => tr.onclick = () => {
       const p = d.parties[Number(tr.dataset.party)];
       UI.drawer({
         title: p.party_name,
-        bodyHTML: `<table><thead><tr><th>Document</th><th>Due</th><th>Bucket</th><th class="right">Outstanding</th></tr></thead>
+        bodyHTML: `${p.docs.length ? `<table><thead><tr><th>Document</th><th>Due</th><th>Bucket</th><th class="right">Outstanding</th></tr></thead>
           <tbody>${p.docs.map((doc) => `<tr><td class="mono">${UI.esc(doc.doc_number)}</td><td>${UI.esc(doc.due_date || '—')}</td>
-            <td class="muted">${BUCKET_LABEL[doc.bucket]}</td><td class="right">${money(doc.outstanding)}</td></tr>`).join('')}</tbody></table>
+            <td class="muted">${BUCKET_LABEL[doc.bucket]}</td><td class="right">${money(doc.outstanding)}</td></tr>`).join('')}</tbody></table>`
+          : '<p class="muted">No open documents.</p>'}
+          ${p.credits ? `<p class="muted">On-account credit: <strong>${money(p.credits)}</strong> — net owed <strong>${money(p.total)}</strong>.</p>` : ''}
           ${canManage && p.party_id ? `<button class="btn" style="margin-top:12px" id="rp-pay-party">Record ${kind === 'ar' ? 'receipt' : 'payment'}</button>` : ''}`,
       });
       const pb = document.getElementById('rp-pay-party');
@@ -227,6 +232,110 @@ App.register('accounting-receivables', async (view, filter) => {
           UI.toast('Payment recorded');
           route();
         } catch (e) { showErr(e.message); return false; }
+      },
+    });
+  }
+
+  /* ---------- credit / debit notes ---------- */
+  async function creditNotes() {
+    body.innerHTML = '<div class="empty">Loading…</div>';
+    const list = await API.get('/accounting/credit-notes');
+    body.innerHTML = `
+      <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
+        ${canManage ? `<button class="btn secondary small" id="cn-new">${UI.icon('plus')} New note</button>` : ''}</div>
+      ${list.length ? `<table><thead><tr><th>No.</th><th>Date</th><th>Kind</th><th>Party</th><th>Reason</th>
+        <th class="right">Total</th><th>Status</th></tr></thead>
+        <tbody>${list.map((n) => `<tr class="clickable" data-open="${n.id}">
+          <td class="mono">${UI.esc(n.number)}</td><td>${UI.esc(n.note_date)}</td>
+          <td>${n.kind === 'customer' ? 'Credit note' : 'Debit note'}</td>
+          <td>${UI.esc(n.party_name || '—')}</td><td class="muted">${UI.esc(n.reason || '—')}</td>
+          <td class="right">${money(n.total)}</td>
+          <td><span class="badge-pill ${n.status === 'issued' ? 'status-completed' : 'status-cancelled'}">${n.status}</span></td>
+        </tr>`).join('')}</tbody></table>`
+        : UI.emptyState({ icon: 'sheet', title: 'No credit / debit notes', hint: 'Issue one for a sales return, allowance or overbilling.' })}`;
+    const nb = body.querySelector('#cn-new');
+    if (nb) nb.onclick = () => creditNoteModal();
+    body.querySelectorAll('[data-open]').forEach((tr) => tr.onclick = () => openNote(Number(tr.dataset.open)));
+  }
+
+  async function openNote(id) {
+    const n = await API.get('/accounting/credit-notes/' + id);
+    UI.drawer({
+      title: `${n.number} · ${n.kind === 'customer' ? 'Credit note' : 'Debit note'}`,
+      bodyHTML: `
+        <div class="kv">
+          <div><span class="muted">Date</span><div>${UI.esc(n.note_date)}</div></div>
+          <div><span class="muted">Party</span><div>${UI.esc(n.party_name || '—')}</div></div>
+          <div><span class="muted">Net</span><div>${money(n.subtotal)}</div></div>
+          <div><span class="muted">Tax</span><div>${money(n.tax_amount)}</div></div>
+          <div><span class="muted">Total</span><div><strong>${money(n.total)}</strong></div></div>
+          ${n.source_doc_number ? `<div><span class="muted">Against</span><div class="mono">${UI.esc(n.source_doc_number)}</div></div>` : ''}
+          <div><span class="muted">Status</span><div>${n.status}</div></div>
+        </div>
+        ${n.reason ? `<p style="margin:8px 0">${UI.esc(n.reason)}</p>` : ''}
+        ${canManage && n.status === 'issued' ? `<button class="btn danger" style="margin-top:14px" id="cn-void">Void note</button>` : ''}`,
+    });
+    const vb = document.getElementById('cn-void');
+    if (vb) vb.onclick = async () => {
+      if (!(await UI.confirmDialog(`Void ${n.number}? This reverses its ledger entry.`, 'Void'))) return;
+      try { await API.post(`/accounting/credit-notes/${id}/void`, {}); UI.toast('Note voided'); route(); }
+      catch (e) { UI.toast(e.message, 'error'); }
+    };
+  }
+
+  async function creditNoteModal() {
+    const [customers, suppliers] = await Promise.all([
+      API.get('/customers').catch(() => []),
+      API.get('/suppliers').catch(() => []),
+    ]);
+    let kind = 'customer';
+    const render = () => {
+      const parties = kind === 'customer' ? customers : suppliers;
+      return `<div class="form-grid">
+        <div class="form-field"><div class="field-label"><label>Kind</label></div>
+          <select data-f="kind">
+            <option value="customer" ${kind === 'customer' ? 'selected' : ''}>Customer credit note (sales return → reduces AR)</option>
+            <option value="supplier" ${kind === 'supplier' ? 'selected' : ''}>Supplier debit note (purchase return → reduces AP)</option>
+          </select></div>
+        <div class="form-field"><div class="field-label"><label>Date <span class="req">*</span></label></div>
+          <input data-f="note_date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
+        <div class="form-field span2"><div class="field-label"><label>${kind === 'customer' ? 'Customer' : 'Supplier'}</label></div>
+          <select data-f="party_id"><option value="">— name only —</option>
+            ${parties.map((p) => `<option value="${p.id}">${UI.esc(p.name)}</option>`).join('')}</select></div>
+        <div class="form-field"><div class="field-label"><label>Net amount <span class="req">*</span></label></div>
+          <input data-f="subtotal" type="number" step="0.01" min="0" value="" /></div>
+        <div class="form-field"><div class="field-label"><label>VAT amount</label></div>
+          <input data-f="tax_amount" type="number" step="0.01" min="0" value="0" /></div>
+        <div class="form-field span2"><div class="field-label"><label>Reason</label></div>
+          <input data-f="reason" placeholder="Sales return / allowance / overbilling" /></div>
+      </div>`;
+    };
+    UI.modal({
+      title: 'New credit / debit note',
+      size: 'lg',
+      bodyHTML: `<div id="cn-wrap">${render()}</div>`,
+      confirmText: 'Issue note',
+      onOpen: (ov) => {
+        const bind = () => {
+          ov.querySelector('[data-f="kind"]').onchange = (e) => {
+            kind = e.target.value; ov.querySelector('#cn-wrap').innerHTML = render(); bind();
+          };
+        };
+        bind();
+      },
+      onConfirm: async (ov, showErr) => {
+        const g = (k) => ov.querySelector(`[data-f="${k}"]`);
+        const b = {
+          kind: g('kind').value,
+          party_id: g('party_id').value ? Number(g('party_id').value) : null,
+          note_date: g('note_date').value,
+          subtotal: Number(g('subtotal').value) || 0,
+          tax_amount: Number(g('tax_amount').value) || 0,
+          reason: g('reason').value.trim() || null,
+        };
+        if (b.subtotal + b.tax_amount <= 0) { showErr('Enter an amount'); return false; }
+        try { await API.post('/accounting/credit-notes', b); UI.toast('Note issued'); route(); }
+        catch (e) { showErr(e.message); return false; }
       },
     });
   }

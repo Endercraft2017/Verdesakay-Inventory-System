@@ -418,6 +418,36 @@ describe('accounting: receivables & payables (Phase 1b)', () => {
     expect(tb.body.balanced).toBe(true);
   });
 
+  it('a customer credit note nets against the party in AR aging and reverses on void', async () => {
+    const cn = await ctx.api.post('/api/accounting/credit-notes').set(hdr()).send({
+      kind: 'customer', party_id: custId, note_date: '2026-05-22', subtotal: 250, tax_amount: 0,
+      reason: 'Short shipment',
+    });
+    expect(cn.status).toBe(201);
+    expect(cn.body.posted).toBe(true);
+
+    const aging = await ctx.api.get('/api/accounting/ar-aging?as_of=2026-05-25').set(hdr());
+    const p = aging.body.parties.find((x: { party_id: number }) => x.party_id === custId);
+    expect(p.open).toBe(1000);
+    expect(p.credits).toBe(250);
+    expect(p.total).toBe(750);
+
+    const je = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'credit_note', source_id: cn.body.id }).set(hdr());
+    expect(je.body.length).toBe(1);
+    expect(je.body[0].book).toBe('sales');
+
+    const st = await ctx.api.get(`/api/accounting/party-ledger?party_type=customer&party_id=${custId}`).set(hdr());
+    expect(st.body.lines.some((l: { kind: string; charge: number }) => l.kind === 'credit_note' && l.charge === -250)).toBe(true);
+
+    await ctx.api.post(`/api/accounting/credit-notes/${cn.body.id}/void`).set(hdr()).send({});
+    const after = await ctx.api.get('/api/accounting/ar-aging?as_of=2026-05-25').set(hdr());
+    const p2 = after.body.parties.find((x: { party_id: number }) => x.party_id === custId);
+    expect(p2.total).toBe(1000);
+    const tb = await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr());
+    expect(tb.body.balanced).toBe(true);
+  });
+
   it('AP aging + a disbursement against an approved vendor bill', async () => {
     const loc = (await ctx.api.get('/api/locations').set(hdr())).body
       .find((l: { is_default: number }) => l.is_default === 1).id;

@@ -172,6 +172,7 @@ const NAV = [
         tree: [
           { label: 'AR / AP Aging', icon: 'sheet', route: 'accounting-receivables' },
           { label: 'Payments', icon: 'adjust', route: 'accounting-receivables', filter: { tab: 'payments' } },
+          { label: 'Credit / Debit Notes', icon: 'sheet', route: 'accounting-receivables', filter: { tab: 'credit notes' } },
         ],
       },
       {

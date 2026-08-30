@@ -1,12 +1,13 @@
 /** Pure tests for the posting engine (src/accounting-posting.ts) — Phase 1. */
 import { describe, it, expect } from 'vitest';
 import {
-  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, type PostingRules,
+  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, type PostingRules,
 } from '../src/accounting-posting';
 
 const RULES: PostingRules = {
   ar_account_id: 11, sales_income_account_id: 41, output_vat_account_id: 21,
   ap_account_id: 22, purchase_expense_account_id: 51, input_vat_account_id: 12,
+  sales_returns_account_id: 44,
 };
 
 const sum = (lines: { debit?: number; credit?: number }[], k: 'debit' | 'credit') =>
@@ -109,6 +110,47 @@ describe('buildPaymentEntry', () => {
       { number: 'RCT-3', date: '2026-04-02', direction: 'in', amount: 10, deposit_account_id: 99, party_type: 'customer' },
       { ...RULES, ar_account_id: null }, 4
     ).ok).toBe(false);
+  });
+});
+
+describe('buildCreditNoteEntry', () => {
+  it('customer credit note: DR sales returns / DR output VAT / CR AR', () => {
+    const r = buildCreditNoteEntry(
+      { number: 'CN-1', date: '2026-05-01', kind: 'customer', subtotal: 1000, tax_amount: 120, total: 1120, party_id: 3 },
+      RULES, 1
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.book).toBe('sales');
+    expect(sum(r.entry.lines, 'debit')).toBe(1120);
+    expect(sum(r.entry.lines, 'credit')).toBe(1120);
+    expect(r.entry.lines.find((l) => l.account_id === 44)!.debit).toBe(1000);
+    expect(r.entry.lines.find((l) => l.account_id === 21)!.debit).toBe(120);
+    const ar = r.entry.lines.find((l) => l.account_id === 11)!;
+    expect(ar.credit).toBe(1120);
+    expect(ar.party_type).toBe('customer');
+    expect(ar.party_id).toBe(3);
+  });
+
+  it('supplier debit note: DR AP / CR purchases / CR input VAT', () => {
+    const r = buildCreditNoteEntry(
+      { number: 'DN-1', date: '2026-05-01', kind: 'supplier', subtotal: 500, tax_amount: 0, total: 500, party_id: 6 },
+      RULES, 2
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.book).toBe('purchase');
+    expect(r.entry.lines).toHaveLength(2); // no VAT leg
+    expect(r.entry.lines.find((l) => l.account_id === 22)!.debit).toBe(500);
+    expect(r.entry.lines.find((l) => l.account_id === 51)!.credit).toBe(500);
+  });
+
+  it('fails without the sales-returns rule on a customer note', () => {
+    const r = buildCreditNoteEntry(
+      { number: 'CN-2', date: '2026-05-01', kind: 'customer', subtotal: 100, tax_amount: 0, total: 100 },
+      { ...RULES, sales_returns_account_id: null }, 3
+    );
+    expect(r.ok).toBe(false);
   });
 });
 

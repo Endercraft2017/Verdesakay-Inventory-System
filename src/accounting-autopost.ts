@@ -9,11 +9,11 @@
  */
 import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } from './db';
 import {
-  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, POSTING_RULE_KEYS,
+  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, POSTING_RULE_KEYS,
   type PostingRules, type PostableDoc, type BuiltEntry,
 } from './accounting-posting';
 import { round2 } from './ledger';
-import type { Order, VendorBill, Payment } from './types';
+import type { Order, VendorBill, Payment, CreditNote } from './types';
 
 const RULES_KEY = 'accounting_posting_rules';
 
@@ -47,6 +47,7 @@ export function seedPostingRulesFromCoa(): PostingRules {
     ['ap_account_id', '2110'],
     ['output_vat_account_id', '2120'],
     ['sales_income_account_id', '4100'],
+    ['sales_returns_account_id', '4400'],
     ['purchase_expense_account_id', '5100'],
   ];
   let touched = false;
@@ -250,6 +251,30 @@ export function maybeAutoPostPayment(paymentId: number, userId: number | null): 
     return { posted: true, entry };
   } catch (e) {
     console.warn(`[gl] auto-post payment ${paymentId} failed: ${(e as Error).message}`);
+    return { posted: false, error: (e as Error).message };
+  }
+}
+
+/** Called after a credit / debit note is issued. Posts the contra entry. */
+export function maybeAutoPostCreditNote(noteId: number, userId: number | null): AutoPostOutcome {
+  try {
+    if (!ledgerEnabled()) return { posted: false, skipped: 'ledger_off' };
+    const n = queryOne<CreditNote>('SELECT * FROM credit_notes WHERE id = ?', noteId);
+    if (!n || n.status !== 'issued') return { posted: false, skipped: 'nothing_to_post' };
+    if (postedEntryForSource('credit_note', noteId)) return { posted: false, skipped: 'already_posted' };
+    if (round2(n.total || 0) <= 0) return { posted: false, skipped: 'nothing_to_post' };
+    if (periodClosedOn(n.note_date)) return { posted: false, skipped: 'period_closed' };
+
+    const built = buildCreditNoteEntry({
+      number: n.number, date: n.note_date, kind: n.kind,
+      subtotal: n.subtotal, tax_amount: n.tax_amount, total: n.total,
+      party_id: n.party_id ?? null, memo: n.party_name ?? n.reason ?? null,
+    }, getPostingRules(), noteId);
+    if (!built.ok) return { posted: false, error: built.error };
+    const entry = writePosted(built.entry, userId);
+    return { posted: true, entry };
+  } catch (e) {
+    console.warn(`[gl] auto-post credit note ${noteId} failed: ${(e as Error).message}`);
     return { posted: false, error: (e as Error).message };
   }
 }

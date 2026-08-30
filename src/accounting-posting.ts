@@ -16,11 +16,13 @@ export interface PostingRules {
   ap_account_id?: number | null;             // Accounts Payable (credit on a bill)
   purchase_expense_account_id?: number | null; // Purchases / COGS / expense (debit on a bill)
   input_vat_account_id?: number | null;      // Input VAT (debit on a bill)
+  sales_returns_account_id?: number | null;  // Sales returns & allowances (debit on a customer credit note)
 }
 
 export const POSTING_RULE_KEYS: (keyof PostingRules)[] = [
   'ar_account_id', 'sales_income_account_id', 'output_vat_account_id',
   'ap_account_id', 'purchase_expense_account_id', 'input_vat_account_id',
+  'sales_returns_account_id',
 ];
 
 /** The document shape the builders need — the same fields sale orders and vendor bills share. */
@@ -39,7 +41,7 @@ export interface BuiltEntry {
   entry_date: string;
   memo: string;
   reference: string;
-  source_type: 'sale_order' | 'vendor_bill' | 'payment';
+  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note';
   source_id: number;
   lines: JournalLineInput[];
 }
@@ -169,6 +171,66 @@ export function buildPaymentEntry(doc: PaymentDoc, rules: PostingRules, sourceId
       memo: `${doc.direction === 'in' ? 'Receipt' : 'Payment'} ${doc.number}`,
       reference: doc.number,
       source_type: 'payment',
+      source_id: sourceId,
+      lines,
+    },
+  };
+}
+
+export interface CreditNoteDoc {
+  number: string;
+  date: string;
+  kind: 'customer' | 'supplier';
+  subtotal: number;
+  tax_amount: number;
+  total: number;
+  party_id?: number | null;
+  memo?: string | null;
+}
+
+/**
+ * A credit / debit note — a return or allowance that unwinds part of a sale / purchase.
+ * Customer credit note: DR Sales Returns (net) / DR Output VAT (tax) / CR AR (gross).
+ * Supplier debit note:  DR AP (gross) / CR Purchases (net) / CR Input VAT (tax).
+ * The VAT leg is dropped when there is no tax; the net leg is derived as total − tax.
+ */
+export function buildCreditNoteEntry(doc: CreditNoteDoc, rules: PostingRules, sourceId: number): BuildResult {
+  const isCustomer = doc.kind === 'customer';
+  const need: (keyof PostingRules)[] = isCustomer
+    ? ['ar_account_id', 'sales_returns_account_id']
+    : ['ap_account_id', 'purchase_expense_account_id'];
+  const tax = round2(doc.tax_amount || 0);
+  if (tax > 0) need.push(isCustomer ? 'output_vat_account_id' : 'input_vat_account_id');
+  const gap = missing(rules, need);
+  if (gap) return { ok: false, error: gap };
+
+  const total = round2(doc.total || 0);
+  if (total <= 0) return { ok: false, error: `${doc.number}: nothing to post (total is ${total}).` };
+  const net = round2(total - tax);
+  const party = isCustomer
+    ? { party_type: 'customer', party_id: doc.party_id ?? null, memo: doc.memo ?? null }
+    : { party_type: 'supplier', party_id: doc.party_id ?? null, memo: doc.memo ?? null };
+
+  const lines: JournalLineInput[] = isCustomer
+    ? [
+        { account_id: rules.sales_returns_account_id!, debit: net, credit: 0 },
+        ...(tax > 0 ? [{ account_id: rules.output_vat_account_id!, debit: tax, credit: 0 }] : []),
+        { account_id: rules.ar_account_id!, debit: 0, credit: total, ...party },
+      ]
+    : [
+        { account_id: rules.ap_account_id!, debit: total, credit: 0, ...party },
+        { account_id: rules.purchase_expense_account_id!, debit: 0, credit: net },
+        ...(tax > 0 ? [{ account_id: rules.input_vat_account_id!, debit: 0, credit: tax }] : []),
+      ];
+
+  return {
+    ok: true,
+    entry: {
+      book: isCustomer ? 'sales' : 'purchase',
+      entry_date: doc.date,
+      memo: `${isCustomer ? 'Credit note' : 'Debit note'} ${doc.number}`,
+      reference: doc.number,
+      source_type: 'credit_note',
       source_id: sourceId,
       lines,
     },

@@ -945,6 +945,28 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_pay_alloc_doc ON payment_allocations(doc_type, doc_id);
 
+    -- Credit notes (customer: sales return / allowance -> reduces AR) and debit notes
+    -- (supplier: purchase return / allowance -> reduces AP). Header-only, like payments.
+    -- Auto-posts a contra entry; nets against the party in AR / AP aging.
+    CREATE TABLE IF NOT EXISTS credit_notes (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      number          TEXT NOT NULL UNIQUE,
+      kind            TEXT NOT NULL CHECK (kind IN ('customer','supplier')),
+      party_id        INTEGER,
+      party_name      TEXT,
+      note_date       TEXT NOT NULL,
+      source_doc_type TEXT CHECK (source_doc_type IN ('sale_order','vendor_bill')),
+      source_doc_id   INTEGER,
+      reason          TEXT,
+      subtotal        REAL NOT NULL DEFAULT 0,
+      tax_amount      REAL NOT NULL DEFAULT 0,
+      total           REAL NOT NULL DEFAULT 0,
+      status          TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued','void')),
+      created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_credit_notes_party ON credit_notes(kind, party_id);
+
     -- Full-text index for the AI knowledge search (RAG). Rebuilt by src/rag.ts;
     -- rows carry an ACL (permission key) + optional dept_id for retrieval filtering.
     CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks USING fts5(

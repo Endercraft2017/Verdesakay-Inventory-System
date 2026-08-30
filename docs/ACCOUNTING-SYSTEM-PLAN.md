@@ -12,9 +12,10 @@
 > rules** (Books → Posting Rules), and reverse when the document is pulled back.
 > **Phase 1b (2026-08-30)** adds a **`customers`** party registry, **payments** (customer
 > receipts / supplier disbursements that settle invoices and auto-post to the cash books),
-> and **AR / AP aging** + a per-party statement (Accounting → Receivables & Payables).
-> Phases 1b-rest–5 (credit/debit notes + BIR columnar journals, VAT/EWT registers, payroll
-> & inventory into the GL, financial-statement polish, CAS export) are the roadmap.
+> **credit / debit notes**, and **AR / AP aging** (net of on-account credits) + a
+> per-party statement — all under Accounting → Receivables & Payables. Phases 2–5 (BIR
+> columnar journals + VAT/EWT registers, payroll & inventory into the GL, financial-
+> statement polish, CAS export) are the roadmap.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -242,8 +243,18 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   **Accounting → Receivables & Payables** (`public/js/views/accounting-receivables.js`) +
   **Inventory → Customers** (`customers.js`); the sale-order form gained a customer picker.
   `tests/customers.test.ts` + `tests/accounting.test.ts` ("receivables & payables (Phase 1b)").
-- **1b — still to do.** **Credit / debit notes**; **Sales Journal / Purchase Journal** in
-  BIR columnar format; unapplied-credit handling in the aging (currently doc-level only).
+- **1b — credit / debit notes + credit netting. ✅ SHIPPED 2026-08-30.** New
+  **`credit_notes`** table (header-only, `kind` customer/supplier). A **customer credit
+  note** posts DR Sales Returns / DR Output VAT / CR AR; a **supplier debit note** posts
+  DR AP / CR Purchases / CR Input VAT (`buildCreditNoteEntry` + `maybeAutoPostCreditNote`,
+  7th posting-rule leg `sales_returns_account_id` → code 4400). `GET/POST /credit-notes`,
+  `GET /credit-notes/:id`, `POST /credit-notes/:id/void`. AR/AP aging now nets an
+  **on-account credit** per party — issued notes **plus** the unapplied portion of posted
+  payments — into a `credits` column and a `grand_total = open − credits` (parties with
+  only a credit balance show up too); the party statement lists a note as a negative
+  charge. Accounting → Receivables & Payables gained a **Credit Notes** tab.
+- **1b — still to do.** **Sales Journal / Purchase Journal** in BIR columnar format
+  (moves to Phase 2 alongside re-sourcing 2550M/2550Q from the journals).
 
 **Phase 2 — VAT + withholding, properly.** `tax_codes` on lines; **input/output VAT**
 accounts driven by the codes; **EWT** tagging on AP → the **withholding register**.
