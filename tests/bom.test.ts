@@ -100,7 +100,10 @@ describe('finished products + BOM', () => {
     await ctx.api.put(`/api/finished-products/${product}`).set(authHdr())
       .send({ components: [{ component_item_id: keep, quantity: 1 }, { component_item_id: gone, quantity: 1 }] });
 
-    await ctx.api.delete(`/api/inventory/${gone}`).set(authHdr());
+    // an item can only be deleted once its stock is zeroed
+    await ctx.api.post(`/api/inventory/${gone}/adjust`).set(authHdr())
+      .send({ change: -10, reason: 'clear before delete' });
+    expect((await ctx.api.delete(`/api/inventory/${gone}`).set(authHdr())).status).toBe(200);
 
     const detail = await ctx.api.get(`/api/finished-products/${product}`).set(authHdr());
     expect(detail.body.bom.map((c: { component_item_id: number }) => c.component_item_id)).toEqual([keep]);
