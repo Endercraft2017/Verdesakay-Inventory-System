@@ -16,7 +16,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'templates.view', 'templates.edit', 'templates.company',
   'users.manage',
   'hr.view', 'hr.manage',
-  'accounting.view',
+  'accounting.view', 'accounting.manage',
   'audit.view',
   'mail.send',
   'announce',
@@ -46,7 +46,7 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
     'forms.view', 'forms.upload', 'forms.manage.accounting',
     'messages.view', 'messages.send',
     'templates.view',
-    'accounting.view',
+    'accounting.view', 'accounting.manage',
   ],
   warehouse: [
     'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.adjust', 'inventory.mobile',

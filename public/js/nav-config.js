@@ -152,7 +152,7 @@ const NAV = [
       {
         id: 'tax', label: 'Tax & Compliance', requiredPermission: 'accounting.view',
         tree: [
-          { label: 'BIR & Statutory Forms', icon: 'sheet', route: 'accounting' },
+          { label: 'Tax & Compliance', icon: 'sheet', route: 'accounting' },
         ],
       },
       {

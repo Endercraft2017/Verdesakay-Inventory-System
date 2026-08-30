@@ -68,3 +68,30 @@ describe('accounting: permission gate', () => {
     expect((await ctx.api.get('/api/accounting/bir-2550m?month=2026-07').set('Authorization', `Bearer ${acc.token}`)).status).toBe(200);
   });
 });
+
+describe('accounting: statutory deductions per employee', () => {
+  it('lists employees with all four switches defaulting on; PUT toggles them; needs accounting.manage', async () => {
+    const e1 = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'SD-1', name: 'Deduct One', daily_rate: 900 });
+
+    const list = await ctx.api.get('/api/accounting/statutory-deductions').set(hdr());
+    expect(list.status).toBe(200);
+    const row = list.body.rows.find((r: { id: number }) => r.id === e1.body.id);
+    expect(row).toMatchObject({ deduct_sss: true, deduct_philhealth: true, deduct_pagibig: true, deduct_withholding_tax: true });
+
+    // warehouse (no accounting.manage) can't write
+    const wh = await createEmployee(ctx.api, token, { role: 'warehouse', username: 'sd_wh' });
+    const blocked = await ctx.api.put('/api/accounting/statutory-deductions')
+      .set('Authorization', `Bearer ${wh.token}`)
+      .send({ updates: [{ employee_id: e1.body.id, deduct_sss: false }] });
+    expect(blocked.status).toBe(403);
+
+    const ok = await ctx.api.put('/api/accounting/statutory-deductions').set(hdr())
+      .send({ updates: [{ employee_id: e1.body.id, deduct_sss: false, deduct_pagibig: false }] });
+    expect(ok.status).toBe(200);
+    expect(ok.body.updated).toBe(1);
+
+    const after = await ctx.api.get('/api/accounting/statutory-deductions').set(hdr());
+    const row2 = after.body.rows.find((r: { id: number }) => r.id === e1.body.id);
+    expect(row2).toMatchObject({ deduct_sss: false, deduct_philhealth: true, deduct_pagibig: false, deduct_withholding_tax: true });
+  });
+});

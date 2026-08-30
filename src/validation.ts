@@ -477,6 +477,17 @@ export const disputeBillSchema = z.object({
   note: trimmed.min(3, 'Say what the problem is').max(1000),
 });
 
+// PUT /api/accounting/statutory-deductions — per-employee statutory-deduction switches.
+export const statutoryDeductionsSchema = z.object({
+  updates: z.array(z.object({
+    employee_id: z.coerce.number().int().positive(),
+    deduct_sss: boolish.optional(),
+    deduct_philhealth: boolish.optional(),
+    deduct_pagibig: boolish.optional(),
+    deduct_withholding_tax: boolish.optional(),
+  })).min(1).max(2000),
+});
+
 export const matchToleranceSchema = z.object({
   price_pct: numCoerce.min(0).max(100).default(2),
   price_abs: numCoerce.min(0).default(0),

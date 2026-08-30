@@ -15,6 +15,26 @@ filing in eBIRForms / eFPS or each agency's portal.
 
 ---
 
+## Statutory deductions — per employee
+
+**Accounting → Tax & Compliance → Statutory deductions** (needs *Accounting: manage*).
+
+A grid of every employee with four switches: **SSS**, **PhilHealth**, **Pag-IBIG**,
+**Withholding tax** — all **on** by default. Turn one **off** for an employee (e.g. a
+contractor carried on the payroll for convenience, or someone whose contributions another
+entity remits) and:
+
+- that deduction is **zeroed** on their payslip the next time payslips are generated, and
+- they **drop out of that fund's contribution schedule** for the month.
+
+Use the **Toggle SSS / PhilHealth / …** buttons above the grid to flip every currently
+visible (filtered) employee at once. **Save changes**, then re-generate the affected
+payslips.
+
+> HR's **Auto-compute statutory** (Time Keeping → Policy Settings) is the company-wide
+> master switch — off means *nobody* gets auto statutory. These per-employee switches are
+> the exceptions on top of it.
+
 ## BIR 2550M — monthly VAT declaration
 
 **Output VAT** from the month's sale orders, **input VAT** from approved vendor bills

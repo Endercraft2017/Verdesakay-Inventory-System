@@ -5,37 +5,132 @@ const ACC_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
 const accPeso = (n) => (UI.money ? UI.money(n) : Number(n || 0).toFixed(2));
 
 App.register('accounting', async (view) => {
-  const FORMS = [
-    ['BIR 2550M', 'Monthly VAT declaration — output VAT (sales) less input VAT (purchases)', bir2550mModal],
-    ['BIR 0619-E', 'Monthly remittance of expanded / creditable withholding tax', bir0619eModal],
-    ['BIR 1601-C', 'Monthly withholding tax on compensation — the remittance worksheet', bir1601cModal],
-    ['BIR 1604-C', 'Annual withholding return face + Alphalist reconciliation', bir1604cModal],
-    ['BIR 1604-C Alphalist', 'Schedule 1 — Alphalist of Employees in the BIR column layout', birAlphalistModal],
-    ['BIR 2316', 'Year-end Certificate of Compensation Payment / Tax Withheld, per employee', bir2316Modal],
-    ['Contribution schedule', 'Monthly SSS R-3 / PhilHealth RF-1·EPRS / Pag-IBIG MCRF·eSRS collection list', contributionScheduleModal],
+  const canManage = App.hasPermission('accounting.manage');
+  // group, title, hint, action, needsManage
+  const SECTIONS = [
+    ['Value-added tax', [
+      ['sheet', 'BIR 2550M', 'Monthly VAT — output VAT (sales) less input VAT (purchases).', bir2550mModal],
+    ]],
+    ['Expanded withholding (suppliers)', [
+      ['sheet', 'BIR 0619-E', 'Monthly remittance of expanded / creditable withholding tax, per ATC.', bir0619eModal],
+    ]],
+    ['Withholding on compensation (payroll)', [
+      ['sheet', 'BIR 1601-C', 'Monthly withholding-tax remittance worksheet.', bir1601cModal],
+      ['sheet', 'BIR 1604-C', 'Annual return face + reconciliation to the Alphalist.', bir1604cModal],
+      ['forms', 'BIR 1604-C Alphalist', 'Schedule 1 — Alphalist of Employees, BIR column layout.', birAlphalistModal],
+      ['printer', 'BIR 2316', 'Year-end Certificate of Compensation Payment / Tax Withheld, per employee.', bir2316Modal],
+    ]],
+    ['Statutory contributions', [
+      ['building', 'Contribution schedule', 'Monthly SSS R-3 / PhilHealth RF-1·EPRS / Pag-IBIG MCRF·eSRS collection list.', contributionScheduleModal],
+      ['adjust', 'Statutory deductions', 'Turn SSS / PhilHealth / Pag-IBIG / withholding on or off per employee — feeds payroll.', statutoryDeductionsModal, true],
+    ]],
   ];
+
+  const card = (c) => {
+    const locked = c[4] && !canManage;
+    return `<div class="${locked ? '' : 'clickable'}" data-card="${c[1]}"
+        style="border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:16px;background:var(--surface-2)${locked ? ';opacity:.55' : ''}">
+        <div style="color:var(--text-faint);margin-bottom:9px">${UI.icon(c[0], 22)}</div>
+        <div style="font-weight:600;margin-bottom:3px">${UI.esc(c[1])}</div>
+        <div class="muted" style="font-size:12.5px">${UI.esc(c[2])}</div>
+        ${locked ? '<span class="badge-pill muted" style="margin-top:8px;display:inline-block">Needs Accounting: manage</span>' : ''}
+      </div>`;
+  };
 
   view.innerHTML = `
     <div class="topbar"><h2>Tax &amp; Compliance</h2></div>
-    <div class="panel">
-      <p class="muted" style="margin-top:0">Every figure here is a <b>worksheet</b> built from your payroll,
-      sales and purchase records — review and adjust before filing in eBIRForms / eFPS or each agency's portal.
-      Philippine agencies have no direct filing API.</p>
-      <div class="acc-grid">${FORMS.map((f, i) => `
-        <button type="button" class="acc-card" data-i="${i}">
-          <strong>${UI.esc(f[0])}</strong><span>${UI.esc(f[1])}</span>
-        </button>`).join('')}</div>
-    </div>
-    <style>
-      .acc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-top:12px}
-      .acc-card{text-align:left;padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface);cursor:pointer}
-      .acc-card:hover{border-color:var(--accent);background:var(--accent-weak)}
-      .acc-card strong{display:block;font-size:14px}
-      .acc-card span{display:block;font-size:12px;color:var(--text-muted);margin-top:3px}
-    </style>`;
+    <div class="panel" style="padding:22px">
+      <p class="muted" style="margin-top:0">Each item is a <b>worksheet</b> built from your payroll, sales and
+      purchase records — review and adjust before filing in eBIRForms / eFPS or each agency's portal (PH agencies
+      have no direct filing API). See the roadmap for a full general ledger in
+      <code>docs/ACCOUNTING-SYSTEM-PLAN.md</code>.</p>
+      ${SECTIONS.map(([group, cards]) => `
+        <h4 style="margin:18px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${UI.esc(group)}</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:12px">
+          ${cards.map(card).join('')}
+        </div>`).join('')}
+    </div>`;
 
-  view.querySelectorAll('.acc-card').forEach((b) => b.onclick = () => FORMS[Number(b.dataset.i)][2]());
+  const byName = Object.fromEntries(SECTIONS.flatMap(([, cs]) => cs).map((c) => [c[1], c]));
+  view.querySelectorAll('[data-card]').forEach((el) => {
+    if (!el.classList.contains('clickable')) return;
+    el.onclick = () => byName[el.dataset.card][3]();
+  });
 });
+
+/* ── Statutory deductions — per-employee SSS / PhilHealth / Pag-IBIG / WT switches ── */
+async function statutoryDeductionsModal() {
+  const COLS = [
+    ['deduct_sss', 'SSS'], ['deduct_philhealth', 'PhilHealth'],
+    ['deduct_pagibig', 'Pag-IBIG'], ['deduct_withholding_tax', 'Withholding tax'],
+  ];
+  let data;
+  try { data = await API.get('/accounting/statutory-deductions'); }
+  catch (e) { UI.toast(e.message, 'error'); return; }
+
+  const rows = data.rows.map((r) => ({ ...r }));       // working copy
+  const dirty = new Set();
+
+  const m = UI.modal({
+    title: 'Statutory deductions — per employee',
+    size: 'lg',
+    confirmText: 'Save changes',
+    bodyHTML: `
+      <p class="muted" style="margin-top:0;font-size:12px">${UI.esc(data.note || '')}</p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <div class="search-box search" style="flex:1;min-width:180px">${UI.icon('search', 15)}<input id="sd-q" placeholder="Filter employees…" /></div>
+        ${COLS.map((c) => `<button type="button" class="btn secondary small" data-col="${c[0]}">Toggle ${c[1]}</button>`).join('')}
+      </div>
+      <div style="max-height:52vh;overflow:auto;border:1px solid var(--border);border-radius:8px">
+        <table class="line-table"><thead><tr>
+          <th>Employee</th>${COLS.map((c) => `<th class="right" style="width:96px">${c[1]}</th>`).join('')}
+        </tr></thead><tbody id="sd-body"></tbody></table>
+      </div>`,
+    onOpen: (ov) => {
+      const body = ov.querySelector('#sd-body');
+      const q = ov.querySelector('#sd-q');
+      function draw() {
+        const term = q.value.trim().toLowerCase();
+        body.innerHTML = rows
+          .filter((r) => !term || r.name.toLowerCase().includes(term) || (r.employee_no || '').toLowerCase().includes(term))
+          .map((r) => `<tr data-id="${r.id}">
+            <td>${UI.esc(r.name)}<div class="muted mono" style="font-size:11px">${UI.esc(r.employee_no || '')}${r.department_name ? ' · ' + UI.esc(r.department_name) : ''}</div></td>
+            ${COLS.map((c) => `<td class="right"><input type="checkbox" data-f="${c[0]}" ${r[c[0]] ? 'checked' : ''} /></td>`).join('')}
+          </tr>`).join('');
+        body.querySelectorAll('tr[data-id]').forEach((tr) => {
+          const r = rows.find((x) => x.id === Number(tr.dataset.id));
+          tr.querySelectorAll('[data-f]').forEach((cb) => cb.onchange = () => {
+            r[cb.dataset.f] = cb.checked; dirty.add(r.id);
+          });
+        });
+      }
+      q.oninput = draw;
+      ov.querySelectorAll('[data-col]').forEach((b) => b.onclick = () => {
+        const col = b.dataset.col;
+        const visible = [...body.querySelectorAll('tr[data-id]')].map((tr) => Number(tr.dataset.id));
+        const target = !visible.every((id) => rows.find((r) => r.id === id)[col]);
+        visible.forEach((id) => { const r = rows.find((x) => x.id === id); r[col] = target; dirty.add(id); });
+        draw();
+      });
+      draw();
+    },
+    onConfirm: async (ov, showErr) => {
+      if (!dirty.size) { m.close && m.close(); return; }
+      const updates = [...dirty].map((id) => {
+        const r = rows.find((x) => x.id === id);
+        return {
+          employee_id: id,
+          deduct_sss: r.deduct_sss, deduct_philhealth: r.deduct_philhealth,
+          deduct_pagibig: r.deduct_pagibig, deduct_withholding_tax: r.deduct_withholding_tax,
+        };
+      });
+      try {
+        await API.put('/accounting/statutory-deductions', { updates });
+        UI.toast(`Saved — ${updates.length} employee${updates.length === 1 ? '' : 's'} updated. Re-generate payslips to apply.`);
+      } catch (e) { showErr(e.message); return false; }
+    },
+  });
+}
 
 /* ── BIR 2550M — monthly VAT declaration ─────────────────────────────────── */
 async function bir2550mModal() {

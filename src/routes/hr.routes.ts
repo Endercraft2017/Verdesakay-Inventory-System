@@ -764,9 +764,14 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
   const roster = queryAll<{
     employee_id: number; name: string; position: string | null; daily_rate: number;
     rate_type: 'daily' | 'monthly'; monthly_rate: number | null; department_name: string | null;
+    deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
   }>(
     `SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.daily_rate,
-            e.rate_type, e.monthly_rate, d.name AS department_name
+            e.rate_type, e.monthly_rate, d.name AS department_name,
+            COALESCE(e.deduct_sss, 1) AS deduct_sss,
+            COALESCE(e.deduct_philhealth, 1) AS deduct_philhealth,
+            COALESCE(e.deduct_pagibig, 1) AS deduct_pagibig,
+            COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -865,7 +870,9 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       );
 
       // SSS / PhilHealth / Pag-IBIG + BIR withholding. When policy.auto_statutory is off,
-      // keep whatever a previous generation / manual edit left (old behaviour).
+      // keep whatever a previous generation / manual edit left (old behaviour). Each
+      // contribution is also gated by a per-employee flag set from Accounting → Statutory
+      // Deductions (default on); an off flag zeroes that one deduction.
       let sss = num(prev.sss), philhealth = num(prev.philhealth), pagibig = num(prev.pagibig);
       let withholding_tax = num(prev.withholding_tax);
       if (policy.auto_statutory) {
@@ -873,11 +880,12 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
           ? emp.monthly_rate
           : round2(emp.daily_rate * policy.monthly_rate_divisor);
         const ded = statutoryDeductions(monthlyComp, monthlyComp, statTables);
-        sss = round2(ded.sss.employee / periodsPerMonth);
-        philhealth = round2(ded.philhealth.employee / periodsPerMonth);
-        pagibig = round2(ded.pagibig.employee / periodsPerMonth);
+        sss = emp.deduct_sss ? round2(ded.sss.employee / periodsPerMonth) : 0;
+        philhealth = emp.deduct_philhealth ? round2(ded.philhealth.employee / periodsPerMonth) : 0;
+        pagibig = emp.deduct_pagibig ? round2(ded.pagibig.employee / periodsPerMonth) : 0;
         const taxable = taxableCompensation(totalEarnings, 0, round2(sss + philhealth + pagibig));
-        withholding_tax = withholdingTax(taxable, policy.pay_frequency, statTables.rwt);
+        withholding_tax = emp.deduct_withholding_tax
+          ? withholdingTax(taxable, policy.pay_frequency, statTables.rwt) : 0;
       }
 
       const totalDeductions = policy.auto_statutory

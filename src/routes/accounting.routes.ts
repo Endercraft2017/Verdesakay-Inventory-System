@@ -9,8 +9,9 @@
  *  - SSS R-3 / PhilHealth RF-1 / Pag-IBIG MCRF      — statutory contribution schedules
  */
 import { Router } from 'express';
-import { queryOne, queryAll } from '../db';
+import { db, queryOne, queryAll, run } from '../db';
 import { requireAuth, requirePermission } from '../auth';
+import { parseBody, statutoryDeductionsSchema } from '../validation';
 import { toCsv } from '../csv';
 import { effectiveTables } from '../payroll-tables';
 import { compute2316 } from '../ph-2316';
@@ -212,14 +213,22 @@ router.get('/contribution-schedule', (req, res) => {
   const agency = (['sss', 'philhealth', 'pagibig'] as const).includes(req.query.agency as Agency)
     ? (req.query.agency as Agency) : 'sss';
 
-  const employees: ContribEmployeeInput[] = [...payslipTotalsForMonth(month).entries()].map(([name, v]) => {
-    const e = queryOne<{ sss_no: string | null; philhealth_no: string | null; pagibig_no: string | null }>(
-      'SELECT sss_no, philhealth_no, pagibig_no FROM employees WHERE name = ? COLLATE NOCASE', name
-    );
-    const id_number = agency === 'sss' ? e?.sss_no
-      : agency === 'philhealth' ? e?.philhealth_no : e?.pagibig_no;
-    return { name, id_number: id_number ?? null, monthly_comp: v.comp, monthly_basic: v.basic };
-  });
+  const flagCol = agency === 'sss' ? 'deduct_sss'
+    : agency === 'philhealth' ? 'deduct_philhealth' : 'deduct_pagibig';
+  const employees: ContribEmployeeInput[] = [...payslipTotalsForMonth(month).entries()]
+    .map(([name, v]) => {
+      const e = queryOne<{ sss_no: string | null; philhealth_no: string | null; pagibig_no: string | null; flag: number }>(
+        `SELECT sss_no, philhealth_no, pagibig_no, COALESCE(${flagCol}, 1) AS flag
+         FROM employees WHERE name = ? COLLATE NOCASE`, name
+      );
+      // An employee switched off for this fund (Accounting → Statutory Deductions) isn't
+      // remitted, so they don't belong on this schedule.
+      if (e && !e.flag) return null;
+      const id_number = agency === 'sss' ? e?.sss_no
+        : agency === 'philhealth' ? e?.philhealth_no : e?.pagibig_no;
+      return { name, id_number: id_number ?? null, monthly_comp: v.comp, monthly_basic: v.basic };
+    })
+    .filter((x): x is ContribEmployeeInput => x !== null);
 
   const schedule = contributionSchedule(agency, month, employees, effectiveTables(`${month}-15`));
 
@@ -235,6 +244,65 @@ router.get('/contribution-schedule', (req, res) => {
     return;
   }
   res.json({ ...schedule, company: companyProfile() });
+});
+
+/* ------------------------------- statutory deductions ↔ payroll --- */
+
+// GET /api/accounting/statutory-deductions — every employee + the four per-person
+// switches (default on) that `generate-payslips` honours. Accounting decides what is
+// actually deducted / remitted; HR runs the payroll. See docs/ACCOUNTING-SYSTEM-PLAN.md §6.
+router.get('/statutory-deductions', (_req, res) => {
+  const rows = queryAll<{
+    id: number; name: string; employee_no: string | null; status: string | null;
+    department_name: string | null;
+    deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+  }>(`
+    SELECT e.id, e.name, e.employee_no, e.status, d.name AS department_name,
+           COALESCE(e.deduct_sss, 1) AS deduct_sss,
+           COALESCE(e.deduct_philhealth, 1) AS deduct_philhealth,
+           COALESCE(e.deduct_pagibig, 1) AS deduct_pagibig,
+           COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax
+    FROM employees e LEFT JOIN departments d ON d.id = e.department_id
+    ORDER BY e.name COLLATE NOCASE`);
+  res.json({
+    rows: rows.map((r) => ({
+      ...r,
+      deduct_sss: !!r.deduct_sss, deduct_philhealth: !!r.deduct_philhealth,
+      deduct_pagibig: !!r.deduct_pagibig, deduct_withholding_tax: !!r.deduct_withholding_tax,
+    })),
+    note: 'An off switch zeroes that contribution on the employee\'s payslip the next time '
+      + 'payslips are generated, and drops them from that fund\'s remittance schedule. The '
+      + 'company-wide master is HR → Time Keeping → Policy Settings → Auto-compute statutory.',
+  });
+});
+
+// PUT /api/accounting/statutory-deductions — { updates: [{ employee_id, deduct_* }] }.
+router.put('/statutory-deductions', requirePermission('accounting.manage'), (req, res) => {
+  const { updates } = parseBody(statutoryDeductionsSchema, req.body);
+  const cols = ['deduct_sss', 'deduct_philhealth', 'deduct_pagibig', 'deduct_withholding_tax'] as const;
+
+  db.exec('BEGIN');
+  try {
+    let changed = 0;
+    for (const u of updates) {
+      const sets: string[] = [];
+      const vals: unknown[] = [];
+      for (const c of cols) {
+        if (u[c] !== undefined) { sets.push(`${c} = ?`); vals.push(u[c] ? 1 : 0); }
+      }
+      if (!sets.length) continue;
+      const info = run(
+        `UPDATE employees SET ${sets.join(', ')} WHERE id = ?`,
+        ...vals, u.employee_id
+      );
+      changed += Number(info.changes);
+    }
+    db.exec('COMMIT');
+    res.json({ ok: true, updated: changed });
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 });
 
 export default router;

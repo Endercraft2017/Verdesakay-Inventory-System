@@ -350,7 +350,16 @@
               <b>PhilHealth RF-1·EPRS</b> / <b>Pag-IBIG MCRF·eSRS</b> collection list.
               EE + ER (+ EC for SSS) recomputed from the rate tables on each person's
               month-total pay. Export the CSV and upload in the agency portal.</li>
-        </ul>`,
+          <li><b>Statutory deductions</b> (needs <i>Accounting: manage</i>) — turn
+              <b>SSS / PhilHealth / Pag-IBIG / withholding tax</b> on or off <b>per
+              employee</b>. An off switch zeroes that deduction on the employee's next
+              generated payslip and drops them from that fund's schedule. HR's
+              <i>Auto-compute statutory</i> policy is still the company-wide master
+              switch; this is the per-person override.</li>
+        </ul>
+        <p>A full double-entry general ledger (chart of accounts, journals, financial
+        statements, VAT/EWT registers, BIR books of accounts) is planned — see
+        <code>docs/ACCOUNTING-SYSTEM-PLAN.md</code>.</p>`,
     },
     {
       id: 'payroll-rate-tables', title: 'Payroll rate tables (SSS/PhilHealth/etc.)', group: 'HR', routes: [],

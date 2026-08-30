@@ -110,10 +110,17 @@ The reason a buyer can't leave, and the reason finance + HR + owner all say yes.
   SSS R-3 / PhilHealth RF-1·EPRS / Pag-IBIG MCRF·eSRS contribution schedules**. Pure
   modules `src/ph-*.ts`, CSV export throughout — the filings live under Accounting, the
   payroll processing under HR.
+- **Also:** **per-employee statutory switches** — Accounting (`accounting.manage`) turns
+  SSS / PhilHealth / Pag-IBIG / withholding on or off per person; an off switch zeroes
+  that deduction on the payslip and drops the employee from that fund's schedule.
 - **Gap (smaller now):** leave balances & accrual; BIR 2307 per-payee certificates +
   1601-EQ / QAP quarterly; loan-ledger tracking; the agency `.DAT`/proprietary upload
   formats (we emit the column-exact CSV — the employer converts in each portal's own
   tool, since no PH agency has a filing API).
+- **Adjacent expansion — a full double-entry GL** (chart of accounts, journals,
+  financial statements, VAT/EWT registers, BIR books of accounts / CAS): planned in
+  [ACCOUNTING-SYSTEM-PLAN.md](ACCOUNTING-SYSTEM-PLAN.md). Natural follow-on to the tax
+  wedge; the existing orders / bills / payslips already model the transactions.
 - **Selling line:** "Payroll that produces the forms you actually file, kept current with
   the tables — not a spreadsheet with SSS as a column."
 

@@ -54,7 +54,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1023,6 +1023,15 @@ function migrate(): void {
   }
   if (!empCols3.some((c) => c.name === 'monthly_rate')) {
     db.exec('ALTER TABLE employees ADD COLUMN monthly_rate REAL');
+  }
+
+  // Per-employee statutory-deduction switches, controlled from Accounting → Statutory
+  // Deductions. Default 1 (deduct); an off flag zeroes that contribution in
+  // generate-payslips (and drops the employee from the agency schedule for that fund).
+  for (const col of ['deduct_sss', 'deduct_philhealth', 'deduct_pagibig', 'deduct_withholding_tax']) {
+    if (!empCols3.some((c) => c.name === col)) {
+      db.exec(`ALTER TABLE employees ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 1`);
+    }
   }
 
   // Optional link from an HR employee record to the login account they use — lets an employee's

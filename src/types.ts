@@ -17,7 +17,7 @@ export type Permission =
   | 'templates.view' | 'templates.edit' | 'templates.company'
   | 'users.manage'
   | 'hr.view' | 'hr.manage'
-  | 'accounting.view'
+  | 'accounting.view' | 'accounting.manage'
   | 'audit.view'
   | 'mail.send'
   | 'announce'

@@ -626,6 +626,41 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ auto_statutory: true }); // restore for other tests
   });
 
+  it('per-employee statutory switch (Accounting) zeroes that deduction on the next payslip', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-SDFLAG', name: 'SD Flag Employee', daily_rate: 1000 });
+    // Accounting turns SSS + withholding off for this employee, leaves PhilHealth/Pag-IBIG on.
+    const put = await ctx.api.put('/api/accounting/statutory-deductions').set(hdr())
+      .send({ updates: [{ employee_id: emp.body.id, deduct_sss: false, deduct_withholding_tax: false }] });
+    expect(put.status).toBe(200);
+
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'SD Flag Cutoff', start_date: '2026-08-05', end_date: '2026-08-05' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-05', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'SD Flag Cutoff', pay_date: '2026-08-10' });
+    const recs = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'SD Flag Cutoff' }).set(hdr());
+    const rec = recs.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'SD Flag Employee');
+
+    expect(rec.data.sss).toBe(0);
+    expect(rec.data.withholding_tax).toBe(0);
+    expect(rec.data.philhealth).toBe(325);  // still deducted
+    expect(rec.data.pagibig).toBe(100);
+    expect(rec.data.total_deductions).toBe(
+      Math.round((0 + rec.data.philhealth + rec.data.pagibig + 0 + rec.data.late_absences + 0) * 100) / 100
+    );
+
+    // ...and the SSS schedule for that month no longer lists this employee.
+    const sched = await ctx.api.get('/api/accounting/contribution-schedule').query({ month: '2026-08', agency: 'sss' }).set(hdr());
+    expect(sched.body.rows.some((x: { name: string }) => x.name === 'SD Flag Employee')).toBe(false);
+    const phic = await ctx.api.get('/api/accounting/contribution-schedule').query({ month: '2026-08', agency: 'philhealth' }).set(hdr());
+    expect(phic.body.rows.some((x: { name: string }) => x.name === 'SD Flag Employee')).toBe(true);
+  });
+
   it('rotating shifts: the same employee can have a different shift on different days within one cutoff', async () => {
     const nightShift = await ctx.api.post('/api/hr/shifts').set(hdr())
       .send({ name: 'Rotate Night', start_time: '22:00', end_time: '06:00', is_default: false });
