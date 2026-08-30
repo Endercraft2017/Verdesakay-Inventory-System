@@ -362,6 +362,28 @@
         <code>docs/ACCOUNTING-SYSTEM-PLAN.md</code>.</p>`,
     },
     {
+      id: 'petty-cash', title: 'Petty Cash', group: 'Accounting', routes: ['accounting-petty-cash'],
+      html: `
+        <p><b>Accounting → Cash → Petty Cash</b> is a running record of the office cash
+        box — every peso <b>in</b> and <b>out</b>.</p>
+        <ul>
+          <li><b>Funds</b> — make one fund per cash box (e.g. "Main Petty Cash", or one
+              per branch). Set its <b>custodian</b> and <b>opening float</b>. Multiple
+              funds are fine; the toolbar dropdown switches between them.</li>
+          <li><b>Cash out</b> — a disbursement: date, amount, a category (Transport,
+              Supplies, Meals…), who you paid, and the OR / voucher number.</li>
+          <li><b>Cash in</b> — money added: usually a <b>Replenishment</b> (top-up), or a
+              returned cash advance / refund.</li>
+          <li>The table shows a <b>running balance</b> after every entry, and the panel up
+              top shows opening balance, total in, total out, and closing balance for the
+              date range you pick.</li>
+          <li><b>Export</b> downloads the register as CSV for the cash count / liquidation.</li>
+        </ul>
+        <p>Recording entries needs the <i>Accounting: manage</i> permission; anyone with
+        <i>Accounting: view</i> can read the register. A fund that already has entries
+        can't be deleted — set it <b>inactive</b> instead.</p>`,
+    },
+    {
       id: 'payroll-rate-tables', title: 'Payroll rate tables (SSS/PhilHealth/etc.)', group: 'HR', routes: [],
       html: `
         <p>The government contribution and withholding-tax figures the payslip computation

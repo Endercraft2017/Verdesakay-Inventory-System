@@ -69,6 +69,57 @@ describe('accounting: permission gate', () => {
   });
 });
 
+describe('accounting: petty cash', () => {
+  it('fund + money in/out with a running balance, opening carry, delete, and gates', async () => {
+    // warehouse (no accounting.manage) can't create a fund
+    const wh = await createEmployee(ctx.api, token, { role: 'warehouse', username: 'pc_wh' });
+    const blocked = await ctx.api.post('/api/accounting/petty-cash/funds')
+      .set('Authorization', `Bearer ${wh.token}`).send({ name: 'Nope', opening_balance: 100 });
+    expect(blocked.status).toBe(403);
+
+    const fund = await ctx.api.post('/api/accounting/petty-cash/funds').set(hdr())
+      .send({ name: 'Main Petty Cash', custodian: 'Ana', opening_balance: 5000 });
+    expect(fund.status).toBe(201);
+
+    const list = await ctx.api.get('/api/accounting/petty-cash/funds').set(hdr());
+    const f = list.body.find((x: { id: number }) => x.id === fund.body.id);
+    expect(f.balance).toBe(5000);
+    expect(f.entry_count).toBe(0);
+
+    const post = (b: Record<string, unknown>) =>
+      ctx.api.post(`/api/accounting/petty-cash/funds/${fund.body.id}/entries`).set(hdr()).send(b);
+    await post({ entry_date: '2026-07-02', direction: 'out', amount: 350, category: 'Transport', counterparty: 'Grab' });
+    await post({ entry_date: '2026-07-05', direction: 'out', amount: 1200, category: 'Office supplies' });
+    await post({ entry_date: '2026-07-10', direction: 'in', amount: 2000, category: 'Replenishment', reference_no: 'OR-77' });
+
+    const reg = await ctx.api.get(`/api/accounting/petty-cash/funds/${fund.body.id}/entries`).set(hdr());
+    expect(reg.body.opening_balance).toBe(5000);
+    expect(reg.body.totals).toMatchObject({ in: 2000, out: 1550, net: 450 });
+    expect(reg.body.closing_balance).toBe(5450);
+    expect(reg.body.entries.map((e: { running_balance: number }) => e.running_balance)).toEqual([4650, 3450, 5450]);
+
+    // date-range: opening carries the earlier entries
+    const ranged = await ctx.api.get(`/api/accounting/petty-cash/funds/${fund.body.id}/entries`)
+      .query({ from: '2026-07-06' }).set(hdr());
+    expect(ranged.body.opening_balance).toBe(3450); // 5000 - 350 - 1200
+    expect(ranged.body.entries).toHaveLength(1);
+    expect(ranged.body.closing_balance).toBe(5450);
+
+    // deleting a fund with entries is blocked; an entry can be removed and the balance re-computes
+    expect((await ctx.api.delete(`/api/accounting/petty-cash/funds/${fund.body.id}`).set(hdr())).status).toBe(409);
+    const delId = reg.body.entries[1].id; // the 1,200 out
+    expect((await ctx.api.delete(`/api/accounting/petty-cash/entries/${delId}`).set(hdr())).status).toBe(200);
+    const after = await ctx.api.get(`/api/accounting/petty-cash/funds/${fund.body.id}/entries`).set(hdr());
+    expect(after.body.closing_balance).toBe(6650); // 5000 - 350 + 2000
+
+    // CSV
+    const csv = await ctx.api.get(`/api/accounting/petty-cash/funds/${fund.body.id}/entries`)
+      .query({ format: 'csv' }).set(hdr());
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.text).toContain('Running balance');
+  });
+});
+
 describe('accounting: statutory deductions per employee', () => {
   it('lists employees with all four switches defaulting on; PUT toggles them; needs accounting.manage', async () => {
     const e1 = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'SD-1', name: 'Deduct One', daily_rate: 900 });

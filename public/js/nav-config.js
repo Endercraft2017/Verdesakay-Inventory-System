@@ -14,7 +14,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'inventory', 'inventory-movements', 'suppliers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
 
 const NAV = [
   {
@@ -153,6 +153,12 @@ const NAV = [
         id: 'tax', label: 'Tax & Compliance', requiredPermission: 'accounting.view',
         tree: [
           { label: 'Tax & Compliance', icon: 'sheet', route: 'accounting' },
+        ],
+      },
+      {
+        id: 'cash', label: 'Cash', requiredPermission: 'accounting.view',
+        tree: [
+          { label: 'Petty Cash', icon: 'sheet', route: 'accounting-petty-cash' },
         ],
       },
       {

@@ -1,10 +1,12 @@
 # Accounting Module — Plan for a Complete Philippine System
 
-> **Status:** planning. Today the "Accounting" section is **tax & statutory reporting
-> only** (BIR 1601-C / 1604-C / 2316 / Alphalist / 0619-E / 2550M worksheets + SSS /
-> PhilHealth / Pag-IBIG contribution schedules, all built from payroll / sales / purchase
-> data). There is **no general ledger** yet. This document plans the full double-entry
+> **Status:** planning. Today the "Accounting" section has **tax & statutory reporting**
+> (BIR 1601-C / 1604-C / 2316 / Alphalist / 0619-E / 2550M worksheets + SSS / PhilHealth /
+> Pag-IBIG contribution schedules) and a **Petty Cash** register (money in / out per fund
+> — §6.5). There is **no general ledger** yet. This document plans the full double-entry
 > bookkeeping system a Philippine SMB actually needs, and the order to build it in.
+> **Decided (2026-08-30):** build it modelled on **Frappe Books** (§9) — same stack
+> (SQLite + Node/JS), SMB-scoped, readable; design reference only (AGPL, reimplement).
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -262,6 +264,27 @@ Accounting decides what's remitted.
 this screen and, later, for posting/period-close in the GL. `accounting.view` stays
 read-only for the reports.
 
+## 6.5 Petty cash (shipped 2026-08-30)
+
+Ahead of the GL, **Accounting → Cash → Petty Cash** is a standalone register:
+
+- **`petty_cash_funds`** — named funds (custodian, optional location, opening float,
+  currency, active flag).
+- **`petty_cash_entries`** — one row per **money in** (`direction='in'`) or **money out**
+  (`out`): date, amount (> 0), category (datalist of common ones), payee/source,
+  reference no. (OR / voucher), notes, `recorded_by`.
+- `GET /api/accounting/petty-cash/funds` returns each fund's live balance;
+  `GET .../funds/:id/entries?from=&to=&format=csv` returns the register with a **running
+  balance per row**, the **opening balance carried into the range**, in/out totals, and
+  the closing balance. Writes need `accounting.manage`; a fund with entries can't be
+  deleted (deactivate instead).
+
+**GL mapping (Phase 2):** each `in` becomes a **Cash Receipts Book** line
+(Dr Petty Cash, Cr the source account), each `out` a **Cash Disbursements Book** line
+(Dr the expense/`category` account, Cr Petty Cash). A **replenishment** is the fund
+top-up from the main cash/bank account. `category` becomes a link to a COA account once
+the chart exists; until then it's free text.
+
 ---
 
 ## 7. What we are *not* doing
@@ -286,7 +309,8 @@ read-only for the reports.
 | 2 — VAT + EWT registers + files | large | the BIR non-payroll returns |
 | 3 — payroll + inventory posting | medium | full P&L without manual entry |
 | 4 — statements + close + assets + bank rec | large | AFS pack; audit-ready |
-| §6 — per-employee statutory toggles | small | **now** (independent of the GL) |
+| §6 — per-employee statutory toggles | small | **done** (independent of the GL) |
+| §6.5 — petty cash register | small | **done** — money in/out per fund, running balance, CSV; feeds the cash books in Phase 2 |
 
 Recommendation: ship **§6 now**, then **Phase 0** as the next standalone feature after
 GO-TO-MARKET §6's remaining core items (SSO/2FA), since a manual GL is immediately
@@ -302,7 +326,7 @@ posting rules, chart of accounts and report layouts**, then reimplement in our s
 and learn from them, but we must **not paste their code** into this (proprietary, SaaS)
 product. Only permissively-licensed code can be vendored.
 
-### Primary basis — **Frappe Books** (`github.com/frappe/books`)
+### Primary basis — **Frappe Books** (`github.com/frappe/books`)  ← DECIDED (2026-08-30)
 
 The closest match to our constraints: **SQLite** file as the database (same as our
 `node:sqlite`), **JavaScript/Node** backend, SMB-scoped, offline-first, small and

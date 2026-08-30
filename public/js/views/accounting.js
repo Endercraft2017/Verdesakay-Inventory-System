@@ -24,6 +24,9 @@ App.register('accounting', async (view) => {
       ['building', 'Contribution schedule', 'Monthly SSS R-3 / PhilHealth RF-1·EPRS / Pag-IBIG MCRF·eSRS collection list.', contributionScheduleModal],
       ['adjust', 'Statutory deductions', 'Turn SSS / PhilHealth / Pag-IBIG / withholding on or off per employee — feeds payroll.', statutoryDeductionsModal, true],
     ]],
+    ['Cash', [
+      ['sheet', 'Petty cash', 'Named cash funds with a running money-in / money-out register.', () => App.navigate('accounting-petty-cash')],
+    ]],
   ];
 
   const card = (c) => {

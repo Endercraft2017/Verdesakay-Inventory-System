@@ -11,8 +11,11 @@
 import { Router } from 'express';
 import { db, queryOne, queryAll, run } from '../db';
 import { requireAuth, requirePermission } from '../auth';
-import { parseBody, statutoryDeductionsSchema } from '../validation';
+import {
+  parseBody, statutoryDeductionsSchema, pettyCashFundSchema, pettyCashEntrySchema,
+} from '../validation';
 import { toCsv } from '../csv';
+import type { PettyCashFund, PettyCashEntry } from '../types';
 import { effectiveTables } from '../payroll-tables';
 import { compute2316 } from '../ph-2316';
 import {
@@ -303,6 +306,161 @@ router.put('/statutory-deductions', requirePermission('accounting.manage'), (req
     db.exec('ROLLBACK');
     throw e;
   }
+});
+
+/* --------------------------------------------------------------- petty cash --- */
+// A named cash fund + a running money-in / money-out register. Informal ledger for now;
+// maps to the Cash Receipts / Cash Disbursements books once the GL lands.
+
+const fundBalanceExpr = `(
+  f.opening_balance
+  + COALESCE((SELECT SUM(CASE WHEN e.direction = 'in' THEN e.amount ELSE -e.amount END)
+             FROM petty_cash_entries e WHERE e.fund_id = f.id), 0)
+)`;
+
+// GET /api/accounting/petty-cash/funds — all funds + current balance + entry count.
+router.get('/petty-cash/funds', (req, res) => {
+  const where = req.query.active === '0' ? '' : 'WHERE f.active = 1';
+  res.json(queryAll<PettyCashFund>(`
+    SELECT f.*, l.name AS location_name,
+           ${fundBalanceExpr} AS balance,
+           (SELECT COUNT(*) FROM petty_cash_entries e WHERE e.fund_id = f.id) AS entry_count
+    FROM petty_cash_funds f
+    LEFT JOIN locations l ON l.id = f.location_id
+    ${where}
+    ORDER BY f.active DESC, f.name COLLATE NOCASE`));
+});
+
+// POST /api/accounting/petty-cash/funds
+router.post('/petty-cash/funds', requirePermission('accounting.manage'), (req, res) => {
+  const b = parseBody(pettyCashFundSchema, req.body);
+  if (b.location_id != null && !queryOne('SELECT id FROM locations WHERE id = ?', b.location_id)) {
+    res.status(400).json({ error: 'That location does not exist' });
+    return;
+  }
+  const info = run(
+    `INSERT INTO petty_cash_funds (name, custodian, location_id, opening_balance, currency, active, notes, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    b.name, b.custodian ?? null, b.location_id ?? null, b.opening_balance,
+    b.currency || 'PHP', b.active === false ? 0 : 1, b.notes ?? null, req.user!.id
+  );
+  res.status(201).json({ id: Number(info.lastInsertRowid) });
+});
+
+// PUT /api/accounting/petty-cash/funds/:id
+router.put('/petty-cash/funds/:id', requirePermission('accounting.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM petty_cash_funds WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Fund not found' });
+    return;
+  }
+  const b = parseBody(pettyCashFundSchema, req.body);
+  run(
+    `UPDATE petty_cash_funds SET name = ?, custodian = ?, location_id = ?, opening_balance = ?,
+       currency = ?, active = ?, notes = ? WHERE id = ?`,
+    b.name, b.custodian ?? null, b.location_id ?? null, b.opening_balance,
+    b.currency || 'PHP', b.active === false ? 0 : 1, b.notes ?? null, id
+  );
+  res.json({ ok: true });
+});
+
+// DELETE /api/accounting/petty-cash/funds/:id — only while it has no entries.
+router.delete('/petty-cash/funds/:id', requirePermission('accounting.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  const n = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM petty_cash_entries WHERE fund_id = ?', id)?.n ?? 0;
+  if (n > 0) {
+    res.status(409).json({ error: `This fund has ${n} entr${n === 1 ? 'y' : 'ies'} — deactivate it instead of deleting.` });
+    return;
+  }
+  const info = run('DELETE FROM petty_cash_funds WHERE id = ?', id);
+  if (!info.changes) { res.status(404).json({ error: 'Fund not found' }); return; }
+  res.json({ ok: true });
+});
+
+// GET /api/accounting/petty-cash/funds/:id/entries?from=&to=&format=csv
+// Register for the date range, each row with its running balance, plus the opening
+// balance carried into the range and the in/out totals.
+router.get('/petty-cash/funds/:id/entries', (req, res) => {
+  const fund = queryOne<PettyCashFund>('SELECT * FROM petty_cash_funds WHERE id = ?', Number(req.params.id));
+  if (!fund) { res.status(404).json({ error: 'Fund not found' }); return; }
+
+  const from = typeof req.query.from === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : null;
+  const to = typeof req.query.to === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.to) ? req.query.to : null;
+
+  const signed = (e: { direction: string; amount: number }) => (e.direction === 'in' ? 1 : -1) * (Number(e.amount) || 0);
+
+  // Opening balance carried into the range = fund opening + everything strictly before `from`.
+  let opening = fund.opening_balance;
+  if (from) {
+    const prior = queryAll<{ direction: string; amount: number }>(
+      "SELECT direction, amount FROM petty_cash_entries WHERE fund_id = ? AND entry_date < ?",
+      fund.id, from
+    );
+    opening = round2(prior.reduce((s, e) => s + signed(e), 0) + fund.opening_balance);
+  }
+
+  const rows = queryAll<PettyCashEntry>(`
+    SELECT e.*, u.full_name AS recorded_by_name
+    FROM petty_cash_entries e LEFT JOIN users u ON u.id = e.recorded_by
+    WHERE e.fund_id = ?
+      ${from ? 'AND e.entry_date >= ?' : ''} ${to ? 'AND e.entry_date <= ?' : ''}
+    ORDER BY e.entry_date, e.id`,
+    ...[fund.id, from, to].filter((x) => x != null)
+  );
+
+  let bal = opening;
+  let totalIn = 0, totalOut = 0;
+  const withRunning = rows.map((e) => {
+    bal = round2(bal + signed(e));
+    if (e.direction === 'in') totalIn = round2(totalIn + e.amount); else totalOut = round2(totalOut + e.amount);
+    return { ...e, running_balance: bal };
+  });
+
+  if (req.query.format === 'csv') {
+    const headers = ['Date', 'Direction', 'Category', 'Payee / Source', 'Reference', 'Amount', 'Running balance', 'Notes', 'Recorded by'];
+    const csvRows = withRunning.map((e) => ({
+      Date: e.entry_date, Direction: e.direction, Category: e.category ?? '', 'Payee / Source': e.counterparty ?? '',
+      Reference: e.reference_no ?? '', Amount: e.direction === 'in' ? e.amount : -e.amount,
+      'Running balance': e.running_balance, Notes: e.notes ?? '', 'Recorded by': e.recorded_by_name ?? '',
+    }));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="petty-cash-${fund.name.replace(/\W+/g, '-')}.csv"`);
+    res.send(toCsv(headers, csvRows));
+    return;
+  }
+
+  res.json({
+    fund,
+    from, to,
+    opening_balance: round2(opening),
+    entries: withRunning,
+    totals: { in: totalIn, out: totalOut, net: round2(totalIn - totalOut) },
+    closing_balance: round2(bal),
+  });
+});
+
+// POST /api/accounting/petty-cash/funds/:id/entries
+router.post('/petty-cash/funds/:id/entries', requirePermission('accounting.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM petty_cash_funds WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Fund not found' });
+    return;
+  }
+  const b = parseBody(pettyCashEntrySchema, req.body);
+  const info = run(
+    `INSERT INTO petty_cash_entries (fund_id, entry_date, direction, amount, category, counterparty, reference_no, notes, recorded_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, b.entry_date, b.direction, b.amount, b.category ?? null, b.counterparty ?? null,
+    b.reference_no ?? null, b.notes ?? null, req.user!.id
+  );
+  res.status(201).json({ id: Number(info.lastInsertRowid) });
+});
+
+// DELETE /api/accounting/petty-cash/entries/:id
+router.delete('/petty-cash/entries/:id', requirePermission('accounting.manage'), (req, res) => {
+  const info = run('DELETE FROM petty_cash_entries WHERE id = ?', Number(req.params.id));
+  if (!info.changes) { res.status(404).json({ error: 'Entry not found' }); return; }
+  res.json({ ok: true });
 });
 
 export default router;

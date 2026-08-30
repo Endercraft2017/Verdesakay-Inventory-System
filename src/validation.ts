@@ -488,6 +488,27 @@ export const statutoryDeductionsSchema = z.object({
   })).min(1).max(2000),
 });
 
+// ---- Petty cash ----
+export const pettyCashFundSchema = z.object({
+  name: trimmed.min(1, 'Fund name is required').max(120),
+  custodian: trimmed.max(120).optional().nullable(),
+  location_id: optionalId,
+  opening_balance: numCoerce.min(0).default(0),
+  currency: trimmed.max(10).optional().nullable(),
+  active: boolish.optional(),
+  notes: optionalText,
+});
+
+export const pettyCashEntrySchema = z.object({
+  entry_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  direction: z.enum(['in', 'out']),
+  amount: numCoerce.positive('Amount must be greater than 0'),
+  category: trimmed.max(80).optional().nullable(),
+  counterparty: trimmed.max(160).optional().nullable(),
+  reference_no: trimmed.max(80).optional().nullable(),
+  notes: optionalText,
+});
+
 export const matchToleranceSchema = z.object({
   price_pct: numCoerce.min(0).max(100).default(2),
   price_abs: numCoerce.min(0).default(0),

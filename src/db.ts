@@ -759,6 +759,36 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_vbills_status ON vendor_bills(status);
     CREATE INDEX IF NOT EXISTS idx_vbill_items_bill ON vendor_bill_items(bill_id);
 
+    -- Petty cash: named cash funds + a running money-in / money-out register per fund.
+    -- Informal ledger for now; maps to the Cash Receipts / Cash Disbursements books once
+    -- the general ledger lands (see docs/ACCOUNTING-SYSTEM-PLAN.md).
+    CREATE TABLE IF NOT EXISTS petty_cash_funds (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      name            TEXT NOT NULL,
+      custodian       TEXT,
+      location_id     INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      opening_balance REAL NOT NULL DEFAULT 0,
+      currency        TEXT NOT NULL DEFAULT 'PHP',
+      active          INTEGER NOT NULL DEFAULT 1,
+      notes           TEXT,
+      created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS petty_cash_entries (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      fund_id       INTEGER NOT NULL REFERENCES petty_cash_funds(id) ON DELETE CASCADE,
+      entry_date    TEXT NOT NULL,                      -- YYYY-MM-DD
+      direction     TEXT NOT NULL CHECK (direction IN ('in','out')),
+      amount        REAL NOT NULL,                      -- always > 0
+      category      TEXT,                               -- 'Replenishment', 'Supplies', 'Transport', ...
+      counterparty  TEXT,                               -- payee (out) / source (in)
+      reference_no  TEXT,                               -- OR / voucher / receipt no.
+      notes         TEXT,
+      recorded_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_pce_fund ON petty_cash_entries(fund_id, entry_date);
+
     -- Full-text index for the AI knowledge search (RAG). Rebuilt by src/rag.ts;
     -- rows carry an ACL (permission key) + optional dept_id for retrieval filtering.
     CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks USING fts5(

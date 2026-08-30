@@ -15,6 +15,24 @@ filing in eBIRForms / eFPS or each agency's portal.
 
 ---
 
+## Petty cash — money in and out
+
+**Accounting → Cash → Petty Cash** (record entries: *Accounting: manage*; read: *Accounting: view*).
+
+1. **Make a fund** (Funds button) — one per cash box: name, custodian, and the **opening
+   float**. Have as many as you need (e.g. one per branch); the toolbar dropdown switches
+   between them.
+2. **Cash out** — a disbursement: date, amount, category (Transport / Supplies / Meals…),
+   who you paid, the OR / voucher number.
+3. **Cash in** — money added: usually a **Replenishment**, or a returned cash advance /
+   refund.
+4. The register shows a **running balance** after each entry. The strip at the top shows
+   opening balance, total in, total out and closing balance for the **date range** you
+   pick.
+5. **Export** gives the register as CSV for the cash count / liquidation.
+
+A fund that already has entries can't be deleted — set it **inactive** instead.
+
 ## Statutory deductions — per employee
 
 **Accounting → Tax & Compliance → Statutory deductions** (needs *Accounting: manage*).

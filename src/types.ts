@@ -513,6 +513,42 @@ export interface VendorBillItem {
   sort: number;
 }
 
+/** A named petty-cash fund + its running money-in / money-out register.
+    See src/routes/accounting.routes.ts and docs/ACCOUNTING-SYSTEM-PLAN.md. */
+export interface PettyCashFund {
+  id: number;
+  name: string;
+  custodian: string | null;
+  location_id: number | null;
+  opening_balance: number;
+  currency: string;
+  active: number;
+  notes: string | null;
+  created_by: number | null;
+  created_at: string;
+  location_name?: string | null;
+  /** Joined in by GET /accounting/petty-cash/funds. */
+  balance?: number;
+  entry_count?: number;
+}
+
+export interface PettyCashEntry {
+  id: number;
+  fund_id: number;
+  entry_date: string;
+  direction: 'in' | 'out';
+  amount: number;
+  category: string | null;
+  counterparty: string | null;
+  reference_no: string | null;
+  notes: string | null;
+  recorded_by: number | null;
+  created_at: string;
+  recorded_by_name?: string | null;
+  /** Running balance after this entry — computed in GET .../entries. */
+  running_balance?: number;
+}
+
 export interface DocTemplate {
   id: number;
   name: string;
