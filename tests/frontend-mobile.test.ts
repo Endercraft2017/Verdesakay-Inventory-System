@@ -14,7 +14,7 @@ const EXPECTED_ROUTES = [
   'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
   'batch', 'job-orders', 'qc', 'report-problem', 'settings', 'queue', 'clock',
   'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks',
-  'announcements', 'time-fix', 'approvals', 'allocate',
+  'announcements', 'time-fix', 'approvals', 'allocate', 'deliveries',
 ];
 
 describe('mobile bootstrap', () => {

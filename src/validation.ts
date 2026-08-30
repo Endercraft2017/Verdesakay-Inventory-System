@@ -834,3 +834,34 @@ export const approvalDecisionSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
   note: trimmed.max(1000).optional().nullable(),
 });
+
+// ---- Field deliveries ----
+const ymd = trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional().nullable();
+const geo = z.coerce.number().min(-180).max(180).optional().nullable();
+
+export const createDeliverySchema = z.object({
+  order_id: optionalId,
+  customer_name: trimmed.max(200).optional().nullable(),
+  address: trimmed.max(500).optional().nullable(),
+  contact_phone: trimmed.max(40).optional().nullable(),
+  scheduled_date: ymd,
+  assigned_to: optionalId,
+  notes: optionalText,
+});
+
+export const updateDeliverySchema = createDeliverySchema.partial();
+
+export const deliveryStatusSchema = z.object({
+  status: z.enum(['out_for_delivery', 'cancelled']),
+});
+
+export const deliveryCompleteSchema = z.object({
+  outcome: z.enum(['delivered', 'failed']),
+  recipient: trimmed.max(160).optional().nullable(),
+  note: trimmed.max(1000).optional().nullable(),
+  lat: geo,
+  lng: geo,
+  signature_attachment_id: optionalId,
+}).refine((v) => v.outcome !== 'failed' || (v.note && v.note.trim().length >= 3), {
+  message: 'Say why the delivery failed', path: ['note'],
+});

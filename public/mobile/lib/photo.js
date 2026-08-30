@@ -35,17 +35,18 @@
   }
 
   function attach(kind, refId, caption) {
-    return pickFile().then(function (file) {
-      var fd = new FormData();
-      fd.append('image', file, file.name || 'photo.jpg');
-      fd.append('kind', kind);
-      fd.append('ref_id', String(refId));
-      if (caption) fd.append('caption', caption);
-      mToast('Uploading photo…');
-      return API.upload('/attachments', fd)
-        .then(function (r) { mToast('Photo attached'); return r; })
-        .catch(function (e) { mToast(e.message || 'Upload failed', 'err'); throw e; });
-    });
+    return pickFile().then(function (file) { return attachBlob(kind, refId, file, file.name || 'photo.jpg', caption); });
+  }
+
+  /** Upload an already-obtained Blob/File (e.g. a signature canvas) as an attachment. */
+  function attachBlob(kind, refId, blob, filename, caption) {
+    var fd = new FormData();
+    fd.append('image', blob, filename || 'upload.png');
+    fd.append('kind', kind);
+    fd.append('ref_id', String(refId));
+    if (caption) fd.append('caption', caption);
+    return API.upload('/attachments', fd)
+      .catch(function (e) { mToast(e.message || 'Upload failed', 'err'); throw e; });
   }
 
   function view(url) {
@@ -96,5 +97,5 @@
     return strip;
   }
 
-  window.mPhoto = { capture: capture, attach: attach, thumbs: thumbs, view: view };
+  window.mPhoto = { capture: capture, attach: attach, attachBlob: attachBlob, thumbs: thumbs, view: view };
 })();

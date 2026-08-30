@@ -21,7 +21,8 @@ export type Permission =
   | 'audit.view'
   | 'mail.send'
   | 'announce'
-  | 'qc.configure';
+  | 'qc.configure'
+  | 'delivery.run' | 'delivery.manage';
 
 /** Which section a Form Builder form belongs to — drives per-section access control
     (see `forms.manage.*` permissions) and where it's organized in the nav/Data Forms.
@@ -240,11 +241,41 @@ export interface QcChecklistResult {
   note?: string | null;
 }
 
+/** A field delivery / drop with its proof of delivery. See src/routes/deliveries.routes.ts. */
+export type DeliveryStatus = 'pending' | 'out_for_delivery' | 'delivered' | 'failed' | 'cancelled';
+export interface Delivery {
+  id: number;
+  number: string;
+  order_id: number | null;
+  customer_name: string | null;
+  address: string | null;
+  contact_phone: string | null;
+  scheduled_date: string | null;
+  assigned_to: number | null;
+  status: DeliveryStatus;
+  notes: string | null;
+  pod_recipient: string | null;
+  pod_signature_attachment_id: number | null;
+  pod_lat: number | null;
+  pod_lng: number | null;
+  pod_note: string | null;
+  delivered_at: string | null;
+  delivered_by: number | null;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  order_number?: string | null;
+  assigned_to_name?: string | null;
+  delivered_by_name?: string | null;
+  item_count?: number;
+  photo_count?: number;
+}
+
 /** A photo hung off another record (QC unit inspection, damage report, …).
     See src/routes/attachments.routes.ts. */
 export interface Attachment {
   id: number;
-  kind: 'qc_unit' | 'damage' | 'problem';
+  kind: 'qc_unit' | 'damage' | 'problem' | 'delivery' | 'signature';
   ref_id: number;
   image_path: string;
   caption: string | null;

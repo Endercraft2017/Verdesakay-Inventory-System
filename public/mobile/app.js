@@ -61,7 +61,7 @@ window.MApp = (function () {
     work: 'work', 'stock-move': 'work', transfer: 'work', damage: 'work', 'new-item': 'work',
     batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work', 'job-orders': 'work',
     qc: 'work', allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
-    'my-log': 'work', item: 'work', scan: 'action',
+    'my-log': 'work', item: 'work', scan: 'action', deliveries: 'work',
     inbox: 'inbox', directory: 'inbox',
     settings: 'profile', queue: 'profile',
     clock: 'action', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home',

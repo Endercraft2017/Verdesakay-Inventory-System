@@ -51,18 +51,24 @@ describe('attachments', () => {
     expect((await ctx.api.get('/api/attachments').set(H())).status).toBe(400);
   });
 
-  it('needs inventory.adjust to upload and inventory.view to read', async () => {
+  it('gates qc_unit / damage on inventory perms, per kind', async () => {
     const hr = await createEmployee(ctx.api, token, { role: 'hr' }); // no inventory.*
-    const wh = await createEmployee(ctx.api, token, { role: 'warehouse' }); // has both
+    const wh = await createEmployee(ctx.api, token, { role: 'warehouse' }); // has inventory.adjust/view
 
     const asHr = await ctx.api.post('/api/attachments').set({ Authorization: `Bearer ${hr.token}` })
-      .field('kind', 'problem').field('ref_id', '1').attach('image', PNG, 'x.png');
+      .field('kind', 'qc_unit').field('ref_id', '1').attach('image', PNG, 'x.png');
     expect(asHr.status).toBe(403);
 
     const asWh = await ctx.api.post('/api/attachments').set({ Authorization: `Bearer ${wh.token}` })
-      .field('kind', 'problem').field('ref_id', '1').attach('image', PNG, 'x.png');
+      .field('kind', 'qc_unit').field('ref_id', '1').attach('image', PNG, 'x.png');
     expect(asWh.status).toBe(201);
-    expect((await ctx.api.get('/api/attachments?kind=problem&ref_id=1')
+    expect((await ctx.api.get('/api/attachments?kind=qc_unit&ref_id=1')
       .set({ Authorization: `Bearer ${hr.token}` })).status).toBe(403);
+
+    // a `delivery` photo needs delivery.run, not inventory.*
+    expect((await ctx.api.post('/api/attachments').set({ Authorization: `Bearer ${wh.token}` })
+      .field('kind', 'delivery').field('ref_id', '1').attach('image', PNG, 'x.png')).status).toBe(201);
+    expect((await ctx.api.post('/api/attachments').set({ Authorization: `Bearer ${hr.token}` })
+      .field('kind', 'delivery').field('ref_id', '1').attach('image', PNG, 'x.png')).status).toBe(403);
   });
 });

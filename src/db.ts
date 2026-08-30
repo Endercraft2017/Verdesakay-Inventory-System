@@ -695,6 +695,35 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_attachments_ref ON attachments(kind, ref_id);
 
+    -- Field deliveries / drops + their proof of delivery (recipient, signature,
+    -- GPS, photos). See src/routes/deliveries.routes.ts. Permission-gated:
+    -- delivery.run (do your assigned drops) / delivery.manage (plan + see all).
+    CREATE TABLE IF NOT EXISTS deliveries (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      number         TEXT NOT NULL UNIQUE,
+      order_id       INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      customer_name  TEXT,
+      address        TEXT,
+      contact_phone  TEXT,
+      scheduled_date TEXT,
+      assigned_to    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      status         TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending','out_for_delivery','delivered','failed','cancelled')),
+      notes          TEXT,
+      pod_recipient  TEXT,
+      pod_signature_attachment_id INTEGER REFERENCES attachments(id) ON DELETE SET NULL,
+      pod_lat        REAL,
+      pod_lng        REAL,
+      pod_note       TEXT,
+      delivered_at   TEXT,
+      delivered_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_deliveries_assigned ON deliveries(assigned_to, status);
+    CREATE INDEX IF NOT EXISTS idx_deliveries_date ON deliveries(scheduled_date);
+
     -- Links between a local record and its QuickBooks Online counterpart, so a re-push
     -- updates rather than duplicates. See src/quickbooks.ts.
     CREATE TABLE IF NOT EXISTS qbo_links (

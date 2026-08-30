@@ -22,9 +22,21 @@
     });
   }
 
+  function canDeliver() { return MApp.can('delivery.run') || MApp.can('delivery.manage'); }
+
+  var DELIVERY_ROW = {
+    icon: '🛻', label: 'Deliveries', sub: 'field drops + proof of delivery', route: 'deliveries', color: '#0891b2',
+    count: function () {
+      return API.get('/deliveries?mine=1').then(function (rows) {
+        return (rows || []).filter(function (r) { return r.status === 'pending' || r.status === 'out_for_delivery'; }).length;
+      });
+    },
+  };
+
   function mWorkQueue() {
     var wrap = mEl('<div class="m-wq"></div>');
-    ROWS.forEach(function (r) {
+    var rows = canDeliver() ? [DELIVERY_ROW].concat(ROWS) : ROWS;
+    rows.forEach(function (r) {
       var row = mEl(
         '<div class="m-wq-row" style="--wq:' + r.color + '">' +
         '<span class="m-wq-ic">' + r.icon + '</span>' +
@@ -57,6 +69,7 @@
       ['✅', 'My Tasks', 'tasks'], ['📝', 'Requests', 'requests'],
       ['🛠️', 'Fix a Punch', 'time-fix'], ['📅', 'My Schedule', 'schedule'],
     ];
+    if (canDeliver()) LIST.unshift(['🛻', 'Deliveries', 'deliveries']);
     if (MApp.canApprove()) LIST.unshift(['✔️', 'To Approve', 'approvals']);
     var wrap = mEl('<div class="m-wq"></div>');
     LIST.forEach(function (x) {

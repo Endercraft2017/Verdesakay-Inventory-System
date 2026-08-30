@@ -573,6 +573,16 @@ input, select, button, textarea { font-family: inherit; }
 }
 .m-photo-view img { max-width: 100%; max-height: 100%; border-radius: 8px; }
 
+/* ---------- Deliveries: signature pad + POD ---------- */
+.m-link { color: var(--m-accent); text-decoration: none; font-size: 13.5px; }
+.m-sign { border: 1px solid var(--m-border); border-radius: 10px; overflow: hidden; background: #fff; }
+.m-sign-cv { display: block; width: 100%; touch-action: none; background: #fff; }
+.m-sign-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-top: 1px solid var(--m-border); }
+.m-sign-bar span { color: #6b7688; font-size: 12px; }
+.m-sign-bar .m-sign-clear { border: 0; background: transparent; color: var(--m-accent); font-weight: 700; font-size: 12.5px; }
+.m-sign-view { margin: 8px 0; border: 1px solid var(--m-border); border-radius: 10px; background: #fff; padding: 6px; }
+.m-sign-view img { display: block; max-width: 100%; }
+
 /* ---------- Approvals deck ---------- */
 .m-appr-wrap { position: relative; }
 .m-appr-nav { display: flex; align-items: center; justify-content: center; gap: 16px; color: var(--m-muted); font-size: 12.5px; margin: 10px 0; }

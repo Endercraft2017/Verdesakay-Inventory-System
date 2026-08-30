@@ -1,20 +1,43 @@
 /** Photo attachments hung off another record — QC unit inspections, damage
- *  reports, problem reports. Files stored under UPLOAD_DIR; rows in `attachments`.
- *  Mounted at /api/attachments. */
+ *  reports, problem reports, delivery proofs (photos + signature). Files stored
+ *  under UPLOAD_DIR; rows in `attachments`. Mounted at /api/attachments.
+ *
+ *  Permissions are per `kind` (see `canRead` / `canWrite`), so a delivery driver
+ *  with only `delivery.run` can attach a POD photo without holding `inventory.*`. */
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir } from '../db';
-import { requireAuth, requirePermission } from '../auth';
+import { requireAuth } from '../auth';
 import { enforceQuota } from '../quota';
+import type { Permission } from '../types';
 
 const router = Router();
 router.use(requireAuth);
 
-const KINDS = new Set(['qc_unit', 'damage', 'problem']);
+const KINDS = new Set(['qc_unit', 'damage', 'problem', 'delivery', 'signature']);
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+/** Which permission(s) a kind needs. `[]` = any authenticated user. */
+const READ_PERMS: Record<string, Permission[]> = {
+  qc_unit: ['inventory.view'],
+  damage: ['inventory.view'],
+  problem: [],
+  delivery: ['delivery.run', 'delivery.manage'],
+  signature: ['delivery.run', 'delivery.manage'],
+};
+const WRITE_PERMS: Record<string, Permission[]> = {
+  qc_unit: ['inventory.adjust'],
+  damage: ['inventory.adjust'],
+  problem: [],
+  delivery: ['delivery.run', 'delivery.manage'],
+  signature: ['delivery.run', 'delivery.manage'],
+};
+function allows(req: Request, perms: Permission[]): boolean {
+  return perms.length === 0 || perms.some((p) => req.user!.permissions.includes(p));
+}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -39,13 +62,14 @@ interface Row {
 }
 
 // GET /api/attachments?kind=&ref_id= — list attachments for one record
-router.get('/', requirePermission('inventory.view'), (req, res) => {
+router.get('/', (req, res) => {
   const kind = String(req.query.kind || '');
   const refId = Number(req.query.ref_id);
   if (!KINDS.has(kind) || !Number.isInteger(refId) || refId <= 0) {
     res.status(400).json({ error: 'kind and ref_id are required' });
     return;
   }
+  if (!allows(req, READ_PERMS[kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   const rows = queryAll<Row>(
     `SELECT a.id, a.kind, a.ref_id, a.caption, a.created_at, u.full_name AS uploaded_by_name
      FROM attachments a LEFT JOIN users u ON u.id = a.uploaded_by
@@ -56,22 +80,28 @@ router.get('/', requirePermission('inventory.view'), (req, res) => {
 });
 
 // GET /api/attachments/:id/image — stream the file
-router.get('/:id/image', requirePermission('inventory.view'), (req, res) => {
-  const row = queryOne<Row>('SELECT image_path FROM attachments WHERE id = ?', Number(req.params.id));
+router.get('/:id/image', (req, res) => {
+  const row = queryOne<Row>('SELECT kind, image_path FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
+  if (!allows(req, READ_PERMS[row.kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   const file = path.join(uploadDir(), row.image_path);
   if (!fs.existsSync(file)) { res.status(404).json({ error: 'File missing' }); return; }
   res.sendFile(file);
 });
 
 // POST /api/attachments — { kind, ref_id, caption? } + an `image` file
-router.post('/', requirePermission('inventory.adjust'), upload.single('image'), (req, res) => {
+router.post('/', upload.single('image'), (req, res) => {
   const kind = String(req.body?.kind || '');
   const refId = Number(req.body?.ref_id);
   const caption = typeof req.body?.caption === 'string' ? req.body.caption.trim().slice(0, 300) : null;
   if (!KINDS.has(kind) || !Number.isInteger(refId) || refId <= 0) {
     if (req.file) unlink(req.file.filename);
     res.status(400).json({ error: 'kind and ref_id are required' });
+    return;
+  }
+  if (!allows(req, WRITE_PERMS[kind] ?? ['inventory.adjust'])) {
+    if (req.file) unlink(req.file.filename);
+    res.status(403).json({ error: 'Forbidden' });
     return;
   }
   if (!req.file) {
@@ -93,9 +123,10 @@ router.post('/', requirePermission('inventory.adjust'), upload.single('image'), 
 });
 
 // DELETE /api/attachments/:id
-router.delete('/:id', requirePermission('inventory.adjust'), (req, res) => {
-  const row = queryOne<Row>('SELECT image_path FROM attachments WHERE id = ?', Number(req.params.id));
+router.delete('/:id', (req, res) => {
+  const row = queryOne<Row>('SELECT kind, image_path FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
+  if (!allows(req, WRITE_PERMS[row.kind] ?? ['inventory.adjust'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   run('DELETE FROM attachments WHERE id = ?', Number(req.params.id));
   unlink(row.image_path);
   res.json({ ok: true });
