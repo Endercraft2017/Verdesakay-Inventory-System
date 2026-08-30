@@ -551,6 +551,16 @@ export const glPeriodSchema = z.object({
   end_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
+// ---- Auto-posting rules (Phase 1): which account each posted amount lands on ----
+export const postingRulesSchema = z.object({
+  ar_account_id: optionalId,
+  sales_income_account_id: optionalId,
+  output_vat_account_id: optionalId,
+  ap_account_id: optionalId,
+  purchase_expense_account_id: optionalId,
+  input_vat_account_id: optionalId,
+});
+
 export const matchToleranceSchema = z.object({
   price_pct: numCoerce.min(0).max(100).default(2),
   price_abs: numCoerce.min(0).default(0),

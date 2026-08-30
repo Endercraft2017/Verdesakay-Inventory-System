@@ -6,9 +6,12 @@
 > ledger**: chart of accounts, fiscal periods, manual journal entries (draft → post →
 > reverse, gapless numbers, closed-period lock), and the Trial Balance / P&L / Balance
 > Sheet / General Ledger reports (§5). Built modelled on **Frappe Books** (§9–10) — same
-> stack (SQLite + Node/JS); AGPL, so design reference only (reimplemented). Phases 1–5
-> below (auto-posting, VAT/EWT registers, financial-statement polish, CAS export) are the
-> roadmap.
+> stack (SQLite + Node/JS); AGPL, so design reference only (reimplemented).
+> **Phase 1a (2026-08-30)** adds **auto-posting**: a confirmed sale order and an approved
+> vendor bill post themselves to the sales / purchase journals via editable **posting
+> rules** (Books → Posting Rules), and reverse when the document is pulled back. Phases
+> 1b–5 (AR/AP subledgers + payments, VAT/EWT registers, payroll & inventory into the GL,
+> financial-statement polish, CAS export) are the roadmap.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -209,11 +212,25 @@ Invariants: balanced entries, immutable once posted (reverse, don't edit/delete)
 closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
 `tests/accounting.test.ts`. *No automation yet — a usable, CAS-shaped manual GL.*
 
-**Phase 1 — AR / AP subledgers + auto-posting sales & purchases.** Posting rules +
-`maybePost` hooks on **sale-order confirm** and **vendor-bill approve**. Customer &
-supplier become parties with a ledger. Ledger-backed **AR/AP aging**. Credit / debit
-notes. Payments (receive-from-customer, pay-supplier) as cash entries that settle
-invoices. **Sales Journal / Purchase Journal** in BIR format.
+**Phase 1 — AR / AP subledgers + auto-posting sales & purchases.**
+
+- **1a — auto-posting + posting rules. ✅ SHIPPED 2026-08-30.** `src/accounting-posting.ts`
+  (pure `buildSalesEntry` / `buildPurchaseEntry`) + `src/accounting-autopost.ts` (the
+  DB-facing `maybeAutoPostSale` / `maybeAutoPostVendorBill` / `unpostSource`, best-effort,
+  same pattern as `maybeAutoPush`). A **confirmed** sale order (`status` confirmed /
+  completed / …) posts **DR AR / CR Sales / CR Output VAT** to the *sales* journal; an
+  **approved** vendor bill posts **DR Purchases / DR Input VAT / CR AP** to the *purchase*
+  journal. Re-opening / cancelling / deleting the sale, or disputing the bill, writes a
+  reversing entry (`source_type` + `source_id` on `journal_entries` link the two; a doc is
+  never posted twice). Posting rules (which account each leg hits) are a `settings` map,
+  seeded from the default COA at ledger setup, edited at **Books → Posting Rules**
+  (`GET`/`PUT /api/accounting/ledger/posting-rules`). Skips silently when the ledger is off
+  or the entry date is in a closed period. `tests/accounting-posting.test.ts` +
+  `tests/accounting.test.ts` ("auto-posting sales & purchases (Phase 1)").
+- **1b — still to do.** Customer & supplier as first-class **parties with a ledger**;
+  ledger-backed **AR / AP aging**; **credit / debit notes**; **Payments**
+  (receive-from-customer, pay-supplier) as cash entries that settle invoices; **Sales
+  Journal / Purchase Journal** in BIR columnar format.
 
 **Phase 2 — VAT + withholding, properly.** `tax_codes` on lines; **input/output VAT**
 accounts driven by the codes; **EWT** tagging on AP → the **withholding register**.
@@ -399,7 +416,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | `JournalEntry` + `JournalEntryAccount` | `journal_entries` + `journal_lines` | ✅ **Phase 0** — draft → post, void = reversing entry, gapless `JV-` numbers |
 | `AccountingSettings` (fiscal year, base currency, enable flag) | `settings.accounting_ledger` + `accounting_periods` | ✅ **Phase 0** |
 | `NumberSeries` / `SerialNumberSeries` / `BatchSeries` | `nextSequence()` | ✅ |
-| `Defaults` (default account per doc type) | posting-rules map (Phase 1) | ⬜ |
+| `Defaults` (default account per doc type) | `settings.accounting_posting_rules` (`GET`/`PUT /ledger/posting-rules`) | ✅ **Phase 1a** — 6 legs: AR / Sales / Output VAT / AP / Purchases / Input VAT |
 
 ### Parties, items, pricing
 | Frappe Books | Verdesakay | Status |
@@ -413,8 +430,8 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 ### Sales & purchase
 | Frappe Books | Verdesakay | Status |
 |---|---|---|
-| `SalesInvoice` + `SalesInvoiceItem` | `orders` type `sale` | 🟡 → auto-post to sales journal (Phase 1) |
-| `PurchaseInvoice` + `PurchaseInvoiceItem` | `vendor_bills` | 🟡 → auto-post to purchase journal (Phase 1) |
+| `SalesInvoice` + `SalesInvoiceItem` | `orders` type `sale` | 🟡 — **Phase 1a** auto-posts a *confirmed* sale to the sales journal (DR AR / CR Sales / CR Output VAT); reverses on re-open |
+| `PurchaseInvoice` + `PurchaseInvoiceItem` | `vendor_bills` | 🟡 — **Phase 1a** auto-posts an *approved* bill to the purchase journal (DR Purchases / DR Input VAT / CR AP); reverses on dispute |
 | `SalesQuote` + items | — | ⬜ (quotation → SO) |
 | `Payment` + `PaymentFor` (allocation) + `PaymentMethod` | — | ⬜ **Phase 1** — receive-from-customer / pay-supplier, settle invoices |
 | `Tax` + `TaxDetail` + `TaxSummary` (tax templates) | `tax_percent` on docs + the VAT/EWT worksheets | 🟡 → `tax_codes` on lines (Phase 2) |

@@ -9,7 +9,7 @@ App.register('accounting-ledger', async (view, filter) => {
 
   if (!settings.enabled) { renderSetup(); return; }
 
-  const tabs = ['Chart of Accounts', 'Journal', 'Trial Balance', 'Profit & Loss', 'Balance Sheet', 'General Ledger'];
+  const tabs = ['Chart of Accounts', 'Journal', 'Trial Balance', 'Profit & Loss', 'Balance Sheet', 'General Ledger', 'Posting Rules'];
   let active = filter && filter.tab ? tabs.find((t) => t.toLowerCase().replace(/[^a-z]/g, '') === filter.tab) || tabs[0] : tabs[0];
 
   view.innerHTML = `
@@ -42,7 +42,46 @@ App.register('accounting-ledger', async (view, filter) => {
     if (active === 'Trial Balance') return trialBalance();
     if (active === 'Profit & Loss') return pnl();
     if (active === 'Balance Sheet') return balanceSheet();
+    if (active === 'Posting Rules') return postingRules();
     return generalLedger();
+  }
+
+  /* ---------- posting rules (Phase 1: auto-posting sales & purchases) ---------- */
+  async function postingRules() {
+    body.innerHTML = '<div class="empty">Loading…</div>';
+    const d = await API.get('/accounting/ledger/posting-rules');
+    const LABELS = {
+      ar_account_id: 'Accounts Receivable (sale → debit)',
+      sales_income_account_id: 'Sales / revenue (sale → credit)',
+      output_vat_account_id: 'Output VAT payable (sale → credit)',
+      ap_account_id: 'Accounts Payable (bill → credit)',
+      purchase_expense_account_id: 'Purchases / expense (bill → debit)',
+      input_vat_account_id: 'Input VAT (bill → debit)',
+    };
+    const keys = Object.keys(LABELS);
+    const opts = (root, sel) => ['<option value="">— not set —</option>'].concat(
+      d.accounts.filter((a) => a.root_type === root)
+        .map((a) => `<option value="${a.id}" ${String(sel) === String(a.id) ? 'selected' : ''}>${a.code} · ${UI.esc(a.name)}</option>`)
+    ).join('');
+    body.innerHTML = `
+      <p class="muted" style="margin-top:0">A <b>confirmed sale order</b> auto-posts to the <b>Sales</b> journal and an
+        <b>approved vendor bill</b> to the <b>Purchase</b> journal, using the accounts below. Re-opening or disputing the
+        document reverses its entry. Seeded from the default chart of accounts at setup.</p>
+      <table style="max-width:640px"><tbody>${keys.map((k) => `<tr>
+        <td style="padding:6px 10px 6px 0">${LABELS[k]}</td>
+        <td>${canManage
+          ? `<select data-rule="${k}" style="min-width:280px">${opts(d.roots[k], d.rules[k])}</select>`
+          : `<span class="muted">${d.resolved[k] ? UI.esc(d.resolved[k].code + ' · ' + d.resolved[k].name) : '— not set —'}</span>`}</td>
+      </tr>`).join('')}</tbody></table>
+      ${canManage ? `<button class="btn" id="pr-save" style="margin-top:12px">Save posting rules</button>` : ''}`;
+    const save = body.querySelector('#pr-save');
+    if (save) save.onclick = async () => {
+      const payload = {};
+      body.querySelectorAll('[data-rule]').forEach((s) => { payload[s.dataset.rule] = s.value ? Number(s.value) : null; });
+      save.disabled = true;
+      try { await API.put('/accounting/ledger/posting-rules', payload); UI.toast('Posting rules saved'); postingRules(); }
+      catch (e) { UI.toast(e.message, 'error'); save.disabled = false; }
+    };
   }
 
   /* ---------- setup ---------- */
@@ -163,7 +202,7 @@ App.register('accounting-ledger', async (view, filter) => {
       ${list.length ? `<table><thead><tr><th>No.</th><th>Date</th><th>Book</th><th>Memo</th><th class="right">Amount</th><th>Status</th></tr></thead>
         <tbody>${list.map((e) => `<tr class="clickable" data-open="${e.id}">
           <td class="mono">${UI.esc(e.number)}</td><td>${UI.esc(e.entry_date)}</td>
-          <td class="muted">${e.book.replace('_', ' ')}</td><td>${UI.esc(e.memo || '—')}</td>
+          <td class="muted">${e.book.replace('_', ' ')}</td><td>${UI.esc(e.memo || '—')}${e.source_type ? ` <span class="badge-pill muted" title="Auto-posted from a ${e.source_type.replace('_', ' ')}">auto</span>` : ''}</td>
           <td class="right">${money(e.total_debit)}</td>
           <td><span class="badge-pill ${e.status === 'posted' ? 'status-completed' : 'status-open'}">${e.status}</span>${e.reversed_by ? ' <span class="badge-pill status-cancelled">reversed</span>' : ''}</td>
         </tr>`).join('')}</tbody></table>` : UI.emptyState({ icon: 'sheet', title: 'No journal entries', hint: 'Record a manual double-entry transaction.' })}`;
@@ -190,7 +229,9 @@ App.register('accounting-ledger', async (view, filter) => {
         <div class="kv"><div><span class="muted">Date</span><div>${UI.esc(e.entry_date)}</div></div>
           <div><span class="muted">Book</span><div>${e.book.replace('_', ' ')}</div></div>
           ${e.reference ? `<div><span class="muted">Ref</span><div>${UI.esc(e.reference)}</div></div>` : ''}
+          ${e.source_type ? `<div><span class="muted">Source</span><div>${UI.esc(e.source_type.replace('_', ' '))} #${e.source_id}</div></div>` : ''}
           ${e.reverses_id ? `<div><span class="muted">Reverses</span><div>#${e.reverses_id}</div></div>` : ''}</div>
+        ${e.source_type ? `<p class="muted" style="margin:8px 0">Auto-posted. Re-open / dispute the source document to reverse it.</p>` : ''}
         ${e.memo ? `<p style="margin:8px 0">${UI.esc(e.memo)}</p>` : ''}
         ${e.reversed_by ? `<p class="muted" style="margin:8px 0">Reversed by <strong>${UI.esc(e.reversed_by)}</strong>.</p>` : ''}
         <table style="margin-top:8px"><thead><tr><th>Code</th><th>Account</th><th class="right">Debit</th><th class="right">Credit</th><th>Memo</th></tr></thead>

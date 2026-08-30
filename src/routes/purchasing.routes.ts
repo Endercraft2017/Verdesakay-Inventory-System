@@ -16,6 +16,7 @@ import {
   disputeBillSchema, matchToleranceSchema,
 } from '../validation';
 import { applyStockChange } from '../inventory-stock';
+import { maybeAutoPostVendorBill, unpostSource } from '../accounting-autopost';
 import {
   threeWayMatch, receiptStatus, DEFAULT_TOLERANCE,
   type MatchInputLine, type MatchTolerance,
@@ -409,6 +410,7 @@ router.post('/bills/:id/approve', requirePermission('orders.edit'), (req, res) =
      WHERE id = ?`,
     req.user!.id, JSON.stringify(match), note, bill.id
   );
+  maybeAutoPostVendorBill(bill.id, req.user!.id);
   res.json({ ok: true, forced: input.force && !match.ok, match });
 });
 
@@ -422,6 +424,8 @@ router.post('/bills/:id/dispute', requirePermission('orders.edit'), (req, res) =
      WHERE id = ?`,
     input.note, Number(req.params.id)
   );
+  // A bill pulled back from "approved" is no longer a payable — reverse any GL posting.
+  unpostSource('vendor_bill', Number(req.params.id), req.user!.id);
   res.json({ ok: true });
 });
 

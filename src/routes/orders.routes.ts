@@ -5,6 +5,7 @@ import { db, queryOne, queryAll, run, nextSequence } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import { parseBody, createOrderSchema, updateOrderSchema } from '../validation';
 import { getQboStatus, pushOrder } from '../quickbooks';
+import { maybeAutoPostSale, unpostSource } from '../accounting-autopost';
 import type { Order, OrderItem, OrderType } from '../types';
 
 const router = Router();
@@ -140,6 +141,7 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
     );
     insertItems(Number(info.lastInsertRowid), lines);
     db.exec('COMMIT');
+    if (input.type === 'sale') maybeAutoPostSale(Number(info.lastInsertRowid), req.user!.id);
     res.status(201).json({ id: info.lastInsertRowid, number });
     maybeAutoPush(Number(info.lastInsertRowid));
   } catch (e) {
@@ -183,6 +185,7 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
     run('DELETE FROM order_items WHERE order_id = ?', id);
     insertItems(id, lines);
     db.exec('COMMIT');
+    if (order.type === 'sale') maybeAutoPostSale(id, req.user!.id);
     res.json({ ok: true });
     maybeAutoPush(id);
   } catch (e) {
@@ -193,7 +196,10 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
 
 // DELETE /api/orders/:id (cascades items)
 router.delete('/:id', requirePermission('orders.delete'), (req, res) => {
-  const info = run('DELETE FROM orders WHERE id = ?', Number(req.params.id));
+  const id = Number(req.params.id);
+  // If this sale was posted to the ledger, reverse it before the row goes away.
+  unpostSource('sale_order', id, req.user!.id);
+  const info = run('DELETE FROM orders WHERE id = ?', id);
   if (info.changes === 0) {
     res.status(404).json({ error: 'Order not found' });
     return;

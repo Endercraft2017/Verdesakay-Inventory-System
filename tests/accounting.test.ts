@@ -214,6 +214,111 @@ describe('accounting: petty cash', () => {
   });
 });
 
+describe('accounting: auto-posting sales & purchases (Phase 1)', () => {
+  // The Phase 0 block above has already run POST /ledger/setup, so the ledger is live.
+  let soId = 0;
+  const lineByCode = (lines: { account_code: string; debit: number; credit: number }[], code: string) =>
+    lines.find((l) => l.account_code === code)!;
+
+  it('setup seeded the posting rules from the default chart of accounts', async () => {
+    const r = await ctx.api.get('/api/accounting/ledger/posting-rules').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.resolved.ar_account_id.code).toBe('1140');
+    expect(r.body.resolved.sales_income_account_id.code).toBe('4100');
+    expect(r.body.resolved.output_vat_account_id.code).toBe('2120');
+    expect(r.body.resolved.ap_account_id.code).toBe('2110');
+    expect(r.body.resolved.input_vat_account_id.code).toBe('1160');
+  });
+
+  it('rejects a posting rule pointed at the wrong root type', async () => {
+    const accs = (await ctx.api.get('/api/accounting/ledger/accounts').set(hdr())).body;
+    const rent = accs.find((a: { code: string }) => a.code === '6200').id; // an expense
+    const bad = await ctx.api.put('/api/accounting/ledger/posting-rules').set(hdr())
+      .send({ ar_account_id: rent });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatch(/expected asset/i);
+  });
+
+  it('a confirmed sale order auto-posts to the sales journal', async () => {
+    const so = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'sale', customer_name: 'Cust A', order_date: '2026-03-04', status: 'confirmed',
+      tax_percent: 12,
+      items: [{ name: 'Widget', quantity: 10, unit_price: 100 }], // subtotal 1000, VAT 120, total 1120
+    });
+    expect(so.status).toBe(201);
+    soId = so.body.id;
+
+    const list = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'sale_order', source_id: soId }).set(hdr());
+    expect(list.body.length).toBe(1);
+
+    const je = (await ctx.api.get(`/api/accounting/ledger/journal-entries/${list.body[0].id}`).set(hdr())).body;
+    expect(je.status).toBe('posted');
+    expect(je.book).toBe('sales');
+    expect(lineByCode(je.lines, '1140').debit).toBe(1120);
+    expect(lineByCode(je.lines, '4100').credit).toBe(1000);
+    expect(lineByCode(je.lines, '2120').credit).toBe(120);
+  });
+
+  it('re-saving the still-confirmed order does not post a second entry', async () => {
+    await ctx.api.put(`/api/orders/${soId}`).set(hdr()).send({
+      customer_name: 'Cust A (rev)', order_date: '2026-03-04', status: 'confirmed', tax_percent: 12,
+      items: [{ name: 'Widget', quantity: 10, unit_price: 100 }],
+    });
+    const list = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'sale_order', source_id: soId }).set(hdr());
+    expect(list.body.length).toBe(1);
+  });
+
+  it('pulling the order back to open reverses the posting', async () => {
+    await ctx.api.put(`/api/orders/${soId}`).set(hdr()).send({
+      customer_name: 'Cust A', order_date: '2026-03-04', status: 'open', tax_percent: 12,
+      items: [{ name: 'Widget', quantity: 10, unit_price: 100 }],
+    });
+    const list = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'sale_order', source_id: soId }).set(hdr());
+    expect(list.body.length).toBe(2); // original + reversal, both posted
+    const tb = await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr());
+    expect(tb.body.balanced).toBe(true);
+  });
+
+  it('an approved vendor bill auto-posts to the purchase journal', async () => {
+    const loc = (await ctx.api.get('/api/locations').set(hdr())).body
+      .find((l: { is_default: number }) => l.is_default === 1).id;
+    const item = (await ctx.api.post('/api/inventory').set(hdr())
+      .send({ name: 'P1 Widget', quantity: 0 })).body.id;
+    const po = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'purchase', order_date: '2026-03-10', tax_percent: 12,
+      items: [{ item_id: item, name: 'P1 Widget', quantity: 5, unit_price: 200 }], // sub 1000, VAT 120, total 1120
+    });
+    const oi = (await ctx.api.get(`/api/orders/${po.body.id}`).set(hdr())).body.items[0].id;
+    await ctx.api.post(`/api/purchasing/orders/${po.body.id}/receipts`).set(hdr())
+      .send({ location_id: loc, lines: [{ order_item_id: oi, item_id: item, name: 'P1 Widget', quantity: 5 }] });
+    const bill = await ctx.api.post(`/api/purchasing/orders/${po.body.id}/bills`).set(hdr())
+      .send({ bill_date: '2026-03-10', tax_percent: 12,
+        lines: [{ order_item_id: oi, item_id: item, name: 'P1 Widget', quantity: 5, unit_price: 200 }] });
+    const appr = await ctx.api.post(`/api/purchasing/bills/${bill.body.id}/approve`).set(hdr()).send({});
+    expect(appr.status).toBe(200);
+
+    const list = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'vendor_bill', source_id: bill.body.id }).set(hdr());
+    expect(list.body.length).toBe(1);
+    const je = (await ctx.api.get(`/api/accounting/ledger/journal-entries/${list.body[0].id}`).set(hdr())).body;
+    expect(je.book).toBe('purchase');
+    expect(lineByCode(je.lines, '5100').debit).toBe(1000);
+    expect(lineByCode(je.lines, '1160').debit).toBe(120);
+    expect(lineByCode(je.lines, '2110').credit).toBe(1120);
+
+    // disputing the approved bill reverses it
+    await ctx.api.post(`/api/purchasing/bills/${bill.body.id}/dispute`).set(hdr()).send({ note: 'wrong price' });
+    const after = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'vendor_bill', source_id: bill.body.id }).set(hdr());
+    expect(after.body.length).toBe(2);
+    const tb = await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr());
+    expect(tb.body.balanced).toBe(true);
+  });
+});
+
 describe('accounting: statutory deductions per employee', () => {
   it('lists employees with all four switches defaulting on; PUT toggles them; needs accounting.manage', async () => {
     const e1 = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'SD-1', name: 'Deduct One', daily_rate: 900 });

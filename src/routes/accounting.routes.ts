@@ -13,10 +13,14 @@ import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } fro
 import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody, statutoryDeductionsSchema, pettyCashFundSchema, pettyCashEntrySchema,
-  ledgerSetupSchema, accountSchema, journalEntrySchema, glPeriodSchema,
+  ledgerSetupSchema, accountSchema, journalEntrySchema, glPeriodSchema, postingRulesSchema,
 } from '../validation';
 import { toCsv } from '../csv';
 import { validateJournalLines, accountBalance, DEFAULT_COA, type JournalLineInput } from '../ledger';
+import {
+  getPostingRules, setPostingRules, seedPostingRulesFromCoa,
+} from '../accounting-autopost';
+import { POSTING_RULE_KEYS, type PostingRules } from '../accounting-posting';
 import type {
   PettyCashFund, PettyCashEntry, Account, JournalEntry, JournalLine, AccountingPeriod,
   AccountRootType,
@@ -548,6 +552,7 @@ router.post('/ledger/setup', requirePermission('accounting.manage'), (req, res) 
     db.exec('ROLLBACK');
     throw e;
   }
+  seedPostingRulesFromCoa();   // wire the default COA into the auto-posting rules
   res.status(201).json({ ok: true, seeded: !already });
 });
 
@@ -694,6 +699,59 @@ router.post('/ledger/periods/:id/:action(close|reopen)', requirePermission('acco
   res.json({ ok: true, status: closing ? 'closed' : 'open' });
 });
 
+/* ------------------------------------------------------------- auto-posting rules --- */
+/* Which account each auto-posted amount lands on. Seeded from the default COA at setup;
+   editable here. Sale-order confirm -> sales journal; vendor-bill approve -> purchase
+   journal (src/accounting-autopost.ts). */
+
+const POSTING_RULE_ROOT: Record<keyof PostingRules, AccountRootType> = {
+  ar_account_id: 'asset',
+  sales_income_account_id: 'income',
+  output_vat_account_id: 'liability',
+  ap_account_id: 'liability',
+  purchase_expense_account_id: 'expense',
+  input_vat_account_id: 'asset',
+};
+
+function postingRulesPayload() {
+  const rules = getPostingRules();
+  const accts = queryAll<{ id: number; code: string; name: string; root_type: AccountRootType }>(
+    "SELECT id, code, name, root_type FROM accounts WHERE is_group = 0 AND archived = 0 ORDER BY code");
+  const byId = new Map(accts.map((a) => [a.id, a]));
+  const resolved: Record<string, { account_id: number; code: string; name: string } | null> = {};
+  for (const k of POSTING_RULE_KEYS) {
+    const id = rules[k];
+    const a = id ? byId.get(Number(id)) : undefined;
+    resolved[k] = a ? { account_id: a.id, code: a.code, name: a.name } : null;
+  }
+  return { rules, resolved, roots: POSTING_RULE_ROOT, accounts: accts };
+}
+
+router.get('/ledger/posting-rules', (_req, res) => {
+  if (!requireLedger(res)) return;
+  res.json(postingRulesPayload());
+});
+
+router.put('/ledger/posting-rules', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const b = parseBody(postingRulesSchema, req.body);
+  for (const k of POSTING_RULE_KEYS) {
+    const id = b[k];
+    if (id == null) continue;
+    const a = queryOne<{ is_group: number; archived: number; root_type: AccountRootType }>(
+      'SELECT is_group, archived, root_type FROM accounts WHERE id = ?', id);
+    if (!a) { res.status(400).json({ error: `${k}: account not found.` }); return; }
+    if (a.is_group) { res.status(400).json({ error: `${k}: pick a leaf account, not a group.` }); return; }
+    if (a.archived) { res.status(400).json({ error: `${k}: that account is archived.` }); return; }
+    if (a.root_type !== POSTING_RULE_ROOT[k]) {
+      res.status(400).json({ error: `${k}: expected ${POSTING_RULE_ROOT[k]} account, got ${a.root_type}.` });
+      return;
+    }
+  }
+  setPostingRules(b as Partial<PostingRules>);
+  res.json(postingRulesPayload());
+});
+
 /* --------------------------------------------------------------- journal entries --- */
 
 router.get('/ledger/journal-entries', (req, res) => {
@@ -705,6 +763,9 @@ router.get('/ledger/journal-entries', (req, res) => {
   if (typeof q.to === 'string') { where.push('je.entry_date <= ?'); params.push(q.to); }
   if (typeof q.book === 'string') { where.push('je.book = ?'); params.push(q.book); }
   if (typeof q.status === 'string') { where.push('je.status = ?'); params.push(q.status); }
+  if (typeof q.source_type === 'string') { where.push('je.source_type = ?'); params.push(q.source_type); }
+  if (q.source_id != null && q.source_id !== '') { where.push('je.source_id = ?'); params.push(Number(q.source_id)); }
+  if (q.auto === '1') where.push('je.source_type IS NOT NULL');
   if (typeof q.q === 'string' && q.q.trim()) {
     where.push('(je.number LIKE ? OR je.memo LIKE ? OR je.reference LIKE ?)');
     const like = `%${q.q.trim()}%`; params.push(like, like, like);
