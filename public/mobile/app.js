@@ -54,17 +54,17 @@ window.MApp = (function () {
   function setTitle(t) { document.getElementById('m-title').textContent = t || 'Home'; }
 
   /* ---------- chrome: tabs + segments ---------- */
-  var TAB_ROOTS = { home: 1, work: 1, scan: 1, inbox: 1, settings: 1 };
-  // which bottom tab lights up for a given route
+  var TAB_ROOTS = { home: 1, work: 1, scan: 1, clock: 1, inbox: 1, settings: 1 };
+  // which bottom tab lights up for a given route ('action' = the role Scan/Clock tab)
   var TAB_OF = {
     home: 'home',
     work: 'work', 'stock-move': 'work', transfer: 'work', damage: 'work', 'new-item': 'work',
     batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work', 'job-orders': 'work',
     qc: 'work', allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
-    'my-log': 'work', item: 'work', scan: 'center',
+    'my-log': 'work', item: 'work', scan: 'action',
     inbox: 'inbox', directory: 'inbox',
     settings: 'profile', queue: 'profile',
-    clock: 'center', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home',
+    clock: 'action', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home',
     tasks: 'work', approvals: 'home', announcements: 'home', 'report-problem': 'home',
   };
   var SEGMENTS = ['me', 'approvals', 'people', 'warehouse'];
@@ -87,19 +87,20 @@ window.MApp = (function () {
   }
   function seg() { return currentSeg(); }
 
-  /** The centre action button: Scan for warehouse, Clock for other employees. */
-  function fabConfig() {
+  /** The role action tab (left of the raised Home button): Scan for warehouse,
+      Clock for other employees. */
+  function actionConfig() {
     if (isWarehouse()) {
       return { route: 'scan', label: 'Scan',
-        svg: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M4 12h16"/></svg>' };
+        svg: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M4 12h16"/></svg>' };
     }
     return { route: 'clock', label: 'Clock',
-      svg: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' };
+      svg: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' };
   }
 
   function paintChrome(parsed) {
     var name = parsed.name;
-    var isRoot = !!TAB_ROOTS[name] || name === fabConfig().route;
+    var isRoot = !!TAB_ROOTS[name] || name === actionConfig().route;
     document.getElementById('m-back').classList.toggle('hidden', isRoot);
 
     // segmented control only on Home; hide segments that don't apply to this user
@@ -116,8 +117,7 @@ window.MApp = (function () {
 
     // active bottom tab
     var activeTab = name === 'home' ? 'home' : (TAB_OF[name] || 'home');
-    var fab = fabConfig();
-    if (name === fab.route) activeTab = 'center';
+    if (name === actionConfig().route) activeTab = 'action';
     document.querySelectorAll('#m-tabbar .m-tab').forEach(function (t) {
       t.classList.toggle('on', t.dataset.tab === activeTab);
     });
@@ -194,12 +194,12 @@ window.MApp = (function () {
     appScreen().classList.remove('hidden');
     document.getElementById('m-tabbar').classList.remove('hidden');
 
-    // paint the role-aware centre button once we know the user
-    var fab = fabConfig();
-    var fi = document.getElementById('m-fab-icon');
-    var fl = document.getElementById('m-fab-lbl');
-    if (fi) fi.innerHTML = fab.svg;
-    if (fl) fl.textContent = fab.label;
+    // paint the role-aware action tab (Scan / Clock) once we know the user
+    var act = actionConfig();
+    var ai = document.getElementById('m-action-icon');
+    var al = document.getElementById('m-action-lbl');
+    if (ai) ai.innerHTML = act.svg;
+    if (al) al.textContent = act.label;
 
     refreshInboxBadge();
     if (!location.hash || location.hash === '#' || location.hash === '#/') {
@@ -235,7 +235,7 @@ window.MApp = (function () {
         var tab = t.dataset.tab;
         if (tab === 'home') go('home', { seg: currentSeg() });
         else if (tab === 'work') go('work');
-        else if (tab === 'center') go(fabConfig().route);
+        else if (tab === 'action') go(actionConfig().route);
         else if (tab === 'inbox') go('inbox');
         else if (tab === 'profile') go('settings');
       };

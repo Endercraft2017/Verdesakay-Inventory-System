@@ -184,14 +184,13 @@
     MApp.setTitle('Warehouse');
     view.innerHTML = '';
 
-    var scan = mEl(
-      '<button class="m-scanbar"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M4 12h16"/></svg>' +
-      '<span>Scan or enter item</span>' +
-      '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="4"/><path d="M9 4h6l1 2h3v12H5V6h3z"/></svg></button>'
-    );
-    scan.onclick = function () { MApp.go('scan'); };
-    view.appendChild(scan);
-    view.appendChild(mEl('<div class="m-scanbar-sub">or enter SKU / name manually</div>'));
+    // Type an item name / SKU (or scan) → open its Scan Result.
+    var picker = mItemPicker({
+      label: 'Search or scan an item',
+      onPick: function (it) { MApp.go('item', { id: it.id }); },
+    });
+    view.appendChild(picker.el);
+    view.appendChild(mEl('<div class="m-scanbar-sub">type a name or SKU, or tap the scanner</div>'));
 
     var stat = mEl('<div class="m-stat3">' +
       '<button data-go="low-stock"><span class="n" data-k="low">–</span><span class="l warn">Low Stock</span></button>' +

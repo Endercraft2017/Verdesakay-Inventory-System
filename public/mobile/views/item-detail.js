@@ -88,27 +88,7 @@
       view.appendChild(ul);
     }
 
-    // ---- arc action menu ----
-    var arc = mEl('<div class="m-arc"></div>');
-    var ACTIONS = [
-      { key: 'in', label: 'In', fn: function () { mStockMoveForm(view, { item: it, mode: 'in' }); } },
-      { key: 'out', label: 'Out', fn: function () { mStockMoveForm(view, { item: it, mode: 'out' }); } },
-      { key: 'transfer', label: 'Transfer', fn: function () { mTransferForm(view, it); } },
-      { key: 'damage', label: 'Damage', warn: true, fn: function () { mDamageForm(view, it); } },
-      { key: 'qa', label: 'QA', dim: !it.is_finished_product, fn: function () {
-          if (!it.is_finished_product) { mToast('Not a finished product', 'err'); return; }
-          MApp.go('qc');
-        } },
-    ];
-    ACTIONS.forEach(function (a) {
-      var b = mEl('<button class="' + (a.warn ? 'warn' : '') + '"' + (a.dim ? ' disabled' : '') +
-        '><span class="ic">' + icon(a.key) + '</span>' + mEsc(a.label) + '</button>');
-      b.onclick = a.fn;
-      arc.appendChild(b);
-    });
-    view.appendChild(arc);
-
-    // secondary chips
+    // secondary chips (in normal flow)
     var chips = mEl('<div class="m-detail-acts" style="margin-top:14px"></div>');
     [
       ['Add QR', function () { MApp.go('assign-qr', { id: it.id }); }],
@@ -120,6 +100,28 @@
       chips.appendChild(b);
     });
     view.appendChild(chips);
+    view.appendChild(mEl('<div class="m-arc-spacer"></div>'));
+
+    // ---- arc action menu, docked above the bottom bar ----
+    var arc = mEl('<div class="m-arc"></div>');
+    [
+      { key: 'in', label: 'In', fn: function () { mStockMoveForm(view, { item: it, mode: 'in' }); } },
+      { key: 'out', label: 'Out', fn: function () { mStockMoveForm(view, { item: it, mode: 'out' }); } },
+      { key: 'transfer', label: 'Transfer', fn: function () { mTransferForm(view, it); } },
+      { key: 'damage', label: 'Damage', warn: true, fn: function () { mDamageForm(view, it); } },
+      { key: 'qa', label: 'QA', dim: !it.is_finished_product, fn: function () {
+          if (!it.is_finished_product) { mToast('Not a finished product', 'err'); return; }
+          MApp.go('qc');
+        } },
+    ].forEach(function (a) {
+      var b = mEl('<button class="' + (a.warn ? 'warn' : '') + '"' + (a.dim ? ' disabled' : '') +
+        '><span class="ic">' + icon(a.key) + '</span>' + mEsc(a.label) + '</button>');
+      b.onclick = a.fn;
+      arc.appendChild(b);
+    });
+    var dock = mEl('<div class="m-arc-dock"></div>');
+    dock.appendChild(arc);
+    view.appendChild(dock);
   }
 
   function start(view, params) {
