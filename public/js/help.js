@@ -362,6 +362,31 @@
         <code>docs/ACCOUNTING-SYSTEM-PLAN.md</code>.</p>`,
     },
     {
+      id: 'gl-books', title: 'Books (general ledger)', group: 'Accounting', routes: ['accounting-ledger'],
+      html: `
+        <p><b>Accounting → General Ledger → Books</b> is the double-entry ledger — the
+        BIR "Books of Accounts" in one place.</p>
+        <ul>
+          <li><b>Set up books</b> (once, needs <i>Accounting: manage</i>) creates a
+              standard Philippine SMB <b>chart of accounts</b> and your first fiscal
+              year. Everything is editable after.</li>
+          <li><b>Chart of Accounts</b> — the account tree. <b>Group</b> accounts are
+              headers you can't post to; leaf accounts hold the balances. An account with
+              entries can be renamed/archived but not deleted or re-typed.</li>
+          <li><b>Journal</b> — record a manual transaction: pick accounts, put amounts in
+              the <b>Debit</b> or <b>Credit</b> column; totals must match. Save as a
+              <b>draft</b>, then <b>Post</b> it. A posted entry is never edited or
+              deleted — <b>Reverse</b> it and a mirror entry is posted, leaving both in
+              the ledger.</li>
+          <li><b>Trial Balance / Profit &amp; Loss / Balance Sheet / General Ledger</b> —
+              live reports from the posted entries.</li>
+          <li><b>Periods</b> — closing a period locks posting into its dates.</li>
+        </ul>
+        <p>This is <b>Phase 0</b>. Auto-posting from invoices, bills and payslips, plus
+        the BIR books/SLSP exports, come next — see
+        <code>docs/ACCOUNTING-SYSTEM-PLAN.md</code>.</p>`,
+    },
+    {
       id: 'petty-cash', title: 'Petty Cash', group: 'Accounting', routes: ['accounting-petty-cash'],
       html: `
         <p><b>Accounting → Cash → Petty Cash</b> is a running record of the office cash

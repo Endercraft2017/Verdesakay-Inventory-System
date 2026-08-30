@@ -28,6 +28,7 @@ session.
 | [BIR Form 1601-C](bir-1601c.md) | Payroll admin | The monthly withholding-tax remittance worksheet; how it reconciles to 1604-C |
 | [BIR 1604-C Alphalist](bir-alphalist.md) | Payroll admin | Generating the Schedule 1 Alphalist of Employees CSV, and how to turn it into the `.DAT` |
 | [Tax & compliance (BIR + agency forms)](final-pay-and-contributions.md) | Accounting / payroll admin | Accounting → Tax & Compliance (1601-C, 1604-C + reconciliation, Alphalist, 2316, 0619-E, 2550M, SSS/PhilHealth/Pag-IBIG schedules) and HR's final-pay / 13th-month worksheets |
+| [Books — the general ledger](general-ledger.md) | Bookkeeper / accountant | Setting up the chart of accounts, recording & posting journal entries, closing periods, and the Trial Balance / P&L / Balance Sheet / GL reports (Phase 0) |
 
 ## Writing a new guide
 

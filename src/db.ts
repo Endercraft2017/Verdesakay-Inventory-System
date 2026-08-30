@@ -803,6 +803,70 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_pce_fund ON petty_cash_entries(fund_id, entry_date);
 
+    -- Double-entry general ledger (ACCOUNTING-SYSTEM-PLAN.md Phase 0), modelled on
+    -- Frappe Books: Account (tree) / JournalEntry + JournalEntryAccount / Accounting
+    -- LedgerEntry. journal_lines of a posted entry ARE the ledger. Gated by
+    -- settings.accounting_ledger.enabled; POST /accounting/ledger/setup seeds the COA.
+    CREATE TABLE IF NOT EXISTS accounts (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      code         TEXT NOT NULL UNIQUE,
+      name         TEXT NOT NULL,
+      root_type    TEXT NOT NULL CHECK (root_type IN ('asset','liability','equity','income','expense')),
+      account_type TEXT,                          -- cash/bank/receivable/payable/tax/stock/cogs/depreciation/round_off/…
+      parent_id    INTEGER REFERENCES accounts(id) ON DELETE RESTRICT,
+      is_group     INTEGER NOT NULL DEFAULT 0,    -- header node, not directly postable
+      currency     TEXT NOT NULL DEFAULT 'PHP',
+      description  TEXT,
+      archived     INTEGER NOT NULL DEFAULT 0,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
+
+    CREATE TABLE IF NOT EXISTS accounting_periods (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date   TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+      closed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      closed_at  TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS journal_entries (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      number      TEXT NOT NULL UNIQUE,           -- JV-000001, gapless
+      book        TEXT NOT NULL DEFAULT 'general'
+                    CHECK (book IN ('general','sales','purchase','cash_receipts','cash_disbursements','payroll')),
+      entry_date  TEXT NOT NULL,
+      memo        TEXT,
+      reference   TEXT,
+      source_type TEXT,                           -- 'order' | 'vendor_bill' | 'payslip' | 'petty_cash' | … (auto-post link)
+      source_id   INTEGER,
+      status      TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','posted','void')),
+      reverses_id INTEGER REFERENCES journal_entries(id) ON DELETE SET NULL,
+      posted_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      posted_at   TEXT,
+      created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_je_date ON journal_entries(entry_date);
+    CREATE INDEX IF NOT EXISTS idx_je_source ON journal_entries(source_type, source_id);
+
+    CREATE TABLE IF NOT EXISTS journal_lines (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      entry_id   INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+      account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+      debit      REAL NOT NULL DEFAULT 0,
+      credit     REAL NOT NULL DEFAULT 0,
+      party_type TEXT,                            -- 'customer' | 'supplier' | 'employee'
+      party_id   INTEGER,
+      memo       TEXT,
+      sort       INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_jl_entry ON journal_lines(entry_id);
+    CREATE INDEX IF NOT EXISTS idx_jl_account ON journal_lines(account_id);
+
     -- Full-text index for the AI knowledge search (RAG). Rebuilt by src/rag.ts;
     -- rows carry an ACL (permission key) + optional dept_id for retrieval filtering.
     CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks USING fts5(

@@ -69,6 +69,100 @@ describe('accounting: permission gate', () => {
   });
 });
 
+describe('accounting: general ledger (Phase 0)', () => {
+  let cash = 0, sales = 0, ar = 0, rent = 0;
+
+  it('setup seeds the chart of accounts + fiscal year and enables the ledger', async () => {
+    const wh = await createEmployee(ctx.api, token, { role: 'warehouse', username: 'gl_wh' });
+    expect((await ctx.api.post('/api/accounting/ledger/setup').set('Authorization', `Bearer ${wh.token}`)
+      .send({ fiscal_year_start: '2026-01-01' })).status).toBe(403);
+
+    const s = await ctx.api.post('/api/accounting/ledger/setup').set(hdr()).send({ fiscal_year_start: '2026-01-01' });
+    expect(s.status).toBe(201);
+    const st = await ctx.api.get('/api/accounting/ledger/settings').set(hdr());
+    expect(st.body.enabled).toBe(true);
+    expect(st.body.accounts).toBeGreaterThan(30);
+
+    const accs = (await ctx.api.get('/api/accounting/ledger/accounts').set(hdr())).body;
+    cash = accs.find((a: { code: string }) => a.code === '1110').id;
+    ar = accs.find((a: { code: string }) => a.code === '1140').id;
+    sales = accs.find((a: { code: string }) => a.code === '4100').id;
+    rent = accs.find((a: { code: string }) => a.code === '6200').id;
+  });
+
+  it('rejects an unbalanced entry, posts a balanced one with a gapless number', async () => {
+    const bad = await ctx.api.post('/api/accounting/ledger/journal-entries').set(hdr()).send({
+      entry_date: '2026-02-01', lines: [{ account_id: cash, debit: 1000 }, { account_id: sales, credit: 900 }],
+    });
+    expect(bad.status).toBe(400);
+
+    const je = await ctx.api.post('/api/accounting/ledger/journal-entries').set(hdr()).send({
+      entry_date: '2026-02-01', memo: 'Cash sale',
+      lines: [{ account_id: cash, debit: 1000 }, { account_id: sales, credit: 1000 }],
+    });
+    expect(je.status).toBe(201);
+    expect(je.body.number).toMatch(/^JV-\d{6}$/);
+
+    const posted = await ctx.api.post(`/api/accounting/ledger/journal-entries/${je.body.id}/post`).set(hdr()).send({});
+    expect(posted.status).toBe(200);
+    // a second post is rejected
+    expect((await ctx.api.post(`/api/accounting/ledger/journal-entries/${je.body.id}/post`).set(hdr()).send({})).status).toBe(409);
+  });
+
+  it('void posts an equal-and-opposite reversing entry', async () => {
+    const je = await ctx.api.post('/api/accounting/ledger/journal-entries').set(hdr()).send({
+      entry_date: '2026-02-05', memo: 'Rent on account',
+      lines: [{ account_id: rent, debit: 5000 }, { account_id: ar, credit: 5000 }],
+    });
+    await ctx.api.post(`/api/accounting/ledger/journal-entries/${je.body.id}/post`).set(hdr()).send({});
+    const v = await ctx.api.post(`/api/accounting/ledger/journal-entries/${je.body.id}/void`).set(hdr()).send({});
+    expect(v.status).toBe(200);
+    const rev = await ctx.api.get(`/api/accounting/ledger/journal-entries/${v.body.reversal_id}`).set(hdr());
+    expect(rev.body.reverses_id).toBe(je.body.id);
+    const rentLine = rev.body.lines.find((l: { account_id: number }) => l.account_id === rent);
+    expect(rentLine.credit).toBe(5000);   // debit and credit swapped
+    // net effect of the rent account is now zero
+    const tb = await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr());
+    expect(tb.body.balanced).toBe(true);
+    expect(tb.body.rows.some((r: { account_id: number }) => r.account_id === rent)).toBe(false);
+  });
+
+  it('trial balance, P&L and balance sheet tie out', async () => {
+    const tb = await ctx.api.get('/api/accounting/ledger/reports/trial-balance?as_of=2026-12-31').set(hdr());
+    expect(tb.body.balanced).toBe(true);
+    expect(tb.body.total_debit).toBe(tb.body.total_credit);
+
+    const pnl = await ctx.api.get('/api/accounting/ledger/reports/profit-and-loss?from=2026-01-01&to=2026-12-31').set(hdr());
+    expect(pnl.body.total_income).toBe(1000);   // only the surviving cash sale
+    expect(pnl.body.net_income).toBe(1000);
+
+    const bs = await ctx.api.get('/api/accounting/ledger/reports/balance-sheet?as_of=2026-12-31').set(hdr());
+    expect(bs.body.balanced).toBe(true);
+    expect(bs.body.equity.current_period_earnings).toBe(1000);
+    expect(bs.body.total_assets).toBe(bs.body.total_liabilities_and_equity);
+  });
+
+  it('a closed period blocks posting into it', async () => {
+    const p = await ctx.api.post('/api/accounting/ledger/periods').set(hdr())
+      .send({ name: 'Jan 2026', start_date: '2026-01-01', end_date: '2026-01-31' });
+    await ctx.api.post(`/api/accounting/ledger/periods/${p.body.id}/close`).set(hdr()).send({});
+    const je = await ctx.api.post('/api/accounting/ledger/journal-entries').set(hdr()).send({
+      entry_date: '2026-01-15', lines: [{ account_id: cash, debit: 10 }, { account_id: sales, credit: 10 }],
+    });
+    const posted = await ctx.api.post(`/api/accounting/ledger/journal-entries/${je.body.id}/post`).set(hdr()).send({});
+    expect(posted.status).toBe(409);
+    expect(posted.body.error).toMatch(/closed period/i);
+  });
+
+  it('an account with entries cannot be deleted or re-typed', async () => {
+    expect((await ctx.api.delete(`/api/accounting/ledger/accounts/${cash}`).set(hdr())).status).toBe(409);
+    const acc = (await ctx.api.get('/api/accounting/ledger/accounts').set(hdr())).body.find((a: { id: number }) => a.id === cash);
+    const put = await ctx.api.put(`/api/accounting/ledger/accounts/${cash}`).set(hdr())
+      .send({ ...acc, root_type: 'expense' });
+    expect(put.status).toBe(409);
+  });
+});
+
 describe('accounting: petty cash', () => {
   it('fund + money in/out with a running balance, opening carry, delete, and gates', async () => {
     // warehouse (no accounting.manage) can't create a fund

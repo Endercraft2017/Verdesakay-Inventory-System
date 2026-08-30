@@ -9,13 +9,18 @@
  *  - SSS R-3 / PhilHealth RF-1 / Pag-IBIG MCRF      — statutory contribution schedules
  */
 import { Router } from 'express';
-import { db, queryOne, queryAll, run } from '../db';
+import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import {
   parseBody, statutoryDeductionsSchema, pettyCashFundSchema, pettyCashEntrySchema,
+  ledgerSetupSchema, accountSchema, journalEntrySchema, glPeriodSchema,
 } from '../validation';
 import { toCsv } from '../csv';
-import type { PettyCashFund, PettyCashEntry } from '../types';
+import { validateJournalLines, accountBalance, DEFAULT_COA, type JournalLineInput } from '../ledger';
+import type {
+  PettyCashFund, PettyCashEntry, Account, JournalEntry, JournalLine, AccountingPeriod,
+  AccountRootType,
+} from '../types';
 import { effectiveTables } from '../payroll-tables';
 import { compute2316 } from '../ph-2316';
 import {
@@ -461,6 +466,514 @@ router.delete('/petty-cash/entries/:id', requirePermission('accounting.manage'),
   const info = run('DELETE FROM petty_cash_entries WHERE id = ?', Number(req.params.id));
   if (!info.changes) { res.status(404).json({ error: 'Entry not found' }); return; }
   res.json({ ok: true });
+});
+
+/* ================================================================= general ledger === */
+/* Double-entry GL — ACCOUNTING-SYSTEM-PLAN.md Phase 0, modelled on Frappe Books.
+   Read = accounting.view; write (COA, post, close) = accounting.manage. */
+
+const LEDGER_KEY = 'accounting_ledger';   // { enabled, fiscal_year_start, base_currency }
+interface LedgerSettings { enabled: boolean; fiscal_year_start: string; base_currency: string; }
+const ledgerSettings = (): LedgerSettings => ({
+  enabled: false, fiscal_year_start: '', base_currency: 'PHP',
+  ...(getSetting<Partial<LedgerSettings>>(LEDGER_KEY) || {}),
+});
+function requireLedger(res: import('express').Response): boolean {
+  if (!ledgerSettings().enabled) {
+    res.status(409).json({ error: 'The general ledger is not set up yet — Accounting → Books → Set up.' });
+    return false;
+  }
+  return true;
+}
+/** Reject an entry_date that falls inside a closed accounting period. */
+function closedPeriodFor(date: string): AccountingPeriod | undefined {
+  return queryOne<AccountingPeriod>(
+    "SELECT * FROM accounting_periods WHERE status = 'closed' AND ? BETWEEN start_date AND end_date", date
+  );
+}
+function loadLines(entryId: number): JournalLine[] {
+  return queryAll<JournalLine>(`
+    SELECT jl.*, a.code AS account_code, a.name AS account_name
+    FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+    WHERE jl.entry_id = ? ORDER BY jl.sort, jl.id`, entryId);
+}
+function accountRefMap() {
+  const m = new Map<number, { id: number; is_group: number; archived: number }>();
+  for (const a of queryAll<{ id: number; is_group: number; archived: number }>(
+    'SELECT id, is_group, archived FROM accounts'
+  )) m.set(a.id, a);
+  return m;
+}
+
+// GET /api/accounting/ledger/settings
+router.get('/ledger/settings', (_req, res) => {
+  const s = ledgerSettings();
+  const counts = s.enabled
+    ? queryOne<{ accounts: number; entries: number }>(
+        'SELECT (SELECT COUNT(*) FROM accounts) AS accounts, (SELECT COUNT(*) FROM journal_entries) AS entries')
+    : { accounts: 0, entries: 0 };
+  res.json({ ...s, ...counts });
+});
+
+// POST /api/accounting/ledger/setup — seed the chart of accounts + the fiscal-year period.
+router.post('/ledger/setup', requirePermission('accounting.manage'), (req, res) => {
+  const input = parseBody(ledgerSetupSchema, req.body);
+  const already = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM accounts')?.n ?? 0;
+
+  db.exec('BEGIN');
+  try {
+    if (!already) {
+      const idByCode = new Map<string, number>();
+      for (const a of DEFAULT_COA) {
+        const info = run(
+          `INSERT INTO accounts (code, name, root_type, account_type, parent_id, is_group, currency)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          a.code, a.name, a.root_type, a.account_type ?? null,
+          a.parent ? idByCode.get(a.parent) ?? null : null, a.is_group ? 1 : 0, input.base_currency
+        );
+        idByCode.set(a.code, Number(info.lastInsertRowid));
+      }
+    }
+    const y = input.fiscal_year_start.slice(0, 4);
+    const end = new Date(input.fiscal_year_start);
+    end.setFullYear(end.getFullYear() + 1);
+    end.setDate(end.getDate() - 1);
+    if (!queryOne('SELECT id FROM accounting_periods WHERE start_date = ?', input.fiscal_year_start)) {
+      run('INSERT INTO accounting_periods (name, start_date, end_date) VALUES (?, ?, ?)',
+        `FY ${y}`, input.fiscal_year_start, end.toISOString().slice(0, 10));
+    }
+    setSetting(LEDGER_KEY, { enabled: true, fiscal_year_start: input.fiscal_year_start, base_currency: input.base_currency });
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  res.status(201).json({ ok: true, seeded: !already });
+});
+
+/* --------------------------------------------------------------- chart of accounts --- */
+
+const accountBalancesUpTo = (asOf?: string): Map<number, { debit: number; credit: number }> => {
+  const rows = queryAll<{ account_id: number; debit: number; credit: number }>(`
+    SELECT jl.account_id, SUM(jl.debit) AS debit, SUM(jl.credit) AS credit
+    FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+    WHERE je.status = 'posted' ${asOf ? 'AND je.entry_date <= ?' : ''}
+    GROUP BY jl.account_id`, ...(asOf ? [asOf] : []));
+  const m = new Map<number, { debit: number; credit: number }>();
+  for (const r of rows) m.set(r.account_id, { debit: r.debit || 0, credit: r.credit || 0 });
+  return m;
+};
+
+// GET /api/accounting/ledger/accounts?tree=1
+router.get('/ledger/accounts', (req, res) => {
+  if (!requireLedger(res)) return;
+  const bals = accountBalancesUpTo();
+  const rows = queryAll<Account>(`
+    SELECT a.*, p.code AS parent_code FROM accounts a
+    LEFT JOIN accounts p ON p.id = a.parent_id
+    ORDER BY a.code`).map((a) => {
+    const b = bals.get(a.id) || { debit: 0, credit: 0 };
+    return { ...a, balance: accountBalance(a.root_type, b.debit, b.credit) };
+  });
+  if (req.query.tree !== '1') { res.json(rows); return; }
+  const byParent = new Map<number | null, Account[]>();
+  for (const a of rows) {
+    const k = a.parent_id ?? null;
+    (byParent.get(k) || byParent.set(k, []).get(k)!).push(a);
+  }
+  const build = (pid: number | null): Account[] =>
+    (byParent.get(pid) || []).map((a) => ({ ...a, children: build(a.id) }));
+  res.json(build(null));
+});
+
+// POST /api/accounting/ledger/accounts
+router.post('/ledger/accounts', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const b = parseBody(accountSchema, req.body);
+  if (queryOne('SELECT id FROM accounts WHERE code = ?', b.code)) {
+    res.status(409).json({ error: `Account code ${b.code} is already used.` });
+    return;
+  }
+  let parentRoot: AccountRootType | null = null;
+  if (b.parent_id != null) {
+    const p = queryOne<{ root_type: AccountRootType; is_group: number }>(
+      'SELECT root_type, is_group FROM accounts WHERE id = ?', b.parent_id);
+    if (!p) { res.status(400).json({ error: 'Parent account not found.' }); return; }
+    if (!p.is_group) { res.status(400).json({ error: 'The parent must be a group account.' }); return; }
+    parentRoot = p.root_type;
+  }
+  if (parentRoot && parentRoot !== b.root_type) {
+    res.status(400).json({ error: `Root type must match the parent (${parentRoot}).` });
+    return;
+  }
+  const info = run(
+    `INSERT INTO accounts (code, name, root_type, account_type, parent_id, is_group, currency, description)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    b.code, b.name, b.root_type, b.account_type ?? null, b.parent_id ?? null,
+    b.is_group ? 1 : 0, b.currency || ledgerSettings().base_currency, b.description ?? null
+  );
+  res.status(201).json({ id: Number(info.lastInsertRowid) });
+});
+
+// PUT /api/accounting/ledger/accounts/:id  (rename / re-parent / archive; not root_type once used)
+router.put('/ledger/accounts/:id', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const id = Number(req.params.id);
+  const cur = queryOne<Account>('SELECT * FROM accounts WHERE id = ?', id);
+  if (!cur) { res.status(404).json({ error: 'Account not found' }); return; }
+  const b = parseBody(accountSchema, req.body);
+  const used = (queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM journal_lines WHERE account_id = ?', id)?.n ?? 0) > 0;
+  const hasChildren = (queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM accounts WHERE parent_id = ?', id)?.n ?? 0) > 0;
+  if (used && b.root_type !== cur.root_type) {
+    res.status(409).json({ error: 'This account already has ledger entries — its type can no longer change.' });
+    return;
+  }
+  if (b.is_group && used) {
+    res.status(409).json({ error: 'An account with entries cannot become a group.' });
+    return;
+  }
+  if (!b.is_group && hasChildren) {
+    res.status(409).json({ error: 'A group with sub-accounts cannot become a leaf.' });
+    return;
+  }
+  run(
+    `UPDATE accounts SET code = ?, name = ?, root_type = ?, account_type = ?, parent_id = ?,
+       is_group = ?, currency = ?, description = ?, archived = ? WHERE id = ?`,
+    b.code, b.name, b.root_type, b.account_type ?? null, b.parent_id ?? null,
+    b.is_group ? 1 : 0, b.currency || cur.currency, b.description ?? null,
+    b.archived ? 1 : 0, id
+  );
+  res.json({ ok: true });
+});
+
+// DELETE /api/accounting/ledger/accounts/:id — only an unused leaf with no children.
+router.delete('/ledger/accounts/:id', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const id = Number(req.params.id);
+  if ((queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM journal_lines WHERE account_id = ?', id)?.n ?? 0) > 0) {
+    res.status(409).json({ error: 'This account has ledger entries — archive it instead.' });
+    return;
+  }
+  if ((queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM accounts WHERE parent_id = ?', id)?.n ?? 0) > 0) {
+    res.status(409).json({ error: 'This account has sub-accounts — remove or re-parent them first.' });
+    return;
+  }
+  const info = run('DELETE FROM accounts WHERE id = ?', id);
+  if (!info.changes) { res.status(404).json({ error: 'Account not found' }); return; }
+  res.json({ ok: true });
+});
+
+/* ------------------------------------------------------------ accounting periods --- */
+
+router.get('/ledger/periods', (_req, res) => {
+  if (!requireLedger(res)) return;
+  res.json(queryAll<AccountingPeriod>('SELECT * FROM accounting_periods ORDER BY start_date DESC'));
+});
+
+router.post('/ledger/periods', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const b = parseBody(glPeriodSchema, req.body);
+  if (b.end_date < b.start_date) { res.status(400).json({ error: 'End date is before the start date.' }); return; }
+  const info = run('INSERT INTO accounting_periods (name, start_date, end_date) VALUES (?, ?, ?)',
+    b.name, b.start_date, b.end_date);
+  res.status(201).json({ id: Number(info.lastInsertRowid) });
+});
+
+router.post('/ledger/periods/:id/:action(close|reopen)', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM accounting_periods WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Period not found' }); return;
+  }
+  const closing = req.params.action === 'close';
+  run(
+    `UPDATE accounting_periods SET status = ?, closed_by = ?, closed_at = ? WHERE id = ?`,
+    closing ? 'closed' : 'open', closing ? req.user!.id : null,
+    closing ? new Date().toISOString() : null, id
+  );
+  res.json({ ok: true, status: closing ? 'closed' : 'open' });
+});
+
+/* --------------------------------------------------------------- journal entries --- */
+
+router.get('/ledger/journal-entries', (req, res) => {
+  if (!requireLedger(res)) return;
+  const where: string[] = [];
+  const params: unknown[] = [];
+  const q = req.query;
+  if (typeof q.from === 'string') { where.push('je.entry_date >= ?'); params.push(q.from); }
+  if (typeof q.to === 'string') { where.push('je.entry_date <= ?'); params.push(q.to); }
+  if (typeof q.book === 'string') { where.push('je.book = ?'); params.push(q.book); }
+  if (typeof q.status === 'string') { where.push('je.status = ?'); params.push(q.status); }
+  if (typeof q.q === 'string' && q.q.trim()) {
+    where.push('(je.number LIKE ? OR je.memo LIKE ? OR je.reference LIKE ?)');
+    const like = `%${q.q.trim()}%`; params.push(like, like, like);
+  }
+  res.json(queryAll<JournalEntry>(`
+    SELECT je.*, u.full_name AS created_by_name,
+           (SELECT COALESCE(SUM(debit), 0) FROM journal_lines WHERE entry_id = je.id) AS total_debit,
+           (SELECT r.number FROM journal_entries r WHERE r.reverses_id = je.id) AS reversed_by
+    FROM journal_entries je LEFT JOIN users u ON u.id = je.created_by
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ORDER BY je.entry_date DESC, je.id DESC LIMIT 500`, ...params));
+});
+
+router.get('/ledger/journal-entries/:id', (req, res) => {
+  if (!requireLedger(res)) return;
+  const je = queryOne<JournalEntry & { reversed_by?: string | null }>(`
+    SELECT je.*, u.full_name AS created_by_name,
+           (SELECT r.number FROM journal_entries r WHERE r.reverses_id = je.id) AS reversed_by
+    FROM journal_entries je LEFT JOIN users u ON u.id = je.created_by WHERE je.id = ?`, Number(req.params.id));
+  if (!je) { res.status(404).json({ error: 'Entry not found' }); return; }
+  je.lines = loadLines(je.id);
+  res.json(je);
+});
+
+function insertLines(entryId: number, lines: JournalLineInput[]): void {
+  lines.forEach((l, i) => run(
+    `INSERT INTO journal_lines (entry_id, account_id, debit, credit, party_type, party_id, memo, sort)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    entryId, l.account_id, round2(Number(l.debit) || 0), round2(Number(l.credit) || 0),
+    l.party_type ?? null, l.party_id ?? null, l.memo ?? null, i
+  ));
+}
+
+// POST /api/accounting/ledger/journal-entries — create a draft.
+router.post('/ledger/journal-entries', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const b = parseBody(journalEntrySchema, req.body);
+  const v = validateJournalLines(b.lines as JournalLineInput[], accountRefMap());
+  if (!v.ok) { res.status(400).json({ error: v.errors[0], errors: v.errors }); return; }
+
+  db.exec('BEGIN');
+  try {
+    const number = nextSequence('je_number', 'JV', 6);
+    const info = run(
+      `INSERT INTO journal_entries (number, book, entry_date, memo, reference, status, created_by)
+       VALUES (?, ?, ?, ?, ?, 'draft', ?)`,
+      number, b.book, b.entry_date, b.memo ?? null, b.reference ?? null, req.user!.id
+    );
+    insertLines(Number(info.lastInsertRowid), b.lines as JournalLineInput[]);
+    db.exec('COMMIT');
+    res.status(201).json({ id: Number(info.lastInsertRowid), number });
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+});
+
+// PUT — edit a draft.
+router.put('/ledger/journal-entries/:id', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const je = queryOne<JournalEntry>('SELECT * FROM journal_entries WHERE id = ?', Number(req.params.id));
+  if (!je) { res.status(404).json({ error: 'Entry not found' }); return; }
+  if (je.status !== 'draft') { res.status(409).json({ error: 'Only a draft entry can be edited.' }); return; }
+  const b = parseBody(journalEntrySchema, req.body);
+  const v = validateJournalLines(b.lines as JournalLineInput[], accountRefMap());
+  if (!v.ok) { res.status(400).json({ error: v.errors[0], errors: v.errors }); return; }
+  db.exec('BEGIN');
+  try {
+    run(`UPDATE journal_entries SET book = ?, entry_date = ?, memo = ?, reference = ? WHERE id = ?`,
+      b.book, b.entry_date, b.memo ?? null, b.reference ?? null, je.id);
+    run('DELETE FROM journal_lines WHERE entry_id = ?', je.id);
+    insertLines(je.id, b.lines as JournalLineInput[]);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  res.json({ ok: true });
+});
+
+// POST .../post — validate + lock into a closed-period check + mark posted.
+router.post('/ledger/journal-entries/:id/post', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const je = queryOne<JournalEntry>('SELECT * FROM journal_entries WHERE id = ?', Number(req.params.id));
+  if (!je) { res.status(404).json({ error: 'Entry not found' }); return; }
+  if (je.status !== 'draft') { res.status(409).json({ error: `Entry is already ${je.status}.` }); return; }
+  const v = validateJournalLines(loadLines(je.id) as JournalLineInput[], accountRefMap());
+  if (!v.ok) { res.status(400).json({ error: v.errors[0], errors: v.errors }); return; }
+  const closed = closedPeriodFor(je.entry_date);
+  if (closed) { res.status(409).json({ error: `${je.entry_date} falls in a closed period (${closed.name}).` }); return; }
+  run(`UPDATE journal_entries SET status = 'posted', posted_by = ?, posted_at = datetime('now') WHERE id = ?`,
+    req.user!.id, je.id);
+  res.json({ ok: true, status: 'posted' });
+});
+
+// POST .../void — a posted entry is reversed by an equal-and-opposite *posted* entry.
+// The original stays posted (both entries remain in the ledger and net to zero — CAS
+// rule: nothing is removed); the reversal's `reverses_id` links them.
+router.post('/ledger/journal-entries/:id/void', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const je = queryOne<JournalEntry>('SELECT * FROM journal_entries WHERE id = ?', Number(req.params.id));
+  if (!je) { res.status(404).json({ error: 'Entry not found' }); return; }
+  if (je.status !== 'posted') { res.status(409).json({ error: 'Only a posted entry can be reversed.' }); return; }
+  if (queryOne('SELECT id FROM journal_entries WHERE reverses_id = ?', je.id)) {
+    res.status(409).json({ error: 'This entry has already been reversed.' });
+    return;
+  }
+  const closed = closedPeriodFor(je.entry_date);
+  if (closed) { res.status(409).json({ error: `Entry is in a closed period (${closed.name}).` }); return; }
+  const lines = loadLines(je.id);
+
+  db.exec('BEGIN');
+  try {
+    const number = nextSequence('je_number', 'JV', 6);
+    const info = run(
+      `INSERT INTO journal_entries (number, book, entry_date, memo, reference, status, reverses_id, posted_by, posted_at, created_by)
+       VALUES (?, ?, ?, ?, ?, 'posted', ?, ?, datetime('now'), ?)`,
+      number, je.book, new Date().toISOString().slice(0, 10),
+      `Reversal of ${je.number}${je.memo ? ' — ' + je.memo : ''}`, je.reference ?? null,
+      je.id, req.user!.id, req.user!.id
+    );
+    const revId = Number(info.lastInsertRowid);
+    lines.forEach((l, i) => run(
+      `INSERT INTO journal_lines (entry_id, account_id, debit, credit, party_type, party_id, memo, sort)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      revId, l.account_id, round2(l.credit), round2(l.debit), l.party_type, l.party_id, l.memo, i
+    ));
+    db.exec('COMMIT');
+    res.json({ ok: true, reversal_id: revId, reversal_number: number });
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+});
+
+router.delete('/ledger/journal-entries/:id', requirePermission('accounting.manage'), (req, res) => {
+  if (!requireLedger(res)) return;
+  const je = queryOne<{ status: string }>('SELECT status FROM journal_entries WHERE id = ?', Number(req.params.id));
+  if (!je) { res.status(404).json({ error: 'Entry not found' }); return; }
+  if (je.status !== 'draft') { res.status(409).json({ error: 'Only a draft can be deleted — void a posted entry instead.' }); return; }
+  run('DELETE FROM journal_entries WHERE id = ?', Number(req.params.id));
+  res.json({ ok: true });
+});
+
+/* ---------------------------------------------------------------------- reports --- */
+
+// GET .../reports/general-ledger?account_id=&from=&to=
+router.get('/ledger/reports/general-ledger', (req, res) => {
+  if (!requireLedger(res)) return;
+  const accountId = Number(req.query.account_id);
+  const acc = queryOne<Account>('SELECT * FROM accounts WHERE id = ?', accountId);
+  if (!acc) { res.status(400).json({ error: 'Pick an account.' }); return; }
+  const from = typeof req.query.from === 'string' ? req.query.from : null;
+  const to = typeof req.query.to === 'string' ? req.query.to : null;
+
+  const opRow = from ? queryOne<{ d: number; c: number }>(`
+    SELECT COALESCE(SUM(jl.debit),0) AS d, COALESCE(SUM(jl.credit),0) AS c
+    FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+    WHERE je.status = 'posted' AND jl.account_id = ? AND je.entry_date < ?`, accountId, from) : null;
+  let running = accountBalance(acc.root_type, opRow?.d ?? 0, opRow?.c ?? 0);
+  const opening = running;
+
+  const rows = queryAll<{ id: number; number: string; entry_date: string; memo: string | null; debit: number; credit: number; line_memo: string | null }>(`
+    SELECT je.id, je.number, je.entry_date, je.memo, jl.debit, jl.credit, jl.memo AS line_memo
+    FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+    WHERE je.status = 'posted' AND jl.account_id = ?
+      ${from ? 'AND je.entry_date >= ?' : ''} ${to ? 'AND je.entry_date <= ?' : ''}
+    ORDER BY je.entry_date, je.id, jl.sort`,
+    ...[accountId, from, to].filter((x) => x != null));
+
+  const dir = acc.root_type === 'asset' || acc.root_type === 'expense' ? 1 : -1;
+  const entries = rows.map((r) => {
+    running = round2(running + dir * ((r.debit || 0) - (r.credit || 0)));
+    return { ...r, running_balance: running };
+  });
+  res.json({
+    account: acc, from, to,
+    opening_balance: opening,
+    entries,
+    total_debit: round2(rows.reduce((s, r) => s + (r.debit || 0), 0)),
+    total_credit: round2(rows.reduce((s, r) => s + (r.credit || 0), 0)),
+    closing_balance: running,
+  });
+});
+
+// GET .../reports/trial-balance?as_of=
+router.get('/ledger/reports/trial-balance', (req, res) => {
+  if (!requireLedger(res)) return;
+  const asOf = typeof req.query.as_of === 'string' ? req.query.as_of : undefined;
+  const bals = accountBalancesUpTo(asOf);
+  const accts = queryAll<Account>("SELECT * FROM accounts WHERE is_group = 0 ORDER BY code");
+  let totalDebit = 0, totalCredit = 0;
+  const rows = accts.map((a) => {
+    const b = bals.get(a.id) || { debit: 0, credit: 0 };
+    // Net debit vs net credit — every account presented on whichever side it lands.
+    const net = round2((b.debit || 0) - (b.credit || 0));
+    const dCol = round2(Math.max(net, 0));
+    const cCol = round2(Math.max(-net, 0));
+    totalDebit = round2(totalDebit + dCol);
+    totalCredit = round2(totalCredit + cCol);
+    return { code: a.code, name: a.name, root_type: a.root_type, account_id: a.id, debit: dCol, credit: cCol };
+  }).filter((r) => r.debit || r.credit);
+  res.json({ as_of: asOf ?? null, rows, total_debit: totalDebit, total_credit: totalCredit, balanced: Math.abs(totalDebit - totalCredit) < 0.01 });
+});
+
+/** Net income (income − expense) for [from, to]. */
+function netIncome(from: string, to: string): number {
+  const r = queryOne<{ inc: number; exp: number }>(`
+    SELECT
+      COALESCE(SUM(CASE WHEN a.root_type = 'income'  THEN jl.credit - jl.debit ELSE 0 END), 0) AS inc,
+      COALESCE(SUM(CASE WHEN a.root_type = 'expense' THEN jl.debit - jl.credit ELSE 0 END), 0) AS exp
+    FROM journal_lines jl
+    JOIN journal_entries je ON je.id = jl.entry_id
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE je.status = 'posted' AND je.entry_date >= ? AND je.entry_date <= ?`, from, to);
+  return round2((r?.inc ?? 0) - (r?.exp ?? 0));
+}
+
+// GET .../reports/profit-and-loss?from=&to=
+router.get('/ledger/reports/profit-and-loss', (req, res) => {
+  if (!requireLedger(res)) return;
+  const from = typeof req.query.from === 'string' ? req.query.from : ledgerSettings().fiscal_year_start;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const rows = queryAll<{ code: string; name: string; root_type: AccountRootType; amount: number }>(`
+    SELECT a.code, a.name, a.root_type,
+           SUM(CASE WHEN a.root_type = 'income' THEN jl.credit - jl.debit ELSE jl.debit - jl.credit END) AS amount
+    FROM journal_lines jl
+    JOIN journal_entries je ON je.id = jl.entry_id
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE je.status = 'posted' AND a.is_group = 0 AND a.root_type IN ('income','expense')
+      AND je.entry_date >= ? AND je.entry_date <= ?
+    GROUP BY a.id HAVING amount <> 0 ORDER BY a.code`, from, to);
+  const income = rows.filter((r) => r.root_type === 'income').map((r) => ({ ...r, amount: round2(r.amount) }));
+  const expense = rows.filter((r) => r.root_type === 'expense').map((r) => ({ ...r, amount: round2(r.amount) }));
+  const totalIncome = round2(income.reduce((s, r) => s + r.amount, 0));
+  const totalExpense = round2(expense.reduce((s, r) => s + r.amount, 0));
+  res.json({ from, to, income, expense, total_income: totalIncome, total_expense: totalExpense, net_income: round2(totalIncome - totalExpense) });
+});
+
+// GET .../reports/balance-sheet?as_of=
+router.get('/ledger/reports/balance-sheet', (req, res) => {
+  if (!requireLedger(res)) return;
+  const asOf = typeof req.query.as_of === 'string' ? req.query.as_of : new Date().toISOString().slice(0, 10);
+  const fyStart = ledgerSettings().fiscal_year_start || asOf.slice(0, 4) + '-01-01';
+  const bals = accountBalancesUpTo(asOf);
+  const accts = queryAll<Account>("SELECT * FROM accounts WHERE is_group = 0 ORDER BY code");
+
+  const sect = (root: AccountRootType) => {
+    const items = accts.filter((a) => a.root_type === root).map((a) => {
+      const b = bals.get(a.id) || { debit: 0, credit: 0 };
+      return { code: a.code, name: a.name, amount: accountBalance(root, b.debit, b.credit) };
+    }).filter((r) => r.amount !== 0);
+    return { items, total: round2(items.reduce((s, r) => s + r.amount, 0)) };
+  };
+  const assets = sect('asset');
+  const liabilities = sect('liability');
+  const equity = sect('equity');
+  const currentEarnings = netIncome(fyStart, asOf);
+  const equityWithEarnings = round2(equity.total + currentEarnings);
+
+  res.json({
+    as_of: asOf,
+    assets,
+    liabilities,
+    equity: { ...equity, current_period_earnings: currentEarnings, total_with_earnings: equityWithEarnings },
+    total_assets: assets.total,
+    total_liabilities_and_equity: round2(liabilities.total + equityWithEarnings),
+    balanced: Math.abs(assets.total - (liabilities.total + equityWithEarnings)) < 0.01,
+  });
 });
 
 export default router;

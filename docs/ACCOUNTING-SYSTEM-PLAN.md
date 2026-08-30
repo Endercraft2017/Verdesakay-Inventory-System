@@ -1,12 +1,14 @@
 # Accounting Module — Plan for a Complete Philippine System
 
-> **Status:** planning. Today the "Accounting" section has **tax & statutory reporting**
-> (BIR 1601-C / 1604-C / 2316 / Alphalist / 0619-E / 2550M worksheets + SSS / PhilHealth /
-> Pag-IBIG contribution schedules) and a **Petty Cash** register (money in / out per fund
-> — §6.5). There is **no general ledger** yet. This document plans the full double-entry
-> bookkeeping system a Philippine SMB actually needs, and the order to build it in.
-> **Decided (2026-08-30):** build it modelled on **Frappe Books** (§9) — same stack
-> (SQLite + Node/JS), SMB-scoped, readable; design reference only (AGPL, reimplement).
+> **Status:** the "Accounting" section now has **tax & statutory reporting** (BIR 1601-C /
+> 1604-C / 2316 / Alphalist / 0619-E / 2550M + SSS / PhilHealth / Pag-IBIG schedules), a
+> **Petty Cash** register (§6.5), and — as of **2026-08-30** — **Phase 0 of the general
+> ledger**: chart of accounts, fiscal periods, manual journal entries (draft → post →
+> reverse, gapless numbers, closed-period lock), and the Trial Balance / P&L / Balance
+> Sheet / General Ledger reports (§5). Built modelled on **Frappe Books** (§9–10) — same
+> stack (SQLite + Node/JS); AGPL, so design reference only (reimplemented). Phases 1–5
+> below (auto-posting, VAT/EWT registers, financial-statement polish, CAS export) are the
+> roadmap.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -197,11 +199,15 @@ statement.
 
 ## 5. Build order (phased — ship each)
 
-**Phase 0 — foundation (now-ish).** `accounts` + `accounting_periods` + `journal_entries`
-+ `journal_lines`; the default COA seed; a manual **Journal Entry** screen (draft →
-post, reversing entry, gapless numbering); **Trial Balance** + **General Ledger** +
-**Journal** views with drill-through; period open/close. *No automation yet — but it's a
-usable, CAS-shaped manual GL.*
+**Phase 0 — foundation. ✅ SHIPPED 2026-08-30.** `accounts` + `accounting_periods` +
+`journal_entries` + `journal_lines`; `src/ledger.ts` (`DEFAULT_COA` + pure validators);
+`POST /api/accounting/ledger/setup` seeds the PH SMB COA + fiscal year; **Accounting →
+General Ledger → Books** (`public/js/views/accounting-ledger.js`) — Chart of Accounts
+tree CRUD, Journal (draft → post → reverse, gapless `JV-` numbers), **Trial Balance /
+Profit & Loss / Balance Sheet / General Ledger** reports, period close/reopen.
+Invariants: balanced entries, immutable once posted (reverse, don't edit/delete),
+closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
+`tests/accounting.test.ts`. *No automation yet — a usable, CAS-shaped manual GL.*
 
 **Phase 1 — AR / AP subledgers + auto-posting sales & purchases.** Posting rules +
 `maybePost` hooks on **sale-order confirm** and **vendor-bill approve**. Customer &
@@ -304,7 +310,7 @@ the chart exists; until then it's free text.
 
 | Phase | Rough size | Unlocks |
 |---|---|---|
-| 0 — manual GL | medium | "we have books"; trial balance; CAS-shaped |
+| 0 — manual GL | medium | **done 2026-08-30** — COA, journal, TB / P&L / BS / GL, periods |
 | 1 — AR/AP + auto sales/purchases | large | the GL fills itself; real aging |
 | 2 — VAT + EWT registers + files | large | the BIR non-payroll returns |
 | 3 — payroll + inventory posting | medium | full P&L without manual entry |
@@ -377,6 +383,84 @@ None of the above ship BIR compliance. The RELIEF/SLSP `.DAT`, 2550Q, 1601-EQ + 
 PH buyer expects**, benchmark against **QuickBooks Online** (already integrated —
 `src/quickbooks.ts`), **Xero**, and the PH-local **Oojeema** / **ECOUNT** (our price-floor
 competitor).
+
+---
+
+## 10. Frappe Books feature map (the full target)
+
+Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legend:
+✅ done · 🟡 partial (exists in another form) · ⬜ to build · ➖ out of scope.
+
+### Accounting core
+| Frappe Books | Verdesakay | Status |
+|---|---|---|
+| `Account` (tree chart of accounts) | `accounts` | ✅ **Phase 0** — seeded PH SMB COA, tree CRUD |
+| `AccountingLedgerEntry` (immutable GL lines) | `journal_lines` (posted) | ✅ **Phase 0** |
+| `JournalEntry` + `JournalEntryAccount` | `journal_entries` + `journal_lines` | ✅ **Phase 0** — draft → post, void = reversing entry, gapless `JV-` numbers |
+| `AccountingSettings` (fiscal year, base currency, enable flag) | `settings.accounting_ledger` + `accounting_periods` | ✅ **Phase 0** |
+| `NumberSeries` / `SerialNumberSeries` / `BatchSeries` | `nextSequence()` | ✅ |
+| `Defaults` (default account per doc type) | posting-rules map (Phase 1) | ⬜ |
+
+### Parties, items, pricing
+| Frappe Books | Verdesakay | Status |
+|---|---|---|
+| `Party` (customer/supplier) + `Address` | `suppliers` (customers implicit on `orders`) | 🟡 — needs a real `customers` party ledger (Phase 1) |
+| `Item` + `ItemGroup` + `UOM` + `UOMConversionItem` | `inventory_items` (category, unit) | 🟡 |
+| `PriceList` + `PriceListItem` | `attributes.sale_price` per item | 🟡 |
+| `PricingRule` (+ detail/item) | — | ⬜ |
+| `Lead` / `ItemEnquiry` (light CRM) | — | ➖ |
+
+### Sales & purchase
+| Frappe Books | Verdesakay | Status |
+|---|---|---|
+| `SalesInvoice` + `SalesInvoiceItem` | `orders` type `sale` | 🟡 → auto-post to sales journal (Phase 1) |
+| `PurchaseInvoice` + `PurchaseInvoiceItem` | `vendor_bills` | 🟡 → auto-post to purchase journal (Phase 1) |
+| `SalesQuote` + items | — | ⬜ (quotation → SO) |
+| `Payment` + `PaymentFor` (allocation) + `PaymentMethod` | — | ⬜ **Phase 1** — receive-from-customer / pay-supplier, settle invoices |
+| `Tax` + `TaxDetail` + `TaxSummary` (tax templates) | `tax_percent` on docs + the VAT/EWT worksheets | 🟡 → `tax_codes` on lines (Phase 2) |
+| `AppliedCouponCodes` / `CouponCode` / `PricingRule` | — | ➖ |
+
+### Inventory (`schemas/app/inventory`)
+| Frappe Books | Verdesakay | Status |
+|---|---|---|
+| `Location` (warehouse) | `locations` | ✅ |
+| `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` | ✅ (needs a valuation layer for COGS — Phase 3) |
+| `StockMovement` / `StockTransfer` (+ items) | adjust / transfer endpoints | ✅ |
+| `PurchaseReceipt` (+ items) | `goods_receipts` | ✅ |
+| `Shipment` (+ items) — delivery note | finished-unit allocation | 🟡 |
+| `SerialNumber` / `Batch` / `BatchSeries` | `job_order_units` (finished goods only) | 🟡 |
+| `InventorySettings` | inventory form-config | 🟡 |
+
+### POS (`schemas/app/inventory/Point of Sale`)
+| Frappe Books | Verdesakay | Status |
+|---|---|---|
+| `POSProfile`, POS mode, `PaymentMethod`, `LoyaltyProgram` + `LoyaltyPointEntry`, `CollectionRulesItems` | — | ➖ (separate product decision; not an SMB-manufacturer need) |
+
+### Reports
+| Frappe Books | Verdesakay | Status |
+|---|---|---|
+| General Ledger | `GET /accounting/ledger/reports/general-ledger` | ✅ **Phase 0** |
+| Trial Balance | `.../reports/trial-balance` | ✅ **Phase 0** |
+| Profit & Loss | `.../reports/profit-and-loss` | ✅ **Phase 0** |
+| Balance Sheet | `.../reports/balance-sheet` | ✅ **Phase 0** |
+| Cash Flow Statement | — | ⬜ Phase 4 |
+| Stock Ledger / Stock Balance | analytics dashboard (stock value) | 🟡 |
+| Sales / Purchase Register, Party Ledger | — | ⬜ Phase 1 |
+| GST reports | our BIR VAT/EWT worksheets + (Phase 2) SLSP / 1601-EQ / QAP | 🟡 |
+
+### Cross-cutting
+| Frappe Books | Verdesakay | Status |
+|---|---|---|
+| `PrintTemplate` + `PrintSettings` | `doc_templates` + `renderTemplate` | ✅ |
+| `Currency` + multi-currency w/ fx | `currency` field + `currencies.js`, no fx | 🟡 → Phase 5 |
+| `SetupWizard` / `GetStarted` | `POST /accounting/ledger/setup` (seed COA + fiscal year) | ✅ **Phase 0** |
+| Dashboard | `analytics` (Reports) | ✅ |
+| Data import | CSV import (items/suppliers/employees); COA/opening-balance import | 🟡 → Phase 0.1 |
+| `ERPNextSyncSettings` / sync queue | our QuickBooks push (`src/quickbooks.ts`) is the analogous "external accounting bridge" | ✅ (different target) |
+
+**Phase 0 (this build) = the GL foundation**: chart of accounts, fiscal periods,
+manual journal entries with the CAS invariants, and the four core financial reports.
+Everything marked ⬜ Phase 1+ is the roadmap above (§5).
 
 ---
 

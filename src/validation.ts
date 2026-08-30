@@ -34,9 +34,10 @@ const optionalId = z.preprocess(
   z.coerce.number().int().positive().nullable()
 );
 
-/** Accepts a real boolean or the strings '1'/'0'/'true'/'false'. */
+/** Accepts a real boolean, the strings '1'/'0'/'true'/'false', or the numbers 1/0. */
 const boolish = z.preprocess((v) => {
   if (typeof v === 'string') return v === '1' || v.toLowerCase() === 'true';
+  if (typeof v === 'number') return v !== 0;
   return v;
 }, z.boolean());
 
@@ -507,6 +508,47 @@ export const pettyCashEntrySchema = z.object({
   counterparty: trimmed.max(160).optional().nullable(),
   reference_no: trimmed.max(80).optional().nullable(),
   notes: optionalText,
+});
+
+// ---- General ledger (Phase 0) ----
+export const ledgerSetupSchema = z.object({
+  fiscal_year_start: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Fiscal year start must be YYYY-MM-DD'),
+  base_currency: trimmed.min(3).max(3).default('PHP'),
+});
+
+export const accountSchema = z.object({
+  code: trimmed.min(1, 'Account code is required').max(20),
+  name: trimmed.min(1, 'Account name is required').max(140),
+  root_type: z.enum(['asset', 'liability', 'equity', 'income', 'expense']),
+  account_type: trimmed.max(40).optional().nullable(),
+  parent_id: optionalId,
+  is_group: boolish.default(false),
+  currency: trimmed.max(10).optional().nullable(),
+  description: optionalText,
+  archived: boolish.optional(),
+});
+
+const journalLineSchema = z.object({
+  account_id: z.coerce.number().int().positive(),
+  debit: numCoerce.min(0).default(0),
+  credit: numCoerce.min(0).default(0),
+  party_type: z.enum(['customer', 'supplier', 'employee']).optional().nullable(),
+  party_id: optionalId,
+  memo: trimmed.max(300).optional().nullable(),
+});
+
+export const journalEntrySchema = z.object({
+  entry_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  book: z.enum(['general', 'sales', 'purchase', 'cash_receipts', 'cash_disbursements', 'payroll']).default('general'),
+  memo: optionalText,
+  reference: trimmed.max(120).optional().nullable(),
+  lines: z.array(journalLineSchema).min(2, 'A journal entry needs at least two lines').max(200),
+});
+
+export const glPeriodSchema = z.object({
+  name: trimmed.min(1).max(60),
+  start_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/),
+  end_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
 export const matchToleranceSchema = z.object({

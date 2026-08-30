@@ -564,6 +564,73 @@ export interface PettyCashEntry {
   running_balance?: number;
 }
 
+/* ---- Double-entry general ledger (ACCOUNTING-SYSTEM-PLAN.md Phase 0) ---- */
+
+export type AccountRootType = 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+
+export interface Account {
+  id: number;
+  code: string;
+  name: string;
+  root_type: AccountRootType;
+  account_type: string | null;
+  parent_id: number | null;
+  is_group: number;
+  currency: string;
+  description: string | null;
+  archived: number;
+  created_at: string;
+  /** Joined / computed for API responses. */
+  parent_code?: string | null;
+  balance?: number;
+  children?: Account[];
+}
+
+export interface AccountingPeriod {
+  id: number;
+  name: string;
+  start_date: string;
+  end_date: string;
+  status: 'open' | 'closed';
+  closed_by: number | null;
+  closed_at: string | null;
+  created_at: string;
+}
+
+export interface JournalEntry {
+  id: number;
+  number: string;
+  book: 'general' | 'sales' | 'purchase' | 'cash_receipts' | 'cash_disbursements' | 'payroll';
+  entry_date: string;
+  memo: string | null;
+  reference: string | null;
+  source_type: string | null;
+  source_id: number | null;
+  status: 'draft' | 'posted' | 'void';
+  reverses_id: number | null;
+  posted_by: number | null;
+  posted_at: string | null;
+  created_by: number | null;
+  created_at: string;
+  created_by_name?: string | null;
+  total_debit?: number;
+  lines?: JournalLine[];
+}
+
+export interface JournalLine {
+  id: number;
+  entry_id: number;
+  account_id: number;
+  debit: number;
+  credit: number;
+  party_type: string | null;
+  party_id: number | null;
+  memo: string | null;
+  sort: number;
+  account_code?: string;
+  account_name?: string;
+}
+
 export interface DocTemplate {
   id: number;
   name: string;
