@@ -72,6 +72,8 @@ add month- or quarter-sized ones here if you want a tighter close cadence. Only
 | **Trial Balance** | Every account with a balance, debit vs credit columns, must tie |
 | **Profit & Loss** | Income − expenses for the range → net income |
 | **Balance Sheet** | Assets, liabilities, equity as of a date; current-period earnings folded into equity; `assets = liabilities + equity` check |
+| **Cash Flow** | Indirect method — net income, then the period's movement in working-capital / non-cash accounts (operating), non-current assets (investing) and non-current liabilities + equity (financing). The three totals sum to the change in cash & bank (`✓` when they reconcile) |
+| **Equity** | Statement of changes in equity — opening / movement / closing per equity account, plus the period's net income (added to retained earnings only at period-end close) |
 | **General Ledger** | One account, opening balance + every posted line + running balance + closing |
 
 ## Tips & gotchas
