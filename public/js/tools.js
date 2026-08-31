@@ -113,7 +113,7 @@
         </div></div>
         <div class="ai-widget-foot">
           <form class="ai-input" id="ai-form">
-            <input id="ai-text" placeholder="Ask me anything…" autocomplete="off" />
+            <textarea id="ai-text" placeholder="Ask me anything…" rows="1"></textarea>
             <button class="btn" type="submit" aria-label="Send">${UI.icon('send', 16)}</button>
           </form>
         </div>
@@ -131,12 +131,25 @@
     const cfgBtn = el.querySelector('#ai-config');
     if (cfgBtn) cfgBtn.onclick = () => aiSettingsModal();
 
+    // Grows with content instead of scrolling sideways (it's a textarea, not a single-line
+    // input) — CSS caps it around 4 lines tall (max-height + overflow-y:auto on .ai-input
+    // textarea), so typing past that scrolls vertically inside the box instead of growing
+    // the whole widget further.
+    const autoGrow = () => { input.style.height = 'auto'; input.style.height = input.scrollHeight + 'px'; };
+    input.addEventListener('input', autoGrow);
+    // Enter sends (matching the old single-line input's implicit-submit-on-Enter behavior);
+    // Shift+Enter inserts a newline instead, same convention as chat apps generally use.
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+    });
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const t = input.value.trim();
       if (!t) return;
       chat.insertAdjacentHTML('beforeend', `<div class="ai-msg user">${UI.esc(t)}</div>`);
       input.value = '';
+      autoGrow(); // collapse back to one line after sending
       input.disabled = true;
       submitBtn.disabled = true;
       aiHistory.push({ role: 'user', content: t });
