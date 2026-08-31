@@ -112,10 +112,11 @@ App.register('accounting-ledger', async (view, filter) => {
     body.innerHTML = '<div class="empty">Loading…</div>';
     const rows = await API.get('/accounting/ledger/periods');
     body.innerHTML = `
-      <p class="muted" style="margin-top:0">Closing a period blocks any new or edited posting dated inside it — manual
-        journal entries, and the auto-posted Sales/Purchase/Payroll/Payroll-GL/Job-Order entries alike — until it's
-        reopened. A fiscal-year period is created automatically when the ledger is set up; add more here for
-        month-by-month or quarter-by-quarter closes.</p>
+      <p class="muted" style="margin-top:0">Closing a period <b>posts the closing journal entry</b> — every income and
+        expense account for the range is zeroed and the net rolled into Retained Earnings — and then blocks any new or
+        edited posting dated inside it (manual entries and the auto-posted Sales/Purchase/Payroll/Job-Order entries
+        alike) until it's reopened, which reverses the closing entry. A fiscal-year period is created automatically at
+        ledger setup; add more here for month- or quarter-end closes.</p>
       <div style="display:flex;margin-bottom:8px">
         <div class="grow"></div>
         ${canManage ? `<button class="btn secondary small" id="per-new">${UI.icon('plus')} New period</button>` : ''}
@@ -137,11 +138,22 @@ App.register('accounting-ledger', async (view, filter) => {
       const action = b.dataset.action;
       const p = rows.find((x) => String(x.id) === b.dataset.toggle);
       if (action === 'close' && !(await UI.confirmDialog(
-        `Close "${p.name}" (${p.start_date} – ${p.end_date})? No new or edited posting dated in this range will be allowed until it's reopened.`,
+        `Close "${p.name}" (${p.start_date} – ${p.end_date})? This posts the closing entry (income & expense → Retained Earnings) and locks the range until it's reopened.`,
         'Close period'
       ))) return;
       b.disabled = true;
-      try { await API.post(`/accounting/ledger/periods/${p.id}/${action}`); UI.toast(action === 'close' ? 'Period closed' : 'Period reopened'); periods(); }
+      try {
+        const r = await API.post(`/accounting/ledger/periods/${p.id}/${action}`);
+        if (action === 'close') {
+          const ce = r && r.closing_entry;
+          UI.toast(ce
+            ? `Period closed — ${ce.number}, net ${money(ce.net_income)}${ce.retained_earnings ? ` to ${ce.retained_earnings.code}` : ''}`
+            : 'Period closed');
+        } else {
+          UI.toast(r && r.reversal ? `Period reopened — closing entry reversed (${r.reversal.number})` : 'Period reopened');
+        }
+        periods();
+      }
       catch (e) { UI.toast(e.message, 'error'); b.disabled = false; }
     });
   }

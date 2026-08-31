@@ -214,6 +214,16 @@ return worksheets can find the right balances without the user wiring anything.
 - **Books of Accounts export** for CAS presentation. ✅ **Phase 4b** — `GET /books-of-accounts`
   bundles the General Journal / General Ledger / Cash books / Sales & Purchase Journals with
   the company header; printable + per-book CSV (Accounting → Tax & Compliance → Books of Accounts).
+- **Period-end close + retained-earnings roll-up.** ✅ **Phase 4c** — `POST /ledger/periods/:id/close`
+  now, before locking the range, **posts the closing journal entry**: every income and expense
+  account is zeroed by its movement within `[start_date, end_date]` and the net rolled to the
+  **Retained Earnings** account (`account_type = 'retained_earnings'`) — a real posted
+  `journal_entries` row (`book 'general'`, `source_type 'year_end_close'`, dated the period end,
+  `reverses`-linked on reopen). After a close the P&L for the year reads flat and the balance
+  sheet's `current_period_earnings` plug goes to zero because RE now carries the amount; `reopen`
+  posts the equal-and-opposite reversal. Accruals / prepaid amortization stay manual journal
+  entries. UI: the "Close" button on Books → Periods reports the closing entry. `tests/accounting.test.ts`
+  ("period-end close + retained-earnings roll-up").
 
 ### 4.3 Bank reconciliation
 

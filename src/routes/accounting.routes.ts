@@ -751,19 +751,130 @@ router.post('/ledger/periods', requirePermission('accounting.manage'), (req, res
   res.status(201).json({ id: Number(info.lastInsertRowid) });
 });
 
+/** The live (non-reversed) posted year-end closing entry for a period, if any. */
+function liveClosingEntry(periodId: number): { id: number; number: string; entry_date: string } | undefined {
+  return queryOne<{ id: number; number: string; entry_date: string }>(
+    `SELECT id, number, entry_date FROM journal_entries je
+     WHERE source_type = 'year_end_close' AND source_id = ? AND status = 'posted'
+       AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reverses_id = je.id)
+     ORDER BY id DESC LIMIT 1`, periodId
+  );
+}
+
+/** Post the closing journal entry for a fiscal period: zero every income / expense account
+ *  by its movement within [start, end] and roll the net into Retained Earnings. Returns
+ *  null when there is nothing to close. Caller wraps in its own guards. */
+function postClosingEntry(period: AccountingPeriod, userId: number): {
+  id: number; number: string; net_income: number; retained_earnings: { code: string; delta: number } | null;
+} | null {
+  const re = queryOne<{ id: number; code: string }>(
+    "SELECT id, code FROM accounts WHERE account_type = 'retained_earnings' AND is_group = 0 ORDER BY code LIMIT 1");
+  if (!re) throw Object.assign(new Error('Add a Retained Earnings account (account type "retained_earnings") before closing a period.'), { status: 400 });
+
+  const rows = queryAll<{ id: number; root_type: AccountRootType; debit: number; credit: number }>(`
+    SELECT jl.account_id AS id, a.root_type, SUM(jl.debit) AS debit, SUM(jl.credit) AS credit
+    FROM journal_lines jl
+    JOIN journal_entries je ON je.id = jl.entry_id
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE je.status = 'posted' AND a.is_group = 0 AND a.root_type IN ('income', 'expense')
+      AND je.entry_date >= ? AND je.entry_date <= ?
+    GROUP BY jl.account_id`, period.start_date, period.end_date);
+
+  const lines: { account_id: number; debit: number; credit: number }[] = [];
+  let netIncomeAmt = 0;
+  for (const r of rows) {
+    const nat = accountBalance(r.root_type, r.debit || 0, r.credit || 0); // ≥0 for a healthy account
+    if (Math.abs(nat) < 0.005) continue;
+    if (r.root_type === 'income') { lines.push({ account_id: r.id, debit: round2(nat), credit: 0 }); netIncomeAmt = round2(netIncomeAmt + nat); }
+    else { lines.push({ account_id: r.id, debit: 0, credit: round2(nat) }); netIncomeAmt = round2(netIncomeAmt - nat); }
+  }
+  if (!lines.length) return null;
+
+  // Balance to Retained Earnings: profit -> credit RE, loss -> debit RE.
+  const reDelta = round2(netIncomeAmt);
+  if (Math.abs(reDelta) >= 0.005) {
+    lines.push(reDelta > 0
+      ? { account_id: re.id, debit: 0, credit: reDelta }
+      : { account_id: re.id, debit: -reDelta, credit: 0 });
+  }
+
+  db.exec('BEGIN');
+  try {
+    const number = nextSequence('je_number', 'JV', 6);
+    const info = run(
+      `INSERT INTO journal_entries (number, book, entry_date, memo, status, source_type, source_id, posted_by, posted_at, created_by)
+       VALUES (?, 'general', ?, ?, 'posted', 'year_end_close', ?, ?, datetime('now'), ?)`,
+      number, period.end_date, `Closing entries — ${period.name}`, period.id, userId, userId
+    );
+    const entryId = Number(info.lastInsertRowid);
+    lines.forEach((l, i) => run(
+      `INSERT INTO journal_lines (entry_id, account_id, debit, credit, memo, sort) VALUES (?, ?, ?, ?, ?, ?)`,
+      entryId, l.account_id, l.debit, l.credit, null, i
+    ));
+    db.exec('COMMIT');
+    return { id: entryId, number, net_income: round2(netIncomeAmt), retained_earnings: Math.abs(reDelta) >= 0.005 ? { code: re.code, delta: reDelta } : null };
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+/** Reverse a period's live closing entry (used on reopen). Equal-and-opposite posted
+ *  entry dated the period end, `reverses_id` links the two. */
+function reverseClosingEntry(entryId: number, endDate: string, userId: number): { id: number; number: string } {
+  const orig = queryOne<{ number: string; memo: string | null }>('SELECT number, memo FROM journal_entries WHERE id = ?', entryId)!;
+  const src = queryAll<{ account_id: number; debit: number; credit: number }>(
+    'SELECT account_id, debit, credit FROM journal_lines WHERE entry_id = ? ORDER BY sort, id', entryId);
+  db.exec('BEGIN');
+  try {
+    const number = nextSequence('je_number', 'JV', 6);
+    const info = run(
+      `INSERT INTO journal_entries (number, book, entry_date, memo, status, reverses_id, source_type, source_id, posted_by, posted_at, created_by)
+       VALUES (?, 'general', ?, ?, 'posted', ?, 'year_end_close', ?, ?, datetime('now'), ?)`,
+      number, endDate, `Reversal of ${orig.number}${orig.memo ? ' — ' + orig.memo : ''}`, entryId,
+      queryOne<{ source_id: number }>('SELECT source_id FROM journal_entries WHERE id = ?', entryId)!.source_id,
+      userId, userId
+    );
+    const revId = Number(info.lastInsertRowid);
+    src.forEach((l, i) => run(
+      `INSERT INTO journal_lines (entry_id, account_id, debit, credit, memo, sort) VALUES (?, ?, ?, ?, ?, ?)`,
+      revId, l.account_id, round2(l.credit), round2(l.debit), null, i
+    ));
+    db.exec('COMMIT');
+    return { id: revId, number };
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+// POST /ledger/periods/:id/(close|reopen) — closing also posts the year-end closing entry
+// (zero income/expense → Retained Earnings); reopening reverses it.
 router.post('/ledger/periods/:id/:action(close|reopen)', requirePermission('accounting.manage'), (req, res) => {
   if (!requireLedger(res)) return;
   const id = Number(req.params.id);
-  if (!queryOne('SELECT id FROM accounting_periods WHERE id = ?', id)) {
-    res.status(404).json({ error: 'Period not found' }); return;
-  }
+  const period = queryOne<AccountingPeriod>('SELECT * FROM accounting_periods WHERE id = ?', id);
+  if (!period) { res.status(404).json({ error: 'Period not found' }); return; }
   const closing = req.params.action === 'close';
+
+  let closingEntry: ReturnType<typeof postClosingEntry> = null;
+  let reversalEntry: { id: number; number: string } | null = null;
+
+  if (closing) {
+    if (period.status === 'closed') { res.status(409).json({ error: 'Period is already closed.' }); return; }
+    const existing = liveClosingEntry(id);
+    closingEntry = existing ? null : postClosingEntry(period, req.user!.id);
+  } else {
+    const live = liveClosingEntry(id);
+    if (live) reversalEntry = reverseClosingEntry(live.id, live.entry_date, req.user!.id);
+  }
+
   run(
     `UPDATE accounting_periods SET status = ?, closed_by = ?, closed_at = ? WHERE id = ?`,
     closing ? 'closed' : 'open', closing ? req.user!.id : null,
     closing ? new Date().toISOString() : null, id
   );
-  res.json({ ok: true, status: closing ? 'closed' : 'open' });
+  res.json({ ok: true, status: closing ? 'closed' : 'open', closing_entry: closingEntry, reversal: reversalEntry });
 });
 
 /* ------------------------------------------------------------- auto-posting rules --- */

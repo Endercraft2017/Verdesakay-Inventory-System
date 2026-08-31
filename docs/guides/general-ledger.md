@@ -58,12 +58,21 @@ Posting an entry dated inside a **closed period** is rejected.
 **Trial Balance / P&L / Balance Sheet** tabs → each has a **period picker**, unrelated to
 the ones below (those are just date ranges for a report).
 
-The **Periods** tab is where you create and **close** an accounting period —
-closing locks *any* posting dated inside its range, manual journal entries and every
-auto-posted document alike (sales, purchases, payroll, payroll GL, job orders), until
-you **reopen** it. A fiscal-year period is created automatically when you set up books;
-add month- or quarter-sized ones here if you want a tighter close cadence. Only
-*Accounting: manage* can create/close/reopen — anyone with book access can see the list.
+The **Periods** tab is where you create and **close** an accounting period. Closing a
+period does two things:
+
+1. **Posts the closing journal entry** — every income and expense account is zeroed by
+   its movement within the period, and the net (profit or loss) is rolled into
+   **Retained Earnings**. After a year-end close the P&L for that year reads flat and
+   the amount lives in equity where it belongs.
+2. **Locks the range** — *any* posting dated inside it is then rejected, manual journal
+   entries and every auto-posted document alike (sales, purchases, payroll, payroll GL,
+   job orders), until you **reopen** it (which reverses the closing entry).
+
+A fiscal-year period is created automatically when you set up books; add month- or
+quarter-sized ones here if you want a tighter close cadence. Accruals and prepaid
+amortization are still your own manual journal entries. Only *Accounting: manage* can
+create/close/reopen — anyone with book access can see the list.
 
 ## Reports
 

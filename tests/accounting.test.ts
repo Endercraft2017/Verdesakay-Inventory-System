@@ -1013,3 +1013,67 @@ describe('accounting: Books of Accounts (Phase 4b)', () => {
     expect(l.text.split('\n')[0]).toContain('Running balance');
   });
 });
+
+// Mutates shared ledger state (closes the FY period) — keep this the LAST describe.
+describe('accounting: period-end close + retained-earnings roll-up (Phase 4c)', () => {
+  const pnl = async () =>
+    (await ctx.api.get('/api/accounting/ledger/reports/profit-and-loss?from=2026-01-01&to=2026-12-31').set(hdr())).body;
+  const acctBal = async (code: string) => {
+    const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr())).body;
+    const r = tb.rows.find((x: { code: string }) => x.code === code);
+    return r ? Math.round((r.debit - r.credit) * 100) / 100 : 0;
+  };
+  let periodId = 0;
+
+  it('closing the fiscal year zeroes P&L and rolls the net into Retained Earnings', async () => {
+    const periods = (await ctx.api.get('/api/accounting/ledger/periods').set(hdr())).body;
+    const fy = periods.find((p: { start_date: string; end_date: string }) => p.start_date === '2026-01-01' && p.end_date === '2026-12-31');
+    expect(fy).toBeTruthy();
+    periodId = fy.id;
+
+    const before = await pnl();
+    expect(before.net_income).not.toBe(0);
+    const reBefore = await acctBal('3300');
+
+    const r = await ctx.api.post(`/api/accounting/ledger/periods/${periodId}/close`).set(hdr()).send({});
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('closed');
+    expect(r.body.closing_entry).toBeTruthy();
+    expect(r.body.closing_entry.number).toMatch(/^JV-\d{6}$/);
+    expect(r.body.closing_entry.net_income).toBeCloseTo(before.net_income, 2);
+    expect(r.body.closing_entry.retained_earnings.code).toBe('3300');
+
+    // P&L for the year is now flat; Retained Earnings moved by the net income
+    const after = await pnl();
+    expect(after.net_income).toBeCloseTo(0, 2);
+    // 3300 is a credit-natured equity account → acctBal (debit − credit) goes more negative by a profit
+    expect(await acctBal('3300')).toBeCloseTo(reBefore - before.net_income, 2);
+
+    const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr())).body;
+    expect(tb.balanced).toBe(true);
+    const bs = (await ctx.api.get('/api/accounting/ledger/reports/balance-sheet?as_of=2026-12-31').set(hdr())).body;
+    expect(bs.equity.current_period_earnings).toBeCloseTo(0, 2);
+    expect(bs.balanced).toBe(true);
+  });
+
+  it('a closed period blocks new postings dated inside it', async () => {
+    const accs = (await ctx.api.get('/api/accounting/ledger/accounts').set(hdr())).body;
+    const cash = accs.find((a: { code: string }) => a.code === '1110').id;
+    const re = accs.find((a: { code: string }) => a.code === '3300').id;
+    const je = await ctx.api.post('/api/accounting/ledger/journal-entries').set(hdr()).send({
+      entry_date: '2026-06-15', memo: 'should be blocked',
+      lines: [{ account_id: cash, debit: 100 }, { account_id: re, credit: 100 }],
+    });
+    const posted = await ctx.api.post(`/api/accounting/ledger/journal-entries/${je.body.id}/post`).set(hdr()).send({});
+    expect(posted.status).toBe(409);
+  });
+
+  it('reopening the period reverses the closing entry', async () => {
+    const r = await ctx.api.post(`/api/accounting/ledger/periods/${periodId}/reopen`).set(hdr()).send({});
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('open');
+    expect(r.body.reversal).toBeTruthy();
+    const back = await pnl();
+    expect(back.net_income).not.toBeCloseTo(0, 2); // the year's real net income is visible again
+  });
+});
