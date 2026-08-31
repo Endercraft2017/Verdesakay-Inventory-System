@@ -277,3 +277,40 @@ describe('purchasing permissions', () => {
     expect(whBill.status).toBe(403);
   });
 });
+
+describe('3-way match tolerance settings', () => {
+  it('GET returns the built-in default before anything is saved', async () => {
+    const r = await ctx.api.get('/api/purchasing/tolerance').set('Authorization', `Bearer ${token}`);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ price_pct: 2, price_abs: 0, qty_pct: 0 });
+  });
+
+  it('PUT saves it, and GET reflects the change afterward', async () => {
+    const put = await ctx.api.put('/api/purchasing/tolerance').set('Authorization', `Bearer ${token}`)
+      .send({ price_pct: 5, price_abs: 10, qty_pct: 1 });
+    expect(put.status).toBe(200);
+    expect(put.body).toEqual({ price_pct: 5, price_abs: 10, qty_pct: 1 });
+
+    const get = await ctx.api.get('/api/purchasing/tolerance').set('Authorization', `Bearer ${token}`);
+    expect(get.body).toEqual({ price_pct: 5, price_abs: 10, qty_pct: 1 });
+
+    // restore the default so later tests in this file (fixed at price_pct: 2) aren't affected
+    await ctx.api.put('/api/purchasing/tolerance').set('Authorization', `Bearer ${token}`)
+      .send({ price_pct: 2, price_abs: 0, qty_pct: 0 });
+  });
+
+  it('GET needs orders.view, PUT needs orders.edit — neither is open to just any login', async () => {
+    // csr has orders.edit but not inventory.adjust (irrelevant here); use a role with neither
+    // orders permission — warehouse holds orders.view only (read-only), no orders.edit.
+    const wh2 = await createEmployee(ctx.api, token, { role: 'warehouse', username: 'pur_tol_wh' });
+    expect((await ctx.api.get('/api/purchasing/tolerance').set('Authorization', `Bearer ${wh2.token}`)).status).toBe(200);
+    expect((await ctx.api.put('/api/purchasing/tolerance').set('Authorization', `Bearer ${wh2.token}`)
+      .send({ price_pct: 1, price_abs: 0, qty_pct: 0 })).status).toBe(403);
+  });
+
+  it('rejects a negative tolerance', async () => {
+    const r = await ctx.api.put('/api/purchasing/tolerance').set('Authorization', `Bearer ${token}`)
+      .send({ price_pct: -1, price_abs: 0, qty_pct: 0 });
+    expect(r.status).toBe(400);
+  });
+});

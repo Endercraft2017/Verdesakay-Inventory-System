@@ -1,15 +1,15 @@
-/* HR: module launcher. Employees and Time Keeping are real modules; Payroll jumps
-   straight into the existing "HR Payroll" Data Form; Leave Management is still planned. */
+/* HR: module launcher. Employees and Time Keeping are real modules; Payroll and Leave
+   Management both jump into their existing Data Form record lists (same pattern). */
 App.register('hr', async (view) => {
   if (!App.hasPermission('hr.view')) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
   const MODULES = [
-    { icon: 'sheet', title: 'Payroll', hint: 'Payslips, earnings & deductions per cutoff.', action: openPayroll },
-    { icon: 'users', title: 'Employees', hint: 'Master list: department, position, daily rate.', action: () => App.navigate('hr-employees') },
+    { icon: 'sheet', title: 'Payroll', hint: 'Payslips, earnings & deductions per cutoff.', action: () => openDataForm('hr_payroll') },
+    { icon: 'users', title: 'Employees', hint: 'Master list: department, position, daily rate, leave-day bank.', action: () => App.navigate('hr-employees') },
     { icon: 'calendar', title: 'Time Keeping', hint: 'Per-cutoff roster with daily time-in/out.', action: () => App.navigate('hr-timekeeping') },
-    { icon: 'note', title: 'Leave Management', hint: 'Leave credits, requests & approvals.', action: null },
+    { icon: 'note', title: 'Leave Management', hint: 'Leave requests, status & balance impact — edit an employee’s leave-day bank under Employees.', action: () => openDataForm('leave_request') },
   ];
 
   view.innerHTML = `
@@ -28,11 +28,15 @@ App.register('hr', async (view) => {
       </div>
     </div>`;
 
-  async function openPayroll() {
+  // Jumps straight into a specific Data Form's record list (Payroll -> hr_payroll, Leave
+  // Management -> leave_request) instead of the generic "pick a form" index — falls back to
+  // that index if the form can't be found (not yet created, or this user's forms.manage.<scope>
+  // doesn't cover it, in which case form-records.js's own access gate explains why).
+  async function openDataForm(slug) {
     try {
       const forms = await API.get('/form-definitions');
-      const hrPayroll = forms.find((f) => f.slug === 'hr_payroll');
-      if (hrPayroll) App.navigate('form-records', { form_id: hrPayroll.id });
+      const form = forms.find((f) => f.slug === slug);
+      if (form) App.navigate('form-records', { form_id: form.id });
       else App.navigate('form-records');
     } catch {
       App.navigate('form-records');

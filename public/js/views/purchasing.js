@@ -37,14 +37,43 @@ App.register('purchasing', async (view, filter) => {
         <option value="approved">Approved</option>
         <option value="disputed">Disputed</option>
       </select>` : ''}
+      <button class="btn secondary small" id="pur-tol" title="3-way match tolerance">${UI.icon('settings', 15)} Match tolerance</button>
     </div>
     <div class="panel"><div id="pur-table"><div class="empty">Loading…</div></div></div>`;
 
   const tableEl = view.querySelector('#pur-table');
   const statusSel = view.querySelector('#pur-status');
   if (statusSel) statusSel.onchange = () => loadBills();
+  view.querySelector('#pur-tol').onclick = () => toleranceModal();
 
   if (tab === 'bills') loadBills(); else loadReceipts();
+
+  async function toleranceModal() {
+    let t;
+    try { t = await API.get('/purchasing/tolerance'); } catch (e) { UI.toast(e.message, 'error'); return; }
+    UI.modal({
+      title: '3-way match tolerance',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">How far a vendor bill's price/quantity may drift from the
+          purchase order + goods receipts before the match panel flags it as an exception. A price line fails
+          if it's outside <b>both</b> the % and absolute allowance (whichever is looser wins); quantity only
+          checks %.</p>
+        <div class="field-row">
+          <div><label>Price tolerance (%)</label><input data-f="price_pct" type="number" min="0" step="0.1" value="${t.price_pct}" ${canBill ? '' : 'disabled'} /></div>
+          <div><label>Price tolerance (₱, flat)</label><input data-f="price_abs" type="number" min="0" step="0.01" value="${t.price_abs}" ${canBill ? '' : 'disabled'} /></div>
+          <div><label>Quantity tolerance (%)</label><input data-f="qty_pct" type="number" min="0" step="0.1" value="${t.qty_pct}" ${canBill ? '' : 'disabled'} /></div>
+        </div>`,
+      confirmText: canBill ? 'Save' : null,
+      cancelText: canBill ? 'Cancel' : 'Close',
+      onConfirm: canBill ? async (ov, showErr) => {
+        const v = (k) => Number(ov.querySelector(`[data-f="${k}"]`).value);
+        const body = { price_pct: v('price_pct'), price_abs: v('price_abs'), qty_pct: v('qty_pct') };
+        if (body.price_pct < 0 || body.price_abs < 0 || body.qty_pct < 0) { showErr('Tolerances can’t be negative'); return false; }
+        await API.put('/purchasing/tolerance', body);
+        UI.toast('Match tolerance saved');
+      } : undefined,
+    });
+  }
 
   async function loadBills() {
     tableEl.innerHTML = '<div class="empty">Loading…</div>';

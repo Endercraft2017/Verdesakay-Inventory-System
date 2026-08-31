@@ -1,7 +1,9 @@
 /* Right-rail personal tools: AI assistant, Notes, Email, Scheduler, Bookmarks.
    Notes / tasks / bookmarks persist per-user via /api/notes|tasks|bookmarks.
    AI talks to the real POST /api/ai/chat agentic backend (src/routes/ai.routes.ts +
-   src/ai-tools.ts) — see docs/AI-AGENT.md. Email is still a UI-only preview (no backend). */
+   src/ai-tools.ts) — see docs/AI-AGENT.md. Email sends for real via BYO-SMTP
+   (src/mailer.ts, /api/mail/*) — Settings configures the mailbox, Sent log shows
+   src/mailer.ts's mail_log (users.manage for both). */
 (function () {
   const TOOL_ICONS = { ai: 'sparkles', notes: 'note', email: 'mail', scheduler: 'calendar', bookmarks: 'bookmark', help: 'help' };
 
@@ -205,11 +207,14 @@
            <label>Message</label><textarea id="em-body" placeholder="Write your email…" style="min-height:180px"></textarea>
            <div id="em-status" class="muted" style="font-size:12px;margin-top:6px"></div>`
         : `<div class="tool-note">You don't have permission to send email.${canConfig ? ' You can still configure the mailbox below.' : ''}</div>`,
-      footHTML: `${canConfig ? `<button class="btn secondary" id="em-config">${UI.icon('settings', 15)} Settings</button>` : ''}
+      footHTML: `${canConfig ? `<button class="btn secondary" id="em-config">${UI.icon('settings', 15)} Settings</button>
+        <button class="btn secondary" id="em-log">${UI.icon('history', 15)} Sent log</button>` : ''}
         ${canSend ? `<button class="btn" id="em-send">${UI.icon('send', 16)} Send</button>` : ''}`,
       onOpen: (el) => {
         const cfg = el.querySelector('#em-config');
         if (cfg) cfg.onclick = () => mailSettingsModal();
+        const logBtn = el.querySelector('#em-log');
+        if (logBtn) logBtn.onclick = () => mailLogModal();
         const send = el.querySelector('#em-send');
         if (send) send.onclick = async () => {
           const g = (id) => el.querySelector(id);
@@ -294,6 +299,40 @@
       const pw = g('smtp_pass').value;
       if (pw) body.smtp_pass = pw;
       await API.put('/mail/settings', body);
+    }
+  }
+
+  async function mailLogModal() {
+    const PAGE = 50;
+    let offset = 0;
+    let rows = [];
+    UI.modal({
+      title: 'Sent mail log',
+      size: 'lg',
+      cancelText: 'Close',
+      confirmText: null,
+      bodyHTML: `<div id="ml-body"><div class="empty">Loading…</div></div>`,
+      onOpen: (ov) => load(ov),
+    });
+    async function load(ov) {
+      const body = ov.querySelector('#ml-body');
+      let page;
+      try { page = await API.get(`/mail/log?limit=${PAGE}&offset=${offset}`); }
+      catch (e) { body.innerHTML = `<div class="empty">${UI.esc(e.message)}</div>`; return; }
+      rows = rows.concat(page);
+      if (!rows.length) { body.innerHTML = UI.emptyState({ icon: 'mail', title: 'No email sent yet', hint: 'Sends show up here once Email settings has a working mailbox.' }); return; }
+      body.innerHTML = `
+        <table><thead><tr><th>Sent</th><th>To</th><th>Subject</th><th>Status</th><th>By</th></tr></thead>
+          <tbody>${rows.map((r) => `<tr>
+            <td class="muted mono" style="white-space:nowrap">${UI.esc((r.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+            <td>${UI.esc(r.to_addr)}</td>
+            <td>${UI.esc(r.subject || '—')}</td>
+            <td><span class="badge-pill ${r.status === 'sent' ? 'status-completed' : 'status-cancelled'}" ${r.error ? `title="${UI.esc(r.error)}"` : ''}>${r.status}</span></td>
+            <td class="muted">${UI.esc(r.sent_by_name || 'system')}</td>
+          </tr>`).join('')}</tbody></table>
+        ${page.length === PAGE ? `<button type="button" class="btn secondary small" id="ml-more" style="margin-top:10px">Load more</button>` : ''}`;
+      const more = body.querySelector('#ml-more');
+      if (more) more.onclick = () => { offset += PAGE; load(ov); };
     }
   }
 

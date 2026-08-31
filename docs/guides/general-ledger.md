@@ -55,9 +55,15 @@ Posting an entry dated inside a **closed period** is rejected.
 
 ## Periods
 
-**Trial Balance / P&L / Balance Sheet** tabs → each has a **period picker**. Under
-Chart of Accounts you can also create periods and **close** one — closing locks posting
-into its date range (reopen to unlock).
+**Trial Balance / P&L / Balance Sheet** tabs → each has a **period picker**, unrelated to
+the ones below (those are just date ranges for a report).
+
+The **Periods** tab is where you create and **close** an accounting period —
+closing locks *any* posting dated inside its range, manual journal entries and every
+auto-posted document alike (sales, purchases, payroll, payroll GL, job orders), until
+you **reopen** it. A fiscal-year period is created automatically when you set up books;
+add month- or quarter-sized ones here if you want a tighter close cadence. Only
+*Accounting: manage* can create/close/reopen — anyone with book access can see the list.
 
 ## Reports
 
