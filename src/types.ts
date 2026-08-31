@@ -567,6 +567,14 @@ export interface Order {
   tax_code_id: number | null;
   created_by_name?: string | null;
   supplier_name?: string | null;
+  /** Job orders only: the manufacturing job_orders row this order spawned via "Start
+   *  production" (Orders → Job Order), if any — the most recent one when more than one
+   *  somehow exists. Lets the UI show/link to it instead of offering "Start production"
+   *  again and risking a duplicate. Null for sale/purchase orders and job orders where
+   *  production hasn't started yet. */
+  job_order_id?: number | null;
+  job_order_number?: string | null;
+  job_order_status?: string | null;
   items?: OrderItem[];
 }
 

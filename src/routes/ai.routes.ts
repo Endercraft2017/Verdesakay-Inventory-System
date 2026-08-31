@@ -18,7 +18,7 @@ import { getToolsForUser, executeTool } from '../ai-tools';
 import { REPORT_FILE_RE } from '../ai-reporting';
 import { reindex } from '../rag';
 import { uploadDir } from '../db';
-import { getAiConfig, activeAiConfig, saveAiConfig } from '../ai-config';
+import { getAiConfig, activeAiConfig, saveAiConfig, addTokenUsage, tokenCapReached, resetTokenUsage } from '../ai-config';
 import { enforceQuota, recordAiCall } from '../quota';
 import { parseBody, aiConfigSchema } from '../validation';
 import type { AuthUser } from '../types';
@@ -62,9 +62,16 @@ router.get('/config', requirePermission('users.manage'), (_req, res) => {
   res.json(getAiConfig());
 });
 
-// PUT /api/ai/config — { model?, base_url?, api_key? }  (api_key '' clears → env fallback)
+// PUT /api/ai/config — { model?, base_url?, api_key?, token_cap? } (api_key '' clears → env
+// fallback; token_cap 0 = unlimited)
 router.put('/config', requirePermission('users.manage'), (req, res) => {
   saveAiConfig(parseBody(aiConfigSchema, req.body));
+  res.json(getAiConfig());
+});
+
+// POST /api/ai/reset-usage — zero the running token counter (doesn't touch the cap itself)
+router.post('/reset-usage', requirePermission('users.manage'), (_req, res) => {
+  resetTokenUsage();
   res.json(getAiConfig());
 });
 
@@ -109,6 +116,10 @@ interface CerebrasChoice {
 
 interface CerebrasResponse {
   choices: CerebrasChoice[];
+  /** Standard OpenAI-compatible usage block — present on every non-streaming provider this
+      app talks to (OpenAI, Gemini's OpenAI-compat endpoint, Groq, Cerebras, OpenRouter).
+      Optional defensively; a provider that omits it just doesn't meter that call. */
+  usage?: { total_tokens?: number };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,6 +198,10 @@ router.post('/chat', async (req, res, next) => {
       res.status(503).json({ error: 'AI is not configured. An admin can add an API key under the AI Assistant settings.' });
       return;
     }
+    if (tokenCapReached()) {
+      res.status(402).json({ error: 'The AI Assistant\'s token usage cap has been reached. An admin can raise it or reset usage under AI Assistant settings.' });
+      return;
+    }
     enforceQuota('ai_calls_month');
     recordAiCall();
 
@@ -201,7 +216,16 @@ router.post('/chat', async (req, res, next) => {
     const steps: Array<{ tool: string; args: unknown; result: unknown }> = [];
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
+      // Re-check before every call, not just once at the top — a single chat turn can make
+      // several LLM calls across the tool-use loop below, and each one spends real tokens;
+      // this stops a long multi-step turn as soon as it crosses the cap instead of only
+      // catching it on the *next* turn.
+      if (i > 0 && tokenCapReached()) {
+        res.status(402).json({ error: 'The AI Assistant\'s token usage cap was reached mid-conversation. An admin can raise it or reset usage under AI Assistant settings.' });
+        return;
+      }
       const response = await callLlm(cebrasMsgs, tools, apiKey, baseUrl, model);
+      addTokenUsage(response.usage?.total_tokens ?? 0);
       const choice = response.choices[0];
       if (!choice) break;
       const msg = choice.message;

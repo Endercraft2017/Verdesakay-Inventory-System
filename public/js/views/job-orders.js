@@ -1,6 +1,9 @@
 /* Inventory → Production: manufacturing job orders. Build N units of a finished
-   product by consuming its BOM; track progress, pause/cancel with returns. */
-App.register('job-orders', async (view) => {
+   product by consuming its BOM; track progress, pause/cancel with returns.
+   filter.id = <job order id> deep-links straight into that one's detail (used by the
+   "View in Production" backlink on a job-type Order, and by the AI assistant's
+   created-record links). */
+App.register('job-orders', async (view, filter) => {
   const canWrite = App.hasPermission('inventory.adjust');
   const STATUS = ['', 'draft', 'released', 'in_progress', 'paused', 'completed', 'cancelled'];
   const state = { status: '' };
@@ -322,4 +325,5 @@ App.register('job-orders', async (view) => {
   if (nb) nb.onclick = () => newModal();
 
   await load();
+  if (filter && filter.id) trackModal(filter.id);
 });

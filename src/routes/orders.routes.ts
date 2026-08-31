@@ -103,10 +103,12 @@ router.get('/', (req, res) => {
     params.push(like, like);
   }
   const rows = queryAll<Order>(
-    `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name
+    `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name,
+            jo.id AS job_order_id, jo.number AS job_order_number, jo.status AS job_order_status
      FROM orders o
      LEFT JOIN users u ON u.id = o.created_by
      LEFT JOIN suppliers s ON s.id = o.supplier_id
+     LEFT JOIN job_orders jo ON jo.id = (SELECT id FROM job_orders WHERE order_id = o.id ORDER BY id DESC LIMIT 1)
      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY o.id DESC`,
     ...params
@@ -117,10 +119,12 @@ router.get('/', (req, res) => {
 // GET /api/orders/:id — order + line items
 router.get('/:id', (req, res) => {
   const order = queryOne<Order>(
-    `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name
+    `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name,
+            jo.id AS job_order_id, jo.number AS job_order_number, jo.status AS job_order_status
      FROM orders o
      LEFT JOIN users u ON u.id = o.created_by
      LEFT JOIN suppliers s ON s.id = o.supplier_id
+     LEFT JOIN job_orders jo ON jo.id = (SELECT id FROM job_orders WHERE order_id = o.id ORDER BY id DESC LIMIT 1)
      WHERE o.id = ?`,
     Number(req.params.id)
   );

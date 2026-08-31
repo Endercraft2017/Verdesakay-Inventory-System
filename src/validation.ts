@@ -163,11 +163,15 @@ export const csvImportSchema = z.object({
   dry_run: boolish.optional(),
 });
 
-/** PUT /api/ai/config — per-tenant LLM settings. `api_key` write-only ('' clears → env). */
+/** PUT /api/ai/config — per-tenant LLM settings. `api_key` write-only ('' clears → env).
+    `token_cap` is a running-usage ceiling (0 = unlimited) — see src/ai-config.ts. */
 export const aiConfigSchema = z.object({
   model: trimmed.max(120).optional(),
   base_url: z.union([z.literal(''), z.string().trim().url('Endpoint must be a valid URL')]).optional(),
   api_key: z.string().max(500).optional(),
+  // z.coerce.number() inline, not the shared numCoerce const — that's declared later in this
+  // file and referencing it here (aiConfigSchema sits above its declaration) is a TDZ error.
+  token_cap: z.coerce.number().min(0).max(1_000_000_000).optional(),
 });
 
 /** POST /api/signup — create a new tenant workspace (self-serve, gated by SIGNUPS_OPEN). */

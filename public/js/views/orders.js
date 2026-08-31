@@ -62,13 +62,17 @@ App.register('orders', async (view, filter) => {
         <thead><tr><th>Number</th><th>Customer</th><th>Date</th><th class="right">Total</th><th>Status</th><th></th></tr></thead>
         <tbody>${list.map((o) => `
           <tr class="clickable" data-open="${o.id}">
-            <td><strong>${UI.esc(o.number)}</strong></td>
+            <td><strong>${UI.esc(o.number)}</strong>${type === 'job' && o.job_order_number ? `<div class="muted" style="font-size:11px">${UI.esc(o.job_order_number)} · ${UI.esc((o.job_order_status || '').replace('_', ' '))}</div>` : ''}</td>
             <td>${UI.esc(o.customer_name || '—')}</td>
             <td>${UI.esc(o.order_date || UI.fmtDateShort(o.created_at))}</td>
             <td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>
             <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span></td>
             <td class="actions">
-              ${type === 'job' && App.hasPermission('inventory.adjust') ? `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>` : ''}
+              ${type === 'job' && App.hasPermission('inventory.adjust')
+                ? (o.job_order_id
+                  ? `<button class="icon-btn" title="View in Production — ${UI.esc(o.job_order_number)}" data-view-jo="${o.job_order_id}">${UI.icon('eye')}</button>`
+                  : `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>`)
+                : ''}
               ${type === 'purchase' ? `<button class="icon-btn" title="Receiving & bills" data-purch="${o.id}">${UI.icon('inbox')}</button>` : ''}
               ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
@@ -89,6 +93,7 @@ App.register('orders', async (view, filter) => {
       finally { b.disabled = false; }
     });
     tableEl.querySelectorAll('[data-produce]').forEach((b) => b.onclick = () => startProduction(b.dataset.produce));
+    tableEl.querySelectorAll('[data-view-jo]').forEach((b) => b.onclick = () => App.navigate('job-orders', { id: b.dataset.viewJo }));
     tableEl.querySelectorAll('[data-purch]').forEach((b) => b.onclick = () => App.navigate('purchasing', { order: b.dataset.purch }));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(b.dataset.del, list));
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
@@ -436,4 +441,7 @@ App.register('orders', async (view, filter) => {
   view.querySelector('#ord-new').addEventListener('click', () => orderModal(null));
 
   await load();
+  // filter.id deep-links straight into one order's edit modal (used by the AI assistant's
+  // created-record links) — openOrder() only needs the id, it fetches the rest itself.
+  if (filter && filter.id) openOrder(filter.id);
 });

@@ -27,13 +27,14 @@ afterAll(() => cleanup(ctx));
 
 // ─── Fetch mock helpers ────────────────────────────────────────────────────
 
-function makeCerebrasReply(content: string) {
+function makeCerebrasReply(content: string, totalTokens?: number) {
   return {
     choices: [{ message: { role: 'assistant', content, tool_calls: undefined }, finish_reason: 'stop' }],
+    ...(totalTokens != null ? { usage: { total_tokens: totalTokens } } : {}),
   };
 }
 
-function makeCerebrasToolCall(id: string, name: string, args: object) {
+function makeCerebrasToolCall(id: string, name: string, args: object, totalTokens?: number) {
   return {
     choices: [{
       message: {
@@ -43,6 +44,7 @@ function makeCerebrasToolCall(id: string, name: string, args: object) {
       },
       finish_reason: 'tool_calls',
     }],
+    ...(totalTokens != null ? { usage: { total_tokens: totalTokens } } : {}),
   };
 }
 
@@ -250,6 +252,76 @@ describe('POST /api/ai/chat', () => {
   });
 });
 
+describe('token usage cap', () => {
+  const hdr = () => ({ Authorization: `Bearer ${adminToken}` });
+  beforeEach(async () => {
+    process.env.CEREBRAS_API_KEY = 'test-key';
+    // Clean slate: no cap, zero usage, before each test in this block.
+    await ctx.api.put('/api/ai/config').set(hdr()).send({ token_cap: 0 });
+    await ctx.api.post('/api/ai/reset-usage').set(hdr());
+  });
+  afterEach(() => { vi.restoreAllMocks(); delete process.env.CEREBRAS_API_KEY; });
+
+  it('accumulates usage.total_tokens from the LLM response, summed across every call in one turn', async () => {
+    mockFetch(
+      makeCerebrasToolCall('tu1', 'get_notes', {}, 120),
+      makeCerebrasReply('Done.', 80),
+    );
+    const res = await ctx.api.post('/api/ai/chat').set(hdr())
+      .send({ messages: [{ role: 'user', content: 'notes?' }] });
+    expect(res.status).toBe(200);
+
+    const cfg = await ctx.api.get('/api/ai/config').set(hdr());
+    expect(cfg.body.tokens_used).toBe(200); // 120 + 80, not just the last call's 80
+  });
+
+  it('refuses a new chat once usage reaches the cap, with a clear 402', async () => {
+    const fetchSpy = mockFetch(makeCerebrasReply('First.', 500));
+    await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'hi' }] });
+    await ctx.api.put('/api/ai/config').set(hdr()).send({ token_cap: 500 }); // exactly at usage
+    fetchSpy.mockClear(); // isolate the call count check below to just the next request
+
+    const res = await ctx.api.post('/api/ai/chat').set(hdr())
+      .send({ messages: [{ role: 'user', content: 'again?' }] });
+    expect(res.status).toBe(402);
+    expect(res.body.error).toMatch(/cap/i);
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // blocked before ever calling the LLM
+  });
+
+  it('a cap of 0 never blocks, regardless of usage', async () => {
+    mockFetch(makeCerebrasReply('Fine.', 999_999));
+    const first = await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'hi' }] });
+    expect(first.status).toBe(200);
+
+    mockFetch(makeCerebrasReply('Still fine.', 1));
+    const second = await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'hi again' }] });
+    expect(second.status).toBe(200);
+  });
+
+  it('reset-usage clears the counter (cap unchanged) and unblocks further chat', async () => {
+    mockFetch(makeCerebrasReply('First.', 300));
+    await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'hi' }] });
+    await ctx.api.put('/api/ai/config').set(hdr()).send({ token_cap: 300 });
+
+    const blocked = await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'again' }] });
+    expect(blocked.status).toBe(402);
+
+    const reset = await ctx.api.post('/api/ai/reset-usage').set(hdr());
+    expect(reset.body.tokens_used).toBe(0);
+    expect(reset.body.token_cap).toBe(300); // cap itself is untouched by a reset
+
+    mockFetch(makeCerebrasReply('Working again.', 1));
+    const after = await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'once more' }] });
+    expect(after.status).toBe(200);
+  });
+
+  it('reset-usage and a negative/absurd token_cap are both users.manage-gated', async () => {
+    const wh = await createEmployee(ctx.api, adminToken, { role: 'warehouse' });
+    expect((await ctx.api.post('/api/ai/reset-usage').set('Authorization', `Bearer ${wh.token}`)).status).toBe(403);
+    expect((await ctx.api.put('/api/ai/config').set(hdr()).send({ token_cap: -5 })).status).toBe(400);
+  });
+});
+
 // ─── Tool execution unit tests (no HTTP) ──────────────────────────────────
 
 describe('executeTool unit tests', () => {
@@ -312,6 +384,9 @@ describe('executeTool unit tests', () => {
     });
     expect(result.success).toBe(true);
     expect((result.data as { number: string }).number).toMatch(/^PR-\d{5}$/);
+    // type comes back so the frontend can build a "View purchase request" link (public/js/tools.js's
+    // actionForStep()) without having to re-derive it from the order number's prefix.
+    expect((result.data as { type: string }).type).toBe('purchase');
   });
 
   it('update_user refuses to demote the last active administrator', async () => {

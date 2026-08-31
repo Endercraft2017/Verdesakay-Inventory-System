@@ -917,4 +917,7 @@ App.register('inventory', async (view, filter) => {
     loadSuppliers(true).then(fillSupplierFilter),
     loadLocations(true).then(fillLocationFilter),
   ]);
+  // filter.id deep-links straight into one item's detail (used by the AI assistant's
+  // created-record links) — detailModal() only needs {id}, it fetches the rest itself.
+  if (filter && filter.id) detailModal({ id: Number(filter.id) });
 });

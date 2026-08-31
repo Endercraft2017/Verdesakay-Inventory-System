@@ -834,7 +834,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
             );
           });
           db.exec('COMMIT');
-          return { success: true, data: { id: Number(r.lastInsertRowid), number: orderNum, total } };
+          return { success: true, data: { id: Number(r.lastInsertRowid), number: orderNum, total, type } };
         } catch (e) { db.exec('ROLLBACK'); throw e; }
       }
 

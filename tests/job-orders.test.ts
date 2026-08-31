@@ -260,3 +260,41 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
     expect(byCode['1152'].credit).toBe(160); // WIP cleared
   });
 });
+
+describe('job-type order <-> job_orders backlink', () => {
+  it('GET /orders and /orders/:id surface the job_orders row "Start production" spawned', async () => {
+    const { product } = await setupProduct('Backlink');
+    const order = await ctx.api.post('/api/orders').set(authHdr())
+      .send({ type: 'job', items: [{ name: 'Custom build', quantity: 1, unit_price: 500 }] });
+    expect(order.body.number).toMatch(/^JO-\d{5}$/); // the order's own JO- number, distinct from the job_orders one below
+
+    // Before "Start production": no backlink yet.
+    const before = await ctx.api.get('/api/orders/' + order.body.id).set(authHdr());
+    expect(before.body.job_order_id).toBeFalsy();
+
+    const mo = await createMO({ product_item_id: product, qty_ordered: 3, order_id: order.body.id });
+    expect(mo.status).toBe(201);
+
+    const after = await ctx.api.get('/api/orders/' + order.body.id).set(authHdr());
+    expect(after.body.job_order_id).toBe(mo.body.id);
+    expect(after.body.job_order_number).toBe(mo.body.number);
+    expect(after.body.job_order_status).toBe('draft');
+
+    const list = await ctx.api.get('/api/orders?type=job').set(authHdr());
+    const row = list.body.find((o: { id: number }) => o.id === order.body.id);
+    expect(row.job_order_id).toBe(mo.body.id);
+
+    // The reverse direction already worked before this change: job_orders itself carries
+    // order_number back to the originating order.
+    const joDetail = await ctx.api.get('/api/job-orders/' + mo.body.id).set(authHdr());
+    expect(joDetail.body.order_number).toBe(order.body.number);
+  });
+
+  it('a job-type order with no production started yet has a null backlink', async () => {
+    const order = await ctx.api.post('/api/orders').set(authHdr())
+      .send({ type: 'job', items: [{ name: 'Not started', quantity: 1, unit_price: 100 }] });
+    const detail = await ctx.api.get('/api/orders/' + order.body.id).set(authHdr());
+    expect(detail.body.job_order_id).toBeFalsy();
+    expect(detail.body.job_order_number).toBeFalsy();
+  });
+});

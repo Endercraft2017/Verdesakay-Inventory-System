@@ -374,4 +374,10 @@ App.register('admin', async (view, filter) => {
 
   // Deep-link: the "Departments" tree leaf opens the manager directly.
   if (filter && filter.tab === 'departments') manageDepartments();
+  // filter.id deep-links into one account's edit modal (used by the AI assistant's
+  // created-record links) — editUser() needs the full row, load() above already has it.
+  if (filter && filter.id) {
+    const u = allUsers.find((x) => String(x.id) === String(filter.id));
+    if (u) editUser(u);
+  }
 });

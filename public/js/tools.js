@@ -61,6 +61,45 @@
       `<button type="button" class="btn secondary small ai-report-dl" data-url="${UI.esc(f.url)}" data-name="${UI.esc(f.name)}">${UI.icon('download', 14)} ${UI.esc((f.format || 'file').toUpperCase())}</button>`
     ).join('')}</div>`;
   }
+  /** A pressable "View X" jump for a step that created (or otherwise points at) a real
+      record — job/sale/purchase order, inventory item, account, note, task. Returns null
+      for steps that don't map to anywhere navigable (most tools: reads, sends, etc). */
+  function actionForStep(step) {
+    if (!step || !step.result || step.result.success === false) return null;
+    const d = step.result.data || {};
+    if (step.tool === 'create_inventory_item' && d.id) {
+      return { label: 'View item', run: () => App.navigate('inventory', { id: d.id }) };
+    }
+    if (step.tool === 'create_order' && d.id && d.type) {
+      const noun = d.type === 'job' ? 'job order' : d.type === 'purchase' ? 'purchase request' : 'sale order';
+      return { label: `View ${noun}`, run: () => App.navigate('orders', { type: d.type, id: d.id }) };
+    }
+    if (step.tool === 'create_user' && d.id) {
+      return { label: 'View account', run: () => App.navigate('admin', { id: d.id }) };
+    }
+    if (step.tool === 'create_note') {
+      return { label: 'Open Notes', run: () => openNotes() };
+    }
+    if (step.tool === 'create_task') {
+      return { label: 'Open Tasks', run: () => openScheduler() };
+    }
+    return null;
+  }
+  function recordLinksHTML(steps) {
+    const actions = (steps || []).map((s, i) => ({ i, a: actionForStep(s) })).filter((x) => x.a);
+    if (!actions.length) return '';
+    return `<div class="ai-reports">${actions.map(({ i, a }) =>
+      `<button type="button" class="btn secondary small ai-record-view" data-step="${i}">${UI.icon('eye', 14)} ${UI.esc(a.label)}</button>`
+    ).join('')}</div>`;
+  }
+  function wireRecordLinks(msgEl, steps) {
+    if (!msgEl) return;
+    msgEl.querySelectorAll('.ai-record-view').forEach((b) => b.onclick = () => {
+      const step = (steps || [])[Number(b.dataset.step)];
+      const a = actionForStep(step);
+      if (a) a.run();
+    });
+  }
   function wireReportLinks(msgEl) {
     if (!msgEl) return;
     msgEl.querySelectorAll('.ai-report-dl').forEach((b) => b.onclick = async () => {
@@ -169,7 +208,8 @@
           `<span class="ai-chip">${UI.esc(toolLabel(s.tool))}</span>`).join('');
         const chipsHTML = chips ? `<div class="ai-chips">${chips}</div>` : '';
         chat.insertAdjacentHTML('beforeend',
-          `<div class="ai-msg bot">${chipsHTML}<div>${mdLite(res.reply || '')}</div>${reportLinksHTML(res.steps)}</div>`);
+          `<div class="ai-msg bot">${chipsHTML}<div>${mdLite(res.reply || '')}</div>${recordLinksHTML(res.steps)}${reportLinksHTML(res.steps)}</div>`);
+        wireRecordLinks(chat.lastElementChild, res.steps);
         wireReportLinks(chat.lastElementChild);
         aiHistory.push({ role: 'assistant', content: res.reply || '' });
       } catch (err) {
@@ -185,6 +225,19 @@
       }
     });
     input.focus();
+  }
+
+  function usageBarHTML(c) {
+    const used = c.tokens_used || 0;
+    const cap = c.token_cap || 0;
+    const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+    const stage = pct >= 100 ? 'over' : pct >= 80 ? 'near' : 'ok';
+    const text = cap > 0
+      ? `${used.toLocaleString()} / ${cap.toLocaleString()} tokens used (${pct}%)${pct >= 100 ? ' — cap reached, the assistant is paused' : ''}`
+      : `${used.toLocaleString()} tokens used — no cap set`;
+    return `
+      <div class="ai-usage-bar"><div class="ai-usage-fill ${stage}" style="width:${cap > 0 ? pct : 0}%"></div></div>
+      <div class="muted" style="font-size:12px;margin-top:5px" id="ai-usage-text">${UI.esc(text)}</div>`;
   }
 
   async function aiSettingsModal() {
@@ -218,7 +271,20 @@
       </div>
       <p class="muted" style="font-size:12px;margin:10px 0 0">Any OpenAI-compatible chat-completions API works.
         The default is <strong>Gemini Flash-Lite</strong> — high context, low cost. Clearing the key falls back
-        to the platform key if one is configured.</p>`,
+        to the platform key if one is configured.</p>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+        <div class="field-label"><label>Token usage cap</label></div>
+        <div id="ai-usage-wrap">${usageBarHTML(c)}</div>
+        <div class="field-row" style="margin-top:10px">
+          <div><label>Cap (0 = unlimited)</label>
+            <input data-f="token_cap" type="number" min="0" step="1000" value="${c.token_cap || 0}" /></div>
+          <div style="align-self:flex-end">
+            <button type="button" class="btn secondary small" id="ai-reset-usage">Reset usage</button></div>
+        </div>
+        <p class="muted" style="font-size:12px;margin:8px 0 0">Counts every token spent across all LLM calls
+          (including tool-use steps within a single question), summed since it was last reset. Once usage
+          reaches the cap, the assistant refuses new requests until an admin raises the cap or resets usage here.</p>
+      </div>`,
       confirmText: 'Save',
       onOpen: (ov) => {
         const PRESETS = {
@@ -235,10 +301,19 @@
           ov.querySelector('[data-f="model"]').value = p[0];
           ov.querySelector('[data-f="base_url"]').value = p[1];
         });
+        ov.querySelector('#ai-reset-usage').onclick = async () => {
+          if (!(await UI.confirmDialog('Reset the token usage counter to 0? The cap itself is unchanged.', 'Reset usage'))) return;
+          try {
+            const updated = await API.post('/ai/reset-usage');
+            c = updated;
+            ov.querySelector('#ai-usage-wrap').innerHTML = usageBarHTML(c);
+            UI.toast('Usage reset');
+          } catch (e) { UI.toast(e.message, 'error'); }
+        };
       },
       onConfirm: async (ov) => {
         const g = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
-        const body = { model: g('model'), base_url: g('base_url') };
+        const body = { model: g('model'), base_url: g('base_url'), token_cap: Number(g('token_cap')) || 0 };
         const key = g('api_key');
         if (key) body.api_key = key;
         await API.put('/ai/config', body);
