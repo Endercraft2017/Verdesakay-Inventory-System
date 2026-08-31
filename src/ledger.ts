@@ -127,6 +127,7 @@ export const DEFAULT_COA: SeedAccount[] = [
   // ---- Liabilities ----
   { code: '2000', name: 'Liabilities', root_type: 'liability', is_group: true },
   { code: '2100', name: 'Current Liabilities', root_type: 'liability', is_group: true, parent: '2000' },
+  { code: '2105', name: 'Goods Received Not Invoiced', root_type: 'liability', account_type: 'payable', parent: '2100' },
   { code: '2110', name: 'Accounts Payable', root_type: 'liability', account_type: 'payable', parent: '2100' },
   { code: '2120', name: 'Output VAT', root_type: 'liability', account_type: 'tax', parent: '2100' },
   { code: '2130', name: 'Withholding Tax Payable — Compensation', root_type: 'liability', account_type: 'tax', parent: '2100' },

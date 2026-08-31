@@ -23,11 +23,13 @@
 > **Phase 3a (2026-08-31)** posts the **Payroll Journal** — one aggregate entry per
 > cutoff via an explicit "Post to GL" action (not an implicit per-regenerate hook, unlike
 > sales/purchase — see §5), plus payslip locking (`mark-paid`) and payslip email as
-> companion fixes. **Phase 3b (2026-08-31)** posts **manufacturing WIP** — a job order
+> companion fixes. **Phase 3b (2026-08-31)** brings **inventory into the GL**: a job order
 > moves its material cost DR WIP / CR Inventory at release, DR Inventory / CR WIP as units
-> finish, with a scrap/variance true-up at close (`inventory_items.unit_cost` standard
-> cost). Purchase-side perpetual inventory + COGS-on-sale are the remaining 3b work; Phase
-> 4–5 (financial-statement polish, CAS export) are the roadmap. **Phase 2 is complete** — its last tail,
+> finish, with a scrap/variance true-up at close; a goods receipt posts DR Inventory / CR
+> Goods Received Not Invoiced at the PO price, and the vendor bill clears GRNI instead of
+> expensing (`inventory_items.unit_cost` standard cost). COGS-on-sale (needs a sale→stock
+> hook) is the remaining 3b work; Phase 4–5 (financial-statement polish, CAS export) are
+> the roadmap. **Phase 2 is complete** — its last tail,
 > **per-line tax codes** for mixed-rate documents (2026-08-31), lets the BIR journals /
 > SLSP / 2550M-Q classify a sale or bill line by line.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
@@ -392,10 +394,21 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   is **standard cost** from `unit_cost` at posting time — no moving-average valuation layer
   yet. `tests/accounting-posting.test.ts` ("buildJobOrderEntry") + `tests/job-orders.test.ts`
   ("manufacturing WIP in the GL").
-- **3b — still to do.** Perpetual inventory on the **purchase side** (goods receipt →
-  DR Inventory / CR GR-IR clearing; goods vendor bill clears GR-IR instead of expensing)
-  and **COGS on sale** — the latter needs a sale → stock-decrement hook first (sale orders
-  don't touch stock today). Moving-average valuation.
+- **3b — purchase-side perpetual inventory. ✅ SHIPPED 2026-08-31.** The default COA gains
+  **Goods Received Not Invoiced** (code 2105, current liability); a 4th Phase-3 posting-rule
+  leg `grir_clearing_account_id` (seeded to 2105 by `seedPostingRulesFromCoa()`, backfilled
+  into an existing chart by the SCHEMA_VERSION 13 migrate step). A **goods receipt** now
+  posts **DR Inventory / CR GRNI** at the purchase-order line price (× received qty; falls
+  back to `inventory_items.unit_cost` for a line with no PO link) — `buildReceiptEntry` +
+  `maybeAutoPostGoodsReceipt`, `source_type` `goods_receipt`; `DELETE /receipts/:id`
+  reverses it. When a **vendor bill** is approved for a PO that has receipts,
+  `buildPurchaseEntry` debits **GRNI** for the outstanding balance (`grirOpenForOrder` — Σ
+  the PO's receipt GRNI credits − Σ its bills' GRNI debits, capped at the bill's net)
+  instead of purchase expense; a bill with no receipts (services / expenses) is unchanged.
+  `tests/accounting-posting.test.ts` ("buildReceiptEntry", "buildPurchaseEntry" GRNI cases)
+  + `tests/accounting.test.ts` ("perpetual inventory — goods receipts + GRNI").
+- **3b — still to do.** **COGS on sale** — needs a sale → stock-decrement hook first (sale
+  orders don't touch stock today). **Moving-average valuation** to replace standard cost.
 
 **Phase 4 — statements, close, assets, bank rec.** PFRS-for-SMEs **BS / IS / cash flow /
 equity**; **period-end close** (accruals, prepaid amortization, depreciation run,
@@ -596,9 +609,9 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Frappe Books | Verdesakay | Status |
 |---|---|---|
 | `Location` (warehouse) | `locations` | ✅ |
-| `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` (+ `inventory_items.unit_cost` standard cost, Phase 3b) | ✅ — job orders post WIP to the GL at standard cost; purchase-side perpetual inventory + moving-average valuation still ⬜ (Phase 3b) |
+| `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` (+ `inventory_items.unit_cost` standard cost, Phase 3b) | ✅ — job orders post WIP + goods receipts post DR Inventory / CR GRNI, both at standard cost (Phase 3b); COGS-on-sale + moving-average valuation still ⬜ |
 | `StockMovement` / `StockTransfer` (+ items) | adjust / transfer endpoints | ✅ |
-| `PurchaseReceipt` (+ items) | `goods_receipts` | ✅ |
+| `PurchaseReceipt` (+ items) | `goods_receipts` | ✅ — posts DR Inventory / CR Goods Received Not Invoiced (Phase 3b); the vendor bill clears GRNI |
 | `Shipment` (+ items) — delivery note | finished-unit allocation | 🟡 |
 | `SerialNumber` / `Batch` / `BatchSeries` | `job_order_units` (finished goods only) | 🟡 |
 | `InventorySettings` | inventory form-config | 🟡 |

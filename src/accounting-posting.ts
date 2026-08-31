@@ -29,6 +29,7 @@ export interface PostingRules {
   inventory_asset_account_id?: number | null;      // Inventory (raw materials + finished goods)
   wip_account_id?: number | null;                  // Work in Process (job-order materials in production)
   mfg_variance_account_id?: number | null;         // Manufacturing Variance & Scrap (job-order WIP true-up)
+  grir_clearing_account_id?: number | null;        // Goods Received Not Invoiced (receipt → credit; goods bill → debit)
 }
 
 export const POSTING_RULE_KEYS: (keyof PostingRules)[] = [
@@ -38,7 +39,7 @@ export const POSTING_RULE_KEYS: (keyof PostingRules)[] = [
   'payroll_expense_account_id', 'payroll_er_contrib_account_id', 'sss_payable_account_id',
   'philhealth_payable_account_id', 'pagibig_payable_account_id', 'withholding_tax_payable_account_id',
   'net_pay_payable_account_id', 'employee_advance_account_id',
-  'inventory_asset_account_id', 'wip_account_id', 'mfg_variance_account_id',
+  'inventory_asset_account_id', 'wip_account_id', 'mfg_variance_account_id', 'grir_clearing_account_id',
 ];
 
 /** The document shape the builders need — the same fields sale orders and vendor bills share. */
@@ -51,6 +52,9 @@ export interface PostableDoc {
   party_id?: number | null;   // customer / supplier id, stamped onto the AR / AP line
   memo?: string | null;
   ewt_amount?: number;        // vendor bill only: withheld and remitted to BIR, not the supplier
+  grir_amount?: number;       // vendor bill only: the portion of the net that clears Goods
+                              // Received Not Invoiced (goods already booked to Inventory at
+                              // receipt) instead of hitting purchase expense
 }
 
 export interface BuiltEntry {
@@ -58,7 +62,7 @@ export interface BuiltEntry {
   entry_date: string;
   memo: string;
   reference: string;
-  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note' | 'payroll_run' | 'job_order';
+  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note' | 'payroll_run' | 'job_order' | 'goods_receipt';
   source_id: number;
   lines: JournalLineInput[];
 }
@@ -114,22 +118,28 @@ export function buildSalesEntry(doc: PostableDoc, rules: PostingRules, sourceId:
  * VAT line dropped when there is no tax; the expense debit is derived as total − tax.
  */
 export function buildPurchaseEntry(doc: PostableDoc, rules: PostingRules, sourceId: number): BuildResult {
-  const need: (keyof PostingRules)[] = ['ap_account_id', 'purchase_expense_account_id'];
+  const need: (keyof PostingRules)[] = ['ap_account_id'];
   const tax = round2(doc.tax_amount || 0);
   if (tax > 0) need.push('input_vat_account_id');
   const ewt = round2(Math.min(doc.ewt_amount || 0, doc.total || 0));
   if (ewt > 0) need.push('ewt_payable_account_id');
-  const gap = missing(rules, need);
-  if (gap) return { ok: false, error: gap };
 
   const total = round2(doc.total || 0);
   if (total <= 0) return { ok: false, error: `${doc.number}: nothing to post (total is ${total}).` };
   const net = round2(total - tax);
   const payable = round2(total - ewt);   // EWT is withheld from the supplier and owed to BIR
+  // The part of the net that clears Goods Received Not Invoiced (goods already on the
+  // balance sheet from the receipt); the remainder is a straight purchase / expense.
+  const grir = round2(Math.min(Math.max(doc.grir_amount || 0, 0), net));
+  const expense = round2(net - grir);
+  if (grir > 0) need.push('grir_clearing_account_id');
+  if (expense > 0) need.push('purchase_expense_account_id');
+  const gap = missing(rules, need);
+  if (gap) return { ok: false, error: gap };
 
-  const lines: JournalLineInput[] = [
-    { account_id: rules.purchase_expense_account_id!, debit: net, credit: 0 },
-  ];
+  const lines: JournalLineInput[] = [];
+  if (expense > 0) lines.push({ account_id: rules.purchase_expense_account_id!, debit: expense, credit: 0 });
+  if (grir > 0) lines.push({ account_id: rules.grir_clearing_account_id!, debit: grir, credit: 0, memo: `Clears GRNI ${doc.number}` });
   if (tax > 0) lines.push({ account_id: rules.input_vat_account_id!, debit: tax, credit: 0 });
   lines.push({ account_id: rules.ap_account_id!, debit: 0, credit: payable, party_type: 'supplier', party_id: doc.party_id ?? null, memo: doc.memo ?? null });
   if (ewt > 0) lines.push({ account_id: rules.ewt_payable_account_id!, debit: 0, credit: ewt, memo: `EWT ${doc.number}` });
@@ -411,6 +421,37 @@ export function buildJobOrderEntry(doc: JobOrderMoveDoc, rules: PostingRules, so
       source_type: 'job_order',
       source_id: sourceId,
       lines,
+    },
+  };
+}
+
+/** A goods receipt: perpetual inventory recognises the stock as it arrives, against a
+ *  clearing account the vendor bill later settles.  DR Inventory / CR Goods Received Not
+ *  Invoiced, valued at the purchase-order line price (× received qty). */
+export interface ReceiptDoc {
+  number: string;   // GRN-xxxxx
+  date: string;
+  amount: number;   // Σ received qty × PO unit price
+}
+
+export function buildReceiptEntry(doc: ReceiptDoc, rules: PostingRules, sourceId: number): BuildResult {
+  const gap = missing(rules, ['inventory_asset_account_id', 'grir_clearing_account_id']);
+  if (gap) return { ok: false, error: gap };
+  const amt = round2(doc.amount || 0);
+  if (amt <= 0) return { ok: false, error: `${doc.number}: nothing to value (amount is ${amt}).` };
+  return {
+    ok: true,
+    entry: {
+      book: 'general',
+      entry_date: doc.date,
+      memo: `Goods receipt ${doc.number}`,
+      reference: doc.number,
+      source_type: 'goods_receipt',
+      source_id: sourceId,
+      lines: [
+        { account_id: rules.inventory_asset_account_id!, debit: amt, credit: 0 },
+        { account_id: rules.grir_clearing_account_id!, debit: 0, credit: amt },
+      ],
     },
   };
 }

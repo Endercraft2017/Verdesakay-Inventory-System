@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
-  buildJobOrderEntry,
+  buildJobOrderEntry, buildReceiptEntry,
   type PostingRules, type PayrollDoc,
 } from '../src/accounting-posting';
 
@@ -199,6 +199,37 @@ describe('buildPurchaseEntry', () => {
     );
     expect(r.ok).toBe(false);
   });
+
+  it('grir_amount clears Goods Received Not Invoiced instead of purchase expense', () => {
+    // whole net was received: DR GRNI 1000 / DR input VAT 120 / CR AP 1120, no expense line
+    const whole = buildPurchaseEntry(
+      { number: 'BILL-4', date: '2026-03-02', subtotal: 1000, tax_amount: 120, total: 1120, grir_amount: 1000 },
+      { ...RULES, grir_clearing_account_id: 21050 }, 13
+    );
+    expect(whole.ok).toBe(true);
+    if (!whole.ok) return;
+    expect(whole.entry.lines.find((l) => l.account_id === 21050)!.debit).toBe(1000);
+    expect(whole.entry.lines.some((l) => l.account_id === 51)).toBe(false); // no purchase expense
+    expect(sum(whole.entry.lines, 'debit')).toBe(sum(whole.entry.lines, 'credit'));
+
+    // partial receipt: ₱600 clears GRNI, the remaining ₱400 is a straight expense
+    const partial = buildPurchaseEntry(
+      { number: 'BILL-5', date: '2026-03-02', subtotal: 1000, tax_amount: 0, total: 1000, grir_amount: 600 },
+      { ...RULES, grir_clearing_account_id: 21050 }, 14
+    );
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) return;
+    expect(partial.entry.lines.find((l) => l.account_id === 21050)!.debit).toBe(600);
+    expect(partial.entry.lines.find((l) => l.account_id === 51)!.debit).toBe(400);
+  });
+
+  it('fails when goods were received but no GRNI clearing rule is set', () => {
+    const r = buildPurchaseEntry(
+      { number: 'BILL-6', date: '2026-03-02', subtotal: 1000, tax_amount: 0, total: 1000, grir_amount: 1000 },
+      RULES, 15
+    );
+    expect(r.ok).toBe(false);
+  });
 });
 
 describe('buildPayrollEntry', () => {
@@ -336,5 +367,26 @@ describe('buildJobOrderEntry', () => {
       { ...RULES, wip_account_id: null }, 1
     );
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('buildReceiptEntry', () => {
+  it('DR Inventory / CR Goods Received Not Invoiced', () => {
+    const r = buildReceiptEntry(
+      { number: 'GRN-1', date: '2026-03-10', amount: 1000 },
+      { ...RULES, grir_clearing_account_id: 21050 }, 1
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.book).toBe('general');
+    expect(r.entry.source_type).toBe('goods_receipt');
+    expect(r.entry.lines.find((l) => l.account_id === 15)!.debit).toBe(1000);    // Inventory
+    expect(r.entry.lines.find((l) => l.account_id === 21050)!.credit).toBe(1000); // GRNI
+  });
+
+  it('fails on a zero value or a missing rule', () => {
+    expect(buildReceiptEntry({ number: 'GRN-2', date: '2026-03-10', amount: 0 },
+      { ...RULES, grir_clearing_account_id: 21050 }, 1).ok).toBe(false);
+    expect(buildReceiptEntry({ number: 'GRN-3', date: '2026-03-10', amount: 500 }, RULES, 1).ok).toBe(false);
   });
 });

@@ -10,7 +10,7 @@
 import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } from './db';
 import {
   buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
-  buildJobOrderEntry, POSTING_RULE_KEYS,
+  buildJobOrderEntry, buildReceiptEntry, POSTING_RULE_KEYS,
   type PostingRules, type PostableDoc, type BuiltEntry, type PayrollDoc,
 } from './accounting-posting';
 import { round2 } from './ledger';
@@ -62,6 +62,7 @@ export function seedPostingRulesFromCoa(): PostingRules {
     ['inventory_asset_account_id', '1150'],
     ['wip_account_id', '1152'],
     ['mfg_variance_account_id', '5150'],
+    ['grir_clearing_account_id', '2105'],
   ];
   let touched = false;
   for (const [key, code] of wants) {
@@ -245,6 +246,45 @@ export function maybeAutoPostSale(orderId: number, userId: number | null): AutoP
   }
 }
 
+/** Outstanding Goods Received Not Invoiced for a purchase order: Σ its receipts' GRNI
+ *  credits − Σ its bills' GRNI debits, from posted GL lines. Drives how much of the next
+ *  vendor bill clears GRNI instead of hitting purchase expense. 0 when the ledger is off,
+ *  the rule is unset, or nothing was posted. */
+export function grirOpenForOrder(orderId: number): number {
+  const acct = getPostingRules().grir_clearing_account_id;
+  if (!acct || !orderId) return 0;
+  const r = queryOne<{ bal: number }>(
+    `SELECT COALESCE(SUM(jl.credit) - SUM(jl.debit), 0) AS bal
+     FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+     WHERE je.status = 'posted' AND jl.account_id = ?
+       AND ( (je.source_type = 'goods_receipt' AND je.source_id IN (SELECT id FROM goods_receipts WHERE order_id = ?))
+          OR (je.source_type = 'vendor_bill'   AND je.source_id IN (SELECT id FROM vendor_bills   WHERE order_id = ?)) )`,
+    acct, orderId, orderId
+  );
+  return round2(Math.max(0, r?.bal ?? 0));
+}
+
+/** Called after a goods receipt is posted. Recognises the stock: DR Inventory / CR Goods
+ *  Received Not Invoiced, at the purchase-order line price. `unpostSource('goods_receipt', …)`
+ *  on delete. Best-effort. */
+export function maybeAutoPostGoodsReceipt(
+  receiptId: number, number: string, date: string, amount: number, userId: number | null
+): AutoPostOutcome {
+  try {
+    if (!ledgerEnabled()) return { posted: false, skipped: 'ledger_off' };
+    if (postedEntryForSource('goods_receipt', receiptId)) return { posted: false, skipped: 'already_posted' };
+    if (round2(amount) <= 0) return { posted: false, skipped: 'nothing_to_post' };
+    if (periodClosedOn(date)) return { posted: false, skipped: 'period_closed' };
+    const built = buildReceiptEntry({ number, date, amount }, getPostingRules(), receiptId);
+    if (!built.ok) return { posted: false, error: built.error };
+    const entry = writePosted(built.entry, userId);
+    return { posted: true, entry };
+  } catch (e) {
+    console.warn(`[gl] auto-post goods receipt ${receiptId} failed: ${(e as Error).message}`);
+    return { posted: false, error: (e as Error).message };
+  }
+}
+
 /** Called after a vendor bill is approved. Posts it to the purchase journal. */
 export function maybeAutoPostVendorBill(billId: number, userId: number | null): AutoPostOutcome {
   try {
@@ -255,6 +295,7 @@ export function maybeAutoPostVendorBill(billId: number, userId: number | null): 
       number: b.number,
       date: b.bill_date || b.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
       subtotal: b.subtotal, tax_amount: b.tax_amount, total: b.total, ewt_amount: b.ewt_amount || 0,
+      grir_amount: b.order_id ? grirOpenForOrder(b.order_id) : 0,
       party_id: b.supplier_id ?? null, memo: b.vendor_ref ?? null,
     }, userId, rulesForTaxCode(b.tax_code_id, getPostingRules()));
   } catch (e) {

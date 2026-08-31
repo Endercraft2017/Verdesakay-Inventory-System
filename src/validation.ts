@@ -646,6 +646,7 @@ export const postingRulesSchema = z.object({
   inventory_asset_account_id: optionalId,
   wip_account_id: optionalId,
   mfg_variance_account_id: optionalId,
+  grir_clearing_account_id: optionalId,
 });
 
 export const matchToleranceSchema = z.object({

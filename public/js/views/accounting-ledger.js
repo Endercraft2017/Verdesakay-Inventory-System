@@ -73,6 +73,7 @@ App.register('accounting-ledger', async (view, filter) => {
       inventory_asset_account_id: 'Inventory (job order: raw materials out / finished goods in)',
       wip_account_id: 'Work in Process (job order: materials in production)',
       mfg_variance_account_id: 'Manufacturing Variance & Scrap (job order: WIP true-up at close)',
+      grir_clearing_account_id: 'Goods Received Not Invoiced (goods receipt → credit; goods bill → debit)',
     };
     const keys = Object.keys(LABELS);
     const opts = (root, sel) => ['<option value="">— not set —</option>'].concat(

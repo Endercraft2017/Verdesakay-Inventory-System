@@ -787,6 +787,7 @@ const POSTING_RULE_ROOT: Record<keyof PostingRules, AccountRootType> = {
   inventory_asset_account_id: 'asset',
   wip_account_id: 'asset',
   mfg_variance_account_id: 'expense',
+  grir_clearing_account_id: 'liability',
 };
 
 function postingRulesPayload() {

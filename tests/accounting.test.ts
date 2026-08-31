@@ -310,8 +310,16 @@ describe('accounting: auto-posting sales & purchases (Phase 1)', () => {
       items: [{ item_id: item, name: 'P1 Widget', quantity: 5, unit_price: 200 }], // sub 1000, VAT 120, total 1120
     });
     const oi = (await ctx.api.get(`/api/orders/${po.body.id}`).set(hdr())).body.items[0].id;
-    await ctx.api.post(`/api/purchasing/orders/${po.body.id}/receipts`).set(hdr())
+    const rcpt = await ctx.api.post(`/api/purchasing/orders/${po.body.id}/receipts`).set(hdr())
       .send({ location_id: loc, lines: [{ order_item_id: oi, item_id: item, name: 'P1 Widget', quantity: 5 }] });
+
+    // the receipt recognises stock: DR Inventory 1150 / CR Goods Received Not Invoiced 2105
+    const grn = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'goods_receipt', source_id: rcpt.body.id }).set(hdr());
+    const grnJe = (await ctx.api.get(`/api/accounting/ledger/journal-entries/${grn.body[0].id}`).set(hdr())).body;
+    expect(lineByCode(grnJe.lines, '1150').debit).toBe(1000);
+    expect(lineByCode(grnJe.lines, '2105').credit).toBe(1000);
+
     const bill = await ctx.api.post(`/api/purchasing/orders/${po.body.id}/bills`).set(hdr())
       .send({ bill_date: '2026-03-10', tax_percent: 12,
         lines: [{ order_item_id: oi, item_id: item, name: 'P1 Widget', quantity: 5, unit_price: 200 }] });
@@ -323,7 +331,8 @@ describe('accounting: auto-posting sales & purchases (Phase 1)', () => {
     expect(list.body.length).toBe(1);
     const je = (await ctx.api.get(`/api/accounting/ledger/journal-entries/${list.body[0].id}`).set(hdr())).body;
     expect(je.book).toBe('purchase');
-    expect(lineByCode(je.lines, '5100').debit).toBe(1000);
+    // goods were received, so the bill clears GRNI instead of hitting purchase expense
+    expect(lineByCode(je.lines, '2105').debit).toBe(1000);
     expect(lineByCode(je.lines, '1160').debit).toBe(120);
     expect(lineByCode(je.lines, '2110').credit).toBe(1120);
 
@@ -619,7 +628,7 @@ describe('accounting: expanded withholding / EWT (Phase 2b)', () => {
     const byCode = Object.fromEntries(je.lines.map((l: { account_code: string; debit: number; credit: number }) => [l.account_code, l]));
     expect(byCode['2110'].credit).toBe(1100); // AP = 1120 gross - 20 withheld
     expect(byCode['2140'].credit).toBe(20);   // Withholding Tax Payable — Expanded
-    expect(byCode['5100'].debit).toBe(1000);
+    expect(byCode['2105'].debit).toBe(1000);  // clears Goods Received Not Invoiced (stock was received)
     const tb = await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr());
     expect(tb.body.balanced).toBe(true);
   });
@@ -786,5 +795,73 @@ describe('accounting: per-line tax codes (Phase 2 tail)', () => {
     expect(row.cols.vatable).toBe(1000);
     expect(row.cols.vat).toBe(120);
     expect(row.cols.exempt).toBe(0);
+  });
+});
+
+describe('accounting: perpetual inventory — goods receipts + GRNI (Phase 3b)', () => {
+  const acctBal = async (code: string): Promise<number> => {
+    const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr())).body;
+    const r = tb.rows.find((x: { code: string }) => x.code === code);
+    return r ? Math.round((r.debit - r.credit) * 100) / 100 : 0;
+  };
+  const lines = async (sourceType: string, sourceId: number) => {
+    const l = (await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: sourceType, source_id: sourceId }).set(hdr())).body;
+    return (await ctx.api.get(`/api/accounting/ledger/journal-entries/${l[0].id}`).set(hdr())).body.lines;
+  };
+  const byCode = (ls: { account_code: string; debit: number; credit: number }[]) =>
+    Object.fromEntries(ls.map((x) => [x.account_code, x]));
+
+  it('a receipt then its bill move value Inventory → GRNI → cleared, netting GRNI to zero', async () => {
+    const loc = (await ctx.api.get('/api/locations').set(hdr())).body.find((l: { is_default: number }) => l.is_default === 1).id;
+    const item = (await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'GRNI Widget', quantity: 0 })).body.id;
+    const grniBefore = await acctBal('2105');
+    const invBefore = await acctBal('1150');
+
+    const po = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'purchase', order_date: '2026-04-02', tax_percent: 12,
+      items: [{ item_id: item, name: 'GRNI Widget', quantity: 10, unit_price: 50 }], // net 500
+    });
+    const oi = (await ctx.api.get(`/api/orders/${po.body.id}`).set(hdr())).body.items[0].id;
+    const rcpt = await ctx.api.post(`/api/purchasing/orders/${po.body.id}/receipts`).set(hdr())
+      .send({ location_id: loc, lines: [{ order_item_id: oi, item_id: item, name: 'GRNI Widget', quantity: 10 }] });
+
+    const rl = byCode(await lines('goods_receipt', rcpt.body.id));
+    expect(rl['1150']!.debit).toBe(500);
+    expect(rl['2105']!.credit).toBe(500);
+    expect(await acctBal('1150')).toBe(Math.round((invBefore + 500) * 100) / 100);
+
+    const bill = await ctx.api.post(`/api/purchasing/orders/${po.body.id}/bills`).set(hdr())
+      .send({ bill_date: '2026-04-02', tax_percent: 12,
+        lines: [{ order_item_id: oi, item_id: item, name: 'GRNI Widget', quantity: 10, unit_price: 50 }] });
+    await ctx.api.post(`/api/purchasing/bills/${bill.body.id}/approve`).set(hdr()).send({});
+
+    const bl = byCode(await lines('vendor_bill', bill.body.id));
+    expect(bl['2105']!.debit).toBe(500);   // clears GRNI, not purchase expense
+    expect(bl['5100']).toBeUndefined();
+    expect(bl['2110']!.credit).toBe(560);  // AP = 500 + 60 VAT
+    expect(await acctBal('2105')).toBe(grniBefore); // GRNI back to flat
+    const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr())).body;
+    expect(tb.balanced).toBe(true);
+  });
+
+  it('deleting a receipt reverses its inventory recognition', async () => {
+    const loc = (await ctx.api.get('/api/locations').set(hdr())).body.find((l: { is_default: number }) => l.is_default === 1).id;
+    const item = (await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'GRNI Undo', quantity: 0 })).body.id;
+    const po = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'purchase', order_date: '2026-04-05',
+      items: [{ item_id: item, name: 'GRNI Undo', quantity: 4, unit_price: 25 }], // net 100
+    });
+    const oi = (await ctx.api.get(`/api/orders/${po.body.id}`).set(hdr())).body.items[0].id;
+    const grniBefore = await acctBal('2105');
+    const rcpt = await ctx.api.post(`/api/purchasing/orders/${po.body.id}/receipts`).set(hdr())
+      .send({ location_id: loc, lines: [{ order_item_id: oi, item_id: item, name: 'GRNI Undo', quantity: 4 }] });
+    expect(await acctBal('2105')).toBe(Math.round((grniBefore - 100) * 100) / 100);
+
+    expect((await ctx.api.delete(`/api/purchasing/receipts/${rcpt.body.id}`).set(hdr())).status).toBe(200);
+    const es = (await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'goods_receipt', source_id: rcpt.body.id }).set(hdr())).body;
+    expect(es.length).toBe(2); // original + reversal
+    expect(await acctBal('2105')).toBe(grniBefore);
   });
 });

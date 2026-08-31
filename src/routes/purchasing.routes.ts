@@ -16,7 +16,7 @@ import {
   disputeBillSchema, matchToleranceSchema,
 } from '../validation';
 import { applyStockChange } from '../inventory-stock';
-import { maybeAutoPostVendorBill, unpostSource } from '../accounting-autopost';
+import { maybeAutoPostVendorBill, maybeAutoPostGoodsReceipt, unpostSource } from '../accounting-autopost';
 import {
   threeWayMatch, receiptStatus, DEFAULT_TOLERANCE,
   type MatchInputLine, type MatchTolerance,
@@ -28,6 +28,18 @@ router.use(requireAuth);
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 const TOL_KEY = 'purchasing_match_tolerance';
+
+/** Cost value of a goods receipt: Σ received qty × the matching PO line's unit price,
+ *  falling back to the item's standard `unit_cost` for a line with no PO link. */
+function receiptValue(receiptId: number): number {
+  const rows = queryAll<{ quantity: number; po_price: number | null; std: number }>(
+    `SELECT gi.quantity,
+            (SELECT oi.unit_price FROM order_items oi WHERE oi.id = gi.order_item_id) AS po_price,
+            COALESCE((SELECT i.unit_cost FROM inventory_items i WHERE i.id = gi.item_id), 0) AS std
+     FROM goods_receipt_items gi WHERE gi.receipt_id = ?`, receiptId
+  );
+  return round2(rows.reduce((s, r) => s + (Number(r.quantity) || 0) * (r.po_price ?? r.std ?? 0), 0));
+}
 const tolerance = (): MatchTolerance => ({ ...DEFAULT_TOLERANCE, ...(getSetting<MatchTolerance>(TOL_KEY) || {}) });
 
 /** Load a purchase order, or send the right error and return null. */
@@ -226,6 +238,9 @@ router.post('/orders/:id/receipts', requirePermission('inventory.adjust'), (req,
       }
     });
     db.exec('COMMIT');
+    // GL: perpetual inventory — DR Inventory / CR Goods Received Not Invoiced (best-effort).
+    maybeAutoPostGoodsReceipt(receiptId, number, input.received_date ?? new Date().toISOString().slice(0, 10),
+      receiptValue(receiptId), req.user!.id);
     res.status(201).json({ id: receiptId, number });
   } catch (e) {
     db.exec('ROLLBACK');
@@ -256,6 +271,7 @@ router.delete('/receipts/:id', requirePermission('inventory.adjust'), (req, res)
     db.exec('ROLLBACK');
     throw e;
   }
+  unpostSource('goods_receipt', receipt.id, req.user!.id);   // GL: reverse the receipt entry
   res.json({ ok: true });
 });
 

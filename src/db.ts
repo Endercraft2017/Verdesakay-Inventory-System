@@ -55,7 +55,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1379,8 +1379,9 @@ function migrate(): void {
   }
 
   // Backfill chart-of-accounts entries added to DEFAULT_COA after a tenant already ran
-  // ledger/setup (e.g. Work in Process / Manufacturing Variance for Phase 3b). New codes
-  // only — never touches an existing account. No-op when the ledger isn't set up yet.
+  // ledger/setup (Work in Process / Manufacturing Variance at SCHEMA_VERSION 12, Goods
+  // Received Not Invoiced at 13). New codes only — never touches an existing account.
+  // No-op when the ledger isn't set up yet.
   const haveAccounts = (db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number }).n;
   if (haveAccounts > 0) {
     const idByCode = new Map<string, number>();
