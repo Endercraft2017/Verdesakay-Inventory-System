@@ -2,11 +2,22 @@
 (function () {
   var STATUS_CLASS = { draft: '', pending: 'warn', approved: 'ok', rejected: 'bad', completed: 'ok', cancelled: '' };
 
+  function leaveBalanceStrip(emp) {
+    if (!emp || emp.leave_days_per_year == null) return '';
+    var remaining = emp.leave_days_remaining;
+    return '<div class="m-nextshift">🌴 Leave balance <b>' + mEsc(String(remaining)) + ' / ' +
+      mEsc(String(emp.leave_days_per_year)) + ' days</b> remaining this year</div>';
+  }
+
   function list(view) {
     MApp.setTitle('Requests');
     view.innerHTML = '<div class="m-actions"><button class="m-btn" id="m-req-new">＋ New request</button></div>' +
+      '<div id="m-req-balance"></div>' +
       '<div id="m-req-list"><div class="m-hint">Loading…</div></div>';
     view.querySelector('#m-req-new').onclick = function () { pickType(view); };
+    API.get('/me').then(function (r) {
+      view.querySelector('#m-req-balance').innerHTML = leaveBalanceStrip(r.employee);
+    }).catch(function () { /* unlinked accounts get a 403-free null employee; any other failure is non-fatal here */ });
     var host = view.querySelector('#m-req-list');
     API.get('/me/requests')
       .then(function (rows) {
@@ -97,6 +108,13 @@
     var emp = (MApp.getMe() || {}).employee || {};
     var AUTOFILL = { employee_name: emp.name, name: emp.name, department: emp.department_name, position: emp.position, employee_no: emp.employee_no };
     var fields = (t.fields || []).filter(function (f) { return !AUTOFILL[f.key]; });
+    if (t.slug === 'leave_request') {
+      var balBox = mEl('<div id="m-req-form-balance"></div>');
+      view.appendChild(balBox);
+      API.get('/me').then(function (r) {
+        balBox.innerHTML = leaveBalanceStrip(r.employee);
+      }).catch(function () { /* non-fatal — the request can still be filed, HR reviews the balance on approval */ });
+    }
     var f = mEl('<form class="m-form">' + fields.map(field).join('') +
       '<div class="m-actions"><button class="m-btn" type="submit">Submit request</button>' +
       '<button class="m-btn m-btn-secondary" type="button" data-cancel>Cancel</button></div></form>');
