@@ -21,6 +21,9 @@ App.register('accounting', async (view) => {
       ['sheet', 'BIR 1604-E', 'Annual info return of creditable taxes withheld (expanded) + alphalist.', bir1604eModal],
       ['printer', 'BIR 2307', 'Certificate of Creditable Tax Withheld at Source — one per supplier, printable.', bir2307Modal],
     ]],
+    ['Income tax', [
+      ['sheet', 'BIR 1702Q / 1702-RT', 'Corporate income tax worksheet — book net income → adjustments → tax due, less credits.', bir1702Modal],
+    ]],
     ['Withholding on compensation (payroll)', [
       ['sheet', 'BIR 1601-C', 'Monthly withholding-tax remittance worksheet.', bir1601cModal],
       ['sheet', 'BIR 1604-C', 'Annual return face + reconciliation to the Alphalist.', bir1604cModal],
@@ -343,6 +346,91 @@ async function bir2550qModal() {
       }
       ['#v-q', '#v-incl', '#v-carry', '#v-paid'].forEach((s) => ov.querySelector(s).addEventListener('change', load));
       load();
+    },
+  });
+}
+
+/* ── BIR 1702Q / 1702-RT — corporate income tax worksheet ───────────────── */
+async function bir1702Modal() {
+  const thisYear = new Date().getFullYear();
+  UI.modal({
+    title: 'BIR 1702Q / 1702-RT — income tax', size: 'lg', cancelText: 'Close', confirmText: null,
+    bodyHTML: `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <label style="margin:0">Year</label>
+        <select id="it-y">${[0, 1, 2, 3].map((i) => `<option>${thisYear - i}</option>`).join('')}</select>
+        <label style="margin:0">Period</label>
+        <select id="it-q"><option value="">Annual (1702-RT)</option>${[1, 2, 3].map((q) => `<option value="Q${q}">Q${q} cumulative (1702Q)</option>`).join('')}</select>
+        <label class="check" style="margin:0"><input type="checkbox" id="it-osd" /> Optional Standard Deduction (40%)</label>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <label class="check" style="margin:0"><input type="checkbox" id="it-small" /> Small / MSME corp (20% rate)</label>
+        <label class="check" style="margin:0"><input type="checkbox" id="it-mcit" /> MCIT applies (4th year on)</label>
+        <label style="margin:0;font-size:12px">Prior-quarter payments</label><input id="it-prior" type="number" min="0" step="0.01" value="0" style="width:110px" />
+        <label style="margin:0;font-size:12px">Creditable WT (2307s received)</label><input id="it-cwt" type="number" min="0" step="0.01" value="0" style="width:110px" />
+        <label style="margin:0;font-size:12px">Prior-year excess</label><input id="it-pye" type="number" min="0" step="0.01" value="0" style="width:110px" />
+      </div>
+      <p class="muted" style="font-size:12px;margin:0 0 6px">Book net income &amp; gross income come from the posted ledger for the period (the
+        year-end closing entry is excluded). Under itemized deductions, add non-deductible expenses back and deduct
+        non-taxable income here; under OSD these lines don't apply.</p>
+      <table class="line-table"><thead><tr><th>Reconciliation item</th><th style="width:110px">Add / Deduct</th><th style="width:130px">Amount</th><th></th></tr></thead>
+        <tbody id="it-rows"></tbody></table>
+      <button type="button" class="btn secondary small" id="it-add" style="margin-top:6px">${UI.icon('plus', 14)} Add line</button>
+      <div id="it-out" style="margin-top:12px" class="empty">Loading…</div>`,
+    onOpen: (ov) => {
+      const rowsEl = ov.querySelector('#it-rows');
+      const out = ov.querySelector('#it-out');
+      const rowHtml = () => `<tr>
+        <td><input data-k="label" placeholder="e.g. Provision for bad debts" /></td>
+        <td><select data-k="kind"><option value="add">Add back</option><option value="deduct">Deduct</option></select></td>
+        <td><input data-k="amount" type="number" min="0" step="0.01" value="0" style="width:120px" /></td>
+        <td><button type="button" class="icon-btn danger" data-rm>${UI.icon('trash', 14)}</button></td></tr>`;
+
+      const recompute = async () => {
+        const adjustments = [...rowsEl.querySelectorAll('tr')].map((tr) => ({
+          label: tr.querySelector('[data-k="label"]').value.trim(),
+          kind: tr.querySelector('[data-k="kind"]').value,
+          amount: parseFloat(tr.querySelector('[data-k="amount"]').value) || 0,
+        })).filter((a) => a.amount > 0);
+        const q = new URLSearchParams({
+          period: ov.querySelector('#it-q').value ? `${ov.querySelector('#it-y').value}-${ov.querySelector('#it-q').value}` : ov.querySelector('#it-y').value,
+          deduction: ov.querySelector('#it-osd').checked ? 'osd' : 'itemized',
+          adjustments: JSON.stringify(adjustments),
+          small_corp: ov.querySelector('#it-small').checked ? '1' : '0',
+          mcit: ov.querySelector('#it-mcit').checked ? '1' : '0',
+          prior_payments: ov.querySelector('#it-prior').value || 0,
+          creditable_withholding: ov.querySelector('#it-cwt').value || 0,
+          prior_year_excess: ov.querySelector('#it-pye').value || 0,
+        });
+        try {
+          const d = await API.get('/accounting/bir-1702?' + q.toString());
+          const w = d.worksheet;
+          out.innerHTML = `<p class="muted" style="font-size:11px;margin:0 0 6px">${UI.esc(d.form)} · ${UI.esc(d.period)} · ${UI.esc(d.from)} to ${UI.esc(d.to)}</p>
+            <table class="line-table"><tbody>
+              <tr><td>Gross income (net sales − COGS + other)</td><td class="right">${accPeso(d.sources.gross_income)}</td></tr>
+              <tr><td>Book net income</td><td class="right">${accPeso(d.sources.book_net_income)}</td></tr>
+              ${w.deduction_method === 'itemized' ? `<tr><td>Add: non-deductible items</td><td class="right">${accPeso(w.additions)}</td></tr>
+                <tr><td>Less: non-taxable income</td><td class="right">${accPeso(w.deductions)}</td></tr>` : ''}
+              <tr><th>Net taxable income</th><th class="right">${accPeso(w.net_taxable_income)}</th></tr>
+              <tr><td>Regular income tax @ ${(w.rate * 100).toFixed(0)}%</td><td class="right">${accPeso(w.regular_income_tax)}</td></tr>
+              ${w.mcit_applies ? `<tr><td>MCIT @ ${(w.mcit_rate * 100).toFixed(0)}% of gross income</td><td class="right">${accPeso(w.mcit)}</td></tr>` : ''}
+              <tr><th>Income tax due</th><th class="right">${accPeso(w.income_tax_due)}</th></tr>
+              <tr><td>Less: total tax credits / payments</td><td class="right">${accPeso(w.total_credits)}</td></tr>
+              <tr><th>Still payable</th><th class="right" style="color:${w.still_payable ? 'var(--danger)' : ''}">${accPeso(w.still_payable)}</th></tr>
+              ${w.overpayment ? `<tr><td>Overpayment (carry over / refund)</td><td class="right">${accPeso(w.overpayment)}</td></tr>` : ''}
+            </tbody></table>
+            ${w.notes.length ? `<ul class="muted" style="font-size:12px;margin:8px 0 0;padding-left:18px">${w.notes.map((n) => `<li>${UI.esc(n)}</li>`).join('')}</ul>` : ''}`;
+        } catch { out.innerHTML = '<div class="m-error">Could not compute.</div>'; }
+      };
+
+      ov.querySelector('#it-add').onclick = () => {
+        rowsEl.insertAdjacentHTML('beforeend', rowHtml());
+        const tr = rowsEl.lastElementChild;
+        tr.querySelector('[data-rm]').onclick = () => { tr.remove(); recompute(); };
+        tr.querySelectorAll('input,select').forEach((el) => el.addEventListener('input', recompute));
+      };
+      ov.querySelectorAll('#it-y,#it-q,#it-osd,#it-small,#it-mcit,#it-prior,#it-cwt,#it-pye').forEach((el) => el.addEventListener('input', recompute));
+      recompute();
     },
   });
 }

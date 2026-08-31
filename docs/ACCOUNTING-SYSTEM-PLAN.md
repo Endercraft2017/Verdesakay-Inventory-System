@@ -210,10 +210,25 @@ return worksheets can find the right balances without the user wiring anything.
   register** built as AP entries are tagged with an ATC. 0619-E worksheet exists; the
   register + QAP + 2307 printing + 1604-E are new.
 - **1702Q / 1702-RT** worksheet — trial balance → book income → the common
-  add-backs/deductions → tax due; attach the AFS. New.
+  add-backs/deductions → tax due; attach the AFS. ✅ **Phase 4d** (`bir-1702`,
+  `src/ph-income-tax.ts`; RCIT / MCIT / OSD / credits).
 - **Books of Accounts export** for CAS presentation. ✅ **Phase 4b** — `GET /books-of-accounts`
   bundles the General Journal / General Ledger / Cash books / Sales & Purchase Journals with
   the company header; printable + per-book CSV (Accounting → Tax & Compliance → Books of Accounts).
+- **1702Q / 1702-RT income tax worksheet.** ✅ **Phase 4d** — pure `src/ph-income-tax.ts`
+  (`incomeTax1702(input)`) + **`GET /api/accounting/bir-1702?period=YYYY|YYYY-Qn`**. Book net
+  income and gross income (net sales − COGS + other) are sourced from the posted ledger for
+  the range (year-to-date through the quarter for 1702Q; the full year for 1702-RT; the
+  Phase 4c year-end closing entry is excluded). The accountant enters the book-to-tax
+  reconciliation lines (`?adjustments=<json {label,kind:add|deduct,amount}>`), the rate
+  (`?rate=` or `?small_corp=1` for the 20% MSME rate, else 25%), MCIT applicability
+  (`?mcit=1` → pay the higher of 25% net taxable and 2% of gross income), and the credits
+  (`?prior_payments=`, `?creditable_withholding=` for 2307s received / SAWT,
+  `?prior_year_excess=`). OSD (`?deduction=osd`) computes 60% of gross income and ignores
+  the reconciliation lines. UI: Accounting → Tax & Compliance → **Income tax → BIR 1702Q /
+  1702-RT**. `tests/ph-income-tax.test.ts` + `tests/accounting.test.ts` ("income tax
+  worksheet"). (Also fixed a positive-offset-timezone bug in `quarterOf` / `monthRange`
+  that shifted quarter- and month-end dates back one day.)
 - **Period-end close + retained-earnings roll-up.** ✅ **Phase 4c** — `POST /ledger/periods/:id/close`
   now, before locking the range, **posts the closing journal entry**: every income and expense
   account is zeroed by its movement within `[start_date, end_date]` and the net rolled to the

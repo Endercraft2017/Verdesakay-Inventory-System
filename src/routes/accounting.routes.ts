@@ -36,6 +36,7 @@ import {
 } from '../ph-alphalist';
 import { contributionSchedule, type Agency, type ContribEmployeeInput } from '../ph-contributions';
 import { vat2550m, ewt0619e, EWT_ATCS, type EwtLine } from '../ph-vat-ewt';
+import { incomeTax1702, type IncomeTaxAdjustment } from '../ph-income-tax';
 import {
   yearPayslipRowsByEmployee, monthlyWithholdingReport, payslipTotalsForMonth,
   optsFromQuery, companyProfile,
@@ -62,7 +63,8 @@ function quarterOf(v: unknown): { year: string; q: number; from: string; to: str
   }
   const startMonth = (q - 1) * 3; // 0-indexed
   const from = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`;
-  const to = new Date(year, startMonth + 3, 0).toISOString().slice(0, 10);
+  // Date.UTC so the quarter's last day isn't shifted back one by a positive-offset tz.
+  const to = new Date(Date.UTC(year, startMonth + 3, 0)).toISOString().slice(0, 10);
   const months = [0, 1, 2].map((i) => `${year}-${String(startMonth + 1 + i).padStart(2, '0')}`);
   return { year: String(year), q, from, to, months };
 }
@@ -175,7 +177,7 @@ router.get('/bir-0619e', (req, res) => {
   if (req.query.source === 'register') {
     // Build the lines straight from the month's withholding register (approved bills).
     const from = month + '-01';
-    const end = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).toISOString().slice(0, 10);
+    const end = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
     const byAtc = new Map<string, EwtLine & { _tax: number }>();
     for (const r of ewtRegisterRows(from, end)) {
       const k = r.atc || '(none)';
@@ -277,6 +279,71 @@ router.get('/bir-2550q', (req, res) => {
     ...vatReturnPayload(from, to, req.query as Record<string, unknown>),
     note: 'Quarterly VAT (2550Q). Attach the SLSP (Summary List of Sales / Purchases) when over '
       + 'the threshold. Deadline: the 25th day after the close of the quarter.',
+  });
+});
+
+// GET /api/accounting/bir-1702?period=YYYY|YYYY-Qn&deduction=itemized|osd&adjustments=<json>
+//   &rate=&small_corp=1&mcit=1&prior_payments=&creditable_withholding=&prior_year_excess=
+// Corporate income tax worksheet — 1702Q (year-to-date through the quarter) / 1702-RT
+// (full year). Book net income + gross income are sourced from the posted ledger for the
+// range (excluding the Phase 4c year-end closing entry); everything else is entered.
+router.get('/bir-1702', (req, res) => {
+  const raw = String(req.query.period ?? '');
+  const qm = raw.match(/^(\d{4})-?Q([1-4])$/i);
+  let from: string, to: string, label: string, quarter: number | 'annual';
+  if (qm) {
+    const p = quarterOf(raw);
+    from = `${p.year}-01-01`; to = p.to; label = `${p.year}-Q${p.q}`; quarter = p.q;
+  } else {
+    const y = yearOf(req.query.period);
+    from = `${y}-01-01`; to = `${y}-12-31`; label = y; quarter = 'annual';
+  }
+
+  const r = queryOne<{ income: number; cogs: number; expense: number }>(`
+    SELECT
+      COALESCE(SUM(CASE WHEN a.root_type = 'income' THEN jl.credit - jl.debit ELSE 0 END), 0) AS income,
+      COALESCE(SUM(CASE WHEN a.root_type = 'expense' AND a.account_type = 'cogs' THEN jl.debit - jl.credit ELSE 0 END), 0) AS cogs,
+      COALESCE(SUM(CASE WHEN a.root_type = 'expense' THEN jl.debit - jl.credit ELSE 0 END), 0) AS expense
+    FROM journal_lines jl
+    JOIN journal_entries je ON je.id = jl.entry_id
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE je.status = 'posted' AND a.is_group = 0
+      AND (je.source_type IS NULL OR je.source_type <> 'year_end_close')
+      AND je.entry_date >= ? AND je.entry_date <= ?`, from, to);
+  const grossIncome = round2((r?.income ?? 0) - (r?.cogs ?? 0));
+  const bookNet = round2((r?.income ?? 0) - (r?.expense ?? 0));
+
+  let adjustments: IncomeTaxAdjustment[] = [];
+  if (typeof req.query.adjustments === 'string' && req.query.adjustments) {
+    try {
+      const parsed = JSON.parse(req.query.adjustments);
+      if (Array.isArray(parsed)) {
+        adjustments = parsed.map((a: Record<string, unknown>) => ({
+          label: String(a.label ?? ''),
+          kind: a.kind === 'deduct' ? 'deduct' : 'add',
+          amount: Number(a.amount) || 0,
+        }));
+      }
+    } catch { /* ignore — no adjustments */ }
+  }
+
+  const worksheet = incomeTax1702({
+    gross_income: grossIncome,
+    book_net_income: bookNet,
+    deduction_method: req.query.deduction === 'osd' ? 'osd' : 'itemized',
+    adjustments,
+    rate: req.query.small_corp === '1' ? 0.20 : (Number(req.query.rate) || undefined),
+    mcit_applies: req.query.mcit === '1',
+    prior_payments: Number(req.query.prior_payments) || 0,
+    creditable_withholding: Number(req.query.creditable_withholding) || 0,
+    prior_year_excess: Number(req.query.prior_year_excess) || 0,
+  });
+
+  res.json({
+    period: label, quarter, from, to, company: companyProfile(),
+    form: quarter === 'annual' ? '1702-RT' : '1702Q',
+    sources: { gross_income: grossIncome, book_net_income: bookNet },
+    worksheet,
   });
 });
 
@@ -2177,7 +2244,8 @@ function purchaseJournalData(from: string, to: string) {
 }
 
 function monthRange(month: string): [string, string] {
-  return [month + '-01', new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).toISOString().slice(0, 10)];
+  // Date.UTC so the month's last day isn't shifted back one by a positive-offset tz.
+  return [month + '-01', new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10)];
 }
 
 // GET /api/accounting/sales-journal?from=&to= — BIR Sales Book columns per sale + credit note.
@@ -2304,7 +2372,7 @@ router.get('/bir-1601eq', (req, res) => {
     } catch { return [0, 0, 0]; }
   })();
   const monthly = months.map((m, i) => {
-    const rows = ewtRegisterRows(m + '-01', new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0).toISOString().slice(0, 10));
+    const rows = ewtRegisterRows(m + '-01', new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).toISOString().slice(0, 10));
     const base = round2(rows.reduce((s, r) => s + r.base, 0));
     const tax = round2(rows.reduce((s, r) => s + r.tax, 0));
     return { month: m, tax_base: base, tax_withheld: tax, remitted: round2(remitted[i] ?? 0), still_due: round2(tax - (remitted[i] ?? 0)) };

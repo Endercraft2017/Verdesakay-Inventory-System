@@ -1014,6 +1014,37 @@ describe('accounting: Books of Accounts (Phase 4b)', () => {
   });
 });
 
+describe('accounting: income tax worksheet 1702Q / 1702-RT (Phase 4d)', () => {
+  it('sources book net income + gross income from the ledger and computes the tax', async () => {
+    const pnl = (await ctx.api.get('/api/accounting/ledger/reports/profit-and-loss?from=2026-01-01&to=2026-12-31').set(hdr())).body;
+
+    const r = await ctx.api.get('/api/accounting/bir-1702?period=2026').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.form).toBe('1702-RT');
+    expect(r.body.sources.book_net_income).toBeCloseTo(pnl.net_income, 2);
+    expect(r.body.sources.gross_income).toBeGreaterThanOrEqual(r.body.sources.book_net_income); // gross omits opex
+    // itemized, no adjustments → taxable = book net income (floored at 0), tax = 25%
+    const w = r.body.worksheet;
+    expect(w.deduction_method).toBe('itemized');
+    expect(w.net_taxable_income).toBeCloseTo(Math.max(0, pnl.net_income), 2);
+    expect(w.regular_income_tax).toBeCloseTo(w.net_taxable_income * 0.25, 2);
+    expect(w.income_tax_due).toBeCloseTo(w.regular_income_tax, 2);
+  });
+
+  it('quarterly form is year-to-date and reflects adjustments + credits', async () => {
+    const adjustments = JSON.stringify([{ label: 'Penalties', kind: 'add', amount: 50000 }]);
+    const r = await ctx.api.get('/api/accounting/bir-1702')
+      .query({ period: '2026-Q3', adjustments, small_corp: '1', prior_payments: 12000 }).set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.form).toBe('1702Q');
+    expect(r.body.from).toBe('2026-01-01');
+    expect(r.body.to).toBe('2026-09-30');
+    expect(r.body.worksheet.rate).toBe(0.2);
+    expect(r.body.worksheet.additions).toBe(50000);
+    expect(r.body.worksheet.total_credits).toBe(12000);
+  });
+});
+
 // Mutates shared ledger state (closes the FY period) — keep this the LAST describe.
 describe('accounting: period-end close + retained-earnings roll-up (Phase 4c)', () => {
   const pnl = async () =>
