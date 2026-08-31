@@ -122,7 +122,11 @@ App.register('orders', async (view, filter) => {
       title: `Start production — ${order.number}`,
       bodyHTML: `<div class="form-grid">
         <div class="form-field span2"><div class="field-label"><label>Product to build <span class="req">*</span></label></div>
-          <select data-f="product">${products.map((p) => `<option value="${p.id}" ${match && match.item_id === p.id ? 'selected' : ''}>${UI.esc(p.name)} — ${p.max_buildable} buildable</option>`).join('')}</select></div>
+          <select data-f="product">${products.map((p) => {
+            const spec = p.attributes && typeof p.attributes === 'object' ? p.attributes.spec : null;
+            const variant = [p.product_group, spec].filter(Boolean).join(' · ');
+            return `<option value="${p.id}" ${match && match.item_id === p.id ? 'selected' : ''}>${UI.esc(p.name)}${variant ? ` (${UI.esc(variant)})` : ''} — ${p.max_buildable} buildable</option>`;
+          }).join('')}</select></div>
         <div class="form-field"><div class="field-label"><label>Quantity <span class="req">*</span></label></div>
           <input data-f="qty" type="number" min="1" value="${match ? Math.max(1, Math.round(match.quantity)) : 1}" /></div>
         <div class="form-field"><div class="field-label"><label>Pull components from</label></div><select data-f="source">${locOpts}</select></div>
@@ -279,6 +283,26 @@ App.register('orders', async (view, filter) => {
           }))
           .filter((l) => l.name);
         if (!cleaned.length) { showErr('Add at least one line item (with a name)'); return false; }
+
+        // Any line item typed by hand (not picked via "Add from Inventory") that doesn't
+        // match a real item by name gets offered for creation — one at a time, in order,
+        // before the order itself is saved. Matching by name is confirmed on the next line
+        // item; a matched one gets silently linked (item_id) rather than prompted again.
+        for (const line of cleaned) {
+          if (line.item_id) continue;
+          let existing = [];
+          try { existing = await API.get('/inventory?q=' + encodeURIComponent(line.name)); } catch { /* search optional */ }
+          const exact = existing.find((it) => it.name.trim().toLowerCase() === line.name.toLowerCase());
+          if (exact) { line.item_id = exact.id; continue; }
+          const wantsCreate = await UI.confirmDialog(
+            `"${line.name}" isn't in inventory yet. Create it now, so this line links to real stock?`,
+            'Create item'
+          );
+          if (!wantsCreate) continue; // keep it as a plain text line, no inventory link
+          const created = await quickCreateItemModal(line.name);
+          if (created) line.item_id = created.id;
+        }
+
         const fOpt = (k) => { const el = ov.querySelector(`[data-f="${k}"]`); return el ? el.value : null; };
         const body = {
           customer_name: f('customer_name'), customer_contact: f('customer_contact'),
@@ -303,6 +327,62 @@ App.register('orders', async (view, filter) => {
     return m;
   }
 
+  /* ---------- Quick "this line item isn't in inventory yet" create ---------- */
+  // A lean standalone form (name/SKU/category/unit/starting qty — the same minimal set the
+  // AI assistant's create_inventory_item tool accepts) rather than reusing inventory.js's
+  // full itemModal(), which is closure-scoped to that view's own App.register callback and
+  // not reachable from here. Resolves the created item (or null if the user closes without
+  // saving) so orderModal()'s save flow can link it and move on to the next missing line.
+  function quickCreateItemModal(name) {
+    return new Promise((resolve) => {
+      let groups = [];
+      API.get('/inventory/product-groups').then((g) => {
+        groups = g;
+        const dl = document.getElementById('qi-groups-dl');
+        if (dl) dl.innerHTML = groups.map((x) => `<option value="${UI.esc(x)}"></option>`).join('');
+      }).catch(() => { /* suggestions optional */ });
+      const m = UI.modal({
+        title: 'New inventory item',
+        bodyHTML: `
+          <div class="field-row">
+            <div style="flex:1"><label>Name <span class="req">*</span></label><input data-f="qi-name" value="${UI.esc(name)}" /></div>
+            <div><label>SKU</label><input data-f="qi-sku" style="width:130px" /></div>
+          </div>
+          <div class="field-row">
+            <div><label>Category</label><input data-f="qi-category" /></div>
+            <div><label>Unit</label><input data-f="qi-unit" placeholder="pcs" style="width:100px" /></div>
+            <div><label>Starting quantity</label><input data-f="qi-qty" type="number" min="0" value="0" style="width:130px" /></div>
+          </div>
+          <div class="field-row">
+            <div style="flex:1"><label>Product group <span class="muted">(same model, different variant?)</span></label>
+              <input data-f="qi-group" list="qi-groups-dl" placeholder="e.g. Office Chair" />
+              <datalist id="qi-groups-dl"></datalist></div>
+            <div style="flex:1"><label>Spec / variant</label><input data-f="qi-spec" placeholder="e.g. Red / Large" /></div>
+          </div>
+          <p class="muted" style="font-size:12px;margin:10px 0 0">Everything else (photo, supplier, location, min stock…)
+            can be filled in later from Inventory.</p>`,
+        confirmText: 'Create item',
+        onConfirm: async (ov, showErr) => {
+          const g = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
+          const itemName = g('qi-name');
+          if (!itemName) { showErr('Name is required'); return false; }
+          const spec = g('qi-spec');
+          const created = await API.post('/inventory', {
+            name: itemName,
+            sku: g('qi-sku') || undefined,
+            category: g('qi-category') || undefined,
+            unit: g('qi-unit') || undefined,
+            quantity: Number(g('qi-qty')) || 0,
+            product_group: g('qi-group') || undefined,
+            attributes: spec ? { spec } : undefined,
+          });
+          resolve({ id: created.id, name: itemName });
+        },
+      });
+      m.overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => resolve(null)));
+    });
+  }
+
   /* ---------- Inventory picker ---------- */
   function pickInventory(onPick) {
     const m = UI.modal({
@@ -317,11 +397,15 @@ App.register('orders', async (view, filter) => {
         async function search() {
           const items = await API.get('/inventory?q=' + encodeURIComponent(q.value.trim()));
           if (!items.length) { out.innerHTML = '<div class="empty">No items found</div>'; return; }
-          out.innerHTML = items.slice(0, 20).map((it) => `
+          out.innerHTML = items.slice(0, 20).map((it) => {
+            const spec = it.attributes && typeof it.attributes === 'object' ? it.attributes.spec : null;
+            const variant = [it.product_group, spec].filter(Boolean).map(String).join(' · ');
+            return `
             <div class="pick-row" data-id="${it.id}">
-              <div><strong>${UI.esc(it.name)}</strong> <span class="muted mono">${UI.esc(it.sku || '')}</span></div>
+              <div><strong>${UI.esc(it.name)}</strong> <span class="muted mono">${UI.esc(it.sku || '')}</span>${variant ? ` <span class="muted">${UI.esc(variant)}</span>` : ''}</div>
               <div class="muted">${it.quantity} ${UI.esc(it.unit || '')}</div>
-            </div>`).join('');
+            </div>`;
+          }).join('');
           out.querySelectorAll('[data-id]').forEach((row) =>
             row.onclick = () => { onPick(items.find((x) => x.id == row.dataset.id)); m.close(); });
         }

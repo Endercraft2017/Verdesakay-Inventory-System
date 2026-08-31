@@ -82,18 +82,20 @@ function withParsedAttributes<T extends { attributes: unknown }>(item: T): T {
 
 // GET /api/inventory — list with optional search / filters
 router.get('/', (req, res) => {
-  const { q, department_id, supplier_id, category, low } = req.query;
+  const { q, department_id, supplier_id, category, product_group, low } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
 
   if (typeof q === 'string' && q.trim()) {
     // `spec` lives in the attributes JSON, not a column — reach it with json_extract.
+    // product_group is searchable too, so typing the base product's name surfaces every
+    // variant even when the variant's own name doesn't repeat it (e.g. just "Red").
     where.push(
       "(i.name LIKE ? OR i.sku LIKE ? OR i.category LIKE ? OR i.location LIKE ?" +
-        " OR json_extract(i.attributes, '$.spec') LIKE ?)"
+        " OR i.product_group LIKE ? OR json_extract(i.attributes, '$.spec') LIKE ?)"
     );
     const like = `%${q.trim()}%`;
-    params.push(like, like, like, like, like);
+    params.push(like, like, like, like, like, like);
   }
   if (department_id) {
     where.push('i.department_id = ?');
@@ -110,6 +112,10 @@ router.get('/', (req, res) => {
   if (typeof category === 'string' && category.trim()) {
     where.push('i.category = ?');
     params.push(category.trim());
+  }
+  if (typeof product_group === 'string' && product_group.trim()) {
+    where.push('i.product_group = ?');
+    params.push(product_group.trim());
   }
   if (low === '1' || low === 'true') {
     where.push('i.quantity <= i.min_quantity');
@@ -168,6 +174,17 @@ router.get('/categories', (_req, res) => {
     DAMAGE_CATEGORY
   );
   res.json(rows.map((r) => r.category));
+});
+
+// GET /api/inventory/product-groups — distinct non-empty product groups (for filters and the
+// item form's "existing group" suggestions)
+router.get('/product-groups', (_req, res) => {
+  const rows = queryAll<{ product_group: string }>(
+    `SELECT DISTINCT product_group FROM inventory_items
+     WHERE product_group IS NOT NULL AND TRIM(product_group) != ''
+     ORDER BY product_group COLLATE NOCASE`
+  );
+  res.json(rows.map((r) => r.product_group));
 });
 
 // GET /api/inventory/movements — the cross-item stock movement feed (all items)
@@ -505,8 +522,8 @@ router.post('/', requirePermission('inventory.create'), (req, res) => {
   try {
     const info = run(
       `INSERT INTO inventory_items
-        (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, unit_cost, location, notes, attributes)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+        (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, unit_cost, location, notes, product_group, attributes)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
       input.name,
       input.sku ?? null,
       input.category ?? null,
@@ -517,6 +534,7 @@ router.post('/', requirePermission('inventory.create'), (req, res) => {
       input.unit_cost ?? 0,
       input.location ?? null,
       input.notes ?? null,
+      input.product_group ?? null,
       input.attributes ? JSON.stringify(input.attributes) : null
     );
     itemId = info.lastInsertRowid;
@@ -559,7 +577,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
   run(
     `UPDATE inventory_items
      SET name = ?, sku = ?, category = ?, department_id = ?, supplier_id = ?, unit = ?, min_quantity = ?,
-         unit_cost = ?, location = ?, notes = ?, attributes = ?, updated_at = datetime('now')
+         unit_cost = ?, location = ?, notes = ?, product_group = ?, attributes = ?, updated_at = datetime('now')
      WHERE id = ?`,
     input.name ?? item.name,
     sku,
@@ -571,6 +589,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
     input.unit_cost !== undefined ? input.unit_cost : item.unit_cost ?? 0,
     input.location !== undefined ? input.location : item.location,
     input.notes !== undefined ? input.notes : item.notes,
+    input.product_group !== undefined ? input.product_group : item.product_group,
     input.attributes !== undefined ? JSON.stringify(input.attributes) : (item.attributes ?? null),
     id
   );

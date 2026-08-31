@@ -80,7 +80,11 @@ App.register('job-orders', async (view, filter) => {
       title: 'New job order',
       bodyHTML: `<div class="form-grid">
         <div class="form-field span2"><div class="field-label"><label>Product to build <span class="req">*</span></label></div>
-          <select data-f="product">${products.map((p) => `<option value="${p.id}">${UI.esc(p.name)} — BOM: ${p.component_count} parts, ${p.max_buildable} buildable</option>`).join('')}</select></div>
+          <select data-f="product">${products.map((p) => {
+            const spec = p.attributes && typeof p.attributes === 'object' ? p.attributes.spec : null;
+            const variant = [p.product_group, spec].filter(Boolean).join(' · ');
+            return `<option value="${p.id}">${UI.esc(p.name)}${variant ? ` (${UI.esc(variant)})` : ''} — BOM: ${p.component_count} parts, ${p.max_buildable} buildable</option>`;
+          }).join('')}</select></div>
         <div class="form-field"><div class="field-label"><label>Quantity to build <span class="req">*</span></label></div>
           <input data-f="qty" type="number" min="1" value="1" /></div>
         <div class="form-field"><div class="field-label"><label>Pull components from</label></div>

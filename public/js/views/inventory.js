@@ -147,7 +147,7 @@ function renderItemFormBody(cfg, it) {
     `<button type="button" class="form-tab ${i === 0 ? 'active' : ''}" data-formtab="${t.id}">${UI.esc(t.label)}</button>`).join('');
   const panels = tabs.map((t, i) => {
     const fields = cfg.filter((f) => f.tab === t.id && f.visible).map((f) => {
-      const editLocked = it && f.key === 'quantity'; // quantity changes go through the adjust modal
+      const editLocked = it && it.id && f.key === 'quantity'; // quantity changes go through the adjust modal
       return renderItemField(f, itemFieldValue(f, it), { disabled: editLocked });
     }).join('');
     return `<div data-formpanel="${t.id}" class="form-panel ${i === 0 ? '' : 'hidden'}"><div class="form-grid">${fields}</div></div>`;
@@ -459,6 +459,16 @@ App.register('inventory', async (view, filter) => {
     });
   }
 
+  /** Small "Office Chair · Red / Large" line under the item name — the product_group and
+      the variant's own spec attribute together, so variants are distinguishable in the list
+      without opening each one. Either half is optional; renders nothing if both are empty. */
+  function groupLineHTML(it) {
+    const spec = it.attributes && typeof it.attributes === 'object' ? it.attributes.spec : null;
+    const parts = [it.product_group, spec].filter(Boolean);
+    if (!parts.length) return '';
+    return `<div class="muted" style="font-size:11px">${parts.map((p) => UI.esc(String(p))).join(' · ')}</div>`;
+  }
+
   function render(items) {
     if (!items.length) {
       const fresh = !state.q && !state.department_id && !state.supplier_id && !state.location_id && !state.category && !state.low && !state.include_damaged;
@@ -480,7 +490,7 @@ App.register('inventory', async (view, filter) => {
         </tr></thead>
         <tbody>${items.map((i) => `
           <tr class="clickable" data-open="${i.id}">
-            <td><strong>${UI.esc(i.name)}</strong><div class="muted mono">${UI.esc(i.sku || '—')}</div></td>
+            <td><strong>${UI.esc(i.name)}</strong><div class="muted mono">${UI.esc(i.sku || '—')}</div>${groupLineHTML(i)}</td>
             <td>${UI.esc(i.category || '—')}</td>
             <td>${UI.esc(i.department_name || '—')}</td>
             <td>${UI.esc(i.supplier_name || '—')}</td>
@@ -625,17 +635,23 @@ App.register('inventory', async (view, filter) => {
     if (lblBtn) lblBtn.onclick = () => printLabelSheet([it], { copies: 1, withName: true, size: 'medium' });
   }
 
-  async function itemModal(it) {
+  // `it` is either a real, existing item (has .id -> edit mode) or, for a brand-new item,
+  // either null or a *partial* prefill stub like {name: 'Typed but not in inventory yet'}
+  // (used by orderModal()'s missing-product prompt) — anything without .id is create mode,
+  // its fields just seed the New Item form instead of starting blank. `onCreated(item)` — UI.modal
+  // has no return channel of its own, so this is how a caller finds out what got created.
+  async function itemModal(it, onCreated) {
     const cfg = await loadItemFormConfig();
     await loadSuppliers(true); // pick list must be current when the form renders
     const canCustomize = App.hasPermission('inventory.configure');
+    const editing = !!(it && it.id);
     let imageState = null;
     const m = UI.modal({
-      title: it ? 'Edit item' : 'New item',
+      title: editing ? 'Edit item' : 'New item',
       size: 'lg',
       headActionHTML: canCustomize ? `<button class="btn secondary small" id="item-option-btn">Option</button>` : '',
       bodyHTML: `<div id="item-form-host">${renderItemFormBody(_itemFormConfig, it)}</div>`,
-      confirmText: it ? 'Save changes' : 'Create item',
+      confirmText: editing ? 'Save changes' : 'Create item',
       onOpen: (overlay) => {
         wireItemFormTabs(overlay);
         wireItemComboboxes(overlay);
@@ -658,13 +674,12 @@ App.register('inventory', async (view, filter) => {
         const { core, attributes } = collectItemForm(overlay, _itemFormConfig, it);
         const body = { ...core, attributes };
         let id;
-        if (it) {
+        if (editing) {
           delete body.quantity; // stock changes go through the adjust modal
           await API.put('/inventory/' + it.id, body);
           id = it.id;
         } else {
-          const created = await API.post('/inventory', body);
-          id = created.id;
+          id = (await API.post('/inventory', body)).id;
         }
         // Item photo: upload a staged file, or clear an existing one.
         if (imageState && imageState.file) {
@@ -675,9 +690,10 @@ App.register('inventory', async (view, filter) => {
         } else if (imageState && imageState.remove) {
           try { await API.del('/inventory/' + id + '/image'); } catch { /* already gone */ }
         }
-        UI.toast(it ? 'Item updated' : 'Item created');
+        UI.toast(editing ? 'Item updated' : 'Item created');
         load();
         loadCategories();
+        if (!editing && onCreated) onCreated({ id, ...body });
       },
     });
     return m;

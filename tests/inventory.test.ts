@@ -184,6 +184,54 @@ describe('inventory: extended attributes (ECOUNT-style fields)', () => {
   });
 });
 
+describe('inventory: product group (variants)', () => {
+  it('stores product_group, round-trips on update, and lists it in /product-groups', async () => {
+    const chair = await createItem({ name: 'Office Chair - Red', product_group: 'Office Chair' });
+    expect(chair.status).toBe(201);
+    const detail = await ctx.api.get(`/api/inventory/${chair.body.id}`).set(authHdr());
+    expect(detail.body.product_group).toBe('Office Chair');
+
+    await createItem({ name: 'Office Chair - Blue', product_group: 'Office Chair' });
+
+    const groups = await ctx.api.get('/api/inventory/product-groups').set(authHdr());
+    expect(groups.body).toContain('Office Chair');
+
+    // Update can change or clear it.
+    await ctx.api.put(`/api/inventory/${chair.body.id}`).set(authHdr()).send({ product_group: 'Seating' });
+    const updated = await ctx.api.get(`/api/inventory/${chair.body.id}`).set(authHdr());
+    expect(updated.body.product_group).toBe('Seating');
+  });
+
+  it('is filterable via ?product_group= and searchable via ?q=', async () => {
+    await createItem({ name: 'Widget A', product_group: 'Widget Family' });
+    await createItem({ name: 'Widget B', product_group: 'Widget Family' });
+    await createItem({ name: 'Unrelated Thing', product_group: 'Something Else' });
+
+    const filtered = await ctx.api.get('/api/inventory?product_group=Widget%20Family').set(authHdr());
+    expect(filtered.body.length).toBeGreaterThanOrEqual(2);
+    expect(filtered.body.every((i: { product_group: string }) => i.product_group === 'Widget Family')).toBe(true);
+
+    // Typing the group name in the general search surfaces every variant, even ones whose
+    // own name doesn't repeat it.
+    const searched = await ctx.api.get('/api/inventory?q=Widget%20Family').set(authHdr());
+    expect(searched.body.some((i: { name: string }) => i.name === 'Widget A')).toBe(true);
+    expect(searched.body.some((i: { name: string }) => i.name === 'Widget B')).toBe(true);
+  });
+
+  it('a variant with its own spec attribute is fully independent stock — its own row, own quantity', async () => {
+    const red = await createItem({ name: 'Mug - Red', product_group: 'Mug', quantity: 10, attributes: { spec: 'Red' } });
+    const blue = await createItem({ name: 'Mug - Blue', product_group: 'Mug', quantity: 5, attributes: { spec: 'Blue' } });
+    expect(red.body.id).not.toBe(blue.body.id);
+
+    const redDetail = await ctx.api.get(`/api/inventory/${red.body.id}`).set(authHdr());
+    const blueDetail = await ctx.api.get(`/api/inventory/${blue.body.id}`).set(authHdr());
+    expect(redDetail.body.quantity).toBe(10);
+    expect(blueDetail.body.quantity).toBe(5);
+    expect(redDetail.body.attributes.spec).toBe('Red');
+    expect(blueDetail.body.attributes.spec).toBe('Blue');
+  });
+});
+
 describe('inventory: supplier link', () => {
   async function mkSupplier(name: string) {
     const r = await ctx.api.post('/api/suppliers').set(authHdr()).send({ name });

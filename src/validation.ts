@@ -139,6 +139,10 @@ export const createItemSchema = z.object({
   unit_cost: z.coerce.number().min(0).default(0), // standard cost — values raw materials / finished goods in the GL
   location: optionalText,
   notes: optionalText,
+  // Groups variants of the same base product (e.g. "Office Chair" for Red/Blue/Green rows) —
+  // each variant stays its own full item; this is just the shared label to list/filter/pick
+  // them together. The variant's own descriptor (color/size/spec) is attributes.spec.
+  product_group: optionalText,
   attributes: attributesSchema,
 });
 
@@ -153,6 +157,7 @@ export const updateItemSchema = z.object({
   unit_cost: z.coerce.number().min(0).optional(),
   location: optionalText,
   notes: optionalText,
+  product_group: optionalText,
   attributes: attributesSchema,
 });
 

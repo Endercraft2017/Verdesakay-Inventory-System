@@ -23,7 +23,7 @@ function loadCatalog(): {
 }
 
 // The columns that actually exist on inventory_items (src/db.ts).
-const REAL_COLUMNS = ['name', 'sku', 'category', 'department_id', 'supplier_id', 'quantity', 'unit', 'min_quantity', 'unit_cost', 'location', 'notes'];
+const REAL_COLUMNS = ['name', 'sku', 'category', 'department_id', 'supplier_id', 'quantity', 'unit', 'min_quantity', 'unit_cost', 'location', 'notes', 'product_group'];
 
 const { ITEM_FORM_TABS, ITEM_FORM_SECTIONS, ITEM_CORE_KEYS, ITEM_FORM_DEFAULTS } = loadCatalog();
 
@@ -96,7 +96,7 @@ describe('item-form-config catalog', () => {
       [
         // essentials
         'category', 'department_id', 'supplier_id', 'name', 'notes', 'quantity',
-        'min_quantity', 'unit_cost', 'location', 'sku', 'spec', 'unit',
+        'min_quantity', 'unit_cost', 'location', 'sku', 'spec', 'unit', 'product_group',
         // optional reference set
         'currency', 'barcode', 'image', 'manufacturer', 'model_no', 'purchase_price',
         'sale_price',

@@ -245,6 +245,10 @@ export interface InventoryItem {
   is_finished_product: number;
   /** Finished products only: which QA/QC checklist applies (else the default). */
   qc_checklist_id: number | null;
+  /** Plain-text grouping key shared by variants of the same base product (e.g. "Office
+   *  Chair" for Red/Blue/Green rows, each its own full item with its own stock/SKU/BOM).
+   *  The variant's own descriptor lives in the existing attributes.spec field, not here. */
+  product_group: string | null;
   created_at: string;
   updated_at: string;
   department_name?: string | null;

@@ -55,7 +55,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1422,6 +1422,17 @@ function migrate(): void {
       db.prepare("INSERT INTO qc_checklists (name, items, is_default) VALUES ('Default checklist', ?, 1)")
         .run(JSON.stringify(legacyItems));
     }
+  }
+
+  // Product variants (SCHEMA_VERSION 15): variants of the same base product (e.g. "Office
+  // Chair" in Red / Blue / Green) stay full, separate inventory_items rows — accurate
+  // per-variant stock and their own SKU/BOM/etc — sharing a plain-text `product_group` so
+  // the UI can list/filter/pick them together. The variant's own descriptor (color, size,
+  // spec) already had a home: the existing `spec` attribute (json attributes.spec),
+  // included in inventory search since before this — no change needed there.
+  const itemCols2 = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (!itemCols2.some((c) => c.name === 'product_group')) {
+    db.exec('ALTER TABLE inventory_items ADD COLUMN product_group TEXT');
   }
 }
 

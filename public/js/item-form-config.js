@@ -63,10 +63,10 @@ const ITEM_FORM_SECTIONS = [
   { id: 'attachments', label: 'Attachments' },
 ];
 
-/** The nine columns that exist on inventory_items (everything else ⇒ attributes). */
+/** The columns that exist on inventory_items (everything else ⇒ attributes). */
 const ITEM_CORE_KEYS = [
   'name', 'sku', 'category', 'department_id', 'supplier_id',
-  'quantity', 'unit', 'min_quantity', 'unit_cost', 'location', 'notes',
+  'quantity', 'unit', 'min_quantity', 'unit_cost', 'location', 'notes', 'product_group',
 ];
 
 const USE_NOUSE = ['Use', 'Do Not Use'];
@@ -81,6 +81,7 @@ const ITEM_FORM_DEFAULTS = [
   { key: 'unit', label: 'Unit', tab: 'default', section: 'stock', type: 'text', core: true, default: 'pcs', visible: true, required: false, placeholder: 'Unit', help: 'Unit of measure used for stock counts (e.g. pcs, box, kg).' },
   { key: 'item_category', label: 'Item Category', tab: 'default', section: 'classification', type: 'radio', options: ['Raw Material', 'Sub Material', 'Finished Goods', 'Semi-Finished Goods', 'Merchandise', 'Intangible Merchandise'], default: 'Merchandise', visible: false, required: false, help: 'Inventory/accounting classification of the item.' },
   { key: 'category', label: 'Category', tab: 'default', section: 'classification', type: 'text', core: true, visible: true, required: false, placeholder: 'Category (used for filters)', help: 'Free-text category used for searching and filtering item lists.' },
+  { key: 'product_group', label: 'Product Group', tab: 'default', section: 'classification', type: 'text', core: true, visible: true, required: false, placeholder: 'e.g. Office Chair', help: 'Groups variants of the same base product (e.g. "Office Chair" for Red/Blue/Green rows) so they list, filter, and get picked together. Each variant still stays its own full item with its own stock — put the variant\'s own color/size/spec in the Spec. field above, not here.' },
   { key: 'department_id', label: 'Department', tab: 'default', section: 'classification', type: 'department', core: true, visible: true, required: false, help: 'Department that owns or manages this item.' },
   { key: 'supplier_id', label: 'Supplier', tab: 'default', section: 'purchasing', type: 'supplier', core: true, visible: true, required: false, help: 'Default supplier / vendor for this item. Pick from the Suppliers registry (Inventory → Suppliers); filterable on the item list.' },
   { key: 'bundle_item_status', label: 'Bundle Item Status', tab: 'default', section: 'manufacturing', type: 'radio', options: USE_NOUSE, default: 'Do Not Use', visible: false, required: false, help: 'Whether this item is a bundle made up of other items.' },
