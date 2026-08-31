@@ -60,6 +60,7 @@ App.register('accounting-ledger', async (view, filter) => {
       purchase_expense_account_id: 'Purchases / expense (bill → debit)',
       input_vat_account_id: 'Input VAT (bill → debit)',
       sales_returns_account_id: 'Sales returns & allowances (credit note → debit)',
+      ewt_payable_account_id: 'Withholding tax payable — expanded (bill EWT → credit)',
     };
     const keys = Object.keys(LABELS);
     const opts = (root, sel) => ['<option value="">— not set —</option>'].concat(

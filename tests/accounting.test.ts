@@ -567,3 +567,67 @@ describe('accounting: tax codes + BIR journals (Phase 2)', () => {
     expect(pj.body.totals).toHaveProperty('vatable');
   });
 });
+
+describe('accounting: expanded withholding / EWT (Phase 2b)', () => {
+  let supplierId = 0, billNo = '';
+
+  it('an approved bill with EWT posts a split AP + withholding-payable entry', async () => {
+    const loc = (await ctx.api.get('/api/locations').set(hdr())).body
+      .find((l: { is_default: number }) => l.is_default === 1).id;
+    const item = (await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'EWT Widget', quantity: 0 })).body.id;
+    supplierId = (await ctx.api.post('/api/suppliers').set(hdr())
+      .send({ name: 'Services Co', tin: '999-888-777-000', address: '1 Ayala Ave, Makati' })).body.id;
+    const po = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'purchase', order_date: '2026-07-02', supplier_id: supplierId,
+      items: [{ item_id: item, name: 'EWT Widget', quantity: 10, unit_price: 100 }], // net 1000
+    });
+    const oi = (await ctx.api.get(`/api/orders/${po.body.id}`).set(hdr())).body.items[0].id;
+    await ctx.api.post(`/api/purchasing/orders/${po.body.id}/receipts`).set(hdr())
+      .send({ location_id: loc, lines: [{ order_item_id: oi, item_id: item, name: 'EWT Widget', quantity: 10 }] });
+    const bill = await ctx.api.post(`/api/purchasing/orders/${po.body.id}/bills`).set(hdr())
+      .send({ bill_date: '2026-07-02', tax_percent: 12, ewt_rate: 2, ewt_atc: 'WC140',
+        lines: [{ order_item_id: oi, item_id: item, name: 'EWT Widget', quantity: 10, unit_price: 100 }] });
+    billNo = bill.body.number;
+
+    const detail = await ctx.api.get(`/api/purchasing/bills/${bill.body.id}`).set(hdr());
+    expect(detail.body.ewt_amount).toBe(20); // 2% of net 1000
+
+    const appr = await ctx.api.post(`/api/purchasing/bills/${bill.body.id}/approve`).set(hdr()).send({});
+    expect(appr.status).toBe(200);
+
+    const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'vendor_bill', source_id: bill.body.id }).set(hdr());
+    const je = (await ctx.api.get(`/api/accounting/ledger/journal-entries/${jes.body[0].id}`).set(hdr())).body;
+    const byCode = Object.fromEntries(je.lines.map((l: { account_code: string; debit: number; credit: number }) => [l.account_code, l]));
+    expect(byCode['2110'].credit).toBe(1100); // AP = 1120 gross - 20 withheld
+    expect(byCode['2140'].credit).toBe(20);   // Withholding Tax Payable — Expanded
+    expect(byCode['5100'].debit).toBe(1000);
+    const tb = await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr());
+    expect(tb.body.balanced).toBe(true);
+  });
+
+  it('the withholding register groups the withheld tax by ATC', async () => {
+    const reg = await ctx.api.get('/api/accounting/ewt-register?from=2026-07-01&to=2026-07-31').set(hdr());
+    expect(reg.status).toBe(200);
+    const row = reg.body.rows.find((r: { ref: string }) => r.ref === billNo);
+    expect(row.tax).toBe(20);
+    expect(row.atc).toBe('WC140');
+    expect(row.tin).toBe('999-888-777-000');
+    expect(reg.body.total_tax).toBeGreaterThanOrEqual(20);
+    expect(reg.body.by_atc.some((a: { atc: string; tax: number }) => a.atc === 'WC140' && a.tax >= 20)).toBe(true);
+  });
+
+  it('BIR 2307 certifies the withheld tax per supplier', async () => {
+    const c = await ctx.api.get(`/api/accounting/bir-2307?supplier_id=${supplierId}&from=2026-07-01&to=2026-09-30`).set(hdr());
+    expect(c.status).toBe(200);
+    expect(c.body.payee.tin).toBe('999-888-777-000');
+    expect(c.body.total_tax).toBe(20);
+    expect(c.body.lines[0]).toMatchObject({ atc: 'WC140', month: '2026-07' });
+  });
+
+  it('0619-E can source its lines from the register', async () => {
+    const r = await ctx.api.get('/api/accounting/bir-0619e?month=2026-07&source=register').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.worksheet.total_tax_withheld).toBeGreaterThanOrEqual(20);
+  });
+});

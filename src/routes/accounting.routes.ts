@@ -154,7 +154,23 @@ router.get('/bir-alphalist', (req, res) => {
 router.get('/bir-0619e', (req, res) => {
   const month = monthOf(req.query.month);
   let lines: EwtLine[] = [];
-  if (typeof req.query.lines === 'string' && req.query.lines) {
+  if (req.query.source === 'register') {
+    // Build the lines straight from the month's withholding register (approved bills).
+    const from = month + '-01';
+    const end = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).toISOString().slice(0, 10);
+    const byAtc = new Map<string, EwtLine & { _tax: number }>();
+    for (const r of ewtRegisterRows(from, end)) {
+      const k = r.atc || '(none)';
+      const g = byAtc.get(k) || { atc: k, description: '', tax_base: 0, rate: (r.rate || 0) / 100, _tax: 0 };
+      g.tax_base = Math.round((g.tax_base + r.base) * 100) / 100;
+      g._tax = Math.round((g._tax + r.tax) * 100) / 100;
+      byAtc.set(k, g);
+    }
+    // Use an effective rate so the 0619-E total matches the amounts actually withheld.
+    lines = [...byAtc.values()].map(({ _tax, ...l }) => ({
+      ...l, rate: l.tax_base > 0 ? _tax / l.tax_base : l.rate,
+    }));
+  } else if (typeof req.query.lines === 'string' && req.query.lines) {
     try {
       const parsed = JSON.parse(req.query.lines);
       if (Array.isArray(parsed)) {
@@ -715,6 +731,7 @@ const POSTING_RULE_ROOT: Record<keyof PostingRules, AccountRootType> = {
   purchase_expense_account_id: 'expense',
   input_vat_account_id: 'asset',
   sales_returns_account_id: 'income',
+  ewt_payable_account_id: 'liability',
 };
 
 function postingRulesPayload() {
@@ -1635,6 +1652,81 @@ router.get('/purchase-journal', (req, res) => {
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.ref.localeCompare(b.ref));
 
   res.json({ from, to, rows, totals: sumCols(rows) });
+});
+
+/* ---------------------------------------------------------- expanded withholding (EWT) --- */
+/* A vendor bill can withhold a % of its net and remit it to BIR (creditable withholding).
+   These endpoints turn the withheld amounts into the register + BIR 2307 / 0619-E feed. */
+
+interface EwtRow {
+  date: string | null; ref: string; supplier_id: number | null; supplier: string | null;
+  tin: string | null; atc: string | null; base: number; rate: number; tax: number;
+}
+function ewtRegisterRows(from: string, to: string, supplierId?: number): EwtRow[] {
+  const params: unknown[] = [from, to];
+  let sql = `
+    SELECT COALESCE(b.bill_date, substr(b.created_at,1,10)) AS date, b.number AS ref,
+           b.supplier_id, s.name AS supplier, s.tin AS tin, b.ewt_atc AS atc,
+           b.subtotal AS base, b.ewt_rate AS rate, b.ewt_amount AS tax
+    FROM vendor_bills b LEFT JOIN suppliers s ON s.id = b.supplier_id
+    WHERE b.status = 'approved' AND b.ewt_amount > 0
+      AND COALESCE(b.bill_date, substr(b.created_at,1,10)) >= ? AND COALESCE(b.bill_date, substr(b.created_at,1,10)) <= ?`;
+  if (supplierId) { sql += ' AND b.supplier_id = ?'; params.push(supplierId); }
+  sql += ' ORDER BY date, b.id';
+  return queryAll<EwtRow>(sql, ...params).map((r) => ({ ...r, base: round2(r.base), tax: round2(r.tax) }));
+}
+
+// GET /api/accounting/ewt-register?from=&to=&supplier_id= — the creditable-withholding register.
+router.get('/ewt-register', (req, res) => {
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
+  const supplierId = req.query.supplier_id ? Number(req.query.supplier_id) : undefined;
+  const rows = ewtRegisterRows(from, to, supplierId);
+
+  const byAtc = new Map<string, { atc: string; base: number; tax: number; count: number }>();
+  for (const r of rows) {
+    const k = r.atc || '(none)';
+    const g = byAtc.get(k) || { atc: k, base: 0, tax: 0, count: 0 };
+    g.base = round2(g.base + r.base); g.tax = round2(g.tax + r.tax); g.count += 1;
+    byAtc.set(k, g);
+  }
+  res.json({
+    from, to, rows,
+    by_atc: [...byAtc.values()].sort((a, b) => b.tax - a.tax),
+    total_base: round2(rows.reduce((s, r) => s + r.base, 0)),
+    total_tax: round2(rows.reduce((s, r) => s + r.tax, 0)),
+  });
+});
+
+// GET /api/accounting/bir-2307?supplier_id=&from=&to= — Certificate of Creditable Tax
+// Withheld at Source, one per payee for the period (typically a quarter).
+router.get('/bir-2307', (req, res) => {
+  const supplierId = Number(req.query.supplier_id);
+  if (!supplierId) { res.status(400).json({ error: 'supplier_id is required.' }); return; }
+  const sup = queryOne<{ name: string; tin: string | null; address: string | null }>(
+    'SELECT name, tin, address FROM suppliers WHERE id = ?', supplierId);
+  if (!sup) { res.status(404).json({ error: 'Supplier not found.' }); return; }
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
+  const rows = ewtRegisterRows(from, to, supplierId);
+
+  // One line per ATC × month (the 2307 breaks income payments down by month of the quarter).
+  const byKey = new Map<string, { atc: string; month: string; base: number; tax: number }>();
+  for (const r of rows) {
+    const month = String(r.date || from).slice(0, 7);
+    const k = `${r.atc || '(none)'}|${month}`;
+    const g = byKey.get(k) || { atc: r.atc || '(none)', month, base: 0, tax: 0 };
+    g.base = round2(g.base + r.base); g.tax = round2(g.tax + r.tax);
+    byKey.set(k, g);
+  }
+  res.json({
+    from, to, company: companyProfile(),
+    payee: { name: sup.name, tin: sup.tin, address: sup.address },
+    lines: [...byKey.values()].sort((a, b) => a.month.localeCompare(b.month) || a.atc.localeCompare(b.atc)),
+    total_base: round2(rows.reduce((s, r) => s + r.base, 0)),
+    total_tax: round2(rows.reduce((s, r) => s + r.tax, 0)),
+    note: 'Give this to the supplier so they can claim the withheld amount as a tax credit.',
+  });
 });
 
 export default router;

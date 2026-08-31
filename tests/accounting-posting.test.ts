@@ -7,7 +7,7 @@ import {
 const RULES: PostingRules = {
   ar_account_id: 11, sales_income_account_id: 41, output_vat_account_id: 21,
   ap_account_id: 22, purchase_expense_account_id: 51, input_vat_account_id: 12,
-  sales_returns_account_id: 44,
+  sales_returns_account_id: 44, ewt_payable_account_id: 23,
 };
 
 const sum = (lines: { debit?: number; credit?: number }[], k: 'debit' | 'credit') =>
@@ -171,5 +171,26 @@ describe('buildPurchaseEntry', () => {
     expect(ap.credit).toBe(2240);
     expect(ap.party_type).toBe('supplier');
     expect(ap.party_id).toBe(9);
+  });
+
+  it('EWT splits the AP credit into supplier payable + withholding tax payable', () => {
+    const r = buildPurchaseEntry(
+      { number: 'BILL-2', date: '2026-03-02', subtotal: 1000, tax_amount: 120, total: 1120, party_id: 9, ewt_amount: 20 },
+      RULES, 11
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(sum(r.entry.lines, 'debit')).toBe(sum(r.entry.lines, 'credit'));
+    expect(r.entry.lines.find((l) => l.account_id === 22)!.credit).toBe(1100); // 1120 - 20
+    expect(r.entry.lines.find((l) => l.account_id === 23)!.credit).toBe(20);   // EWT payable
+    expect(r.entry.lines.find((l) => l.account_id === 51)!.debit).toBe(1000);
+  });
+
+  it('fails when EWT is set but no withholding-payable rule', () => {
+    const r = buildPurchaseEntry(
+      { number: 'BILL-3', date: '2026-03-02', subtotal: 1000, tax_amount: 0, total: 1000, ewt_amount: 20 },
+      { ...RULES, ewt_payable_account_id: null }, 12
+    );
+    expect(r.ok).toBe(false);
   });
 });

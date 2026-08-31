@@ -242,6 +242,11 @@ App.register('purchasing', async (view, filter) => {
             ${taxCodes.map((t) => `<option value="${t.id}" ${existing && String(existing.tax_code_id) === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)} — ${UI.esc(t.name)}</option>`).join('')}</select></div>` : ''}
           <div style="flex:1"><label>Note</label><input data-f="note" value="${UI.esc(existing ? existing.notes || '' : '')}" /></div>
         </div>
+        <div class="field-row">
+          <div><label>EWT %</label><input data-f="ewt" type="number" min="0" max="100" step="any" value="${existing ? (existing.ewt_rate || 0) : 0}" style="width:90px" /></div>
+          <div><label>ATC</label><input data-f="ewtatc" value="${UI.esc(existing ? existing.ewt_atc || '' : '')}" placeholder="WI120 / WC140…" style="width:110px" /></div>
+          <div style="flex:1;align-self:end"><span class="muted" id="ewt-hint" style="font-size:12px"></span></div>
+        </div>
         <h4 style="${LABEL}">Lines</h4>
         <table><thead><tr><th>Item</th><th style="width:110px">Qty</th><th style="width:120px">Unit price</th></tr></thead>
           <tbody id="bill-rows">${src.map((l) => billRow(l)).join('')}</tbody></table>
@@ -254,6 +259,18 @@ App.register('purchasing', async (view, filter) => {
           const rm = e.target.closest('[data-rm]');
           if (rm) rm.closest('tr').remove();
         });
+        const hint = ov.querySelector('#ewt-hint');
+        const updateEwt = () => {
+          let net = 0;
+          ov.querySelectorAll('#bill-rows tr').forEach((tr) => {
+            net += (parseFloat(tr.querySelector('[data-q]').value) || 0) * (parseFloat(tr.querySelector('[data-p]').value) || 0);
+          });
+          const rate = parseFloat(ov.querySelector('[data-f="ewt"]').value) || 0;
+          hint.textContent = rate > 0 ? `Withholds ${money(net * rate / 100)} from the supplier (remitted to BIR).` : '';
+        };
+        ov.querySelector('[data-f="ewt"]').addEventListener('input', updateEwt);
+        ov.querySelector('#bill-rows').addEventListener('input', updateEwt);
+        updateEwt();
       },
       onConfirm: async (ov, showErr) => {
         const lines = [];
@@ -277,6 +294,8 @@ App.register('purchasing', async (view, filter) => {
           due_date: ov.querySelector('[data-f="ddate"]').value || null,
           tax_percent: parseFloat(ov.querySelector('[data-f="tax"]').value) || 0,
           tax_code_id: tcodeEl && tcodeEl.value ? Number(tcodeEl.value) : null,
+          ewt_rate: parseFloat(ov.querySelector('[data-f="ewt"]').value) || 0,
+          ewt_atc: ov.querySelector('[data-f="ewtatc"]').value.trim() || null,
           notes: ov.querySelector('[data-f="note"]').value.trim() || null,
           lines,
         };
@@ -327,6 +346,7 @@ App.register('purchasing', async (view, filter) => {
           <div><span class="muted">PO</span><div>${UI.esc(bill.order_number || '—')}</div></div>
           <div><span class="muted">Status</span><div><span class="badge-pill ${statusPill(bill.status)}">${UI.esc(bill.status)}</span></div></div>
           <div><span class="muted">Total</span><div>${UI.esc(bill.currency || '')} ${money(bill.total)}</div></div>
+          ${bill.ewt_amount ? `<div><span class="muted">EWT withheld</span><div>${money(bill.ewt_amount)}${bill.ewt_atc ? ' · ' + UI.esc(bill.ewt_atc) : ''} → net to supplier ${money(bill.total - bill.ewt_amount)}</div></div>` : ''}
           ${bill.approved_by_name ? `<div><span class="muted">Approved by</span><div>${UI.esc(bill.approved_by_name)} · ${UI.esc((bill.approved_at || '').slice(0, 10))}</div></div>` : ''}
           ${bill.dispute_note ? `<div><span class="muted">Dispute</span><div>${UI.esc(bill.dispute_note)}</div></div>` : ''}
         </div>

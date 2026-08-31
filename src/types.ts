@@ -108,6 +108,7 @@ export interface Supplier {
   phone: string | null;
   email: string | null;
   address: string | null;
+  tin: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -622,6 +623,10 @@ export interface VendorBill {
   total: number;
   status: 'draft' | 'approved' | 'disputed';
   tax_code_id: number | null;
+  /** Expanded withholding tax held back from the supplier and remitted to BIR. */
+  ewt_rate: number;
+  ewt_amount: number;
+  ewt_atc: string | null;
   match_json: string | null;
   dispute_note: string | null;
   approved_by: number | null;

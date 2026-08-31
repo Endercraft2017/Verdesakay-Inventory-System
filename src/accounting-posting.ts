@@ -17,12 +17,13 @@ export interface PostingRules {
   purchase_expense_account_id?: number | null; // Purchases / COGS / expense (debit on a bill)
   input_vat_account_id?: number | null;      // Input VAT (debit on a bill)
   sales_returns_account_id?: number | null;  // Sales returns & allowances (debit on a customer credit note)
+  ewt_payable_account_id?: number | null;    // Expanded withholding tax payable (credit on a bill with EWT)
 }
 
 export const POSTING_RULE_KEYS: (keyof PostingRules)[] = [
   'ar_account_id', 'sales_income_account_id', 'output_vat_account_id',
   'ap_account_id', 'purchase_expense_account_id', 'input_vat_account_id',
-  'sales_returns_account_id',
+  'sales_returns_account_id', 'ewt_payable_account_id',
 ];
 
 /** The document shape the builders need — the same fields sale orders and vendor bills share. */
@@ -34,6 +35,7 @@ export interface PostableDoc {
   total: number;
   party_id?: number | null;   // customer / supplier id, stamped onto the AR / AP line
   memo?: string | null;
+  ewt_amount?: number;        // vendor bill only: withheld and remitted to BIR, not the supplier
 }
 
 export interface BuiltEntry {
@@ -100,18 +102,22 @@ export function buildPurchaseEntry(doc: PostableDoc, rules: PostingRules, source
   const need: (keyof PostingRules)[] = ['ap_account_id', 'purchase_expense_account_id'];
   const tax = round2(doc.tax_amount || 0);
   if (tax > 0) need.push('input_vat_account_id');
+  const ewt = round2(Math.min(doc.ewt_amount || 0, doc.total || 0));
+  if (ewt > 0) need.push('ewt_payable_account_id');
   const gap = missing(rules, need);
   if (gap) return { ok: false, error: gap };
 
   const total = round2(doc.total || 0);
   if (total <= 0) return { ok: false, error: `${doc.number}: nothing to post (total is ${total}).` };
   const net = round2(total - tax);
+  const payable = round2(total - ewt);   // EWT is withheld from the supplier and owed to BIR
 
   const lines: JournalLineInput[] = [
     { account_id: rules.purchase_expense_account_id!, debit: net, credit: 0 },
   ];
   if (tax > 0) lines.push({ account_id: rules.input_vat_account_id!, debit: tax, credit: 0 });
-  lines.push({ account_id: rules.ap_account_id!, debit: 0, credit: total, party_type: 'supplier', party_id: doc.party_id ?? null, memo: doc.memo ?? null });
+  lines.push({ account_id: rules.ap_account_id!, debit: 0, credit: payable, party_type: 'supplier', party_id: doc.party_id ?? null, memo: doc.memo ?? null });
+  if (ewt > 0) lines.push({ account_id: rules.ewt_payable_account_id!, debit: 0, credit: ewt, memo: `EWT ${doc.number}` });
 
   return {
     ok: true,

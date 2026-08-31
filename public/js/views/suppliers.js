@@ -78,6 +78,7 @@ App.register('suppliers', async (view) => {
         ${field('Contact person', 'contact_person', s && s.contact_person)}
         ${field('Phone', 'phone', s && s.phone)}
         ${field('Email', 'email', s && s.email, 'email')}
+        ${field('TIN', 'tin', s && s.tin)}
         <div class="form-field span2"><div class="field-label"><label>Address</label></div>
           <input data-f="address" value="${UI.esc(s && s.address || '')}" /></div>
         <div class="form-field span2"><div class="field-label"><label>Notes</label></div>
@@ -88,7 +89,7 @@ App.register('suppliers', async (view) => {
         const g = (k) => overlay.querySelector(`[data-f="${k}"]`).value.trim();
         const body = {
           name: g('name'), contact_person: g('contact_person'), phone: g('phone'),
-          email: g('email'), address: g('address'), notes: g('notes'),
+          email: g('email'), tin: g('tin'), address: g('address'), notes: g('notes'),
         };
         if (!body.name) { showErr('Name is required'); return false; }
         if (s) await API.put('/suppliers/' + s.id, body);
@@ -114,6 +115,7 @@ App.register('suppliers', async (view) => {
           <div><span class="muted">Contact</span><div>${UI.esc(s.contact_person || '—')}</div></div>
           <div><span class="muted">Phone</span><div>${UI.esc(s.phone || '—')}</div></div>
           <div><span class="muted">Email</span><div>${UI.esc(s.email || '—')}</div></div>
+          <div><span class="muted">TIN</span><div class="mono">${UI.esc(s.tin || '—')}</div></div>
           <div><span class="muted">Address</span><div>${UI.esc(s.address || '—')}</div></div>
         </div>
         ${s.notes ? `<h4 style="margin:14px 0 4px">Notes</h4><p style="white-space:pre-wrap;margin:0">${UI.esc(s.notes)}</p>` : ''}

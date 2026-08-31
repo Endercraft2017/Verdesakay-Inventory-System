@@ -13,7 +13,9 @@ App.register('accounting', async (view) => {
       ['adjust', 'Tax codes', 'VAT / withholding classifications a sale, bill or note can carry.', taxCodesModal],
     ]],
     ['Expanded withholding (suppliers)', [
+      ['sheet', 'Withholding register', 'Every vendor bill with EWT held back — by ATC, feeds 0619-E / 1601-EQ.', ewtRegisterModal],
       ['sheet', 'BIR 0619-E', 'Monthly remittance of expanded / creditable withholding tax, per ATC.', bir0619eModal],
+      ['printer', 'BIR 2307', 'Certificate of Creditable Tax Withheld at Source — one per supplier, printable.', bir2307Modal],
     ]],
     ['Withholding on compensation (payroll)', [
       ['sheet', 'BIR 1601-C', 'Monthly withholding-tax remittance worksheet.', bir1601cModal],
@@ -367,6 +369,102 @@ async function bir0619eModal() {
       ov.querySelector('#e-month').addEventListener('change', recompute);
       ov.querySelector('#e-prior').addEventListener('input', recompute);
       addRow();
+    },
+  });
+}
+
+/* ── Withholding (EWT) register ──────────────────────────────────────────── */
+async function ewtRegisterModal() {
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+  const last = today.toISOString().slice(0, 10);
+  UI.modal({
+    title: 'Withholding (EWT) register', size: 'lg', cancelText: 'Close', confirmText: null,
+    bodyHTML: `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <label style="margin:0">From</label><input id="w-from" type="date" value="${first}" />
+        <label style="margin:0">To</label><input id="w-to" type="date" value="${last}" />
+        <button type="button" class="btn secondary small" id="w-go">Refresh</button>
+        <div class="grow"></div><button type="button" class="btn secondary small" id="w-csv">${UI.icon('download', 14)} CSV</button>
+      </div>
+      <div id="w-out" class="empty">Loading…</div>`,
+    onOpen: (ov) => {
+      const out = ov.querySelector('#w-out');
+      let data = { rows: [], total_base: 0, total_tax: 0, by_atc: [] };
+      const run = async () => {
+        const from = ov.querySelector('#w-from').value, to = ov.querySelector('#w-to').value;
+        const d = await API.get(`/accounting/ewt-register?from=${from}&to=${to}`);
+        data = d;
+        out.innerHTML = `
+          <table class="line-table"><thead><tr><th>Date</th><th>Bill</th><th>Supplier</th><th>TIN</th><th>ATC</th>
+            <th class="right">Base</th><th class="right">Rate</th><th class="right">Withheld</th></tr></thead>
+            <tbody>${d.rows.map((r) => `<tr><td>${UI.esc(r.date || '—')}</td><td class="mono">${UI.esc(r.ref)}</td>
+              <td>${UI.esc(r.supplier || '—')}</td><td class="mono">${UI.esc(r.tin || '—')}</td><td class="mono">${UI.esc(r.atc || '—')}</td>
+              <td class="right">${accPeso(r.base)}</td><td class="right">${(r.rate || 0).toFixed(2)}%</td><td class="right">${accPeso(r.tax)}</td></tr>`).join('')
+              || `<tr><td colspan="8" class="muted" style="text-align:center;padding:14px">No EWT withheld in this range.</td></tr>`}</tbody>
+            <tfoot><tr><th colspan="5">Totals</th><th class="right">${accPeso(d.total_base)}</th><th></th><th class="right">${accPeso(d.total_tax)}</th></tr></tfoot>
+          </table>
+          ${d.by_atc.length ? `<h4 style="margin:14px 0 6px">By ATC</h4><table class="line-table"><thead><tr><th>ATC</th><th class="right">Bills</th><th class="right">Base</th><th class="right">Withheld</th></tr></thead>
+            <tbody>${d.by_atc.map((a) => `<tr><td class="mono">${UI.esc(a.atc)}</td><td class="right">${a.count}</td><td class="right">${accPeso(a.base)}</td><td class="right">${accPeso(a.tax)}</td></tr>`).join('')}</tbody></table>` : ''}`;
+      };
+      ov.querySelector('#w-go').onclick = run;
+      ov.querySelector('#w-csv').onclick = () => UI.downloadCsv('ewt-register.csv',
+        ['Date', 'Bill', 'Supplier', 'TIN', 'ATC', 'Base', 'Rate%', 'Withheld'],
+        data.rows.map((r) => [r.date || '', r.ref, r.supplier || '', r.tin || '', r.atc || '', r.base, r.rate, r.tax]));
+      run();
+    },
+  });
+}
+
+/* ── BIR 2307 — Certificate of Creditable Tax Withheld at Source ──────────── */
+async function bir2307Modal() {
+  let suppliers = [];
+  try { suppliers = await API.get('/suppliers'); } catch { /* */ }
+  const today = new Date();
+  const qStart = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1).toISOString().slice(0, 10);
+  UI.modal({
+    title: 'BIR Form 2307', size: 'lg', cancelText: 'Close', confirmText: null,
+    bodyHTML: `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <label style="margin:0">Supplier</label>
+        <select id="c-sup" style="min-width:200px"><option value="">— pick —</option>${suppliers.map((s) => `<option value="${s.id}">${UI.esc(s.name)}</option>`).join('')}</select>
+        <label style="margin:0">From</label><input id="c-from" type="date" value="${qStart}" />
+        <label style="margin:0">To</label><input id="c-to" type="date" value="${today.toISOString().slice(0, 10)}" />
+        <button type="button" class="btn secondary small" id="c-go">Show</button>
+        <button type="button" class="btn secondary small" id="c-print">${UI.icon('printer', 14)} Print</button>
+      </div>
+      <div id="c-out" class="muted">Pick a supplier and period.</div>`,
+    onOpen: (ov) => {
+      const out = ov.querySelector('#c-out');
+      const run = async () => {
+        const sid = ov.querySelector('#c-sup').value;
+        if (!sid) { out.innerHTML = '<div class="muted">Pick a supplier.</div>'; return; }
+        const d = await API.get(`/accounting/bir-2307?supplier_id=${sid}&from=${ov.querySelector('#c-from').value}&to=${ov.querySelector('#c-to').value}`);
+        out.innerHTML = `
+          <div style="border:1px solid var(--border-strong);border-radius:8px;padding:16px" id="c-cert">
+            <div style="text-align:center;font-weight:700;margin-bottom:10px">CERTIFICATE OF CREDITABLE TAX WITHHELD AT SOURCE<br><span style="font-weight:400;font-size:12px">BIR Form 2307 — ${UI.esc(d.from)} to ${UI.esc(d.to)}</span></div>
+            <div class="kv">
+              <div><span class="muted">Payor</span><div>${UI.esc(d.company.name || '—')}${d.company.tin ? ' · TIN ' + UI.esc(d.company.tin) : ''}</div></div>
+              <div><span class="muted">Payee</span><div>${UI.esc(d.payee.name)}${d.payee.tin ? ' · TIN ' + UI.esc(d.payee.tin) : ''}</div></div>
+              ${d.payee.address ? `<div><span class="muted">Payee address</span><div>${UI.esc(d.payee.address)}</div></div>` : ''}
+            </div>
+            <table class="line-table" style="margin-top:10px"><thead><tr><th>Month</th><th>ATC</th><th class="right">Income payment</th><th class="right">Tax withheld</th></tr></thead>
+              <tbody>${d.lines.map((l) => `<tr><td>${UI.esc(l.month)}</td><td class="mono">${UI.esc(l.atc)}</td><td class="right">${accPeso(l.base)}</td><td class="right">${accPeso(l.tax)}</td></tr>`).join('')
+                || `<tr><td colspan="4" class="muted" style="text-align:center;padding:12px">No withholding for this supplier in the period.</td></tr>`}</tbody>
+              <tfoot><tr><th colspan="2">Totals</th><th class="right">${accPeso(d.total_base)}</th><th class="right">${accPeso(d.total_tax)}</th></tr></tfoot>
+            </table>
+            <p class="muted" style="font-size:11px;margin:10px 0 0">${UI.esc(d.note || '')}</p>
+          </div>`;
+      };
+      ov.querySelector('#c-go').onclick = run;
+      ov.querySelector('#c-sup').onchange = run;
+      ov.querySelector('#c-print').onclick = () => {
+        const el = ov.querySelector('#c-cert');
+        if (!el) { UI.toast('Show a certificate first', 'error'); return; }
+        const w = window.open('', '_blank');
+        w.document.write(`<html><head><title>BIR 2307</title><style>body{font:13px system-ui;padding:24px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:4px 8px;text-align:left}td:last-child,th:last-child,td:nth-child(3),th:nth-child(3){text-align:right}</style></head><body>${el.innerHTML}</body></html>`);
+        w.document.close(); w.focus(); w.print();
+      };
     },
   });
 }

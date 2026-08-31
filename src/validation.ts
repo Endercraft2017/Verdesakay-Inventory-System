@@ -186,6 +186,7 @@ export const createSupplierSchema = z.object({
   phone: trimmed.max(80).optional().nullable(),
   email: trimmed.max(160).optional().nullable(),
   address: trimmed.max(500).optional().nullable(),
+  tin: trimmed.max(40).optional().nullable(),
   notes: optionalText,
 });
 
@@ -484,6 +485,9 @@ export const vendorBillSchema = z.object({
   currency: trimmed.max(10).optional().nullable(),
   tax_percent: numCoerce.min(0).max(100).default(0),
   tax_code_id: optionalId,
+  ewt_rate: numCoerce.min(0).max(100).default(0),
+  ewt_atc: trimmed.max(20).optional().nullable(),
+  ewt_amount: numCoerce.min(0).optional(),   // omitted -> computed from ewt_rate on the net
   notes: optionalText,
   lines: z.array(billLineSchema).min(1, 'Add at least one line').max(300),
 });
@@ -626,6 +630,7 @@ export const postingRulesSchema = z.object({
   purchase_expense_account_id: optionalId,
   input_vat_account_id: optionalId,
   sales_returns_account_id: optionalId,
+  ewt_payable_account_id: optionalId,
 });
 
 export const matchToleranceSchema = z.object({

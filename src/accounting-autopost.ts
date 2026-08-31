@@ -49,6 +49,7 @@ export function seedPostingRulesFromCoa(): PostingRules {
     ['sales_income_account_id', '4100'],
     ['sales_returns_account_id', '4400'],
     ['purchase_expense_account_id', '5100'],
+    ['ewt_payable_account_id', '2140'],
   ];
   let touched = false;
   for (const [key, code] of wants) {
@@ -241,7 +242,7 @@ export function maybeAutoPostVendorBill(billId: number, userId: number | null): 
     return autoPost('vendor_bill', billId, {
       number: b.number,
       date: b.bill_date || b.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-      subtotal: b.subtotal, tax_amount: b.tax_amount, total: b.total,
+      subtotal: b.subtotal, tax_amount: b.tax_amount, total: b.total, ewt_amount: b.ewt_amount || 0,
       party_id: b.supplier_id ?? null, memo: b.vendor_ref ?? null,
     }, userId, rulesForTaxCode(b.tax_code_id, getPostingRules()));
   } catch (e) {

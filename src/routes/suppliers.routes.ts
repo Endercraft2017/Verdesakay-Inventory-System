@@ -112,13 +112,14 @@ router.get('/:id', requirePermission('inventory.view'), (req, res) => {
 router.post('/', requirePermission('inventory.create'), (req, res) => {
   const input = parseBody(createSupplierSchema, req.body);
   const info = run(
-    `INSERT INTO suppliers (name, contact_person, phone, email, address, notes)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO suppliers (name, contact_person, phone, email, address, tin, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     input.name,
     input.contact_person ?? null,
     input.phone ?? null,
     input.email ?? null,
     input.address ?? null,
+    input.tin ?? null,
     input.notes ?? null
   );
   res.status(201).json({ id: info.lastInsertRowid });
@@ -135,7 +136,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
   const input = parseBody(updateSupplierSchema, req.body);
   run(
     `UPDATE suppliers
-     SET name = ?, contact_person = ?, phone = ?, email = ?, address = ?, notes = ?,
+     SET name = ?, contact_person = ?, phone = ?, email = ?, address = ?, tin = ?, notes = ?,
          updated_at = datetime('now')
      WHERE id = ?`,
     input.name ?? existing.name,
@@ -143,6 +144,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
     input.phone !== undefined ? input.phone : existing.phone,
     input.email !== undefined ? input.email : existing.email,
     input.address !== undefined ? input.address : existing.address,
+    input.tin !== undefined ? input.tin : existing.tin,
     input.notes !== undefined ? input.notes : existing.notes,
     id
   );

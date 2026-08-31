@@ -54,7 +54,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1324,6 +1324,25 @@ function migrate(): void {
   const cnoteCols = db.prepare('PRAGMA table_info(credit_notes)').all() as { name: string }[];
   if (cnoteCols.length && !cnoteCols.some((c) => c.name === 'tax_code_id')) {
     db.exec('ALTER TABLE credit_notes ADD COLUMN tax_code_id INTEGER REFERENCES tax_codes(id) ON DELETE SET NULL');
+  }
+
+  // Expanded withholding tax (EWT / creditable) held back on a vendor bill: the buyer
+  // pays part of the bill to BIR instead of the supplier. Feeds the withholding register
+  // + BIR 2307 / 0619-E / 1601-EQ. (SCHEMA_VERSION 9)
+  const vbillCols2 = db.prepare('PRAGMA table_info(vendor_bills)').all() as { name: string }[];
+  if (!vbillCols2.some((c) => c.name === 'ewt_rate')) {
+    db.exec('ALTER TABLE vendor_bills ADD COLUMN ewt_rate REAL NOT NULL DEFAULT 0');
+  }
+  if (!vbillCols2.some((c) => c.name === 'ewt_amount')) {
+    db.exec('ALTER TABLE vendor_bills ADD COLUMN ewt_amount REAL NOT NULL DEFAULT 0');
+  }
+  if (!vbillCols2.some((c) => c.name === 'ewt_atc')) {
+    db.exec('ALTER TABLE vendor_bills ADD COLUMN ewt_atc TEXT');
+  }
+  // Suppliers get a TIN for the BIR 2307 / withholding register (customers already have one).
+  const supCols = db.prepare('PRAGMA table_info(suppliers)').all() as { name: string }[];
+  if (!supCols.some((c) => c.name === 'tin')) {
+    db.exec('ALTER TABLE suppliers ADD COLUMN tin TEXT');
   }
 
   // Carry a pre-existing single checklist (settings key `qc_checklist`) into a named row.
