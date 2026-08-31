@@ -319,7 +319,10 @@ a { color: var(--accent); }
    (.ai-widget) — deliberately its own thing, not a .drawer, so a chat interface gets a
    compact anchored footprint instead of a full-height sidebar. */
 .ai-fab {
-  position: fixed; right: 22px; bottom: 22px; z-index: 120;
+  /* right offset clears the --rail-w icon rail (52px) so the bubble doesn't sit on top of
+     its bottom buttons (theme/logout/account) — the rail only occupies this edge above the
+     900px breakpoint, where the mobile override below resets it to a plain 14px. */
+  position: fixed; right: calc(var(--rail-w) + 22px); bottom: 22px; z-index: 120;
   width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
   background: var(--accent); color: var(--accent-contrast);
   display: grid; place-items: center; box-shadow: var(--shadow-lg);
@@ -329,7 +332,7 @@ a { color: var(--accent); }
 .ai-fab.open { background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); }
 
 .ai-widget {
-  position: fixed; right: 22px; bottom: 86px; z-index: 119;
+  position: fixed; right: calc(var(--rail-w) + 22px); bottom: 86px; z-index: 119;
   width: 360px; max-width: calc(100vw - 32px);
   height: 520px; max-height: calc(100vh - 130px);
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
