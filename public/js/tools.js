@@ -5,7 +5,7 @@
    (src/mailer.ts, /api/mail/*) — Settings configures the mailbox, Sent log shows
    src/mailer.ts's mail_log (users.manage for both). */
 (function () {
-  const TOOL_ICONS = { ai: 'sparkles', notes: 'note', email: 'mail', scheduler: 'calendar', bookmarks: 'bookmark', help: 'help' };
+  const TOOL_ICONS = { notes: 'note', email: 'mail', scheduler: 'calendar', bookmarks: 'bookmark', help: 'help' };
 
   function init() {
     document.querySelectorAll('.rail-btn[data-tool]').forEach((b) => {
@@ -13,11 +13,15 @@
       b.addEventListener('click', () => openTool(b.dataset.tool));
     });
     wireBookmarkContextMenu();
+    const fab = document.getElementById('ai-fab');
+    if (fab) {
+      fab.insertAdjacentHTML('afterbegin', UI.icon('sparkles', 22));
+      fab.addEventListener('click', toggleAI);
+    }
   }
 
   function openTool(tool) {
-    if (tool === 'ai') openAI();
-    else if (tool === 'notes') openNotes();
+    if (tool === 'notes') openNotes();
     else if (tool === 'email') openEmail();
     else if (tool === 'scheduler') openScheduler();
     else if (tool === 'bookmarks') openBookmarks();
@@ -70,69 +74,104 @@
     });
   }
 
+  // The AI assistant is its own floating corner widget (bubble + small fixed-size panel),
+  // not one of the generic right-rail .drawer tools — a chat interface reads better as a
+  // compact, always-in-the-corner thing than a full-height sidebar. Toggled by #ai-fab.
+  let aiOpen = false;
+  let aiEscHandler = null;
+
+  function toggleAI() { if (aiOpen) closeAI(); else openAI(); }
+
+  function closeAI() {
+    aiOpen = false;
+    const fab = document.getElementById('ai-fab');
+    if (fab) fab.classList.remove('open');
+    const root = document.getElementById('ai-widget-root');
+    const w = root && root.querySelector('.ai-widget');
+    if (document.activeElement && w && w.contains(document.activeElement)) document.activeElement.blur();
+    if (aiEscHandler) { document.removeEventListener('keydown', aiEscHandler); aiEscHandler = null; }
+    if (!w) return;
+    w.classList.remove('open');
+    setTimeout(() => { if (!aiOpen) root.innerHTML = ''; }, 180);
+  }
+
   function openAI() {
+    aiOpen = true;
     aiHistory = [];
-    UI.drawer({
-      key: 'ai', icon: 'sparkles', title: 'AI Assistant',
-      bodyHTML: `<div class="ai-chat" id="ai-chat">
+    const fab = document.getElementById('ai-fab');
+    if (fab) fab.classList.add('open');
+    const root = document.getElementById('ai-widget-root');
+    root.innerHTML = `
+      <div class="ai-widget" id="ai-widget">
+        <div class="ai-widget-head">
+          ${UI.icon('sparkles', 17)}<h3>AI Assistant</h3>
+          ${App.hasPermission('users.manage') ? `<button type="button" class="icon-btn" id="ai-config" title="AI settings" aria-label="AI settings">${UI.icon('settings', 16)}</button>` : ''}
+          <button type="button" class="icon-btn" id="ai-widget-close" aria-label="Close">${UI.icon('close', 16)}</button>
+        </div>
+        <div class="ai-widget-body"><div class="ai-chat" id="ai-chat">
           <div class="ai-msg bot">Hi! I'm your assistant — ask me about inventory, orders, messages, or your notes and tasks.</div>
-        </div>`,
-      footHTML: `${App.hasPermission('users.manage') ? `<button class="btn secondary" id="ai-config" style="margin-bottom:8px">${UI.icon('settings', 15)} AI settings</button>` : ''}
-        <form class="ai-input" id="ai-form">
-          <input id="ai-text" placeholder="Ask me anything…" autocomplete="off" />
-          <button class="btn" type="submit" aria-label="Send">${UI.icon('send', 16)}</button>
-        </form>`,
-      onOpen: (el) => {
-        const chat = el.querySelector('#ai-chat');
-        const input = el.querySelector('#ai-text');
-        const form = el.querySelector('#ai-form');
-        const submitBtn = form.querySelector('button[type="submit"]');
-        const cfgBtn = el.querySelector('#ai-config');
-        if (cfgBtn) cfgBtn.onclick = () => aiSettingsModal();
+        </div></div>
+        <div class="ai-widget-foot">
+          <form class="ai-input" id="ai-form">
+            <input id="ai-text" placeholder="Ask me anything…" autocomplete="off" />
+            <button class="btn" type="submit" aria-label="Send">${UI.icon('send', 16)}</button>
+          </form>
+        </div>
+      </div>`;
+    const el = root.querySelector('#ai-widget');
+    requestAnimationFrame(() => el.classList.add('open'));
+    aiEscHandler = (e) => { if (e.key === 'Escape') closeAI(); };
+    document.addEventListener('keydown', aiEscHandler);
 
-        form.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const t = input.value.trim();
-          if (!t) return;
-          chat.insertAdjacentHTML('beforeend', `<div class="ai-msg user">${UI.esc(t)}</div>`);
-          input.value = '';
-          input.disabled = true;
-          submitBtn.disabled = true;
-          aiHistory.push({ role: 'user', content: t });
-          chat.scrollTop = chat.scrollHeight;
+    const chat = el.querySelector('#ai-chat');
+    const input = el.querySelector('#ai-text');
+    const form = el.querySelector('#ai-form');
+    const submitBtn = form.querySelector('button[type="submit"]');
+    el.querySelector('#ai-widget-close').onclick = () => closeAI();
+    const cfgBtn = el.querySelector('#ai-config');
+    if (cfgBtn) cfgBtn.onclick = () => aiSettingsModal();
 
-          const typingId = 'ai-typing-' + Date.now();
-          chat.insertAdjacentHTML('beforeend',
-            `<div class="ai-msg bot ai-typing" id="${typingId}"><span></span><span></span><span></span></div>`);
-          chat.scrollTop = chat.scrollHeight;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const t = input.value.trim();
+      if (!t) return;
+      chat.insertAdjacentHTML('beforeend', `<div class="ai-msg user">${UI.esc(t)}</div>`);
+      input.value = '';
+      input.disabled = true;
+      submitBtn.disabled = true;
+      aiHistory.push({ role: 'user', content: t });
+      chat.scrollTop = chat.scrollHeight;
 
-          try {
-            const res = await API.post('/ai/chat', { messages: aiHistory });
-            const typingEl = document.getElementById(typingId);
-            if (typingEl) typingEl.remove();
+      const typingId = 'ai-typing-' + Date.now();
+      chat.insertAdjacentHTML('beforeend',
+        `<div class="ai-msg bot ai-typing" id="${typingId}"><span></span><span></span><span></span></div>`);
+      chat.scrollTop = chat.scrollHeight;
 
-            const chips = (res.steps || []).map((s) =>
-              `<span class="ai-chip">${UI.esc(toolLabel(s.tool))}</span>`).join('');
-            const chipsHTML = chips ? `<div class="ai-chips">${chips}</div>` : '';
-            chat.insertAdjacentHTML('beforeend',
-              `<div class="ai-msg bot">${chipsHTML}<div>${mdLite(res.reply || '')}</div>${reportLinksHTML(res.steps)}</div>`);
-            wireReportLinks(chat.lastElementChild);
-            aiHistory.push({ role: 'assistant', content: res.reply || '' });
-          } catch (err) {
-            const typingEl = document.getElementById(typingId);
-            if (typingEl) typingEl.remove();
-            chat.insertAdjacentHTML('beforeend', `<div class="ai-msg bot ai-error">${UI.esc(err.message)}</div>`);
-            aiHistory.pop(); // don't carry a failed turn's user message forward
-          } finally {
-            input.disabled = false;
-            submitBtn.disabled = false;
-            chat.scrollTop = chat.scrollHeight;
-            input.focus();
-          }
-        });
+      try {
+        const res = await API.post('/ai/chat', { messages: aiHistory });
+        const typingEl = document.getElementById(typingId);
+        if (typingEl) typingEl.remove();
+
+        const chips = (res.steps || []).map((s) =>
+          `<span class="ai-chip">${UI.esc(toolLabel(s.tool))}</span>`).join('');
+        const chipsHTML = chips ? `<div class="ai-chips">${chips}</div>` : '';
+        chat.insertAdjacentHTML('beforeend',
+          `<div class="ai-msg bot">${chipsHTML}<div>${mdLite(res.reply || '')}</div>${reportLinksHTML(res.steps)}</div>`);
+        wireReportLinks(chat.lastElementChild);
+        aiHistory.push({ role: 'assistant', content: res.reply || '' });
+      } catch (err) {
+        const typingEl = document.getElementById(typingId);
+        if (typingEl) typingEl.remove();
+        chat.insertAdjacentHTML('beforeend', `<div class="ai-msg bot ai-error">${UI.esc(err.message)}</div>`);
+        aiHistory.pop(); // don't carry a failed turn's user message forward
+      } finally {
+        input.disabled = false;
+        submitBtn.disabled = false;
+        chat.scrollTop = chat.scrollHeight;
         input.focus();
-      },
+      }
     });
+    input.focus();
   }
 
   async function aiSettingsModal() {

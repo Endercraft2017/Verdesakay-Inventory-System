@@ -315,14 +315,49 @@ a { color: var(--accent); }
 .task-add #task-date { width: 140px; }
 .task-add .btn { flex-shrink: 0; }
 
-/* AI chat */
+/* AI floating widget: a corner bubble (.ai-fab) that opens a small fixed-size panel
+   (.ai-widget) — deliberately its own thing, not a .drawer, so a chat interface gets a
+   compact anchored footprint instead of a full-height sidebar. */
+.ai-fab {
+  position: fixed; right: 22px; bottom: 22px; z-index: 120;
+  width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
+  background: var(--accent); color: var(--accent-contrast);
+  display: grid; place-items: center; box-shadow: var(--shadow-lg);
+  transition: transform 0.15s ease;
+}
+.ai-fab:hover { transform: scale(1.06); }
+.ai-fab.open { background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); }
+
+.ai-widget {
+  position: fixed; right: 22px; bottom: 86px; z-index: 119;
+  width: 360px; max-width: calc(100vw - 32px);
+  height: 520px; max-height: calc(100vh - 130px);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden;
+  opacity: 0; transform: translateY(10px) scale(0.98); pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.ai-widget.open { opacity: 1; transform: none; pointer-events: auto; }
+.ai-widget-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 8px 12px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.ai-widget-head .ic { color: var(--accent); }
+.ai-widget-head h3 { margin: 0; font-size: 14.5px; font-weight: 650; flex: 1; }
+.ai-widget-body { flex: 1; overflow: auto; padding: 12px 14px; }
+.ai-widget-foot { padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; }
+
+/* AI chat content (bubbles, chips) — shared regardless of container */
 .ai-chat { display: flex; flex-direction: column; gap: 9px; }
 .ai-msg { max-width: 85%; padding: 8px 11px; border-radius: 12px; font-size: 13px; line-height: 1.45; }
 .ai-msg.bot { align-self: flex-start; background: var(--surface-2); color: var(--text); border-bottom-left-radius: 4px; }
 .ai-msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-contrast); border-bottom-right-radius: 4px; }
-.ai-input { display: flex; gap: 7px; }
+.ai-input { display: flex; gap: 7px; align-items: center; }
 .ai-input input { flex: 1; }
-.ai-input .btn { flex-shrink: 0; }
+.ai-input .btn {
+  flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center;
+}
 .ai-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
 .ai-reports { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .ai-chip {
@@ -772,6 +807,10 @@ textarea { resize: vertical; min-height: 84px; }
   .opt-grid { grid-template-columns: 1fr; }
   .drawer { width: 100vw; }
   .tpl-editor { grid-template-columns: 1fr; }
+  /* .rail docks horizontally at the bottom on narrow viewports (above) — lift the AI
+     bubble/panel clear of it. */
+  .ai-fab { bottom: 76px; right: 14px; }
+  .ai-widget { bottom: 140px; right: 14px; width: calc(100vw - 28px); height: calc(100vh - 220px); }
 }
 
 /* ---------- Time-in Kiosk (office monitor) ---------- */

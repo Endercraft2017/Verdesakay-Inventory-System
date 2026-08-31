@@ -81,7 +81,6 @@
         <button class="rail-btn" id="rail-messages" data-route="messages" title="Messages" aria-label="Messages">
           <span class="badge hidden" id="msg-badge">0</span>
         </button>
-        <button class="rail-btn" data-tool="ai" title="AI Assistant" aria-label="AI Assistant"></button>
         <button class="rail-btn" data-tool="notes" title="Notes" aria-label="Notes"></button>
         <button class="rail-btn" data-tool="email" title="Email" aria-label="Email"></button>
         <button class="rail-btn" data-tool="scheduler" title="Scheduler" aria-label="Scheduler"></button>
@@ -93,6 +92,12 @@
         <button class="rail-btn" id="logout-btn" title="Sign out" aria-label="Sign out"></button>
       </aside>
     </div>
+
+    <!-- Floating AI chat widget: a corner bubble that opens a small fixed-size panel,
+         independent of the right-rail .drawer system (see tools.js). Lives inside
+         #app-screen so it hides/shows with the rest of the shell on logout/login. -->
+    <button class="ai-fab" id="ai-fab" title="AI Assistant" aria-label="AI Assistant"></button>
+    <div id="ai-widget-root"></div>
   </div>
 
   <div id="modal-root"></div>
