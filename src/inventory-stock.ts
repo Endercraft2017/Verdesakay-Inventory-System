@@ -57,12 +57,32 @@ interface ChangeOpts {
   userId: number | null;
   /** false for transfers — the grand total doesn't move, only its distribution. */
   touchTotal?: boolean;
+  /** Acquisition cost per unit for a stock-in (goods receipt at the PO price, finished
+      units at their built cost). When given on a positive `change`, `inventory_items.unit_cost`
+      is rolled to the weighted moving average. Omit for cost-less moves (adjustments,
+      transfers, returns) — the average is then left untouched. */
+  unitCost?: number | null;
 }
 
 /** Apply a stock delta at one location + log it. Returns the new figures. */
 export function applyStockChange(opts: ChangeOpts): { locationQty: number; total: number } {
-  const { itemId, locationId, change, reason, userId, touchTotal = true } = opts;
+  const { itemId, locationId, change, reason, userId, touchTotal = true, unitCost } = opts;
   const locationQty = stockAt(itemId, locationId) + change;
+
+  // Weighted moving average, computed from the pre-change grand total (a pre-existing
+  // negative balance counts as 0 so a backorder doesn't distort the blend).
+  if (unitCost != null && change > 0 && touchTotal) {
+    const cur = queryOne<{ quantity: number; unit_cost: number }>(
+      'SELECT quantity, unit_cost FROM inventory_items WHERE id = ?', itemId
+    );
+    const prevQty = Math.max(0, cur?.quantity ?? 0);
+    const prevCost = cur?.unit_cost ?? 0;
+    const newQty = prevQty + change;
+    const newCost = newQty > 0
+      ? Math.round(((prevQty * prevCost + change * unitCost) / newQty) * 100) / 100
+      : unitCost;
+    run("UPDATE inventory_items SET unit_cost = ? WHERE id = ?", newCost, itemId);
+  }
 
   run(
     `INSERT INTO inventory_stock (item_id, location_id, quantity) VALUES (?, ?, ?)

@@ -128,6 +128,27 @@ describe('goods receipts post stock against a PO', () => {
     expect(summary.body.receipt_status).toBe('complete');
   });
 
+  it('a goods receipt rolls the item unit cost to the weighted moving average', async () => {
+    const loc = await defaultLocId();
+    const costOf = async (id: number) =>
+      (await ctx.api.get(`/api/inventory/${id}`).set(authHdr())).body.unit_cost as number;
+
+    const widget = await mkItem('MA Widget'); // qty 0, unit_cost 0
+    const po1 = await makePO([{ item_id: widget, name: 'MA Widget', quantity: 10, unit_price: 4 }]);
+    await ctx.api.post(`/api/purchasing/orders/${po1.id}/receipts`).set(authHdr())
+      .send({ location_id: loc, lines: [{ order_item_id: po1.oiId, item_id: widget, name: 'MA Widget', quantity: 10 }] });
+    expect(await costOf(widget)).toBe(4); // 0 on hand → straight to the receipt price
+
+    const po2 = await makePO([{ item_id: widget, name: 'MA Widget', quantity: 10, unit_price: 10 }]);
+    await ctx.api.post(`/api/purchasing/orders/${po2.id}/receipts`).set(authHdr())
+      .send({ location_id: loc, lines: [{ order_item_id: po2.oiId, item_id: widget, name: 'MA Widget', quantity: 10 }] });
+    expect(await costOf(widget)).toBe(7); // (10×4 + 10×10) / 20
+
+    // a stock-out (negative adjustment) leaves the average untouched
+    await ctx.api.post(`/api/inventory/${widget}/adjust`).set(authHdr()).send({ change: -5, reason: 'shrinkage' });
+    expect(await costOf(widget)).toBe(7);
+  });
+
   it('deleting a receipt reverses the stock', async () => {
     const loc = await defaultLocId();
     const nut = await mkItem('PO Nut');

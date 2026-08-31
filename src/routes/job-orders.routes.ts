@@ -419,6 +419,7 @@ router.post('/:id/progress', writeGate, (req, res) => {
           change: done_delta,
           reason: `${jo.number}: produced`,
           userId: req.user!.id,
+          unitCost: componentCostFor(id).perUnit,   // built cost → moving-average
         });
       }
       run(
@@ -686,6 +687,7 @@ router.post('/:id/units/inspect', writeGate, (req, res) => {
               change: 1,
               reason: `${jo.number}: unit passed QC`,
               userId: req.user!.id,
+              unitCost: componentCostFor(id).perUnit,   // built cost → moving-average
             });
           }
           run('UPDATE job_orders SET qty_done = qty_done + 1, updated_at = datetime(\'now\') WHERE id = ?', id);

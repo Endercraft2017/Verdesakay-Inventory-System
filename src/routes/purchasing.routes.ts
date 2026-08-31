@@ -231,9 +231,13 @@ router.post('/orders/:id/receipts', requirePermission('inventory.adjust'), (req,
         l.quantity ?? 0, l.unit ?? null, i
       );
       if (l.item_id != null && (l.quantity ?? 0) > 0) {
+        const poPrice = l.order_item_id != null
+          ? queryOne<{ unit_price: number }>('SELECT unit_price FROM order_items WHERE id = ?', l.order_item_id)?.unit_price
+          : undefined;
         applyStockChange({
           itemId: l.item_id, locationId: input.location_id, change: l.quantity ?? 0,
           userId: req.user!.id, reason: `Goods receipt ${number} — ${order.number}`,
+          unitCost: poPrice,   // rolls the item's moving-average cost
         });
       }
     });

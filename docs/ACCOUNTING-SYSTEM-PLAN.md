@@ -27,9 +27,9 @@
 > moves its material cost DR WIP / CR Inventory at release, DR Inventory / CR WIP as units
 > finish, with a scrap/variance true-up at close; a goods receipt posts DR Inventory / CR
 > Goods Received Not Invoiced at the PO price (the vendor bill clears GRNI instead of
-> expensing), and a **firm sale** draws stock down and posts **DR COGS / CR Inventory** at
-> standard cost (`inventory_items.unit_cost`; `orders.location_id` / `fulfilled_at`).
-> Moving-average valuation is the remaining 3b work; Phase 4–5 (financial-statement polish,
+> expensing), and a **firm sale** draws stock down and posts **DR COGS / CR Inventory**;
+> `inventory_items.unit_cost` rolls to the weighted moving average on every costed
+> stock-in. **Phase 3 is complete** — Phase 4–5 (financial-statement polish, period close,
 > CAS export) are the roadmap. **Phase 2 is complete** — its last tail,
 > **per-line tax codes** for mixed-rate documents (2026-08-31), lets the BIR journals /
 > SLSP / 2550M-Q classify a sale or bill line by line.
@@ -424,8 +424,18 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   (`src/accounting-autopost.ts`); UI: a **Ship from** picker on the sale-order form.
   `tests/accounting-posting.test.ts` ("buildCogsEntry") + `tests/accounting.test.ts`
   ("COGS on sale").
-- **3b — still to do.** **Moving-average valuation** to replace standard cost; a
-  **shortage block** on confirming a sale that can't be covered.
+- **3b — moving-average valuation. ✅ SHIPPED 2026-08-31.** `applyStockChange`
+  (`src/inventory-stock.ts`) gained an optional `unitCost`; on a **positive** change that
+  passes one, it rolls `inventory_items.unit_cost` to the weighted moving average
+  `(max(prevQty,0) × prevCost + inQty × unitCost) / newQty` (a pre-existing negative
+  on-hand counts as 0 so a backorder doesn't distort the blend). **Goods receipts** pass
+  the PO line price; **job-order finished units** pass their built cost (Σ component
+  `qty_per_unit × unit_cost`). Cost-less moves (stock adjustments, transfers, component
+  returns, initial stock, stock-outs) pass nothing → the average is untouched. `unit_cost`
+  stays a plain editable field for the opening cost. `tests/purchasing.test.ts` ("weighted
+  moving average"). **Phase 3b complete.**
+- **3b — nice-to-have, deferred.** A **shortage block** on confirming a sale that can't be
+  covered (today the stock just goes negative — a backorder); FIFO / lot costing.
 
 **Phase 4 — statements, close, assets, bank rec.** PFRS-for-SMEs **BS / IS / cash flow /
 equity**; **period-end close** (accruals, prepaid amortization, depreciation run,
@@ -626,7 +636,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Frappe Books | Verdesakay | Status |
 |---|---|---|
 | `Location` (warehouse) | `locations` | ✅ |
-| `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` (+ `inventory_items.unit_cost` standard cost, Phase 3b) | ✅ — job orders post WIP, goods receipts post DR Inventory / CR GRNI, and firm sales post DR COGS / CR Inventory, all at standard cost (Phase 3b); moving-average valuation still ⬜ |
+| `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` (+ `inventory_items.unit_cost`, weighted moving average — Phase 3b) | ✅ — job orders post WIP, goods receipts post DR Inventory / CR GRNI, firm sales post DR COGS / CR Inventory; `unit_cost` rolls to the moving average on every costed stock-in (Phase 3b) |
 | `StockMovement` / `StockTransfer` (+ items) | adjust / transfer endpoints | ✅ |
 | `PurchaseReceipt` (+ items) | `goods_receipts` | ✅ — posts DR Inventory / CR Goods Received Not Invoiced (Phase 3b); the vendor bill clears GRNI |
 | `Shipment` (+ items) — delivery note | finished-unit allocation; a firm sale draws its lines out of stock from `orders.location_id` + posts COGS (Phase 3b) | 🟡 — no partial / separate delivery document yet |
