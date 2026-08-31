@@ -211,7 +211,9 @@ return worksheets can find the right balances without the user wiring anything.
   register + QAP + 2307 printing + 1604-E are new.
 - **1702Q / 1702-RT** worksheet — trial balance → book income → the common
   add-backs/deductions → tax due; attach the AFS. New.
-- **Books of Accounts export** for CAS presentation. New.
+- **Books of Accounts export** for CAS presentation. ✅ **Phase 4b** — `GET /books-of-accounts`
+  bundles the General Journal / General Ledger / Cash books / Sales & Purchase Journals with
+  the company header; printable + per-book CSV (Accounting → Tax & Compliance → Books of Accounts).
 
 ### 4.3 Bank reconciliation
 
@@ -456,6 +458,18 @@ reconciliation**; **recurring entries**; **1702Q/1702-RT** worksheet + AFS pack;
   (folded into retained earnings only at period-end close); with `from` = the fiscal-year
   start, `closing_equity` equals the balance sheet's equity-with-earnings. UI: **Cash Flow**
   and **Equity** tabs in Books. `tests/accounting.test.ts` ("cash flow + equity statements").
+- **4b — Books of Accounts export. ✅ SHIPPED 2026-08-31.** The registered CAS set in one
+  place. New reports **`GET /ledger/reports/general-journal?from=&to=&format=csv`** (every
+  posted journal line, chronological, grouped by entry, Σdebit = Σcredit) and
+  **`GET /ledger/reports/general-ledger-all?from=&to=&format=csv`** (every account with
+  activity — opening balance carried into `from`, its posted lines with a running balance,
+  closing). **`GET /books-of-accounts?from=&to=`** bundles all six books — General Journal,
+  General Ledger, Cash Receipts / Disbursements Books, Sales & Purchase Journals — with the
+  company registration header, for a printable document (`cashBookData` was extracted from
+  the `/cash-book` route to share). UI: **Accounting → Tax & Compliance → Books of Accounts**
+  — date range, per-book CSV, and **Print all** (opens a page-broken document to print /
+  save as PDF for BIR CAS registration). The app does **not** register on the customer's
+  behalf (§7). `tests/accounting.test.ts` ("Books of Accounts").
 
 **Phase 5 — multi-currency, multi-entity, budgets, dimensions** (cost centre / project
 / department tags on lines), consolidation. Later.
@@ -671,7 +685,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Balance Sheet | `.../reports/balance-sheet` | ✅ **Phase 0** |
 | Cash Flow Statement | `GET .../reports/cash-flow` (indirect) + `.../reports/equity-changes` | ✅ **Phase 4a** |
 | Stock Ledger / Stock Balance | analytics dashboard (stock value) | 🟡 |
-| Sales / Purchase Register, Party Ledger | `sales-journal` / `purchase-journal` (Phase 2a, BIR columnar); `party-ledger` statement (Phase 1b); AR/AP aging; **Cash Receipts / Cash Disbursements books** (`cash-book`, Phase 2d) | ✅ — registers + cash books + party statement done |
+| Sales / Purchase Register, Party Ledger | `sales-journal` / `purchase-journal` (Phase 2a, BIR columnar); `party-ledger` statement (Phase 1b); AR/AP aging; **Cash Receipts / Cash Disbursements books** (`cash-book`, Phase 2d); **General Journal + all-account General Ledger** (`reports/general-journal`, `reports/general-ledger-all`, Phase 4b) | ✅ — registers + cash books + party statement + the full Books-of-Accounts set |
 | GST reports | BIR sales/purchase journals + **2550M/2550Q (journal-sourced) / 0619-E** + **EWT register / 2307 / 1601-EQ + QAP / 1604-E / SLSP `.DAT`** (Phase 2) | ✅ |
 
 ### Cross-cutting

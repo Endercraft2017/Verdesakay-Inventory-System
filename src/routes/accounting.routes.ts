@@ -1216,18 +1216,10 @@ router.get('/ledger/reports/equity-changes', (req, res) => {
   });
 });
 
-// GET /api/accounting/cash-book?type=receipts|disbursements&from=&to=&format=csv
-// The BIR Cash Receipts / Cash Disbursements books: every posted entry in that cash
-// journal, its cash-side movement, and the contra accounts each entry hit. The payment
-// auto-post (Phase 1b) is what fills these books; manual entries booked to the
-// cash_receipts / cash_disbursements journal show here too.
-router.get('/cash-book', (req, res) => {
-  if (!requireLedger(res)) return;
-  const type = req.query.type === 'disbursements' ? 'disbursements' : 'receipts';
+/** The Cash Receipts / Cash Disbursements book for a range: every posted entry in that
+ *  cash journal, its cash-side movement, and the contra accounts each entry hit. */
+function cashBookData(type: 'receipts' | 'disbursements', from: string, to: string) {
   const book = type === 'receipts' ? 'cash_receipts' : 'cash_disbursements';
-  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
-  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
-
   const cashAcctIds = new Set(queryAll<{ id: number }>(
     "SELECT id FROM accounts WHERE account_type IN ('cash','bank')").map((a) => a.id));
 
@@ -1258,10 +1250,27 @@ router.get('/cash-book', (req, res) => {
       cash_in: cIn, cash_out: cOut, contra,
     };
   });
+  return {
+    type, book, rows,
+    cash_totals: { debit: cashDebit, credit: cashCredit, net: round2(cashDebit - cashCredit) },
+    contra_totals: [...contraTotals.values()].sort((a, b) => (b.debit + b.credit) - (a.debit + a.credit)),
+  };
+}
+
+// GET /api/accounting/cash-book?type=receipts|disbursements&from=&to=&format=csv
+// The BIR Cash Receipts / Cash Disbursements books (see cashBookData). The payment
+// auto-post (Phase 1b) is what fills these journals; manual entries booked to the
+// cash_receipts / cash_disbursements journal show here too.
+router.get('/cash-book', (req, res) => {
+  if (!requireLedger(res)) return;
+  const type = req.query.type === 'disbursements' ? 'disbursements' : 'receipts';
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
+  const d = cashBookData(type, from, to);
 
   if (req.query.format === 'csv') {
     const headers = ['Date', 'Entry', 'Ref', 'Party', 'Memo', 'Cash in', 'Cash out', 'Contra accounts'];
-    const csvRows = rows.map((r) => ({
+    const csvRows = d.rows.map((r) => ({
       Date: r.date, Entry: r.number, Ref: r.ref ?? '', Party: r.party ?? '', Memo: r.memo ?? '',
       'Cash in': r.cash_in, 'Cash out': r.cash_out,
       'Contra accounts': r.contra.map((c) => `${c.code} ${c.name} ${c.debit ? 'Dr ' + c.debit : 'Cr ' + c.credit}`).join('; '),
@@ -1271,11 +1280,138 @@ router.get('/cash-book', (req, res) => {
     res.send(toCsv(headers, csvRows));
     return;
   }
+  res.json({ ...d, from, to });
+});
 
+/* ================================================ Books of Accounts (Phase 4b) === */
+/* The registered books a Computerized Accounting System presents to the BIR: General
+   Journal, General Ledger, Cash Receipts / Disbursements Books, Sales / Purchase Journals.
+   All read from the posted `journal_lines`; see docs/ACCOUNTING-SYSTEM-PLAN.md §1.1 / §4.2. */
+
+/** General Journal: every posted journal line for the range, chronological, grouped by entry. */
+function generalJournalData(from: string, to: string) {
+  const rows = queryAll<{
+    entry_id: number; date: string; number: string; book: string; memo: string | null;
+    account_code: string; account_name: string; line_memo: string | null; debit: number; credit: number;
+  }>(`
+    SELECT je.id AS entry_id, je.entry_date AS date, je.number, je.book, je.memo,
+           a.code AS account_code, a.name AS account_name, jl.memo AS line_memo, jl.debit, jl.credit
+    FROM journal_lines jl
+    JOIN journal_entries je ON je.id = jl.entry_id
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE je.status = 'posted' AND je.entry_date >= ? AND je.entry_date <= ?
+    ORDER BY je.entry_date, je.id, jl.sort, jl.id`, from, to);
+  return {
+    rows: rows.map((r) => ({ ...r, debit: round2(r.debit), credit: round2(r.credit) })),
+    total_debit: round2(rows.reduce((s, r) => s + (r.debit || 0), 0)),
+    total_credit: round2(rows.reduce((s, r) => s + (r.credit || 0), 0)),
+  };
+}
+
+/** General Ledger, every account that has posted activity up to `to`: opening balance
+ *  carried into `from`, the range's posted lines with a running balance, and the closing. */
+function generalLedgerAllData(from: string, to: string) {
+  const opening = accountBalancesUpTo(addDays(from, -1) ?? undefined);
+  const accts = queryAll<Account>("SELECT * FROM accounts WHERE is_group = 0 ORDER BY code");
+  const linesByAcct = new Map<number, { date: string; number: string; memo: string | null; line_memo: string | null; debit: number; credit: number }[]>();
+  for (const l of queryAll<{ account_id: number; date: string; number: string; memo: string | null; line_memo: string | null; debit: number; credit: number }>(`
+    SELECT jl.account_id, je.entry_date AS date, je.number, je.memo, jl.memo AS line_memo, jl.debit, jl.credit
+    FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+    WHERE je.status = 'posted' AND je.entry_date >= ? AND je.entry_date <= ?
+    ORDER BY je.entry_date, je.id, jl.sort, jl.id`, from, to)) {
+    (linesByAcct.get(l.account_id) ?? linesByAcct.set(l.account_id, []).get(l.account_id)!).push(l);
+  }
+
+  const accountsOut = [];
+  for (const a of accts) {
+    const ob = opening.get(a.id);
+    const lines = linesByAcct.get(a.id) ?? [];
+    const openingBal = accountBalance(a.root_type, ob?.debit ?? 0, ob?.credit ?? 0);
+    if (!lines.length && openingBal === 0) continue;   // no activity ever
+    const dir = a.root_type === 'asset' || a.root_type === 'expense' ? 1 : -1;
+    let running = openingBal;
+    const entries = lines.map((l) => {
+      running = round2(running + dir * ((l.debit || 0) - (l.credit || 0)));
+      return { date: l.date, number: l.number, memo: l.line_memo || l.memo || '', debit: round2(l.debit), credit: round2(l.credit), running_balance: running };
+    });
+    accountsOut.push({
+      account: { code: a.code, name: a.name, root_type: a.root_type },
+      opening_balance: openingBal,
+      entries,
+      total_debit: round2(lines.reduce((s, l) => s + (l.debit || 0), 0)),
+      total_credit: round2(lines.reduce((s, l) => s + (l.credit || 0), 0)),
+      closing_balance: running,
+    });
+  }
+  return { accounts: accountsOut };
+}
+
+// GET /api/accounting/ledger/reports/general-journal?from=&to=&format=csv
+router.get('/ledger/reports/general-journal', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : ledgerSettings().fiscal_year_start || to.slice(0, 8) + '01';
+  const d = generalJournalData(from, to);
+  if (req.query.format === 'csv') {
+    const headers = ['Date', 'Reference', 'Account code', 'Account', 'Particulars', 'Debit', 'Credit'];
+    const csvRows = d.rows.map((r) => ({
+      Date: r.date, Reference: r.number, 'Account code': r.account_code, Account: r.account_name,
+      Particulars: r.line_memo || r.memo || '', Debit: r.debit || '', Credit: r.credit || '',
+    }));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="general-journal-${from}_${to}.csv"`);
+    res.send(toCsv(headers, csvRows));
+    return;
+  }
+  res.json({ from, to, company: companyProfile(), ...d });
+});
+
+// GET /api/accounting/ledger/reports/general-ledger-all?from=&to=&format=csv
+router.get('/ledger/reports/general-ledger-all', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : ledgerSettings().fiscal_year_start || to.slice(0, 8) + '01';
+  const d = generalLedgerAllData(from, to);
+  if (req.query.format === 'csv') {
+    const headers = ['Account code', 'Account', 'Date', 'Reference', 'Particulars', 'Debit', 'Credit', 'Running balance'];
+    const csvRows: Record<string, unknown>[] = [];
+    for (const acc of d.accounts) {
+      csvRows.push({ 'Account code': acc.account.code, Account: acc.account.name, Particulars: 'Opening balance', 'Running balance': acc.opening_balance });
+      for (const e of acc.entries) csvRows.push({
+        'Account code': acc.account.code, Account: acc.account.name, Date: e.date, Reference: e.number,
+        Particulars: e.memo, Debit: e.debit || '', Credit: e.credit || '', 'Running balance': e.running_balance,
+      });
+      csvRows.push({ 'Account code': acc.account.code, Account: acc.account.name, Particulars: 'Closing balance', 'Running balance': acc.closing_balance });
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="general-ledger-${from}_${to}.csv"`);
+    res.send(toCsv(headers, csvRows));
+    return;
+  }
+  res.json({ from, to, company: companyProfile(), ...d });
+});
+
+// GET /api/accounting/books-of-accounts?from=&to= — the whole registered set in one
+// payload, for a printable "Books of Accounts" document (BIR CAS presentation). Each book
+// also has its own CSV endpoint (linked in `books[].csv`).
+router.get('/books-of-accounts', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : ledgerSettings().fiscal_year_start || to.slice(0, 8) + '01';
+  const range = `from=${from}&to=${to}`;
   res.json({
-    type, book, from, to, rows,
-    cash_totals: { debit: cashDebit, credit: cashCredit, net: round2(cashDebit - cashCredit) },
-    contra_totals: [...contraTotals.values()].sort((a, b) => (b.debit + b.credit) - (a.debit + a.credit)),
+    company: companyProfile(),
+    from, to,
+    books: [
+      { key: 'general_journal', title: 'General Journal', csv: `/api/accounting/ledger/reports/general-journal?${range}&format=csv`, data: generalJournalData(from, to) },
+      { key: 'general_ledger', title: 'General Ledger', csv: `/api/accounting/ledger/reports/general-ledger-all?${range}&format=csv`, data: generalLedgerAllData(from, to) },
+      { key: 'cash_receipts_book', title: 'Cash Receipts Book', csv: `/api/accounting/cash-book?type=receipts&${range}&format=csv`, data: cashBookData('receipts', from, to) },
+      { key: 'cash_disbursements_book', title: 'Cash Disbursements Book', csv: `/api/accounting/cash-book?type=disbursements&${range}&format=csv`, data: cashBookData('disbursements', from, to) },
+      { key: 'sales_journal', title: 'Sales Journal', csv: null, data: salesJournalData(from, to) },
+      { key: 'purchase_journal', title: 'Purchase Journal', csv: null, data: purchaseJournalData(from, to) },
+    ],
+    note: 'Present these with the system description and sample reports for BIR CAS registration. '
+      + 'The app does not register on your behalf (see docs/ACCOUNTING-SYSTEM-PLAN.md §7).',
   });
 });
 

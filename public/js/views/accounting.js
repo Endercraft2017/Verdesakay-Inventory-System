@@ -32,9 +32,10 @@ App.register('accounting', async (view) => {
       ['adjust', 'Statutory deductions', 'Turn SSS / PhilHealth / Pag-IBIG / withholding on or off per employee — feeds payroll.', statutoryDeductionsModal, true],
     ]],
     ['General ledger', [
-      ['sheet', 'Books', 'Double-entry general ledger — chart of accounts, journal entries, trial balance, P&L, balance sheet.', () => App.navigate('accounting-ledger')],
+      ['sheet', 'Books', 'Double-entry general ledger — chart of accounts, journal entries, trial balance, P&L, balance sheet, cash flow.', () => App.navigate('accounting-ledger')],
       ['sheet', 'Receivables & Payables', 'AR / AP aging, customer receipts & supplier payments, per-party statement.', () => App.navigate('accounting-receivables')],
       ['sheet', 'Petty cash', 'Named cash funds with a running money-in / money-out register.', () => App.navigate('accounting-petty-cash')],
+      ['printer', 'Books of Accounts', 'The registered set — General Journal / Ledger, Cash books, Sales / Purchase Journals — printable + CSV for BIR CAS registration.', booksOfAccountsModal],
     ]],
   ];
 
@@ -469,6 +470,105 @@ async function ewtRegisterModal() {
 }
 
 /* ── BIR 2307 — Certificate of Creditable Tax Withheld at Source ──────────── */
+/* ── Books of Accounts — the registered CAS set ─────────────────────────── */
+function boaBookHtml(bk) {
+  const e = UI.esc, m = accPeso;
+  const d = bk.data || {};
+  if (bk.key === 'general_journal') {
+    return `<table class="line-table"><thead><tr><th>Date</th><th>Ref</th><th>Account</th><th>Particulars</th><th class="right">Debit</th><th class="right">Credit</th></tr></thead>
+      <tbody>${(d.rows || []).map((r) => `<tr><td>${e(r.date)}</td><td class="mono">${e(r.number)}</td>
+        <td>${e(r.account_code)} ${e(r.account_name)}</td><td>${e(r.line_memo || r.memo || '')}</td>
+        <td class="right">${r.debit ? m(r.debit) : ''}</td><td class="right">${r.credit ? m(r.credit) : ''}</td></tr>`).join('')
+        || '<tr><td colspan="6" class="muted" style="text-align:center;padding:10px">No entries in this period.</td></tr>'}</tbody>
+      <tfoot><tr><th colspan="4">Totals</th><th class="right">${m(d.total_debit)}</th><th class="right">${m(d.total_credit)}</th></tr></tfoot></table>`;
+  }
+  if (bk.key === 'general_ledger') {
+    return (d.accounts || []).map((acc) => `<h4 style="margin:12px 0 4px">${e(acc.account.code)} · ${e(acc.account.name)}</h4>
+      <table class="line-table"><thead><tr><th>Date</th><th>Ref</th><th>Particulars</th><th class="right">Debit</th><th class="right">Credit</th><th class="right">Balance</th></tr></thead>
+      <tbody>
+        <tr><td colspan="5" class="muted">Opening balance</td><td class="right">${m(acc.opening_balance)}</td></tr>
+        ${acc.entries.map((x) => `<tr><td>${e(x.date)}</td><td class="mono">${e(x.number)}</td><td>${e(x.memo || '')}</td>
+          <td class="right">${x.debit ? m(x.debit) : ''}</td><td class="right">${x.credit ? m(x.credit) : ''}</td><td class="right">${m(x.running_balance)}</td></tr>`).join('')}
+        <tr style="font-weight:600"><td colspan="3">Closing balance</td><td class="right">${m(acc.total_debit)}</td><td class="right">${m(acc.total_credit)}</td><td class="right">${m(acc.closing_balance)}</td></tr>
+      </tbody></table>`).join('') || '<p class="muted">No account activity in this period.</p>';
+  }
+  if (bk.key === 'cash_receipts_book' || bk.key === 'cash_disbursements_book') {
+    const inCol = bk.key === 'cash_receipts_book' ? 'Cash in' : 'Cash out';
+    return `<table class="line-table"><thead><tr><th>Date</th><th>Ref</th><th>Payee / payor</th><th>Particulars</th><th class="right">${inCol}</th><th>Contra account(s)</th></tr></thead>
+      <tbody>${(d.rows || []).map((r) => `<tr><td>${e(r.date)}</td><td class="mono">${e(r.ref || r.number)}</td>
+        <td>${e(r.party || '')}</td><td>${e(r.memo || '')}</td>
+        <td class="right">${m(bk.key === 'cash_receipts_book' ? r.cash_in : r.cash_out)}</td>
+        <td class="muted" style="font-size:11px">${r.contra.map((c) => `${e(c.code)} ${c.debit ? 'Dr ' + m(c.debit) : 'Cr ' + m(c.credit)}`).join('; ')}</td></tr>`).join('')
+        || '<tr><td colspan="6" class="muted" style="text-align:center;padding:10px">No entries in this period.</td></tr>'}</tbody>
+      <tfoot><tr><th colspan="4">Total</th><th class="right">${m(bk.key === 'cash_receipts_book' ? d.cash_totals.debit : d.cash_totals.credit)}</th><th></th></tr></tfoot></table>`;
+  }
+  // sales_journal / purchase_journal
+  const who = bk.key === 'sales_journal' ? 'Customer' : 'Supplier';
+  return `<table class="line-table"><thead><tr><th>Date</th><th>Ref</th><th>${who}</th><th>TIN</th>
+      <th class="right">Gross</th><th class="right">VATable</th><th class="right">Exempt</th><th class="right">Zero-rated</th><th class="right">VAT</th></tr></thead>
+    <tbody>${(d.rows || []).map((r) => `<tr><td>${e(r.date || '')}</td><td class="mono">${e(r.ref)}</td><td>${e(r.name || '')}</td><td class="mono">${e(r.tin || '')}</td>
+      <td class="right">${m(r.cols.gross)}</td><td class="right">${m(r.cols.vatable)}</td><td class="right">${m(r.cols.exempt)}</td><td class="right">${m(r.cols.zero_rated)}</td><td class="right">${m(r.cols.vat)}</td></tr>`).join('')
+      || '<tr><td colspan="9" class="muted" style="text-align:center;padding:10px">No documents in this period.</td></tr>'}</tbody>
+    <tfoot><tr><th colspan="4">Totals</th><th class="right">${m(d.totals.gross)}</th><th class="right">${m(d.totals.vatable)}</th><th class="right">${m(d.totals.exempt)}</th><th class="right">${m(d.totals.zero_rated)}</th><th class="right">${m(d.totals.vat)}</th></tr></tfoot></table>`;
+}
+
+async function booksOfAccountsModal() {
+  const today = new Date();
+  const yStart = today.getFullYear() + '-01-01';
+  UI.modal({
+    title: 'Books of Accounts', size: 'lg', cancelText: 'Close', confirmText: null,
+    bodyHTML: `
+      <p class="muted" style="font-size:12px;margin-top:0">The registered set a Computerized Accounting System presents
+        for BIR registration — General Journal, General Ledger, Cash Receipts / Disbursements Books, Sales &amp; Purchase
+        Journals — from the posted ledger. The app does not register on your behalf.</p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <label style="margin:0">From</label><input id="ba-from" type="date" value="${yStart}" />
+        <label style="margin:0">To</label><input id="ba-to" type="date" value="${today.toISOString().slice(0, 10)}" />
+        <button type="button" class="btn secondary small" id="ba-go">Load</button>
+        <button type="button" class="btn secondary small" id="ba-print">${UI.icon('printer', 14)} Print all</button>
+      </div>
+      <div id="ba-out" class="empty">Load a period.</div>`,
+    onOpen: (ov) => {
+      const out = ov.querySelector('#ba-out');
+      let state = null;
+      const run = async () => {
+        out.innerHTML = '<div class="empty">Loading…</div>';
+        const from = ov.querySelector('#ba-from').value, to = ov.querySelector('#ba-to').value;
+        state = await API.get(`/accounting/books-of-accounts?from=${from}&to=${to}`).catch((err) => { out.innerHTML = `<div class="m-error">${UI.esc(err.message)}</div>`; return null; });
+        if (!state) return;
+        const count = (b) => b.key === 'general_ledger' ? `${(b.data.accounts || []).length} account(s)`
+          : `${(b.data.rows || []).length} row(s)`;
+        out.innerHTML = state.books.map((b) => `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1"><b>${UI.esc(b.title)}</b> <span class="muted" style="font-size:12px">— ${count(b)}</span></div>
+          ${b.csv ? `<button type="button" class="btn secondary small" data-csv="${UI.esc(b.csv)}" data-name="${b.key}">${UI.icon('download', 13)} CSV</button>` : '<span class="muted" style="font-size:11px">CSV via Books tab</span>'}
+        </div>`).join('') + `<p class="muted" style="font-size:11px;margin-top:10px">${UI.esc(state.note)}</p>`;
+        out.querySelectorAll('[data-csv]').forEach((btn) => btn.onclick = () =>
+          API.download(btn.dataset.csv.replace('/api/accounting', '/accounting'), `${btn.dataset.name}-${from}_${to}.csv`));
+      };
+      ov.querySelector('#ba-go').onclick = run;
+      ov.querySelector('#ba-print').onclick = () => {
+        if (!state) { UI.toast('Load a period first', 'error'); return; }
+        const c = state.company || {};
+        const head = `<div style="text-align:center;margin-bottom:8px">
+          <div style="font-weight:700;font-size:15px">${UI.esc(c.name || 'Company')}</div>
+          ${c.tin ? `<div>TIN ${UI.esc(c.tin)}</div>` : ''}${c.address ? `<div style="font-size:12px">${UI.esc(c.address)}</div>` : ''}
+          <div style="margin-top:6px;font-weight:700">BOOKS OF ACCOUNTS</div>
+          <div style="font-size:12px">${UI.esc(state.from)} to ${UI.esc(state.to)}</div></div>`;
+        const body = state.books.map((b) => `<h2 style="page-break-before:always">${UI.esc(b.title)}</h2>${boaBookHtml(b)}`).join('');
+        const w = window.open('', '_blank');
+        w.document.write(`<html><head><title>Books of Accounts — ${UI.esc(state.from)} to ${UI.esc(state.to)}</title>
+          <style>body{font:12px system-ui;padding:20px;color:#111}h2{font-size:14px;border-bottom:2px solid #111;padding-bottom:2px;margin:18px 0 6px}h2:first-of-type{page-break-before:auto}h4{margin:10px 0 3px;font-size:12px}
+          table{border-collapse:collapse;width:100%;margin-bottom:6px}th,td{border:1px solid #bbb;padding:3px 6px;text-align:left;vertical-align:top}
+          .right{text-align:right}.mono{font-family:ui-monospace,monospace}.muted{color:#666}tfoot th{border-top:2px solid #111}</style></head>
+          <body>${head}${body}</body></html>`);
+        w.document.close(); w.focus();
+        setTimeout(() => w.print(), 300);
+      };
+      run();
+    },
+  });
+}
+
 async function bir2307Modal() {
   let suppliers = [];
   try { suppliers = await API.get('/suppliers'); } catch { /* */ }

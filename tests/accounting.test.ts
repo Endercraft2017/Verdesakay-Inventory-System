@@ -977,3 +977,39 @@ describe('accounting: cash flow + equity statements (Phase 4a)', () => {
     expect(eq.body.closing_equity).toBeCloseTo(bs.body.equity.total_with_earnings, 2);
   });
 });
+
+describe('accounting: Books of Accounts (Phase 4b)', () => {
+  const range = 'from=2026-01-01&to=2026-12-31';
+
+  it('bundles the six registered books, and the General Journal balances', async () => {
+    const r = await ctx.api.get(`/api/accounting/books-of-accounts?${range}`).set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.books.map((b: { key: string }) => b.key)).toEqual([
+      'general_journal', 'general_ledger', 'cash_receipts_book', 'cash_disbursements_book', 'sales_journal', 'purchase_journal',
+    ]);
+    const gj = r.body.books.find((b: { key: string }) => b.key === 'general_journal').data;
+    expect(gj.total_debit).toBeGreaterThan(0);
+    expect(gj.total_debit).toBeCloseTo(gj.total_credit, 2); // a journal must balance
+    const gl = r.body.books.find((b: { key: string }) => b.key === 'general_ledger').data;
+    expect(gl.accounts.length).toBeGreaterThan(3);
+    const acc = gl.accounts[0];
+    expect(acc).toHaveProperty('opening_balance');
+    expect(acc).toHaveProperty('closing_balance');
+  });
+
+  it('the General Journal report matches the trial balance totals for the range', async () => {
+    const gj = (await ctx.api.get(`/api/accounting/ledger/reports/general-journal?${range}`).set(hdr())).body;
+    expect(gj.total_debit).toBeCloseTo(gj.total_credit, 2);
+    // every line references a real account + entry number
+    expect(gj.rows.every((x: { number: string; account_code: string }) => /^JV-/.test(x.number) && x.account_code)).toBe(true);
+  });
+
+  it('exports the General Journal and General Ledger as CSV', async () => {
+    const j = await ctx.api.get(`/api/accounting/ledger/reports/general-journal?${range}&format=csv`).set(hdr());
+    expect(j.headers['content-type']).toContain('text/csv');
+    expect(j.text.split('\n')[0]).toContain('Debit');
+    const l = await ctx.api.get(`/api/accounting/ledger/reports/general-ledger-all?${range}&format=csv`).set(hdr());
+    expect(l.headers['content-type']).toContain('text/csv');
+    expect(l.text.split('\n')[0]).toContain('Running balance');
+  });
+});

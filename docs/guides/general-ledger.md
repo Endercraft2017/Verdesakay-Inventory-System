@@ -76,6 +76,16 @@ add month- or quarter-sized ones here if you want a tighter close cadence. Only
 | **Equity** | Statement of changes in equity — opening / movement / closing per equity account, plus the period's net income (added to retained earnings only at period-end close) |
 | **General Ledger** | One account, opening balance + every posted line + running balance + closing |
 
+## Books of Accounts (for BIR CAS registration)
+
+**Accounting → Tax & Compliance → Books of Accounts** pulls the registered set for a
+period — **General Journal**, **General Ledger** (every account), **Cash Receipts** and
+**Cash Disbursements Books**, **Sales** and **Purchase Journals** — from the posted
+ledger. Each book downloads as CSV; **Print all** opens one page-broken document (company
+name / TIN / address header, then each book) to print or save as PDF and present with the
+system description for CAS registration. The app does not register the system with the BIR
+for you.
+
 ## Tips & gotchas
 
 - The reports read **posted** entries only — a draft doesn't move any balance.
