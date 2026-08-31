@@ -170,6 +170,31 @@ describe('accounting: general ledger (Phase 0)', () => {
     const posted = await ctx.api.post(`/api/accounting/ledger/journal-entries/${je.body.id}/post`).set(hdr()).send({});
     expect(posted.status).toBe(409);
     expect(posted.body.error).toMatch(/closed period/i);
+
+    // GET lists it as closed with who/when, joined from the users table
+    const list = await ctx.api.get('/api/accounting/ledger/periods').set(hdr());
+    const row = list.body.find((x: { id: number }) => x.id === p.body.id);
+    expect(row.status).toBe('closed');
+    expect(row.closed_by_name).toBeTruthy();
+    expect(row.closed_at).toBeTruthy();
+
+    // Reopening clears the lock, unblocking the same entry
+    const reopened = await ctx.api.post(`/api/accounting/ledger/periods/${p.body.id}/reopen`).set(hdr()).send({});
+    expect(reopened.body.status).toBe('open');
+    const postedAfterReopen = await ctx.api.post(`/api/accounting/ledger/journal-entries/${je.body.id}/post`).set(hdr()).send({});
+    expect(postedAfterReopen.status).toBe(200);
+
+    const listAfter = await ctx.api.get('/api/accounting/ledger/periods').set(hdr());
+    const rowAfter = listAfter.body.find((x: { id: number }) => x.id === p.body.id);
+    expect(rowAfter.status).toBe('open');
+    expect(rowAfter.closed_by_name).toBeNull();
+  });
+
+  it('rejects a period whose end date is before its start date, and a request for a non-existent period', async () => {
+    const bad = await ctx.api.post('/api/accounting/ledger/periods').set(hdr())
+      .send({ name: 'Backwards', start_date: '2026-02-01', end_date: '2026-01-01' });
+    expect(bad.status).toBe(400);
+    expect((await ctx.api.post('/api/accounting/ledger/periods/999999/close').set(hdr()).send({})).status).toBe(404);
   });
 
   it('an account with entries cannot be deleted or re-typed', async () => {
@@ -923,5 +948,32 @@ describe('accounting: COGS on sale (Phase 3b)', () => {
     const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
       .query({ source_type: 'sale_cogs', source_id: soId }).set(hdr());
     expect(jes.body.length).toBe(3); // original + reversal + fresh
+  });
+});
+
+describe('accounting: cash flow + equity statements (Phase 4a)', () => {
+  it('the cash flow statement reconciles to the movement in cash & bank', async () => {
+    const cf = await ctx.api.get('/api/accounting/ledger/reports/cash-flow?from=2026-01-01&to=2026-12-31').set(hdr());
+    expect(cf.status).toBe(200);
+    expect(cf.body.reconciles).toBe(true);
+    // operating + investing + financing = the actual change in cash
+    expect(cf.body.net_change_in_cash).toBeCloseTo(cf.body.cash_ending - cf.body.cash_beginning, 2);
+    expect(cf.body.net_change_in_cash).toBeCloseTo(
+      cf.body.operating.total + cf.body.investing.total + cf.body.financing.total, 2);
+    expect(cf.body.operating.total).toBeCloseTo(
+      cf.body.operating.net_income + cf.body.operating.adjustments.reduce((s: number, l: { amount: number }) => s + l.amount, 0), 2);
+  });
+
+  it('the statement of changes in equity closes to the balance sheet equity', async () => {
+    const asOf = '2026-12-31';
+    const eq = await ctx.api.get(`/api/accounting/ledger/reports/equity-changes?from=2026-01-01&to=${asOf}`).set(hdr());
+    expect(eq.status).toBe(200);
+    // opening + movements + net income = closing
+    expect(eq.body.closing_equity).toBeCloseTo(
+      eq.body.opening_equity + eq.body.movements_total + eq.body.net_income_for_period, 2);
+    for (const r of eq.body.rows) expect(r.closing).toBeCloseTo(r.opening + r.movement, 2);
+
+    const bs = await ctx.api.get(`/api/accounting/ledger/reports/balance-sheet?as_of=${asOf}`).set(hdr());
+    expect(eq.body.closing_equity).toBeCloseTo(bs.body.equity.total_with_earnings, 2);
   });
 });

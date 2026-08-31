@@ -735,7 +735,11 @@ router.delete('/ledger/accounts/:id', requirePermission('accounting.manage'), (r
 
 router.get('/ledger/periods', (_req, res) => {
   if (!requireLedger(res)) return;
-  res.json(queryAll<AccountingPeriod>('SELECT * FROM accounting_periods ORDER BY start_date DESC'));
+  res.json(queryAll<AccountingPeriod & { closed_by_name: string | null }>(
+    `SELECT p.*, u.full_name AS closed_by_name FROM accounting_periods p
+     LEFT JOIN users u ON u.id = p.closed_by
+     ORDER BY p.start_date DESC`
+  ));
 });
 
 router.post('/ledger/periods', requirePermission('accounting.manage'), (req, res) => {
@@ -1112,6 +1116,103 @@ router.get('/ledger/reports/balance-sheet', (req, res) => {
     total_assets: assets.total,
     total_liabilities_and_equity: round2(liabilities.total + equityWithEarnings),
     balanced: Math.abs(assets.total - (liabilities.total + equityWithEarnings)) < 0.01,
+  });
+});
+
+// GET .../reports/cash-flow?from=&to= — indirect-method statement of cash flows.
+// Re-groups the change in every non-cash account over the period: net income + the
+// movement in working-capital / non-cash accounts (operating), in non-current assets
+// (investing) and in non-current liabilities / equity (financing). By double-entry the
+// three totals always sum to the change in cash & bank — `reconciles` is a rounding check.
+// Operating vs investing vs financing is a presentation split, keyed off `account_type`
+// and the default chart's numbering (1200s = non-current assets, 2200s = non-current
+// liabilities); re-tag or renumber accounts to change how a line is grouped.
+router.get('/ledger/reports/cash-flow', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from
+    : ledgerSettings().fiscal_year_start || to.slice(0, 8) + '01';
+  const open = accountBalancesUpTo(addDays(from, -1) ?? undefined);
+  const close = accountBalancesUpTo(to);
+  const accts = queryAll<Account>("SELECT * FROM accounts WHERE is_group = 0 ORDER BY code");
+
+  const bal = (m: Map<number, { debit: number; credit: number }>, a: Account): number => {
+    const b = m.get(a.id) || { debit: 0, credit: 0 };
+    return accountBalance(a.root_type, b.debit, b.credit);
+  };
+  const nonCurrentAsset = (a: Account) =>
+    a.account_type === 'fixed_asset' || a.account_type === 'accumulated_depreciation' || /^12/.test(a.code);
+  const nonCurrentLiab = (a: Account) => /^22/.test(a.code);
+
+  type Line = { code: string; name: string; amount: number };
+  const operating: Line[] = [], investing: Line[] = [], financing: Line[] = [];
+  let cashOpen = 0, cashClose = 0;
+
+  for (const a of accts) {
+    if (a.account_type === 'cash' || a.account_type === 'bank') {
+      cashOpen = round2(cashOpen + bal(open, a));
+      cashClose = round2(cashClose + bal(close, a));
+      continue;
+    }
+    if (a.root_type === 'income' || a.root_type === 'expense') continue; // captured in net income
+    const delta = round2(bal(close, a) - bal(open, a));
+    if (delta === 0) continue;
+    // Cash impact: a rise in an asset consumes cash; a rise in a liability / equity provides it.
+    const line: Line = { code: a.code, name: a.name, amount: a.root_type === 'asset' ? -delta : delta };
+    if (a.root_type === 'asset') (nonCurrentAsset(a) && a.account_type !== 'accumulated_depreciation' ? investing : operating).push(line);
+    else if (a.root_type === 'liability') (nonCurrentLiab(a) ? financing : operating).push(line);
+    else financing.push(line); // equity
+  }
+
+  const netInc = netIncome(from, to);
+  const opTotal = round2(netInc + operating.reduce((s, l) => s + l.amount, 0));
+  const invTotal = round2(investing.reduce((s, l) => s + l.amount, 0));
+  const finTotal = round2(financing.reduce((s, l) => s + l.amount, 0));
+  const netChange = round2(opTotal + invTotal + finTotal);
+
+  res.json({
+    from, to,
+    operating: { net_income: netInc, adjustments: operating, total: opTotal },
+    investing: { items: investing, total: invTotal },
+    financing: { items: financing, total: finTotal },
+    net_change_in_cash: netChange,
+    cash_beginning: round2(cashOpen),
+    cash_ending: round2(cashClose),
+    reconciles: Math.abs(netChange - round2(cashClose - cashOpen)) < 0.01,
+  });
+});
+
+// GET .../reports/equity-changes?from=&to= — statement of changes in equity: opening,
+// movement and closing per equity account, plus the period's net income (folded into
+// retained earnings only at period-end close, shown separately until then). With
+// `from` = the fiscal-year start, `closing_equity` matches the balance sheet's
+// equity-with-earnings.
+router.get('/ledger/reports/equity-changes', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from
+    : ledgerSettings().fiscal_year_start || to.slice(0, 8) + '01';
+  const open = accountBalancesUpTo(addDays(from, -1) ?? undefined);
+  const close = accountBalancesUpTo(to);
+
+  const rows = queryAll<Account>("SELECT * FROM accounts WHERE is_group = 0 AND root_type = 'equity' ORDER BY code")
+    .map((a) => {
+      const ob = open.get(a.id) || { debit: 0, credit: 0 };
+      const cb = close.get(a.id) || { debit: 0, credit: 0 };
+      const opening = accountBalance('equity', ob.debit, ob.credit);
+      const closing = accountBalance('equity', cb.debit, cb.credit);
+      return { code: a.code, name: a.name, opening: round2(opening), movement: round2(closing - opening), closing: round2(closing) };
+    });
+  const netInc = netIncome(from, to);
+  const openingEquity = round2(rows.reduce((s, r) => s + r.opening, 0));
+  const movements = round2(rows.reduce((s, r) => s + r.movement, 0));
+
+  res.json({
+    from, to, rows,
+    net_income_for_period: netInc,
+    opening_equity: openingEquity,
+    movements_total: movements,
+    closing_equity: round2(openingEquity + movements + netInc),
   });
 });
 

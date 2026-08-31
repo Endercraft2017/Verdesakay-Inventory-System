@@ -443,6 +443,20 @@ retained-earnings roll-up); **fixed-asset register + depreciation**; **bank
 reconciliation**; **recurring entries**; **1702Q/1702-RT** worksheet + AFS pack;
 **Books of Accounts export** for CAS registration.
 
+- **4a — cash flow + equity statements. ✅ SHIPPED 2026-08-31.** The two missing primary
+  statements. **`GET /api/accounting/ledger/reports/cash-flow?from=&to=`** — indirect
+  method: starts from `netIncome(from, to)`, then re-groups the period movement in every
+  non-cash account into **operating** (working-capital + the accumulated-depreciation
+  non-cash add-back), **investing** (non-current assets) and **financing** (non-current
+  liabilities + equity). By double-entry the three totals always sum to the change in cash
+  & bank, so `reconciles` is a rounding check; operating-vs-investing-vs-financing is a
+  presentation split keyed off `account_type` + the default chart's numbering (12xx =
+  non-current asset, 22xx = non-current liability). **`GET .../reports/equity-changes?from=&to=`**
+  — opening / movement / closing per equity account + the period's `net_income_for_period`
+  (folded into retained earnings only at period-end close); with `from` = the fiscal-year
+  start, `closing_equity` equals the balance sheet's equity-with-earnings. UI: **Cash Flow**
+  and **Equity** tabs in Books. `tests/accounting.test.ts` ("cash flow + equity statements").
+
 **Phase 5 — multi-currency, multi-entity, budgets, dimensions** (cost centre / project
 / department tags on lines), consolidation. Later.
 
@@ -655,7 +669,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Trial Balance | `.../reports/trial-balance` | ✅ **Phase 0** |
 | Profit & Loss | `.../reports/profit-and-loss` | ✅ **Phase 0** |
 | Balance Sheet | `.../reports/balance-sheet` | ✅ **Phase 0** |
-| Cash Flow Statement | — | ⬜ Phase 4 |
+| Cash Flow Statement | `GET .../reports/cash-flow` (indirect) + `.../reports/equity-changes` | ✅ **Phase 4a** |
 | Stock Ledger / Stock Balance | analytics dashboard (stock value) | 🟡 |
 | Sales / Purchase Register, Party Ledger | `sales-journal` / `purchase-journal` (Phase 2a, BIR columnar); `party-ledger` statement (Phase 1b); AR/AP aging; **Cash Receipts / Cash Disbursements books** (`cash-book`, Phase 2d) | ✅ — registers + cash books + party statement done |
 | GST reports | BIR sales/purchase journals + **2550M/2550Q (journal-sourced) / 0619-E** + **EWT register / 2307 / 1601-EQ + QAP / 1604-E / SLSP `.DAT`** (Phase 2) | ✅ |

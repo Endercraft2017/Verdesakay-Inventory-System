@@ -9,7 +9,7 @@ App.register('accounting-ledger', async (view, filter) => {
 
   if (!settings.enabled) { renderSetup(); return; }
 
-  const tabs = ['Chart of Accounts', 'Journal', 'Sales Journal', 'Purchase Journal', 'Cash Book', 'Trial Balance', 'Profit & Loss', 'Balance Sheet', 'General Ledger', 'Posting Rules'];
+  const tabs = ['Chart of Accounts', 'Journal', 'Sales Journal', 'Purchase Journal', 'Cash Book', 'Trial Balance', 'Profit & Loss', 'Balance Sheet', 'Cash Flow', 'Equity', 'General Ledger', 'Posting Rules', 'Periods'];
   let active = filter && filter.tab ? tabs.find((t) => t.toLowerCase().replace(/[^a-z]/g, '') === filter.tab) || tabs[0] : tabs[0];
 
   view.innerHTML = `
@@ -45,7 +45,10 @@ App.register('accounting-ledger', async (view, filter) => {
     if (active === 'Trial Balance') return trialBalance();
     if (active === 'Profit & Loss') return pnl();
     if (active === 'Balance Sheet') return balanceSheet();
+    if (active === 'Cash Flow') return cashFlow();
+    if (active === 'Equity') return equityStatement();
     if (active === 'Posting Rules') return postingRules();
+    if (active === 'Periods') return periods();
     return generalLedger();
   }
 
@@ -102,6 +105,68 @@ App.register('accounting-ledger', async (view, filter) => {
       try { await API.put('/accounting/ledger/posting-rules', payload); UI.toast('Posting rules saved'); postingRules(); }
       catch (e) { UI.toast(e.message, 'error'); save.disabled = false; }
     };
+  }
+
+  /* ---------- accounting periods (close / reopen) ---------- */
+  async function periods() {
+    body.innerHTML = '<div class="empty">Loading…</div>';
+    const rows = await API.get('/accounting/ledger/periods');
+    body.innerHTML = `
+      <p class="muted" style="margin-top:0">Closing a period blocks any new or edited posting dated inside it — manual
+        journal entries, and the auto-posted Sales/Purchase/Payroll/Payroll-GL/Job-Order entries alike — until it's
+        reopened. A fiscal-year period is created automatically when the ledger is set up; add more here for
+        month-by-month or quarter-by-quarter closes.</p>
+      <div style="display:flex;margin-bottom:8px">
+        <div class="grow"></div>
+        ${canManage ? `<button class="btn secondary small" id="per-new">${UI.icon('plus')} New period</button>` : ''}
+      </div>
+      <table><thead><tr><th>Name</th><th>Start</th><th>End</th><th>Status</th><th>Closed by</th><th></th></tr></thead>
+        <tbody>${rows.length ? rows.map((p) => `<tr>
+          <td>${UI.esc(p.name)}</td>
+          <td class="mono">${UI.esc(p.start_date)}</td>
+          <td class="mono">${UI.esc(p.end_date)}</td>
+          <td><span class="badge-pill ${p.status === 'closed' ? 'status-cancelled' : 'status-open'}">${p.status}</span></td>
+          <td class="muted">${p.status === 'closed' ? `${UI.esc(p.closed_by_name || '—')} · ${UI.esc((p.closed_at || '').slice(0, 10))}` : '—'}</td>
+          <td class="actions">${canManage
+            ? `<button class="btn secondary small" data-toggle="${p.id}" data-action="${p.status === 'closed' ? 'reopen' : 'close'}">${p.status === 'closed' ? 'Reopen' : 'Close'}</button>`
+            : ''}</td>
+        </tr>`).join('') : `<tr><td colspan="6" class="empty">No periods yet.</td></tr>`}</tbody></table>`;
+    const nb = body.querySelector('#per-new');
+    if (nb) nb.onclick = () => periodModal();
+    body.querySelectorAll('[data-toggle]').forEach((b) => b.onclick = async () => {
+      const action = b.dataset.action;
+      const p = rows.find((x) => String(x.id) === b.dataset.toggle);
+      if (action === 'close' && !(await UI.confirmDialog(
+        `Close "${p.name}" (${p.start_date} – ${p.end_date})? No new or edited posting dated in this range will be allowed until it's reopened.`,
+        'Close period'
+      ))) return;
+      b.disabled = true;
+      try { await API.post(`/accounting/ledger/periods/${p.id}/${action}`); UI.toast(action === 'close' ? 'Period closed' : 'Period reopened'); periods(); }
+      catch (e) { UI.toast(e.message, 'error'); b.disabled = false; }
+    });
+  }
+
+  function periodModal() {
+    const today = new Date().toISOString().slice(0, 10);
+    UI.modal({
+      title: 'New accounting period',
+      bodyHTML: `
+        <label>Name <span class="req">*</span></label><input data-f="name" placeholder="e.g. January 2027 or Q1 2027" />
+        <div class="field-row">
+          <div><label>Start date <span class="req">*</span></label><input data-f="start_date" type="date" value="${today}" /></div>
+          <div><label>End date <span class="req">*</span></label><input data-f="end_date" type="date" value="${today}" /></div>
+        </div>`,
+      confirmText: 'Create period',
+      onConfirm: async (ov, showErr) => {
+        const v = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
+        const b = { name: v('name'), start_date: v('start_date'), end_date: v('end_date') };
+        if (!b.name) { showErr('Name is required'); return false; }
+        if (!b.start_date || !b.end_date) { showErr('Start and end dates are required'); return false; }
+        await API.post('/accounting/ledger/periods', b);
+        UI.toast('Period created');
+        periods();
+      },
+    });
   }
 
   /* ---------- setup ---------- */
@@ -477,6 +542,55 @@ App.register('accounting-ledger', async (view, filter) => {
         <tr style="font-weight:700"><td>Total assets</td><td class="right">${money(d.total_assets)}</td></tr>
         <tr style="font-weight:700"><td>Total liabilities + equity ${d.balanced ? '✓' : '⚠'}</td><td class="right">${money(d.total_liabilities_and_equity)}</td></tr>
       </tbody></table></div>`;
+      body.querySelector('#r-go').onclick = run;
+    };
+    body.querySelector('#r-go').onclick = run; run();
+  }
+
+  async function cashFlow() {
+    body.innerHTML = dateControls(['from', 'to']) + '<div id="r-out" class="empty">Loading…</div>';
+    body.querySelector('#r-from').value = settings.fiscal_year_start;
+    const run = async () => {
+      const from = body.querySelector('#r-from').value, to = body.querySelector('#r-to').value;
+      const d = await API.get(`/accounting/ledger/reports/cash-flow?from=${from}&to=${to}`);
+      const lines = (items) => items.map((r) => `<tr><td class="mono">${r.code}</td><td>${UI.esc(r.name)}</td>
+        <td class="right ${r.amount < 0 ? 'gl-neg' : ''}">${money(r.amount)}</td></tr>`).join('');
+      const sec = (title, total) => `<tr style="font-weight:600;background:var(--surface-2)"><td colspan="2">${title}</td><td class="right">${money(total)}</td></tr>`;
+      body.querySelector('#r-out').outerHTML = `<div id="r-out">
+        <p class="muted" style="margin:0 0 8px">Indirect method — ${UI.esc(from)} to ${UI.esc(to)}.</p>
+        <table><tbody>
+          ${sec('Operating activities', d.operating.total)}
+          <tr><td colspan="2">Net income</td><td class="right">${money(d.operating.net_income)}</td></tr>
+          ${lines(d.operating.adjustments)}
+          ${sec('Investing activities', d.investing.total)}
+          ${lines(d.investing.items) || '<tr><td colspan="3" class="muted">—</td></tr>'}
+          ${sec('Financing activities', d.financing.total)}
+          ${lines(d.financing.items) || '<tr><td colspan="3" class="muted">—</td></tr>'}
+          <tr style="font-weight:700"><td colspan="2">Net change in cash ${d.reconciles ? '✓' : '⚠'}</td><td class="right ${d.net_change_in_cash < 0 ? 'gl-neg' : ''}">${money(d.net_change_in_cash)}</td></tr>
+          <tr><td colspan="2">Cash at beginning</td><td class="right">${money(d.cash_beginning)}</td></tr>
+          <tr style="font-weight:700"><td colspan="2">Cash at end</td><td class="right">${money(d.cash_ending)}</td></tr>
+        </tbody></table></div>`;
+      body.querySelector('#r-go').onclick = run;
+    };
+    body.querySelector('#r-go').onclick = run; run();
+  }
+
+  async function equityStatement() {
+    body.innerHTML = dateControls(['from', 'to']) + '<div id="r-out" class="empty">Loading…</div>';
+    body.querySelector('#r-from').value = settings.fiscal_year_start;
+    const run = async () => {
+      const from = body.querySelector('#r-from').value, to = body.querySelector('#r-to').value;
+      const d = await API.get(`/accounting/ledger/reports/equity-changes?from=${from}&to=${to}`);
+      body.querySelector('#r-out').outerHTML = `<div id="r-out">
+        <p class="muted" style="margin:0 0 8px">Statement of changes in equity — ${UI.esc(from)} to ${UI.esc(to)}.</p>
+        <table><thead><tr><th>Code</th><th>Account</th><th class="right">Opening</th><th class="right">Movement</th><th class="right">Closing</th></tr></thead>
+        <tbody>${d.rows.map((r) => `<tr><td class="mono">${r.code}</td><td>${UI.esc(r.name)}</td>
+          <td class="right">${money(r.opening)}</td><td class="right ${r.movement < 0 ? 'gl-neg' : ''}">${money(r.movement)}</td><td class="right">${money(r.closing)}</td></tr>`).join('')}
+          <tr><td colspan="4">Net income for the period (to retained earnings at close)</td><td class="right">${money(d.net_income_for_period)}</td></tr>
+        </tbody>
+        <tfoot><tr style="font-weight:700"><td colspan="2">Total equity</td>
+          <td class="right">${money(d.opening_equity)}</td><td class="right">${money(d.movements_total + d.net_income_for_period)}</td><td class="right">${money(d.closing_equity)}</td></tr></tfoot>
+        </table></div>`;
       body.querySelector('#r-go').onclick = run;
     };
     body.querySelector('#r-go').onclick = run; run();
