@@ -9,7 +9,7 @@ App.register('accounting-ledger', async (view, filter) => {
 
   if (!settings.enabled) { renderSetup(); return; }
 
-  const tabs = ['Chart of Accounts', 'Journal', 'Sales Journal', 'Purchase Journal', 'Trial Balance', 'Profit & Loss', 'Balance Sheet', 'General Ledger', 'Posting Rules'];
+  const tabs = ['Chart of Accounts', 'Journal', 'Sales Journal', 'Purchase Journal', 'Cash Book', 'Trial Balance', 'Profit & Loss', 'Balance Sheet', 'General Ledger', 'Posting Rules'];
   let active = filter && filter.tab ? tabs.find((t) => t.toLowerCase().replace(/[^a-z]/g, '') === filter.tab) || tabs[0] : tabs[0];
 
   view.innerHTML = `
@@ -41,6 +41,7 @@ App.register('accounting-ledger', async (view, filter) => {
     if (active === 'Journal') return journal();
     if (active === 'Sales Journal') return birJournal('sales');
     if (active === 'Purchase Journal') return birJournal('purchase');
+    if (active === 'Cash Book') return cashBook();
     if (active === 'Trial Balance') return trialBalance();
     if (active === 'Profit & Loss') return pnl();
     if (active === 'Balance Sheet') return balanceSheet();
@@ -362,6 +363,61 @@ App.register('accounting-ledger', async (view, filter) => {
       );
     };
     body.querySelector('#r-go').onclick = run; run();
+  }
+
+  /* ---------- cash receipts / disbursements books ---------- */
+  async function cashBook() {
+    let type = 'receipts';
+    body.innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <div class="subnav-inline" id="cb-type">
+          <button class="tab active" data-type="receipts">Cash Receipts</button>
+          <button class="tab" data-type="disbursements">Cash Disbursements</button>
+        </div>
+        <div class="grow"></div>
+        <label class="muted" style="font-size:12px">From</label><input type="date" id="r-from" />
+        <label class="muted" style="font-size:12px">To</label><input type="date" id="r-to" value="${new Date().toISOString().slice(0, 10)}" />
+        <button class="btn secondary small" id="r-go">Refresh</button>
+      </div><div id="r-out" class="empty">Loading…</div>`;
+    const today = new Date();
+    body.querySelector('#r-from').value = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+    body.querySelectorAll('#cb-type .tab').forEach((b) => b.onclick = () => {
+      type = b.dataset.type;
+      body.querySelectorAll('#cb-type .tab').forEach((x) => x.classList.toggle('active', x === b));
+      run();
+    });
+    const run = async () => {
+      const from = body.querySelector('#r-from').value, to = body.querySelector('#r-to').value;
+      const d = await API.get(`/accounting/cash-book?type=${type}&from=${from}&to=${to}`);
+      const inLabel = type === 'receipts' ? 'Cash in' : 'Cash out';
+      body.querySelector('#r-out').outerHTML = `<div id="r-out">
+        <p class="muted" style="margin:0 0 8px">${type === 'receipts' ? 'Cash Receipts Book' : 'Cash Disbursements Book'} — ${UI.esc(from)} to ${UI.esc(to)}.
+          Each row is a posted entry in the <code>${d.book.replace('_', ' ')}</code> journal.</p>
+        <div style="overflow-x:auto"><table><thead><tr>
+          <th>Date</th><th>Entry</th><th>Ref</th><th>Party</th><th>Particulars</th>
+          <th class="right">${inLabel}</th><th>Contra account(s)</th>
+        </tr></thead>
+        <tbody>${d.rows.map((r) => `<tr>
+          <td>${UI.esc(r.date)}</td><td class="mono">${UI.esc(r.number)}</td>
+          <td class="mono">${UI.esc(r.ref || '—')}</td><td>${UI.esc(r.party || '—')}</td>
+          <td>${UI.esc(r.memo || '—')}</td>
+          <td class="right">${money(type === 'receipts' ? r.cash_in : r.cash_out)}</td>
+          <td class="muted" style="font-size:12px">${r.contra.map((c) => `${UI.esc(c.code)} ${UI.esc(c.name)} <span class="mono">${c.debit ? 'Dr ' + money(c.debit) : 'Cr ' + money(c.credit)}</span>`).join('<br>') || '—'}</td>
+        </tr>`).join('') || `<tr><td colspan="7" class="muted" style="text-align:center;padding:14px">No entries in this range.</td></tr>`}</tbody>
+        <tfoot><tr><th colspan="5">Total ${inLabel.toLowerCase()}</th>
+          <th class="right">${money(type === 'receipts' ? d.cash_totals.debit : d.cash_totals.credit)}</th><th></th></tr></tfoot>
+        </table></div>
+        ${d.contra_totals.length ? `<h4 style="margin:14px 0 6px">Contra account summary</h4>
+          <table style="max-width:520px"><thead><tr><th>Code</th><th>Account</th><th class="right">Debit</th><th class="right">Credit</th></tr></thead>
+          <tbody>${d.contra_totals.map((c) => `<tr><td class="mono">${UI.esc(c.code)}</td><td>${UI.esc(c.name)}</td>
+            <td class="right">${c.debit ? money(c.debit) : ''}</td><td class="right">${c.credit ? money(c.credit) : ''}</td></tr>`).join('')}</tbody></table>` : ''}
+        <button class="btn secondary small" id="r-csv" style="margin-top:10px">${UI.icon('download')} CSV</button></div>`;
+      body.querySelector('#r-go').onclick = run;
+      body.querySelector('#r-csv').onclick = () => API.download(
+        `/accounting/cash-book?type=${type}&from=${from}&to=${to}&format=csv`, `cash-${type}-${from}_${to}.csv`);
+    };
+    body.querySelector('#r-go').onclick = run;
+    run();
   }
 
   async function trialBalance() {

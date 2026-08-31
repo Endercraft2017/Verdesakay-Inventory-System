@@ -19,9 +19,10 @@ describe('accounting: 2550M (VAT)', () => {
     const loc = (await ctx.api.get('/api/locations').set(hdr())).body.find((l: { is_default: number }) => l.is_default === 1).id;
     const item = (await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'VAT Widget', quantity: 100 })).body.id;
 
-    // A sale this month: total 11,200 incl. 1,200 VAT.
+    // A confirmed sale this month: total 11,200 incl. 1,200 VAT. (2550M re-sources from the
+    // sales journal, which counts confirmed / completed / … sales — not open drafts.)
     await ctx.api.post('/api/orders').set(hdr()).send({
-      type: 'sale', status: 'open', order_date: '2026-07-05', tax_percent: 12,
+      type: 'sale', status: 'confirmed', order_date: '2026-07-05', tax_percent: 12,
       items: [{ item_id: item, name: 'VAT Widget', quantity: 10, unit_price: 1000 }],
     });
     // A purchase this month, received + billed + approved: 5,600 incl. 600 VAT.
@@ -41,6 +42,23 @@ describe('accounting: 2550M (VAT)', () => {
     expect(r.body.worksheet.output_vat).toBeCloseTo(1_200, 2);
     expect(r.body.worksheet.input_vat_current).toBeCloseTo(600, 2);
     expect(r.body.worksheet.net_vat_payable).toBeCloseTo(600, 2);
+    // the journal re-source exposes the vatable / exempt / zero-rated split
+    expect(r.body.breakdown.sales.vatable).toBeCloseTo(10_000, 2);
+    expect(r.body.breakdown.purchases.vatable).toBeCloseTo(5_000, 2);
+  });
+
+  it('2550Q sums the quarter and breaks it down by month', async () => {
+    const r = await ctx.api.get('/api/accounting/bir-2550q?quarter=2026-Q3').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.quarter).toBe('2026-Q3');
+    expect(r.body.monthly).toHaveLength(3);
+    expect(r.body.monthly.map((m: { month: string }) => m.month)).toEqual(['2026-07', '2026-08', '2026-09']);
+    // the July sale + bill from the previous test fall in Q3
+    const jul = r.body.monthly.find((m: { month: string }) => m.month === '2026-07');
+    expect(jul.output_vat).toBeCloseTo(1_200, 2);
+    expect(jul.input_vat).toBeCloseTo(600, 2);
+    expect(jul.net_vat).toBeCloseTo(600, 2);
+    expect(r.body.worksheet.output_vat).toBeGreaterThanOrEqual(1_200);
   });
 });
 
@@ -682,5 +700,29 @@ describe('accounting: SLSP summary lists (Phase 2c)', () => {
     const row = sls.body.rows.find((r: { tin: string | null }) => r.tin === '111-222-333-000');
     expect(row.cols.exempt).toBeGreaterThanOrEqual(1100); // 500 + 600 exempt sales
     expect(row.cols.vatable).toBe(1000);                   // the one VAT sale
+  });
+});
+
+describe('accounting: cash books (Phase 2 tail)', () => {
+  it('the cash receipts book lists the posted receipt with its contra account', async () => {
+    // Phase 1b posted a ₱400 receipt from "Aging Co" on 2026-05-20 to the cash_receipts book.
+    const r = await ctx.api.get('/api/accounting/cash-book?type=receipts&from=2026-05-01&to=2026-05-31').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.book).toBe('cash_receipts');
+    const row = r.body.rows.find((x: { party: string | null }) => x.party === 'Aging Co');
+    expect(row.cash_in).toBe(400);
+    expect(row.cash_out).toBe(0);
+    // the other leg is Accounts Receivable (1140), credited
+    expect(row.contra.some((c: { code: string; credit: number }) => c.code === '1140' && c.credit === 400)).toBe(true);
+    expect(r.body.cash_totals.debit).toBeGreaterThanOrEqual(400);
+    const arTot = r.body.contra_totals.find((c: { code: string }) => c.code === '1140');
+    expect(arTot.credit).toBeGreaterThanOrEqual(400);
+  });
+
+  it('exports the cash disbursements book as CSV', async () => {
+    const csv = await ctx.api.get('/api/accounting/cash-book?type=disbursements&from=2026-01-01&to=2026-12-31&format=csv').set(hdr());
+    expect(csv.status).toBe(200);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.text.split('\n')[0]).toContain('Contra accounts');
   });
 });

@@ -217,40 +217,66 @@ router.get('/bir-0619e', (req, res) => {
   });
 });
 
+/** Shared 2550M / 2550Q payload for a date range — re-sourced from the BIR sales &
+ *  purchase journals (so exempt / zero-rated and credit / debit notes are already split
+ *  and netted, unlike a raw SUM over the documents). */
+function vatReturnPayload(from: string, to: string, q: Record<string, unknown>) {
+  const s = salesJournalData(from, to).totals;
+  const p = purchaseJournalData(from, to).totals;
+  const worksheet = vat2550m({
+    gross_sales: s.gross,
+    output_vat_booked: s.vat,
+    gross_purchases: p.gross,
+    input_vat_booked: p.vat,
+    amounts_vat_inclusive: q.vat_inclusive === '1' || q.vat_inclusive === 'true',
+    input_vat_carry_over: Number(q.input_vat_carry_over) || 0,
+    vat_payments: Number(q.vat_payments) || 0,
+  });
+  return {
+    sources: { gross_sales: s.gross, gross_purchases: p.gross },
+    breakdown: {
+      sales: { vatable: s.vatable, exempt: s.exempt, zero_rated: s.zero_rated, output_vat: s.vat },
+      purchases: { vatable: p.vatable, exempt: p.exempt, zero_rated: p.zero_rated, input_vat: p.vat },
+    },
+    worksheet,
+  };
+}
+
 // GET /api/accounting/bir-2550m?month=&vat_inclusive=&input_vat_carry_over=&vat_payments=
-// Monthly VAT declaration worksheet from the month's sale orders (output) + approved
-// vendor bills (input). Defaults use each document's own tax_amount; falls back to a
-// 12% derivation when a document carries none.
+// Monthly VAT declaration worksheet, re-sourced from the sales & purchase journals.
 router.get('/bir-2550m', (req, res) => {
   const month = monthOf(req.query.month);
-  const like = `${month}%`;
-
-  const sales = queryOne<{ gross: number; vat: number }>(
-    `SELECT COALESCE(SUM(total), 0) AS gross, COALESCE(SUM(tax_amount), 0) AS vat
-     FROM orders WHERE type = 'sale' AND status NOT IN ('cancelled')
-       AND COALESCE(order_date, substr(created_at,1,10)) LIKE ?`, like
-  );
-  const purch = queryOne<{ gross: number; vat: number }>(
-    `SELECT COALESCE(SUM(total), 0) AS gross, COALESCE(SUM(tax_amount), 0) AS vat
-     FROM vendor_bills WHERE status = 'approved'
-       AND COALESCE(bill_date, substr(created_at,1,10)) LIKE ?`, like
-  );
-
-  const worksheet = vat2550m({
-    gross_sales: round2(sales?.gross ?? 0),
-    output_vat_booked: round2(sales?.vat ?? 0),
-    gross_purchases: round2(purch?.gross ?? 0),
-    input_vat_booked: round2(purch?.vat ?? 0),
-    amounts_vat_inclusive: req.query.vat_inclusive === '1' || req.query.vat_inclusive === 'true',
-    input_vat_carry_over: Number(req.query.input_vat_carry_over) || 0,
-    vat_payments: Number(req.query.vat_payments) || 0,
-  });
+  const [from, to] = monthRange(month);
   res.json({
     month, company: companyProfile(),
-    sources: { gross_sales: round2(sales?.gross ?? 0), gross_purchases: round2(purch?.gross ?? 0) },
-    worksheet,
-    note: 'Worksheet from booked sale orders + approved vendor bills. Adjust for exempt / zero-rated '
-      + 'sales and disallowed input VAT before filing. Deadline: 20th of the following month.',
+    ...vatReturnPayload(from, to, req.query as Record<string, unknown>),
+    note: 'Re-sourced from the BIR sales & purchase journals — exempt / zero-rated sales and '
+      + 'credit / debit notes are already split and netted. Confirm disallowed input VAT before '
+      + 'filing. Deadline: 20th of the following month.',
+  });
+});
+
+// GET /api/accounting/bir-2550q?quarter=YYYY-Qn&vat_inclusive=&input_vat_carry_over=&vat_payments=
+// Quarterly VAT declaration — the quarter's output less input, plus a per-month breakdown.
+router.get('/bir-2550q', (req, res) => {
+  const { year, q, from, to, months } = quarterOf(req.query.quarter);
+  const monthly = months.map((m) => {
+    const [mf, mt] = monthRange(m);
+    const ms = salesJournalData(mf, mt).totals;
+    const mp = purchaseJournalData(mf, mt).totals;
+    return {
+      month: m,
+      output_vat: ms.vat, input_vat: mp.vat,
+      net_vat: round2(ms.vat - mp.vat),
+      vatable_sales: ms.vatable, vatable_purchases: mp.vatable,
+    };
+  });
+  res.json({
+    quarter: `${year}-Q${q}`, from, to, company: companyProfile(),
+    monthly,
+    ...vatReturnPayload(from, to, req.query as Record<string, unknown>),
+    note: 'Quarterly VAT (2550Q). Attach the SLSP (Summary List of Sales / Purchases) when over '
+      + 'the threshold. Deadline: the 25th day after the close of the quarter.',
   });
 });
 
@@ -750,6 +776,14 @@ const POSTING_RULE_ROOT: Record<keyof PostingRules, AccountRootType> = {
   input_vat_account_id: 'asset',
   sales_returns_account_id: 'income',
   ewt_payable_account_id: 'liability',
+  payroll_expense_account_id: 'expense',
+  payroll_er_contrib_account_id: 'expense',
+  sss_payable_account_id: 'liability',
+  philhealth_payable_account_id: 'liability',
+  pagibig_payable_account_id: 'liability',
+  withholding_tax_payable_account_id: 'liability',
+  net_pay_payable_account_id: 'liability',
+  employee_advance_account_id: 'asset',
 };
 
 function postingRulesPayload() {
@@ -1073,6 +1107,69 @@ router.get('/ledger/reports/balance-sheet', (req, res) => {
     total_assets: assets.total,
     total_liabilities_and_equity: round2(liabilities.total + equityWithEarnings),
     balanced: Math.abs(assets.total - (liabilities.total + equityWithEarnings)) < 0.01,
+  });
+});
+
+// GET /api/accounting/cash-book?type=receipts|disbursements&from=&to=&format=csv
+// The BIR Cash Receipts / Cash Disbursements books: every posted entry in that cash
+// journal, its cash-side movement, and the contra accounts each entry hit. The payment
+// auto-post (Phase 1b) is what fills these books; manual entries booked to the
+// cash_receipts / cash_disbursements journal show here too.
+router.get('/cash-book', (req, res) => {
+  if (!requireLedger(res)) return;
+  const type = req.query.type === 'disbursements' ? 'disbursements' : 'receipts';
+  const book = type === 'receipts' ? 'cash_receipts' : 'cash_disbursements';
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
+
+  const cashAcctIds = new Set(queryAll<{ id: number }>(
+    "SELECT id FROM accounts WHERE account_type IN ('cash','bank')").map((a) => a.id));
+
+  const entries = queryAll<JournalEntry & { party_name?: string | null; source_number?: string | null }>(`
+    SELECT je.*, p.party_name AS party_name, p.number AS source_number
+    FROM journal_entries je
+    LEFT JOIN payments p ON p.id = je.source_id AND je.source_type = 'payment'
+    WHERE je.book = ? AND je.status = 'posted' AND je.entry_date >= ? AND je.entry_date <= ?
+    ORDER BY je.entry_date, je.id`, book, from, to);
+
+  const contraTotals = new Map<number, { code: string; name: string; debit: number; credit: number }>();
+  let cashDebit = 0, cashCredit = 0;
+  const rows = entries.map((e) => {
+    let cIn = 0, cOut = 0;
+    const contra: { code: string; name: string; debit: number; credit: number }[] = [];
+    for (const l of loadLines(e.id)) {
+      if (cashAcctIds.has(l.account_id)) { cIn = round2(cIn + l.debit); cOut = round2(cOut + l.credit); continue; }
+      contra.push({ code: l.account_code ?? '', name: l.account_name ?? '', debit: round2(l.debit), credit: round2(l.credit) });
+      const g = contraTotals.get(l.account_id) ?? { code: l.account_code ?? '', name: l.account_name ?? '', debit: 0, credit: 0 };
+      g.debit = round2(g.debit + l.debit); g.credit = round2(g.credit + l.credit);
+      contraTotals.set(l.account_id, g);
+    }
+    cashDebit = round2(cashDebit + cIn); cashCredit = round2(cashCredit + cOut);
+    return {
+      date: e.entry_date, number: e.number, ref: e.reference || e.source_number || null,
+      party: e.party_name ?? null, memo: e.memo ?? null,
+      source_type: e.source_type ?? null, source_id: e.source_id ?? null,
+      cash_in: cIn, cash_out: cOut, contra,
+    };
+  });
+
+  if (req.query.format === 'csv') {
+    const headers = ['Date', 'Entry', 'Ref', 'Party', 'Memo', 'Cash in', 'Cash out', 'Contra accounts'];
+    const csvRows = rows.map((r) => ({
+      Date: r.date, Entry: r.number, Ref: r.ref ?? '', Party: r.party ?? '', Memo: r.memo ?? '',
+      'Cash in': r.cash_in, 'Cash out': r.cash_out,
+      'Contra accounts': r.contra.map((c) => `${c.code} ${c.name} ${c.debit ? 'Dr ' + c.debit : 'Cr ' + c.credit}`).join('; '),
+    }));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="cash-${type}-${from}_${to}.csv"`);
+    res.send(toCsv(headers, csvRows));
+    return;
+  }
+
+  res.json({
+    type, book, from, to, rows,
+    cash_totals: { debit: cashDebit, credit: cashCredit, net: round2(cashDebit - cashCredit) },
+    contra_totals: [...contraTotals.values()].sort((a, b) => (b.debit + b.credit) - (a.debit + a.credit)),
   });
 });
 
@@ -1600,12 +1697,9 @@ function journalRow(r: JournalSrc, doc: string, sign: 1 | -1) {
   };
 }
 
-// GET /api/accounting/sales-journal?from=&to= — BIR Sales Book columns per sale + credit note.
-router.get('/sales-journal', (req, res) => {
-  if (!requireLedger(res)) return;
-  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
-  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
-
+/** BIR Sales Book rows + column totals for [from, to] — confirmed sales less customer
+ *  credit notes, each classified into vatable / exempt / zero-rated + output VAT. */
+function salesJournalData(from: string, to: string) {
   const sales = queryAll<{
     date: string | null; ref: string; name: string | null; tin: string | null;
     subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
@@ -1632,16 +1726,12 @@ router.get('/sales-journal', (req, res) => {
     ...sales.map((r) => journalRow(r, 'sale', 1)),
     ...notes.map((r) => journalRow(r, 'credit_note', -1)),
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.ref.localeCompare(b.ref));
+  return { rows, totals: sumCols(rows) };
+}
 
-  res.json({ from, to, rows, totals: sumCols(rows) });
-});
-
-// GET /api/accounting/purchase-journal?from=&to= — BIR Purchase Book columns per bill + debit note.
-router.get('/purchase-journal', (req, res) => {
-  if (!requireLedger(res)) return;
-  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
-  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
-
+/** BIR Purchase Book rows + column totals for [from, to] — approved bills less supplier
+ *  debit notes, each classified + input VAT. */
+function purchaseJournalData(from: string, to: string) {
   const bills = queryAll<{
     date: string | null; ref: string; name: string | null;
     subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
@@ -1668,8 +1758,27 @@ router.get('/purchase-journal', (req, res) => {
     ...bills.map((r) => journalRow(r, 'bill', 1)),
     ...notes.map((r) => journalRow(r, 'debit_note', -1)),
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.ref.localeCompare(b.ref));
+  return { rows, totals: sumCols(rows) };
+}
 
-  res.json({ from, to, rows, totals: sumCols(rows) });
+function monthRange(month: string): [string, string] {
+  return [month + '-01', new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).toISOString().slice(0, 10)];
+}
+
+// GET /api/accounting/sales-journal?from=&to= — BIR Sales Book columns per sale + credit note.
+router.get('/sales-journal', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
+  res.json({ from, to, ...salesJournalData(from, to) });
+});
+
+// GET /api/accounting/purchase-journal?from=&to= — BIR Purchase Book columns per bill + debit note.
+router.get('/purchase-journal', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from : to.slice(0, 8) + '01';
+  res.json({ from, to, ...purchaseJournalData(from, to) });
 });
 
 /* ---------------------------------------------------------- expanded withholding (EWT) --- */

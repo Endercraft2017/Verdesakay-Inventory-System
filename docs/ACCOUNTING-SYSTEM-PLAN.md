@@ -17,9 +17,11 @@
 > **Phase 2 (2026-08-31)** adds **`tax_codes`**, the **BIR Sales & Purchase Journals**,
 > **expanded withholding (EWT)** on vendor bills (register + 2307 + 0619-E), and the
 > **quarterly / annual filing pack** — 1601-EQ + QAP, 1604-E, and the SLSP summary lists
-> with `.DAT` export. Phases 3–5 (payroll & inventory into the GL, financial-statement
-> polish, CAS export) are the roadmap; a few Phase 2 tails remain (per-line tax codes,
-> re-sourcing 2550M/2550Q from the journals).
+> with `.DAT` export. **Phase 2 tails (2026-08-31)** re-sourced **2550M** from the sales &
+> purchase journals and added **2550Q** (quarterly VAT + per-month breakdown), plus the
+> **Cash Receipts / Cash Disbursements** book views (Books → Cash Book). Phases 3–5
+> (payroll & inventory into the GL, financial-statement polish, CAS export) are the
+> roadmap; the last Phase 2 tail is per-*line* tax codes for mixed-rate documents.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -293,9 +295,19 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   VAT, `format=csv|dat`). UI: Accounting → Tax & Compliance modals **BIR 1601-EQ + QAP**,
   **BIR 1604-E**, **SLSP** (with `.DAT` / CSV download via the new `API.download`).
   `tests/accounting.test.ts` ("SLSP summary lists" + the 1601-EQ/QAP/1604-E block).
-- **2 — still to do.** `tax_codes` on *lines* (mixed-rate docs); re-source **2550M /
-  2550Q** from the journals; the dedicated **Cash Receipts / Cash Disbursements** book
-  views (the payment auto-post already fills those journals).
+- **2d — 2550M/Q re-source + cash books. ✅ SHIPPED 2026-08-31.** `bir-2550m` now derives
+  its figures from `salesJournalData` / `purchaseJournalData` (the same `classify()` split
+  the sales / purchase journal endpoints use) so exempt / zero-rated sales and credit /
+  debit notes are already broken out and netted; the response gained a `breakdown`.
+  **`GET /api/accounting/bir-2550q?quarter=YYYY-Qn`** is the quarterly return — quarter
+  totals + a per-month (output / input / net) table. **`GET /api/accounting/cash-book?type=
+  receipts|disbursements&from=&to=&format=csv`** is the BIR Cash Receipts / Cash
+  Disbursements book: every posted entry in that cash journal, its cash-side movement and
+  the contra accounts, plus a contra-account summary. UI: Accounting → Tax & Compliance →
+  **BIR 2550Q**; **Books → Cash Book** (receipts / disbursements toggle, CSV).
+  `tests/accounting.test.ts` ("2550M (VAT)" + "cash books (Phase 2 tail)").
+- **2 — still to do.** `tax_codes` on *lines* (mixed-rate docs) — the last tail; needs
+  `order_items` / `vendor_bill_items` columns and a per-line picker on the sale / bill forms.
 
 **Phase 3 — payroll & inventory into the GL.** Post the **payroll journal** from each
 payslip batch (this is where the *"enable/disable the SSS/PhilHealth/Pag-IBIG deduction
@@ -522,8 +534,8 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Balance Sheet | `.../reports/balance-sheet` | ✅ **Phase 0** |
 | Cash Flow Statement | — | ⬜ Phase 4 |
 | Stock Ledger / Stock Balance | analytics dashboard (stock value) | 🟡 |
-| Sales / Purchase Register, Party Ledger | `sales-journal` / `purchase-journal` (Phase 2a, BIR columnar); `party-ledger` statement (Phase 1b); AR/AP aging | ✅ — registers + party statement done |
-| GST reports | BIR sales/purchase journals + 2550M/0619-E + **EWT register / 2307 / 1601-EQ + QAP / 1604-E / SLSP `.DAT`** (Phase 2); 2550Q re-source from journals still ⬜ | ✅ |
+| Sales / Purchase Register, Party Ledger | `sales-journal` / `purchase-journal` (Phase 2a, BIR columnar); `party-ledger` statement (Phase 1b); AR/AP aging; **Cash Receipts / Cash Disbursements books** (`cash-book`, Phase 2d) | ✅ — registers + cash books + party statement done |
+| GST reports | BIR sales/purchase journals + **2550M/2550Q (journal-sourced) / 0619-E** + **EWT register / 2307 / 1601-EQ + QAP / 1604-E / SLSP `.DAT`** (Phase 2) | ✅ |
 
 ### Cross-cutting
 | Frappe Books | Verdesakay | Status |

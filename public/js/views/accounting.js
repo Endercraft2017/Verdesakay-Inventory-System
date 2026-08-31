@@ -9,7 +9,8 @@ App.register('accounting', async (view) => {
   // group, title, hint, action, needsManage
   const SECTIONS = [
     ['Value-added tax', [
-      ['sheet', 'BIR 2550M', 'Monthly VAT — output VAT (sales) less input VAT (purchases).', bir2550mModal],
+      ['sheet', 'BIR 2550M', 'Monthly VAT — output less input, re-sourced from the sales & purchase journals.', bir2550mModal],
+      ['sheet', 'BIR 2550Q', 'Quarterly VAT — the quarter\'s output less input, with a per-month breakdown.', bir2550qModal],
       ['sheet', 'SLSP', 'Quarterly Summary List of Sales / Purchases — the RELIEF/DAT file.', slspModal],
       ['adjust', 'Tax codes', 'VAT / withholding classifications a sale, bill or note can carry.', taxCodesModal],
     ]],
@@ -245,7 +246,36 @@ async function statutoryDeductionsModal() {
   });
 }
 
-/* ── BIR 2550M — monthly VAT declaration ─────────────────────────────────── */
+/* ── BIR 2550M / 2550Q — VAT declaration ─────────────────────────────────── */
+// Shared worksheet + breakdown renderer for the monthly / quarterly VAT return.
+function vatReturnBodyHtml(state) {
+  if (!state) return '<div class="m-error">Could not load.</div>';
+  const w = state.worksheet;
+  const bd = state.breakdown || { sales: {}, purchases: {} };
+  const split = (label, s) => `<tr><td>${label} — vatable</td><td class="right">${accPeso(s.vatable)}</td></tr>
+    <tr><td>${label} — exempt</td><td class="right">${accPeso(s.exempt)}</td></tr>
+    <tr><td>${label} — zero-rated</td><td class="right">${accPeso(s.zero_rated)}</td></tr>`;
+  const monthly = state.monthly ? `<h4 style="margin:14px 0 6px">Per month</h4>
+    <table class="line-table"><thead><tr><th>Month</th><th class="right">Output VAT</th><th class="right">Input VAT</th><th class="right">Net</th></tr></thead>
+      <tbody>${state.monthly.map((m) => `<tr><td>${UI.esc(m.month)}</td><td class="right">${accPeso(m.output_vat)}</td>
+        <td class="right">${accPeso(m.input_vat)}</td><td class="right">${accPeso(m.net_vat)}</td></tr>`).join('')}</tbody></table>` : '';
+  return `<table class="line-table"><tbody>
+      ${split('Sales', bd.sales)}
+      <tr><th>Output VAT</th><th class="right">${accPeso(w.output_vat)}</th></tr>
+      ${split('Purchases', bd.purchases)}
+      <tr><td>Input VAT — current</td><td class="right">${accPeso(w.input_vat_current)}</td></tr>
+      <tr><td>Input VAT — carried over</td><td class="right">${accPeso(w.input_vat_carry_over)}</td></tr>
+      <tr><th>Total available input VAT</th><th class="right">${accPeso(w.total_available_input_vat)}</th></tr>
+      <tr><td>Net VAT payable</td><td class="right">${accPeso(w.net_vat_payable)}</td></tr>
+      <tr><td>Less: VAT paid / withheld</td><td class="right">${accPeso(w.vat_payments)}</td></tr>
+      <tr><th>Still payable</th><th class="right" style="color:${w.still_payable ? 'var(--danger)' : ''}">${accPeso(w.still_payable)}</th></tr>
+      <tr><td>Excess input VAT (carry forward)</td><td class="right">${accPeso(w.excess_input_vat)}</td></tr>
+    </tbody></table>
+    ${monthly}
+    <p class="muted" style="font-size:11px;margin-top:8px">${UI.esc(state.note || '')}</p>
+    ${w.notes.length ? `<ul class="muted" style="font-size:12px;margin:8px 0 0;padding-left:18px">${w.notes.map((n) => `<li>${UI.esc(n)}</li>`).join('')}</ul>` : ''}`;
+}
+
 async function bir2550mModal() {
   UI.modal({
     title: 'BIR 2550M — monthly VAT declaration',
@@ -258,12 +288,11 @@ async function bir2550mModal() {
         <label style="margin:0;font-size:12px">Input VAT carry-over</label><input id="v-carry" type="number" min="0" step="0.01" value="0" style="width:110px" />
         <label style="margin:0;font-size:12px">VAT paid / withheld</label><input id="v-paid" type="number" min="0" step="0.01" value="0" style="width:110px" />
       </div>
-      <p class="muted" style="font-size:12px;margin-top:0">Output VAT from the month's sale orders, input VAT from
-        approved vendor bills (each document's own tax amount, else a 12% derivation). Adjust for exempt / zero-rated
-        sales and disallowed input before filing. Deadline: the 20th of the following month.</p>
+      <p class="muted" style="font-size:12px;margin-top:0">Re-sourced from the BIR sales & purchase journals — the
+        exempt / zero-rated split and any credit / debit notes are already netted. Confirm disallowed input VAT
+        before filing. Deadline: the 20th of the following month.</p>
       <div id="v-body"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
-      let state = null;
       async function load() {
         ov.querySelector('#v-body').innerHTML = '<div class="empty">Loading…</div>';
         const p = new URLSearchParams({
@@ -272,26 +301,46 @@ async function bir2550mModal() {
           input_vat_carry_over: ov.querySelector('#v-carry').value || 0,
           vat_payments: ov.querySelector('#v-paid').value || 0,
         });
-        state = await API.get('/accounting/bir-2550m?' + p.toString()).catch(() => null);
-        const b = ov.querySelector('#v-body');
-        if (!state) { b.innerHTML = '<div class="m-error">Could not load.</div>'; return; }
-        const w = state.worksheet;
-        b.innerHTML = `<table class="line-table"><tbody>
-            <tr><td>Vatable sales / receipts</td><td class="right">${accPeso(w.vatable_sales)}</td></tr>
-            <tr><th>Output VAT</th><th class="right">${accPeso(w.output_vat)}</th></tr>
-            <tr><td>Vatable purchases</td><td class="right">${accPeso(w.vatable_purchases)}</td></tr>
-            <tr><td>Input VAT — current</td><td class="right">${accPeso(w.input_vat_current)}</td></tr>
-            <tr><td>Input VAT — carried over</td><td class="right">${accPeso(w.input_vat_carry_over)}</td></tr>
-            <tr><th>Total available input VAT</th><th class="right">${accPeso(w.total_available_input_vat)}</th></tr>
-            <tr><td>Net VAT payable</td><td class="right">${accPeso(w.net_vat_payable)}</td></tr>
-            <tr><td>Less: VAT paid / withheld</td><td class="right">${accPeso(w.vat_payments)}</td></tr>
-            <tr><th>Still payable</th><th class="right" style="color:${w.still_payable ? 'var(--danger)' : ''}">${accPeso(w.still_payable)}</th></tr>
-            <tr><td>Excess input VAT (carry forward)</td><td class="right">${accPeso(w.excess_input_vat)}</td></tr>
-          </tbody></table>
-          <p class="muted" style="font-size:11px;margin-top:8px">Sources — sales ${accPeso(state.sources.gross_sales)}, purchases ${accPeso(state.sources.gross_purchases)}.</p>
-          ${w.notes.length ? `<ul class="muted" style="font-size:12px;margin:8px 0 0;padding-left:18px">${w.notes.map((n) => `<li>${UI.esc(n)}</li>`).join('')}</ul>` : ''}`;
+        const state = await API.get('/accounting/bir-2550m?' + p.toString()).catch(() => null);
+        ov.querySelector('#v-body').innerHTML = vatReturnBodyHtml(state);
       }
       ['#v-month', '#v-incl', '#v-carry', '#v-paid'].forEach((s) => ov.querySelector(s).addEventListener('change', load));
+      load();
+    },
+  });
+}
+
+async function bir2550qModal() {
+  const quarters = accQuarterOptions();
+  UI.modal({
+    title: 'BIR 2550Q — quarterly VAT declaration',
+    size: 'lg', cancelText: 'Close', confirmText: null,
+    bodyHTML: `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <label style="margin:0">Quarter</label>
+        <select id="v-q">${quarters.map((q) => `<option value="${q}">${q}</option>`).join('')}</select>
+        <label class="check" style="margin:0"><input type="checkbox" id="v-incl" /> Amounts are VAT-inclusive</label>
+        <div class="grow"></div>
+        <label style="margin:0;font-size:12px">Input VAT carry-over</label><input id="v-carry" type="number" min="0" step="0.01" value="0" style="width:110px" />
+        <label style="margin:0;font-size:12px">VAT paid (2550M)</label><input id="v-paid" type="number" min="0" step="0.01" value="0" style="width:110px" />
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:0">The quarter's output less input, re-sourced from the sales
+        & purchase journals. Enter the VAT already paid on the two monthly 2550M returns. Attach the SLSP when over
+        the threshold. Deadline: the 25th day after the quarter.</p>
+      <div id="v-body"><div class="empty">Loading…</div></div>`,
+    onOpen: (ov) => {
+      async function load() {
+        ov.querySelector('#v-body').innerHTML = '<div class="empty">Loading…</div>';
+        const p = new URLSearchParams({
+          quarter: ov.querySelector('#v-q').value,
+          vat_inclusive: ov.querySelector('#v-incl').checked ? '1' : '0',
+          input_vat_carry_over: ov.querySelector('#v-carry').value || 0,
+          vat_payments: ov.querySelector('#v-paid').value || 0,
+        });
+        const state = await API.get('/accounting/bir-2550q?' + p.toString()).catch(() => null);
+        ov.querySelector('#v-body').innerHTML = vatReturnBodyHtml(state);
+      }
+      ['#v-q', '#v-incl', '#v-carry', '#v-paid'].forEach((s) => ov.querySelector(s).addEventListener('change', load));
       load();
     },
   });
