@@ -1,8 +1,9 @@
 /**
  * Final-pay / back-pay worksheet (pure). The route feeds it the employee's rate + this
- * year's payslip figures + a few operator inputs (leave days, outstanding loans); this
- * returns the itemised computation. It is a *worksheet*, not a filed document — the
- * accountant reviews it before release.
+ * year's payslip figures + the tracked leave-day bank (default, operator-overridable) +
+ * a few other operator inputs (outstanding loans, unpaid days); this returns the itemised
+ * computation. It is a *worksheet*, not a filed document — the accountant reviews it
+ * before release.
  *
  * References: Labor Code Art. 297/300 (separation), DOLE Labor Advisory 06-20 (final pay
  * within 30 days), Revenue Regs. on the 90k 13th-month / de-minimis exclusion and
@@ -21,7 +22,12 @@ export interface FinalPayInput {
   last_day_paid: string | null;
   /** Days actually worked after `last_day_paid` and not yet in any payslip. */
   unpaid_days: number;
-  /** Unused, convertible leave credits (days). Leave balances aren't tracked — operator enters. */
+  /**
+   * Unused, convertible leave credits (days). The route defaults this from the employee's
+   * tracked leave-day bank (`employees.leave_days_per_year - leave_days_used`), but it's
+   * still an operator-overridable input — not every leave type or company policy converts
+   * a remaining balance to cash 1:1 at separation.
+   */
   unused_leave_days: number;
   /** Other taxable amounts still due (e.g. pro-rated allowance) — operator enters. */
   other_earnings: number;

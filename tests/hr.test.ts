@@ -904,6 +904,24 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect((await ctx.api.get('/api/hr/final-pay/99999').set(hdr())).status).toBe(404);
   });
 
+  it('final-pay worksheet: unused_leave_days defaults from the employee leave-day bank, overridable', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-FINAL-LEAVE', name: 'Leaver, Balance', daily_rate: 1000, status: 'resigned',
+        leave_days_per_year: 5, leave_days_used: 1.5 });
+
+    const noOverride = await ctx.api.get(`/api/hr/final-pay/${emp.body.id}`)
+      .query({ separation_date: '2026-05-31' }).set(hdr());
+    expect(noOverride.status).toBe(200);
+    expect(noOverride.body.leave_days_remaining).toBe(3.5);
+    expect(noOverride.body.inputs.unused_leave_days).toBe(3.5);
+    expect(noOverride.body.worksheet.earnings.leave_conversion).toBe(3_500); // 3.5 × 1000
+
+    const overridden = await ctx.api.get(`/api/hr/final-pay/${emp.body.id}`)
+      .query({ separation_date: '2026-05-31', unused_leave_days: 1 }).set(hdr());
+    expect(overridden.body.inputs.unused_leave_days).toBe(1);
+    expect(overridden.body.worksheet.earnings.leave_conversion).toBe(1_000);
+  });
+
   it('contribution schedule: SSS/PhilHealth/Pag-IBIG collection list + CSV', async () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-CONTRIB', name: 'Payer, Reg', daily_rate: 1600, sss_no: '34-9999999-9', philhealth_no: '11-222222222-3', pagibig_no: '1234-5678-9012' });

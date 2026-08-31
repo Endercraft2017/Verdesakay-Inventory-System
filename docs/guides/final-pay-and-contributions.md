@@ -93,7 +93,7 @@ payslips can't tell us:
 | Field | What to put |
 |---|---|
 | Unpaid days worked | Days after the last processed payslip, not yet paid |
-| Unused leave (days) | Convertible leave credits (the system doesn't track leave balances) |
+| Unused leave (days) | Convertible leave credits — **prefilled from the employee's leave-day bank** (HR → Employees; `days/year − days used`) the moment you pick them, still editable if company policy doesn't convert the full balance |
 | Other earnings | Any remaining taxable amount due (pro-rated allowance, etc.) |
 | Outstanding advance / loan | Balance to net out (defaults to the cash-advance total on this year's payslips) |
 | Other deductions | Equipment, training bond, … |

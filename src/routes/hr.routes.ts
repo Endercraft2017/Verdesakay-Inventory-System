@@ -335,6 +335,9 @@ router.get('/final-pay/:employeeId', requirePermission('hr.view'), (req, res) =>
   const dailyRate = effectiveDailyRate({
     rate_type: emp.rate_type, daily_rate: emp.daily_rate, monthly_rate: emp.monthly_rate,
   });
+  // Defaults to the employee's tracked leave-day bank, but the operator can still override
+  // via ?unused_leave_days= (e.g. company policy doesn't convert 100% of remaining leave).
+  const leaveRemaining = round2(Math.max(0, (emp.leave_days_per_year ?? 0) - (emp.leave_days_used ?? 0)));
 
   const input: FinalPayInput = {
     employee_name: emp.name,
@@ -342,7 +345,7 @@ router.get('/final-pay/:employeeId', requirePermission('hr.view'), (req, res) =>
     separation_date: sep,
     last_day_paid: typeof q.last_day_paid === 'string' ? q.last_day_paid : null,
     unpaid_days: Math.max(0, numq(q.unpaid_days)),
-    unused_leave_days: Math.max(0, numq(q.unused_leave_days)),
+    unused_leave_days: Math.max(0, numq(q.unused_leave_days, leaveRemaining)),
     other_earnings: Math.max(0, numq(q.other_earnings)),
     outstanding_advance: Math.max(0, numq(q.outstanding_advance, sum((r) => r.cash_advance))),
     other_deductions: Math.max(0, numq(q.other_deductions)),
@@ -361,6 +364,7 @@ router.get('/final-pay/:employeeId', requirePermission('hr.view'), (req, res) =>
     year,
     company: companyProfile(),
     employee: emp,
+    leave_days_remaining: leaveRemaining,
     inputs: input,
     worksheet: computeFinalPay(input),
   });

@@ -382,7 +382,8 @@ async function finalPayModal() {
       </div>
       <div class="field-row">
         <div><label>Unpaid days worked</label><input id="fp-days" type="number" min="0" step="0.5" value="0" /></div>
-        <div><label>Unused leave (days)</label><input id="fp-leave" type="number" min="0" step="0.5" value="0" /></div>
+        <div><label>Unused leave (days)</label><input id="fp-leave" type="number" min="0" step="0.5" value="0" />
+          <div class="muted" id="fp-leave-hint" style="font-size:11px;margin-top:2px">pick an employee to prefill from their leave balance</div></div>
         <div><label>Other earnings</label><input id="fp-other" type="number" min="0" step="0.01" value="0" /></div>
       </div>
       <div class="field-row">
@@ -394,6 +395,16 @@ async function finalPayModal() {
       <div id="fp-out" style="margin-top:14px"></div>`,
     onOpen: (ov) => {
       const out = ov.querySelector('#fp-out');
+      ov.querySelector('#fp-emp').onchange = () => {
+        const emp = pool.find((e) => String(e.id) === ov.querySelector('#fp-emp').value);
+        const hint = ov.querySelector('#fp-leave-hint');
+        if (emp && emp.leave_days_remaining != null) {
+          ov.querySelector('#fp-leave').value = emp.leave_days_remaining;
+          hint.textContent = `from ${emp.name}'s leave balance — still editable`;
+        } else {
+          hint.textContent = emp ? 'no leave balance on record for this employee' : 'pick an employee to prefill from their leave balance';
+        }
+      };
       ov.querySelector('#fp-run').onclick = async () => {
         const id = ov.querySelector('#fp-emp').value;
         if (!id) { UI.toast('Pick an employee', 'error'); return; }
