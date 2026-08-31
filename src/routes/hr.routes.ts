@@ -5,6 +5,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { db, queryOne, queryAll, run, nextSequence, uploadDir, getSetting, setSetting } from '../db';
@@ -34,6 +35,20 @@ import type { PayslipYearRow } from '../ph-2316';
 import { computeFinalPay, type FinalPayInput } from '../ph-final-pay';
 import { yearPayslipRowsByEmployee, companyProfile } from '../ph-payroll-report-data';
 import { enforceQuota } from '../quota';
+import { sendMail } from '../mailer';
+import { ledgerEnabled, maybeAutoPostPayroll } from '../accounting-autopost';
+
+// Reuses the browser's own payslip HTML renderer instead of duplicating it server-side —
+// hr-payroll-print.js is pure string logic (no DOM/window access) and already resolves its
+// own require('./doc-template.js') internally when run under Node, same trick the test suite
+// uses to load it. `createRequire` (not `require`, since this file is ESM) needs a base URL
+// to resolve the relative path from.
+const clientRequire = createRequire(import.meta.url);
+const { renderSlip: renderPayrollSlip, FALLBACK_BODY: PAYROLL_SLIP_FALLBACK } =
+  clientRequire('../../public/js/hr-payroll-print.js') as {
+    renderSlip: (data: Record<string, unknown>, templateBody: string) => string;
+    FALLBACK_BODY: string;
+  };
 
 const EMP_CSV_COLUMNS = [
   'employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate',
@@ -120,7 +135,8 @@ router.get('/employees', requirePermission('hr.view'), (req, res) => {
     where.push('e.status = ?'); params.push(status.trim());
   }
   const rows = queryAll<Employee>(
-    `SELECT e.*, d.name AS department_name, u.username AS linked_username, u.full_name AS linked_full_name
+    `SELECT e.*, d.name AS department_name, u.username AS linked_username, u.full_name AS linked_full_name,
+            (e.leave_days_per_year - e.leave_days_used) AS leave_days_remaining
      FROM employees e
      LEFT JOIN departments d ON d.id = e.department_id
      LEFT JOIN users u ON u.id = e.user_id
@@ -383,12 +399,12 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
   const info = run(
     `INSERT INTO employees
       (employee_no, name, department_id, position, user_id, daily_rate, rate_type, monthly_rate, status, start_date,
-       sss_no, philhealth_no, pagibig_no, tin_no, photo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, photo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input),
     input.rate_type, input.rate_type === 'monthly' ? input.monthly_rate : null,
     input.status, input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
-    input.pagibig_no ?? null, input.tin_no ?? null, input.photo ?? null
+    input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used, input.photo ?? null
   );
   res.status(201).json({ id: info.lastInsertRowid });
 });
@@ -408,12 +424,13 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
   if (linkErr) { res.status(409).json({ error: linkErr }); return; }
   run(
     `UPDATE employees SET employee_no = ?, name = ?, department_id = ?, position = ?, user_id = ?, daily_rate = ?, rate_type = ?,
-       monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?, photo = ?
+       monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?,
+       leave_days_per_year = ?, leave_days_used = ?, photo = ?
      WHERE id = ?`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input), input.rate_type,
     input.rate_type === 'monthly' ? input.monthly_rate : null, input.status,
     input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
-    input.pagibig_no ?? null, input.tin_no ?? null, input.photo ?? null, id
+    input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used, input.photo ?? null, id
   );
   res.json({ ok: true });
 });
@@ -802,9 +819,22 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
 
   let created = 0;
   let updated = 0;
+  let skippedLocked = 0;
   db.exec('BEGIN');
   try {
     for (const emp of roster) {
+      const existing = queryAll<FormRecord>(
+        `SELECT * FROM form_records WHERE form_def_id = ? AND period = ?`,
+        form.id, payrollPeriod
+      ).find((r) => {
+        try { return (JSON.parse(r.data as string).employee_name ?? '') === emp.name; }
+        catch { return false; }
+      });
+      // A payslip marked Paid is locked — skip it entirely (don't even read its attendance)
+      // rather than silently overwriting numbers on something already paid out. Unmark it
+      // first (POST /hr/payroll/:recordId/unmark-paid) to let it be regenerated again.
+      if (existing && existing.status === 'paid') { skippedLocked++; continue; }
+
       const deptPosition = [emp.department_name, emp.position].filter(Boolean).join(' / ');
       const zeros = {
         days_worked: 0, ot_hours: 0, ot_rate_hour: 0, basic_salary: 0, overtime_pay: 0,
@@ -842,13 +872,6 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy);
       const basicSalary = emp.daily_rate * computed.days_worked;
 
-      const existing = queryAll<FormRecord>(
-        `SELECT * FROM form_records WHERE form_def_id = ? AND period = ?`,
-        form.id, payrollPeriod
-      ).find((r) => {
-        try { return (JSON.parse(r.data as string).employee_name ?? '') === emp.name; }
-        catch { return false; }
-      });
       // Regenerating recomputes every attendance-derived field fresh — that's the point of
       // "generate payslips" (pick up the latest attendance/link edits) — but purely-manual
       // fields with no computed source (statutory deductions, cash advance, rest-day OT, the
@@ -875,6 +898,13 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       // Deductions (default on); an off flag zeroes that one deduction.
       let sss = num(prev.sss), philhealth = num(prev.philhealth), pagibig = num(prev.pagibig);
       let withholding_tax = num(prev.withholding_tax);
+      // Employer-side shares (for the GL payroll posting — src/accounting-autopost.ts's
+      // maybeAutoPostPayroll) are persisted here at generate time, not recomputed later, so a
+      // later rate-table/flag change can't silently drift the two apart. Nested under one key
+      // (not flat) so it stays invisible to the employee's own mobile payslip view, the CSV
+      // export, and the print slip — all of which only read a fixed set of top-level fields.
+      let employerContributions = (prev.employer_contributions ?? { sss_er: 0, sss_ec: 0, philhealth_er: 0, pagibig_er: 0 }) as
+        { sss_er: number; sss_ec: number; philhealth_er: number; pagibig_er: number };
       if (policy.auto_statutory) {
         const monthlyComp = emp.rate_type === 'monthly' && emp.monthly_rate
           ? emp.monthly_rate
@@ -886,6 +916,12 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         const taxable = taxableCompensation(totalEarnings, 0, round2(sss + philhealth + pagibig));
         withholding_tax = emp.deduct_withholding_tax
           ? withholdingTax(taxable, policy.pay_frequency, statTables.rwt) : 0;
+        employerContributions = {
+          sss_er: emp.deduct_sss ? round2(ded.sss.employer / periodsPerMonth) : 0,
+          sss_ec: emp.deduct_sss ? round2(ded.sss.ec / periodsPerMonth) : 0,
+          philhealth_er: emp.deduct_philhealth ? round2(ded.philhealth.employer / periodsPerMonth) : 0,
+          pagibig_er: emp.deduct_pagibig ? round2(ded.pagibig.employer / periodsPerMonth) : 0,
+        };
       }
 
       const totalDeductions = policy.auto_statutory
@@ -911,6 +947,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         sss, philhealth, pagibig, withholding_tax,
         total_deductions: totalDeductions,
         net_pay: netPay,
+        employer_contributions: employerContributions,
       };
 
       if (existing) {
@@ -928,10 +965,92 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       }
     }
     db.exec('COMMIT');
-    res.status(201).json({ created, updated, period: payrollPeriod, form_id: form.id });
+    res.status(201).json({ created, updated, skipped_locked: skippedLocked, period: payrollPeriod, form_id: form.id });
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
+  }
+});
+
+// POST /api/hr/periods/:id/post-payroll-gl — books this cutoff's generated payslips as one
+// aggregate journal entry (Payroll Journal). A deliberate, separate action from
+// generate-payslips itself (see src/accounting-autopost.ts's maybeAutoPostPayroll for why) —
+// safe to click again after a regenerate, which reverses the prior entry and posts fresh.
+router.post('/periods/:id/post-payroll-gl', requirePermission('hr.manage'), (req, res) => {
+  if (!ledgerEnabled()) { res.status(400).json({ error: 'The General Ledger isn’t enabled — turn it on under Accounting → Books first.' }); return; }
+  const periodId = Number(req.params.id);
+  const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
+  if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
+  // Same payroll_period label generate-payslips used for this cutoff — not re-validated as
+  // strictly as generatePayslipsSchema (that one requires it non-empty for a *new* generate);
+  // here it's optional and just needs to match whatever records are already sitting there.
+  const payrollPeriod = (typeof req.body?.payroll_period === 'string' && req.body.payroll_period.trim()) || period.label;
+  const outcome = maybeAutoPostPayroll(periodId, payrollPeriod, req.user!.id);
+  if (outcome.error) { res.status(400).json(outcome); return; }
+  if (!outcome.posted) { res.status(400).json({ ...outcome, error: outcome.skipped === 'nothing_to_post' ? 'No payslips to post for this period yet — generate payslips first.' : `Not posted (${outcome.skipped}).` }); return; }
+  res.status(201).json(outcome);
+});
+
+// POST /api/hr/payroll/:recordId/mark-paid — locks a generated payslip: generate-payslips
+// will skip it on future regenerates, and the generic /api/form-records PUT/DELETE routes
+// refuse to touch it (see form-builder.routes.ts) until it's unmarked.
+router.post('/payroll/:recordId/mark-paid', requirePermission('hr.manage'), (req, res) => {
+  const rec = queryOne<{ id: number; status: string; slug: string }>(
+    `SELECT fr.id, fr.status, fd.slug FROM form_records fr
+     JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+    Number(req.params.recordId)
+  );
+  if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
+  if (rec.status === 'paid') { res.status(400).json({ error: 'Already marked paid' }); return; }
+  run("UPDATE form_records SET status = 'paid', updated_at = datetime('now') WHERE id = ?", rec.id);
+  res.json({ ok: true });
+});
+
+// POST /api/hr/payroll/:recordId/unmark-paid — unlocks it again for editing/regeneration.
+router.post('/payroll/:recordId/unmark-paid', requirePermission('hr.manage'), (req, res) => {
+  const rec = queryOne<{ id: number; status: string; slug: string }>(
+    `SELECT fr.id, fr.status, fd.slug FROM form_records fr
+     JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+    Number(req.params.recordId)
+  );
+  if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
+  if (rec.status !== 'paid') { res.status(400).json({ error: 'This payslip is not marked paid' }); return; }
+  run("UPDATE form_records SET status = 'draft', updated_at = datetime('now') WHERE id = ?", rec.id);
+  res.json({ ok: true });
+});
+
+// POST /api/hr/payroll/:recordId/email — emails this payslip to the employee's linked account.
+// Employees have no email of their own (that's exactly what the account-linking feature is
+// for) — this only works once HR has linked one under Employees, and only if that account has
+// an email address set.
+router.post('/payroll/:recordId/email', requirePermission('hr.manage'), async (req, res, next) => {
+  try {
+    const rec = queryOne<FormRecord & { slug: string }>(
+      `SELECT fr.*, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+      Number(req.params.recordId)
+    );
+    if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
+    const data = JSON.parse(rec.data as string) as Record<string, unknown>;
+    const employeeName = String(data.employee_name || '');
+    const target = queryOne<{ email: string | null }>(
+      `SELECT u.email FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.name = ?`,
+      employeeName
+    );
+    if (!target || !target.email) {
+      res.status(400).json({
+        error: `${employeeName || 'This employee'} has no linked user account with an email address. Link an account under HR → Employees first.`,
+      });
+      return;
+    }
+    const tpl = queryOne<{ body: string }>("SELECT body FROM doc_templates WHERE name = 'HR Payroll Slip'");
+    const html = renderPayrollSlip(data, tpl?.body || PAYROLL_SLIP_FALLBACK);
+    const r = await sendMail(
+      { to: target.email, subject: `Payslip — ${data.payroll_period || rec.number}`, html },
+      req.user!.id
+    );
+    res.status(r.ok ? 200 : 400).json(r);
+  } catch (e) {
+    next(e);
   }
 });
 

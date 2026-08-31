@@ -19,9 +19,13 @@
 > **quarterly / annual filing pack** — 1601-EQ + QAP, 1604-E, and the SLSP summary lists
 > with `.DAT` export. **Phase 2 tails (2026-08-31)** re-sourced **2550M** from the sales &
 > purchase journals and added **2550Q** (quarterly VAT + per-month breakdown), plus the
-> **Cash Receipts / Cash Disbursements** book views (Books → Cash Book). Phases 3–5
-> (payroll & inventory into the GL, financial-statement polish, CAS export) are the
-> roadmap; the last Phase 2 tail is per-*line* tax codes for mixed-rate documents.
+> **Cash Receipts / Cash Disbursements** book views (Books → Cash Book).
+> **Phase 3a (2026-08-31)** posts the **Payroll Journal** — one aggregate entry per
+> cutoff via an explicit "Post to GL" action (not an implicit per-regenerate hook, unlike
+> sales/purchase — see §5), plus payslip locking (`mark-paid`) and payslip email as
+> companion fixes. Phase 3b (inventory/COGS/WIP into the GL), Phase 4–5 (financial-
+> statement polish, CAS export) are the roadmap; the last Phase 2 tail is per-*line* tax
+> codes for mixed-rate documents.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -102,7 +106,7 @@ to **post** them.
 | **Sale orders** (`orders` type `sale`) | Sales Journal → Dr AR / Cash, Cr Sales, Cr Output VAT |
 | **Vendor bills** (`vendor_bills`, approved) | Purchase Journal → Dr Expense/Inventory, Dr Input VAT, Cr AP; Cr EWT payable if withheld |
 | **Goods receipts** (`goods_receipts`) | Perpetual inventory → Dr Inventory, Cr GR/IR clearing (cleared by the bill) |
-| **Payslips** (`hr_payroll` records) | Payroll Journal → Dr Salaries, Dr ER contributions, Cr SSS/PHIC/HDMF payable, Cr WT payable, Cr Cash/Net-pay payable |
+| **Payslips** (`hr_payroll` records) | Payroll Journal → Dr Salaries, Dr ER contributions, Cr SSS/PHIC/HDMF payable, Cr WT payable, Cr Cash/Net-pay payable — **✅ shipped, §5 Phase 3a** |
 | **Stock adjustments / damage** (`inventory_transactions`) | Inventory shrinkage / write-off entries |
 | **Job orders** (WIP consumption + finished-goods) | Manufacturing journal → Dr WIP, Cr Raw materials; Dr Finished goods, Cr WIP |
 | **QuickBooks push** (`src/quickbooks.ts`) | Interim bridge — a customer can keep QBO as the GL while we build ours; once ours exists, it's the same posting logic pointed inward |
@@ -309,10 +313,53 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
 - **2 — still to do.** `tax_codes` on *lines* (mixed-rate docs) — the last tail; needs
   `order_items` / `vendor_bill_items` columns and a per-line picker on the sale / bill forms.
 
-**Phase 3 — payroll & inventory into the GL.** Post the **payroll journal** from each
-payslip batch (this is where the *"enable/disable the SSS/PhilHealth/Pag-IBIG deduction
-per employee"* control feeds in — see §6). Perpetual **inventory / COGS** postings from
-goods receipts + shipments + adjustments; **GR/IR clearing**. Manufacturing WIP.
+**Phase 3 — payroll & inventory into the GL.**
+
+- **3a — payroll journal. ✅ SHIPPED 2026-08-31.** One aggregate **Payroll Journal** entry
+  per cutoff (not per employee, not per `generate-payslips` regenerate): **Dr Salaries &
+  Wages** (Σ `total_earnings` − Σ `late_absences` — unpaid time isn't owed to anyone),
+  **Dr Employer's SSS/PhilHealth/Pag-IBIG**, **Cr SSS/PhilHealth/Pag-IBIG Payable** (employee
+  + employer + EC combined), **Cr Withholding Tax Payable — Compensation**, **Cr Advances
+  to Employees** (cash-advance recovery, code 1190 — only when nonzero, same pattern as
+  EWT), **Cr Net Pay Payable**. 8 new posting-rule keys (`payroll_expense_account_id`,
+  `payroll_er_contrib_account_id`, `sss_payable_account_id`, `philhealth_payable_account_id`,
+  `pagibig_payable_account_id`, `withholding_tax_payable_account_id`,
+  `net_pay_payable_account_id`, `employee_advance_account_id`) map to the already-seeded
+  COA codes 2130/2150/2160/2170/2185/6100/6110/1190 via `seedPostingRulesFromCoa()`.
+  `src/accounting-posting.ts`'s `buildPayrollEntry()` — a self-check sums debits vs.
+  credits and refuses to post (with a specific error) if a run assembled from
+  hand-edited payslips (`auto_statutory` off) doesn't actually balance, rather than
+  silently posting garbage. Employer-side shares are computed and **persisted on each
+  payslip at generate time** (`hr_payroll` records gain a nested `data.employer_contributions
+  {sss_er, sss_ec, philhealth_er, pagibig_er}` — nested, not flat, so it stays invisible to
+  the employee's own mobile payslip view / CSV export / print slip, none of which read
+  unknown keys) rather than recomputed later, so a rate-table or per-employee flag change
+  between generate and post can't silently drift the two apart.
+  **Deliberately NOT an implicit hook fired on every `generate-payslips` call** — unlike a
+  sale order or vendor bill, a cutoff's payslips are commonly regenerated several times
+  (attendance corrections) before payroll is final, and the existing `maybeAutoPost*` hooks
+  silently no-op once a source is already posted (confirmed: editing an already-posted sale
+  order today does *not* refresh its journal entry — a pre-existing gap, not something to
+  copy). Instead, an explicit **`POST /api/hr/periods/:id/post-payroll-gl`** (`hr.manage`,
+  UI: the "Post to GL" button next to Generate Payslips in Time Keeping's cutoff detail) —
+  safe to click again after a regenerate: if a live entry already exists for that
+  `('payroll_run', periodId)` source, it's reversed first (CAS rule — never edited/deleted)
+  and a fresh one posted with the current numbers. Also gained, as a companion (not
+  strictly GL-scoped but the natural adjacent fix): **payslips can be locked** —
+  `POST /hr/payroll/:recordId/mark-paid` sets `status='paid'`, after which
+  `generate-payslips` skips that record entirely (counted in a new `skipped_locked`
+  response field) and the *generic* `PUT`/`DELETE /api/form-records/:id` routes 423 until
+  it's unmarked (closing a real bypass: those generic routes had **no permission or lock
+  check at all**, so anyone could edit/delete any form record including a paid payslip
+  through the ordinary Edit button) — and **email a payslip** to the employee's linked
+  user account (`POST /hr/payroll/:recordId/email`, reuses the existing single-slip
+  `renderSlip()` HTML renderer from `hr-payroll-print.js` via `createRequire`, no
+  duplicated rendering logic). `tests/accounting-posting.test.ts` ("buildPayrollEntry" —
+  balance-with-real-numbers, dropped-zero-lines, EWT-style advance-recovery leg, deliberate
+  imbalance rejection) + `tests/hr.test.ts` (lock bypass, post/repost/reverse against a real
+  ledger, email-when-unlinked).
+- **3b — still to do.** Perpetual **inventory / COGS** postings from goods receipts +
+  shipments + adjustments; **GR/IR clearing**. Manufacturing WIP.
 
 **Phase 4 — statements, close, assets, bank rec.** PFRS-for-SMEs **BS / IS / cash flow /
 equity**; **period-end close** (accruals, prepaid amortization, depreciation run,
@@ -334,7 +381,7 @@ Each report gets an in-app Help topic + a `docs/guides/` entry, same as everythi
 The user asked that **SSS / PhilHealth / Pag-IBIG (and withholding tax)** be controllable
 **per employee** from Accounting — "enable the subtraction of each employee or not".
 
-**Shipping now (ahead of the GL):**
+**Shipped ahead of the GL, then wired into it (§5 Phase 3a):**
 
 - `employees` gains four flags — `deduct_sss`, `deduct_philhealth`, `deduct_pagibig`,
   `deduct_withholding_tax` (default **on**; migration ALTER, all existing employees =

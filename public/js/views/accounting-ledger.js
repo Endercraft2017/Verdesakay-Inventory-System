@@ -62,6 +62,14 @@ App.register('accounting-ledger', async (view, filter) => {
       input_vat_account_id: 'Input VAT (bill → debit)',
       sales_returns_account_id: 'Sales returns & allowances (credit note → debit)',
       ewt_payable_account_id: 'Withholding tax payable — expanded (bill EWT → credit)',
+      payroll_expense_account_id: 'Salaries & Wages (payroll → debit)',
+      payroll_er_contrib_account_id: "Employer's SSS/PhilHealth/Pag-IBIG (payroll → debit)",
+      sss_payable_account_id: 'SSS Payable (payroll → credit)',
+      philhealth_payable_account_id: 'PhilHealth Payable (payroll → credit)',
+      pagibig_payable_account_id: 'Pag-IBIG Payable (payroll → credit)',
+      withholding_tax_payable_account_id: 'Withholding tax payable — compensation (payroll → credit)',
+      net_pay_payable_account_id: 'Net Pay Payable (payroll → credit)',
+      employee_advance_account_id: 'Advances to Employees (payroll cash-advance recovery → credit)',
     };
     const keys = Object.keys(LABELS);
     const opts = (root, sel) => ['<option value="">— not set —</option>'].concat(
@@ -71,7 +79,9 @@ App.register('accounting-ledger', async (view, filter) => {
     body.innerHTML = `
       <p class="muted" style="margin-top:0">A <b>confirmed sale order</b> auto-posts to the <b>Sales</b> journal and an
         <b>approved vendor bill</b> to the <b>Purchase</b> journal, using the accounts below. Re-opening or disputing the
-        document reverses its entry. Seeded from the default chart of accounts at setup.</p>
+        document reverses its entry. A cutoff's payslips post to the <b>Payroll</b> journal via the explicit
+        "Post to GL" action on the payroll records screen (not automatic — a cutoff is commonly regenerated
+        several times before it's final). Seeded from the default chart of accounts at setup.</p>
       <table style="max-width:640px"><tbody>${keys.map((k) => `<tr>
         <td style="padding:6px 10px 6px 0">${LABELS[k]}</td>
         <td>${canManage

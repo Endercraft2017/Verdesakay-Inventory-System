@@ -792,6 +792,9 @@ export interface Employee {
   user_id: number | null; // linked login account, 1:1 (enforced by a partial unique index)
   linked_username?: string | null;
   linked_full_name?: string | null;
+  leave_days_per_year: number; // admin-set fixed bank, not accrual-based (see db.ts migration)
+  leave_days_used: number; // running counter, incremented as paid Leave forms are approved
+  leave_days_remaining?: number; // computed: leave_days_per_year - leave_days_used
 }
 
 /** Company-wide format for the RECOMMENDED employee number (settings key "employee_no_policy") —

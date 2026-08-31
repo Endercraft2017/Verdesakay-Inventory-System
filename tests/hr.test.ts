@@ -933,4 +933,119 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(csv.text).toContain('Pag-IBIG MID No.');
     expect(csv.text).toContain('1234-5678-9012');
   });
+
+  it('marking a payslip Paid locks it: regenerate skips it, and the generic edit/delete routes 423', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LOCK', name: 'Lock Test Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Lock Cutoff', start_date: '2026-08-20', end_date: '2026-08-20' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-20', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    const gen1 = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Lock Cutoff' });
+    const recs1 = await ctx.api.get(`/api/form-definitions/${gen1.body.form_id}/records`).query({ period: 'Lock Cutoff' }).set(hdr());
+    const recId = recs1.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Lock Test Employee').id;
+
+    // Can't mark-paid twice, and unmark-paid on a not-paid one fails.
+    expect((await ctx.api.post(`/api/hr/payroll/${recId}/unmark-paid`).set(hdr())).status).toBe(400);
+    const mark = await ctx.api.post(`/api/hr/payroll/${recId}/mark-paid`).set(hdr());
+    expect(mark.status).toBe(200);
+    expect((await ctx.api.post(`/api/hr/payroll/${recId}/mark-paid`).set(hdr())).status).toBe(400);
+
+    // Regenerate skips the locked record entirely.
+    const gen2 = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Lock Cutoff' });
+    expect(gen2.body.skipped_locked).toBe(1);
+    expect(gen2.body.updated).toBe(0);
+
+    // The generic form-records edit/delete routes refuse to touch it.
+    const editAttempt = await ctx.api.put(`/api/form-records/${recId}`).set(hdr()).send({ data: { net_pay: 1 } });
+    expect(editAttempt.status).toBe(423);
+    const delAttempt = await ctx.api.delete(`/api/form-records/${recId}`).set(hdr());
+    expect(delAttempt.status).toBe(423);
+    // Nor can status be set to 'paid' directly through the generic route.
+    const otherRec = recs1.body.find((r: { data: { employee_name: string } }) => r.data.employee_name !== 'Lock Test Employee');
+    if (otherRec) {
+      const sneaky = await ctx.api.put(`/api/form-records/${otherRec.id}`).set(hdr()).send({ data: otherRec.data, status: 'paid' });
+      expect(sneaky.status).toBe(400);
+    }
+
+    // Unmark, then everything works normally again.
+    const unmark = await ctx.api.post(`/api/hr/payroll/${recId}/unmark-paid`).set(hdr());
+    expect(unmark.status).toBe(200);
+    const editAfterUnmark = await ctx.api.put(`/api/form-records/${recId}`).set(hdr()).send({ data: recs1.body.find((r: { id: number }) => r.id === recId).data });
+    expect(editAfterUnmark.status).toBe(200);
+    const gen3 = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Lock Cutoff' });
+    expect(gen3.body.skipped_locked).toBe(0);
+    expect(gen3.body.updated).toBe(1);
+  });
+
+  it('emailing a payslip 400s when the employee has no linked account (or the linked account has no email)', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-EMAIL', name: 'Email Test Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Email Cutoff', start_date: '2026-08-21', end_date: '2026-08-21' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-21', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Email Cutoff' });
+    const recs = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Email Cutoff' }).set(hdr());
+    const recId = recs.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Email Test Employee').id;
+
+    const res = await ctx.api.post(`/api/hr/payroll/${recId}/email`).set(hdr());
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/linked user account/i);
+  });
+
+  it('post-payroll-gl books an aggregate payroll journal entry when the ledger is on, 400s otherwise', async () => {
+    // Ledger is off by default in this fresh test DB.
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-GL', name: 'GL Test Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'GL Cutoff', start_date: '2026-08-22', end_date: '2026-08-22' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-22', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'GL Cutoff' });
+
+    const offAttempt = await ctx.api.post(`/api/hr/periods/${period.body.id}/post-payroll-gl`).set(hdr()).send({ payroll_period: 'GL Cutoff' });
+    expect(offAttempt.status).toBe(400);
+
+    // Turn the ledger on — seeds posting rules from the default COA, including the payroll accounts.
+    const setup = await ctx.api.post('/api/accounting/ledger/setup').set(hdr()).send({ fiscal_year_start: '2026-01-01' });
+    expect(setup.status).toBe(201);
+
+    const posted = await ctx.api.post(`/api/hr/periods/${period.body.id}/post-payroll-gl`).set(hdr()).send({ payroll_period: 'GL Cutoff' });
+    expect(posted.status).toBe(201);
+    expect(posted.body.posted).toBe(true);
+    expect(posted.body.entry.number).toMatch(/^JV-/);
+
+    const je = await ctx.api.get('/api/accounting/ledger/journal-entries').query({ source_type: 'payroll_run' }).set(hdr());
+    const entry = je.body.find((e: { id: number; number: string }) => e.number === posted.body.entry.number);
+    expect(entry.book).toBe('payroll');
+    expect(entry.source_id).toBe(period.body.id);
+    expect(entry.total_debit).toBeGreaterThan(0);
+    // Debits must equal credits — auto_statutory defaults on, so this run's employer
+    // contributions land in the total too, not just the bare daily_rate.
+    const detail = await ctx.api.get(`/api/accounting/ledger/journal-entries/${entry.id}`).set(hdr());
+    const debitSum = detail.body.lines.reduce((s: number, l: { debit: number }) => s + (l.debit || 0), 0);
+    const creditSum = detail.body.lines.reduce((s: number, l: { credit: number }) => s + (l.credit || 0), 0);
+    expect(debitSum).toBeCloseTo(creditSum, 2);
+
+    // Re-posting (e.g. after a regenerate) reverses the old entry and posts a fresh one.
+    const posted2 = await ctx.api.post(`/api/hr/periods/${period.body.id}/post-payroll-gl`).set(hdr()).send({ payroll_period: 'GL Cutoff' });
+    expect(posted2.status).toBe(201);
+    expect(posted2.body.entry.number).not.toBe(posted.body.entry.number);
+    const reversedCheck = await ctx.api.get(`/api/accounting/ledger/journal-entries/${entry.id}`).set(hdr());
+    expect(reversedCheck.body.reversed_by).toBeTruthy();
+  });
 });

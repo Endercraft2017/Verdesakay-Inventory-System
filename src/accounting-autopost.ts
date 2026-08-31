@@ -9,8 +9,8 @@
  */
 import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } from './db';
 import {
-  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, POSTING_RULE_KEYS,
-  type PostingRules, type PostableDoc, type BuiltEntry,
+  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry, POSTING_RULE_KEYS,
+  type PostingRules, type PostableDoc, type BuiltEntry, type PayrollDoc,
 } from './accounting-posting';
 import { round2 } from './ledger';
 import type { Order, VendorBill, Payment, CreditNote } from './types';
@@ -50,6 +50,14 @@ export function seedPostingRulesFromCoa(): PostingRules {
     ['sales_returns_account_id', '4400'],
     ['purchase_expense_account_id', '5100'],
     ['ewt_payable_account_id', '2140'],
+    ['withholding_tax_payable_account_id', '2130'],
+    ['sss_payable_account_id', '2150'],
+    ['philhealth_payable_account_id', '2160'],
+    ['pagibig_payable_account_id', '2170'],
+    ['net_pay_payable_account_id', '2185'],
+    ['payroll_expense_account_id', '6100'],
+    ['payroll_er_contrib_account_id', '6110'],
+    ['employee_advance_account_id', '1190'],
   ];
   let touched = false;
   for (const [key, code] of wants) {
@@ -296,6 +304,54 @@ export function maybeAutoPostCreditNote(noteId: number, userId: number | null): 
     return { posted: true, entry };
   } catch (e) {
     console.warn(`[gl] auto-post credit note ${noteId} failed: ${(e as Error).message}`);
+    return { posted: false, error: (e as Error).message };
+  }
+}
+
+/** Called from the explicit "Post to GL" action (not fired automatically on every
+ *  generate-payslips call — see the payroll gap-fix plan for why: unlike a sale or bill,
+ *  a cutoff's payslips are commonly regenerated several times before payroll is final, and
+ *  the other maybeAutoPost* hooks silently no-op once a source is already posted, which
+ *  would leave the payroll journal stale). If a live posted entry already exists for this
+ *  period, it's reversed first so a re-post always reflects the current numbers. */
+export function maybeAutoPostPayroll(periodId: number, payrollPeriod: string, userId: number | null): AutoPostOutcome {
+  try {
+    if (!ledgerEnabled()) return { posted: false, skipped: 'ledger_off' };
+    const form = queryOne<{ id: number }>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
+    if (!form) return { posted: false, skipped: 'nothing_to_post' };
+    const records = queryAll<{ data: string }>(
+      'SELECT data FROM form_records WHERE form_def_id = ? AND period = ?', form.id, payrollPeriod
+    ).map((r) => { try { return JSON.parse(r.data) as Record<string, unknown>; } catch { return {}; } });
+    if (!records.length) return { posted: false, skipped: 'nothing_to_post' };
+
+    const num = (v: unknown): number => Number(v) || 0;
+    const sum = (fn: (d: Record<string, unknown>) => number) => round2(records.reduce((s, d) => s + fn(d), 0));
+    const er = (d: Record<string, unknown>) => (d.employer_contributions ?? {}) as Record<string, unknown>;
+
+    const doc: PayrollDoc = {
+      number: payrollPeriod,
+      date: (records.find((d) => d.pay_date)?.pay_date as string) || new Date().toISOString().slice(0, 10),
+      gross_total: sum((d) => num(d.total_earnings)),
+      late_total: sum((d) => num(d.late_absences)),
+      er_contrib_total: sum((d) => num(er(d).sss_er) + num(er(d).sss_ec) + num(er(d).philhealth_er) + num(er(d).pagibig_er)),
+      sss_payable_total: sum((d) => num(d.sss) + num(er(d).sss_er) + num(er(d).sss_ec)),
+      philhealth_payable_total: sum((d) => num(d.philhealth) + num(er(d).philhealth_er)),
+      pagibig_payable_total: sum((d) => num(d.pagibig) + num(er(d).pagibig_er)),
+      withholding_tax_total: sum((d) => num(d.withholding_tax)),
+      net_pay_total: sum((d) => num(d.net_pay)),
+      cash_advance_total: sum((d) => num(d.cash_advance)),
+    };
+    if (round2(doc.gross_total - doc.late_total) <= 0) return { posted: false, skipped: 'nothing_to_post' };
+    if (periodClosedOn(doc.date)) return { posted: false, skipped: 'period_closed' };
+
+    if (postedEntryForSource('payroll_run', periodId)) unpostSource('payroll_run', periodId, userId);
+
+    const built = buildPayrollEntry(doc, getPostingRules(), periodId);
+    if (!built.ok) return { posted: false, error: built.error };
+    const entry = writePosted(built.entry, userId);
+    return { posted: true, entry };
+  } catch (e) {
+    console.warn(`[gl] auto-post payroll period ${periodId} failed: ${(e as Error).message}`);
     return { posted: false, error: (e as Error).message };
   }
 }

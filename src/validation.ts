@@ -631,6 +631,14 @@ export const postingRulesSchema = z.object({
   input_vat_account_id: optionalId,
   sales_returns_account_id: optionalId,
   ewt_payable_account_id: optionalId,
+  payroll_expense_account_id: optionalId,
+  payroll_er_contrib_account_id: optionalId,
+  sss_payable_account_id: optionalId,
+  philhealth_payable_account_id: optionalId,
+  pagibig_payable_account_id: optionalId,
+  withholding_tax_payable_account_id: optionalId,
+  net_pay_payable_account_id: optionalId,
+  employee_advance_account_id: optionalId,
 });
 
 export const matchToleranceSchema = z.object({
@@ -675,14 +683,21 @@ export const linkFormTemplateSchema = z.object({
   template_id: z.coerce.number().int().positive().nullable(),
 });
 
+// A field value is normally a scalar, but one level of nested scalar-only object is also
+// allowed — e.g. hr_payroll's generate-payslips-only `employer_contributions` breakdown
+// (never shown/edited in the generic form UI, but round-tripped through {...existing.data,
+// otherField} by both that UI and PUT /form-records/:id, so it has to survive validation).
+const formFieldScalar = z.union([z.string().max(10000), z.number(), z.boolean(), z.null()]);
+const formFieldValue = z.union([formFieldScalar, z.record(z.string().max(64), formFieldScalar)]);
+
 export const createFormRecordSchema = z.object({
   form_def_id: z.coerce.number().int().positive('Form definition is required'),
-  data: z.record(z.string().max(64), z.union([z.string().max(10000), z.number(), z.boolean(), z.null()])).default({}),
+  data: z.record(z.string().max(64), formFieldValue).default({}),
   status: trimmed.max(40).default('draft'),
 });
 
 export const updateFormRecordSchema = z.object({
-  data: z.record(z.string().max(64), z.union([z.string().max(10000), z.number(), z.boolean(), z.null()])).default({}),
+  data: z.record(z.string().max(64), formFieldValue).default({}),
   status: trimmed.max(40).optional(),
 });
 
@@ -734,6 +749,8 @@ export const employeeSchema = z.object({
   philhealth_no: optionalIdText,
   pagibig_no: optionalIdText,
   tin_no: optionalIdText,
+  leave_days_per_year: numCoerce.min(0).max(366).default(5),
+  leave_days_used: numCoerce.min(0).default(0),
   photo: z.preprocess(
     (v) => (v === '' ? null : v),
     z.string().max(2_000_000).regex(/^data:image\//, 'Photo must be an image').optional().nullable()
@@ -915,6 +932,9 @@ export const timeCorrectionSchema = z
 export const approvalDecisionSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
   note: trimmed.max(1000).optional().nullable(),
+  // Approve a paid Leave request even though it would push leave_days_used past
+  // leave_days_per_year — otherwise that's rejected with a 400 (see me.routes.ts).
+  override_balance: z.boolean().optional(),
 });
 
 // ---- Field deliveries ----

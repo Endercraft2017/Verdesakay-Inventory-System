@@ -304,9 +304,21 @@ router.post('/form-records', (req, res) => {
 // PUT /api/form-records/:id — update data / status
 router.put('/form-records/:id', (req, res) => {
   const id = Number(req.params.id);
-  const existing = queryOne<FormRecord>('SELECT * FROM form_records WHERE id = ?', id);
+  const existing = queryOne<FormRecord & { slug: string }>(
+    `SELECT fr.*, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+    id
+  );
   if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
   const input = parseBody(updateFormRecordSchema, req.body);
+  // A payslip marked Paid (src/routes/hr.routes.ts's mark-paid) is locked against the generic
+  // edit path — unmark it first. Also block setting status to 'paid' through here directly;
+  // the dedicated mark-paid route is the only allowed entry point for that transition.
+  if (existing.slug === 'hr_payroll' && existing.status === 'paid') {
+    res.status(423).json({ error: 'This payslip is marked Paid — unmark it first to edit.' }); return;
+  }
+  if (existing.slug === 'hr_payroll' && input.status === 'paid' && existing.status !== 'paid') {
+    res.status(400).json({ error: 'Use "Mark as Paid" on the payslip instead of setting status directly.' }); return;
+  }
   run(
     `UPDATE form_records
      SET data = ?, status = ?, updated_at = datetime('now')
@@ -320,7 +332,16 @@ router.put('/form-records/:id', (req, res) => {
 
 // DELETE /api/form-records/:id
 router.delete('/form-records/:id', (req, res) => {
-  const info = run('DELETE FROM form_records WHERE id = ?', Number(req.params.id));
+  const id = Number(req.params.id);
+  const existing = queryOne<{ id: number; status: string; slug: string }>(
+    `SELECT fr.id, fr.status, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+    id
+  );
+  if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
+  if (existing.slug === 'hr_payroll' && existing.status === 'paid') {
+    res.status(423).json({ error: 'This payslip is marked Paid — unmark it first to delete.' }); return;
+  }
+  const info = run('DELETE FROM form_records WHERE id = ?', id);
   if (info.changes === 0) { res.status(404).json({ error: 'Record not found' }); return; }
   res.json({ ok: true });
 });

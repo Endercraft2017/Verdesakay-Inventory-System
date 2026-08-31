@@ -18,12 +18,23 @@ export interface PostingRules {
   input_vat_account_id?: number | null;      // Input VAT (debit on a bill)
   sales_returns_account_id?: number | null;  // Sales returns & allowances (debit on a customer credit note)
   ewt_payable_account_id?: number | null;    // Expanded withholding tax payable (credit on a bill with EWT)
+  payroll_expense_account_id?: number | null;      // Salaries & Wages (debit — gross, net of late deductions)
+  payroll_er_contrib_account_id?: number | null;   // Employer's SSS/PhilHealth/Pag-IBIG (debit)
+  sss_payable_account_id?: number | null;          // SSS Payable (credit — employee + employer + EC)
+  philhealth_payable_account_id?: number | null;   // PhilHealth Payable (credit)
+  pagibig_payable_account_id?: number | null;      // Pag-IBIG Payable (credit)
+  withholding_tax_payable_account_id?: number | null; // Withholding Tax Payable — Compensation (credit)
+  net_pay_payable_account_id?: number | null;      // Net Pay Payable (credit)
+  employee_advance_account_id?: number | null;     // Advances to Employees (credit — cash-advance recovery)
 }
 
 export const POSTING_RULE_KEYS: (keyof PostingRules)[] = [
   'ar_account_id', 'sales_income_account_id', 'output_vat_account_id',
   'ap_account_id', 'purchase_expense_account_id', 'input_vat_account_id',
   'sales_returns_account_id', 'ewt_payable_account_id',
+  'payroll_expense_account_id', 'payroll_er_contrib_account_id', 'sss_payable_account_id',
+  'philhealth_payable_account_id', 'pagibig_payable_account_id', 'withholding_tax_payable_account_id',
+  'net_pay_payable_account_id', 'employee_advance_account_id',
 ];
 
 /** The document shape the builders need — the same fields sale orders and vendor bills share. */
@@ -39,11 +50,11 @@ export interface PostableDoc {
 }
 
 export interface BuiltEntry {
-  book: 'sales' | 'purchase' | 'cash_receipts' | 'cash_disbursements';
+  book: 'sales' | 'purchase' | 'cash_receipts' | 'cash_disbursements' | 'payroll';
   entry_date: string;
   memo: string;
   reference: string;
-  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note';
+  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note' | 'payroll_run';
   source_id: number;
   lines: JournalLineInput[];
 }
@@ -237,6 +248,92 @@ export function buildCreditNoteEntry(doc: CreditNoteDoc, rules: PostingRules, so
       memo: `${isCustomer ? 'Credit note' : 'Debit note'} ${doc.number}`,
       reference: doc.number,
       source_type: 'credit_note',
+      source_id: sourceId,
+      lines,
+    },
+  };
+}
+
+/** One `generate-payslips` run's totals, already summed across the roster (see
+ *  src/accounting-autopost.ts's maybeAutoPostPayroll for how these are aggregated from the
+ *  hr_payroll form_records). All employee-side figures are net of each employee's own
+ *  deduct_* flags (zeroed on the payslip already); er_contrib_total likewise. */
+export interface PayrollDoc {
+  number: string;          // the payroll_period label, used as memo/reference
+  date: string;             // pay_date (falls back to today) — entry_date
+  gross_total: number;      // Σ total_earnings
+  late_total: number;       // Σ late_absences — netted out of the gross debit, owed to no one
+  er_contrib_total: number; // Σ employer_contributions.* (SSS/PhilHealth/Pag-IBIG employer share + EC)
+  sss_payable_total: number;         // Σ sss (employee) + the SSS portion of er_contrib_total
+  philhealth_payable_total: number;  // Σ philhealth (employee) + employer share
+  pagibig_payable_total: number;     // Σ pagibig (employee) + employer share
+  withholding_tax_total: number;     // Σ withholding_tax (employee-withheld, owed to BIR)
+  net_pay_total: number;             // Σ net_pay — what's actually paid out
+  cash_advance_total: number;        // Σ cash_advance recovered this run
+}
+
+/**
+ * A payroll run: DR Salaries & Wages (gross − late deductions) / DR Employer contributions
+ * expense / CR SSS·PhilHealth·Pag-IBIG payable / CR Withholding Tax payable / CR Net Pay
+ * payable / CR Advances to Employees (cash-advance recovery). Each payable/advance line is
+ * only required (and only appears) when its total is nonzero, same as `ewt_payable_account_id`
+ * in buildPurchaseEntry above. The four component sums plus net pay and cash-advance recovery
+ * are constructed so debits equal credits by construction — see the derivation in the payroll
+ * gap-fix plan; this still double-checks with a cents-tolerant sum comparison, since a run
+ * assembled from partly hand-edited payslips (auto_statutory off) isn't guaranteed to satisfy
+ * that identity the way a single computed document always is.
+ */
+export function buildPayrollEntry(doc: PayrollDoc, rules: PostingRules, sourceId: number): BuildResult {
+  const need: (keyof PostingRules)[] = ['payroll_expense_account_id', 'net_pay_payable_account_id'];
+  const sss = round2(doc.sss_payable_total || 0);
+  const philhealth = round2(doc.philhealth_payable_total || 0);
+  const pagibig = round2(doc.pagibig_payable_total || 0);
+  const wht = round2(doc.withholding_tax_total || 0);
+  const erContrib = round2(doc.er_contrib_total || 0);
+  const cashAdvance = round2(doc.cash_advance_total || 0);
+  if (sss > 0) need.push('sss_payable_account_id');
+  if (philhealth > 0) need.push('philhealth_payable_account_id');
+  if (pagibig > 0) need.push('pagibig_payable_account_id');
+  if (wht > 0) need.push('withholding_tax_payable_account_id');
+  if (erContrib > 0) need.push('payroll_er_contrib_account_id');
+  if (cashAdvance > 0) need.push('employee_advance_account_id');
+  const gap = missing(rules, need);
+  if (gap) return { ok: false, error: gap };
+
+  const grossNet = round2((doc.gross_total || 0) - (doc.late_total || 0));
+  if (grossNet <= 0) return { ok: false, error: `${doc.number}: nothing to post (net gross is ${grossNet}).` };
+  const netPay = round2(doc.net_pay_total || 0);
+
+  const lines: JournalLineInput[] = [
+    { account_id: rules.payroll_expense_account_id!, debit: grossNet, credit: 0, memo: `Payroll ${doc.number}` },
+  ];
+  if (erContrib > 0) lines.push({ account_id: rules.payroll_er_contrib_account_id!, debit: erContrib, credit: 0 });
+  if (sss > 0) lines.push({ account_id: rules.sss_payable_account_id!, debit: 0, credit: sss });
+  if (philhealth > 0) lines.push({ account_id: rules.philhealth_payable_account_id!, debit: 0, credit: philhealth });
+  if (pagibig > 0) lines.push({ account_id: rules.pagibig_payable_account_id!, debit: 0, credit: pagibig });
+  if (wht > 0) lines.push({ account_id: rules.withholding_tax_payable_account_id!, debit: 0, credit: wht });
+  if (cashAdvance > 0) lines.push({ account_id: rules.employee_advance_account_id!, debit: 0, credit: cashAdvance });
+  lines.push({ account_id: rules.net_pay_payable_account_id!, debit: 0, credit: netPay, memo: `Payroll ${doc.number}` });
+
+  const totalDebit = round2(lines.reduce((s, l) => s + (l.debit || 0), 0));
+  const totalCredit = round2(lines.reduce((s, l) => s + (l.credit || 0), 0));
+  if (Math.abs(totalDebit - totalCredit) > 0.01) {
+    return {
+      ok: false,
+      error: `${doc.number}: doesn't balance (debits ${totalDebit} vs credits ${totalCredit}) — check ` +
+        `payslips in this run for hand-edited totals that don't add up (this can happen when auto ` +
+        `statutory computation is off), then try posting again.`,
+    };
+  }
+
+  return {
+    ok: true,
+    entry: {
+      book: 'payroll',
+      entry_date: doc.date,
+      memo: `Payroll ${doc.number}`,
+      reference: doc.number,
+      source_type: 'payroll_run',
       source_id: sourceId,
       lines,
     },

@@ -12,11 +12,16 @@ import type { FormDefinition, FormRecord, TimeCorrection } from '../types';
 const router = Router();
 router.use(requireAuth);
 
-interface Emp { id: number; name: string; department_id: number | null; position: string | null; employee_no: string | null; default_shift_id: number | null; department_name: string | null }
+interface Emp {
+  id: number; name: string; department_id: number | null; position: string | null; employee_no: string | null;
+  default_shift_id: number | null; department_name: string | null;
+  leave_days_per_year: number; leave_days_used: number; leave_days_remaining: number;
+}
 
 function me(userId: number): Emp | undefined {
   return queryOne<Emp>(
-    `SELECT e.id, e.name, e.department_id, e.position, e.employee_no, e.default_shift_id, d.name AS department_name
+    `SELECT e.id, e.name, e.department_id, e.position, e.employee_no, e.default_shift_id, d.name AS department_name,
+            e.leave_days_per_year, e.leave_days_used, (e.leave_days_per_year - e.leave_days_used) AS leave_days_remaining
      FROM employees e LEFT JOIN departments d ON d.id = e.department_id WHERE e.user_id = ?`,
     userId
   );
@@ -218,11 +223,15 @@ router.get('/approvals', (req, res) => {
   });
 });
 
-// POST /api/me/approvals/requests/:id/decide — { decision: 'approved'|'rejected', note? }
+// POST /api/me/approvals/requests/:id/decide — { decision: 'approved'|'rejected', note?, override_balance? }
 router.post('/approvals/requests/:id/decide', (req, res) => {
   const id = Number(req.params.id);
-  const rec = queryOne<{ id: number; status: string; created_by: number | null; data: string; slug: string; form_name: string; department_id: number | null }>(
-    `SELECT fr.id, fr.status, fr.created_by, fr.data, fd.slug, fd.name AS form_name, e.department_id
+  const rec = queryOne<{
+    id: number; status: string; created_by: number | null; data: string; slug: string; form_name: string;
+    department_id: number | null; employee_id: number | null; leave_days_per_year: number | null; leave_days_used: number | null;
+  }>(
+    `SELECT fr.id, fr.status, fr.created_by, fr.data, fd.slug, fd.name AS form_name,
+            e.department_id, e.id AS employee_id, e.leave_days_per_year, e.leave_days_used
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
      LEFT JOIN employees e ON e.user_id = fr.created_by
@@ -234,8 +243,25 @@ router.post('/approvals/requests/:id/decide', (req, res) => {
   if (!mayDecide(req, rec.department_id)) { res.status(403).json({ error: 'Not an approver for this request' }); return; }
   if (rec.status !== 'pending') { res.status(400).json({ error: 'This request is no longer pending' }); return; }
 
-  const { decision, note } = parseBody(approvalDecisionSchema, req.body);
+  const { decision, note, override_balance } = parseBody(approvalDecisionSchema, req.body);
   const data = parse(rec.data);
+
+  // Approving a paid Leave request consumes the employee's fixed leave-day bank. Blocked if it
+  // would go negative, unless the approver explicitly overrides — a rejected decision, or one
+  // where with_pay isn't 'Yes', never touches the balance (see docs on the "simple fixed bank"
+  // design: no accrual math, no carry-over, one-way consumption with no un-approve path).
+  if (decision === 'approved' && rec.slug === 'leave_request' && data.with_pay === 'Yes' && rec.employee_id) {
+    const days = Number(data.days) || 0;
+    if (days > 0) {
+      const remaining = (rec.leave_days_per_year ?? 5) - (rec.leave_days_used ?? 0);
+      if (remaining - days < 0 && !override_balance) {
+        res.status(400).json({ error: `Requested ${days} day(s), only ${remaining} remaining. Approve anyway to override.` });
+        return;
+      }
+      run('UPDATE employees SET leave_days_used = leave_days_used + ? WHERE id = ?', days, rec.employee_id);
+    }
+  }
+
   data.decided_by = req.user!.full_name;
   data.decided_at = new Date().toISOString().slice(0, 16).replace('T', ' ');
   if (note) data.decision_note = note;

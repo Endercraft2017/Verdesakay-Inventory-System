@@ -1,13 +1,17 @@
 /** Pure tests for the posting engine (src/accounting-posting.ts) — Phase 1. */
 import { describe, it, expect } from 'vitest';
 import {
-  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, type PostingRules,
+  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
+  type PostingRules, type PayrollDoc,
 } from '../src/accounting-posting';
 
 const RULES: PostingRules = {
   ar_account_id: 11, sales_income_account_id: 41, output_vat_account_id: 21,
   ap_account_id: 22, purchase_expense_account_id: 51, input_vat_account_id: 12,
   sales_returns_account_id: 44, ewt_payable_account_id: 23,
+  payroll_expense_account_id: 61, payroll_er_contrib_account_id: 62, sss_payable_account_id: 71,
+  philhealth_payable_account_id: 72, pagibig_payable_account_id: 73, withholding_tax_payable_account_id: 74,
+  net_pay_payable_account_id: 75, employee_advance_account_id: 19,
 };
 
 const sum = (lines: { debit?: number; credit?: number }[], k: 'debit' | 'credit') =>
@@ -192,5 +196,92 @@ describe('buildPurchaseEntry', () => {
       { ...RULES, ewt_payable_account_id: null }, 12
     );
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('buildPayrollEntry', () => {
+  const FULL_DOC: PayrollDoc = {
+    number: 'Aug 2026 Cutoff', date: '2026-08-31',
+    gross_total: 2166.67, late_total: 100,
+    er_contrib_total: 190, // sss_er 110 + sss_ec 5 + philhealth_er 50 + pagibig_er 25
+    sss_payable_total: 215,          // employee 100 + employer 110 + ec 5
+    philhealth_payable_total: 100,   // employee 50 + employer 50
+    pagibig_payable_total: 50,       // employee 25 + employer 25
+    withholding_tax_total: 30,
+    net_pay_total: 1861.67,
+    cash_advance_total: 0,
+  };
+
+  it('DR salaries (net of late) + ER contributions / CR the payables + net pay, balanced', () => {
+    const r = buildPayrollEntry(FULL_DOC, RULES, 1);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.book).toBe('payroll');
+    expect(r.entry.source_type).toBe('payroll_run');
+    expect(sum(r.entry.lines, 'debit')).toBe(sum(r.entry.lines, 'credit'));
+    expect(r.entry.lines.find((l) => l.account_id === 61)!.debit).toBe(2066.67); // gross - late
+    expect(r.entry.lines.find((l) => l.account_id === 62)!.debit).toBe(190);
+    expect(r.entry.lines.find((l) => l.account_id === 71)!.credit).toBe(215);
+    expect(r.entry.lines.find((l) => l.account_id === 72)!.credit).toBe(100);
+    expect(r.entry.lines.find((l) => l.account_id === 73)!.credit).toBe(50);
+    expect(r.entry.lines.find((l) => l.account_id === 74)!.credit).toBe(30);
+    expect(r.entry.lines.find((l) => l.account_id === 75)!.credit).toBe(1861.67);
+  });
+
+  it('drops payable lines whose total is zero, and the ER-contribution line when there is none', () => {
+    // A self-consistent minimal doc (no ER contributions, no SSS/withholding at all this run) —
+    // net_pay = gross - philhealth (the only deduction), so it still balances.
+    const r = buildPayrollEntry(
+      {
+        number: 'Minimal', date: '2026-08-31', gross_total: 1000, late_total: 0, er_contrib_total: 0,
+        sss_payable_total: 0, philhealth_payable_total: 100, pagibig_payable_total: 0,
+        withholding_tax_total: 0, net_pay_total: 900, cash_advance_total: 0,
+      },
+      RULES, 2
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(sum(r.entry.lines, 'debit')).toBe(sum(r.entry.lines, 'credit'));
+    expect(r.entry.lines.some((l) => l.account_id === 62)).toBe(false); // ER contrib
+    expect(r.entry.lines.some((l) => l.account_id === 71)).toBe(false); // SSS
+    expect(r.entry.lines.some((l) => l.account_id === 74)).toBe(false); // withholding tax
+    expect(r.entry.lines.some((l) => l.account_id === 19)).toBe(false); // no cash advance
+    expect(r.entry.lines.find((l) => l.account_id === 72)!.credit).toBe(100);
+  });
+
+  it('adds an Advances to Employees credit line when cash_advance_total is nonzero', () => {
+    const r = buildPayrollEntry(
+      { ...FULL_DOC, net_pay_total: FULL_DOC.net_pay_total - 200, cash_advance_total: 200 }, RULES, 3
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(sum(r.entry.lines, 'debit')).toBe(sum(r.entry.lines, 'credit'));
+    expect(r.entry.lines.find((l) => l.account_id === 19)!.credit).toBe(200);
+  });
+
+  it('fails when the employee-advance rule is missing but cash_advance_total is nonzero', () => {
+    const r = buildPayrollEntry(
+      { ...FULL_DOC, cash_advance_total: 200 }, { ...RULES, employee_advance_account_id: null }, 4
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it('fails when a nonzero payable has no posting rule set', () => {
+    const r = buildPayrollEntry(FULL_DOC, { ...RULES, sss_payable_account_id: null }, 5);
+    expect(r.ok).toBe(false);
+  });
+
+  it('fails on a non-positive net gross (nothing worked this cutoff)', () => {
+    const r = buildPayrollEntry({ ...FULL_DOC, gross_total: 0, late_total: 0 }, RULES, 6);
+    expect(r.ok).toBe(false);
+  });
+
+  it('fails with a clear error when the totals given do not actually balance', () => {
+    // net_pay_total inconsistent with the rest — simulates a run with hand-edited manual
+    // figures (auto_statutory off) that don't add up.
+    const r = buildPayrollEntry({ ...FULL_DOC, net_pay_total: 99999 }, RULES, 7);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/doesn't balance/);
   });
 });

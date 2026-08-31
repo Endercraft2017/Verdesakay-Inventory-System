@@ -74,6 +74,7 @@ async function renderFormView(view, formId, initialPeriod) {
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }
 
   const isPayroll = formDef.slug === 'hr_payroll';
+  const canManagePayroll = isPayroll && App.hasPermission('hr.manage');
   // Any other form with a linked print template gets the same "Print All"/"Print selected"
   // bulk actions payroll has always had — payroll keeps its own dedicated 2-up slip buttons.
   const canBulkPrint = !isPayroll && !!formDef.template_id;
@@ -93,7 +94,7 @@ async function renderFormView(view, formId, initialPeriod) {
       <div class="search-box search">${UI.icon('search', 16)}<input id="fr-search" placeholder="Search number…" /></div>
       <select id="fr-status" style="margin-left:8px">
         <option value="">All statuses</option>
-        ${['draft', 'submitted', 'approved', 'rejected', 'completed']
+        ${['draft', 'submitted', 'approved', 'rejected', 'completed'].concat(isPayroll ? ['paid'] : [])
           .map((s) => `<option value="${s}">${s}</option>`).join('')}
       </select>
       ${isPayroll ? `
@@ -432,8 +433,12 @@ async function renderFormView(view, formId, initialPeriod) {
           <td class="actions">
             ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip">${UI.icon('printer')}</button>` : ''}
             ${!isPayroll && formDef.template_id ? `<button class="icon-btn" data-print-tpl="${r.id}" title="Print">${UI.icon('printer')}</button>` : ''}
-            <button class="icon-btn" data-edit="${r.id}" title="Edit">${UI.icon('edit')}</button>
-            <button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>
+            ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip">${UI.icon('mail')}</button>` : ''}
+            ${isPayroll && canManagePayroll ? (r.status === 'paid'
+              ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)">${UI.icon('reply', 15)}</button>`
+              : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)">${UI.icon('check')}</button>`) : ''}
+            ${r.status !== 'paid' ? `<button class="icon-btn" data-edit="${r.id}" title="Edit">${UI.icon('edit')}</button>` : ''}
+            ${r.status !== 'paid' ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>` : ''}
           </td>
         </tr>`).join('')}
       </tbody></table>`;
@@ -464,6 +469,37 @@ async function renderFormView(view, formId, initialPeriod) {
         e.stopPropagation();
         const r = records.find((x) => String(x.id) === String(b.dataset.printTpl));
         if (r) printRecordsViaTemplate([r]);
+      });
+    el.querySelectorAll('[data-email]').forEach((b) =>
+      b.onclick = async (e) => {
+        e.stopPropagation();
+        b.disabled = true;
+        try {
+          await API.post(`/hr/payroll/${b.dataset.email}/email`, {});
+          UI.toast('Payslip emailed');
+        } catch (err) {
+          UI.toast(err.message, 'error');
+        } finally {
+          b.disabled = false;
+        }
+      });
+    el.querySelectorAll('[data-paid]').forEach((b) =>
+      b.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+          await API.post(`/hr/payroll/${b.dataset.paid}/mark-paid`, {});
+          UI.toast('Payslip marked as paid');
+          load();
+        } catch (err) { UI.toast(err.message, 'error'); }
+      });
+    el.querySelectorAll('[data-unpaid]').forEach((b) =>
+      b.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+          await API.post(`/hr/payroll/${b.dataset.unpaid}/unmark-paid`, {});
+          UI.toast('Payslip unmarked — editable again');
+          load();
+        } catch (err) { UI.toast(err.message, 'error'); }
       });
     el.querySelectorAll('[data-edit]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); openRecord(b.dataset.edit, records); });

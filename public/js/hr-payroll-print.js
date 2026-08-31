@@ -102,5 +102,5 @@ function buildPayrollSlipsHtml(dataList, templateBody) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { buildPayrollSlipsHtml, buildSlipContext, FALLBACK_BODY };
+  module.exports = { buildPayrollSlipsHtml, buildSlipContext, renderSlip, FALLBACK_BODY };
 }

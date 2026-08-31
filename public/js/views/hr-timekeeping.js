@@ -525,6 +525,9 @@ async function renderPeriod(view, periodId) {
   let period = null;
   try { period = await API.get('/hr/periods/' + periodId); }
   catch { view.innerHTML = '<div class="empty">Cutoff not found.</div>'; return; }
+  // The payroll_period label used for the last (or most recent) Generate Payslips run — it's
+  // editable there, so "Post to GL" needs to target the same label, not always period.label.
+  let lastPayrollPeriod = period.label;
 
   view.innerHTML = `
     <div class="topbar">
@@ -534,6 +537,7 @@ async function renderPeriod(view, periodId) {
       <div class="grow"></div>
       <button class="btn secondary" id="tk-edit-period">${UI.icon('edit')} Edit Cutoff</button>
       <button class="btn secondary" id="tk-import-punches" style="margin-left:8px" title="Fill time-in/out from time-clock punches">${UI.icon('calendar')} Import Punches</button>
+      <button class="btn secondary" id="tk-post-gl" style="margin-left:8px" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 15)} Post to GL</button>
       <button class="btn" id="tk-generate" style="margin-left:8px">${UI.icon('sheet')} Generate Payslips</button>
     </div>
     <div class="panel">
@@ -565,6 +569,7 @@ async function renderPeriod(view, periodId) {
     renderRoster();
   });
   view.querySelector('#tk-generate').onclick = () => generateModal();
+  view.querySelector('#tk-post-gl').onclick = () => postGlModal();
   view.querySelector('#tk-import-punches').onclick = async (e) => {
     if (!App.hasPermission('hr.manage')) { UI.toast('Needs HR manage', 'error'); return; }
     const ok = await UI.confirmDialog(
@@ -931,6 +936,7 @@ async function renderPeriod(view, periodId) {
         if (!payroll_period) { showErr('Payroll period label is required'); return false; }
         const pay_date = ov.querySelector('[data-f="pay_date"]').value;
         const res = await API.post(`/hr/periods/${periodId}/generate-payslips`, { payroll_period, pay_date });
+        lastPayrollPeriod = payroll_period;
         UI.toast(`Payslips ready: ${res.created} created, ${res.updated} updated`);
         UI.modal({
           title: 'Payslips ready',
@@ -939,6 +945,24 @@ async function renderPeriod(view, periodId) {
           confirmText: 'Open Payroll',
           onConfirm: () => { App.navigate('form-records', { form_id: res.form_id, period: res.period }); },
         });
+      },
+    });
+  }
+
+  function postGlModal() {
+    UI.modal({
+      title: 'Post payroll to the General Ledger',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">Books this cutoff's generated payslips as one aggregate journal entry
+          (Salaries & Wages, statutory payables, Net Pay Payable). Posting again after a regenerate reverses the
+          previous entry first and posts fresh with the current numbers — safe to re-run.</p>
+        <div><label>Payroll period label</label><input data-f="payroll_period" value="${UI.esc(lastPayrollPeriod)}" /></div>`,
+      confirmText: 'Post to GL',
+      onConfirm: async (ov, showErr) => {
+        const payroll_period = ov.querySelector('[data-f="payroll_period"]').value.trim();
+        if (!payroll_period) { showErr('Payroll period label is required'); return false; }
+        const res = await API.post(`/hr/periods/${periodId}/post-payroll-gl`, { payroll_period });
+        UI.toast(`Posted to GL — journal entry ${res.entry ? res.entry.number : ''}`.trim());
       },
     });
   }

@@ -312,6 +312,13 @@ App.register('hr-employees', async (view) => {
             <div><label>Pag-IBIG No.</label><input data-f="pagibig_no" value="${UI.esc(editing ? (existing.pagibig_no || '') : '')}" /></div>
             <div><label>TIN</label><input data-f="tin_no" value="${UI.esc(editing ? (existing.tin_no || '') : '')}" /></div>
           </div>
+          <label style="margin-top:12px;display:block">Paid leave (simple fixed bank — not accrual-based)</label>
+          <div class="field-row">
+            <div><label>Days / year</label><input data-f="leave_days_per_year" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_per_year ?? 5) : 5))}" /></div>
+            <div><label>Days used (this year)</label><input data-f="leave_days_used" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_used ?? 0) : 0))}" />
+              ${editing ? `<div class="muted" style="font-size:12px;margin-top:3px">${UI.esc(String((existing.leave_days_per_year ?? 5) - (existing.leave_days_used ?? 0)))} remaining</div>` : ''}
+            </div>
+          </div>
           ${editing ? `
           <label style="margin-top:14px;display:block">201 documents</label>
           <div id="emp-docs"><div class="empty">Loading…</div></div>
@@ -437,6 +444,8 @@ App.register('hr-employees', async (view) => {
             philhealth_no: ov.querySelector('[data-f="philhealth_no"]').value.trim(),
             pagibig_no: ov.querySelector('[data-f="pagibig_no"]').value.trim(),
             tin_no: ov.querySelector('[data-f="tin_no"]').value.trim(),
+            leave_days_per_year: Number(ov.querySelector('[data-f="leave_days_per_year"]').value) || 0,
+            leave_days_used: Number(ov.querySelector('[data-f="leave_days_used"]').value) || 0,
             photo: photoData,
           };
           if (editing) await API.put('/hr/employees/' + existing.id, body);

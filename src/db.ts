@@ -54,7 +54,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1255,6 +1255,17 @@ function migrate(): void {
     if (!empCols3.some((c) => c.name === col)) {
       db.exec(`ALTER TABLE employees ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 1`);
     }
+  }
+
+  // Simple fixed-bank paid-leave balance, admin-set per employee (not accrual-based — no
+  // monthly math, no carry-over rules). Default 5 matches PH Service Incentive Leave's
+  // minimum but is freely editable per employee, not treated as law. Consumed as Leave
+  // Request forms are approved with with_pay = 'Yes' (src/routes/me.routes.ts).
+  if (!empCols3.some((c) => c.name === 'leave_days_per_year')) {
+    db.exec('ALTER TABLE employees ADD COLUMN leave_days_per_year REAL NOT NULL DEFAULT 5');
+  }
+  if (!empCols3.some((c) => c.name === 'leave_days_used')) {
+    db.exec('ALTER TABLE employees ADD COLUMN leave_days_used REAL NOT NULL DEFAULT 0');
   }
 
   // Optional link from an HR employee record to the login account they use — lets an employee's

@@ -98,6 +98,61 @@ describe('request approvals', () => {
     expect(dec.body.status).toBe('rejected');
   });
 
+  it('approving a paid Leave request consumes the fixed leave-day bank, blocked past the balance unless overridden', async () => {
+    const hr = await createEmployee(ctx.api, adminToken, { role: 'hr' });
+    const filer = await linkedEmployee({});
+    const leaveId = await requestFormId('leave_request');
+
+    // Default bank is 5 days/year (src/db.ts migration default) — confirm before consuming it.
+    const empBefore = (await ctx.api.get('/api/hr/employees').set(A())).body.find((e: { id: number }) => e.id === filer.empId);
+    expect(empBefore.leave_days_per_year).toBe(5);
+    expect(empBefore.leave_days_remaining).toBe(5);
+
+    const filed = await ctx.api.post('/api/form-records').set(bearer(filer.token))
+      .send({ form_def_id: leaveId, data: { employee_name: filer.name, with_pay: 'Yes', days: 3 }, status: 'pending' });
+    const dec = await ctx.api.post(`/api/me/approvals/requests/${filed.body.id}/decide`)
+      .set(bearer(hr.token)).send({ decision: 'approved' });
+    expect(dec.status).toBe(200);
+
+    const empAfter = (await ctx.api.get('/api/hr/employees').set(A())).body.find((e: { id: number }) => e.id === filer.empId);
+    expect(empAfter.leave_days_used).toBe(3);
+    expect(empAfter.leave_days_remaining).toBe(2);
+
+    // Requesting more than the 2 remaining is blocked...
+    const filed2 = await ctx.api.post('/api/form-records').set(bearer(filer.token))
+      .send({ form_def_id: leaveId, data: { employee_name: filer.name, with_pay: 'Yes', days: 4 }, status: 'pending' });
+    const blocked = await ctx.api.post(`/api/me/approvals/requests/${filed2.body.id}/decide`)
+      .set(bearer(hr.token)).send({ decision: 'approved' });
+    expect(blocked.status).toBe(400);
+    const stillTwo = (await ctx.api.get('/api/hr/employees').set(A())).body.find((e: { id: number }) => e.id === filer.empId);
+    expect(stillTwo.leave_days_used).toBe(3); // untouched by the rejected-for-balance attempt
+
+    // ...unless the approver explicitly overrides.
+    const overridden = await ctx.api.post(`/api/me/approvals/requests/${filed2.body.id}/decide`)
+      .set(bearer(hr.token)).send({ decision: 'approved', override_balance: true });
+    expect(overridden.status).toBe(200);
+    const empFinal = (await ctx.api.get('/api/hr/employees').set(A())).body.find((e: { id: number }) => e.id === filer.empId);
+    expect(empFinal.leave_days_used).toBe(7);
+    expect(empFinal.leave_days_remaining).toBe(-2); // allowed to go negative once overridden
+  });
+
+  it('an unpaid Leave request, or a rejected one, never touches the leave-day bank', async () => {
+    const hr = await createEmployee(ctx.api, adminToken, { role: 'hr' });
+    const filer = await linkedEmployee({});
+    const leaveId = await requestFormId('leave_request');
+
+    const unpaid = await ctx.api.post('/api/form-records').set(bearer(filer.token))
+      .send({ form_def_id: leaveId, data: { employee_name: filer.name, with_pay: 'No', days: 2 }, status: 'pending' });
+    await ctx.api.post(`/api/me/approvals/requests/${unpaid.body.id}/decide`).set(bearer(hr.token)).send({ decision: 'approved' });
+
+    const paidButRejected = await ctx.api.post('/api/form-records').set(bearer(filer.token))
+      .send({ form_def_id: leaveId, data: { employee_name: filer.name, with_pay: 'Yes', days: 2 }, status: 'pending' });
+    await ctx.api.post(`/api/me/approvals/requests/${paidButRejected.body.id}/decide`).set(bearer(hr.token)).send({ decision: 'rejected' });
+
+    const emp = (await ctx.api.get('/api/hr/employees').set(A())).body.find((e: { id: number }) => e.id === filer.empId);
+    expect(emp.leave_days_used).toBe(0);
+  });
+
   it('lets the filer cancel their own still-pending request', async () => {
     const filer = await linkedEmployee({});
     const leaveId = await requestFormId('leave_request');
