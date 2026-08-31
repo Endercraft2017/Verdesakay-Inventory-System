@@ -53,6 +53,11 @@ App.register('form-builder', async (view, filter) => {
         req('date', 'Date', 'date'),
         req('time_out', 'Time Out', 'text'),
         opt('minutes_short', 'Minutes Short', 'number'),
+        // 'Yes', once this request is approved and linked to the attendance day, waives the
+        // undertime deduction outright — a company-authorized paid early release, no make-up
+        // owed (unlike an Offset form, which defers the obligation instead of waiving it).
+        // Anything else (including left blank) still deducts, same as no form linked at all.
+        req('with_pay', 'With Pay?', 'select', ['Yes', 'No']),
         req('reason', 'Reason', 'textarea'),
         opt('approved_by', 'Approved By', 'text'),
       ],

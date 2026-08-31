@@ -170,6 +170,29 @@ describe('computeAttendanceForEmployee — Offset form shifts the expected time-
   });
 });
 
+describe('computeAttendanceForEmployee — Undertime Request with_pay override', () => {
+  it('leaving early with NO linked form deducts, same as always', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '16:00' })], DAILY_RATE, POLICY);
+    expect(r.undertime_pay).toBeLessThan(0);
+  });
+
+  it('a linked Undertime Request with with_pay=No still deducts (documentation only)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '16:00', linkedForm: { slug: 'undertime_request', data: { with_pay: 'No' } } })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.undertime_pay).toBeLessThan(0);
+  });
+
+  it('a linked Undertime Request with with_pay=Yes waives the deduction entirely', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '16:00', linkedForm: { slug: 'undertime_request', data: { with_pay: 'Yes' } } })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.undertime_pay).toBe(0);
+  });
+});
+
 describe('computeAttendanceForEmployee — Holiday Work premiums', () => {
   it('Regular Holiday adds a 100% premium on top into holiday_pay', () => {
     const r = computeAttendanceForEmployee(

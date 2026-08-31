@@ -163,10 +163,18 @@ export function computeAttendanceForEmployee(
         out.overtime_pay += pay;
       }
     } else if (timeOutRel < effectiveEnd) {
-      // Left before the expected end with nothing (like an Offset form) covering it.
-      const shortRaw = effectiveEnd - timeOutRel;
-      const shortBlocked = roundUpToUnit(shortRaw, unitMinutesFor(policy.late_unit));
-      out.undertime_pay -= (shortBlocked / 60) * hourlyRate;
+      // Left before the expected end. Deducted by default — unlike OT, a short day doesn't
+      // need anyone's authorization to be a deduction. The one exception: a linked Undertime
+      // Request form with with_pay = 'Yes' — a company-authorized, PAID early release (e.g. a
+      // documented emergency) waives the deduction outright, no make-up owed. That's different
+      // from an Offset form, which defers the obligation (make up the time later) rather than
+      // waiving it — hence effectiveEnd is still computed from Offset above, not this.
+      const authorizedPaid = slug === 'undertime_request' && day.linkedForm?.data?.with_pay === 'Yes';
+      if (!authorizedPaid) {
+        const shortRaw = effectiveEnd - timeOutRel;
+        const shortBlocked = roundUpToUnit(shortRaw, unitMinutesFor(policy.late_unit));
+        out.undertime_pay -= (shortBlocked / 60) * hourlyRate;
+      }
     }
 
     if (slug === 'holiday_work_request') {
