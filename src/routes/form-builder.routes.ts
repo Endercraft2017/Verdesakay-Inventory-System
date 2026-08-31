@@ -13,6 +13,7 @@ import {
   globalVariableSchema,
 } from '../validation';
 import { parsePayrollSummaryCsv } from '../hr-payroll-import';
+import { REQUEST_SLUGS } from './me.routes';
 import type { FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../types';
 
 const router = Router();
@@ -44,7 +45,11 @@ const ANY_FORMS_MANAGE: Permission[] = FORM_SCOPES.map((s) => `forms.manage.${s}
     section, so a form nobody explicitly sectioned doesn't become manageable by whichever role
     happens to hold just one scope. In practice only admin holds all four by default, making
     General effectively admin-managed, the right default for an unowned bucket. Writes the 403
-    itself and returns whether the caller may proceed. */
+    itself and returns whether the caller may proceed. Also the read gate for form_definitions/
+    records and form_records/:id (there's no separate forms.view.<scope> tier for this system —
+    manage is the only permission level, so browsing a section's records requires the same
+    permission as managing them; a self-filer's own submissions stay visible via the separate,
+    ownership-scoped GET /me/requests instead). */
 function canManageScope(req: Request, res: Response, scope: FormScope | null): boolean {
   const ok = scope
     ? req.user!.permissions.includes(`forms.manage.${scope}` as Permission)
@@ -230,12 +235,15 @@ router.get('/form-definitions/:id/periods', (req, res) => {
 
 // ─── Form Records ────────────────────────────────────────────────────────────
 
-// GET /api/form-definitions/:id/records — list records for a form (?q=, ?status=)
+// GET /api/form-definitions/:id/records — list records for a form (?q=, ?status=). Same
+// forms.manage.<scope> gate as writing records — this is the staff-facing "browse everything
+// in my section" view (public/js/views/form-records.js). An employee's own self-filed requests
+// are visible through the separate, self-scoped GET /me/requests instead.
 router.get('/form-definitions/:id/records', (req, res) => {
   const formId = Number(req.params.id);
-  if (!queryOne('SELECT id FROM form_definitions WHERE id = ?', formId)) {
-    res.status(404).json({ error: 'Form not found' }); return;
-  }
+  const form = queryOne<{ scope: FormScope | null }>('SELECT scope FROM form_definitions WHERE id = ?', formId);
+  if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
+  if (!canManageScope(req, res, form.scope)) return;
   const { q, status, period } = req.query;
   const where: string[] = ['fr.form_def_id = ?'];
   const params: unknown[] = [formId];
@@ -258,10 +266,11 @@ router.get('/form-definitions/:id/records', (req, res) => {
   res.json(rows.map((r) => ({ ...r, data: parseData(r.data as string) })));
 });
 
-// GET /api/form-records/:id — single record
+// GET /api/form-records/:id — single record (forms.manage.<scope> for its form's scope — same
+// gate as the list route above)
 router.get('/form-records/:id', (req, res) => {
-  const row = queryOne<FormRecord & { form_name: string }>(
-    `SELECT fr.*, fd.name AS form_name, u.full_name AS created_by_name
+  const row = queryOne<FormRecord & { form_name: string; scope: FormScope | null }>(
+    `SELECT fr.*, fd.name AS form_name, fd.scope AS scope, u.full_name AS created_by_name
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
      LEFT JOIN users u ON u.id = fr.created_by
@@ -269,10 +278,16 @@ router.get('/form-records/:id', (req, res) => {
     Number(req.params.id)
   );
   if (!row) { res.status(404).json({ error: 'Record not found' }); return; }
+  if (!canManageScope(req, res, row.scope)) return;
   res.json({ ...row, data: parseData(row.data as string) });
 });
 
-// POST /api/form-records — create a record
+// POST /api/form-records — create a record. Two allowed paths: (a) forms.manage.<scope> staff
+// creating any record in their section, any status — the desktop Data Forms flow; or (b) ANY
+// logged-in user self-filing one of the ~12 whitelisted HR request forms (REQUEST_SLUGS, same
+// list GET /me/request-types exposes) — the mobile self-service flow. Path (b) always forces
+// status to 'pending' server-side, ignoring whatever the client sent, so a self-filer can't
+// create an already-'approved'/'completed' record and skip the real approval workflow.
 router.post('/form-records', (req, res) => {
   const input = parseBody(createFormRecordSchema, req.body);
   const form = queryOne<FormDefinition>(
@@ -280,6 +295,16 @@ router.post('/form-records', (req, res) => {
     input.form_def_id
   );
   if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
+
+  const canManage = form.scope
+    ? req.user!.permissions.includes(`forms.manage.${form.scope}` as Permission)
+    : FORM_SCOPES.every((s) => req.user!.permissions.includes(`forms.manage.${s}` as Permission));
+  const selfFile = !canManage && REQUEST_SLUGS.includes(form.slug);
+  if (!canManage && !selfFile) {
+    res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+    return;
+  }
+  const status = selfFile ? 'pending' : input.status;
 
   db.exec('BEGIN');
   try {
@@ -290,7 +315,7 @@ router.post('/form-records', (req, res) => {
       input.form_def_id,
       number,
       JSON.stringify(input.data),
-      input.status,
+      status,
       req.user!.id
     );
     db.exec('COMMIT');
@@ -301,14 +326,17 @@ router.post('/form-records', (req, res) => {
   }
 });
 
-// PUT /api/form-records/:id — update data / status
+// PUT /api/form-records/:id — update data / status (forms.manage.<scope> for the record's
+// form — the desktop Data Forms edit flow; mobile self-filers never PUT here, they only POST
+// to create and use the separate, ownership-checked POST /me/requests/:id/cancel to withdraw).
 router.put('/form-records/:id', (req, res) => {
   const id = Number(req.params.id);
-  const existing = queryOne<FormRecord & { slug: string }>(
-    `SELECT fr.*, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+  const existing = queryOne<FormRecord & { slug: string; scope: FormScope | null }>(
+    `SELECT fr.*, fd.slug, fd.scope AS scope FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     id
   );
   if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
+  if (!canManageScope(req, res, existing.scope)) return;
   const input = parseBody(updateFormRecordSchema, req.body);
   // A payslip marked Paid (src/routes/hr.routes.ts's mark-paid) is locked against the generic
   // edit path — unmark it first. Also block setting status to 'paid' through here directly;
@@ -330,14 +358,15 @@ router.put('/form-records/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /api/form-records/:id
+// DELETE /api/form-records/:id (forms.manage.<scope> for the record's form — same gate as PUT)
 router.delete('/form-records/:id', (req, res) => {
   const id = Number(req.params.id);
-  const existing = queryOne<{ id: number; status: string; slug: string }>(
-    `SELECT fr.id, fr.status, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+  const existing = queryOne<{ id: number; status: string; slug: string; scope: FormScope | null }>(
+    `SELECT fr.id, fr.status, fd.slug, fd.scope AS scope FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     id
   );
   if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
+  if (!canManageScope(req, res, existing.scope)) return;
   if (existing.slug === 'hr_payroll' && existing.status === 'paid') {
     res.status(423).json({ error: 'This payslip is marked Paid — unmark it first to delete.' }); return;
   }

@@ -73,6 +73,27 @@ async function renderFormView(view, formId, initialPeriod) {
   try { formDef = await API.get('/form-definitions/' + formId); }
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }
 
+  // Browsing a section's records needs the same forms.manage.<scope> permission as managing
+  // them — there's no separate view-only tier for this system (mirrors the server-side gate in
+  // form-builder.routes.ts's canManageScope). Checked client-side too so a user without access
+  // gets a clean message instead of a raw 403 from the records fetch below.
+  const canBrowse = formDef.scope
+    ? App.hasPermission('forms.manage.' + formDef.scope)
+    : ['hr', 'inventory', 'admin', 'accounting'].every((s) => App.hasPermission('forms.manage.' + s));
+  if (!canBrowse) {
+    view.innerHTML = `<div class="topbar">
+        <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} All Forms</button>
+        <h2 style="margin-left:10px">${UI.esc(formDef.name)}</h2>
+      </div>
+      <div class="panel">${UI.emptyState({
+        icon: 'key',
+        title: 'No access to this form’s records',
+        hint: 'Filed one yourself? Open Requests in the mobile app to see your own submissions and their status.',
+      })}</div>`;
+    view.querySelector('#fr-back').onclick = () => App.navigate('form-records');
+    return;
+  }
+
   const isPayroll = formDef.slug === 'hr_payroll';
   const canManagePayroll = isPayroll && App.hasPermission('hr.manage');
   // Any other form with a linked print template gets the same "Print All"/"Print selected"

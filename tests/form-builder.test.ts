@@ -306,9 +306,12 @@ describe('form records', () => {
   let recordId: number;
 
   beforeAll(async () => {
-    // Create a fresh form for record tests.
+    // Create a fresh form for record tests, scoped to 'inventory' so empToken (warehouse role,
+    // forms.manage.inventory) legitimately manages its records below — record CRUD requires the
+    // same forms.manage.<scope> permission as managing the definition itself (no separate
+    // view-only tier), so the test identity needs a matching scope, not just "any logged-in user".
     const res = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send({
-      name: 'Expense Report', slug: 'expense_report', number_prefix: 'ER', icon: 'file',
+      name: 'Expense Report', slug: 'expense_report', number_prefix: 'ER', icon: 'file', scope: 'inventory',
       fields: [
         { key: 'amount', label: 'Amount', type: 'number', required: true, options: [], default: '' },
         { key: 'description', label: 'Description', type: 'text', required: false, options: [], default: '' },
@@ -317,7 +320,18 @@ describe('form records', () => {
     formId = res.body.id;
   });
 
-  it('any user can create a record', async () => {
+  it('a user without forms.manage.<scope> for the record cannot create, read, update, or delete it', async () => {
+    // marketing holds none of the four forms.manage.* permissions (see the global-variables
+    // describe block below) and expense_report isn't a self-fileable request form.
+    const marketing = (await createEmployee(ctx.api, adminToken, { role: 'marketing' })).token;
+    expect((await ctx.api.post('/api/form-records').set(hdr(marketing))
+      .send({ form_def_id: formId, data: { amount: 1 } })).status).toBe(403);
+    // Use the real employee record (created below by empToken) to check read/write 403s once it
+    // exists; here just confirm listing this inventory-scoped form's records 403s too.
+    expect((await ctx.api.get('/api/form-definitions/' + formId + '/records').set(hdr(marketing))).status).toBe(403);
+  });
+
+  it('a forms.manage.inventory holder can create a record', async () => {
     const res = await ctx.api.post('/api/form-records').set(hdr(empToken)).send({
       form_def_id: formId,
       data: { amount: 500, description: 'Office supplies' },
@@ -357,6 +371,14 @@ describe('form records', () => {
     expect(res.body.form_name).toBe('Expense Report');
   });
 
+  it('a scope-mismatched user 403s reading, updating, or deleting this specific record', async () => {
+    const marketing = (await createEmployee(ctx.api, adminToken, { role: 'marketing' })).token;
+    expect((await ctx.api.get('/api/form-records/' + recordId).set(hdr(marketing))).status).toBe(403);
+    expect((await ctx.api.put('/api/form-records/' + recordId).set(hdr(marketing))
+      .send({ data: { amount: 999 } })).status).toBe(403);
+    expect((await ctx.api.delete('/api/form-records/' + recordId).set(hdr(marketing))).status).toBe(403);
+  });
+
   it('can update a record (data + status)', async () => {
     const res = await ctx.api.put('/api/form-records/' + recordId).set(hdr(empToken))
       .send({ data: { amount: 750, description: 'Updated' }, status: 'approved' });
@@ -384,6 +406,25 @@ describe('form records', () => {
     expect(r.status).toBe(201);
     await ctx.api.delete('/api/form-definitions/' + formId).set(hdr(adminToken));
     expect((await ctx.api.get('/api/form-records/' + r.body.id).set(hdr(empToken))).status).toBe(404);
+  });
+
+  it('self-filing a REQUEST_SLUGS form (e.g. leave_request) works for anyone, forced to status=pending, regardless of scope permissions', async () => {
+    // sampleForm ('Leave Request', slug leave_request) was created earlier with no scope — a
+    // marketing-role user holds none of the four forms.manage.* and couldn't manage it, but
+    // self-filing bypasses the scope gate entirely for the ~12 whitelisted HR request slugs.
+    const marketing = (await createEmployee(ctx.api, adminToken, { role: 'marketing' })).token;
+    const leaveFormId = (await ctx.api.get('/api/form-definitions').set(hdr(adminToken)))
+      .body.find((f: { slug: string }) => f.slug === 'leave_request').id;
+    const res = await ctx.api.post('/api/form-records').set(hdr(marketing)).send({
+      form_def_id: leaveFormId,
+      data: { reason: 'Trip', days: 2 },
+      status: 'approved', // a self-filer trying to skip the workflow — must be ignored
+    });
+    expect(res.status).toBe(201);
+    // Reading it back needs a manager token (marketing still can't browse the General scope);
+    // confirm the forced status via the admin view instead of trusting the create response.
+    const detail = await ctx.api.get('/api/form-records/' + res.body.id).set(hdr(adminToken));
+    expect(detail.body.status).toBe('pending');
   });
 });
 
@@ -503,9 +544,11 @@ describe('hr payroll csv import', () => {
     expect(res.status).toBe(201);
     expect(res.body.created).toBe(1);
 
+    // empToken (warehouse, forms.manage.inventory) can't browse hr_payroll's records — that
+    // needs forms.manage.hr, same as managing the form itself.
     const records = await ctx.api
       .get(`/api/form-definitions/${payrollFormId}/records`)
-      .set(hdr(empToken));
+      .set(hdr(adminToken));
     expect(records.body).toHaveLength(1);
     expect(records.body[0].data.employee_name).toBe('Dela Cruz, Juan');
     expect(records.body[0].data.dept_position).toBe('WAREHOUSE');
