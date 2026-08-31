@@ -15,6 +15,7 @@ import {
   setUnitIdentifierSchema,
 } from '../validation';
 import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory-stock';
+import { postJobOrderMovement, jobOrderWipBalance } from '../accounting-autopost';
 import { checklistForProduct } from './qc.routes';
 import type { JobOrder, JobOrderComponent, JobOrderUnit, InventoryItem } from '../types';
 
@@ -23,6 +24,38 @@ router.use(requireAuth);
 
 const readGate = requirePermission('inventory.view');
 const writeGate = requirePermission('inventory.adjust');
+
+const today = (): string => new Date().toISOString().slice(0, 10);
+const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+
+/** Standard-cost value of a job order's components: `released` = Σ qty_planned × unit_cost
+ *  (the whole reservation, removed from stock at release); `perUnit` = Σ qty_per_unit ×
+ *  unit_cost (one finished unit's material cost). Reads `inventory_items.unit_cost` live. */
+function componentCostFor(joId: number): { released: number; perUnit: number } {
+  let released = 0, perUnit = 0;
+  for (const c of queryAll<{ qty_planned: number; qty_per_unit: number; cost: number }>(
+    `SELECT c.qty_planned, c.qty_per_unit, COALESCE(i.unit_cost, 0) AS cost
+     FROM job_order_components c LEFT JOIN inventory_items i ON i.id = c.component_item_id
+     WHERE c.job_order_id = ?`, joId
+  )) {
+    released += (c.qty_planned || 0) * (c.cost || 0);
+    perUnit += (c.qty_per_unit || 0) * (c.cost || 0);
+  }
+  return { released: r2(released), perUnit: r2(perUnit) };
+}
+
+/** After a job order reaches a terminal state, flush its residual WIP balance: the value
+ *  of unconsumed components physically returned to stock goes back to Inventory, the rest
+ *  (materials consumed by scrapped units + rounding) to Manufacturing Variance. Best-effort
+ *  — no-op if the ledger is off, the job order isn't terminal, or WIP is already flat. */
+function settleJobOrderGl(joId: number, userId: number | null): void {
+  const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', joId);
+  if (!jo || (jo.status !== 'completed' && jo.status !== 'cancelled')) return;
+  const bal = jobOrderWipBalance(joId);
+  if (Math.abs(bal) < 0.005) return;
+  const scrap = r2((jo.qty_scrapped || 0) * componentCostFor(joId).perUnit);
+  postJobOrderMovement(joId, jo.number, today(), 'settle', bal, userId, r2(bal - scrap));
+}
 
 function loadJobOrder(id: number): JobOrder | null {
   const jo = queryOne<JobOrder>(
@@ -319,6 +352,8 @@ router.post('/:id/release', writeGate, (req, res) => {
     db.exec('ROLLBACK');
     throw e;
   }
+  // GL: raw materials leave Inventory into Work in Process (best-effort).
+  postJobOrderMovement(id, jo.number, today(), 'release', componentCostFor(id).released, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
@@ -399,6 +434,13 @@ router.post('/:id/progress', writeGate, (req, res) => {
     db.exec('ROLLBACK');
     throw e;
   }
+  // GL: units that landed in stock this call relieve WIP into finished goods; then settle
+  // if the job order just closed out (both best-effort). QC-gated units post on QC pass.
+  const producedNow = jo.qc_stages > 0 ? 0 : done_delta;
+  if (producedNow > 0) {
+    postJobOrderMovement(id, jo.number, today(), 'produce', r2(producedNow * componentCostFor(id).perUnit), req.user!.id);
+  }
+  settleJobOrderGl(id, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
@@ -468,6 +510,7 @@ router.post('/:id/cancel', writeGate, (req, res) => {
     db.exec('ROLLBACK');
     throw e;
   }
+  settleJobOrderGl(id, req.user!.id);   // GL: flush any WIP back to Inventory / Variance
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
@@ -492,6 +535,7 @@ router.post('/:id/close', writeGate, (req, res) => {
     db.exec('ROLLBACK');
     throw e;
   }
+  settleJobOrderGl(id, req.user!.id);   // GL: flush any WIP back to Inventory / Variance
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
@@ -662,6 +706,12 @@ router.post('/:id/units/inspect', writeGate, (req, res) => {
     db.exec('ROLLBACK');
     throw e;
   }
+  // GL: units that passed final QC into stock this call relieve WIP; settle if now closed.
+  const finishedNow = (queryOne<{ n: number }>('SELECT qty_done AS n FROM job_orders WHERE id = ?', id)?.n ?? 0) - jo.qty_done;
+  if (finishedNow > 0) {
+    postJobOrderMovement(id, jo.number, today(), 'produce', r2(finishedNow * componentCostFor(id).perUnit), req.user!.id);
+  }
+  settleJobOrderGl(id, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 

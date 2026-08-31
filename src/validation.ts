@@ -136,6 +136,7 @@ export const createItemSchema = z.object({
   quantity: intCoerce.default(0),
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).default(0),
+  unit_cost: z.coerce.number().min(0).default(0), // standard cost — values raw materials / finished goods in the GL
   location: optionalText,
   notes: optionalText,
   attributes: attributesSchema,
@@ -149,6 +150,7 @@ export const updateItemSchema = z.object({
   supplier_id: optionalId,
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).optional(),
+  unit_cost: z.coerce.number().min(0).optional(),
   location: optionalText,
   notes: optionalText,
   attributes: attributesSchema,
@@ -641,6 +643,9 @@ export const postingRulesSchema = z.object({
   withholding_tax_payable_account_id: optionalId,
   net_pay_payable_account_id: optionalId,
   employee_advance_account_id: optionalId,
+  inventory_asset_account_id: optionalId,
+  wip_account_id: optionalId,
+  mfg_variance_account_id: optionalId,
 });
 
 export const matchToleranceSchema = z.object({

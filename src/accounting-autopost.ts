@@ -9,7 +9,8 @@
  */
 import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } from './db';
 import {
-  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry, POSTING_RULE_KEYS,
+  buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
+  buildJobOrderEntry, POSTING_RULE_KEYS,
   type PostingRules, type PostableDoc, type BuiltEntry, type PayrollDoc,
 } from './accounting-posting';
 import { round2 } from './ledger';
@@ -58,6 +59,9 @@ export function seedPostingRulesFromCoa(): PostingRules {
     ['payroll_expense_account_id', '6100'],
     ['payroll_er_contrib_account_id', '6110'],
     ['employee_advance_account_id', '1190'],
+    ['inventory_asset_account_id', '1150'],
+    ['wip_account_id', '1152'],
+    ['mfg_variance_account_id', '5150'],
   ];
   let touched = false;
   for (const [key, code] of wants) {
@@ -304,6 +308,49 @@ export function maybeAutoPostCreditNote(noteId: number, userId: number | null): 
     return { posted: true, entry };
   } catch (e) {
     console.warn(`[gl] auto-post credit note ${noteId} failed: ${(e as Error).message}`);
+    return { posted: false, error: (e as Error).message };
+  }
+}
+
+/* ------------------------------------------------------ manufacturing / job orders --- */
+
+/** The current WIP debit balance a job order still carries in the GL (Σ its posted
+ *  DR WIP − CR WIP). Drives the `settle` true-up at close. 0 when the ledger is off or
+ *  nothing was posted for this job order. */
+export function jobOrderWipBalance(joId: number): number {
+  const wip = getPostingRules().wip_account_id;
+  if (!wip) return 0;
+  const r = queryOne<{ bal: number }>(
+    `SELECT COALESCE(SUM(jl.debit) - SUM(jl.credit), 0) AS bal
+     FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+     WHERE je.status = 'posted' AND je.source_type = 'job_order' AND je.source_id = ? AND jl.account_id = ?`,
+    joId, wip
+  );
+  return round2(r?.bal ?? 0);
+}
+
+/** Post one job-order cost movement (release / produce / settle) straight as a posted
+ *  entry. Unlike the sale / bill hooks a job order posts many entries under one source_id,
+ *  so this never checks `postedEntryForSource`. Best-effort — never throws. */
+export function postJobOrderMovement(
+  joId: number, joNumber: string, date: string,
+  kind: 'release' | 'produce' | 'settle',
+  amount: number, userId: number | null, returnAmount = 0
+): AutoPostOutcome {
+  try {
+    if (!ledgerEnabled()) return { posted: false, skipped: 'ledger_off' };
+    if (periodClosedOn(date)) return { posted: false, skipped: 'period_closed' };
+    if (kind === 'settle' ? Math.abs(round2(amount)) < 0.005 : round2(amount) <= 0) {
+      return { posted: false, skipped: 'nothing_to_post' };
+    }
+    const built = buildJobOrderEntry(
+      { number: joNumber, date, kind, amount, return_amount: returnAmount }, getPostingRules(), joId
+    );
+    if (!built.ok) return { posted: false, error: built.error };
+    const entry = writePosted(built.entry, userId);
+    return { posted: true, entry };
+  } catch (e) {
+    console.warn(`[gl] job order ${joId} ${kind} post failed: ${(e as Error).message}`);
     return { posted: false, error: (e as Error).message };
   }
 }

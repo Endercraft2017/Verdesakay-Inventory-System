@@ -26,6 +26,9 @@ export interface PostingRules {
   withholding_tax_payable_account_id?: number | null; // Withholding Tax Payable — Compensation (credit)
   net_pay_payable_account_id?: number | null;      // Net Pay Payable (credit)
   employee_advance_account_id?: number | null;     // Advances to Employees (credit — cash-advance recovery)
+  inventory_asset_account_id?: number | null;      // Inventory (raw materials + finished goods)
+  wip_account_id?: number | null;                  // Work in Process (job-order materials in production)
+  mfg_variance_account_id?: number | null;         // Manufacturing Variance & Scrap (job-order WIP true-up)
 }
 
 export const POSTING_RULE_KEYS: (keyof PostingRules)[] = [
@@ -35,6 +38,7 @@ export const POSTING_RULE_KEYS: (keyof PostingRules)[] = [
   'payroll_expense_account_id', 'payroll_er_contrib_account_id', 'sss_payable_account_id',
   'philhealth_payable_account_id', 'pagibig_payable_account_id', 'withholding_tax_payable_account_id',
   'net_pay_payable_account_id', 'employee_advance_account_id',
+  'inventory_asset_account_id', 'wip_account_id', 'mfg_variance_account_id',
 ];
 
 /** The document shape the builders need — the same fields sale orders and vendor bills share. */
@@ -50,11 +54,11 @@ export interface PostableDoc {
 }
 
 export interface BuiltEntry {
-  book: 'sales' | 'purchase' | 'cash_receipts' | 'cash_disbursements' | 'payroll';
+  book: 'general' | 'sales' | 'purchase' | 'cash_receipts' | 'cash_disbursements' | 'payroll';
   entry_date: string;
   memo: string;
   reference: string;
-  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note' | 'payroll_run';
+  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note' | 'payroll_run' | 'job_order';
   source_id: number;
   lines: JournalLineInput[];
 }
@@ -334,6 +338,77 @@ export function buildPayrollEntry(doc: PayrollDoc, rules: PostingRules, sourceId
       memo: `Payroll ${doc.number}`,
       reference: doc.number,
       source_type: 'payroll_run',
+      source_id: sourceId,
+      lines,
+    },
+  };
+}
+
+/** One movement of a manufacturing job order's cost between Inventory and Work in Process.
+ *  A job order posts several of these under the same `source_id`:
+ *   - `release`  — raw materials leave stock into production: DR WIP / CR Inventory.
+ *   - `produce`  — finished units enter stock: DR Inventory / CR WIP (at standard cost:
+ *                  Σ component qty_per_unit × unit_cost).
+ *   - `settle`   — the job order closes: whatever WIP balance is left is split back to
+ *                  Inventory (unconsumed components physically returned) and Manufacturing
+ *                  Variance & Scrap (components consumed by scrapped units + rounding),
+ *                  zeroing the job order's WIP. `amount` is the residual WIP debit balance
+ *                  (may be negative if over-relieved); `return_amount` is the Inventory
+ *                  portion. */
+export interface JobOrderMoveDoc {
+  number: string;   // MO-xxxxx
+  date: string;
+  kind: 'release' | 'produce' | 'settle';
+  amount: number;
+  return_amount?: number;   // settle only
+}
+
+export function buildJobOrderEntry(doc: JobOrderMoveDoc, rules: PostingRules, sourceId: number): BuildResult {
+  const inv = rules.inventory_asset_account_id;
+  const wip = rules.wip_account_id;
+  const gap = missing(rules, ['inventory_asset_account_id', 'wip_account_id']);
+  if (gap) return { ok: false, error: gap };
+
+  const lines: JournalLineInput[] = [];
+  let memo: string;
+
+  if (doc.kind === 'release') {
+    const amt = round2(doc.amount || 0);
+    if (amt <= 0) return { ok: false, error: `${doc.number}: nothing to release into production.` };
+    lines.push({ account_id: wip!, debit: amt, credit: 0 });
+    lines.push({ account_id: inv!, debit: 0, credit: amt });
+    memo = `${doc.number}: materials released to production`;
+  } else if (doc.kind === 'produce') {
+    const amt = round2(doc.amount || 0);
+    if (amt <= 0) return { ok: false, error: `${doc.number}: nothing produced to post.` };
+    lines.push({ account_id: inv!, debit: amt, credit: 0 });
+    lines.push({ account_id: wip!, debit: 0, credit: amt });
+    memo = `${doc.number}: finished goods from WIP`;
+  } else {
+    const bal = round2(doc.amount || 0);            // residual WIP debit balance
+    if (Math.abs(bal) < 0.005) return { ok: false, error: `${doc.number}: WIP is already settled.` };
+    const ret = round2(doc.return_amount || 0);
+    const variance = round2(bal - ret);
+    if (variance !== 0 && !rules.mfg_variance_account_id) {
+      return { ok: false, error: missing(rules, ['mfg_variance_account_id'])! };
+    }
+    if (ret > 0) lines.push({ account_id: inv!, debit: ret, credit: 0 });
+    else if (ret < 0) lines.push({ account_id: inv!, debit: 0, credit: -ret });
+    if (variance > 0) lines.push({ account_id: rules.mfg_variance_account_id!, debit: variance, credit: 0 });
+    else if (variance < 0) lines.push({ account_id: rules.mfg_variance_account_id!, debit: 0, credit: -variance });
+    if (bal > 0) lines.push({ account_id: wip!, debit: 0, credit: bal });
+    else lines.push({ account_id: wip!, debit: -bal, credit: 0 });
+    memo = `${doc.number}: job order closed — WIP settled`;
+  }
+
+  return {
+    ok: true,
+    entry: {
+      book: 'general',
+      entry_date: doc.date,
+      memo,
+      reference: doc.number,
+      source_type: 'job_order',
       source_id: sourceId,
       lines,
     },

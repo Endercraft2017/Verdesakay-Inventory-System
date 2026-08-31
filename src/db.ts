@@ -16,6 +16,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
 import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from './ph-statutory';
+import { DEFAULT_COA } from './ledger';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -54,7 +55,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1367,6 +1368,37 @@ function migrate(): void {
   const vbiCols = db.prepare('PRAGMA table_info(vendor_bill_items)').all() as { name: string }[];
   if (!vbiCols.some((c) => c.name === 'tax_code_id')) {
     db.exec('ALTER TABLE vendor_bill_items ADD COLUMN tax_code_id INTEGER REFERENCES tax_codes(id) ON DELETE SET NULL');
+  }
+
+  // A standard unit cost per item — used to value raw materials into Work in Process and
+  // finished goods out of it when a job order is posted to the GL (ACCOUNTING-SYSTEM-PLAN
+  // Phase 3b). Editable on the item form; 0 until set. (SCHEMA_VERSION 12)
+  const invCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (!invCols.some((c) => c.name === 'unit_cost')) {
+    db.exec('ALTER TABLE inventory_items ADD COLUMN unit_cost REAL NOT NULL DEFAULT 0');
+  }
+
+  // Backfill chart-of-accounts entries added to DEFAULT_COA after a tenant already ran
+  // ledger/setup (e.g. Work in Process / Manufacturing Variance for Phase 3b). New codes
+  // only — never touches an existing account. No-op when the ledger isn't set up yet.
+  const haveAccounts = (db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number }).n;
+  if (haveAccounts > 0) {
+    const idByCode = new Map<string, number>();
+    for (const a of db.prepare('SELECT id, code FROM accounts').all() as { id: number; code: string }[]) {
+      idByCode.set(a.code, a.id);
+    }
+    const baseCcy = (db.prepare("SELECT value FROM settings WHERE key = 'accounting_ledger'").get() as { value: string } | undefined);
+    let ccy = 'PHP';
+    try { ccy = baseCcy ? (JSON.parse(baseCcy.value).base_currency || 'PHP') : 'PHP'; } catch { /* keep PHP */ }
+    for (const a of DEFAULT_COA) {
+      if (idByCode.has(a.code)) continue;
+      const info = db.prepare(
+        `INSERT INTO accounts (code, name, root_type, account_type, parent_id, is_group, currency)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(a.code, a.name, a.root_type, a.account_type ?? null,
+        a.parent ? idByCode.get(a.parent) ?? null : null, a.is_group ? 1 : 0, ccy);
+      idByCode.set(a.code, Number(info.lastInsertRowid));
+    }
   }
 
   // Carry a pre-existing single checklist (settings key `qc_checklist`) into a named row.

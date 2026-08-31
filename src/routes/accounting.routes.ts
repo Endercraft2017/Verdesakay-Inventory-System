@@ -784,6 +784,9 @@ const POSTING_RULE_ROOT: Record<keyof PostingRules, AccountRootType> = {
   withholding_tax_payable_account_id: 'liability',
   net_pay_payable_account_id: 'liability',
   employee_advance_account_id: 'asset',
+  inventory_asset_account_id: 'asset',
+  wip_account_id: 'asset',
+  mfg_variance_account_id: 'expense',
 };
 
 function postingRulesPayload() {

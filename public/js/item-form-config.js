@@ -66,7 +66,7 @@ const ITEM_FORM_SECTIONS = [
 /** The nine columns that exist on inventory_items (everything else ⇒ attributes). */
 const ITEM_CORE_KEYS = [
   'name', 'sku', 'category', 'department_id', 'supplier_id',
-  'quantity', 'unit', 'min_quantity', 'location', 'notes',
+  'quantity', 'unit', 'min_quantity', 'unit_cost', 'location', 'notes',
 ];
 
 const USE_NOUSE = ['Use', 'Do Not Use'];
@@ -90,6 +90,7 @@ const ITEM_FORM_DEFAULTS = [
   { key: 'purchase_price', label: 'Purchase Price', tab: 'default', section: 'pricing', type: 'money', visible: true, required: false, placeholder: 'Purchase Price', help: 'Default price you pay to buy this item.' },
   { key: 'purchase_price_tax_incl', label: 'Purchase Price — Tax Included', tab: 'default', section: 'tax', type: 'checkbox', default: false, visible: false, required: false, help: 'Tick if the purchase price already includes tax.' },
   { key: 'sale_price', label: 'Sale Price', tab: 'default', section: 'pricing', type: 'money', visible: true, required: false, placeholder: 'Sale Price', help: 'Default price you sell this item for. Prefills the price when this item is added to an order.' },
+  { key: 'unit_cost', label: 'Standard Cost', tab: 'default', section: 'pricing', type: 'money', core: true, default: 0, visible: true, required: false, placeholder: 'Standard Cost', help: 'Standard unit cost used to value this item as a raw material into Work in Process and as finished goods out of it when a job order posts to the general ledger (Accounting → Books). 0 until set.' },
   { key: 'sale_price_tax_incl', label: 'Sale Price — Tax Included', tab: 'default', section: 'tax', type: 'checkbox', default: false, visible: false, required: false, help: 'Tick if the sale price already includes tax.' },
   { key: 'quantity', label: 'Inventory Qty', tab: 'default', section: 'stock', type: 'number', core: true, default: 0, visible: true, required: false, help: 'Starting stock quantity recorded when the item is first created. Later changes go through Stock In/Out.' },
 

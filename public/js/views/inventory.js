@@ -68,6 +68,7 @@ function itemFieldValue(def, it) {
     if (def.key === 'department_id') return it.department_id ?? '';
     if (def.key === 'quantity') return it.quantity ?? 0;
     if (def.key === 'min_quantity') return it.min_quantity ?? 0;
+    if (def.key === 'unit_cost') return it.unit_cost ?? 0;
     return it[def.key] ?? '';
   }
   const attrs = (it.attributes && typeof it.attributes === 'object') ? it.attributes : {};

@@ -115,6 +115,7 @@ export const DEFAULT_COA: SeedAccount[] = [
   { code: '1130', name: 'Petty Cash Fund', root_type: 'asset', account_type: 'cash', parent: '1100' },
   { code: '1140', name: 'Accounts Receivable', root_type: 'asset', account_type: 'receivable', parent: '1100' },
   { code: '1150', name: 'Inventory', root_type: 'asset', account_type: 'stock', parent: '1100' },
+  { code: '1152', name: 'Work in Process', root_type: 'asset', account_type: 'stock', parent: '1100' },
   { code: '1160', name: 'Input VAT', root_type: 'asset', account_type: 'tax', parent: '1100' },
   { code: '1170', name: 'Creditable Withholding Tax', root_type: 'asset', account_type: 'tax', parent: '1100' },
   { code: '1180', name: 'Prepaid Expenses', root_type: 'asset', parent: '1100' },
@@ -155,6 +156,7 @@ export const DEFAULT_COA: SeedAccount[] = [
   // ---- Cost of Sales ----
   { code: '5000', name: 'Cost of Sales', root_type: 'expense', is_group: true },
   { code: '5100', name: 'Cost of Goods Sold', root_type: 'expense', account_type: 'cogs', parent: '5000' },
+  { code: '5150', name: 'Manufacturing Variance & Scrap', root_type: 'expense', account_type: 'cogs', parent: '5000' },
   { code: '5200', name: 'Freight In', root_type: 'expense', account_type: 'cogs', parent: '5000' },
 
   // ---- Operating Expenses ----

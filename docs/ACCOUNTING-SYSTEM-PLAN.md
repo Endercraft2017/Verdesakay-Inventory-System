@@ -23,8 +23,11 @@
 > **Phase 3a (2026-08-31)** posts the **Payroll Journal** — one aggregate entry per
 > cutoff via an explicit "Post to GL" action (not an implicit per-regenerate hook, unlike
 > sales/purchase — see §5), plus payslip locking (`mark-paid`) and payslip email as
-> companion fixes. Phase 3b (inventory/COGS/WIP into the GL), Phase 4–5 (financial-
-> statement polish, CAS export) are the roadmap. **Phase 2 is complete** — its last tail,
+> companion fixes. **Phase 3b (2026-08-31)** posts **manufacturing WIP** — a job order
+> moves its material cost DR WIP / CR Inventory at release, DR Inventory / CR WIP as units
+> finish, with a scrap/variance true-up at close (`inventory_items.unit_cost` standard
+> cost). Purchase-side perpetual inventory + COGS-on-sale are the remaining 3b work; Phase
+> 4–5 (financial-statement polish, CAS export) are the roadmap. **Phase 2 is complete** — its last tail,
 > **per-line tax codes** for mixed-rate documents (2026-08-31), lets the BIR journals /
 > SLSP / 2550M-Q classify a sale or bill line by line.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
@@ -368,8 +371,31 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   balance-with-real-numbers, dropped-zero-lines, EWT-style advance-recovery leg, deliberate
   imbalance rejection) + `tests/hr.test.ts` (lock bypass, post/repost/reverse against a real
   ledger, email-when-unlinked).
-- **3b — still to do.** Perpetual **inventory / COGS** postings from goods receipts +
-  shipments + adjustments; **GR/IR clearing**. Manufacturing WIP.
+- **3b — manufacturing WIP. ✅ SHIPPED 2026-08-31.** A job order posts its material cost
+  through the GL as it moves. `inventory_items` gains **`unit_cost`** (SCHEMA_VERSION 12,
+  a standard cost, editable on the item form) and the default COA gains **Work in Process**
+  (code 1152, asset) + **Manufacturing Variance & Scrap** (5150, expense); 3 posting-rule
+  legs — `inventory_asset_account_id` (1150), `wip_account_id` (1152),
+  `mfg_variance_account_id` (5150) — seeded by `seedPostingRulesFromCoa()`, and a migrate
+  step backfills those two accounts into a chart that was already set up. On **release**,
+  the reservation value (Σ component `qty_planned × unit_cost`) posts **DR Work in Process /
+  CR Inventory**; as finished units land in stock (progress, or per QC pass) their standard
+  material cost (Σ component `qty_per_unit × unit_cost`) posts **DR Inventory / CR WIP**;
+  when the job order reaches a terminal state (complete / close / cancel) `settleJobOrderGl`
+  flushes the residual WIP balance — unconsumed components physically returned to stock go
+  back to Inventory, materials consumed by scrapped units + rounding go to Manufacturing
+  Variance — zeroing the job order's WIP. Pure `buildJobOrderEntry(kind)` in
+  `accounting-posting.ts` (`release` / `produce` / `settle`, book `general`, `source_type`
+  `job_order` — many entries per source, so posted directly, not via `autoPost`);
+  `postJobOrderMovement` + `jobOrderWipBalance` in `accounting-autopost.ts`; hooks in
+  `job-orders.routes.ts` (all best-effort, after the stock transaction commits). Cost basis
+  is **standard cost** from `unit_cost` at posting time — no moving-average valuation layer
+  yet. `tests/accounting-posting.test.ts` ("buildJobOrderEntry") + `tests/job-orders.test.ts`
+  ("manufacturing WIP in the GL").
+- **3b — still to do.** Perpetual inventory on the **purchase side** (goods receipt →
+  DR Inventory / CR GR-IR clearing; goods vendor bill clears GR-IR instead of expensing)
+  and **COGS on sale** — the latter needs a sale → stock-decrement hook first (sale orders
+  don't touch stock today). Moving-average valuation.
 
 **Phase 4 — statements, close, assets, bank rec.** PFRS-for-SMEs **BS / IS / cash flow /
 equity**; **period-end close** (accruals, prepaid amortization, depreciation run,
@@ -570,7 +596,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Frappe Books | Verdesakay | Status |
 |---|---|---|
 | `Location` (warehouse) | `locations` | ✅ |
-| `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` | ✅ (needs a valuation layer for COGS — Phase 3) |
+| `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` (+ `inventory_items.unit_cost` standard cost, Phase 3b) | ✅ — job orders post WIP to the GL at standard cost; purchase-side perpetual inventory + moving-average valuation still ⬜ (Phase 3b) |
 | `StockMovement` / `StockTransfer` (+ items) | adjust / transfer endpoints | ✅ |
 | `PurchaseReceipt` (+ items) | `goods_receipts` | ✅ |
 | `Shipment` (+ items) — delivery note | finished-unit allocation | 🟡 |

@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
+  buildJobOrderEntry,
   type PostingRules, type PayrollDoc,
 } from '../src/accounting-posting';
 
@@ -12,6 +13,7 @@ const RULES: PostingRules = {
   payroll_expense_account_id: 61, payroll_er_contrib_account_id: 62, sss_payable_account_id: 71,
   philhealth_payable_account_id: 72, pagibig_payable_account_id: 73, withholding_tax_payable_account_id: 74,
   net_pay_payable_account_id: 75, employee_advance_account_id: 19,
+  inventory_asset_account_id: 15, wip_account_id: 152, mfg_variance_account_id: 515,
 };
 
 const sum = (lines: { debit?: number; credit?: number }[], k: 'debit' | 'credit') =>
@@ -283,5 +285,56 @@ describe('buildPayrollEntry', () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error).toMatch(/doesn't balance/);
+  });
+});
+
+describe('buildJobOrderEntry', () => {
+  it('release: DR Work in Process / CR Inventory', () => {
+    const r = buildJobOrderEntry({ number: 'MO-1', date: '2026-08-31', kind: 'release', amount: 400 }, RULES, 1);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.book).toBe('general');
+    expect(r.entry.source_type).toBe('job_order');
+    expect(r.entry.lines.find((l) => l.account_id === 152)!.debit).toBe(400); // WIP
+    expect(r.entry.lines.find((l) => l.account_id === 15)!.credit).toBe(400); // Inventory
+  });
+
+  it('produce: DR Inventory / CR Work in Process', () => {
+    const r = buildJobOrderEntry({ number: 'MO-1', date: '2026-08-31', kind: 'produce', amount: 320 }, RULES, 1);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.lines.find((l) => l.account_id === 15)!.debit).toBe(320);
+    expect(r.entry.lines.find((l) => l.account_id === 152)!.credit).toBe(320);
+  });
+
+  it('settle: splits the residual WIP balance between Inventory (returned) and Variance (scrap)', () => {
+    const r = buildJobOrderEntry(
+      { number: 'MO-1', date: '2026-08-31', kind: 'settle', amount: 120, return_amount: 40 }, RULES, 1
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.lines.find((l) => l.account_id === 15)!.debit).toBe(40);   // back to Inventory
+    expect(r.entry.lines.find((l) => l.account_id === 515)!.debit).toBe(80);  // Manufacturing Variance
+    expect(r.entry.lines.find((l) => l.account_id === 152)!.credit).toBe(120); // WIP cleared
+    expect(sum(r.entry.lines, 'debit')).toBe(sum(r.entry.lines, 'credit'));
+  });
+
+  it('settle with the full balance returned to stock needs no variance account', () => {
+    const r = buildJobOrderEntry(
+      { number: 'MO-1', date: '2026-08-31', kind: 'settle', amount: 160, return_amount: 160 },
+      { ...RULES, mfg_variance_account_id: null }, 1
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.lines.find((l) => l.account_id === 15)!.debit).toBe(160);
+    expect(r.entry.lines.find((l) => l.account_id === 152)!.credit).toBe(160);
+  });
+
+  it('fails when the WIP / Inventory rules are not set', () => {
+    const r = buildJobOrderEntry(
+      { number: 'MO-1', date: '2026-08-31', kind: 'release', amount: 400 },
+      { ...RULES, wip_account_id: null }, 1
+    );
+    expect(r.ok).toBe(false);
   });
 });

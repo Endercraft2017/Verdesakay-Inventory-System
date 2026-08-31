@@ -172,3 +172,91 @@ describe('job orders', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
+  const acctBalance = async (code: string): Promise<number> => {
+    const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(authHdr())).body;
+    const row = tb.rows.find((r: { code: string }) => r.code === code);
+    return row ? Math.round((row.debit - row.credit) * 100) / 100 : 0;
+  };
+  const joEntries = async (joId: number) => {
+    const list = (await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'job_order', source_id: joId }).set(authHdr())).body;
+    const out = [];
+    for (const e of list) out.push((await ctx.api.get(`/api/accounting/ledger/journal-entries/${e.id}`).set(authHdr())).body);
+    return out;
+  };
+  /** A product: 2 bolts @ ₱5 + 3 panels @ ₱10 ⇒ ₱40 material cost per finished unit. */
+  async function costedProduct(prefix: string) {
+    const product = (await ctx.api.post('/api/inventory').set(authHdr()).send({ name: `${prefix} Product` })).body.id;
+    const bolt = (await ctx.api.post('/api/inventory').set(authHdr()).send({ name: `${prefix} Bolt`, quantity: 200, unit_cost: 5 })).body.id;
+    const panel = (await ctx.api.post('/api/inventory').set(authHdr()).send({ name: `${prefix} Panel`, quantity: 200, unit_cost: 10 })).body.id;
+    await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({
+      components: [{ component_item_id: bolt, quantity: 2 }, { component_item_id: panel, quantity: 3 }],
+    });
+    return { product, bolt, panel };
+  }
+
+  it('sets up the ledger and stores unit_cost on items', async () => {
+    const s = await ctx.api.post('/api/accounting/ledger/setup').set(authHdr()).send({ fiscal_year_start: '2026-01-01' });
+    expect(s.status).toBe(201);
+    const it = (await ctx.api.post('/api/inventory').set(authHdr()).send({ name: 'Costed Widget', unit_cost: 12.5 })).body.id;
+    expect((await ctx.api.get(`/api/inventory/${it}`).set(authHdr())).body.unit_cost).toBe(12.5);
+  });
+
+  it('release moves component cost from Inventory into Work in Process', async () => {
+    const { product } = await costedProduct('WIP-A');
+    const mo = await createMO({ product_item_id: product, qty_ordered: 10 }); // 20 bolts (₱100) + 30 panels (₱300) = ₱400
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+
+    const [entry] = await joEntries(mo.body.id);
+    const byCode = Object.fromEntries(entry.lines.map((l: { account_code: string; debit: number; credit: number }) => [l.account_code, l]));
+    expect(byCode['1152'].debit).toBe(400);  // Work in Process
+    expect(byCode['1150'].credit).toBe(400); // Inventory
+    const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(authHdr())).body;
+    expect(tb.balanced).toBe(true);
+  });
+
+  it('a fully-built job order relieves WIP into finished goods and leaves WIP flat', async () => {
+    const wipBefore = await acctBalance('1152');
+    const { product } = await costedProduct('WIP-B');
+    const mo = await createMO({ product_item_id: product, qty_ordered: 5 }); // released value ₱200
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+    const done = await ctx.api.post(`/api/job-orders/${mo.body.id}/progress`).set(authHdr())
+      .send({ done_delta: 5, scrapped_delta: 0 });
+    expect(done.body.job_order.status).toBe('completed');
+
+    const entries = await joEntries(mo.body.id);
+    const produce = entries.find((e) => /finished goods/i.test(e.memo));
+    const pByCode = Object.fromEntries(produce.lines.map((l: { account_code: string; debit: number; credit: number }) => [l.account_code, l]));
+    expect(pByCode['1150'].debit).toBe(200);  // Inventory (finished goods)
+    expect(pByCode['1152'].credit).toBe(200); // Work in Process
+    expect(await acctBalance('1152')).toBe(wipBefore); // WIP nets back to where it started
+  });
+
+  it('scrapped units settle their material cost to Manufacturing Variance', async () => {
+    const varBefore = await acctBalance('5150');
+    const { product } = await costedProduct('WIP-C');
+    const mo = await createMO({ product_item_id: product, qty_ordered: 10 }); // released ₱400, ₱40/unit
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+    const r = await ctx.api.post(`/api/job-orders/${mo.body.id}/progress`).set(authHdr())
+      .send({ done_delta: 8, scrapped_delta: 2 }); // 8 good (₱320), 2 scrapped (₱80)
+    expect(r.body.job_order.status).toBe('completed');
+
+    expect(await acctBalance('5150')).toBe(Math.round((varBefore + 80) * 100) / 100);
+    const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(authHdr())).body;
+    expect(tb.balanced).toBe(true);
+  });
+
+  it('cancelling a released job order returns the whole WIP charge to Inventory', async () => {
+    const { product } = await costedProduct('WIP-D');
+    const mo = await createMO({ product_item_id: product, qty_ordered: 4 }); // released ₱160
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/cancel`).set(authHdr());
+
+    const settle = (await joEntries(mo.body.id)).find((e) => /settled/i.test(e.memo));
+    const byCode = Object.fromEntries(settle.lines.map((l: { account_code: string; debit: number; credit: number }) => [l.account_code, l]));
+    expect(byCode['1150'].debit).toBe(160);  // back to Inventory
+    expect(byCode['1152'].credit).toBe(160); // WIP cleared
+  });
+});

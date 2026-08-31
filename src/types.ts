@@ -232,6 +232,9 @@ export interface InventoryItem {
   quantity: number;
   unit: string | null;
   min_quantity: number;
+  /** Standard unit cost — values raw materials into WIP and finished goods out of it
+   *  when a job order posts to the GL (ACCOUNTING-SYSTEM-PLAN Phase 3b). 0 until set. */
+  unit_cost: number;
   location: string | null;
   notes: string | null;
   /** Raw JSON string in the DB row; parsed to an object in API responses. */

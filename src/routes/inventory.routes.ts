@@ -505,8 +505,8 @@ router.post('/', requirePermission('inventory.create'), (req, res) => {
   try {
     const info = run(
       `INSERT INTO inventory_items
-        (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, location, notes, attributes)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
+        (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, unit_cost, location, notes, attributes)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
       input.name,
       input.sku ?? null,
       input.category ?? null,
@@ -514,6 +514,7 @@ router.post('/', requirePermission('inventory.create'), (req, res) => {
       input.supplier_id,
       input.unit ?? 'pcs',
       input.min_quantity,
+      input.unit_cost ?? 0,
       input.location ?? null,
       input.notes ?? null,
       input.attributes ? JSON.stringify(input.attributes) : null
@@ -558,7 +559,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
   run(
     `UPDATE inventory_items
      SET name = ?, sku = ?, category = ?, department_id = ?, supplier_id = ?, unit = ?, min_quantity = ?,
-         location = ?, notes = ?, attributes = ?, updated_at = datetime('now')
+         unit_cost = ?, location = ?, notes = ?, attributes = ?, updated_at = datetime('now')
      WHERE id = ?`,
     input.name ?? item.name,
     sku,
@@ -567,6 +568,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
     input.supplier_id !== undefined ? input.supplier_id : item.supplier_id,
     input.unit !== undefined ? (input.unit ?? 'pcs') : item.unit,
     input.min_quantity !== undefined ? input.min_quantity : item.min_quantity,
+    input.unit_cost !== undefined ? input.unit_cost : item.unit_cost ?? 0,
     input.location !== undefined ? input.location : item.location,
     input.notes !== undefined ? input.notes : item.notes,
     input.attributes !== undefined ? JSON.stringify(input.attributes) : (item.attributes ?? null),
