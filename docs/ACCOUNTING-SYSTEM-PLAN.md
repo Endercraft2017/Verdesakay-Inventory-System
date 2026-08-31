@@ -96,7 +96,7 @@ statements in a form the CPA can take over.
 | **1604-E** | annual alphalist of expanded withholding | by Mar 1 | AP withholding register |
 | **1702Q** / **1702-RT** (or **1701Q/1701** for sole prop) | quarterly / annual income tax | quarterly + annual | trial balance → taxable income reconciliation |
 | **0605** | payment form (registration fee, deficiency, etc.) | as needed | manual |
-| **AFS** | audited financial statements | annual, 15 days after the ITR | trial balance → the five statements |
+| **AFS** | audited financial statements | annual, 15 days after the ITR | trial balance → the five statements — **`GET /accounting/afs?year=` (Phase 4e)** returns the four primary statements comparative + a notes scaffold |
 | **Books of Accounts** | the registered books themselves | kept current; presented on audit | the GL / journals, exportable + printable |
 
 Payroll-side forms are **done**. Everything else needs a general ledger underneath it.
@@ -215,6 +215,16 @@ return worksheets can find the right balances without the user wiring anything.
 - **Books of Accounts export** for CAS presentation. ✅ **Phase 4b** — `GET /books-of-accounts`
   bundles the General Journal / General Ledger / Cash books / Sales & Purchase Journals with
   the company header; printable + per-book CSV (Accounting → Tax & Compliance → Books of Accounts).
+- **Comparative AFS pack.** ✅ **Phase 4e** — **`GET /api/accounting/afs?year=YYYY`** returns
+  all four PFRS-for-SMEs primary statements for the year **and the prior year** — statement
+  of financial position, comprehensive income, cash flows (indirect), changes in equity —
+  reusing the extracted `balanceSheetData` / `profitLossData` / `cashFlowData` /
+  `equityChangesData` helpers (the four `/ledger/reports/*` routes now call these). Plus a
+  `notes` scaffold: the standard PFRS-for-SMEs note headings for the CPA to fill in. UI:
+  Accounting → Tax & Compliance → **Financial Statements (AFS)** — year picker, comparative
+  on-screen view + a **Print** to a cover page + page-broken statements + notes. A *draft*
+  from the ledger — the app doesn't write the disclosures or audit. `tests/accounting.test.ts`
+  ("comparative AFS pack").
 - **1702Q / 1702-RT income tax worksheet.** ✅ **Phase 4d** — pure `src/ph-income-tax.ts`
   (`incomeTax1702(input)`) + **`GET /api/accounting/bir-1702?period=YYYY|YYYY-Qn`**. Book net
   income and gross income (net sales − COGS + other) are sourced from the posted ledger for

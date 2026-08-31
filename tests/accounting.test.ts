@@ -1045,6 +1045,34 @@ describe('accounting: income tax worksheet 1702Q / 1702-RT (Phase 4d)', () => {
   });
 });
 
+describe('accounting: comparative AFS pack (Phase 4e)', () => {
+  it('bundles the four statements this-year-vs-last and matches the standalone reports', async () => {
+    const r = await ctx.api.get('/api/accounting/afs?year=2026').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.year).toBe(2026);
+    expect(r.body.prior_year).toBe(2025);
+    expect(Object.keys(r.body.statements).sort()).toEqual([
+      'cash_flows', 'changes_in_equity', 'comprehensive_income', 'financial_position',
+    ]);
+    for (const s of Object.values(r.body.statements) as { current: unknown; prior: unknown }[]) {
+      expect(s.current).toBeTruthy();
+      expect(s.prior).toBeTruthy();
+    }
+    expect(Array.isArray(r.body.notes)).toBe(true);
+    expect(r.body.notes.length).toBeGreaterThan(5);
+
+    const bs = (await ctx.api.get('/api/accounting/ledger/reports/balance-sheet?as_of=2026-12-31').set(hdr())).body;
+    expect(r.body.statements.financial_position.current.total_assets).toBeCloseTo(bs.total_assets, 2);
+    const pl = (await ctx.api.get('/api/accounting/ledger/reports/profit-and-loss?from=2026-01-01&to=2026-12-31').set(hdr())).body;
+    expect(r.body.statements.comprehensive_income.current.net_income).toBeCloseTo(pl.net_income, 2);
+    expect(r.body.statements.cash_flows.current.reconciles).toBe(true);
+
+    // 2025 had no activity
+    expect(r.body.statements.financial_position.prior.total_assets).toBeCloseTo(0, 2);
+    expect(r.body.statements.comprehensive_income.prior.net_income).toBeCloseTo(0, 2);
+  });
+});
+
 // Mutates shared ledger state (closes the FY period) — keep this the LAST describe.
 describe('accounting: period-end close + retained-earnings roll-up (Phase 4c)', () => {
   const pnl = async () =>

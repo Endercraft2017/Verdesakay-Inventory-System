@@ -39,6 +39,7 @@ App.register('accounting', async (view) => {
       ['sheet', 'Receivables & Payables', 'AR / AP aging, customer receipts & supplier payments, per-party statement.', () => App.navigate('accounting-receivables')],
       ['sheet', 'Petty cash', 'Named cash funds with a running money-in / money-out register.', () => App.navigate('accounting-petty-cash')],
       ['printer', 'Books of Accounts', 'The registered set — General Journal / Ledger, Cash books, Sales / Purchase Journals — printable + CSV for BIR CAS registration.', booksOfAccountsModal],
+      ['printer', 'Financial Statements (AFS)', 'The five statements, this year vs last, notes-ready — a draft pack for the CPA.', afsModal],
     ]],
   ];
 
@@ -598,6 +599,131 @@ function boaBookHtml(bk) {
       <td class="right">${m(r.cols.gross)}</td><td class="right">${m(r.cols.vatable)}</td><td class="right">${m(r.cols.exempt)}</td><td class="right">${m(r.cols.zero_rated)}</td><td class="right">${m(r.cols.vat)}</td></tr>`).join('')
       || '<tr><td colspan="9" class="muted" style="text-align:center;padding:10px">No documents in this period.</td></tr>'}</tbody>
     <tfoot><tr><th colspan="4">Totals</th><th class="right">${m(d.totals.gross)}</th><th class="right">${m(d.totals.vatable)}</th><th class="right">${m(d.totals.exempt)}</th><th class="right">${m(d.totals.zero_rated)}</th><th class="right">${m(d.totals.vat)}</th></tr></tfoot></table>`;
+}
+
+/* ── Financial Statements (AFS) — comparative pack for the CPA ───────────── */
+function afsStatementsHtml(d, mode) {
+  // mode: 'screen' (compact tables) or 'print' (full, page-broken)
+  const e = UI.esc, m = accPeso;
+  const s = d.statements;
+  const cur = d.year, pri = d.prior_year;
+  const two = (label, c, p) => `<tr><td>${e(label)}</td><td class="right">${m(c)}</td><td class="right muted">${m(p)}</td></tr>`;
+  const hd = (t) => `<tr style="font-weight:700;background:var(--surface-2)"><td>${e(t)}</td><td class="right">${cur}</td><td class="right muted">${pri}</td></tr>`;
+  const items = (cur, pri, key) => {
+    const map = new Map();
+    (cur.items || cur || []).forEach((x) => map.set(x.code, { code: x.code, name: x.name, c: x.amount, p: 0 }));
+    (pri.items || pri || []).forEach((x) => { const r = map.get(x.code) || { code: x.code, name: x.name, c: 0, p: 0 }; r.p = x.amount; map.set(x.code, r); });
+    return [...map.values()].sort((a, b) => a.code.localeCompare(b.code))
+      .map((r) => two(`${r.code} ${r.name}`, r.c, r.p)).join('');
+  };
+
+  const fp = s.financial_position;
+  const ci = s.comprehensive_income;
+  const cf = s.cash_flows;
+  const ce = s.changes_in_equity;
+
+  const sfp = `<h3>Statement of Financial Position — as at December 31</h3>
+    <table><tbody>
+      ${hd('ASSETS')}${items(fp.current.assets, fp.prior.assets)}
+      ${two('Total assets', fp.current.total_assets, fp.prior.total_assets)}
+      ${hd('LIABILITIES')}${items(fp.current.liabilities, fp.prior.liabilities)}
+      ${two('Total liabilities', fp.current.liabilities.total, fp.prior.liabilities.total)}
+      ${hd('EQUITY')}${items(fp.current.equity, fp.prior.equity)}
+      ${two('Retained earnings — current period', fp.current.equity.current_period_earnings, fp.prior.equity.current_period_earnings)}
+      ${two('Total equity', fp.current.equity.total_with_earnings, fp.prior.equity.total_with_earnings)}
+      <tr style="font-weight:700"><td>Total liabilities and equity ${fp.current.balanced ? '' : '⚠'}</td><td class="right">${m(fp.current.total_liabilities_and_equity)}</td><td class="right muted">${m(fp.prior.total_liabilities_and_equity)}</td></tr>
+    </tbody></table>`;
+
+  const sci = `<h3>Statement of Comprehensive Income — for the year ended December 31</h3>
+    <table><tbody>
+      ${hd('Revenue')}${items(ci.current.income, ci.prior.income)}
+      ${two('Total revenue', ci.current.total_income, ci.prior.total_income)}
+      ${hd('Expenses')}${items(ci.current.expense, ci.prior.expense)}
+      ${two('Total expenses', ci.current.total_expense, ci.prior.total_expense)}
+      <tr style="font-weight:700"><td>Net income</td><td class="right">${m(ci.current.net_income)}</td><td class="right muted">${m(ci.prior.net_income)}</td></tr>
+    </tbody></table>`;
+
+  const scf = `<h3>Statement of Cash Flows (indirect) — for the year ended December 31</h3>
+    <table><tbody>
+      ${hd('Operating activities')}
+      ${two('Net income', cf.current.operating.net_income, cf.prior.operating.net_income)}
+      ${(cf.current.operating.adjustments || []).map((x) => two(`${x.code} ${x.name}`, x.amount, (cf.prior.operating.adjustments.find((y) => y.code === x.code) || {}).amount || 0)).join('')}
+      ${two('Net cash from operating activities', cf.current.operating.total, cf.prior.operating.total)}
+      ${hd('Investing activities')}
+      ${(cf.current.investing.items || []).map((x) => two(`${x.code} ${x.name}`, x.amount, (cf.prior.investing.items.find((y) => y.code === x.code) || {}).amount || 0)).join('') || two('—', 0, 0)}
+      ${two('Net cash from investing activities', cf.current.investing.total, cf.prior.investing.total)}
+      ${hd('Financing activities')}
+      ${(cf.current.financing.items || []).map((x) => two(`${x.code} ${x.name}`, x.amount, (cf.prior.financing.items.find((y) => y.code === x.code) || {}).amount || 0)).join('') || two('—', 0, 0)}
+      ${two('Net cash from financing activities', cf.current.financing.total, cf.prior.financing.total)}
+      <tr style="font-weight:700"><td>Net change in cash ${cf.current.reconciles ? '' : '⚠'}</td><td class="right">${m(cf.current.net_change_in_cash)}</td><td class="right muted">${m(cf.prior.net_change_in_cash)}</td></tr>
+      ${two('Cash at beginning of year', cf.current.cash_beginning, cf.prior.cash_beginning)}
+      <tr style="font-weight:700"><td>Cash at end of year</td><td class="right">${m(cf.current.cash_ending)}</td><td class="right muted">${m(cf.prior.cash_ending)}</td></tr>
+    </tbody></table>`;
+
+  const sce = `<h3>Statement of Changes in Equity — for the year ended December 31</h3>
+    <table><thead><tr><th>Account</th><th class="right">Opening</th><th class="right">Movement</th><th class="right">Closing</th></tr></thead>
+    <tbody>${ce.current.rows.map((r) => `<tr><td>${e(r.code)} ${e(r.name)}</td><td class="right">${m(r.opening)}</td><td class="right">${m(r.movement)}</td><td class="right">${m(r.closing)}</td></tr>`).join('')}
+      <tr><td>Net income for the year</td><td class="right"></td><td class="right">${m(ce.current.net_income_for_period)}</td><td class="right"></td></tr>
+      <tr style="font-weight:700"><td>Total equity</td><td class="right">${m(ce.current.opening_equity)}</td><td class="right">${m(ce.current.movements_total + ce.current.net_income_for_period)}</td><td class="right">${m(ce.current.closing_equity)}</td></tr>
+    </tbody></table>`;
+
+  const notes = `<h3>Notes to the Financial Statements</h3>
+    <ol style="font-size:12px;line-height:1.7">${d.notes.map((n) => `<li>${e(n)}</li>`).join('')}</ol>
+    <p class="muted" style="font-size:11px">${e(d.disclaimer)}</p>`;
+
+  return mode === 'print'
+    ? [sfp, sci, scf, sce, notes].map((x) => `<section>${x}</section>`).join('')
+    : sfp + sci + scf + sce + notes;
+}
+
+async function afsModal() {
+  const thisYear = new Date().getFullYear();
+  UI.modal({
+    title: 'Financial Statements (AFS pack)', size: 'lg', cancelText: 'Close', confirmText: null,
+    bodyHTML: `
+      <p class="muted" style="font-size:12px;margin-top:0">A draft comparative pack (this year vs last) from the general
+        ledger — statement of financial position, comprehensive income, cash flows, and changes in equity, plus the
+        standard PFRS-for-SMEs note headings. For the CPA to review, adjust and audit; the app does not write the
+        disclosures or perform the audit.</p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <label style="margin:0">Fiscal year</label>
+        <select id="afs-y">${[0, 1, 2, 3].map((i) => `<option>${thisYear - i}</option>`).join('')}</select>
+        <button type="button" class="btn secondary small" id="afs-go">Load</button>
+        <button type="button" class="btn secondary small" id="afs-print">${UI.icon('printer', 14)} Print</button>
+      </div>
+      <div id="afs-out" class="empty">Load a year.</div>`,
+    onOpen: (ov) => {
+      const out = ov.querySelector('#afs-out');
+      let state = null;
+      const run = async () => {
+        out.innerHTML = '<div class="empty">Loading…</div>';
+        state = await API.get('/accounting/afs?year=' + ov.querySelector('#afs-y').value).catch((e) => { out.innerHTML = `<div class="m-error">${UI.esc(e.message)}</div>`; return null; });
+        if (!state) return;
+        out.innerHTML = `<div class="afs-screen">${afsStatementsHtml(state, 'screen')}</div>
+          <style>.afs-screen h3{font-size:13px;margin:16px 0 4px}.afs-screen table{width:100%}.afs-screen td,.afs-screen th{padding:2px 6px}</style>`;
+      };
+      ov.querySelector('#afs-go').onclick = run;
+      ov.querySelector('#afs-print').onclick = () => {
+        if (!state) { UI.toast('Load a year first', 'error'); return; }
+        const c = state.company || {};
+        const w = window.open('', '_blank');
+        w.document.write(`<html><head><title>Audited Financial Statements — ${state.year}</title>
+          <style>body{font:12px system-ui;padding:24px;color:#111}section{page-break-after:always}section:last-child{page-break-after:auto}
+          h1{font-size:18px}h3{font-size:13px;border-bottom:1px solid #111;padding-bottom:2px;margin:16px 0 6px}
+          table{border-collapse:collapse;width:100%;margin-bottom:6px}th,td{border:1px solid #ccc;padding:3px 7px;text-align:left}
+          .right{text-align:right}.muted{color:#666}</style></head><body>
+          <section style="text-align:center;page-break-after:always"><h1>${UI.esc(c.name || 'Company')}</h1>
+            ${c.tin ? `<div>TIN ${UI.esc(c.tin)}</div>` : ''}${c.address ? `<div>${UI.esc(c.address)}</div>` : ''}
+            <div style="margin-top:14px;font-weight:700">AUDITED FINANCIAL STATEMENTS</div>
+            <div>For the years ended December 31, ${state.year} and ${state.prior_year}</div>
+            <div style="margin-top:24px;font-size:11px" class="muted">Draft prepared from the general ledger — subject to the independent auditor's review and report.</div></section>
+          ${afsStatementsHtml(state, 'print')}</body></html>`);
+        w.document.close(); w.focus();
+        setTimeout(() => w.print(), 300);
+      };
+      run();
+    },
+  });
 }
 
 async function booksOfAccountsModal() {

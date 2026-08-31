@@ -1244,11 +1244,9 @@ function netIncome(from: string, to: string): number {
   return round2((r?.inc ?? 0) - (r?.exp ?? 0));
 }
 
-// GET .../reports/profit-and-loss?from=&to=
-router.get('/ledger/reports/profit-and-loss', (req, res) => {
-  if (!requireLedger(res)) return;
-  const from = typeof req.query.from === 'string' ? req.query.from : ledgerSettings().fiscal_year_start;
-  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+/** Income statement for [from, to] — every income / expense account with a nonzero
+ *  balance, section totals and net income. */
+function profitLossData(from: string, to: string) {
   const rows = queryAll<{ code: string; name: string; root_type: AccountRootType; amount: number }>(`
     SELECT a.code, a.name, a.root_type,
            SUM(CASE WHEN a.root_type = 'income' THEN jl.credit - jl.debit ELSE jl.debit - jl.credit END) AS amount
@@ -1262,13 +1260,20 @@ router.get('/ledger/reports/profit-and-loss', (req, res) => {
   const expense = rows.filter((r) => r.root_type === 'expense').map((r) => ({ ...r, amount: round2(r.amount) }));
   const totalIncome = round2(income.reduce((s, r) => s + r.amount, 0));
   const totalExpense = round2(expense.reduce((s, r) => s + r.amount, 0));
-  res.json({ from, to, income, expense, total_income: totalIncome, total_expense: totalExpense, net_income: round2(totalIncome - totalExpense) });
+  return { from, to, income, expense, total_income: totalIncome, total_expense: totalExpense, net_income: round2(totalIncome - totalExpense) };
+}
+
+// GET .../reports/profit-and-loss?from=&to=
+router.get('/ledger/reports/profit-and-loss', (req, res) => {
+  if (!requireLedger(res)) return;
+  const from = typeof req.query.from === 'string' ? req.query.from : ledgerSettings().fiscal_year_start;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  res.json(profitLossData(from, to));
 });
 
-// GET .../reports/balance-sheet?as_of=
-router.get('/ledger/reports/balance-sheet', (req, res) => {
-  if (!requireLedger(res)) return;
-  const asOf = typeof req.query.as_of === 'string' ? req.query.as_of : new Date().toISOString().slice(0, 10);
+/** Statement of financial position as of `asOf` — asset / liability / equity sections,
+ *  with the fiscal-year-to-date earnings folded into equity. */
+function balanceSheetData(asOf: string) {
   const fyStart = ledgerSettings().fiscal_year_start || asOf.slice(0, 4) + '-01-01';
   const bals = accountBalancesUpTo(asOf);
   const accts = queryAll<Account>("SELECT * FROM accounts WHERE is_group = 0 ORDER BY code");
@@ -1286,30 +1291,25 @@ router.get('/ledger/reports/balance-sheet', (req, res) => {
   const currentEarnings = netIncome(fyStart, asOf);
   const equityWithEarnings = round2(equity.total + currentEarnings);
 
-  res.json({
+  return {
     as_of: asOf,
-    assets,
-    liabilities,
+    assets, liabilities,
     equity: { ...equity, current_period_earnings: currentEarnings, total_with_earnings: equityWithEarnings },
     total_assets: assets.total,
     total_liabilities_and_equity: round2(liabilities.total + equityWithEarnings),
     balanced: Math.abs(assets.total - (liabilities.total + equityWithEarnings)) < 0.01,
-  });
+  };
+}
+
+// GET .../reports/balance-sheet?as_of=
+router.get('/ledger/reports/balance-sheet', (req, res) => {
+  if (!requireLedger(res)) return;
+  const asOf = typeof req.query.as_of === 'string' ? req.query.as_of : new Date().toISOString().slice(0, 10);
+  res.json(balanceSheetData(asOf));
 });
 
-// GET .../reports/cash-flow?from=&to= — indirect-method statement of cash flows.
-// Re-groups the change in every non-cash account over the period: net income + the
-// movement in working-capital / non-cash accounts (operating), in non-current assets
-// (investing) and in non-current liabilities / equity (financing). By double-entry the
-// three totals always sum to the change in cash & bank — `reconciles` is a rounding check.
-// Operating vs investing vs financing is a presentation split, keyed off `account_type`
-// and the default chart's numbering (1200s = non-current assets, 2200s = non-current
-// liabilities); re-tag or renumber accounts to change how a line is grouped.
-router.get('/ledger/reports/cash-flow', (req, res) => {
-  if (!requireLedger(res)) return;
-  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
-  const from = typeof req.query.from === 'string' ? req.query.from
-    : ledgerSettings().fiscal_year_start || to.slice(0, 8) + '01';
+/** Indirect-method statement of cash flows for [from, to] (see the route comment below). */
+function cashFlowData(from: string, to: string) {
   const open = accountBalancesUpTo(addDays(from, -1) ?? undefined);
   const close = accountBalancesUpTo(to);
   const accts = queryAll<Account>("SELECT * FROM accounts WHERE is_group = 0 ORDER BY code");
@@ -1348,7 +1348,7 @@ router.get('/ledger/reports/cash-flow', (req, res) => {
   const finTotal = round2(financing.reduce((s, l) => s + l.amount, 0));
   const netChange = round2(opTotal + invTotal + finTotal);
 
-  res.json({
+  return {
     from, to,
     operating: { net_income: netInc, adjustments: operating, total: opTotal },
     investing: { items: investing, total: invTotal },
@@ -1357,19 +1357,28 @@ router.get('/ledger/reports/cash-flow', (req, res) => {
     cash_beginning: round2(cashOpen),
     cash_ending: round2(cashClose),
     reconciles: Math.abs(netChange - round2(cashClose - cashOpen)) < 0.01,
-  });
-});
+  };
+}
 
-// GET .../reports/equity-changes?from=&to= — statement of changes in equity: opening,
-// movement and closing per equity account, plus the period's net income (folded into
-// retained earnings only at period-end close, shown separately until then). With
-// `from` = the fiscal-year start, `closing_equity` matches the balance sheet's
-// equity-with-earnings.
-router.get('/ledger/reports/equity-changes', (req, res) => {
+// GET .../reports/cash-flow?from=&to= — indirect-method statement of cash flows.
+// Re-groups the change in every non-cash account over the period: net income + the
+// movement in working-capital / non-cash accounts (operating), in non-current assets
+// (investing) and in non-current liabilities / equity (financing). By double-entry the
+// three totals always sum to the change in cash & bank — `reconciles` is a rounding check.
+// Operating vs investing vs financing is a presentation split, keyed off `account_type`
+// and the default chart's numbering (1200s = non-current assets, 2200s = non-current
+// liabilities); re-tag or renumber accounts to change how a line is grouped.
+router.get('/ledger/reports/cash-flow', (req, res) => {
   if (!requireLedger(res)) return;
   const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
   const from = typeof req.query.from === 'string' ? req.query.from
     : ledgerSettings().fiscal_year_start || to.slice(0, 8) + '01';
+  res.json(cashFlowData(from, to));
+});
+
+/** Statement of changes in equity for [from, to] — opening / movement / closing per
+ *  equity account + the period's net income. */
+function equityChangesData(from: string, to: string) {
   const open = accountBalancesUpTo(addDays(from, -1) ?? undefined);
   const close = accountBalancesUpTo(to);
 
@@ -1385,12 +1394,71 @@ router.get('/ledger/reports/equity-changes', (req, res) => {
   const openingEquity = round2(rows.reduce((s, r) => s + r.opening, 0));
   const movements = round2(rows.reduce((s, r) => s + r.movement, 0));
 
-  res.json({
+  return {
     from, to, rows,
     net_income_for_period: netInc,
     opening_equity: openingEquity,
     movements_total: movements,
     closing_equity: round2(openingEquity + movements + netInc),
+  };
+}
+
+// GET .../reports/equity-changes?from=&to= — statement of changes in equity: opening,
+// movement and closing per equity account, plus the period's net income (folded into
+// retained earnings only at period-end close, shown separately until then). With
+// `from` = the fiscal-year start, `closing_equity` matches the balance sheet's
+// equity-with-earnings.
+router.get('/ledger/reports/equity-changes', (req, res) => {
+  if (!requireLedger(res)) return;
+  const to = typeof req.query.to === 'string' ? req.query.to : new Date().toISOString().slice(0, 10);
+  const from = typeof req.query.from === 'string' ? req.query.from
+    : ledgerSettings().fiscal_year_start || to.slice(0, 8) + '01';
+  res.json(equityChangesData(from, to));
+});
+
+/* ---------------------------------------------------------- AFS pack (Phase 4e) --- */
+/* The five PFRS-for-SMEs statements as a single comparative (this year vs last) bundle,
+   for the CPA to review and turn into the audited financial statements. Notes are a
+   scaffold — the standard headings — not auto-generated. */
+
+const AFS_NOTE_HEADINGS = [
+  'Corporate information',
+  'Basis of preparation and statement of compliance (PFRS for SMEs)',
+  'Summary of significant accounting policies',
+  'Significant accounting judgments, estimates and assumptions',
+  'Cash and cash equivalents',
+  'Trade and other receivables',
+  'Inventories',
+  'Property, plant and equipment',
+  'Trade and other payables',
+  'Income taxes',
+  'Equity',
+  'Revenue',
+  'Cost of sales and operating expenses',
+  'Related party transactions',
+  'Events after the reporting period',
+];
+
+// GET /api/accounting/afs?year=YYYY — the comparative financial-statement pack.
+router.get('/afs', (req, res) => {
+  if (!requireLedger(res)) return;
+  const y = Number(yearOf(req.query.year));
+  const py = y - 1;
+  const yr = (n: number) => ({ start: `${n}-01-01`, end: `${n}-12-31` });
+  const cur = yr(y), prior = yr(py);
+
+  res.json({
+    company: companyProfile(),
+    year: y, prior_year: py,
+    statements: {
+      financial_position: { current: balanceSheetData(cur.end), prior: balanceSheetData(prior.end) },
+      comprehensive_income: { current: profitLossData(cur.start, cur.end), prior: profitLossData(prior.start, prior.end) },
+      cash_flows: { current: cashFlowData(cur.start, cur.end), prior: cashFlowData(prior.start, prior.end) },
+      changes_in_equity: { current: equityChangesData(cur.start, cur.end), prior: equityChangesData(prior.start, prior.end) },
+    },
+    notes: AFS_NOTE_HEADINGS,
+    disclaimer: 'A draft comparative pack from the general ledger for the CPA to review, adjust and audit. '
+      + 'The notes are the standard PFRS-for-SMEs headings only — the app does not write the disclosures or perform the audit.',
   });
 });
 
