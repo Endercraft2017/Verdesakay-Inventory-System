@@ -5,7 +5,7 @@ import { db, queryOne, queryAll, run, nextSequence } from '../db';
 import { requireAuth, requirePermission } from '../auth';
 import { parseBody, createOrderSchema, updateOrderSchema } from '../validation';
 import { getQboStatus, pushOrder } from '../quickbooks';
-import { maybeAutoPostSale, unpostSource } from '../accounting-autopost';
+import { maybeAutoPostSale, maybeFulfillSale, unpostSource } from '../accounting-autopost';
 import type { Order, OrderItem, OrderType } from '../types';
 
 const router = Router();
@@ -147,14 +147,15 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
     const number = nextOrderNumber(input.type);
     const info = run(
       `INSERT INTO orders
-        (type, number, customer_name, customer_contact, customer_id, tax_code_id, order_date, status, notes, currency,
+        (type, number, customer_name, customer_contact, customer_id, location_id, tax_code_id, order_date, status, notes, currency,
          subtotal, tax_percent, tax_amount, total, created_by, supplier_id, expected_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.type,
       number,
       cust.customer_name,
       cust.customer_contact,
       cust.customer_id,
+      input.type === 'sale' ? (input.location_id ?? null) : null,
       input.tax_code_id ?? null,
       input.order_date ?? null,
       input.status || 'open',
@@ -170,7 +171,10 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
     );
     insertItems(Number(info.lastInsertRowid), lines);
     db.exec('COMMIT');
-    if (input.type === 'sale') maybeAutoPostSale(Number(info.lastInsertRowid), req.user!.id);
+    if (input.type === 'sale') {
+      maybeAutoPostSale(Number(info.lastInsertRowid), req.user!.id);
+      maybeFulfillSale(Number(info.lastInsertRowid), req.user!.id);
+    }
     res.status(201).json({ id: info.lastInsertRowid, number });
     maybeAutoPush(Number(info.lastInsertRowid));
   } catch (e) {
@@ -194,13 +198,14 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
   db.exec('BEGIN');
   try {
     run(
-      `UPDATE orders SET customer_name = ?, customer_contact = ?, customer_id = ?, tax_code_id = ?, order_date = ?, status = ?,
+      `UPDATE orders SET customer_name = ?, customer_contact = ?, customer_id = ?, location_id = ?, tax_code_id = ?, order_date = ?, status = ?,
          notes = ?, currency = ?, subtotal = ?, tax_percent = ?, tax_amount = ?, total = ?,
          supplier_id = ?, expected_date = ?, updated_at = datetime('now')
        WHERE id = ?`,
       cust.customer_name,
       cust.customer_contact,
       cust.customer_id,
+      order.type === 'sale' ? (input.location_id ?? order.location_id ?? null) : null,
       input.tax_code_id ?? null,
       input.order_date ?? null,
       input.status || 'open',
@@ -217,7 +222,10 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
     run('DELETE FROM order_items WHERE order_id = ?', id);
     insertItems(id, lines);
     db.exec('COMMIT');
-    if (order.type === 'sale') maybeAutoPostSale(id, req.user!.id);
+    if (order.type === 'sale') {
+      maybeAutoPostSale(id, req.user!.id);
+      maybeFulfillSale(id, req.user!.id);
+    }
     res.json({ ok: true });
     maybeAutoPush(id);
   } catch (e) {
@@ -229,7 +237,9 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
 // DELETE /api/orders/:id (cascades items)
 router.delete('/:id', requirePermission('orders.delete'), (req, res) => {
   const id = Number(req.params.id);
-  // If this sale was posted to the ledger, reverse it before the row goes away.
+  // If this sale was posted to the ledger / drew down stock, reverse both before the row
+  // (and its cascaded line items) go away.
+  maybeFulfillSale(id, req.user!.id, 'release');
   unpostSource('sale_order', id, req.user!.id);
   const info = run('DELETE FROM orders WHERE id = ?', id);
   if (info.changes === 0) {

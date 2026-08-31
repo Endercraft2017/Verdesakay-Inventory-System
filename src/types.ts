@@ -558,6 +558,11 @@ export interface Order {
   expected_date: string | null;
   /** Sale orders only: the customer this order is raised for. */
   customer_id: number | null;
+  /** Sale orders only: the location stock ships from (defaults to the default location). */
+  location_id: number | null;
+  /** Sale orders only: set once the sale's lines have been drawn down from stock and COGS
+   *  posted; cleared when the sale is pulled back to a non-firm status. */
+  fulfilled_at: string | null;
   /** Optional VAT / tax classification (drives the GL post + the BIR journals). */
   tax_code_id: number | null;
   created_by_name?: string | null;

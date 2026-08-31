@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
-  buildJobOrderEntry, buildReceiptEntry,
+  buildJobOrderEntry, buildReceiptEntry, buildCogsEntry,
   type PostingRules, type PayrollDoc,
 } from '../src/accounting-posting';
 
@@ -388,5 +388,25 @@ describe('buildReceiptEntry', () => {
     expect(buildReceiptEntry({ number: 'GRN-2', date: '2026-03-10', amount: 0 },
       { ...RULES, grir_clearing_account_id: 21050 }, 1).ok).toBe(false);
     expect(buildReceiptEntry({ number: 'GRN-3', date: '2026-03-10', amount: 500 }, RULES, 1).ok).toBe(false);
+  });
+});
+
+describe('buildCogsEntry', () => {
+  it('DR Cost of Goods Sold / CR Inventory', () => {
+    const r = buildCogsEntry(
+      { number: 'SO-1', date: '2026-05-02', amount: 750 },
+      { ...RULES, cogs_account_id: 5100 }, 1
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.entry.source_type).toBe('sale_cogs');
+    expect(r.entry.lines.find((l) => l.account_id === 5100)!.debit).toBe(750);
+    expect(r.entry.lines.find((l) => l.account_id === 15)!.credit).toBe(750);
+  });
+
+  it('fails on a zero cost or a missing rule', () => {
+    expect(buildCogsEntry({ number: 'SO-2', date: '2026-05-02', amount: 0 },
+      { ...RULES, cogs_account_id: 5100 }, 1).ok).toBe(false);
+    expect(buildCogsEntry({ number: 'SO-3', date: '2026-05-02', amount: 100 }, RULES, 1).ok).toBe(false);
   });
 });

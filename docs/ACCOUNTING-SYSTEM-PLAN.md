@@ -26,10 +26,11 @@
 > companion fixes. **Phase 3b (2026-08-31)** brings **inventory into the GL**: a job order
 > moves its material cost DR WIP / CR Inventory at release, DR Inventory / CR WIP as units
 > finish, with a scrap/variance true-up at close; a goods receipt posts DR Inventory / CR
-> Goods Received Not Invoiced at the PO price, and the vendor bill clears GRNI instead of
-> expensing (`inventory_items.unit_cost` standard cost). COGS-on-sale (needs a sale→stock
-> hook) is the remaining 3b work; Phase 4–5 (financial-statement polish, CAS export) are
-> the roadmap. **Phase 2 is complete** — its last tail,
+> Goods Received Not Invoiced at the PO price (the vendor bill clears GRNI instead of
+> expensing), and a **firm sale** draws stock down and posts **DR COGS / CR Inventory** at
+> standard cost (`inventory_items.unit_cost`; `orders.location_id` / `fulfilled_at`).
+> Moving-average valuation is the remaining 3b work; Phase 4–5 (financial-statement polish,
+> CAS export) are the roadmap. **Phase 2 is complete** — its last tail,
 > **per-line tax codes** for mixed-rate documents (2026-08-31), lets the BIR journals /
 > SLSP / 2550M-Q classify a sale or bill line by line.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
@@ -109,7 +110,7 @@ to **post** them.
 
 | Existing module | Becomes / posts to |
 |---|---|
-| **Sale orders** (`orders` type `sale`) | Sales Journal → Dr AR / Cash, Cr Sales, Cr Output VAT |
+| **Sale orders** (`orders` type `sale`) | Sales Journal → Dr AR / Cash, Cr Sales, Cr Output VAT; a *firm* sale also draws stock down → Dr COGS, Cr Inventory (Phase 3b) |
 | **Vendor bills** (`vendor_bills`, approved) | Purchase Journal → Dr Expense/Inventory, Dr Input VAT, Cr AP; Cr EWT payable if withheld |
 | **Goods receipts** (`goods_receipts`) | Perpetual inventory → Dr Inventory, Cr GR/IR clearing (cleared by the bill) |
 | **Payslips** (`hr_payroll` records) | Payroll Journal → Dr Salaries, Dr ER contributions, Cr SSS/PHIC/HDMF payable, Cr WT payable, Cr Cash/Net-pay payable — **✅ shipped, §5 Phase 3a** |
@@ -407,8 +408,24 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   instead of purchase expense; a bill with no receipts (services / expenses) is unchanged.
   `tests/accounting-posting.test.ts` ("buildReceiptEntry", "buildPurchaseEntry" GRNI cases)
   + `tests/accounting.test.ts` ("perpetual inventory — goods receipts + GRNI").
-- **3b — still to do.** **COGS on sale** — needs a sale → stock-decrement hook first (sale
-  orders don't touch stock today). **Moving-average valuation** to replace standard cost.
+- **3b — COGS on sale. ✅ SHIPPED 2026-08-31.** A **firm** sale order (status confirmed /
+  completed / … — the same `CONFIRMED_SALE` set the sales-journal post uses) now **draws its
+  lines out of stock** from a ship-from location and posts **DR Cost of Goods Sold / CR
+  Inventory** at standard cost (Σ line qty × `inventory_items.unit_cost`). `orders` gains
+  **`location_id`** (a per-sale ship-from, defaulting to the default location) and
+  **`fulfilled_at`** (SCHEMA_VERSION 14; `fulfilled_at` is the single idempotency guard).
+  Pulling the sale back to a non-firm status — or deleting it — restores the stock and
+  reverses the COGS entry; re-confirming re-draws and re-posts (a stale reversal from an
+  earlier cycle is left beside the fresh entry, netting to zero). 5th Phase-3 posting-rule
+  leg `cogs_account_id` (seeded to 5100). **Only acts while the general ledger is on** —
+  turning the GL on is what opts a tenant into perpetual inventory; all of it is
+  best-effort (never blocks the order save) and stock is allowed to go negative (a
+  backorder — no shortage block yet). `buildCogsEntry` + `maybeFulfillSale`
+  (`src/accounting-autopost.ts`); UI: a **Ship from** picker on the sale-order form.
+  `tests/accounting-posting.test.ts` ("buildCogsEntry") + `tests/accounting.test.ts`
+  ("COGS on sale").
+- **3b — still to do.** **Moving-average valuation** to replace standard cost; a
+  **shortage block** on confirming a sale that can't be covered.
 
 **Phase 4 — statements, close, assets, bank rec.** PFRS-for-SMEs **BS / IS / cash flow /
 equity**; **period-end close** (accruals, prepaid amortization, depreciation run,
@@ -609,10 +626,10 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Frappe Books | Verdesakay | Status |
 |---|---|---|
 | `Location` (warehouse) | `locations` | ✅ |
-| `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` (+ `inventory_items.unit_cost` standard cost, Phase 3b) | ✅ — job orders post WIP + goods receipts post DR Inventory / CR GRNI, both at standard cost (Phase 3b); COGS-on-sale + moving-average valuation still ⬜ |
+| `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` (+ `inventory_items.unit_cost` standard cost, Phase 3b) | ✅ — job orders post WIP, goods receipts post DR Inventory / CR GRNI, and firm sales post DR COGS / CR Inventory, all at standard cost (Phase 3b); moving-average valuation still ⬜ |
 | `StockMovement` / `StockTransfer` (+ items) | adjust / transfer endpoints | ✅ |
 | `PurchaseReceipt` (+ items) | `goods_receipts` | ✅ — posts DR Inventory / CR Goods Received Not Invoiced (Phase 3b); the vendor bill clears GRNI |
-| `Shipment` (+ items) — delivery note | finished-unit allocation | 🟡 |
+| `Shipment` (+ items) — delivery note | finished-unit allocation; a firm sale draws its lines out of stock from `orders.location_id` + posts COGS (Phase 3b) | 🟡 — no partial / separate delivery document yet |
 | `SerialNumber` / `Batch` / `BatchSeries` | `job_order_units` (finished goods only) | 🟡 |
 | `InventorySettings` | inventory form-config | 🟡 |
 

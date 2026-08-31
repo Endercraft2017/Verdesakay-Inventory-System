@@ -10,10 +10,11 @@
 import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } from './db';
 import {
   buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
-  buildJobOrderEntry, buildReceiptEntry, POSTING_RULE_KEYS,
+  buildJobOrderEntry, buildReceiptEntry, buildCogsEntry, POSTING_RULE_KEYS,
   type PostingRules, type PostableDoc, type BuiltEntry, type PayrollDoc,
 } from './accounting-posting';
 import { round2 } from './ledger';
+import { applyStockChange, getDefaultLocationId } from './inventory-stock';
 import type { Order, VendorBill, Payment, CreditNote } from './types';
 
 const RULES_KEY = 'accounting_posting_rules';
@@ -63,6 +64,7 @@ export function seedPostingRulesFromCoa(): PostingRules {
     ['wip_account_id', '1152'],
     ['mfg_variance_account_id', '5150'],
     ['grir_clearing_account_id', '2105'],
+    ['cogs_account_id', '5100'],
   ];
   let touched = false;
   for (const [key, code] of wants) {
@@ -282,6 +284,64 @@ export function maybeAutoPostGoodsReceipt(
   } catch (e) {
     console.warn(`[gl] auto-post goods receipt ${receiptId} failed: ${(e as Error).message}`);
     return { posted: false, error: (e as Error).message };
+  }
+}
+
+/* ----------------------------------------------- sale fulfilment (perpetual inventory) --- */
+
+interface FulfilLine { item_id: number | null; quantity: number; cost: number }
+
+function saleLines(orderId: number): FulfilLine[] {
+  return queryAll<FulfilLine>(
+    `SELECT oi.item_id, oi.quantity, COALESCE(i.unit_cost, 0) AS cost
+     FROM order_items oi LEFT JOIN inventory_items i ON i.id = oi.item_id
+     WHERE oi.order_id = ?`, orderId
+  );
+}
+
+/** Move a firm sale's goods out of stock (and reverse the move when pulled back), keeping
+ *  perpetual inventory + COGS in step. Only acts while the general ledger is on — turning
+ *  the GL on is what opts a tenant into perpetual inventory. `force` = 'release' runs the
+ *  restore branch regardless of status (used just before a sale is deleted). Best-effort. */
+export function maybeFulfillSale(orderId: number, userId: number | null, force?: 'release'): void {
+  try {
+    if (!ledgerEnabled()) return;
+    const o = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
+    if (!o || o.type !== 'sale') return;
+    const wantFulfilled = force === 'release' ? false : CONFIRMED_SALE.has(String(o.status || '').toLowerCase());
+    if (wantFulfilled === !!o.fulfilled_at) return;   // already in the right state
+
+    const lines = saleLines(orderId).filter((l) => l.item_id != null && (l.quantity || 0) > 0);
+    let loc: number;
+    try { loc = o.location_id ?? getDefaultLocationId(); } catch { return; }  // no locations → skip
+    const date = o.order_date || o.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const sign = wantFulfilled ? -1 : 1;
+    const reason = wantFulfilled ? `Sold — ${o.number}` : `Sale reversed — ${o.number}`;
+
+    db.exec('BEGIN');
+    try {
+      for (const l of lines) {
+        applyStockChange({ itemId: l.item_id!, locationId: loc, change: sign * l.quantity, userId, reason });
+      }
+      run(`UPDATE orders SET fulfilled_at = ${wantFulfilled ? "datetime('now')" : 'NULL'} WHERE id = ?`, orderId);
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+
+    if (wantFulfilled) {
+      // `fulfilled_at` (just set above) is the idempotency guard — this block only runs on
+      // the not-fulfilled → fulfilled transition, so post unconditionally. A stale reversal
+      // from an earlier confirm/reopen cycle is left in place; the fresh entry stands beside
+      // it and the pair nets to zero (CAS rule — nothing is edited or removed).
+      const amount = round2(lines.reduce((s, l) => s + l.quantity * (l.cost || 0), 0));
+      if (amount > 0 && !periodClosedOn(date)) {
+        const built = buildCogsEntry({ number: o.number, date, amount }, getPostingRules(), orderId);
+        if (built.ok) { try { writePosted(built.entry, userId); } catch (e) { console.warn(`[gl] COGS ${orderId}: ${(e as Error).message}`); } }
+      }
+    } else {
+      unpostSource('sale_cogs', orderId, userId);
+    }
+  } catch (e) {
+    console.warn(`[inv] fulfil sale ${orderId} failed: ${(e as Error).message}`);
   }
 }
 

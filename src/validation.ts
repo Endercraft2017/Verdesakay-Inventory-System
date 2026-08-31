@@ -434,6 +434,7 @@ const orderFields = {
   customer_name: optionalText,
   customer_contact: optionalText,
   customer_id: optionalId,
+  location_id: optionalId,   // sale orders: ship-from location for stock draw-down + COGS
   tax_code_id: optionalId,
   order_date: trimmed.max(40).optional().nullable(),
   status: trimmed.max(40).optional().nullable(),
@@ -647,6 +648,7 @@ export const postingRulesSchema = z.object({
   wip_account_id: optionalId,
   mfg_variance_account_id: optionalId,
   grir_clearing_account_id: optionalId,
+  cogs_account_id: optionalId,
 });
 
 export const matchToleranceSchema = z.object({

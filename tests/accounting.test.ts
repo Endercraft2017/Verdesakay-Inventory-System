@@ -865,3 +865,63 @@ describe('accounting: perpetual inventory — goods receipts + GRNI (Phase 3b)',
     expect(await acctBal('2105')).toBe(grniBefore);
   });
 });
+
+describe('accounting: COGS on sale (Phase 3b)', () => {
+  const acctBal = async (code: string): Promise<number> => {
+    const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr())).body;
+    const r = tb.rows.find((x: { code: string }) => x.code === code);
+    return r ? Math.round((r.debit - r.credit) * 100) / 100 : 0;
+  };
+  const onHand = async (id: number) => (await ctx.api.get(`/api/inventory/${id}`).set(hdr())).body.quantity as number;
+
+  let custId = 0, itemId = 0, soId = 0;
+
+  it('a firm sale draws stock down and posts DR COGS / CR Inventory at standard cost', async () => {
+    custId = (await ctx.api.post('/api/customers').set(hdr()).send({ name: 'COGS Co' })).body.id;
+    itemId = (await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'COGS Widget', quantity: 100, unit_cost: 7 })).body.id;
+    const cogsBefore = await acctBal('5100');
+    const invBefore = await acctBal('1150');
+
+    const so = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'sale', customer_id: custId, order_date: '2026-05-04', status: 'confirmed', tax_percent: 12,
+      items: [{ item_id: itemId, name: 'COGS Widget', quantity: 10, unit_price: 20 }],
+    });
+    soId = so.body.id;
+
+    expect(await onHand(itemId)).toBe(90); // 10 shipped
+    const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'sale_cogs', source_id: soId }).set(hdr());
+    const je = (await ctx.api.get(`/api/accounting/ledger/journal-entries/${jes.body[0].id}`).set(hdr())).body;
+    const byCode = Object.fromEntries(je.lines.map((l: { account_code: string; debit: number; credit: number }) => [l.account_code, l]));
+    expect(byCode['5100'].debit).toBe(70);  // 10 × ₱7
+    expect(byCode['1150'].credit).toBe(70);
+    expect(await acctBal('5100')).toBe(Math.round((cogsBefore + 70) * 100) / 100);
+    expect(await acctBal('1150')).toBe(Math.round((invBefore - 70) * 100) / 100);
+    const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(hdr())).body;
+    expect(tb.balanced).toBe(true);
+  });
+
+  it('pulling the sale back to open restores the stock and reverses COGS', async () => {
+    const cogsMid = await acctBal('5100');
+    await ctx.api.put(`/api/orders/${soId}`).set(hdr()).send({
+      type: 'sale', customer_id: custId, order_date: '2026-05-04', status: 'open', tax_percent: 12,
+      items: [{ item_id: itemId, name: 'COGS Widget', quantity: 10, unit_price: 20 }],
+    });
+    expect(await onHand(itemId)).toBe(100); // stock back
+    const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'sale_cogs', source_id: soId }).set(hdr());
+    expect(jes.body.length).toBe(2); // original + reversal
+    expect(await acctBal('5100')).toBe(Math.round((cogsMid - 70) * 100) / 100);
+  });
+
+  it('re-confirming posts a fresh COGS entry (not a no-op)', async () => {
+    await ctx.api.put(`/api/orders/${soId}`).set(hdr()).send({
+      type: 'sale', customer_id: custId, order_date: '2026-05-04', status: 'confirmed', tax_percent: 12,
+      items: [{ item_id: itemId, name: 'COGS Widget', quantity: 10, unit_price: 20 }],
+    });
+    expect(await onHand(itemId)).toBe(90);
+    const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'sale_cogs', source_id: soId }).set(hdr());
+    expect(jes.body.length).toBe(3); // original + reversal + fresh
+  });
+});

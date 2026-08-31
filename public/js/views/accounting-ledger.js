@@ -70,10 +70,11 @@ App.register('accounting-ledger', async (view, filter) => {
       withholding_tax_payable_account_id: 'Withholding tax payable — compensation (payroll → credit)',
       net_pay_payable_account_id: 'Net Pay Payable (payroll → credit)',
       employee_advance_account_id: 'Advances to Employees (payroll cash-advance recovery → credit)',
-      inventory_asset_account_id: 'Inventory (job order: raw materials out / finished goods in)',
+      inventory_asset_account_id: 'Inventory (goods receipt / job order / sale — stock in & out)',
       wip_account_id: 'Work in Process (job order: materials in production)',
       mfg_variance_account_id: 'Manufacturing Variance & Scrap (job order: WIP true-up at close)',
       grir_clearing_account_id: 'Goods Received Not Invoiced (goods receipt → credit; goods bill → debit)',
+      cogs_account_id: 'Cost of Goods Sold (firm sale → debit, at standard cost)',
     };
     const keys = Object.keys(LABELS);
     const opts = (root, sel) => ['<option value="">— not set —</option>'].concat(

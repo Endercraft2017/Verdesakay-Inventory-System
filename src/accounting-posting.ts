@@ -30,6 +30,7 @@ export interface PostingRules {
   wip_account_id?: number | null;                  // Work in Process (job-order materials in production)
   mfg_variance_account_id?: number | null;         // Manufacturing Variance & Scrap (job-order WIP true-up)
   grir_clearing_account_id?: number | null;        // Goods Received Not Invoiced (receipt → credit; goods bill → debit)
+  cogs_account_id?: number | null;                 // Cost of Goods Sold (firm sale → debit, at standard cost)
 }
 
 export const POSTING_RULE_KEYS: (keyof PostingRules)[] = [
@@ -40,6 +41,7 @@ export const POSTING_RULE_KEYS: (keyof PostingRules)[] = [
   'philhealth_payable_account_id', 'pagibig_payable_account_id', 'withholding_tax_payable_account_id',
   'net_pay_payable_account_id', 'employee_advance_account_id',
   'inventory_asset_account_id', 'wip_account_id', 'mfg_variance_account_id', 'grir_clearing_account_id',
+  'cogs_account_id',
 ];
 
 /** The document shape the builders need — the same fields sale orders and vendor bills share. */
@@ -62,7 +64,7 @@ export interface BuiltEntry {
   entry_date: string;
   memo: string;
   reference: string;
-  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note' | 'payroll_run' | 'job_order' | 'goods_receipt';
+  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note' | 'payroll_run' | 'job_order' | 'goods_receipt' | 'sale_cogs';
   source_id: number;
   lines: JournalLineInput[];
 }
@@ -451,6 +453,31 @@ export function buildReceiptEntry(doc: ReceiptDoc, rules: PostingRules, sourceId
       lines: [
         { account_id: rules.inventory_asset_account_id!, debit: amt, credit: 0 },
         { account_id: rules.grir_clearing_account_id!, debit: 0, credit: amt },
+      ],
+    },
+  };
+}
+
+/** A firm sale draws its goods out of stock at standard cost: DR Cost of Goods Sold /
+ *  CR Inventory, at Σ line qty × inventory_items.unit_cost. Reversed when the sale is
+ *  pulled back to a non-firm status. */
+export function buildCogsEntry(doc: ReceiptDoc, rules: PostingRules, sourceId: number): BuildResult {
+  const gap = missing(rules, ['cogs_account_id', 'inventory_asset_account_id']);
+  if (gap) return { ok: false, error: gap };
+  const amt = round2(doc.amount || 0);
+  if (amt <= 0) return { ok: false, error: `${doc.number}: no cost to post (amount is ${amt}).` };
+  return {
+    ok: true,
+    entry: {
+      book: 'general',
+      entry_date: doc.date,
+      memo: `Cost of goods sold ${doc.number}`,
+      reference: doc.number,
+      source_type: 'sale_cogs',
+      source_id: sourceId,
+      lines: [
+        { account_id: rules.cogs_account_id!, debit: amt, credit: 0 },
+        { account_id: rules.inventory_asset_account_id!, debit: 0, credit: amt },
       ],
     },
   };

@@ -55,7 +55,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1376,6 +1376,17 @@ function migrate(): void {
   const invCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
   if (!invCols.some((c) => c.name === 'unit_cost')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN unit_cost REAL NOT NULL DEFAULT 0');
+  }
+
+  // Sale orders: `location_id` is where stock ships from, `fulfilled_at` marks that the
+  // sale's lines have been drawn down from stock (a firm sale consumes stock and posts
+  // COGS once the GL is on — ACCOUNTING-SYSTEM-PLAN Phase 3b). (SCHEMA_VERSION 14)
+  const orderCols2 = db.prepare('PRAGMA table_info(orders)').all() as { name: string }[];
+  if (!orderCols2.some((c) => c.name === 'location_id')) {
+    db.exec('ALTER TABLE orders ADD COLUMN location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL');
+  }
+  if (!orderCols2.some((c) => c.name === 'fulfilled_at')) {
+    db.exec('ALTER TABLE orders ADD COLUMN fulfilled_at TEXT');
   }
 
   // Backfill chart-of-accounts entries added to DEFAULT_COA after a tenant already ran
