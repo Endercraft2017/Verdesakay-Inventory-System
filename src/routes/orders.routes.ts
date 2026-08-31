@@ -28,7 +28,7 @@ function maybeAutoPush(orderId: number): void {
 
 type LineInput = {
   item_id?: number | null; name: string; sku?: string | null; description?: string | null;
-  quantity: number; unit?: string | null; unit_price: number;
+  quantity: number; unit?: string | null; unit_price: number; tax_code_id?: number | null;
 };
 
 /** Compute line totals + subtotal/tax/total from raw line inputs (never trust the client). */
@@ -74,8 +74,8 @@ function insertItems(orderId: number, lines: ReturnType<typeof computeTotals>['l
   lines.forEach((l, i) => {
     run(
       `INSERT INTO order_items
-        (order_id, item_id, name, sku, description, quantity, unit, unit_price, line_total, sort)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (order_id, item_id, name, sku, description, quantity, unit, unit_price, line_total, tax_code_id, sort)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       orderId,
       l.item_id ?? null,
       l.name,
@@ -85,6 +85,7 @@ function insertItems(orderId: number, lines: ReturnType<typeof computeTotals>['l
       l.unit ?? null,
       l.unit_price,
       l.line_total,
+      l.tax_code_id ?? null,
       i
     );
   });

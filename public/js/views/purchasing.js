@@ -248,7 +248,7 @@ App.register('purchasing', async (view, filter) => {
           <div style="flex:1;align-self:end"><span class="muted" id="ewt-hint" style="font-size:12px"></span></div>
         </div>
         <h4 style="${LABEL}">Lines</h4>
-        <table><thead><tr><th>Item</th><th style="width:110px">Qty</th><th style="width:120px">Unit price</th></tr></thead>
+        <table><thead><tr><th>Item</th><th style="width:90px">Qty</th>${taxCodes.length ? '<th style="width:130px">Tax code</th>' : ''}<th style="width:120px">Unit price</th></tr></thead>
           <tbody id="bill-rows">${src.map((l) => billRow(l)).join('')}</tbody></table>
         <button type="button" class="btn secondary small" id="bill-add" style="margin-top:8px">${UI.icon('plus')} Add line</button>`,
       confirmText: existing ? 'Save bill' : 'Create bill',
@@ -284,6 +284,7 @@ App.register('purchasing', async (view, filter) => {
             sku: tr.dataset.sku || null, unit: tr.dataset.unit || null,
             quantity: parseFloat(tr.querySelector('[data-q]').value) || 0,
             unit_price: parseFloat(tr.querySelector('[data-p]').value) || 0,
+            tax_code_id: (() => { const s = tr.querySelector('[data-tc]'); return s && s.value ? Number(s.value) : null; })(),
           });
         });
         if (!lines.length) { showErr('Add at least one line'); return false; }
@@ -309,9 +310,14 @@ App.register('purchasing', async (view, filter) => {
   }
 
   function billRow(l) {
+    const tcCell = taxCodes.length
+      ? `<td><select data-tc style="width:125px"><option value="">— doc default —</option>${taxCodes.map((t) =>
+          `<option value="${t.id}" ${String(l.tax_code_id || '') === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)}</option>`).join('')}</select></td>`
+      : '';
     return `<tr data-oi="${l.order_item_id || ''}" data-item="${l.item_id || ''}" data-sku="${UI.esc(l.sku || '')}" data-unit="${UI.esc(l.unit || '')}">
       <td><input data-n value="${UI.esc(l.name || '')}" placeholder="Line item" style="width:100%" /></td>
-      <td><input data-q type="number" min="0" step="any" value="${l.quantity != null ? l.quantity : 1}" style="width:100px" /></td>
+      <td><input data-q type="number" min="0" step="any" value="${l.quantity != null ? l.quantity : 1}" style="width:80px" /></td>
+      ${tcCell}
       <td style="display:flex;gap:4px">
         <input data-p type="number" min="0" step="any" value="${l.unit_price != null ? l.unit_price : 0}" style="width:100px" />
         <button type="button" class="icon-btn danger" data-rm title="Remove">${UI.icon('trash')}</button>

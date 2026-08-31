@@ -726,3 +726,65 @@ describe('accounting: cash books (Phase 2 tail)', () => {
     expect(csv.text.split('\n')[0]).toContain('Contra accounts');
   });
 });
+
+describe('accounting: per-line tax codes (Phase 2 tail)', () => {
+  let vatCode = 0, exemptCode = 0, custId = 0, soNumber = '';
+
+  it('a mixed-rate sale classifies each line by its own tax code in the sales journal', async () => {
+    const codes = (await ctx.api.get('/api/accounting/tax-codes').set(hdr())).body;
+    vatCode = codes.find((t: { code: string }) => t.code === 'VAT').id;
+    exemptCode = codes.find((t: { code: string }) => t.code === 'VAT-EX').id;
+    custId = (await ctx.api.post('/api/customers').set(hdr())
+      .send({ name: 'MixedRate Co', tin: '444-555-666-000' })).body.id;
+
+    // One vatable line (1000) + one exempt line (500) on ONE order, doc tax_percent 0.
+    const so = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'sale', customer_id: custId, order_date: '2026-11-04', status: 'confirmed', tax_percent: 0,
+      items: [
+        { name: 'Vatable goods', quantity: 10, unit_price: 100, tax_code_id: vatCode },
+        { name: 'Exempt goods', quantity: 5, unit_price: 100, tax_code_id: exemptCode },
+      ],
+    });
+    soNumber = so.body.number;
+
+    // the per-line codes round-trip on the order
+    const detail = await ctx.api.get(`/api/orders/${so.body.id}`).set(hdr());
+    const byName = Object.fromEntries(detail.body.items.map((i: { name: string; tax_code_id: number }) => [i.name, i.tax_code_id]));
+    expect(byName['Vatable goods']).toBe(vatCode);
+    expect(byName['Exempt goods']).toBe(exemptCode);
+
+    const sj = await ctx.api.get('/api/accounting/sales-journal?from=2026-11-01&to=2026-11-30').set(hdr());
+    const row = sj.body.rows.find((r: { ref: string }) => r.ref === soNumber);
+    expect(row.cols.vatable).toBe(1000);
+    expect(row.cols.vat).toBe(120);      // 12% of the vatable line only
+    expect(row.cols.exempt).toBe(500);   // the exempt line, untaxed
+    expect(row.cols.gross).toBe(1620);
+    expect(row.unclassified).toBe(false);
+  });
+
+  it('the mixed split flows through to SLSP and the 2550M breakdown', async () => {
+    const slsp = await ctx.api.get('/api/accounting/slsp?kind=sales&quarter=2026-Q4').set(hdr());
+    const party = slsp.body.rows.find((r: { tin: string | null }) => r.tin === '444-555-666-000');
+    expect(party.cols.vatable).toBe(1000);
+    expect(party.cols.exempt).toBe(500);
+    expect(party.cols.vat).toBe(120);
+
+    const vat = await ctx.api.get('/api/accounting/bir-2550m?month=2026-11').set(hdr());
+    expect(vat.body.breakdown.sales.vatable).toBeCloseTo(1000, 2);
+    expect(vat.body.breakdown.sales.exempt).toBeCloseTo(500, 2);
+    expect(vat.body.breakdown.sales.output_vat).toBeCloseTo(120, 2);
+  });
+
+  it('a document with no line codes still classifies at the document level', async () => {
+    const so = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'sale', customer_id: custId, tax_code_id: vatCode, order_date: '2026-11-06',
+      status: 'confirmed', tax_percent: 12,
+      items: [{ name: 'Plain vatable', quantity: 10, unit_price: 100 }], // no per-line code
+    });
+    const sj = await ctx.api.get('/api/accounting/sales-journal?from=2026-11-01&to=2026-11-30').set(hdr());
+    const row = sj.body.rows.find((r: { ref: string }) => r.ref === so.body.number);
+    expect(row.cols.vatable).toBe(1000);
+    expect(row.cols.vat).toBe(120);
+    expect(row.cols.exempt).toBe(0);
+  });
+});

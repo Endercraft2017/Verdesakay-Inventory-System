@@ -573,6 +573,7 @@ export interface OrderItem {
   unit: string | null;
   unit_price: number;
   line_total: number;
+  tax_code_id: number | null; // per-line VAT / tax classification for mixed-rate documents
   sort: number;
 }
 
@@ -651,6 +652,7 @@ export interface VendorBillItem {
   unit: string | null;
   unit_price: number;
   line_total: number;
+  tax_code_id: number | null; // per-line VAT / tax classification for mixed-rate documents
   sort: number;
 }
 

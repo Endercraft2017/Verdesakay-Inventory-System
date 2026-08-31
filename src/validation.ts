@@ -425,6 +425,7 @@ const orderItemSchema = z.object({
   quantity: numCoerce.min(0, 'Quantity cannot be negative').default(1),
   unit: trimmed.max(40).optional().nullable(),
   unit_price: numCoerce.min(0, 'Price cannot be negative').default(0),
+  tax_code_id: optionalId,   // per-line VAT classification for mixed-rate documents
 });
 
 const orderFields = {
@@ -476,6 +477,7 @@ const billLineSchema = z.object({
   unit: trimmed.max(40).optional().nullable(),
   quantity: numCoerce.min(0, 'Quantity cannot be negative').default(0),
   unit_price: numCoerce.min(0, 'Price cannot be negative').default(0),
+  tax_code_id: optionalId,   // per-line VAT classification for mixed-rate documents
 });
 
 export const vendorBillSchema = z.object({

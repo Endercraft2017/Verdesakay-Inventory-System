@@ -1682,12 +1682,72 @@ function sumCols(rows: { cols: VatColumns }[]): VatColumns {
   return t;
 }
 
+/* Per-line tax codes (mixed-rate documents). When any line of a sale / bill carries its
+   own tax_code_id, classify the document line-by-line — a line's own code + rate decides
+   its column — instead of forcing one treatment on the whole document. Lines without a
+   code fall back to the document-level classification for their slice. Documents with no
+   line codes at all take the original document-level path unchanged. */
+interface LineTax { line_total: number; kind: string | null; rate: number }
+
+function classifyLines(
+  docKind: string | null, subtotal: number, taxAmount: number, total: number,
+  lines: LineTax[] | undefined
+): VatColumns & { unclassified: boolean } {
+  if (!lines || !lines.some((l) => l.kind)) return classify(docKind, subtotal, taxAmount, total);
+  const effRate = subtotal > 0 ? taxAmount / subtotal : 0;
+  const z = { gross: 0, vatable: 0, exempt: 0, zero_rated: 0, vat: 0, unclassified: false };
+  for (const l of lines) {
+    const amt = round2(l.line_total || 0);
+    if (l.kind === 'output_vat' || l.kind === 'input_vat') {
+      const v = round2(amt * ((l.rate || 0) / 100));
+      z.vatable = round2(z.vatable + amt); z.vat = round2(z.vat + v); z.gross = round2(z.gross + amt + v);
+    } else if (l.kind === 'exempt') {
+      z.exempt = round2(z.exempt + amt); z.gross = round2(z.gross + amt);
+    } else if (l.kind === 'zero_rated') {
+      z.zero_rated = round2(z.zero_rated + amt); z.gross = round2(z.gross + amt);
+    } else {
+      const sub = classify(docKind, amt, round2(amt * effRate), round2(amt * (1 + effRate)));
+      z.vatable = round2(z.vatable + sub.vatable); z.exempt = round2(z.exempt + sub.exempt);
+      z.zero_rated = round2(z.zero_rated + sub.zero_rated); z.vat = round2(z.vat + sub.vat);
+      z.gross = round2(z.gross + sub.gross);
+      z.unclassified = z.unclassified || sub.unclassified;
+    }
+  }
+  return z;
+}
+
+/** line_total + tax-code kind/rate per parent document id, for [from, to]. */
+function orderLinesByTax(from: string, to: string): Map<number, LineTax[]> {
+  const m = new Map<number, LineTax[]>();
+  for (const l of queryAll<{ doc_id: number; line_total: number; kind: string | null; rate: number }>(`
+    SELECT oi.order_id AS doc_id, oi.line_total AS line_total, tc.kind AS kind, COALESCE(tc.rate, 0) AS rate
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
+    LEFT JOIN tax_codes tc ON tc.id = oi.tax_code_id
+    WHERE ${CONFIRMED_SALE_SQL} AND o.order_date >= ? AND o.order_date <= ?`, from, to)) {
+    (m.get(l.doc_id) ?? m.set(l.doc_id, []).get(l.doc_id)!).push({ line_total: l.line_total, kind: l.kind, rate: l.rate });
+  }
+  return m;
+}
+function billLinesByTax(from: string, to: string): Map<number, LineTax[]> {
+  const m = new Map<number, LineTax[]>();
+  for (const l of queryAll<{ doc_id: number; line_total: number; kind: string | null; rate: number }>(`
+    SELECT vbi.bill_id AS doc_id, vbi.line_total AS line_total, tc.kind AS kind, COALESCE(tc.rate, 0) AS rate
+    FROM vendor_bill_items vbi
+    JOIN vendor_bills b ON b.id = vbi.bill_id
+    LEFT JOIN tax_codes tc ON tc.id = vbi.tax_code_id
+    WHERE b.status = 'approved' AND COALESCE(b.bill_date, substr(b.created_at,1,10)) >= ? AND COALESCE(b.bill_date, substr(b.created_at,1,10)) <= ?`, from, to)) {
+    (m.get(l.doc_id) ?? m.set(l.doc_id, []).get(l.doc_id)!).push({ line_total: l.line_total, kind: l.kind, rate: l.rate });
+  }
+  return m;
+}
+
 interface JournalSrc {
   date: string | null; ref: string; name: string | null; tin?: string | null;
   subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
 }
-function journalRow(r: JournalSrc, doc: string, sign: 1 | -1) {
-  const c = classify(r.tax_kind, r.subtotal, r.tax_amount, r.total);
+function journalRow(r: JournalSrc, doc: string, sign: 1 | -1, lines?: LineTax[]) {
+  const c = classifyLines(r.tax_kind, r.subtotal, r.tax_amount, r.total, lines);
   const cols: VatColumns = sign === 1 ? c : {
     gross: -c.gross, vatable: -c.vatable, exempt: -c.exempt, zero_rated: -c.zero_rated, vat: -c.vat,
   };
@@ -1701,10 +1761,10 @@ function journalRow(r: JournalSrc, doc: string, sign: 1 | -1) {
  *  credit notes, each classified into vatable / exempt / zero-rated + output VAT. */
 function salesJournalData(from: string, to: string) {
   const sales = queryAll<{
-    date: string | null; ref: string; name: string | null; tin: string | null;
+    id: number; date: string | null; ref: string; name: string | null; tin: string | null;
     subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
   }>(`
-    SELECT o.order_date AS date, o.number AS ref, COALESCE(c.name, o.customer_name) AS name, c.tin AS tin,
+    SELECT o.id, o.order_date AS date, o.number AS ref, COALESCE(c.name, o.customer_name) AS name, c.tin AS tin,
            o.subtotal, o.tax_amount, o.total, tc.kind AS tax_kind
     FROM orders o
     LEFT JOIN customers c ON c.id = o.customer_id
@@ -1722,8 +1782,9 @@ function salesJournalData(from: string, to: string) {
     LEFT JOIN tax_codes tc ON tc.id = n.tax_code_id
     WHERE n.kind = 'customer' AND n.status = 'issued' AND n.note_date >= ? AND n.note_date <= ?`, from, to);
 
+  const linesByDoc = orderLinesByTax(from, to);
   const rows = [
-    ...sales.map((r) => journalRow(r, 'sale', 1)),
+    ...sales.map((r) => journalRow(r, 'sale', 1, linesByDoc.get(r.id))),
     ...notes.map((r) => journalRow(r, 'credit_note', -1)),
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.ref.localeCompare(b.ref));
   return { rows, totals: sumCols(rows) };
@@ -1733,10 +1794,10 @@ function salesJournalData(from: string, to: string) {
  *  debit notes, each classified + input VAT. */
 function purchaseJournalData(from: string, to: string) {
   const bills = queryAll<{
-    date: string | null; ref: string; name: string | null;
+    id: number; date: string | null; ref: string; name: string | null;
     subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
   }>(`
-    SELECT COALESCE(b.bill_date, b.created_at) AS date, b.number AS ref, s.name AS name,
+    SELECT b.id, COALESCE(b.bill_date, b.created_at) AS date, b.number AS ref, s.name AS name,
            b.subtotal, b.tax_amount, b.total, tc.kind AS tax_kind
     FROM vendor_bills b
     LEFT JOIN suppliers s ON s.id = b.supplier_id
@@ -1754,8 +1815,9 @@ function purchaseJournalData(from: string, to: string) {
     LEFT JOIN tax_codes tc ON tc.id = n.tax_code_id
     WHERE n.kind = 'supplier' AND n.status = 'issued' AND n.note_date >= ? AND n.note_date <= ?`, from, to);
 
+  const linesByDoc = billLinesByTax(from, to);
   const rows = [
-    ...bills.map((r) => journalRow(r, 'bill', 1)),
+    ...bills.map((r) => journalRow(r, 'bill', 1, linesByDoc.get(r.id))),
     ...notes.map((r) => journalRow(r, 'debit_note', -1)),
   ].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.ref.localeCompare(b.ref));
   return { rows, totals: sumCols(rows) };
@@ -1975,6 +2037,7 @@ function slspRows(kind: 'sales' | 'purchases', from: string, to: string) {
   };
 
   if (kind === 'sales') {
+    const linesByDoc = orderLinesByTax(from, to);
     for (const o of queryAll<{ id: number; subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
       customer_id: number | null; name: string | null; tin: string | null; address: string | null }>(`
         SELECT o.id, o.subtotal, o.tax_amount, o.total, tc.kind AS tax_kind, o.customer_id,
@@ -1984,7 +2047,7 @@ function slspRows(kind: 'sales' | 'purchases', from: string, to: string) {
         WHERE ${CONFIRMED_SALE_SQL} AND o.order_date >= ? AND o.order_date <= ?`, from, to)) {
       add(o.customer_id ? `c${o.customer_id}` : `n:${o.name}`,
         { party_id: o.customer_id, tin: o.tin, name: o.name, address: o.address },
-        classify(o.tax_kind, o.subtotal, o.tax_amount, o.total));
+        classifyLines(o.tax_kind, o.subtotal, o.tax_amount, o.total, linesByDoc.get(o.id)));
     }
     for (const n of queryAll<{ subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
       party_id: number | null; name: string | null; tin: string | null; address: string | null }>(`
@@ -1999,16 +2062,17 @@ function slspRows(kind: 'sales' | 'purchases', from: string, to: string) {
         { gross: -c.gross, vatable: -c.vatable, exempt: -c.exempt, zero_rated: -c.zero_rated, vat: -c.vat });
     }
   } else {
-    for (const b of queryAll<{ subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
+    const linesByDoc = billLinesByTax(from, to);
+    for (const b of queryAll<{ id: number; subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
       supplier_id: number | null; name: string | null; tin: string | null; address: string | null }>(`
-        SELECT b.subtotal, b.tax_amount, b.total, tc.kind AS tax_kind, b.supplier_id,
+        SELECT b.id, b.subtotal, b.tax_amount, b.total, tc.kind AS tax_kind, b.supplier_id,
                s.name AS name, s.tin AS tin, s.address AS address
         FROM vendor_bills b LEFT JOIN suppliers s ON s.id = b.supplier_id
         LEFT JOIN tax_codes tc ON tc.id = b.tax_code_id
         WHERE b.status = 'approved' AND COALESCE(b.bill_date, substr(b.created_at,1,10)) >= ? AND COALESCE(b.bill_date, substr(b.created_at,1,10)) <= ?`, from, to)) {
       add(b.supplier_id ? `s${b.supplier_id}` : `n:${b.name}`,
         { party_id: b.supplier_id, tin: b.tin, name: b.name, address: b.address },
-        classify(b.tax_kind, b.subtotal, b.tax_amount, b.total));
+        classifyLines(b.tax_kind, b.subtotal, b.tax_amount, b.total, linesByDoc.get(b.id)));
     }
   }
   return [...acc.values()].sort((a, b) => (b.gross) - (a.gross));

@@ -24,8 +24,9 @@
 > cutoff via an explicit "Post to GL" action (not an implicit per-regenerate hook, unlike
 > sales/purchase — see §5), plus payslip locking (`mark-paid`) and payslip email as
 > companion fixes. Phase 3b (inventory/COGS/WIP into the GL), Phase 4–5 (financial-
-> statement polish, CAS export) are the roadmap; the last Phase 2 tail is per-*line* tax
-> codes for mixed-rate documents.
+> statement polish, CAS export) are the roadmap. **Phase 2 is complete** — its last tail,
+> **per-line tax codes** for mixed-rate documents (2026-08-31), lets the BIR journals /
+> SLSP / 2550M-Q classify a sale or bill line by line.
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -310,8 +311,17 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   the contra accounts, plus a contra-account summary. UI: Accounting → Tax & Compliance →
   **BIR 2550Q**; **Books → Cash Book** (receipts / disbursements toggle, CSV).
   `tests/accounting.test.ts` ("2550M (VAT)" + "cash books (Phase 2 tail)").
-- **2 — still to do.** `tax_codes` on *lines* (mixed-rate docs) — the last tail; needs
-  `order_items` / `vendor_bill_items` columns and a per-line picker on the sale / bill forms.
+- **2e — per-line tax codes. ✅ SHIPPED 2026-08-31.** `order_items` and `vendor_bill_items`
+  gained a `tax_code_id` (SCHEMA_VERSION 11). When any line of a sale / bill carries its
+  own code, the BIR sales / purchase journals, **SLSP** and **2550M/Q** classify the
+  document **line by line** — each line's own code + rate decides its column (vatable +
+  VAT at the line code's rate / exempt / zero-rated); lines with no code fall back to the
+  document-level classification for their slice; documents with no line codes at all take
+  the original document-level path unchanged (`classifyLines` + `orderLinesByTax` /
+  `billLinesByTax` helpers). GL posting stays at the document level (the doc's own
+  `tax_amount`) — the split is a reporting refinement. UI: a **Tax code** column on the
+  sale-order and vendor-bill line grids ("— doc default —" per line). `tests/accounting.test.ts`
+  ("per-line tax codes"). **Phase 2 complete.**
 
 **Phase 3 — payroll & inventory into the GL.**
 
@@ -553,7 +563,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | `PurchaseInvoice` + `PurchaseInvoiceItem` | `vendor_bills` | 🟡 — **Phase 1a** auto-posts an *approved* bill to the purchase journal (DR Purchases / DR Input VAT / CR AP); reverses on dispute |
 | `SalesQuote` + items | — | ⬜ (quotation → SO) |
 | `Payment` + `PaymentFor` (allocation) + `PaymentMethod` | `payments` + `payment_allocations` (Phase 1b) | ✅ — receipt / disbursement, applied to sale orders / vendor bills, auto-posts to the cash books, void = reversal |
-| `Tax` + `TaxDetail` + `TaxSummary` (tax templates) | `tax_codes` table + `tax_code_id` on `orders` / `vendor_bills` / `credit_notes` (Phase 2a); `tax_percent` still on the doc | 🟡 — per-document code done; per-*line* codes for mixed-rate docs still ⬜ (Phase 2b) |
+| `Tax` + `TaxDetail` + `TaxSummary` (tax templates) | `tax_codes` table + `tax_code_id` on `orders` / `vendor_bills` / `credit_notes` (Phase 2a) **and on `order_items` / `vendor_bill_items`** (Phase 2e, per-line for mixed-rate docs); `tax_percent` still on the doc | ✅ — per-document + per-line codes; the BIR journals / SLSP / 2550M-Q classify line by line |
 | `AppliedCouponCodes` / `CouponCode` / `PricingRule` | — | ➖ |
 
 ### Inventory (`schemas/app/inventory`)

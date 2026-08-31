@@ -54,7 +54,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1354,6 +1354,19 @@ function migrate(): void {
   const supCols = db.prepare('PRAGMA table_info(suppliers)').all() as { name: string }[];
   if (!supCols.some((c) => c.name === 'tin')) {
     db.exec('ALTER TABLE suppliers ADD COLUMN tin TEXT');
+  }
+
+  // Per-line tax code on a sale order / vendor bill line, for mixed-rate documents (some
+  // lines vatable, some exempt / zero-rated). The BIR sales / purchase journals, SLSP and
+  // 2550M/Q classify per line when any line carries one, else fall back to the document's
+  // own tax_code_id. (SCHEMA_VERSION 11)
+  const oiCols = db.prepare('PRAGMA table_info(order_items)').all() as { name: string }[];
+  if (!oiCols.some((c) => c.name === 'tax_code_id')) {
+    db.exec('ALTER TABLE order_items ADD COLUMN tax_code_id INTEGER REFERENCES tax_codes(id) ON DELETE SET NULL');
+  }
+  const vbiCols = db.prepare('PRAGMA table_info(vendor_bill_items)').all() as { name: string }[];
+  if (!vbiCols.some((c) => c.name === 'tax_code_id')) {
+    db.exec('ALTER TABLE vendor_bill_items ADD COLUMN tax_code_id INTEGER REFERENCES tax_codes(id) ON DELETE SET NULL');
   }
 
   // Carry a pre-existing single checklist (settings key `qc_checklist`) into a named row.

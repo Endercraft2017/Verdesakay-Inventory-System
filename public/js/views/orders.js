@@ -170,7 +170,7 @@ App.register('orders', async (view, filter) => {
         </div>
         <label style="margin-top:14px">Line items</label>
         <div class="line-items"><table class="line-table"><thead><tr>
-          <th>Item</th><th>SKU</th><th class="right">Qty</th><th>Unit</th><th class="right">Unit Price</th><th class="right">Total</th><th></th>
+          <th>Item</th><th>SKU</th><th class="right">Qty</th><th>Unit</th><th class="right">Unit Price</th>${taxCodes.length ? '<th>Tax code</th>' : ''}<th class="right">Total</th><th></th>
         </tr></thead><tbody id="ord-lines"></tbody></table></div>
         <div class="line-actions">
           <button type="button" class="btn secondary small" id="ord-add-inv">${UI.icon('inventory', 15)} Add inventory item</button>
@@ -204,9 +204,17 @@ App.register('orders', async (view, filter) => {
           ov.querySelector('#ord-total').textContent = money(subtotal + tax);
         }
 
+        const taxCell = (l) => {
+          if (!taxCodes.length) return '';
+          const opts = ['<option value="">— doc default —</option>'].concat(
+            taxCodes.map((t) => `<option value="${t.id}" ${String(l.tax_code_id || '') === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)}</option>`)
+          ).join('');
+          return `<td><select data-k="tax_code_id" style="width:120px">${opts}</select></td>`;
+        };
+
         function renderLines() {
           if (!lines.length) {
-            body.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:14px">No line items yet — add one below.</td></tr>`;
+            body.innerHTML = `<tr><td colspan="${taxCodes.length ? 8 : 7}" class="muted" style="text-align:center;padding:14px">No line items yet — add one below.</td></tr>`;
             recompute();
             return;
           }
@@ -217,11 +225,13 @@ App.register('orders', async (view, filter) => {
               <td><input data-k="quantity" type="number" step="any" value="${UI.esc(String(l.quantity ?? 1))}" class="right" style="width:70px" /></td>
               <td><input data-k="unit" value="${UI.esc(l.unit || '')}" style="width:60px" /></td>
               <td><input data-k="unit_price" type="number" step="0.01" value="${UI.esc(String(l.unit_price ?? 0))}" class="right" style="width:90px" /></td>
+              ${taxCell(l)}
               <td class="right" data-total="${i}">0.00</td>
               <td><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 15)}</button></td>
             </tr>`).join('');
-          body.querySelectorAll('input[data-k]').forEach((inp) => {
-            inp.addEventListener('input', () => {
+          body.querySelectorAll('[data-k]').forEach((inp) => {
+            const ev = inp.tagName === 'SELECT' ? 'change' : 'input';
+            inp.addEventListener(ev, () => {
               const row = Number(inp.closest('[data-row]').dataset.row);
               lines[row][inp.dataset.k] = inp.value;
               recompute();
@@ -254,6 +264,7 @@ App.register('orders', async (view, filter) => {
             item_id: l.item_id || null, name: (l.name || '').trim(), sku: l.sku || null,
             description: l.description || null, quantity: Number(l.quantity) || 0,
             unit: l.unit || null, unit_price: Number(l.unit_price) || 0,
+            tax_code_id: l.tax_code_id ? Number(l.tax_code_id) : null,
           }))
           .filter((l) => l.name);
         if (!cleaned.length) { showErr('Add at least one line item (with a name)'); return false; }

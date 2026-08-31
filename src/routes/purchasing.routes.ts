@@ -333,10 +333,10 @@ router.post('/orders/:id/bills', requirePermission('orders.edit'), (req, res) =>
     withTotals.forEach((l, i) => {
       run(
         `INSERT INTO vendor_bill_items
-          (bill_id, order_item_id, item_id, name, sku, quantity, unit, unit_price, line_total, sort)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (bill_id, order_item_id, item_id, name, sku, quantity, unit, unit_price, line_total, tax_code_id, sort)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         billId, l.order_item_id ?? null, l.item_id ?? null, l.name, l.sku ?? null,
-        l.quantity ?? 0, l.unit ?? null, l.unit_price ?? 0, l.line_total, i
+        l.quantity ?? 0, l.unit ?? null, l.unit_price ?? 0, l.line_total, l.tax_code_id ?? null, i
       );
     });
     db.exec('COMMIT');
@@ -378,10 +378,10 @@ router.put('/bills/:id', requirePermission('orders.edit'), (req, res) => {
     withTotals.forEach((l, i) => {
       run(
         `INSERT INTO vendor_bill_items
-          (bill_id, order_item_id, item_id, name, sku, quantity, unit, unit_price, line_total, sort)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (bill_id, order_item_id, item_id, name, sku, quantity, unit, unit_price, line_total, tax_code_id, sort)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         bill.id, l.order_item_id ?? null, l.item_id ?? null, l.name, l.sku ?? null,
-        l.quantity ?? 0, l.unit ?? null, l.unit_price ?? 0, l.line_total, i
+        l.quantity ?? 0, l.unit ?? null, l.unit_price ?? 0, l.line_total, l.tax_code_id ?? null, i
       );
     });
     db.exec('COMMIT');
