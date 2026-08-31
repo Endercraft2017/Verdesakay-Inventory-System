@@ -63,6 +63,16 @@ const API = (() => {
     return URL.createObjectURL(await res.blob());
   }
 
+  /** Fetch an auth'd endpoint that returns a file (CSV / DAT / etc.) and save it. */
+  async function download(path, filename) {
+    const url = await blobUrl(path);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'download';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   return {
     getToken, setToken, clearToken,
     get: (p) => request('GET', p),
@@ -70,6 +80,6 @@ const API = (() => {
     put: (p, b, opts) => request('PUT', p, b, false, opts),
     del: (p) => request('DELETE', p),
     upload: (p, formData) => request('POST', p, formData, true),
-    blobUrl,
+    blobUrl, download,
   };
 })();

@@ -14,11 +14,12 @@
 > receipts / supplier disbursements that settle invoices and auto-post to the cash books),
 > **credit / debit notes**, and **AR / AP aging** (net of on-account credits) + a
 > per-party statement — all under Accounting → Receivables & Payables.
-> **Phase 2a–b (2026-08-31)** adds **`tax_codes`** (VAT / withholding classifications on a
-> sale, bill or note), the **BIR Sales & Purchase Journals**, and **expanded withholding
-> (EWT)** on vendor bills — the withholding register, BIR 2307, and a register-sourced
-> 0619-E. Phases 2-rest–5 (re-sourced VAT returns + SLSP / 1601-EQ, payroll & inventory
-> into the GL, financial-statement polish, CAS export) are the roadmap.
+> **Phase 2 (2026-08-31)** adds **`tax_codes`**, the **BIR Sales & Purchase Journals**,
+> **expanded withholding (EWT)** on vendor bills (register + 2307 + 0619-E), and the
+> **quarterly / annual filing pack** — 1601-EQ + QAP, 1604-E, and the SLSP summary lists
+> with `.DAT` export. Phases 3–5 (payroll & inventory into the GL, financial-statement
+> polish, CAS export) are the roadmap; a few Phase 2 tails remain (per-line tax codes,
+> re-sourcing 2550M/2550Q from the journals).
 > Companion to [GO-TO-MARKET.md](GO-TO-MARKET.md) (Pillar 1 is the payroll/tax wedge —
 > a real GL is the natural extension) and [SAAS-READINESS.md](SAAS-READINESS.md).
 
@@ -282,10 +283,19 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   builds its ATC lines straight from the register. UI: Accounting → Tax & Compliance →
   **Withholding register** / **BIR 2307**; EWT % + ATC fields on the vendor-bill form.
   `tests/accounting.test.ts` ("expanded withholding / EWT").
-- **2b — still to do.** `tax_codes` on *lines* (mixed-rate docs); re-source **2550M /
-  2550Q** from the journals; add **SLSP `.DAT`**, **1601-EQ + QAP**, **1604-E**; the
-  dedicated **Cash Receipts / Cash Disbursements** book views (the payment auto-post
-  already fills those journals).
+- **2c — quarterly / annual EWT + SLSP. ✅ SHIPPED 2026-08-31.** All sourced from the
+  data structures already built (EWT register + BIR journals), no schema change.
+  **`GET /api/accounting/bir-1601eq?quarter=YYYY-Qn`** (quarterly EWT return — 3 monthly
+  rows + reconciliation), **`/qap`** (Quarterly Alphalist of Payees, one row per payee ×
+  ATC, `format=csv|dat`), **`/bir-1604e?year=`** (annual info return + alphalist,
+  `format=csv|dat`), **`/slsp?quarter=&kind=sales|purchases`** (Summary List of Sales /
+  Purchases per party — TIN / name / address / gross / exempt / zero-rated / taxable /
+  VAT, `format=csv|dat`). UI: Accounting → Tax & Compliance modals **BIR 1601-EQ + QAP**,
+  **BIR 1604-E**, **SLSP** (with `.DAT` / CSV download via the new `API.download`).
+  `tests/accounting.test.ts` ("SLSP summary lists" + the 1601-EQ/QAP/1604-E block).
+- **2 — still to do.** `tax_codes` on *lines* (mixed-rate docs); re-source **2550M /
+  2550Q** from the journals; the dedicated **Cash Receipts / Cash Disbursements** book
+  views (the payment auto-post already fills those journals).
 
 **Phase 3 — payroll & inventory into the GL.** Post the **payroll journal** from each
 payslip batch (this is where the *"enable/disable the SSS/PhilHealth/Pag-IBIG deduction
@@ -513,7 +523,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | Cash Flow Statement | — | ⬜ Phase 4 |
 | Stock Ledger / Stock Balance | analytics dashboard (stock value) | 🟡 |
 | Sales / Purchase Register, Party Ledger | `sales-journal` / `purchase-journal` (Phase 2a, BIR columnar); `party-ledger` statement (Phase 1b); AR/AP aging | ✅ — registers + party statement done |
-| GST reports | BIR sales/purchase journals + 2550M/0619-E worksheets + the **EWT register / 2307** (Phase 2a–b); SLSP `.DAT` / 1601-EQ / QAP still ⬜ | 🟡 |
+| GST reports | BIR sales/purchase journals + 2550M/0619-E + **EWT register / 2307 / 1601-EQ + QAP / 1604-E / SLSP `.DAT`** (Phase 2); 2550Q re-source from journals still ⬜ | ✅ |
 
 ### Cross-cutting
 | Frappe Books | Verdesakay | Status |

@@ -630,4 +630,57 @@ describe('accounting: expanded withholding / EWT (Phase 2b)', () => {
     expect(r.status).toBe(200);
     expect(r.body.worksheet.total_tax_withheld).toBeGreaterThanOrEqual(20);
   });
+
+  it('1601-EQ + QAP roll the register up by quarter and payee', async () => {
+    const eq = await ctx.api.get('/api/accounting/bir-1601eq?quarter=2026-Q3').set(hdr());
+    expect(eq.status).toBe(200);
+    const jul = eq.body.monthly.find((m: { month: string }) => m.month === '2026-07');
+    expect(jul.tax_base).toBe(1000);
+    expect(jul.tax_withheld).toBe(20);
+    expect(eq.body.total_tax_withheld).toBeGreaterThanOrEqual(20);
+
+    const qap = await ctx.api.get('/api/accounting/qap?quarter=2026-Q3').set(hdr());
+    const row = qap.body.rows.find((r: { tin: string }) => r.tin === '999-888-777-000');
+    expect(row).toMatchObject({ atc: 'WC140', base: 1000, tax: 20 });
+
+    const csv = await ctx.api.get('/api/accounting/qap?quarter=2026-Q3&format=csv').set(hdr());
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.text).toContain('999-888-777-000');
+    expect(csv.text.split('\n')[0]).toContain('Payee TIN');
+
+    const dat = await ctx.api.get('/api/accounting/qap?quarter=2026-Q3&format=dat').set(hdr());
+    expect(dat.text).toContain('999-888-777-000|');
+  });
+
+  it('1604-E is the annual roll-up of the same payee alphalist', async () => {
+    const r = await ctx.api.get('/api/accounting/bir-1604e?year=2026').set(hdr());
+    expect(r.status).toBe(200);
+    expect(r.body.rows.some((x: { tin: string }) => x.tin === '999-888-777-000')).toBe(true);
+    expect(r.body.total_tax).toBeGreaterThanOrEqual(20);
+  });
+});
+
+describe('accounting: SLSP summary lists (Phase 2c)', () => {
+  it('summary list of purchases groups approved bills by supplier for the quarter', async () => {
+    // The Phase 2b EWT bill (Services Co, net 1000 + 120 VAT, 2026-07) lands in Q3.
+    const slp = await ctx.api.get('/api/accounting/slsp?kind=purchases&quarter=2026-Q3').set(hdr());
+    expect(slp.status).toBe(200);
+    const row = slp.body.rows.find((r: { tin: string | null }) => r.tin === '999-888-777-000');
+    expect(row.cols.vatable).toBe(1000);
+    expect(row.cols.vat).toBe(120);
+    expect(slp.body.totals.vatable).toBeGreaterThanOrEqual(1000);
+
+    const csv = await ctx.api.get('/api/accounting/slsp?kind=purchases&quarter=2026-Q3&format=csv').set(hdr());
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.text).toContain('Taxable (net)');
+  });
+
+  it('summary list of sales groups confirmed sales by customer', async () => {
+    // The Phase 2a exempt + VAT sales for "TaxCo" are in 2026-06 (Q2).
+    const sls = await ctx.api.get('/api/accounting/slsp?kind=sales&quarter=2026-Q2').set(hdr());
+    expect(sls.status).toBe(200);
+    const row = sls.body.rows.find((r: { tin: string | null }) => r.tin === '111-222-333-000');
+    expect(row.cols.exempt).toBeGreaterThanOrEqual(1100); // 500 + 600 exempt sales
+    expect(row.cols.vatable).toBe(1000);                   // the one VAT sale
+  });
 });

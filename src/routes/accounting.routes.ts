@@ -49,6 +49,24 @@ const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 1
 const yearOf = (v: unknown): string => (/^\d{4}$/.test(String(v)) ? String(v) : String(new Date().getFullYear()));
 const monthOf = (v: unknown): string => (/^\d{4}-\d{2}$/.test(String(v)) ? String(v) : new Date().toISOString().slice(0, 7));
 
+/** "2026-Q3" (or bare "2026-07"…"2026-09") -> {year, q, from, to, months[]}. Defaults to the current quarter. */
+function quarterOf(v: unknown): { year: string; q: number; from: string; to: string; months: string[] } {
+  const s = String(v ?? '');
+  let year: number, q: number;
+  const m = s.match(/^(\d{4})-?Q([1-4])$/i);
+  if (m) { year = Number(m[1]); q = Number(m[2]); }
+  else {
+    const now = new Date();
+    year = now.getFullYear();
+    q = Math.floor(now.getMonth() / 3) + 1;
+  }
+  const startMonth = (q - 1) * 3; // 0-indexed
+  const from = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`;
+  const to = new Date(year, startMonth + 3, 0).toISOString().slice(0, 10);
+  const months = [0, 1, 2].map((i) => `${year}-${String(startMonth + 1 + i).padStart(2, '0')}`);
+  return { year: String(year), q, from, to, months };
+}
+
 /* ------------------------------------------ BIR — withholding on compensation --- */
 
 // GET /api/accounting/bir-1601c?year= — monthly withholding-tax remittance worksheet.
@@ -1726,6 +1744,194 @@ router.get('/bir-2307', (req, res) => {
     total_base: round2(rows.reduce((s, r) => s + r.base, 0)),
     total_tax: round2(rows.reduce((s, r) => s + r.tax, 0)),
     note: 'Give this to the supplier so they can claim the withheld amount as a tax credit.',
+  });
+});
+
+/* ------------------------------------------------- quarterly / annual EWT: 1601-EQ + QAP --- */
+
+/** One row per payee TIN × ATC over [from, to] — the QAP / 1604-E alphalist shape. */
+function payeeAlphalist(from: string, to: string) {
+  const rows = ewtRegisterRows(from, to);
+  const byKey = new Map<string, {
+    tin: string | null; name: string | null; atc: string; base: number; tax: number;
+    rate: number; supplier_id: number | null;
+  }>();
+  for (const r of rows) {
+    const k = `${r.supplier_id ?? 'x'}|${r.atc || '(none)'}`;
+    const g = byKey.get(k) || {
+      tin: r.tin, name: r.supplier, atc: r.atc || '(none)', base: 0, tax: 0, rate: r.rate,
+      supplier_id: r.supplier_id,
+    };
+    g.base = round2(g.base + r.base); g.tax = round2(g.tax + r.tax);
+    byKey.set(k, g);
+  }
+  return [...byKey.values()]
+    .map((g) => ({ ...g, rate: g.base > 0 ? round2((g.tax / g.base) * 100) : g.rate }))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '') || a.atc.localeCompare(b.atc));
+}
+
+// GET /api/accounting/bir-1601eq?quarter=YYYY-Qn — quarterly remittance return of EWT.
+router.get('/bir-1601eq', (req, res) => {
+  const { year, q, from, to, months } = quarterOf(req.query.quarter);
+  const remitted = ((): number[] => {
+    try {
+      const p = JSON.parse(String(req.query.remitted ?? '[]'));
+      return Array.isArray(p) ? p.map((n) => Number(n) || 0) : [0, 0, 0];
+    } catch { return [0, 0, 0]; }
+  })();
+  const monthly = months.map((m, i) => {
+    const rows = ewtRegisterRows(m + '-01', new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0).toISOString().slice(0, 10));
+    const base = round2(rows.reduce((s, r) => s + r.base, 0));
+    const tax = round2(rows.reduce((s, r) => s + r.tax, 0));
+    return { month: m, tax_base: base, tax_withheld: tax, remitted: round2(remitted[i] ?? 0), still_due: round2(tax - (remitted[i] ?? 0)) };
+  });
+  const alpha = payeeAlphalist(from, to);
+  res.json({
+    quarter: `${year}-Q${q}`, from, to, company: companyProfile(),
+    monthly,
+    total_tax_base: round2(monthly.reduce((s, m) => s + m.tax_base, 0)),
+    total_tax_withheld: round2(monthly.reduce((s, m) => s + m.tax_withheld, 0)),
+    total_remitted: round2(monthly.reduce((s, m) => s + m.remitted, 0)),
+    still_due: round2(monthly.reduce((s, m) => s + m.still_due, 0)),
+    payee_count: alpha.length,
+    note: 'File 1601-EQ with the Quarterly Alphalist of Payees (QAP) attached. Deadline: last day of the month after the quarter.',
+  });
+});
+
+const QAP_HEADERS = ['Payee TIN', 'Payee name', 'ATC', 'Nature of payment', 'Tax base', 'Rate %', 'Tax withheld'];
+function qapCells(a: ReturnType<typeof payeeAlphalist>[number]): (string | number)[] {
+  const ref = EWT_ATCS.find((x) => x.atc.split('/').includes(a.atc));
+  return [a.tin ?? '', a.name ?? '', a.atc, ref?.description ?? '', a.base, a.rate, a.tax];
+}
+
+// GET /api/accounting/qap?quarter=YYYY-Qn&format=csv|dat — Quarterly Alphalist of Payees.
+router.get('/qap', (req, res) => {
+  const { year, q, from, to } = quarterOf(req.query.quarter);
+  const rows = payeeAlphalist(from, to);
+  const fmt = String(req.query.format ?? '');
+  if (fmt === 'csv' || fmt === 'dat') {
+    const sep = fmt === 'dat' ? '|' : ',';
+    const body = (fmt === 'csv' ? QAP_HEADERS.join(',') + '\n' : '')
+      + rows.map((r) => qapCells(r).map((c) => (fmt === 'csv' ? String(c).replace(/"/g, '""') : c)).join(sep)).join('\n');
+    res.setHeader('Content-Type', fmt === 'csv' ? 'text/csv' : 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="QAP-${year}Q${q}.${fmt}"`);
+    res.send(body);
+    return;
+  }
+  res.json({
+    quarter: `${year}-Q${q}`, from, to, company: companyProfile(),
+    headers: QAP_HEADERS,
+    rows: rows.map((r) => ({ tin: r.tin, name: r.name, atc: r.atc, base: r.base, rate: r.rate, tax: r.tax })),
+    total_base: round2(rows.reduce((s, r) => s + r.base, 0)),
+    total_tax: round2(rows.reduce((s, r) => s + r.tax, 0)),
+  });
+});
+
+// GET /api/accounting/bir-1604e?year=&format=csv|dat — Annual Info Return of creditable
+// income taxes withheld (expanded) + its alphalist of payees.
+router.get('/bir-1604e', (req, res) => {
+  const year = yearOf(req.query.year);
+  const from = `${year}-01-01`, to = `${year}-12-31`;
+  const rows = payeeAlphalist(from, to);
+  const fmt = String(req.query.format ?? '');
+  if (fmt === 'csv' || fmt === 'dat') {
+    const sep = fmt === 'dat' ? '|' : ',';
+    const body = (fmt === 'csv' ? QAP_HEADERS.join(',') + '\n' : '')
+      + rows.map((r) => qapCells(r).map((c) => (fmt === 'csv' ? String(c).replace(/"/g, '""') : c)).join(sep)).join('\n');
+    res.setHeader('Content-Type', fmt === 'csv' ? 'text/csv' : 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="1604E-alphalist-${year}.${fmt}"`);
+    res.send(body);
+    return;
+  }
+  res.json({
+    year, company: companyProfile(),
+    headers: QAP_HEADERS,
+    rows: rows.map((r) => ({ tin: r.tin, name: r.name, atc: r.atc, base: r.base, rate: r.rate, tax: r.tax })),
+    total_base: round2(rows.reduce((s, r) => s + r.base, 0)),
+    total_tax: round2(rows.reduce((s, r) => s + r.tax, 0)),
+    note: 'Deadline: 1 March of the following year. Attach the alphalist of payees.',
+  });
+});
+
+/* -------------------------------------------------- Summary List of Sales / Purchases (SLSP) --- */
+
+const SLSP_HEADERS = ['TIN', 'Name', 'Address', 'Gross', 'Exempt', 'Zero-rated', 'Taxable (net)', 'VAT'];
+function slspRows(kind: 'sales' | 'purchases', from: string, to: string) {
+  type Row = { party_id: number | null; tin: string | null; name: string | null; address: string | null } & VatColumns;
+  const acc = new Map<string, Row>();
+  const add = (key: string, seed: Omit<Row, keyof VatColumns>, c: VatColumns) => {
+    let r = acc.get(key);
+    if (!r) { r = { ...seed, gross: 0, vatable: 0, exempt: 0, zero_rated: 0, vat: 0 }; acc.set(key, r); }
+    for (const k of ['gross', 'vatable', 'exempt', 'zero_rated', 'vat'] as (keyof VatColumns)[]) r[k] = round2(r[k] + c[k]);
+  };
+
+  if (kind === 'sales') {
+    for (const o of queryAll<{ id: number; subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
+      customer_id: number | null; name: string | null; tin: string | null; address: string | null }>(`
+        SELECT o.id, o.subtotal, o.tax_amount, o.total, tc.kind AS tax_kind, o.customer_id,
+               COALESCE(c.name, o.customer_name) AS name, c.tin AS tin, c.address AS address
+        FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN tax_codes tc ON tc.id = o.tax_code_id
+        WHERE ${CONFIRMED_SALE_SQL} AND o.order_date >= ? AND o.order_date <= ?`, from, to)) {
+      add(o.customer_id ? `c${o.customer_id}` : `n:${o.name}`,
+        { party_id: o.customer_id, tin: o.tin, name: o.name, address: o.address },
+        classify(o.tax_kind, o.subtotal, o.tax_amount, o.total));
+    }
+    for (const n of queryAll<{ subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
+      party_id: number | null; name: string | null; tin: string | null; address: string | null }>(`
+        SELECT n.subtotal, n.tax_amount, n.total, tc.kind AS tax_kind, n.party_id,
+               COALESCE(c.name, n.party_name) AS name, c.tin AS tin, c.address AS address
+        FROM credit_notes n LEFT JOIN customers c ON c.id = n.party_id
+        LEFT JOIN tax_codes tc ON tc.id = n.tax_code_id
+        WHERE n.kind = 'customer' AND n.status = 'issued' AND n.note_date >= ? AND n.note_date <= ?`, from, to)) {
+      const c = classify(n.tax_kind, n.subtotal, n.tax_amount, n.total);
+      add(n.party_id ? `c${n.party_id}` : `n:${n.name}`,
+        { party_id: n.party_id, tin: n.tin, name: n.name, address: n.address },
+        { gross: -c.gross, vatable: -c.vatable, exempt: -c.exempt, zero_rated: -c.zero_rated, vat: -c.vat });
+    }
+  } else {
+    for (const b of queryAll<{ subtotal: number; tax_amount: number; total: number; tax_kind: string | null;
+      supplier_id: number | null; name: string | null; tin: string | null; address: string | null }>(`
+        SELECT b.subtotal, b.tax_amount, b.total, tc.kind AS tax_kind, b.supplier_id,
+               s.name AS name, s.tin AS tin, s.address AS address
+        FROM vendor_bills b LEFT JOIN suppliers s ON s.id = b.supplier_id
+        LEFT JOIN tax_codes tc ON tc.id = b.tax_code_id
+        WHERE b.status = 'approved' AND COALESCE(b.bill_date, substr(b.created_at,1,10)) >= ? AND COALESCE(b.bill_date, substr(b.created_at,1,10)) <= ?`, from, to)) {
+      add(b.supplier_id ? `s${b.supplier_id}` : `n:${b.name}`,
+        { party_id: b.supplier_id, tin: b.tin, name: b.name, address: b.address },
+        classify(b.tax_kind, b.subtotal, b.tax_amount, b.total));
+    }
+  }
+  return [...acc.values()].sort((a, b) => (b.gross) - (a.gross));
+}
+
+// GET /api/accounting/slsp?quarter=YYYY-Qn&kind=sales|purchases&format=csv|dat
+router.get('/slsp', (req, res) => {
+  if (!requireLedger(res)) return;
+  const kind = req.query.kind === 'purchases' ? 'purchases' : 'sales';
+  const { year, q, from, to } = quarterOf(req.query.quarter);
+  const rows = slspRows(kind, from, to);
+  const fmt = String(req.query.format ?? '');
+  const cells = (r: ReturnType<typeof slspRows>[number]) =>
+    [r.tin ?? '', r.name ?? '', r.address ?? '', r.gross, r.exempt, r.zero_rated, r.vatable, r.vat];
+  if (fmt === 'csv' || fmt === 'dat') {
+    const sep = fmt === 'dat' ? '|' : ',';
+    const body = (fmt === 'csv' ? SLSP_HEADERS.join(',') + '\n' : '')
+      + rows.map((r) => cells(r).map((c) => (fmt === 'csv' ? `"${String(c).replace(/"/g, '""')}"` : c)).join(sep)).join('\n');
+    res.setHeader('Content-Type', fmt === 'csv' ? 'text/csv' : 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="SL${kind === 'sales' ? 'S' : 'P'}-${year}Q${q}.${fmt}"`);
+    res.send(body);
+    return;
+  }
+  const tot = rows.reduce((t, r) => {
+    for (const k of ['gross', 'vatable', 'exempt', 'zero_rated', 'vat'] as (keyof VatColumns)[]) t[k] = round2(t[k] + r[k]);
+    return t;
+  }, { gross: 0, vatable: 0, exempt: 0, zero_rated: 0, vat: 0 } as VatColumns);
+  res.json({
+    kind, quarter: `${year}-Q${q}`, from, to, company: companyProfile(),
+    headers: SLSP_HEADERS,
+    rows: rows.map((r) => ({ party_id: r.party_id, tin: r.tin, name: r.name, address: r.address, cols: { gross: r.gross, vatable: r.vatable, exempt: r.exempt, zero_rated: r.zero_rated, vat: r.vat } })),
+    totals: tot,
   });
 });
 

@@ -10,11 +10,14 @@ App.register('accounting', async (view) => {
   const SECTIONS = [
     ['Value-added tax', [
       ['sheet', 'BIR 2550M', 'Monthly VAT — output VAT (sales) less input VAT (purchases).', bir2550mModal],
+      ['sheet', 'SLSP', 'Quarterly Summary List of Sales / Purchases — the RELIEF/DAT file.', slspModal],
       ['adjust', 'Tax codes', 'VAT / withholding classifications a sale, bill or note can carry.', taxCodesModal],
     ]],
     ['Expanded withholding (suppliers)', [
       ['sheet', 'Withholding register', 'Every vendor bill with EWT held back — by ATC, feeds 0619-E / 1601-EQ.', ewtRegisterModal],
       ['sheet', 'BIR 0619-E', 'Monthly remittance of expanded / creditable withholding tax, per ATC.', bir0619eModal],
+      ['sheet', 'BIR 1601-EQ + QAP', 'Quarterly EWT return + Quarterly Alphalist of Payees.', bir1601eqModal],
+      ['sheet', 'BIR 1604-E', 'Annual info return of creditable taxes withheld (expanded) + alphalist.', bir1604eModal],
       ['printer', 'BIR 2307', 'Certificate of Creditable Tax Withheld at Source — one per supplier, printable.', bir2307Modal],
     ]],
     ['Withholding on compensation (payroll)', [
@@ -465,6 +468,150 @@ async function bir2307Modal() {
         w.document.write(`<html><head><title>BIR 2307</title><style>body{font:13px system-ui;padding:24px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:4px 8px;text-align:left}td:last-child,th:last-child,td:nth-child(3),th:nth-child(3){text-align:right}</style></head><body>${el.innerHTML}</body></html>`);
         w.document.close(); w.focus(); w.print();
       };
+    },
+  });
+}
+
+/* ── quarter picker helper ──────────────────────────────────────────────── */
+function accQuarterOptions(back = 8) {
+  const now = new Date();
+  const opts = [];
+  let y = now.getFullYear(), q = Math.floor(now.getMonth() / 3) + 1;
+  for (let i = 0; i < back; i++) {
+    opts.push(`${y}-Q${q}`);
+    q -= 1; if (q === 0) { q = 4; y -= 1; }
+  }
+  return opts;
+}
+
+/* ── BIR 1601-EQ + QAP — quarterly EWT return + alphalist of payees ──────── */
+async function bir1601eqModal() {
+  const quarters = accQuarterOptions();
+  UI.modal({
+    title: 'BIR 1601-EQ + QAP', size: 'lg', cancelText: 'Close', confirmText: null,
+    bodyHTML: `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <label style="margin:0">Quarter</label>
+        <select id="eq-q">${quarters.map((q) => `<option value="${q}">${q}</option>`).join('')}</select>
+        <div class="grow"></div>
+        <button type="button" class="btn secondary small" id="eq-qap-csv">${UI.icon('download', 14)} QAP CSV</button>
+        <button type="button" class="btn secondary small" id="eq-qap-dat">QAP .DAT</button>
+      </div>
+      <div id="eq-out" class="empty">Loading…</div>`,
+    onOpen: (ov) => {
+      const out = ov.querySelector('#eq-out');
+      const run = async () => {
+        const q = ov.querySelector('#eq-q').value;
+        const [face, qap] = await Promise.all([
+          API.get('/accounting/bir-1601eq?quarter=' + q),
+          API.get('/accounting/qap?quarter=' + q),
+        ]);
+        out.innerHTML = `
+          <table class="line-table"><thead><tr><th>Month</th><th class="right">Tax base</th><th class="right">Withheld</th><th class="right">Remitted</th><th class="right">Still due</th></tr></thead>
+            <tbody>${face.monthly.map((m) => `<tr><td>${UI.esc(m.month)}</td><td class="right">${accPeso(m.tax_base)}</td><td class="right">${accPeso(m.tax_withheld)}</td><td class="right">${accPeso(m.remitted)}</td><td class="right">${accPeso(m.still_due)}</td></tr>`).join('')}</tbody>
+            <tfoot><tr><th>Quarter</th><th class="right">${accPeso(face.total_tax_base)}</th><th class="right">${accPeso(face.total_tax_withheld)}</th><th class="right">${accPeso(face.total_remitted)}</th><th class="right">${accPeso(face.still_due)}</th></tr></tfoot>
+          </table>
+          <p class="muted" style="font-size:12px">${UI.esc(face.note)}</p>
+          <h4 style="margin:14px 0 6px">Quarterly Alphalist of Payees — ${qap.rows.length} line(s)</h4>
+          <table class="line-table"><thead><tr><th>TIN</th><th>Payee</th><th>ATC</th><th class="right">Tax base</th><th class="right">Rate</th><th class="right">Withheld</th></tr></thead>
+            <tbody>${qap.rows.map((r) => `<tr><td class="mono">${UI.esc(r.tin || '—')}</td><td>${UI.esc(r.name || '—')}</td><td class="mono">${UI.esc(r.atc)}</td>
+              <td class="right">${accPeso(r.base)}</td><td class="right">${(r.rate || 0).toFixed(2)}%</td><td class="right">${accPeso(r.tax)}</td></tr>`).join('')
+              || `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">No withholding this quarter.</td></tr>`}</tbody>
+            <tfoot><tr><th colspan="3">Totals</th><th class="right">${accPeso(qap.total_base)}</th><th></th><th class="right">${accPeso(qap.total_tax)}</th></tr></tfoot>
+          </table>`;
+      };
+      const dl = (fmt) => {
+        const q = ov.querySelector('#eq-q').value;
+        API.download(`/accounting/qap?format=${fmt}&quarter=${q}`, `QAP-${q.replace('-', '')}.${fmt}`);
+      };
+      ov.querySelector('#eq-q').onchange = run;
+      ov.querySelector('#eq-qap-csv').onclick = () => dl('csv');
+      ov.querySelector('#eq-qap-dat').onclick = () => dl('dat');
+      run();
+    },
+  });
+}
+
+/* ── BIR 1604-E — annual info return + alphalist ─────────────────────────── */
+async function bir1604eModal() {
+  const thisYear = new Date().getFullYear();
+  UI.modal({
+    title: 'BIR 1604-E', size: 'lg', cancelText: 'Close', confirmText: null,
+    bodyHTML: `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <label style="margin:0">Year</label>
+        <select id="ae-y">${[0, 1, 2, 3].map((i) => `<option>${thisYear - i}</option>`).join('')}</select>
+        <div class="grow"></div>
+        <button type="button" class="btn secondary small" id="ae-csv">${UI.icon('download', 14)} Alphalist CSV</button>
+        <button type="button" class="btn secondary small" id="ae-dat">.DAT</button>
+      </div>
+      <div id="ae-out" class="empty">Loading…</div>`,
+    onOpen: (ov) => {
+      const out = ov.querySelector('#ae-out');
+      const run = async () => {
+        const d = await API.get('/accounting/bir-1604e?year=' + ov.querySelector('#ae-y').value);
+        out.innerHTML = `
+          <p class="muted" style="font-size:12px">${UI.esc(d.note)}</p>
+          <table class="line-table"><thead><tr><th>TIN</th><th>Payee</th><th>ATC</th><th class="right">Income payment</th><th class="right">Rate</th><th class="right">Tax withheld</th></tr></thead>
+            <tbody>${d.rows.map((r) => `<tr><td class="mono">${UI.esc(r.tin || '—')}</td><td>${UI.esc(r.name || '—')}</td><td class="mono">${UI.esc(r.atc)}</td>
+              <td class="right">${accPeso(r.base)}</td><td class="right">${(r.rate || 0).toFixed(2)}%</td><td class="right">${accPeso(r.tax)}</td></tr>`).join('')
+              || `<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">No withholding this year.</td></tr>`}</tbody>
+            <tfoot><tr><th colspan="3">Totals</th><th class="right">${accPeso(d.total_base)}</th><th></th><th class="right">${accPeso(d.total_tax)}</th></tr></tfoot>
+          </table>`;
+      };
+      const dl = (fmt) => {
+        const y = ov.querySelector('#ae-y').value;
+        API.download(`/accounting/bir-1604e?format=${fmt}&year=${y}`, `1604E-alphalist-${y}.${fmt}`);
+      };
+      ov.querySelector('#ae-y').onchange = run;
+      ov.querySelector('#ae-csv').onclick = () => dl('csv');
+      ov.querySelector('#ae-dat').onclick = () => dl('dat');
+      run();
+    },
+  });
+}
+
+/* ── SLSP — Summary List of Sales / Purchases ───────────────────────────── */
+async function slspModal() {
+  const quarters = accQuarterOptions();
+  UI.modal({
+    title: 'Summary List of Sales / Purchases (SLSP)', size: 'lg', cancelText: 'Close', confirmText: null,
+    bodyHTML: `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <select id="sl-kind"><option value="sales">Sales (SLS)</option><option value="purchases">Purchases (SLP)</option></select>
+        <label style="margin:0">Quarter</label>
+        <select id="sl-q">${quarters.map((q) => `<option value="${q}">${q}</option>`).join('')}</select>
+        <div class="grow"></div>
+        <button type="button" class="btn secondary small" id="sl-csv">${UI.icon('download', 14)} CSV</button>
+        <button type="button" class="btn secondary small" id="sl-dat">.DAT</button>
+      </div>
+      <div id="sl-out" class="empty">Loading…</div>`,
+    onOpen: (ov) => {
+      const out = ov.querySelector('#sl-out');
+      const run = async () => {
+        const kind = ov.querySelector('#sl-kind').value, q = ov.querySelector('#sl-q').value;
+        const d = await API.get(`/accounting/slsp?kind=${kind}&quarter=${q}`);
+        const t = d.totals;
+        out.innerHTML = `
+          <div style="overflow-x:auto"><table class="line-table"><thead><tr><th>TIN</th><th>Name</th><th>Address</th>
+            <th class="right">Gross</th><th class="right">Exempt</th><th class="right">Zero-rated</th><th class="right">Taxable</th><th class="right">VAT</th></tr></thead>
+            <tbody>${d.rows.map((r) => `<tr><td class="mono">${UI.esc(r.tin || '—')}</td><td>${UI.esc(r.name || '—')}</td><td class="muted">${UI.esc(r.address || '—')}</td>
+              <td class="right">${accPeso(r.cols.gross)}</td><td class="right">${accPeso(r.cols.exempt)}</td><td class="right">${accPeso(r.cols.zero_rated)}</td>
+              <td class="right">${accPeso(r.cols.vatable)}</td><td class="right">${accPeso(r.cols.vat)}</td></tr>`).join('')
+              || `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px">Nothing in this quarter.</td></tr>`}</tbody>
+            <tfoot><tr><th colspan="3">Totals</th><th class="right">${accPeso(t.gross)}</th><th class="right">${accPeso(t.exempt)}</th><th class="right">${accPeso(t.zero_rated)}</th><th class="right">${accPeso(t.vatable)}</th><th class="right">${accPeso(t.vat)}</th></tr></tfoot>
+          </table></div>
+          <p class="muted" style="font-size:11px">Attach the relevant list to the quarterly 2550Q. The .DAT is a pipe-delimited layout to load into BIR's RELIEF / Alphalist tool.</p>`;
+      };
+      const dl = (fmt) => {
+        const kind = ov.querySelector('#sl-kind').value, q = ov.querySelector('#sl-q').value;
+        API.download(`/accounting/slsp?kind=${kind}&quarter=${q}&format=${fmt}`, `SL${kind === 'sales' ? 'S' : 'P'}-${q.replace('-', '')}.${fmt}`);
+      };
+      ov.querySelector('#sl-kind').onchange = run;
+      ov.querySelector('#sl-q').onchange = run;
+      ov.querySelector('#sl-csv').onclick = () => dl('csv');
+      ov.querySelector('#sl-dat').onclick = () => dl('dat');
+      run();
     },
   });
 }
