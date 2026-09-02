@@ -173,7 +173,17 @@ export function createApp() {
 
   // Static assets (css/js/images and the mobile/* bundle). `index: false` so that
   // "/" falls through to the SPA fallback below, where device detection runs.
-  app.use(express.static(path.join(ROOT, 'public'), { index: false }));
+  // Cache-Control: no-cache (NOT no-store) — the browser still keeps the response and can
+  // reuse it, but must always revalidate with the server first (a fast 304 via the ETag/
+  // Last-Modified express.static already sends when nothing changed). Without this, some
+  // browsers apply their own heuristic freshness window and serve a stale JS/CSS file for a
+  // while after a real edit even on an ordinary reload — no build step here means every
+  // change is meant to be live on the next request, so nothing should ever look "stuck" a
+  // step behind what was actually just deployed.
+  app.use(express.static(path.join(ROOT, 'public'), {
+    index: false,
+    setHeaders: (res) => res.set('Cache-Control', 'no-cache'),
+  }));
 
   // SPA fallback + mobile routing.
   //
