@@ -356,6 +356,18 @@ App.register('hr-employees', async (view) => {
               ${editing ? `<div class="muted" style="font-size:12px;margin-top:3px">${UI.esc(String((existing.leave_days_per_year ?? 5) - (existing.leave_days_used ?? 0)))} remaining</div>` : ''}
             </div>
           </div>
+          <label style="margin-top:12px;display:block">Rest days</label>
+          <label style="display:flex;align-items:center;gap:6px;font-weight:normal">
+            <input type="checkbox" id="emp-rd-custom" style="width:auto" ${existing && existing.rest_days ? 'checked' : ''} />
+            Custom for this employee (otherwise uses the company-wide default from HR &rarr; Time Keeping &rarr; Policy Settings)
+          </label>
+          <div id="emp-rest-days" style="display:${existing && existing.rest_days ? 'flex' : 'none'};gap:12px;flex-wrap:wrap;margin-top:6px">
+            ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((n, i) => `
+              <label style="display:flex;align-items:center;gap:4px;font-weight:normal">
+                <input type="checkbox" data-rd="${i}" style="width:auto" ${existing && existing.rest_days && existing.rest_days.includes(i) ? 'checked' : ''} />${n}</label>`).join('')}
+          </div>
+          <p class="muted" style="font-size:12px;margin:4px 0 0">Worked on a rest day pays +30% automatically (more
+            if it also lands on a holiday) — nothing else to fill in on the daily grid.</p>
           ${editing ? `
           <label style="margin-top:14px;display:block">201 documents</label>
           <div id="emp-docs"><div class="empty">Loading…</div></div>
@@ -367,6 +379,10 @@ App.register('hr-employees', async (view) => {
         onOpen: (ov) => {
           const genBtn = ov.querySelector('#emp-gen-id');
           if (genBtn) genBtn.onclick = () => generateId(existing);
+
+          ov.querySelector('#emp-rd-custom').addEventListener('change', (e) => {
+            ov.querySelector('#emp-rest-days').style.display = e.target.checked ? 'flex' : 'none';
+          });
 
           const empNoInp = ov.querySelector('[data-f="employee_no"]');
           ov.querySelector('#emp-no-suggest').onclick = async () => {
@@ -483,6 +499,9 @@ App.register('hr-employees', async (view) => {
             tin_no: ov.querySelector('[data-f="tin_no"]').value.trim(),
             leave_days_per_year: Number(ov.querySelector('[data-f="leave_days_per_year"]').value) || 0,
             leave_days_used: Number(ov.querySelector('[data-f="leave_days_used"]').value) || 0,
+            rest_days: ov.querySelector('#emp-rd-custom').checked
+              ? [...ov.querySelectorAll('[data-rd]:checked')].map((cb) => Number(cb.dataset.rd))
+              : null,
             photo: photoData,
           };
           if (editing) await API.put('/hr/employees/' + existing.id, body);

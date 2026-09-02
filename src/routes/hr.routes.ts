@@ -144,6 +144,11 @@ router.get('/employees', requirePermission('hr.view'), (req, res) => {
      ORDER BY e.name`,
     ...params
   );
+  // rest_days is stored as a JSON-text column (see db.ts migration) — parse it back to an
+  // array (or null) for callers, same shape employeeSchema accepts on save.
+  for (const r of rows) {
+    r.rest_days = r.rest_days ? (() => { try { return JSON.parse(r.rest_days as unknown as string); } catch { return null; } })() : null;
+  }
   res.json(rows);
 });
 
@@ -403,12 +408,13 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
   const info = run(
     `INSERT INTO employees
       (employee_no, name, department_id, position, user_id, daily_rate, rate_type, monthly_rate, status, start_date,
-       sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, photo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, photo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input),
     input.rate_type, input.rate_type === 'monthly' ? input.monthly_rate : null,
     input.status, input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
-    input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used, input.photo ?? null
+    input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used,
+    input.rest_days ? JSON.stringify(input.rest_days) : null, input.photo ?? null
   );
   res.status(201).json({ id: info.lastInsertRowid });
 });
@@ -429,12 +435,13 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
   run(
     `UPDATE employees SET employee_no = ?, name = ?, department_id = ?, position = ?, user_id = ?, daily_rate = ?, rate_type = ?,
        monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?,
-       leave_days_per_year = ?, leave_days_used = ?, photo = ?
+       leave_days_per_year = ?, leave_days_used = ?, rest_days = ?, photo = ?
      WHERE id = ?`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input), input.rate_type,
     input.rate_type === 'monthly' ? input.monthly_rate : null, input.status,
     input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
-    input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used, input.photo ?? null, id
+    input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used,
+    input.rest_days ? JSON.stringify(input.rest_days) : null, input.photo ?? null, id
   );
   res.json({ ok: true });
 });
@@ -563,7 +570,18 @@ const DEFAULT_POLICY: PayrollPolicy = {
   grace_minutes: 10, late_unit: 'hour', ot_unit: 'hour', ot_rate_percent: 125,
   night_diff_enabled: false, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
   monthly_rate_divisor: 26, pay_frequency: 'semi_monthly', auto_statutory: true,
+  default_rest_days: [0, 6], // Sun, Sat
 };
+
+/** "YYYY-MM-DD" -> weekday index (0=Sun..6=Sat). Builds the Date from the parsed y/m/d as
+    LOCAL components (not `new Date("YYYY-MM-DD")`, which parses as UTC midnight and can read
+    back as the wrong calendar day in a non-UTC zone) so .getDay() answers for the calendar
+    date the string actually names, regardless of server timezone. */
+function weekdayOf(workDate: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(workDate);
+  if (!m) return -1;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getDay();
+}
 
 /** How many pay periods per month, for splitting the monthly statutory contribution. */
 const PERIODS_PER_MONTH: Record<PayrollPolicy['pay_frequency'], number> = {
@@ -605,7 +623,7 @@ router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', id);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
   const roster = queryAll(
-    `SELECT e.id AS employee_id, e.name, e.position, e.daily_rate, e.default_shift_id,
+    `SELECT e.id AS employee_id, e.name, e.position, e.daily_rate, e.default_shift_id, e.rest_days,
        e.department_id, d.name AS department_name, e.status,
        COUNT(*) AS days_total,
        SUM(CASE WHEN ar.time_in IS NOT NULL AND ar.time_in != '' THEN 1 ELSE 0 END) AS days_logged,
@@ -796,13 +814,13 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res)
   try {
     run('DELETE FROM attendance_records WHERE period_id = ? AND employee_id = ?', periodId, input.employee_id);
     const insert = db.prepare(
-      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes, shift_id, form_record_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes, shift_id, form_record_id, holiday_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const d of input.days) {
       insert.run(
         periodId, input.employee_id, d.work_date, d.time_in || null, d.time_out || null, d.notes || null,
-        d.shift_id || null, d.form_record_id || null
+        d.shift_id || null, d.form_record_id || null, d.holiday_type || null
       );
     }
     db.exec('COMMIT');
@@ -834,13 +852,15 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
     employee_id: number; name: string; position: string | null; daily_rate: number;
     rate_type: 'daily' | 'monthly'; monthly_rate: number | null; department_name: string | null;
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+    rest_days: string | null;
   }>(
     `SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.daily_rate,
             e.rate_type, e.monthly_rate, d.name AS department_name,
             COALESCE(e.deduct_sss, 1) AS deduct_sss,
             COALESCE(e.deduct_philhealth, 1) AS deduct_philhealth,
             COALESCE(e.deduct_pagibig, 1) AS deduct_pagibig,
-            COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax
+            COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax,
+            e.rest_days
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -863,6 +883,25 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
     const memo = noWorkMemos.find((m) => workDate >= m.date_from && workDate <= m.date_to);
     if (!memo) return null;
     return memo.paid === 'Yes' ? 'paid' : 'unpaid';
+  }
+
+  // Company Holidays calendar (form slug 'company_holiday') — same "resolved once, applies to
+  // everyone automatically" shape as No Work Memo above. A per-record attendance_records.
+  // holiday_type override (checked in the attendanceRows.map below) takes precedence over this.
+  const HOLIDAY_LABEL_TO_CODE: Record<string, 'regular' | 'special_non_working' | 'special_working'> = {
+    'Regular Holiday': 'regular',
+    'Special Non-Working Holiday': 'special_non_working',
+    'Special Working Holiday': 'special_working',
+  };
+  const holidayForm = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'company_holiday'");
+  const holidays = holidayForm
+    ? queryAll<FormRecord>('SELECT data FROM form_records WHERE form_def_id = ?', holidayForm.id)
+        .map((r) => { try { return JSON.parse(r.data as string); } catch { return null; } })
+        .filter((d): d is { date: string; type: string } => !!d && !!d.date && !!d.type)
+    : [];
+  function holidayFor(workDate: string): 'regular' | 'special_non_working' | 'special_working' | null {
+    const h = holidays.find((x) => x.date === workDate);
+    return h ? HOLIDAY_LABEL_TO_CODE[h.type] ?? null : null;
   }
 
   // Statutory rate tables in force for this run (by pay date, else the cutoff end).
@@ -900,11 +939,11 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       const attendanceRows = queryAll<{
         work_date: string; time_in: string | null; time_out: string | null;
         shift_start: string | null; shift_end: string | null;
-        fr_data: string | null; fd_slug: string | null;
+        fr_data: string | null; fd_slug: string | null; holiday_type: string | null;
       }>(
         `SELECT ar.work_date, ar.time_in, ar.time_out,
            s.start_time AS shift_start, s.end_time AS shift_end,
-           fr.data AS fr_data, fd.slug AS fd_slug
+           fr.data AS fr_data, fd.slug AS fd_slug, ar.holiday_type
          FROM attendance_records ar
          LEFT JOIN shifts s ON s.id = ar.shift_id
          LEFT JOIN form_records fr ON fr.id = ar.form_record_id
@@ -913,6 +952,9 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
          ORDER BY ar.work_date`,
         periodId, emp.employee_id
       );
+      // Per-record override (attendance_records.holiday_type) beats the calendar; 'none' is a
+      // real override meaning "not a holiday for this person" even if the calendar says so.
+      const empRestDays: number[] = emp.rest_days ? JSON.parse(emp.rest_days) : policy.default_rest_days;
       const attendanceDays: AttendanceDay[] = attendanceRows.map((r) => ({
         work_date: r.work_date,
         time_in: r.time_in,
@@ -920,28 +962,32 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         shift: r.shift_start && r.shift_end ? { start_time: r.shift_start, end_time: r.shift_end } : null,
         linkedForm: r.fd_slug ? { slug: r.fd_slug, data: JSON.parse(r.fr_data || '{}') } : null,
         noWork: noWorkFor(r.work_date),
+        holiday: r.holiday_type === 'none' ? null : (r.holiday_type as AttendanceDay['holiday']) || holidayFor(r.work_date),
+        isRestDay: empRestDays.includes(weekdayOf(r.work_date)),
       }));
       const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy);
       const basicSalary = emp.daily_rate * computed.days_worked;
 
       // Regenerating recomputes every attendance-derived field fresh — that's the point of
       // "generate payslips" (pick up the latest attendance/link edits) — but purely-manual
-      // fields with no computed source (statutory deductions, cash advance, rest-day OT, the
-      // OT peso rate, and the final net pay) are carried over from a previous generation rather
-      // than reset to zero, same as the un-computed fields always did before this feature.
+      // fields with no computed source (statutory deductions, cash advance, the OT peso rate,
+      // and the final net pay) are carried over from a previous generation rather than reset to
+      // zero, same as the un-computed fields always did before this feature. Rest Day OT USED to
+      // be in this bucket (hand-typed every time) — it's now auto-computed from attendance
+      // (holiday/rest-day marking, see hr-payroll-compute.ts), same as overtime_pay already was,
+      // so a value someone typed in before this feature will be overwritten on next regenerate.
       const prev = existing ? (() => { try { return JSON.parse(existing.data as string) as Record<string, unknown>; } catch { return {}; } })() : {};
       const num = (v: unknown): number => Number(v) || 0;
       // Purely-manual fields with no computed source are carried over rather than reset.
       const prevManual = {
-        cash_advance: prev.cash_advance, rest_day_ot: prev.rest_day_ot,
+        cash_advance: prev.cash_advance,
         ot_rate_hour: prev.ot_rate_hour, pay_date: prev.pay_date,
       };
 
-      const restDayOt = num(prevManual.rest_day_ot);
       const cashAdvance = num(prevManual.cash_advance);
       const totalEarnings = round2(
         basicSalary + computed.overtime_pay + computed.undertime_pay
-        + computed.holiday_pay + computed.special_holiday_30 + restDayOt
+        + computed.holiday_pay + computed.special_holiday_30 + computed.rest_day_ot
       );
 
       // SSS / PhilHealth / Pag-IBIG + BIR withholding. When policy.auto_statutory is off,
@@ -998,6 +1044,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         undertime_pay: round2(computed.undertime_pay),
         holiday_pay: round2(computed.holiday_pay),
         special_holiday_30: round2(computed.special_holiday_30),
+        rest_day_ot: round2(computed.rest_day_ot),
         late_absences: round2(computed.late_deduction),
         basic_salary: round2(basicSalary),
         total_earnings: totalEarnings,

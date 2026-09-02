@@ -17,6 +17,7 @@ const POLICY: PayrollPolicy = {
   monthly_rate_divisor: 26,
   pay_frequency: 'semi_monthly',
   auto_statutory: true,
+  default_rest_days: [0, 6],
 };
 const DAILY_RATE = 800; // hourly = 100
 const SHIFT = { start_time: '08:00', end_time: '17:00' };
@@ -230,6 +231,102 @@ describe('computeAttendanceForEmployee — Holiday Work premiums', () => {
     );
     expect(r.special_holiday_30).toBeCloseTo(8 * 100 * 0.3, 6);
     expect(r.holiday_pay).toBe(0);
+  });
+});
+
+// Per-record holiday marking (attendance_records.holiday_type, or the Company Holidays
+// calendar, both resolved into day.holiday by the caller — see hr.routes.ts) + rest-day pay
+// (day.isRestDay, resolved from employees.rest_days / PayrollPolicy.default_rest_days). Full
+// DOLE Labor Advisory No. 12-25 combo table — one test per row.
+describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DOLE combo rates)', () => {
+  it('unworked Regular Holiday is paid 100% (a full days_worked day) despite no time logged', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'regular' })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(1);
+    expect(r.days_absent).toBe(0);
+    expect(r.holiday_pay).toBe(0); // the 100% already landed in days_worked/basic_salary, no separate premium for an unworked day
+  });
+
+  it('unworked Special Non-Working Holiday is "no work, no pay" — same bucket as a plain absence', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'special_non_working' })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(0);
+    expect(r.days_absent).toBe(1);
+  });
+
+  it('worked, no holiday, not a rest day: no premium (the ordinary case)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00' })], DAILY_RATE, POLICY
+    );
+    expect(r.holiday_pay).toBe(0);
+    expect(r.special_holiday_30).toBe(0);
+    expect(r.rest_day_ot).toBe(0);
+  });
+
+  it('worked, plain rest day (no holiday): 130% total -> +30% into rest_day_ot', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', isRestDay: true })], DAILY_RATE, POLICY
+    );
+    expect(r.rest_day_ot).toBeCloseTo(DAILY_RATE * 0.3, 6);
+    expect(r.holiday_pay).toBe(0);
+    expect(r.special_holiday_30).toBe(0);
+  });
+
+  it('worked Regular Holiday, not a rest day: 200% total -> +100% into holiday_pay', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', holiday: 'regular' })], DAILY_RATE, POLICY
+    );
+    expect(r.holiday_pay).toBeCloseTo(DAILY_RATE * 1.0, 6);
+    expect(r.rest_day_ot).toBe(0);
+  });
+
+  it('worked Regular Holiday AND rest day: 260% total -> +160% into holiday_pay (not +130%)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', holiday: 'regular', isRestDay: true })], DAILY_RATE, POLICY
+    );
+    expect(r.holiday_pay).toBeCloseTo(DAILY_RATE * 1.6, 6);
+    expect(r.rest_day_ot).toBe(0); // folded into holiday_pay, not double-counted separately
+  });
+
+  it('worked Special Non-Working, not a rest day: 130% total -> +30% into special_holiday_30', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', holiday: 'special_non_working' })], DAILY_RATE, POLICY
+    );
+    expect(r.special_holiday_30).toBeCloseTo(DAILY_RATE * 0.3, 6);
+    expect(r.rest_day_ot).toBe(0);
+  });
+
+  it('worked Special Non-Working AND rest day: 150% total -> +50% into special_holiday_30 (not +60%)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', holiday: 'special_non_working', isRestDay: true })], DAILY_RATE, POLICY
+    );
+    expect(r.special_holiday_30).toBeCloseTo(DAILY_RATE * 0.5, 6);
+    expect(r.rest_day_ot).toBe(0);
+  });
+
+  it('Special Working Holiday behaves like an ordinary day — no premium worked or not', () => {
+    const worked = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', holiday: 'special_working', isRestDay: true })], DAILY_RATE, POLICY
+    );
+    // still gets the plain rest-day premium (the holiday type itself adds nothing) since it IS a rest day
+    expect(worked.holiday_pay).toBe(0);
+    expect(worked.special_holiday_30).toBe(0);
+    expect(worked.rest_day_ot).toBeCloseTo(DAILY_RATE * 0.3, 6);
+
+    const unworked = computeAttendanceForEmployee([day({ holiday: 'special_working' })], DAILY_RATE, POLICY);
+    expect(unworked.days_absent).toBe(1); // no time logged, no special pay rule — ordinary absence
+  });
+
+  it('a linked holiday_work_request form takes precedence over calendar/override marking (no double premium)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '17:00', holiday: 'regular', isRestDay: true,
+        linkedForm: { slug: 'holiday_work_request', data: { hours_worked: 8, holiday_type: 'Special Non-Working Holiday' } },
+      })],
+      DAILY_RATE, POLICY
+    );
+    // The linked form's own (unrelated) numbers won, not the day.holiday/isRestDay combo rate.
+    expect(r.special_holiday_30).toBeCloseTo(8 * 100 * 0.3, 6);
+    expect(r.holiday_pay).toBe(0);
+    expect(r.rest_day_ot).toBe(0);
   });
 });
 

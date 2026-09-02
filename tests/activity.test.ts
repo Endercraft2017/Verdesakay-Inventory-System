@@ -102,4 +102,19 @@ describe('activity log', () => {
     const res = await ctx.api.delete('/api/activity').set(authHdr());
     expect(res.status).toBe(400);
   });
+
+  it('auto-sweeps audit rows older than the retention window on housekeeping', async () => {
+    const { run, queryOne, cleanupSessions, ACTIVITY_LOG_RETENTION_DAYS } = await import('../src/db');
+    run(
+      `INSERT INTO activity_log (created_at, method, path, entity, action, summary)
+       VALUES (datetime('now', '-${ACTIVITY_LOG_RETENTION_DAYS + 5} days'), 'POST', '/api/x', 'x', 'create', 'ancient')`
+    );
+    run(
+      `INSERT INTO activity_log (created_at, method, path, entity, action, summary)
+       VALUES (datetime('now', '-2 days'), 'POST', '/api/x', 'x', 'create', 'recent')`
+    );
+    cleanupSessions();
+    expect(queryOne<{ n: number }>("SELECT COUNT(*) n FROM activity_log WHERE summary = 'ancient'")?.n).toBe(0);
+    expect(queryOne<{ n: number }>("SELECT COUNT(*) n FROM activity_log WHERE summary = 'recent'")?.n).toBe(1);
+  });
 });

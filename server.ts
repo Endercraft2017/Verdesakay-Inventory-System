@@ -15,6 +15,7 @@ import { createApp } from './src/app';
 import { sendDueTaskReminders } from './src/push';
 
 init();
+cleanupSessions(); // sweep stale sessions / old audit-log rows once at boot, then hourly
 setInterval(cleanupSessions, 60 * 60 * 1000).unref(); // hourly
 setInterval(() => { void sendDueTaskReminders(); }, 60 * 1000).unref(); // task reminders
 

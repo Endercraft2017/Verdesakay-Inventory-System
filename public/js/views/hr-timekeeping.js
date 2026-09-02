@@ -22,7 +22,8 @@ async function renderList(view) {
       <h2>Time Keeping</h2>
       <div class="grow"></div>
       <button class="btn secondary" id="tk-govforms">${UI.icon('sheet')} Payroll Worksheets ▾</button>
-      <button class="btn secondary" id="tk-noWork" style="margin-left:8px" title="Company-wide holidays, suspensions, and other no-work declarations — applies to every employee automatically, no per-employee linking needed">${UI.icon('alert')} Holidays / No Work</button>
+      <button class="btn secondary" id="tk-holidays" style="margin-left:8px" title="The PH holiday calendar (Regular / Special Non-Working / Special Working) — pays every employee automatically unless overridden on that person's own Daily Time record">${UI.icon('calendar')} Holidays</button>
+      <button class="btn secondary" id="tk-noWork" style="margin-left:8px" title="Company-wide suspensions and other no-work declarations (typhoon, equipment failure, etc.) — not a public holiday, see the Holidays button for those — applies to every employee automatically, no per-employee linking needed">${UI.icon('alert')} No Work / Suspension</button>
       <button class="btn secondary" id="tk-policy" style="margin-left:8px">${UI.icon('settings')} Policy Settings</button>
       <button class="btn" id="tk-new" style="margin-left:8px">${UI.icon('plus')} New Cutoff</button>
     </div>
@@ -30,6 +31,7 @@ async function renderList(view) {
 
   view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
   view.querySelector('#tk-govforms').addEventListener('click', () => govFormsModal());
+  view.querySelector('#tk-holidays').addEventListener('click', () => companyHolidaysModal());
   view.querySelector('#tk-noWork').addEventListener('click', () => noWorkMemoModal());
 
   const tableEl = view.querySelector('#tk-table');
@@ -201,6 +203,17 @@ async function policySettingsModal() {
         <div><label>Night start</label><input data-p="night_start" type="time" /></div>
         <div><label>Night end</label><input data-p="night_end" type="time" /></div>
       </div>
+      <div style="margin-top:14px">
+        <label>Company-wide rest days</label>
+        <div id="tk-rest-days" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
+          ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((n, i) => `
+            <label style="display:flex;align-items:center;gap:4px;font-weight:normal">
+              <input type="checkbox" data-rd="${i}" style="width:auto" />${n}</label>`).join('')}
+        </div>
+        <p class="muted" style="font-size:12px;margin:4px 0 0">Worked automatically pays +30% (more if it also lands
+          on a holiday) — nothing else to fill in on the daily grid. A specific employee can be given their own rest
+          days instead, overriding this, on their Employee record.</p>
+      </div>
       <button type="button" class="btn" id="tk-policy-save" style="margin-top:14px">${UI.icon('sheet', 14)} Save Rules</button>
       <hr style="margin:18px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
       <strong>Statutory Rate Tables</strong>
@@ -224,6 +237,10 @@ async function policySettingsModal() {
         p('night_diff_percent').value = policy.night_diff_percent;
         p('night_start').value = policy.night_start;
         p('night_end').value = policy.night_end;
+        (policy.default_rest_days || [0, 6]).forEach((d) => {
+          const cb = ov.querySelector(`[data-rd="${d}"]`);
+          if (cb) cb.checked = true;
+        });
       }
 
       function renderShifts() {
@@ -274,6 +291,7 @@ async function policySettingsModal() {
           night_diff_percent: Number(p('night_diff_percent').value) || 0,
           night_start: p('night_start').value,
           night_end: p('night_end').value,
+          default_rest_days: [...ov.querySelectorAll('[data-rd]:checked')].map((cb) => Number(cb.dataset.rd)),
         };
         await API.put('/hr/payroll-policy', body);
         UI.toast('Payroll rules saved');
@@ -356,14 +374,16 @@ async function noWorkMemoModal() {
   }
 
   const m = UI.modal({
-    title: 'Holidays / No Work',
+    title: 'No Work / Suspension',
     size: 'lg',
     cancelText: 'Close',
     confirmText: null,
     bodyHTML: `<p class="muted" style="margin-top:0">Declares a date range where no work happened company-wide — a
-        holiday, a suspension, whatever the reason. Applies to every employee automatically the next time payslips
-        are generated for a cutoff covering these dates; paid credits a full day, unpaid is the same as an absence
-        but documented. No per-employee linking needed.</p>
+        typhoon suspension, equipment failure, whatever the reason (for an actual public holiday, use the
+        <strong>Holidays</strong> button instead — it pays the correct DOLE Regular/Special premium rather than a
+        flat paid/unpaid day). Applies to every employee automatically the next time payslips are generated for a
+        cutoff covering these dates; paid credits a full day, unpaid is the same as an absence but documented. No
+        per-employee linking needed.</p>
       <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
         <button type="button" class="btn secondary small" id="nw-new">${UI.icon('plus')} New</button></div>
       <div id="nw-list"><div class="empty">Loading…</div></div>`,
@@ -414,6 +434,98 @@ async function noWorkMemoModal() {
         if (!data.date_from || !data.date_to) { showErr('Both dates are required'); return false; }
         if (data.date_to < data.date_from) { showErr('"Date to" is before "date from"'); return false; }
         if (!data.reason) { showErr('Reason is required'); return false; }
+        await API.post('/form-records', { form_def_id: formId, data, status: 'approved' });
+        UI.toast('Saved');
+        after();
+      },
+    });
+  }
+}
+
+/* ── Company Holidays calendar (PH regular / special non-working / special working) ────────
+   Same list/create/delete shape as noWorkMemoModal above, against the 'company_holiday' form
+   instead — kept as its own function rather than a shared generic helper since the two forms'
+   fields (date range + paid vs a single date + type) don't actually overlap much. Seeded with
+   reference dates in src/db.ts; admin edits/adds/deletes freely here. */
+async function companyHolidaysModal() {
+  let formId = null;
+  try {
+    const forms = await API.get('/form-definitions');
+    const f = forms.find((x) => x.slug === 'company_holiday');
+    formId = f ? f.id : null;
+  } catch { /* fall through to the error state below */ }
+  if (!formId) { UI.toast('Company Holidays form not found — ask an admin to check Form Builder (HR).', 'error'); return; }
+
+  const TYPE_BADGE = {
+    'Regular Holiday': 'status-completed',
+    'Special Non-Working Holiday': 'status-confirmed',
+    'Special Working Holiday': '',
+  };
+
+  async function load() {
+    const records = await API.get(`/form-definitions/${formId}/records`).catch(() => []);
+    return records.slice().sort((a, b) => String(a.data.date || '').localeCompare(String(b.data.date || '')));
+  }
+
+  UI.modal({
+    title: 'Company Holidays',
+    size: 'lg',
+    cancelText: 'Close',
+    confirmText: null,
+    bodyHTML: `<p class="muted" style="margin-top:0">Applies to every employee automatically — a Regular Holiday pays
+        200% if worked (100% even if not); a Special Non-Working Holiday pays 130% if worked ("no work, no pay" if
+        not). A specific employee's Daily Time record can override any date here for that one person (Daily Time —
+        Day Type column).</p>
+      <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
+        <button type="button" class="btn secondary small" id="ch-new">${UI.icon('plus')} New</button></div>
+      <div id="ch-list"><div class="empty">Loading…</div></div>`,
+    onOpen: (ov) => {
+      const list = ov.querySelector('#ch-list');
+      async function refresh() {
+        const records = await load();
+        if (!records.length) {
+          list.innerHTML = UI.emptyState({ icon: 'calendar', title: 'No holidays yet', hint: 'Add a date and its DOLE-declared type.' });
+          return;
+        }
+        list.innerHTML = `<table><thead><tr><th>Date</th><th>Name</th><th>Type</th><th></th></tr></thead>
+          <tbody>${records.map((r) => `
+            <tr>
+              <td class="mono">${UI.esc(r.data.date || '')}</td>
+              <td>${UI.esc(r.data.name || '')}</td>
+              <td><span class="badge-pill ${TYPE_BADGE[r.data.type] || ''}">${UI.esc(r.data.type || '')}</span></td>
+              <td class="actions"><button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button></td>
+            </tr>`).join('')}</tbody></table>`;
+        list.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+          if (!await UI.confirmDialog('Delete this holiday?', 'Delete')) return;
+          try { await API.del('/form-records/' + b.dataset.del); refresh(); }
+          catch (e) { UI.toast(e.message, 'error'); }
+        });
+      }
+      ov.querySelector('#ch-new').onclick = () => newModal(refresh);
+      refresh();
+    },
+  });
+
+  function newModal(after) {
+    UI.modal({
+      title: 'New holiday',
+      bodyHTML: `
+        <div class="field-row">
+          <div><label>Date <span class="req">*</span></label><input data-f="date" type="date" /></div>
+          <div><label>Name <span class="req">*</span></label><input data-f="name" placeholder="e.g. National Heroes Day" /></div>
+        </div>
+        <label>Type <span class="req">*</span></label>
+        <select data-f="type">
+          <option value="Regular Holiday">Regular Holiday — 200% worked, 100% unworked</option>
+          <option value="Special Non-Working Holiday">Special Non-Working Holiday — 130% worked, unpaid if not</option>
+          <option value="Special Working Holiday">Special Working Holiday — ordinary day, no premium</option>
+        </select>`,
+      confirmText: 'Save',
+      onConfirm: async (ov2, showErr) => {
+        const g = (k) => ov2.querySelector(`[data-f="${k}"]`).value.trim();
+        const data = { date: g('date'), name: g('name'), type: g('type') };
+        if (!data.date) { showErr('Date is required'); return false; }
+        if (!data.name) { showErr('Name is required'); return false; }
         await API.post('/form-records', { form_def_id: formId, data, status: 'approved' });
         UI.toast('Saved');
         after();
@@ -945,26 +1057,58 @@ async function renderPeriod(view, periodId) {
      whichever shift applied) and optionally linked to an OT/Half Day/Leave/Undertime/Offset
      form record, both purely optional — Generate Payslips picks these up automatically, but
      nothing here is required to just log plain time-in/out like before. */
+  const HOLIDAY_LABELS = { regular: 'Regular Holiday', special_non_working: 'Special Non-Working', special_working: 'Special Working' };
+  /** "YYYY-MM-DD" -> weekday index (0=Sun..6=Sat), from local y/m/d components (not
+      new Date("YYYY-MM-DD"), which parses as UTC and can read back as the wrong day). */
+  function weekdayOf(workDate) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(workDate || '');
+    if (!m) return -1;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getDay();
+  }
+
   async function dailyGridModal(rosterRow) {
     const employeeId = rosterRow.employee_id;
     const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form'];
-    const [days, shifts] = await Promise.all([
+    const [days, shifts, policy, holidayForms] = await Promise.all([
       API.get(`/hr/periods/${periodId}/attendance?employee_id=${employeeId}`),
       API.get('/hr/shifts').catch(() => []),
+      API.get('/hr/payroll-policy').catch(() => ({ default_rest_days: [0, 6] })),
+      API.get('/form-definitions').catch(() => []),
     ]);
     const defaultShift = shifts.find((s) => s.is_default) || null;
     days.forEach((d) => {
       if (d.shift_id == null) d.shift_id = rosterRow.default_shift_id || (defaultShift ? defaultShift.id : null);
     });
 
+    // Same two-layer resolution as the payroll engine (hr-payroll-compute.ts via hr.routes.ts)
+    // — a per-record override wins, else the Company Holidays calendar, else not a holiday —
+    // computed client-side here purely so the grid can show HR what will happen without
+    // actually running payroll first.
+    const holidayForm = holidayForms.find((f) => f.slug === 'company_holiday');
+    const holidayByDate = {};
+    if (holidayForm) {
+      const records = await API.get(`/form-definitions/${holidayForm.id}/records`).catch(() => []);
+      const TYPE_TO_CODE = { 'Regular Holiday': 'regular', 'Special Non-Working Holiday': 'special_non_working', 'Special Working Holiday': 'special_working' };
+      records.forEach((r) => { if (r.data.date) holidayByDate[r.data.date] = TYPE_TO_CODE[r.data.type] || null; });
+    }
+    let empRestDays = policy.default_rest_days || [0, 6];
+    try { if (rosterRow.rest_days) empRestDays = JSON.parse(rosterRow.rest_days); } catch { /* keep company default */ }
+
     const shiftOptions = (selectedId) => '<option value="">— No shift —</option>' +
       shifts.map((s) => `<option value="${s.id}" ${String(s.id) === String(selectedId) ? 'selected' : ''}>${UI.esc(s.name)} (${UI.esc(s.start_time)}-${UI.esc(s.end_time)})</option>`).join('');
+
+    const dayTypeOptions = (selected) => `
+      <option value="" ${!selected ? 'selected' : ''}>Default</option>
+      <option value="regular" ${selected === 'regular' ? 'selected' : ''}>Regular Holiday</option>
+      <option value="special_non_working" ${selected === 'special_non_working' ? 'selected' : ''}>Special Non-Working</option>
+      <option value="special_working" ${selected === 'special_working' ? 'selected' : ''}>Special Working</option>
+      <option value="none" ${selected === 'none' ? 'selected' : ''}>Not a Holiday</option>`;
 
     UI.modal({
       title: `Daily time — ${rosterRow.name}`,
       size: 'xl',
       bodyHTML: `<div class="line-items"><table class="line-table"><thead><tr>
-          <th>Date</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Notes</th><th>Linked Form</th>
+          <th>Date</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Notes</th><th>Linked Form</th>
         </tr></thead><tbody id="tk-days"></tbody></table></div>`,
       confirmText: 'Save',
       onOpen: (ov) => {
@@ -977,12 +1121,19 @@ async function renderPeriod(view, periodId) {
             // happened — flagged so HR can spot & fix it at a glance, distinct from a plain
             // blank (unremarkable — not yet worked, or a known absence) or a fully-filled day.
             const incomplete = !!d.time_in !== !!d.time_out && d.work_date <= today;
+            // Effective holiday: override (if not '' and not 'none') else the calendar's entry.
+            const effHoliday = d.holiday_type ? (d.holiday_type === 'none' ? null : d.holiday_type) : holidayByDate[d.work_date];
+            const isRestDay = empRestDays.includes(weekdayOf(d.work_date));
+            const tag = effHoliday
+              ? `<span class="badge-pill status-completed" title="Pays the DOLE premium automatically">${UI.esc(HOLIDAY_LABELS[effHoliday] || effHoliday)}</span>`
+              : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : '');
             return `
             <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
-              <td>${UI.esc(d.work_date)}</td>
+              <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}</td>
               <td><select data-k="shift_id">${shiftOptions(d.shift_id)}</select></td>
               <td><input data-k="time_in" type="time" value="${UI.esc(d.time_in || '')}" /></td>
               <td><input data-k="time_out" type="time" value="${UI.esc(d.time_out || '')}" /></td>
+              <td><select data-k="holiday_type" title="Override this one day/employee — leave at Default to inherit the Company Holidays calendar">${dayTypeOptions(d.holiday_type)}</select></td>
               <td><input data-k="notes" value="${UI.esc(d.notes || '')}" placeholder="optional" /></td>
               <td>${d._linkLabel
                 ? `<span class="badge-pill" data-unlink="${i}" title="Click to unlink" style="cursor:pointer">${UI.esc(d._linkLabel)} ✕</span>`
@@ -995,6 +1146,7 @@ async function renderPeriod(view, periodId) {
             inp.addEventListener(evt, () => {
               const row = Number(inp.closest('[data-row]').dataset.row);
               days[row][inp.dataset.k] = inp.value;
+              if (inp.dataset.k === 'holiday_type') renderRows(); // refresh the tag next to the date
             });
           });
           body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.link)));
@@ -1059,6 +1211,7 @@ async function renderPeriod(view, periodId) {
           days: days.map((d) => ({
             work_date: d.work_date, time_in: d.time_in || '', time_out: d.time_out || '', notes: d.notes || '',
             shift_id: d.shift_id || null, form_record_id: d.form_record_id || null,
+            holiday_type: d.holiday_type || null,
           })),
         });
         UI.toast('Attendance saved');

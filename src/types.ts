@@ -817,6 +817,7 @@ export interface Employee {
   leave_days_per_year: number; // admin-set fixed bank, not accrual-based (see db.ts migration)
   leave_days_used: number; // running counter, incremented as paid Leave forms are approved
   leave_days_remaining?: number; // computed: leave_days_per_year - leave_days_used
+  rest_days: number[] | null; // weekday indices (0=Sun..6=Sat) this employee rests on; null = use PayrollPolicy.default_rest_days
 }
 
 /** Company-wide format for the RECOMMENDED employee number (settings key "employee_no_policy") —
@@ -860,6 +861,9 @@ export interface PayrollPolicy {
   /** When true, generate-payslips computes SSS/PhilHealth/Pag-IBIG + withholding tax
       from the statutory rate tables. When false, those stay manual (carried over). */
   auto_statutory: boolean;
+  /** Weekday indices (0=Sun..6=Sat) that count as a rest day company-wide, unless an
+      individual employee has their own employees.rest_days override. Default [0, 6]. */
+  default_rest_days: number[];
 }
 
 export interface EmployeeDocument {

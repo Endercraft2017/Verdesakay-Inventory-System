@@ -55,7 +55,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -333,6 +333,19 @@ function createSchema(): void {
       params     TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- AI Assistant chat history: persists per user across sessions/reloads until they
+    -- clear it (DELETE /api/ai/messages). steps is the tool-call trail for an assistant
+    -- turn (JSON), kept so record/report links still work after a reload.
+    CREATE TABLE IF NOT EXISTS ai_messages (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role       TEXT NOT NULL CHECK (role IN ('user','assistant')),
+      content    TEXT NOT NULL,
+      steps      TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_messages_user ON ai_messages(user_id, id);
 
     CREATE TABLE IF NOT EXISTS orders (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1243,12 +1256,25 @@ function migrate(): void {
   if (!arCols.some((c) => c.name === 'form_record_id')) {
     db.exec('ALTER TABLE attendance_records ADD COLUMN form_record_id INTEGER REFERENCES form_records(id) ON DELETE SET NULL');
   }
+  // Per-record holiday override: null = inherit whatever the Company Holidays calendar says
+  // for this work_date (if anything); 'none' = explicitly *not* a holiday for this person even
+  // if the calendar says otherwise (e.g. a 24/7 site); 'regular'/'special_non_working'/
+  // 'special_working' = force that type regardless of the calendar. See hr-payroll-compute.ts.
+  if (!arCols.some((c) => c.name === 'holiday_type')) {
+    db.exec('ALTER TABLE attendance_records ADD COLUMN holiday_type TEXT');
+  }
 
   // An employee's *usual* shift — purely a UI pre-fill for new attendance days, never enforced,
   // so a rotating employee can still be assigned a different shift on any given day.
   const empCols2 = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
   if (!empCols2.some((c) => c.name === 'default_shift_id')) {
     db.exec('ALTER TABLE employees ADD COLUMN default_shift_id INTEGER REFERENCES shifts(id) ON DELETE SET NULL');
+  }
+  // JSON array of weekday indices (0=Sun..6=Sat) this employee rests on; null = use the
+  // company-wide PayrollPolicy.default_rest_days instead. Never enforced against attendance —
+  // purely what the payroll engine checks to apply the rest-day pay premium.
+  if (!empCols2.some((c) => c.name === 'rest_days')) {
+    db.exec('ALTER TABLE employees ADD COLUMN rest_days TEXT');
   }
 
   // Rate can be entered as a true daily rate or as a monthly salary; when monthly, daily_rate is
@@ -1542,6 +1568,7 @@ function seed(): void {
   seedTemplates();
   seedHrPayrollForm();
   seedNoWorkMemoForm();
+  seedCompanyHolidaysForm();
   seedPayrollTables();
   seedTaxCodes();
 }
@@ -1681,6 +1708,63 @@ function seedNoWorkMemoForm(): void {
     `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope)
      VALUES ('No Work Memo', 'no_work_memo', 'NW', 'alert', ?, 'hr')`
   ).run(JSON.stringify(fields));
+}
+
+/** The PH public-holiday calendar HR marks pay premiums against — applies to every employee
+    automatically for the date (see src/hr-payroll-compute.ts), same "company-wide, no
+    per-employee linking" shape as No Work Memo, but with the specific Regular/Special
+    Non-Working/Special Working distinction the law actually pays differently (DOLE Labor
+    Advisory No. 12-25, 2026: 200%/130% worked, 100%/no-pay unworked). Seeded with the
+    statutorily-fixed annual dates (Labor Code Art. 94 regular holidays; RA 9256 Ninoy Aquino
+    Day; the Immaculate Conception feast) plus 2026's confirmed movable dates (Proclamation
+    No. 1006) — a starting reference, not a permanent source of truth: Eid'l Fitr/Eid'l Adha
+    and any year-specific additions are proclaimed separately and need adding by hand, and this
+    whole list should be checked against the actual yearly proclamation. Admin can edit/add/
+    delete freely via the same generic form-records UI No Work Memo already uses. */
+function seedCompanyHolidaysForm(): void {
+  if (db.prepare("SELECT id FROM form_definitions WHERE slug = 'company_holiday'").get()) return;
+  const fields = [
+    { key: 'date', label: 'Date', type: 'date', required: true, options: [], default: '' },
+    { key: 'name', label: 'Holiday Name', type: 'text', required: true, options: [], default: '' },
+    {
+      key: 'type', label: 'Type', type: 'select', required: true,
+      options: ['Regular Holiday', 'Special Non-Working Holiday', 'Special Working Holiday'],
+      default: 'Regular Holiday',
+    },
+  ];
+  const formId = Number(
+    db.prepare(
+      `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope)
+       VALUES ('Company Holidays', 'company_holiday', 'HOL', 'calendar', ?, 'hr')`
+    ).run(JSON.stringify(fields)).lastInsertRowid
+  );
+  const REGULAR = 'Regular Holiday';
+  const SPECIAL = 'Special Non-Working Holiday';
+  const seedRows: Array<[string, string, string]> = [
+    ['2026-01-01', "New Year's Day", REGULAR],
+    ['2026-04-02', 'Maundy Thursday', REGULAR],
+    ['2026-04-03', 'Good Friday', REGULAR],
+    ['2026-04-09', 'Araw ng Kagitingan', REGULAR],
+    ['2026-05-01', 'Labor Day', REGULAR],
+    ['2026-06-12', 'Independence Day', REGULAR],
+    ['2026-08-31', 'National Heroes Day', REGULAR],
+    ['2026-11-30', 'Bonifacio Day', REGULAR],
+    ['2026-12-25', 'Christmas Day', REGULAR],
+    ['2026-12-30', 'Rizal Day', REGULAR],
+    ['2026-02-17', 'Chinese New Year', SPECIAL],
+    ['2026-04-04', 'Black Saturday', SPECIAL],
+    ['2026-08-21', 'Ninoy Aquino Day', SPECIAL],
+    ['2026-11-02', "All Souls' Day", SPECIAL],
+    ['2026-12-08', 'Feast of the Immaculate Conception', SPECIAL],
+    ['2026-12-24', 'Christmas Eve', SPECIAL],
+  ];
+  const insertRecord = db.prepare(
+    `INSERT INTO form_records (form_def_id, number, data, status) VALUES (?, ?, ?, 'approved')`
+  );
+  for (const [date, name, type] of seedRows) {
+    const number = nextSequence(`form_seq_${formId}`, 'HOL');
+    insertRecord.run(formId, number, JSON.stringify({ date, name, type }));
+  }
 }
 
 /** Seed default templates — each checked independently so adding a new default later
@@ -1936,6 +2020,10 @@ function orderTemplateBody(title: string): string {
 </div>`;
 }
 
+/** How long the app-wide activity_log is kept. Rows older than this are swept on the
+    housekeeping timer; admins can still prune earlier by hand via DELETE /api/activity. */
+export const ACTIVITY_LOG_RETENTION_DAYS = 31;
+
 export function cleanupSessions(): void {
   // Runs on a timer, outside any request — sweep every open tenant connection.
   for (const slug of registry.keys()) {
@@ -1945,6 +2033,10 @@ export function cleanupSessions(): void {
       // a week is far more than enough for a flaky-LAN offline queue.
       db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();
       db.prepare("DELETE FROM password_resets WHERE used = 1 OR expires_at < datetime('now')").run();
+      // Cap the audit trail at roughly a month so it can't grow without bound.
+      db.prepare(
+        `DELETE FROM activity_log WHERE created_at < datetime('now', '-${ACTIVITY_LOG_RETENTION_DAYS} days')`
+      ).run();
     });
   }
 }

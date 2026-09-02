@@ -17,6 +17,15 @@ export interface AttendanceDay {
   // individual employee is linked to; this is a blanket declaration that applies automatically
   // to everyone, no per-employee linking needed). Omitted/null = no memo covers this date.
   noWork?: 'paid' | 'unpaid' | null;
+  // This day's holiday type, already resolved by the caller as per-record override (attendance_
+  // records.holiday_type) if set, else whatever the Company Holidays calendar says for this
+  // work_date, else null. 'special_working' behaves like an ordinary day (informational only —
+  // no premium, no unworked-pay change) so it's accepted here but never branched on below.
+  holiday?: 'regular' | 'special_non_working' | 'special_working' | null;
+  // Whether this work_date falls on this employee's rest day — resolved by the caller from
+  // employees.rest_days (if set) else PayrollPolicy.default_rest_days. Never stored; purely a
+  // function of the date, so the caller recomputes it each time rather than persisting it.
+  isRestDay?: boolean;
 }
 
 export interface AttendanceComputation {
@@ -35,6 +44,12 @@ export interface AttendanceComputation {
   undertime_pay: number; // negative — matches the existing "Undertime" earnings-line convention
   holiday_pay: number;
   special_holiday_30: number;
+  /** Auto-computed rest-day-worked premium (30% for a plain rest day, folded into holiday_pay/
+   *  special_holiday_30 instead when the day is ALSO a holiday — see the multiplier table in
+   *  computeAttendanceForEmployee). Same "premium only, not the full day" convention as
+   *  holiday_pay/special_holiday_30 — the day's base 100% is already in basic_salary via
+   *  days_worked. Was a purely-manual payslip field before this; see hr.routes.ts. */
+  rest_day_ot: number;
 }
 
 const DAY_MIN = 24 * 60;
@@ -82,7 +97,7 @@ function nightOverlapMinutes(fromMin: number, toMin: number, nightStart: number,
 
 const ZERO: AttendanceComputation = {
   days_worked: 0, days_absent: 0, late_deduction: 0, ot_hours: 0, overtime_pay: 0,
-  undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0,
+  undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0,
 };
 
 export function computeAttendanceForEmployee(
@@ -108,10 +123,17 @@ export function computeAttendanceForEmployee(
       // paid if the memo says so, contributing nothing either way if unpaid (same as a plain
       // absence numerically, but distinguished here for anyone reading/extending this later:
       // it was an excused, management-declared non-workday, not an unexplained no-show).
+      // An unworked Regular Holiday is *always* paid by law (Labor Code Art. 94) — 100%, same
+      // as a paid Leave day; simplified vs. DOLE's stricter "present/on paid leave the day
+      // immediately before" eligibility check, which this per-day loop doesn't look back for.
+      // An unworked Special Non-Working (or Special Working) day is plain "no work, no pay" —
+      // same bucket as an unpaid No Work Memo day, not specially distinguished.
       // Otherwise it's a genuine unpaid absence and contributes nothing.
       if (slug === 'leave_request' && day.linkedForm?.data?.with_pay === 'Yes') {
         out.days_worked += 1;
       } else if (day.noWork === 'paid') {
+        out.days_worked += 1;
+      } else if (day.holiday === 'regular') {
         out.days_worked += 1;
       } else {
         out.days_absent += 1;
@@ -196,6 +218,27 @@ export function computeAttendanceForEmployee(
       const premium = hours * hourlyRate * (isRegular ? 1.0 : 0.3);
       if (isRegular) out.holiday_pay += premium;
       else out.special_holiday_30 += premium;
+    } else if (day.holiday === 'regular' || day.holiday === 'special_non_working' || day.isRestDay) {
+      // Same premium-only convention as the holiday_work_request branch above (the day's base
+      // 100% is already counted via days_worked/basic_salary), but driven by HR directly marking
+      // the day (per-record override, or the Company Holidays calendar) instead of an employee
+      // self-filing a Holiday Work Request — so it's gated on that branch NOT having fired for
+      // this day, to avoid paying the premium twice. Uses the whole day's rate as the premium
+      // base (not actual hours worked) — simplest correct behavior for the common case; doesn't
+      // specially prorate a half-day (halfday_request) that also happens to be a holiday/rest
+      // day, an intentionally rare combination not worth the extra complexity.
+      // DOLE Labor Advisory No. 12-25 combo rates (see hr-payroll-compute plan): a rest day
+      // doesn't just add 30% on top of whatever else applies — Regular Holiday + rest day is a
+      // flat 260% (i.e. +30% of the 200% regular-holiday rate), while Special Non-Working + rest
+      // day is a flat 150% (not +30% of the already-130% special rate) — both looked up directly
+      // rather than derived, to match the published rates exactly.
+      if (day.holiday === 'regular') {
+        out.holiday_pay += dailyRate * (day.isRestDay ? 1.6 : 1.0);
+      } else if (day.holiday === 'special_non_working') {
+        out.special_holiday_30 += dailyRate * (day.isRestDay ? 0.5 : 0.3);
+      } else if (day.isRestDay) {
+        out.rest_day_ot += dailyRate * 0.3;
+      }
     }
   }
 

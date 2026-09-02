@@ -32,6 +32,24 @@ describe('hr', () => {
     expect(noWork.fields.map((f: { key: string }) => f.key)).toEqual(['date_from', 'date_to', 'reason', 'paid']);
   });
 
+  it('auto-seeds the Company Holidays calendar with reference PH holiday dates, editable/deletable like any form record', async () => {
+    const defs = await ctx.api.get('/api/form-definitions').set(hdr());
+    const holidayForm = defs.body.find((f: { slug: string }) => f.slug === 'company_holiday');
+    expect(holidayForm).toBeDefined();
+    expect(holidayForm.fields.map((f: { key: string }) => f.key)).toEqual(['date', 'name', 'type']);
+
+    const records = await ctx.api.get(`/api/form-definitions/${holidayForm.id}/records`).set(hdr());
+    expect(records.body.length).toBeGreaterThanOrEqual(10);
+    const newYears = records.body.find((r: { data: { date: string } }) => r.data.date === '2026-01-01');
+    expect(newYears.data.type).toBe('Regular Holiday');
+    const chineseNewYear = records.body.find((r: { data: { date: string } }) => r.data.date === '2026-02-17');
+    expect(chineseNewYear.data.type).toBe('Special Non-Working Holiday');
+
+    // Admin can freely edit/delete the seeded reference data — no special protection.
+    const del = await ctx.api.delete(`/api/form-records/${chineseNewYear.id}`).set(hdr());
+    expect(del.status).toBe(200);
+  });
+
   it('creates and lists an employee with a caller-supplied number, defaulting to probationary status', async () => {
     const res = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-JUAN', name: 'Juan Dela Cruz', position: 'Warehouseman', daily_rate: 610 });
@@ -479,6 +497,9 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
       grace_minutes: 10, late_unit: 'hour', ot_unit: 'hour', ot_rate_percent: 125,
       night_diff_enabled: false, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
+      // No rest days here — several fixture dates below land on a real-calendar Sat/Sun and
+      // these tests are about OT/late/leave, not rest-day pay (that's its own describe block).
+      default_rest_days: [],
     });
     const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
       .send({ name: 'Compute Test Shift', start_time: '08:00', end_time: '17:00', is_default: false });
@@ -614,7 +635,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect((await ctx.api.get('/api/hr/periods/999999/attendance/export').set(hdr())).status).toBe(404);
   });
 
-  it('regenerating refreshes computed fields but preserves purely-manual ones (cash advance, rest-day OT)', async () => {
+  it('regenerating refreshes computed fields (including rest-day OT, now attendance-derived) but preserves purely-manual ones (cash advance)', async () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-REGEN', name: 'Regen Test Employee', daily_rate: 800 });
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -629,7 +650,11 @@ describe('generate-payslips computes real numbers from attendance + linked forms
       .send({ payroll_period: 'Regen Cutoff' });
     const records1 = await ctx.api.get(`/api/form-definitions/${gen1.body.form_id}/records`).query({ period: 'Regen Cutoff' }).set(hdr());
     const rec1 = records1.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Regen Test Employee');
+    expect(rec1.data.rest_day_ot).toBe(0); // 2026-08-04 is a Tuesday and this describe block's policy has no rest days
 
+    // cash_advance has no computed source, so it's still carried over untouched. rest_day_ot
+    // DOES have a computed source now (attendance-derived, see hr-payroll-compute.ts) — a
+    // manual edit to it is overwritten on the next regenerate, same as overtime_pay already was.
     await ctx.api.put(`/api/form-records/${rec1.id}`).set(hdr()).send({ data: { ...rec1.data, cash_advance: 500, rest_day_ot: 250 } });
 
     const gen2 = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
@@ -638,7 +663,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const records2 = await ctx.api.get(`/api/form-definitions/${gen1.body.form_id}/records`).query({ period: 'Regen Cutoff' }).set(hdr());
     const rec2 = records2.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Regen Test Employee');
     expect(rec2.data.cash_advance).toBe(500);
-    expect(rec2.data.rest_day_ot).toBe(250);
+    expect(rec2.data.rest_day_ot).toBe(0);
     expect(rec2.data.days_worked).toBe(1);
   });
 
@@ -821,7 +846,9 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-2316', name: '2316 Employee', daily_rate: 1000, tin_no: '123-456-789-000' });
 
-    for (const [i, [payDate, workDate]] of [['2026-06-15', '2026-06-14'], ['2026-07-15', '2026-07-14']].entries()) {
+    // work_date deliberately NOT a Sat/Sun (2026-06-14 is a Sunday) — this test is about BIR
+    // 2316 aggregation, not rest-day pay, and shouldn't accidentally exercise that feature.
+    for (const [i, [payDate, workDate]] of [['2026-06-15', '2026-06-16'], ['2026-07-15', '2026-07-14']].entries()) {
       const period = await ctx.api.post('/api/hr/periods').set(hdr())
         .send({ label: `2316 P${i}`, start_date: workDate, end_date: workDate });
       await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -1118,5 +1145,99 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(posted2.body.entry.number).not.toBe(posted.body.entry.number);
     const reversedCheck = await ctx.api.get(`/api/accounting/ledger/journal-entries/${entry.id}`).set(hdr());
     expect(reversedCheck.body.reversed_by).toBeTruthy();
+  });
+});
+
+// PH holiday pay + rest-day premium end to end: per-record override vs. the Company Holidays
+// calendar, and per-employee rest-day override vs. the company-wide default. Own describe block
+// (own policy/fixtures) so it doesn't collide with 'generate-payslips computes real numbers...'
+// above, which deliberately sets default_rest_days: [] to stay unaffected by this feature.
+describe('generate-payslips — HR-marked holidays + rest-day pay end to end', () => {
+  let holidayShiftId: number;
+
+  beforeAll(async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      grace_minutes: 10, late_unit: 'hour', ot_unit: 'hour', ot_rate_percent: 125,
+      night_diff_enabled: false, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
+      default_rest_days: [0, 6], // Sun, Sat
+    });
+    const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Holiday Test Shift', start_time: '08:00', end_time: '17:00', is_default: false });
+    holidayShiftId = shift.body.id;
+  });
+
+  async function genOne(periodId: number, label: string, employeeName: string) {
+    const gen = await ctx.api.post(`/api/hr/periods/${periodId}/generate-payslips`).set(hdr()).send({ payroll_period: label });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: label }).set(hdr());
+    return records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === employeeName);
+  }
+
+  it('a per-record holiday_type override beats the Company Holidays calendar for that one day', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-HOL-OVERRIDE', name: 'Holiday Override Employee', daily_rate: 1000 });
+    // 2026-01-01 is already seeded in the calendar as a Regular Holiday.
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Holiday Override Cutoff', start_date: '2026-01-01', end_date: '2026-01-01' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{
+        work_date: '2026-01-01', time_in: '08:00', time_out: '17:00', notes: '', shift_id: holidayShiftId,
+        holiday_type: 'none', // override the calendar off for this one employee
+      }],
+    });
+    const rec = await genOne(period.body.id, 'Holiday Override Cutoff', 'Holiday Override Employee');
+    expect(rec.data.holiday_pay).toBe(0); // override wins — not the calendar's 200% Regular Holiday rate
+  });
+
+  it('with no per-record override, the Company Holidays calendar applies automatically', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-HOL-CALENDAR', name: 'Holiday Calendar Employee', daily_rate: 1000 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Holiday Calendar Cutoff', start_date: '2026-01-01', end_date: '2026-01-01' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-01-01', time_in: '08:00', time_out: '17:00', notes: '', shift_id: holidayShiftId }],
+    });
+    const rec = await genOne(period.body.id, 'Holiday Calendar Cutoff', 'Holiday Calendar Employee');
+    // 2026-01-01 is a Thursday, not a rest day -> plain 200% Regular Holiday rate (+100% premium).
+    expect(rec.data.holiday_pay).toBeCloseTo(1000, 6);
+  });
+
+  it("an employee's rest_days override wins over PayrollPolicy.default_rest_days", async () => {
+    // Company default is Sun/Sat; give this one employee Mon/Tue off instead.
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-RESTDAY-OVERRIDE', name: 'Rest Day Override Employee', daily_rate: 1000, rest_days: [1, 2] });
+    // 2026-08-03 is a Monday (this employee's custom rest day; not the company default).
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Rest Day Override Cutoff', start_date: '2026-08-03', end_date: '2026-08-03' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-03', time_in: '08:00', time_out: '17:00', notes: '', shift_id: holidayShiftId }],
+    });
+    const rec = await genOne(period.body.id, 'Rest Day Override Cutoff', 'Rest Day Override Employee');
+    expect(rec.data.rest_day_ot).toBeCloseTo(300, 6); // +30% of 1000, credited because of the override, not the company default
+
+    // Round-trips back out through GET too.
+    const list = await ctx.api.get('/api/hr/employees').set(hdr());
+    const fetched = list.body.find((e: { id: number }) => e.id === emp.body.id);
+    expect(fetched.rest_days).toEqual([1, 2]);
+  });
+
+  it('company-wide default_rest_days applies when an employee has no override', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-RESTDAY-DEFAULT', name: 'Rest Day Default Employee', daily_rate: 1000 });
+    // 2026-08-01 is a Saturday -> covered by the company default [0, 6].
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Rest Day Default Cutoff', start_date: '2026-08-01', end_date: '2026-08-01' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-01', time_in: '08:00', time_out: '17:00', notes: '', shift_id: holidayShiftId }],
+    });
+    const rec = await genOne(period.body.id, 'Rest Day Default Cutoff', 'Rest Day Default Employee');
+    expect(rec.data.rest_day_ot).toBeCloseTo(300, 6);
   });
 });

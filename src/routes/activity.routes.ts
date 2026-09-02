@@ -1,4 +1,5 @@
-/** Activity log (admin-only, `audit.view`): read the app-wide action history + prune old rows. */
+/** Activity log (admin-only, `audit.view`): read the app-wide action history + prune old rows.
+ *  Rows are also swept automatically after ACTIVITY_LOG_RETENTION_DAYS by cleanupSessions(). */
 import { Router } from 'express';
 import { queryOne, queryAll, run } from '../db';
 import { requireAuth, requirePermission } from '../auth';

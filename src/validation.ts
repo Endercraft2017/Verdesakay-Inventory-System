@@ -770,6 +770,7 @@ export const employeeSchema = z.object({
   tin_no: optionalIdText,
   leave_days_per_year: numCoerce.min(0).max(366).default(5),
   leave_days_used: numCoerce.min(0).default(0),
+  rest_days: z.array(z.number().int().min(0).max(6)).max(7).nullable().optional(),
   photo: z.preprocess(
     (v) => (v === '' ? null : v),
     z.string().max(2_000_000).regex(/^data:image\//, 'Photo must be an image').optional().nullable()
@@ -800,6 +801,7 @@ const attendanceDaySchema = z.object({
   notes: optionalText,
   shift_id: nullableId,
   form_record_id: nullableId,
+  holiday_type: z.enum(['regular', 'special_non_working', 'special_working', 'none']).nullable().optional(),
 });
 
 export const saveAttendanceSchema = z.object({
@@ -867,6 +869,7 @@ export const payrollPolicySchema = z.object({
   monthly_rate_divisor: z.coerce.number().min(1).max(31).default(26),
   pay_frequency: z.enum(['monthly', 'semi_monthly', 'weekly', 'daily']).default('semi_monthly'),
   auto_statutory: boolish.default(true),
+  default_rest_days: z.array(z.number().int().min(0).max(6)).max(7).default([0, 6]),
 });
 
 /** Sparse permission overrides: keys are permission strings, values are booleans. */

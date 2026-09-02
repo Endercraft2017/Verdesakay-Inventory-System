@@ -123,9 +123,9 @@ App.register('activity', async (view) => {
     UI.modal({
       title: 'Prune activity log',
       bodyHTML: `
-        <p class="muted" style="margin-top:0">Permanently delete entries older than the given number of days.</p>
+        <p class="muted" style="margin-top:0">The log is kept for about a month automatically — use this only to clear entries sooner.</p>
         <label>Older than (days)</label>
-        <input data-f="days" type="number" min="1" value="90" />`,
+        <input data-f="days" type="number" min="1" value="30" />`,
       confirmText: 'Delete entries',
       onConfirm: async (overlay, showErr) => {
         const days = parseInt(overlay.querySelector('[data-f="days"]').value, 10);
