@@ -252,6 +252,18 @@ describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DO
     expect(r.days_absent).toBe(1);
   });
 
+  it('an unworked rest day is neither days_worked nor days_absent — it was never a scheduled workday', () => {
+    const r = computeAttendanceForEmployee([day({ isRestDay: true })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(0);
+    expect(r.days_absent).toBe(0);
+  });
+
+  it('unworked Regular Holiday that also falls on a rest day is still fully paid (rest-day-ness never reduces the holiday entitlement)', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'regular', isRestDay: true })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(1);
+    expect(r.days_absent).toBe(0);
+  });
+
   it('worked, no holiday, not a rest day: no premium (the ordinary case)', () => {
     const r = computeAttendanceForEmployee(
       [day({ time_in: '08:00', time_out: '17:00' })], DAILY_RATE, POLICY
@@ -327,6 +339,32 @@ describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DO
     expect(r.special_holiday_30).toBeCloseTo(8 * 100 * 0.3, 6);
     expect(r.holiday_pay).toBe(0);
     expect(r.rest_day_ot).toBe(0);
+  });
+
+  it('authorized OT on a Regular Holiday is paid at the holiday-scaled rate (200% x OT%), not the ordinary-day OT rate', () => {
+    // Shift 08:00-17:00; worked 08:00-19:00 -> 2hrs OT (POLICY.ot_unit is '30min', so this rounds exactly).
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '19:00', holiday: 'regular',
+        linkedForm: { slug: 'overtime_request', data: {} },
+      })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.ot_hours).toBeCloseTo(2, 6);
+    // 2hrs * 100/hr * 2.0 (Regular Holiday multiplier) * 1.25 (POLICY.ot_rate_percent) = 500,
+    // not the ordinary 2 * 100 * 1.25 = 250 an unscaled OT rate would give.
+    expect(r.overtime_pay).toBeCloseTo(2 * 100 * 2.0 * 1.25, 6);
+    // The regular (within-shift) hours still separately earn the base-day holiday premium —
+    // OT scaling and the base-day premium are for disjoint hour ranges, both apply.
+    expect(r.holiday_pay).toBeCloseTo(DAILY_RATE * 1.0, 6);
+  });
+
+  it('authorized OT on an ordinary day is unaffected by the holiday-scaling change (multiplier 1.0, same as before)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '19:00', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.overtime_pay).toBeCloseTo(2 * 100 * 1.25, 6);
   });
 });
 

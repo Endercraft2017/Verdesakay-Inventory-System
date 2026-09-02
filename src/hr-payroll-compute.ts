@@ -100,6 +100,17 @@ const ZERO: AttendanceComputation = {
   undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0,
 };
 
+/** DOLE Labor Advisory No. 12-25 total pay multiplier for a worked day, by holiday type +
+    rest-day combination — the single source of truth both the base-day premium below AND the
+    OT-rate scaling in the overtime_request branch derive from, so the two can never drift
+    apart. 1.0 = ordinary day (no premium). */
+function dayRateMultiplier(holiday: AttendanceDay['holiday'], isRestDay: boolean | undefined): number {
+  if (holiday === 'regular') return isRestDay ? 2.6 : 2.0;
+  if (holiday === 'special_non_working') return isRestDay ? 1.5 : 1.3;
+  if (isRestDay) return 1.3;
+  return 1.0;
+}
+
 export function computeAttendanceForEmployee(
   days: AttendanceDay[],
   dailyRate: number,
@@ -128,6 +139,9 @@ export function computeAttendanceForEmployee(
       // immediately before" eligibility check, which this per-day loop doesn't look back for.
       // An unworked Special Non-Working (or Special Working) day is plain "no work, no pay" —
       // same bucket as an unpaid No Work Memo day, not specially distinguished.
+      // An unworked rest day is neither paid nor an absence — it was never a scheduled workday
+      // to begin with, so it contributes to neither days_worked nor days_absent (unlike the
+      // above cases, which are all still "supposed to work, but excused" one way or another).
       // Otherwise it's a genuine unpaid absence and contributes nothing.
       if (slug === 'leave_request' && day.linkedForm?.data?.with_pay === 'Yes') {
         out.days_worked += 1;
@@ -135,6 +149,8 @@ export function computeAttendanceForEmployee(
         out.days_worked += 1;
       } else if (day.holiday === 'regular') {
         out.days_worked += 1;
+      } else if (day.isRestDay) {
+        // intentionally silent — see comment above
       } else {
         out.days_absent += 1;
       }
@@ -184,7 +200,16 @@ export function computeAttendanceForEmployee(
         const otBlocked = roundUpToUnit(otRaw, unitMinutesFor(policy.ot_unit));
         const otHours = otBlocked / 60;
         out.ot_hours += otHours;
-        let pay = otHours * hourlyRate * (policy.ot_rate_percent / 100);
+        // OT pay scales with the day's own rate multiplier too — OT worked on a Regular Holiday
+        // isn't paid at the same rate as OT on an ordinary day (DOLE: hourly rate x 200% x 130%
+        // for a Regular Holiday, not just x 125%). Rather than hardcoding DOLE's own OT sub-rates
+        // (169%/195%/260%/338% for each combination) as separate magic numbers, this reuses the
+        // exact same dayRateMultiplier the base-day premium below is built from, scaled by the
+        // admin's configured OT%: ordinary-day OT is unaffected (multiplier 1.0, same result as
+        // before this existed), and every holiday/rest-day combination scales consistently with
+        // whatever OT% the company has configured, instead of a second hardcoded rate.
+        const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
+        let pay = otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
         if (policy.night_diff_enabled) {
           // Convert back to wall-clock (mod 24h) for the night-window check — effectiveEnd/
           // timeOutRel may be on the shift's extended "past midnight" timeline.
@@ -227,17 +252,19 @@ export function computeAttendanceForEmployee(
       // base (not actual hours worked) — simplest correct behavior for the common case; doesn't
       // specially prorate a half-day (halfday_request) that also happens to be a holiday/rest
       // day, an intentionally rare combination not worth the extra complexity.
-      // DOLE Labor Advisory No. 12-25 combo rates (see hr-payroll-compute plan): a rest day
-      // doesn't just add 30% on top of whatever else applies — Regular Holiday + rest day is a
-      // flat 260% (i.e. +30% of the 200% regular-holiday rate), while Special Non-Working + rest
-      // day is a flat 150% (not +30% of the already-130% special rate) — both looked up directly
-      // rather than derived, to match the published rates exactly.
+      // DOLE Labor Advisory No. 12-25 combo rates, via the same dayRateMultiplier the OT branch
+      // above uses: a rest day doesn't just add 30% on top of whatever else applies — Regular
+      // Holiday + rest day is a flat 260% (multiplier 2.6, i.e. +30% of the 200% regular-holiday
+      // rate), while Special Non-Working + rest day is a flat 150% (multiplier 1.5, not +30% of
+      // the already-130% special rate) — subtracting 1.0 (the day's base 100%, already counted
+      // via days_worked/basic_salary above) leaves just the premium this field stores.
+      const premiumPct = dayRateMultiplier(day.holiday, day.isRestDay) - 1.0;
       if (day.holiday === 'regular') {
-        out.holiday_pay += dailyRate * (day.isRestDay ? 1.6 : 1.0);
+        out.holiday_pay += dailyRate * premiumPct;
       } else if (day.holiday === 'special_non_working') {
-        out.special_holiday_30 += dailyRate * (day.isRestDay ? 0.5 : 0.3);
+        out.special_holiday_30 += dailyRate * premiumPct;
       } else if (day.isRestDay) {
-        out.rest_day_ot += dailyRate * 0.3;
+        out.rest_day_ot += dailyRate * premiumPct;
       }
     }
   }
