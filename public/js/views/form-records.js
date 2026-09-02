@@ -111,6 +111,11 @@ async function renderFormView(view, formId, initialPeriod) {
   // stats, just without the id-dependent quick actions (Export CSV, Post to GL).
   let periodsMeta = [];
   const expandedBundles = new Set(); // period labels the user has toggled open
+  // Defaults the most-recent bundle open exactly once, on the very first render — without
+  // this flag, collapsing that same bundle empties the set again, and the "default open"
+  // fallback below would immediately re-add it right back, making it look like clicking to
+  // collapse just did nothing.
+  let bundlesDefaultApplied = false;
 
   try { formDef = await API.get('/form-definitions/' + formId); }
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }
@@ -647,8 +652,10 @@ async function renderFormView(view, formId, initialPeriod) {
       if (b.meta) return 1;
       return b.label.localeCompare(a.label);
     });
-    // Nothing expanded yet (first render) -> default to just the most recent bundle open.
-    if (!expandedBundles.size && bundles.length) expandedBundles.add(bundles[0].label);
+    // Default the most recent bundle open — but only once, on the very first render. Checking
+    // "is the set empty" instead of this flag would re-trigger every time the user collapses
+    // the last open bundle back down to zero, undoing their own click.
+    if (!bundlesDefaultApplied && bundles.length) { expandedBundles.add(bundles[0].label); bundlesDefaultApplied = true; }
 
     return bundles.map((b) => {
       const open = expandedBundles.has(b.label);
