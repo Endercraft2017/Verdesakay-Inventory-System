@@ -61,6 +61,31 @@ describe('hr', () => {
     expect(created.status).toBe('probationary');
   });
 
+  it('default_shift_id round-trips through create/update and shows up on the period roster (a UI pre-fill for Daily Time, never enforced)', async () => {
+    const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Default Shift Test', start_time: '08:00', end_time: '17:00', is_default: false });
+    const create = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-DEFSHIFT', name: 'Default Shift Employee', daily_rate: 500, default_shift_id: shift.body.id });
+    expect(create.status).toBe(201);
+    const list = await ctx.api.get('/api/hr/employees').set(hdr());
+    const created = list.body.find((e: { id: number }) => e.id === create.body.id);
+    expect(created.default_shift_id).toBe(shift.body.id);
+
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Default Shift Roster Cutoff', start_date: '2026-08-05', end_date: '2026-08-05' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: create.body.id });
+    const roster = await ctx.api.get(`/api/hr/periods/${period.body.id}`).set(hdr());
+    const rosterRow = roster.body.roster.find((r: { employee_id: number }) => r.employee_id === create.body.id);
+    expect(rosterRow.default_shift_id).toBe(shift.body.id); // what dailyGridModal's pre-fill actually reads
+
+    // Clearing it back to null (falls back to whichever shift is marked company-wide default).
+    const update = await ctx.api.put(`/api/hr/employees/${create.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-DEFSHIFT', name: 'Default Shift Employee', daily_rate: 500, default_shift_id: null });
+    expect(update.status).toBe(200);
+    const list2 = await ctx.api.get('/api/hr/employees').set(hdr());
+    expect(list2.body.find((e: { id: number }) => e.id === create.body.id).default_shift_id).toBeNull();
+  });
+
   it('rejects creating an employee with a number already in use, and rejects a blank number', async () => {
     const dup = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-JUAN', name: 'Someone Else' });

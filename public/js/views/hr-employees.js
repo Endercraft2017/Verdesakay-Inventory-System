@@ -260,9 +260,13 @@ App.register('hr-employees', async (view) => {
       ensurePolicyDivisor(),
       editing ? Promise.resolve(existing.employee_no || '') : suggestEmployeeNo(''),
       loadLinkPickerData(),
-    ]).then(([deptList, , suggestedNo, { users, allEmployees }]) => {
+      API.get('/hr/shifts').catch(() => []),
+    ]).then(([deptList, , suggestedNo, { users, allEmployees }, shifts]) => {
       const deptOpts = ['<option value="">— none —</option>']
         .concat(deptList.map((d) => `<option value="${d.id}" ${editing && existing.department_id === d.id ? 'selected' : ''}>${UI.esc(d.name)}</option>`))
+        .join('');
+      const shiftOpts = ['<option value="">— company default —</option>']
+        .concat(shifts.map((s) => `<option value="${s.id}" ${editing && existing.default_shift_id === s.id ? 'selected' : ''}>${UI.esc(s.name)} (${UI.esc(s.start_time)}-${UI.esc(s.end_time)})</option>`))
         .join('');
       const statusOpts = Object.keys(STATUS_LABELS)
         .map((s) => `<option value="${s}" ${(editing ? existing.status : 'probationary') === s ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`)
@@ -356,6 +360,12 @@ App.register('hr-employees', async (view) => {
               ${editing ? `<div class="muted" style="font-size:12px;margin-top:3px">${UI.esc(String((existing.leave_days_per_year ?? 5) - (existing.leave_days_used ?? 0)))} remaining</div>` : ''}
             </div>
           </div>
+          <label style="margin-top:12px;display:block">Default shift</label>
+          <select data-f="default_shift_id">${shiftOpts}</select>
+          <p class="muted" style="font-size:12px;margin:4px 0 0">Pre-fills new Daily Time rows in Time Keeping — a
+            rotating employee can still be set to a different shift, or none, on any single day there. Without a
+            shift, late/OT/undertime can't be judged (nothing to compare the clock-in against), though holiday and
+            rest-day pay still compute fine either way.</p>
           <label style="margin-top:12px;display:block">Rest days</label>
           <label style="display:flex;align-items:center;gap:6px;font-weight:normal">
             <input type="checkbox" id="emp-rd-custom" style="width:auto" ${existing && existing.rest_days ? 'checked' : ''} />
@@ -488,6 +498,7 @@ App.register('hr-employees', async (view) => {
             department_id: ov.querySelector('[data-f="department_id"]').value || null,
             position: ov.querySelector('[data-f="position"]').value.trim(),
             user_id: ov.querySelector('[data-f="user_id"]').value || null,
+            default_shift_id: ov.querySelector('[data-f="default_shift_id"]').value || null,
             rate_type: rateTypeVal,
             daily_rate: rateTypeVal === 'daily' ? rateAmountVal : 0,
             monthly_rate: rateTypeVal === 'monthly' ? rateAmountVal : null,

@@ -772,6 +772,9 @@ export const employeeSchema = z.object({
   department_id: optionalId,
   position: trimmed.max(120).optional().nullable(),
   user_id: optionalId,
+  // Usual shift — a UI pre-fill only for new Daily Time rows (dailyGridModal), never enforced;
+  // any single day can still be set to a different shift, or none, in Time Keeping.
+  default_shift_id: optionalId,
   rate_type: z.enum(['daily', 'monthly']).default('daily'),
   daily_rate: numCoerce.min(0, 'Daily rate cannot be negative').default(0),
   monthly_rate: numCoerce.min(0, 'Monthly rate cannot be negative').optional().nullable(),

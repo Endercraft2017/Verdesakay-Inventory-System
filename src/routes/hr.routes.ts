@@ -409,13 +409,13 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
   const info = run(
     `INSERT INTO employees
       (employee_no, name, department_id, position, user_id, daily_rate, rate_type, monthly_rate, status, start_date,
-       sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, photo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, default_shift_id, photo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input),
     input.rate_type, input.rate_type === 'monthly' ? input.monthly_rate : null,
     input.status, input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
     input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used,
-    input.rest_days ? JSON.stringify(input.rest_days) : null, input.photo ?? null
+    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.photo ?? null
   );
   res.status(201).json({ id: info.lastInsertRowid });
 });
@@ -436,13 +436,13 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
   run(
     `UPDATE employees SET employee_no = ?, name = ?, department_id = ?, position = ?, user_id = ?, daily_rate = ?, rate_type = ?,
        monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?,
-       leave_days_per_year = ?, leave_days_used = ?, rest_days = ?, photo = ?
+       leave_days_per_year = ?, leave_days_used = ?, rest_days = ?, default_shift_id = ?, photo = ?
      WHERE id = ?`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input), input.rate_type,
     input.rate_type === 'monthly' ? input.monthly_rate : null, input.status,
     input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
     input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used,
-    input.rest_days ? JSON.stringify(input.rest_days) : null, input.photo ?? null, id
+    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.photo ?? null, id
   );
   res.json({ ok: true });
 });
