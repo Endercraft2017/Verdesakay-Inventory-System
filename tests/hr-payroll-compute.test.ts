@@ -364,6 +364,45 @@ describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DO
     expect(r.rest_day_ot).toBe(0);
   });
 
+  // Regression: holiday/rest-day premiums used to sit after `if (!day.shift) continue`, so a
+  // worked day with no shift assigned (shift: null — every other test in this file supplies
+  // SHIFT, which is exactly why nothing caught this) silently paid 0 premium regardless of
+  // day.holiday/isRestDay. Late/OT/undertime genuinely need a shift's start/end time and stay
+  // gated behind that check; these don't.
+  it('holiday premium still applies to a worked day with no shift assigned', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', shift: null, holiday: 'regular' })], DAILY_RATE, POLICY
+    );
+    expect(r.days_worked).toBe(1);
+    expect(r.holiday_pay).toBeCloseTo(DAILY_RATE * 1.0, 6);
+  });
+
+  it('rest-day premium still applies to a worked day with no shift assigned', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', shift: null, isRestDay: true })], DAILY_RATE, POLICY
+    );
+    expect(r.rest_day_ot).toBeCloseTo(DAILY_RATE * 0.3, 6);
+  });
+
+  it('a self-filed holiday_work_request premium still applies with no shift assigned', () => {
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '17:00', shift: null,
+        linkedForm: { slug: 'holiday_work_request', data: { hours_worked: 8, holiday_type: 'Regular Holiday' } },
+      })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.holiday_pay).toBeCloseTo(8 * 100 * 1.0, 6);
+  });
+
+  it('late/OT/undertime stay correctly skipped with no shift assigned (unlike holiday/rest-day pay)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '09:30', time_out: '17:00', shift: null, holiday: 'regular' })], DAILY_RATE, POLICY
+    );
+    expect(r.late_deduction).toBe(0); // nothing to judge lateness against without a shift
+    expect(r.holiday_pay).toBeCloseTo(DAILY_RATE * 1.0, 6); // but the holiday premium still lands
+  });
+
   it('authorized OT on a Regular Holiday is paid at the holiday-scaled rate (200% x OT%), not the ordinary-day OT rate', () => {
     // Shift 08:00-17:00; worked 08:00-19:00 -> 2hrs OT (POLICY.ot_unit is '30min', so this rounds exactly).
     const r = computeAttendanceForEmployee(

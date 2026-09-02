@@ -167,6 +167,46 @@ export function computeAttendanceForEmployee(
     }
 
     out.days_worked += slug === 'halfday_request' ? 0.5 : 1;
+
+    // Holiday/rest-day premiums first, before the shift-required guard below — unlike late/OT/
+    // undertime (which need a shift's start/end time to judge against), these depend only on
+    // the day's own type, not on a shift being assigned at all. Was previously stuck after that
+    // guard, so a worked day with no shift set silently got 0 holiday/rest-day pay regardless of
+    // day.holiday/isRestDay — a real bug, not a "no shift, nothing to compute" case like late is.
+    if (slug === 'holiday_work_request') {
+      const hours = Number(day.linkedForm?.data?.hours_worked) || 0;
+      const isRegular = day.linkedForm?.data?.holiday_type === 'Regular Holiday';
+      // PH convention: the linked form's hours already earned basic pay via days_worked/basic_
+      // salary above — this is just the *additional* premium on top (100% for Regular Holiday,
+      // 30% for Special Non-Working — the latter is why the field is literally named "...30").
+      const premium = hours * hourlyRate * (isRegular ? 1.0 : 0.3);
+      if (isRegular) out.holiday_pay += premium;
+      else out.special_holiday_30 += premium;
+    } else if (day.holiday === 'regular' || day.holiday === 'special_non_working' || day.isRestDay) {
+      // Same premium-only convention as the holiday_work_request branch above (the day's base
+      // 100% is already counted via days_worked/basic_salary), but driven by HR directly marking
+      // the day (per-record override, or the Company Holidays calendar) instead of an employee
+      // self-filing a Holiday Work Request — so it's gated on that branch NOT having fired for
+      // this day, to avoid paying the premium twice. Uses the whole day's rate as the premium
+      // base (not actual hours worked) — simplest correct behavior for the common case; doesn't
+      // specially prorate a half-day (halfday_request) that also happens to be a holiday/rest
+      // day, an intentionally rare combination not worth the extra complexity.
+      // DOLE Labor Advisory No. 12-25 combo rates, via the same dayRateMultiplier the OT branch
+      // below uses: a rest day doesn't just add 30% on top of whatever else applies — Regular
+      // Holiday + rest day is a flat 260% (multiplier 2.6, i.e. +30% of the 200% regular-holiday
+      // rate), while Special Non-Working + rest day is a flat 150% (multiplier 1.5, not +30% of
+      // the already-130% special rate) — subtracting 1.0 (the day's base 100%, already counted
+      // via days_worked/basic_salary above) leaves just the premium this field stores.
+      const premiumPct = dayRateMultiplier(day.holiday, day.isRestDay) - 1.0;
+      if (day.holiday === 'regular') {
+        out.holiday_pay += dailyRate * premiumPct;
+      } else if (day.holiday === 'special_non_working') {
+        out.special_holiday_30 += dailyRate * premiumPct;
+      } else if (day.isRestDay) {
+        out.rest_day_ot += dailyRate * premiumPct;
+      }
+    }
+
     if (!day.shift) continue; // no shift assigned -> nothing to judge late/OT/undertime against
 
     const shiftStart = toMinutes(day.shift.start_time);
@@ -213,7 +253,7 @@ export function computeAttendanceForEmployee(
         // isn't paid at the same rate as OT on an ordinary day (DOLE: hourly rate x 200% x 130%
         // for a Regular Holiday, not just x 125%). Rather than hardcoding DOLE's own OT sub-rates
         // (169%/195%/260%/338% for each combination) as separate magic numbers, this reuses the
-        // exact same dayRateMultiplier the base-day premium below is built from, scaled by the
+        // exact same dayRateMultiplier the base-day premium above is built from, scaled by the
         // admin's configured OT%: ordinary-day OT is unaffected (multiplier 1.0, same result as
         // before this existed), and every holiday/rest-day combination scales consistently with
         // whatever OT% the company has configured, instead of a second hardcoded rate.
@@ -240,40 +280,6 @@ export function computeAttendanceForEmployee(
         const shortRaw = effectiveEnd - timeOutRel;
         const shortBlocked = roundUpToUnit(shortRaw, unitMinutesFor(policy.late_unit));
         out.undertime_pay -= (shortBlocked / 60) * hourlyRate;
-      }
-    }
-
-    if (slug === 'holiday_work_request') {
-      const hours = Number(day.linkedForm?.data?.hours_worked) || 0;
-      const isRegular = day.linkedForm?.data?.holiday_type === 'Regular Holiday';
-      // PH convention: the linked form's hours already earned basic pay via days_worked/basic_
-      // salary above — this is just the *additional* premium on top (100% for Regular Holiday,
-      // 30% for Special Non-Working — the latter is why the field is literally named "...30").
-      const premium = hours * hourlyRate * (isRegular ? 1.0 : 0.3);
-      if (isRegular) out.holiday_pay += premium;
-      else out.special_holiday_30 += premium;
-    } else if (day.holiday === 'regular' || day.holiday === 'special_non_working' || day.isRestDay) {
-      // Same premium-only convention as the holiday_work_request branch above (the day's base
-      // 100% is already counted via days_worked/basic_salary), but driven by HR directly marking
-      // the day (per-record override, or the Company Holidays calendar) instead of an employee
-      // self-filing a Holiday Work Request — so it's gated on that branch NOT having fired for
-      // this day, to avoid paying the premium twice. Uses the whole day's rate as the premium
-      // base (not actual hours worked) — simplest correct behavior for the common case; doesn't
-      // specially prorate a half-day (halfday_request) that also happens to be a holiday/rest
-      // day, an intentionally rare combination not worth the extra complexity.
-      // DOLE Labor Advisory No. 12-25 combo rates, via the same dayRateMultiplier the OT branch
-      // above uses: a rest day doesn't just add 30% on top of whatever else applies — Regular
-      // Holiday + rest day is a flat 260% (multiplier 2.6, i.e. +30% of the 200% regular-holiday
-      // rate), while Special Non-Working + rest day is a flat 150% (multiplier 1.5, not +30% of
-      // the already-130% special rate) — subtracting 1.0 (the day's base 100%, already counted
-      // via days_worked/basic_salary above) leaves just the premium this field stores.
-      const premiumPct = dayRateMultiplier(day.holiday, day.isRestDay) - 1.0;
-      if (day.holiday === 'regular') {
-        out.holiday_pay += dailyRate * premiumPct;
-      } else if (day.holiday === 'special_non_working') {
-        out.special_holiday_30 += dailyRate * premiumPct;
-      } else if (day.isRestDay) {
-        out.rest_day_ot += dailyRate * premiumPct;
       }
     }
   }
