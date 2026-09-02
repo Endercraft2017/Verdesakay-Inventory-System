@@ -194,14 +194,22 @@ async function renderFormView(view, formId, initialPeriod) {
     updateBulkBar();
   }
 
+  // Item 5: one "are you sure" per record, not a single combined confirm for the whole batch —
+  // each delete is its own irreversible action, so a rushed single "yes" can't take out more
+  // than the user actually meant to. Cancelling one skips just that record and moves on.
   async function delSelected() {
     if (!selectedIds.size) return;
-    const n = selectedIds.size;
-    if (!await UI.confirmDialog(`Delete ${n} selected record${n === 1 ? '' : 's'}? Cannot be undone.`, 'Delete')) return;
-    let failed = 0;
-    await Promise.all([...selectedIds].map((id) => API.del('/form-records/' + id).catch(() => { failed++; })));
+    const targets = currentRecords.filter((r) => selectedIds.has(r.id));
+    let deleted = 0, skipped = 0, failed = 0;
+    for (const r of targets) {
+      const ok = await UI.confirmDialog(`Delete record ${r.number}? Cannot be undone.`, 'Delete');
+      if (!ok) { skipped++; continue; }
+      try { await API.del('/form-records/' + r.id); deleted++; }
+      catch (e) { failed++; UI.toast(`${r.number}: ${e.message}`, 'error'); }
+    }
     selectedIds.clear();
-    UI.toast(failed ? `Deleted with ${failed} error${failed === 1 ? '' : 's'}` : `${n - failed} record${n - failed === 1 ? '' : 's'} deleted`);
+    if (deleted) UI.toast(`${deleted} record${deleted === 1 ? '' : 's'} deleted${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`);
+    else if (skipped) UI.toast('Nothing deleted');
     load();
   }
 
@@ -420,6 +428,32 @@ async function renderFormView(view, formId, initialPeriod) {
     renderRecords(records);
   }
 
+  // Item 3: a total-salary summary for the currently-filtered payslips (usually one payroll
+  // period, via the period dropdown — but works for whatever's on screen, e.g. a status
+  // filter too). Summed client-side from the already-loaded records' data, no extra request.
+  function payslipSummaryHTML(records) {
+    if (!isPayroll || !records.length) return '';
+    const num = (v) => Number(v) || 0;
+    const sum = (key) => records.reduce((s, r) => s + num(r.data[key]), 0);
+    const gross = sum('total_earnings');
+    const statutory = sum('sss') + sum('philhealth') + sum('pagibig') + sum('withholding_tax');
+    const otherDeductions = sum('total_deductions') - statutory;
+    const totalDeductions = sum('total_deductions');
+    const net = sum('net_pay');
+    const label = state.period ? `for "${state.period}"` : (state.status ? `for status "${state.status}"` : '(all periods shown)');
+    const cell = (l, v) => `<div><div class="muted" style="font-size:11px">${UI.esc(l)}</div><div style="font-weight:700;font-size:15px">${UI.money(v)}</div></div>`;
+    return `<div class="panel" style="margin-bottom:14px;padding:12px 16px">
+      <div class="muted" style="font-size:12px;margin-bottom:8px">Summary — ${records.length} payslip${records.length === 1 ? '' : 's'} ${UI.esc(label)}</div>
+      <div style="display:flex;gap:28px;flex-wrap:wrap">
+        ${cell('Total Gross', gross)}
+        ${cell('Statutory (SSS/PhilHealth/Pag-IBIG/Tax)', statutory)}
+        ${cell('Other Deductions', otherDeductions)}
+        ${cell('Total Deductions', totalDeductions)}
+        ${cell('Total Net Pay', net)}
+      </div>
+    </div>`;
+  }
+
   function renderRecords(records) {
     const el = view.querySelector('#fr-table');
     if (!records.length) {
@@ -437,7 +471,7 @@ async function renderFormView(view, formId, initialPeriod) {
 
     // Build column headers from form fields (show first 4 to keep table readable).
     const visibleFields = formDef.fields.slice(0, 4);
-    el.innerHTML = `<table>
+    el.innerHTML = `${payslipSummaryHTML(records)}<table>
       <thead><tr>
         <th style="width:36px;text-align:center"><input type="checkbox" id="fr-check-all" title="Select all" /></th>
         <th>Number</th>

@@ -608,7 +608,11 @@ router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
     `SELECT e.id AS employee_id, e.name, e.position, e.daily_rate, e.default_shift_id,
        e.department_id, d.name AS department_name, e.status,
        COUNT(*) AS days_total,
-       SUM(CASE WHEN ar.time_in IS NOT NULL AND ar.time_in != '' THEN 1 ELSE 0 END) AS days_logged
+       SUM(CASE WHEN ar.time_in IS NOT NULL AND ar.time_in != '' THEN 1 ELSE 0 END) AS days_logged,
+       SUM(CASE WHEN
+             ((ar.time_in IS NOT NULL AND ar.time_in != '') <> (ar.time_out IS NOT NULL AND ar.time_out != ''))
+             AND ar.work_date <= date('now', 'localtime')
+           THEN 1 ELSE 0 END) AS days_incomplete
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -734,6 +738,50 @@ router.get('/periods/:id/attendance', requirePermission('hr.view'), (req, res) =
   res.json(rows);
 });
 
+// GET /api/hr/periods/:id/attendance/export — the whole cutoff's daily roster as CSV, every
+// employee, one row per work_date (item 1: "download a CSV of the whole timekeeping for that
+// certain payroll period" — the per-employee GET above only ever covers one employee at a time).
+router.get('/periods/:id/attendance/export', requirePermission('hr.view'), (req, res) => {
+  const periodId = Number(req.params.id);
+  const period = queryOne<{ label: string }>('SELECT label FROM attendance_periods WHERE id = ?', periodId);
+  if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
+  const rows = queryAll<{
+    employee_no: string | null; name: string; department: string | null; work_date: string;
+    shift_name: string | null; time_in: string | null; time_out: string | null;
+    form_name: string | null; notes: string | null;
+  }>(
+    `SELECT e.employee_no, e.name, d.name AS department, ar.work_date,
+            s.name AS shift_name, ar.time_in, ar.time_out, fd.name AS form_name, ar.notes
+     FROM attendance_records ar
+     JOIN employees e ON e.id = ar.employee_id
+     LEFT JOIN departments d ON d.id = e.department_id
+     LEFT JOIN shifts s ON s.id = ar.shift_id
+     LEFT JOIN form_records fr ON fr.id = ar.form_record_id
+     LEFT JOIN form_definitions fd ON fd.id = fr.form_def_id
+     WHERE ar.period_id = ?
+     ORDER BY e.name, ar.work_date`,
+    periodId
+  );
+  const csvRows = rows.map((r) => ({
+    'Employee No.': r.employee_no || '',
+    'Employee Name': r.name,
+    Department: r.department || '',
+    Date: r.work_date,
+    Shift: r.shift_name || '',
+    'Time In': r.time_in || '',
+    'Time Out': r.time_out || '',
+    Status: r.time_in && r.time_out ? 'Complete' : (r.time_in || r.time_out) ? 'Incomplete' : 'Blank',
+    'Linked Form': r.form_name || '',
+    Notes: r.notes || '',
+  }));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="timekeeping-${period.label.replace(/[^a-z0-9]+/gi, '-')}.csv"`);
+  res.send(toCsv(
+    ['Employee No.', 'Employee Name', 'Department', 'Date', 'Shift', 'Time In', 'Time Out', 'Status', 'Linked Form', 'Notes'],
+    csvRows
+  ));
+});
+
 // PUT /api/hr/periods/:id/attendance — replace one employee's daily rows for this cutoff
 router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res) => {
   const periodId = Number(req.params.id);
@@ -841,7 +889,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
 
       const deptPosition = [emp.department_name, emp.position].filter(Boolean).join(' / ');
       const zeros = {
-        days_worked: 0, ot_hours: 0, ot_rate_hour: 0, basic_salary: 0, overtime_pay: 0,
+        days_worked: 0, days_absent: 0, ot_hours: 0, ot_rate_hour: 0, basic_salary: 0, overtime_pay: 0,
         undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, total_earnings: 0,
         sss: 0, philhealth: 0, pagibig: 0, cash_advance: 0, late_absences: 0, total_deductions: 0, net_pay: 0,
       };
@@ -940,6 +988,11 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         payroll_period: payrollPeriod, pay_date: input.pay_date || (prevManual.pay_date as string) || '',
         daily_rate: emp.daily_rate,
         days_worked: computed.days_worked,
+        // Informational only, doesn't itself subtract anything — an absent day already isn't
+        // in days_worked, so it's already excluded from basic_salary below. This just makes
+        // that reduction visible on the payslip (see the "Late / Absences" line's own comment
+        // in src/hr-payroll-compute.ts — despite the name, it never held an absence figure).
+        days_absent: computed.days_absent,
         ot_hours: computed.ot_hours,
         overtime_pay: round2(computed.overtime_pay),
         undertime_pay: round2(computed.undertime_pay),

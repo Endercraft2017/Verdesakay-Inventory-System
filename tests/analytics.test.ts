@@ -87,4 +87,32 @@ describe('analytics overview', () => {
     expect(Array.isArray(r.body.payroll.periods)).toBe(true);
     expect(r.body.inventory).toBeUndefined();
   });
+
+  it('payroll.incomplete_timekeeping counts employees with exactly one of time_in/time_out set, in a cutoff covering today (item 7)', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const emp = await ctx.api.post('/api/hr/employees').set(authHdr())
+      .send({ employee_no: 'TEST-INCOMPLETE', name: 'Incomplete Test Employee', daily_rate: 500 });
+    const period = await ctx.api.post('/api/hr/periods').set(authHdr())
+      .send({ label: 'Incomplete Cutoff', start_date: today, end_date: today });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(authHdr()).send({ employee_id: emp.body.id });
+
+    const before = await ctx.api.get('/api/analytics/overview').set(authHdr());
+    const beforeCount = before.body.payroll.incomplete_timekeeping;
+
+    // Only time_in set — incomplete.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(authHdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: today, time_in: '08:00', time_out: '', notes: '' }],
+    });
+    const after = await ctx.api.get('/api/analytics/overview').set(authHdr());
+    expect(after.body.payroll.incomplete_timekeeping).toBe(beforeCount + 1);
+
+    // Filling in time_out clears it.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(authHdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: today, time_in: '08:00', time_out: '17:00', notes: '' }],
+    });
+    const filled = await ctx.api.get('/api/analytics/overview').set(authHdr());
+    expect(filled.body.payroll.incomplete_timekeeping).toBe(beforeCount);
+  });
 });

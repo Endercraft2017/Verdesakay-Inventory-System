@@ -128,6 +128,39 @@ describe('ai-analytics: attendance reports', () => {
     expect(e.days_with_form).toBe(1);
   });
 
+  it('attendance_detail (item 6 — AI can check timekeeping, read-only) returns raw day rows and flags incomplete ones', () => {
+    const emp = db.queryOne<{ id: number }>("SELECT id FROM employees WHERE name = 'Chronically Late'")!.id;
+    const periodId = db.queryOne<{ id: number }>("SELECT id FROM attendance_periods WHERE label = 'Test'")!.id;
+    // A day with only time_in set — the fixture's own day() helper never produces this
+    // combination (it always pairs a time_in with '18:00' or leaves both null).
+    db.run(
+      "INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out) VALUES (?, ?, '2026-08-09', '09:00', NULL)",
+      periodId, emp
+    );
+
+    const noEmp = exec('attendance_detail', { from: '2026-08-01', to: '2026-08-31' }, admin());
+    expect(noEmp).toMatchObject({ success: false });
+
+    const r = exec('attendance_detail', { employee_id: emp, from: '2026-08-01', to: '2026-08-31' }, admin()) as {
+      data: { days: Array<{ work_date: string; time_in: string | null; time_out: string | null; incomplete: boolean; linked_form: string | null }> };
+    };
+    const complete = r.data.days.find((d) => d.work_date === '2026-08-06'); // 08:55/18:00
+    expect(complete!.incomplete).toBe(false);
+    const absentDay = r.data.days.find((d) => d.work_date === '2026-08-07'); // both null
+    expect(absentDay!.incomplete).toBe(false); // a plain absence, not "incomplete"
+    const excused = r.data.days.find((d) => d.work_date === '2026-08-08');
+    expect(excused!.linked_form).toBe('Leave Request');
+    const incompleteDay = r.data.days.find((d) => d.work_date === '2026-08-09');
+    expect(incompleteDay!.incomplete).toBe(true); // only time_in set
+
+    // hr.view can check, but nothing in ai-tools.ts/ai-analytics.ts lets the AI write to
+    // attendance_records at all — "checking only, not editing" holds by construction, not by
+    // a permission check that could be misconfigured.
+    const names = toolsFor(user(['hr.view'])).map((t) => t.function.name);
+    expect(names).toContain('attendance_detail');
+    expect(names.some((n) => /attendance/i.test(n) && /update|create|edit|delete|set/i.test(n))).toBe(false);
+  });
+
   it('chronic_lateness ranks repeat offenders above a threshold', () => {
     const r = exec('chronic_lateness', { from: '2026-08-01', to: '2026-08-31', min_late_days: 2 }, admin()) as {
       data: { employees: Array<{ name: string; late_days: number }> };

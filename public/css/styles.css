@@ -432,6 +432,13 @@ a { color: var(--accent); }
 .badge-pill.status-completed { background: var(--success-weak); color: var(--success); }
 .badge-pill.status-cancelled { background: var(--danger-weak); color: var(--danger); }
 
+/* Time Keeping: a day with only one of time in/out set (see hr-timekeeping.js's dailyGridModal
+   and the roster table) — a data-entry gap worth a glance, distinct from a plain blank day. */
+tr.tk-incomplete { background: var(--warn-weak); }
+tr.tk-incomplete td { color: var(--warn); }
+tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
+.tk-roster-incomplete { color: var(--warn); font-weight: 600; }
+
 /* ---------- Template editor ---------- */
 .tpl-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px; }
 .tpl-body { width: 100%; min-height: 320px; font-family: 'Consolas', ui-monospace, monospace; font-size: 12.5px; line-height: 1.5; }
@@ -825,6 +832,14 @@ textarea { resize: vertical; min-height: 84px; }
 .msg-row .meta .preview { color: var(--text-muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .msg-row .when { color: var(--text-faint); font-size: 12px; flex-shrink: 0; }
 .msg-full .body { white-space: pre-wrap; margin-top: 12px; line-height: 1.65; }
+.msg-attachments { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.msg-attach { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.msg-attach:hover { background: var(--surface-2); }
+.msg-attach-icon { color: var(--text-faint); flex-shrink: 0; }
+.msg-attach-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-attach-size { font-size: 12px; flex-shrink: 0; }
+.msg-attach-img-wrap { width: 100%; }
+.msg-attach-img { max-width: 100%; max-height: 320px; border-radius: 6px; display: block; margin-bottom: 4px; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 900px) {

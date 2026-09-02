@@ -21,6 +21,14 @@ export interface AttendanceDay {
 
 export interface AttendanceComputation {
   days_worked: number;
+  /** Days with no usable time logged AND not paid another way (no paid Leave, no paid No
+   *  Work Memo) — a genuine no-show, an unpaid Leave, or an unpaid No Work Memo, counted the
+   *  same either way. Purely informational: an absent day already isn't in days_worked, so
+   *  it already doesn't get paid via basic_salary = daily_rate * days_worked — this field
+   *  doesn't subtract anything itself, it just makes that reduction visible on the payslip
+   *  instead of silent (see the "Late / Absences" line, which — despite the name — has only
+   *  ever held the late-arrival peso deduction; see hr.routes.ts generate-payslips). */
+  days_absent: number;
   late_deduction: number;
   ot_hours: number;
   overtime_pay: number;
@@ -73,7 +81,7 @@ function nightOverlapMinutes(fromMin: number, toMin: number, nightStart: number,
 }
 
 const ZERO: AttendanceComputation = {
-  days_worked: 0, late_deduction: 0, ot_hours: 0, overtime_pay: 0,
+  days_worked: 0, days_absent: 0, late_deduction: 0, ot_hours: 0, overtime_pay: 0,
   undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0,
 };
 
@@ -105,6 +113,8 @@ export function computeAttendanceForEmployee(
         out.days_worked += 1;
       } else if (day.noWork === 'paid') {
         out.days_worked += 1;
+      } else {
+        out.days_absent += 1;
       }
       continue;
     }

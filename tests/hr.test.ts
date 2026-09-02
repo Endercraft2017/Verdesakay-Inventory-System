@@ -25,6 +25,13 @@ describe('hr', () => {
     expect(hrPayroll.fields.some((f: { key: string }) => f.key === 'employee_name')).toBe(true);
   });
 
+  it('auto-seeds the No Work Memo form definition too (item 2 — was previously Quick-Add-only, no way to reach it without one first existing)', async () => {
+    const res = await ctx.api.get('/api/form-definitions').set(hdr());
+    const noWork = res.body.find((f: { slug: string }) => f.slug === 'no_work_memo');
+    expect(noWork).toBeDefined();
+    expect(noWork.fields.map((f: { key: string }) => f.key)).toEqual(['date_from', 'date_to', 'reason', 'paid']);
+  });
+
   it('creates and lists an employee with a caller-supplied number, defaulting to probationary status', async () => {
     const res = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-JUAN', name: 'Juan Dela Cruz', position: 'Warehouseman', daily_rate: 610 });
@@ -492,16 +499,12 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     });
     leaveFormId = leaveForm.body.id;
 
-    const noWorkForm = await ctx.api.post('/api/form-definitions').set(hdr()).send({
-      name: 'No Work Memo', slug: 'no_work_memo', number_prefix: 'NW', icon: 'alert', scope: 'hr',
-      fields: [
-        { key: 'date_from', label: 'Date From', type: 'date', required: true, options: [], default: '' },
-        { key: 'date_to', label: 'Date To', type: 'date', required: true, options: [], default: '' },
-        { key: 'reason', label: 'Reason', type: 'textarea', required: true, options: [], default: '' },
-        { key: 'paid', label: 'Paid?', type: 'select', required: true, options: ['Yes', 'No'], default: '' },
-      ],
-    });
-    noWorkFormId = noWorkForm.body.id;
+    // No Work Memo is auto-seeded now (item 2 — src/db.ts's seedNoWorkMemoForm(), same as
+    // hr_payroll always has been) rather than created by hand like the other forms above, so
+    // POST-ing one here would 500 on the slug's UNIQUE constraint — just look it up.
+    const noWorkForm = (await ctx.api.get('/api/form-definitions').set(hdr()))
+      .body.find((f: { slug: string }) => f.slug === 'no_work_memo');
+    noWorkFormId = noWorkForm.id;
   });
 
   it('computes days worked, a late deduction, and authorized OT pay from attendance + a linked overtime form', async () => {
@@ -559,6 +562,56 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Leave Test Employee');
     expect(rec.data.days_worked).toBe(1);
     expect(rec.data.basic_salary).toBeCloseTo(800, 6);
+  });
+
+  it('a genuine unexplained absence shows up as days_absent, doesn\'t touch late_absences, and correctly lowers basic_salary via days_worked', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ABSENT', name: 'Absent Test Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Absent Cutoff', start_date: '2026-08-04', end_date: '2026-08-05' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        // Worked, on time.
+        { work_date: '2026-08-04', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId, form_record_id: null },
+        // No time logged, nothing linked -> a genuine absence.
+        { work_date: '2026-08-05', time_in: '', time_out: '', notes: '', form_record_id: null },
+      ],
+    });
+
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Absent Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Absent Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Absent Test Employee');
+    expect(rec.data.days_worked).toBe(1); // only the day actually worked
+    expect(rec.data.days_absent).toBe(1); // the absence, now visible instead of silent
+    expect(rec.data.late_absences).toBe(0); // no lateness that day — the absence itself isn't in this field
+    expect(rec.data.basic_salary).toBeCloseTo(800, 6); // 1 paid day, not 2 — the absence already isn't paid
+  });
+
+  it('GET /periods/:id/attendance/export downloads the whole cutoff as CSV, one row per employee per day (item 1)', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-CSV-EXPORT', name: 'CSV Export Employee', daily_rate: 500 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'CSV Export Cutoff', start_date: '2026-08-06', end_date: '2026-08-06' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-06', time_in: '08:00', time_out: '', notes: 'forgot to clock out' }],
+    });
+
+    const res = await ctx.api.get(`/api/hr/periods/${period.body.id}/attendance/export`).set(hdr());
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.headers['content-disposition']).toMatch(/attachment/);
+    expect(res.text).toContain('CSV Export Employee');
+    expect(res.text).toContain('2026-08-06');
+    expect(res.text).toContain('Incomplete'); // time_in with no time_out
+    expect(res.text).toContain('forgot to clock out');
+
+    expect((await ctx.api.get('/api/hr/periods/999999/attendance/export').set(hdr())).status).toBe(404);
   });
 
   it('regenerating refreshes computed fields but preserves purely-manual ones (cash advance, rest-day OT)', async () => {

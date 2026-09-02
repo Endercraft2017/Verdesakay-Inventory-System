@@ -22,6 +22,7 @@ async function renderList(view) {
       <h2>Time Keeping</h2>
       <div class="grow"></div>
       <button class="btn secondary" id="tk-govforms">${UI.icon('sheet')} Payroll Worksheets ▾</button>
+      <button class="btn secondary" id="tk-noWork" style="margin-left:8px" title="Company-wide holidays, suspensions, and other no-work declarations — applies to every employee automatically, no per-employee linking needed">${UI.icon('alert')} Holidays / No Work</button>
       <button class="btn secondary" id="tk-policy" style="margin-left:8px">${UI.icon('settings')} Policy Settings</button>
       <button class="btn" id="tk-new" style="margin-left:8px">${UI.icon('plus')} New Cutoff</button>
     </div>
@@ -29,6 +30,7 @@ async function renderList(view) {
 
   view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
   view.querySelector('#tk-govforms').addEventListener('click', () => govFormsModal());
+  view.querySelector('#tk-noWork').addEventListener('click', () => noWorkMemoModal());
 
   const tableEl = view.querySelector('#tk-table');
 
@@ -334,6 +336,92 @@ async function thirteenthMonthModal() {
 // BIR returns, Alphalist and the agency contribution schedules moved to
 // Accounting → Tax & Compliance (they're the finance team's to file). What
 // stays here is payroll processing: 13th-month and the final-pay worksheet.
+/* ── Item 2: Holidays / paid & unpaid work cancellations (No Work Memo) ─────────────────
+   A company-wide declaration for a date range — a holiday, a typhoon suspension, equipment
+   failure, whatever — paid or unpaid, applies to every employee automatically the next time
+   payslips are generated (src/hr-payroll-compute.ts), no per-employee linking needed. The
+   underlying "No Work Memo" Data Form always existed for this; this is just a direct way to
+   manage it from Time Keeping instead of via Form Builder / Data Forms. */
+async function noWorkMemoModal() {
+  let formId = null;
+  try {
+    const forms = await API.get('/form-definitions');
+    const f = forms.find((x) => x.slug === 'no_work_memo');
+    formId = f ? f.id : null;
+  } catch { /* fall through to the error state below */ }
+  if (!formId) { UI.toast('No Work Memo form not found — ask an admin to check Form Builder (HR).', 'error'); return; }
+
+  async function load() {
+    return API.get(`/form-definitions/${formId}/records`).catch(() => []);
+  }
+
+  const m = UI.modal({
+    title: 'Holidays / No Work',
+    size: 'lg',
+    cancelText: 'Close',
+    confirmText: null,
+    bodyHTML: `<p class="muted" style="margin-top:0">Declares a date range where no work happened company-wide — a
+        holiday, a suspension, whatever the reason. Applies to every employee automatically the next time payslips
+        are generated for a cutoff covering these dates; paid credits a full day, unpaid is the same as an absence
+        but documented. No per-employee linking needed.</p>
+      <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
+        <button type="button" class="btn secondary small" id="nw-new">${UI.icon('plus')} New</button></div>
+      <div id="nw-list"><div class="empty">Loading…</div></div>`,
+    onOpen: (ov) => {
+      const list = ov.querySelector('#nw-list');
+      async function refresh() {
+        const records = await load();
+        if (!records.length) {
+          list.innerHTML = UI.emptyState({ icon: 'alert', title: 'No holidays or no-work declarations yet', hint: 'Add one for an upcoming holiday or suspension.' });
+          return;
+        }
+        list.innerHTML = `<table><thead><tr><th>Number</th><th>From</th><th>To</th><th>Reason</th><th>Paid?</th><th></th></tr></thead>
+          <tbody>${records.map((r) => `
+            <tr>
+              <td class="mono muted">${UI.esc(r.number)}</td>
+              <td>${UI.esc(r.data.date_from || '')}</td>
+              <td>${UI.esc(r.data.date_to || '')}</td>
+              <td>${UI.esc(r.data.reason || '')}</td>
+              <td><span class="badge-pill ${r.data.paid === 'Yes' ? 'status-completed' : 'status-cancelled'}">${UI.esc(r.data.paid || 'No')}</span></td>
+              <td class="actions"><button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button></td>
+            </tr>`).join('')}</tbody></table>`;
+        list.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+          if (!await UI.confirmDialog('Delete this declaration?', 'Delete')) return;
+          try { await API.del('/form-records/' + b.dataset.del); refresh(); }
+          catch (e) { UI.toast(e.message, 'error'); }
+        });
+      }
+      ov.querySelector('#nw-new').onclick = () => newModal(refresh);
+      refresh();
+    },
+  });
+
+  function newModal(after) {
+    UI.modal({
+      title: 'New holiday / no-work declaration',
+      bodyHTML: `
+        <div class="field-row">
+          <div><label>Date from <span class="req">*</span></label><input data-f="date_from" type="date" /></div>
+          <div><label>Date to <span class="req">*</span></label><input data-f="date_to" type="date" /></div>
+        </div>
+        <label>Reason <span class="req">*</span></label><textarea data-f="reason" placeholder="e.g. Regular Holiday — National Heroes Day"></textarea>
+        <label>Paid?</label>
+        <select data-f="paid"><option value="Yes">Yes — credit a full paid day for everyone</option><option value="No">No — unpaid, same as an absence but documented</option></select>`,
+      confirmText: 'Save',
+      onConfirm: async (ov2, showErr) => {
+        const g = (k) => ov2.querySelector(`[data-f="${k}"]`).value.trim();
+        const data = { date_from: g('date_from'), date_to: g('date_to'), reason: g('reason'), paid: g('paid') };
+        if (!data.date_from || !data.date_to) { showErr('Both dates are required'); return false; }
+        if (data.date_to < data.date_from) { showErr('"Date to" is before "date from"'); return false; }
+        if (!data.reason) { showErr('Reason is required'); return false; }
+        await API.post('/form-records', { form_def_id: formId, data, status: 'approved' });
+        UI.toast('Saved');
+        after();
+      },
+    });
+  }
+}
+
 function govFormsModal() {
   const items = [
     ['13th-month pay', 'Per-employee 13th-month computation', thirteenthMonthModal],
@@ -548,6 +636,7 @@ async function renderPeriod(view, periodId) {
       <div class="grow"></div>
       <button class="btn secondary" id="tk-edit-period">${UI.icon('edit')} Edit Cutoff</button>
       <button class="btn secondary" id="tk-import-punches" style="margin-left:8px" title="Fill time-in/out from time-clock punches">${UI.icon('calendar')} Import Punches</button>
+      <button class="btn secondary" id="tk-export-csv" style="margin-left:8px" title="Download this cutoff's whole timekeeping roster as CSV">${UI.icon('download')} Export CSV</button>
       <button class="btn secondary" id="tk-post-gl" style="margin-left:8px" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 15)} Post to GL</button>
       <button class="btn" id="tk-generate" style="margin-left:8px">${UI.icon('sheet')} Generate Payslips</button>
     </div>
@@ -569,6 +658,7 @@ async function renderPeriod(view, periodId) {
         </select>
         <button type="button" class="icon-btn" id="tk-roster-sort-dir" title="Reverse sort order">${UI.icon('adjust', 15)}</button>
         <div class="grow"></div>
+        <button class="btn danger small" id="tk-remove-selected" hidden>${UI.icon('trash')} Remove selected</button>
         <button class="btn secondary" id="tk-add-emp">${UI.icon('plus')} Add Employee</button>
       </div>
       <div id="tk-roster"></div>
@@ -601,6 +691,9 @@ async function renderPeriod(view, periodId) {
     }
   };
   view.querySelector('#tk-add-emp').onclick = () => addEmployeeModal();
+  view.querySelector('#tk-export-csv').onclick = () =>
+    API.download(`/hr/periods/${periodId}/attendance/export`, `timekeeping-${period.label.replace(/[^a-z0-9]+/gi, '-')}.csv`)
+      .catch((e) => UI.toast(e.message, 'error'));
 
   const rosterEl = view.querySelector('#tk-roster');
   const groupSel = view.querySelector('#tk-roster-group');
@@ -631,14 +724,17 @@ async function renderPeriod(view, periodId) {
   function rosterTableHtml(list) {
     return `
       <table>
-        <thead><tr><th>Employee</th><th>Department</th><th>Status</th><th class="right">Daily Rate</th><th class="right">Days Logged</th><th></th></tr></thead>
+        <thead><tr><th></th><th>Employee</th><th>Department</th><th>Status</th><th class="right">Daily Rate</th><th class="right">Days Logged</th><th></th></tr></thead>
         <tbody>${list.map((r) => `
           <tr class="clickable" data-open="${r.employee_id}">
+            <td><input type="checkbox" class="tk-roster-chk" data-emp="${r.employee_id}" data-name="${UI.esc(r.name)}" /></td>
             <td><strong>${UI.esc(r.name)}</strong></td>
             <td>${UI.esc(r.department_name || '—')}</td>
             <td>${UI.esc(STATUS_LABELS[r.status] || r.status || '—')}</td>
             <td class="right">${UI.money(r.daily_rate)}</td>
-            <td class="right">${r.days_logged || 0} / ${r.days_total || 0}</td>
+            <td class="right">${r.days_logged || 0} / ${r.days_total || 0}${r.days_incomplete
+              ? ` <span class="tk-roster-incomplete" title="${r.days_incomplete} incomplete day(s) — only one of time in/out set">${UI.icon('alert', 13)} ${r.days_incomplete}</span>`
+              : ''}</td>
             <td class="actions"><button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
           </tr>`).join('')}
         </tbody>
@@ -678,11 +774,45 @@ async function renderPeriod(view, periodId) {
 
     rosterEl.querySelectorAll('[data-rm]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); removeEmployee(b.dataset.rm, roster); });
     rosterEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
-      if (e.target.closest('.actions')) return;
+      if (e.target.closest('.actions') || e.target.closest('.tk-roster-chk')) return;
       const r = roster.find((x) => String(x.employee_id) === tr.dataset.open);
       if (r) dailyGridModal(r);
     });
+    rosterEl.querySelectorAll('.tk-roster-chk').forEach((c) => {
+      c.addEventListener('click', (e) => e.stopPropagation());
+      c.addEventListener('change', updateRemoveSelectedBtn);
+    });
+    updateRemoveSelectedBtn();
   }
+
+  const removeSelectedBtn = view.querySelector('#tk-remove-selected');
+  function selectedEmployees() {
+    return Array.from(rosterEl.querySelectorAll('.tk-roster-chk:checked'))
+      .map((c) => ({ id: c.dataset.emp, name: c.dataset.name }));
+  }
+  function updateRemoveSelectedBtn() {
+    const n = selectedEmployees().length;
+    removeSelectedBtn.hidden = n === 0;
+    removeSelectedBtn.textContent = '';
+    removeSelectedBtn.innerHTML = `${UI.icon('trash')} Remove selected (${n})`;
+  }
+  // Item 5: bulk-remove, but one "are you sure" per employee rather than a single combined
+  // confirm — each removal is its own irreversible action (their logged time for this cutoff
+  // goes with it), so a rushed single "yes to all" click shouldn't be able to take out someone
+  // the user didn't mean to. Cancelling one skips just that employee and moves to the next.
+  removeSelectedBtn.onclick = async () => {
+    const targets = selectedEmployees();
+    let removed = 0, skipped = 0;
+    for (const t of targets) {
+      const ok = await UI.confirmDialog(`Remove ${t.name} from this cutoff? Their logged time for it will be lost.`, 'Remove');
+      if (!ok) { skipped++; continue; }
+      try { await API.del(`/hr/periods/${periodId}/employees/${t.id}`); removed++; }
+      catch (e) { UI.toast(`${t.name}: ${e.message}`, 'error'); }
+    }
+    if (removed) UI.toast(`Removed ${removed} employee(s)${skipped ? `, skipped ${skipped}` : ''}`);
+    else if (skipped) UI.toast('Nothing removed');
+    await reload();
+  };
 
   groupSel.addEventListener('change', () => { rosterView.groupBy = groupSel.value; renderRoster(); });
   sortSel.addEventListener('change', () => { rosterView.sortBy = sortSel.value; renderRoster(); });
@@ -840,9 +970,15 @@ async function renderPeriod(view, periodId) {
       onOpen: (ov) => {
         const body = ov.querySelector('#tk-days');
 
+        const today = new Date().toISOString().slice(0, 10);
         function renderRows() {
-          body.innerHTML = days.map((d, i) => `
-            <tr data-row="${i}">
+          body.innerHTML = days.map((d, i) => {
+            // Item 7: one of time_in/time_out set but not both, for a day that's already
+            // happened — flagged so HR can spot & fix it at a glance, distinct from a plain
+            // blank (unremarkable — not yet worked, or a known absence) or a fully-filled day.
+            const incomplete = !!d.time_in !== !!d.time_out && d.work_date <= today;
+            return `
+            <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
               <td>${UI.esc(d.work_date)}</td>
               <td><select data-k="shift_id">${shiftOptions(d.shift_id)}</select></td>
               <td><input data-k="time_in" type="time" value="${UI.esc(d.time_in || '')}" /></td>
@@ -852,7 +988,8 @@ async function renderPeriod(view, periodId) {
                 ? `<span class="badge-pill" data-unlink="${i}" title="Click to unlink" style="cursor:pointer">${UI.esc(d._linkLabel)} ✕</span>`
                 : `<button type="button" class="icon-btn" data-link="${i}" title="Link an OT/Half Day/Leave/Undertime/Offset form (optional)">${UI.icon('edit', 14)}</button>`}
               </td>
-            </tr>`).join('');
+            </tr>`;
+          }).join('');
           body.querySelectorAll('input[data-k], select[data-k]').forEach((inp) => {
             const evt = inp.tagName === 'SELECT' ? 'change' : 'input';
             inp.addEventListener(evt, () => {

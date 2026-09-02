@@ -5,20 +5,23 @@ App.register('dashboard', async (view) => {
   const canMsg = App.hasPermission('messages.view');
   const canForms = App.hasPermission('forms.view');
   const canUsers = App.hasPermission('users.manage');
+  const canHr = App.hasPermission('hr.view');
 
-  const [stats, items, inbox, forms, unread, users] = await Promise.all([
+  const [stats, items, inbox, forms, unread, users, hrOverview] = await Promise.all([
     canInv ? API.get('/inventory/stats') : Promise.resolve({ items: 0, total_units: 0, low_stock: 0, out_of_stock: 0 }),
     canInv ? API.get('/inventory?low=1') : Promise.resolve([]),
     canMsg ? API.get('/messages?box=inbox') : Promise.resolve([]),
     canForms ? API.get('/forms') : Promise.resolve([]),
     canMsg ? API.get('/messages/unread-count') : Promise.resolve({ count: 0 }),
     canUsers ? API.get('/users') : Promise.resolve(null),
+    canHr ? API.get('/analytics/overview').catch(() => null) : Promise.resolve(null),
   ]);
+  const incompleteTk = hrOverview && hrOverview.payroll ? (hrOverview.payroll.incomplete_timekeeping || 0) : 0;
 
   const recent = inbox.slice(0, 5);
 
-  const statCard = (cls, ic, label, value) => `
-    <div class="stat-card ${cls}">
+  const statCard = (cls, ic, label, value, go) => `
+    <div class="stat-card ${cls}${go ? ' clickable' : ''}" ${go ? `data-go="${go}"` : ''}>
       <div class="stat-ic">${UI.icon(ic, 20)}</div>
       <div><div class="value">${value}</div><div class="label">${label}</div></div>
     </div>`;
@@ -40,6 +43,7 @@ App.register('dashboard', async (view) => {
       ${statCard('', 'forms', 'Files available', forms.length)}
       ${statCard('', 'messages', 'Unread messages', unread.count)}
       ${canUsers ? statCard('', 'users', 'Staff accounts', users.length) : ''}
+      ${canHr ? statCard(incompleteTk > 0 ? 'warn' : '', 'history', 'Incomplete timekeeping', incompleteTk, 'hr-timekeeping') : ''}
     </div>
 
     <div class="grid-2">

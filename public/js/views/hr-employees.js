@@ -29,6 +29,7 @@ App.register('hr-employees', async (view) => {
       </select>
       ${canManage ? `<button class="btn secondary" id="emp-no-settings" style="margin-left:8px" title="Employee numbering format">${UI.icon('settings', 15)}</button>` : ''}
       ${canManage ? `<button class="btn secondary" id="emp-import" style="margin-left:8px" title="Create or update employees from a CSV file">${UI.icon('upload')} Import</button>` : ''}
+      ${canManage ? `<button class="btn danger small" id="emp-remove-selected" style="margin-left:8px" hidden>${UI.icon('trash')} Remove selected</button>` : ''}
       ${canManage ? `<button class="btn" id="emp-new" style="margin-left:8px">${UI.icon('plus')} New Employee</button>` : ''}
     </div>
     <div class="panel"><div id="emp-table"></div></div>`;
@@ -150,9 +151,10 @@ App.register('hr-employees', async (view) => {
     }
     tableEl.innerHTML = `
       <table>
-        <thead><tr><th></th><th>Name</th><th>Employee No.</th><th>Department</th><th>Position</th><th class="right">Rate</th><th>Status</th><th></th></tr></thead>
+        <thead><tr>${canManage ? '<th></th>' : ''}<th></th><th>Name</th><th>Employee No.</th><th>Department</th><th>Position</th><th class="right">Rate</th><th>Status</th><th></th></tr></thead>
         <tbody>${list.map((e) => `
           <tr class="clickable" data-open="${e.id}">
+            ${canManage ? `<td><input type="checkbox" class="emp-chk" data-emp="${e.id}" data-name="${UI.esc(e.name)}" /></td>` : ''}
             <td><img src="${UI.esc(e.photo || PLACEHOLDER_PHOTO)}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle" /></td>
             <td><strong>${UI.esc(e.name)}</strong>${e.user_id ? ` <span class="muted" title="Linked to account: ${UI.esc(e.linked_username || '')}" style="vertical-align:middle">${UI.icon('key', 13)}</span>` : ''}</td>
             <td class="mono muted">${UI.esc(e.employee_no || '—')}</td>
@@ -178,9 +180,44 @@ App.register('hr-employees', async (view) => {
       if (emp) generateId(emp);
     });
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
-      if (e.target.closest('.actions')) return;
+      if (e.target.closest('.actions') || e.target.closest('.emp-chk')) return;
       openEmployee(tr.dataset.open, list);
     });
+    tableEl.querySelectorAll('.emp-chk').forEach((c) => {
+      c.addEventListener('click', (e) => e.stopPropagation());
+      c.addEventListener('change', updateRemoveSelectedBtn);
+    });
+    updateRemoveSelectedBtn();
+  }
+
+  const removeSelectedBtn = view.querySelector('#emp-remove-selected');
+  function selectedEmployees() {
+    if (!tableEl.querySelectorAll) return [];
+    return Array.from(tableEl.querySelectorAll('.emp-chk:checked')).map((c) => ({ id: c.dataset.emp, name: c.dataset.name }));
+  }
+  function updateRemoveSelectedBtn() {
+    if (!removeSelectedBtn) return;
+    const n = selectedEmployees().length;
+    removeSelectedBtn.hidden = n === 0;
+    removeSelectedBtn.innerHTML = `${UI.icon('trash')} Remove selected (${n})`;
+  }
+  // Item 4: one "are you sure" per employee, not a single combined confirm — deleting an
+  // employee is irreversible and each is its own decision, so a rushed single "yes" can't
+  // remove more than intended. Cancelling one skips just that employee and moves to the next.
+  if (removeSelectedBtn) {
+    removeSelectedBtn.onclick = async () => {
+      const targets = selectedEmployees();
+      let removed = 0, skipped = 0;
+      for (const t of targets) {
+        const ok = await UI.confirmDialog(`Delete ${t.name}? This cannot be undone.`, 'Delete');
+        if (!ok) { skipped++; continue; }
+        try { await API.del('/hr/employees/' + t.id); removed++; }
+        catch (e) { UI.toast(`${t.name}: ${e.message}`, 'error'); }
+      }
+      if (removed) UI.toast(`${removed} employee(s) deleted${skipped ? `, ${skipped} skipped` : ''}`);
+      else if (skipped) UI.toast('Nothing deleted');
+      load();
+    };
   }
 
   function openEmployee(id, list) {

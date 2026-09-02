@@ -55,7 +55,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -515,6 +515,20 @@ function createSchema(): void {
       read_at      TEXT,
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Files/images/documents attached to a message. Counted against the sender's
+    -- per-user storage cap (see MESSAGE_STORAGE_CAP in messages.routes.ts); freed
+    -- automatically when the parent message is deleted (ON DELETE CASCADE).
+    CREATE TABLE IF NOT EXISTS message_attachments (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id    INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      stored_name   TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type     TEXT,
+      size_bytes    INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
 
     CREATE TABLE IF NOT EXISTS form_definitions (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1434,6 +1448,31 @@ function migrate(): void {
   if (!itemCols2.some((c) => c.name === 'product_group')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN product_group TEXT');
   }
+
+  // (SCHEMA_VERSION 16) The seeded "HR Payroll Slip" doc_template is insert-only (see
+  // seedTemplates()'s own comment) — an install that already has one won't pick up
+  // payrollSlipTemplateBody()'s new "Days Absent" row / corrected "Late" label just from a
+  // source change. Surgical string replace instead of overwriting the row outright, so an
+  // admin's own styling/logo customizations survive — a template that's been edited enough
+  // that these exact substrings are gone is left alone rather than guessed at.
+  const slipTpl = db.prepare("SELECT id, body FROM doc_templates WHERE name = 'HR Payroll Slip'").get() as
+    { id: number; body: string } | undefined;
+  if (slipTpl) {
+    let body = slipTpl.body;
+    let touched = false;
+    if (body.includes('>Late / Absences<')) {
+      body = body.replace('>Late / Absences<', '>Late<');
+      touched = true;
+    }
+    if (!body.includes('{{days_absent}}') && body.includes('{{days_worked}}')) {
+      body = body.replace(
+        '<span class="v">{{days_worked}}</span></div>',
+        '<span class="v">{{days_worked}}</span></div>\n  <div class="slip-row"><span class="l">Days Absent:</span><span class="v">{{days_absent}}</span></div>'
+      );
+      touched = true;
+    }
+    if (touched) db.prepare('UPDATE doc_templates SET body = ?, updated_at = datetime(\'now\') WHERE id = ?').run(body, slipTpl.id);
+  }
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
@@ -1502,6 +1541,7 @@ function seed(): void {
 
   seedTemplates();
   seedHrPayrollForm();
+  seedNoWorkMemoForm();
   seedPayrollTables();
   seedTaxCodes();
 }
@@ -1567,6 +1607,16 @@ function seedHrPayrollForm(): void {
         fields.splice(at >= 0 ? at + 1 : fields.length, 0, wt);
         touched = true;
       }
+      // days_absent (informational — see hr-payroll-compute.ts) added 2026-09-01, plus fixing
+      // late_absences' label: it never held an absence figure, only the late-arrival deduction.
+      if (!fields.some((f) => f.key === 'days_absent')) {
+        const at = fields.findIndex((f) => f.key === 'days_worked');
+        const da = { key: 'days_absent', label: 'Days Absent', type: 'number', required: false, options: [], default: '' };
+        fields.splice(at >= 0 ? at + 1 : fields.length, 0, da);
+        touched = true;
+      }
+      const lateField = fields.find((f) => f.key === 'late_absences');
+      if (lateField && lateField.label !== 'Late') { lateField.label = 'Late'; touched = true; }
       if (touched) db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
     } catch { /* leave as-is if the stored fields are somehow unparseable */ }
     return;
@@ -1582,6 +1632,7 @@ function seedHrPayrollForm(): void {
     { key: 'pay_date', label: 'Pay Date', type: 'date', required: false, options: [], default: '' },
     numField('daily_rate', 'Daily Rate'),
     numField('days_worked', 'Days Worked'),
+    numField('days_absent', 'Days Absent'),
     numField('ot_hours', 'OT Hours'),
     numField('ot_rate_hour', 'OT Rate/Hour'),
     numField('basic_salary', 'Basic Salary'),
@@ -1596,13 +1647,39 @@ function seedHrPayrollForm(): void {
     numField('pagibig', 'Pag-IBIG'),
     numField('withholding_tax', 'Withholding Tax'),
     numField('cash_advance', 'Cash Advance'),
-    numField('late_absences', 'Late / Absences'),
+    // Key stays late_absences for backward compat (GL posting, CSV import, tests all read it)
+    // but the label is deliberately just "Late" — it has only ever held the late-arrival peso
+    // deduction, never an absence figure (see days_absent above, and the field's own comment
+    // in src/hr-payroll-compute.ts).
+    numField('late_absences', 'Late'),
     numField('total_deductions', 'Total Deductions'),
     numField('net_pay', 'Net Pay'),
   ];
   db.prepare(
     `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope)
      VALUES ('HR Payroll', 'hr_payroll', 'PAY', 'sheet', ?, 'hr')`
+  ).run(JSON.stringify(fields));
+}
+
+/** Item 2: "add Holidays and paid/unpaid work cancellations" — the compute engine
+    (src/hr-payroll-compute.ts) has always understood a company-wide "No Work Memo" covering
+    a date range (holiday, typhoon suspension, equipment failure — paid or unpaid, applies to
+    every employee automatically, no per-employee linking), but the `no_work_memo` form was
+    only ever created by hand via Form Builder -> Quick Add — never auto-seeded like
+    hr_payroll, so a fresh (or this) install has nowhere to actually make one. Auto-seeded now
+    so Time Keeping's "Holidays / No Work" button (hr-timekeeping.js) always has a form to
+    write records into, the same way Payroll's button always has hr_payroll. */
+function seedNoWorkMemoForm(): void {
+  if (db.prepare("SELECT id FROM form_definitions WHERE slug = 'no_work_memo'").get()) return;
+  const fields = [
+    { key: 'date_from', label: 'Date From', type: 'date', required: true, options: [], default: '' },
+    { key: 'date_to', label: 'Date To', type: 'date', required: true, options: [], default: '' },
+    { key: 'reason', label: 'Reason', type: 'textarea', required: true, options: [], default: '' },
+    { key: 'paid', label: 'Paid?', type: 'select', required: true, options: ['Yes', 'No'], default: 'Yes' },
+  ];
+  db.prepare(
+    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope)
+     VALUES ('No Work Memo', 'no_work_memo', 'NW', 'alert', ?, 'hr')`
   ).run(JSON.stringify(fields));
 }
 
@@ -1790,6 +1867,7 @@ function payrollSlipTemplateBody(): string {
   <div class="slip-row"><span class="l">Pay Date:</span><span class="v">{{pay_date}}</span></div>
   <div class="slip-row"><span class="l">Daily Rate:</span><span class="v">{{daily_rate}}</span></div>
   <div class="slip-row"><span class="l">Days Worked:</span><span class="v">{{days_worked}}</span></div>
+  <div class="slip-row"><span class="l">Days Absent:</span><span class="v">{{days_absent}}</span></div>
   <div class="slip-row"><span class="l">OT Hours:</span><span class="v">{{ot_hours}}</span></div>
   <div class="slip-row"><span class="l">OT Rate/Hour:</span><span class="v">{{ot_rate_hour}}</span></div>
   <div class="slip-cols">
@@ -1810,7 +1888,7 @@ function payrollSlipTemplateBody(): string {
       <div class="slip-line"><span>Pag-IBIG</span><span>{{pagibig}}</span></div>
       <div class="slip-line"><span>Withholding Tax</span><span>{{withholding_tax}}</span></div>
       <div class="slip-line"><span>Cash Advance</span><span>{{cash_advance}}</span></div>
-      <div class="slip-line"><span>Late / Absences</span><span>{{late_absences}}</span></div>
+      <div class="slip-line"><span>Late</span><span>{{late_absences}}</span></div>
       <div class="slip-total"><span>Total Deductions</span><span>{{total_deductions}}</span></div>
     </div>
   </div>

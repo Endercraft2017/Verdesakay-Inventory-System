@@ -90,34 +90,52 @@ describe('computeAttendanceForEmployee — OT rounds up, requires a linked Overt
 });
 
 describe('computeAttendanceForEmployee — absences, leave-with-pay, half day', () => {
-  it('plain absence (no time logged, nothing linked) contributes nothing', () => {
+  it('plain absence (no time logged, nothing linked) contributes nothing but is counted as absent', () => {
     const r = computeAttendanceForEmployee([day({})], DAILY_RATE, POLICY);
     expect(r.days_worked).toBe(0);
+    expect(r.days_absent).toBe(1);
   });
 
-  it('absence linked to a Leave form WITHOUT pay is still an unpaid absence', () => {
+  it('absence linked to a Leave form WITHOUT pay is still an unpaid absence, and still counted', () => {
     const r = computeAttendanceForEmployee(
       [day({ linkedForm: { slug: 'leave_request', data: { with_pay: 'No' } } })],
       DAILY_RATE, POLICY
     );
     expect(r.days_worked).toBe(0);
+    expect(r.days_absent).toBe(1);
   });
 
-  it('absence linked to a Leave form WITH pay counts as a full paid day', () => {
+  it('absence linked to a Leave form WITH pay counts as a full paid day, NOT an absence', () => {
     const r = computeAttendanceForEmployee(
       [day({ linkedForm: { slug: 'leave_request', data: { with_pay: 'Yes' } } })],
       DAILY_RATE, POLICY
     );
     expect(r.days_worked).toBe(1);
+    expect(r.days_absent).toBe(0);
     expect(r.late_deduction).toBe(0);
   });
 
-  it('a day linked to a Half Day form counts as 0.5', () => {
+  it('a day linked to a Half Day form counts as 0.5, not an absence (time was logged)', () => {
     const r = computeAttendanceForEmployee(
       [day({ time_in: '08:00', time_out: '12:00', linkedForm: { slug: 'halfday_request', data: {} } })],
       DAILY_RATE, POLICY
     );
     expect(r.days_worked).toBe(0.5);
+    expect(r.days_absent).toBe(0);
+  });
+
+  it('days_absent sums across multiple days, mixing present/absent/paid-leave', () => {
+    const r = computeAttendanceForEmployee(
+      [
+        day({ work_date: '2026-08-01', time_in: '08:00', time_out: '17:00' }), // present
+        day({ work_date: '2026-08-02' }), // absent
+        day({ work_date: '2026-08-03' }), // absent
+        day({ work_date: '2026-08-04', linkedForm: { slug: 'leave_request', data: { with_pay: 'Yes' } } }), // paid, not absent
+      ],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days_worked).toBe(2); // the worked day + the paid leave day
+    expect(r.days_absent).toBe(2);
   });
 });
 
@@ -125,11 +143,13 @@ describe('computeAttendanceForEmployee — company-wide No Work Memo (no per-emp
   it('a PAID no-work day counts as a full paid day even with nothing logged and no Leave form', () => {
     const r = computeAttendanceForEmployee([day({ noWork: 'paid' })], DAILY_RATE, POLICY);
     expect(r.days_worked).toBe(1);
+    expect(r.days_absent).toBe(0);
   });
 
-  it('an UNPAID no-work day contributes nothing, same as a plain absence (but is not a Leave form)', () => {
+  it('an UNPAID no-work day contributes nothing, same as a plain absence (but is not a Leave form) — still counted as absent', () => {
     const r = computeAttendanceForEmployee([day({ noWork: 'unpaid' })], DAILY_RATE, POLICY);
     expect(r.days_worked).toBe(0);
+    expect(r.days_absent).toBe(1);
   });
 
   it('a linked, paid Leave form still takes precedence over a no-work memo on the same day', () => {

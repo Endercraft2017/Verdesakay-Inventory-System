@@ -62,6 +62,7 @@ function buildSlipContext(d) {
     pay_date: d.pay_date || '',
     daily_rate: _money(d.daily_rate),
     days_worked: d.days_worked ?? '',
+    days_absent: d.days_absent ?? '',
     ot_hours: d.ot_hours ?? '',
     ot_rate_hour: _money(d.ot_rate_hour),
     basic_salary: _money(d.basic_salary),

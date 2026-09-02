@@ -11,6 +11,7 @@ import type { AuthUser, Permission } from './types';
 
 type AnalyticsToolName =
   | 'attendance_report'
+  | 'attendance_detail'
   | 'chronic_lateness'
   | 'absence_report'
   | 'leave_ot_summary'
@@ -25,6 +26,7 @@ type AnalyticsToolName =
 
 const PERMISSION: Record<AnalyticsToolName, Permission> = {
   attendance_report: 'hr.view',
+  attendance_detail: 'hr.view',
   chronic_lateness: 'hr.view',
   absence_report: 'hr.view',
   leave_ot_summary: 'hr.view',
@@ -106,6 +108,25 @@ const SPECS: Record<AnalyticsToolName, CerebrasTool> = {
           department_id: { type: 'number', description: 'Limit to one department.' },
           employee_id: { type: 'number', description: 'Limit to one employee.' },
         },
+      },
+    },
+  },
+  attendance_detail: {
+    type: 'function',
+    function: {
+      name: 'attendance_detail',
+      description:
+        'The raw day-by-day time-in/time-out rows for one employee over a date range — read-only, for '
+        + 'answering "what time did X clock in on Y" or checking a specific day, not for editing. Each row also '
+        + 'flags "incomplete" (only one of time-in/time-out set — a data-entry gap, not a plain absence) and '
+        + 'names any linked OT/Leave/Half-Day/Undertime/Offset form.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ...dateRangeProps,
+          employee_id: { type: 'number', description: 'Required — which employee.' },
+        },
+        required: ['employee_id'],
       },
     },
   },
@@ -278,6 +299,36 @@ export function executeAnalyticsTool(name: string, args: unknown, user: AuthUser
           ...params
         );
         return { success: true, data: { from, to, grace_minutes: grace, employees: rows } };
+      }
+
+      case 'attendance_detail': {
+        if (!a.employee_id) return { success: false, error: 'employee_id is required.' };
+        const { from, to } = range(a);
+        const rows = queryAll<{
+          work_date: string; time_in: string | null; time_out: string | null; notes: string | null;
+          shift_name: string | null; form_name: string | null;
+        }>(
+          `SELECT ar.work_date, ar.time_in, ar.time_out, ar.notes,
+                  sh.name AS shift_name, fd.name AS form_name
+           FROM attendance_records ar
+           LEFT JOIN shifts sh ON sh.id = ar.shift_id
+           LEFT JOIN form_records fr ON fr.id = ar.form_record_id
+           LEFT JOIN form_definitions fd ON fd.id = fr.form_def_id
+           WHERE ar.employee_id = ? AND ar.work_date BETWEEN ? AND ?
+           ORDER BY ar.work_date`,
+          Number(a.employee_id), from, to
+        );
+        const today = new Date().toISOString().slice(0, 10);
+        const days = rows.map((r) => ({
+          work_date: r.work_date,
+          time_in: r.time_in || null,
+          time_out: r.time_out || null,
+          shift: r.shift_name,
+          linked_form: r.form_name,
+          notes: r.notes || null,
+          incomplete: !!r.time_in !== !!r.time_out && r.work_date <= today,
+        }));
+        return { success: true, data: { employee_id: Number(a.employee_id), from, to, days } };
       }
 
       case 'chronic_lateness': {
