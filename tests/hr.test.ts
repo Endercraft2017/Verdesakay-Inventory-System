@@ -1240,4 +1240,123 @@ describe('generate-payslips — HR-marked holidays + rest-day pay end to end', (
     const rec = await genOne(period.body.id, 'Rest Day Default Cutoff', 'Rest Day Default Employee');
     expect(rec.data.rest_day_ot).toBeCloseTo(300, 6);
   });
+
+  it("a per-record rest_day='yes' forces the premium on a weekday that isn't in the pattern", async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-RESTDAY-PERDATE-ON', name: 'Rest Day Per Date On Employee', daily_rate: 1000 });
+    // 2026-08-05 is a Wednesday — not a rest day under the company default [0, 6] or any
+    // per-employee pattern here; the per-record override alone makes it one.
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Rest Day Per Date On Cutoff', start_date: '2026-08-05', end_date: '2026-08-05' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-05', time_in: '08:00', time_out: '17:00', notes: '', shift_id: holidayShiftId, rest_day: 'yes' }],
+    });
+    const rec = await genOne(period.body.id, 'Rest Day Per Date On Cutoff', 'Rest Day Per Date On Employee');
+    expect(rec.data.rest_day_ot).toBeCloseTo(300, 6);
+  });
+
+  it("a per-record rest_day='no' suppresses the premium on a weekday that is in the pattern", async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-RESTDAY-PERDATE-OFF', name: 'Rest Day Per Date Off Employee', daily_rate: 1000 });
+    // 2026-08-08 is a Saturday — a rest day under the company default [0, 6]; the per-record
+    // override turns it back into an ordinary working day for this one date.
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Rest Day Per Date Off Cutoff', start_date: '2026-08-08', end_date: '2026-08-08' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-08', time_in: '08:00', time_out: '17:00', notes: '', shift_id: holidayShiftId, rest_day: 'no' }],
+    });
+    const rec = await genOne(period.body.id, 'Rest Day Per Date Off Cutoff', 'Rest Day Per Date Off Employee');
+    expect(rec.data.rest_day_ot).toBe(0);
+  });
+});
+
+// Per-cutoff statutory deduction schedule: which of SSS/PhilHealth/Pag-IBIG/withholding tax
+// lands in which cutoff of the month, instead of always splitting every deduction evenly.
+// Own describe block + own policy so it doesn't collide with any other test's global policy
+// state. Same daily_rate=1000 (~26k/mo comp) fixture the existing "computes SSS / PhilHealth
+// / Pag-IBIG / withholding tax" test uses, so the monthly totals are already known: SSS
+// employee share 1300/mo, PhilHealth 650/mo, Pag-IBIG 200/mo (capped) — evenly split across 2
+// semi-monthly cutoffs that's 650/325/100 each; this schedule instead puts the *whole* monthly
+// amount on whichever single cutoff has that key checked.
+describe('generate-payslips — per-cutoff statutory deduction schedule', () => {
+  let dedShiftId: number;
+
+  async function setSchedule(schedule: unknown) {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], deduction_schedule: schedule,
+    });
+  }
+
+  beforeAll(async () => {
+    const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Ded Schedule Test Shift', start_time: '08:00', end_time: '17:00', is_default: false });
+    dedShiftId = shift.body.id;
+  });
+
+  async function genFor(startDate: string, label: string, employeeName: string, dailyRate = 1000) {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-DED-' + Math.floor(Math.random() * 1e6), name: employeeName, daily_rate: dailyRate });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label, start_date: startDate, end_date: startDate });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: startDate, time_in: '08:00', time_out: '17:00', notes: '', shift_id: dedShiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: label });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: label }).set(hdr());
+    return records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === employeeName);
+  }
+
+  it('1st-half cutoff (day <= 15) deducts only SSS, at the full monthly amount, when scheduled that way', async () => {
+    await setSchedule([
+      { sss: true, philhealth: false, pagibig: false, withholding_tax: false },
+      { sss: false, philhealth: true, pagibig: true, withholding_tax: true },
+    ]);
+    const rec = await genFor('2026-08-05', 'Ded Sched 1st Cutoff', '1st Cutoff Ded Employee');
+    expect(rec.data.sss).toBe(1300); // full monthly, not halved
+    expect(rec.data.philhealth).toBe(0);
+    expect(rec.data.pagibig).toBe(0);
+    expect(rec.data.withholding_tax).toBe(0);
+  });
+
+  it('2nd-half cutoff (day > 15) deducts PhilHealth/Pag-IBIG/tax at the full monthly amount, SSS deferred to 0', async () => {
+    await setSchedule([
+      { sss: true, philhealth: false, pagibig: false, withholding_tax: false },
+      { sss: false, philhealth: true, pagibig: true, withholding_tax: true },
+    ]);
+    const rec = await genFor('2026-08-20', 'Ded Sched 2nd Cutoff', '2nd Cutoff Ded Employee');
+    expect(rec.data.sss).toBe(0);
+    expect(rec.data.philhealth).toBe(650); // full monthly, not halved
+    expect(rec.data.pagibig).toBe(200);    // full monthly, not halved
+    expect(rec.data.withholding_tax).toBeGreaterThanOrEqual(0); // gated on, computed normally (not divided — never was)
+  });
+
+  it('an unset schedule still splits every deduction evenly across every cutoff — the pre-existing default behavior', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
+    });
+    const rec = await genFor('2026-08-05', 'Ded Sched Default', 'Default Ded Employee');
+    expect(rec.data.sss).toBe(650);
+    expect(rec.data.philhealth).toBe(325);
+    expect(rec.data.pagibig).toBe(100);
+  });
+
+  it('a schedule left over from a different pay_frequency (wrong length) safely falls back to even-split rather than misbehaving', async () => {
+    // A 4-slot (weekly) schedule under semi_monthly (2 slots) is a length mismatch.
+    await setSchedule([
+      { sss: true, philhealth: false, pagibig: false, withholding_tax: false },
+      { sss: false, philhealth: true, pagibig: false, withholding_tax: false },
+      { sss: false, philhealth: false, pagibig: true, withholding_tax: false },
+      { sss: false, philhealth: false, pagibig: false, withholding_tax: true },
+    ]);
+    const rec = await genFor('2026-08-05', 'Ded Sched Mismatch', 'Mismatch Ded Employee');
+    expect(rec.data.sss).toBe(650); // ignored the stale schedule, fell back to the even split
+    expect(rec.data.philhealth).toBe(325);
+    expect(rec.data.pagibig).toBe(100);
+  });
 });

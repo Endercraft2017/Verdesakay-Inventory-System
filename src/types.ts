@@ -864,6 +864,17 @@ export interface PayrollPolicy {
   /** Weekday indices (0=Sun..6=Sat) that count as a rest day company-wide, unless an
       individual employee has their own employees.rest_days override. Default [0, 6]. */
   default_rest_days: number[];
+  /** Which statutory deductions land in which cutoff of the month — e.g. SSS only on the
+      1st cutoff, PhilHealth/Pag-IBIG/withholding tax only on the 2nd, instead of splitting
+      every deduction evenly across every cutoff. One entry per cutoff "slot" (index 0..
+      periodsPerMonth-1 for the current pay_frequency — see PERIODS_PER_MONTH in
+      hr.routes.ts); when a key is true for a slot, that cutoff takes a share of the FULL
+      monthly amount (split only across however many slots have that key on); when false,
+      that cutoff contributes 0 for that key. Absent, or a length mismatch against the
+      current pay_frequency's period count (e.g. left over from switching frequencies),
+      falls back to "every slot has everything on" — exactly the old always-divide-evenly
+      behavior, so this is fully opt-in. */
+  deduction_schedule?: Array<{ sss: boolean; philhealth: boolean; pagibig: boolean; withholding_tax: boolean }>;
 }
 
 export interface EmployeeDocument {
@@ -899,6 +910,11 @@ export interface AttendanceRecord {
   notes: string | null;
   shift_id: number | null;
   form_record_id: number | null;
+  /** Per-record holiday override; null inherits the Company Holidays calendar. */
+  holiday_type: 'regular' | 'special_non_working' | 'special_working' | 'none' | null;
+  /** Per-record rest-day override; null inherits the weekly rest-day pattern
+      (employees.rest_days else PayrollPolicy.default_rest_days). */
+  rest_day: 'yes' | 'no' | null;
   updated_at: string;
 }
 

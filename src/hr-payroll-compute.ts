@@ -21,7 +21,10 @@ export interface AttendanceDay {
   // records.holiday_type) if set, else whatever the Company Holidays calendar says for this
   // work_date, else null. 'special_working' behaves like an ordinary day (informational only —
   // no premium, no unworked-pay change) so it's accepted here but never branched on below.
-  holiday?: 'regular' | 'special_non_working' | 'special_working' | null;
+  // 'cancelled_paid'/'cancelled_unpaid' are a per-record, per-employee version of a No Work
+  // Memo (equipment failure, sent home early, etc. — not a real holiday, no premium either
+  // way) — always a per-record override, never sourced from the Company Holidays calendar.
+  holiday?: 'regular' | 'special_non_working' | 'special_working' | 'cancelled_paid' | 'cancelled_unpaid' | null;
   // Whether this work_date falls on this employee's rest day — resolved by the caller from
   // employees.rest_days (if set) else PayrollPolicy.default_rest_days. Never stored; purely a
   // function of the date, so the caller recomputes it each time rather than persisting it.
@@ -138,18 +141,24 @@ export function computeAttendanceForEmployee(
       // as a paid Leave day; simplified vs. DOLE's stricter "present/on paid leave the day
       // immediately before" eligibility check, which this per-day loop doesn't look back for.
       // An unworked Special Non-Working (or Special Working) day is plain "no work, no pay" —
-      // same bucket as an unpaid No Work Memo day, not specially distinguished.
+      // same bucket as an unpaid No Work Memo day, not specially distinguished. A per-record
+      // "Work Cancellation" (equipment failure, sent home early, etc. — not a real holiday) is
+      // the same idea at per-employee granularity instead of company-wide: paid credits a full
+      // day same as a paid Leave/No Work Memo day, unpaid falls to the same bucket as those.
       // An unworked rest day is neither paid nor an absence — it was never a scheduled workday
       // to begin with, so it contributes to neither days_worked nor days_absent (unlike the
-      // above cases, which are all still "supposed to work, but excused" one way or another).
+      // above cases, which are all still "supposed to work, but excused" one way or another) —
+      // but only when nothing else already explains the day; an explicit unpaid/excused marking
+      // (special_non_working, cancelled_unpaid) still shows up in days_absent even on a rest
+      // day, since that's a more specific, deliberately-recorded classification, not silence.
       // Otherwise it's a genuine unpaid absence and contributes nothing.
       if (slug === 'leave_request' && day.linkedForm?.data?.with_pay === 'Yes') {
         out.days_worked += 1;
       } else if (day.noWork === 'paid') {
         out.days_worked += 1;
-      } else if (day.holiday === 'regular') {
+      } else if (day.holiday === 'regular' || day.holiday === 'cancelled_paid') {
         out.days_worked += 1;
-      } else if (day.isRestDay) {
+      } else if (day.isRestDay && !day.holiday) {
         // intentionally silent — see comment above
       } else {
         out.days_absent += 1;

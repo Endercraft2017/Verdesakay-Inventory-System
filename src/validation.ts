@@ -801,7 +801,10 @@ const attendanceDaySchema = z.object({
   notes: optionalText,
   shift_id: nullableId,
   form_record_id: nullableId,
-  holiday_type: z.enum(['regular', 'special_non_working', 'special_working', 'none']).nullable().optional(),
+  holiday_type: z.enum(['regular', 'special_non_working', 'special_working', 'cancelled_paid', 'cancelled_unpaid', 'none']).nullable().optional(),
+  // 'yes'/'no' force this one date on/off as a rest day for this employee; null inherits the
+  // weekly rest-day pattern. See attendance_records.rest_day (db.ts, SCHEMA_VERSION 18).
+  rest_day: z.enum(['yes', 'no']).nullable().optional(),
 });
 
 export const saveAttendanceSchema = z.object({
@@ -870,6 +873,11 @@ export const payrollPolicySchema = z.object({
   pay_frequency: z.enum(['monthly', 'semi_monthly', 'weekly', 'daily']).default('semi_monthly'),
   auto_statutory: boolish.default(true),
   default_rest_days: z.array(z.number().int().min(0).max(6)).max(7).default([0, 6]),
+  // Absent = every slot deducts everything (today's always-divide-evenly behavior) — see
+  // PayrollPolicy.deduction_schedule (src/types.ts) for the full semantics.
+  deduction_schedule: z.array(z.object({
+    sss: boolish, philhealth: boolish, pagibig: boolish, withholding_tax: boolish,
+  })).max(31).optional(),
 });
 
 /** Sparse permission overrides: keys are permission strings, values are booleans. */

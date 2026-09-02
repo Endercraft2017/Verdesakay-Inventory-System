@@ -55,7 +55,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1262,6 +1262,14 @@ function migrate(): void {
   // 'special_working' = force that type regardless of the calendar. See hr-payroll-compute.ts.
   if (!arCols.some((c) => c.name === 'holiday_type')) {
     db.exec('ALTER TABLE attendance_records ADD COLUMN holiday_type TEXT');
+  }
+  // Per-record rest-day override: null = inherit the weekly pattern (employees.rest_days else
+  // PayrollPolicy.default_rest_days) for this work_date's weekday; 'yes' = force this date to be
+  // a rest day for this one employee even though its weekday isn't in the pattern (covers a
+  // rotating/varying rest day that changes month to month); 'no' = force it *not* a rest day
+  // even though its weekday is in the pattern. See hr.routes.ts generate-payslips. (SCHEMA_VERSION 18)
+  if (!arCols.some((c) => c.name === 'rest_day')) {
+    db.exec('ALTER TABLE attendance_records ADD COLUMN rest_day TEXT');
   }
 
   // An employee's *usual* shift — purely a UI pre-fill for new attendance days, never enforced,

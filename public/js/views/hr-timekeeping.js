@@ -214,6 +214,14 @@ async function policySettingsModal() {
           on a holiday) — nothing else to fill in on the daily grid. A specific employee can be given their own rest
           days instead, overriding this, on their Employee record.</p>
       </div>
+      <div style="margin-top:14px">
+        <label>Statutory deduction schedule</label>
+        <p class="muted" style="font-size:12px;margin:2px 0 6px">Most companies don't deduct everything every cutoff
+          — e.g. SSS only on the 1st cutoff, PhilHealth / Pag-IBIG / withholding tax only on the 2nd. Leave every box
+          checked to keep splitting each deduction evenly across every cutoff (the default). Whichever cutoff(s) a
+          deduction is checked for take the full monthly amount, split only across those.</p>
+        <div id="tk-ded-schedule"></div>
+      </div>
       <button type="button" class="btn" id="tk-policy-save" style="margin-top:14px">${UI.icon('sheet', 14)} Save Rules</button>
       <hr style="margin:18px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
       <strong>Statutory Rate Tables</strong>
@@ -242,6 +250,28 @@ async function policySettingsModal() {
           if (cb) cb.checked = true;
         });
       }
+
+      const PERIODS_PER_MONTH_CLIENT = { monthly: 1, semi_monthly: 2, weekly: 4, daily: 22 };
+      const SLOT_LABELS = ['1st cutoff', '2nd cutoff', '3rd cutoff', '4th cutoff'];
+      const DED_KEYS = [['sss', 'SSS'], ['philhealth', 'PhilHealth'], ['pagibig', 'Pag-IBIG'], ['withholding_tax', 'Withholding tax']];
+      function renderDeductionSchedule() {
+        const el = ov.querySelector('#tk-ded-schedule');
+        const freq = p('pay_frequency').value;
+        const n = PERIODS_PER_MONTH_CLIENT[freq] || 2;
+        if (freq === 'daily') {
+          el.innerHTML = '<p class="muted" style="font-size:12.5px">Not available for daily pay frequency — 22+ cutoffs a month makes a fixed schedule impractical.</p>';
+          return;
+        }
+        const saved = policy && Array.isArray(policy.deduction_schedule) && policy.deduction_schedule.length === n
+          ? policy.deduction_schedule : null;
+        el.innerHTML = `<table class="line-table"><thead><tr><th></th>${DED_KEYS.map(([, label]) => `<th>${UI.esc(label)}</th>`).join('')}</tr></thead>
+          <tbody>${Array.from({ length: n }, (_, slot) => `
+            <tr><td>${SLOT_LABELS[slot] || `Cutoff ${slot + 1}`}</td>
+              ${DED_KEYS.map(([key]) => `<td><input type="checkbox" data-ded="${slot}:${key}" style="width:auto" ${!saved || saved[slot][key] ? 'checked' : ''} /></td>`).join('')}
+            </tr>`).join('')}</tbody></table>`;
+      }
+      renderDeductionSchedule();
+      p('pay_frequency').addEventListener('change', renderDeductionSchedule);
 
       function renderShifts() {
         const listEl = ov.querySelector('#tk-shifts-list');
@@ -293,6 +323,16 @@ async function policySettingsModal() {
           night_end: p('night_end').value,
           default_rest_days: [...ov.querySelectorAll('[data-rd]:checked')].map((cb) => Number(cb.dataset.rd)),
         };
+        const dedCells = [...ov.querySelectorAll('[data-ded]')];
+        if (dedCells.length) {
+          const n = PERIODS_PER_MONTH_CLIENT[body.pay_frequency] || 2;
+          const schedule = Array.from({ length: n }, () => ({ sss: false, philhealth: false, pagibig: false, withholding_tax: false }));
+          dedCells.forEach((cb) => {
+            const [slot, key] = cb.dataset.ded.split(':');
+            if (schedule[Number(slot)]) schedule[Number(slot)][key] = cb.checked;
+          });
+          body.deduction_schedule = schedule;
+        }
         await API.put('/hr/payroll-policy', body);
         UI.toast('Payroll rules saved');
       };
@@ -1057,7 +1097,10 @@ async function renderPeriod(view, periodId) {
      whichever shift applied) and optionally linked to an OT/Half Day/Leave/Undertime/Offset
      form record, both purely optional — Generate Payslips picks these up automatically, but
      nothing here is required to just log plain time-in/out like before. */
-  const HOLIDAY_LABELS = { regular: 'Regular Holiday', special_non_working: 'Special Non-Working', special_working: 'Special Working' };
+  const HOLIDAY_LABELS = {
+    regular: 'Regular Holiday', special_non_working: 'Special Non-Working', special_working: 'Special Working',
+    cancelled_paid: 'Cancelled (Paid)', cancelled_unpaid: 'Cancelled (Unpaid)',
+  };
   /** "YYYY-MM-DD" -> weekday index (0=Sun..6=Sat), from local y/m/d components (not
       new Date("YYYY-MM-DD"), which parses as UTC and can read back as the wrong day). */
   function weekdayOf(workDate) {
@@ -1102,13 +1145,22 @@ async function renderPeriod(view, periodId) {
       <option value="regular" ${selected === 'regular' ? 'selected' : ''}>Regular Holiday</option>
       <option value="special_non_working" ${selected === 'special_non_working' ? 'selected' : ''}>Special Non-Working</option>
       <option value="special_working" ${selected === 'special_working' ? 'selected' : ''}>Special Working</option>
+      <option value="cancelled_paid" ${selected === 'cancelled_paid' ? 'selected' : ''}>Work Cancellation (Paid)</option>
+      <option value="cancelled_unpaid" ${selected === 'cancelled_unpaid' ? 'selected' : ''}>Work Cancellation (Unpaid)</option>
       <option value="none" ${selected === 'none' ? 'selected' : ''}>Not a Holiday</option>`;
+
+    // Per-date rest-day override — for a rotating/varying rest day that isn't the same weekday
+    // every week. Default inherits the weekly pattern (this employee's or the company default).
+    const restDayOptions = (selected) => `
+      <option value="" ${!selected ? 'selected' : ''}>Default</option>
+      <option value="yes" ${selected === 'yes' ? 'selected' : ''}>Rest day</option>
+      <option value="no" ${selected === 'no' ? 'selected' : ''}>Working day</option>`;
 
     UI.modal({
       title: `Daily time — ${rosterRow.name}`,
       size: 'xl',
       bodyHTML: `<div class="line-items"><table class="line-table"><thead><tr>
-          <th>Date</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Notes</th><th>Linked Form</th>
+          <th>Date</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Rest Day</th><th>Notes</th><th>Linked Form</th>
         </tr></thead><tbody id="tk-days"></tbody></table></div>`,
       confirmText: 'Save',
       onOpen: (ov) => {
@@ -1123,9 +1175,13 @@ async function renderPeriod(view, periodId) {
             const incomplete = !!d.time_in !== !!d.time_out && d.work_date <= today;
             // Effective holiday: override (if not '' and not 'none') else the calendar's entry.
             const effHoliday = d.holiday_type ? (d.holiday_type === 'none' ? null : d.holiday_type) : holidayByDate[d.work_date];
-            const isRestDay = empRestDays.includes(weekdayOf(d.work_date));
+            // Per-date override wins, else the weekly rest-day pattern for this weekday.
+            const isRestDay = d.rest_day === 'yes' ? true
+              : d.rest_day === 'no' ? false
+              : empRestDays.includes(weekdayOf(d.work_date));
+            const isCancellation = effHoliday === 'cancelled_paid' || effHoliday === 'cancelled_unpaid';
             const tag = effHoliday
-              ? `<span class="badge-pill status-completed" title="Pays the DOLE premium automatically">${UI.esc(HOLIDAY_LABELS[effHoliday] || effHoliday)}</span>`
+              ? `<span class="badge-pill ${isCancellation ? 'status-cancelled' : 'status-completed'}" title="${isCancellation ? 'Not worked — credited as a paid/unpaid day per the selection, no premium' : 'Pays the DOLE premium automatically'}">${UI.esc(HOLIDAY_LABELS[effHoliday] || effHoliday)}</span>`
               : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : '');
             return `
             <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
@@ -1133,7 +1189,8 @@ async function renderPeriod(view, periodId) {
               <td><select data-k="shift_id">${shiftOptions(d.shift_id)}</select></td>
               <td><input data-k="time_in" type="time" value="${UI.esc(d.time_in || '')}" /></td>
               <td><input data-k="time_out" type="time" value="${UI.esc(d.time_out || '')}" /></td>
-              <td><select data-k="holiday_type" title="Override this one day/employee — leave at Default to inherit the Company Holidays calendar">${dayTypeOptions(d.holiday_type)}</select></td>
+              <td><select data-k="holiday_type" title="Default inherits the Company Holidays calendar. Work Cancellation is a per-employee paid/unpaid excused day (equipment failure, sent home early, etc.) — the one-employee version of a company-wide No Work Memo.">${dayTypeOptions(d.holiday_type)}</select></td>
+              <td><select data-k="rest_day" title="Override this one day/employee — leave at Default to inherit the weekly rest-day pattern. Use for a rest day that moves week to week.">${restDayOptions(d.rest_day)}</select></td>
               <td><input data-k="notes" value="${UI.esc(d.notes || '')}" placeholder="optional" /></td>
               <td>${d._linkLabel
                 ? `<span class="badge-pill" data-unlink="${i}" title="Click to unlink" style="cursor:pointer">${UI.esc(d._linkLabel)} ✕</span>`
@@ -1146,7 +1203,7 @@ async function renderPeriod(view, periodId) {
             inp.addEventListener(evt, () => {
               const row = Number(inp.closest('[data-row]').dataset.row);
               days[row][inp.dataset.k] = inp.value;
-              if (inp.dataset.k === 'holiday_type') renderRows(); // refresh the tag next to the date
+              if (inp.dataset.k === 'holiday_type' || inp.dataset.k === 'rest_day') renderRows(); // refresh the tag next to the date
             });
           });
           body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.link)));
@@ -1211,7 +1268,7 @@ async function renderPeriod(view, periodId) {
           days: days.map((d) => ({
             work_date: d.work_date, time_in: d.time_in || '', time_out: d.time_out || '', notes: d.notes || '',
             shift_id: d.shift_id || null, form_record_id: d.form_record_id || null,
-            holiday_type: d.holiday_type || null,
+            holiday_type: d.holiday_type || null, rest_day: d.rest_day || null,
           })),
         });
         UI.toast('Attendance saved');

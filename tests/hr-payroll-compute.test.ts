@@ -264,6 +264,29 @@ describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DO
     expect(r.days_absent).toBe(0);
   });
 
+  it('unworked "Work Cancellation (Paid)" credits a full paid day, same as a paid Leave day', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'cancelled_paid' })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(1);
+    expect(r.days_absent).toBe(0);
+  });
+
+  it('unworked "Work Cancellation (Unpaid)" falls into the days_absent bucket, same as an unpaid No Work Memo day', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'cancelled_unpaid' })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(0);
+    expect(r.days_absent).toBe(1);
+  });
+
+  it('an unpaid cancellation on a rest day still shows in days_absent — an explicit excused-unpaid record isn\'t silenced by rest-day-ness', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'cancelled_unpaid', isRestDay: true })], DAILY_RATE, POLICY);
+    expect(r.days_absent).toBe(1);
+  });
+
+  it('a paid cancellation on a rest day is still a full paid day', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'cancelled_paid', isRestDay: true })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(1);
+    expect(r.days_absent).toBe(0);
+  });
+
   it('worked, no holiday, not a rest day: no premium (the ordinary case)', () => {
     const r = computeAttendanceForEmployee(
       [day({ time_in: '08:00', time_out: '17:00' })], DAILY_RATE, POLICY

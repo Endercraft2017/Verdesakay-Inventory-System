@@ -588,6 +588,37 @@ const PERIODS_PER_MONTH: Record<PayrollPolicy['pay_frequency'], number> = {
   monthly: 1, semi_monthly: 2, weekly: 4, daily: 22,
 };
 
+type DeductionSlot = { sss: boolean; philhealth: boolean; pagibig: boolean; withholding_tax: boolean };
+const ALL_ON: DeductionSlot = { sss: true, philhealth: true, pagibig: true, withholding_tax: true };
+
+/** Which cutoff "slot" (0-indexed) a period falls into within its month, for
+    PayrollPolicy.deduction_schedule — only meaningful for pay frequencies where
+    "which cutoff of the month" is a sensible question (not `daily`, see below).
+    `weekly`'s day/7 bucketing is an approximation — real-world weekly cutoffs don't
+    always align to calendar-day chunks; leaving every slot at the default (all-on)
+    sidesteps that entirely. */
+function slotIndexFor(period: { start_date: string }, payFrequency: PayrollPolicy['pay_frequency']): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(period.start_date);
+  const day = m ? Number(m[3]) : 1;
+  switch (payFrequency) {
+    case 'monthly': return 0;
+    case 'semi_monthly': return day <= 15 ? 0 : 1;
+    case 'weekly': return Math.min(3, Math.floor((day - 1) / 7));
+    case 'daily': return 0; // scheduling 22 slots/month isn't practical — see PERIODS_PER_MONTH
+  }
+}
+
+/** The effective per-slot deduction schedule for `periodsPerMonth` cutoffs: the policy's
+    own schedule if it's set and its length actually matches (a stale schedule left over
+    from a different pay_frequency is ignored, not misapplied), else every slot has
+    everything on — exactly the pre-existing always-divide-evenly behavior. */
+function effectiveSchedule(policy: PayrollPolicy, periodsPerMonth: number): DeductionSlot[] {
+  if (policy.deduction_schedule && policy.deduction_schedule.length === periodsPerMonth) {
+    return policy.deduction_schedule;
+  }
+  return Array.from({ length: periodsPerMonth }, () => ALL_ON);
+}
+
 function currentPolicy(): PayrollPolicy {
   return { ...DEFAULT_POLICY, ...(getSetting<Partial<PayrollPolicy>>('payroll_policy') || {}) };
 }
@@ -814,13 +845,13 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res)
   try {
     run('DELETE FROM attendance_records WHERE period_id = ? AND employee_id = ?', periodId, input.employee_id);
     const insert = db.prepare(
-      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes, shift_id, form_record_id, holiday_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes, shift_id, form_record_id, holiday_type, rest_day)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const d of input.days) {
       insert.run(
         periodId, input.employee_id, d.work_date, d.time_in || null, d.time_out || null, d.notes || null,
-        d.shift_id || null, d.form_record_id || null, d.holiday_type || null
+        d.shift_id || null, d.form_record_id || null, d.holiday_type || null, d.rest_day || null
       );
     }
     db.exec('COMMIT');
@@ -908,6 +939,15 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
   const statTables = effectiveTables(input.pay_date || period.end_date);
   const periodsPerMonth = PERIODS_PER_MONTH[policy.pay_frequency];
 
+  // Per-cutoff statutory deduction schedule: which of SSS/PhilHealth/Pag-IBIG/withholding
+  // tax this specific cutoff (period) deducts, and — for the three that are normally a
+  // monthly total split across cutoffs — how many of this month's slots share that split.
+  // Same schedule and slot count for every employee in this run (it's period-wide, not
+  // per-employee), so resolved once here rather than inside the per-employee loop below.
+  const schedule = effectiveSchedule(policy, periodsPerMonth);
+  const thisSlot = schedule[slotIndexFor(period, policy.pay_frequency)] ?? ALL_ON;
+  const slotDivisor = (key: keyof DeductionSlot): number => Math.max(1, schedule.filter((s) => s[key]).length);
+
   let created = 0;
   let updated = 0;
   let skippedLocked = 0;
@@ -940,10 +980,11 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         work_date: string; time_in: string | null; time_out: string | null;
         shift_start: string | null; shift_end: string | null;
         fr_data: string | null; fd_slug: string | null; holiday_type: string | null;
+        rest_day: string | null;
       }>(
         `SELECT ar.work_date, ar.time_in, ar.time_out,
            s.start_time AS shift_start, s.end_time AS shift_end,
-           fr.data AS fr_data, fd.slug AS fd_slug, ar.holiday_type
+           fr.data AS fr_data, fd.slug AS fd_slug, ar.holiday_type, ar.rest_day
          FROM attendance_records ar
          LEFT JOIN shifts s ON s.id = ar.shift_id
          LEFT JOIN form_records fr ON fr.id = ar.form_record_id
@@ -952,8 +993,10 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
          ORDER BY ar.work_date`,
         periodId, emp.employee_id
       );
-      // Per-record override (attendance_records.holiday_type) beats the calendar; 'none' is a
-      // real override meaning "not a holiday for this person" even if the calendar says so.
+      // Per-record override (attendance_records.holiday_type / .rest_day) beats the calendar /
+      // weekly pattern; holiday 'none' means "not a holiday for this person" even if the calendar
+      // says so, and rest_day 'yes'/'no' force a single date on/off regardless of its weekday
+      // (a rotating rest day that varies month to month).
       const empRestDays: number[] = emp.rest_days ? JSON.parse(emp.rest_days) : policy.default_rest_days;
       const attendanceDays: AttendanceDay[] = attendanceRows.map((r) => ({
         work_date: r.work_date,
@@ -963,7 +1006,9 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         linkedForm: r.fd_slug ? { slug: r.fd_slug, data: JSON.parse(r.fr_data || '{}') } : null,
         noWork: noWorkFor(r.work_date),
         holiday: r.holiday_type === 'none' ? null : (r.holiday_type as AttendanceDay['holiday']) || holidayFor(r.work_date),
-        isRestDay: empRestDays.includes(weekdayOf(r.work_date)),
+        isRestDay: r.rest_day === 'yes' ? true
+          : r.rest_day === 'no' ? false
+          : empRestDays.includes(weekdayOf(r.work_date)),
       }));
       const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy);
       const basicSalary = emp.daily_rate * computed.days_worked;
@@ -1008,17 +1053,24 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
           ? emp.monthly_rate
           : round2(emp.daily_rate * policy.monthly_rate_divisor);
         const ded = statutoryDeductions(monthlyComp, monthlyComp, statTables);
-        sss = emp.deduct_sss ? round2(ded.sss.employee / periodsPerMonth) : 0;
-        philhealth = emp.deduct_philhealth ? round2(ded.philhealth.employee / periodsPerMonth) : 0;
-        pagibig = emp.deduct_pagibig ? round2(ded.pagibig.employee / periodsPerMonth) : 0;
+        // Gated by BOTH the per-employee "deduct this at all" flag (Accounting -> Statutory
+        // Deductions) AND this cutoff's slot in the deduction schedule — a monthly total is
+        // split only across however many slots have that key on (1 slot = the full monthly
+        // amount lands in that one cutoff), not always periodsPerMonth like before.
+        sss = emp.deduct_sss && thisSlot.sss ? round2(ded.sss.employee / slotDivisor('sss')) : 0;
+        philhealth = emp.deduct_philhealth && thisSlot.philhealth ? round2(ded.philhealth.employee / slotDivisor('philhealth')) : 0;
+        pagibig = emp.deduct_pagibig && thisSlot.pagibig ? round2(ded.pagibig.employee / slotDivisor('pagibig')) : 0;
         const taxable = taxableCompensation(totalEarnings, 0, round2(sss + philhealth + pagibig));
-        withholding_tax = emp.deduct_withholding_tax
+        // Withholding tax was never a monthly total split across cutoffs (withholdingTax()
+        // looks up the correct per-period BIR table row directly) — its schedule membership
+        // is just on/off for this cutoff, no divisor.
+        withholding_tax = emp.deduct_withholding_tax && thisSlot.withholding_tax
           ? withholdingTax(taxable, policy.pay_frequency, statTables.rwt) : 0;
         employerContributions = {
-          sss_er: emp.deduct_sss ? round2(ded.sss.employer / periodsPerMonth) : 0,
-          sss_ec: emp.deduct_sss ? round2(ded.sss.ec / periodsPerMonth) : 0,
-          philhealth_er: emp.deduct_philhealth ? round2(ded.philhealth.employer / periodsPerMonth) : 0,
-          pagibig_er: emp.deduct_pagibig ? round2(ded.pagibig.employer / periodsPerMonth) : 0,
+          sss_er: emp.deduct_sss && thisSlot.sss ? round2(ded.sss.employer / slotDivisor('sss')) : 0,
+          sss_ec: emp.deduct_sss && thisSlot.sss ? round2(ded.sss.ec / slotDivisor('sss')) : 0,
+          philhealth_er: emp.deduct_philhealth && thisSlot.philhealth ? round2(ded.philhealth.employer / slotDivisor('philhealth')) : 0,
+          pagibig_er: emp.deduct_pagibig && thisSlot.pagibig ? round2(ded.pagibig.employer / slotDivisor('pagibig')) : 0,
         };
       }
 
