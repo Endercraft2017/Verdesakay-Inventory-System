@@ -1127,6 +1127,100 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(res.body.error).toMatch(/linked user account/i);
   });
 
+  it('the read-only payroll detail route returns a per-day breakdown that sums to the payslip\'s own totals', async () => {
+    // Re-assert the same self-contained policy this describe block's beforeAll set — PUT
+    // /payroll-policy is a full replace, not a merge (see e.g. the auto_statutory-only test
+    // above), so an earlier test in this file that PUT a partial payload can have quietly reset
+    // default_rest_days back to its schema default ([0,6]) by the time this test runs; 2026-08-02
+    // (a Sunday) must NOT be treated as a rest day for the OT-rate assertions below to hold.
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      grace_minutes: 10, late_unit: 'hour', ot_unit: 'hour', ot_rate_percent: 125,
+      night_diff_enabled: false, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
+      default_rest_days: [],
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-DETAIL', name: 'Detail Test Employee', daily_rate: 800 }); // hourly = 100
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Detail Cutoff', start_date: '2026-08-01', end_date: '2026-08-02' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+
+    const otRecord = await ctx.api.post('/api/form-records').set(hdr())
+      .send({ form_def_id: overtimeFormId, data: { employee_name: 'Detail Test Employee' }, status: 'approved' });
+
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        // 70 min late (shift 08:00-17:00, 10 min grace -> 60 min past grace -> 1-hour block)
+        { work_date: '2026-08-01', time_in: '09:10', time_out: '17:00', notes: '', shift_id: morningShiftId, form_record_id: null },
+        // On time, 1 hour of authorized OT
+        { work_date: '2026-08-02', time_in: '08:00', time_out: '18:00', notes: '', shift_id: morningShiftId, form_record_id: otRecord.body.id },
+      ],
+    });
+
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Detail Cutoff' });
+    expect(gen.status).toBe(201);
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Detail Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Detail Test Employee');
+
+    const detail = await ctx.api.get(`/api/hr/payroll/${rec.id}/detail`).set(hdr());
+    expect(detail.status).toBe(200);
+    expect(detail.body.employee_name).toBe('Detail Test Employee');
+    expect(detail.body.period_label).toBe('Detail Cutoff');
+    expect(detail.body.days).toHaveLength(2);
+
+    const lateDay = detail.body.days.find((d: { work_date: string }) => d.work_date === '2026-08-01');
+    expect(lateDay.status).toBe('worked');
+    expect(lateDay.late_minutes).toBe(60);
+    expect(lateDay.late_pay).toBeCloseTo(100, 6);
+    expect(lateDay.ot_hours).toBe(0);
+
+    const otDay = detail.body.days.find((d: { work_date: string }) => d.work_date === '2026-08-02');
+    expect(otDay.ot_hours).toBeCloseTo(1, 6);
+    expect(otDay.ot_pay).toBeCloseTo(125, 6);
+    expect(otDay.late_minutes).toBe(0);
+
+    // Per-day figures sum to exactly what generate-payslips put on the payslip — same loop,
+    // same numbers, never a separately-derived (and possibly drifting) copy.
+    expect(detail.body.totals.late_deduction).toBeCloseTo(rec.data.late_absences, 6);
+    expect(detail.body.totals.overtime_pay).toBeCloseTo(rec.data.overtime_pay, 6);
+    expect(detail.body.days.reduce((s: number, d: { late_pay: number }) => s + d.late_pay, 0))
+      .toBeCloseTo(detail.body.totals.late_deduction, 6);
+    expect(detail.body.days.reduce((s: number, d: { ot_pay: number }) => s + d.ot_pay, 0))
+      .toBeCloseTo(detail.body.totals.overtime_pay, 6);
+  });
+
+  it('the payroll detail route 404s when the employee or the period can\'t be resolved', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-DETAIL-404', name: 'Detail 404 Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Detail 404 Cutoff', start_date: '2026-08-06', end_date: '2026-08-06' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-06', time_in: '08:00', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Detail 404 Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Detail 404 Cutoff' }).set(hdr());
+    const recId = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Detail 404 Employee').id;
+
+    // Renaming the employee breaks the free-text employee_name link the payroll record relies on.
+    await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-DETAIL-404', name: 'Renamed Employee', daily_rate: 800 });
+    const noEmp = await ctx.api.get(`/api/hr/payroll/${recId}/detail`).set(hdr());
+    expect(noEmp.status).toBe(404);
+    expect(noEmp.body.error).toMatch(/no employee record/i);
+    await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-DETAIL-404', name: 'Detail 404 Employee', daily_rate: 800 }); // restore
+
+    // Renaming the cutoff breaks the period-label link.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}`).set(hdr()).send({ label: 'Renamed Cutoff', start_date: '2026-08-06', end_date: '2026-08-06' });
+    const noPeriod = await ctx.api.get(`/api/hr/payroll/${recId}/detail`).set(hdr());
+    expect(noPeriod.status).toBe(404);
+    expect(noPeriod.body.error).toMatch(/no cutoff found/i);
+  });
+
   it('post-payroll-gl books an aggregate payroll journal entry when the ledger is on, 400s otherwise', async () => {
     // Ledger is off by default in this fresh test DB.
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())

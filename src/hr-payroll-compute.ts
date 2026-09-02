@@ -53,6 +53,30 @@ export interface AttendanceComputation {
    *  holiday_pay/special_holiday_30 — the day's base 100% is already in basic_salary via
    *  days_worked. Was a purely-manual payslip field before this; see hr.routes.ts. */
   rest_day_ot: number;
+  /** Per-day breakdown, collected in the same loop that produces the aggregate above — so
+   *  these always sum to it exactly, never a separately-derived (and possibly drifting) copy.
+   *  For the "why does my payslip say X" read-only detail view (hr.routes.ts's payroll detail
+   *  route); the aggregate fields above are what actually drive the payslip's money fields. */
+  days: DayBreakdown[];
+}
+
+export interface DayBreakdown {
+  work_date: string;
+  time_in: string | null;
+  time_out: string | null;
+  holiday: AttendanceDay['holiday'] | null;
+  no_work: 'paid' | 'unpaid' | null;
+  is_rest_day: boolean;
+  // Mirrors exactly which branch of the unworked-day precedence (see the comment above it)
+  // fired, or 'worked' for a day with time logged — not a new aggregate-level distinction,
+  // just makes an already-computed decision visible per day instead of only summed.
+  status: 'worked' | 'paid_leave' | 'paid_no_work' | 'paid_holiday' | 'rest_day_off' | 'absent';
+  late_minutes: number;
+  late_pay: number;
+  ot_hours: number;
+  ot_pay: number;
+  undertime_pay: number;
+  day_premium_pay: number; // whichever of holiday_pay/special_holiday_30/rest_day_ot this day contributed
 }
 
 const DAY_MIN = 24 * 60;
@@ -100,7 +124,7 @@ function nightOverlapMinutes(fromMin: number, toMin: number, nightStart: number,
 
 const ZERO: AttendanceComputation = {
   days_worked: 0, days_absent: 0, late_deduction: 0, ot_hours: 0, overtime_pay: 0,
-  undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0,
+  undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, days: [],
 };
 
 /** DOLE Labor Advisory No. 12-25 total pay multiplier for a worked day, by holiday type +
@@ -120,7 +144,9 @@ export function computeAttendanceForEmployee(
   policy: PayrollPolicy
 ): AttendanceComputation {
   const hourlyRate = dailyRate / 8;
-  const out: AttendanceComputation = { ...ZERO };
+  // Not { ...ZERO } for `days` specifically — a shallow spread would copy ZERO's own array
+  // *reference*, so every call would push into (and pollute) the exact same shared array.
+  const out: AttendanceComputation = { ...ZERO, days: [] };
   const nightStart = toMinutes(policy.night_start) ?? 0;
   const nightEnd = toMinutes(policy.night_end) ?? 0;
 
@@ -128,6 +154,17 @@ export function computeAttendanceForEmployee(
     const slug = day.linkedForm?.slug;
     const timeIn = toMinutes(day.time_in);
     const timeOut = toMinutes(day.time_out);
+    // Per-day mirror of whatever the aggregate below adds — pushed to out.days at every exit
+    // point of this iteration (there are several `continue`s), so it always reflects exactly
+    // what happened to this specific day, never a separately-derived guess.
+    let lateMin = 0, latePay = 0, otHours = 0, otPay = 0, undertimePay = 0, dayPremium = 0;
+    let status: DayBreakdown['status'] = 'worked';
+    const pushDay = () => out.days.push({
+      work_date: day.work_date, time_in: day.time_in, time_out: day.time_out,
+      holiday: day.holiday ?? null, no_work: day.noWork ?? null, is_rest_day: !!day.isRestDay,
+      status, late_minutes: lateMin, late_pay: latePay, ot_hours: otHours, ot_pay: otPay,
+      undertime_pay: undertimePay, day_premium_pay: dayPremium,
+    });
 
     if (timeIn == null || timeOut == null) {
       // No usable time logged. In order of precedence: a linked, paid Leave form makes it a
@@ -154,15 +191,21 @@ export function computeAttendanceForEmployee(
       // Otherwise it's a genuine unpaid absence and contributes nothing.
       if (slug === 'leave_request' && day.linkedForm?.data?.with_pay === 'Yes') {
         out.days_worked += 1;
+        status = 'paid_leave';
       } else if (day.noWork === 'paid') {
         out.days_worked += 1;
+        status = 'paid_no_work';
       } else if (day.holiday === 'regular' || day.holiday === 'cancelled_paid') {
         out.days_worked += 1;
+        status = 'paid_holiday';
       } else if (day.isRestDay && !day.holiday) {
         // intentionally silent — see comment above
+        status = 'rest_day_off';
       } else {
         out.days_absent += 1;
+        status = 'absent';
       }
+      pushDay();
       continue;
     }
 
@@ -182,6 +225,7 @@ export function computeAttendanceForEmployee(
       const premium = hours * hourlyRate * (isRegular ? 1.0 : 0.3);
       if (isRegular) out.holiday_pay += premium;
       else out.special_holiday_30 += premium;
+      dayPremium = premium;
     } else if (day.holiday === 'regular' || day.holiday === 'special_non_working' || day.isRestDay) {
       // Same premium-only convention as the holiday_work_request branch above (the day's base
       // 100% is already counted via days_worked/basic_salary), but driven by HR directly marking
@@ -200,18 +244,21 @@ export function computeAttendanceForEmployee(
       const premiumPct = dayRateMultiplier(day.holiday, day.isRestDay) - 1.0;
       if (day.holiday === 'regular') {
         out.holiday_pay += dailyRate * premiumPct;
+        dayPremium = dailyRate * premiumPct;
       } else if (day.holiday === 'special_non_working') {
         out.special_holiday_30 += dailyRate * premiumPct;
+        dayPremium = dailyRate * premiumPct;
       } else if (day.isRestDay) {
         out.rest_day_ot += dailyRate * premiumPct;
+        dayPremium = dailyRate * premiumPct;
       }
     }
 
-    if (!day.shift) continue; // no shift assigned -> nothing to judge late/OT/undertime against
+    if (!day.shift) { pushDay(); continue; } // no shift assigned -> nothing to judge late/OT/undertime against
 
     const shiftStart = toMinutes(day.shift.start_time);
     let shiftEnd = toMinutes(day.shift.end_time);
-    if (shiftStart == null || shiftEnd == null) continue;
+    if (shiftStart == null || shiftEnd == null) { pushDay(); continue; }
     const overnight = shiftEnd < shiftStart;
     if (overnight) shiftEnd += DAY_MIN; // e.g. 22:00-06:00 -> end normalized to 30:00
 
@@ -238,7 +285,9 @@ export function computeAttendanceForEmployee(
     if (lateRaw > policy.grace_minutes) {
       const pastGrace = lateRaw - policy.grace_minutes;
       const lateBlocked = roundUpToUnit(pastGrace, unitMinutesFor(policy.late_unit));
-      out.late_deduction += (lateBlocked / 60) * hourlyRate;
+      lateMin = lateBlocked;
+      latePay = (lateBlocked / 60) * hourlyRate;
+      out.late_deduction += latePay;
     }
 
     if (slug === 'overtime_request') {
@@ -247,7 +296,7 @@ export function computeAttendanceForEmployee(
       const otRaw = timeOutRel - effectiveEnd;
       if (otRaw > 0) {
         const otBlocked = roundUpToUnit(otRaw, unitMinutesFor(policy.ot_unit));
-        const otHours = otBlocked / 60;
+        otHours = otBlocked / 60;
         out.ot_hours += otHours;
         // OT pay scales with the day's own rate multiplier too — OT worked on a Regular Holiday
         // isn't paid at the same rate as OT on an ordinary day (DOLE: hourly rate x 200% x 130%
@@ -266,6 +315,7 @@ export function computeAttendanceForEmployee(
           const nightMin = nightOverlapMinutes(wallStart, wallStart + otRaw, nightStart, nightEnd);
           pay += (nightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
         }
+        otPay = pay;
         out.overtime_pay += pay;
       }
     } else if (timeOutRel < effectiveEnd) {
@@ -279,9 +329,12 @@ export function computeAttendanceForEmployee(
       if (!authorizedPaid) {
         const shortRaw = effectiveEnd - timeOutRel;
         const shortBlocked = roundUpToUnit(shortRaw, unitMinutesFor(policy.late_unit));
-        out.undertime_pay -= (shortBlocked / 60) * hourlyRate;
+        undertimePay = -(shortBlocked / 60) * hourlyRate;
+        out.undertime_pay += undertimePay;
       }
     }
+
+    pushDay();
   }
 
   return out;

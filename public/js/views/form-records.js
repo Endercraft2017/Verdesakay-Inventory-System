@@ -424,6 +424,81 @@ async function renderFormView(view, formId, initialPeriod) {
     });
   }
 
+  // Same Day Type badge vocabulary hr-timekeeping.js's Daily Time grid already shows — kept
+  // duplicated (not shared) rather than requiring that view's script on this page just for one
+  // lookup table.
+  const DETAIL_HOLIDAY_LABELS = {
+    regular: 'Regular Holiday', special_non_working: 'Special Non-Working', special_working: 'Special Working',
+    cancelled_paid: 'Cancelled (Paid)', cancelled_unpaid: 'Cancelled (Unpaid)',
+  };
+  function detailDayTag(d) {
+    if (d.holiday) {
+      const isCancellation = d.holiday === 'cancelled_paid' || d.holiday === 'cancelled_unpaid';
+      return `<span class="badge-pill ${isCancellation ? 'status-cancelled' : 'status-completed'}">${UI.esc(DETAIL_HOLIDAY_LABELS[d.holiday] || d.holiday)}</span>`;
+    }
+    if (d.no_work) {
+      return `<span class="badge-pill ${d.no_work === 'paid' ? 'status-completed' : 'status-cancelled'}">No Work (${d.no_work === 'paid' ? 'Paid' : 'Unpaid'})</span>`;
+    }
+    if (d.is_rest_day) return '<span class="badge-pill status-confirmed">Rest Day</span>';
+    if (d.status === 'absent') return '<span class="badge-pill status-cancelled">Absent</span>';
+    if (d.status === 'paid_leave') return '<span class="badge-pill status-completed">Paid Leave</span>';
+    return '';
+  }
+
+  // Read-only "why does my payslip say X" view — opened by clicking a payroll row's body (see
+  // the tr[data-id] wiring below). Shows the exact same slip visual (reusing renderSlip from
+  // hr-payroll-print.js, same template printSlips() uses) plus a per-day breakdown fetched from
+  // the server route that reruns the exact resolution+compute generate-payslips itself used, so
+  // these numbers can never disagree with what's actually on the payslip. Never opens an
+  // editable form — Edit (the pencil icon, stopPropagation'ed) is the only way into that now.
+  async function payslipDetailModal(r) {
+    let detail;
+    try {
+      detail = await API.get(`/hr/payroll/${r.id}/detail`);
+    } catch (err) {
+      UI.modal({
+        title: `Payslip — ${r.data.employee_name || 'Unknown employee'}`,
+        bodyHTML: `<p class="muted">${UI.esc(err.message)}</p>`,
+        cancelText: 'Close',
+      });
+      return;
+    }
+
+    let templateBody;
+    try {
+      const templates = await API.get('/templates');
+      const meta = templates.find((t) => t.name === 'HR Payroll Slip');
+      if (meta) templateBody = (await API.get('/templates/' + meta.id)).body;
+    } catch { /* fall back to renderSlip's own built-in default layout */ }
+    const slipHtml = typeof renderSlip === 'function' ? renderSlip(r.data, templateBody) : '';
+
+    const rows = detail.days.map((d) => `
+      <tr>
+        <td>${UI.esc(d.work_date)}</td>
+        <td>${UI.esc(d.time_in || '—')}</td>
+        <td>${UI.esc(d.time_out || '—')}</td>
+        <td>${detailDayTag(d) || '<span class="muted">—</span>'}</td>
+        <td>${d.late_minutes ? `${d.late_minutes} min<div class="muted" style="font-size:11px">${UI.money(d.late_pay)}</div>` : '—'}</td>
+        <td>${d.ot_hours ? `${d.ot_hours.toFixed(2)} hr<div class="muted" style="font-size:11px">${UI.money(d.ot_pay)}</div>` : '—'}</td>
+      </tr>`).join('');
+
+    UI.modal({
+      title: `Payslip — ${detail.employee_name}`,
+      size: 'xl',
+      headActionHTML: `<button type="button" class="btn secondary small" id="pd-print">${UI.icon('printer')} Print</button>`,
+      bodyHTML: `
+        <div style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff">${slipHtml}</div>
+        <div class="line-items"><table class="line-table"><thead><tr>
+          <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>OT</th>
+        </tr></thead><tbody>${rows || '<tr><td colspan="6" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
+      cancelText: 'Close',
+      onOpen: (ov) => {
+        const btn = ov.querySelector('#pd-print');
+        if (btn) btn.onclick = () => printSlips([r.data]);
+      },
+    });
+  }
+
   // Print one or many records through the form's linked template (data filled in) — additive
   // to, not a replacement for, the payroll-specific printSlips() above (which stays the
   // specialized 2-up slip layout for hr_payroll). Any other form that has a template linked in
@@ -807,6 +882,15 @@ async function renderFormView(view, formId, initialPeriod) {
     el.querySelectorAll('tr[data-id]').forEach((tr) =>
       tr.onclick = (e) => {
         if (e.target.closest('.actions')) return;
+        // Payroll rows open the read-only detail view — Edit (the pencil button, already
+        // stopPropagation'ed above) is the only way into the editable form for payroll now, so
+        // a click meant to "just look" (or an already-paid, locked slip) can't turn into an
+        // accidental/confusing edit attempt. Every other form's rows are unaffected.
+        if (isPayroll) {
+          const r = records.find((x) => String(x.id) === String(tr.dataset.id));
+          if (r) payslipDetailModal(r);
+          return;
+        }
         openRecord(tr.dataset.id, records);
       });
   }

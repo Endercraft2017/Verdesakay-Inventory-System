@@ -516,3 +516,113 @@ describe('computeAttendanceForEmployee — night differential', () => {
     expect(r.overtime_pay).toBeCloseTo(basePay + nightBonus, 6);
   });
 });
+
+describe('computeAttendanceForEmployee — per-day breakdown (days[]), for the read-only payroll detail view', () => {
+  it('always returns exactly one DayBreakdown per input day, in the same order, regardless of which branch each day takes', () => {
+    const r = computeAttendanceForEmployee(
+      [
+        day({ work_date: '2026-08-01', time_in: '08:00', time_out: '17:00' }),
+        day({ work_date: '2026-08-02', time_in: null, time_out: null }),
+        day({ work_date: '2026-08-03', shift: null, time_in: '08:00', time_out: '17:00' }),
+      ],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days.map((d) => d.work_date)).toEqual(['2026-08-01', '2026-08-02', '2026-08-03']);
+  });
+
+  it('a late day\'s late_minutes/late_pay land on that exact day, summing to the aggregate late_deduction', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ work_date: '2026-08-01', time_in: '09:10', time_out: '17:00' })], // 70 min late -> 1hr block
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('worked');
+    expect(r.days[0]!.late_minutes).toBe(60);
+    expect(r.days[0]!.late_pay).toBeCloseTo(100, 6);
+    expect(r.days[0]!.late_pay).toBeCloseTo(r.late_deduction, 6);
+  });
+
+  it('an authorized OT day\'s ot_hours/ot_pay land on that exact day, summing to the aggregate overtime_pay', () => {
+    const policy = { ...POLICY, ot_unit: 'minute' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ work_date: '2026-08-01', time_in: '08:00', time_out: '18:00', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, policy
+    );
+    expect(r.days[0]!.ot_hours).toBeCloseTo(1, 6);
+    expect(r.days[0]!.ot_pay).toBeCloseTo(125, 6);
+    expect(r.days[0]!.ot_pay).toBeCloseTo(r.overtime_pay, 6);
+    expect(r.days[0]!.late_minutes).toBe(0); // no bleed into unrelated fields
+  });
+
+  it('an unauthorized undertime day\'s undertime_pay (negative) lands on that exact day, summing to the aggregate', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ work_date: '2026-08-01', time_in: '08:00', time_out: '16:00' })], // left 1hr early
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.undertime_pay).toBeCloseTo(-100, 6);
+    expect(r.days[0]!.undertime_pay).toBeCloseTo(r.undertime_pay, 6);
+  });
+
+  it('an absent day is tagged status "absent" with all money fields at zero', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ work_date: '2026-08-01', time_in: null, time_out: null })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('absent');
+    expect(r.days[0]!.late_pay).toBe(0);
+    expect(r.days[0]!.ot_pay).toBe(0);
+    expect(r.days[0]!.undertime_pay).toBe(0);
+    expect(r.days[0]!.day_premium_pay).toBe(0);
+  });
+
+  it('a paid Leave day is tagged status "paid_leave"; a paid No Work Memo day is tagged "paid_no_work"', () => {
+    const r = computeAttendanceForEmployee(
+      [
+        day({ work_date: '2026-08-01', time_in: null, time_out: null, linkedForm: { slug: 'leave_request', data: { with_pay: 'Yes' } } }),
+        day({ work_date: '2026-08-02', time_in: null, time_out: null, noWork: 'paid' }),
+      ],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('paid_leave');
+    expect(r.days[1]!.status).toBe('paid_no_work');
+  });
+
+  it('a worked Regular Holiday day carries its holiday_pay premium in day_premium_pay, still status "worked"', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ work_date: '2026-08-01', time_in: '08:00', time_out: '17:00', holiday: 'regular' })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('worked');
+    expect(r.days[0]!.holiday).toBe('regular');
+    expect(r.days[0]!.day_premium_pay).toBeCloseTo(DAILY_RATE * 1.0, 6); // +100% premium
+    expect(r.days[0]!.day_premium_pay).toBeCloseTo(r.holiday_pay, 6);
+  });
+
+  it('an unworked Regular Holiday is tagged status "paid_holiday" (a full paid day despite no time logged)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ work_date: '2026-08-01', time_in: null, time_out: null, holiday: 'regular' })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('paid_holiday');
+  });
+
+  it('an unworked plain rest day (no holiday) is tagged status "rest_day_off"', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ work_date: '2026-08-01', time_in: null, time_out: null, isRestDay: true })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('rest_day_off');
+  });
+
+  it('is a fresh array per call — computing twice never lets one result\'s days bleed into the other\'s', () => {
+    const days = [day({ work_date: '2026-08-01', time_in: '08:00', time_out: '17:00' })];
+    const r1 = computeAttendanceForEmployee(days, DAILY_RATE, POLICY);
+    const r2 = computeAttendanceForEmployee(
+      [day({ work_date: '2026-08-01', time_in: '10:05', time_out: '17:00' })], // late
+      DAILY_RATE, POLICY
+    );
+    expect(r1.days).toHaveLength(1);
+    expect(r2.days).toHaveLength(1);
+    expect(r1.days[0]!.late_pay).toBe(0);
+    expect(r2.days[0]!.late_pay).toBeGreaterThan(0);
+  });
+});

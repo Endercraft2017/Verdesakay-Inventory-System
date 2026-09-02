@@ -907,6 +907,98 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// Company-wide no-work ranges — the seeded "No Work Memo" form plus any other form whose
+// definition carries an `apply_no_work` action (Form Builder). Resolved once per request (not
+// per employee), since these apply to everyone automatically with no per-day linking required.
+// Shared by generate-payslips and the read-only payroll detail route below — both need to agree
+// on exactly the same day resolution the real payslip was built from.
+function buildNoWorkResolver(): (workDate: string) => 'paid' | 'unpaid' | null {
+  const noWorkFormIds = noWorkFormIdsWithAction();
+  const noWorkMemos = noWorkFormIds.length
+    ? queryAll<FormRecord>(
+        `SELECT data FROM form_records WHERE form_def_id IN (${noWorkFormIds.map(() => '?').join(',')})`,
+        ...noWorkFormIds)
+        .map((r) => { try { return JSON.parse(r.data as string); } catch { return null; } })
+        .filter((d): d is { date_from: string; date_to: string; paid: string } => !!d && !!d.date_from && !!d.date_to)
+    : [];
+  return (workDate: string) => {
+    const memo = noWorkMemos.find((m) => workDate >= m.date_from && workDate <= m.date_to);
+    if (!memo) return null;
+    return memo.paid === 'Yes' ? 'paid' : 'unpaid';
+  };
+}
+
+// Company Holidays calendar (form slug 'company_holiday') — same "resolved once, applies to
+// everyone automatically" shape as No Work Memo above. A per-record attendance_records.
+// holiday_type override (checked in attendanceDaysForEmployee below) takes precedence over this.
+const HOLIDAY_LABEL_TO_CODE: Record<string, 'regular' | 'special_non_working' | 'special_working'> = {
+  'Regular Holiday': 'regular',
+  'Special Non-Working Holiday': 'special_non_working',
+  'Special Working Holiday': 'special_working',
+};
+function buildHolidayResolver(): (workDate: string) => 'regular' | 'special_non_working' | 'special_working' | null {
+  const holidayForm = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'company_holiday'");
+  const holidays = holidayForm
+    ? queryAll<FormRecord>('SELECT data FROM form_records WHERE form_def_id = ?', holidayForm.id)
+        .map((r) => { try { return JSON.parse(r.data as string); } catch { return null; } })
+        .filter((d): d is { date: string; type: string } => !!d && !!d.date && !!d.type)
+    : [];
+  return (workDate: string) => {
+    const h = holidays.find((x) => x.date === workDate);
+    return h ? HOLIDAY_LABEL_TO_CODE[h.type] ?? null : null;
+  };
+}
+
+// Per-employee attendance rows for one cutoff, resolved into the compute engine's own
+// AttendanceDay shape — shift_id -> {start_time, end_time}, form_record_id -> {slug, data}, and
+// each work_date -> No Work Memo / Company Holiday / rest-day, exactly as
+// src/hr-payroll-compute.ts expects its caller to do. Shared by generate-payslips (which builds
+// the real payslip) and the read-only payroll detail route (which must show identical days, not
+// a second implementation that could disagree with the real payslip).
+function attendanceDaysForEmployee(
+  periodId: number,
+  employeeId: number,
+  employeeRestDaysJson: string | null,
+  policy: PayrollPolicy,
+  noWorkFor: (workDate: string) => 'paid' | 'unpaid' | null,
+  holidayFor: (workDate: string) => 'regular' | 'special_non_working' | 'special_working' | null
+): AttendanceDay[] {
+  const attendanceRows = queryAll<{
+    work_date: string; time_in: string | null; time_out: string | null;
+    shift_start: string | null; shift_end: string | null;
+    fr_data: string | null; fd_slug: string | null; holiday_type: string | null;
+    rest_day: string | null;
+  }>(
+    `SELECT ar.work_date, ar.time_in, ar.time_out,
+       s.start_time AS shift_start, s.end_time AS shift_end,
+       fr.data AS fr_data, fd.slug AS fd_slug, ar.holiday_type, ar.rest_day
+     FROM attendance_records ar
+     LEFT JOIN shifts s ON s.id = ar.shift_id
+     LEFT JOIN form_records fr ON fr.id = ar.form_record_id
+     LEFT JOIN form_definitions fd ON fd.id = fr.form_def_id
+     WHERE ar.period_id = ? AND ar.employee_id = ?
+     ORDER BY ar.work_date`,
+    periodId, employeeId
+  );
+  // Per-record override (attendance_records.holiday_type / .rest_day) beats the calendar /
+  // weekly pattern; holiday 'none' means "not a holiday for this person" even if the calendar
+  // says so, and rest_day 'yes'/'no' force a single date on/off regardless of its weekday
+  // (a rotating rest day that varies month to month).
+  const empRestDays: number[] = employeeRestDaysJson ? JSON.parse(employeeRestDaysJson) : policy.default_rest_days;
+  return attendanceRows.map((r) => ({
+    work_date: r.work_date,
+    time_in: r.time_in,
+    time_out: r.time_out,
+    shift: r.shift_start && r.shift_end ? { start_time: r.shift_start, end_time: r.shift_end } : null,
+    linkedForm: r.fd_slug ? { slug: r.fd_slug, data: JSON.parse(r.fr_data || '{}') } : null,
+    noWork: noWorkFor(r.work_date),
+    holiday: r.holiday_type === 'none' ? null : (r.holiday_type as AttendanceDay['holiday']) || holidayFor(r.work_date),
+    isRestDay: r.rest_day === 'yes' ? true
+      : r.rest_day === 'no' ? false
+      : empRestDays.includes(weekdayOf(r.work_date)),
+  }));
+}
+
 // POST /api/hr/periods/:id/generate-payslips
 router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (req, res) => {
   const periodId = Number(req.params.id);
@@ -940,42 +1032,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
   if (!roster.length) { res.status(400).json({ error: 'This cutoff has no employees yet' }); return; }
 
   const policy = currentPolicy();
-
-  // Company-wide no-work ranges — the seeded "No Work Memo" form plus any other form whose
-  // definition carries an `apply_no_work` action (Form Builder). Resolved once, not per
-  // employee, since these apply to everyone automatically with no per-day linking required.
-  const noWorkFormIds = noWorkFormIdsWithAction();
-  const noWorkMemos = noWorkFormIds.length
-    ? queryAll<FormRecord>(
-        `SELECT data FROM form_records WHERE form_def_id IN (${noWorkFormIds.map(() => '?').join(',')})`,
-        ...noWorkFormIds)
-        .map((r) => { try { return JSON.parse(r.data as string); } catch { return null; } })
-        .filter((d): d is { date_from: string; date_to: string; paid: string } => !!d && !!d.date_from && !!d.date_to)
-    : [];
-  function noWorkFor(workDate: string): 'paid' | 'unpaid' | null {
-    const memo = noWorkMemos.find((m) => workDate >= m.date_from && workDate <= m.date_to);
-    if (!memo) return null;
-    return memo.paid === 'Yes' ? 'paid' : 'unpaid';
-  }
-
-  // Company Holidays calendar (form slug 'company_holiday') — same "resolved once, applies to
-  // everyone automatically" shape as No Work Memo above. A per-record attendance_records.
-  // holiday_type override (checked in the attendanceRows.map below) takes precedence over this.
-  const HOLIDAY_LABEL_TO_CODE: Record<string, 'regular' | 'special_non_working' | 'special_working'> = {
-    'Regular Holiday': 'regular',
-    'Special Non-Working Holiday': 'special_non_working',
-    'Special Working Holiday': 'special_working',
-  };
-  const holidayForm = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'company_holiday'");
-  const holidays = holidayForm
-    ? queryAll<FormRecord>('SELECT data FROM form_records WHERE form_def_id = ?', holidayForm.id)
-        .map((r) => { try { return JSON.parse(r.data as string); } catch { return null; } })
-        .filter((d): d is { date: string; type: string } => !!d && !!d.date && !!d.type)
-    : [];
-  function holidayFor(workDate: string): 'regular' | 'special_non_working' | 'special_working' | null {
-    const h = holidays.find((x) => x.date === workDate);
-    return h ? HOLIDAY_LABEL_TO_CODE[h.type] ?? null : null;
-  }
+  const noWorkFor = buildNoWorkResolver();
+  const holidayFor = buildHolidayResolver();
 
   // Statutory rate tables in force for this run (by pay date, else the cutoff end).
   const statTables = effectiveTables(input.pay_date || period.end_date);
@@ -1018,40 +1076,9 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       // Attendance + whatever OT/Half Day/Leave/Undertime/Offset form (and its resolved shift)
       // is linked to each day — the compute engine itself never touches the DB, this is exactly
       // the resolution step src/hr-payroll-compute.ts expects its caller to do.
-      const attendanceRows = queryAll<{
-        work_date: string; time_in: string | null; time_out: string | null;
-        shift_start: string | null; shift_end: string | null;
-        fr_data: string | null; fd_slug: string | null; holiday_type: string | null;
-        rest_day: string | null;
-      }>(
-        `SELECT ar.work_date, ar.time_in, ar.time_out,
-           s.start_time AS shift_start, s.end_time AS shift_end,
-           fr.data AS fr_data, fd.slug AS fd_slug, ar.holiday_type, ar.rest_day
-         FROM attendance_records ar
-         LEFT JOIN shifts s ON s.id = ar.shift_id
-         LEFT JOIN form_records fr ON fr.id = ar.form_record_id
-         LEFT JOIN form_definitions fd ON fd.id = fr.form_def_id
-         WHERE ar.period_id = ? AND ar.employee_id = ?
-         ORDER BY ar.work_date`,
-        periodId, emp.employee_id
+      const attendanceDays = attendanceDaysForEmployee(
+        periodId, emp.employee_id, emp.rest_days, policy, noWorkFor, holidayFor
       );
-      // Per-record override (attendance_records.holiday_type / .rest_day) beats the calendar /
-      // weekly pattern; holiday 'none' means "not a holiday for this person" even if the calendar
-      // says so, and rest_day 'yes'/'no' force a single date on/off regardless of its weekday
-      // (a rotating rest day that varies month to month).
-      const empRestDays: number[] = emp.rest_days ? JSON.parse(emp.rest_days) : policy.default_rest_days;
-      const attendanceDays: AttendanceDay[] = attendanceRows.map((r) => ({
-        work_date: r.work_date,
-        time_in: r.time_in,
-        time_out: r.time_out,
-        shift: r.shift_start && r.shift_end ? { start_time: r.shift_start, end_time: r.shift_end } : null,
-        linkedForm: r.fd_slug ? { slug: r.fd_slug, data: JSON.parse(r.fr_data || '{}') } : null,
-        noWork: noWorkFor(r.work_date),
-        holiday: r.holiday_type === 'none' ? null : (r.holiday_type as AttendanceDay['holiday']) || holidayFor(r.work_date),
-        isRestDay: r.rest_day === 'yes' ? true
-          : r.rest_day === 'no' ? false
-          : empRestDays.includes(weekdayOf(r.work_date)),
-      }));
       const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy);
       const basicSalary = emp.daily_rate * computed.days_worked;
 
@@ -1215,6 +1242,60 @@ router.post('/payroll/:recordId/unmark-paid', requirePermission('hr.manage'), (r
   if (rec.status !== 'paid') { res.status(400).json({ error: 'This payslip is not marked paid' }); return; }
   run("UPDATE form_records SET status = 'draft', updated_at = datetime('now') WHERE id = ?", rec.id);
   res.json({ ok: true });
+});
+
+// GET /api/hr/payroll/:recordId/detail — read-only per-day breakdown behind one generated
+// payslip (late/OT/holiday/rest-day figures, day by day), for the "why does my payslip say X"
+// detail view (form-records.js's payslipDetailModal) — NOT the edit form. Resolves the payslip's
+// free-text employee_name/period back to a real employees row + attendance_periods row (the only
+// link a payroll record has — see attendanceDaysForEmployee above), then reruns the exact same
+// resolution + compute engine generate-payslips used, so the per-day numbers can never disagree
+// with what's actually on the payslip. 404s with a clear reason if either match fails, rather
+// than returning an empty/wrong table.
+router.get('/payroll/:recordId/detail', requirePermission('hr.manage'), (req, res) => {
+  const rec = queryOne<FormRecord & { slug: string }>(
+    `SELECT fr.*, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+    Number(req.params.recordId)
+  );
+  if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
+  const data = JSON.parse(rec.data as string) as Record<string, unknown>;
+  const employeeName = String(data.employee_name || '');
+  const emp = queryOne<Employee>('SELECT * FROM employees WHERE name = ?', employeeName);
+  if (!emp) {
+    res.status(404).json({ error: `No employee record named "${employeeName}" — it may have been renamed since this payslip was generated.` });
+    return;
+  }
+  const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE label = ?', rec.period);
+  if (!period) {
+    res.status(404).json({ error: `No cutoff found for period "${rec.period}" — it may have been renamed or removed since this payslip was generated.` });
+    return;
+  }
+  const policy = currentPolicy();
+  const noWorkFor = buildNoWorkResolver();
+  const holidayFor = buildHolidayResolver();
+  // emp.rest_days is stored as a JSON-text column (see db.ts migration + the parsing convention
+  // above in the employee list route) — this raw SELECT * doesn't run that normalization, so at
+  // runtime it's still the raw string despite Employee's declared (already-parsed) type.
+  const restDaysJson = emp.rest_days as unknown as string | null;
+  const attendanceDays = attendanceDaysForEmployee(period.id, emp.id, restDaysJson, policy, noWorkFor, holidayFor);
+  const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy);
+  res.json({
+    employee_name: emp.name,
+    period_label: period.label,
+    daily_rate: emp.daily_rate,
+    days: computed.days,
+    totals: {
+      days_worked: computed.days_worked,
+      days_absent: computed.days_absent,
+      late_deduction: computed.late_deduction,
+      ot_hours: computed.ot_hours,
+      overtime_pay: computed.overtime_pay,
+      undertime_pay: computed.undertime_pay,
+      holiday_pay: computed.holiday_pay,
+      special_holiday_30: computed.special_holiday_30,
+      rest_day_ot: computed.rest_day_ot,
+    },
+  });
 });
 
 // POST /api/hr/payroll/:recordId/email — emails this payslip to the employee's linked account.
