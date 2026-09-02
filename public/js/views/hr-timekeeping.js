@@ -1169,6 +1169,21 @@ async function renderPeriod(view, periodId) {
       const TYPE_TO_CODE = { 'Regular Holiday': 'regular', 'Special Non-Working Holiday': 'special_non_working', 'Special Working Holiday': 'special_working' };
       records.forEach((r) => { if (r.data.date) holidayByDate[r.data.date] = TYPE_TO_CODE[r.data.type] || null; });
     }
+    // No Work Memo (company-wide suspensions — typhoon, equipment failure, etc.) is a *range*
+    // (date_from..date_to), not a single date, so it can't be looked up by exact match the way
+    // the holiday calendar is — matched per-row below instead. Was previously computed only
+    // server-side at payroll-generation time, invisible here even though it silently affects
+    // whether a blank day counts as an absence.
+    const noWorkForm = holidayForms.find((f) => f.slug === 'no_work_memo');
+    let noWorkMemos = [];
+    if (noWorkForm) {
+      noWorkMemos = (await API.get(`/form-definitions/${noWorkForm.id}/records`).catch(() => []))
+        .filter((r) => r.data.date_from && r.data.date_to);
+    }
+    function noWorkFor(workDate) {
+      const memo = noWorkMemos.find((m) => workDate >= m.data.date_from && workDate <= m.data.date_to);
+      return memo ? (memo.data.paid === 'Yes' ? 'paid' : 'unpaid') : null;
+    }
     let empRestDays = policy.default_rest_days || [0, 6];
     try { if (rosterRow.rest_days) empRestDays = JSON.parse(rosterRow.rest_days); } catch { /* keep company default */ }
 
@@ -1220,9 +1235,12 @@ async function renderPeriod(view, periodId) {
               : d.rest_day === 'no' ? false
               : empRestDays.includes(weekdayOf(d.work_date));
             const isCancellation = effHoliday === 'cancelled_paid' || effHoliday === 'cancelled_unpaid';
+            const noWork = effHoliday ? null : noWorkFor(d.work_date); // holiday/override always takes precedence
             const tag = effHoliday
               ? `<span class="badge-pill ${isCancellation ? 'status-cancelled' : 'status-completed'}" title="${isCancellation ? 'Not worked — credited as a paid/unpaid day per the selection, no premium' : 'Pays the DOLE premium automatically'}">${UI.esc(HOLIDAY_LABELS[effHoliday] || effHoliday)}</span>`
-              : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : '');
+              : noWork
+                ? `<span class="badge-pill ${noWork === 'paid' ? 'status-completed' : 'status-cancelled'}" title="Company-wide No Work Memo — ${noWork === 'paid' ? 'credited as a paid day' : 'unpaid, same as an absence but documented'}">No Work (${noWork === 'paid' ? 'Paid' : 'Unpaid'})</span>`
+                : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : '');
             return `
             <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
               <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}</td>
