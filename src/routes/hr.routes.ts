@@ -37,6 +37,7 @@ import { yearPayslipRowsByEmployee, companyProfile } from '../ph-payroll-report-
 import { enforceQuota } from '../quota';
 import { sendMail } from '../mailer';
 import { ledgerEnabled, maybeAutoPostPayroll } from '../accounting-autopost';
+import { noWorkFormIds as noWorkFormIdsWithAction } from '../form-actions';
 
 // Reuses the browser's own payslip HTML renderer instead of duplicating it server-side —
 // hr-payroll-print.js is pure string logic (no DOM/window access) and already resolves its
@@ -655,7 +656,7 @@ router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
   const roster = queryAll(
     `SELECT e.id AS employee_id, e.name, e.position, e.daily_rate, e.default_shift_id, e.rest_days,
-       e.department_id, d.name AS department_name, e.status,
+       e.department_id, d.name AS department_name, e.status, e.user_id,
        COUNT(*) AS days_total,
        SUM(CASE WHEN ar.time_in IS NOT NULL AND ar.time_in != '' THEN 1 ELSE 0 END) AS days_logged,
        SUM(CASE WHEN
@@ -671,6 +672,44 @@ router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
     id
   );
   res.json({ ...period, roster });
+});
+
+// GET /api/hr/timekeeping/incomplete — employees with an incomplete day (exactly one of
+// time_in/time_out set) in any cutoff ending within the last ~120 days. One row per
+// (employee, cutoff); `user_id` present means they have a login account we can message.
+// Powers the Home "Incomplete timekeeping" drill-down and Time Keeping's "Notify" action.
+router.get('/timekeeping/incomplete', requirePermission('hr.view'), (_req, res) => {
+  const rows = queryAll<{
+    employee_id: number; name: string; user_id: number | null;
+    period_id: number; period_label: string; work_date: string;
+  }>(`
+    SELECT e.id AS employee_id, e.name, e.user_id,
+           p.id AS period_id, p.label AS period_label, ar.work_date
+    FROM attendance_records ar
+    JOIN attendance_periods p ON p.id = ar.period_id
+    JOIN employees e ON e.id = ar.employee_id
+    WHERE p.end_date >= date('now', 'localtime', '-120 day')
+      AND ar.work_date <= date('now', 'localtime')
+      AND ((ar.time_in IS NOT NULL AND ar.time_in != '') <> (ar.time_out IS NOT NULL AND ar.time_out != ''))
+    ORDER BY e.name, p.start_date, ar.work_date`);
+
+  const byKey = new Map<string, {
+    employee_id: number; name: string; user_id: number | null;
+    period_id: number; period_label: string; dates: string[];
+  }>();
+  for (const r of rows) {
+    const key = `${r.employee_id}:${r.period_id}`;
+    let entry = byKey.get(key);
+    if (!entry) {
+      entry = {
+        employee_id: r.employee_id, name: r.name, user_id: r.user_id,
+        period_id: r.period_id, period_label: r.period_label, dates: [],
+      };
+      byKey.set(key, entry);
+    }
+    entry.dates.push(r.work_date);
+  }
+  res.json([...byKey.values()]);
 });
 
 // POST /api/hr/periods
@@ -902,11 +941,14 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
 
   const policy = currentPolicy();
 
-  // Company-wide "No Work Memo" records (form slug 'no_work_memo') — resolved once, not per
+  // Company-wide no-work ranges — the seeded "No Work Memo" form plus any other form whose
+  // definition carries an `apply_no_work` action (Form Builder). Resolved once, not per
   // employee, since these apply to everyone automatically with no per-day linking required.
-  const noWorkForm = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'no_work_memo'");
-  const noWorkMemos = noWorkForm
-    ? queryAll<FormRecord>('SELECT data FROM form_records WHERE form_def_id = ?', noWorkForm.id)
+  const noWorkFormIds = noWorkFormIdsWithAction();
+  const noWorkMemos = noWorkFormIds.length
+    ? queryAll<FormRecord>(
+        `SELECT data FROM form_records WHERE form_def_id IN (${noWorkFormIds.map(() => '?').join(',')})`,
+        ...noWorkFormIds)
         .map((r) => { try { return JSON.parse(r.data as string); } catch { return null; } })
         .filter((d): d is { date_from: string; date_to: string; paid: string } => !!d && !!d.date_from && !!d.date_to)
     : [];

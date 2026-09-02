@@ -205,16 +205,17 @@ function payrollSection() {
     WHERE form_def_id = ? AND period IS NOT NULL
     GROUP BY period ORDER BY last_at DESC LIMIT 6`, form.id);
 
-  // Item 7: how many employees currently have an incomplete day (exactly one of time_in/
-  // time_out set, not both blank — a blank day is a plain absence, not a data problem) in a
-  // cutoff that covers today. Scoped to "current" cutoffs (start_date <= today <= end_date)
-  // rather than all history, since this is meant as an actionable "go fix this" home-page
-  // count, not a historical audit figure.
+  // Item 7: how many employees have an incomplete day (exactly one of time_in/time_out set,
+  // not both blank — a blank day is a plain absence, not a data problem) in any recent cutoff.
+  // Matches the per-cutoff roster count in hr.routes.ts GET /periods/:id exactly (no
+  // "cutoff covers today" restriction — the missing time-out is just as real once a cutoff has
+  // ended), bounded to cutoffs ending within the last ~120 days so ancient data doesn't inflate
+  // this actionable "go fix this" home-page figure.
   const incomplete = queryOne<{ n: number }>(`
     SELECT COUNT(DISTINCT ar.employee_id) AS n
     FROM attendance_records ar
     JOIN attendance_periods p ON p.id = ar.period_id
-    WHERE date('now', 'localtime') BETWEEN p.start_date AND p.end_date
+    WHERE p.end_date >= date('now', 'localtime', '-120 day')
       AND ar.work_date <= date('now', 'localtime')
       AND ((ar.time_in IS NOT NULL AND ar.time_in != '') <> (ar.time_out IS NOT NULL AND ar.time_out != ''))
   `);

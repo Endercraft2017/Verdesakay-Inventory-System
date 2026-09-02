@@ -138,6 +138,18 @@ const NAV = [
         ],
       },
       {
+        id: 'payroll', label: 'Payroll',
+        tree: [
+          { label: 'Payroll', icon: 'sheet', route: 'form-records', filter: { slug: 'hr_payroll' } },
+        ],
+      },
+      {
+        id: 'memos', label: 'Memos & Notices',
+        tree: [
+          { label: 'Memos & Notices', icon: 'alert', route: 'form-records', filter: { scope: 'hr' } },
+        ],
+      },
+      {
         id: 'timekeeping', label: 'Time Keeping',
         tree: [
           { label: 'Time Keeping', icon: 'calendar', route: 'hr-timekeeping' },

@@ -467,6 +467,7 @@ App.register('form-builder', async (view, filter) => {
     const editing = !!existing;
     const seed = existing || prefill || null;
     const fields = seed ? JSON.parse(JSON.stringify(seed.fields)) : [];
+    const actions = seed && seed.actions ? JSON.parse(JSON.stringify(seed.actions)) : [];
 
     UI.modal({
       title: editing ? `Edit: ${existing.name}` : 'New Form',
@@ -500,6 +501,16 @@ App.register('form-builder', async (view, filter) => {
         <p class="muted" style="font-size:12px;margin-top:8px">
           Each field becomes a template variable: <span class="mono">{{field_key}}</span> —
           this form belongs to <strong>${UI.esc(FORM_SCOPE_LABELS[scope])}</strong>.
+        </p>
+        <div style="margin-top:18px;display:flex;align-items:center;gap:12px;margin-bottom:8px">
+          <strong>Automated actions</strong>
+          <button type="button" class="btn secondary small" id="fb-add-action">${UI.icon('plus', 14)} Add action</button>
+        </div>
+        <div id="fb-actions-list"></div>
+        <p class="muted" style="font-size:12px;margin-top:8px">
+          Actions run when a record is saved (or reaches <em>approved</em>). "Notify"/"File to 201"/"Email"
+          use the field of type <span class="mono">employee</span> to find who the record is about.
+          Message text may use <span class="mono">{number} {form} {employee} {field:key}</span>.
         </p>`,
       confirmText: editing ? 'Save form' : 'Create form',
       onOpen: (ov) => {
@@ -521,6 +532,12 @@ App.register('form-builder', async (view, filter) => {
           renderFields(ov, fields);
         };
         renderFields(ov, fields);
+
+        ov.querySelector('#fb-add-action').onclick = () => {
+          actions.push({ type: 'notify_employee', run_on: 'create' });
+          renderActions(ov, actions);
+        };
+        renderActions(ov, actions);
       },
       onConfirm: async (ov, showErr) => {
         const f = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
@@ -540,7 +557,7 @@ App.register('form-builder', async (view, filter) => {
         const body = {
           name: f('name'), slug: f('slug'),
           number_prefix: f('number_prefix'), icon: f('icon') || 'file',
-          fields, scope,
+          fields, actions, scope,
         };
         if (editing) {
           await API.put('/form-definitions/' + existing.id, body);
@@ -612,6 +629,70 @@ App.register('form-builder', async (view, filter) => {
     } else {
       fields[i][k] = inp.value;
     }
+  }
+
+  const ACTION_TYPES = [
+    ['notify_employee', 'Send notice to employee (login account)'],
+    ['save_to_201', 'File rendered form into employee 201'],
+    ['email_employee', 'Email the employee (company SMTP)'],
+    ['notify_hr', 'Notify HR / department head'],
+    ['create_followup_task', 'Create a follow-up task'],
+    ['apply_no_work', 'Feed date_from/date_to/paid into payroll no-work'],
+  ];
+
+  function renderActions(ov, actions) {
+    const el = ov.querySelector('#fb-actions-list');
+    if (!actions.length) {
+      el.innerHTML = `<div class="muted" style="text-align:center;padding:12px">No actions — this form just stores records.</div>`;
+      return;
+    }
+    const typeOpts = (sel) => ACTION_TYPES
+      .map(([v, label]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${UI.esc(label)}</option>`).join('');
+    const runOpts = (sel) => ['create', 'approved']
+      .map((v) => `<option value="${v}" ${v === (sel || 'create') ? 'selected' : ''}>on ${v}</option>`).join('');
+
+    el.innerHTML = `<table class="line-table"><thead><tr>
+      <th>Action</th><th>When</th><th>Details</th><th></th>
+    </tr></thead><tbody>${actions.map((a, i) => {
+      let details = '';
+      if (a.type === 'notify_employee') {
+        details = `<input data-ak="subject" value="${UI.esc(a.subject || '')}" placeholder="Subject (optional)" style="margin-bottom:4px" />
+          <textarea data-ak="body" rows="2" placeholder="Message body (optional)">${UI.esc(a.body || '')}</textarea>`;
+      } else if (a.type === 'email_employee') {
+        details = `<input data-ak="subject" value="${UI.esc(a.subject || '')}" placeholder="Email subject (optional)" />`;
+      } else if (a.type === 'create_followup_task') {
+        details = `<input data-ak="title" value="${UI.esc(a.title || '')}" placeholder="Task title (optional)" style="margin-bottom:4px" />
+          <input class="mono" data-ak="due_field" value="${UI.esc(a.due_field || '')}" placeholder="due date field key (optional)" />`;
+      } else {
+        details = `<span class="muted" style="font-size:12px">No extra settings</span>`;
+      }
+      return `<tr data-ai="${i}">
+        <td><select data-ak="type">${typeOpts(a.type)}</select></td>
+        <td><select data-ak="run_on">${runOpts(a.run_on)}</select></td>
+        <td>${details}</td>
+        <td><button type="button" class="icon-btn danger" data-arm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+
+    el.querySelectorAll('input[data-ak], select[data-ak], textarea[data-ak]').forEach((inp) => {
+      inp.addEventListener('change', () => syncAction(inp, actions));
+      if (inp.tagName !== 'SELECT') inp.addEventListener('input', () => syncAction(inp, actions));
+    });
+    el.querySelectorAll('[data-arm]').forEach((b) =>
+      b.onclick = () => { actions.splice(Number(b.dataset.arm), 1); renderActions(ov, actions); });
+  }
+
+  function syncAction(inp, actions) {
+    const row = inp.closest('[data-ai]');
+    if (!row) return;
+    const i = Number(row.dataset.ai);
+    const k = inp.dataset.ak;
+    if (k === 'type') {
+      actions[i] = { type: inp.value, run_on: actions[i].run_on || 'create' };
+      renderActions(inp.closest('.modal-body'), actions);
+      return;
+    }
+    actions[i][k] = inp.value;
   }
 
   // ── Global Variables tab ───────────────────────────────────────────────────

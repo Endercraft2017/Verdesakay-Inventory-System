@@ -80,6 +80,8 @@ export interface UserRow {
   department_id: number | null;
   active: number; // 0 | 1
   created_at: string;
+  /** Sparse JSON diff against the role's default permissions — see resolvePermissions(). */
+  permission_overrides: string;
 }
 
 /** The authenticated user attached to requests (no password hash). */
@@ -928,6 +930,23 @@ export interface FieldDef {
   default: string;
 }
 
+/** Automated actions a form fires when a record is created / approved. See src/form-actions.ts.
+    `run_on` defaults to 'create'. */
+export interface FormAction {
+  type:
+    | 'notify_employee'      // message the linked employee's login account (+ push)
+    | 'save_to_201'          // render the form's template and file it into their 201 documents
+    | 'email_employee'       // email the rendered notice via the company SMTP mailbox
+    | 'notify_hr'            // message the employee's dept head, else hr.manage holders
+    | 'create_followup_task' // add a task due on `due_field`
+    | 'apply_no_work';       // date_from/date_to/paid range feeds paid/unpaid no-work into payroll
+  run_on?: 'create' | 'approved';
+  subject?: string;          // notify_employee / email_employee — templated
+  body?: string;             // notify_employee — templated
+  due_field?: string;        // create_followup_task — a date field key on the form
+  title?: string;            // create_followup_task
+}
+
 /** A custom form type created by an admin. */
 export interface FormDefinition {
   id: number;
@@ -936,6 +955,7 @@ export interface FormDefinition {
   number_prefix: string;
   icon: string;
   fields: string | FieldDef[];  // raw JSON string in DB; parsed array in API responses
+  actions: string | FormAction[]; // raw JSON string in DB; parsed array in API responses
   template_id: number | null;   // linked doc_templates.id used to print this form's records
   scope: FormScope | null;      // which section owns this form; null = General (admin-only)
   created_by: number | null;

@@ -887,7 +887,9 @@ async function renderPeriod(view, periodId) {
             <td class="right">${r.days_logged || 0} / ${r.days_total || 0}${r.days_incomplete
               ? ` <span class="tk-roster-incomplete" title="${r.days_incomplete} incomplete day(s) — only one of time in/out set">${UI.icon('alert', 13)} ${r.days_incomplete}</span>`
               : ''}</td>
-            <td class="actions"><button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
+            <td class="actions">${r.days_incomplete && r.user_id
+              ? `<button class="icon-btn" title="Send this employee a notice to fix their missing time-out and see HR" data-notify="${r.employee_id}">${UI.icon('send', 15)}</button>`
+              : ''}<button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
           </tr>`).join('')}
         </tbody>
       </table>`;
@@ -925,6 +927,11 @@ async function renderPeriod(view, periodId) {
     }
 
     rosterEl.querySelectorAll('[data-rm]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); removeEmployee(b.dataset.rm, roster); });
+    rosterEl.querySelectorAll('[data-notify]').forEach((b) => b.onclick = (e) => {
+      e.stopPropagation();
+      const r = roster.find((x) => String(x.employee_id) === b.dataset.notify);
+      if (r) notifyIncompleteEmployee(r);
+    });
     rosterEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions') || e.target.closest('.tk-roster-chk')) return;
       const r = roster.find((x) => String(x.employee_id) === tr.dataset.open);
@@ -965,6 +972,34 @@ async function renderPeriod(view, periodId) {
     else if (skipped) UI.toast('Nothing removed');
     await reload();
   };
+
+  // Message an employee (via their linked login account) about the days in this cutoff where
+  // only one of time-in/time-out is set, asking them to see HR. Reuses internal messaging —
+  // no email, no new endpoint.
+  async function notifyIncompleteEmployee(rosterRow) {
+    if (!rosterRow.user_id) { UI.toast('This employee has no linked login account', 'error'); return; }
+    let dates = [];
+    try {
+      const days = await API.get(`/hr/periods/${periodId}/attendance?employee_id=${rosterRow.employee_id}`);
+      const today = new Date().toISOString().slice(0, 10);
+      dates = days.filter((d) => (!!d.time_in !== !!d.time_out) && d.work_date <= today).map((d) => d.work_date);
+    } catch { /* fall back to a date-less message */ }
+    const dateList = dates.length ? dates.join(', ') : '(see your timekeeping record)';
+    const ok = await UI.confirmDialog(
+      `Send ${UI.esc(rosterRow.name)} a notice about ${dates.length || 'their'} incomplete day(s) in "${UI.esc(period.label)}"?`,
+      'Send notice');
+    if (!ok) return;
+    try {
+      await API.post('/messages', {
+        recipient_id: rosterRow.user_id,
+        subject: `Timekeeping — missing time-out (${period.label})`,
+        body: `Hi ${rosterRow.name},\n\nYour attendance for the cutoff "${period.label}" has day(s) with a time-in but no time-out (or vice versa): ${dateList}.\n\nPlease see HR to correct your timekeeping record so your payroll is computed correctly.\n\nThank you.`,
+      });
+      UI.toast(`Notice sent to ${rosterRow.name}`, 'success');
+    } catch (e) {
+      UI.toast(e.message || 'Could not send notice', 'error');
+    }
+  }
 
   groupSel.addEventListener('change', () => { rosterView.groupBy = groupSel.value; renderRoster(); });
   sortSel.addEventListener('change', () => { rosterView.sortBy = sortSel.value; renderRoster(); });
@@ -1159,12 +1194,17 @@ async function renderPeriod(view, periodId) {
     UI.modal({
       title: `Daily time — ${rosterRow.name}`,
       size: 'xl',
+      headActionHTML: rosterRow.user_id
+        ? `<button type="button" class="btn secondary small" id="tk-notify-emp">${UI.icon('send', 14)} Send notice</button>`
+        : '',
       bodyHTML: `<div class="line-items"><table class="line-table"><thead><tr>
           <th>Date</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Rest Day</th><th>Notes</th><th>Linked Form</th>
         </tr></thead><tbody id="tk-days"></tbody></table></div>`,
       confirmText: 'Save',
       onOpen: (ov) => {
         const body = ov.querySelector('#tk-days');
+        const notifyBtn = ov.querySelector('#tk-notify-emp');
+        if (notifyBtn) notifyBtn.onclick = () => notifyIncompleteEmployee(rosterRow);
 
         const today = new Date().toISOString().slice(0, 10);
         function renderRows() {

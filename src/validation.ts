@@ -689,12 +689,25 @@ export const fieldDefSchema = z.object({
   default: trimmed.max(500).default(''),
 });
 
+export const formActionSchema = z.object({
+  type: z.enum([
+    'notify_employee', 'save_to_201', 'email_employee',
+    'notify_hr', 'create_followup_task', 'apply_no_work',
+  ]),
+  run_on: z.enum(['create', 'approved']).default('create'),
+  subject: trimmed.max(200).optional(),
+  body: trimmed.max(4000).optional(),
+  due_field: trimmed.max(64).optional(),
+  title: trimmed.max(200).optional(),
+});
+
 export const formDefinitionSchema = z.object({
   name: trimmed.min(1, 'Form name is required').max(120),
   slug: trimmed.min(1).max(60).regex(/^[a-z0-9_]+$/, 'Slug must be lowercase letters, numbers, or underscores'),
   number_prefix: trimmed.min(1).max(10).regex(/^[A-Z0-9]+$/, 'Prefix must be uppercase letters or numbers').default('FM'),
   icon: trimmed.max(40).default('file'),
   fields: z.array(fieldDefSchema).max(100).default([]),
+  actions: z.array(formActionSchema).max(20).default([]),
   scope: z.enum(['hr', 'inventory', 'admin', 'accounting']).nullable().default(null),
 });
 

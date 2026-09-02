@@ -4,6 +4,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run, newToken } from '../db';
 import { createSession, destroySession, requireAuth } from '../auth';
+import { resolvePermissions } from '../permissions';
 import {
   parseBody, loginSchema, changePasswordSchema, updateProfileSchema,
   forgotPasswordSchema, selfResetPasswordSchema,
@@ -30,6 +31,13 @@ router.post('/login', (req, res) => {
   const dept = user.department_id
     ? queryOne<{ name: string }>('SELECT name FROM departments WHERE id = ?', user.department_id)
     : null;
+  // Bug: this response never included `permissions` at all (unlike GET /auth/me, which
+  // resolves them via requireAuth -> userFromToken) — every App.hasPermission(...) check on
+  // the client silently failed right after a fresh login (permission-gated buttons/nav just
+  // didn't render), until the user did something that re-fetched /auth/me (a page reload).
+  // Resolved the same way userFromToken does, from the role + this user's own overrides.
+  let overrides: Record<string, boolean> = {};
+  try { overrides = JSON.parse(user.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
 
   res.json({
     token,
@@ -40,6 +48,7 @@ router.post('/login', (req, res) => {
       role: user.role,
       department_id: user.department_id,
       department_name: dept ? dept.name : null,
+      permissions: resolvePermissions(user.role, overrides),
     },
   });
 });

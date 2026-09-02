@@ -13,6 +13,7 @@ import {
   globalVariableSchema,
 } from '../validation';
 import { parsePayrollSummaryCsv } from '../hr-payroll-import';
+import { runFormActions } from '../form-actions';
 import { REQUEST_SLUGS } from './me.routes';
 import type { FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../types';
 
@@ -24,6 +25,10 @@ const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function parseFields(raw: string | null): unknown[] {
+  try { return JSON.parse(raw || '[]'); } catch { return []; }
+}
+
+function parseActions(raw: string | null): unknown[] {
   try { return JSON.parse(raw || '[]'); } catch { return []; }
 }
 
@@ -68,7 +73,7 @@ router.get('/form-definitions', (_req, res) => {
      FROM form_definitions fd
      ORDER BY fd.name`
   );
-  res.json(rows.map((r) => ({ ...r, fields: parseFields(r.fields as string) })));
+  res.json(rows.map((r) => ({ ...r, fields: parseFields(r.fields as string), actions: parseActions(r.actions as string) })));
 });
 
 // GET /api/form-definitions/:id — detail with parsed fields
@@ -78,7 +83,7 @@ router.get('/form-definitions/:id', (req, res) => {
     Number(req.params.id)
   );
   if (!row) { res.status(404).json({ error: 'Form not found' }); return; }
-  res.json({ ...row, fields: parseFields(row.fields as string) });
+  res.json({ ...row, fields: parseFields(row.fields as string), actions: parseActions(row.actions as string) });
 });
 
 // POST /api/form-definitions — create (forms.manage.<scope>)
@@ -86,13 +91,14 @@ router.post('/form-definitions', (req, res) => {
   const input = parseBody(formDefinitionSchema, req.body);
   if (!canManageScope(req, res, input.scope)) return;
   const info = run(
-    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, actions, scope, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     input.name,
     input.slug,
     input.number_prefix,
     input.icon,
     JSON.stringify(input.fields),
+    JSON.stringify(input.actions),
     input.scope,
     req.user!.id
   );
@@ -110,13 +116,14 @@ router.put('/form-definitions/:id', (req, res) => {
   if (input.scope !== existing.scope && !canManageScope(req, res, input.scope)) return;
   run(
     `UPDATE form_definitions
-     SET name = ?, slug = ?, number_prefix = ?, icon = ?, fields = ?, scope = ?, updated_at = datetime('now')
+     SET name = ?, slug = ?, number_prefix = ?, icon = ?, fields = ?, actions = ?, scope = ?, updated_at = datetime('now')
      WHERE id = ?`,
     input.name,
     input.slug,
     input.number_prefix,
     input.icon,
     JSON.stringify(input.fields),
+    JSON.stringify(input.actions),
     input.scope,
     id
   );
@@ -306,9 +313,11 @@ router.post('/form-records', (req, res) => {
   }
   const status = selfFile ? 'pending' : input.status;
 
+  let recordId: number;
+  let number: string;
   db.exec('BEGIN');
   try {
-    const number = nextRecordNumber(form.number_prefix, form.id);
+    number = nextRecordNumber(form.number_prefix, form.id);
     const info = run(
       `INSERT INTO form_records (form_def_id, number, data, status, created_by)
        VALUES (?, ?, ?, ?, ?)`,
@@ -318,12 +327,24 @@ router.post('/form-records', (req, res) => {
       status,
       req.user!.id
     );
+    recordId = Number(info.lastInsertRowid);
     db.exec('COMMIT');
-    res.status(201).json({ id: info.lastInsertRowid, number });
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
+
+  // Fire configured form actions (notify employee, file to 201, …) — best-effort, outside the
+  // transaction so a failed action never un-creates the record. Skipped for self-filed HR
+  // requests (forced to 'pending' above — those go through the me.routes approval flow).
+  let action_warnings: string[] = [];
+  if (!selfFile) {
+    action_warnings = runFormActions({
+      recordId, recordNumber: number, formDef: form, data: input.data as Record<string, unknown>,
+      trigger: 'create', actingUserId: req.user!.id,
+    }).warnings;
+  }
+  res.status(201).json({ id: recordId, number, action_warnings });
 });
 
 // PUT /api/form-records/:id — update data / status (forms.manage.<scope> for the record's
@@ -347,15 +368,28 @@ router.put('/form-records/:id', (req, res) => {
   if (existing.slug === 'hr_payroll' && input.status === 'paid' && existing.status !== 'paid') {
     res.status(400).json({ error: 'Use "Mark as Paid" on the payslip instead of setting status directly.' }); return;
   }
+  const newStatus = input.status ?? existing.status;
   run(
     `UPDATE form_records
      SET data = ?, status = ?, updated_at = datetime('now')
      WHERE id = ?`,
     JSON.stringify(input.data),
-    input.status ?? existing.status,
+    newStatus,
     id
   );
-  res.json({ ok: true });
+
+  // Fire `run_on: 'approved'` actions the first time a record reaches 'approved'.
+  let action_warnings: string[] = [];
+  if (newStatus === 'approved' && existing.status !== 'approved') {
+    const form = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', existing.form_def_id);
+    if (form) {
+      action_warnings = runFormActions({
+        recordId: id, recordNumber: existing.number, formDef: form,
+        data: input.data as Record<string, unknown>, trigger: 'approved', actingUserId: req.user!.id,
+      }).warnings;
+    }
+  }
+  res.json({ ok: true, action_warnings });
 });
 
 // DELETE /api/form-records/:id (forms.manage.<scope> for the record's form — same gate as PUT)

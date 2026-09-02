@@ -37,7 +37,15 @@ App.register('account', async (view) => {
           <button class="btn" id="pw-save" style="margin-top:16px">Update password</button>
         </div>
       </div>
-    </div>`;
+    </div>
+
+    ${App.hasPermission('messages.view') ? `
+    <div class="panel" style="max-width:760px;margin-top:18px">
+      <div class="panel-head"><h3>Message attachment storage</h3></div>
+      <div class="panel-body" id="acc-storage">
+        <div class="muted">Loading…</div>
+      </div>
+    </div>` : ''}`;
 
   // Update display name.
   const pfErr = view.querySelector('#pf-err');
@@ -54,6 +62,24 @@ App.register('account', async (view) => {
       pfErr.textContent = e.message; pfErr.classList.remove('hidden');
     }
   });
+
+  // Storage usage: attachments sent on internal messages count against a fixed 5 GB
+  // per-user pool (see MESSAGE_STORAGE_CAP in src/routes/messages.routes.ts).
+  const storageBox = view.querySelector('#acc-storage');
+  if (storageBox) {
+    (async () => {
+      let q;
+      try { q = await API.get('/messages/quota'); }
+      catch (e) { storageBox.innerHTML = `<div class="muted">${UI.esc(e.message)}</div>`; return; }
+      const pct = q.cap_bytes > 0 ? Math.min(100, Math.round((q.used_bytes / q.cap_bytes) * 100)) : 0;
+      const stage = pct >= 100 ? 'over' : pct >= 80 ? 'near' : 'ok';
+      storageBox.innerHTML = `
+        <div class="usage-bar"><div class="usage-fill ${stage}" style="width:${pct}%"></div></div>
+        <div class="muted" style="font-size:12px;margin-top:6px">
+          ${UI.fmtBytes(q.used_bytes)} / ${UI.fmtBytes(q.cap_bytes)} used (${pct}%)${pct >= 100 ? ' — limit reached, delete some old messages to free up space' : ''}
+        </div>`;
+    })();
+  }
 
   // Change password.
   const err = view.querySelector('#pw-err');

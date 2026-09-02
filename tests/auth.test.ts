@@ -16,6 +16,25 @@ describe('auth', () => {
     expect(res.body.user.role).toBe('admin');
   });
 
+  it('the login response includes permissions — was previously omitted entirely, so every ' +
+    'App.hasPermission(...) check silently failed right after a fresh login until something ' +
+    'else (e.g. a page reload hitting /auth/me) repopulated it', async () => {
+    const res = await ctx.api.post('/api/auth/login').send({ username: 'admin', password: 'admin123' });
+    expect(Array.isArray(res.body.user.permissions)).toBe(true);
+    expect(res.body.user.permissions).toContain('hr.manage');
+    // Matches what GET /auth/me (already correct) resolves for the same account.
+    const me = await ctx.api.get('/api/auth/me').set('Authorization', `Bearer ${res.body.token}`);
+    expect(res.body.user.permissions.sort()).toEqual(me.body.user.permissions.sort());
+  });
+
+  it('a non-admin role gets its own default permissions on login, not the admin set', async () => {
+    const adminToken = await login(ctx.api);
+    const acc = await createEmployee(ctx.api, adminToken, { role: 'warehouse' });
+    const res = await ctx.api.post('/api/auth/login').send({ username: acc.username, password: acc.password });
+    expect(res.body.user.permissions).toContain('inventory.view');
+    expect(res.body.user.permissions).not.toContain('hr.manage');
+  });
+
   it('is case-insensitive on username', async () => {
     const res = await ctx.api.post('/api/auth/login').send({ username: 'ADMIN', password: 'admin123' });
     expect(res.status).toBe(200);

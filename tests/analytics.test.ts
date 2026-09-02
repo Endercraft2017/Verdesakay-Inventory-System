@@ -115,4 +115,28 @@ describe('analytics overview', () => {
     const filled = await ctx.api.get('/api/analytics/overview').set(authHdr());
     expect(filled.body.payroll.incomplete_timekeeping).toBe(beforeCount);
   });
+
+  it('payroll.incomplete_timekeeping still counts an incomplete day in an already-ended cutoff', async () => {
+    // A cutoff that ended well before today (but within 120 days) — the Home count must not
+    // silently drop these the way the old "cutoff covers today" filter did.
+    const pastStart = new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10);
+    const pastEnd = new Date(Date.now() - 38 * 86400000).toISOString().slice(0, 10);
+    const emp = await ctx.api.post('/api/hr/employees').set(authHdr())
+      .send({ employee_no: 'TEST-INCOMPLETE-PAST', name: 'Past Cutoff Employee', daily_rate: 500 });
+    const period = await ctx.api.post('/api/hr/periods').set(authHdr())
+      .send({ label: 'Ended Cutoff', start_date: pastStart, end_date: pastEnd });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(authHdr()).send({ employee_id: emp.body.id });
+
+    const before = (await ctx.api.get('/api/analytics/overview').set(authHdr())).body.payroll.incomplete_timekeeping;
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(authHdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: pastStart, time_in: '08:00', time_out: '', notes: '' }],
+    });
+    const after = (await ctx.api.get('/api/analytics/overview').set(authHdr())).body.payroll.incomplete_timekeeping;
+    expect(after).toBe(before + 1);
+
+    // And it shows up in the drill-down endpoint with the employee's account info.
+    const list = await ctx.api.get('/api/hr/timekeeping/incomplete').set(authHdr());
+    expect(list.body.some((r: { employee_id: number }) => r.employee_id === emp.body.id)).toBe(true);
+  });
 });

@@ -3,13 +3,45 @@
 const FORM_RECORDS_SCOPE_LABELS = { hr: 'HR', inventory: 'Inventory', admin: 'Admin', accounting: 'Accounting' };
 const FORM_RECORDS_SCOPE_ORDER = ['hr', 'inventory', 'admin', 'accounting', null];
 
+// Set by App.openFormRecordDraft just before navigating here; consumed once by
+// renderFormView to pop a pre-filled "New record" modal. Kept off the URL filter so a big
+// proposed payload doesn't end up in the address bar.
+let pendingFormDraft = null;
+
 App.register('form-records', async (view, filter) => {
-  if (filter && filter.form_id) {
+  filter = filter || {};
+  // filter.slug — jump straight to one form by its slug (HR nav's "Payroll" -> hr_payroll),
+  // resolved to an id the same way hr.js's openDataForm does.
+  if (filter.slug && !filter.form_id) {
+    try {
+      const forms = await API.get('/form-definitions');
+      const f = forms.find((x) => x.slug === filter.slug);
+      if (f) { await renderFormView(view, f.id, filter.period || ''); return; }
+    } catch { /* fall through to the index */ }
+  }
+  if (filter.form_id) {
     await renderFormView(view, Number(filter.form_id), filter.period || '');
   } else {
-    await renderIndex(view);
+    await renderIndex(view, filter.scope || '');
   }
 });
+
+/* Open a specific form's "New record" modal pre-filled with `proposal.data` — used by the AI
+   assistant's "Review & issue" button (public/js/tools.js). */
+App.openFormRecordDraft = async function (proposal) {
+  if (!proposal) return;
+  let id = proposal.form_def_id;
+  if (!id && proposal.slug) {
+    try {
+      const forms = await API.get('/form-definitions');
+      const f = forms.find((x) => x.slug === proposal.slug);
+      id = f && f.id;
+    } catch { /* ignore */ }
+  }
+  if (!id) { UI.toast('That form could not be found', 'error'); return; }
+  pendingFormDraft = { formId: Number(id), data: proposal.data || {} };
+  App.navigate('form-records', { form_id: String(id) });
+};
 
 function formCardHTML(f) {
   return `<div class="form-card clickable" data-id="${f.id}">
@@ -23,14 +55,18 @@ function formCardHTML(f) {
 }
 
 /* ── Form index: pick which form to open, grouped by the section that owns it ────── */
-async function renderIndex(view) {
+async function renderIndex(view, onlyScope) {
+  const heading = onlyScope
+    ? `${FORM_RECORDS_SCOPE_LABELS[onlyScope] || onlyScope} Forms`
+    : 'Data Forms';
   view.innerHTML = `
-    <div class="topbar"><h2>Data Forms</h2></div>
+    <div class="topbar"><h2>${UI.esc(heading)}</h2></div>
     <div class="panel"><div id="fr-index"></div></div>`;
   const el = view.querySelector('#fr-index');
   el.innerHTML = '<div class="empty">Loading…</div>';
 
-  const forms = await API.get('/form-definitions');
+  let forms = await API.get('/form-definitions');
+  if (onlyScope) forms = forms.filter((f) => f.scope === onlyScope);
   // Which section (if any) this user could jump into Form Builder for, for the empty-state
   // shortcut below — every Form Builder entry now requires a scope, so "open Form Builder" with
   // none no longer resolves to anything.
@@ -134,6 +170,10 @@ async function renderFormView(view, formId, initialPeriod) {
       <div style="flex:1"></div>
       ${isPayroll ? `<button class="btn secondary small" id="fr-bulk-print">${UI.icon('printer')} Print selected</button>` : ''}
       ${canBulkPrint ? `<button class="btn secondary small" id="fr-bulk-print-tpl">${UI.icon('printer')} Print selected</button>` : ''}
+      <button class="btn secondary small" id="fr-bulk-status">${UI.icon('edit', 14)} Change status</button>
+      ${isPayroll && canManagePayroll ? `
+        <button class="btn secondary small" id="fr-bulk-mark-paid">${UI.icon('check')} Mark paid</button>
+        <button class="btn secondary small" id="fr-bulk-unmark-paid">${UI.icon('reply', 15)} Unmark paid</button>` : ''}
       <button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>
       <button class="btn secondary small" id="fr-bulk-clear">${UI.icon('close', 12)} Clear</button>
     </div>
@@ -168,6 +208,11 @@ async function renderFormView(view, formId, initialPeriod) {
   view.querySelector('#fr-del-all').onclick = () => delAll();
   view.querySelector('#fr-bulk-del').onclick = () => delSelected();
   view.querySelector('#fr-bulk-clear').onclick = () => { selectedIds.clear(); syncSelection(); };
+  view.querySelector('#fr-bulk-status').onclick = () => bulkChangeStatus();
+  if (isPayroll && canManagePayroll) {
+    view.querySelector('#fr-bulk-mark-paid').onclick = () => bulkSetPaid(true);
+    view.querySelector('#fr-bulk-unmark-paid').onclick = () => bulkSetPaid(false);
+  }
 
   function updateBulkBar() {
     const bar = view.querySelector('#fr-bulk-bar');
@@ -210,6 +255,70 @@ async function renderFormView(view, formId, initialPeriod) {
     selectedIds.clear();
     if (deleted) UI.toast(`${deleted} record${deleted === 1 ? '' : 's'} deleted${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`);
     else if (skipped) UI.toast('Nothing deleted');
+    load();
+  }
+
+  // Batch status change — works for any form's records (not just payroll). Same one-confirm-
+  // per-record convention as delSelected() above: a rushed single "yes" can't apply a status
+  // change to more records than the user actually meant to, and cancelling one just skips it.
+  // A record already paid is locked (server 423s the generic PUT — see form-builder.routes.ts)
+  // and is skipped without even asking; 'paid' itself isn't offered here — that's only ever set
+  // via the dedicated Mark Paid action, same restriction the single-record editor already has.
+  async function bulkChangeStatus() {
+    if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
+    const targets = currentRecords.filter((r) => selectedIds.has(r.id));
+
+    const statusOpts = ['draft', 'submitted', 'approved', 'rejected', 'completed'];
+    // Same resolve(true/false)-on-[data-close] wrapping UI.confirmDialog itself uses (ui.js) —
+    // the only supported way to read "confirmed vs cancelled" out of a modal that also needs
+    // to hand back a value (the picked status), not just a yes/no.
+    const newStatus = await new Promise((resolve) => {
+      const m = UI.modal({
+        title: `Change status — ${targets.length} record${targets.length === 1 ? '' : 's'}`,
+        bodyHTML: `<label>New status</label>
+          <select data-f="status">${statusOpts.map((s) => `<option value="${s}">${s}</option>`).join('')}</select>
+          <p class="muted" style="font-size:12px;margin-top:8px">Asks separately for each record — cancel any single one to leave it as-is.</p>`,
+        confirmText: 'Continue',
+        onConfirm: (ov) => { resolve(ov.querySelector('[data-f="status"]').value); },
+      });
+      m.overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => resolve(null)));
+    });
+    if (!newStatus) return; // cancelled
+
+    let changed = 0, skipped = 0, failed = 0;
+    for (const r of targets) {
+      if (r.status === newStatus) { skipped++; continue; }
+      if (r.status === 'paid') { skipped++; continue; } // locked — unmark paid first
+      const ok = await UI.confirmDialog(`Set ${r.number} to "${newStatus}"?`, 'Change');
+      if (!ok) { skipped++; continue; }
+      try { await API.put('/form-records/' + r.id, { data: r.data, status: newStatus }); changed++; }
+      catch (e) { failed++; UI.toast(`${r.number}: ${e.message}`, 'error'); }
+    }
+    selectedIds.clear();
+    if (changed) UI.toast(`${changed} record${changed === 1 ? '' : 's'} updated${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`);
+    else if (skipped) UI.toast('Nothing changed');
+    load();
+  }
+
+  // Batch Mark/Unmark Paid (payroll only). Same per-record confirm convention as above — a
+  // payslip already in the target state is skipped without asking (nothing to confirm).
+  async function bulkSetPaid(toPaid) {
+    if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
+    const targets = currentRecords.filter((r) => selectedIds.has(r.id));
+    const verb = toPaid ? 'Mark' : 'Unmark';
+    const endpoint = toPaid ? 'mark-paid' : 'unmark-paid';
+    let changed = 0, skipped = 0, failed = 0;
+    for (const r of targets) {
+      const already = toPaid ? r.status === 'paid' : r.status !== 'paid';
+      if (already) { skipped++; continue; }
+      const ok = await UI.confirmDialog(`${verb} ${r.number} as paid?`, verb);
+      if (!ok) { skipped++; continue; }
+      try { await API.post(`/hr/payroll/${r.id}/${endpoint}`, {}); changed++; }
+      catch (e) { failed++; UI.toast(`${r.number}: ${e.message}`, 'error'); }
+    }
+    selectedIds.clear();
+    if (changed) UI.toast(`${changed} payslip${changed === 1 ? '' : 's'} ${toPaid ? 'marked' : 'unmarked'} paid${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`);
+    else if (skipped) UI.toast('Nothing changed');
     load();
   }
 
@@ -586,9 +695,11 @@ async function renderFormView(view, formId, initialPeriod) {
   const EMPLOYEE_AUTOFILL_MAP = { department: 'department_name', position: 'position', employee_no: 'employee_no', daily_rate: 'daily_rate' };
 
   /* ── Record create / edit modal ─────────────────────────────────────────── */
-  async function recordModal(existing) {
+  // `prefill` (a plain data object) seeds a brand-new record — used by the AI assistant's
+  // "Review & issue" flow so a proposed memo/NTE opens here for the user to confirm.
+  async function recordModal(existing, prefill) {
     const editing = !!existing;
-    const data = editing ? { ...existing.data } : {};
+    const data = editing ? { ...existing.data } : { ...(prefill || {}) };
     const statusOpts = ['draft', 'submitted', 'approved', 'rejected', 'completed']
       .map((s) => `<option value="${s}" ${(existing ? existing.status : 'draft') === s ? 'selected' : ''}>${s}</option>`)
       .join('');
@@ -653,12 +764,12 @@ async function renderFormView(view, formId, initialPeriod) {
         }
         const status = ov.querySelector('[data-f="status"]').value;
 
-        if (editing) {
-          await API.put('/form-records/' + existing.id, { data: collected, status });
-        } else {
-          await API.post('/form-records', { form_def_id: formId, data: collected, status });
-        }
+        const res = editing
+          ? await API.put('/form-records/' + existing.id, { data: collected, status })
+          : await API.post('/form-records', { form_def_id: formId, data: collected, status });
         UI.toast(editing ? 'Record saved' : 'Record created');
+        const warns = (res && res.action_warnings) || [];
+        if (warns.length) UI.toast('Some actions were skipped: ' + warns.join('; '), 'error');
         load();
       },
     });
@@ -704,4 +815,9 @@ async function renderFormView(view, formId, initialPeriod) {
   }
 
   await load();
+  if (pendingFormDraft && pendingFormDraft.formId === Number(formId)) {
+    const d = pendingFormDraft.data;
+    pendingFormDraft = null;
+    recordModal(null, d);
+  }
 }

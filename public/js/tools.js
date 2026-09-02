@@ -29,9 +29,14 @@
   }
 
   /* ---------------- AI assistant ---------------- */
-  // Conversation history for the agentic loop — the server is stateless, so the client
-  // resends the full thread each turn. Cleared whenever the drawer is (re)opened.
+  // The conversation is saved server-side (ai_messages, per user) and survives reloads —
+  // it's only cleared when the user hits "Clear conversation". `aiHistory` is just the
+  // context sent to the LLM each turn: the /chat route is otherwise stateless per call, so
+  // the client resends recent history and the route persists the new turn as a side effect
+  // (see GET/DELETE /api/ai/messages in src/routes/ai.routes.ts). Capped below the route's
+  // 40-message ceiling so a long-lived conversation never fails validation.
   let aiHistory = [];
+  const AI_HISTORY_LIMIT = 38;
 
   function mdLite(s) {
     // Light markdown over already-escaped text: **bold**, `code`, line breaks.
@@ -82,6 +87,12 @@
     }
     if (step.tool === 'create_task') {
       return { label: 'Open Tasks', run: () => openScheduler() };
+    }
+    if (step.tool === 'propose_form_record' && d.proposed && (d.form_def_id || d.slug)) {
+      return {
+        label: `Review & issue ${d.form_name || 'form'}`,
+        run: () => App.openFormRecordDraft && App.openFormRecordDraft(d),
+      };
     }
     return null;
   }
@@ -134,9 +145,46 @@
     setTimeout(() => { if (!aiOpen) root.innerHTML = ''; }, 180);
   }
 
+  const AI_GREETING = "Hi! I'm your assistant — ask me about inventory, orders, messages, or your notes and tasks.";
+
+  /** Append a finished assistant turn (chips + reply + record/report links), wiring its
+      buttons. Shared by the live reply path and by replaying saved history on open. */
+  function renderBotTurn(chat, reply, steps) {
+    const chips = (steps || []).map((s) =>
+      `<span class="ai-chip">${UI.esc(toolLabel(s.tool))}</span>`).join('');
+    const chipsHTML = chips ? `<div class="ai-chips">${chips}</div>` : '';
+    chat.insertAdjacentHTML('beforeend',
+      `<div class="ai-msg bot">${chipsHTML}<div>${mdLite(reply || '')}</div>${recordLinksHTML(steps)}${reportLinksHTML(steps)}</div>`);
+    wireRecordLinks(chat.lastElementChild, steps);
+    wireReportLinks(chat.lastElementChild);
+  }
+
+  async function loadAiHistory(chat) {
+    let saved = [];
+    try { saved = await API.get('/ai/messages'); } catch { saved = []; }
+    chat.innerHTML = '';
+    if (!saved.length) {
+      chat.insertAdjacentHTML('beforeend', `<div class="ai-msg bot">${AI_GREETING}</div>`);
+      aiHistory = [];
+      return;
+    }
+    saved.forEach((m) => {
+      if (m.role === 'user') chat.insertAdjacentHTML('beforeend', `<div class="ai-msg user">${UI.esc(m.content)}</div>`);
+      else renderBotTurn(chat, m.content, m.steps);
+    });
+    aiHistory = saved.slice(-AI_HISTORY_LIMIT).map((m) => ({ role: m.role, content: m.content }));
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  async function clearAiConversation(chat) {
+    if (!(await UI.confirmDialog('Clear this conversation? This cannot be undone.', 'Clear'))) return;
+    try { await API.del('/ai/messages'); } catch (e) { UI.toast(e.message, 'error'); return; }
+    aiHistory = [];
+    chat.innerHTML = `<div class="ai-msg bot">${AI_GREETING}</div>`;
+  }
+
   function openAI() {
     aiOpen = true;
-    aiHistory = [];
     const fab = document.getElementById('ai-fab');
     if (fab) fab.classList.add('open');
     const root = document.getElementById('ai-widget-root');
@@ -144,11 +192,12 @@
       <div class="ai-widget" id="ai-widget">
         <div class="ai-widget-head">
           ${UI.icon('sparkles', 17)}<h3>AI Assistant</h3>
+          <button type="button" class="icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear conversation">${UI.icon('trash', 16)}</button>
           ${App.hasPermission('users.manage') ? `<button type="button" class="icon-btn" id="ai-config" title="AI settings" aria-label="AI settings">${UI.icon('settings', 16)}</button>` : ''}
           <button type="button" class="icon-btn" id="ai-widget-close" aria-label="Close">${UI.icon('close', 16)}</button>
         </div>
         <div class="ai-widget-body"><div class="ai-chat" id="ai-chat">
-          <div class="ai-msg bot">Hi! I'm your assistant — ask me about inventory, orders, messages, or your notes and tasks.</div>
+          <div class="ai-msg bot">Loading your conversation…</div>
         </div></div>
         <div class="ai-widget-foot">
           <form class="ai-input" id="ai-form">
@@ -167,8 +216,10 @@
     const form = el.querySelector('#ai-form');
     const submitBtn = form.querySelector('button[type="submit"]');
     el.querySelector('#ai-widget-close').onclick = () => closeAI();
+    el.querySelector('#ai-clear').onclick = () => clearAiConversation(chat);
     const cfgBtn = el.querySelector('#ai-config');
     if (cfgBtn) cfgBtn.onclick = () => aiSettingsModal();
+    loadAiHistory(chat);
 
     // Grows with content instead of scrolling sideways (it's a textarea, not a single-line
     // input) — CSS caps it around 4 lines tall (max-height + overflow-y:auto on .ai-input
@@ -204,14 +255,11 @@
         const typingEl = document.getElementById(typingId);
         if (typingEl) typingEl.remove();
 
-        const chips = (res.steps || []).map((s) =>
-          `<span class="ai-chip">${UI.esc(toolLabel(s.tool))}</span>`).join('');
-        const chipsHTML = chips ? `<div class="ai-chips">${chips}</div>` : '';
-        chat.insertAdjacentHTML('beforeend',
-          `<div class="ai-msg bot">${chipsHTML}<div>${mdLite(res.reply || '')}</div>${recordLinksHTML(res.steps)}${reportLinksHTML(res.steps)}</div>`);
-        wireRecordLinks(chat.lastElementChild, res.steps);
-        wireReportLinks(chat.lastElementChild);
+        renderBotTurn(chat, res.reply, res.steps);
         aiHistory.push({ role: 'assistant', content: res.reply || '' });
+        // Keep the client's LLM-context window under the route's cap (see AI_HISTORY_LIMIT);
+        // the full conversation stays saved server-side regardless.
+        if (aiHistory.length > AI_HISTORY_LIMIT) aiHistory = aiHistory.slice(-AI_HISTORY_LIMIT);
       } catch (err) {
         const typingEl = document.getElementById(typingId);
         if (typingEl) typingEl.remove();
@@ -236,7 +284,7 @@
       ? `${used.toLocaleString()} / ${cap.toLocaleString()} tokens used (${pct}%)${pct >= 100 ? ' — cap reached, the assistant is paused' : ''}`
       : `${used.toLocaleString()} tokens used — no cap set`;
     return `
-      <div class="ai-usage-bar"><div class="ai-usage-fill ${stage}" style="width:${cap > 0 ? pct : 0}%"></div></div>
+      <div class="usage-bar"><div class="usage-fill ${stage}" style="width:${cap > 0 ? pct : 0}%"></div></div>
       <div class="muted" style="font-size:12px;margin-top:5px" id="ai-usage-text">${UI.esc(text)}</div>`;
   }
 

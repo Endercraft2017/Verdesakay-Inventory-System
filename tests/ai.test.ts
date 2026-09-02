@@ -252,6 +252,81 @@ describe('POST /api/ai/chat', () => {
   });
 });
 
+describe('GET/DELETE /api/ai/messages — saved conversation history', () => {
+  const hdr = () => ({ Authorization: `Bearer ${adminToken}` });
+  beforeEach(async () => {
+    process.env.CEREBRAS_API_KEY = 'test-key';
+    await ctx.api.delete('/api/ai/messages').set(hdr()); // clean slate
+  });
+  afterEach(() => { vi.restoreAllMocks(); delete process.env.CEREBRAS_API_KEY; });
+
+  it('starts empty, then saves the user turn and the reply after a successful chat', async () => {
+    expect((await ctx.api.get('/api/ai/messages').set(hdr())).body).toEqual([]);
+
+    mockFetch(makeCerebrasReply('Hi there!'));
+    await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'Hello' }] });
+
+    const saved = (await ctx.api.get('/api/ai/messages').set(hdr())).body;
+    expect(saved).toHaveLength(2);
+    expect(saved[0]).toMatchObject({ role: 'user', content: 'Hello' });
+    expect(saved[1]).toMatchObject({ role: 'assistant', content: 'Hi there!' });
+    expect(saved[1].steps).toBeUndefined(); // no tool calls this turn
+  });
+
+  it('persists the tool-call trail alongside the assistant reply', async () => {
+    mockFetch(
+      makeCerebrasToolCall('tcs1', 'get_notes', {}),
+      makeCerebrasReply('You have no notes.'),
+    );
+    await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'notes?' }] });
+
+    const saved = (await ctx.api.get('/api/ai/messages').set(hdr())).body;
+    expect(saved[1].steps).toHaveLength(1);
+    expect(saved[1].steps[0].tool).toBe('get_notes');
+  });
+
+  it('accumulates across multiple turns, in order', async () => {
+    mockFetch(makeCerebrasReply('First reply'));
+    await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'One' }] });
+    mockFetch(makeCerebrasReply('Second reply'));
+    await ctx.api.post('/api/ai/chat').set(hdr())
+      .send({ messages: [{ role: 'user', content: 'One' }, { role: 'assistant', content: 'First reply' }, { role: 'user', content: 'Two' }] });
+
+    const saved = (await ctx.api.get('/api/ai/messages').set(hdr())).body;
+    expect(saved.map((m: { content: string }) => m.content)).toEqual(['One', 'First reply', 'Two', 'Second reply']);
+  });
+
+  it('does not persist a turn when the LLM call fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
+    const res = await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'will fail' }] });
+    expect(res.status).toBe(500);
+    expect((await ctx.api.get('/api/ai/messages').set(hdr())).body).toEqual([]);
+  });
+
+  it('DELETE clears the conversation; each user only sees their own', async () => {
+    const bob = await createEmployee(ctx.api, adminToken, { username: 'bob_ai' });
+
+    mockFetch(makeCerebrasReply('Admin reply'));
+    await ctx.api.post('/api/ai/chat').set(hdr()).send({ messages: [{ role: 'user', content: 'admin says hi' }] });
+    mockFetch(makeCerebrasReply('Bob reply'));
+    await ctx.api.post('/api/ai/chat').set({ Authorization: `Bearer ${bob.token}` })
+      .send({ messages: [{ role: 'user', content: 'bob says hi' }] });
+
+    expect((await ctx.api.get('/api/ai/messages').set(hdr())).body).toHaveLength(2);
+    expect((await ctx.api.get('/api/ai/messages').set({ Authorization: `Bearer ${bob.token}` })).body).toHaveLength(2);
+
+    await ctx.api.delete('/api/ai/messages').set(hdr());
+    expect((await ctx.api.get('/api/ai/messages').set(hdr())).body).toEqual([]);
+    // bob's conversation is untouched by admin's delete
+    expect((await ctx.api.get('/api/ai/messages').set({ Authorization: `Bearer ${bob.token}` })).body).toHaveLength(2);
+  });
+
+  it('requires auth', async () => {
+    expect((await ctx.api.get('/api/ai/messages')).status).toBe(401);
+    expect((await ctx.api.delete('/api/ai/messages')).status).toBe(401);
+  });
+});
+
 describe('token usage cap', () => {
   const hdr = () => ({ Authorization: `Bearer ${adminToken}` });
   beforeEach(async () => {

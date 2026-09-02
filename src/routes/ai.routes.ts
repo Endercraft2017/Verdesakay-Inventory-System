@@ -8,6 +8,10 @@
  * The route runs an agentic loop: it calls the LLM, executes any tool calls, feeds the
  * results back, and continues until the model stops calling tools (or MAX_ITERATIONS hit).
  * All tool access is gated by the caller's effective permissions from auth.ts.
+ *
+ * GET/DELETE /api/ai/messages — the caller's conversation persists in `ai_messages` across
+ * sessions/reloads (saved as a side effect of each successful /chat turn) until they clear
+ * it via DELETE. Each user has exactly one running conversation, no multi-thread history.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +21,7 @@ import { requireAuth, requirePermission } from '../auth';
 import { getToolsForUser, executeTool } from '../ai-tools';
 import { REPORT_FILE_RE } from '../ai-reporting';
 import { reindex } from '../rag';
-import { uploadDir } from '../db';
+import { uploadDir, queryAll, run } from '../db';
 import { getAiConfig, activeAiConfig, saveAiConfig, addTokenUsage, tokenCapReached, resetTokenUsage } from '../ai-config';
 import { enforceQuota, recordAiCall } from '../quota';
 import { parseBody, aiConfigSchema } from '../validation';
@@ -50,6 +54,40 @@ router.get('/reports/:name', (req, res) => {
   const nice = name.replace(/^ai-report-/, '').replace(/-\d{10,}-[a-f0-9]+(\.\w+)$/, '$1');
   res.download(file, nice);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Saved chat history — persists per user across sessions until they clear it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AiMessageRow {
+  id: number; role: 'user' | 'assistant'; content: string; steps: string | null; created_at: string;
+}
+
+// GET /api/ai/messages — the caller's saved conversation, oldest first
+router.get('/messages', (req, res) => {
+  const rows = queryAll<AiMessageRow>(
+    'SELECT id, role, content, steps, created_at FROM ai_messages WHERE user_id = ? ORDER BY id',
+    req.user!.id
+  );
+  res.json(rows.map((r) => ({ ...r, steps: r.steps ? JSON.parse(r.steps) : undefined })));
+});
+
+// DELETE /api/ai/messages — clear the caller's saved conversation
+router.delete('/messages', (req, res) => {
+  run('DELETE FROM ai_messages WHERE user_id = ?', req.user!.id);
+  res.json({ ok: true });
+});
+
+function saveTurn(userId: number, userContent: string, reply: string, steps: unknown[]): void {
+  run('INSERT INTO ai_messages (user_id, role, content) VALUES (?, ?, ?)', userId, 'user', userContent);
+  run(
+    'INSERT INTO ai_messages (user_id, role, content, steps) VALUES (?, ?, ?, ?)',
+    userId,
+    'assistant',
+    reply,
+    steps.length ? JSON.stringify(steps) : null
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
@@ -192,6 +230,9 @@ router.post('/chat', async (req, res, next) => {
     }
     const { messages } = parsed.data;
     const user = req.user!;
+    // The client always appends the new turn as the last user message before posting —
+    // that's what gets saved to ai_messages alongside the reply (see saveTurn below).
+    const newUserMessage = [...messages].reverse().find((m) => m.role === 'user');
 
     const { api_key: apiKey, base_url: baseUrl, model } = activeAiConfig();
     if (!apiKey) {
@@ -233,7 +274,9 @@ router.post('/chat', async (req, res, next) => {
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
         // Model gave a final answer
-        res.json({ reply: msg.content ?? '', steps });
+        const reply = msg.content ?? '';
+        if (newUserMessage) saveTurn(user.id, newUserMessage.content, reply, steps);
+        res.json({ reply, steps });
         return;
       }
 
@@ -256,7 +299,9 @@ router.post('/chat', async (req, res, next) => {
 
     // Hit the iteration cap — return whatever the model last said
     const lastAssistant = [...cebrasMsgs].reverse().find((m) => m.role === 'assistant' && m.content);
-    res.json({ reply: lastAssistant?.content ?? 'Unable to complete the request.', steps });
+    const reply = lastAssistant?.content ?? 'Unable to complete the request.';
+    if (newUserMessage) saveTurn(user.id, newUserMessage.content, reply, steps);
+    res.json({ reply, steps });
   } catch (e) {
     next(e);
   }

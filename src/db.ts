@@ -55,7 +55,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1507,6 +1507,28 @@ function migrate(): void {
     }
     if (touched) db.prepare('UPDATE doc_templates SET body = ?, updated_at = datetime(\'now\') WHERE id = ?').run(body, slipTpl.id);
   }
+
+  // (SCHEMA_VERSION 19) Form actions — a form definition can carry a JSON list of automated
+  // actions that fire when a record is created / approved (notify the linked employee, file
+  // the rendered form into their 201, email them, feed a no-work range into payroll, …).
+  // form_record_action_runs is the per-(record, action) idempotency + audit log so re-saving
+  // a record never re-fires an action. See src/form-actions.ts.
+  const fdCols2 = db.prepare('PRAGMA table_info(form_definitions)').all() as { name: string }[];
+  if (!fdCols2.some((c) => c.name === 'actions')) {
+    db.exec("ALTER TABLE form_definitions ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS form_record_action_runs (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      form_record_id INTEGER NOT NULL REFERENCES form_records(id) ON DELETE CASCADE,
+      action_type    TEXT NOT NULL,
+      status         TEXT NOT NULL,
+      detail         TEXT,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_form_record_action_runs_record
+      ON form_record_action_runs(form_record_id);
+  `);
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
@@ -1576,6 +1598,7 @@ function seed(): void {
   seedTemplates();
   seedHrPayrollForm();
   seedNoWorkMemoForm();
+  seedMemoForms();
   seedCompanyHolidaysForm();
   seedPayrollTables();
   seedTaxCodes();
@@ -1712,10 +1735,151 @@ function seedNoWorkMemoForm(): void {
     { key: 'reason', label: 'Reason', type: 'textarea', required: true, options: [], default: '' },
     { key: 'paid', label: 'Paid?', type: 'select', required: true, options: ['Yes', 'No'], default: 'Yes' },
   ];
+  // apply_no_work marks this form as a driver of paid/unpaid no-work days in payroll
+  // generation (src/routes/hr.routes.ts generate-payslips). Any form carrying this action
+  // plus date_from/date_to/paid fields feeds the same engine — no_work_memo is just the
+  // pre-seeded one.
+  const actions = [{ type: 'apply_no_work' }];
   db.prepare(
-    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope)
-     VALUES ('No Work Memo', 'no_work_memo', 'NW', 'alert', ?, 'hr')`
-  ).run(JSON.stringify(fields));
+    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope, actions)
+     VALUES ('No Work Memo', 'no_work_memo', 'NW', 'alert', ?, 'hr', ?)`
+  ).run(JSON.stringify(fields), JSON.stringify(actions));
+}
+
+/** Item 4: ready-made HR memo / notice forms. Each is a normal form_definition (so it uses
+    the same Data Forms record UI, Form Builder editor and printable doc_template) but ships
+    with a curated field set, a default printable template body, and a preset `actions` list
+    that fires on record creation — the linked employee is messaged (their login account) and
+    the rendered notice is filed into their 201 documents. HR can restyle the template and
+    tune the actions in Form Builder afterward. Each seeded independently by slug so adding a
+    new one later doesn't need a fresh database. */
+function seedMemoForms(): void {
+  const employeeField = { key: 'employee_name', label: 'Employee', type: 'employee', required: true, options: [], default: '' };
+  const text = (key: string, label: string, required = false) => ({ key, label, type: 'text', required, options: [], default: '' });
+  const date = (key: string, label: string, required = false) => ({ key, label, type: 'date', required, options: [], default: '' });
+  const area = (key: string, label: string, required = false) => ({ key, label, type: 'textarea', required, options: [], default: '' });
+
+  const NOTIFY = { type: 'notify_employee', run_on: 'create' };
+  const FILE201 = { type: 'save_to_201', run_on: 'create' };
+
+  const MEMOS: Array<{
+    name: string; slug: string; prefix: string; icon: string;
+    fields: unknown[]; actions: unknown[];
+  }> = [
+    {
+      name: 'Notice to Explain (NTE)', slug: 'nte', prefix: 'NTE', icon: 'alert',
+      fields: [
+        { ...employeeField },
+        text('subject', 'Subject / Charge', true),
+        date('incident_date', 'Date of Incident', true),
+        area('details', 'Details of the Alleged Infraction', true),
+        date('response_deadline', 'Written Explanation Due By', true),
+      ],
+      actions: [NOTIFY, FILE201, { type: 'create_followup_task', due_field: 'response_deadline', title: 'NTE response due' }],
+    },
+    {
+      name: 'General Memo', slug: 'memo_general', prefix: 'MEMO', icon: 'note',
+      fields: [
+        { ...employeeField, required: false },
+        text('subject', 'Subject', true),
+        area('body', 'Memo Body', true),
+        date('effective_date', 'Effective Date'),
+      ],
+      actions: [NOTIFY, FILE201],
+    },
+    {
+      name: 'Notice of Disciplinary Action', slug: 'disciplinary_action', prefix: 'NODA', icon: 'alert',
+      fields: [
+        { ...employeeField },
+        text('offense', 'Offense', true),
+        {
+          key: 'penalty', label: 'Penalty', type: 'select', required: true,
+          options: ['Verbal Warning', 'Written Warning', 'Suspension', 'Preventive Suspension', 'Dismissal'],
+          default: 'Written Warning',
+        },
+        date('effective_date', 'Effective Date', true),
+        area('details', 'Findings / Basis', true),
+      ],
+      actions: [NOTIFY, FILE201],
+    },
+    {
+      name: 'Return to Work Order', slug: 'return_to_work', prefix: 'RTW', icon: 'calendar',
+      fields: [
+        { ...employeeField },
+        date('return_date', 'Report Back to Work On', true),
+        area('notes', 'Notes / Conditions'),
+      ],
+      actions: [NOTIFY, FILE201],
+    },
+    {
+      name: 'Incident Report', slug: 'incident_report', prefix: 'IR', icon: 'alert',
+      fields: [
+        { ...employeeField, label: 'Employee Involved', required: false },
+        date('incident_date', 'Date of Incident', true),
+        text('location', 'Location'),
+        area('description', 'What Happened', true),
+        text('witnesses', 'Witnesses'),
+      ],
+      actions: [FILE201],
+    },
+    {
+      name: 'Certificate of Employment', slug: 'coe', prefix: 'COE', icon: 'file',
+      fields: [
+        { ...employeeField },
+        text('position', 'Position'),
+        date('date_started', 'Date Started'),
+        date('date_ended', 'Date Ended (blank if still employed)'),
+        text('purpose', 'Purpose'),
+      ],
+      actions: [NOTIFY, FILE201],
+    },
+  ];
+
+  const insertDef = db.prepare(
+    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope, actions, template_id)
+     VALUES (?, ?, ?, ?, ?, 'hr', ?, ?)`
+  );
+  const insertTpl = db.prepare(
+    "INSERT INTO doc_templates (name, type, body) VALUES (?, 'generic', ?)"
+  );
+  for (const m of MEMOS) {
+    if (db.prepare('SELECT id FROM form_definitions WHERE slug = ?').get(m.slug)) continue;
+    const tplId = Number(insertTpl.run(m.name, memoTemplateBody(m.name, m.fields as Array<{ key: string; label: string }>)).lastInsertRowid);
+    insertDef.run(m.name, m.slug, m.prefix, m.icon, JSON.stringify(m.fields), JSON.stringify(m.actions), tplId);
+  }
+}
+
+/** A plain, restyleable printable body for a seeded memo — company letterhead, a heading,
+    then one labelled line per form field ({{key}} placeholders the form-record print flow
+    and src/form-actions.ts both substitute). Deliberately minimal; HR edits it in the doc
+    editor from Form Builder. */
+function memoTemplateBody(title: string, fields: Array<{ key: string; label: string }>): string {
+  const rows = fields
+    .map((f) => `  <div class="mm-row"><span class="mm-l">${f.label}</span><span class="mm-v">{{${f.key}}}</span></div>`)
+    .join('\n');
+  return `<style>
+  .memo { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; max-width: 720px; margin: 0 auto; }
+  .memo h1 { font-size: 15px; text-align: center; letter-spacing: .04em; margin: 0 0 2px; }
+  .memo .co { text-align: center; color: #555; font-size: 11px; margin-bottom: 16px; }
+  .memo h2 { font-size: 13px; border-bottom: 2px solid #222; padding-bottom: 3px; margin: 14px 0 10px; }
+  .memo .mm-row { display: flex; gap: 12px; padding: 4px 2px; border-bottom: 1px dotted #ccc; }
+  .memo .mm-l { width: 200px; color: #444; font-weight: 600; }
+  .memo .mm-v { flex: 1; white-space: pre-wrap; }
+  .memo .sig { display: flex; justify-content: space-between; margin-top: 40px; }
+  .memo .sig div { width: 46%; border-top: 1px solid #666; padding-top: 3px; text-align: center; font-size: 11px; color: #444; }
+</style>
+<div class="memo">
+  <h1>{{company.name}}</h1>
+  <div class="co">{{company.address}}</div>
+  <h2>${title.toUpperCase()}</h2>
+  <div class="mm-row"><span class="mm-l">Reference No.</span><span class="mm-v">{{number}}</span></div>
+  <div class="mm-row"><span class="mm-l">Date Issued</span><span class="mm-v">{{today}}</span></div>
+${rows}
+  <div class="sig">
+    <div>Issued by (HR)</div>
+    <div>Received by (Employee)</div>
+  </div>
+</div>`;
 }
 
 /** The PH public-holiday calendar HR marks pay premiums against — applies to every employee
