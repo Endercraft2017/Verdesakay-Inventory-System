@@ -146,10 +146,10 @@ a { color: var(--accent); }
   font-size: 12.5px;
 }
 .util-bar .grow { flex: 1; }
-.menu-search { position: relative; display: flex; align-items: center; gap: 6px; }
+.menu-search { position: relative; display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; max-width: 420px; }
 .menu-search > .ic { color: var(--text-faint); flex-shrink: 0; }
 .menu-search input {
-  width: 200px; height: 24px; padding: 2px 8px;
+  width: 100%; min-width: 0; height: 30px; padding: 4px 10px;
   border: 1px solid var(--border-strong); border-radius: 6px;
   background: var(--surface); color: var(--text); font-size: 12.5px;
 }
@@ -482,7 +482,7 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
 .sitemap-leaf:hover .ic { color: var(--accent); }
 
 /* ---------- Topbar ---------- */
-.topbar { display: flex; align-items: center; margin-bottom: 20px; gap: 12px; }
+.topbar { display: flex; align-items: center; flex-wrap: wrap; margin-bottom: 20px; gap: 12px; row-gap: 10px; }
 .topbar h2 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
 .topbar .sub { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
 .topbar .grow { flex: 1; }
@@ -545,6 +545,9 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
 }
 .form-card.clickable { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
 .form-card.clickable:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+.payroll-bundle-head { cursor: pointer; transition: background-color .12s; }
+.payroll-bundle-head:hover { background-color: var(--surface-2, #f5f7fa); }
+.payroll-bundle-head .payroll-bundle-actions .btn { white-space: nowrap; }
 .form-card-icon {
   width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
   background: var(--accent-weak); color: var(--accent);
@@ -632,10 +635,12 @@ textarea { resize: vertical; min-height: 84px; }
 .field-row { display: flex; gap: 14px; }
 .field-row > div { flex: 1; }
 
-.search-box { position: relative; }
+.search-box { position: relative; display: flex; align-items: center; }
 .search-box .ic { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-faint); pointer-events: none; }
-.search-box input { padding-left: 34px; }
-.search { max-width: 280px; }
+.search-box input { width: 100%; min-width: 0; padding-left: 34px; }
+/* A search box that shares a flex row (topbar, filter bars): grow to fill, but stay
+   within sane bounds and never collapse to unusable width on narrow viewports. */
+.search { flex: 1 1 220px; min-width: 160px; max-width: 380px; }
 
 /* ---------- Badges ---------- */
 .badge-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
@@ -850,7 +855,9 @@ textarea { resize: vertical; min-height: 84px; }
   .tree { border-right: none; border-bottom: 1px solid var(--border); }
   .rail { flex-direction: row; border-left: none; border-top: 1px solid var(--border); }
   .rail-spacer { display: none; }
-  .menu-search input { width: 140px; }
+  .menu-search { max-width: none; }
+  .menu-search input { width: 100%; }
+  .search { flex-basis: 100%; max-width: none; }
   .grid-2 { grid-template-columns: 1fr; }
   .field-row { flex-direction: column; gap: 0; }
   .form-grid { grid-template-columns: 1fr; }
