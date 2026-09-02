@@ -2,8 +2,14 @@
  *  de-dupe, and reconciliation into attendance_records. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
-import { currentKioskCode } from '../src/clock';
-import { run, queryOne } from '../src/db';
+// NOTE: `run`/`queryOne`/`currentKioskCode` are imported dynamically inside beforeAll,
+// after setupApp() sets DB_PATH — a top-level `import ... from '../src/db'` (directly, or
+// transitively via '../src/clock', which itself imports './db') would evaluate DB_PATH
+// before it's set (real data.db, not the throwaway per-file one). See helpers.ts's own
+// doc comment.
+let run: typeof import('../src/db').run;
+let queryOne: typeof import('../src/db').queryOne;
+let currentKioskCode: typeof import('../src/clock').currentKioskCode;
 
 let ctx: TestContext;
 let adminToken: string;
@@ -11,6 +17,8 @@ const A = () => ({ Authorization: `Bearer ${adminToken}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
+  ({ run, queryOne } = await import('../src/db'));
+  ({ currentKioskCode } = await import('../src/clock'));
   adminToken = await login(ctx.api);
 });
 afterAll(() => cleanup(ctx));

@@ -2,7 +2,10 @@
  *  Authorization: the filer's department head, or any hr.manage holder, may decide. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
-import { queryOne } from '../src/db';
+// NOTE: `queryOne` is imported dynamically inside beforeAll, after setupApp() sets DB_PATH
+// — a top-level `import ... from '../src/db'` would evaluate DB_PATH before it's set (real
+// data.db, not the throwaway per-file one). See helpers.ts's own doc comment.
+let queryOne: typeof import('../src/db').queryOne;
 
 let ctx: TestContext;
 let adminToken: string;
@@ -11,7 +14,18 @@ const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
+  ({ queryOne } = await import('../src/db'));
   adminToken = await login(ctx.api);
+  // leave_request isn't auto-seeded (same as no_work_memo before it got a seed function —
+  // real installs build it via Form Builder); create it here so this file's own throwaway
+  // DB has it, matching what hr.test.ts sets up for its own isolated DB.
+  await ctx.api.post('/api/form-definitions').set(A()).send({
+    name: 'Leave Request', slug: 'leave_request', number_prefix: 'LV', icon: 'calendar', scope: 'hr',
+    fields: [
+      { key: 'employee_name', label: 'Employee Name', type: 'text', required: true, options: [], default: '' },
+      { key: 'with_pay', label: 'With Pay?', type: 'select', required: true, options: ['Yes', 'No'], default: '' },
+    ],
+  });
 });
 afterAll(() => cleanup(ctx));
 
