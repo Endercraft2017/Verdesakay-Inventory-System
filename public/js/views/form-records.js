@@ -105,6 +105,12 @@ async function renderFormView(view, formId, initialPeriod) {
   let currentRecords = [];
   let selectedIds = new Set();
   const state = { q: '', status: '', period: initialPeriod || '' };
+  // Payroll "All periods" view: attendance_periods rows (id/dates), matched to a payslip's
+  // free-text `period` label — that label is independently editable at Generate Payslips time
+  // (see hr.routes.ts), so a match isn't guaranteed. A bundle with no match still shows its
+  // stats, just without the id-dependent quick actions (Export CSV, Post to GL).
+  let periodsMeta = [];
+  const expandedBundles = new Set(); // period labels the user has toggled open
 
   try { formDef = await API.get('/form-definitions/' + formId); }
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }
@@ -231,11 +237,13 @@ async function renderFormView(view, formId, initialPeriod) {
     tableEl.querySelectorAll('[data-row-check]').forEach((cb) => {
       cb.checked = selectedIds.has(Number(cb.dataset.rowCheck));
     });
-    const allCb = tableEl.querySelector('#fr-check-all');
-    if (allCb) {
-      allCb.checked = currentRecords.length > 0 && currentRecords.every((r) => selectedIds.has(r.id));
-      allCb.indeterminate = selectedIds.size > 0 && !allCb.checked;
-    }
+    // One check-all per table — the plain view has exactly one (#fr-check-all); the grouped
+    // payroll view has one per bundle ([data-check-all]), each scoped to just its own table's rows.
+    tableEl.querySelectorAll('#fr-check-all, [data-check-all]').forEach((allCb) => {
+      const rowChecks = [...allCb.closest('table').querySelectorAll('[data-row-check]')];
+      allCb.checked = rowChecks.length > 0 && rowChecks.every((cb) => selectedIds.has(Number(cb.dataset.rowCheck)));
+      allCb.indeterminate = !allCb.checked && rowChecks.some((cb) => selectedIds.has(Number(cb.dataset.rowCheck)));
+    });
     updateBulkBar();
   }
 
@@ -334,10 +342,14 @@ async function renderFormView(view, formId, initialPeriod) {
     const s = v == null ? '' : String(v);
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
-  function downloadCsv() {
-    if (!currentRecords.length) { UI.toast('No records to export', 'error'); return; }
+  // `records`/`labelHint` are only passed by a payroll bundle's own "Export CSV" button (scopes
+  // the download to just that period); the top-level header button calls this with no args,
+  // exporting whatever's currently filtered — unchanged from before.
+  function downloadCsv(records, labelHint) {
+    const list = records || currentRecords;
+    if (!list.length) { UI.toast('No records to export', 'error'); return; }
     const headers = ['Number', ...formDef.fields.map((f) => f.label), 'Status', 'Date'];
-    const rows = currentRecords.map((r) => [
+    const rows = list.map((r) => [
       r.number,
       ...formDef.fields.map((f) => r.data[f.key] ?? ''),
       r.status,
@@ -348,7 +360,7 @@ async function renderFormView(view, formId, initialPeriod) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${(formDef.slug || 'records') + (state.period ? '-' + state.period : '')}.csv`.replace(/[^a-z0-9._-]+/gi, '_');
+    a.download = `${(formDef.slug || 'records') + (labelHint || state.period ? '-' + (labelHint || state.period) : '')}.csv`.replace(/[^a-z0-9._-]+/gi, '_');
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -533,6 +545,11 @@ async function renderFormView(view, formId, initialPeriod) {
             periods.map((p) => `<option value="${UI.esc(p)}" ${p === cur ? 'selected' : ''}>${UI.esc(p)}</option>`).join('');
         } catch { /* non-critical */ }
       }
+      // Only needed for the grouped "All periods" bundle view below — skip the extra request
+      // otherwise (a single period selected already scopes everything, no grouping to do).
+      if (!state.period) {
+        periodsMeta = await API.get('/hr/periods').catch(() => []);
+      }
     }
     renderRecords(records);
   }
@@ -563,26 +580,15 @@ async function renderFormView(view, formId, initialPeriod) {
     </div>`;
   }
 
-  function renderRecords(records) {
-    const el = view.querySelector('#fr-table');
-    if (!records.length) {
-      el.innerHTML = UI.emptyState({
-        icon: formDef.icon || 'file',
-        title: state.q || state.status ? 'No matching records' : `No ${formDef.name} records yet`,
-        hint: state.q || state.status ? 'Try a different search or status.' : 'Create the first record to get started.',
-        action: !state.q && !state.status
-          ? `<button class="btn" id="fr-empty-new">${UI.icon('plus')} New Record</button>` : '',
-      });
-      const en = el.querySelector('#fr-empty-new');
-      if (en) en.onclick = () => recordModal(null);
-      return;
-    }
-
-    // Build column headers from form fields (show first 4 to keep table readable).
+  // Column headers + one <table> for a set of records — used both for the plain (ungrouped)
+  // view and, once per period, inside each collapsible bundle below. `checkAllAttr` lets each
+  // caller give its own "select all" checkbox a distinct hook (a literal id would collide once
+  // there's more than one table on screen).
+  function tableHTML(records, checkAllAttr) {
     const visibleFields = formDef.fields.slice(0, 4);
-    el.innerHTML = `${payslipSummaryHTML(records)}<table>
+    return `<table>
       <thead><tr>
-        <th style="width:36px;text-align:center"><input type="checkbox" id="fr-check-all" title="Select all" /></th>
+        <th style="width:36px;text-align:center"><input type="checkbox" ${checkAllAttr} title="Select all" /></th>
         <th>Number</th>
         ${visibleFields.map((f) => `<th>${UI.esc(f.label)}</th>`).join('')}
         <th>Status</th><th>Date</th><th></th>
@@ -606,12 +612,134 @@ async function renderFormView(view, formId, initialPeriod) {
           </td>
         </tr>`).join('')}
       </tbody></table>`;
+  }
 
-    // Select-all checkbox
-    el.querySelector('#fr-check-all').onchange = (e) => {
-      records.forEach((r) => e.target.checked ? selectedIds.add(r.id) : selectedIds.delete(r.id));
-      syncSelection();
-    };
+  // Same totals payslipSummaryHTML sums, factored out so a bundle header can show them too.
+  function payslipTotals(records) {
+    const num = (v) => Number(v) || 0;
+    const sum = (key) => records.reduce((s, r) => s + num(r.data[key]), 0);
+    const gross = sum('total_earnings');
+    const statutory = sum('sss') + sum('philhealth') + sum('pagibig') + sum('withholding_tax');
+    const totalDeductions = sum('total_deductions');
+    return { gross, statutory, otherDeductions: totalDeductions - statutory, totalDeductions, net: sum('net_pay') };
+  }
+
+  // Item: "the per payroll timeline should be collapsible, with that payroll's settings
+  // visible on the collapsed bundle" — one collapsible section per payroll period instead of
+  // one flat table mixing every cutoff together. Only kicks in for payroll's "All periods"
+  // view (state.period === '') — a single period already scopes everything, same flat table
+  // as before covers that case (and every non-payroll form) with no behavior change.
+  function bundlesHTML(records) {
+    const groups = new Map();
+    for (const r of records) {
+      const label = r.period || '(no period)';
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(r);
+    }
+    const bundles = [...groups.entries()].map(([label, recs]) => ({
+      label, records: recs, meta: periodsMeta.find((p) => p.label === label) || null,
+    }));
+    // Most recent cutoff first — by its real start_date when known, else fall back to the
+    // label itself (periods endpoint already returns labels in DESC order server-side).
+    bundles.sort((a, b) => {
+      if (a.meta && b.meta) return b.meta.start_date.localeCompare(a.meta.start_date);
+      if (a.meta) return -1;
+      if (b.meta) return 1;
+      return b.label.localeCompare(a.label);
+    });
+    // Nothing expanded yet (first render) -> default to just the most recent bundle open.
+    if (!expandedBundles.size && bundles.length) expandedBundles.add(bundles[0].label);
+
+    return bundles.map((b) => {
+      const open = expandedBundles.has(b.label);
+      const t = payslipTotals(b.records);
+      const dateRange = b.meta ? `${UI.esc(b.meta.start_date)} – ${UI.esc(b.meta.end_date)} · ` : '';
+      return `<div class="panel payroll-bundle" style="margin-bottom:10px;padding:0;overflow:hidden">
+        <div class="payroll-bundle-head clickable" data-bundle-toggle="${UI.esc(b.label)}"
+             style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px">
+          <span style="font-size:12px;width:14px;flex-shrink:0">${open ? '▾' : '▸'}</span>
+          <div style="min-width:170px">
+            <strong>${UI.esc(b.label)}</strong>
+            <div class="muted" style="font-size:11.5px">${dateRange}${b.records.length} payslip${b.records.length === 1 ? '' : 's'}</div>
+          </div>
+          <div style="display:flex;gap:22px;flex-wrap:wrap">
+            <div><div class="muted" style="font-size:10.5px">Gross</div><div style="font-weight:700;font-size:13px">${UI.money(t.gross)}</div></div>
+            <div><div class="muted" style="font-size:10.5px">Deductions</div><div style="font-weight:700;font-size:13px">${UI.money(t.totalDeductions)}</div></div>
+            <div><div class="muted" style="font-size:10.5px">Net Pay</div><div style="font-weight:700;font-size:13px">${UI.money(t.net)}</div></div>
+          </div>
+          <div class="grow"></div>
+          <div class="payroll-bundle-actions" data-bundle-actions style="display:flex;gap:6px" onclick="event.stopPropagation()">
+            <button type="button" class="btn secondary small" data-bundle-print="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print All</button>
+            <button type="button" class="btn secondary small" data-bundle-csv="${UI.esc(b.label)}">${UI.icon('download', 13)} Export CSV</button>
+            ${canManagePayroll && b.meta ? `<button type="button" class="btn secondary small" data-bundle-post-gl="${b.meta.id}" data-bundle-post-gl-label="${UI.esc(b.label)}">${UI.icon('building', 13)} Post to GL</button>` : ''}
+          </div>
+        </div>
+        <div ${open ? '' : 'hidden'} data-bundle-body="${UI.esc(b.label)}" style="border-top:1px solid var(--border,#dce6f2)">
+          ${tableHTML(b.records, `data-check-all="${UI.esc(b.label)}"`)}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderRecords(records) {
+    const el = view.querySelector('#fr-table');
+    if (!records.length) {
+      el.innerHTML = UI.emptyState({
+        icon: formDef.icon || 'file',
+        title: state.q || state.status ? 'No matching records' : `No ${formDef.name} records yet`,
+        hint: state.q || state.status ? 'Try a different search or status.' : 'Create the first record to get started.',
+        action: !state.q && !state.status
+          ? `<button class="btn" id="fr-empty-new">${UI.icon('plus')} New Record</button>` : '',
+      });
+      const en = el.querySelector('#fr-empty-new');
+      if (en) en.onclick = () => recordModal(null);
+      return;
+    }
+
+    const grouped = isPayroll && !state.period;
+    el.innerHTML = grouped
+      ? bundlesHTML(records)
+      : `${payslipSummaryHTML(records)}${tableHTML(records, 'id="fr-check-all"')}`;
+
+    if (grouped) {
+      el.querySelectorAll('[data-bundle-toggle]').forEach((head) => head.onclick = (e) => {
+        if (e.target.closest('[data-bundle-actions]')) return;
+        const label = head.dataset.bundleToggle;
+        if (expandedBundles.has(label)) expandedBundles.delete(label); else expandedBundles.add(label);
+        renderRecords(records); // cheap re-render — just flips which bundle bodies are hidden
+      });
+      el.querySelectorAll('[data-bundle-print]').forEach((b) => b.onclick = (e) => {
+        e.stopPropagation();
+        printSlips(records.filter((r) => (r.period || '(no period)') === b.dataset.bundlePrint).map((r) => r.data));
+      });
+      el.querySelectorAll('[data-bundle-csv]').forEach((b) => b.onclick = (e) => {
+        e.stopPropagation();
+        const label = b.dataset.bundleCsv;
+        downloadCsv(records.filter((r) => (r.period || '(no period)') === label), label);
+      });
+      el.querySelectorAll('[data-bundle-post-gl]').forEach((b) => b.onclick = async (e) => {
+        e.stopPropagation();
+        const label = b.dataset.bundlePostGlLabel;
+        if (!await UI.confirmDialog(`Post "${label}" payroll to the General Ledger?`, 'Post to GL')) return;
+        try {
+          const res = await API.post(`/hr/periods/${b.dataset.bundlePostGl}/post-payroll-gl`, { payroll_period: label });
+          UI.toast(`Posted to GL — journal entry ${res.entry ? res.entry.number : ''}`.trim());
+        } catch (err) { UI.toast(err.message, 'error'); }
+      });
+    }
+
+    // Select-all checkbox(es) — one per table (the plain view has exactly one; the grouped
+    // view has one per bundle, each scoped to just that bundle's own rows).
+    el.querySelectorAll('#fr-check-all, [data-check-all]').forEach((allCb) => {
+      allCb.onchange = (e) => {
+        const scope = e.target.closest('table').querySelectorAll('[data-row-check]');
+        scope.forEach((cb) => {
+          const id = Number(cb.dataset.rowCheck);
+          if (e.target.checked) selectedIds.add(id); else selectedIds.delete(id);
+        });
+        syncSelection();
+      };
+    });
     // Per-row checkboxes
     el.querySelectorAll('[data-row-check]').forEach((cb) => {
       cb.onclick = (e) => e.stopPropagation();
