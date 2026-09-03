@@ -840,7 +840,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(rec.data.basic_salary).toBeCloseTo(800, 6);
   });
 
-  it('an UNPAID No Work Memo does not credit the day, but is still not a Leave-form-based absence', async () => {
+  it('an UNPAID No Work Memo does not credit the day, but is not counted as an absence either — management\'s call, not an unexplained no-show', async () => {
     await ctx.api.post('/api/form-records').set(hdr()).send({
       form_def_id: noWorkFormId,
       data: { date_from: '2026-08-11', date_to: '2026-08-11', reason: 'Unpaid facility closure', paid: 'No' },
@@ -861,6 +861,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Unpaid No Work Cutoff' }).set(hdr());
     const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Unpaid No Work Employee');
     expect(rec.data.days_worked).toBe(0);
+    expect(rec.data.days_absent).toBe(0);
     expect(rec.data.basic_salary).toBeCloseTo(0, 6);
   });
 

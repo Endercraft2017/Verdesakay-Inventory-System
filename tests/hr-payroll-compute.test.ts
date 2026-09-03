@@ -208,10 +208,10 @@ describe('computeAttendanceForEmployee — company-wide No Work Memo (no per-emp
     expect(r.days_absent).toBe(0);
   });
 
-  it('an UNPAID no-work day contributes nothing, same as a plain absence (but is not a Leave form) — still counted as absent', () => {
+  it('an UNPAID no-work day contributes no pay but is NOT an absence — it was management\'s call, not an unexplained no-show', () => {
     const r = computeAttendanceForEmployee([day({ noWork: 'unpaid' })], DAILY_RATE, POLICY);
     expect(r.days_worked).toBe(0);
-    expect(r.days_absent).toBe(1);
+    expect(r.days_absent).toBe(0);
   });
 
   it('a linked, paid Leave form still takes precedence over a no-work memo on the same day', () => {
@@ -346,15 +346,17 @@ describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DO
     expect(r.days_absent).toBe(0);
   });
 
-  it('unworked "Work Cancellation (Unpaid)" falls into the days_absent bucket, same as an unpaid No Work Memo day', () => {
+  it('unworked "Work Cancellation (Unpaid)" is not an absence either — same non-absence treatment as an unpaid No Work Memo day', () => {
     const r = computeAttendanceForEmployee([day({ holiday: 'cancelled_unpaid' })], DAILY_RATE, POLICY);
     expect(r.days_worked).toBe(0);
-    expect(r.days_absent).toBe(1);
+    expect(r.days_absent).toBe(0);
   });
 
-  it('an unpaid cancellation on a rest day still shows in days_absent — an explicit excused-unpaid record isn\'t silenced by rest-day-ness', () => {
+  it('an unpaid cancellation on a rest day is still its own explicit status, not silenced by rest-day-ness — but still not an absence', () => {
     const r = computeAttendanceForEmployee([day({ holiday: 'cancelled_unpaid', isRestDay: true })], DAILY_RATE, POLICY);
-    expect(r.days_absent).toBe(1);
+    expect(r.days_absent).toBe(0);
+    expect(r.days_worked).toBe(0);
+    expect(r.days[0]!.status).toBe('unpaid_no_work');
   });
 
   it('a paid cancellation on a rest day is still a full paid day', () => {
@@ -648,6 +650,16 @@ describe('computeAttendanceForEmployee — per-day breakdown (days[]), for the r
     expect(r.days[0]!.ot_pay).toBe(0);
     expect(r.days[0]!.undertime_pay).toBe(0);
     expect(r.days[0]!.day_premium_pay).toBe(0);
+  });
+
+  it('real case: an unpaid No Work Memo day (e.g. "Health Break") is tagged "unpaid_no_work", not "absent" — days_absent stays 0', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ work_date: '2026-08-18', time_in: null, time_out: null, noWork: 'unpaid' })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('unpaid_no_work');
+    expect(r.days_absent).toBe(0);
+    expect(r.days_worked).toBe(0);
   });
 
   it('a paid Leave day is tagged status "paid_leave"; a paid No Work Memo day is tagged "paid_no_work"', () => {

@@ -70,7 +70,7 @@ export interface DayBreakdown {
   // Mirrors exactly which branch of the unworked-day precedence (see the comment above it)
   // fired, or 'worked' for a day with time logged — not a new aggregate-level distinction,
   // just makes an already-computed decision visible per day instead of only summed.
-  status: 'worked' | 'paid_leave' | 'paid_no_work' | 'paid_holiday' | 'rest_day_off' | 'absent';
+  status: 'worked' | 'paid_leave' | 'paid_no_work' | 'paid_holiday' | 'unpaid_no_work' | 'rest_day_off' | 'absent';
   late_minutes: number;
   late_pay: number;
   ot_hours: number;
@@ -178,41 +178,40 @@ export function computeAttendanceForEmployee(
 
     if (timeIn == null || timeOut == null) {
       // No usable time logged. In order of precedence: a linked, paid Leave form makes it a
-      // full paid day; otherwise a company-wide "No Work Memo" covering this date (management
-      // declared no work — a typhoon suspension, equipment failure, etc.) means it's automatically
-      // *not* counted as an absence at all, regardless of whether the employee filed anything —
-      // paid if the memo says so, contributing nothing either way if unpaid (same as a plain
-      // absence numerically, but distinguished here for anyone reading/extending this later:
-      // it was an excused, management-declared non-workday, not an unexplained no-show).
-      // An unworked Regular Holiday is *always* paid by law (Labor Code Art. 94) — 100%, same
-      // as a paid Leave day; simplified vs. DOLE's stricter "present/on paid leave the day
-      // immediately before" eligibility check, which this per-day loop doesn't look back for.
-      // Unlike a paid Leave/No Work/cancellation day, its 100% is booked straight into
-      // holiday_pay instead of days_worked/basic_salary — keeping it OUT of "Days Worked" so
-      // that field only ever counts days the employee was actually present or on ordinary paid
-      // leave, and the payslip's Holiday Pay line shows this day's money instead of it being
-      // silently absorbed into Basic Salary where it reads as an extra day worked. Checked
-      // BEFORE the No Work Memo below (even though a memo can independently cover the same
-      // date, e.g. "Suspension, Holiday" declared for a Regular Holiday the office is closed
-      // for) — the statutory Holiday Pay entitlement takes precedence over a discretionary
-      // company no-work declaration landing on the same day, not the other way around; a memo
-      // can't downgrade a Regular Holiday to an ordinary paid no-work day (or, if marked
-      // unpaid, strip the pay the law requires).
-      // An unworked Special Non-Working (or Special Working) day is plain "no work, no pay" —
-      // same bucket as an unpaid No Work Memo day, not specially distinguished; unlike Regular
-      // Holiday it has no statutory entitlement of its own, so a No Work Memo covering the same
-      // date is exactly what makes it paid — no separate branch needed here, the noWork check
-      // below already handles that case. A per-record "Work Cancellation" (equipment failure,
-      // sent home early, etc. — not a real holiday) is the same idea at per-employee granularity
-      // instead of company-wide: paid credits a full day same as a paid Leave/No Work Memo day,
-      // unpaid falls to the same bucket as those.
+      // full paid day; otherwise an unworked Regular Holiday is *always* paid by law (Labor
+      // Code Art. 94) — 100%, same as a paid Leave day; simplified vs. DOLE's stricter
+      // "present/on paid leave the day immediately before" eligibility check, which this
+      // per-day loop doesn't look back for. Unlike a paid Leave/No Work/cancellation day, its
+      // 100% is booked straight into holiday_pay instead of days_worked/basic_salary — keeping
+      // it OUT of "Days Worked" so that field only ever counts days the employee was actually
+      // present or on ordinary paid leave, and the payslip's Holiday Pay line shows this day's
+      // money instead of it being silently absorbed into Basic Salary where it reads as an
+      // extra day worked. Checked BEFORE the No Work Memo below (even though a memo can
+      // independently cover the same date, e.g. "Suspension, Holiday" declared for a Regular
+      // Holiday the office is closed for) — the statutory Holiday Pay entitlement takes
+      // precedence over a discretionary company no-work declaration landing on the same day,
+      // not the other way around; a memo can't downgrade a Regular Holiday to an ordinary paid
+      // no-work day (or, if marked unpaid, strip the pay the law requires).
+      // A company-wide "No Work Memo" covering this date (management declared no work — a
+      // typhoon suspension, equipment failure, health break, etc.) is automatically *not* an
+      // absence either way, paid or not: it was management's call, not the employee's, so it's
+      // never the employee's fault or choice the way an unexplained no-show is. Paid credits a
+      // full day (days_worked); unpaid contributes no pay but is still explicitly its own
+      // status ('unpaid_no_work') — distinct from a genuine absence, which is reserved for a day
+      // nothing here explains at all. An unworked Special Non-Working (or Special Working)
+      // holiday with no memo covering it is plain "no work, no pay" and — unlike a memo day —
+      // *does* fall to the genuine-absence bucket below, since it has no company declaration or
+      // statutory entitlement backing it the way Regular Holiday or a No Work Memo day does. A
+      // per-record "Work Cancellation" (equipment failure, sent home early, etc. — not a real
+      // holiday) is the same idea as a No Work Memo at per-employee granularity instead of
+      // company-wide: paid credits a full day, unpaid gets the same non-absence
+      // 'unpaid_no_work' treatment.
       // An unworked rest day is neither paid nor an absence — it was never a scheduled workday
-      // to begin with, so it contributes to neither days_worked nor days_absent (unlike the
-      // above cases, which are all still "supposed to work, but excused" one way or another) —
-      // but only when nothing else already explains the day; an explicit unpaid/excused marking
-      // (special_non_working, cancelled_unpaid) still shows up in days_absent even on a rest
-      // day, since that's a more specific, deliberately-recorded classification, not silence.
-      // Otherwise it's a genuine unpaid absence and contributes nothing.
+      // to begin with, so it contributes to neither days_worked nor days_absent — but only when
+      // nothing else already explains the day; an explicit no-work/cancellation marking (paid or
+      // unpaid) still shows its own distinct status even on a rest day, since that's a more
+      // specific, deliberately-recorded classification, not silence.
+      // Otherwise — nothing here explains the day at all — it's a genuine unpaid absence.
       if (slug === 'leave_request' && day.linkedForm?.data?.with_pay === 'Yes') {
         out.days_worked += 1;
         status = 'paid_leave';
@@ -220,14 +219,15 @@ export function computeAttendanceForEmployee(
         out.holiday_pay += dailyRate;
         dayPremium = dailyRate;
         status = 'paid_holiday';
-      } else if (day.noWork === 'paid') {
+      } else if (day.noWork === 'paid' || day.holiday === 'cancelled_paid') {
         out.days_worked += 1;
-        status = 'paid_no_work';
-      } else if (day.holiday === 'cancelled_paid') {
-        out.days_worked += 1;
-        status = 'paid_holiday';
+        status = day.holiday === 'cancelled_paid' ? 'paid_holiday' : 'paid_no_work';
+      } else if (day.noWork === 'unpaid' || day.holiday === 'cancelled_unpaid') {
+        // Company-declared no-work, unpaid — excused and documented, just not on the clock.
+        // Contributes to neither days_worked nor days_absent; distinct from rest_day_off below
+        // so a reader can tell "explicitly excused" apart from "wasn't scheduled at all".
+        status = 'unpaid_no_work';
       } else if (day.isRestDay && !day.holiday) {
-        // intentionally silent — see comment above
         status = 'rest_day_off';
       } else {
         out.days_absent += 1;
