@@ -326,6 +326,20 @@ describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DO
     expect(r.holiday_pay).toBe(DAILY_RATE);
   });
 
+  it('a Regular Holiday ALSO covered by a paid No Work Memo (e.g. "Suspension, Holiday") still routes to holiday_pay, not days_worked — the statutory entitlement wins over the discretionary memo', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'regular', noWork: 'paid' })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(0);
+    expect(r.days_absent).toBe(0);
+    expect(r.holiday_pay).toBe(DAILY_RATE);
+  });
+
+  it('a Regular Holiday covered by an UNPAID No Work Memo is still fully paid — a memo can\'t strip the statutory Regular Holiday entitlement', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'regular', noWork: 'unpaid' })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(0);
+    expect(r.days_absent).toBe(0);
+    expect(r.holiday_pay).toBe(DAILY_RATE);
+  });
+
   it('unworked "Work Cancellation (Paid)" credits a full paid day, same as a paid Leave day', () => {
     const r = computeAttendanceForEmployee([day({ holiday: 'cancelled_paid' })], DAILY_RATE, POLICY);
     expect(r.days_worked).toBe(1);

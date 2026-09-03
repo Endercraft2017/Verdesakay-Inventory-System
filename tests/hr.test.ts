@@ -608,6 +608,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(rec.data.late_absences).toBeCloseTo(100, 6); // 1 hour * 100/hr
     expect(rec.data.ot_hours).toBeCloseTo(1, 6);
     expect(rec.data.overtime_pay).toBeCloseTo(125, 6); // 1hr * 100 * 1.25
+    expect(rec.data.ot_rate_hour).toBeCloseTo(125, 6); // auto-computed now: 100/hr * 125% — no more hand-typing it
     expect(rec.data.basic_salary).toBeCloseTo(1600, 6); // 800 * 2 days
     expect(rec.data.total_earnings).toBeCloseTo(1600 + 125, 6);
   });
@@ -1332,6 +1333,33 @@ describe('generate-payslips — HR-marked holidays + rest-day pay end to end', (
     });
     const rec = await genOne(period.body.id, 'Holiday Override Cutoff', 'Holiday Override Employee');
     expect(rec.data.holiday_pay).toBe(0); // override wins — not the calendar's 200% Regular Holiday rate
+  });
+
+  it('a Regular Holiday ALSO covered by a paid No Work Memo still routes to holiday_pay, is excluded from days_worked, and is not an absence — the statutory entitlement wins over the memo', async () => {
+    const forms = await ctx.api.get('/api/form-definitions').set(hdr());
+    const noWorkFormId = forms.body.find((f: { slug: string }) => f.slug === 'no_work_memo').id;
+    await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: noWorkFormId,
+      data: { date_from: '2026-01-01', date_to: '2026-01-01', reason: 'Suspension, Holiday', paid: 'Yes' },
+      status: 'approved',
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-HOL-NOWORK', name: 'Holiday No Work Employee', daily_rate: 1000 });
+    // 2026-01-01 is already seeded in the calendar as a Regular Holiday, AND now also covered
+    // by the paid No Work Memo above — nobody logged any time (unworked, per the memo).
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Holiday No Work Cutoff', start_date: '2026-01-01', end_date: '2026-01-01' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-01-01', time_in: '', time_out: '', notes: '' }],
+    });
+    const rec = await genOne(period.body.id, 'Holiday No Work Cutoff', 'Holiday No Work Employee');
+    expect(rec.data.days_worked).toBe(0);
+    expect(rec.data.days_absent).toBe(0);
+    expect(rec.data.holiday_pay).toBe(1000);
+    expect(rec.data.basic_salary).toBe(0); // the day's pay is in holiday_pay, not folded into basic salary
+    expect(rec.data.total_earnings).toBe(1000); // same total money either way, just the right line
   });
 
   it('with no per-record override, the Company Holidays calendar applies automatically', async () => {

@@ -191,12 +191,21 @@ export function computeAttendanceForEmployee(
       // holiday_pay instead of days_worked/basic_salary — keeping it OUT of "Days Worked" so
       // that field only ever counts days the employee was actually present or on ordinary paid
       // leave, and the payslip's Holiday Pay line shows this day's money instead of it being
-      // silently absorbed into Basic Salary where it reads as an extra day worked.
+      // silently absorbed into Basic Salary where it reads as an extra day worked. Checked
+      // BEFORE the No Work Memo below (even though a memo can independently cover the same
+      // date, e.g. "Suspension, Holiday" declared for a Regular Holiday the office is closed
+      // for) — the statutory Holiday Pay entitlement takes precedence over a discretionary
+      // company no-work declaration landing on the same day, not the other way around; a memo
+      // can't downgrade a Regular Holiday to an ordinary paid no-work day (or, if marked
+      // unpaid, strip the pay the law requires).
       // An unworked Special Non-Working (or Special Working) day is plain "no work, no pay" —
-      // same bucket as an unpaid No Work Memo day, not specially distinguished. A per-record
-      // "Work Cancellation" (equipment failure, sent home early, etc. — not a real holiday) is
-      // the same idea at per-employee granularity instead of company-wide: paid credits a full
-      // day same as a paid Leave/No Work Memo day, unpaid falls to the same bucket as those.
+      // same bucket as an unpaid No Work Memo day, not specially distinguished; unlike Regular
+      // Holiday it has no statutory entitlement of its own, so a No Work Memo covering the same
+      // date is exactly what makes it paid — no separate branch needed here, the noWork check
+      // below already handles that case. A per-record "Work Cancellation" (equipment failure,
+      // sent home early, etc. — not a real holiday) is the same idea at per-employee granularity
+      // instead of company-wide: paid credits a full day same as a paid Leave/No Work Memo day,
+      // unpaid falls to the same bucket as those.
       // An unworked rest day is neither paid nor an absence — it was never a scheduled workday
       // to begin with, so it contributes to neither days_worked nor days_absent (unlike the
       // above cases, which are all still "supposed to work, but excused" one way or another) —
@@ -207,13 +216,13 @@ export function computeAttendanceForEmployee(
       if (slug === 'leave_request' && day.linkedForm?.data?.with_pay === 'Yes') {
         out.days_worked += 1;
         status = 'paid_leave';
-      } else if (day.noWork === 'paid') {
-        out.days_worked += 1;
-        status = 'paid_no_work';
       } else if (day.holiday === 'regular') {
         out.holiday_pay += dailyRate;
         dayPremium = dailyRate;
         status = 'paid_holiday';
+      } else if (day.noWork === 'paid') {
+        out.days_worked += 1;
+        status = 'paid_no_work';
       } else if (day.holiday === 'cancelled_paid') {
         out.days_worked += 1;
         status = 'paid_holiday';

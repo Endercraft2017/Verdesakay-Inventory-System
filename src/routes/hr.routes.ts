@@ -1138,19 +1138,25 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
 
       // Regenerating recomputes every attendance-derived field fresh — that's the point of
       // "generate payslips" (pick up the latest attendance/link edits) — but purely-manual
-      // fields with no computed source (statutory deductions, cash advance, the OT peso rate,
-      // and the final net pay) are carried over from a previous generation rather than reset to
-      // zero, same as the un-computed fields always did before this feature. Rest Day OT USED to
-      // be in this bucket (hand-typed every time) — it's now auto-computed from attendance
-      // (holiday/rest-day marking, see hr-payroll-compute.ts), same as overtime_pay already was,
-      // so a value someone typed in before this feature will be overwritten on next regenerate.
+      // fields with no computed source (statutory deductions, cash advance, and the final net
+      // pay) are carried over from a previous generation rather than reset to zero, same as the
+      // un-computed fields always did before this feature. Rest Day OT and OT Rate/Hour USED to
+      // be in this bucket (hand-typed every time) — both are now auto-computed (Rest Day OT from
+      // attendance holiday/rest-day marking, OT Rate/Hour as hourly rate x the policy's OT% —
+      // see below), so a value someone typed in before this feature will be overwritten on next
+      // regenerate.
       const prev = existing ? (() => { try { return JSON.parse(existing.data as string) as Record<string, unknown>; } catch { return {}; } })() : {};
       const num = (v: unknown): number => Number(v) || 0;
       // Purely-manual fields with no computed source are carried over rather than reset.
       const prevManual = {
         cash_advance: prev.cash_advance,
-        ot_rate_hour: prev.ot_rate_hour, pay_date: prev.pay_date,
+        pay_date: prev.pay_date,
       };
+      // The base (ordinary-day) OT rate per hour — informational, same "one flat number" the
+      // Daily Rate line already is; the actual overtime_pay above still scales per-day by
+      // holiday/rest-day (see dayRateMultiplier in hr-payroll-compute.ts), this is just what
+      // an ordinary day's OT hour is worth at a glance.
+      const otRateHour = round2((emp.daily_rate / 8) * (policy.ot_rate_percent / 100));
 
       const cashAdvance = num(prevManual.cash_advance);
       const totalEarnings = round2(
@@ -1215,6 +1221,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         // in src/hr-payroll-compute.ts — despite the name, it never held an absence figure).
         days_absent: computed.days_absent,
         ot_hours: computed.ot_hours,
+        ot_rate_hour: otRateHour,
         overtime_pay: round2(computed.overtime_pay),
         undertime_pay: round2(computed.undertime_pay),
         holiday_pay: round2(computed.holiday_pay),
