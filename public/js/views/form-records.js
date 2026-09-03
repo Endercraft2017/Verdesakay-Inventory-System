@@ -489,22 +489,15 @@ async function renderFormView(view, formId, initialPeriod) {
       <div class="panel" style="margin-bottom:14px;padding:12px 14px">
         <strong>Statutory Deductions</strong>
         <p class="muted" style="font-size:12px;margin:2px 0 10px">Turn off any deduction that shouldn't apply to
-          this one payslip — recomputes instantly (withholding tax's own taxable base moves too), nothing is saved
-          until you click Save.</p>
-        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px">
+          this one payslip — the slip above updates instantly as you toggle (withholding tax's own taxable base
+          moves too), nothing is saved until you click Save.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:16px">
           ${Object.keys(DED_LABELS).map((k) => `
             <label style="display:flex;align-items:center;gap:6px;font-weight:normal">
               <input type="checkbox" data-ded="${k}" style="width:auto" ${r.data[k + '_applied'] !== false ? 'checked' : ''} ${locked ? 'disabled' : ''} />
               ${DED_LABELS[k]}
             </label>`).join('')}
         </div>
-        <div class="line-items"><table class="line-table">
-          <tbody>
-            ${Object.keys(DED_LABELS).map((k) => `<tr><td>${DED_LABELS[k]}</td><td class="right" data-out="${k}">${UI.money(r.data[k])}</td></tr>`).join('')}
-            <tr><th>Total Deductions</th><th class="right" data-out="total_deductions">${UI.money(r.data.total_deductions)}</th></tr>
-            <tr><th>Net Pay</th><th class="right" data-out="net_pay">${UI.money(r.data.net_pay)}</th></tr>
-          </tbody>
-        </table></div>
         ${locked
           ? `<p class="muted" style="font-size:12px;margin-top:8px">This payslip is marked Paid — unmark it first to change its deductions.</p>`
           : `<button type="button" class="btn small" id="pd-ded-save" style="margin-top:10px">Save Deductions</button>`}
@@ -515,7 +508,7 @@ async function renderFormView(view, formId, initialPeriod) {
       size: 'xl',
       headActionHTML: `<button type="button" class="btn secondary small" id="pd-print">${UI.icon('printer')} Print</button>`,
       bodyHTML: `
-        <div style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff;color:#111">${slipHtml}</div>
+        <div id="pd-slip" style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff;color:#111">${slipHtml}</div>
         ${detail.late_exempt ? `<p class="muted" style="font-size:12px;margin:0 0 8px">This employee is exempt from late deductions —
           late minutes are still shown below for reference, but never subtracted from pay.</p>` : ''}
         ${dedSection}
@@ -524,24 +517,30 @@ async function renderFormView(view, formId, initialPeriod) {
         </tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
       cancelText: 'Close',
       onOpen: (ov) => {
+        // Local working copy — the print button and any live edits below use this, never
+        // mutating the caller's own `r.data` unless/until Save actually persists it, so
+        // closing without saving leaves the record (and the list behind this modal) untouched.
+        let liveData = { ...r.data };
         const btn = ov.querySelector('#pd-print');
-        if (btn) btn.onclick = () => printSlips([r.data]);
+        if (btn) btn.onclick = () => printSlips([liveData]);
 
         const dedCheckboxes = ov.querySelectorAll('[data-ded]');
         if (!dedCheckboxes.length) return;
+        const slipEl = ov.querySelector('#pd-slip');
         const currentApplied = () => {
           const applied = {};
           dedCheckboxes.forEach((cb) => { applied[cb.dataset.ded + '_applied'] = cb.checked; });
           return applied;
         };
-        const renderPreview = (vals) => {
-          Object.keys(DED_LABELS).concat(['total_deductions', 'net_pay']).forEach((k) => {
-            const cell = ov.querySelector(`[data-out="${k}"]`);
-            if (cell && vals[k] != null) cell.textContent = UI.money(vals[k]);
-          });
+        // Re-renders the ACTUAL slip visual with the recomputed numbers — this is the one
+        // thing the user is looking at, not a separate summary table off to the side.
+        const applyPreview = (vals) => {
+          liveData = { ...liveData, ...vals };
+          slipEl.innerHTML = typeof renderSlip === 'function' ? renderSlip(liveData, templateBody) : slipEl.innerHTML;
         };
         const refreshPreview = async () => {
-          try { renderPreview(await API.post(`/hr/payroll/${r.id}/preview-deductions`, currentApplied())); }
+          dedCheckboxes.forEach((cb) => { cb.disabled = locked; });
+          try { applyPreview(await API.post(`/hr/payroll/${r.id}/preview-deductions`, currentApplied())); }
           catch (err) { UI.toast(err.message, 'error'); }
         };
         dedCheckboxes.forEach((cb) => cb.addEventListener('change', refreshPreview));
@@ -552,7 +551,8 @@ async function renderFormView(view, formId, initialPeriod) {
             saveBtn.disabled = true;
             try {
               const vals = await API.put(`/hr/payroll/${r.id}/deductions`, currentApplied());
-              renderPreview(vals);
+              applyPreview(vals);
+              r.data = liveData; // so the row behind this modal reflects it once it closes
               UI.toast('Deductions saved');
               load();
             } catch (err) { UI.toast(err.message, 'error'); }
