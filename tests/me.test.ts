@@ -6,6 +6,7 @@ import { setupApp, cleanup, login, createEmployee, type TestContext } from './he
 // top-level `import ... from '../src/db'` would evaluate DB_PATH before it's set (real
 // data.db, not the throwaway per-file one). See helpers.ts's own doc comment.
 let run: typeof import('../src/db').run;
+let __sentPush: typeof import('../src/push').__sentPush;
 
 let ctx: TestContext;
 let adminToken: string;
@@ -14,6 +15,7 @@ const A = () => ({ Authorization: `Bearer ${adminToken}` });
 beforeAll(async () => {
   ctx = await setupApp();
   ({ run } = await import('../src/db'));
+  ({ __sentPush } = await import('../src/push'));
   adminToken = await login(ctx.api);
   // leave_request isn't auto-seeded (same as no_work_memo before it got a seed function —
   // real installs build it via Form Builder); create it here so this file's own throwaway
@@ -131,6 +133,122 @@ describe('GET /api/me/today', () => {
     expect(res.status).toBe(200);
     expect(res.body.clock).toBeNull();
     expect(res.body.stack.some((s: { kind: string }) => s.kind === 'task')).toBe(true);
+  });
+});
+
+describe('unrecorded OT (mobile prompt + Home reminder)', () => {
+  async function shiftEndingAt(endTime: string) {
+    const s = await ctx.api.post('/api/hr/shifts').set(A())
+      .send({ name: 'OT Test Shift ' + endTime, start_time: '08:00', end_time: endTime, is_default: false });
+    return s.body.id as number;
+  }
+  function today() { return new Date().toISOString().slice(0, 10); }
+
+  it('flags a day with a block-worthy clock-out past the shift end and no OT form linked', async () => {
+    const a = await linked();
+    const shiftId = await shiftEndingAt('17:00');
+    const p = await ctx.api.post('/api/hr/periods').set(A())
+      .send({ label: 'OT Detect Cutoff', start_date: today(), end_date: today() });
+    run(
+      'INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, shift_id) VALUES (?, ?, ?, ?, ?, ?)',
+      p.body.id, a.id, today(), '08:00', '19:00', shiftId
+    );
+
+    const res = await ctx.api.get('/api/me/unrecorded-ot').set({ Authorization: `Bearer ${a.token}` });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].work_date).toBe(today());
+    expect(res.body[0].ot_minutes).toBeGreaterThan(0);
+  });
+
+  it('does not flag a day already linked to an Overtime Request form', async () => {
+    const a = await linked();
+    const shiftId = await shiftEndingAt('17:00');
+    const otFormId = await formBySlug('overtime_request');
+    const otRecord = await ctx.api.post('/api/form-records').set(A())
+      .send({ form_def_id: otFormId, data: { employee_name: a.name, work_date: today() }, status: 'approved' });
+    const p = await ctx.api.post('/api/hr/periods').set(A())
+      .send({ label: 'OT Linked Cutoff', start_date: today(), end_date: today() });
+    run(
+      'INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, shift_id, form_record_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      p.body.id, a.id, today(), '08:00', '19:00', shiftId, otRecord.body.id
+    );
+
+    const res = await ctx.api.get('/api/me/unrecorded-ot').set({ Authorization: `Bearer ${a.token}` });
+    expect(res.body).toHaveLength(0);
+  });
+
+  it('a day left on time is never flagged', async () => {
+    const a = await linked();
+    const shiftId = await shiftEndingAt('17:00');
+    const p = await ctx.api.post('/api/hr/periods').set(A())
+      .send({ label: 'OT None Cutoff', start_date: today(), end_date: today() });
+    run(
+      'INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, shift_id) VALUES (?, ?, ?, ?, ?, ?)',
+      p.body.id, a.id, today(), '08:00', '17:00', shiftId
+    );
+
+    const res = await ctx.api.get('/api/me/unrecorded-ot').set({ Authorization: `Bearer ${a.token}` });
+    expect(res.body).toHaveLength(0);
+  });
+
+  it('surfaces as an "ot" item in the /me/today stack, with the flagged date in params', async () => {
+    const a = await linked();
+    const h = { Authorization: `Bearer ${a.token}` };
+    const shiftId = await shiftEndingAt('17:00');
+    const p = await ctx.api.post('/api/hr/periods').set(A())
+      .send({ label: 'OT Stack Cutoff', start_date: today(), end_date: today() });
+    run(
+      'INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, shift_id) VALUES (?, ?, ?, ?, ?, ?)',
+      p.body.id, a.id, today(), '08:00', '19:00', shiftId
+    );
+
+    const res = await ctx.api.get('/api/me/today').set(h);
+    const otItem = res.body.stack.find((s: { kind: string }) => s.kind === 'ot');
+    expect(otItem).toBeDefined();
+    expect(otItem.route).toBe('requests');
+    expect(otItem.params).toMatchObject({ type: 'overtime_request', date: today() });
+  });
+
+  it('PUT /hr/periods/:id/attendance pushes a notification to the employee when the saved day shows unrecorded OT', async () => {
+    const a = await linked();
+    await ctx.api.post('/api/push/subscribe').set({ Authorization: `Bearer ${a.token}` })
+      .send({ endpoint: 'https://push.example.com/sub/ot-' + a.id, keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+    const shiftId = await shiftEndingAt('17:00');
+    const p = await ctx.api.post('/api/hr/periods').set(A())
+      .send({ label: 'OT Notify Cutoff', start_date: today(), end_date: today() });
+    await ctx.api.post(`/api/hr/periods/${p.body.id}/employees`).set(A()).send({ employee_id: a.id });
+
+    __sentPush.length = 0;
+    const res = await ctx.api.put(`/api/hr/periods/${p.body.id}/attendance`).set(A()).send({
+      employee_id: a.id,
+      days: [{ work_date: today(), time_in: '08:00', time_out: '19:00', notes: '', shift_id: shiftId }],
+    });
+    expect(res.status).toBe(200);
+    // The notify call is fire-and-forget after the response — give its microtask a tick.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(__sentPush.some((x) => /Unrecorded overtime/.test(x.payload.title))).toBe(true);
+  });
+
+  it('PUT /hr/periods/:id/attendance does NOT notify when the day is linked to an Overtime Request form', async () => {
+    const a = await linked();
+    await ctx.api.post('/api/push/subscribe').set({ Authorization: `Bearer ${a.token}` })
+      .send({ endpoint: 'https://push.example.com/sub/ot-linked-' + a.id, keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+    const shiftId = await shiftEndingAt('17:00');
+    const otFormId = await formBySlug('overtime_request');
+    const otRecord = await ctx.api.post('/api/form-records').set(A())
+      .send({ form_def_id: otFormId, data: { employee_name: a.name, work_date: today() }, status: 'approved' });
+    const p = await ctx.api.post('/api/hr/periods').set(A())
+      .send({ label: 'OT No-Notify Cutoff', start_date: today(), end_date: today() });
+    await ctx.api.post(`/api/hr/periods/${p.body.id}/employees`).set(A()).send({ employee_id: a.id });
+
+    __sentPush.length = 0;
+    await ctx.api.put(`/api/hr/periods/${p.body.id}/attendance`).set(A()).send({
+      employee_id: a.id,
+      days: [{ work_date: today(), time_in: '08:00', time_out: '19:00', notes: '', shift_id: shiftId, form_record_id: otRecord.body.id }],
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(__sentPush.some((x) => /Unrecorded overtime/.test(x.payload.title))).toBe(false);
   });
 });
 

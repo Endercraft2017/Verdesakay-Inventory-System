@@ -69,16 +69,32 @@
     API.post('/hr/clock/punch', { code: code })
       .then(function (r) {
         chime(r.kind);
-        mSuccess(view, {
-          title: r.kind === 'in' ? 'Clocked IN' : 'Clocked OUT',
-          lines: [
-            (SEG_LABEL[r.segment] || r.segment) + ' · ' + r.at,
-            r.hours_today + ' h today' + (r.duplicate ? ' (already recorded)' : ''),
-          ],
-          actions: [
-            { label: 'Done', onClick: function () { load(view); } },
-            { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
-          ],
+        var actions = [
+          { label: 'Done', onClick: function () { load(view); } },
+          { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
+        ];
+        var lines = [
+          (SEG_LABEL[r.segment] || r.segment) + ' · ' + r.at,
+          r.hours_today + ' h today' + (r.duplicate ? ' (already recorded)' : ''),
+        ];
+        if (r.kind !== 'out') {
+          mSuccess(view, { title: 'Clocked IN', lines: lines, actions: actions });
+          return;
+        }
+        // Clocking out: check whether HR's already-entered time for today shows unrecorded
+        // OT (a shift-aware check against attendance_records — this raw punch alone doesn't
+        // know the shift) with no Overtime Request form linked, and offer to file one right
+        // here if so.
+        var today = new Date().toISOString().slice(0, 10);
+        API.get('/me/unrecorded-ot').then(function (rows) {
+          var mine = (rows || []).filter(function (d) { return d.work_date === today; })[0];
+          if (mine) {
+            lines.push('⏱️ ' + Math.round(mine.ot_minutes / 60 * 10) / 10 + ' h unrecorded OT — no request filed');
+            actions.unshift({ label: 'Request OT', onClick: function () { MApp.go('requests', { type: 'overtime_request', date: today }); } });
+          }
+          mSuccess(view, { title: 'Clocked OUT', lines: lines, actions: actions });
+        }).catch(function () {
+          mSuccess(view, { title: 'Clocked OUT', lines: lines, actions: actions });
         });
       })
       .catch(function (ex) {

@@ -2,7 +2,7 @@
     exactly the kind of finicky business logic worth pinning down precisely, independent of any
     DB or HTTP concerns (the module itself takes plain data in, plain numbers out). */
 import { describe, it, expect } from 'vitest';
-import { computeAttendanceForEmployee, type AttendanceDay } from '../src/hr-payroll-compute';
+import { computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../src/hr-payroll-compute';
 import type { PayrollPolicy } from '../src/types';
 
 const POLICY: PayrollPolicy = {
@@ -660,5 +660,52 @@ describe('computeAttendanceForEmployee — per-day breakdown (days[]), for the r
     expect(r2.days).toHaveLength(1);
     expect(r1.days[0]!.late_pay).toBe(0);
     expect(r2.days[0]!.late_pay).toBeGreaterThan(0);
+  });
+});
+
+describe('unrecordedOtMinutes — flags a block-worthy clock-out past shift end with no OT form', () => {
+  it('a raw late clock-out with no linked form is flagged', () => {
+    const policy = { ...POLICY, ot_unit: 'minute' as const };
+    const mins = unrecordedOtMinutes(day({ time_in: '08:00', time_out: '18:00' }), policy);
+    expect(mins).toBe(60);
+  });
+
+  it('already linked to an Overtime Request form -> not flagged (already authorized)', () => {
+    const mins = unrecordedOtMinutes(
+      day({ time_in: '08:00', time_out: '18:00', linkedForm: { slug: 'overtime_request', data: {} } }),
+      POLICY
+    );
+    expect(mins).toBe(0);
+  });
+
+  it('an Offset form still counts as "no OT form" — flagged if the clock-out is past the SHIFTED end', () => {
+    const policy = { ...POLICY, ot_unit: 'minute' as const };
+    const mins = unrecordedOtMinutes(
+      day({ time_in: '08:00', time_out: '19:00', linkedForm: { slug: 'offset_form', data: { new_time_out: '18:00' } } }),
+      policy
+    );
+    expect(mins).toBe(60); // 1hr past the offset's own new end, not the original shift end
+  });
+
+  it('leaving on time or early is never flagged', () => {
+    expect(unrecordedOtMinutes(day({ time_in: '08:00', time_out: '17:00' }), POLICY)).toBe(0);
+    expect(unrecordedOtMinutes(day({ time_in: '08:00', time_out: '16:00' }), POLICY)).toBe(0);
+  });
+
+  it('no shift assigned -> never flagged (nothing to judge against)', () => {
+    const mins = unrecordedOtMinutes(day({ time_in: '08:00', time_out: '20:00', shift: null }), POLICY);
+    expect(mins).toBe(0);
+  });
+
+  it('no time logged -> never flagged', () => {
+    expect(unrecordedOtMinutes(day({ time_in: null, time_out: null }), POLICY)).toBe(0);
+  });
+
+  it('agrees with computeAttendanceForEmployee\'s own OT minutes when require_ot_form is off, on the same day — the two must never independently drift', () => {
+    const policy = { ...POLICY, ot_unit: 'minute' as const, require_ot_form: false };
+    const d = day({ time_in: '08:00', time_out: '18:37' });
+    const flagged = unrecordedOtMinutes(d, policy);
+    const computed = computeAttendanceForEmployee([d], DAILY_RATE, policy);
+    expect(flagged).toBe(Math.round(computed.days[0]!.ot_hours * 60));
   });
 });

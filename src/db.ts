@@ -1598,6 +1598,7 @@ function seed(): void {
   seedTemplates();
   seedHrPayrollForm();
   seedNoWorkMemoForm();
+  seedHrRequestForms();
   seedMemoForms();
   seedCompanyHolidaysForm();
   seedPayrollTables();
@@ -1728,7 +1729,27 @@ function seedHrPayrollForm(): void {
     so Time Keeping's "Holidays / No Work" button (hr-timekeeping.js) always has a form to
     write records into, the same way Payroll's button always has hr_payroll. */
 function seedNoWorkMemoForm(): void {
-  if (db.prepare("SELECT id FROM form_definitions WHERE slug = 'no_work_memo'").get()) return;
+  const existing = db.prepare("SELECT id, actions FROM form_definitions WHERE slug = 'no_work_memo'").get() as
+    { id: number; actions: string } | undefined;
+  if (existing) {
+    // Touch up an install that had no_work_memo seeded before the apply_no_work action existed
+    // (or otherwise lost it) — without this action, the form never actually fed
+    // generate-payslips (buildNoWorkResolver/noWorkFormIdsWithAction in hr.routes.ts only pulls
+    // from forms carrying it), even though the record list and Daily Time's day-tag display both
+    // look fully functional — that display reads no_work_memo records directly by slug, not
+    // through this action, so the gap was invisible there. A real bug found live: an UNPAID
+    // memo on a date is numerically indistinguishable from a plain absence either way, so it can
+    // silently look correct even when never actually applied — only a PAID memo (or one that
+    // should override a Regular Holiday's own pay) exposes it.
+    try {
+      const actions = JSON.parse(existing.actions || '[]') as { type: string }[];
+      if (!actions.some((a) => a.type === 'apply_no_work')) {
+        actions.push({ type: 'apply_no_work' });
+        db.prepare('UPDATE form_definitions SET actions = ? WHERE id = ?').run(JSON.stringify(actions), existing.id);
+      }
+    } catch { /* leave as-is if the stored actions are somehow unparseable */ }
+    return;
+  }
   const fields = [
     { key: 'date_from', label: 'Date From', type: 'date', required: true, options: [], default: '' },
     { key: 'date_to', label: 'Date To', type: 'date', required: true, options: [], default: '' },
@@ -1744,6 +1765,83 @@ function seedNoWorkMemoForm(): void {
     `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope, actions)
      VALUES ('No Work Memo', 'no_work_memo', 'NW', 'alert', ?, 'hr', ?)`
   ).run(JSON.stringify(fields), JSON.stringify(actions));
+}
+
+/** src/hr-payroll-compute.ts has always understood a day linked to an 'overtime_request' /
+    'undertime_request' / 'offset_form' / 'holiday_work_request' form (by slug — see
+    AttendanceDay.linkedForm), and src/routes/me.routes.ts's REQUEST_SLUGS has always listed all
+    four as forms an employee may self-file from mobile — but unlike hr_payroll/no_work_memo/
+    company_holiday, none of the four were ever auto-seeded, only ever created by hand via Form
+    Builder -> Quick Add. A real gap found live: on an install where nobody happened to create
+    them, mobile's "New request" screen (GET /me/request-types, which only lists forms that
+    already exist) silently just never offered Overtime/Undertime/Offset/Holiday Work as
+    options — no error, they simply weren't there — and HR's Daily Time "link a form" picker had
+    nothing to link either. Auto-seeded now, each independently by slug (same as seedMemoForms
+    below) so an install that already hand-created one of these isn't touched, only the missing
+    ones are added. None carry a special `actions` entry — the compute engine reads them
+    directly by slug, not through an action-based lookup like no_work_memo needs. */
+function seedHrRequestForms(): void {
+  const employeeField = { key: 'employee_name', label: 'Employee', type: 'employee', required: true, options: [], default: '' };
+  const dateField = (key: string, label: string) => ({ key, label, type: 'date', required: true, options: [], default: '' });
+  const area = (key: string, label: string, required = false) => ({ key, label, type: 'textarea', required, options: [], default: '' });
+
+  const FORMS: Array<{ name: string; slug: string; prefix: string; icon: string; fields: unknown[] }> = [
+    {
+      name: 'Overtime Request', slug: 'overtime_request', prefix: 'OT', icon: 'history',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Date'),
+        // Informational only — actual OT hours/pay are computed from the day's real clock-in/
+        // out against the shift (src/hr-payroll-compute.ts); this form only authorizes it.
+        { key: 'hours_estimate', label: 'Estimated OT Hours', type: 'number', required: false, options: [], default: '' },
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
+      name: 'Undertime Request', slug: 'undertime_request', prefix: 'UT', icon: 'history',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Date'),
+        // with_pay is read directly by the compute engine — 'Yes' waives the undertime
+        // deduction outright (a company-authorized paid early release), 'No' still deducts
+        // (documentation only). Same self-selected-at-filing pattern as leave_request's own
+        // with_pay field.
+        { key: 'with_pay', label: 'With Pay?', type: 'select', required: true, options: ['Yes', 'No'], default: 'No' },
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
+      name: 'Offset Form', slug: 'offset_form', prefix: 'OFS', icon: 'history',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Date'),
+        // new_time_out is read directly by the compute engine as this day's shifted expected
+        // end time (arrived late, agreed to leave later instead of a deduction).
+        { key: 'new_time_out', label: 'New Time Out', type: 'time', required: true, options: [], default: '' },
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
+      name: 'Holiday Work Request', slug: 'holiday_work_request', prefix: 'HW', icon: 'calendar',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Date'),
+        // holiday_type and hours_worked are both read directly by the compute engine to pay
+        // the correct DOLE premium (100% for Regular, 30% for Special Non-Working) on top of
+        // the hours actually worked.
+        { key: 'holiday_type', label: 'Holiday Type', type: 'select', required: true, options: ['Regular Holiday', 'Special Non-Working Holiday'], default: '' },
+        { key: 'hours_worked', label: 'Hours Worked', type: 'number', required: true, options: [], default: '' },
+        area('reason', 'Reason'),
+      ],
+    },
+  ];
+  for (const f of FORMS) {
+    if (db.prepare('SELECT id FROM form_definitions WHERE slug = ?').get(f.slug)) continue;
+    db.prepare(
+      `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope)
+       VALUES (?, ?, ?, ?, ?, 'hr')`
+    ).run(f.name, f.slug, f.prefix, f.icon, JSON.stringify(f.fields));
+  }
 }
 
 /** Item 4: ready-made HR memo / notice forms. Each is a normal form_definition (so it uses

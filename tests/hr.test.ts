@@ -50,6 +50,32 @@ describe('hr', () => {
     expect(del.status).toBe(200);
   });
 
+  it('auto-seeds Overtime/Undertime/Offset/Holiday Work Request forms — previously hand-create-only, so an install that never got around to it had no way for employees to self-file OT (or for HR to link one) despite the compute engine and mobile REQUEST_SLUGS both already expecting them', async () => {
+    const res = await ctx.api.get('/api/form-definitions').set(hdr());
+    const bySlug = (slug: string) => res.body.find((f: { slug: string }) => f.slug === slug);
+
+    const ot = bySlug('overtime_request');
+    expect(ot).toBeDefined();
+    expect(ot.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'hours_estimate', 'reason']);
+
+    const ut = bySlug('undertime_request');
+    expect(ut).toBeDefined();
+    expect(ut.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'with_pay', 'reason']);
+
+    const offset = bySlug('offset_form');
+    expect(offset).toBeDefined();
+    expect(offset.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'new_time_out', 'reason']);
+
+    const hw = bySlug('holiday_work_request');
+    expect(hw).toBeDefined();
+    expect(hw.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'holiday_type', 'hours_worked', 'reason']);
+
+    // All four are now offered on mobile's "New request" screen.
+    const types = await ctx.api.get('/api/me/request-types').set(hdr());
+    const slugs = types.body.map((t: { slug: string }) => t.slug);
+    expect(slugs).toEqual(expect.arrayContaining(['overtime_request', 'undertime_request', 'offset_form', 'holiday_work_request']));
+  });
+
   it('creates and lists an employee with a caller-supplied number, defaulting to probationary status', async () => {
     const res = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-JUAN', name: 'Juan Dela Cruz', position: 'Warehouseman', daily_rate: 610 });
@@ -530,11 +556,10 @@ describe('generate-payslips computes real numbers from attendance + linked forms
       .send({ name: 'Compute Test Shift', start_time: '08:00', end_time: '17:00', is_default: false });
     morningShiftId = shift.body.id;
 
-    const otForm = await ctx.api.post('/api/form-definitions').set(hdr()).send({
-      name: 'Overtime Request', slug: 'overtime_request', number_prefix: 'OT', icon: 'calendar', scope: 'hr',
-      fields: [{ key: 'employee_name', label: 'Employee Name', type: 'text', required: true, options: [], default: '' }],
-    });
-    overtimeFormId = otForm.body.id;
+    // Overtime Request is auto-seeded now (src/db.ts's seedHrRequestForms()), same as
+    // hr_payroll/no_work_memo — just look it up instead of creating it.
+    const otForms = await ctx.api.get('/api/form-definitions').set(hdr());
+    overtimeFormId = otForms.body.find((f: { slug: string }) => f.slug === 'overtime_request').id;
 
     const leaveForm = await ctx.api.post('/api/form-definitions').set(hdr()).send({
       name: 'Leave Request', slug: 'leave_request', number_prefix: 'LV', icon: 'calendar', scope: 'hr',

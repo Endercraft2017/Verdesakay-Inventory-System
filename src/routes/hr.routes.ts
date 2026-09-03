@@ -25,7 +25,7 @@ import {
   employeeNumberPolicySchema,
 } from '../validation';
 import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord, Shift, PayrollPolicy, EmployeeNumberPolicy } from '../types';
-import { computeAttendanceForEmployee, type AttendanceDay } from '../hr-payroll-compute';
+import { computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../hr-payroll-compute';
 import { suggestEmployeeNumber } from '../hr-employee-numbering';
 import { toCsv } from '../csv';
 import { resolveImport, importLoop } from '../csv-import';
@@ -38,6 +38,7 @@ import { enforceQuota } from '../quota';
 import { sendMail } from '../mailer';
 import { ledgerEnabled, maybeAutoPostPayroll } from '../accounting-autopost';
 import { noWorkFormIds as noWorkFormIdsWithAction } from '../form-actions';
+import { notifyUser } from '../push';
 
 // Reuses the browser's own payslip HTML renderer instead of duplicating it server-side —
 // hr-payroll-print.js is pure string logic (no DOM/window access) and already resolves its
@@ -620,7 +621,10 @@ function effectiveSchedule(policy: PayrollPolicy, periodsPerMonth: number): Dedu
   return Array.from({ length: periodsPerMonth }, () => ALL_ON);
 }
 
-function currentPolicy(): PayrollPolicy {
+// Exported for src/routes/me.routes.ts's unrecorded-OT detection, which needs the same
+// grace/OT-unit/require_ot_form rules generate-payslips itself uses — never a second, possibly
+// drifting copy of the defaults.
+export function currentPolicy(): PayrollPolicy {
   return { ...DEFAULT_POLICY, ...(getSetting<Partial<PayrollPolicy>>('payroll_policy') || {}) };
 }
 
@@ -895,11 +899,61 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res)
     }
     db.exec('COMMIT');
     res.json({ ok: true });
+    notifyUnrecordedOt(input.employee_id, input.days);
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
 });
+
+// Fires a one-time push notification to the linked employee when a just-saved day shows
+// unrecorded OT (src/hr-payroll-compute.ts's unrecordedOtMinutes — same check the mobile "you
+// have unrecorded OT" prompt/Home reminder use, GET /api/me/unrecorded-ot) — so the employee
+// hears about it as soon as HR types the times in, not only if/when they happen to open the
+// app. Best-effort: never blocks or fails the attendance save itself.
+function notifyUnrecordedOt(
+  employeeId: number,
+  days: Array<{ work_date: string; time_in?: string | null; time_out?: string | null; shift_id?: number | null; form_record_id?: number | null }>
+): void {
+  try {
+    const emp = queryOne<{ user_id: number | null }>('SELECT user_id FROM employees WHERE id = ?', employeeId);
+    if (!emp?.user_id) return;
+    const policy = currentPolicy();
+    const flagged: string[] = [];
+    for (const d of days) {
+      if (!d.time_in || !d.time_out) continue;
+      const shift = d.shift_id
+        ? queryOne<{ start_time: string; end_time: string }>('SELECT start_time, end_time FROM shifts WHERE id = ?', d.shift_id)
+        : null;
+      let linkedForm: AttendanceDay['linkedForm'] = null;
+      if (d.form_record_id) {
+        const fr = queryOne<{ data: string; slug: string }>(
+          `SELECT fr.data, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+          d.form_record_id
+        );
+        if (fr) { try { linkedForm = { slug: fr.slug, data: JSON.parse(fr.data) }; } catch { /* leave null */ } }
+      }
+      const mins = unrecordedOtMinutes(
+        {
+          work_date: d.work_date, time_in: d.time_in, time_out: d.time_out,
+          shift: shift ? { start_time: shift.start_time, end_time: shift.end_time } : null,
+          linkedForm,
+        },
+        policy
+      );
+      if (mins > 0) flagged.push(d.work_date);
+    }
+    if (!flagged.length) return;
+    void notifyUser(emp.user_id, {
+      title: 'Unrecorded overtime',
+      body: flagged.length === 1
+        ? `You worked past your shift on ${flagged[0]} with no OT form filed.`
+        : `You worked past your shift on ${flagged.length} days with no OT form filed.`,
+      url: '#/requests',
+      tag: `unrecorded-ot-${employeeId}-${flagged[flagged.length - 1]}`,
+    });
+  } catch { /* best-effort — never let this break the attendance save */ }
+}
 
 // ─── Generate payslips ──────────────────────────────────────────────────────
 

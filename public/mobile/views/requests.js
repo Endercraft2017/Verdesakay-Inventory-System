@@ -98,11 +98,11 @@
       var opts = (f.options || []).map(function (o) { return '<option>' + mEsc(o) + '</option>'; }).join('');
       return '<label class="m-field">' + lbl + '<select class="m-select" data-k="' + k + '"><option value=""></option>' + opts + '</select></label>';
     }
-    var t = f.type === 'number' ? 'number' : (f.type === 'date' ? 'date' : 'text');
+    var t = f.type === 'number' ? 'number' : (f.type === 'date' ? 'date' : (f.type === 'time' ? 'time' : 'text'));
     return '<label class="m-field">' + lbl + '<input class="m-input" type="' + t + '" data-k="' + k + '" /></label>';
   }
 
-  function form(view, t) {
+  function form(view, t, prefillDate) {
     MApp.setTitle(t.name);
     view.innerHTML = '';
     var emp = (MApp.getMe() || {}).employee || {};
@@ -126,6 +126,11 @@
       var el = f.querySelector('[data-k="' + fd.key + '"]');
       if (el && el.type !== 'checkbox') el.value = fd.default;
     });
+    // A caller (e.g. the "unrecorded OT" stack item) can prefill this form's date field.
+    if (prefillDate) {
+      var dateEl = f.querySelector('[data-k="work_date"]') || f.querySelector('[data-k="date"]');
+      if (dateEl) dateEl.value = prefillDate;
+    }
 
     f.onsubmit = function (e) {
       e.preventDefault();
@@ -149,5 +154,19 @@
     view.appendChild(f);
   }
 
-  MApp.route('requests', function (view) { list(view); });
+  MApp.route('requests', function (view, params) {
+    // A stack item (e.g. the "unrecorded OT" reminder) can jump straight into filing a specific
+    // request type instead of the picker, optionally prefilling one date field.
+    if (params && params.type) {
+      API.get('/me/request-types')
+        .then(function (types) {
+          var t = types.filter(function (x) { return x.slug === params.type; })[0];
+          if (!t) { list(view); return; }
+          form(view, t, params.date);
+        })
+        .catch(function () { list(view); });
+      return;
+    }
+    list(view);
+  });
 })();

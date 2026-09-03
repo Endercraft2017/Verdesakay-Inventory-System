@@ -7,6 +7,8 @@ import { requireAuth } from '../auth';
 import { parseBody, timeCorrectionSchema, approvalDecisionSchema } from '../validation';
 import { notifyUser, notifyPermission } from '../push';
 import { myClockStatus } from '../clock';
+import { unrecordedOtMinutes, type AttendanceDay } from '../hr-payroll-compute';
+import { currentPolicy } from './hr.routes';
 import type { FormDefinition, FormRecord, TimeCorrection } from '../types';
 
 const router = Router();
@@ -327,6 +329,56 @@ router.post('/approvals/time-corrections/:id/decide', (req, res) => {
   res.json({ ok: true, status: decision, applied });
 });
 
+/* ─── Unrecorded OT (mobile prompt + Home reminder) ─────────────────────────── */
+
+interface UnrecordedOtDay { work_date: string; period_label: string; time_in: string; time_out: string; ot_minutes: number }
+
+/** Recent attendance_records days for `employeeId` where the logged time-out is block-worthy
+ *  past the shift's expected end (src/hr-payroll-compute.ts's unrecordedOtMinutes — the exact
+ *  same check generate-payslips' real OT calc is built from) with no linked Overtime Request
+ *  form. Scoped to the last 45 days so this stays a "did you forget something recent" nudge,
+ *  not a lifetime backlog once an employee has years of history. */
+function unrecordedOtDays(employeeId: number): UnrecordedOtDay[] {
+  const rows = queryAll<{
+    work_date: string; time_in: string; time_out: string; period_label: string;
+    shift_start: string | null; shift_end: string | null; fr_data: string | null; fd_slug: string | null;
+  }>(
+    `SELECT ar.work_date, ar.time_in, ar.time_out, p.label AS period_label,
+       s.start_time AS shift_start, s.end_time AS shift_end,
+       fr.data AS fr_data, fd.slug AS fd_slug
+     FROM attendance_records ar
+     JOIN attendance_periods p ON p.id = ar.period_id
+     LEFT JOIN shifts s ON s.id = ar.shift_id
+     LEFT JOIN form_records fr ON fr.id = ar.form_record_id
+     LEFT JOIN form_definitions fd ON fd.id = fr.form_def_id
+     WHERE ar.employee_id = ? AND ar.time_in IS NOT NULL AND ar.time_out IS NOT NULL
+       AND ar.work_date >= date('now', 'localtime', '-45 days')
+     ORDER BY ar.work_date DESC`,
+    employeeId
+  );
+  const policy = currentPolicy();
+  const out: UnrecordedOtDay[] = [];
+  for (const r of rows) {
+    const day: AttendanceDay = {
+      work_date: r.work_date, time_in: r.time_in, time_out: r.time_out,
+      shift: r.shift_start && r.shift_end ? { start_time: r.shift_start, end_time: r.shift_end } : null,
+      linkedForm: r.fd_slug ? { slug: r.fd_slug, data: JSON.parse(r.fr_data || '{}') } : null,
+    };
+    const mins = unrecordedOtMinutes(day, policy);
+    if (mins > 0) out.push({ work_date: r.work_date, period_label: r.period_label, time_in: r.time_in, time_out: r.time_out, ot_minutes: mins });
+  }
+  return out;
+}
+
+// GET /api/me/unrecorded-ot — days this employee worked block-worthy OT with no linked
+// Overtime Request form, for the mobile "you have unrecorded OT" prompt (right after clocking
+// out) and the Home screen reminder card.
+router.get('/unrecorded-ot', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  res.json(unrecordedOtDays(emp.id));
+});
+
 /* ─── Home "Today" feed (mobile) ────────────────────────────────────────────── */
 
 type Urgency = 'high' | 'medium' | 'low';
@@ -336,6 +388,9 @@ interface StackItem {
   subtitle?: string;
   urgency: Urgency;
   route: string;
+  /** Optional query params for the route, e.g. jumping "requests" straight into filing a
+   *  specific request type instead of the picker. */
+  params?: Record<string, string>;
   count?: number;
 }
 const URGENCY_RANK: Record<Urgency, number> = { high: 0, medium: 1, low: 2 };
@@ -421,6 +476,17 @@ router.get('/today', (req, res) => {
         kind: 'correction', route: 'time-fix', urgency: 'low', count: tc.n,
         title: tc.n === 1 ? 'Punch fix pending review' : `${tc.n} punch fixes pending`,
         subtitle: tc.oldest ? `for ${tc.oldest}` : undefined,
+      });
+    }
+
+    // Recent days worked past the shift's end with no Overtime Request filed.
+    const unrecordedOt = unrecordedOtDays(emp.id);
+    if (unrecordedOt.length > 0) {
+      stack.push({
+        kind: 'ot', route: 'requests', params: { type: 'overtime_request', date: unrecordedOt[0]!.work_date },
+        urgency: 'medium', count: unrecordedOt.length,
+        title: unrecordedOt.length === 1 ? 'Unrecorded OT on ' + unrecordedOt[0]!.work_date : `Unrecorded OT on ${unrecordedOt.length} days`,
+        subtitle: 'No Overtime Request filed — tap to request it',
       });
     }
   } else {

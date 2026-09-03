@@ -573,9 +573,12 @@ describe('hr payroll csv import', () => {
     expect(res.status).toBe(403);
   });
 
+  // Just needs to be SOME non-payroll form to prove the import route rejects it — not literally
+  // 'overtime_request' (now auto-seeded by src/db.ts's seedHrRequestForms(), so that slug is
+  // already taken by the time this test DB is set up).
   function sampleForm2() {
     return {
-      name: 'Overtime Request', slug: 'overtime_request', number_prefix: 'OT', icon: 'file',
+      name: 'Sample Non-Payroll Form', slug: 'sample_non_payroll_form', number_prefix: 'SPL', icon: 'file',
       fields: [{ key: 'hours', label: 'Hours', type: 'number', required: true, options: [], default: '' }],
     };
   }

@@ -355,3 +355,37 @@ export function computeAttendanceForEmployee(
 
   return out;
 }
+
+/** Whether `day` shows unrecorded OT — a block-worthy clock-out past the shift's expected end
+ *  (respecting an Offset form's shifted end time, same as the real OT calculation) — with no
+ *  linked Overtime Request form to authorize it. For src/routes/me.routes.ts's mobile "you have
+ *  unrecorded OT" prompt: independent of policy.require_ot_form (that setting controls whether
+ *  unauthorized OT gets PAID, not whether it's worth flagging to the employee to go file for),
+ *  and an Offset form still counts as "no OT form" — Offset only defers the obligation, it
+ *  doesn't authorize OT pay. Returns the block-rounded OT minutes if unrecorded, else 0.
+ *  Deliberately re-derives the same shift-timeline resolution computeAttendanceForEmployee's
+ *  main loop does (not a shared helper) — the two are pinned against the same fixtures in tests
+ *  so they can't silently drift on what counts as "worked past the shift". */
+export function unrecordedOtMinutes(day: AttendanceDay, policy: PayrollPolicy): number {
+  if (day.linkedForm?.slug === 'overtime_request') return 0; // already authorized
+  const timeIn = toMinutes(day.time_in);
+  const timeOut = toMinutes(day.time_out);
+  if (timeIn == null || timeOut == null || !day.shift) return 0;
+  const shiftStart = toMinutes(day.shift.start_time);
+  let shiftEnd = toMinutes(day.shift.end_time);
+  if (shiftStart == null || shiftEnd == null) return 0;
+  const overnight = shiftEnd < shiftStart;
+  if (overnight) shiftEnd += DAY_MIN;
+  const relTo = (min: number) => (overnight && min < shiftStart ? min + DAY_MIN : min);
+  const timeOutRel = relTo(timeOut);
+
+  let effectiveEnd = shiftEnd;
+  if (day.linkedForm?.slug === 'offset_form') {
+    const offsetEndRaw = toMinutes(day.linkedForm?.data?.new_time_out as string | undefined);
+    if (offsetEndRaw != null) effectiveEnd = relTo(offsetEndRaw);
+  }
+
+  const otRaw = timeOutRel - effectiveEnd;
+  if (otRaw <= 0) return 0;
+  return roundUpToUnit(otRaw, unitMinutesFor(policy.ot_unit));
+}
