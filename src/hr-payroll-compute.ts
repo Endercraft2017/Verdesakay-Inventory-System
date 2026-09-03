@@ -96,12 +96,22 @@ function unitMinutesFor(unit: 'minute' | '30min' | 'hour'): number {
   return unit === 'hour' ? 60 : unit === '30min' ? 30 : 1;
 }
 
-/** Round `minutes` UP to the nearest `unitMinutes` block — confirmed convention: any partial
-    block counts as a full block, in both directions (against the employee for lateness/
-    undertime, in their favor for OT). 0 or negative stays 0. */
+/** Round `minutes` UP to the nearest `unitMinutes` block — for late arrivals and undertime: any
+    partial block past grace still counts as a full block against the employee. 0 or negative
+    stays 0. */
 function roundUpToUnit(minutes: number, unitMinutes: number): number {
   if (minutes <= 0) return 0;
   return Math.ceil(minutes / unitMinutes) * unitMinutes;
+}
+
+/** Round `minutes` DOWN to the nearest `unitMinutes` block — for OT specifically: only a fully
+    completed block is credited (2h12m of raw OT on an hour block credits 2 hours, not 3) — the
+    opposite direction from late/undertime's roundUpToUnit, since crediting a partial block in
+    the employee's favor would let a handful of minutes of ordinary lateness masquerade as a
+    full paid OT hour. 0 or negative stays 0. */
+function roundDownToUnit(minutes: number, unitMinutes: number): number {
+  if (minutes <= 0) return 0;
+  return Math.floor(minutes / unitMinutes) * unitMinutes;
 }
 
 /** Overlap (in minutes) between the span [fromMin, toMin) — wall-clock minutes, `toMin` may
@@ -311,7 +321,7 @@ export function computeAttendanceForEmployee(
     if (slug === 'overtime_request' || (!policy.require_ot_form && timeOutRel > effectiveEnd)) {
       const otRaw = timeOutRel - effectiveEnd;
       if (otRaw > 0) {
-        const otBlocked = roundUpToUnit(otRaw, unitMinutesFor(policy.ot_unit));
+        const otBlocked = roundDownToUnit(otRaw, unitMinutesFor(policy.ot_unit));
         otHours = otBlocked / 60;
         out.ot_hours += otHours;
         // OT pay scales with the day's own rate multiplier too — OT worked on a Regular Holiday
@@ -387,5 +397,5 @@ export function unrecordedOtMinutes(day: AttendanceDay, policy: PayrollPolicy): 
 
   const otRaw = timeOutRel - effectiveEnd;
   if (otRaw <= 0) return 0;
-  return roundUpToUnit(otRaw, unitMinutesFor(policy.ot_unit));
+  return roundDownToUnit(otRaw, unitMinutesFor(policy.ot_unit));
 }

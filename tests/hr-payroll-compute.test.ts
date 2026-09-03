@@ -65,19 +65,28 @@ describe('computeAttendanceForEmployee — grace period boundary', () => {
   });
 });
 
-describe('computeAttendanceForEmployee — OT rounds up, requires a linked Overtime form', () => {
-  it('20 min OT with a 30-min block rounds up to 30 min counted', () => {
+describe('computeAttendanceForEmployee — OT rounds DOWN to completed blocks, requires a linked Overtime form', () => {
+  it('20 min OT with a 30-min block is not a completed block yet -> 0 counted', () => {
     const r = computeAttendanceForEmployee(
       [day({ time_in: '08:00', time_out: '17:20', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.ot_hours).toBe(0);
+    expect(r.overtime_pay).toBe(0);
+  });
+
+  it('50 min OT with a 30-min block credits only the one completed block (30 min), not the partial second one', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:50', linkedForm: { slug: 'overtime_request', data: {} } })],
       DAILY_RATE, POLICY
     );
     expect(r.ot_hours).toBeCloseTo(0.5, 6);
     expect(r.overtime_pay).toBeCloseTo(0.5 * 100 * 1.25, 6);
   });
 
-  it('50 min OT with a 30-min block rounds up to 60 min counted', () => {
+  it('60 min OT with a 30-min block credits both completed blocks exactly, no partial-block loss', () => {
     const r = computeAttendanceForEmployee(
-      [day({ time_in: '08:00', time_out: '17:50', linkedForm: { slug: 'overtime_request', data: {} } })],
+      [day({ time_in: '08:00', time_out: '18:00', linkedForm: { slug: 'overtime_request', data: {} } })],
       DAILY_RATE, POLICY
     );
     expect(r.ot_hours).toBeCloseTo(1, 6);
@@ -88,6 +97,24 @@ describe('computeAttendanceForEmployee — OT rounds up, requires a linked Overt
     const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '18:00' })], DAILY_RATE, POLICY);
     expect(r.ot_hours).toBe(0);
     expect(r.overtime_pay).toBe(0);
+  });
+
+  it('real case: 2h12m raw OT on an hour block credits 2 hours, not 3', () => {
+    const policy = { ...POLICY, ot_unit: 'hour' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '07:50', time_out: '19:12', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBe(2);
+  });
+
+  it('real case: 1h11m raw OT on an hour block credits 1 hour, not 2', () => {
+    const policy = { ...POLICY, ot_unit: 'hour' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '07:54', time_out: '18:11', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBe(1);
   });
 });
 
@@ -699,6 +726,12 @@ describe('unrecordedOtMinutes — flags a block-worthy clock-out past shift end 
 
   it('no time logged -> never flagged', () => {
     expect(unrecordedOtMinutes(day({ time_in: null, time_out: null }), POLICY)).toBe(0);
+  });
+
+  it('rounds DOWN to completed blocks, same as the real OT calc — 71 raw minutes on an hour block flags only 60, not 120', () => {
+    const policy = { ...POLICY, ot_unit: 'hour' as const };
+    const mins = unrecordedOtMinutes(day({ time_in: '08:00', time_out: '18:11' }), policy);
+    expect(mins).toBe(60);
   });
 
   it('agrees with computeAttendanceForEmployee\'s own OT minutes when require_ot_form is off, on the same day — the two must never independently drift', () => {
