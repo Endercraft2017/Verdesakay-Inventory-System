@@ -431,11 +431,19 @@ export function computeAttendanceForEmployee(
     }
 
     // An Offset form shifts this day's expected time-out (e.g. arrived late, agreed to leave
-    // later instead) — the effective end used for both the OT and undertime checks below.
+    // later instead) — the effective end used for both the OT and undertime checks below. When
+    // a New Time In is ALSO given, the whole day's window shifts (e.g. an 8-5 shift offset to
+    // 10-7): the arrival below is then judged against this new start too, not the original
+    // shift start, and the 5-7pm stretch stays ordinary hours (still within effectiveEnd), not
+    // OT. Left blank (old behavior, and still how records filed before this field existed
+    // read), only the end-of-day threshold moves — arrival is still judged against the real
+    // shift start.
     let effectiveEnd = shiftEnd;
     if (slug === 'offset_form') {
       const offsetEndRaw = toMinutes(day.linkedForm?.data?.new_time_out as string | undefined);
+      const offsetStartRaw = toMinutes(day.linkedForm?.data?.new_time_in as string | undefined);
       if (offsetEndRaw != null) effectiveEnd = relTo(offsetEndRaw);
+      if (offsetStartRaw != null && offsetEndRaw != null) effShiftStart = relTo(offsetStartRaw);
     }
 
     // Late arrival: grace is a threshold, not a subtracted buffer while under it — but once

@@ -64,7 +64,7 @@ describe('hr', () => {
 
     const offset = bySlug('offset_form');
     expect(offset).toBeDefined();
-    expect(offset.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'new_time_out', 'reason']);
+    expect(offset.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'new_time_in', 'new_time_out', 'reason']);
 
     const hw = bySlug('holiday_work_request');
     expect(hw).toBeDefined();
@@ -1839,6 +1839,42 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
     expect(rec.data.overtime_pay || 0).toBe(0);
     expect(rec.data.undertime_pay || 0).toBe(0); // waived — 19:00 meets the offset's own target
     expect(rec.data.late_absences).toBeGreaterThan(0); // by design: offset doesn't excuse the late arrival itself
+  });
+
+  it('an Offset form with BOTH New Time In and New Time Out shifts the whole day\'s window through a real generate-payslips run: no late deduction for the shifted arrival, and the stretch past the original shift end is not overtime', async () => {
+    // require_ot_form off, so any clock-out past the effective end WOULD auto-pay OT if the
+    // offset's shifted window weren't being honored — proves the 5-7pm stretch is correctly
+    // still "ordinary hours", not silently passing only because OT was gated off anyway.
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], require_ot_form: false,
+    });
+    const offsetRecord = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: offsetFormId,
+      data: { employee_name: 'Full Offset Employee', work_date: '2026-08-10', new_time_in: '10:00', new_time_out: '19:00', reason: 'Whole shift moved 2hrs later' },
+      status: 'approved',
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-FULLOFFSET', name: 'Full Offset Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Full Offset Cutoff', start_date: '2026-08-10', end_date: '2026-08-10' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-10', time_in: '10:00', time_out: '19:00', notes: '', shift_id: hoursShiftId, form_record_id: offsetRecord.body.id }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Full Offset Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Full Offset Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Full Offset Employee');
+    expect(rec.data.days_worked).toBe(1);
+    expect(rec.data.late_absences).toBe(0); // arrival matches the shifted 10:00 start
+    expect(rec.data.overtime_pay || 0).toBe(0); // 5-7pm is still within the same 8-hour day, just shifted
+    expect(rec.data.undertime_pay || 0).toBe(0);
+    expect(rec.data.basic_salary).toBeCloseTo(800, 6); // full day, no deductions either direction
+
+    // Restore for the rest of the suite.
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], require_ot_form: true,
+    });
   });
 
   it('a linked Undertime Request with with_pay=Yes waives the undertime deduction through a real generate-payslips run', async () => {

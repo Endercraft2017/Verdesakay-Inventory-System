@@ -1830,6 +1830,14 @@ function seedHrRequestForms(): void {
       fields: [
         { ...employeeField },
         dateField('work_date', 'Date'),
+        // new_time_in is optional — when filled in alongside new_time_out, the compute engine
+        // judges the ENTIRE day (late, undertime, OT) against this shifted window instead of
+        // the original shift, e.g. an 8-5 shift offset to 10-7: no late deduction for the 10am
+        // arrival, and the 5-7pm stretch isn't OT since it's still within the same 8-hour day,
+        // just shifted later. Left blank, only the time-out shifts (old behavior, backward
+        // compatible with records filed before this field existed): the arrival is still judged
+        // against the original shift start, only the end-of-day undertime/OT threshold moves.
+        { key: 'new_time_in', label: 'New Time In (optional — leave blank to shift only the time-out)', type: 'time', required: false, options: [], default: '' },
         // new_time_out is read directly by the compute engine as this day's shifted expected
         // end time (arrived late, agreed to leave later instead of a deduction).
         { key: 'new_time_out', label: 'New Time Out', type: 'time', required: true, options: [], default: '' },
@@ -1868,11 +1876,30 @@ function seedHrRequestForms(): void {
     },
   ];
   for (const f of FORMS) {
-    if (db.prepare('SELECT id FROM form_definitions WHERE slug = ?').get(f.slug)) continue;
-    db.prepare(
-      `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope)
-       VALUES (?, ?, ?, ?, ?, 'hr')`
-    ).run(f.name, f.slug, f.prefix, f.icon, JSON.stringify(f.fields));
+    const existing = db.prepare('SELECT id, fields FROM form_definitions WHERE slug = ?').get(f.slug) as
+      { id: number; fields: string } | undefined;
+    if (!existing) {
+      db.prepare(
+        `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, scope)
+         VALUES (?, ?, ?, ?, ?, 'hr')`
+      ).run(f.name, f.slug, f.prefix, f.icon, JSON.stringify(f.fields));
+      continue;
+    }
+    // Touch up an install that already had offset_form seeded (or hand-created) before
+    // new_time_in existed — same self-correcting pattern as seedHrPayrollForm below.
+    if (f.slug === 'offset_form') {
+      try {
+        const fields = JSON.parse(existing.fields) as { key: string }[];
+        if (!fields.some((fl) => fl.key === 'new_time_in')) {
+          const at = fields.findIndex((fl) => fl.key === 'new_time_out');
+          const newTimeIn = (f.fields as { key: string }[]).find((fl) => fl.key === 'new_time_in');
+          if (newTimeIn) {
+            fields.splice(at >= 0 ? at : fields.length, 0, newTimeIn);
+            db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
+          }
+        }
+      } catch { /* leave as-is if the stored fields are somehow unparseable */ }
+    }
   }
 }
 

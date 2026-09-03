@@ -290,6 +290,38 @@ describe('computeAttendanceForEmployee — Offset form shifts the expected time-
     // 18:30 is *after* the original 17:00 shift end but *before* the offset 19:00 target
     expect(r.undertime_pay).toBeLessThan(0);
   });
+
+  describe('New Time In (optional) shifts the whole day\'s window, not just the end', () => {
+    const OFFSET_POLICY: PayrollPolicy = { ...POLICY, require_ot_form: false };
+
+    it('a full 8-5 -> 10-7 offset (New Time In + New Time Out both given): no late deduction for the shifted arrival, and the 5-7pm stretch is NOT overtime — still the same 8-hour day, just shifted', () => {
+      const r = computeAttendanceForEmployee(
+        [day({ time_in: '10:00', time_out: '19:00', linkedForm: { slug: 'offset_form', data: { new_time_in: '10:00', new_time_out: '19:00' } } })],
+        DAILY_RATE, OFFSET_POLICY
+      );
+      expect(r.late_deduction).toBe(0);
+      expect(r.overtime_pay).toBe(0);
+      expect(r.undertime_pay).toBe(0);
+      expect(r.days_worked).toBe(1);
+    });
+
+    it('arriving later than the shifted New Time In still counts as late — against the SHIFTED start, not the original 08:00', () => {
+      const r = computeAttendanceForEmployee(
+        [day({ time_in: '10:30', time_out: '19:00', linkedForm: { slug: 'offset_form', data: { new_time_in: '10:00', new_time_out: '19:00' } } })],
+        DAILY_RATE, POLICY
+      );
+      expect(r.late_deduction).toBeGreaterThan(0); // 30 min past the 10:00 shifted start (past the 10-min grace)
+    });
+
+    it('New Time Out alone (no New Time In) keeps the old behavior: arrival is still judged against the original shift start', () => {
+      const r = computeAttendanceForEmployee(
+        [day({ time_in: '10:00', time_out: '19:00', linkedForm: { slug: 'offset_form', data: { new_time_out: '19:00' } } })],
+        DAILY_RATE, OFFSET_POLICY
+      );
+      expect(r.late_deduction).toBeGreaterThan(0); // no new_time_in -> still judged against 08:00
+      expect(r.overtime_pay).toBe(0); // end-of-day is still protected by new_time_out alone
+    });
+  });
 });
 
 describe('computeAttendanceForEmployee — Undertime Request with_pay override', () => {
