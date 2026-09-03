@@ -112,6 +112,26 @@ describe('hr', () => {
     expect(list2.body.find((e: { id: number }) => e.id === create.body.id).default_shift_id).toBeNull();
   });
 
+  it('late_exempt round-trips through create/update (e.g. the company president) and defaults off', async () => {
+    const create = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LATEEXEMPT', name: 'Late Exempt Employee', daily_rate: 500, late_exempt: true });
+    expect(create.status).toBe(201);
+    const list = await ctx.api.get('/api/hr/employees').set(hdr());
+    const created = list.body.find((e: { id: number }) => e.id === create.body.id);
+    expect(!!created.late_exempt).toBe(true);
+
+    const ordinary = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-NOTEXEMPT', name: 'Ordinary Employee', daily_rate: 500 });
+    const list2 = await ctx.api.get('/api/hr/employees').set(hdr());
+    expect(!!list2.body.find((e: { id: number }) => e.id === ordinary.body.id).late_exempt).toBe(false);
+
+    const update = await ctx.api.put(`/api/hr/employees/${create.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-LATEEXEMPT', name: 'Late Exempt Employee', daily_rate: 500, late_exempt: false });
+    expect(update.status).toBe(200);
+    const list3 = await ctx.api.get('/api/hr/employees').set(hdr());
+    expect(!!list3.body.find((e: { id: number }) => e.id === create.body.id).late_exempt).toBe(false);
+  });
+
   it('rejects creating an employee with a number already in use, and rejects a blank number', async () => {
     const dup = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-JUAN', name: 'Someone Else' });
@@ -611,6 +631,35 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(rec.data.ot_rate_hour).toBeCloseTo(125, 6); // auto-computed now: 100/hr * 125% — no more hand-typing it
     expect(rec.data.basic_salary).toBeCloseTo(1600, 6); // 800 * 2 days
     expect(rec.data.total_earnings).toBeCloseTo(1600 + 125, 6);
+  });
+
+  it('an employee marked late_exempt (e.g. the company president) has no late deduction on the generated payslip despite clocking in late', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LATEEXEMPT-GEN', name: 'President Employee', daily_rate: 800, late_exempt: true });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Late Exempt Cutoff', start_date: '2026-08-01', end_date: '2026-08-01' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      // 70 min late (shift 08:00-17:00, 10 min grace) — would normally deduct 1 hour.
+      days: [{ work_date: '2026-08-01', time_in: '09:10', time_out: '17:00', notes: '', shift_id: morningShiftId }],
+    });
+
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Late Exempt Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Late Exempt Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'President Employee');
+    expect(rec.data.late_absences).toBe(0);
+    expect(rec.data.days_worked).toBe(1);
+    expect(rec.data.basic_salary).toBeCloseTo(800, 6); // full day, no deduction
+
+    // The read-only detail route agrees (same exemption applies), and reports the exemption flag
+    // so the frontend can explain why late_minutes shows but nothing was deducted.
+    const detail = await ctx.api.get(`/api/hr/payroll/${rec.id}/detail`).set(hdr());
+    expect(detail.body.late_exempt).toBe(true);
+    expect(detail.body.totals.late_deduction).toBe(0);
+    expect(detail.body.days[0].late_minutes).toBeGreaterThan(0); // still visible for reference
+    expect(detail.body.days[0].late_pay).toBe(0);
   });
 
   it('a day linked to a with-pay Leave form counts as a paid day despite no time logged', async () => {

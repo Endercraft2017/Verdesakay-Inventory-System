@@ -820,6 +820,10 @@ export interface Employee {
   leave_days_used: number; // running counter, incremented as paid Leave forms are approved
   leave_days_remaining?: number; // computed: leave_days_per_year - leave_days_used
   rest_days: number[] | null; // weekday indices (0=Sun..6=Sat) this employee rests on; null = use PayrollPolicy.default_rest_days
+  // Exempt from late deductions (e.g. the company president) — see hr-payroll-compute.ts's
+  // computeAttendanceForEmployee. Stored as a plain 0/1 SQLite integer; truthy checks work fine
+  // at runtime despite the boolean type here (same as every other INTEGER flag on this table).
+  late_exempt: boolean;
 }
 
 /** Company-wide format for the RECOMMENDED employee number (settings key "employee_no_policy") —

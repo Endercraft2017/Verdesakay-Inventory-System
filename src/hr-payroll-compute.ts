@@ -151,7 +151,14 @@ function dayRateMultiplier(holiday: AttendanceDay['holiday'], isRestDay: boolean
 export function computeAttendanceForEmployee(
   days: AttendanceDay[],
   dailyRate: number,
-  policy: PayrollPolicy
+  policy: PayrollPolicy,
+  // Per-employee "exempt from late deductions" (employees.late_exempt — e.g. the company
+  // president, or anyone else whose actual clock-in time HR doesn't want penalized). Deliberately
+  // a plain parameter, not folded into `policy`, since policy is one shared object for every
+  // employee in a generate-payslips run while this varies per employee. late_minutes still
+  // reports the real lateness either way — this only zeroes the peso deduction, so HR can still
+  // see the pattern without it costing the employee anything.
+  exemptLate = false
 ): AttendanceComputation {
   const hourlyRate = dailyRate / 8;
   // Not { ...ZERO } for `days` specifically — a shallow spread would copy ZERO's own array
@@ -313,8 +320,8 @@ export function computeAttendanceForEmployee(
     if (lateRaw > policy.grace_minutes) {
       const pastGrace = lateRaw - policy.grace_minutes;
       const lateBlocked = roundUpToUnit(pastGrace, unitMinutesFor(policy.late_unit));
-      lateMin = lateBlocked;
-      latePay = (lateBlocked / 60) * hourlyRate;
+      lateMin = lateBlocked; // still reported even when exempt — HR can see the pattern, it just costs nothing
+      latePay = exemptLate ? 0 : (lateBlocked / 60) * hourlyRate;
       out.late_deduction += latePay;
     }
 

@@ -787,6 +787,9 @@ export const employeeSchema = z.object({
   leave_days_per_year: numCoerce.min(0).max(366).default(5),
   leave_days_used: numCoerce.min(0).default(0),
   rest_days: z.array(z.number().int().min(0).max(6)).max(7).nullable().optional(),
+  // Exempt from late deductions (e.g. the company president) — real lateness still shows on the
+  // payslip detail, it just never subtracts pay. See src/hr-payroll-compute.ts.
+  late_exempt: boolish.optional(),
   photo: z.preprocess(
     (v) => (v === '' ? null : v),
     z.string().max(2_000_000).regex(/^data:image\//, 'Photo must be an image').optional().nullable()

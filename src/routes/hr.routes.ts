@@ -410,13 +410,13 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
   const info = run(
     `INSERT INTO employees
       (employee_no, name, department_id, position, user_id, daily_rate, rate_type, monthly_rate, status, start_date,
-       sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, default_shift_id, photo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, default_shift_id, late_exempt, photo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input),
     input.rate_type, input.rate_type === 'monthly' ? input.monthly_rate : null,
     input.status, input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
     input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used,
-    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.photo ?? null
+    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.late_exempt ? 1 : 0, input.photo ?? null
   );
   res.status(201).json({ id: info.lastInsertRowid });
 });
@@ -437,13 +437,13 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
   run(
     `UPDATE employees SET employee_no = ?, name = ?, department_id = ?, position = ?, user_id = ?, daily_rate = ?, rate_type = ?,
        monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?,
-       leave_days_per_year = ?, leave_days_used = ?, rest_days = ?, default_shift_id = ?, photo = ?
+       leave_days_per_year = ?, leave_days_used = ?, rest_days = ?, default_shift_id = ?, late_exempt = ?, photo = ?
      WHERE id = ?`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input), input.rate_type,
     input.rate_type === 'monthly' ? input.monthly_rate : null, input.status,
     input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
     input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used,
-    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.photo ?? null, id
+    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.late_exempt ? 1 : 0, input.photo ?? null, id
   );
   res.json({ ok: true });
 });
@@ -1068,7 +1068,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
     employee_id: number; name: string; position: string | null; daily_rate: number;
     rate_type: 'daily' | 'monthly'; monthly_rate: number | null; department_name: string | null;
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
-    rest_days: string | null;
+    rest_days: string | null; late_exempt: number;
   }>(
     `SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.daily_rate,
             e.rate_type, e.monthly_rate, d.name AS department_name,
@@ -1076,7 +1076,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
             COALESCE(e.deduct_philhealth, 1) AS deduct_philhealth,
             COALESCE(e.deduct_pagibig, 1) AS deduct_pagibig,
             COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax,
-            e.rest_days
+            e.rest_days, COALESCE(e.late_exempt, 0) AS late_exempt
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -1133,7 +1133,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       const attendanceDays = attendanceDaysForEmployee(
         periodId, emp.employee_id, emp.rest_days, policy, noWorkFor, holidayFor
       );
-      const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy);
+      const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy, !!emp.late_exempt);
       const basicSalary = emp.daily_rate * computed.days_worked;
 
       // Regenerating recomputes every attendance-derived field fresh — that's the point of
@@ -1339,11 +1339,12 @@ router.get('/payroll/:recordId/detail', requirePermission('hr.manage'), (req, re
   // runtime it's still the raw string despite Employee's declared (already-parsed) type.
   const restDaysJson = emp.rest_days as unknown as string | null;
   const attendanceDays = attendanceDaysForEmployee(period.id, emp.id, restDaysJson, policy, noWorkFor, holidayFor);
-  const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy);
+  const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy, !!emp.late_exempt);
   res.json({
     employee_name: emp.name,
     period_label: period.label,
     daily_rate: emp.daily_rate,
+    late_exempt: !!emp.late_exempt,
     days: computed.days,
     totals: {
       days_worked: computed.days_worked,

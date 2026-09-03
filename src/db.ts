@@ -1306,6 +1306,15 @@ function migrate(): void {
     }
   }
 
+  // Per-employee "exempt from late deductions" — e.g. the company president, or anyone else
+  // whose actual clock-in time HR doesn't want penalized. Default 0 (not exempt, ordinary
+  // rules apply); an on flag zeroes the late deduction in generate-payslips
+  // (src/hr-payroll-compute.ts's computeAttendanceForEmployee) while still reporting the real
+  // lateness — HR can see the pattern, it just doesn't cost the employee anything.
+  if (!empCols3.some((c) => c.name === 'late_exempt')) {
+    db.exec('ALTER TABLE employees ADD COLUMN late_exempt INTEGER NOT NULL DEFAULT 0');
+  }
+
   // Simple fixed-bank paid-leave balance, admin-set per employee (not accrual-based — no
   // monthly math, no carry-over rules). Default 5 matches PH Service Incentive Leave's
   // minimum but is freely editable per employee, not treated as law. Consumed as Leave

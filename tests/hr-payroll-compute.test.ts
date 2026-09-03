@@ -65,6 +65,41 @@ describe('computeAttendanceForEmployee — grace period boundary', () => {
   });
 });
 
+describe('computeAttendanceForEmployee — exemptLate (e.g. the company president)', () => {
+  it('an exempt employee has no late_deduction despite being late — the 5th (exemptLate) parameter', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '09:10', time_out: '17:00' })], // 70 min late -> would normally deduct 1hr
+      DAILY_RATE, POLICY, true
+    );
+    expect(r.late_deduction).toBe(0);
+  });
+
+  it('late_minutes is still reported per-day even when exempt — HR can see the pattern, it just costs nothing', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '09:10', time_out: '17:00' })], DAILY_RATE, POLICY, true);
+    expect(r.days[0]!.late_minutes).toBe(60);
+    expect(r.days[0]!.late_pay).toBe(0);
+  });
+
+  it('exemptLate defaults to false when omitted — every existing non-exempt call site is unaffected', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '09:10', time_out: '17:00' })], DAILY_RATE, POLICY);
+    expect(r.late_deduction).toBe(100);
+  });
+
+  it('exemptLate only affects late — OT, undertime, and holiday/rest-day premiums still compute normally', () => {
+    const policy = { ...POLICY, ot_unit: 'minute' as const };
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '09:10', time_out: '18:00', holiday: 'regular',
+        linkedForm: { slug: 'overtime_request', data: {} },
+      })],
+      DAILY_RATE, policy, true
+    );
+    expect(r.late_deduction).toBe(0); // exempt
+    expect(r.ot_hours).toBeGreaterThan(0); // unaffected
+    expect(r.holiday_pay).toBeGreaterThan(0); // unaffected
+  });
+});
+
 describe('computeAttendanceForEmployee — OT rounds DOWN to completed blocks, requires a linked Overtime form', () => {
   it('20 min OT with a 30-min block is not a completed block yet -> 0 counted', () => {
     const r = computeAttendanceForEmployee(

@@ -378,6 +378,13 @@ App.register('hr-employees', async (view) => {
           </div>
           <p class="muted" style="font-size:12px;margin:4px 0 0">Worked on a rest day pays +30% automatically (more
             if it also lands on a holiday) — nothing else to fill in on the daily grid.</p>
+          <label style="margin-top:12px;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" data-f="late_exempt" style="width:auto" ${existing && existing.late_exempt ? 'checked' : ''} />
+            Exempt from late deductions
+          </label>
+          <p class="muted" style="font-size:12px;margin:4px 0 0">For someone whose actual clock-in time shouldn't be
+            penalized (e.g. the company president). Late minutes still show on the payslip detail for the record —
+            this only zeroes the peso deduction.</p>
           ${editing ? `
           <label style="margin-top:14px;display:block">201 documents</label>
           <div id="emp-docs"><div class="empty">Loading…</div></div>
@@ -513,6 +520,7 @@ App.register('hr-employees', async (view) => {
             rest_days: ov.querySelector('#emp-rd-custom').checked
               ? [...ov.querySelectorAll('[data-rd]:checked')].map((cb) => Number(cb.dataset.rd))
               : null,
+            late_exempt: ov.querySelector('[data-f="late_exempt"]').checked,
             photo: photoData,
           };
           if (editing) await API.put('/hr/employees/' + existing.id, body);

@@ -478,7 +478,7 @@ async function renderFormView(view, formId, initialPeriod) {
         <td>${UI.esc(d.time_in || '—')}</td>
         <td>${UI.esc(d.time_out || '—')}</td>
         <td>${detailDayTag(d) || '<span class="muted">—</span>'}</td>
-        <td>${d.late_minutes ? `${d.late_minutes} min<div class="muted" style="font-size:11px">${UI.money(d.late_pay)}</div>` : '—'}</td>
+        <td>${d.late_minutes ? `${d.late_minutes} min<div class="muted" style="font-size:11px">${detail.late_exempt ? 'exempt' : UI.money(d.late_pay)}</div>` : '—'}</td>
         <td>${d.ot_hours ? `${d.ot_hours.toFixed(2)} hr<div class="muted" style="font-size:11px">${UI.money(d.ot_pay)}</div>` : '—'}</td>
         <td>${d.day_premium_pay ? UI.money(d.day_premium_pay) : '—'}</td>
       </tr>`).join('');
@@ -489,6 +489,8 @@ async function renderFormView(view, formId, initialPeriod) {
       headActionHTML: `<button type="button" class="btn secondary small" id="pd-print">${UI.icon('printer')} Print</button>`,
       bodyHTML: `
         <div style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff">${slipHtml}</div>
+        ${detail.late_exempt ? `<p class="muted" style="font-size:12px;margin:0 0 8px">This employee is exempt from late deductions —
+          late minutes are still shown below for reference, but never subtracted from pay.</p>` : ''}
         <div class="line-items"><table class="line-table"><thead><tr>
           <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>OT</th><th>Holiday/Rest-Day Premium</th>
         </tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
