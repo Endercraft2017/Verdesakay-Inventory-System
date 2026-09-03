@@ -24,6 +24,8 @@ const POLICY: PayrollPolicy = {
   count_lunch_as_worked: false,
   hours_basis: 'fixed',
   hours_basis_unit: '30min',
+  whole_day_min_minutes: 0,
+  max_ot_hours: null,
 };
 const DAILY_RATE = 800; // hourly = 100
 const SHIFT = { start_time: '08:00', end_time: '17:00' };
@@ -635,11 +637,11 @@ describe('computeAttendanceForEmployee — night differential', () => {
       [day({ time_in: '14:00', time_out: '23:00', shift: afternoon, linkedForm: { slug: 'overtime_request', data: {} } })],
       DAILY_RATE, policy
     );
-    // 60 min OT (22:00-23:00), entirely inside the 22:00-06:00 night window
+    // 60 min OT (22:00-23:00), entirely inside the 22:00-06:00 night window; the regular
+    // 14:00-22:00 span doesn't touch the night window at all (ends exactly at 22:00).
     expect(r.ot_hours).toBeCloseTo(1, 6);
-    const basePay = 1 * 100 * 1.25;
-    const nightBonus = 1 * 100 * 0.10;
-    expect(r.overtime_pay).toBeCloseTo(basePay + nightBonus, 6);
+    expect(r.overtime_pay).toBeCloseTo(1 * 100 * 1.25, 6); // night diff is its own line, not folded in
+    expect(r.night_diff_pay).toBeCloseTo(1 * 100 * 0.10, 6);
   });
 
   it('no night bonus when the OT falls entirely outside the night window', () => {
@@ -658,12 +660,35 @@ describe('computeAttendanceForEmployee — night differential', () => {
       [day({ time_in: '21:00', time_out: '07:00', shift: earlyNight, linkedForm: { slug: 'overtime_request', data: {} } })],
       DAILY_RATE, policy
     );
-    // 2 hours OT (05:00-07:00): the 05:00-06:00 hour is inside the 22:00-06:00 night window,
-    // the 06:00-07:00 hour is not.
+    // 2 hours OT (05:00-07:00). Night diff now covers the WHOLE paid clocked span (21:00-07:00,
+    // 10 hours), not just the OT portion — the entire 22:00-06:00 night window (8 hours) sits
+    // inside that span, so all 8 hours (both regular and OT) earn the night premium, not just
+    // the 1 OT hour that used to be the only thing checked.
     expect(r.ot_hours).toBeCloseTo(2, 6);
-    const basePay = 2 * 100 * 1.25;
-    const nightBonus = 1 * 100 * 0.10; // only 1 of the 2 OT hours gets the night premium
-    expect(r.overtime_pay).toBeCloseTo(basePay + nightBonus, 6);
+    expect(r.overtime_pay).toBeCloseTo(2 * 100 * 1.25, 6); // night diff is its own line, not folded in
+    expect(r.night_diff_pay).toBeCloseTo(8 * 100 * 0.10, 6);
+  });
+
+  it('covers REGULAR (non-OT) night hours too — a straight night-shift worker with no OT still earns the differential for every night hour actually worked', () => {
+    const policy: PayrollPolicy = { ...POLICY, night_diff_enabled: true, night_diff_percent: 10 };
+    const nightShift = { start_time: '22:00', end_time: '06:00' }; // wraps midnight, entirely the night window
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '22:00', time_out: '06:00', shift: nightShift })],
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBe(0);
+    expect(r.overtime_pay).toBe(0);
+    // Full 8-hour shift, entirely inside 22:00-06:00 -> full night differential, no OT involved.
+    expect(r.night_diff_pay).toBeCloseTo(8 * 100 * 0.10, 6);
+  });
+
+  it('disabled (night_diff_enabled: false) pays no differential at all, regular or OT', () => {
+    const nightShift = { start_time: '22:00', end_time: '06:00' };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '22:00', time_out: '06:00', shift: nightShift })],
+      DAILY_RATE, POLICY // night_diff_enabled: false
+    );
+    expect(r.night_diff_pay).toBe(0);
   });
 });
 
@@ -1030,5 +1055,137 @@ describe('unrecordedOtMinutes — flags a block-worthy clock-out past shift end 
     const flagged = unrecordedOtMinutes(d, policy);
     const computed = computeAttendanceForEmployee([d], DAILY_RATE, policy);
     expect(flagged).toBe(Math.round(computed.days[0]!.ot_hours * 60));
+  });
+});
+
+describe('computeAttendanceForEmployee — whole_day_min_minutes ("Undertime Days" vs whole days)', () => {
+  const WHOLE = { ...POLICY, whole_day_min_minutes: 420 }; // 7 hours
+
+  it('off by default (0): any presence at all is still a flat whole day, unchanged old behavior', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '10:00' })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(1);
+    expect(r.days_undertime).toBe(0);
+    expect(r.days[0]!.status).toBe('worked');
+  });
+
+  it('exactly at the threshold (7h net) counts as a whole day', () => {
+    // 08:00-16:00 raw = 8h, minus 1h lunch = 7h net -> meets the 420-min threshold exactly.
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '16:00' })], DAILY_RATE, WHOLE);
+    expect(r.days_worked).toBe(1);
+    expect(r.days_undertime).toBe(0);
+    expect(r.days[0]!.status).toBe('worked');
+  });
+
+  it('just under the threshold becomes an "Undertime Day": 0 credit toward days_worked, paid proportionally, no late/undertime peso deduction layered on top', () => {
+    // 08:00-15:30 raw = 7.5h, minus 1h lunch = 6.5h net -> under 7h.
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '15:30' })], DAILY_RATE, WHOLE);
+    expect(r.days_worked).toBe(0);
+    expect(r.days_undertime).toBe(1);
+    expect(r.late_deduction).toBe(0);
+    expect(r.undertime_pay).toBe(0);
+    expect(r.undertime_day_pay).toBeCloseTo(6.5 * 100, 6); // 6.5 net hours x hourly rate
+    expect(r.days[0]!.status).toBe('undertime');
+    expect(r.days[0]!.undertime_day_pay).toBeCloseTo(6.5 * 100, 6);
+  });
+
+  it('raw presence alone is not enough if lunch pushes net hours under the threshold — 7.5h raw but only 6.5h net still counts as Undertime, not whole', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '08:30', time_out: '16:00' })], DAILY_RATE, WHOLE);
+    // 08:30-16:00 raw = 7.5h, minus 1h lunch = 6.5h net -> Undertime Day.
+    expect(r.days_worked).toBe(0);
+    expect(r.days_undertime).toBe(1);
+  });
+
+  it('a linked Half Day request is always its own fixed 0.5, never judged by whole_day_min_minutes even at 4 net hours', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '12:00', linkedForm: { slug: 'halfday_request', data: { session: 'Morning (AM)' } } })],
+      DAILY_RATE, WHOLE
+    );
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+    expect(r.days_undertime).toBe(0);
+    expect(r.days[0]!.status).toBe('half_day');
+  });
+
+  it('a linked Undertime Request with with_pay=Yes is always a full day, never judged by whole_day_min_minutes even when hours present are short', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '13:00', linkedForm: { slug: 'undertime_request', data: { with_pay: 'Yes' } } })],
+      DAILY_RATE, WHOLE
+    );
+    expect(r.days_worked).toBe(1);
+    expect(r.days_undertime).toBe(0);
+    expect(r.days[0]!.status).toBe('worked');
+  });
+
+  it('an Undertime Request with with_pay=No is still judged by whole_day_min_minutes like any other short day', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '13:00', linkedForm: { slug: 'undertime_request', data: { with_pay: 'No' } } })],
+      DAILY_RATE, WHOLE
+    );
+    expect(r.days_worked).toBe(0);
+    expect(r.days_undertime).toBe(1);
+  });
+
+  it('late arrival is still reported (informationally) on an Undertime Day, just never costs pay', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '09:30', time_out: '15:00' })], DAILY_RATE, WHOLE);
+    expect(r.days[0]!.status).toBe('undertime');
+    expect(r.days[0]!.late_minutes).toBeGreaterThan(0);
+    expect(r.days[0]!.late_pay).toBe(0);
+    expect(r.late_deduction).toBe(0);
+  });
+
+  it('an explicit min_work_minutes "deny" still takes precedence over the whole-day/Undertime-Day classification', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '09:00', minHoursDecision: 'deny' })],
+      DAILY_RATE, { ...WHOLE, min_work_minutes: 240 }
+    );
+    expect(r.days[0]!.status).toBe('below_minimum_denied');
+    expect(r.days_undertime).toBe(0);
+    expect(r.days_worked).toBe(0);
+  });
+});
+
+describe('computeAttendanceForEmployee — max_ot_hours (policy.max_ot_hours, null = no cap)', () => {
+  it('null (default): no cap, unchanged old behavior', () => {
+    const policy = { ...POLICY, require_ot_form: false, max_ot_hours: null };
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '21:00' })], DAILY_RATE, policy); // 4h raw OT
+    expect(r.ot_hours).toBeCloseTo(4, 6);
+  });
+
+  it('caps OT hours credited/paid at the configured maximum — the excess is simply unpaid presence, not converted to anything else', () => {
+    const policy = { ...POLICY, require_ot_form: false, ot_unit: 'minute' as const, max_ot_hours: 2 };
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '21:00' })], DAILY_RATE, policy); // 4h raw OT
+    expect(r.ot_hours).toBeCloseTo(2, 6);
+    expect(r.overtime_pay).toBeCloseTo(2 * 100 * 1.25, 6);
+  });
+
+  it('0 is a meaningful cap (no OT paid at all), distinct from null', () => {
+    const policy = { ...POLICY, require_ot_form: false, max_ot_hours: 0 };
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '21:00' })], DAILY_RATE, policy);
+    expect(r.ot_hours).toBe(0);
+    expect(r.overtime_pay).toBe(0);
+  });
+
+  it('under the cap is unaffected', () => {
+    const policy = { ...POLICY, require_ot_form: false, max_ot_hours: 5 };
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '19:00' })], DAILY_RATE, policy); // 2h raw OT
+    expect(r.ot_hours).toBeCloseTo(2, 6);
+  });
+
+  it('also caps OT under hours_basis: per_hour', () => {
+    const policy = { ...POLICY, hours_basis: 'per_hour' as const, require_ot_form: false, max_ot_hours: 1 };
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '20:00' })], DAILY_RATE, policy); // ~4h raw OT
+    expect(r.ot_hours).toBeCloseTo(1, 6);
+  });
+
+  it('a capped OT tail earns no night differential for the uncompensated excess', () => {
+    const policy = { ...POLICY, require_ot_form: false, night_diff_enabled: true, night_diff_percent: 10, ot_unit: 'minute' as const, max_ot_hours: 0.5 };
+    const afternoon = { start_time: '14:00', end_time: '22:00' }; // regular hours never touch the 22:00-06:00 window
+    // Raw OT would be 22:00-23:00 (1h), all inside the night window, but capped to 0.5h (22:00-22:30).
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '14:00', time_out: '23:00', shift: afternoon })],
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBeCloseTo(0.5, 6);
+    expect(r.night_diff_pay).toBeCloseTo(0.5 * 100 * 0.10, 6); // only the 0.5 paid OT hour, not the full 1
   });
 });

@@ -280,8 +280,8 @@ router.get('/form-definitions/:id/records', (req, res) => {
 // GET /api/form-records/:id — single record (forms.manage.<scope> for its form's scope — same
 // gate as the list route above)
 router.get('/form-records/:id', (req, res) => {
-  const row = queryOne<FormRecord & { form_name: string; scope: FormScope | null }>(
-    `SELECT fr.*, fd.name AS form_name, fd.scope AS scope, u.full_name AS created_by_name
+  const row = queryOne<FormRecord & { form_name: string; form_slug: string; scope: FormScope | null }>(
+    `SELECT fr.*, fd.name AS form_name, fd.slug AS form_slug, fd.scope AS scope, u.full_name AS created_by_name
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
      LEFT JOIN users u ON u.id = fr.created_by

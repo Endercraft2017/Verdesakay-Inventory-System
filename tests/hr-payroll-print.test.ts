@@ -60,6 +60,27 @@ describe('buildSlipContext', () => {
     const ctx = buildSlipContext(emp({ net_pay: 7626.25 }));
     expect(ctx.net_pay).toBe('7,626.25'); // stored value, not computed 7755 - 128.8 = 7626.20
   });
+
+  it('formats the new Half Days / Undertime Days / Undertime Day Pay / Night Differential fields', () => {
+    const ctx = buildSlipContext(emp({ days_half: 1, days_undertime: 2, undertime_day_pay: 350, night_diff_pay: 80 }));
+    expect(ctx.days_half).toBe(1);
+    expect(ctx.days_undertime).toBe(2);
+    expect(ctx.undertime_day_pay).toBe('350.00');
+    expect(ctx.night_diff_pay).toBe('80.00');
+  });
+
+  it('formats each other_deductions line for the template\'s {{#other_deductions}} loop', () => {
+    const ctx = buildSlipContext(emp({ other_deductions: [{ label: 'Cash Advance', amount: 2000 }, { label: 'Uniform', amount: 350.5 }] }));
+    expect(ctx.other_deductions).toEqual([
+      { label: 'Cash Advance', amount: '2,000.00' },
+      { label: 'Uniform', amount: '350.50' },
+    ]);
+  });
+
+  it('other_deductions defaults to an empty array when absent or not an array', () => {
+    expect(buildSlipContext(emp()).other_deductions).toEqual([]);
+    expect(buildSlipContext(emp({ other_deductions: null })).other_deductions).toEqual([]);
+  });
 });
 
 describe('buildPayrollSlipsHtml', () => {
@@ -96,5 +117,12 @@ describe('buildPayrollSlipsHtml', () => {
   it('the fallback body references the fields the fetch could return', () => {
     expect(FALLBACK_BODY).toContain('{{employee_name}}');
     expect(FALLBACK_BODY).toContain('{{net_pay}}');
+  });
+
+  it('a template using {{#other_deductions}}...{{/other_deductions}} renders one line per entry', () => {
+    const body = '<div>{{#other_deductions}}<span>{{label}}: {{amount}}</span>{{/other_deductions}}</div>';
+    const html = buildPayrollSlipsHtml([emp({ other_deductions: [{ label: 'Cash Advance', amount: 2000 }, { label: 'Uniform', amount: 350 }] })], body);
+    expect(html).toContain('Cash Advance: 2,000.00');
+    expect(html).toContain('Uniform: 350.00');
   });
 });

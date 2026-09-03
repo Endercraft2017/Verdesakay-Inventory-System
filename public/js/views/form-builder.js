@@ -45,34 +45,39 @@ App.register('form-builder', async (view, filter) => {
       ],
     },
     {
+      // These 5 request-type templates (undertime/offset here, plus overtime/half day/holiday
+      // work elsewhere in this list) exist only as a recovery path for an admin who deleted an
+      // auto-seeded request form and wants to recreate it — src/db.ts's seedHrRequestForms()
+      // always auto-seeds all 5 on every install already, so in the normal case this template
+      // is never actually used (the slug already exists). Kept field-for-field identical to the
+      // canonical auto-seeded shape (not a superset with extra convenience fields) so a
+      // recreated form is guaranteed to still work with the compute engine, which reads these
+      // keys directly.
       key: 'undertime', label: 'Undertime Form', icon: 'calendar',
       name: 'Undertime Request', slug: 'undertime_request', number_prefix: 'UT',
       fields: [
         req('employee_name', 'Employee Name', 'employee'),
-        opt('department', 'Department', 'text'),
-        req('date', 'Date', 'date'),
-        req('time_out', 'Time Out', 'text'),
-        opt('minutes_short', 'Minutes Short', 'number'),
+        req('work_date', 'Date', 'date'),
         // 'Yes', once this request is approved and linked to the attendance day, waives the
         // undertime deduction outright — a company-authorized paid early release, no make-up
         // owed (unlike an Offset form, which defers the obligation instead of waiving it).
         // Anything else (including left blank) still deducts, same as no form linked at all.
         req('with_pay', 'With Pay?', 'select', ['Yes', 'No']),
         req('reason', 'Reason', 'textarea'),
-        opt('approved_by', 'Approved By', 'text'),
       ],
     },
     {
       key: 'offset', label: 'Offset Form', icon: 'calendar',
-      name: 'Offset Request', slug: 'offset_form', number_prefix: 'OF',
+      name: 'Offset Request', slug: 'offset_form', number_prefix: 'OFS',
       fields: [
         req('employee_name', 'Employee Name', 'employee'),
-        opt('department', 'Department', 'text'),
-        req('offset_date', 'Date', 'date'),
-        req('late_arrival_time', 'Late Arrival Time', 'text'),
-        req('new_time_out', 'Adjusted Time Out', 'text'),
+        req('work_date', 'Date', 'date'),
+        // Optional — when both this and Adjusted Time Out are filled in, the whole day's
+        // window shifts (late/OT/undertime judged against it instead of the original shift).
+        // Left blank, only the time-out shifts.
+        opt('new_time_in', 'New Time In (optional)', 'time'),
+        req('new_time_out', 'Adjusted Time Out', 'time'),
         req('reason', 'Reason', 'textarea'),
-        opt('approved_by', 'Approved By', 'text'),
       ],
     },
     {

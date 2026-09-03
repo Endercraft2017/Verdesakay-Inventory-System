@@ -55,7 +55,9 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 21; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision
+export const SCHEMA_VERSION = 22; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+// 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
+// Differential, itemized Other Deductions rows
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1520,6 +1522,37 @@ function migrate(): void {
       );
       touched = true;
     }
+    // (SCHEMA_VERSION 22) Half Days/Undertime Days (PayrollPolicy.whole_day_min_minutes),
+    // Undertime Day Pay, Night Differential, and itemized Other Deductions — same surgical,
+    // admin-customization-preserving touch-up as the two checks above.
+    if (!body.includes('{{days_half}}') && body.includes('<span class="l">Days Absent:</span><span class="v">{{days_absent}}</span></div>')) {
+      body = body.replace(
+        '<span class="l">Days Absent:</span><span class="v">{{days_absent}}</span></div>',
+        '<span class="l">Days Absent:</span><span class="v">{{days_absent}}</span></div>\n  <div class="slip-row"><span class="l">Half Days:</span><span class="v">{{days_half}}</span></div>\n  <div class="slip-row"><span class="l">Undertime Days:</span><span class="v">{{days_undertime}}</span></div>'
+      );
+      touched = true;
+    }
+    if (!body.includes('{{undertime_day_pay}}') && body.includes('<span>Undertime</span><span>{{undertime_pay}}</span></div>')) {
+      body = body.replace(
+        '<span>Undertime</span><span>{{undertime_pay}}</span></div>',
+        '<span>Undertime</span><span>{{undertime_pay}}</span></div>\n      <div class="slip-line"><span>Undertime Day Pay</span><span>{{undertime_day_pay}}</span></div>'
+      );
+      touched = true;
+    }
+    if (!body.includes('{{night_diff_pay}}') && body.includes('<span>Rest Day OT</span><span>{{rest_day_ot}}</span></div>')) {
+      body = body.replace(
+        '<span>Rest Day OT</span><span>{{rest_day_ot}}</span></div>',
+        '<span>Rest Day OT</span><span>{{rest_day_ot}}</span></div>\n      <div class="slip-line"><span>Night Differential</span><span>{{night_diff_pay}}</span></div>'
+      );
+      touched = true;
+    }
+    if (!body.includes('{{#other_deductions}}') && body.includes('<span>Cash Advance</span><span>{{cash_advance}}</span></div>')) {
+      body = body.replace(
+        '<span>Cash Advance</span><span>{{cash_advance}}</span></div>',
+        '<span>Cash Advance</span><span>{{cash_advance}}</span></div>\n      {{#other_deductions}}<div class="slip-line"><span>{{label}}</span><span>{{amount}}</span></div>{{/other_deductions}}'
+      );
+      touched = true;
+    }
     if (touched) db.prepare('UPDATE doc_templates SET body = ?, updated_at = datetime(\'now\') WHERE id = ?').run(body, slipTpl.id);
   }
 
@@ -1691,6 +1724,20 @@ function seedHrPayrollForm(): void {
       }
       const lateField = fields.find((f) => f.key === 'late_absences');
       if (lateField && lateField.label !== 'Late') { lateField.label = 'Late'; touched = true; }
+      // Half Days / Undertime Days (PayrollPolicy.whole_day_min_minutes), Undertime Day Pay,
+      // Night Differential, and Other Deductions Total — added alongside the Time Keeping
+      // minimum-work-time / max-OT / night-diff / other-deductions feature.
+      const insertAfter = (afterKey: string, field: { key: string; label: string; type: string; required: boolean; options: unknown[]; default: string }) => {
+        if (fields.some((f) => f.key === field.key)) return;
+        const at = fields.findIndex((f) => f.key === afterKey);
+        fields.splice(at >= 0 ? at + 1 : fields.length, 0, field);
+        touched = true;
+      };
+      insertAfter('days_absent', { key: 'days_half', label: 'Half Days', type: 'number', required: false, options: [], default: '' });
+      insertAfter('days_half', { key: 'days_undertime', label: 'Undertime Days', type: 'number', required: false, options: [], default: '' });
+      insertAfter('undertime_pay', { key: 'undertime_day_pay', label: 'Undertime Day Pay', type: 'number', required: false, options: [], default: '' });
+      insertAfter('rest_day_ot', { key: 'night_diff_pay', label: 'Night Differential', type: 'number', required: false, options: [], default: '' });
+      insertAfter('cash_advance', { key: 'other_deductions_total', label: 'Other Deductions', type: 'number', required: false, options: [], default: '' });
       if (touched) db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
     } catch { /* leave as-is if the stored fields are somehow unparseable */ }
     return;
@@ -1707,20 +1754,25 @@ function seedHrPayrollForm(): void {
     numField('daily_rate', 'Daily Rate'),
     numField('days_worked', 'Days Worked'),
     numField('days_absent', 'Days Absent'),
+    numField('days_half', 'Half Days'),
+    numField('days_undertime', 'Undertime Days'),
     numField('ot_hours', 'OT Hours'),
     numField('ot_rate_hour', 'OT Rate/Hour'),
     numField('basic_salary', 'Basic Salary'),
     numField('overtime_pay', 'Overtime Pay'),
     numField('undertime_pay', 'Undertime Pay'),
+    numField('undertime_day_pay', 'Undertime Day Pay'),
     numField('holiday_pay', 'Holiday Pay'),
     numField('special_holiday_30', 'Special Holiday 30%'),
     numField('rest_day_ot', 'Rest Day OT'),
+    numField('night_diff_pay', 'Night Differential'),
     numField('total_earnings', 'Total Earnings'),
     numField('sss', 'SSS'),
     numField('philhealth', 'PhilHealth'),
     numField('pagibig', 'Pag-IBIG'),
     numField('withholding_tax', 'Withholding Tax'),
     numField('cash_advance', 'Cash Advance'),
+    numField('other_deductions_total', 'Other Deductions'),
     // Key stays late_absences for backward compat (GL posting, CSV import, tests all read it)
     // but the label is deliberately just "Late" — it has only ever held the late-arrival peso
     // deduction, never an absence figure (see days_absent above, and the field's own comment
@@ -2281,6 +2333,8 @@ function payrollSlipTemplateBody(): string {
   <div class="slip-row"><span class="l">Daily Rate:</span><span class="v">{{daily_rate}}</span></div>
   <div class="slip-row"><span class="l">Days Worked:</span><span class="v">{{days_worked}}</span></div>
   <div class="slip-row"><span class="l">Days Absent:</span><span class="v">{{days_absent}}</span></div>
+  <div class="slip-row"><span class="l">Half Days:</span><span class="v">{{days_half}}</span></div>
+  <div class="slip-row"><span class="l">Undertime Days:</span><span class="v">{{days_undertime}}</span></div>
   <div class="slip-row"><span class="l">OT Hours:</span><span class="v">{{ot_hours}}</span></div>
   <div class="slip-row"><span class="l">OT Rate/Hour:</span><span class="v">{{ot_rate_hour}}</span></div>
   <div class="slip-cols">
@@ -2289,9 +2343,11 @@ function payrollSlipTemplateBody(): string {
       <div class="slip-line"><span>Basic Salary</span><span>{{basic_salary}}</span></div>
       <div class="slip-line"><span>Overtime Pay</span><span>{{overtime_pay}}</span></div>
       <div class="slip-line"><span>Undertime</span><span>{{undertime_pay}}</span></div>
+      <div class="slip-line"><span>Undertime Day Pay</span><span>{{undertime_day_pay}}</span></div>
       <div class="slip-line"><span>Holiday Pay</span><span>{{holiday_pay}}</span></div>
       <div class="slip-line"><span>Special Holiday 30%</span><span>{{special_holiday_30}}</span></div>
       <div class="slip-line"><span>Rest Day OT</span><span>{{rest_day_ot}}</span></div>
+      <div class="slip-line"><span>Night Differential</span><span>{{night_diff_pay}}</span></div>
       <div class="slip-total"><span>Total Earnings</span><span>{{total_earnings}}</span></div>
     </div>
     <div class="slip-col">
@@ -2301,6 +2357,7 @@ function payrollSlipTemplateBody(): string {
       <div class="slip-line"><span>Pag-IBIG</span><span>{{pagibig}}</span></div>
       <div class="slip-line"><span>Withholding Tax</span><span>{{withholding_tax}}</span></div>
       <div class="slip-line"><span>Cash Advance</span><span>{{cash_advance}}</span></div>
+      {{#other_deductions}}<div class="slip-line"><span>{{label}}</span><span>{{amount}}</span></div>{{/other_deductions}}
       <div class="slip-line"><span>Late</span><span>{{late_absences}}</span></div>
       <div class="slip-total"><span>Total Deductions</span><span>{{total_deductions}}</span></div>
     </div>

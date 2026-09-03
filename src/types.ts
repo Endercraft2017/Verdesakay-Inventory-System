@@ -902,18 +902,38 @@ export interface PayrollPolicy {
       effect on fixed-basis pay (a full flat day already included lunch) or half-day window
       derivation, which always assumes the structural lunch gap regardless of this flag. */
   count_lunch_as_worked: boolean;
-  /** 'fixed' (default, unchanged): a worked day credits a flat 1 day (0.5 for a linked Half Day
-      request) once present at all; late/OT/undertime are peso adjustments around the shift's
-      fixed start/end. 'per_hour': basic pay is prorated directly from actual worked minutes
-      (lunch excluded per count_lunch_as_worked), rounded to hours_basis_unit — e.g. clocking
+  /** 'fixed' (default): a worked day credits a flat 1 day (0.5 for a linked Half Day request,
+      0 for an "Undertime Day" — see whole_day_min_minutes) once present for at least
+      whole_day_min_minutes; late/OT/undertime are peso adjustments around the shift's fixed
+      start/end. 'per_hour': basic pay is prorated directly from actual worked minutes (lunch
+      excluded per count_lunch_as_worked), rounded to hours_basis_unit — e.g. clocking
       08:00-14:00 on an 08:00-17:00 shift with a 60-min lunch pays exactly 5 hours, not a flat
       full or half day. In this mode late arrival/leaving early are inherently self-correcting
       (already paid only for hours present), so no separate late/undertime peso deduction is
       layered on top. */
   hours_basis: 'fixed' | 'per_hour';
-  /** Rounding block for hours_basis: 'per_hour' pay — same rounding-DOWN convention as OT (only
-      a fully completed block is paid). Has no effect in 'fixed' mode. */
+  /** Rounding block for hours_basis: 'per_hour' pay (and an "Undertime Day"'s own proportional
+      pay under 'fixed' mode — see whole_day_min_minutes) — same rounding-DOWN convention as OT
+      (only a fully completed block is paid). */
   hours_basis_unit: 'minute' | '30min' | 'hour';
+  /** hours_basis: 'fixed' only. Net minutes actually present (lunch excluded, same rule as
+      hours_basis: 'per_hour') a day needs to count as a full "whole day" credit (1.0) toward
+      days_worked — not just having clocked in/out at all. Below this, the day becomes its own
+      "Undertime Day": 0 credit toward days_worked (tracked separately, see
+      AttendanceComputation.days_undertime), paid proportionally for the actual net minutes
+      present instead of the flat daily rate, and no separate late/undertime peso deduction is
+      layered on top (same self-correcting reasoning as hours_basis: 'per_hour'). Doesn't apply
+      to a linked Half Day request (always its own fixed 0.5, never judged by this) or a linked
+      Undertime Request with with_pay = 'Yes' (explicitly authorized as a full paid day
+      regardless of hours present). Default 420 (7 hours) — deliberately a bit under a full
+      8-hour shift so up to an hour late still reads as a whole day. 0 disables the check
+      entirely (every present day is a flat whole day, the pre-2026-09 behavior). */
+  whole_day_min_minutes: number;
+  /** Caps OT credited per day, in hours — hours worked past this are simply not paid as OT
+      (same as unauthorized OT when require_ot_form is on: presence without pay, not converted
+      into undertime either). null/undefined (default): no cap. Applies in both hours_basis
+      modes, scaled by hours_basis_unit's own rounding as usual before the cap is applied. */
+  max_ot_hours: number | null;
 }
 
 export interface EmployeeDocument {

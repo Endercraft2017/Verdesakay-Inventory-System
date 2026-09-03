@@ -177,9 +177,12 @@ async function policySettingsModal() {
           <select data-p="ot_unit"><option value="minute">Per minute</option><option value="30min">Per 30 minutes</option><option value="hour">Per hour</option></select></div>
         <div><label>OT rate (% of hourly)</label><input data-p="ot_rate_percent" type="number" min="0" /></div>
         <div><label>Monthly rate divisor</label><input data-p="monthly_rate_divisor" type="number" min="1" max="31" /></div>
+        <div><label>Maximum OT (hours/day)</label><input data-p="max_ot_hours" type="number" min="0" max="24" step="0.5" placeholder="blank = no maximum" /></div>
       </div>
       <p class="muted" style="font-size:12px;margin:2px 0 0">For employees paid a monthly rate, their effective
-        daily rate used in payroll is monthly rate ÷ this number (e.g. 26 working days/month).</p>
+        daily rate used in payroll is monthly rate ÷ this number (e.g. 26 working days/month). Maximum OT caps how
+        many OT hours are credited/paid per day — hours worked past it are simply unpaid presence, not converted
+        into anything else. Leave blank for no cap.</p>
       <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
         <input type="checkbox" data-p="require_ot_form" style="width:auto" /> Require a linked Overtime Request form for OT to be paid
       </label></div>
@@ -217,6 +220,17 @@ async function policySettingsModal() {
         a per-hours-basis worked span. Minimum time flags any day under it for review in Time Keeping's daily grid
         (an Allow/Deny button appears there) — it never withholds pay by itself; a short day still pays for the
         actual hours worked unless HR explicitly denies it. Leave at 0 to never flag short days at all.</p>
+      <div class="field-row" style="margin-top:10px">
+        <div><label>Whole-day minimum, Fixed mode only (minutes)</label>
+          <input data-p="whole_day_min_minutes" type="number" min="0" max="1440" placeholder="0 = off (any presence is a whole day)" /></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0"><b>Fixed mode only.</b> Below this many net minutes
+        present (lunch excluded), a day no longer counts as a full "Days Worked" credit — it becomes its own
+        "Undertime Day" instead (shown separately on the payslip), paid proportionally for the actual hours
+        present rather than the flat daily rate. Doesn't apply to a linked Half Day request (always its own fixed
+        half day) or an Undertime Request filed with pay (always a full paid day). Suggested: 420 (7 hours) for an
+        8-hour shift — up to an hour late still reads as a whole day. Leave at 0 to keep the old behavior: any
+        presence at all is a flat whole day.</p>
       <div class="field-row" style="margin-top:10px">
         <div><label>Pay frequency</label>
           <select data-p="pay_frequency">
@@ -288,6 +302,8 @@ async function policySettingsModal() {
         p('lunch_break_minutes').value = policy.lunch_break_minutes ?? 60;
         p('count_lunch_as_worked').checked = !!policy.count_lunch_as_worked;
         p('min_work_minutes').value = policy.min_work_minutes ?? 0;
+        p('whole_day_min_minutes').value = policy.whole_day_min_minutes ?? 0;
+        p('max_ot_hours').value = policy.max_ot_hours ?? '';
         (policy.default_rest_days || [0, 6]).forEach((d) => {
           const cb = ov.querySelector(`[data-rd="${d}"]`);
           if (cb) cb.checked = true;
@@ -359,6 +375,7 @@ async function policySettingsModal() {
           ot_rate_percent: Number(p('ot_rate_percent').value) || 0,
           require_ot_form: p('require_ot_form').checked,
           monthly_rate_divisor: Number(p('monthly_rate_divisor').value) || 26,
+          max_ot_hours: p('max_ot_hours').value === '' ? null : Number(p('max_ot_hours').value),
           pay_frequency: p('pay_frequency').value,
           auto_statutory: p('auto_statutory').checked,
           night_diff_enabled: p('night_diff_enabled').checked,
@@ -370,6 +387,7 @@ async function policySettingsModal() {
           lunch_break_minutes: Number(p('lunch_break_minutes').value) || 0,
           count_lunch_as_worked: p('count_lunch_as_worked').checked,
           min_work_minutes: Number(p('min_work_minutes').value) || 0,
+          whole_day_min_minutes: Number(p('whole_day_min_minutes').value) || 0,
           default_rest_days: [...ov.querySelectorAll('[data-rd]:checked')].map((cb) => Number(cb.dataset.rd)),
         };
         const dedCells = [...ov.querySelectorAll('[data-ded]')];
@@ -1328,11 +1346,17 @@ async function renderPeriod(view, periodId) {
               : empRestDays.includes(weekdayOf(d.work_date));
             const isCancellation = effHoliday === 'cancelled_paid' || effHoliday === 'cancelled_unpaid';
             const noWork = effHoliday ? null : noWorkFor(d.work_date); // holiday/override always takes precedence
+            // Explicit "Half Day" identifier — the linked-form badge in the last column already
+            // names the form, but doesn't stand out as a distinct DAY TYPE the way the holiday/
+            // rest-day tags above it do, so a half day was easy to miss at a glance.
+            const halfDayTag = d._linkSlug === 'halfday_request'
+              ? `<span class="badge-pill status-confirmed" title="Judged against just this half's own AM/PM window, not the full shift">Half Day${d._linkSession ? ` (${d._linkSession.startsWith('After') ? 'PM' : 'AM'})` : ''}</span>`
+              : '';
             const tag = effHoliday
               ? `<span class="badge-pill ${isCancellation ? 'status-cancelled' : 'status-completed'}" title="${isCancellation ? 'Not worked — credited as a paid/unpaid day per the selection, no premium' : 'Pays the DOLE premium automatically'}">${UI.esc(HOLIDAY_LABELS[effHoliday] || effHoliday)}</span>`
               : noWork
                 ? `<span class="badge-pill ${noWork === 'paid' ? 'status-completed' : 'status-cancelled'}" title="Company-wide No Work Memo — ${noWork === 'paid' ? 'credited as a paid day' : 'unpaid, same as an absence but documented'}">No Work (${noWork === 'paid' ? 'Paid' : 'Unpaid'})</span>`
-                : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : '');
+                : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : halfDayTag);
             return `
             <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
               <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}<div data-min-flag="${i}">${minFlagHtml(d, i)}</div></td>
@@ -1415,12 +1439,17 @@ async function renderPeriod(view, periodId) {
         }
 
         // Resolve a readable label for whatever's already linked (form_record_id came back from
-        // GET as a bare id — fetch each once to show "Overtime Request OT-00003" etc.).
+        // GET as a bare id — fetch each once to show "Overtime Request OT-00003" etc.). Also
+        // stashes the slug/session so renderRows can show an explicit "Half Day (AM/PM)"
+        // identifier next to the date — the linked-form badge alone (in the last column) didn't
+        // stand out enough to tell a half day apart from any other linked request at a glance.
         Promise.all(days.map(async (d) => {
           if (d.form_record_id) {
             try {
               const r = await API.get('/form-records/' + d.form_record_id);
               d._linkLabel = `${r.form_name || 'Form'} ${r.number || ''}`.trim();
+              d._linkSlug = r.form_slug || null;
+              d._linkSession = (r.data && r.data.session) || null;
             } catch { d._linkLabel = 'Linked'; }
           }
         })).then(renderRows);

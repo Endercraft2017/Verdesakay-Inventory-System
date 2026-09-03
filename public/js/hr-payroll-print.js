@@ -63,19 +63,29 @@ function buildSlipContext(d) {
     daily_rate: _money(d.daily_rate),
     days_worked: d.days_worked ?? '',
     days_absent: d.days_absent ?? '',
+    days_half: d.days_half ?? '',
+    days_undertime: d.days_undertime ?? '',
     ot_hours: d.ot_hours ?? '',
     ot_rate_hour: _money(d.ot_rate_hour),
     basic_salary: _money(d.basic_salary),
     overtime_pay: _money(d.overtime_pay),
     undertime_pay: _money(d.undertime_pay),
+    undertime_day_pay: _money(d.undertime_day_pay),
     holiday_pay: _money(d.holiday_pay),
     special_holiday_30: _money(d.special_holiday_30),
     rest_day_ot: _money(d.rest_day_ot),
+    night_diff_pay: _money(d.night_diff_pay),
     total_earnings: _money(totalEarnings),
     sss: _money(d.sss),
     philhealth: _money(d.philhealth),
     pagibig: _money(d.pagibig),
     cash_advance: _money(d.cash_advance),
+    // Ad-hoc per-cutoff deduction lines (Cash Advance, uniform, misc, …) — see
+    // src/routes/hr.routes.ts's recomputeDeductionsFor. Rendered via the template's own
+    // {{#other_deductions}}...{{/other_deductions}} loop (renderTemplate supports array
+    // sections natively), each line's amount pre-formatted the same as every other money field.
+    other_deductions: (Array.isArray(d.other_deductions) ? d.other_deductions : [])
+      .map((line) => ({ label: line && line.label, amount: _money(line && line.amount) })),
     late_absences: _money(d.late_absences),
     total_deductions: _money(totalDeductions),
     net_pay: _money(netPay),

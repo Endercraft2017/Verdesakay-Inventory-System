@@ -719,8 +719,12 @@ export const linkFormTemplateSchema = z.object({
 // allowed — e.g. hr_payroll's generate-payslips-only `employer_contributions` breakdown
 // (never shown/edited in the generic form UI, but round-tripped through {...existing.data,
 // otherField} by both that UI and PUT /form-records/:id, so it has to survive validation).
+// An array of such flat objects is also allowed — hr_payroll's `other_deductions` (ad-hoc
+// Cash Advance / misc deduction lines, [{label, amount}, ...]) — same "generate-payslips-only,
+// round-tripped by the generic PUT" reasoning.
 const formFieldScalar = z.union([z.string().max(10000), z.number(), z.boolean(), z.null()]);
-const formFieldValue = z.union([formFieldScalar, z.record(z.string().max(64), formFieldScalar)]);
+const formFieldObject = z.record(z.string().max(64), formFieldScalar);
+const formFieldValue = z.union([formFieldScalar, formFieldObject, z.array(formFieldObject).max(50)]);
 
 export const createFormRecordSchema = z.object({
   form_def_id: z.coerce.number().int().positive('Form definition is required'),
@@ -906,6 +910,13 @@ export const payrollPolicySchema = z.object({
   count_lunch_as_worked: boolish.default(false),
   hours_basis: z.enum(['fixed', 'per_hour']).default('fixed'),
   hours_basis_unit: z.enum(['minute', '30min', 'hour']).default('30min'),
+  // 0 (default) = off, preserving the pre-existing "any presence at all is a whole day"
+  // behavior — same opt-in-by-default safety convention as min_work_minutes above, so
+  // upgrading an existing install never silently changes its payroll math. 420 (7 hours) is
+  // the company's own suggested value, not baked in as the default.
+  whole_day_min_minutes: z.coerce.number().int().min(0).max(1440).default(0),
+  // Blank/null (default) = no cap, same "opt-in" safety convention.
+  max_ot_hours: z.coerce.number().min(0).max(24).nullable().optional().default(null),
 });
 
 // POST /api/hr/payroll/:recordId/preview-deductions, PUT .../deductions — which of the four
@@ -916,6 +927,13 @@ export const payrollDeductionTogglesSchema = z.object({
   philhealth_applied: boolish.optional(),
   pagibig_applied: boolish.optional(),
   withholding_tax_applied: boolish.optional(),
+  // Ad-hoc per-cutoff deduction lines for this one payslip (Cash Advance, uniform, misc, …) —
+  // no running balance tracked across cutoffs, see docs/CASH-ADVANCE-LEDGER-TODO.md for the
+  // planned persistent-ledger version. Omitted keeps whatever is already stored.
+  other_deductions: z.array(z.object({
+    label: z.string().trim().min(1).max(80),
+    amount: z.coerce.number().min(0).max(10_000_000),
+  })).max(20).optional(),
 });
 
 /** Sparse permission overrides: keys are permission strings, values are booleans. */

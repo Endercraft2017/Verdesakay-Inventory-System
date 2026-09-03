@@ -1,6 +1,6 @@
 /** HR Time Keeping: employees master list, cutoff periods with a daily time-in/out
     roster, and generating payslips into the (auto-seeded) HR Payroll form. */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 
 let ctx: TestContext;
@@ -1900,5 +1900,161 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
     expect(rec.data.days_worked).toBe(1);
     expect(rec.data.undertime_pay || 0).toBe(0);
     expect(rec.data.basic_salary).toBeCloseTo(800, 6); // full day, no deduction
+  });
+});
+
+describe('Whole-day/Undertime Days, max OT, night differential, and Other Deductions — end to end', () => {
+  let shiftId: number;
+
+  beforeAll(async () => {
+    const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Whole Day Test Shift', start_time: '08:00', end_time: '17:00', is_default: false });
+    shiftId = shift.body.id;
+  });
+
+  afterEach(async () => {
+    // Restore defaults so later tests in this file aren't affected.
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
+      whole_day_min_minutes: 0, max_ot_hours: null, night_diff_enabled: false,
+    });
+  });
+
+  it('an Undertime Day (under whole_day_min_minutes) is 0 days_worked, counted separately in days_undertime, paid proportionally', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], whole_day_min_minutes: 420,
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-UNDERTIMEDAY', name: 'Undertime Day Employee', daily_rate: 800 }); // hourly = 100
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Undertime Day Cutoff', start_date: '2026-08-11', end_date: '2026-08-11' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    // 08:00-15:30 raw = 7.5h, minus 1h lunch = 6.5h net -> under the 7h threshold.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-11', time_in: '08:00', time_out: '15:30', notes: '', shift_id: shiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Undertime Day Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Undertime Day Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Undertime Day Employee');
+    expect(rec.data.days_worked).toBe(0);
+    expect(rec.data.days_undertime).toBe(1);
+    expect(rec.data.undertime_day_pay).toBeCloseTo(650, 6); // 6.5h x 100/hr
+    expect(rec.data.basic_salary).toBe(0); // not a whole day, no flat-rate basic salary
+    expect(rec.data.total_earnings).toBeCloseTo(650, 6);
+  });
+
+  it('a linked Half Day request shows as days_half:1 on the payslip, still 0.5 toward days_worked', async () => {
+    const forms = await ctx.api.get('/api/form-definitions').set(hdr());
+    const halfdayFormId = forms.body.find((f: { slug: string }) => f.slug === 'halfday_request').id;
+    const halfdayRecord = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: halfdayFormId,
+      data: { employee_name: 'Days Half Employee', date: '2026-08-12', session: 'Morning (AM)', reason: 'Personal' },
+      status: 'approved',
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-DAYSHALF', name: 'Days Half Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Days Half Cutoff', start_date: '2026-08-12', end_date: '2026-08-12' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-12', time_in: '08:00', time_out: '12:00', notes: '', shift_id: shiftId, form_record_id: halfdayRecord.body.id }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Days Half Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Days Half Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Days Half Employee');
+    expect(rec.data.days_worked).toBe(0.5);
+    expect(rec.data.days_half).toBe(1);
+    expect(rec.data.days_undertime).toBe(0);
+  });
+
+  it('max_ot_hours caps OT hours/pay through a real generate-payslips run', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], require_ot_form: false, max_ot_hours: 1,
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-MAXOT', name: 'Max OT Employee', daily_rate: 800 }); // hourly = 100
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Max OT Cutoff', start_date: '2026-08-13', end_date: '2026-08-13' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    // 08:00-21:00 -> 4h raw OT past the 17:00 shift end, capped to 1h.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-13', time_in: '08:00', time_out: '21:00', notes: '', shift_id: shiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Max OT Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Max OT Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Max OT Employee');
+    expect(rec.data.ot_hours).toBeCloseTo(1, 6);
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], require_ot_form: true,
+    });
+  });
+
+  it('night differential (regular hours, not just OT) flows through a real generate-payslips run', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
+      night_diff_enabled: true, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
+    });
+    const nightShift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Night Diff Test Shift', start_time: '22:00', end_time: '06:00', is_default: false });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-NIGHTDIFF', name: 'Night Diff Employee', daily_rate: 800 }); // hourly = 100
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Night Diff Cutoff', start_date: '2026-08-14', end_date: '2026-08-14' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-14', time_in: '22:00', time_out: '06:00', notes: '', shift_id: nightShift.body.id }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Night Diff Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Night Diff Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Night Diff Employee');
+    expect(rec.data.ot_hours).toBe(0);
+    expect(rec.data.night_diff_pay).toBeCloseTo(8 * 100 * 0.10, 6); // full 8h shift, entirely inside the night window
+    expect(rec.data.total_earnings).toBeCloseTo(800 + 8 * 100 * 0.10, 6);
+  });
+
+  it('Other Deductions: preview recomputes totals without saving, then Save persists and shows on the payslip', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-OTHERDED', name: 'Other Ded Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Other Ded Cutoff', start_date: '2026-08-15', end_date: '2026-08-15' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-15', time_in: '08:00', time_out: '17:00', notes: '', shift_id: shiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Other Ded Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Other Ded Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Other Ded Employee');
+    const baseNetPay = rec.data.net_pay;
+
+    const lines = [{ label: 'Cash Advance', amount: 2000 }, { label: 'Uniform', amount: 300 }];
+    const preview = await ctx.api.post(`/api/hr/payroll/${rec.id}/preview-deductions`).set(hdr()).send({ other_deductions: lines });
+    expect(preview.status).toBe(200);
+    expect(preview.body.other_deductions_total).toBeCloseTo(2300, 6);
+    expect(preview.body.net_pay).toBeCloseTo(baseNetPay - 2300, 6);
+
+    // Preview alone doesn't persist.
+    const stillUnsaved = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Other Ded Cutoff' }).set(hdr());
+    expect(stillUnsaved.body.find((r: { id: number }) => r.id === rec.id).data.other_deductions_total || 0).toBe(0);
+
+    const saved = await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ other_deductions: lines });
+    expect(saved.status).toBe(200);
+    expect(saved.body.other_deductions_total).toBeCloseTo(2300, 6);
+    const persisted = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Other Ded Cutoff' }).set(hdr());
+    const persistedRec = persisted.body.find((r: { id: number }) => r.id === rec.id);
+    expect(persistedRec.data.other_deductions).toEqual(lines);
+    expect(persistedRec.data.other_deductions_total).toBeCloseTo(2300, 6);
+    expect(persistedRec.data.net_pay).toBeCloseTo(baseNetPay - 2300, 6);
+
+    // Regenerating carries the lines over (no computed source, same treatment as cash_advance).
+    const regen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Other Ded Cutoff' });
+    expect(regen.body.updated).toBe(1);
+    const afterRegen = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Other Ded Cutoff' }).set(hdr());
+    const regenRec = afterRegen.body.find((r: { id: number }) => r.id === rec.id);
+    expect(regenRec.data.other_deductions).toEqual(lines);
   });
 });

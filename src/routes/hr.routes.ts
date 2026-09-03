@@ -576,6 +576,7 @@ const DEFAULT_POLICY: PayrollPolicy = {
   default_rest_days: [0, 6], // Sun, Sat
   min_work_minutes: 0, lunch_break_minutes: 60, count_lunch_as_worked: false,
   hours_basis: 'fixed', hours_basis_unit: '30min',
+  whole_day_min_minutes: 0, max_ot_hours: null,
 };
 
 /** "YYYY-MM-DD" -> weekday index (0=Sun..6=Sat). Builds the Date from the parsed y/m/d as
@@ -1190,9 +1191,12 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
 
       const deptPosition = [emp.department_name, emp.position].filter(Boolean).join(' / ');
       const zeros = {
-        days_worked: 0, days_absent: 0, ot_hours: 0, ot_rate_hour: 0, basic_salary: 0, overtime_pay: 0,
-        undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, total_earnings: 0,
-        sss: 0, philhealth: 0, pagibig: 0, cash_advance: 0, late_absences: 0, total_deductions: 0, net_pay: 0,
+        days_worked: 0, days_absent: 0, days_half: 0, days_undertime: 0,
+        ot_hours: 0, ot_rate_hour: 0, basic_salary: 0, overtime_pay: 0,
+        undertime_pay: 0, undertime_day_pay: 0, night_diff_pay: 0,
+        holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, total_earnings: 0,
+        sss: 0, philhealth: 0, pagibig: 0, cash_advance: 0, other_deductions: [] as Array<{ label: string; amount: number }>,
+        other_deductions_total: 0, late_absences: 0, total_deductions: 0, net_pay: 0,
       };
 
       // Attendance + whatever OT/Half Day/Leave/Undertime/Offset form (and its resolved shift)
@@ -1218,8 +1222,15 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       // Purely-manual fields with no computed source are carried over rather than reset.
       const prevManual = {
         cash_advance: prev.cash_advance,
+        // Ad-hoc per-cutoff deduction lines (Cash Advance, uniform, misc, …) — see
+        // payrollDeductionTogglesSchema/other_deductions. No computed source, same "manual edit
+        // survives a regenerate" treatment as cash_advance itself.
+        other_deductions: Array.isArray(prev.other_deductions) ? prev.other_deductions : [],
         pay_date: prev.pay_date,
       };
+      const otherDeductionsTotal = round2(
+        ((prevManual.other_deductions as Array<{ amount: unknown }>) || []).reduce((sum, d) => sum + (Number(d.amount) || 0), 0)
+      );
       // The base (ordinary-day) OT rate per hour — informational, same "one flat number" the
       // Daily Rate line already is; the actual overtime_pay above still scales per-day by
       // holiday/rest-day (see dayRateMultiplier in hr-payroll-compute.ts), this is just what
@@ -1228,8 +1239,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
 
       const cashAdvance = num(prevManual.cash_advance);
       const totalEarnings = round2(
-        basicSalary + computed.overtime_pay + computed.undertime_pay
-        + computed.holiday_pay + computed.special_holiday_30 + computed.rest_day_ot
+        basicSalary + computed.overtime_pay + computed.undertime_pay + computed.undertime_day_pay
+        + computed.night_diff_pay + computed.holiday_pay + computed.special_holiday_30 + computed.rest_day_ot
       );
 
       // SSS / PhilHealth / Pag-IBIG + BIR withholding. When policy.auto_statutory is off,
@@ -1258,7 +1269,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       }
 
       const totalDeductions = policy.auto_statutory
-        ? round2(sss + philhealth + pagibig + withholding_tax + computed.late_deduction + cashAdvance)
+        ? round2(sss + philhealth + pagibig + withholding_tax + computed.late_deduction + cashAdvance + otherDeductionsTotal)
         : num(prev.total_deductions);
       const netPay = policy.auto_statutory ? round2(totalEarnings - totalDeductions) : num(prev.net_pay);
 
@@ -1274,10 +1285,19 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         // that reduction visible on the payslip (see the "Late / Absences" line's own comment
         // in src/hr-payroll-compute.ts — despite the name, it never held an absence figure).
         days_absent: computed.days_absent,
+        // Half Days/Undertime Days: already folded into days_worked (0.5 each) / excluded from
+        // it (0 credit) respectively — these just surface the counts themselves, same
+        // informational purpose as days_absent. See PayrollPolicy.whole_day_min_minutes.
+        days_half: computed.days_half,
+        days_undertime: computed.days_undertime,
         ot_hours: computed.ot_hours,
         ot_rate_hour: otRateHour,
         overtime_pay: round2(computed.overtime_pay),
         undertime_pay: round2(computed.undertime_pay),
+        // Undertime Days' own proportional pay (positive, its own earnings line) — separate
+        // from undertime_pay above (a deduction FROM an otherwise-flat whole day).
+        undertime_day_pay: round2(computed.undertime_day_pay),
+        night_diff_pay: round2(computed.night_diff_pay),
         holiday_pay: round2(computed.holiday_pay),
         special_holiday_30: round2(computed.special_holiday_30),
         rest_day_ot: round2(computed.rest_day_ot),
@@ -1285,6 +1305,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         basic_salary: round2(basicSalary),
         total_earnings: totalEarnings,
         sss, philhealth, pagibig, withholding_tax,
+        other_deductions: prevManual.other_deductions,
+        other_deductions_total: otherDeductionsTotal,
         // Persisted so the payroll detail view's deduction toggles (and this same regenerate
         // path next time) know which of the four were actually selected for this one payslip —
         // see computeEmployeeStatutory/appliedFromRecordData above.
@@ -1408,10 +1430,14 @@ router.get('/payroll/:recordId/detail', requirePermission('hr.manage'), (req, re
     totals: {
       days_worked: computed.days_worked,
       days_absent: computed.days_absent,
+      days_half: computed.days_half,
+      days_undertime: computed.days_undertime,
       late_deduction: computed.late_deduction,
       ot_hours: computed.ot_hours,
       overtime_pay: computed.overtime_pay,
       undertime_pay: computed.undertime_pay,
+      undertime_day_pay: computed.undertime_day_pay,
+      night_diff_pay: computed.night_diff_pay,
       holiday_pay: computed.holiday_pay,
       special_holiday_30: computed.special_holiday_30,
       rest_day_ot: computed.rest_day_ot,
@@ -1461,13 +1487,18 @@ function resolvePayrollDeductionContext(
   return { rec, data, emp, period };
 }
 
+type OtherDeductionLine = { label: string; amount: number };
+
 /** Recompute SSS/PhilHealth/Pag-IBIG/withholding tax + totals for one payslip record under a
- *  given set of applied-deduction toggles — the shared math behind both preview and save. */
+ *  given set of applied-deduction toggles and ad-hoc "other deductions" lines (Cash Advance,
+ *  uniform, misc, …) — the shared math behind both preview and save. `otherDeductions` omitted
+ *  keeps whatever is already stored on the record (not reset to none). */
 function recomputeDeductionsFor(
   data: Record<string, unknown>,
   emp: Parameters<typeof computeEmployeeStatutory>[0],
   applied: StatutoryApplied,
-  period: AttendancePeriod
+  period: AttendancePeriod,
+  otherDeductions?: OtherDeductionLine[]
 ) {
   const policy = currentPolicy();
   const periodsPerMonth = PERIODS_PER_MONTH[policy.pay_frequency];
@@ -1479,17 +1510,23 @@ function recomputeDeductionsFor(
   const statutory = computeEmployeeStatutory(emp, totalEarnings, applied, policy, statTables, thisSlot, slotDivisor);
   const cashAdvance = Number(data.cash_advance) || 0;
   const lateDeduction = Number(data.late_absences) || 0;
-  const totalDeductions = round2(statutory.sss + statutory.philhealth + statutory.pagibig + statutory.withholding_tax + lateDeduction + cashAdvance);
+  const lines = otherDeductions ?? ((Array.isArray(data.other_deductions) ? data.other_deductions : []) as OtherDeductionLine[]);
+  const otherDeductionsTotal = round2(lines.reduce((sum, d) => sum + (Number(d.amount) || 0), 0));
+  const totalDeductions = round2(
+    statutory.sss + statutory.philhealth + statutory.pagibig + statutory.withholding_tax
+    + lateDeduction + cashAdvance + otherDeductionsTotal
+  );
   const netPay = round2(totalEarnings - totalDeductions);
-  return { ...statutory, total_deductions: totalDeductions, net_pay: netPay };
+  return { ...statutory, other_deductions: lines, other_deductions_total: otherDeductionsTotal, total_deductions: totalDeductions, net_pay: netPay };
 }
 
 // POST /api/hr/payroll/:recordId/preview-deductions — recompute (without saving) what SSS/
-// PhilHealth/Pag-IBIG/withholding tax and the resulting totals WOULD be for this one payslip
-// under a given set of applied-deduction toggles — same rate-table math generate-payslips and
-// the "save" route below both use, so the live preview in the payroll detail view can never
-// disagree with what Save would actually produce. Any key omitted from the body keeps that
-// deduction's current applied state (from the stored record), not reset to on.
+// PhilHealth/Pag-IBIG/withholding tax, other-deduction lines, and the resulting totals WOULD be
+// for this one payslip under a given set of applied-deduction toggles / other-deduction lines —
+// same math generate-payslips and the "save" route below both use, so the live preview in the
+// payroll detail view can never disagree with what Save would actually produce. Any key omitted
+// from the body keeps that deduction's current applied state (from the stored record), not
+// reset to on/empty.
 router.post('/payroll/:recordId/preview-deductions', requirePermission('hr.manage'), (req, res) => {
   const ctx = resolvePayrollDeductionContext(Number(req.params.recordId), res);
   if (!ctx) return;
@@ -1501,7 +1538,7 @@ router.post('/payroll/:recordId/preview-deductions', requirePermission('hr.manag
     pagibig: input.pagibig_applied ?? current.pagibig,
     withholding_tax: input.withholding_tax_applied ?? current.withholding_tax,
   };
-  res.json(recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period));
+  res.json(recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period, input.other_deductions));
 });
 
 // PUT /api/hr/payroll/:recordId/deductions — same recompute, persisted into the record. Locked
@@ -1522,12 +1559,13 @@ router.put('/payroll/:recordId/deductions', requirePermission('hr.manage'), (req
     pagibig: input.pagibig_applied ?? current.pagibig,
     withholding_tax: input.withholding_tax_applied ?? current.withholding_tax,
   };
-  const result = recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period);
+  const result = recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period, input.other_deductions);
   const newData = {
     ...ctx.data,
     sss: result.sss, philhealth: result.philhealth, pagibig: result.pagibig, withholding_tax: result.withholding_tax,
     sss_applied: applied.sss, philhealth_applied: applied.philhealth,
     pagibig_applied: applied.pagibig, withholding_tax_applied: applied.withholding_tax,
+    other_deductions: result.other_deductions, other_deductions_total: result.other_deductions_total,
     total_deductions: result.total_deductions, net_pay: result.net_pay,
     employer_contributions: result.employer_contributions,
   };

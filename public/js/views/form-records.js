@@ -443,6 +443,8 @@ async function renderFormView(view, formId, initialPeriod) {
     if (d.status === 'below_minimum_denied') return '<span class="badge-pill status-cancelled" title="Under the configured minimum work time, HR denied pay for it">Below Min — Denied</span>';
     if (d.status === 'absent') return '<span class="badge-pill status-cancelled">Absent</span>';
     if (d.status === 'paid_leave') return '<span class="badge-pill status-completed">Paid Leave</span>';
+    if (d.status === 'half_day') return '<span class="badge-pill status-confirmed" title="Judged against just this half\'s own AM/PM window, not the full shift">Half Day</span>';
+    if (d.status === 'undertime') return `<span class="badge-pill status-cancelled" title="Under the configured whole-day minimum — paid proportionally for actual hours present (${UI.money(d.undertime_day_pay)}), not counted as a whole day worked">Undertime Day</span>`;
     if (d.below_minimum) return '<span class="badge-pill status-confirmed" title="Under the configured minimum work time — still paid for actual hours (allowed by default)">Below Min — Allowed</span>';
     return '';
   }
@@ -483,6 +485,7 @@ async function renderFormView(view, formId, initialPeriod) {
         <td>${d.late_minutes ? `${d.late_minutes} min<div class="muted" style="font-size:11px">${detail.late_exempt ? 'exempt' : UI.money(d.late_pay)}</div>` : '—'}</td>
         <td>${d.ot_hours ? `${d.ot_hours.toFixed(2)} hr<div class="muted" style="font-size:11px">${UI.money(d.ot_pay)}</div>` : '—'}</td>
         <td>${d.day_premium_pay ? UI.money(d.day_premium_pay) : '—'}</td>
+        <td>${d.night_diff_pay ? UI.money(d.night_diff_pay) : '—'}</td>
       </tr>`).join('');
 
     const locked = r.status === 'paid';
@@ -500,9 +503,21 @@ async function renderFormView(view, formId, initialPeriod) {
               ${DED_LABELS[k]}
             </label>`).join('')}
         </div>
+        <hr style="margin:14px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
+        <strong>Other Deductions</strong>
+        <p class="muted" style="font-size:12px;margin:2px 0 10px">Ad-hoc lines for this one payslip — Cash Advance,
+          uniform, misc, etc. — auto-deducted from the total the same as SSS/etc. above. No running balance is
+          tracked across cutoffs; re-add a remaining Cash Advance balance next cutoff if there is one.</p>
+        <div id="pd-other-ded-list"></div>
+        ${!locked ? `
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end;flex-wrap:wrap">
+          <div style="flex:1;min-width:140px"><label style="font-size:12px">Label</label><input id="pd-other-ded-label" placeholder="e.g. Cash Advance" /></div>
+          <div style="width:120px"><label style="font-size:12px">Amount</label><input id="pd-other-ded-amount" type="number" min="0" step="0.01" /></div>
+          <button type="button" class="btn secondary small" id="pd-other-ded-add">${UI.icon('plus', 14)} Add</button>
+        </div>` : ''}
         ${locked
           ? `<p class="muted" style="font-size:12px;margin-top:8px">This payslip is marked Paid — unmark it first to change its deductions.</p>`
-          : `<button type="button" class="btn small" id="pd-ded-save" style="margin-top:10px">Save Deductions</button>`}
+          : `<button type="button" class="btn small" id="pd-ded-save" style="margin-top:14px">Save Deductions</button>`}
       </div>` : '';
 
     UI.modal({
@@ -515,8 +530,8 @@ async function renderFormView(view, formId, initialPeriod) {
           late minutes are still shown below for reference, but never subtracted from pay.</p>` : ''}
         ${dedSection}
         <div class="line-items"><table class="line-table"><thead><tr>
-          <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>OT</th><th>Holiday/Rest-Day Premium</th>
-        </tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
+          <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>OT</th><th>Holiday/Rest-Day Premium</th><th>Night Diff</th>
+        </tr></thead><tbody>${rows || '<tr><td colspan="8" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
       cancelText: 'Close',
       onOpen: (ov) => {
         // Local working copy — the print button and any live edits below use this, never
@@ -529,8 +544,46 @@ async function renderFormView(view, formId, initialPeriod) {
         const dedCheckboxes = ov.querySelectorAll('[data-ded]');
         if (!dedCheckboxes.length) return;
         const slipEl = ov.querySelector('#pd-slip');
+        // Local working copy of the ad-hoc lines — same "nothing persists until Save" rule as
+        // the statutory checkboxes above, mutated by the add/remove UI below and re-rendered
+        // into #pd-other-ded-list each time.
+        let otherDeductions = Array.isArray(r.data.other_deductions) ? r.data.other_deductions.map((d) => ({ ...d })) : [];
+        const otherDedListEl = ov.querySelector('#pd-other-ded-list');
+        function renderOtherDedList() {
+          otherDedListEl.innerHTML = otherDeductions.length
+            ? otherDeductions.map((d, i) => `
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border,#eee)">
+                  <span>${UI.esc(d.label)}</span>
+                  <span style="display:flex;align-items:center;gap:10px">
+                    ${UI.money(d.amount)}
+                    ${!locked ? `<button type="button" class="icon-btn" data-other-ded-del="${i}" title="Remove">${UI.icon('trash', 14)}</button>` : ''}
+                  </span>
+                </div>`).join('')
+            : '<p class="muted" style="font-size:12.5px;margin:2px 0">No other deductions on this payslip.</p>';
+          otherDedListEl.querySelectorAll('[data-other-ded-del]').forEach((b) => b.onclick = () => {
+            otherDeductions.splice(Number(b.dataset.otherDedDel), 1);
+            renderOtherDedList();
+            refreshPreview();
+          });
+        }
+        renderOtherDedList();
+        const addBtn = ov.querySelector('#pd-other-ded-add');
+        if (addBtn) {
+          addBtn.onclick = () => {
+            const labelInp = ov.querySelector('#pd-other-ded-label');
+            const amountInp = ov.querySelector('#pd-other-ded-amount');
+            const label = labelInp.value.trim();
+            const amount = Number(amountInp.value);
+            if (!label || !(amount > 0)) { UI.toast('Enter a label and an amount greater than 0', 'error'); return; }
+            otherDeductions.push({ label, amount });
+            labelInp.value = ''; amountInp.value = '';
+            renderOtherDedList();
+            refreshPreview();
+          };
+        }
+
         const currentApplied = () => {
-          const applied = {};
+          const applied = { other_deductions: otherDeductions };
           dedCheckboxes.forEach((cb) => { applied[cb.dataset.ded + '_applied'] = cb.checked; });
           return applied;
         };

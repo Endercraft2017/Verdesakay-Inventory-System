@@ -45,10 +45,33 @@ export interface AttendanceComputation {
    *  instead of silent (see the "Late / Absences" line, which — despite the name — has only
    *  ever held the late-arrival peso deduction; see hr.routes.ts generate-payslips). */
   days_absent: number;
+  /** Count of days credited as a half day (a linked Half Day request) — already folded into
+   *  days_worked at 0.5 each; this just surfaces the count itself so the payslip can show
+   *  "Half Days: 2" instead of that only being visible as a fractional days_worked total. */
+  days_half: number;
+  /** Count of "Undertime Days" — present, but under PayrollPolicy.whole_day_min_minutes, with
+   *  no linked Half Day request — see undertime_day_pay for the pay these earn. Contributes 0
+   *  to days_worked (that's the whole point: days_worked only counts whole days actually
+   *  worked, not merely "present at all" — see whole_day_min_minutes). Always 0 when the
+   *  policy's check is off (whole_day_min_minutes: 0). */
+  days_undertime: number;
   late_deduction: number;
   ot_hours: number;
   overtime_pay: number;
   undertime_pay: number; // negative — matches the existing "Undertime" earnings-line convention
+  /** Proportional pay for Undertime Days (days_undertime above) — hourly rate x actual net
+   *  minutes present, rounded down to hours_basis_unit. Positive, its own earnings line (not
+   *  folded into basic_salary, which stays daily_rate x days_worked exactly as always) — unlike
+   *  undertime_pay above, this isn't a deduction FROM a flat day, it's the day's entire pay. */
+  undertime_day_pay: number;
+  /** Night shift differential — DOLE Labor Code Art. 86: not less than 10% of the regular wage
+   *  for each hour actually worked between night_start and night_end (default 22:00-06:00),
+   *  additive on top of OT/holiday/rest-day premiums. Covers the ENTIRE clocked span (regular
+   *  hours AND any OT together, computed once per day) when night_diff_enabled — before this
+   *  field existed, night diff was only ever computed for the OT portion of a day, so a
+   *  straight night-shift worker with no OT got none at all despite the law requiring it for
+   *  every night hour worked, not just OT ones. */
+  night_diff_pay: number;
   holiday_pay: number;
   special_holiday_30: number;
   /** Auto-computed rest-day-worked premium (30% for a plain rest day, folded into holiday_pay/
@@ -72,15 +95,19 @@ export interface DayBreakdown {
   no_work: 'paid' | 'unpaid' | null;
   is_rest_day: boolean;
   // Mirrors exactly which branch of the unworked-day precedence (see the comment above it)
-  // fired, or 'worked' for a day with time logged — not a new aggregate-level distinction,
-  // just makes an already-computed decision visible per day instead of only summed.
-  status: 'worked' | 'paid_leave' | 'paid_no_work' | 'paid_holiday' | 'unpaid_no_work' | 'rest_day_off' | 'absent'
+  // fired, or 'worked'/'half_day'/'undertime' for a day with time logged — not a new
+  // aggregate-level distinction, just makes an already-computed decision visible per day
+  // instead of only summed.
+  status: 'worked' | 'half_day' | 'undertime' | 'paid_leave' | 'paid_no_work' | 'paid_holiday'
+    | 'unpaid_no_work' | 'rest_day_off' | 'absent'
     | 'below_minimum_denied'; // HR clicked "Deny" on a day under PayrollPolicy.min_work_minutes — 0 credit, not an absence
   late_minutes: number;
   late_pay: number;
   ot_hours: number;
   ot_pay: number;
   undertime_pay: number;
+  undertime_day_pay: number; // this day's proportional pay, only nonzero when status === 'undertime'
+  night_diff_pay: number;
   day_premium_pay: number; // whichever of holiday_pay/special_holiday_30/rest_day_ot this day contributed
   // Whether this day's actual worked minutes fell under PayrollPolicy.min_work_minutes —
   // informational, independent of whether it was ultimately allowed or denied (status above),
@@ -178,9 +205,21 @@ function halfDayWindow(
 }
 
 const ZERO: AttendanceComputation = {
-  days_worked: 0, days_absent: 0, late_deduction: 0, ot_hours: 0, overtime_pay: 0,
-  undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, days: [],
+  days_worked: 0, days_absent: 0, days_half: 0, days_undertime: 0, late_deduction: 0, ot_hours: 0,
+  overtime_pay: 0, undertime_pay: 0, undertime_day_pay: 0, night_diff_pay: 0,
+  holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, days: [],
 };
+
+/** Night-window overlap (minutes) for a span starting at `startRel` (on the same continuous —
+    possibly >1440, overnight-normalized — timeline the caller resolved) and lasting
+    `durationMin` minutes. Reduces to wall-clock via a single mod at the start, then adds the
+    raw duration un-modded — nightOverlapMinutes checks both the window's "today" and "tomorrow"
+    instance, so this stays correct even when startRel + durationMin lands past 1440. */
+function nightMinutesRel(startRel: number, durationMin: number, nightStart: number, nightEnd: number): number {
+  if (durationMin <= 0) return 0;
+  const wallStart = startRel % DAY_MIN;
+  return nightOverlapMinutes(wallStart, wallStart + durationMin, nightStart, nightEnd);
+}
 
 /** DOLE Labor Advisory No. 12-25 total pay multiplier for a worked day, by holiday type +
     rest-day combination — the single source of truth both the base-day premium below AND the
@@ -220,13 +259,15 @@ export function computeAttendanceForEmployee(
     // point of this iteration (there are several `continue`s), so it always reflects exactly
     // what happened to this specific day, never a separately-derived guess.
     let lateMin = 0, latePay = 0, otHours = 0, otPay = 0, undertimePay = 0, dayPremium = 0;
+    let undertimeDayPay = 0, nightDiffPay = 0;
     let status: DayBreakdown['status'] = 'worked';
     let belowMin = false;
     const pushDay = () => out.days.push({
       work_date: day.work_date, time_in: day.time_in, time_out: day.time_out,
       holiday: day.holiday ?? null, no_work: day.noWork ?? null, is_rest_day: !!day.isRestDay,
       status, late_minutes: lateMin, late_pay: latePay, ot_hours: otHours, ot_pay: otPay,
-      undertime_pay: undertimePay, day_premium_pay: dayPremium, below_minimum: belowMin,
+      undertime_pay: undertimePay, undertime_day_pay: undertimeDayPay, night_diff_pay: nightDiffPay,
+      day_premium_pay: dayPremium, below_minimum: belowMin,
     });
 
     if (timeIn == null || timeOut == null) {
@@ -340,7 +381,13 @@ export function computeAttendanceForEmployee(
     const shiftStart = day.shift ? toMinutes(day.shift.start_time) : null;
     let shiftEnd = day.shift ? toMinutes(day.shift.end_time) : null;
     if (shiftStart == null || shiftEnd == null) {
-      out.days_worked += slug === 'halfday_request' ? 0.5 : 1;
+      if (slug === 'halfday_request') {
+        out.days_worked += 0.5;
+        out.days_half += 1;
+        status = 'half_day';
+      } else {
+        out.days_worked += 1;
+      }
       pushDay(); continue;
     }
     const overnight = shiftEnd < shiftStart;
@@ -377,7 +424,9 @@ export function computeAttendanceForEmployee(
       // special handling either — someone who only worked their half naturally computes to
       // ~4 hours of pay without needing to know a form was involved.
       const lunch = lunchWindow(shiftStart, shiftEnd, policy.lunch_break_minutes);
-      const lunchOverlap = policy.count_lunch_as_worked ? 0 : overlapMinutes(timeInRel, timeOutRel, lunch.start, lunch.end);
+      const lunchOverlapStart = Math.max(timeInRel, lunch.start);
+      const lunchOverlapEnd = Math.min(timeOutRel, lunch.end);
+      const lunchOverlap = policy.count_lunch_as_worked ? 0 : Math.max(0, lunchOverlapEnd - lunchOverlapStart);
       const workedRaw = Math.max(0, rawWorkedMinutes - lunchOverlap);
       const normalSpan = Math.max(0, (shiftEnd - shiftStart) - (policy.count_lunch_as_worked ? 0 : policy.lunch_break_minutes));
 
@@ -395,21 +444,39 @@ export function computeAttendanceForEmployee(
 
       // Hours worked beyond the shift's own normal span — same authorization gate OT already
       // uses (require_ot_form), same OT%/holiday-scaled rate, just measured from actual worked
-      // minutes instead of a fixed clock-out-vs-shift-end comparison.
+      // minutes instead of a fixed clock-out-vs-shift-end comparison. policy.max_ot_hours (null
+      // = no cap) caps how much of it is actually PAID — same as unauthorized OT, hours worked
+      // past the cap are simply uncompensated presence, not converted into undertime.
+      let otBlocked = 0;
       const otRaw = workedRaw - normalSpan;
       if (otRaw > 0 && (slug === 'overtime_request' || !policy.require_ot_form)) {
-        const otBlocked = roundDownToUnit(otRaw, unitMinutesFor(policy.hours_basis_unit));
-        otHours = otBlocked / 60;
-        out.ot_hours += otHours;
-        const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
-        let pay = otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
-        if (policy.night_diff_enabled) {
-          const wallStart = (timeOutRel - otRaw) % DAY_MIN;
-          const nightMin = nightOverlapMinutes(wallStart, wallStart + otRaw, nightStart, nightEnd);
-          pay += (nightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
+        const otBlockedRaw = roundDownToUnit(otRaw, unitMinutesFor(policy.hours_basis_unit));
+        const maxOtMin = policy.max_ot_hours != null ? policy.max_ot_hours * 60 : null;
+        otBlocked = maxOtMin != null ? Math.min(otBlockedRaw, maxOtMin) : otBlockedRaw;
+        if (otBlocked > 0) {
+          otHours = otBlocked / 60;
+          out.ot_hours += otHours;
+          const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
+          const pay = otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
+          otPay = pay;
+          out.overtime_pay += pay;
         }
-        otPay = pay;
-        out.overtime_pay += pay;
+      }
+
+      // Night differential over the entire physically-present, lunch-excluded span (regular +
+      // OT together, computed once — not just the OT portion, which is all this used to cover:
+      // a straight night-shift worker with no OT got zero night diff despite the law requiring
+      // it for every night hour worked). Capped to the minutes actually PAID (regularBlocked +
+      // otBlocked) so a rounding-down tail or an OT-cap-truncated tail never earns night diff it
+      // wasn't paid for.
+      if (policy.night_diff_enabled) {
+        const rawNightMin = nightMinutesRel(timeInRel, timeOutRel - timeInRel, nightStart, nightEnd)
+          - (lunchOverlap > 0 ? nightMinutesRel(lunchOverlapStart, lunchOverlap, nightStart, nightEnd) : 0);
+        const paidNightMin = Math.max(0, Math.min(rawNightMin, regularBlocked + otBlocked));
+        if (paidNightMin > 0) {
+          nightDiffPay = (paidNightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
+          out.night_diff_pay += nightDiffPay;
+        }
       }
 
       pushDay();
@@ -417,14 +484,14 @@ export function computeAttendanceForEmployee(
     }
 
     // --- fixed-basis mode (the original, unchanged-by-default behavior) ---
-    out.days_worked += slug === 'halfday_request' ? 0.5 : 1;
+    const isHalfDay = slug === 'halfday_request';
 
     // A linked Half Day request judges late/undertime against just its own AM/PM window
     // (derived from the shift + lunch — see halfDayWindow), not the full shift's start/end —
     // previously this compared against the whole day, so an afternoon half-day showed as hours
     // "late" and a morning half-day showed as "undertime" for correctly leaving at lunchtime.
     let effShiftStart = shiftStart;
-    if (slug === 'halfday_request') {
+    if (isHalfDay) {
       const win = halfDayWindow(shiftStart, shiftEnd, policy.lunch_break_minutes, day.linkedForm?.data?.session as string | undefined);
       effShiftStart = win.start;
       shiftEnd = win.end;
@@ -445,6 +512,60 @@ export function computeAttendanceForEmployee(
       if (offsetEndRaw != null) effectiveEnd = relTo(offsetEndRaw);
       if (offsetStartRaw != null && offsetEndRaw != null) effShiftStart = relTo(offsetStartRaw);
     }
+
+    // A company-authorized, PAID early release (a linked Undertime Request with with_pay =
+    // 'Yes') — full day's pay regardless of hours actually present, no make-up owed. Hoisted up
+    // here so it also exempts the day from the whole-day/Undertime-Day hours classification
+    // right below, not just the peso undertime deduction further down — the whole point of
+    // with_pay=Yes is that it's treated as if the day had been worked in full.
+    const authorizedPaid = slug === 'undertime_request' && day.linkedForm?.data?.with_pay === 'Yes';
+
+    // Whole day vs. "Undertime Day" (policy.whole_day_min_minutes, e.g. 420 = 7 hours —
+    // deliberately a bit under a full 8-hour shift so up to an hour late still reads as a whole
+    // day; 0 disables this check entirely). A Half Day request is always its own fixed 0.5,
+    // never judged by this; a with_pay=Yes Undertime Request is always a full day, also never
+    // judged by this. Everything else is classified by actual NET minutes present (lunch
+    // excluded, same rule per-hours-basis pay already uses, against the original shift's own
+    // lunch window — shiftStart/shiftEnd haven't been touched by the Half Day branch above since
+    // we're in the !isHalfDay case here) — below the threshold, this is no longer "the number of
+    // days present" inflating days_worked, it's its own Undertime Day: 0 credit toward
+    // days_worked, paid proportionally for the hours actually present instead of the flat daily
+    // rate (self-correcting, same reasoning as hours_basis: 'per_hour' above — no separate late/
+    // undertime peso deduction layered on top of pay already reduced to match).
+    if (!isHalfDay && !authorizedPaid && policy.whole_day_min_minutes > 0) {
+      const lunch = lunchWindow(shiftStart, shiftEnd, policy.lunch_break_minutes);
+      const lunchOverlap = policy.count_lunch_as_worked ? 0 : overlapMinutes(timeInRel, timeOutRel, lunch.start, lunch.end);
+      const netWorkedMinutes = Math.max(0, rawWorkedMinutes - lunchOverlap);
+      if (netWorkedMinutes < policy.whole_day_min_minutes) {
+        status = 'undertime';
+        out.days_undertime += 1;
+        const paidMinutes = roundDownToUnit(netWorkedMinutes, unitMinutesFor(policy.hours_basis_unit));
+        undertimeDayPay = (paidMinutes / 60) * hourlyRate;
+        out.undertime_day_pay += undertimeDayPay;
+        // Still reported for reference, same as hours_basis: 'per_hour' — informational only,
+        // doesn't cost pay here since pay is already reduced to match actual hours present.
+        const lateRaw = timeInRel - effShiftStart;
+        if (lateRaw > policy.grace_minutes) {
+          lateMin = roundUpToUnit(lateRaw - policy.grace_minutes, unitMinutesFor(policy.late_unit));
+        }
+        if (policy.night_diff_enabled) {
+          const nightMin = nightMinutesRel(timeInRel, timeOutRel - timeInRel, nightStart, nightEnd)
+            - (lunchOverlap > 0 ? nightMinutesRel(Math.max(timeInRel, lunch.start), lunchOverlap, nightStart, nightEnd) : 0);
+          const paidNightMin = Math.max(0, Math.min(nightMin, paidMinutes));
+          if (paidNightMin > 0) {
+            nightDiffPay = (paidNightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
+            out.night_diff_pay += nightDiffPay;
+          }
+        }
+        pushDay();
+        continue;
+      }
+    }
+
+    // Whole day (or Half Day, or an authorized-paid Undertime Request) — unchanged existing
+    // credit + late/OT/undertime-deduction behavior.
+    out.days_worked += isHalfDay ? 0.5 : 1;
+    if (isHalfDay) { out.days_half += 1; status = 'half_day'; }
 
     // Late arrival: grace is a threshold, not a subtracted buffer while under it — but once
     // exceeded, only the minutes *past* grace are rounded to a block (confirmed: 125 min late
@@ -468,45 +589,68 @@ export function computeAttendanceForEmployee(
     // regardless of this setting, preserving the exact old behavior for that case: an
     // authorized-but-early day still books no undertime (mirrors the pre-existing rule that an
     // overtime_request-linked day is judged only for OT, never undertime, even if otRaw <= 0).
+    // How many minutes of this day are actually paid presence — starts at the whole clocked
+    // span; undertime below shrinks it to what was actually there before the expected end (OT
+    // doesn't shrink it — OT is additional presence on top, already within [timeInRel,
+    // timeOutRel]). Used only to scope the unified night-diff pass further down so it never
+    // covers time that wasn't actually paid for (e.g. the un-credited tail past an OT cap).
+    let paidSpanEnd = timeOutRel;
+
     if (slug === 'overtime_request' || (!policy.require_ot_form && timeOutRel > effectiveEnd)) {
       const otRaw = timeOutRel - effectiveEnd;
       if (otRaw > 0) {
-        const otBlocked = roundDownToUnit(otRaw, unitMinutesFor(policy.ot_unit));
-        otHours = otBlocked / 60;
-        out.ot_hours += otHours;
-        // OT pay scales with the day's own rate multiplier too — OT worked on a Regular Holiday
-        // isn't paid at the same rate as OT on an ordinary day (DOLE: hourly rate x 200% x 130%
-        // for a Regular Holiday, not just x 125%). Rather than hardcoding DOLE's own OT sub-rates
-        // (169%/195%/260%/338% for each combination) as separate magic numbers, this reuses the
-        // exact same dayRateMultiplier the base-day premium above is built from, scaled by the
-        // admin's configured OT%: ordinary-day OT is unaffected (multiplier 1.0, same result as
-        // before this existed), and every holiday/rest-day combination scales consistently with
-        // whatever OT% the company has configured, instead of a second hardcoded rate.
-        const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
-        let pay = otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
-        if (policy.night_diff_enabled) {
-          // Convert back to wall-clock (mod 24h) for the night-window check — effectiveEnd/
-          // timeOutRel may be on the shift's extended "past midnight" timeline.
-          const wallStart = effectiveEnd % DAY_MIN;
-          const nightMin = nightOverlapMinutes(wallStart, wallStart + otRaw, nightStart, nightEnd);
-          pay += (nightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
+        const otBlockedRaw = roundDownToUnit(otRaw, unitMinutesFor(policy.ot_unit));
+        // policy.max_ot_hours (null = no cap) caps how much of it is actually PAID — same as
+        // unauthorized OT, hours worked past the cap are simply uncompensated presence, not
+        // converted into undertime.
+        const maxOtMin = policy.max_ot_hours != null ? policy.max_ot_hours * 60 : null;
+        const otBlocked = maxOtMin != null ? Math.min(otBlockedRaw, maxOtMin) : otBlockedRaw;
+        paidSpanEnd = effectiveEnd + otBlocked;
+        if (otBlocked > 0) {
+          otHours = otBlocked / 60;
+          out.ot_hours += otHours;
+          // OT pay scales with the day's own rate multiplier too — OT worked on a Regular
+          // Holiday isn't paid at the same rate as OT on an ordinary day (DOLE: hourly rate x
+          // 200% x 130% for a Regular Holiday, not just x 125%). Rather than hardcoding DOLE's
+          // own OT sub-rates (169%/195%/260%/338% for each combination) as separate magic
+          // numbers, this reuses the exact same dayRateMultiplier the base-day premium above is
+          // built from, scaled by the admin's configured OT%: ordinary-day OT is unaffected
+          // (multiplier 1.0, same result as before this existed), and every holiday/rest-day
+          // combination scales consistently with whatever OT% the company has configured,
+          // instead of a second hardcoded rate.
+          const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
+          const pay = otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
+          otPay = pay;
+          out.overtime_pay += pay;
         }
-        otPay = pay;
-        out.overtime_pay += pay;
       }
     } else if (timeOutRel < effectiveEnd) {
       // Left before the expected end. Deducted by default — unlike OT, a short day doesn't
       // need anyone's authorization to be a deduction. The one exception: a linked Undertime
-      // Request form with with_pay = 'Yes' — a company-authorized, PAID early release (e.g. a
-      // documented emergency) waives the deduction outright, no make-up owed. That's different
-      // from an Offset form, which defers the obligation (make up the time later) rather than
-      // waiving it — hence effectiveEnd is still computed from Offset above, not this.
-      const authorizedPaid = slug === 'undertime_request' && day.linkedForm?.data?.with_pay === 'Yes';
+      // Request form with with_pay = 'Yes' (authorizedPaid, hoisted above) — a company-
+      // authorized, PAID early release (e.g. a documented emergency) waives the deduction
+      // outright, no make-up owed. That's different from an Offset form, which defers the
+      // obligation (make up the time later) rather than waiving it — hence effectiveEnd is
+      // still computed from Offset above, not this.
       if (!authorizedPaid) {
         const shortRaw = effectiveEnd - timeOutRel;
         const shortBlocked = roundUpToUnit(shortRaw, unitMinutesFor(policy.late_unit));
         undertimePay = -(shortBlocked / 60) * hourlyRate;
         out.undertime_pay += undertimePay;
+      }
+    }
+
+    // Night differential over the entire PAID clocked span (regular + OT together, computed
+    // once — not just the OT portion, which is all this used to cover: a straight night-shift
+    // worker with no OT got zero night diff despite the law requiring it for every night hour
+    // actually worked). Runs from the real clock-in (timeInRel, not effShiftStart — an
+    // employee who arrived at night still worked those minutes regardless of being late for
+    // them) to paidSpanEnd (shrinks for undertime, extends for any paid OT, capped either way).
+    if (policy.night_diff_enabled) {
+      const nightMin = nightMinutesRel(timeInRel, Math.max(0, paidSpanEnd - timeInRel), nightStart, nightEnd);
+      if (nightMin > 0) {
+        nightDiffPay = (nightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
+        out.night_diff_pay += nightDiffPay;
       }
     }
 
