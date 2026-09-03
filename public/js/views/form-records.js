@@ -440,8 +440,10 @@ async function renderFormView(view, formId, initialPeriod) {
       return `<span class="badge-pill ${d.no_work === 'paid' ? 'status-completed' : 'status-cancelled'}">No Work (${d.no_work === 'paid' ? 'Paid' : 'Unpaid'})</span>`;
     }
     if (d.is_rest_day) return '<span class="badge-pill status-confirmed">Rest Day</span>';
+    if (d.status === 'below_minimum_denied') return '<span class="badge-pill status-cancelled" title="Under the configured minimum work time, HR denied pay for it">Below Min — Denied</span>';
     if (d.status === 'absent') return '<span class="badge-pill status-cancelled">Absent</span>';
     if (d.status === 'paid_leave') return '<span class="badge-pill status-completed">Paid Leave</span>';
+    if (d.below_minimum) return '<span class="badge-pill status-confirmed" title="Under the configured minimum work time — still paid for actual hours (allowed by default)">Below Min — Allowed</span>';
     return '';
   }
 

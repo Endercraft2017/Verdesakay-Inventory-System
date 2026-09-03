@@ -186,6 +186,37 @@ async function policySettingsModal() {
       <p class="muted" style="font-size:12px;margin:2px 0 0">On (default): a clock-out past the shift's end only pays
         OT when that day is linked to an approved Overtime Request. Off: any clock-out past the shift's end
         auto-pays OT — no form needed.</p>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
+      <strong>Hours & Minimum Time</strong>
+      <div class="field-row" style="margin-top:8px">
+        <div><label>How a worked day is paid</label>
+          <select data-p="hours_basis">
+            <option value="fixed">Fixed — full/half day + late/OT/undertime margins (default)</option>
+            <option value="per_hour">Per-hours-basis — prorated by actual hours worked</option>
+          </select></div>
+        <div><label>Per-hours-basis rounding block</label>
+          <select data-p="hours_basis_unit"><option value="minute">Per minute</option><option value="30min">Per 30 minutes</option><option value="hour">Per hour</option></select></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0"><b>Fixed</b>: a day worked at all pays a flat full day
+        (or half day, for a linked Half Day request), with late/OT/undertime as peso adjustments around the shift's
+        set start/end — undertime (e.g. 8:00-3:00 on an 8-5 shift, 6hrs), offset (10:00-19:00 via an Offset form,
+        8hrs) and half day (8-12 or 1-5, 4hrs) all work this way. <b>Per-hours-basis</b>: pay is computed directly
+        from actual clock times instead — e.g. clocking 8:00-14:00 on an 8-5 shift pays exactly 5 hours (lunch
+        excluded), not a flat full or half day; late arrival/leaving early no longer need a separate deduction,
+        since paying only for hours present already accounts for it.</p>
+      <div class="field-row" style="margin-top:10px">
+        <div><label>Lunch break (minutes)</label><input data-p="lunch_break_minutes" type="number" min="0" max="480" /></div>
+        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <input type="checkbox" data-p="count_lunch_as_worked" style="width:auto" /> Count lunch as paid time
+        </label></div>
+        <div><label>Minimum time for a day (minutes)</label><input data-p="min_work_minutes" type="number" min="0" max="1440" placeholder="0 = no minimum" /></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">Lunch break is assumed to sit in the middle of each
+        shift's span (e.g. an 8-5 shift with a 60-min lunch splits into 8-12 / lunch / 1-5) — used to derive a
+        linked Half Day request's own AM/PM window, and (unless "count lunch as paid time" is on) subtracted from
+        a per-hours-basis worked span. Minimum time flags any day under it for review in Time Keeping's daily grid
+        (an Allow/Deny button appears there) — it never withholds pay by itself; a short day still pays for the
+        actual hours worked unless HR explicitly denies it. Leave at 0 to never flag short days at all.</p>
       <div class="field-row" style="margin-top:10px">
         <div><label>Pay frequency</label>
           <select data-p="pay_frequency">
@@ -252,6 +283,11 @@ async function policySettingsModal() {
         p('night_diff_percent').value = policy.night_diff_percent;
         p('night_start').value = policy.night_start;
         p('night_end').value = policy.night_end;
+        p('hours_basis').value = policy.hours_basis || 'fixed';
+        p('hours_basis_unit').value = policy.hours_basis_unit || '30min';
+        p('lunch_break_minutes').value = policy.lunch_break_minutes ?? 60;
+        p('count_lunch_as_worked').checked = !!policy.count_lunch_as_worked;
+        p('min_work_minutes').value = policy.min_work_minutes ?? 0;
         (policy.default_rest_days || [0, 6]).forEach((d) => {
           const cb = ov.querySelector(`[data-rd="${d}"]`);
           if (cb) cb.checked = true;
@@ -329,6 +365,11 @@ async function policySettingsModal() {
           night_diff_percent: Number(p('night_diff_percent').value) || 0,
           night_start: p('night_start').value,
           night_end: p('night_end').value,
+          hours_basis: p('hours_basis').value,
+          hours_basis_unit: p('hours_basis_unit').value,
+          lunch_break_minutes: Number(p('lunch_break_minutes').value) || 0,
+          count_lunch_as_worked: p('count_lunch_as_worked').checked,
+          min_work_minutes: Number(p('min_work_minutes').value) || 0,
           default_rest_days: [...ov.querySelectorAll('[data-rd]:checked')].map((cb) => Number(cb.dataset.rd)),
         };
         const dedCells = [...ov.querySelectorAll('[data-ded]')];
@@ -1152,6 +1193,18 @@ async function renderPeriod(view, periodId) {
     return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getDay();
   }
 
+  /** Raw minutes between time_in/time_out (crossing midnight if time_out < time_in) — a quick
+      client-side approximation of PayrollPolicy.min_work_minutes for the grid's flag/button,
+      not itself the real payroll computation (see hr-payroll-compute.ts for that). null if
+      either side is blank. */
+  function workedMinutesFor(d) {
+    if (!d.time_in || !d.time_out) return null;
+    const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    let inMin = toMin(d.time_in), outMin = toMin(d.time_out);
+    if (outMin < inMin) outMin += 24 * 60;
+    return outMin - inMin;
+  }
+
   async function dailyGridModal(rosterRow) {
     const employeeId = rosterRow.employee_id;
     const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form'];
@@ -1230,6 +1283,37 @@ async function renderPeriod(view, periodId) {
         if (notifyBtn) notifyBtn.onclick = () => notifyIncompleteEmployee(rosterRow);
 
         const today = new Date().toISOString().slice(0, 10);
+        // Below PayrollPolicy.min_work_minutes (0 = off) — flags for review, never withholds pay
+        // by itself; only an explicit Deny click does (see hr-payroll-compute.ts). Its own
+        // function (not inlined in renderRows) so a time-field blur can refresh just this one
+        // row's flag without re-rendering (and stealing focus out of) the whole table.
+        function minFlagHtml(d, i) {
+          const workedMin = workedMinutesFor(d);
+          const belowMinimum = policy.min_work_minutes > 0 && workedMin != null && workedMin < policy.min_work_minutes;
+          if (!belowMinimum) return '';
+          return `<div style="margin-top:3px">
+              <span class="badge-pill status-cancelled" title="Worked ${workedMin} min, under the ${policy.min_work_minutes}-min minimum">
+                Below Min${d.min_hours_decision ? ` — ${d.min_hours_decision === 'allow' ? 'Allowed' : 'Denied'}` : ''}
+              </span>
+              <div style="margin-top:3px;display:flex;gap:4px">
+                <button type="button" class="btn secondary small" data-min-allow="${i}" style="padding:1px 7px;font-size:11px">Allow</button>
+                <button type="button" class="btn secondary small" data-min-deny="${i}" style="padding:1px 7px;font-size:11px">Deny</button>
+              </div>
+            </div>`;
+        }
+        function renderMinFlag(i) {
+          const el = body.querySelector(`[data-min-flag="${i}"]`);
+          if (!el) return;
+          el.innerHTML = minFlagHtml(days[i], i);
+          el.querySelectorAll('[data-min-allow]').forEach((b) => b.onclick = () => {
+            days[Number(b.dataset.minAllow)].min_hours_decision = 'allow';
+            renderMinFlag(Number(b.dataset.minAllow));
+          });
+          el.querySelectorAll('[data-min-deny]').forEach((b) => b.onclick = () => {
+            days[Number(b.dataset.minDeny)].min_hours_decision = 'deny';
+            renderMinFlag(Number(b.dataset.minDeny));
+          });
+        }
         function renderRows() {
           body.innerHTML = days.map((d, i) => {
             // Item 7: one of time_in/time_out set but not both, for a day that's already
@@ -1251,7 +1335,7 @@ async function renderPeriod(view, periodId) {
                 : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : '');
             return `
             <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
-              <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}</td>
+              <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}<div data-min-flag="${i}">${minFlagHtml(d, i)}</div></td>
               <td><select data-k="shift_id">${shiftOptions(d.shift_id)}</select></td>
               <td><input data-k="time_in" type="time" value="${UI.esc(d.time_in || '')}" /></td>
               <td><input data-k="time_out" type="time" value="${UI.esc(d.time_out || '')}" /></td>
@@ -1270,7 +1354,21 @@ async function renderPeriod(view, periodId) {
               const row = Number(inp.closest('[data-row]').dataset.row);
               days[row][inp.dataset.k] = inp.value;
               if (inp.dataset.k === 'holiday_type' || inp.dataset.k === 'rest_day') renderRows(); // refresh the tag next to the date
+              // A time change can flip the below-minimum flag on or off — refreshed on blur (not
+              // every keystroke/'input' event) so a full renderRows() here can't steal focus out
+              // of the field the user is still typing/picking a time into.
+              if (inp.dataset.k === 'time_in' || inp.dataset.k === 'time_out') {
+                inp.addEventListener('blur', () => renderMinFlag(row), { once: true });
+              }
             });
+          });
+          body.querySelectorAll('[data-min-allow]').forEach((b) => b.onclick = () => {
+            days[Number(b.dataset.minAllow)].min_hours_decision = 'allow';
+            renderMinFlag(Number(b.dataset.minAllow));
+          });
+          body.querySelectorAll('[data-min-deny]').forEach((b) => b.onclick = () => {
+            days[Number(b.dataset.minDeny)].min_hours_decision = 'deny';
+            renderMinFlag(Number(b.dataset.minDeny));
           });
           body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.link)));
           body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = () => {
@@ -1335,6 +1433,7 @@ async function renderPeriod(view, periodId) {
             work_date: d.work_date, time_in: d.time_in || '', time_out: d.time_out || '', notes: d.notes || '',
             shift_id: d.shift_id || null, form_record_id: d.form_record_id || null,
             holiday_type: d.holiday_type || null, rest_day: d.rest_day || null,
+            min_hours_decision: d.min_hours_decision || null,
           })),
         });
         UI.toast('Attendance saved');

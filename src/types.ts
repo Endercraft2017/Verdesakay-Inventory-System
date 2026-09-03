@@ -849,8 +849,10 @@ export interface Shift {
 }
 
 /** Company-wide payroll computation rules (settings key "payroll_policy") — how lateness/OT are
-    computed, as opposed to *when* a shift runs (that's per-Shift). Rounding is always "round up"
-    (against the employee for lateness, in their favor for OT) — not itself configurable. */
+    computed, as opposed to *when* a shift runs (that's per-Shift). Late/undertime always round
+    UP against the employee; OT and per-hours-basis pay always round DOWN (only a fully
+    completed block is credited) — the direction itself isn't configurable, only the block size
+    (late_unit/ot_unit/hours_basis_unit). */
 export interface PayrollPolicy {
   grace_minutes: number;
   late_unit: 'minute' | 'hour';
@@ -885,6 +887,33 @@ export interface PayrollPolicy {
       falls back to "every slot has everything on" — exactly the old always-divide-evenly
       behavior, so this is fully opt-in. */
   deduction_schedule?: Array<{ sss: boolean; philhealth: boolean; pagibig: boolean; withholding_tax: boolean }>;
+  /** Below this many actual minutes worked in one day, HR gets a flag + allow/deny button on
+      that attendance record (attendance_records.min_hours_decision) — 0 (default) disables the
+      check entirely. Doesn't withhold pay on its own: a short day still pays for the actual
+      hours/fraction worked by default, same as any other day; only an explicit per-record
+      'deny' decision zeroes it. See computeAttendanceForEmployee's minimum-hours check. */
+  min_work_minutes: number;
+  /** Minutes of unpaid lunch assumed within a shift's span. Subtracted from worked time for
+      hours_basis: 'per_hour' pay (unless count_lunch_as_worked), and used to derive a linked
+      Half Day request's own AM/PM window regardless of hours_basis — see lunchWindow/
+      halfDayWindow in hr-payroll-compute.ts. */
+  lunch_break_minutes: number;
+  /** When true, lunch is paid time — not subtracted from a per-hours-basis worked span. Has no
+      effect on fixed-basis pay (a full flat day already included lunch) or half-day window
+      derivation, which always assumes the structural lunch gap regardless of this flag. */
+  count_lunch_as_worked: boolean;
+  /** 'fixed' (default, unchanged): a worked day credits a flat 1 day (0.5 for a linked Half Day
+      request) once present at all; late/OT/undertime are peso adjustments around the shift's
+      fixed start/end. 'per_hour': basic pay is prorated directly from actual worked minutes
+      (lunch excluded per count_lunch_as_worked), rounded to hours_basis_unit — e.g. clocking
+      08:00-14:00 on an 08:00-17:00 shift with a 60-min lunch pays exactly 5 hours, not a flat
+      full or half day. In this mode late arrival/leaving early are inherently self-correcting
+      (already paid only for hours present), so no separate late/undertime peso deduction is
+      layered on top. */
+  hours_basis: 'fixed' | 'per_hour';
+  /** Rounding block for hours_basis: 'per_hour' pay — same rounding-DOWN convention as OT (only
+      a fully completed block is paid). Has no effect in 'fixed' mode. */
+  hours_basis_unit: 'minute' | '30min' | 'hour';
 }
 
 export interface EmployeeDocument {
@@ -925,6 +954,11 @@ export interface AttendanceRecord {
   /** Per-record rest-day override; null inherits the weekly rest-day pattern
       (employees.rest_days else PayrollPolicy.default_rest_days). */
   rest_day: 'yes' | 'no' | null;
+  /** HR's explicit decision on a day that came in under PayrollPolicy.min_work_minutes — set
+      via the Daily Time grid's allow/deny button once one appears. null = no decision made yet
+      (still pays for actual hours worked, same as 'allow' — see computeAttendanceForEmployee).
+      'deny' zeroes the day's credit entirely (not an absence, just excused/undetermined). */
+  min_hours_decision: 'allow' | 'deny' | null;
   updated_at: string;
 }
 

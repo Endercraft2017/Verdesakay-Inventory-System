@@ -29,6 +29,10 @@ export interface AttendanceDay {
   // employees.rest_days (if set) else PayrollPolicy.default_rest_days. Never stored; purely a
   // function of the date, so the caller recomputes it each time rather than persisting it.
   isRestDay?: boolean;
+  // HR's explicit allow/deny decision on a day under PayrollPolicy.min_work_minutes — see
+  // attendance_records.min_hours_decision. null/omitted behaves exactly like 'allow' (pays for
+  // actual hours/fraction worked); only an explicit 'deny' zeroes the day's credit.
+  minHoursDecision?: 'allow' | 'deny' | null;
 }
 
 export interface AttendanceComputation {
@@ -70,13 +74,19 @@ export interface DayBreakdown {
   // Mirrors exactly which branch of the unworked-day precedence (see the comment above it)
   // fired, or 'worked' for a day with time logged — not a new aggregate-level distinction,
   // just makes an already-computed decision visible per day instead of only summed.
-  status: 'worked' | 'paid_leave' | 'paid_no_work' | 'paid_holiday' | 'unpaid_no_work' | 'rest_day_off' | 'absent';
+  status: 'worked' | 'paid_leave' | 'paid_no_work' | 'paid_holiday' | 'unpaid_no_work' | 'rest_day_off' | 'absent'
+    | 'below_minimum_denied'; // HR clicked "Deny" on a day under PayrollPolicy.min_work_minutes — 0 credit, not an absence
   late_minutes: number;
   late_pay: number;
   ot_hours: number;
   ot_pay: number;
   undertime_pay: number;
   day_premium_pay: number; // whichever of holiday_pay/special_holiday_30/rest_day_ot this day contributed
+  // Whether this day's actual worked minutes fell under PayrollPolicy.min_work_minutes —
+  // informational, independent of whether it was ultimately allowed or denied (status above),
+  // so the Daily Time grid / detail view can flag it either way. Always false when the policy's
+  // check is off (min_work_minutes: 0) or no shift is assigned (nothing to measure against).
+  below_minimum: boolean;
 }
 
 const DAY_MIN = 24 * 60;
@@ -132,6 +142,41 @@ function nightOverlapMinutes(fromMin: number, toMin: number, nightStart: number,
   return total;
 }
 
+/** Plain overlap (in minutes) between two spans on the same continuous (already shift-relative)
+    timeline — unlike nightOverlapMinutes this doesn't wrap, both spans are already normalized. */
+function overlapMinutes(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
+}
+
+/** The shift's own structural lunch gap — the unpaid break assumed to sit in the middle of the
+    shift's span, splitting it into two equal halves (before subtracting `lunchMinutes` itself).
+    E.g. an 08:00-17:00 shift (540 min span) with a 60-min lunch splits into a 240-min (4h) AM
+    half, a 60-min lunch, and a 240-min (4h) PM half — lunch sits at 12:00-13:00. Both
+    computeAttendanceForEmployee's per-hours-basis pay and halfDayWindow below derive from this
+    same gap, so a half-day's own boundary and the lunch subtracted from a per-hour day can never
+    disagree on where lunch actually falls. `shiftStart`/`shiftEnd` are already on the same
+    continuous (possibly >1440, overnight-normalized) timeline the caller resolved. */
+function lunchWindow(shiftStart: number, shiftEnd: number, lunchMinutes: number): { start: number; end: number } {
+  const workSpan = Math.max(0, shiftEnd - shiftStart - lunchMinutes);
+  const half = workSpan / 2;
+  return { start: shiftStart + half, end: shiftStart + half + lunchMinutes };
+}
+
+/** A linked Half Day request's own effective start/end — AM runs shift-start to the lunch gap,
+    PM runs from the end of the lunch gap to shift-end (see lunchWindow) — e.g. 08:00-12:00 or
+    13:00-17:00 for the same 08:00-17:00/60-min-lunch shift above, matching a plain "half of an
+    8-hour day" expectation exactly. Unrecognized/missing session defaults to AM (the more
+    common case, and the safer of the two — misjudging an actual PM half-day as AM would flag it
+    "late" instead of silently accepting it as on-time, so it fails toward visibility not
+    silence). */
+function halfDayWindow(
+  shiftStart: number, shiftEnd: number, lunchMinutes: number, session: string | undefined
+): { start: number; end: number } {
+  const lunch = lunchWindow(shiftStart, shiftEnd, lunchMinutes);
+  if (session === 'Afternoon (PM)') return { start: lunch.end, end: shiftEnd };
+  return { start: shiftStart, end: lunch.start };
+}
+
 const ZERO: AttendanceComputation = {
   days_worked: 0, days_absent: 0, late_deduction: 0, ot_hours: 0, overtime_pay: 0,
   undertime_pay: 0, holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, days: [],
@@ -176,11 +221,12 @@ export function computeAttendanceForEmployee(
     // what happened to this specific day, never a separately-derived guess.
     let lateMin = 0, latePay = 0, otHours = 0, otPay = 0, undertimePay = 0, dayPremium = 0;
     let status: DayBreakdown['status'] = 'worked';
+    let belowMin = false;
     const pushDay = () => out.days.push({
       work_date: day.work_date, time_in: day.time_in, time_out: day.time_out,
       holiday: day.holiday ?? null, no_work: day.noWork ?? null, is_rest_day: !!day.isRestDay,
       status, late_minutes: lateMin, late_pay: latePay, ot_hours: otHours, ot_pay: otPay,
-      undertime_pay: undertimePay, day_premium_pay: dayPremium,
+      undertime_pay: undertimePay, day_premium_pay: dayPremium, below_minimum: belowMin,
     });
 
     if (timeIn == null || timeOut == null) {
@@ -244,8 +290,6 @@ export function computeAttendanceForEmployee(
       continue;
     }
 
-    out.days_worked += slug === 'halfday_request' ? 0.5 : 1;
-
     // Holiday/rest-day premiums first, before the shift-required guard below — unlike late/OT/
     // undertime (which need a shift's start/end time to judge against), these depend only on
     // the day's own type, not on a shift being assigned at all. Was previously stuck after that
@@ -289,11 +333,16 @@ export function computeAttendanceForEmployee(
       }
     }
 
-    if (!day.shift) { pushDay(); continue; } // no shift assigned -> nothing to judge late/OT/undertime against
-
-    const shiftStart = toMinutes(day.shift.start_time);
-    let shiftEnd = toMinutes(day.shift.end_time);
-    if (shiftStart == null || shiftEnd == null) { pushDay(); continue; }
+    // No shift assigned, or the assigned shift has unparseable times: nothing to judge late/OT/
+    // undertime/minimum-hours/per-hours-basis against — flat credit only, same as fixed-basis
+    // mode always used (a per-hours-basis day needs a shift to know how many hours it SHOULD
+    // have been, so this is also its fallback).
+    const shiftStart = day.shift ? toMinutes(day.shift.start_time) : null;
+    let shiftEnd = day.shift ? toMinutes(day.shift.end_time) : null;
+    if (shiftStart == null || shiftEnd == null) {
+      out.days_worked += slug === 'halfday_request' ? 0.5 : 1;
+      pushDay(); continue;
+    }
     const overnight = shiftEnd < shiftStart;
     if (overnight) shiftEnd += DAY_MIN; // e.g. 22:00-06:00 -> end normalized to 30:00
 
@@ -303,6 +352,83 @@ export function computeAttendanceForEmployee(
     const relTo = (min: number) => (overnight && min < shiftStart ? min + DAY_MIN : min);
     const timeInRel = relTo(timeIn);
     const timeOutRel = relTo(timeOut);
+
+    // Minimum allowable time for the day (policy.min_work_minutes, 0 = off): flags a short day
+    // (below_minimum, surfaced per-day for the Daily Time grid's allow/deny button and the
+    // payroll detail view) but never withholds pay on its own — by default a short day still
+    // pays for the actual hours/fraction worked below, same as any other day. Only an explicit
+    // per-record 'deny' decision (attendance_records.min_hours_decision) zeroes it entirely —
+    // not an absence, just excused/undetermined, distinct from a genuine no-show.
+    const rawWorkedMinutes = Math.max(0, timeOutRel - timeInRel);
+    belowMin = policy.min_work_minutes > 0 && rawWorkedMinutes < policy.min_work_minutes;
+    if (belowMin && day.minHoursDecision === 'deny') {
+      status = 'below_minimum_denied';
+      pushDay(); continue;
+    }
+
+    if (policy.hours_basis === 'per_hour') {
+      // Basic pay prorated directly from actual worked minutes (lunch excluded unless
+      // count_lunch_as_worked), rounded DOWN to hours_basis_unit — e.g. clocking 08:00-14:00 on
+      // an 08:00-17:00 shift (60-min lunch) pays exactly 5 hours, not a flat full/half day
+      // credit. Late arrival and leaving early are inherently self-correcting here (already
+      // only paid for hours actually present), so — unlike fixed-basis mode below — this never
+      // ALSO layers a separate undertime peso deduction on top of the already-reduced hours;
+      // that would double-penalize the same shortfall. A linked Half Day request doesn't need
+      // special handling either — someone who only worked their half naturally computes to
+      // ~4 hours of pay without needing to know a form was involved.
+      const lunch = lunchWindow(shiftStart, shiftEnd, policy.lunch_break_minutes);
+      const lunchOverlap = policy.count_lunch_as_worked ? 0 : overlapMinutes(timeInRel, timeOutRel, lunch.start, lunch.end);
+      const workedRaw = Math.max(0, rawWorkedMinutes - lunchOverlap);
+      const normalSpan = Math.max(0, (shiftEnd - shiftStart) - (policy.count_lunch_as_worked ? 0 : policy.lunch_break_minutes));
+
+      const regularRaw = Math.min(workedRaw, normalSpan);
+      const regularBlocked = roundDownToUnit(regularRaw, unitMinutesFor(policy.hours_basis_unit));
+      out.days_worked += (regularBlocked / 60) / 8;
+
+      // Still reported for reference (same grace/rounding as fixed-basis mode) even though it
+      // never costs pay here — HR can see the pattern without it being double-counted against
+      // an employee already paid only for the hours they were actually present.
+      const lateRaw = timeInRel - shiftStart;
+      if (lateRaw > policy.grace_minutes) {
+        lateMin = roundUpToUnit(lateRaw - policy.grace_minutes, unitMinutesFor(policy.late_unit));
+      }
+
+      // Hours worked beyond the shift's own normal span — same authorization gate OT already
+      // uses (require_ot_form), same OT%/holiday-scaled rate, just measured from actual worked
+      // minutes instead of a fixed clock-out-vs-shift-end comparison.
+      const otRaw = workedRaw - normalSpan;
+      if (otRaw > 0 && (slug === 'overtime_request' || !policy.require_ot_form)) {
+        const otBlocked = roundDownToUnit(otRaw, unitMinutesFor(policy.hours_basis_unit));
+        otHours = otBlocked / 60;
+        out.ot_hours += otHours;
+        const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
+        let pay = otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
+        if (policy.night_diff_enabled) {
+          const wallStart = (timeOutRel - otRaw) % DAY_MIN;
+          const nightMin = nightOverlapMinutes(wallStart, wallStart + otRaw, nightStart, nightEnd);
+          pay += (nightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
+        }
+        otPay = pay;
+        out.overtime_pay += pay;
+      }
+
+      pushDay();
+      continue;
+    }
+
+    // --- fixed-basis mode (the original, unchanged-by-default behavior) ---
+    out.days_worked += slug === 'halfday_request' ? 0.5 : 1;
+
+    // A linked Half Day request judges late/undertime against just its own AM/PM window
+    // (derived from the shift + lunch — see halfDayWindow), not the full shift's start/end —
+    // previously this compared against the whole day, so an afternoon half-day showed as hours
+    // "late" and a morning half-day showed as "undertime" for correctly leaving at lunchtime.
+    let effShiftStart = shiftStart;
+    if (slug === 'halfday_request') {
+      const win = halfDayWindow(shiftStart, shiftEnd, policy.lunch_break_minutes, day.linkedForm?.data?.session as string | undefined);
+      effShiftStart = win.start;
+      shiftEnd = win.end;
+    }
 
     // An Offset form shifts this day's expected time-out (e.g. arrived late, agreed to leave
     // later instead) — the effective end used for both the OT and undertime checks below.
@@ -316,7 +442,7 @@ export function computeAttendanceForEmployee(
     // exceeded, only the minutes *past* grace are rounded to a block (confirmed: 125 min late
     // with a 10 min grace and a 1-hour block -> 115 min past grace -> rounds up to 2 hours, not
     // 3 — rounding the full 125 raw minutes would over-penalize).
-    const lateRaw = timeInRel - shiftStart;
+    const lateRaw = timeInRel - effShiftStart;
     if (lateRaw > policy.grace_minutes) {
       const pastGrace = lateRaw - policy.grace_minutes;
       const lateBlocked = roundUpToUnit(pastGrace, unitMinutesFor(policy.late_unit));

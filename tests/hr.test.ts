@@ -70,10 +70,14 @@ describe('hr', () => {
     expect(hw).toBeDefined();
     expect(hw.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'holiday_type', 'hours_worked', 'reason']);
 
-    // All four are now offered on mobile's "New request" screen.
+    const hd = bySlug('halfday_request');
+    expect(hd).toBeDefined();
+    expect(hd.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'department', 'date', 'session', 'reason', 'approved_by']);
+
+    // All five are now offered on mobile's "New request" screen.
     const types = await ctx.api.get('/api/me/request-types').set(hdr());
     const slugs = types.body.map((t: { slug: string }) => t.slug);
-    expect(slugs).toEqual(expect.arrayContaining(['overtime_request', 'undertime_request', 'offset_form', 'holiday_work_request']));
+    expect(slugs).toEqual(expect.arrayContaining(['overtime_request', 'undertime_request', 'offset_form', 'holiday_work_request', 'halfday_request']));
   });
 
   it('creates and lists an employee with a caller-supplied number, defaulting to probationary status', async () => {
@@ -1694,5 +1698,116 @@ describe('payroll detail — per-payslip statutory deduction toggles (preview + 
   it('404s for a non-payroll or nonexistent record', async () => {
     expect((await ctx.api.put('/api/hr/payroll/999999/deductions').set(hdr()).send({})).status).toBe(404);
     expect((await ctx.api.post('/api/hr/payroll/999999/preview-deductions').set(hdr()).send({})).status).toBe(404);
+  });
+});
+
+describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum work time — end to end', () => {
+  let hoursShiftId: number;
+  let halfdayFormId: number;
+
+  beforeAll(async () => {
+    const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Hours Basis Test Shift', start_time: '08:00', end_time: '17:00', is_default: false });
+    hoursShiftId = shift.body.id;
+    const forms = await ctx.api.get('/api/form-definitions').set(hdr());
+    halfdayFormId = forms.body.find((f: { slug: string }) => f.slug === 'halfday_request').id;
+  });
+
+  it('a linked Half Day (PM) request no longer shows hours of "late" against the full shift\'s 08:00 start (real bug fix)', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
+      hours_basis: 'fixed', lunch_break_minutes: 60, min_work_minutes: 0,
+    });
+    const halfdayRecord = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: halfdayFormId,
+      data: { employee_name: 'Half Day PM Employee', date: '2026-08-05', session: 'Afternoon (PM)', reason: 'Personal' },
+      status: 'approved',
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-HALFDAY-PM', name: 'Half Day PM Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Half Day PM Cutoff', start_date: '2026-08-05', end_date: '2026-08-05' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-05', time_in: '13:00', time_out: '17:00', notes: '', shift_id: hoursShiftId, form_record_id: halfdayRecord.body.id }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Half Day PM Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Half Day PM Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Half Day PM Employee');
+    expect(rec.data.days_worked).toBe(0.5);
+    expect(rec.data.late_absences).toBe(0); // was wrongly ~500 (5hrs "late") before the fix
+    expect(rec.data.basic_salary).toBeCloseTo(400, 6); // half of 800
+  });
+
+  it('hours_basis: per_hour prorates basic_salary directly from actual worked minutes across a real generate-payslips run', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
+      hours_basis: 'per_hour', hours_basis_unit: '30min', lunch_break_minutes: 60, min_work_minutes: 0,
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-PERHOUR', name: 'Per Hour Employee', daily_rate: 800 }); // hourly = 100
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Per Hour Cutoff', start_date: '2026-08-06', end_date: '2026-08-06' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    // 08:00-14:00 on an 08:00-17:00 shift with a 60-min lunch -> exactly 5 paid hours.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-06', time_in: '08:00', time_out: '14:00', notes: '', shift_id: hoursShiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Per Hour Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Per Hour Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Per Hour Employee');
+    expect(rec.data.days_worked).toBeCloseTo(5 / 8, 6);
+    expect(rec.data.basic_salary).toBeCloseTo(500, 6); // 5 hours * 100/hr
+    expect(rec.data.late_absences).toBe(0); // no separate deduction on top of the already-reduced hours
+    // Restore fixed-basis for the rest of the suite.
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], hours_basis: 'fixed',
+    });
+  });
+
+  it('a below-minimum day denied via the Daily Time grid\'s attendance save contributes 0 to days_worked/basic_salary, not an absence', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
+      hours_basis: 'fixed', min_work_minutes: 240, // half-day minimum
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-MINDENY', name: 'Min Deny Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Min Deny Cutoff', start_date: '2026-08-07', end_date: '2026-08-07' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      // Only 1 hour worked, under the 4-hour minimum, explicitly denied.
+      days: [{ work_date: '2026-08-07', time_in: '08:00', time_out: '09:00', notes: '', shift_id: hoursShiftId, min_hours_decision: 'deny' }],
+    });
+    const attendanceCheck = await ctx.api.get(`/api/hr/periods/${period.body.id}/attendance`).query({ employee_id: emp.body.id }).set(hdr());
+    expect(attendanceCheck.body[0].min_hours_decision).toBe('deny'); // round-trips through the save/read routes
+
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Min Deny Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Min Deny Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Min Deny Employee');
+    expect(rec.data.days_worked).toBe(0);
+    expect(rec.data.days_absent).toBe(0); // explicitly not an absence
+    expect(rec.data.basic_salary).toBeCloseTo(0, 6);
+
+    // A short day left undecided (no min_hours_decision) still pays for actual hours by default.
+    const emp2 = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-MINUNDECIDED', name: 'Min Undecided Employee', daily_rate: 800 });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp2.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp2.body.id,
+      days: [{ work_date: '2026-08-07', time_in: '08:00', time_out: '09:00', notes: '', shift_id: hoursShiftId }],
+    });
+    const gen2 = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Min Deny Cutoff' });
+    const records2 = await ctx.api.get(`/api/form-definitions/${gen2.body.form_id}/records`).query({ period: 'Min Deny Cutoff' }).set(hdr());
+    const rec2 = records2.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Min Undecided Employee');
+    expect(rec2.data.days_worked).toBe(1); // fixed-basis: a full flat day, same as always, since it's not denied
+
+    // Restore for the rest of the suite.
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], min_work_minutes: 0,
+    });
   });
 });

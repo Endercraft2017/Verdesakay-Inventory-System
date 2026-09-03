@@ -824,6 +824,9 @@ const attendanceDaySchema = z.object({
   // 'yes'/'no' force this one date on/off as a rest day for this employee; null inherits the
   // weekly rest-day pattern. See attendance_records.rest_day (db.ts, SCHEMA_VERSION 18).
   rest_day: z.enum(['yes', 'no']).nullable().optional(),
+  // HR's explicit allow/deny decision on a day under PayrollPolicy.min_work_minutes — see
+  // attendance_records.min_hours_decision (db.ts).
+  min_hours_decision: z.enum(['allow', 'deny']).nullable().optional(),
 });
 
 export const saveAttendanceSchema = z.object({
@@ -898,6 +901,11 @@ export const payrollPolicySchema = z.object({
   deduction_schedule: z.array(z.object({
     sss: boolish, philhealth: boolish, pagibig: boolish, withholding_tax: boolish,
   })).max(31).optional(),
+  min_work_minutes: z.coerce.number().int().min(0).max(1440).default(0),
+  lunch_break_minutes: z.coerce.number().int().min(0).max(480).default(60),
+  count_lunch_as_worked: boolish.default(false),
+  hours_basis: z.enum(['fixed', 'per_hour']).default('fixed'),
+  hours_basis_unit: z.enum(['minute', '30min', 'hour']).default('30min'),
 });
 
 // POST /api/hr/payroll/:recordId/preview-deductions, PUT .../deductions — which of the four

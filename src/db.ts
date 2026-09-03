@@ -55,7 +55,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 20; // 20: employees.late_exempt
+export const SCHEMA_VERSION = 21; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -1271,6 +1271,12 @@ function migrate(): void {
   if (!arCols.some((c) => c.name === 'rest_day')) {
     db.exec('ALTER TABLE attendance_records ADD COLUMN rest_day TEXT');
   }
+  // HR's explicit allow/deny decision on a day that came in under PayrollPolicy.
+  // min_work_minutes — null = no decision yet (still pays actual hours, same as 'allow'); see
+  // hr-payroll-compute.ts's minimum-hours check. (SCHEMA_VERSION 21)
+  if (!arCols.some((c) => c.name === 'min_hours_decision')) {
+    db.exec('ALTER TABLE attendance_records ADD COLUMN min_hours_decision TEXT');
+  }
 
   // An employee's *usual* shift — purely a UI pre-fill for new attendance days, never enforced,
   // so a rotating employee can still be assigned a different shift on any given day.
@@ -1841,6 +1847,23 @@ function seedHrRequestForms(): void {
         { key: 'holiday_type', label: 'Holiday Type', type: 'select', required: true, options: ['Regular Holiday', 'Special Non-Working Holiday'], default: '' },
         { key: 'hours_worked', label: 'Hours Worked', type: 'number', required: true, options: [], default: '' },
         area('reason', 'Reason'),
+      ],
+    },
+    {
+      // Also in REQUEST_SLUGS (me.routes.ts) and read directly by slug in
+      // hr-payroll-compute.ts, same as the four above — was missing here even though those
+      // weren't, the one payroll-critical request form still only ever created by hand. Field
+      // shape matches what installs that already hand-created it are already using.
+      name: 'Half Day Request', slug: 'halfday_request', prefix: 'HD', icon: 'history',
+      fields: [
+        { ...employeeField },
+        { key: 'department', label: 'Department', type: 'text', required: false, options: [], default: '' },
+        dateField('date', 'Date'),
+        // Read directly by the compute engine (halfDayWindow) to judge late/undertime against
+        // just this half's own AM/PM window instead of the full shift.
+        { key: 'session', label: 'Session', type: 'select', required: true, options: ['Morning (AM)', 'Afternoon (PM)'], default: '' },
+        area('reason', 'Reason', true),
+        { key: 'approved_by', label: 'Approved By', type: 'text', required: false, options: [], default: '' },
       ],
     },
   ];

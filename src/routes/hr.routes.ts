@@ -574,6 +574,8 @@ const DEFAULT_POLICY: PayrollPolicy = {
   night_diff_enabled: false, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
   monthly_rate_divisor: 26, pay_frequency: 'semi_monthly', auto_statutory: true,
   default_rest_days: [0, 6], // Sun, Sat
+  min_work_minutes: 0, lunch_break_minutes: 60, count_lunch_as_worked: false,
+  hours_basis: 'fixed', hours_basis_unit: '30min',
 };
 
 /** "YYYY-MM-DD" -> weekday index (0=Sun..6=Sat). Builds the Date from the parsed y/m/d as
@@ -889,13 +891,14 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res)
   try {
     run('DELETE FROM attendance_records WHERE period_id = ? AND employee_id = ?', periodId, input.employee_id);
     const insert = db.prepare(
-      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes, shift_id, form_record_id, holiday_type, rest_day)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes, shift_id, form_record_id, holiday_type, rest_day, min_hours_decision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const d of input.days) {
       insert.run(
         periodId, input.employee_id, d.work_date, d.time_in || null, d.time_out || null, d.notes || null,
-        d.shift_id || null, d.form_record_id || null, d.holiday_type || null, d.rest_day || null
+        d.shift_id || null, d.form_record_id || null, d.holiday_type || null, d.rest_day || null,
+        d.min_hours_decision || null
       );
     }
     db.exec('COMMIT');
@@ -1022,11 +1025,11 @@ function attendanceDaysForEmployee(
     work_date: string; time_in: string | null; time_out: string | null;
     shift_start: string | null; shift_end: string | null;
     fr_data: string | null; fd_slug: string | null; holiday_type: string | null;
-    rest_day: string | null;
+    rest_day: string | null; min_hours_decision: string | null;
   }>(
     `SELECT ar.work_date, ar.time_in, ar.time_out,
        s.start_time AS shift_start, s.end_time AS shift_end,
-       fr.data AS fr_data, fd.slug AS fd_slug, ar.holiday_type, ar.rest_day
+       fr.data AS fr_data, fd.slug AS fd_slug, ar.holiday_type, ar.rest_day, ar.min_hours_decision
      FROM attendance_records ar
      LEFT JOIN shifts s ON s.id = ar.shift_id
      LEFT JOIN form_records fr ON fr.id = ar.form_record_id
@@ -1051,6 +1054,7 @@ function attendanceDaysForEmployee(
     isRestDay: r.rest_day === 'yes' ? true
       : r.rest_day === 'no' ? false
       : empRestDays.includes(weekdayOf(r.work_date)),
+    minHoursDecision: r.min_hours_decision as AttendanceDay['minHoursDecision'],
   }));
 }
 
