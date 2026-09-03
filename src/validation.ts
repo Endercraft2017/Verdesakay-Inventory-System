@@ -900,6 +900,16 @@ export const payrollPolicySchema = z.object({
   })).max(31).optional(),
 });
 
+// POST /api/hr/payroll/:recordId/preview-deductions, PUT .../deductions — which of the four
+// statutory deductions apply to ONE payslip record. All optional; an omitted key keeps whatever
+// that deduction's current applied state already is (not reset to on).
+export const payrollDeductionTogglesSchema = z.object({
+  sss_applied: boolish.optional(),
+  philhealth_applied: boolish.optional(),
+  pagibig_applied: boolish.optional(),
+  withholding_tax_applied: boolish.optional(),
+});
+
 /** Sparse permission overrides: keys are permission strings, values are booleans. */
 export const permissionOverridesSchema = z.object({
   overrides: z.record(z.string().max(64), z.boolean())

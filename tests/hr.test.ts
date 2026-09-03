@@ -1582,3 +1582,117 @@ describe('generate-payslips — per-cutoff statutory deduction schedule', () => 
     expect(rec.data.pagibig).toBe(100);
   });
 });
+
+describe('payroll detail — per-payslip statutory deduction toggles (preview + save)', () => {
+  let toggleShiftId: number;
+
+  beforeAll(async () => {
+    const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Deduction Toggle Test Shift', start_time: '08:00', end_time: '17:00', is_default: false });
+    toggleShiftId = shift.body.id;
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
+    });
+  });
+
+  // daily_rate 1800 -> monthly comp 46,800, semi-monthly gross ~23,400 net of statutory —
+  // comfortably over the semi-monthly RWT_2026 15% bracket (10,417), so withholding tax is
+  // reliably non-zero and actually moves when the SSS/PhilHealth/Pag-IBIG toggles change its
+  // own taxable base.
+  async function genToggleEmployee(label: string, workDate: string) {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-DEDTOGGLE-' + Math.floor(Math.random() * 1e6), name: 'Toggle Test ' + label, daily_rate: 1800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label, start_date: workDate, end_date: workDate });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: workDate, time_in: '08:00', time_out: '17:00', notes: '', shift_id: toggleShiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: label });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: label }).set(hdr());
+    return records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Toggle Test ' + label);
+  }
+
+  it('preview-deductions recomputes without saving — turning SSS off zeroes it and lowers total_deductions, but the stored record is untouched', async () => {
+    const rec = await genToggleEmployee('Preview Cutoff', '2026-08-06');
+    expect(rec.data.sss).toBeGreaterThan(0);
+
+    const preview = await ctx.api.post(`/api/hr/payroll/${rec.id}/preview-deductions`).set(hdr())
+      .send({ sss_applied: false });
+    expect(preview.status).toBe(200);
+    expect(preview.body.sss).toBe(0);
+    expect(preview.body.total_deductions).toBeLessThan(rec.data.total_deductions);
+    expect(preview.body.net_pay).toBeGreaterThan(rec.data.net_pay);
+
+    // Nothing persisted — a fresh fetch of the record itself still shows the original numbers.
+    const raw = await ctx.api.get(`/api/form-records/${rec.id}`).set(hdr());
+    expect(raw.body.data.sss).toBe(rec.data.sss); // unchanged — preview never writes
+  });
+
+  it('withholding tax recomputes when SSS/PhilHealth/Pag-IBIG toggles change (its own taxable base moves)', async () => {
+    // Needs total_earnings itself well over the semi-monthly RWT_2026 15% bracket (10,417) — a
+    // single day's pay (~1800) never clears it regardless of the toggles, so this logs a full
+    // 10-day half-cutoff (~18,000) instead of reusing genToggleEmployee's one-day fixture.
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-DEDTOGGLE-TAXBASE', name: 'Toggle Test Tax Base', daily_rate: 1800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Tax Base Cutoff', start_date: '2026-08-03', end_date: '2026-08-14' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    const days = ['03', '04', '05', '06', '07', '10', '11', '12', '13', '14']
+      .map((d) => ({ work_date: `2026-08-${d}`, time_in: '08:00', time_out: '17:00', notes: '', shift_id: toggleShiftId }));
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({ employee_id: emp.body.id, days });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Tax Base Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Tax Base Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Toggle Test Tax Base');
+    expect(rec.data.withholding_tax).toBeGreaterThan(0); // sanity: the fixture actually clears the bracket
+
+    const allOn = await ctx.api.post(`/api/hr/payroll/${rec.id}/preview-deductions`).set(hdr()).send({});
+    const sssOff = await ctx.api.post(`/api/hr/payroll/${rec.id}/preview-deductions`).set(hdr())
+      .send({ sss_applied: false, philhealth_applied: false, pagibig_applied: false });
+    // Turning off the statutory deductions raises taxable income, so withholding tax goes UP,
+    // not just SSS/PhilHealth/Pag-IBIG going to 0 — proves the two aren't computed independently.
+    expect(sssOff.body.sss).toBe(0);
+    expect(sssOff.body.philhealth).toBe(0);
+    expect(sssOff.body.pagibig).toBe(0);
+    expect(sssOff.body.withholding_tax).toBeGreaterThan(allOn.body.withholding_tax);
+  });
+
+  it('PUT .../deductions persists the toggles and recomputed totals; a regenerate afterward preserves the choice', async () => {
+    const rec = await genToggleEmployee('Save Cutoff', '2026-08-08');
+    const save = await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr())
+      .send({ sss_applied: false });
+    expect(save.status).toBe(200);
+    expect(save.body.sss).toBe(0);
+
+    const after = await ctx.api.get(`/api/form-records/${rec.id}`).set(hdr());
+    expect(after.body.data.sss).toBe(0);
+    expect(after.body.data.sss_applied).toBe(false);
+    expect(after.body.data.philhealth_applied).not.toBe(false); // untouched keys stay on
+    expect(after.body.data.total_deductions).toBeLessThan(rec.data.total_deductions);
+
+    // Regenerating the whole cutoff (e.g. after an attendance edit) doesn't silently turn SSS
+    // back on for this one payslip — the override survives, same as cash_advance/pay_date do.
+    const periods = await ctx.api.get('/api/hr/periods').set(hdr());
+    const p = periods.body.find((x: { label: string }) => x.label === 'Save Cutoff');
+    await ctx.api.post(`/api/hr/periods/${p.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Save Cutoff' });
+    const refetched = await ctx.api.get(`/api/form-records/${rec.id}`).set(hdr());
+    expect(refetched.body.data.sss).toBe(0);
+    expect(refetched.body.data.sss_applied).toBe(false);
+  });
+
+  it('is locked once the payslip is marked Paid, same as the generic form-records edit routes', async () => {
+    const rec = await genToggleEmployee('Locked Cutoff', '2026-08-09');
+    await ctx.api.post(`/api/hr/payroll/${rec.id}/mark-paid`).set(hdr());
+    const res = await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ sss_applied: false });
+    expect(res.status).toBe(400);
+    // Preview still works on a locked payslip — it's read-only, nothing to protect.
+    const preview = await ctx.api.post(`/api/hr/payroll/${rec.id}/preview-deductions`).set(hdr()).send({ sss_applied: false });
+    expect(preview.status).toBe(200);
+  });
+
+  it('404s for a non-payroll or nonexistent record', async () => {
+    expect((await ctx.api.put('/api/hr/payroll/999999/deductions').set(hdr()).send({})).status).toBe(404);
+    expect((await ctx.api.post('/api/hr/payroll/999999/preview-deductions').set(hdr()).send({})).status).toBe(404);
+  });
+});

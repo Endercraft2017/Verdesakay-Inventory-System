@@ -159,7 +159,7 @@ async function renderFormView(view, formId, initialPeriod) {
       <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} All Forms</button>
       <h2 style="margin-left:10px">${UI.esc(formDef.name)}</h2>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="fr-search" placeholder="Search number…" /></div>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="fr-search" placeholder="${isPayroll ? 'Search employee name…' : 'Search number…'}" /></div>
       <select id="fr-status" style="margin-left:8px">
         <option value="">All statuses</option>
         ${['draft', 'submitted', 'approved', 'rejected', 'completed'].concat(isPayroll ? ['paid'] : [])
@@ -483,14 +483,42 @@ async function renderFormView(view, formId, initialPeriod) {
         <td>${d.day_premium_pay ? UI.money(d.day_premium_pay) : '—'}</td>
       </tr>`).join('');
 
+    const locked = r.status === 'paid';
+    const DED_LABELS = { sss: 'SSS', philhealth: 'PhilHealth', pagibig: 'Pag-IBIG', withholding_tax: 'Withholding Tax' };
+    const dedSection = canManagePayroll ? `
+      <div class="panel" style="margin-bottom:14px;padding:12px 14px">
+        <strong>Statutory Deductions</strong>
+        <p class="muted" style="font-size:12px;margin:2px 0 10px">Turn off any deduction that shouldn't apply to
+          this one payslip — recomputes instantly (withholding tax's own taxable base moves too), nothing is saved
+          until you click Save.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px">
+          ${Object.keys(DED_LABELS).map((k) => `
+            <label style="display:flex;align-items:center;gap:6px;font-weight:normal">
+              <input type="checkbox" data-ded="${k}" style="width:auto" ${r.data[k + '_applied'] !== false ? 'checked' : ''} ${locked ? 'disabled' : ''} />
+              ${DED_LABELS[k]}
+            </label>`).join('')}
+        </div>
+        <div class="line-items"><table class="line-table">
+          <tbody>
+            ${Object.keys(DED_LABELS).map((k) => `<tr><td>${DED_LABELS[k]}</td><td class="right" data-out="${k}">${UI.money(r.data[k])}</td></tr>`).join('')}
+            <tr><th>Total Deductions</th><th class="right" data-out="total_deductions">${UI.money(r.data.total_deductions)}</th></tr>
+            <tr><th>Net Pay</th><th class="right" data-out="net_pay">${UI.money(r.data.net_pay)}</th></tr>
+          </tbody>
+        </table></div>
+        ${locked
+          ? `<p class="muted" style="font-size:12px;margin-top:8px">This payslip is marked Paid — unmark it first to change its deductions.</p>`
+          : `<button type="button" class="btn small" id="pd-ded-save" style="margin-top:10px">Save Deductions</button>`}
+      </div>` : '';
+
     UI.modal({
       title: `Payslip — ${detail.employee_name}`,
       size: 'xl',
       headActionHTML: `<button type="button" class="btn secondary small" id="pd-print">${UI.icon('printer')} Print</button>`,
       bodyHTML: `
-        <div style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff">${slipHtml}</div>
+        <div style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff;color:#111">${slipHtml}</div>
         ${detail.late_exempt ? `<p class="muted" style="font-size:12px;margin:0 0 8px">This employee is exempt from late deductions —
           late minutes are still shown below for reference, but never subtracted from pay.</p>` : ''}
+        ${dedSection}
         <div class="line-items"><table class="line-table"><thead><tr>
           <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>OT</th><th>Holiday/Rest-Day Premium</th>
         </tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
@@ -498,6 +526,39 @@ async function renderFormView(view, formId, initialPeriod) {
       onOpen: (ov) => {
         const btn = ov.querySelector('#pd-print');
         if (btn) btn.onclick = () => printSlips([r.data]);
+
+        const dedCheckboxes = ov.querySelectorAll('[data-ded]');
+        if (!dedCheckboxes.length) return;
+        const currentApplied = () => {
+          const applied = {};
+          dedCheckboxes.forEach((cb) => { applied[cb.dataset.ded + '_applied'] = cb.checked; });
+          return applied;
+        };
+        const renderPreview = (vals) => {
+          Object.keys(DED_LABELS).concat(['total_deductions', 'net_pay']).forEach((k) => {
+            const cell = ov.querySelector(`[data-out="${k}"]`);
+            if (cell && vals[k] != null) cell.textContent = UI.money(vals[k]);
+          });
+        };
+        const refreshPreview = async () => {
+          try { renderPreview(await API.post(`/hr/payroll/${r.id}/preview-deductions`, currentApplied())); }
+          catch (err) { UI.toast(err.message, 'error'); }
+        };
+        dedCheckboxes.forEach((cb) => cb.addEventListener('change', refreshPreview));
+
+        const saveBtn = ov.querySelector('#pd-ded-save');
+        if (saveBtn) {
+          saveBtn.onclick = async () => {
+            saveBtn.disabled = true;
+            try {
+              const vals = await API.put(`/hr/payroll/${r.id}/deductions`, currentApplied());
+              renderPreview(vals);
+              UI.toast('Deductions saved');
+              load();
+            } catch (err) { UI.toast(err.message, 'error'); }
+            finally { saveBtn.disabled = false; }
+          };
+        }
       },
     });
   }

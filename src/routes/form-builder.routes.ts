@@ -261,7 +261,11 @@ router.get('/form-definitions/:id/records', (req, res) => {
     where.push('fr.period = ?'); params.push(period.trim());
   }
   if (typeof q === 'string' && q.trim()) {
-    where.push('fr.number LIKE ?'); params.push(`%${q.trim()}%`);
+    // Matches the record's own number OR, when the form has one, its employee_name field —
+    // payroll (and every other HR form keyed to an employee) is far more often searched by who
+    // it's for than by its sequential number.
+    where.push("(fr.number LIKE ? OR json_extract(fr.data, '$.employee_name') LIKE ?)");
+    params.push(`%${q.trim()}%`, `%${q.trim()}%`);
   }
   const rows = queryAll<FormRecord>(
     `SELECT fr.*, u.full_name AS created_by_name

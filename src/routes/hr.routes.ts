@@ -23,6 +23,7 @@ import {
   shiftSchema,
   payrollPolicySchema,
   employeeNumberPolicySchema,
+  payrollDeductionTogglesSchema,
 } from '../validation';
 import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord, Shift, PayrollPolicy, EmployeeNumberPolicy } from '../types';
 import { computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../hr-payroll-compute';
@@ -1053,6 +1054,69 @@ function attendanceDaysForEmployee(
   }));
 }
 
+// Which of the four statutory deductions actually apply to ONE payslip record — the per-record
+// override HR can set from the payroll detail view (in addition to the always-existing
+// per-employee deduct_* flags and the cutoff-wide deduction_schedule; all three gate together,
+// same AND as before, just with one more layer). Defaults to true for every key so an existing
+// payslip's stored data (which predates this feature) or a brand-new generation behaves exactly
+// as it always did — nobody's deductions silently turn off just because this shipped.
+interface StatutoryApplied { sss: boolean; philhealth: boolean; pagibig: boolean; withholding_tax: boolean }
+function appliedFromRecordData(data: Record<string, unknown>): StatutoryApplied {
+  return {
+    sss: data.sss_applied !== false,
+    philhealth: data.philhealth_applied !== false,
+    pagibig: data.pagibig_applied !== false,
+    withholding_tax: data.withholding_tax_applied !== false,
+  };
+}
+
+/** SSS/PhilHealth/Pag-IBIG/withholding-tax for one employee, one cutoff — shared by
+ *  generate-payslips (auto_statutory branch) and the two payroll-detail deduction routes below,
+ *  so a manual per-record toggle recomputes with the exact same rate-table math the real payslip
+ *  was generated from, never a second implementation that could disagree. `applied` is the AND
+ *  of the per-employee deduct_* flags (Accounting -> Statutory Deductions), this cutoff's slot in
+ *  the deduction schedule, AND this one payslip's own override — any of the three being off
+ *  zeroes that deduction. */
+function computeEmployeeStatutory(
+  emp: {
+    daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null;
+    deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+  },
+  totalEarnings: number,
+  applied: StatutoryApplied,
+  policy: PayrollPolicy,
+  statTables: ReturnType<typeof effectiveTables>,
+  thisSlot: DeductionSlot,
+  slotDivisor: (key: keyof DeductionSlot) => number
+): { sss: number; philhealth: number; pagibig: number; withholding_tax: number;
+     employer_contributions: { sss_er: number; sss_ec: number; philhealth_er: number; pagibig_er: number } } {
+  const monthlyComp = emp.rate_type === 'monthly' && emp.monthly_rate
+    ? emp.monthly_rate
+    : round2(emp.daily_rate * policy.monthly_rate_divisor);
+  const ded = statutoryDeductions(monthlyComp, monthlyComp, statTables);
+  const sssOn = !!emp.deduct_sss && thisSlot.sss && applied.sss;
+  const philhealthOn = !!emp.deduct_philhealth && thisSlot.philhealth && applied.philhealth;
+  const pagibigOn = !!emp.deduct_pagibig && thisSlot.pagibig && applied.pagibig;
+  const sss = sssOn ? round2(ded.sss.employee / slotDivisor('sss')) : 0;
+  const philhealth = philhealthOn ? round2(ded.philhealth.employee / slotDivisor('philhealth')) : 0;
+  const pagibig = pagibigOn ? round2(ded.pagibig.employee / slotDivisor('pagibig')) : 0;
+  // Withholding tax's own taxable base depends on whichever of SSS/PhilHealth/Pag-IBIG actually
+  // deducted this run — turning one of those off (or on) for this payslip changes the tax too,
+  // not just that one line, which is exactly why this can't be a client-side-only toggle.
+  const taxable = taxableCompensation(totalEarnings, 0, round2(sss + philhealth + pagibig));
+  const withholding_tax = !!emp.deduct_withholding_tax && thisSlot.withholding_tax && applied.withholding_tax
+    ? withholdingTax(taxable, policy.pay_frequency, statTables.rwt) : 0;
+  return {
+    sss, philhealth, pagibig, withholding_tax,
+    employer_contributions: {
+      sss_er: sssOn ? round2(ded.sss.employer / slotDivisor('sss')) : 0,
+      sss_ec: sssOn ? round2(ded.sss.ec / slotDivisor('sss')) : 0,
+      philhealth_er: philhealthOn ? round2(ded.philhealth.employer / slotDivisor('philhealth')) : 0,
+      pagibig_er: pagibigOn ? round2(ded.pagibig.employer / slotDivisor('pagibig')) : 0,
+    },
+  };
+}
+
 // POST /api/hr/periods/:id/generate-payslips
 router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (req, res) => {
   const periodId = Number(req.params.id);
@@ -1167,9 +1231,14 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       // SSS / PhilHealth / Pag-IBIG + BIR withholding. When policy.auto_statutory is off,
       // keep whatever a previous generation / manual edit left (old behaviour). Each
       // contribution is also gated by a per-employee flag set from Accounting → Statutory
-      // Deductions (default on); an off flag zeroes that one deduction.
+      // Deductions (default on), this cutoff's slot in the deduction schedule, AND this one
+      // payslip's own per-record override (the payroll detail view's deduction toggles below) —
+      // the override is carried over from the previous generation (prevApplied), same "manual
+      // edit survives a regenerate" treatment as cash_advance/pay_date, so re-running Generate
+      // Payslips for the whole cutoff never silently undoes what HR chose for one payslip.
       let sss = num(prev.sss), philhealth = num(prev.philhealth), pagibig = num(prev.pagibig);
       let withholding_tax = num(prev.withholding_tax);
+      const prevApplied = appliedFromRecordData(prev);
       // Employer-side shares (for the GL payroll posting — src/accounting-autopost.ts's
       // maybeAutoPostPayroll) are persisted here at generate time, not recomputed later, so a
       // later rate-table/flag change can't silently drift the two apart. Nested under one key
@@ -1178,29 +1247,10 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       let employerContributions = (prev.employer_contributions ?? { sss_er: 0, sss_ec: 0, philhealth_er: 0, pagibig_er: 0 }) as
         { sss_er: number; sss_ec: number; philhealth_er: number; pagibig_er: number };
       if (policy.auto_statutory) {
-        const monthlyComp = emp.rate_type === 'monthly' && emp.monthly_rate
-          ? emp.monthly_rate
-          : round2(emp.daily_rate * policy.monthly_rate_divisor);
-        const ded = statutoryDeductions(monthlyComp, monthlyComp, statTables);
-        // Gated by BOTH the per-employee "deduct this at all" flag (Accounting -> Statutory
-        // Deductions) AND this cutoff's slot in the deduction schedule — a monthly total is
-        // split only across however many slots have that key on (1 slot = the full monthly
-        // amount lands in that one cutoff), not always periodsPerMonth like before.
-        sss = emp.deduct_sss && thisSlot.sss ? round2(ded.sss.employee / slotDivisor('sss')) : 0;
-        philhealth = emp.deduct_philhealth && thisSlot.philhealth ? round2(ded.philhealth.employee / slotDivisor('philhealth')) : 0;
-        pagibig = emp.deduct_pagibig && thisSlot.pagibig ? round2(ded.pagibig.employee / slotDivisor('pagibig')) : 0;
-        const taxable = taxableCompensation(totalEarnings, 0, round2(sss + philhealth + pagibig));
-        // Withholding tax was never a monthly total split across cutoffs (withholdingTax()
-        // looks up the correct per-period BIR table row directly) — its schedule membership
-        // is just on/off for this cutoff, no divisor.
-        withholding_tax = emp.deduct_withholding_tax && thisSlot.withholding_tax
-          ? withholdingTax(taxable, policy.pay_frequency, statTables.rwt) : 0;
-        employerContributions = {
-          sss_er: emp.deduct_sss && thisSlot.sss ? round2(ded.sss.employer / slotDivisor('sss')) : 0,
-          sss_ec: emp.deduct_sss && thisSlot.sss ? round2(ded.sss.ec / slotDivisor('sss')) : 0,
-          philhealth_er: emp.deduct_philhealth && thisSlot.philhealth ? round2(ded.philhealth.employer / slotDivisor('philhealth')) : 0,
-          pagibig_er: emp.deduct_pagibig && thisSlot.pagibig ? round2(ded.pagibig.employer / slotDivisor('pagibig')) : 0,
-        };
+        const statutory = computeEmployeeStatutory(emp, totalEarnings, prevApplied, policy, statTables, thisSlot, slotDivisor);
+        sss = statutory.sss; philhealth = statutory.philhealth; pagibig = statutory.pagibig;
+        withholding_tax = statutory.withholding_tax;
+        employerContributions = statutory.employer_contributions;
       }
 
       const totalDeductions = policy.auto_statutory
@@ -1231,6 +1281,11 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         basic_salary: round2(basicSalary),
         total_earnings: totalEarnings,
         sss, philhealth, pagibig, withholding_tax,
+        // Persisted so the payroll detail view's deduction toggles (and this same regenerate
+        // path next time) know which of the four were actually selected for this one payslip —
+        // see computeEmployeeStatutory/appliedFromRecordData above.
+        sss_applied: prevApplied.sss, philhealth_applied: prevApplied.philhealth,
+        pagibig_applied: prevApplied.pagibig, withholding_tax_applied: prevApplied.withholding_tax,
         total_deductions: totalDeductions,
         net_pay: netPay,
         employer_contributions: employerContributions,
@@ -1358,6 +1413,122 @@ router.get('/payroll/:recordId/detail', requirePermission('hr.manage'), (req, re
       rest_day_ot: computed.rest_day_ot,
     },
   });
+});
+
+// Shared by preview-deductions and deductions below: resolve a payroll record + its employee
+// (with the deduct_* flags, unlike the plain Employee-typed lookup the detail route above uses)
+// + its cutoff, or respond with a 404 and return null. Mirrors the detail route's own resolution
+// (employee_name / period-label match) so a toggle preview/save can never disagree with what the
+// read-only detail view (or the real payslip) would show for the same record.
+function resolvePayrollDeductionContext(
+  recordId: number, res: Response
+): {
+  rec: FormRecord & { slug: string }; data: Record<string, unknown>;
+  emp: { id: number; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null;
+    deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number };
+  period: AttendancePeriod;
+} | null {
+  const rec = queryOne<FormRecord & { slug: string }>(
+    `SELECT fr.*, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+    recordId
+  );
+  if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return null; }
+  const data = JSON.parse(rec.data as string) as Record<string, unknown>;
+  const employeeName = String(data.employee_name || '');
+  const emp = queryOne<{
+    id: number; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null;
+    deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+  }>(
+    `SELECT id, daily_rate, rate_type, monthly_rate,
+            COALESCE(deduct_sss, 1) AS deduct_sss, COALESCE(deduct_philhealth, 1) AS deduct_philhealth,
+            COALESCE(deduct_pagibig, 1) AS deduct_pagibig, COALESCE(deduct_withholding_tax, 1) AS deduct_withholding_tax
+     FROM employees WHERE name = ?`,
+    employeeName
+  );
+  if (!emp) {
+    res.status(404).json({ error: `No employee record named "${employeeName}" — it may have been renamed since this payslip was generated.` });
+    return null;
+  }
+  const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE label = ?', rec.period);
+  if (!period) {
+    res.status(404).json({ error: `No cutoff found for period "${rec.period}" — it may have been renamed or removed since this payslip was generated.` });
+    return null;
+  }
+  return { rec, data, emp, period };
+}
+
+/** Recompute SSS/PhilHealth/Pag-IBIG/withholding tax + totals for one payslip record under a
+ *  given set of applied-deduction toggles — the shared math behind both preview and save. */
+function recomputeDeductionsFor(
+  data: Record<string, unknown>,
+  emp: Parameters<typeof computeEmployeeStatutory>[0],
+  applied: StatutoryApplied,
+  period: AttendancePeriod
+) {
+  const policy = currentPolicy();
+  const periodsPerMonth = PERIODS_PER_MONTH[policy.pay_frequency];
+  const schedule = effectiveSchedule(policy, periodsPerMonth);
+  const thisSlot = schedule[slotIndexFor(period, policy.pay_frequency)] ?? ALL_ON;
+  const slotDivisor = (key: keyof DeductionSlot): number => Math.max(1, schedule.filter((s) => s[key]).length);
+  const statTables = effectiveTables((data.pay_date as string) || period.end_date);
+  const totalEarnings = Number(data.total_earnings) || 0;
+  const statutory = computeEmployeeStatutory(emp, totalEarnings, applied, policy, statTables, thisSlot, slotDivisor);
+  const cashAdvance = Number(data.cash_advance) || 0;
+  const lateDeduction = Number(data.late_absences) || 0;
+  const totalDeductions = round2(statutory.sss + statutory.philhealth + statutory.pagibig + statutory.withholding_tax + lateDeduction + cashAdvance);
+  const netPay = round2(totalEarnings - totalDeductions);
+  return { ...statutory, total_deductions: totalDeductions, net_pay: netPay };
+}
+
+// POST /api/hr/payroll/:recordId/preview-deductions — recompute (without saving) what SSS/
+// PhilHealth/Pag-IBIG/withholding tax and the resulting totals WOULD be for this one payslip
+// under a given set of applied-deduction toggles — same rate-table math generate-payslips and
+// the "save" route below both use, so the live preview in the payroll detail view can never
+// disagree with what Save would actually produce. Any key omitted from the body keeps that
+// deduction's current applied state (from the stored record), not reset to on.
+router.post('/payroll/:recordId/preview-deductions', requirePermission('hr.manage'), (req, res) => {
+  const ctx = resolvePayrollDeductionContext(Number(req.params.recordId), res);
+  if (!ctx) return;
+  const input = parseBody(payrollDeductionTogglesSchema, req.body);
+  const current = appliedFromRecordData(ctx.data);
+  const applied: StatutoryApplied = {
+    sss: input.sss_applied ?? current.sss,
+    philhealth: input.philhealth_applied ?? current.philhealth,
+    pagibig: input.pagibig_applied ?? current.pagibig,
+    withholding_tax: input.withholding_tax_applied ?? current.withholding_tax,
+  };
+  res.json(recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period));
+});
+
+// PUT /api/hr/payroll/:recordId/deductions — same recompute, persisted into the record. Locked
+// the same way the generic form-records PUT is (see form-builder.routes.ts) — a marked-Paid
+// payslip can't be touched until unmarked.
+router.put('/payroll/:recordId/deductions', requirePermission('hr.manage'), (req, res) => {
+  const ctx = resolvePayrollDeductionContext(Number(req.params.recordId), res);
+  if (!ctx) return;
+  if (ctx.rec.status === 'paid') {
+    res.status(400).json({ error: 'This payslip is marked Paid — unmark it first to change its deductions.' });
+    return;
+  }
+  const input = parseBody(payrollDeductionTogglesSchema, req.body);
+  const current = appliedFromRecordData(ctx.data);
+  const applied: StatutoryApplied = {
+    sss: input.sss_applied ?? current.sss,
+    philhealth: input.philhealth_applied ?? current.philhealth,
+    pagibig: input.pagibig_applied ?? current.pagibig,
+    withholding_tax: input.withholding_tax_applied ?? current.withholding_tax,
+  };
+  const result = recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period);
+  const newData = {
+    ...ctx.data,
+    sss: result.sss, philhealth: result.philhealth, pagibig: result.pagibig, withholding_tax: result.withholding_tax,
+    sss_applied: applied.sss, philhealth_applied: applied.philhealth,
+    pagibig_applied: applied.pagibig, withholding_tax_applied: applied.withholding_tax,
+    total_deductions: result.total_deductions, net_pay: result.net_pay,
+    employer_contributions: result.employer_contributions,
+  };
+  run(`UPDATE form_records SET data = ?, updated_at = datetime('now') WHERE id = ?`, JSON.stringify(newData), ctx.rec.id);
+  res.json({ ok: true, ...result });
 });
 
 // POST /api/hr/payroll/:recordId/email — emails this payslip to the employee's linked account.

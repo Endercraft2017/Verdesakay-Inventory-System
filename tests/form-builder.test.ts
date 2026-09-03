@@ -363,6 +363,26 @@ describe('form records', () => {
     expect(res.body[0].data).toEqual(expect.objectContaining({ amount: expect.anything() }));
   });
 
+  it('?q= matches the record\'s own number OR its employee_name field (e.g. payroll, searched by who it\'s for far more often than by number)', async () => {
+    const named = await ctx.api.post('/api/form-records').set(hdr(empToken)).send({
+      form_def_id: formId,
+      data: { amount: 50, employee_name: 'Jordan Cruz Q-Search Test' },
+    });
+    // Matches by number, unaffected by the new employee_name OR-clause.
+    const byNumber = await ctx.api.get('/api/form-definitions/' + formId + '/records')
+      .query({ q: named.body.number }).set(hdr(empToken));
+    expect(byNumber.body.some((r: { id: number }) => r.id === named.body.id)).toBe(true);
+    // Matches by employee_name, the new part.
+    const byName = await ctx.api.get('/api/form-definitions/' + formId + '/records')
+      .query({ q: 'Jordan Cruz' }).set(hdr(empToken));
+    expect(byName.body.some((r: { id: number }) => r.id === named.body.id)).toBe(true);
+    // A record with no employee_name field at all still lists fine under a name-only search
+    // that doesn't match it (no crash from the missing key).
+    const noMatch = await ctx.api.get('/api/form-definitions/' + formId + '/records')
+      .query({ q: 'Nobody Named This' }).set(hdr(empToken));
+    expect(noMatch.body.some((r: { id: number }) => r.id === named.body.id)).toBe(false);
+  });
+
   it('GET /form-records/:id returns parsed data', async () => {
     const res = await ctx.api.get('/api/form-records/' + recordId).set(hdr(empToken));
     expect(res.status).toBe(200);
