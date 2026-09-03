@@ -10,6 +10,7 @@ const POLICY: PayrollPolicy = {
   late_unit: 'hour',
   ot_unit: '30min',
   ot_rate_percent: 125,
+  require_ot_form: true,
   night_diff_enabled: false,
   night_diff_percent: 10,
   night_start: '22:00',
@@ -86,6 +87,39 @@ describe('computeAttendanceForEmployee — OT rounds up, requires a linked Overt
   it('leaving late with NO linked Overtime form earns no OT pay at all', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '18:00' })], DAILY_RATE, POLICY);
     expect(r.ot_hours).toBe(0);
+    expect(r.overtime_pay).toBe(0);
+  });
+});
+
+describe('computeAttendanceForEmployee — require_ot_form: false auto-pays OT with no linked form needed', () => {
+  it('a raw late clock-out with NO linked form still pays OT once require_ot_form is off', () => {
+    const policy = { ...POLICY, require_ot_form: false, ot_unit: 'minute' as const };
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '18:00' })], DAILY_RATE, policy);
+    expect(r.ot_hours).toBeCloseTo(1, 6);
+    expect(r.overtime_pay).toBeCloseTo(1 * 100 * 1.25, 6);
+  });
+
+  it('a linked Overtime Request form still works the same way when require_ot_form is off (not disabled by the setting)', () => {
+    const policy = { ...POLICY, require_ot_form: false, ot_unit: 'minute' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '18:00', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBeCloseTo(1, 6);
+    expect(r.overtime_pay).toBeCloseTo(1 * 100 * 1.25, 6);
+  });
+
+  it('leaving exactly on time or early still isn\'t OT even with require_ot_form off — undertime still applies normally', () => {
+    const policy = { ...POLICY, require_ot_form: false };
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '16:00' })], DAILY_RATE, policy);
+    expect(r.ot_hours).toBe(0);
+    expect(r.overtime_pay).toBe(0);
+    expect(r.undertime_pay).toBeLessThan(0);
+  });
+
+  it('the default (require_ot_form left unset -> true via policy schema default) still requires a form — this test\'s POLICY fixture is explicit for clarity', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '18:00' })], DAILY_RATE, POLICY);
+    expect(POLICY.require_ot_form).toBe(true);
     expect(r.overtime_pay).toBe(0);
   });
 });
@@ -239,11 +273,11 @@ describe('computeAttendanceForEmployee — Holiday Work premiums', () => {
 // (day.isRestDay, resolved from employees.rest_days / PayrollPolicy.default_rest_days). Full
 // DOLE Labor Advisory No. 12-25 combo table — one test per row.
 describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DOLE combo rates)', () => {
-  it('unworked Regular Holiday is paid 100% (a full days_worked day) despite no time logged', () => {
+  it('unworked Regular Holiday is paid 100% via holiday_pay, kept OUT of days_worked so it reads as its own line, not an extra day worked', () => {
     const r = computeAttendanceForEmployee([day({ holiday: 'regular' })], DAILY_RATE, POLICY);
-    expect(r.days_worked).toBe(1);
+    expect(r.days_worked).toBe(0);
     expect(r.days_absent).toBe(0);
-    expect(r.holiday_pay).toBe(0); // the 100% already landed in days_worked/basic_salary, no separate premium for an unworked day
+    expect(r.holiday_pay).toBe(DAILY_RATE); // the full day's pay, not just a premium — this IS the pay for the unworked day
   });
 
   it('unworked Special Non-Working Holiday is "no work, no pay" — same bucket as a plain absence', () => {
@@ -260,8 +294,9 @@ describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DO
 
   it('unworked Regular Holiday that also falls on a rest day is still fully paid (rest-day-ness never reduces the holiday entitlement)', () => {
     const r = computeAttendanceForEmployee([day({ holiday: 'regular', isRestDay: true })], DAILY_RATE, POLICY);
-    expect(r.days_worked).toBe(1);
+    expect(r.days_worked).toBe(0);
     expect(r.days_absent).toBe(0);
+    expect(r.holiday_pay).toBe(DAILY_RATE);
   });
 
   it('unworked "Work Cancellation (Paid)" credits a full paid day, same as a paid Leave day', () => {
@@ -603,6 +638,7 @@ describe('computeAttendanceForEmployee — per-day breakdown (days[]), for the r
       DAILY_RATE, POLICY
     );
     expect(r.days[0]!.status).toBe('paid_holiday');
+    expect(r.days[0]!.day_premium_pay).toBe(DAILY_RATE); // full day's pay, routed through holiday_pay not days_worked
   });
 
   it('an unworked plain rest day (no holiday) is tagged status "rest_day_off"', () => {

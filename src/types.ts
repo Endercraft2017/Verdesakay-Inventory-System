@@ -852,6 +852,10 @@ export interface PayrollPolicy {
   late_unit: 'minute' | 'hour';
   ot_unit: 'minute' | '30min' | 'hour';
   ot_rate_percent: number;
+  /** When true (the default), OT only pays when the day is linked to an approved Overtime
+      Request form — a raw late clock-out by itself isn't auto-paid. When false, any clock-out
+      past the shift's expected end auto-pays OT with no form needed. */
+  require_ot_form: boolean;
   night_diff_enabled: boolean;
   night_diff_percent: number;
   night_start: string; // "HH:MM"

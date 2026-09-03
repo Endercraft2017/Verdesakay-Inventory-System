@@ -180,6 +180,12 @@ async function policySettingsModal() {
       </div>
       <p class="muted" style="font-size:12px;margin:2px 0 0">For employees paid a monthly rate, their effective
         daily rate used in payroll is monthly rate ÷ this number (e.g. 26 working days/month).</p>
+      <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" data-p="require_ot_form" style="width:auto" /> Require a linked Overtime Request form for OT to be paid
+      </label></div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">On (default): a clock-out past the shift's end only pays
+        OT when that day is linked to an approved Overtime Request. Off: any clock-out past the shift's end
+        auto-pays OT — no form needed.</p>
       <div class="field-row" style="margin-top:10px">
         <div><label>Pay frequency</label>
           <select data-p="pay_frequency">
@@ -238,6 +244,7 @@ async function policySettingsModal() {
         p('late_unit').value = policy.late_unit;
         p('ot_unit').value = policy.ot_unit;
         p('ot_rate_percent').value = policy.ot_rate_percent;
+        p('require_ot_form').checked = policy.require_ot_form !== false;
         p('monthly_rate_divisor').value = policy.monthly_rate_divisor;
         p('pay_frequency').value = policy.pay_frequency || 'semi_monthly';
         p('auto_statutory').checked = policy.auto_statutory !== false;
@@ -314,6 +321,7 @@ async function policySettingsModal() {
           late_unit: p('late_unit').value,
           ot_unit: p('ot_unit').value,
           ot_rate_percent: Number(p('ot_rate_percent').value) || 0,
+          require_ot_form: p('require_ot_form').checked,
           monthly_rate_divisor: Number(p('monthly_rate_divisor').value) || 26,
           pay_frequency: p('pay_frequency').value,
           auto_statutory: p('auto_statutory').checked,

@@ -177,6 +177,11 @@ export function computeAttendanceForEmployee(
       // An unworked Regular Holiday is *always* paid by law (Labor Code Art. 94) — 100%, same
       // as a paid Leave day; simplified vs. DOLE's stricter "present/on paid leave the day
       // immediately before" eligibility check, which this per-day loop doesn't look back for.
+      // Unlike a paid Leave/No Work/cancellation day, its 100% is booked straight into
+      // holiday_pay instead of days_worked/basic_salary — keeping it OUT of "Days Worked" so
+      // that field only ever counts days the employee was actually present or on ordinary paid
+      // leave, and the payslip's Holiday Pay line shows this day's money instead of it being
+      // silently absorbed into Basic Salary where it reads as an extra day worked.
       // An unworked Special Non-Working (or Special Working) day is plain "no work, no pay" —
       // same bucket as an unpaid No Work Memo day, not specially distinguished. A per-record
       // "Work Cancellation" (equipment failure, sent home early, etc. — not a real holiday) is
@@ -195,7 +200,11 @@ export function computeAttendanceForEmployee(
       } else if (day.noWork === 'paid') {
         out.days_worked += 1;
         status = 'paid_no_work';
-      } else if (day.holiday === 'regular' || day.holiday === 'cancelled_paid') {
+      } else if (day.holiday === 'regular') {
+        out.holiday_pay += dailyRate;
+        dayPremium = dailyRate;
+        status = 'paid_holiday';
+      } else if (day.holiday === 'cancelled_paid') {
         out.days_worked += 1;
         status = 'paid_holiday';
       } else if (day.isRestDay && !day.holiday) {
@@ -290,9 +299,16 @@ export function computeAttendanceForEmployee(
       out.late_deduction += latePay;
     }
 
-    if (slug === 'overtime_request') {
-      // OT is only credited when authorized by a linked Overtime form — a raw late clock-out by
-      // itself isn't auto-paid overtime.
+    // policy.require_ot_form (default true, the original behavior): OT is only credited when
+    // authorized by a linked Overtime form — a raw late clock-out by itself isn't auto-paid
+    // overtime. Turned off, any clock-out past the shift's expected end auto-pays OT with no
+    // form needed, same as late/undertime already need no authorization to apply — some
+    // companies don't require employees to file anything for OT, so this makes that opt-in
+    // rather than mandatory. A linked Overtime form (when present) still always routes here
+    // regardless of this setting, preserving the exact old behavior for that case: an
+    // authorized-but-early day still books no undertime (mirrors the pre-existing rule that an
+    // overtime_request-linked day is judged only for OT, never undertime, even if otRaw <= 0).
+    if (slug === 'overtime_request' || (!policy.require_ot_form && timeOutRel > effectiveEnd)) {
       const otRaw = timeOutRel - effectiveEnd;
       if (otRaw > 0) {
         const otBlocked = roundUpToUnit(otRaw, unitMinutesFor(policy.ot_unit));

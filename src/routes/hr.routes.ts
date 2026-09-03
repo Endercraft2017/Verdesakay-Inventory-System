@@ -568,7 +568,7 @@ router.delete('/shifts/:id', requirePermission('hr.manage'), (req, res) => {
 // *when* a shift runs lives in the shifts table above, this is the *rules* for judging it) ──────
 
 const DEFAULT_POLICY: PayrollPolicy = {
-  grace_minutes: 10, late_unit: 'hour', ot_unit: 'hour', ot_rate_percent: 125,
+  grace_minutes: 10, late_unit: 'hour', ot_unit: 'hour', ot_rate_percent: 125, require_ot_form: true,
   night_diff_enabled: false, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
   monthly_rate_divisor: 26, pay_frequency: 'semi_monthly', auto_statutory: true,
   default_rest_days: [0, 6], // Sun, Sat

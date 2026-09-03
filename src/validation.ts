@@ -881,6 +881,7 @@ export const payrollPolicySchema = z.object({
   late_unit: z.enum(['minute', 'hour']).default('hour'),
   ot_unit: z.enum(['minute', '30min', 'hour']).default('hour'),
   ot_rate_percent: z.coerce.number().min(0).max(1000).default(125),
+  require_ot_form: boolish.default(true),
   night_diff_enabled: boolish.default(false),
   night_diff_percent: z.coerce.number().min(0).max(200).default(10),
   night_start: hhmm.default('22:00'),
