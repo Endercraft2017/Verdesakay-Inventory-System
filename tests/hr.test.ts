@@ -1704,6 +1704,8 @@ describe('payroll detail — per-payslip statutory deduction toggles (preview + 
 describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum work time — end to end', () => {
   let hoursShiftId: number;
   let halfdayFormId: number;
+  let offsetFormId: number;
+  let undertimeFormId: number;
 
   beforeAll(async () => {
     const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
@@ -1711,6 +1713,8 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
     hoursShiftId = shift.body.id;
     const forms = await ctx.api.get('/api/form-definitions').set(hdr());
     halfdayFormId = forms.body.find((f: { slug: string }) => f.slug === 'halfday_request').id;
+    offsetFormId = forms.body.find((f: { slug: string }) => f.slug === 'offset_form').id;
+    undertimeFormId = forms.body.find((f: { slug: string }) => f.slug === 'undertime_request').id;
   });
 
   it('a linked Half Day (PM) request no longer shows hours of "late" against the full shift\'s 08:00 start (real bug fix)', async () => {
@@ -1809,5 +1813,56 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
     await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
       pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], min_work_minutes: 0,
     });
+  });
+
+  it('a linked Offset form waives the undertime deduction against its own shifted time-out through a real generate-payslips run (but arrival lateness itself is untouched — offset only moves the end)', async () => {
+    const offsetRecord = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: offsetFormId,
+      data: { employee_name: 'Offset Employee', work_date: '2026-08-08', new_time_out: '19:00', reason: 'Arrived late, agreed to stay later' },
+      status: 'approved',
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-OFFSET', name: 'Offset Employee', daily_rate: 800 }); // hourly = 100
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Offset Cutoff', start_date: '2026-08-08', end_date: '2026-08-08' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    // Arrived 09:30 (late vs the 08:00 shift start) but stayed to 19:00, exactly the offset's
+    // new time-out (vs. the shift's original 17:00 end) — no undertime/OT either way.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-08', time_in: '09:30', time_out: '19:00', notes: '', shift_id: hoursShiftId, form_record_id: offsetRecord.body.id }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Offset Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Offset Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Offset Employee');
+    expect(rec.data.days_worked).toBe(1);
+    expect(rec.data.overtime_pay || 0).toBe(0);
+    expect(rec.data.undertime_pay || 0).toBe(0); // waived — 19:00 meets the offset's own target
+    expect(rec.data.late_absences).toBeGreaterThan(0); // by design: offset doesn't excuse the late arrival itself
+  });
+
+  it('a linked Undertime Request with with_pay=Yes waives the undertime deduction through a real generate-payslips run', async () => {
+    const undertimeRecord = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: undertimeFormId,
+      data: { employee_name: 'Undertime Paid Employee', work_date: '2026-08-09', with_pay: 'Yes', reason: 'Documented emergency' },
+      status: 'approved',
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-UNDERTIME-PAID', name: 'Undertime Paid Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Undertime Paid Cutoff', start_date: '2026-08-09', end_date: '2026-08-09' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    // Left at 15:00, 2 hours before the 17:00 shift end — would normally deduct, but the linked
+    // with_pay=Yes Undertime Request waives it outright.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-09', time_in: '08:00', time_out: '15:00', notes: '', shift_id: hoursShiftId, form_record_id: undertimeRecord.body.id }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Undertime Paid Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Undertime Paid Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Undertime Paid Employee');
+    expect(rec.data.days_worked).toBe(1);
+    expect(rec.data.undertime_pay || 0).toBe(0);
+    expect(rec.data.basic_salary).toBeCloseTo(800, 6); // full day, no deduction
   });
 });
