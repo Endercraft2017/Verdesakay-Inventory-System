@@ -1174,6 +1174,11 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
   let created = 0;
   let updated = 0;
   let skippedLocked = 0;
+  // Employees with at least one day this run that LOOKS like an unlinked half day (see
+  // computeAttendanceForEmployee's possible_half_day) — an active nudge in the generate-payslips
+  // response, not just something HR happens to notice if they open a specific payslip's detail
+  // view or the Daily Time grid for that one employee.
+  let possibleHalfDayEmployees = 0;
   db.exec('BEGIN');
   try {
     for (const emp of roster) {
@@ -1207,6 +1212,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       );
       const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy, !!emp.late_exempt);
       const basicSalary = emp.daily_rate * computed.days_worked;
+      if (computed.days.some((d) => d.possible_half_day)) possibleHalfDayEmployees++;
 
       // Regenerating recomputes every attendance-derived field fresh — that's the point of
       // "generate payslips" (pick up the latest attendance/link edits) — but purely-manual
@@ -1332,7 +1338,10 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       }
     }
     db.exec('COMMIT');
-    res.status(201).json({ created, updated, skipped_locked: skippedLocked, period: payrollPeriod, form_id: form.id });
+    res.status(201).json({
+      created, updated, skipped_locked: skippedLocked, period: payrollPeriod, form_id: form.id,
+      possible_half_day_employees: possibleHalfDayEmployees,
+    });
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;

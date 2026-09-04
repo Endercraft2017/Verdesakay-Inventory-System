@@ -1189,3 +1189,47 @@ describe('computeAttendanceForEmployee — max_ot_hours (policy.max_ot_hours, nu
     expect(r.night_diff_pay).toBeCloseTo(0.5 * 100 * 0.10, 6); // only the 0.5 paid OT hour, not the full 1
   });
 });
+
+describe('computeAttendanceForEmployee — possible_half_day (a day that LOOKS like a half day but has no linked Half Day request)', () => {
+  it('a real live case: 12:45-17:04 on an 08:00-17:00 shift (no linked form) is flagged, and — this is the actual bug — still gets docked a huge peso late deduction for "arriving 4h45m late" against the whole shift', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '12:45', time_out: '17:04' })], DAILY_RATE, POLICY);
+    expect(r.days[0]!.possible_half_day).toBe(true);
+    expect(r.days[0]!.status).toBe('worked'); // NOT reclassified — the flag never changes pay on its own
+    expect(r.late_deduction).toBeGreaterThan(0); // this is the actual damage the flag exists to catch
+  });
+
+  it('leaving early, AM pattern: 08:00-12:10 is also flagged', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '12:10' })], DAILY_RATE, POLICY);
+    expect(r.days[0]!.possible_half_day).toBe(true);
+  });
+
+  it('a linked Half Day request is never flagged (already correctly handled)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '12:45', time_out: '17:04', linkedForm: { slug: 'halfday_request', data: { session: 'Afternoon (PM)' } } })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.possible_half_day).toBe(false);
+  });
+
+  it('an ordinary whole day (arrived a bit late, worked most of the day) is not flagged', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '08:30', time_out: '17:00' })], DAILY_RATE, POLICY);
+    expect(r.days[0]!.possible_half_day).toBe(false);
+  });
+
+  it('a genuine, ordinary undertime day (left at 15:00, not lunch-adjacent) is not flagged', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '15:00' })], DAILY_RATE, POLICY);
+    expect(r.days[0]!.possible_half_day).toBe(false);
+  });
+
+  it('no shift assigned -> never flagged (nothing to judge the pattern against)', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '12:45', time_out: '17:04', shift: null })], DAILY_RATE, POLICY);
+    expect(r.days[0]!.possible_half_day).toBe(false);
+  });
+
+  it('still flagged under hours_basis: per_hour (informational there too, even though pay already self-corrects)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '12:45', time_out: '17:04' })], DAILY_RATE, { ...POLICY, hours_basis: 'per_hour' }
+    );
+    expect(r.days[0]!.possible_half_day).toBe(true);
+  });
+});

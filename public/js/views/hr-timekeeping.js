@@ -1285,6 +1285,34 @@ async function renderPeriod(view, periodId) {
       <option value="yes" ${selected === 'yes' ? 'selected' : ''}>Rest day</option>
       <option value="no" ${selected === 'no' ? 'selected' : ''}>Working day</option>`;
 
+    // A real, live bug found this way: HR types raw times straight into this grid without also
+    // filing+linking a Half Day request, so the day gets judged (and any late/undertime
+    // deduction charged) against the WHOLE shift instead of correctly being a half day. Quick
+    // client-side approximation of hr-payroll-compute.ts's looksLikeUnlinkedHalfDay — not the
+    // real payroll computation (same "approximation, not authoritative" caveat as
+    // workedMinutesFor above), just enough to flag it here before Generate Payslips ever runs.
+    function possibleHalfDayFlagged(d) {
+      if (d._linkSlug === 'halfday_request') return false; // already correctly linked
+      const workedMin = workedMinutesFor(d);
+      if (workedMin == null) return false;
+      const shift = shifts.find((s) => String(s.id) === String(d.shift_id));
+      if (!shift) return false;
+      const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+      const shiftStart = toMin(shift.start_time);
+      let shiftEnd = toMin(shift.end_time);
+      if (shiftEnd < shiftStart) shiftEnd += 24 * 60;
+      const lunchMinutes = policy.lunch_break_minutes ?? 60;
+      const workSpan = Math.max(0, shiftEnd - shiftStart - lunchMinutes);
+      if (workedMin <= 0 || workedMin >= workSpan * 0.75) return false;
+      const half = workSpan / 2;
+      const lunchStart = shiftStart + half, lunchEnd = lunchStart + lunchMinutes;
+      let inMin = toMin(d.time_in), outMin = toMin(d.time_out);
+      if (outMin < inMin) outMin += 24 * 60;
+      const tolerance = 60;
+      return (inMin >= lunchStart - tolerance && inMin <= lunchEnd + tolerance)
+        || (outMin >= lunchStart - tolerance && outMin <= lunchEnd + tolerance);
+    }
+
     UI.modal({
       title: `Daily time — ${rosterRow.name}`,
       size: 'xl',
@@ -1332,6 +1360,27 @@ async function renderPeriod(view, periodId) {
             renderMinFlag(Number(b.dataset.minDeny));
           });
         }
+        // Same "own function, refreshed on blur not every keystroke" pattern as minFlagHtml/
+        // renderMinFlag above — flags a day whose times look like a half day (see
+        // possibleHalfDayFlagged) with a one-click path straight into the existing Link-a-form
+        // picker, since the actual fix is filing/linking a real Half Day request, not anything
+        // this flag can do on its own.
+        function halfDayFlagHtml(d, i) {
+          if (!possibleHalfDayFlagged(d)) return '';
+          return `<div style="margin-top:3px">
+              <button type="button" class="badge-pill status-confirmed" data-halfday-flag="${i}"
+                style="cursor:pointer;border:none;font:inherit"
+                title="Times look like a half day, but no Half Day request is linked — it's being judged (and any late/undertime deduction charged) against the FULL shift. Click to link one.">
+                Possible Half Day?
+              </button>
+            </div>`;
+        }
+        function renderHalfDayFlag(i) {
+          const el = body.querySelector(`[data-halfday-flag-cell="${i}"]`);
+          if (!el) return;
+          el.innerHTML = halfDayFlagHtml(days[i], i);
+          el.querySelectorAll('[data-halfday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.halfdayFlag)));
+        }
         function renderRows() {
           body.innerHTML = days.map((d, i) => {
             // Item 7: one of time_in/time_out set but not both, for a day that's already
@@ -1359,7 +1408,7 @@ async function renderPeriod(view, periodId) {
                 : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : halfDayTag);
             return `
             <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
-              <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}<div data-min-flag="${i}">${minFlagHtml(d, i)}</div></td>
+              <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}<div data-min-flag="${i}">${minFlagHtml(d, i)}</div><div data-halfday-flag-cell="${i}">${halfDayFlagHtml(d, i)}</div></td>
               <td><select data-k="shift_id">${shiftOptions(d.shift_id)}</select></td>
               <td><input data-k="time_in" type="time" value="${UI.esc(d.time_in || '')}" /></td>
               <td><input data-k="time_out" type="time" value="${UI.esc(d.time_out || '')}" /></td>
@@ -1382,7 +1431,7 @@ async function renderPeriod(view, periodId) {
               // every keystroke/'input' event) so a full renderRows() here can't steal focus out
               // of the field the user is still typing/picking a time into.
               if (inp.dataset.k === 'time_in' || inp.dataset.k === 'time_out') {
-                inp.addEventListener('blur', () => renderMinFlag(row), { once: true });
+                inp.addEventListener('blur', () => { renderMinFlag(row); renderHalfDayFlag(row); }, { once: true });
               }
             });
           });
@@ -1394,6 +1443,7 @@ async function renderPeriod(view, periodId) {
             days[Number(b.dataset.minDeny)].min_hours_decision = 'deny';
             renderMinFlag(Number(b.dataset.minDeny));
           });
+          body.querySelectorAll('[data-halfday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.halfdayFlag)));
           body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.link)));
           body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = () => {
             const i = Number(b.dataset.unlink);
@@ -1430,6 +1480,10 @@ async function renderPeriod(view, periodId) {
                 const o = options[Number(b.dataset.pick)];
                 days[rowIndex].form_record_id = o.record.id;
                 days[rowIndex]._linkLabel = `${o.form.name} ${o.record.number}`;
+                // Set immediately (not just on the next full form_record_id resolution pass) so
+                // the Half Day tag/flag next to the date reflect this link right away.
+                days[rowIndex]._linkSlug = o.form.slug;
+                days[rowIndex]._linkSession = (o.record.data && o.record.data.session) || null;
                 m2.close();
                 renderRows();
               });
@@ -1490,10 +1544,19 @@ async function renderPeriod(view, periodId) {
         const res = await API.post(`/hr/periods/${periodId}/generate-payslips`, { payroll_period, pay_date });
         lastPayrollPeriod = payroll_period;
         UI.toast(`Payslips ready: ${res.created} created, ${res.updated} updated`);
+        // Active nudge, not just something HR happens to notice by opening a specific payslip —
+        // a real bug found this way: a day whose raw times look like a half day but has no
+        // linked Half Day request gets judged (and any late/undertime deduction charged)
+        // against the full shift instead. Click-through goes straight to the payroll list,
+        // where each flagged payslip's own detail view names the exact day(s).
+        const halfDayWarning = res.possible_half_day_employees
+          ? `<p class="muted" style="color:var(--warn)">⚠ ${res.possible_half_day_employees} employee${res.possible_half_day_employees === 1 ? '' : 's'} ha${res.possible_half_day_employees === 1 ? 's' : 've'} at least one day that looks like a half day but has no Half Day request linked — open a payslip below to see which day(s), or check the Daily Time grid.</p>`
+          : '';
         UI.modal({
           title: 'Payslips ready',
           bodyHTML: `<p>${res.created} created, ${res.updated} updated for "${UI.esc(res.period)}".</p>
-            <p class="muted">Fill in hours/earnings/deductions there, then use the existing Print flow.</p>`,
+            <p class="muted">Fill in hours/earnings/deductions there, then use the existing Print flow.</p>
+            ${halfDayWarning}`,
           confirmText: 'Open Payroll',
           onConfirm: () => { App.navigate('form-records', { form_id: res.form_id, period: res.period }); },
         });

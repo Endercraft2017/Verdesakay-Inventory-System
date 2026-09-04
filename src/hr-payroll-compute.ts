@@ -114,6 +114,11 @@ export interface DayBreakdown {
   // so the Daily Time grid / detail view can flag it either way. Always false when the policy's
   // check is off (min_work_minutes: 0) or no shift is assigned (nothing to measure against).
   below_minimum: boolean;
+  // Whether this day's raw times resemble a half day (see looksLikeUnlinkedHalfDay) but isn't
+  // actually linked to a Half Day request — always false for a day that IS linked to one
+  // (status === 'half_day', already correctly handled) or has no shift assigned. Purely a
+  // flag for HR to review, never changes pay on its own.
+  possible_half_day: boolean;
 }
 
 const DAY_MIN = 24 * 60;
@@ -204,6 +209,30 @@ function halfDayWindow(
   return { start: shiftStart, end: lunch.start };
 }
 
+/** Whether this day's raw clock times resemble one of the shift's own AM/PM half-day windows
+    (see halfDayWindow) even though it isn't actually linked to a Half Day request — a real,
+    live bug found this way: HR types the raw times straight into the Daily Time grid without
+    also filing+linking a Half Day request, so the day gets judged as a full day arriving
+    hours "late" (or leaving hours "early") against the WHOLE shift instead of correctly being
+    a half day, docking real pesos in late/undertime deductions that a linked Half Day request
+    would have avoided entirely. Purely informational (see DayBreakdown.possible_half_day) —
+    never changes pay on its own, since silently reclassifying a genuinely-late whole day as a
+    half day purely from a time-of-day heuristic would be its own kind of wrong; the fix is for
+    HR to actually file+link a Half Day request (or acknowledge the day is correct as-is).
+    `tolerance` (60 min) allows for a half day that started/ended a bit early or late itself. */
+function looksLikeUnlinkedHalfDay(
+  shiftStart: number, shiftEnd: number, lunchMinutes: number, timeInRel: number, timeOutRel: number
+): boolean {
+  const workSpan = Math.max(0, shiftEnd - shiftStart - lunchMinutes);
+  const rawMinutes = Math.max(0, timeOutRel - timeInRel);
+  if (rawMinutes <= 0 || rawMinutes >= workSpan * 0.75) return false; // most of a full day -> not a half day
+  const lunch = lunchWindow(shiftStart, shiftEnd, lunchMinutes);
+  const tolerance = 60;
+  const pmPattern = timeInRel >= lunch.start - tolerance && timeInRel <= lunch.end + tolerance;
+  const amPattern = timeOutRel >= lunch.start - tolerance && timeOutRel <= lunch.end + tolerance;
+  return pmPattern || amPattern;
+}
+
 const ZERO: AttendanceComputation = {
   days_worked: 0, days_absent: 0, days_half: 0, days_undertime: 0, late_deduction: 0, ot_hours: 0,
   overtime_pay: 0, undertime_pay: 0, undertime_day_pay: 0, night_diff_pay: 0,
@@ -262,12 +291,13 @@ export function computeAttendanceForEmployee(
     let undertimeDayPay = 0, nightDiffPay = 0;
     let status: DayBreakdown['status'] = 'worked';
     let belowMin = false;
+    let possibleHalfDay = false;
     const pushDay = () => out.days.push({
       work_date: day.work_date, time_in: day.time_in, time_out: day.time_out,
       holiday: day.holiday ?? null, no_work: day.noWork ?? null, is_rest_day: !!day.isRestDay,
       status, late_minutes: lateMin, late_pay: latePay, ot_hours: otHours, ot_pay: otPay,
       undertime_pay: undertimePay, undertime_day_pay: undertimeDayPay, night_diff_pay: nightDiffPay,
-      day_premium_pay: dayPremium, below_minimum: belowMin,
+      day_premium_pay: dayPremium, below_minimum: belowMin, possible_half_day: possibleHalfDay,
     });
 
     if (timeIn == null || timeOut == null) {
@@ -411,6 +441,15 @@ export function computeAttendanceForEmployee(
     if (belowMin && day.minHoursDecision === 'deny') {
       status = 'below_minimum_denied';
       pushDay(); continue;
+    }
+
+    // See looksLikeUnlinkedHalfDay's own comment — flags a day that LOOKS like a half day by
+    // its times but isn't actually linked to one, regardless of hours_basis mode (fixed mode is
+    // where this costs real pesos via an inflated late/undertime margin against the whole
+    // shift; per-hour mode already self-corrects on pay, but the flag is still useful so HR can
+    // catch a form that should've been filed).
+    if (slug !== 'halfday_request') {
+      possibleHalfDay = looksLikeUnlinkedHalfDay(shiftStart, shiftEnd, policy.lunch_break_minutes, timeInRel, timeOutRel);
     }
 
     if (policy.hours_basis === 'per_hour') {

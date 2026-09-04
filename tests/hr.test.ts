@@ -1270,6 +1270,30 @@ describe('generate-payslips computes real numbers from attendance + linked forms
       .toBeCloseTo(detail.body.totals.overtime_pay, 6);
   });
 
+  it('flags a possible unlinked half day on the real payroll detail route, pinning the exact live case that surfaced this gap (12:45-17:04 on an 08:00-17:00 shift)', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-POSSIBLEHALF', name: 'Possible Half Day Employee', daily_rate: 800 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Possible Half Cutoff', start_date: '2026-08-19', end_date: '2026-08-19' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-19', time_in: '12:45', time_out: '17:04', notes: '', shift_id: morningShiftId }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Possible Half Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Possible Half Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Possible Half Day Employee');
+
+    const detail = await ctx.api.get(`/api/hr/payroll/${rec.id}/detail`).set(hdr());
+    const day = detail.body.days.find((d: { work_date: string }) => d.work_date === '2026-08-19');
+    expect(day.possible_half_day).toBe(true);
+    expect(day.status).toBe('worked'); // never auto-reclassified
+    expect(rec.data.late_absences).toBeGreaterThan(0); // the actual damage: docked as if 4h45m late against the whole shift
+    // generate-payslips itself surfaces an active count, not just something HR happens to
+    // notice by opening this one payslip's detail view.
+    expect(gen.body.possible_half_day_employees).toBe(1);
+  });
+
   it('the payroll detail route 404s when the employee or the period can\'t be resolved', async () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-DETAIL-404', name: 'Detail 404 Employee', daily_rate: 800 });

@@ -446,6 +446,7 @@ async function renderFormView(view, formId, initialPeriod) {
     if (d.status === 'half_day') return '<span class="badge-pill status-confirmed" title="Judged against just this half\'s own AM/PM window, not the full shift">Half Day</span>';
     if (d.status === 'undertime') return `<span class="badge-pill status-cancelled" title="Under the configured whole-day minimum — paid proportionally for actual hours present (${UI.money(d.undertime_day_pay)}), not counted as a whole day worked">Undertime Day</span>`;
     if (d.below_minimum) return '<span class="badge-pill status-confirmed" title="Under the configured minimum work time — still paid for actual hours (allowed by default)">Below Min — Allowed</span>';
+    if (d.possible_half_day) return '<span class="badge-pill status-confirmed" title="This day\'s times look like a half day, but no Half Day request is linked — it was judged (and any late/undertime deduction charged) against the FULL shift instead of just a half. Link a Half Day request on the Daily Time grid if that\'s what this was.">Possible Half Day (unlinked)</span>';
     return '';
   }
 
