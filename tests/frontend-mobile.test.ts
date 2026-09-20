@@ -23,7 +23,7 @@ describe('mobile bootstrap', () => {
 
   it('declares app.js before any view module', () => {
     const appIdx = srcs.indexOf('/mobile/app.js');
-    const firstView = srcs.findIndex((s) => s.startsWith('/mobile/views/'));
+    const firstView = srcs.findIndex((s) => s.startsWith('/mobile/modules/'));
     expect(appIdx).toBeGreaterThanOrEqual(0);
     expect(firstView).toBeGreaterThan(appIdx);
   });

@@ -24,7 +24,7 @@ describe('frontend bootstrap', () => {
 
   it('declares app.js before any view module', () => {
     const appIdx = srcs.indexOf('/js/app.js');
-    const firstView = srcs.findIndex((s) => s.startsWith('/js/views/'));
+    const firstView = srcs.findIndex((s) => s.startsWith('/js/modules/'));
     expect(appIdx).toBeGreaterThanOrEqual(0);
     expect(firstView).toBeGreaterThanOrEqual(0);
     expect(appIdx).toBeLessThan(firstView);
