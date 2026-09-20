@@ -56,7 +56,7 @@ describe('hr', () => {
 
     const ot = bySlug('overtime_request');
     expect(ot).toBeDefined();
-    expect(ot.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'hours_estimate', 'reason']);
+    expect(ot.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'hours_estimate', 'reason', 'approved_hours']);
 
     const ut = bySlug('undertime_request');
     expect(ut).toBeDefined();
@@ -399,6 +399,31 @@ describe('hr', () => {
 
     const detail = await ctx.api.get(`/api/hr/periods/${period.body.id}`).set(hdr());
     expect(detail.body.roster[0].days_logged).toBe(2);
+  });
+
+  it('round-trips a lunch-out / lunch-in bracket and includes it in the cutoff CSV', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'TEST-LUNCH', name: 'Lito Cruz' });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Sep 1-2, 2026', start_date: '2026-09-01', end_date: '2026-09-02' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+
+    const save = await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2026-09-01', time_in: '08:00', lunch_out: '12:00', lunch_in: '12:55', time_out: '17:00', notes: '' },
+      ],
+    });
+    expect(save.status).toBe(200);
+
+    const days = await ctx.api.get(`/api/hr/periods/${period.body.id}/attendance?employee_id=${emp.body.id}`).set(hdr());
+    expect(days.body[0].lunch_out).toBe('12:00');
+    expect(days.body[0].lunch_in).toBe('12:55');
+
+    const csv = await ctx.api.get(`/api/hr/periods/${period.body.id}/attendance/export`).set(hdr());
+    expect(csv.status).toBe(200);
+    expect(csv.text.split('\n')[0]).toContain('Lunch Out');
+    expect(csv.text.split('\n')[0]).toContain('Lunch In');
+    expect(csv.text).toMatch(/12:00.*12:55/);
   });
 
   it('generates payslips into the HR Payroll form, then updates on a second call instead of duplicating', async () => {
@@ -1270,7 +1295,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
       .toBeCloseTo(detail.body.totals.overtime_pay, 6);
   });
 
-  it('flags a possible unlinked half day on the real payroll detail route, pinning the exact live case that surfaced this gap (12:45-17:04 on an 08:00-17:00 shift)', async () => {
+  it('an unlinked-but-half-day-shaped day (12:45-17:04 on an 08:00-17:00 shift — the exact live case) is paid as a half day, not a whole day docked for "arriving 4h45m late"', async () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-POSSIBLEHALF', name: 'Possible Half Day Employee', daily_rate: 800 });
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -1284,13 +1309,15 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Possible Half Cutoff' }).set(hdr());
     const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Possible Half Day Employee');
 
+    expect(rec.data.days_worked).toBe(0.5);   // half a day, not a whole one
+    expect(rec.data.days_half).toBe(1);       // and counted in Half Days, not full working days
+    expect(rec.data.late_absences).toBe(0);   // 12:45 vs the PM half's 13:00 start -> not late
+
     const detail = await ctx.api.get(`/api/hr/payroll/${rec.id}/detail`).set(hdr());
     const day = detail.body.days.find((d: { work_date: string }) => d.work_date === '2026-08-19');
-    expect(day.possible_half_day).toBe(true);
-    expect(day.status).toBe('worked'); // never auto-reclassified
-    expect(rec.data.late_absences).toBeGreaterThan(0); // the actual damage: docked as if 4h45m late against the whole shift
-    // generate-payslips itself surfaces an active count, not just something HR happens to
-    // notice by opening this one payslip's detail view.
+    expect(day.status).toBe('half_day');
+    expect(day.possible_half_day).toBe(true); // still surfaced so HR files the actual request
+    // generate-payslips still surfaces an active count so HR knows to file the real forms.
     expect(gen.body.possible_half_day_employees).toBe(1);
   });
 
@@ -1521,6 +1548,189 @@ describe('generate-payslips — HR-marked holidays + rest-day pay end to end', (
     });
     const rec = await genOne(period.body.id, 'Rest Day Per Date Off Cutoff', 'Rest Day Per Date Off Employee');
     expect(rec.data.rest_day_ot).toBe(0);
+  });
+});
+
+// policy.holiday_adjacency_requirement — whether an employee must have attended (or been
+// excused) the day immediately before/after a holiday to receive its pay at all. The resolver
+// (holidayAdjacencyOk/isPresentOrExcused in hr.routes.ts) does its own period-independent DB
+// lookup on the adjacent date, so these deliberately use a 2-day period spanning both the
+// holiday and its "before" neighbor (or a separate period for the "after" neighbor) to prove
+// that cross-day lookup actually works, not just an in-array check. 2026-01-01 is the seeded
+// Regular Holiday calendar entry every other describe block in this file also relies on.
+describe('generate-payslips — holiday_adjacency_requirement end to end', () => {
+  let adjShiftId: number;
+
+  beforeAll(async () => {
+    const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Adjacency Test Shift', start_time: '08:00', end_time: '17:00', is_default: false });
+    adjShiftId = shift.body.id;
+  });
+
+  async function genOne(periodId: number, label: string, employeeName: string) {
+    const gen = await ctx.api.post(`/api/hr/periods/${periodId}/generate-payslips`).set(hdr()).send({ payroll_period: label });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: label }).set(hdr());
+    return records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === employeeName);
+  }
+
+  it('"before": an unexcused absence the day before the holiday withholds the holiday pay entirely', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ default_rest_days: [0, 6], holiday_adjacency_requirement: 'before' });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ADJ-BEFORE-FAIL', name: 'Adjacency Before Fail Employee', daily_rate: 1000 });
+    // 2025-12-31 is a Wednesday (an ordinary scheduled workday, not a rest day) immediately
+    // before the seeded 2026-01-01 Regular Holiday — left completely blank (no time, no leave,
+    // no holiday of its own), a genuine unexcused absence.
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Adjacency Before Fail Cutoff', start_date: '2025-12-31', end_date: '2026-01-01' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2025-12-31', time_in: '', time_out: '', notes: '' },
+        { work_date: '2026-01-01', time_in: '', time_out: '', notes: '' }, // unworked; the calendar resolves this to Regular Holiday
+      ],
+    });
+    const rec = await genOne(period.body.id, 'Adjacency Before Fail Cutoff', 'Adjacency Before Fail Employee');
+    expect(rec.data.holiday_pay).toBe(0);
+  });
+
+  it('"before": actually clocking in the day before satisfies the requirement — full holiday pay', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ default_rest_days: [0, 6], holiday_adjacency_requirement: 'before' });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ADJ-BEFORE-OK', name: 'Adjacency Before OK Employee', daily_rate: 1000 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Adjacency Before OK Cutoff', start_date: '2025-12-31', end_date: '2026-01-01' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2025-12-31', time_in: '08:00', time_out: '17:00', notes: '', shift_id: adjShiftId },
+        { work_date: '2026-01-01', time_in: '', time_out: '', notes: '' },
+      ],
+    });
+    const rec = await genOne(period.body.id, 'Adjacency Before OK Cutoff', 'Adjacency Before OK Employee');
+    expect(rec.data.holiday_pay).toBeCloseTo(1000, 6);
+  });
+
+  it('"before": an approved PAID leave the day before also satisfies the requirement, even with no clock-in', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ default_rest_days: [0, 6], holiday_adjacency_requirement: 'before' });
+    const forms = await ctx.api.get('/api/form-definitions').set(hdr());
+    const leaveFormId = forms.body.find((f: { slug: string }) => f.slug === 'leave_request').id;
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ADJ-BEFORE-LEAVE', name: 'Adjacency Before Leave Employee', daily_rate: 1000 });
+    const leaveForm = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: leaveFormId,
+      data: { employee_name: 'Adjacency Before Leave Employee', with_pay: 'Yes' },
+      status: 'approved',
+    });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Adjacency Before Leave Cutoff', start_date: '2025-12-31', end_date: '2026-01-01' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2025-12-31', time_in: '', time_out: '', notes: '', form_record_id: leaveForm.body.id },
+        { work_date: '2026-01-01', time_in: '', time_out: '', notes: '' },
+      ],
+    });
+    const rec = await genOne(period.body.id, 'Adjacency Before Leave Cutoff', 'Adjacency Before Leave Employee');
+    expect(rec.data.holiday_pay).toBeCloseTo(1000, 6);
+  });
+
+  it('"after": an unexcused absence the day after the holiday withholds the holiday pay, even though the day before was fine', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ default_rest_days: [0, 6], holiday_adjacency_requirement: 'after' });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ADJ-AFTER-FAIL', name: 'Adjacency After Fail Employee', daily_rate: 1000 });
+    // 2026-01-02 is a Friday (ordinary workday) right after the holiday — blank/absent.
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Adjacency After Fail Cutoff', start_date: '2026-01-01', end_date: '2026-01-02' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2026-01-01', time_in: '', time_out: '', notes: '' },
+        { work_date: '2026-01-02', time_in: '', time_out: '', notes: '' },
+      ],
+    });
+    const rec = await genOne(period.body.id, 'Adjacency After Fail Cutoff', 'Adjacency After Fail Employee');
+    expect(rec.data.holiday_pay).toBe(0);
+  });
+
+  it('"both": satisfying only one of the two adjacent days still withholds the pay — both are required', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ default_rest_days: [0, 6], holiday_adjacency_requirement: 'both' });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ADJ-BOTH-PARTIAL', name: 'Adjacency Both Partial Employee', daily_rate: 1000 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Adjacency Both Partial Cutoff', start_date: '2025-12-31', end_date: '2026-01-02' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2025-12-31', time_in: '08:00', time_out: '17:00', notes: '', shift_id: adjShiftId }, // present before
+        { work_date: '2026-01-01', time_in: '', time_out: '', notes: '' },
+        { work_date: '2026-01-02', time_in: '', time_out: '', notes: '' }, // absent after
+      ],
+    });
+    const rec = await genOne(period.body.id, 'Adjacency Both Partial Cutoff', 'Adjacency Both Partial Employee');
+    expect(rec.data.holiday_pay).toBe(0);
+  });
+
+  it('"both": satisfying both adjacent days pays the full holiday amount', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ default_rest_days: [0, 6], holiday_adjacency_requirement: 'both' });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ADJ-BOTH-OK', name: 'Adjacency Both OK Employee', daily_rate: 1000 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Adjacency Both OK Cutoff', start_date: '2025-12-31', end_date: '2026-01-02' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2025-12-31', time_in: '08:00', time_out: '17:00', notes: '', shift_id: adjShiftId },
+        { work_date: '2026-01-01', time_in: '', time_out: '', notes: '' },
+        { work_date: '2026-01-02', time_in: '08:00', time_out: '17:00', notes: '', shift_id: adjShiftId },
+      ],
+    });
+    const rec = await genOne(period.body.id, 'Adjacency Both OK Cutoff', 'Adjacency Both OK Employee');
+    expect(rec.data.holiday_pay).toBeCloseTo(1000, 6);
+  });
+
+  it('a rest day immediately before the holiday satisfies "before" automatically — no attendance needed', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ default_rest_days: [0, 6], holiday_adjacency_requirement: 'before' });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ADJ-RESTDAY', name: 'Adjacency Rest Day Employee', daily_rate: 1000 });
+    // 2025-12-28 is a Sunday (a company rest day under the default [0, 6]) immediately before
+    // 2025-12-29 — used here as a stand-in "holiday" via a per-record override so the rest-day
+    // neighbor lands right before it. Left completely blank on the rest day itself.
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Adjacency Rest Day Cutoff', start_date: '2025-12-28', end_date: '2025-12-29' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2025-12-28', time_in: '', time_out: '', notes: '' }, // blank rest day, not a real absence
+        { work_date: '2025-12-29', time_in: '', time_out: '', notes: '', holiday_type: 'regular' },
+      ],
+    });
+    const rec = await genOne(period.body.id, 'Adjacency Rest Day Cutoff', 'Adjacency Rest Day Employee');
+    expect(rec.data.holiday_pay).toBeCloseTo(1000, 6);
+  });
+
+  it('policy default ("none") never withholds holiday pay for adjacency, even with a genuine absence next to it', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({ default_rest_days: [0, 6], holiday_adjacency_requirement: 'none' });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ADJ-NONE', name: 'Adjacency None Employee', daily_rate: 1000 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Adjacency None Cutoff', start_date: '2025-12-31', end_date: '2026-01-01' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2025-12-31', time_in: '', time_out: '', notes: '' }, // absent, but the requirement is off
+        { work_date: '2026-01-01', time_in: '', time_out: '', notes: '' },
+      ],
+    });
+    const rec = await genOne(period.body.id, 'Adjacency None Cutoff', 'Adjacency None Employee');
+    expect(rec.data.holiday_pay).toBeCloseTo(1000, 6);
   });
 });
 
@@ -1993,6 +2203,80 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
     expect(rec.data.days_undertime).toBe(0);
   });
 
+  it('a day linked to MULTIPLE forms (form_record_ids): Half Day AM + Overtime both take effect on one generate-payslips run', async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], require_ot_form: true, max_ot_hours: null,
+    });
+    const forms = await ctx.api.get('/api/form-definitions').set(hdr());
+    const halfdayFormId = forms.body.find((f: { slug: string }) => f.slug === 'halfday_request').id;
+    const otFormId = forms.body.find((f: { slug: string }) => f.slug === 'overtime_request').id;
+    const half = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: halfdayFormId,
+      data: { employee_name: 'Multi Form Employee', date: '2026-08-14', session: 'Morning (AM)', reason: 'Personal' },
+      status: 'approved',
+    });
+    const ot = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: otFormId,
+      data: { employee_name: 'Multi Form Employee', work_date: '2026-08-14', reason: 'Coverage' },
+      status: 'approved',
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-MULTIFORM', name: 'Multi Form Employee', daily_rate: 800 }); // hourly = 100
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Multi Form Cutoff', start_date: '2026-08-14', end_date: '2026-08-14' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    // AM half window is 08:00-12:00; worked 08:00-16:00 -> 4h past that window, authorised by the OT form.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{
+        work_date: '2026-08-14', time_in: '08:00', time_out: '16:00', notes: '', shift_id: shiftId,
+        form_record_ids: [half.body.id, ot.body.id],
+      }],
+    });
+    // The saved row mirrors the first id back into the legacy single column.
+    const saved = await ctx.api.get(`/api/hr/periods/${period.body.id}/attendance`).query({ employee_id: emp.body.id }).set(hdr());
+    const savedDay = saved.body.find((d: { work_date: string }) => d.work_date === '2026-08-14');
+    expect(JSON.parse(savedDay.form_record_ids)).toEqual([half.body.id, ot.body.id]);
+    expect(savedDay.form_record_id).toBe(half.body.id);
+
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Multi Form Cutoff' });
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Multi Form Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Multi Form Employee');
+    expect(rec.data.days_worked).toBe(0.5);        // Half Day AM
+    expect(rec.data.days_half).toBe(1);
+    expect(rec.data.ot_hours).toBeCloseTo(4, 6);   // 12:00 -> 16:00, authorised by the OT form
+    expect(rec.data.overtime_pay).toBeCloseTo(4 * 100 * 1.25, 6);
+
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], require_ot_form: true,
+    });
+  });
+
+  it('GET /hr/linked-form-record-ids reports every form record consumed by an attendance day (so the picker can hide them)', async () => {
+    const forms = await ctx.api.get('/api/form-definitions').set(hdr());
+    const otFormId = forms.body.find((f: { slug: string }) => f.slug === 'overtime_request').id;
+    const used = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: otFormId, data: { employee_name: 'Linked IDs Employee', work_date: '2026-08-15', reason: 'x' }, status: 'approved',
+    });
+    const free = await ctx.api.post('/api/form-records').set(hdr()).send({
+      form_def_id: otFormId, data: { employee_name: 'Linked IDs Employee', work_date: '2026-08-16', reason: 'x' }, status: 'approved',
+    });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LINKEDIDS', name: 'Linked IDs Employee', daily_rate: 700 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Linked IDs Cutoff', start_date: '2026-08-15', end_date: '2026-08-16' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-08-15', time_in: '08:00', time_out: '19:00', notes: '', shift_id: shiftId, form_record_ids: [used.body.id] }],
+    });
+
+    const res = await ctx.api.get('/api/hr/linked-form-record-ids').set(hdr());
+    expect(res.status).toBe(200);
+    expect(res.body).toContain(used.body.id);
+    expect(res.body).not.toContain(free.body.id);
+  });
+
   it('max_ot_hours caps OT hours/pay through a real generate-payslips run', async () => {
     await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
       pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], require_ot_form: false, max_ot_hours: 1,
@@ -2080,5 +2364,100 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
     const afterRegen = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Other Ded Cutoff' }).set(hdr());
     const regenRec = afterRegen.body.find((r: { id: number }) => r.id === rec.id);
     expect(regenRec.data.other_deductions).toEqual(lines);
+  });
+});
+
+describe('mid-cutoff rate changes (employee_rate_history)', () => {
+  // Dynamically imported after setupApp() sets DB_PATH — a top-level `import ... from
+  // '../src/db'` would evaluate DB_PATH too early (real data.db, not this file's throwaway
+  // one); see clock.test.ts's own doc comment for the same hazard.
+  let run: typeof import('../src/db').run;
+  beforeAll(async () => {
+    ({ run } = await import('../src/db'));
+  });
+
+  it('backfills the old rate for an employee with no logged history yet (pre-existing before this feature)', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LEGACY-RATE', name: 'Legacy Rate Employee', daily_rate: 500, start_date: '2020-01-01' });
+    // Simulate an employee created before rate history existed: wipe the auto-seeded row.
+    run('DELETE FROM employee_rate_history WHERE employee_id = ?', emp.body.id);
+
+    const raise = await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-LEGACY-RATE', name: 'Legacy Rate Employee', daily_rate: 550, rate_effective_date: '2026-01-01' });
+    expect(raise.status).toBe(200);
+
+    const history = await ctx.api.get(`/api/hr/employees/${emp.body.id}/rate-history`).set(hdr());
+    expect(history.body.length).toBe(2);
+    // Newest first: the new rate, then the backfilled old one dated at the employee's start date.
+    expect(history.body[0]).toMatchObject({ effective_from: '2026-01-01', daily_rate: 550 });
+    expect(history.body[1]).toMatchObject({ effective_from: '2020-01-01', daily_rate: 500 });
+  });
+
+  it('logs a rate change to history, updates the employee\'s current rate, and rejects a future-dated one', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-RAISE', name: 'Raise Test Employee', daily_rate: 600 });
+
+    // A same-day edit that doesn't touch the rate logs nothing.
+    await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-RAISE', name: 'Raise Test Employee', daily_rate: 600, position: 'Packer' });
+    const historyAfterNoChange = await ctx.api.get(`/api/hr/employees/${emp.body.id}/rate-history`).set(hdr());
+    expect(historyAfterNoChange.body.length).toBe(1); // just the seeded "Starting rate" row
+
+    // A future-dated raise is rejected outright.
+    const future = await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-RAISE', name: 'Raise Test Employee', daily_rate: 650, rate_effective_date: '2099-01-01' });
+    expect(future.status).toBe(400);
+
+    // Effective today (or backdated) logs a new history row and updates the current rate.
+    const raise = await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-RAISE', name: 'Raise Test Employee', daily_rate: 650, rate_effective_date: '2026-06-09', rate_change_note: 'Annual raise' });
+    expect(raise.status).toBe(200);
+
+    const detail = (await ctx.api.get('/api/hr/employees').set(hdr())).body.find((e: { id: number }) => e.id === emp.body.id);
+    expect(detail.daily_rate).toBe(650);
+
+    const history = await ctx.api.get(`/api/hr/employees/${emp.body.id}/rate-history`).set(hdr());
+    expect(history.body.length).toBe(2);
+    expect(history.body[0].effective_from).toBe('2026-06-09');
+    expect(history.body[0].daily_rate).toBe(650);
+    expect(history.body[0].note).toBe('Annual raise');
+  });
+
+  it('pays each day of a cutoff at the rate that actually applied that day, not one flat rate', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-SPLITRATE', name: 'Split Rate Employee', daily_rate: 600 });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Split Rate Cutoff', start_date: '2026-06-01', end_date: '2026-06-15' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+
+    // One day before the raise, one day after — both plain 8-hour days, no OT/late/holiday.
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [
+        { work_date: '2026-06-05', time_in: '08:00', time_out: '17:00', notes: '', shift_id: null, form_record_id: null },
+        { work_date: '2026-06-12', time_in: '08:00', time_out: '17:00', notes: '', shift_id: null, form_record_id: null },
+      ],
+    });
+
+    // The raise takes effect June 9, between the two attendance days above.
+    const raise = await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-SPLITRATE', name: 'Split Rate Employee', daily_rate: 650, rate_effective_date: '2026-06-09' });
+    expect(raise.status).toBe(200);
+
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Split Rate Cutoff' });
+    expect(gen.status).toBe(201);
+
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Split Rate Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Split Rate Employee');
+    expect(rec.data.days_worked).toBe(2);
+    // 600 (Jun 5, before the raise) + 650 (Jun 12, after) — not 1200 or 1300 flat.
+    expect(rec.data.basic_salary).toBeCloseTo(1250, 6);
+    // The "Daily Rate" line shows the current (post-raise) rate.
+    expect(rec.data.daily_rate).toBe(650);
+
+    const detail = await ctx.api.get(`/api/hr/payroll/${rec.id}/detail`).set(hdr());
+    expect(detail.body.totals.days_worked).toBe(2);
+    expect(detail.body.daily_rate).toBe(650);
   });
 });

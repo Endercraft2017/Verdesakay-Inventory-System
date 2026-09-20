@@ -48,6 +48,38 @@ describe('templates', () => {
     const res = await ctx.api.post('/api/templates').set(hdr(admin)).send({ name: 'X', body: '' });
     expect(res.status).toBe(400);
   });
+
+  it('defaults copies_per_record/records_per_page/tile_fill and lets an admin opt into N-up tiling', async () => {
+    const c = await ctx.api.post('/api/templates').set(hdr(admin))
+      .send({ name: 'Tiled', type: 'generic', body: 'Hi {{order.no}}' });
+    const got = await ctx.api.get('/api/templates/' + c.body.id).set(hdr(admin));
+    expect(got.body.copies_per_record).toBe(1);
+    expect(got.body.records_per_page).toBe(1);
+    expect(got.body.tile_fill).toBe('blank');
+    // the list endpoint carries the fields too, so the UI can badge tiled templates
+    const list = await ctx.api.get('/api/templates').set(hdr(admin));
+    expect(list.body.find((t: { id: number }) => t.id === c.body.id)).toMatchObject({ copies_per_record: 1, records_per_page: 1, tile_fill: 'blank' });
+
+    const u = await ctx.api.put('/api/templates/' + c.body.id).set(hdr(admin))
+      .send({ name: 'Tiled', type: 'generic', body: 'Hi {{order.no}}', copies_per_record: 2, records_per_page: 2, tile_fill: 'repeat' });
+    expect(u.status).toBe(200);
+    const got2 = await ctx.api.get('/api/templates/' + c.body.id).set(hdr(admin));
+    expect(got2.body.copies_per_record).toBe(2);
+    expect(got2.body.records_per_page).toBe(2);
+    expect(got2.body.tile_fill).toBe('repeat');
+  });
+
+  it('rejects a copies x records-per-page combination over the 12-cell cap', async () => {
+    const res = await ctx.api.post('/api/templates').set(hdr(admin))
+      .send({ name: 'TooBig', type: 'generic', body: 'x', copies_per_record: 5, records_per_page: 5 });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects an invalid tile_fill value', async () => {
+    const res = await ctx.api.post('/api/templates').set(hdr(admin))
+      .send({ name: 'BadFill', type: 'generic', body: 'x', tile_fill: 'nonsense' });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('company profile', () => {
@@ -55,6 +87,8 @@ describe('company profile', () => {
     const def = await ctx.api.get('/api/templates/company').set(hdr(admin));
     expect(def.status).toBe(200);
     expect(def.body).toHaveProperty('name');
+    // image compression defaults on for a fresh workspace
+    expect(def.body.compress_images).toBe(true);
 
     const put = await ctx.api.put('/api/templates/company').set(hdr(admin))
       .send({ name: 'Verdesakay Inc.', address: 'Cebu', phone: '123', email: 'a@b.c', logo_url: '' });
@@ -62,6 +96,17 @@ describe('company profile', () => {
 
     const got = await ctx.api.get('/api/templates/company').set(hdr(admin));
     expect(got.body.name).toBe('Verdesakay Inc.');
+    // omitting the field on save keeps the default rather than clearing it
+    expect(got.body.compress_images).toBe(true);
+  });
+
+  it('persists the compress_images toggle when turned off', async () => {
+    const put = await ctx.api.put('/api/templates/company').set(hdr(admin))
+      .send({ name: 'Verdesakay Inc.', compress_images: false });
+    expect(put.status).toBe(200);
+
+    const got = await ctx.api.get('/api/templates/company').set(hdr(admin));
+    expect(got.body.compress_images).toBe(false);
   });
 
   it('forbids a non-admin from editing the company profile', async () => {

@@ -11,7 +11,9 @@ const router = Router();
 router.use(requireAuth);
 
 const COMPANY_KEY = 'company_profile';
-const EMPTY_COMPANY: CompanyProfile = { name: '', address: '', phone: '', email: '', logo_url: '' };
+const EMPTY_COMPANY: CompanyProfile = {
+  name: '', address: '', phone: '', email: '', logo_url: '', compress_images: true,
+};
 
 // GET /api/templates/company — company profile (for company.* variables)
 router.get('/company', (_req, res) => {
@@ -24,6 +26,7 @@ router.put('/company', requirePermission('templates.company'), (req, res) => {
   const profile: CompanyProfile = {
     name: input.name ?? '', address: input.address ?? '', phone: input.phone ?? '',
     email: input.email ?? '', logo_url: input.logo_url ?? '',
+    compress_images: input.compress_images,
   };
   setSetting(COMPANY_KEY, profile);
   res.json({ ok: true });
@@ -104,7 +107,7 @@ router.get('/', (req, res) => {
     conditions.push('period = ?'); params.push(period);
   }
   const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
-  res.json(queryAll<DocTemplate>(`SELECT id,name,type,period,created_at,updated_at FROM doc_templates${where} ORDER BY period DESC, type, name`, ...params));
+  res.json(queryAll<DocTemplate>(`SELECT id,name,type,period,copies_per_record,records_per_page,tile_fill,created_at,updated_at FROM doc_templates${where} ORDER BY period DESC, type, name`, ...params));
 });
 
 // GET /api/templates/:id
@@ -121,11 +124,16 @@ router.get('/:id', (req, res) => {
 router.post('/', requirePermission('templates.edit'), (req, res) => {
   const input = parseBody(templateSchema, req.body);
   const info = run(
-    'INSERT INTO doc_templates (name, type, period, body, created_by) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO doc_templates (name, type, period, body, copies_per_record, records_per_page, tile_fill, repeat_count, tile_continuous, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     input.name,
     input.type,
     input.period ?? null,
     input.body,
+    input.copies_per_record,
+    input.records_per_page,
+    input.tile_fill,
+    input.repeat_count,
+    input.tile_continuous ? 1 : 0,
     req.user!.id
   );
   res.status(201).json({ id: info.lastInsertRowid });
@@ -135,11 +143,16 @@ router.post('/', requirePermission('templates.edit'), (req, res) => {
 router.put('/:id', requirePermission('templates.edit'), (req, res) => {
   const input = parseBody(templateSchema, req.body);
   const info = run(
-    "UPDATE doc_templates SET name = ?, type = ?, period = ?, body = ?, updated_at = datetime('now') WHERE id = ?",
+    "UPDATE doc_templates SET name = ?, type = ?, period = ?, body = ?, copies_per_record = ?, records_per_page = ?, tile_fill = ?, repeat_count = ?, tile_continuous = ?, updated_at = datetime('now') WHERE id = ?",
     input.name,
     input.type,
     input.period ?? null,
     input.body,
+    input.copies_per_record,
+    input.records_per_page,
+    input.tile_fill,
+    input.repeat_count,
+    input.tile_continuous ? 1 : 0,
     Number(req.params.id)
   );
   if (info.changes === 0) {

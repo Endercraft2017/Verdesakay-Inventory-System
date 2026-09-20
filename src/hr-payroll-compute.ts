@@ -11,11 +11,24 @@ export interface AttendanceDay {
   work_date: string;
   time_in: string | null;  // "HH:MM"
   time_out: string | null; // "HH:MM"
+  /** Lunch-break bracket, same "HH:MM" shape. Optional/omittable — undefined behaves exactly
+      like null, so every existing caller/test that never set these is unaffected. Used for the
+      abandoned-after-lunch half-day substitution and PayrollPolicy.count_lunch_late_as_late —
+      see their comments below. */
+  lunch_out?: string | null;
+  lunch_in?: string | null;
   shift: { start_time: string; end_time: string } | null;
-  linkedForm: { slug: string; data: Record<string, unknown> } | null;
-  // Company-wide "No Work Memo" covering this date (unrelated to linkedForm — that's a form an
-  // individual employee is linked to; this is a blanket declaration that applies automatically
-  // to everyone, no per-employee linking needed). Omitted/null = no memo covers this date.
+  /** All HR request forms linked to this day (OT / Half Day / Leave / Undertime / Offset /
+      Holiday Work). A day can carry more than one — they're applied by concern, not first-wins:
+      a Half Day sets the 0.5 credit + AM/PM window, an Offset shifts that window's end, an
+      Overtime authorises time past it, an Undertime-with-pay waives a shortfall, etc. */
+  linkedForms?: Array<{ slug: string; data: Record<string, unknown> }> | null;
+  /** @deprecated Legacy single link. Still accepted — normalised to a one-element linkedForms
+      at the top of the loop, so existing callers/tests keep working unchanged. */
+  linkedForm?: { slug: string; data: Record<string, unknown> } | null;
+  // Company-wide "No Work Memo" covering this date (unrelated to linked forms — those are forms
+  // an individual employee is linked to; this is a blanket declaration that applies
+  // automatically to everyone, no per-employee linking needed). Omitted/null = no memo covers it.
   noWork?: 'paid' | 'unpaid' | null;
   // This day's holiday type, already resolved by the caller as per-record override (attendance_
   // records.holiday_type) if set, else whatever the Company Holidays calendar says for this
@@ -33,6 +46,20 @@ export interface AttendanceDay {
   // attendance_records.min_hours_decision. null/omitted behaves exactly like 'allow' (pays for
   // actual hours/fraction worked); only an explicit 'deny' zeroes the day's credit.
   minHoursDecision?: 'allow' | 'deny' | null;
+  // Whether this day satisfies PayrollPolicy.holiday_adjacency_requirement, already resolved by
+  // the caller (holidayAdjacencyOk in hr.routes.ts — needs a period-independent DB lookup on the
+  // adjacent date, which this DB-free module can't do itself). Only meaningful when `holiday` is
+  // 'regular' or 'special_non_working'; ignored otherwise. undefined/true: eligible (also true
+  // when the policy requirement is 'none'). false: this day's holiday pay/premium is withheld —
+  // see the holiday branches below.
+  holidayEligible?: boolean;
+  // HR's explicit "credit this day as a half day anyway" call (attendance_records.
+  // half_day_override) — 'am'/'pm' force the same 0.5-day credit + half-window late/undertime
+  // judgement a linked Half Day request or the automatic possible_half_day heuristic would, for
+  // a day that's neither (e.g. the raw punch times don't happen to land near the shift's own
+  // lunch gap, or one side of the day's punches is missing entirely). Ignored whenever a real
+  // halfday_request IS linked — that always takes precedence. null/undefined: no override.
+  halfDayOverride?: 'am' | 'pm' | null;
 }
 
 export interface AttendanceComputation {
@@ -43,11 +70,15 @@ export interface AttendanceComputation {
    *  it already doesn't get paid via basic_salary = daily_rate * days_worked — this field
    *  doesn't subtract anything itself, it just makes that reduction visible on the payslip
    *  instead of silent (see the "Late / Absences" line, which — despite the name — has only
-   *  ever held the late-arrival peso deduction; see hr.routes.ts generate-payslips). */
+   *  ever held the late-arrival peso deduction, now also folding in PayrollPolicy.
+   *  count_lunch_late_as_late's lunch-return lateness when that's on; see hr.routes.ts
+   *  generate-payslips). */
   days_absent: number;
-  /** Count of days credited as a half day (a linked Half Day request) — already folded into
-   *  days_worked at 0.5 each; this just surfaces the count itself so the payslip can show
-   *  "Half Days: 2" instead of that only being visible as a fractional days_worked total. */
+  /** Count of days credited as a half day — a linked Half Day request, OR an "undocumented
+   *  half day" (no linked form, but the raw times match one of the shift's own AM/PM half
+   *  windows — see unlinkedHalfDaySession). Already folded into days_worked at 0.5 each; this
+   *  surfaces the count itself so the payslip can show "Half Days: 2" instead of it only being
+   *  visible as a fractional days_worked total. */
   days_half: number;
   /** Count of "Undertime Days" — present, but under PayrollPolicy.whole_day_min_minutes, with
    *  no linked Half Day request — see undertime_day_pay for the pay these earn. Contributes 0
@@ -100,7 +131,8 @@ export interface DayBreakdown {
   // instead of only summed.
   status: 'worked' | 'half_day' | 'undertime' | 'paid_leave' | 'paid_no_work' | 'paid_holiday'
     | 'unpaid_no_work' | 'rest_day_off' | 'absent'
-    | 'below_minimum_denied'; // HR clicked "Deny" on a day under PayrollPolicy.min_work_minutes — 0 credit, not an absence
+    | 'below_minimum_denied' // HR clicked "Deny" on a day under PayrollPolicy.min_work_minutes — 0 credit, not an absence
+    | 'holiday_ineligible'; // an otherwise-unworked Regular Holiday, but policy.holiday_adjacency_requirement failed — 0 credit, not an absence either (the employee just isn't entitled to this specific day's holiday pay)
   late_minutes: number;
   late_pay: number;
   ot_hours: number;
@@ -114,11 +146,20 @@ export interface DayBreakdown {
   // so the Daily Time grid / detail view can flag it either way. Always false when the policy's
   // check is off (min_work_minutes: 0) or no shift is assigned (nothing to measure against).
   below_minimum: boolean;
-  // Whether this day's raw times resemble a half day (see looksLikeUnlinkedHalfDay) but isn't
-  // actually linked to a Half Day request — always false for a day that IS linked to one
-  // (status === 'half_day', already correctly handled) or has no shift assigned. Purely a
-  // flag for HR to review, never changes pay on its own.
+  // Whether this day's raw times resemble a half day (see unlinkedHalfDaySession) without a
+  // linked Half Day request — always false for a day linked to a Half Day request, manually
+  // overridden (see half_day_manual below), or with no shift assigned. Still set even when the
+  // day was auto-paid as a half day off this signal (an "undocumented half day": no linked form
+  // at all — status is then 'half_day' too), so HR is still nudged to file the actual request
+  // for the record.
   possible_half_day: boolean;
+  // Whether this day's half-day credit (status 'half_day') came from HR's manual override
+  // (AttendanceDay.halfDayOverride) rather than a linked Half Day request or the automatic
+  // possible_half_day heuristic — so the payslip detail / Daily Time grid can label it
+  // distinctly ("recorded, no request") instead of looking identical to either of those. Always
+  // false when status isn't 'half_day', and false whenever a real halfday_request is linked
+  // (that always wins over the override — see halfDayOverrideSession below).
+  half_day_manual: boolean;
 }
 
 const DAY_MIN = 24 * 60;
@@ -194,6 +235,32 @@ function lunchWindow(shiftStart: number, shiftEnd: number, lunchMinutes: number)
   return { start: shiftStart + half, end: shiftStart + half + lunchMinutes };
 }
 
+/** Raw minutes actually present on a day, lunch excluded when applicable — for
+    PayrollPolicy.special_holiday_premium_mode: 'prorated', which needs this BEFORE the main
+    per-day timeline below (shiftStart/shiftEnd/overnight normalization, effShiftStart, etc.) is
+    computed — holiday premiums must still apply with no shift assigned at all (see the comment
+    on the holiday/rest-day premium block), so this can't reuse those later variables. Falls back
+    to the plain clocked span (no lunch subtracted, since there's no shift to place a lunch
+    window against) when there's no usable shift. `timeIn`/`timeOut` are plain minutes-since-
+    midnight (toMinutes of the raw HH:MM), not yet relative to any shift. */
+function rawPresentMinutes(
+  timeIn: number, timeOut: number, shift: AttendanceDay['shift'], lunchBreakMinutes: number, countLunchAsWorked: boolean
+): number {
+  const plainSpan = Math.max(0, timeOut >= timeIn ? timeOut - timeIn : (DAY_MIN - timeIn) + timeOut);
+  const sStart = shift ? toMinutes(shift.start_time) : null;
+  const sEnd0 = shift ? toMinutes(shift.end_time) : null;
+  if (sStart == null || sEnd0 == null) return plainSpan;
+  const overnight = sEnd0 < sStart;
+  const sEnd = overnight ? sEnd0 + DAY_MIN : sEnd0;
+  const relTo = (min: number) => (overnight && min < sStart ? min + DAY_MIN : min);
+  const tInRel = relTo(timeIn);
+  const tOutRel = relTo(timeOut);
+  const raw = Math.max(0, tOutRel - tInRel);
+  const lunch = lunchWindow(sStart, sEnd, lunchBreakMinutes);
+  const lunchOverlap = countLunchAsWorked ? 0 : overlapMinutes(tInRel, tOutRel, lunch.start, lunch.end);
+  return Math.max(0, raw - lunchOverlap);
+}
+
 /** A linked Half Day request's own effective start/end — AM runs shift-start to the lunch gap,
     PM runs from the end of the lunch gap to shift-end (see lunchWindow) — e.g. 08:00-12:00 or
     13:00-17:00 for the same 08:00-17:00/60-min-lunch shift above, matching a plain "half of an
@@ -209,28 +276,38 @@ function halfDayWindow(
   return { start: shiftStart, end: lunch.start };
 }
 
-/** Whether this day's raw clock times resemble one of the shift's own AM/PM half-day windows
-    (see halfDayWindow) even though it isn't actually linked to a Half Day request — a real,
-    live bug found this way: HR types the raw times straight into the Daily Time grid without
-    also filing+linking a Half Day request, so the day gets judged as a full day arriving
-    hours "late" (or leaving hours "early") against the WHOLE shift instead of correctly being
-    a half day, docking real pesos in late/undertime deductions that a linked Half Day request
-    would have avoided entirely. Purely informational (see DayBreakdown.possible_half_day) —
-    never changes pay on its own, since silently reclassifying a genuinely-late whole day as a
-    half day purely from a time-of-day heuristic would be its own kind of wrong; the fix is for
-    HR to actually file+link a Half Day request (or acknowledge the day is correct as-is).
+/** The inferred half-day session ('Morning (AM)' when the day ends near the lunch gap,
+    'Afternoon (PM)' when it starts near it — see halfDayWindow) if this day's raw clock times
+    resemble one of the shift's own AM/PM half-day windows even though no Half Day request is
+    linked, else null. A real, live bug found this way: HR types the raw times straight into the
+    Daily Time grid without also filing+linking a Half Day request, so the day would otherwise be
+    judged as a full day arriving hours "late" (or leaving hours "early") against the WHOLE shift
+    instead of correctly being a half day, docking real pesos in late/undertime deductions that a
+    linked Half Day request would have avoided entirely.
+    A non-null result now also drives pay (see the fixed-basis branch: 0.5 credit, half-window
+    late/undertime judgement — same as a linked Half Day request) — reversing the original
+    "flag only, never touch pay" call: per the customer, a suspected half day should be *paid*
+    as a half day, not as a whole day it plainly wasn't, with DayBreakdown.possible_half_day
+    still set so HR knows to file the actual request for the record.
     `tolerance` (60 min) allows for a half day that started/ended a bit early or late itself. */
-function looksLikeUnlinkedHalfDay(
+function unlinkedHalfDaySession(
   shiftStart: number, shiftEnd: number, lunchMinutes: number, timeInRel: number, timeOutRel: number
-): boolean {
+): 'Morning (AM)' | 'Afternoon (PM)' | null {
   const workSpan = Math.max(0, shiftEnd - shiftStart - lunchMinutes);
   const rawMinutes = Math.max(0, timeOutRel - timeInRel);
-  if (rawMinutes <= 0 || rawMinutes >= workSpan * 0.75) return false; // most of a full day -> not a half day
+  if (rawMinutes <= 0 || rawMinutes >= workSpan * 0.75) return null; // most of a full day -> not a half day
   const lunch = lunchWindow(shiftStart, shiftEnd, lunchMinutes);
   const tolerance = 60;
   const pmPattern = timeInRel >= lunch.start - tolerance && timeInRel <= lunch.end + tolerance;
   const amPattern = timeOutRel >= lunch.start - tolerance && timeOutRel <= lunch.end + tolerance;
-  return pmPattern || amPattern;
+  // Both boundaries lunch-adjacent (a very short day straddling the gap) — classify by which
+  // side of lunch more of the clocked time actually sat.
+  if (pmPattern && amPattern) {
+    return (timeOutRel - lunch.end) >= (lunch.start - timeInRel) ? 'Afternoon (PM)' : 'Morning (AM)';
+  }
+  if (amPattern) return 'Morning (AM)';
+  if (pmPattern) return 'Afternoon (PM)';
+  return null;
 }
 
 const ZERO: AttendanceComputation = {
@@ -271,7 +348,12 @@ export function computeAttendanceForEmployee(
   // employee in a generate-payslips run while this varies per employee. late_minutes still
   // reports the real lateness either way — this only zeroes the peso deduction, so HR can still
   // see the pattern without it costing the employee anything.
-  exemptLate = false
+  exemptLate = false,
+  // Per-employee "exempt from overtime pay" (employees.ot_exempt) — same shape/reasoning as
+  // exemptLate above, for salaried staff never entitled to OT regardless of hours worked past
+  // their shift. ot_hours still reports the real time worked either way; only overtime_pay is
+  // zeroed, in both hours_basis modes.
+  exemptOt = false
 ): AttendanceComputation {
   const hourlyRate = dailyRate / 8;
   // Not { ...ZERO } for `days` specifically — a shallow spread would copy ZERO's own array
@@ -281,9 +363,37 @@ export function computeAttendanceForEmployee(
   const nightEnd = toMinutes(policy.night_end) ?? 0;
 
   for (const day of days) {
-    const slug = day.linkedForm?.slug;
+    // A day can link more than one HR request form now (linkedForms). The legacy single
+    // linkedForm is normalised in as a one-element list, so every existing caller/test that
+    // still passes linkedForm keeps working unchanged. Each concern below checks for the form
+    // it cares about independently rather than switching on one "primary" slug — so a Half Day
+    // AM + an Overtime for the afternoon both take effect on the same day.
+    const forms = day.linkedForms && day.linkedForms.length
+      ? day.linkedForms
+      : day.linkedForm ? [day.linkedForm] : [];
+    const hasForm = (s: string) => forms.some((f) => f.slug === s);
+    const formData = (s: string): Record<string, unknown> | undefined => forms.find((f) => f.slug === s)?.data;
+    // A linked Overtime Request can carry an explicit approved_hours — set by whoever approved
+    // it, e.g. "policy caps OT at 2h/day, but the boss okayed 4h today" — which RAISES
+    // policy.max_ot_hours for THIS day only (never lowers it, and never introduces a cap where
+    // policy has none — a blank/0/non-numeric value, or no policy cap to begin with, just falls
+    // back to the policy's own behavior, same as before this field existed).
+    const approvedOtHours = Number(formData('overtime_request')?.approved_hours);
+    const dayMaxOtMin = policy.max_ot_hours == null ? null
+      : Math.max(policy.max_ot_hours * 60, approvedOtHours > 0 ? approvedOtHours * 60 : 0);
     const timeIn = toMinutes(day.time_in);
-    const timeOut = toMinutes(day.time_out);
+    const rawTimeOut = toMinutes(day.time_out);
+    const lunchOutMin = toMinutes(day.lunch_out ?? null);
+    const lunchInMin = toMinutes(day.lunch_in ?? null);
+    // Timed out for lunch and never punched again (no lunch_in, no time_out) — treated as if the
+    // lunch-out punch were this day's effective time-out, so it flows through the existing
+    // unlinked-half-day detection below (unlinkedHalfDaySession) instead of falling to a flat
+    // absence for the whole day. Per the customer: someone who worked the morning and vanished
+    // after lunch should be auto-credited a half day (or, if the times don't happen to resemble
+    // one of the shift's own AM/PM windows, at least an Undertime Day paid for the actual
+    // minutes present) — either beats being zeroed out entirely as a no-show.
+    const abandonedAfterLunch = rawTimeOut == null && lunchOutMin != null && lunchInMin == null;
+    const timeOut = abandonedAfterLunch ? lunchOutMin : rawTimeOut;
     // Per-day mirror of whatever the aggregate below adds — pushed to out.days at every exit
     // point of this iteration (there are several `continue`s), so it always reflects exactly
     // what happened to this specific day, never a separately-derived guess.
@@ -292,13 +402,37 @@ export function computeAttendanceForEmployee(
     let status: DayBreakdown['status'] = 'worked';
     let belowMin = false;
     let possibleHalfDay = false;
+    let halfDayManual = false;
+    let unlinkedHalfSession: 'Morning (AM)' | 'Afternoon (PM)' | null = null;
+    // HR's manual "credit this as a half day anyway" call — ignored whenever a real
+    // halfday_request is linked (that always wins), same gate undocumentedHalfDay uses below.
+    const halfDayOverrideSession: 'Morning (AM)' | 'Afternoon (PM)' | null =
+      !hasForm('halfday_request') && (day.halfDayOverride === 'am' || day.halfDayOverride === 'pm')
+        ? (day.halfDayOverride === 'pm' ? 'Afternoon (PM)' : 'Morning (AM)')
+        : null;
     const pushDay = () => out.days.push({
       work_date: day.work_date, time_in: day.time_in, time_out: day.time_out,
       holiday: day.holiday ?? null, no_work: day.noWork ?? null, is_rest_day: !!day.isRestDay,
       status, late_minutes: lateMin, late_pay: latePay, ot_hours: otHours, ot_pay: otPay,
       undertime_pay: undertimePay, undertime_day_pay: undertimeDayPay, night_diff_pay: nightDiffPay,
       day_premium_pay: dayPremium, below_minimum: belowMin, possible_half_day: possibleHalfDay,
+      half_day_manual: halfDayManual,
     });
+
+    if (halfDayOverrideSession && (timeIn == null || timeOut == null)) {
+      // HR manually marked this day a half day even though the punch data doesn't resolve into
+      // a normal in/out pair (e.g. one side is missing entirely, with nothing to substitute the
+      // way abandonedAfterLunch does for a missing time_out) — not enough real time data to
+      // judge late/OT/undertime against the half window, so it's credited flatly at 0.5 day with
+      // none of those computed. half_day_manual distinguishes it on the payslip/grid from an
+      // actual linked request or the auto-detected possible_half_day kind.
+      out.days_worked += 0.5;
+      out.days_half += 1;
+      status = 'half_day';
+      halfDayManual = true;
+      pushDay();
+      continue;
+    }
 
     if (timeIn == null || timeOut == null) {
       // No usable time logged. In order of precedence: a linked, paid Leave form makes it a
@@ -336,13 +470,19 @@ export function computeAttendanceForEmployee(
       // unpaid) still shows its own distinct status even on a rest day, since that's a more
       // specific, deliberately-recorded classification, not silence.
       // Otherwise — nothing here explains the day at all — it's a genuine unpaid absence.
-      if (slug === 'leave_request' && day.linkedForm?.data?.with_pay === 'Yes') {
+      if (hasForm('leave_request') && formData('leave_request')?.with_pay === 'Yes') {
         out.days_worked += 1;
         status = 'paid_leave';
       } else if (day.holiday === 'regular') {
-        out.holiday_pay += dailyRate;
-        dayPremium = dailyRate;
-        status = 'paid_holiday';
+        // policy.holiday_adjacency_requirement: withheld entirely (not reduced) when the
+        // employee failed the required adjacent-day check — see AttendanceDay.holidayEligible.
+        if (day.holidayEligible !== false) {
+          out.holiday_pay += dailyRate;
+          dayPremium = dailyRate;
+          status = 'paid_holiday';
+        } else {
+          status = 'holiday_ineligible';
+        }
       } else if (day.noWork === 'paid' || day.holiday === 'cancelled_paid') {
         out.days_worked += 1;
         status = day.holiday === 'cancelled_paid' ? 'paid_holiday' : 'paid_no_work';
@@ -366,16 +506,31 @@ export function computeAttendanceForEmployee(
     // the day's own type, not on a shift being assigned at all. Was previously stuck after that
     // guard, so a worked day with no shift set silently got 0 holiday/rest-day pay regardless of
     // day.holiday/isRestDay — a real bug, not a "no shift, nothing to compute" case like late is.
-    if (slug === 'holiday_work_request') {
-      const hours = Number(day.linkedForm?.data?.hours_worked) || 0;
-      const isRegular = day.linkedForm?.data?.holiday_type === 'Regular Holiday';
-      // PH convention: the linked form's hours already earned basic pay via days_worked/basic_
-      // salary above — this is just the *additional* premium on top (100% for Regular Holiday,
-      // 30% for Special Non-Working — the latter is why the field is literally named "...30").
-      const premium = hours * hourlyRate * (isRegular ? 1.0 : 0.3);
-      if (isRegular) out.holiday_pay += premium;
-      else out.special_holiday_30 += premium;
-      dayPremium = premium;
+    if (hasForm('holiday_work_request')) {
+      const hours = Number(formData('holiday_work_request')?.hours_worked) || 0;
+      const isRegular = formData('holiday_work_request')?.holiday_type === 'Regular Holiday';
+      // policy.holiday_adjacency_requirement applies here too — same withhold-entirely rule as
+      // the unworked-Regular-Holiday branch above.
+      if (day.holidayEligible !== false) {
+        // PH convention: the linked form's hours already earned basic pay via days_worked/basic_
+        // salary above — this is just the *additional* premium on top (100% for Regular Holiday,
+        // 30% for Special Non-Working — the latter is why the field is literally named "...30").
+        // Regular Holiday's premium is always the full statutory rate per hour reported, never
+        // prorated by policy.special_holiday_premium_mode (that setting is Special-Holiday-only)
+        // — but Special Non-Working's is capped at 8 hours' worth either way: 'flat' pays the
+        // full 30% as long as ANY hours were reported (matches the direct-marking branch's flat
+        // mode below), 'prorated' scales with the reported hours, capped at 8.
+        let premium: number;
+        if (isRegular) {
+          premium = hours * hourlyRate * 1.0;
+          out.holiday_pay += premium;
+        } else {
+          const effHours = policy.special_holiday_premium_mode === 'prorated' ? Math.min(hours, 8) : (hours > 0 ? 8 : 0);
+          premium = effHours * hourlyRate * 0.3;
+          out.special_holiday_30 += premium;
+        }
+        dayPremium = premium;
+      }
     } else if (day.holiday === 'regular' || day.holiday === 'special_non_working' || day.isRestDay) {
       // Same premium-only convention as the holiday_work_request branch above (the day's base
       // 100% is already counted via days_worked/basic_salary), but driven by HR directly marking
@@ -392,12 +547,27 @@ export function computeAttendanceForEmployee(
       // the already-130% special rate) — subtracting 1.0 (the day's base 100%, already counted
       // via days_worked/basic_salary above) leaves just the premium this field stores.
       const premiumPct = dayRateMultiplier(day.holiday, day.isRestDay) - 1.0;
+      // policy.holiday_adjacency_requirement gates both holiday branches below (never the plain
+      // rest-day branch — a rest day isn't a holiday, so it's not subject to this at all).
+      const eligible = day.holidayEligible !== false;
       if (day.holiday === 'regular') {
-        out.holiday_pay += dailyRate * premiumPct;
-        dayPremium = dailyRate * premiumPct;
+        if (eligible) {
+          out.holiday_pay += dailyRate * premiumPct;
+          dayPremium = dailyRate * premiumPct;
+        }
       } else if (day.holiday === 'special_non_working') {
-        out.special_holiday_30 += dailyRate * premiumPct;
-        dayPremium = dailyRate * premiumPct;
+        if (eligible) {
+          // policy.special_holiday_premium_mode: 'flat' (default) keeps the pre-2026-09 behavior
+          // — the full premiumPct of the whole day's rate regardless of hours actually present.
+          // 'prorated' scales it by actual hours present that day (lunch excluded), capped at 8
+          // hours' worth — a half-day worked on a special holiday earns roughly half the premium
+          // a full day would, instead of the same full amount either way.
+          const premium = policy.special_holiday_premium_mode === 'prorated'
+            ? Math.min(rawPresentMinutes(timeIn, timeOut, day.shift, policy.lunch_break_minutes, policy.count_lunch_as_worked) / 60, 8) * hourlyRate * premiumPct
+            : dailyRate * premiumPct;
+          out.special_holiday_30 += premium;
+          dayPremium = premium;
+        }
       } else if (day.isRestDay) {
         out.rest_day_ot += dailyRate * premiumPct;
         dayPremium = dailyRate * premiumPct;
@@ -411,10 +581,11 @@ export function computeAttendanceForEmployee(
     const shiftStart = day.shift ? toMinutes(day.shift.start_time) : null;
     let shiftEnd = day.shift ? toMinutes(day.shift.end_time) : null;
     if (shiftStart == null || shiftEnd == null) {
-      if (slug === 'halfday_request') {
+      if (hasForm('halfday_request') || halfDayOverrideSession) {
         out.days_worked += 0.5;
         out.days_half += 1;
         status = 'half_day';
+        halfDayManual = !hasForm('halfday_request');
       } else {
         out.days_worked += 1;
       }
@@ -443,13 +614,51 @@ export function computeAttendanceForEmployee(
       pushDay(); continue;
     }
 
-    // See looksLikeUnlinkedHalfDay's own comment — flags a day that LOOKS like a half day by
-    // its times but isn't actually linked to one, regardless of hours_basis mode (fixed mode is
-    // where this costs real pesos via an inflated late/undertime margin against the whole
-    // shift; per-hour mode already self-corrects on pay, but the flag is still useful so HR can
-    // catch a form that should've been filed).
-    if (slug !== 'halfday_request') {
-      possibleHalfDay = looksLikeUnlinkedHalfDay(shiftStart, shiftEnd, policy.lunch_break_minutes, timeInRel, timeOutRel);
+    // --- Lunch-break lateness (PayrollPolicy.count_lunch_late_as_late, default false) ---
+    // Computed once here (needs shiftStart/shiftEnd/relTo, just resolved above) and folded into
+    // every branch below, right before that branch's own pushDay() — independent of hours_basis
+    // mode. This is deliberately NOT self-correcting the way ordinary arrival/departure lateness
+    // is under 'per_hour' mode or an Undertime Day: both of those only exclude the shift's own
+    // STRUCTURAL lunch window from worked minutes (lunchOverlap below), never however long the
+    // employee's OWN recorded lunch actually ran — so a long lunch would otherwise go completely
+    // unpenalized even there. Skipped entirely for an abandoned-after-lunch day (lunchInMin is
+    // null by definition — nothing to judge a "return" against).
+    let lunchLateMin = 0, lunchLatePay = 0;
+    if (policy.count_lunch_late_as_late && lunchOutMin != null && lunchInMin != null) {
+      const lunchOutRel = relTo(lunchOutMin);
+      let lunchInRel = relTo(lunchInMin);
+      if (lunchInRel < lunchOutRel) lunchInRel += DAY_MIN; // returned after midnight relative to leaving
+      // A linked Lunch/Break Offset Request authorizes a shifted lunch window for this specific
+      // day (its own new_lunch_out; new_lunch_in defaults to new_lunch_out + the policy's own
+      // lunch duration when left blank) — judged against THAT window instead of the shift's
+      // structural one, e.g. an approved 1:00-2:00 lunch (structural window still 12-1) isn't
+      // itself late, even though it's an hour later than the shift's own midpoint gap.
+      let expectedBackRel: number;
+      if (hasForm('lunch_offset_form')) {
+        const newOutRaw = toMinutes(formData('lunch_offset_form')?.new_lunch_out as string | undefined);
+        const newInRaw = toMinutes(formData('lunch_offset_form')?.new_lunch_in as string | undefined);
+        const approvedOutRel = newOutRaw != null ? relTo(newOutRaw) : lunchOutRel;
+        expectedBackRel = newInRaw != null ? relTo(newInRaw) : approvedOutRel + policy.lunch_break_minutes;
+      } else {
+        expectedBackRel = lunchWindow(shiftStart, shiftEnd, policy.lunch_break_minutes).end;
+      }
+      const lunchLateRaw = lunchInRel - expectedBackRel;
+      if (lunchLateRaw > policy.grace_minutes) {
+        lunchLateMin = roundUpToUnit(lunchLateRaw - policy.grace_minutes, unitMinutesFor(policy.late_unit));
+        lunchLatePay = exemptLate ? 0 : (lunchLateMin / 60) * hourlyRate;
+      }
+    }
+
+    // See unlinkedHalfDaySession's own comment — detects a day that LOOKS like a half day by
+    // its times but isn't actually linked to one, regardless of hours_basis mode. In fixed mode
+    // an unlinked half day (one with NO linked form at all) is now also paid as a half day
+    // below — per-hour mode already self-corrects on pay, so there it stays flag-only. A day
+    // linked to some OTHER form (offset/OT/leave/undertime) keeps its own handling and is only
+    // flagged, never reclassified. Skipped entirely when HR already resolved the day via
+    // halfDayOverrideSession — nothing left to nudge HR to go file, they already made the call.
+    if (!hasForm('halfday_request') && !halfDayOverrideSession) {
+      unlinkedHalfSession = unlinkedHalfDaySession(shiftStart, shiftEnd, policy.lunch_break_minutes, timeInRel, timeOutRel);
+      possibleHalfDay = unlinkedHalfSession != null;
     }
 
     if (policy.hours_basis === 'per_hour') {
@@ -483,20 +692,20 @@ export function computeAttendanceForEmployee(
 
       // Hours worked beyond the shift's own normal span — same authorization gate OT already
       // uses (require_ot_form), same OT%/holiday-scaled rate, just measured from actual worked
-      // minutes instead of a fixed clock-out-vs-shift-end comparison. policy.max_ot_hours (null
-      // = no cap) caps how much of it is actually PAID — same as unauthorized OT, hours worked
-      // past the cap are simply uncompensated presence, not converted into undertime.
+      // minutes instead of a fixed clock-out-vs-shift-end comparison. dayMaxOtMin (policy cap,
+      // or a linked Overtime Request's own approved_hours override — see above; null = no cap)
+      // caps how much of it is actually PAID — same as unauthorized OT, hours worked past the
+      // cap are simply uncompensated presence, not converted into undertime.
       let otBlocked = 0;
       const otRaw = workedRaw - normalSpan;
-      if (otRaw > 0 && (slug === 'overtime_request' || !policy.require_ot_form)) {
+      if (otRaw > 0 && (hasForm('overtime_request') || !policy.require_ot_form)) {
         const otBlockedRaw = roundDownToUnit(otRaw, unitMinutesFor(policy.hours_basis_unit));
-        const maxOtMin = policy.max_ot_hours != null ? policy.max_ot_hours * 60 : null;
-        otBlocked = maxOtMin != null ? Math.min(otBlockedRaw, maxOtMin) : otBlockedRaw;
+        otBlocked = dayMaxOtMin != null ? Math.min(otBlockedRaw, dayMaxOtMin) : otBlockedRaw;
         if (otBlocked > 0) {
           otHours = otBlocked / 60;
           out.ot_hours += otHours;
           const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
-          const pay = otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
+          const pay = exemptOt ? 0 : otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
           otPay = pay;
           out.overtime_pay += pay;
         }
@@ -518,20 +727,41 @@ export function computeAttendanceForEmployee(
         }
       }
 
+      // Unlike ordinary arrival lateness a few lines up, lunch lateness DOES cost real pesos
+      // here even in per_hour mode — see the block's own comment above for why it isn't already
+      // self-correcting the way the rest of this branch's pay is.
+      lateMin += lunchLateMin;
+      latePay += lunchLatePay;
+      out.late_deduction += lunchLatePay;
+
       pushDay();
       continue;
     }
 
     // --- fixed-basis mode (the original, unchanged-by-default behavior) ---
-    const isHalfDay = slug === 'halfday_request';
+    // An "undocumented half day": no linked form at all, but the raw times match one of the
+    // shift's own AM/PM half windows (unlinkedHalfSession, set above). Treated exactly like a
+    // linked Half Day request from here on — 0.5 day credit, late/undertime judged against the
+    // half window, not the full shift — so a half day HR forgot to file a request for is still
+    // paid as a half day instead of a whole day it wasn't. Gated on there being NO other linked
+    // form, so a day linked to an offset/OT/leave/undertime form keeps that form's handling.
+    // halfDayOverrideSession (HR's manual call) takes priority over the auto-detected kind when
+    // both would otherwise apply — an explicit HR decision beats a guess, even a correct one.
+    const undocumentedHalfDay = forms.length === 0 && unlinkedHalfSession != null;
+    const isHalfDay = hasForm('halfday_request') || undocumentedHalfDay || !!halfDayOverrideSession;
+    const halfDaySession = halfDayOverrideSession
+      ?? (undocumentedHalfDay
+        ? unlinkedHalfSession ?? undefined
+        : (formData('halfday_request')?.session as string | undefined));
+    if (halfDayOverrideSession) halfDayManual = true;
 
-    // A linked Half Day request judges late/undertime against just its own AM/PM window
-    // (derived from the shift + lunch — see halfDayWindow), not the full shift's start/end —
-    // previously this compared against the whole day, so an afternoon half-day showed as hours
-    // "late" and a morning half-day showed as "undertime" for correctly leaving at lunchtime.
+    // A Half Day judges late/undertime against just its own AM/PM window (derived from the
+    // shift + lunch — see halfDayWindow), not the full shift's start/end — previously a whole
+    // day was compared against the full shift, so an afternoon half-day showed as hours "late"
+    // and a morning half-day showed as "undertime" for correctly leaving at lunchtime.
     let effShiftStart = shiftStart;
     if (isHalfDay) {
-      const win = halfDayWindow(shiftStart, shiftEnd, policy.lunch_break_minutes, day.linkedForm?.data?.session as string | undefined);
+      const win = halfDayWindow(shiftStart, shiftEnd, policy.lunch_break_minutes, halfDaySession);
       effShiftStart = win.start;
       shiftEnd = win.end;
     }
@@ -545,9 +775,9 @@ export function computeAttendanceForEmployee(
     // read), only the end-of-day threshold moves — arrival is still judged against the real
     // shift start.
     let effectiveEnd = shiftEnd;
-    if (slug === 'offset_form') {
-      const offsetEndRaw = toMinutes(day.linkedForm?.data?.new_time_out as string | undefined);
-      const offsetStartRaw = toMinutes(day.linkedForm?.data?.new_time_in as string | undefined);
+    if (hasForm('offset_form')) {
+      const offsetEndRaw = toMinutes(formData('offset_form')?.new_time_out as string | undefined);
+      const offsetStartRaw = toMinutes(formData('offset_form')?.new_time_in as string | undefined);
       if (offsetEndRaw != null) effectiveEnd = relTo(offsetEndRaw);
       if (offsetStartRaw != null && offsetEndRaw != null) effShiftStart = relTo(offsetStartRaw);
     }
@@ -557,7 +787,7 @@ export function computeAttendanceForEmployee(
     // here so it also exempts the day from the whole-day/Undertime-Day hours classification
     // right below, not just the peso undertime deduction further down — the whole point of
     // with_pay=Yes is that it's treated as if the day had been worked in full.
-    const authorizedPaid = slug === 'undertime_request' && day.linkedForm?.data?.with_pay === 'Yes';
+    const authorizedPaid = hasForm('undertime_request') && formData('undertime_request')?.with_pay === 'Yes';
 
     // Whole day vs. "Undertime Day" (policy.whole_day_min_minutes, e.g. 420 = 7 hours —
     // deliberately a bit under a full 8-hour shift so up to an hour late still reads as a whole
@@ -596,6 +826,13 @@ export function computeAttendanceForEmployee(
             out.night_diff_pay += nightDiffPay;
           }
         }
+        // Unlike this branch's own arrival lateness a few lines up, lunch lateness DOES cost
+        // real pesos here — same reasoning as the per_hour branch's own fold-in: an Undertime
+        // Day's pay is only reduced by the shift's STRUCTURAL lunch window, never however long
+        // the actual recorded lunch ran, so it isn't otherwise reflected at all.
+        lateMin += lunchLateMin;
+        latePay += lunchLatePay;
+        out.late_deduction += lunchLatePay;
         pushDay();
         continue;
       }
@@ -635,15 +872,15 @@ export function computeAttendanceForEmployee(
     // covers time that wasn't actually paid for (e.g. the un-credited tail past an OT cap).
     let paidSpanEnd = timeOutRel;
 
-    if (slug === 'overtime_request' || (!policy.require_ot_form && timeOutRel > effectiveEnd)) {
+    if (hasForm('overtime_request') || (!policy.require_ot_form && timeOutRel > effectiveEnd)) {
       const otRaw = timeOutRel - effectiveEnd;
       if (otRaw > 0) {
         const otBlockedRaw = roundDownToUnit(otRaw, unitMinutesFor(policy.ot_unit));
-        // policy.max_ot_hours (null = no cap) caps how much of it is actually PAID — same as
-        // unauthorized OT, hours worked past the cap are simply uncompensated presence, not
-        // converted into undertime.
-        const maxOtMin = policy.max_ot_hours != null ? policy.max_ot_hours * 60 : null;
-        const otBlocked = maxOtMin != null ? Math.min(otBlockedRaw, maxOtMin) : otBlockedRaw;
+        // dayMaxOtMin (policy cap, or a linked Overtime Request's own approved_hours override —
+        // see above; null = no cap) caps how much of it is actually PAID — same as unauthorized
+        // OT, hours worked past the cap are simply uncompensated presence, not converted into
+        // undertime.
+        const otBlocked = dayMaxOtMin != null ? Math.min(otBlockedRaw, dayMaxOtMin) : otBlockedRaw;
         paidSpanEnd = effectiveEnd + otBlocked;
         if (otBlocked > 0) {
           otHours = otBlocked / 60;
@@ -658,7 +895,7 @@ export function computeAttendanceForEmployee(
           // combination scales consistently with whatever OT% the company has configured,
           // instead of a second hardcoded rate.
           const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
-          const pay = otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
+          const pay = exemptOt ? 0 : otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
           otPay = pay;
           out.overtime_pay += pay;
         }
@@ -693,10 +930,68 @@ export function computeAttendanceForEmployee(
       }
     }
 
+    // Lunch-break lateness folds into the same late_minutes/late_deduction totals as ordinary
+    // arrival lateness here — both are real peso deductions in this branch, so unlike the
+    // per_hour/Undertime-Day fold-ins above there's no self-correction reasoning to spell out.
+    lateMin += lunchLateMin;
+    latePay += lunchLatePay;
+    out.late_deduction += lunchLatePay;
+
     pushDay();
   }
 
   return out;
+}
+
+function mergeAttendanceComputations(a: AttendanceComputation, b: AttendanceComputation): AttendanceComputation {
+  return {
+    days_worked: a.days_worked + b.days_worked,
+    days_absent: a.days_absent + b.days_absent,
+    days_half: a.days_half + b.days_half,
+    days_undertime: a.days_undertime + b.days_undertime,
+    late_deduction: a.late_deduction + b.late_deduction,
+    ot_hours: a.ot_hours + b.ot_hours,
+    overtime_pay: a.overtime_pay + b.overtime_pay,
+    undertime_pay: a.undertime_pay + b.undertime_pay,
+    undertime_day_pay: a.undertime_day_pay + b.undertime_day_pay,
+    night_diff_pay: a.night_diff_pay + b.night_diff_pay,
+    holiday_pay: a.holiday_pay + b.holiday_pay,
+    special_holiday_30: a.special_holiday_30 + b.special_holiday_30,
+    rest_day_ot: a.rest_day_ot + b.rest_day_ot,
+    days: [...a.days, ...b.days],
+  };
+}
+
+/** Same as computeAttendanceForEmployee, but resolves each day's own daily rate via
+ *  `rateForDate` instead of applying one flat rate to the whole run — so a mid-cutoff raise
+ *  (e.g. ₱600/day through Jun 8, ₱650/day from Jun 9) pays each day at the rate that actually
+ *  applied that day. Splits `days` into consecutive same-rate runs (in the order given — the
+ *  caller passes them in date order), computes each run separately with
+ *  computeAttendanceForEmployee, and sums the results — so every per-day figure (OT,
+ *  holiday/rest-day/night-diff premiums, late deduction, …) still uses that day's own rate
+ *  throughout, exactly as a single-rate run always has. `rateForDate` is a plain callback (not
+ *  a DB call itself) so this stays as DB-free/unit-testable as computeAttendanceForEmployee —
+ *  see src/routes/hr.routes.ts for the caller that resolves it from employee_rate_history. */
+export function computeAttendanceMultiRate(
+  days: AttendanceDay[],
+  rateForDate: (workDate: string) => number,
+  policy: PayrollPolicy,
+  exemptLate = false,
+  exemptOt = false
+): { computed: AttendanceComputation; basicSalary: number } {
+  let merged: AttendanceComputation = { ...ZERO, days: [] };
+  let basicSalary = 0;
+  let i = 0;
+  while (i < days.length) {
+    const rate = rateForDate(days[i]!.work_date);
+    const run: AttendanceDay[] = [days[i]!];
+    i++;
+    while (i < days.length && rateForDate(days[i]!.work_date) === rate) { run.push(days[i]!); i++; }
+    const c = computeAttendanceForEmployee(run, rate, policy, exemptLate, exemptOt);
+    basicSalary += rate * c.days_worked;
+    merged = mergeAttendanceComputations(merged, c);
+  }
+  return { computed: merged, basicSalary };
 }
 
 /** Whether `day` shows unrecorded OT — a block-worthy clock-out past the shift's expected end
@@ -710,7 +1005,10 @@ export function computeAttendanceForEmployee(
  *  main loop does (not a shared helper) — the two are pinned against the same fixtures in tests
  *  so they can't silently drift on what counts as "worked past the shift". */
 export function unrecordedOtMinutes(day: AttendanceDay, policy: PayrollPolicy): number {
-  if (day.linkedForm?.slug === 'overtime_request') return 0; // already authorized
+  const forms = day.linkedForms && day.linkedForms.length
+    ? day.linkedForms
+    : day.linkedForm ? [day.linkedForm] : [];
+  if (forms.some((f) => f.slug === 'overtime_request')) return 0; // already authorized
   const timeIn = toMinutes(day.time_in);
   const timeOut = toMinutes(day.time_out);
   if (timeIn == null || timeOut == null || !day.shift) return 0;
@@ -723,8 +1021,9 @@ export function unrecordedOtMinutes(day: AttendanceDay, policy: PayrollPolicy): 
   const timeOutRel = relTo(timeOut);
 
   let effectiveEnd = shiftEnd;
-  if (day.linkedForm?.slug === 'offset_form') {
-    const offsetEndRaw = toMinutes(day.linkedForm?.data?.new_time_out as string | undefined);
+  const offset = forms.find((f) => f.slug === 'offset_form');
+  if (offset) {
+    const offsetEndRaw = toMinutes(offset.data?.new_time_out as string | undefined);
     if (offsetEndRaw != null) effectiveEnd = relTo(offsetEndRaw);
   }
 

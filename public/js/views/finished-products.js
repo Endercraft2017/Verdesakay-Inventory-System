@@ -1,7 +1,10 @@
-/* Inventory → Finished Products: items built from a bill of materials (bom_components). */
-App.register('finished-products', async (view) => {
+/* Production → Finished Products: items built from a bill of materials (bom_components).
+   filter.open = <product id> deep-links straight into that product's detail (used by
+   Finished Goods to reuse this file's Sell / Move action instead of duplicating it). */
+App.register('finished-products', async (view, filter) => {
   const canWrite = App.hasPermission('inventory.edit');
   const canConfigQc = App.hasPermission('qc.configure');
+  const canAdjust = App.hasPermission('inventory.adjust');
   let list = [];
   let allItems = [];
   let checklists = [];
@@ -10,6 +13,7 @@ App.register('finished-products', async (view) => {
     <div class="topbar">
       <h2>Finished Products</h2>
       <div class="grow"></div>
+      ${canAdjust ? `<button class="btn secondary" id="fp-label">${UI.icon('printer') || UI.icon('edit')} Label design</button>` : ''}
       ${canConfigQc ? `<button class="btn secondary" id="fp-qc">${UI.icon('edit')} QA/QC Checklists</button>` : ''}
       ${canWrite ? `<button class="btn" id="fp-add">${UI.icon('plus')} New finished product</button>` : ''}
     </div>
@@ -42,14 +46,15 @@ App.register('finished-products', async (view) => {
     tableEl.innerHTML = `
       <table>
         <thead><tr>
-          <th>Product</th><th class="right">Components</th><th>QA/QC checklist</th>
+          <th>Product</th><th class="right">Components</th><th>QA checklist</th><th>QC checklist</th>
           <th class="right">Buildable now</th><th class="right">In stock</th><th></th>
         </tr></thead>
         <tbody>${list.map((p) => `
           <tr class="clickable" data-open="${p.id}">
             <td><strong>${UI.esc(p.name)}</strong><div class="muted mono">${UI.esc(p.sku || '—')}</div></td>
             <td class="right">${p.component_count}</td>
-            <td>${p.qc_checklist_name ? UI.esc(p.qc_checklist_name) : '<span class="muted">Default</span>'}</td>
+            <td>${p.qc_checklist_qa_name ? UI.esc(p.qc_checklist_qa_name) : '<span class="muted">Default</span>'}</td>
+            <td>${p.qc_checklist_qc_name ? UI.esc(p.qc_checklist_qc_name) : '<span class="muted">Default</span>'}</td>
             <td class="right">${p.component_count ? p.max_buildable : '—'}</td>
             <td class="right">${p.quantity} ${UI.esc(p.unit || '')}</td>
             <td class="actions">
@@ -90,11 +95,17 @@ App.register('finished-products', async (view) => {
     // For a brand-new one, first choose which item becomes the finished product.
     let productId = existing ? existing.id : '';
     let bom = [];
-    let currentChecklistId = '';
+    let currentChecklistQaId = '';
+    let currentChecklistQcId = '';
+    let currentLabor = '';
+    let currentOverhead = '';
     if (existing) {
       const full = await API.get('/finished-products/' + existing.id).catch(() => null);
       bom = (full && full.bom) || [];
-      currentChecklistId = (full && full.qc_checklist_id) || '';
+      currentChecklistQaId = (full && full.qc_checklist_qa_id) || '';
+      currentChecklistQcId = (full && full.qc_checklist_qc_id) || '';
+      if (full && Number(full.std_labor_cost)) currentLabor = full.std_labor_cost;
+      if (full && Number(full.std_overhead_cost)) currentOverhead = full.std_overhead_cost;
     }
 
     const pickerHTML = existing
@@ -107,7 +118,7 @@ App.register('finished-products', async (view) => {
 
     const copyFromHTML = list.length ? `
       <div class="field-row" style="align-items:flex-end;gap:8px;margin:10px 0">
-        <div style="flex:1"><label>Copy components from a similar product</label>
+        <div style="flex:1"><label>Copy BOM from another product</label>
           <select data-f="copyfrom"><option value="">— none —</option>
             ${list.filter((p) => !existing || p.id !== existing.id)
               .map((p) => `<option value="${p.id}">${UI.esc(p.name)} (${p.component_count} parts)</option>`).join('')}
@@ -115,12 +126,27 @@ App.register('finished-products', async (view) => {
         <button type="button" class="btn secondary" id="bom-copy">Copy</button>
       </div>` : '';
 
+    const checklistOptions = (stage, currentId) => {
+      const opts = checklists.filter((c) => Number(c.stage) === stage);
+      return `<option value="">Use the default ${stage === 1 ? 'QA' : 'QC'} checklist</option>
+        ${opts.map((c) => `<option value="${c.id}" ${String(c.id) === String(currentId) ? 'selected' : ''}>${UI.esc(c.name)}${c.is_default ? ' (default)' : ''}</option>`).join('')}`;
+    };
     const checklistHTML = `
-      <div class="form-field span2" style="margin-top:6px"><div class="field-label"><label>QA/QC checklist</label></div>
-        <select data-f="checklist">
-          <option value="">Use the default checklist</option>
-          ${checklists.map((c) => `<option value="${c.id}" ${String(c.id) === String(currentChecklistId) ? 'selected' : ''}>${UI.esc(c.name)}${c.is_default ? ' (default)' : ''}</option>`).join('')}
-        </select></div>`;
+      <div class="field-row" style="margin-top:6px">
+        <div><label>QA checklist</label><select data-f="checklist-qa">${checklistOptions(1, currentChecklistQaId)}</select></div>
+        <div><label>QC checklist</label><select data-f="checklist-qc">${checklistOptions(2, currentChecklistQcId)}</select></div>
+      </div>`;
+
+    const costHTML = `
+      <div class="form-field span2" style="margin-top:6px"><div class="field-label"><label>Standard costs per unit (optional)</label></div>
+        <div class="field-row">
+          <div><label class="muted" style="font-size:12px">Labor</label>
+            <input data-f="labor" type="number" min="0" step="0.01" value="${currentLabor}" placeholder="0.00" /></div>
+          <div><label class="muted" style="font-size:12px">Overhead</label>
+            <input data-f="overhead" type="number" min="0" step="0.01" value="${currentOverhead}" placeholder="0.00" /></div>
+        </div>
+        <p class="muted" style="font-size:11px;margin:4px 0 0">Added on top of the rolled-up material cost when set — used for the standard unit cost and to value finished units into stock.</p>
+      </div>`;
 
     UI.modal({
       title: existing ? `Bill of materials — ${existing.name}` : 'New finished product',
@@ -128,6 +154,7 @@ App.register('finished-products', async (view) => {
       bodyHTML: `
         ${pickerHTML}
         ${checklistHTML}
+        ${costHTML}
         ${copyFromHTML}
         <h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Components (per 1 unit)</h4>
         <div id="bom-rows">${(bom.length ? bom : [null]).map((c) => compRow(productId, c)).join('')}</div>
@@ -182,93 +209,25 @@ App.register('finished-products', async (view) => {
           if (!qty || qty <= 0) { showErr('Every component needs a whole quantity above 0'); return false; }
           components.push({ component_item_id: Number(item), quantity: qty, notes: notes || null });
         }
-        if (!components.length) { showErr('Add at least one component'); return false; }
-        const qc_checklist_id = ov.querySelector('[data-f="checklist"]').value || null;
-        await API.put('/finished-products/' + pid, { components, qc_checklist_id });
+        if (!components.length) {
+          const ok = await UI.confirmDialog(
+            'Save this product with no bill of materials? It can still be built — a job order for it just won\'t reserve or consume any parts until you add components.',
+            'Save without BOM');
+          if (!ok) return false;
+        }
+        const qc_checklist_qa_id = ov.querySelector('[data-f="checklist-qa"]').value || null;
+        const qc_checklist_qc_id = ov.querySelector('[data-f="checklist-qc"]').value || null;
+        const laborRaw = ov.querySelector('[data-f="labor"]').value.trim();
+        const overheadRaw = ov.querySelector('[data-f="overhead"]').value.trim();
+        await API.put('/finished-products/' + pid, {
+          components, qc_checklist_qa_id, qc_checklist_qc_id,
+          std_labor_cost: laborRaw === '' ? null : Number(laborRaw),
+          std_overhead_cost: overheadRaw === '' ? null : Number(overheadRaw),
+        });
         UI.toast(existing ? 'BOM saved' : 'Finished product created');
         load();
       },
     });
-  }
-
-  // ---- QA/QC checklist library (qc.configure) ----
-  function checklistLibraryModal() {
-    const STAGE_LABEL = { 0: 'Every inspection', 1: 'QA (first) stage', 2: 'QC (final) stage' };
-    const m = UI.modal({
-      title: 'QA / QC checklists',
-      size: 'lg',
-      cancelText: 'Close',
-      bodyHTML: `<div id="qcl-list"></div>
-        <button type="button" class="btn secondary small" id="qcl-new" style="margin-top:10px">${UI.icon('plus')} New checklist</button>`,
-    });
-    const listEl = m.overlay.querySelector('#qcl-list');
-    async function refresh() {
-      checklists = await API.get('/qc/checklists');
-      listEl.innerHTML = checklists.length ? `
-        <table><thead><tr><th>Name</th><th class="right">Checks</th><th></th></tr></thead>
-        <tbody>${checklists.map((c) => `<tr>
-          <td><strong>${UI.esc(c.name)}</strong>${c.is_default ? ' <span class="badge-pill ok">default</span>' : ''}</td>
-          <td class="right">${c.item_count}</td>
-          <td class="actions">
-            <button class="icon-btn" data-edit="${c.id}" title="Edit">${UI.icon('edit')}</button>
-            <button class="icon-btn danger" data-del="${c.id}" title="Delete">${UI.icon('trash')}</button>
-          </td></tr>`).join('')}</tbody></table>` : '<p class="muted">No checklists yet.</p>';
-      listEl.querySelectorAll('[data-edit]').forEach((b) =>
-        b.onclick = () => editChecklist(checklists.find((c) => String(c.id) === b.dataset.edit), refresh));
-      listEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
-        if (!(await UI.confirmDialog('Delete this checklist? Products using it fall back to the default.', 'Delete'))) return;
-        await API.del('/qc/checklists/' + b.dataset.del);
-        UI.toast('Deleted'); refresh();
-      });
-    }
-    m.overlay.querySelector('#qcl-new').onclick = () => editChecklist(null, refresh);
-    refresh();
-
-    function editChecklist(existing, after) {
-      let items = existing ? (existing.items || []).map((it) => ({ label: it.label, required: !!it.required, stage: Number(it.stage) || 0 })) : [];
-      const em = UI.modal({
-        title: existing ? `Edit — ${existing.name}` : 'New checklist',
-        size: 'lg',
-        confirmText: 'Save',
-        bodyHTML: `
-          <div class="field-row">
-            <div style="flex:1"><label>Checklist name <span class="req">*</span></label><input data-f="name" value="${UI.esc(existing ? existing.name : '')}" /></div>
-            <label class="check" style="align-self:flex-end;white-space:nowrap"><input type="checkbox" data-f="default" ${existing && existing.is_default ? 'checked' : ''}/> Default</label>
-          </div>
-          <h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Checks</h4>
-          <div id="qce-list"></div>
-          <button type="button" class="btn secondary small" id="qce-add" style="margin-top:8px">${UI.icon('plus')} Add check</button>`,
-        onConfirm: async (ov, showErr) => {
-          const name = ov.querySelector('[data-f="name"]').value.trim();
-          if (!name) { showErr('Name is required'); return false; }
-          const clean = items.map((it) => ({ label: (it.label || '').trim(), required: !!it.required, stage: it.stage })).filter((it) => it.label);
-          const body = { name, is_default: ov.querySelector('[data-f="default"]').checked, items: clean };
-          if (existing) await API.put('/qc/checklists/' + existing.id, body);
-          else await API.post('/qc/checklists', body);
-          UI.toast('Checklist saved');
-          after();
-        },
-      });
-      const le = em.overlay.querySelector('#qce-list');
-      function drawItems() {
-        le.innerHTML = items.length ? items.map((it, i) => `
-          <div class="field-row" style="align-items:center;gap:8px;margin-bottom:6px" data-i="${i}">
-            <input data-f="label" value="${UI.esc(it.label)}" placeholder="e.g. Dimensions within tolerance" style="flex:1" />
-            <select data-f="stage" style="width:160px">${[0, 1, 2].map((s) => `<option value="${s}" ${s === it.stage ? 'selected' : ''}>${STAGE_LABEL[s]}</option>`).join('')}</select>
-            <label class="check" style="white-space:nowrap"><input type="checkbox" data-f="required" ${it.required ? 'checked' : ''}/> Required</label>
-            <button type="button" class="icon-btn danger" data-del title="Remove">${UI.icon('trash')}</button>
-          </div>`).join('') : '<p class="muted">No checks yet.</p>';
-        le.querySelectorAll('[data-i]').forEach((row) => {
-          const i = Number(row.dataset.i);
-          row.querySelector('[data-f="label"]').oninput = (e) => { items[i].label = e.target.value; };
-          row.querySelector('[data-f="stage"]').onchange = (e) => { items[i].stage = Number(e.target.value); };
-          row.querySelector('[data-f="required"]').onchange = (e) => { items[i].required = e.target.checked; };
-          row.querySelector('[data-del]').onclick = () => { items.splice(i, 1); drawItems(); };
-        });
-      }
-      em.overlay.querySelector('#qce-add').onclick = () => { items.push({ label: '', required: false, stage: 0 }); drawItems(); };
-      drawItems();
-    }
   }
 
   // ---- "Where used": products whose BOM consumes a given component ----
@@ -306,7 +265,8 @@ App.register('finished-products', async (view) => {
     const serial = units.filter((u) => u.identifier && u.identifier.trim());
     const bulk = units.length - serial.length;
 
-    const stdCost = costRes ? costRes.unit_material_cost : null;
+    const cost = costRes || {};
+    const stdTotal = cost.unit_total_cost != null ? cost.unit_total_cost : cost.unit_material_cost;
     const multiLevelHTML = explodeRes && explodeRes.materials.length ? `
       <div style="display:flex;align-items:center;gap:10px;margin:18px 0 4px">
         <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Full material requirements (all levels)</h4>
@@ -330,8 +290,12 @@ App.register('finished-products', async (view) => {
           <div><span class="muted">In stock</span><div>${p.quantity} ${UI.esc(p.unit || '')}</div></div>
           <div><span class="muted">Buildable now</span><div>${bom.length ? p.max_buildable : '—'}</div></div>
           <div><span class="muted">Limiting part</span><div>${bottleneck ? UI.esc(bottleneck.name) : '—'}</div></div>
-          <div><span class="muted">Std. material cost / unit</span><div>${stdCost != null ? UI.money(stdCost) : '—'}</div></div>
-          <div><span class="muted">QA/QC checklist</span><div>${p.qc_checklist_name ? UI.esc(p.qc_checklist_name) : 'Default'}</div></div>
+          <div><span class="muted">Std. material / unit</span><div>${cost.unit_material_cost != null ? UI.money(cost.unit_material_cost) : '—'}</div></div>
+          ${Number(cost.unit_labor_cost) ? `<div><span class="muted">Std. labor / unit</span><div>${UI.money(cost.unit_labor_cost)}</div></div>` : ''}
+          ${Number(cost.unit_overhead_cost) ? `<div><span class="muted">Std. overhead / unit</span><div>${UI.money(cost.unit_overhead_cost)}</div></div>` : ''}
+          <div><span class="muted">Std. unit cost</span><div><strong>${stdTotal != null ? UI.money(stdTotal) : '—'}</strong></div></div>
+          <div><span class="muted">QA checklist</span><div>${p.qc_checklist_qa_name ? UI.esc(p.qc_checklist_qa_name) : 'Default'}</div></div>
+          <div><span class="muted">QC checklist</span><div>${p.qc_checklist_qc_name ? UI.esc(p.qc_checklist_qc_name) : 'Default'}</div></div>
         </div>
         <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Bill of materials <span class="muted" style="text-transform:none;letter-spacing:0">(direct components)</span></h4>
         ${bom.length ? `<table>
@@ -355,7 +319,7 @@ App.register('finished-products', async (view) => {
           <button type="button" class="btn secondary small" id="fp-sell">Sell / move…</button>` : ''}
         </div>
         ${units.length ? `<table>
-          <thead><tr>${canWrite ? '<th style="width:26px"><input type="checkbox" id="fp-all"/></th>' : ''}<th>Identifier</th><th>From MO</th><th>Location</th><th>Passed</th></tr></thead>
+          <thead><tr>${canWrite ? '<th style="width:26px"><input type="checkbox" id="fp-all"/></th>' : ''}<th>Identifier</th><th>From MO</th><th>Location</th><th>Passed</th><th></th></tr></thead>
           <tbody>
             ${serial.map((u) => `<tr>
               ${canWrite ? `<td><input type="checkbox" class="fp-u" value="${u.id}" data-ident="${UI.esc(u.identifier)}"/></td>` : ''}
@@ -363,11 +327,14 @@ App.register('finished-products', async (view) => {
               <td>${UI.esc(u.job_order_number || '—')}</td>
               <td>${UI.esc(u.location_name || '—')}</td>
               <td class="muted">${UI.esc((u.updated_at || '').slice(0, 10))}</td>
+              <td><button type="button" class="btn secondary small" data-record="${u.id}">Record</button></td>
             </tr>`).join('')}
-            ${bulk ? `<tr>${canWrite ? '<td></td>' : ''}<td class="muted">Bulk / no identifier</td><td>—</td><td>—</td><td class="right">${bulk}</td></tr>` : ''}
+            ${bulk ? `<tr>${canWrite ? '<td></td>' : ''}<td class="muted">Bulk / no identifier</td><td>—</td><td>—</td><td class="right">${bulk}</td><td></td></tr>` : ''}
           </tbody>
         </table>` : '<div class="empty">No units on hand.</div>'}`,
       onOpen: (ov) => {
+        ov.querySelectorAll('[data-record]').forEach((b) => b.onclick = () =>
+          App.navigate('production-record', { unit: b.dataset.record }));
         const all = ov.querySelector('#fp-all');
         if (all) all.onclick = () => ov.querySelectorAll('.fp-u').forEach((c) => { c.checked = all.checked; });
         const picked = () => [...ov.querySelectorAll('.fp-u:checked')].map((c) => ({ id: Number(c.value), ident: c.dataset.ident }));
@@ -410,7 +377,7 @@ App.register('finished-products', async (view) => {
     });
   }
 
-  // ---- QR label printing ----
+  // ---- QR label printing (uses the editable label templates via renderTemplate) ----
   async function ensureQr() {
     if (window.qrcode) return;
     await new Promise((resolve) => {
@@ -421,20 +388,46 @@ App.register('finished-products', async (view) => {
     });
   }
 
-  /** Build one printable label (QR + human-readable block). `code` is what the QR encodes. */
-  function labelHTML(product, code, sub) {
+  function qrDataUrl(text) {
     const qr = window.qrcode(0, 'M');
-    qr.addData(code);
+    qr.addData(String(text || ''));
     qr.make();
-    return `<div class="lbl">
-      <img class="lbl-qr" src="${qr.createDataURL(6, 0)}" alt="" />
-      <div class="lbl-txt">
-        <div class="lbl-name">${UI.esc(product.name)}</div>
-        <div class="lbl-sku">${UI.esc(product.sku || '')}</div>
-        <div class="lbl-code">${UI.esc(code)}</div>
-        ${sub ? `<div class="lbl-sub">${UI.esc(sub)}</div>` : ''}
-      </div>
-    </div>`;
+    return qr.createDataURL(6, 0);
+  }
+
+  /** Context for the label templates. `product` is a finished-product row. */
+  function labelContext(product, opts) {
+    let attrs = {};
+    try { attrs = typeof product.attributes === 'string' ? JSON.parse(product.attributes || '{}') : (product.attributes || {}); } catch (_) { attrs = {}; }
+    const code = opts.code != null ? opts.code : '';
+    return {
+      product: { name: product.name, sku: product.sku || '', model: product.product_group || '', variant: attrs.spec || '' },
+      code, sub: opts.sub || '', batch: opts.batch || {},
+      qr_src: qrDataUrl(code || product.sku || product.name),
+      date: new Date().toISOString().slice(0, 10),
+    };
+  }
+
+  const LABEL_SHEET_CSS = `
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,Arial,sans-serif}
+    .sheet{display:flex;flex-wrap:wrap;gap:4mm;padding:6mm}
+    .lbl{width:52mm;height:30mm;border:1px solid #ddd;border-radius:2mm;display:flex;gap:2mm;padding:2mm;align-items:center;page-break-inside:avoid;overflow:hidden}
+    .lbl-qr{width:26mm;height:26mm;flex:none}
+    .lbl-txt{overflow:hidden;font-size:9pt;line-height:1.2}
+    .lbl-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .lbl-variant{color:#111;font-size:8.5pt}
+    .lbl-model,.lbl-sku{color:#555;font-size:8pt}
+    .lbl-code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;font-size:8pt}
+    .lbl-sub{color:#888;font-size:7.5pt}
+    @media print{.lbl{border-color:#999}}`;
+
+  function openLabelSheet(title, cells, showErr) {
+    const w = window.open('', '_blank');
+    if (!w) { showErr && showErr('Allow pop-ups to open the print sheet'); return false; }
+    w.document.write(`<!doctype html><html><head><title>${UI.esc(title)}</title><style>${LABEL_SHEET_CSS}</style></head>`
+      + `<body><div class="sheet">${cells.join('')}</div><script>window.onload=function(){window.print()}<\/script></body></html>`);
+    w.document.close();
+    return true;
   }
 
   function printLabelsModal(product, pickedUnits, bulkAvail) {
@@ -453,35 +446,54 @@ App.register('finished-products', async (view) => {
         const copies = Math.max(1, parseInt(ov.querySelector('[data-f="copies"]').value, 10) || 1);
         if (!product.sku && !pickedUnits.length) { showErr('This product has no SKU — tick units with identifiers instead'); return false; }
         await ensureQr();
-        if (!window.qrcode) { showErr('QR generator failed to load'); return false; }
+        if (!window.qrcode || !window.renderTemplate) { showErr('Label renderer failed to load'); return false; }
+        const tpl = (await API.get('/production/label-templates').catch(() => ({}))).unit || '';
 
         const cells = [];
-        const push = (code, sub) => { for (let i = 0; i < copies; i++) cells.push(labelHTML(product, code, sub)); };
+        const push = (ctx) => { for (let i = 0; i < copies; i++) cells.push(`<div class="lbl">${window.renderTemplate(tpl, ctx)}</div>`); };
         if (pickedUnits.length) {
-          pickedUnits.forEach((u) => push(u.ident, 'Unit #' + u.id));
+          pickedUnits.forEach((u) => push(labelContext(product, { code: u.ident, sub: 'Unit #' + u.id })));
         } else {
           const n = Math.max(1, parseInt(ov.querySelector('[data-f="batch"]').value, 10) || 1);
-          for (let i = 0; i < n; i++) push(product.sku, '');
+          for (let i = 0; i < n; i++) push(labelContext(product, { code: product.sku, sub: '' }));
         }
-
-        const w = window.open('', '_blank');
-        if (!w) { showErr('Allow pop-ups to open the print sheet'); return false; }
-        w.document.write(`<!doctype html><html><head><title>${UI.esc(product.name)} labels</title>
-          <style>
-            *{box-sizing:border-box} body{margin:0;font-family:system-ui,Arial,sans-serif}
-            .sheet{display:flex;flex-wrap:wrap;gap:4mm;padding:6mm}
-            .lbl{width:52mm;height:30mm;border:1px solid #ddd;border-radius:2mm;display:flex;gap:2mm;padding:2mm;align-items:center;page-break-inside:avoid}
-            .lbl-qr{width:26mm;height:26mm}
-            .lbl-txt{overflow:hidden;font-size:9pt;line-height:1.2}
-            .lbl-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-            .lbl-sku{color:#555}
-            .lbl-code{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;font-size:8pt}
-            .lbl-sub{color:#888;font-size:7.5pt}
-            @media print{.lbl{border-color:#999}}
-          </style></head><body><div class="sheet">${cells.join('')}</div>
-          <script>window.onload=function(){window.print()}<\/script></body></html>`);
-        w.document.close();
+        if (!openLabelSheet(product.name + ' labels', cells, showErr)) return false;
         UI.toast(`${cells.length} label${cells.length === 1 ? '' : 's'} ready`);
+      },
+    });
+  }
+
+  // ---- Label design editor (unit + batch templates, stored per workspace) ----
+  async function labelDesignModal() {
+    const t = await API.get('/production/label-templates').catch(() => null);
+    if (!t) { UI.toast('Could not load label templates', 'error'); return; }
+    UI.modal({
+      title: 'Label design',
+      size: 'lg',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">Mustache-style HTML rendered inside each <code>.lbl</code> card. Variables:
+          <code>{{product.name}}</code> <code>{{product.model}}</code> <code>{{product.variant}}</code>
+          <code>{{code}}</code> <code>{{sub}}</code> <code>{{batch.number}}</code> <code>{{batch.identifier}}</code>
+          <code>{{batch.qty}}</code> <code>{{qr_src}}</code> <code>{{date}}</code>,
+          plus <code>{{#if …}}…{{/if}}</code>.</p>
+        <label>Unit label</label>
+        <textarea data-f="unit" rows="7" style="font-family:ui-monospace,monospace;font-size:12px">${UI.esc(t.unit || '')}</textarea>
+        <label style="margin-top:10px">Batch label</label>
+        <textarea data-f="batch" rows="7" style="font-family:ui-monospace,monospace;font-size:12px">${UI.esc(t.batch || '')}</textarea>
+        <button type="button" class="btn secondary small" id="lbl-reset" style="margin-top:8px">Reset both to default</button>`,
+      confirmText: 'Save',
+      onOpen: (ov) => {
+        ov.querySelector('#lbl-reset').onclick = () => {
+          ov.querySelector('[data-f="unit"]').value = t.default_unit || '';
+          ov.querySelector('[data-f="batch"]').value = t.default_batch || '';
+        };
+      },
+      onConfirm: async (ov) => {
+        await API.put('/production/label-templates', {
+          unit: ov.querySelector('[data-f="unit"]').value,
+          batch: ov.querySelector('[data-f="batch"]').value,
+        });
+        UI.toast('Label design saved');
       },
     });
   }
@@ -557,7 +569,10 @@ App.register('finished-products', async (view) => {
   const addBtn = view.querySelector('#fp-add');
   if (addBtn) addBtn.onclick = () => bomModal(null);
   const qcBtn = view.querySelector('#fp-qc');
-  if (qcBtn) qcBtn.onclick = () => checklistLibraryModal();
+  if (qcBtn) qcBtn.onclick = () => QCChecklists.open(load);
+  const lblBtn = view.querySelector('#fp-label');
+  if (lblBtn) lblBtn.onclick = () => labelDesignModal();
 
   await load();
+  if (filter && filter.open) detailModal(Number(filter.open));
 });

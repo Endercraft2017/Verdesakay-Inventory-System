@@ -117,6 +117,56 @@ export function applyStockChange(opts: ChangeOpts): { locationQty: number; total
   return { locationQty, total };
 }
 
+/** Category of the auto-created "damage twin" rows (mirror of DAMAGE_CATEGORY in
+    inventory.routes.ts). */
+export const DAMAGE_CATEGORY = 'Damage';
+
+/** Find (or create, on first use) the "damage twin" of `itemId` — a category='Damage'
+ *  copy row linked back via `attributes.damaged_of`. Does NOT move any stock; the caller
+ *  issues its own `applyStockChange` pair and owns the transaction. Mirrors the twin
+ *  creation in POST /api/inventory/:id/damage so both stay identical. */
+export function findOrCreateDamageTwin(itemId: number): number {
+  const existing = queryOne<{ id: number }>(
+    `SELECT id FROM inventory_items
+     WHERE category = ? AND json_extract(attributes, '$.damaged_of') = ?`,
+    DAMAGE_CATEGORY,
+    itemId
+  );
+  if (existing) return existing.id;
+
+  const source = queryOne<{
+    name: string; department_id: number | null; supplier_id: number | null;
+    unit: string | null; location: string | null; notes: string | null; attributes: string | null;
+  }>(
+    `SELECT name, department_id, supplier_id, unit, location, notes, attributes
+     FROM inventory_items WHERE id = ?`,
+    itemId
+  );
+  if (!source) throw new Error(`Item ${itemId} not found`);
+
+  let srcAttrs: Record<string, unknown> = {};
+  if (source.attributes) {
+    try { srcAttrs = JSON.parse(source.attributes) as Record<string, unknown>; } catch { /* not JSON */ }
+  }
+  const twinAttrs = { ...srcAttrs, damaged_of: itemId };
+  delete (twinAttrs as { barcode?: unknown }).barcode; // the twin isn't separately scannable
+
+  const info = run(
+    `INSERT INTO inventory_items
+      (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, location, notes, attributes)
+     VALUES (?, NULL, ?, ?, ?, 0, ?, 0, ?, ?, ?)`,
+    source.name,
+    DAMAGE_CATEGORY,
+    source.department_id,
+    source.supplier_id,
+    source.unit ?? 'pcs',
+    source.location ?? null,
+    source.notes ?? null,
+    JSON.stringify(twinAttrs)
+  );
+  return Number(info.lastInsertRowid);
+}
+
 /** Move `amount` (>0) of an item between two locations. Logs a paired out/in. */
 export function transferStock(opts: {
   itemId: number; fromId: number; toId: number; amount: number; reason: string | null; userId: number | null;

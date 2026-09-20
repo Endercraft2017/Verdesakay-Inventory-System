@@ -10,8 +10,10 @@ All routes are mounted at `/api/templates` (`src/app.ts`) and require `requireAu
 ### Company profile
 | Method & path | Auth | Schema | What it does | Response | Errors |
 |---|---|---|---|---|---|
-| `GET /company` | 🔑 any user | — | Reads the `company_profile` key from `settings` via `getSetting`, spread over `EMPTY_COMPANY` defaults (`name/address/phone/email/logo_url` all `''`) so missing keys never come back `undefined`. | `200` `CompanyProfile` | — |
-| `PUT /company` | `requirePermission('templates.company')` | `companyProfileSchema` | Builds a full `CompanyProfile` object (each field `?? ''`) and writes it as one JSON blob via `setSetting(COMPANY_KEY, profile)`. | `200 { ok: true }` | 400 on invalid body; 403 if missing `templates.company` |
+| `GET /company` | 🔑 any user | — | Reads the `company_profile` key from `settings` via `getSetting`, spread over `EMPTY_COMPANY` defaults (`name/address/phone/email/logo_url` all `''`, `compress_images` `true`) so missing keys never come back `undefined`. | `200` `CompanyProfile` | — |
+| `PUT /company` | `requirePermission('templates.company')` | `companyProfileSchema` | Builds a full `CompanyProfile` object (text fields `?? ''`, `compress_images` from `boolish.default(true)`) and writes it as one JSON blob via `setSetting(COMPANY_KEY, profile)`. | `200 { ok: true }` | 400 on invalid body; 403 if missing `templates.company` |
+
+`compress_images` is a **client-side** storage saver, not enforced server-side: when on (the default), the web and mobile Messages composers pipe every picked image over ~1 MB through `public/js/lib/image-compress.js` (canvas downscale to 1920 px + JPEG re-encode) before upload. Non-images and already-small images are sent untouched.
 
 ### Template variables (`doc_variables`)
 | Method & path | Auth | Schema | What it does | Response | Errors |
@@ -31,7 +33,7 @@ All routes are mounted at `/api/templates` (`src/app.ts`) and require `requireAu
 | `PUT /:id` | `requirePermission('templates.edit')` | `templateSchema` | Updates `name, type, period, body, updated_at`. | `200 { ok: true }` | `404` if not found |
 | `DELETE /:id` | `requirePermission('templates.edit')` | — | Deletes the template row. | `200 { ok: true }` | `404` if not found |
 
-`templateSchema` (`src/validation.ts`): `name` (1-120 chars), `type` enum `sale\|job\|purchase\|generic` (default `generic`), `period` (optional, ≤60 chars), `body` (1 to 5,000,000 chars — templates are full HTML+CSS documents). `companyProfileSchema` and `docVariableSchema` fields are all optional/defaulted text except `docVariableSchema.key` which must match `/^[a-zA-Z_][\w]{0,63}$/`.
+`templateSchema` (`src/validation.ts`): `name` (1-120 chars), `type` enum `sale\|job\|purchase\|generic` (default `generic`), `period` (optional, ≤60 chars), `body` (1 to 5,000,000 chars — templates are full HTML+CSS documents). `companyProfileSchema` fields are optional/defaulted text plus `compress_images` (`boolish`, default `true`); `docVariableSchema` fields are all optional/defaulted text except `key` which must match `/^[a-zA-Z_][\w]{0,63}$/`.
 
 ## Dependencies
 - `express` — `Router`.

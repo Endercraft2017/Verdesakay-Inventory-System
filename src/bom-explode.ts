@@ -15,6 +15,10 @@ export interface BomNodeItem {
   is_finished_product: number;
   /** Standard/purchase unit cost; 0 if unknown. */
   unit_cost: number;
+  /** Optional standard labour cost per unit built (finished products); 0 if unset. */
+  labor_cost?: number;
+  /** Optional standard overhead cost per unit built (finished products); 0 if unset. */
+  overhead_cost?: number;
 }
 
 export interface BomChild {
@@ -128,6 +132,12 @@ export interface CostRollup {
   product_id: number;
   /** Fully-loaded material cost to make one unit. */
   unit_material_cost: number;
+  /** Standard labour cost rolled up across the whole tree (0 if none set). */
+  unit_labor_cost: number;
+  /** Standard overhead cost rolled up across the whole tree (0 if none set). */
+  unit_overhead_cost: number;
+  /** unit_material_cost + unit_labor_cost + unit_overhead_cost. */
+  unit_total_cost: number;
   /** Direct children with their extended cost. */
   lines: CostLevel[];
   had_cycle: boolean;
@@ -148,6 +158,20 @@ export function rollupCost(productId: number, r: BomResolvers): CostRollup {
     return round4(total);
   };
 
+  // Labour / overhead only exist on built items, and roll up through sub-assemblies:
+  // a wheel's own labour counts once per wheel fitted to the bike, plus the bike's own.
+  const addonOf = (pid: number, pick: (it: BomNodeItem) => number, seen: Set<number>): number => {
+    if (seen.has(pid)) { hadCycle = true; return 0; }
+    const it = r.item(pid);
+    if (!it || !it.is_finished_product) return 0;
+    const bom = r.children(pid);
+    if (!bom.length) return 0;
+    const nextSeen = new Set(seen).add(pid);
+    let total = pick(it) || 0;
+    for (const c of bom) total += Number(c.quantity) * addonOf(c.component_item_id, pick, nextSeen);
+    return round4(total);
+  };
+
   const lines: CostLevel[] = r.children(productId).map((c) => {
     const it = r.item(c.component_item_id);
     const sub = !!it?.is_finished_product && r.children(c.component_item_id).length > 0;
@@ -162,9 +186,16 @@ export function rollupCost(productId: number, r: BomResolvers): CostRollup {
     };
   });
 
+  const material = round2(lines.reduce((s, l) => s + l.extended, 0));
+  const labor = round2(addonOf(productId, (it) => it.labor_cost || 0, new Set()));
+  const overhead = round2(addonOf(productId, (it) => it.overhead_cost || 0, new Set()));
+
   return {
     product_id: productId,
-    unit_material_cost: round2(lines.reduce((s, l) => s + l.extended, 0)),
+    unit_material_cost: material,
+    unit_labor_cost: labor,
+    unit_overhead_cost: overhead,
+    unit_total_cost: round2(material + labor + overhead),
     lines,
     had_cycle: hadCycle,
   };

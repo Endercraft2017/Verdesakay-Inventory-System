@@ -5,6 +5,7 @@ import { Router } from 'express';
 import { requireAuth } from '../auth';
 import { getTenant } from '../platform';
 import { planFor, tenantUsage, currentSlug } from '../quota';
+import { enabledModules } from '../modules';
 import { DEFAULT_TENANT } from '../db';
 
 const router = Router();
@@ -30,6 +31,7 @@ router.get('/', (req, res) => {
     trial_days_left: trialDaysLeft,
     read_only: !!t && (t.status === 'past_due' || lapsedTrial),
     limits,
+    modules: [...enabledModules(slug)],
   };
   if (req.user!.permissions.includes('users.manage')) {
     body.usage = tenantUsage(slug);

@@ -16,7 +16,9 @@ import locationsRoutes from './routes/locations.routes';
 import bomRoutes from './routes/bom.routes';
 import jobOrdersRoutes from './routes/job-orders.routes';
 import qcRoutes from './routes/qc.routes';
+import productionRoutes from './routes/production.routes';
 import attachmentsRoutes from './routes/attachments.routes';
+import bugReportsRoutes from './routes/bug-reports.routes';
 import deliveriesRoutes from './routes/deliveries.routes';
 import formsRoutes from './routes/forms.routes';
 import messagesRoutes from './routes/messages.routes';
@@ -33,15 +35,18 @@ import accountingRoutes from './routes/accounting.routes';
 import mailRoutes from './routes/mail.routes';
 import pushRoutes from './routes/push.routes';
 import clockRoutes from './routes/clock.routes';
+import fieldRoutes from './routes/field.routes';
 import meRoutes from './routes/me.routes';
 import announcementsRoutes from './routes/announcements.routes';
 import signupRoutes from './routes/signup.routes';
 import tenantRoutes from './routes/tenant.routes';
+import platformConsoleRoutes from './routes/platform.routes';
 import quickbooksRoutes from './routes/quickbooks.routes';
 import { recordActivity } from './activity';
 import { idempotency } from './idempotency';
 import { tenantStore, getDb, DEFAULT_TENANT } from './db';
-import { resolveTenantSlug, getTenant } from './platform';
+import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE } from './platform';
+import { requireModule, moduleEnabled } from './modules';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -130,37 +135,66 @@ export function createApp() {
   app.use('/api/tenant', tenantRoutes); // current workspace plan / status / usage
   // Mounted here (before the bare-'/api' routers below) so its public OAuth /callback
   // isn't shadowed by another router's top-level requireAuth.
-  app.use('/api/quickbooks', quickbooksRoutes);
+  //
+  // requireModule(...) gates whole feature areas per tenant (see src/modules.ts): 402 if
+  // the workspace's plan / entitlements don't include that module. It runs before the
+  // router's own requireAuth — the decision is tenant-level, not user-level. The `default`
+  // tenant has every module, so self-hosted / single-tenant is unaffected. "Core" routers
+  // (users, forms, messages, personal, templates, form-builder, me, announcements,
+  // activity, analytics, attachments, push) are never gated — that's the baseline every
+  // workspace keeps.
+  app.use('/api/quickbooks', requireModule('quickbooks'), quickbooksRoutes);
   app.use('/api/users', usersRoutes);
-  app.use('/api/inventory', inventoryRoutes);
-  app.use('/api/suppliers', suppliersRoutes);
-  app.use('/api/customers', customersRoutes);
-  app.use('/api/locations', locationsRoutes);
-  app.use('/api/finished-products', bomRoutes);
-  app.use('/api/job-orders', jobOrdersRoutes);
-  app.use('/api/qc', qcRoutes);
+  app.use('/api/inventory', requireModule('inventory'), inventoryRoutes);
+  app.use('/api/suppliers', requireModule('inventory'), suppliersRoutes);
+  app.use('/api/customers', requireModule('inventory'), customersRoutes);
+  app.use('/api/locations', requireModule('inventory'), locationsRoutes);
+  app.use('/api/finished-products', requireModule('manufacturing'), bomRoutes);
+  app.use('/api/job-orders', requireModule('manufacturing'), jobOrdersRoutes);
+  app.use('/api/qc', requireModule('manufacturing'), qcRoutes);
+  app.use('/api/production', requireModule('manufacturing'), productionRoutes);
   app.use('/api/attachments', attachmentsRoutes);
-  app.use('/api/deliveries', deliveriesRoutes);
+  app.use('/api/bug-reports', bugReportsRoutes);
+  app.use('/api/deliveries', requireModule('inventory'), deliveriesRoutes);
   app.use('/api/forms', formsRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks
-  app.use('/api/orders', ordersRoutes);
-  app.use('/api/purchasing', purchasingRoutes);
+  app.use('/api/orders', requireModule('inventory'), ordersRoutes);
+  app.use('/api/purchasing', requireModule('purchasing'), purchasingRoutes);
   app.use('/api/templates', templatesRoutes);
   app.use('/api', formBuilderRoutes);
-  app.use('/api/ai', aiRoutes);
-  app.use('/api/hr/clock', clockRoutes);
-  app.use('/api/hr', hrRoutes);
+  app.use('/api/ai', requireModule('ai'), aiRoutes);
+  app.use('/api/hr/clock', requireModule('hr'), clockRoutes);
+  app.use('/api/hr/field', requireModule('hr'), fieldRoutes);
+  app.use('/api/hr', requireModule('hr'), hrRoutes);
   app.use('/api/me', meRoutes);
   app.use('/api/announcements', announcementsRoutes);
   app.use('/api/activity', activityRoutes);
   app.use('/api/analytics', analyticsRoutes);
-  app.use('/api/accounting', accountingRoutes);
-  app.use('/api/mail', mailRoutes);
+  app.use('/api/accounting', requireModule('accounting'), accountingRoutes);
+  app.use('/api/mail', requireModule('email'), mailRoutes);
   app.use('/api/push', pushRoutes);
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
   });
+
+  // Owner console — a separate mini-app under /_platform with its own operator auth
+  // (src/platform-users.ts). Mounted only when PLATFORM_CONSOLE=true; the whole path 404s
+  // otherwise, so single-tenant / self-hosted never exposes it. Its assets live outside
+  // public/ so the generic static handler can't serve them when the console is off. The
+  // API's own middleware also 404s any request that resolved to a tenant sub-domain.
+  if (PLATFORM_CONSOLE) {
+    app.use('/_platform/api', platformConsoleRoutes);
+    app.use('/_platform', express.static(path.join(ROOT, 'web-console'), {
+      setHeaders: (res) => res.set('Cache-Control', 'no-cache'),
+    }));
+    app.get(/^\/_platform(?:\/.*)?$/, (_req, res) => {
+      res.sendFile(path.join(ROOT, 'web-console', 'index.html'));
+    });
+  } else {
+    // Disabled: 404 the whole path so it can't fall through to the SPA shell.
+    app.use('/_platform', (_req, res) => { res.status(404).json({ error: 'Not found' }); });
+  }
 
   // The mobile service worker lives under /mobile/ but must control /m — the
   // Service-Worker-Allowed header lets it claim that broader scope.
@@ -226,6 +260,24 @@ export function createApp() {
     const wantsMobile = pref
       ? pref === 'mobile'
       : MOBILE_UA.test(req.headers['user-agent'] || '');
+
+    // The mobile PWA is a per-tenant module. When it's off, serve a plain notice for any
+    // /m URL and send phone users to the (still usable) desktop app instead of redirecting
+    // them into an app that isn't there — a redirect loop otherwise.
+    if (!moduleEnabled('mobile')) {
+      if (onMobilePath) {
+        res.status(200).type('html').send(
+          `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">`
+          + `<title>Mobile app unavailable</title>`
+          + `<div style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:20vh auto;padding:0 1.5rem;text-align:center">`
+          + `<h1 style="font-size:1.1rem">The mobile app isn't enabled for this workspace</h1>`
+          + `<p style="color:#666">Open <a href="/?view=desktop">the full app</a> instead, or ask your administrator to enable the mobile module.</p></div>`
+        );
+        return;
+      }
+      res.sendFile(path.join(ROOT, 'public', 'index.html'));
+      return;
+    }
 
     // Only auto-redirect INTO the mobile app; never force a desktop browser out of /m.
     if (wantsMobile && !onMobilePath) {

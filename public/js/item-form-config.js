@@ -144,7 +144,8 @@ const ITEM_FORM_DEFAULTS = [
   { key: 'overhead_weight', label: 'Weight for Allocating Overhead Cost', tab: 'cost', section: 'standard-costing', type: 'number', default: 1, visible: false, required: false, help: 'Weight used to allocate overhead cost to this item.' },
   { key: 'std_material_cost', label: 'Standard Material Cost', tab: 'cost', section: 'standard-costing', type: 'money', visible: false, required: false, placeholder: 'Standard Material Cost', help: 'Standard material cost per unit.' },
   { key: 'std_expenses', label: 'Standard Expenses', tab: 'cost', section: 'standard-costing', type: 'money', default: '0.00', visible: false, required: false, help: 'Standard expense cost per unit.' },
-  { key: 'std_labor_cost', label: 'Standard Labor Cost', tab: 'cost', section: 'standard-costing', type: 'money', default: '0.00', visible: false, required: false, help: 'Standard labor cost per unit.' },
+  { key: 'std_labor_cost', label: 'Standard Labor Cost', tab: 'cost', section: 'standard-costing', type: 'money', default: '0.00', visible: false, required: false, help: 'Standard labor cost per unit. For a finished product this is added on top of the rolled-up material cost for the standard unit cost, and values finished units into stock. Also editable from Production → Finished Products.' },
+  { key: 'std_overhead_cost', label: 'Standard Overhead Cost', tab: 'cost', section: 'standard-costing', type: 'money', default: '0.00', visible: false, required: false, help: 'Standard overhead cost per unit. For a finished product this is added on top of material + labor for the standard unit cost. Also editable from Production → Finished Products.' },
   { key: 'std_oe_cost', label: 'Standard O/E Cost', tab: 'cost', section: 'standard-costing', type: 'money', default: '0.00', visible: false, required: false, help: 'Standard outsourcing / external cost per unit.' },
 
   // ---------------- Additional Information ----------------

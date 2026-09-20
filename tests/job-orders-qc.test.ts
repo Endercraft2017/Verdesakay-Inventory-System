@@ -36,6 +36,18 @@ async function releasedMO(prefix: string, qty: number, qc_stages: number) {
 const unitsOf = async (mo: number) =>
   (await ctx.api.get(`/api/job-orders/${mo}/units`).set(authHdr())).body as Array<{ id: number; status: string; stage: number; identifier: string | null }>;
 
+/** Receive everything a job order has awaiting Products In — a final QC pass sets a unit
+    to 'passed', not 'in_stock'; this is the step that actually posts it (see
+    job-orders.routes.ts POST /:id/products-in). */
+async function receiveAll(mo: number): Promise<void> {
+  const rec = (await ctx.api.get(`/api/job-orders/${mo}/receivable`).set(authHdr())).body;
+  if (rec.units?.length) {
+    const r = await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(authHdr())
+      .send({ location_id: rec.output_location_id, unit_ids: rec.units.map((u: { id: number }) => u.id) });
+    if (r.status !== 201) throw new Error(`receive units failed: ${JSON.stringify(r.body)}`);
+  }
+}
+
 describe('job orders — QA/QC', () => {
   it('progress with qc_stages > 0 queues units for inspection (no stock yet)', async () => {
     const { mo, product } = await releasedMO('QC1', 5, 1);
@@ -59,7 +71,7 @@ describe('job orders — QA/QC', () => {
     expect(row.qc_stages).toBe(1);
   });
 
-  it('a single-stage pass puts the unit in stock; a fail scraps it with remarks', async () => {
+  it('a single-stage pass queues the unit for Products In; a fail scraps it with remarks', async () => {
     const { mo, product } = await releasedMO('QC2', 5, 1);
     await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 3 });
     const units = await unitsOf(mo);
@@ -67,17 +79,43 @@ describe('job orders — QA/QC', () => {
     const pass = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
       .send({ unit_ids: [units[0]!.id, units[1]!.id], result: 'pass' });
     expect(pass.body.job_order.qty_done).toBe(2);
+    expect((await unitsOf(mo)).find((u) => u.id === units[0]!.id)!.status).toBe('passed');
+    expect(await onHand(product)).toBe(0); // not yet received
+    await receiveAll(mo);
     expect(await onHand(product)).toBe(2);
 
-    const fail = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
+    // a fail needs a disposition
+    const noDisp = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
       .send({ unit_ids: [units[2]!.id], result: 'fail', remarks: 'weld cracked' });
+    expect(noDisp.status).toBe(400);
+
+    const fail = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
+      .send({ unit_ids: [units[2]!.id], result: 'fail', disposition: 'scrap', remarks: 'weld cracked' });
     expect(fail.body.job_order.qty_scrapped).toBe(1);
     expect(await onHand(product)).toBe(2); // failed unit not added
 
     const log = (await ctx.api.get(`/api/job-orders/${mo}/qc`).set(authHdr())).body;
-    expect(log.some((q: { result: string; remarks: string }) => q.result === 'fail' && q.remarks === 'weld cracked')).toBe(true);
+    expect(log.some((q: { result: string; remarks: string; disposition: string }) =>
+      q.result === 'fail' && q.remarks === 'weld cracked' && q.disposition === 'scrap')).toBe(true);
     const after = await unitsOf(mo);
     expect(after.find((u) => u.id === units[2]!.id)!.status).toBe('failed');
+  });
+
+  it('a repair disposition sends the unit to rework and holds the job order open', async () => {
+    const { mo } = await releasedMO('QCRW', 2, 1);
+    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 2 });
+    const units = await unitsOf(mo);
+
+    // one passes into stock, the other goes to repair
+    await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
+      .send({ unit_ids: [units[0]!.id], result: 'pass' });
+    const rw = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
+      .send({ unit_ids: [units[1]!.id], result: 'fail', disposition: 'repair', remarks: 'panel gap' });
+    expect(rw.status).toBe(200);
+    expect(rw.body.job_order.qty_scrapped).toBe(0);       // repair is not a scrap
+    expect(rw.body.job_order.status).toBe('in_progress');  // still open — a unit is in rework
+    expect(rw.body.job_order.units_summary.rework).toBe(1);
+    expect((await unitsOf(mo)).find((u) => u.id === units[1]!.id)!.status).toBe('rework');
   });
 
   it('two-stage QA→QC needs two passes before the unit counts', async () => {
@@ -93,6 +131,9 @@ describe('job orders — QA/QC', () => {
 
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
       .send({ unit_ids: [units[0]!.id], result: 'pass' }); // stage 2 (QC)
+    expect((await unitsOf(mo)).find((u) => u.id === units[0]!.id)!.status).toBe('passed');
+    expect(await onHand(product)).toBe(0); // not yet received
+    await receiveAll(mo);
     expect(await onHand(product)).toBe(1);
     expect((await unitsOf(mo)).find((u) => u.id === units[0]!.id)!.status).toBe('in_stock');
   });
@@ -106,6 +147,7 @@ describe('job orders — QA/QC', () => {
       .send({ unit_ids: [units[0]!.id, units[1]!.id, units[2]!.id], result: 'pass', identifier: 'PRADO-BLK-01' });
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
       .send({ unit_ids: [units[3]!.id], result: 'pass', identifier: 'PRADO-BLK-02' });
+    await receiveAll(mo); // only 'in_stock'/'reserved' units are explodable — Products In gets them there
 
     const detail = (await ctx.api.get(`/api/finished-products/${product}`).set(authHdr())).body;
     expect(detail.serialized_total).toBe(4);
@@ -122,6 +164,7 @@ describe('job orders — QA/QC', () => {
     const units = await unitsOf(mo);
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
       .send({ unit_ids: units.map((u) => u.id), result: 'pass', identifier: 'SN-9' });
+    await receiveAll(mo);
 
     const detail = (await ctx.api.get(`/api/finished-products/${product}`).set(authHdr())).body;
     expect(await onHand(product)).toBe(7); // 5 bulk + 2 built

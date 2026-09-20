@@ -208,7 +208,7 @@
       var el = stat.querySelector('[data-k="picks"]'); if (el) el.textContent = open;
     }).catch(function () {});
     API.get('/job-orders').then(function (j) {
-      var qa = (j || []).reduce(function (a, x) { return a + (x.units_pending || 0); }, 0);
+      var qa = (j || []).reduce(function (a, x) { return a + (x.units_pending || 0) + (x.units_rework || 0); }, 0);
       var el = stat.querySelector('[data-k="qa"]'); if (el) el.textContent = qa;
     }).catch(function () {});
 

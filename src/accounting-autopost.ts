@@ -322,6 +322,17 @@ export function maybeFulfillSale(orderId: number, userId: number | null, force?:
     try {
       for (const l of lines) {
         applyStockChange({ itemId: l.item_id!, locationId: loc, change: sign * l.quantity, userId, reason });
+        // Serialized units a warehouse releaser earmarked for this order follow the line:
+        // `reserved` → `sold` as the goods leave, and back on a reversal. (No extra stock
+        // move — the unit's quantity is already inside the line total handled above.)
+        run(
+          `UPDATE job_order_units SET status = ?, updated_at = datetime('now')
+           WHERE order_id = ? AND product_item_id = ? AND status = ?`,
+          wantFulfilled ? 'sold' : 'reserved',
+          orderId,
+          l.item_id,
+          wantFulfilled ? 'reserved' : 'sold'
+        );
       }
       run(`UPDATE orders SET fulfilled_at = ${wantFulfilled ? "datetime('now')" : 'NULL'} WHERE id = ?`, orderId);
       db.exec('COMMIT');

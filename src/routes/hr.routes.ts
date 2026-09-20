@@ -26,16 +26,20 @@ import {
   payrollDeductionTogglesSchema,
 } from '../validation';
 import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord, Shift, PayrollPolicy, EmployeeNumberPolicy } from '../types';
-import { computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../hr-payroll-compute';
+import { computeAttendanceMultiRate, computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../hr-payroll-compute';
+import { classifyDailyStatus } from '../hr-daily-report';
 import { suggestEmployeeNumber } from '../hr-employee-numbering';
 import { toCsv } from '../csv';
 import { resolveImport, importLoop } from '../csv-import';
 import { listPayrollTables, effectiveTables, upsertPayrollTable, deletePayrollTable } from '../payroll-tables';
+import { listRateHistory, seedInitialRate, recordRateChange, effectiveDailyRateOn } from '../employee-rate-history';
 import { statutoryDeductions, taxableCompensation, withholdingTax, RWT_2026 } from '../ph-statutory';
 import type { PayslipYearRow } from '../ph-2316';
 import { computeFinalPay, type FinalPayInput } from '../ph-final-pay';
 import { yearPayslipRowsByEmployee, companyProfile } from '../ph-payroll-report-data';
 import { enforceQuota } from '../quota';
+import { slotPunchIdsForDates, type CorrectionSlot } from '../clock';
+import { photoIdsForPunches } from '../punch-photos';
 import { sendMail } from '../mailer';
 import { ledgerEnabled, maybeAutoPostPayroll } from '../accounting-autopost';
 import { noWorkFormIds as noWorkFormIdsWithAction } from '../form-actions';
@@ -69,6 +73,14 @@ const docStorage = multer.diskStorage({
   },
 });
 const uploadDoc = multer({ storage: docStorage, limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
+
+/** 'YYYY-MM-DD' shifted by `delta` calendar days (may be negative). Built the same UTC-anchored
+    way as datesInRange below, so it agrees with it about what "the next/previous day" means. */
+function addDays(workDate: string, delta: number): string {
+  const d = new Date(workDate + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
 
 /** Inclusive list of 'YYYY-MM-DD' date strings from start to end. */
 function datesInRange(start: string, end: string): string[] {
@@ -408,16 +420,28 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
   }
   const linkErr = checkLinkedUser(input.user_id);
   if (linkErr) { res.status(409).json({ error: linkErr }); return; }
+  const dailyRate = effectiveDailyRate(input);
   const info = run(
     `INSERT INTO employees
       (employee_no, name, department_id, position, user_id, daily_rate, rate_type, monthly_rate, status, start_date,
-       sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, default_shift_id, late_exempt, photo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input),
+       sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, default_shift_id, late_exempt,
+       ot_exempt, deduct_sss, deduct_philhealth, deduct_pagibig, deduct_withholding_tax, withholding_tax_override,
+       sss_override, philhealth_override, pagibig_override, photo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, dailyRate,
     input.rate_type, input.rate_type === 'monthly' ? input.monthly_rate : null,
     input.status, input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
     input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used,
-    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.late_exempt ? 1 : 0, input.photo ?? null
+    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.late_exempt ? 1 : 0,
+    input.ot_exempt ? 1 : 0, input.deduct_sss === false ? 0 : 1, input.deduct_philhealth === false ? 0 : 1,
+    input.deduct_pagibig === false ? 0 : 1, input.deduct_withholding_tax === false ? 0 : 1,
+    input.withholding_tax_override ?? null,
+    input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null
+  );
+  seedInitialRate(
+    Number(info.lastInsertRowid), input.start_date ?? null,
+    { rate_type: input.rate_type, daily_rate: dailyRate, monthly_rate: input.rate_type === 'monthly' ? (input.monthly_rate ?? null) : null },
+    req.user!.id
   );
   res.status(201).json({ id: info.lastInsertRowid });
 });
@@ -425,7 +449,10 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
 // PUT /api/hr/employees/:id
 router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
   const id = Number(req.params.id);
-  if (!queryOne('SELECT id FROM employees WHERE id = ?', id)) {
+  const existing = queryOne<{ daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null; start_date: string | null }>(
+    'SELECT daily_rate, rate_type, monthly_rate, start_date FROM employees WHERE id = ?', id
+  );
+  if (!existing) {
     res.status(404).json({ error: 'Employee not found' }); return;
   }
   const input = parseBody(employeeSchema, req.body);
@@ -435,18 +462,50 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
   }
   const linkErr = checkLinkedUser(input.user_id, id);
   if (linkErr) { res.status(409).json({ error: linkErr }); return; }
+
+  const dailyRate = effectiveDailyRate(input);
+  if (round2(dailyRate) !== round2(existing.daily_rate)) {
+    const today = new Date().toISOString().slice(0, 10);
+    const effectiveFrom = input.rate_effective_date || today;
+    if (effectiveFrom > today) {
+      res.status(400).json({ error: 'Rate changes can be backdated or effective today — scheduling one for a future date isn\'t supported yet' });
+      return;
+    }
+    recordRateChange(
+      id, effectiveFrom,
+      { rate_type: input.rate_type, daily_rate: dailyRate, monthly_rate: input.rate_type === 'monthly' ? (input.monthly_rate ?? null) : null },
+      { rate_type: existing.rate_type, daily_rate: existing.daily_rate, monthly_rate: existing.monthly_rate, start_date: existing.start_date },
+      input.rate_change_note || null,
+      req.user!.id
+    );
+  }
   run(
     `UPDATE employees SET employee_no = ?, name = ?, department_id = ?, position = ?, user_id = ?, daily_rate = ?, rate_type = ?,
        monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?,
-       leave_days_per_year = ?, leave_days_used = ?, rest_days = ?, default_shift_id = ?, late_exempt = ?, photo = ?
+       leave_days_per_year = ?, leave_days_used = ?, rest_days = ?, default_shift_id = ?, late_exempt = ?,
+       ot_exempt = ?, deduct_sss = ?, deduct_philhealth = ?, deduct_pagibig = ?, deduct_withholding_tax = ?, withholding_tax_override = ?,
+       sss_override = ?, philhealth_override = ?, pagibig_override = ?, photo = ?
      WHERE id = ?`,
-    input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, effectiveDailyRate(input), input.rate_type,
+    input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, dailyRate, input.rate_type,
     input.rate_type === 'monthly' ? input.monthly_rate : null, input.status,
     input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
     input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used,
-    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.late_exempt ? 1 : 0, input.photo ?? null, id
+    input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.late_exempt ? 1 : 0,
+    input.ot_exempt ? 1 : 0, input.deduct_sss === false ? 0 : 1, input.deduct_philhealth === false ? 0 : 1,
+    input.deduct_pagibig === false ? 0 : 1, input.deduct_withholding_tax === false ? 0 : 1,
+    input.withholding_tax_override ?? null,
+    input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null, id
   );
   res.json({ ok: true });
+});
+
+// GET /api/hr/employees/:id/rate-history — read-only log for the Edit Employee form.
+router.get('/employees/:id/rate-history', requirePermission('hr.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM employees WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Employee not found' }); return;
+  }
+  res.json(listRateHistory(id));
 });
 
 // DELETE /api/hr/employees/:id
@@ -534,6 +593,20 @@ router.get('/shifts', requirePermission('hr.view'), (_req, res) => {
   res.json(rows.map((r) => ({ ...r, is_default: !!r.is_default })));
 });
 
+// GET /api/hr/linked-form-record-ids — every form_records id currently linked to some
+// attendance_records day (form_record_ids JSON array, or the legacy single form_record_id).
+// The Daily Time grid's "Link a form" picker uses it to hide records already consumed by
+// another day, so one OT/Half Day/Leave/… request can't be attached to two days by mistake.
+router.get('/linked-form-record-ids', requirePermission('hr.view'), (_req, res) => {
+  const rows = queryAll<{ id: number }>(
+    `SELECT DISTINCT je.value AS id
+       FROM attendance_records ar,
+            json_each(COALESCE(ar.form_record_ids, json_array(ar.form_record_id))) je
+      WHERE je.value IS NOT NULL`
+  );
+  res.json(rows.map((r) => r.id));
+});
+
 // POST /api/hr/shifts
 router.post('/shifts', requirePermission('hr.manage'), (req, res) => {
   const input = parseBody(shiftSchema, req.body);
@@ -575,8 +648,10 @@ const DEFAULT_POLICY: PayrollPolicy = {
   monthly_rate_divisor: 26, pay_frequency: 'semi_monthly', auto_statutory: true,
   default_rest_days: [0, 6], // Sun, Sat
   min_work_minutes: 0, lunch_break_minutes: 60, count_lunch_as_worked: false,
+  count_lunch_late_as_late: false,
   hours_basis: 'fixed', hours_basis_unit: '30min',
   whole_day_min_minutes: 0, max_ot_hours: null,
+  special_holiday_premium_mode: 'flat', holiday_adjacency_requirement: 'none',
 };
 
 /** "YYYY-MM-DD" -> weekday index (0=Sun..6=Sat). Builds the Date from the parsed y/m/d as
@@ -587,6 +662,20 @@ function weekdayOf(workDate: string): number {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(workDate);
   if (!m) return -1;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getDay();
+}
+
+// Server-local "today"/"now" for the Daily Report — same local-time convention time_punches
+// already uses (src/clock.ts's localParts(): the office runs the server on-site, so wall-clock
+// local time is what "today" and lateness should be judged against, not UTC).
+function localDateStr(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function localTimeStr(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 /** How many pay periods per month, for splitting the monthly statutory contribution. */
@@ -822,16 +911,34 @@ router.delete('/periods/:id/employees/:employeeId', requirePermission('hr.manage
   res.json({ ok: true });
 });
 
-// GET /api/hr/periods/:id/attendance?employee_id= — daily rows for one employee in one cutoff
+// GET /api/hr/periods/:id/attendance?employee_id= — daily rows for one employee in one cutoff.
+// Each row also gets a `photos` object ({time_in, lunch_out, lunch_in, time_out}, each a photo
+// url or null) so the grid can show a camera icon only where the kiosk actually captured one —
+// computed in bulk for the whole period (2 queries total), not per row. See slotPunchIdsForDates
+// in src/clock.ts and photoIdsForPunches in src/punch-photos.ts.
 router.get('/periods/:id/attendance', requirePermission('hr.view'), (req, res) => {
   const periodId = Number(req.params.id);
   const employeeId = Number(req.query.employee_id);
   if (!employeeId) { res.status(400).json({ error: 'employee_id is required' }); return; }
-  const rows = queryAll(
+  const rows = queryAll<{ work_date: string }>(
     `SELECT * FROM attendance_records WHERE period_id = ? AND employee_id = ? ORDER BY work_date`,
     periodId, employeeId
   );
-  res.json(rows);
+  const slotMap = slotPunchIdsForDates(employeeId, rows.map((r) => r.work_date));
+  const allPunchIds = [...slotMap.values()].flatMap((v) => Object.values(v)).filter((id): id is number => id != null);
+  const photoIds = photoIdsForPunches('attendance', allPunchIds);
+  const SLOT_KEY: Record<CorrectionSlot, string> = { in: 'time_in', lunchOut: 'lunch_out', lunchIn: 'lunch_in', out: 'time_out' };
+  res.json(rows.map((r) => {
+    const slots = slotMap.get(r.work_date);
+    const photos: Record<string, string | null> = { time_in: null, lunch_out: null, lunch_in: null, time_out: null };
+    if (slots) {
+      for (const [slot, punchId] of Object.entries(slots) as [CorrectionSlot, number | null][]) {
+        const photoId = punchId != null ? photoIds.get(punchId) : undefined;
+        if (photoId != null) photos[SLOT_KEY[slot]] = `/hr/clock/photo/${photoId}`;
+      }
+    }
+    return { ...r, photos };
+  }));
 });
 
 // GET /api/hr/periods/:id/attendance/export — the whole cutoff's daily roster as CSV, every
@@ -843,17 +950,20 @@ router.get('/periods/:id/attendance/export', requirePermission('hr.view'), (req,
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
   const rows = queryAll<{
     employee_no: string | null; name: string; department: string | null; work_date: string;
-    shift_name: string | null; time_in: string | null; time_out: string | null;
+    shift_name: string | null; time_in: string | null; lunch_out: string | null;
+    lunch_in: string | null; time_out: string | null;
     form_name: string | null; notes: string | null;
   }>(
     `SELECT e.employee_no, e.name, d.name AS department, ar.work_date,
-            s.name AS shift_name, ar.time_in, ar.time_out, fd.name AS form_name, ar.notes
+            s.name AS shift_name, ar.time_in, ar.lunch_out, ar.lunch_in, ar.time_out, ar.notes,
+            (SELECT group_concat(fd2.name, ' + ')
+               FROM json_each(COALESCE(ar.form_record_ids, json_array(ar.form_record_id))) je
+               JOIN form_records fr2 ON fr2.id = je.value
+               JOIN form_definitions fd2 ON fd2.id = fr2.form_def_id) AS form_name
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
      LEFT JOIN shifts s ON s.id = ar.shift_id
-     LEFT JOIN form_records fr ON fr.id = ar.form_record_id
-     LEFT JOIN form_definitions fd ON fd.id = fr.form_def_id
      WHERE ar.period_id = ?
      ORDER BY e.name, ar.work_date`,
     periodId
@@ -865,6 +975,8 @@ router.get('/periods/:id/attendance/export', requirePermission('hr.view'), (req,
     Date: r.work_date,
     Shift: r.shift_name || '',
     'Time In': r.time_in || '',
+    'Lunch Out': r.lunch_out || '',
+    'Lunch In': r.lunch_in || '',
     'Time Out': r.time_out || '',
     Status: r.time_in && r.time_out ? 'Complete' : (r.time_in || r.time_out) ? 'Incomplete' : 'Blank',
     'Linked Form': r.form_name || '',
@@ -873,9 +985,283 @@ router.get('/periods/:id/attendance/export', requirePermission('hr.view'), (req,
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="timekeeping-${period.label.replace(/[^a-z0-9]+/gi, '-')}.csv"`);
   res.send(toCsv(
-    ['Employee No.', 'Employee Name', 'Department', 'Date', 'Shift', 'Time In', 'Time Out', 'Status', 'Linked Form', 'Notes'],
+    ['Employee No.', 'Employee Name', 'Department', 'Date', 'Shift', 'Time In', 'Lunch Out', 'Lunch In', 'Time Out', 'Status', 'Linked Form', 'Notes'],
     csvRows
   ));
+});
+
+// GET /api/hr/daily-report?date=YYYY-MM-DD — a live, whole-company snapshot for one calendar
+// date (default today): who's present / late / absent / on leave, with a per-department
+// breakdown. Unlike everything else in this file, it isn't scoped to one cutoff period — every
+// active employee is included regardless of which (if any) period's roster they're on, and
+// today's time_in falls back to a raw, not-yet-reconciled time_punches row when nothing's been
+// typed or imported into attendance_records yet (see src/hr-daily-report.ts for why this can't
+// just reuse computeAttendanceForEmployee).
+router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
+  const requested = typeof req.query.date === 'string' ? req.query.date : '';
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : localDateStr();
+  const isToday = date === localDateStr();
+  const nowStr = isToday ? localTimeStr() : null;
+
+  const policy = currentPolicy();
+  const noWorkFor = buildNoWorkResolver();
+  const holidayFor = buildHolidayResolver();
+
+  const employees = queryAll<{
+    id: number; name: string; employee_no: string | null; department_id: number | null;
+    department_name: string | null; rest_days: string | null;
+    shift_start: string | null; shift_end: string | null;
+  }>(
+    `SELECT e.id, e.name, e.employee_no, e.department_id, d.name AS department_name, e.rest_days,
+            s.start_time AS shift_start, s.end_time AS shift_end
+     FROM employees e
+     LEFT JOIN departments d ON d.id = e.department_id
+     LEFT JOIN shifts s ON s.id = e.default_shift_id
+     WHERE e.status IN ('probationary', 'regular')
+     ORDER BY d.name IS NULL, d.name, e.name`
+  );
+
+  const employeeRows = employees.map((emp) => {
+    const ar = queryOne<{
+      time_in: string | null; time_out: string | null; form_record_id: number | null;
+      form_record_ids: string | null; holiday_type: string | null; rest_day: string | null;
+      shift_start: string | null; shift_end: string | null;
+    }>(
+      `SELECT ar.time_in, ar.time_out, ar.form_record_id, ar.form_record_ids, ar.holiday_type, ar.rest_day,
+              s.start_time AS shift_start, s.end_time AS shift_end
+       FROM attendance_records ar
+       LEFT JOIN shifts s ON s.id = ar.shift_id
+       WHERE ar.employee_id = ? AND ar.work_date = ?
+       ORDER BY ar.id DESC LIMIT 1`,
+      emp.id, date
+    );
+
+    // Prefer whatever's already recorded/imported; fall back to a raw kiosk/phone punch for a
+    // day nobody has reconciled yet — read-only here, never written back (that's still what
+    // "Import Punches" on the cutoff detail screen is for).
+    let timeIn = ar?.time_in || null;
+    let timeOut = ar?.time_out || null;
+    if (!timeIn) {
+      const punches = queryAll<{ ts: string; kind: string }>(
+        'SELECT ts, kind FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
+        emp.id, date
+      );
+      if (punches.length) {
+        const firstIn = punches.find((p) => p.kind === 'in') ?? punches[0]!;
+        timeIn = firstIn.ts.slice(11, 16);
+        if (!timeOut && punches.length > 1) {
+          const lastOut = [...punches].reverse().find((p) => p.kind === 'out');
+          if (lastOut) timeOut = lastOut.ts.slice(11, 16);
+        }
+      }
+    }
+
+    const shift = ar?.shift_start ? { start_time: ar.shift_start, end_time: ar.shift_end || ar.shift_start }
+      : emp.shift_start ? { start_time: emp.shift_start, end_time: emp.shift_end || emp.shift_start }
+      : null;
+
+    const linkedIds = ar
+      ? (safeParseIdArray(ar.form_record_ids).length ? safeParseIdArray(ar.form_record_ids)
+        : ar.form_record_id ? [ar.form_record_id] : [])
+      : [];
+    const linkedSlugs = linkedIds.length
+      ? queryAll<{ slug: string }>(
+          `SELECT fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+           WHERE fr.id IN (${linkedIds.map(() => '?').join(',')})`,
+          ...linkedIds
+        ).map((f) => f.slug)
+      : [];
+    const onLeave = linkedSlugs.includes('leave_request');
+    const reported = linkedSlugs.includes('reported_absence');
+
+    const restDays: number[] = emp.rest_days ? JSON.parse(emp.rest_days) : policy.default_rest_days;
+    const isRestDay = ar?.rest_day === 'yes' ? true : ar?.rest_day === 'no' ? false : restDays.includes(weekdayOf(date));
+    const holiday = (ar?.holiday_type && ar.holiday_type !== 'none' ? ar.holiday_type : holidayFor(date)) as AttendanceDay['holiday'];
+    const noWork = noWorkFor(date);
+
+    const result = classifyDailyStatus({
+      time_in: timeIn, shift, on_leave: onLeave, reported, holiday, no_work: noWork,
+      is_rest_day: isRestDay, grace_minutes: policy.grace_minutes, now: nowStr,
+    });
+
+    return {
+      id: emp.id, name: emp.name, employee_no: emp.employee_no,
+      department_id: emp.department_id, department_name: emp.department_name || 'Unassigned',
+      time_in: timeIn, time_out: timeOut,
+      status: result.status, late_minutes: result.late_minutes, note: result.note,
+    };
+  });
+
+  const blankTallies = () => ({ present: 0, late: 0, absent: 0, leave: 0, reported: 0, not_scheduled: 0, pending: 0, total: 0 });
+  const totals = blankTallies();
+  const byDept = new Map<string, ReturnType<typeof blankTallies> & { department_id: number | null; department_name: string }>();
+  for (const r of employeeRows) {
+    totals[r.status]++; totals.total++;
+    let d = byDept.get(r.department_name);
+    if (!d) { d = { ...blankTallies(), department_id: r.department_id, department_name: r.department_name }; byDept.set(r.department_name, d); }
+    d[r.status]++; d.total++;
+  }
+
+  res.json({
+    date, is_today: isToday, generated_at: new Date().toISOString(),
+    totals, by_department: [...byDept.values()], employees: employeeRows,
+  });
+});
+
+// Employee self-filed request forms — must track src/routes/me.routes.ts's own REQUEST_SLUGS
+// (not imported directly: that file already imports currentPolicy from this one, so importing
+// its REQUEST_SLUGS back here would make the two modules load each other).
+const PENDING_REQUEST_SLUGS = [
+  'leave_request', 'overtime_request', 'undertime_request', 'halfday_request', 'offset_form',
+  'lunch_offset_form', 'holiday_work_request', 'travel_order', 'coe_request',
+  'reimbursement_request', 'loan_application', 'training_request', 'incident_report',
+];
+
+// GET /api/hr/pending-requests — org-wide count of pending HR requests (leave, OT, undertime,
+// and everything else self-filed from mobile) plus pending attendance/time-correction fixes,
+// for the HR Overview page's "needs attention" summary. Deliberately NOT scoped to what the
+// caller may personally decide (unlike GET /me/approvals, which only shows a department head
+// their own department's queue) — this is a bird's-eye count for anyone with hr.view.
+router.get('/pending-requests', requirePermission('hr.view'), (req, res) => {
+  const byType = queryAll<{ slug: string; name: string; icon: string; count: number }>(
+    `SELECT fd.slug, fd.name, fd.icon, COUNT(fr.id) AS count
+     FROM form_definitions fd
+     LEFT JOIN form_records fr ON fr.form_def_id = fd.id AND fr.status = 'pending'
+     WHERE fd.slug IN (${PENDING_REQUEST_SLUGS.map(() => '?').join(',')})
+     GROUP BY fd.id
+     HAVING count > 0
+     ORDER BY count DESC, fd.name`,
+    ...PENDING_REQUEST_SLUGS
+  );
+  const timeCorrections = queryOne<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM time_corrections WHERE status = 'pending'"
+  )!.n;
+
+  const recentRequests = queryAll<{
+    id: number; number: string; created_at: string; slug: string; form_name: string; employee_name: string | null;
+  }>(
+    `SELECT fr.id, fr.number, fr.created_at, fd.slug, fd.name AS form_name,
+            json_extract(fr.data, '$.employee_name') AS employee_name
+     FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+     WHERE fr.status = 'pending' AND fd.slug IN (${PENDING_REQUEST_SLUGS.map(() => '?').join(',')})
+     ORDER BY fr.id DESC LIMIT 8`,
+    ...PENDING_REQUEST_SLUGS
+  );
+  const recentCorrections = queryAll<{ id: number; created_at: string; employee_name: string; work_date: string }>(
+    `SELECT tc.id, tc.created_at, e.name AS employee_name, tc.work_date
+     FROM time_corrections tc JOIN employees e ON e.id = tc.employee_id
+     WHERE tc.status = 'pending' ORDER BY tc.id DESC LIMIT 8`
+  );
+
+  const recent = [
+    ...recentRequests.map((r) => ({
+      kind: 'request' as const, id: r.id, slug: r.slug, form_name: r.form_name,
+      employee_name: r.employee_name, number: r.number, created_at: r.created_at,
+    })),
+    ...recentCorrections.map((c) => ({
+      kind: 'correction' as const, id: c.id, slug: 'time_correction', form_name: 'Time Correction',
+      employee_name: c.employee_name, number: c.work_date, created_at: c.created_at,
+    })),
+  ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 8);
+
+  const total = byType.reduce((sum, t) => sum + t.count, 0) + timeCorrections;
+  res.json({ total, by_type: byType, time_corrections: timeCorrections, recent });
+});
+
+// GET /api/hr/cutoff-flags?period_id= — which roster employees on the given cutoff (default:
+// the CURRENT one — the attendance_periods row covering today, else the most recently created
+// one) have a day HR should probably follow up on: an unlinked "possible half day"
+// (computeAttendanceForEmployee's own possible_half_day — same heuristic Payroll and the Daily
+// Time grid already surface, just rolled up here across the whole cutoff instead of one
+// payslip/one employee at a time), an unrecorded OT (worked past shift end with no linked
+// overtime_request — same check as the mobile "you have unrecorded OT" nudge, src/routes/
+// me.routes.ts's unrecordedOtDays), or an incomplete punch (time-in with no time-out, or vice
+// versa, on any day — the same XOR check GET /timekeeping/incomplete already uses, just scoped
+// to this one cutoff). Powers the HR Overview page's "Needs Attention" panel, including its
+// cutoff switcher (?period_id lets HR check any past/future cutoff, not just the current one);
+// nothing here mutates anything.
+router.get('/cutoff-flags', requirePermission('hr.view'), (req, res) => {
+  const requestedId = Number(req.query.period_id);
+  const period = requestedId
+    ? queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', requestedId)
+    : queryOne<AttendancePeriod>(
+        `SELECT * FROM attendance_periods
+         WHERE start_date <= date('now', 'localtime') AND end_date >= date('now', 'localtime')
+         ORDER BY start_date DESC LIMIT 1`
+      ) ?? queryOne<AttendancePeriod>(
+        `SELECT * FROM attendance_periods ORDER BY created_at DESC, id DESC LIMIT 1`
+      );
+  if (!period) {
+    res.json({ period: null, employees: [], totals: { half_day: 0, unrecorded_ot: 0, incomplete_punch: 0, employees_flagged: 0 } });
+    return;
+  }
+
+  // Same "distinct employees on this cutoff's roster" query generate-payslips uses — no status
+  // filter, since anyone HR actually logged time for this cutoff is fair game to flag.
+  const roster = queryAll<{
+    employee_id: number; name: string; employee_no: string | null; department_name: string | null;
+    user_id: number | null; daily_rate: number; rest_days: string | null;
+  }>(
+    `SELECT DISTINCT e.id AS employee_id, e.name, e.employee_no, d.name AS department_name,
+            e.user_id, e.daily_rate, e.rest_days
+     FROM attendance_records ar
+     JOIN employees e ON e.id = ar.employee_id
+     LEFT JOIN departments d ON d.id = e.department_id
+     WHERE ar.period_id = ?
+     ORDER BY e.name`,
+    period.id
+  );
+
+  const policy = currentPolicy();
+  const noWorkFor = buildNoWorkResolver();
+  const holidayFor = buildHolidayResolver();
+
+  // One batched query for the incomplete-punch flag (XOR of time_in/time_out) across the whole
+  // roster, rather than a per-employee lookup — same predicate as GET /timekeeping/incomplete.
+  const incompleteRows = queryAll<{ employee_id: number; work_date: string }>(
+    `SELECT employee_id, work_date FROM attendance_records
+     WHERE period_id = ? AND work_date <= date('now', 'localtime')
+       AND ((time_in IS NOT NULL AND time_in != '') <> (time_out IS NOT NULL AND time_out != ''))
+     ORDER BY work_date`,
+    period.id
+  );
+  const incompleteByEmployee = new Map<number, string[]>();
+  for (const r of incompleteRows) {
+    const list = incompleteByEmployee.get(r.employee_id);
+    if (list) list.push(r.work_date); else incompleteByEmployee.set(r.employee_id, [r.work_date]);
+  }
+
+  const employees = roster
+    .map((emp) => {
+      const attendanceDays = attendanceDaysForEmployee(period.id, emp.employee_id, emp.rest_days, policy, noWorkFor, holidayFor);
+      // The daily rate is irrelevant to possible_half_day (it only affects pay amounts), so a
+      // flat placeholder is fine here — this route only ever reads day.possible_half_day.
+      const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate || 0, policy, false);
+      const possibleHalfDayDates = computed.days.filter((d) => d.possible_half_day).map((d) => d.work_date);
+      const unrecordedOtDates = attendanceDays
+        .filter((d) => unrecordedOtMinutes(d, policy) > 0)
+        .map((d) => d.work_date);
+      const incompletePunchDates = incompleteByEmployee.get(emp.employee_id) ?? [];
+      return {
+        employee_id: emp.employee_id, name: emp.name, employee_no: emp.employee_no,
+        department_name: emp.department_name || 'Unassigned', user_id: emp.user_id,
+        possible_half_day_dates: possibleHalfDayDates,
+        unrecorded_ot_dates: unrecordedOtDates,
+        incomplete_punch_dates: incompletePunchDates,
+      };
+    })
+    .filter((e) => e.possible_half_day_dates.length || e.unrecorded_ot_dates.length || e.incomplete_punch_dates.length);
+
+  res.json({
+    period: { id: period.id, label: period.label, start_date: period.start_date, end_date: period.end_date },
+    employees,
+    totals: {
+      half_day: employees.filter((e) => e.possible_half_day_dates.length).length,
+      unrecorded_ot: employees.filter((e) => e.unrecorded_ot_dates.length).length,
+      incomplete_punch: employees.filter((e) => e.incomplete_punch_dates.length).length,
+      employees_flagged: employees.length,
+    },
+  });
 });
 
 // PUT /api/hr/periods/:id/attendance — replace one employee's daily rows for this cutoff
@@ -892,14 +1278,21 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res)
   try {
     run('DELETE FROM attendance_records WHERE period_id = ? AND employee_id = ?', periodId, input.employee_id);
     const insert = db.prepare(
-      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes, shift_id, form_record_id, holiday_type, rest_day, min_hours_decision)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, lunch_out, lunch_in, time_out, notes, shift_id, form_record_id, form_record_ids, holiday_type, rest_day, min_hours_decision, half_day_override)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     for (const d of input.days) {
+      // form_record_ids (the new multi-link) wins when present; otherwise fall back to the
+      // legacy single form_record_id so an older client still works. form_record_id is always
+      // mirrored to the first id so anything still reading that column stays correct.
+      const ids = (d.form_record_ids && d.form_record_ids.length ? d.form_record_ids
+        : d.form_record_id ? [d.form_record_id] : []);
       insert.run(
-        periodId, input.employee_id, d.work_date, d.time_in || null, d.time_out || null, d.notes || null,
-        d.shift_id || null, d.form_record_id || null, d.holiday_type || null, d.rest_day || null,
-        d.min_hours_decision || null
+        periodId, input.employee_id, d.work_date, d.time_in || null,
+        d.lunch_out || null, d.lunch_in || null, d.time_out || null, d.notes || null,
+        d.shift_id || null, ids[0] ?? null, ids.length ? JSON.stringify(ids) : null,
+        d.holiday_type || null, d.rest_day || null, d.min_hours_decision || null,
+        d.half_day_override || null
       );
     }
     db.exec('COMMIT');
@@ -918,7 +1311,7 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res)
 // app. Best-effort: never blocks or fails the attendance save itself.
 function notifyUnrecordedOt(
   employeeId: number,
-  days: Array<{ work_date: string; time_in?: string | null; time_out?: string | null; shift_id?: number | null; form_record_id?: number | null }>
+  days: Array<{ work_date: string; time_in?: string | null; time_out?: string | null; shift_id?: number | null; form_record_id?: number | null; form_record_ids?: number[] | null }>
 ): void {
   try {
     const emp = queryOne<{ user_id: number | null }>('SELECT user_id FROM employees WHERE id = ?', employeeId);
@@ -930,19 +1323,20 @@ function notifyUnrecordedOt(
       const shift = d.shift_id
         ? queryOne<{ start_time: string; end_time: string }>('SELECT start_time, end_time FROM shifts WHERE id = ?', d.shift_id)
         : null;
-      let linkedForm: AttendanceDay['linkedForm'] = null;
-      if (d.form_record_id) {
+      const ids = d.form_record_ids && d.form_record_ids.length ? d.form_record_ids : d.form_record_id ? [d.form_record_id] : [];
+      const linkedForms: NonNullable<AttendanceDay['linkedForms']> = [];
+      for (const id of ids) {
         const fr = queryOne<{ data: string; slug: string }>(
           `SELECT fr.data, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
-          d.form_record_id
+          id
         );
-        if (fr) { try { linkedForm = { slug: fr.slug, data: JSON.parse(fr.data) }; } catch { /* leave null */ } }
+        if (fr) { try { linkedForms.push({ slug: fr.slug, data: JSON.parse(fr.data) }); } catch { /* skip */ } }
       }
       const mins = unrecordedOtMinutes(
         {
           work_date: d.work_date, time_in: d.time_in, time_out: d.time_out,
           shift: shift ? { start_time: shift.start_time, end_time: shift.end_time } : null,
-          linkedForm,
+          linkedForms,
         },
         policy
       );
@@ -1008,6 +1402,73 @@ function buildHolidayResolver(): (workDate: string) => 'regular' | 'special_non_
   };
 }
 
+// PayrollPolicy.holiday_adjacency_requirement support — whether one specific employee
+// "satisfies" a single adjacent date (the day immediately before/after a holiday), per the field's
+// own doc comment (src/types.ts): present, on paid leave, or not a scheduled workday for them all
+// count; only a genuine unexcused absence fails it. Deliberately a fresh, period-independent
+// attendance_records lookup (by employee_id + exact work_date, no period_id) rather than an
+// in-array days[i-1]/days[i+1] check inside computeAttendanceForEmployee — a holiday landing on
+// the first/last day of a cutoff needs the adjacent day from a DIFFERENT period_id (or a
+// different employee_rate_history run within the same cutoff), which computeAttendanceForEmployee
+// never sees at once. No record at all for the date (e.g. outside any period on file, or the
+// employee wasn't yet hired) is treated as satisfied — benefit of the doubt for missing data,
+// never guessed as a failure.
+function isPresentOrExcused(
+  employeeId: number,
+  workDate: string,
+  empRestDays: number[],
+  holidayFor: (workDate: string) => 'regular' | 'special_non_working' | 'special_working' | null
+): boolean {
+  if (empRestDays.includes(weekdayOf(workDate))) return true; // not a scheduled workday for them
+  if (holidayFor(workDate)) return true; // itself a holiday per the company calendar
+
+  const row = queryOne<{
+    time_in: string | null; time_out: string | null; holiday_type: string | null;
+    form_record_id: number | null; form_record_ids: string | null;
+  }>(
+    `SELECT time_in, time_out, holiday_type, form_record_id, form_record_ids
+     FROM attendance_records WHERE employee_id = ? AND work_date = ?`,
+    employeeId, workDate
+  );
+  if (!row) return true; // no record on file for this date — nothing to fail the check against
+  if (row.holiday_type && row.holiday_type !== 'none') return true; // per-record holiday override
+  if (row.time_in && row.time_out) return true; // actually clocked in and out
+
+  const ids = safeParseIdArray(row.form_record_ids);
+  const linkIds = ids.length ? ids : row.form_record_id ? [row.form_record_id] : [];
+  if (linkIds.length) {
+    const forms = queryAll<{ data: string; slug: string }>(
+      `SELECT fr.data, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+       WHERE fr.id IN (${linkIds.map(() => '?').join(',')})`,
+      ...linkIds
+    );
+    for (const f of forms) {
+      if (f.slug !== 'leave_request') continue;
+      try {
+        if (JSON.parse(f.data || '{}').with_pay === 'Yes') return true;
+      } catch { /* unparseable form data — treat as not satisfying via this form */ }
+    }
+  }
+  return false; // a record exists for this date, but nothing on it excuses the absence
+}
+
+/** Whether one holiday date satisfies policy.holiday_adjacency_requirement for one employee —
+    'none' always passes; 'before'/'after' check that one specific adjacent date; 'both' requires
+    both. Only meaningful for a day already resolved as Regular/Special Non-Working Holiday. */
+function holidayAdjacencyOk(
+  requirement: PayrollPolicy['holiday_adjacency_requirement'],
+  employeeId: number,
+  workDate: string,
+  empRestDays: number[],
+  holidayFor: (workDate: string) => 'regular' | 'special_non_working' | 'special_working' | null
+): boolean {
+  if (requirement === 'none') return true;
+  const check = (d: string) => isPresentOrExcused(employeeId, d, empRestDays, holidayFor);
+  if (requirement === 'before') return check(addDays(workDate, -1));
+  if (requirement === 'after') return check(addDays(workDate, 1));
+  return check(addDays(workDate, -1)) && check(addDays(workDate, 1));
+}
+
 // Per-employee attendance rows for one cutoff, resolved into the compute engine's own
 // AttendanceDay shape — shift_id -> {start_time, end_time}, form_record_id -> {slug, data}, and
 // each work_date -> No Work Memo / Company Holiday / rest-day, exactly as
@@ -1024,39 +1485,84 @@ function attendanceDaysForEmployee(
 ): AttendanceDay[] {
   const attendanceRows = queryAll<{
     work_date: string; time_in: string | null; time_out: string | null;
+    lunch_out: string | null; lunch_in: string | null;
     shift_start: string | null; shift_end: string | null;
-    fr_data: string | null; fd_slug: string | null; holiday_type: string | null;
-    rest_day: string | null; min_hours_decision: string | null;
+    form_record_id: number | null; form_record_ids: string | null; holiday_type: string | null;
+    rest_day: string | null; min_hours_decision: string | null; half_day_override: string | null;
   }>(
-    `SELECT ar.work_date, ar.time_in, ar.time_out,
+    `SELECT ar.work_date, ar.time_in, ar.time_out, ar.lunch_out, ar.lunch_in,
        s.start_time AS shift_start, s.end_time AS shift_end,
-       fr.data AS fr_data, fd.slug AS fd_slug, ar.holiday_type, ar.rest_day, ar.min_hours_decision
+       ar.form_record_id, ar.form_record_ids, ar.holiday_type, ar.rest_day, ar.min_hours_decision,
+       ar.half_day_override
      FROM attendance_records ar
      LEFT JOIN shifts s ON s.id = ar.shift_id
-     LEFT JOIN form_records fr ON fr.id = ar.form_record_id
-     LEFT JOIN form_definitions fd ON fd.id = fr.form_def_id
      WHERE ar.period_id = ? AND ar.employee_id = ?
      ORDER BY ar.work_date`,
     periodId, employeeId
   );
+  // Resolve every linked form (form_record_ids, or the legacy single form_record_id for rows
+  // that predate the multi-link) to {slug, data} in one batched lookup, keyed by id.
+  const allFormIds = [
+    ...new Set(
+      attendanceRows.flatMap((r) => {
+        const ids = safeParseIdArray(r.form_record_ids);
+        return ids.length ? ids : r.form_record_id ? [r.form_record_id] : [];
+      })
+    ),
+  ];
+  const formById = new Map<number, { slug: string; data: Record<string, unknown> }>();
+  if (allFormIds.length) {
+    queryAll<{ id: number; data: string; slug: string }>(
+      `SELECT fr.id, fr.data, fd.slug FROM form_records fr
+       JOIN form_definitions fd ON fd.id = fr.form_def_id
+       WHERE fr.id IN (${allFormIds.map(() => '?').join(',')})`,
+      ...allFormIds
+    ).forEach((f) => {
+      try { formById.set(f.id, { slug: f.slug, data: JSON.parse(f.data || '{}') }); } catch { /* skip unparseable */ }
+    });
+  }
   // Per-record override (attendance_records.holiday_type / .rest_day) beats the calendar /
   // weekly pattern; holiday 'none' means "not a holiday for this person" even if the calendar
   // says so, and rest_day 'yes'/'no' force a single date on/off regardless of its weekday
   // (a rotating rest day that varies month to month).
   const empRestDays: number[] = employeeRestDaysJson ? JSON.parse(employeeRestDaysJson) : policy.default_rest_days;
-  return attendanceRows.map((r) => ({
+  return attendanceRows.map((r) => {
+    const ids = safeParseIdArray(r.form_record_ids);
+    const linkIds = ids.length ? ids : r.form_record_id ? [r.form_record_id] : [];
+    const linkedForms = linkIds.map((id) => formById.get(id)).filter((f): f is { slug: string; data: Record<string, unknown> } => !!f);
+    const holiday = r.holiday_type === 'none' ? null : (r.holiday_type as AttendanceDay['holiday']) || holidayFor(r.work_date);
+    return {
     work_date: r.work_date,
     time_in: r.time_in,
     time_out: r.time_out,
+    lunch_out: r.lunch_out,
+    lunch_in: r.lunch_in,
     shift: r.shift_start && r.shift_end ? { start_time: r.shift_start, end_time: r.shift_end } : null,
-    linkedForm: r.fd_slug ? { slug: r.fd_slug, data: JSON.parse(r.fr_data || '{}') } : null,
+    linkedForms,
     noWork: noWorkFor(r.work_date),
-    holiday: r.holiday_type === 'none' ? null : (r.holiday_type as AttendanceDay['holiday']) || holidayFor(r.work_date),
+    holiday,
     isRestDay: r.rest_day === 'yes' ? true
       : r.rest_day === 'no' ? false
       : empRestDays.includes(weekdayOf(r.work_date)),
     minHoursDecision: r.min_hours_decision as AttendanceDay['minHoursDecision'],
-  }));
+    // Only Regular/Special Non-Working Holiday pay is ever subject to this — a plain rest day
+    // isn't a holiday at all, so it's not gated by holiday_adjacency_requirement.
+    holidayEligible: (holiday === 'regular' || holiday === 'special_non_working')
+      ? holidayAdjacencyOk(policy.holiday_adjacency_requirement, employeeId, r.work_date, empRestDays, holidayFor)
+      : true,
+    halfDayOverride: r.half_day_override as AttendanceDay['halfDayOverride'],
+    };
+  });
+}
+
+/** Parse a JSON string that should hold an array of positive integer ids (attendance_records.
+    form_record_ids). Anything malformed -> []. */
+function safeParseIdArray(json: string | null): number[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n) && n > 0) : [];
+  } catch { return []; }
 }
 
 // Which of the four statutory deductions actually apply to ONE payslip record — the per-record
@@ -1086,6 +1592,8 @@ function computeEmployeeStatutory(
   emp: {
     daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null;
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+    withholding_tax_override: number | null;
+    sss_override: number | null; philhealth_override: number | null; pagibig_override: number | null;
   },
   totalEarnings: number,
   applied: StatutoryApplied,
@@ -1102,15 +1610,26 @@ function computeEmployeeStatutory(
   const sssOn = !!emp.deduct_sss && thisSlot.sss && applied.sss;
   const philhealthOn = !!emp.deduct_philhealth && thisSlot.philhealth && applied.philhealth;
   const pagibigOn = !!emp.deduct_pagibig && thisSlot.pagibig && applied.pagibig;
-  const sss = sssOn ? round2(ded.sss.employee / slotDivisor('sss')) : 0;
-  const philhealth = philhealthOn ? round2(ded.philhealth.employee / slotDivisor('philhealth')) : 0;
-  const pagibig = pagibigOn ? round2(ded.pagibig.employee / slotDivisor('pagibig')) : 0;
+  // A per-employee override stands in for the computed MONTHLY contribution (ded.*.employee),
+  // still split across this month's deduction slots exactly the same way — e.g. a semi-monthly
+  // schedule still halves an overridden SSS amount across both cutoffs, matching how the
+  // computed table amount already behaves. Never affects the employer-side share below, which
+  // stays whatever the table says regardless of any employee-side arrangement.
+  const sss = sssOn ? round2((emp.sss_override ?? ded.sss.employee) / slotDivisor('sss')) : 0;
+  const philhealth = philhealthOn ? round2((emp.philhealth_override ?? ded.philhealth.employee) / slotDivisor('philhealth')) : 0;
+  const pagibig = pagibigOn ? round2((emp.pagibig_override ?? ded.pagibig.employee) / slotDivisor('pagibig')) : 0;
   // Withholding tax's own taxable base depends on whichever of SSS/PhilHealth/Pag-IBIG actually
   // deducted this run — turning one of those off (or on) for this payslip changes the tax too,
   // not just that one line, which is exactly why this can't be a client-side-only toggle.
   const taxable = taxableCompensation(totalEarnings, 0, round2(sss + philhealth + pagibig));
+  // A per-employee override replaces the computed BIR amount outright (not divided across
+  // slots the way SSS/PhilHealth/Pag-IBIG's monthly totals are — withholdingTax() itself
+  // already accounts for pay_frequency, and the override is meant to stand in for exactly
+  // that per-cutoff figure). Still fully gated by the same exempt/schedule/applied checks —
+  // an exempt employee is never charged this regardless of any override amount on file.
   const withholding_tax = !!emp.deduct_withholding_tax && thisSlot.withholding_tax && applied.withholding_tax
-    ? withholdingTax(taxable, policy.pay_frequency, statTables.rwt) : 0;
+    ? (emp.withholding_tax_override != null ? emp.withholding_tax_override : withholdingTax(taxable, policy.pay_frequency, statTables.rwt))
+    : 0;
   return {
     sss, philhealth, pagibig, withholding_tax,
     employer_contributions: {
@@ -1137,7 +1656,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
     employee_id: number; name: string; position: string | null; daily_rate: number;
     rate_type: 'daily' | 'monthly'; monthly_rate: number | null; department_name: string | null;
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
-    rest_days: string | null; late_exempt: number;
+    withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
+    pagibig_override: number | null; rest_days: string | null; late_exempt: number; ot_exempt: number;
   }>(
     `SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.daily_rate,
             e.rate_type, e.monthly_rate, d.name AS department_name,
@@ -1145,7 +1665,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
             COALESCE(e.deduct_philhealth, 1) AS deduct_philhealth,
             COALESCE(e.deduct_pagibig, 1) AS deduct_pagibig,
             COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax,
-            e.rest_days, COALESCE(e.late_exempt, 0) AS late_exempt
+            e.withholding_tax_override, e.sss_override, e.philhealth_override, e.pagibig_override,
+            e.rest_days, COALESCE(e.late_exempt, 0) AS late_exempt, COALESCE(e.ot_exempt, 0) AS ot_exempt
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -1210,9 +1731,16 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       const attendanceDays = attendanceDaysForEmployee(
         periodId, emp.employee_id, emp.rest_days, policy, noWorkFor, holidayFor
       );
-      const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy, !!emp.late_exempt);
-      const basicSalary = emp.daily_rate * computed.days_worked;
+      // Resolves each day's own rate from employee_rate_history — a flat emp.daily_rate for
+      // every employee who's never had a logged rate change, exactly as before this existed.
+      const { computed, basicSalary } = computeAttendanceMultiRate(
+        attendanceDays, (workDate) => effectiveDailyRateOn(emp.employee_id, workDate, emp.daily_rate),
+        policy, !!emp.late_exempt, !!emp.ot_exempt
+      );
       if (computed.days.some((d) => d.possible_half_day)) possibleHalfDayEmployees++;
+      // The rate as of the cutoff's last day — what the "Daily Rate" line and the informational
+      // OT-rate-per-hour figure below show, even though pay above was computed per-day.
+      const currentDailyRate = effectiveDailyRateOn(emp.employee_id, period.end_date, emp.daily_rate);
 
       // Regenerating recomputes every attendance-derived field fresh — that's the point of
       // "generate payslips" (pick up the latest attendance/link edits) — but purely-manual
@@ -1241,7 +1769,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       // Daily Rate line already is; the actual overtime_pay above still scales per-day by
       // holiday/rest-day (see dayRateMultiplier in hr-payroll-compute.ts), this is just what
       // an ordinary day's OT hour is worth at a glance.
-      const otRateHour = round2((emp.daily_rate / 8) * (policy.ot_rate_percent / 100));
+      const otRateHour = round2((currentDailyRate / 8) * (policy.ot_rate_percent / 100));
 
       const cashAdvance = num(prevManual.cash_advance);
       const totalEarnings = round2(
@@ -1284,7 +1812,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
         ...prevManual,
         employee_name: emp.name, dept_position: deptPosition,
         payroll_period: payrollPeriod, pay_date: input.pay_date || (prevManual.pay_date as string) || '',
-        daily_rate: emp.daily_rate,
+        daily_rate: currentDailyRate,
         days_worked: computed.days_worked,
         // Informational only, doesn't itself subtract anything — an absent day already isn't
         // in days_worked, so it's already excluded from basic_salary below. This just makes
@@ -1429,11 +1957,14 @@ router.get('/payroll/:recordId/detail', requirePermission('hr.manage'), (req, re
   // runtime it's still the raw string despite Employee's declared (already-parsed) type.
   const restDaysJson = emp.rest_days as unknown as string | null;
   const attendanceDays = attendanceDaysForEmployee(period.id, emp.id, restDaysJson, policy, noWorkFor, holidayFor);
-  const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate, policy, !!emp.late_exempt);
+  const { computed } = computeAttendanceMultiRate(
+    attendanceDays, (workDate) => effectiveDailyRateOn(emp.id, workDate, emp.daily_rate),
+    policy, !!emp.late_exempt, !!emp.ot_exempt
+  );
   res.json({
     employee_name: emp.name,
     period_label: period.label,
-    daily_rate: emp.daily_rate,
+    daily_rate: effectiveDailyRateOn(emp.id, period.end_date, emp.daily_rate),
     late_exempt: !!emp.late_exempt,
     days: computed.days,
     totals: {
@@ -1464,7 +1995,9 @@ function resolvePayrollDeductionContext(
 ): {
   rec: FormRecord & { slug: string }; data: Record<string, unknown>;
   emp: { id: number; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null;
-    deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number };
+    deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+    withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
+    pagibig_override: number | null };
   period: AttendancePeriod;
 } | null {
   const rec = queryOne<FormRecord & { slug: string }>(
@@ -1477,10 +2010,13 @@ function resolvePayrollDeductionContext(
   const emp = queryOne<{
     id: number; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null;
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+    withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
+    pagibig_override: number | null;
   }>(
     `SELECT id, daily_rate, rate_type, monthly_rate,
             COALESCE(deduct_sss, 1) AS deduct_sss, COALESCE(deduct_philhealth, 1) AS deduct_philhealth,
-            COALESCE(deduct_pagibig, 1) AS deduct_pagibig, COALESCE(deduct_withholding_tax, 1) AS deduct_withholding_tax
+            COALESCE(deduct_pagibig, 1) AS deduct_pagibig, COALESCE(deduct_withholding_tax, 1) AS deduct_withholding_tax,
+            withholding_tax_override, sss_override, philhealth_override, pagibig_override
      FROM employees WHERE name = ?`,
     employeeName
   );

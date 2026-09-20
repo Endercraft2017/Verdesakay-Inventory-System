@@ -43,7 +43,8 @@ App.register('messages', async (view, filter) => {
         <div class="avatar">${UI.esc(UI.initials(m.other_name))}</div>
         <div class="meta">
           <div class="who">${box === 'inbox' ? '' : 'To: '}${UI.esc(m.other_name)}
-            ${box === 'inbox' && !m.read_at ? '<span class="badge-pill low" style="font-size:10px">NEW</span>' : ''}</div>
+            ${box === 'inbox' && !m.read_at ? '<span class="badge-pill low" style="font-size:10px">NEW</span>' : ''}
+            ${m.attachments && m.attachments.length ? UI.icon('file', 13) : ''}</div>
           <div class="subj">${UI.esc(m.subject || '(no subject)')}</div>
           <div class="preview">${UI.esc(m.body)}</div>
         </div>
@@ -58,6 +59,7 @@ App.register('messages', async (view, filter) => {
     if (box === 'inbox' && !m.read_at) {
       try { await API.post(`/messages/${m.id}/read`); App.refreshUnread(); } catch {}
     }
+    const attachments = m.attachments || [];
     UI.modal({
       title: m.subject || '(no subject)',
       bodyHTML: `
@@ -65,6 +67,7 @@ App.register('messages', async (view, filter) => {
           <div class="muted">${box === 'inbox' ? 'From' : 'To'}: <strong>${UI.esc(m.other_name)}</strong>
             (@${UI.esc(m.other_username)}) · ${UI.fmtDate(m.created_at)}</div>
           <div class="body">${UI.esc(m.body)}</div>
+          <div class="msg-attachments"></div>
         </div>`,
       confirmText: box === 'inbox' ? 'Reply' : null,
       cancelText: 'Close',
@@ -82,13 +85,40 @@ App.register('messages', async (view, filter) => {
           load();
         };
         foot.prepend(delBtn);
+
+        const attHost = overlay.querySelector('.msg-attachments');
+        attachments.forEach((a) => {
+          const isImage = (a.mime_type || '').startsWith('image/');
+          const row = document.createElement('div');
+          row.className = 'msg-attach';
+          row.title = a.name;
+          row.innerHTML = isImage
+            ? `<div class="msg-attach-img-wrap"><div class="muted" style="font-size:12px">${UI.esc(a.name)} · ${UI.fmtBytes(a.size_bytes)}</div></div>`
+            : `<span class="msg-attach-icon">${UI.icon(UI.fileIconName(a.name), 16)}</span>
+               <span class="msg-attach-name">${UI.esc(a.name)}</span>
+               <span class="msg-attach-size muted">${UI.fmtBytes(a.size_bytes)}</span>`;
+          row.style.cursor = 'pointer';
+          row.onclick = () => API.download(a.url, a.name).catch((e) => UI.toast(e.message, 'error'));
+          attHost.appendChild(row);
+          if (isImage) {
+            const img = document.createElement('img');
+            img.className = 'msg-attach-img';
+            img.alt = a.name;
+            row.querySelector('.msg-attach-img-wrap').prepend(img);
+            API.blobUrl(a.url).then((u) => { img.src = u; }).catch(() => {});
+          }
+        });
       },
     });
     if (box === 'inbox') setTimeout(load, 300);
   }
 
   async function composeModal(toId, toName, subject) {
-    const users = await API.get('/users');
+    const [users, company] = await Promise.all([
+      API.get('/users'),
+      API.get('/templates/company').catch(() => ({})),
+    ]);
+    const compressImages = company.compress_images !== false;
     const me = App.getMe();
     const opts = users.filter((u) => u.id !== me.id)
       .map((u) => `<option value="${u.id}" ${u.id === toId ? 'selected' : ''}>${UI.esc(u.full_name)} (@${UI.esc(u.username)})${u.department_name ? ' · ' + UI.esc(u.department_name) : ''}</option>`).join('');
@@ -97,18 +127,36 @@ App.register('messages', async (view, filter) => {
       bodyHTML: `
         <div><label>To *</label><select data-f="recipient">${'<option value="">— Select recipient —</option>' + opts}</select></div>
         <div><label>Subject</label><input data-f="subject" value="${UI.esc(subject || '')}" /></div>
-        <div><label>Message *</label><textarea data-f="body" style="min-height:120px"></textarea></div>`,
+        <div><label>Message *</label><textarea data-f="body" style="min-height:120px"></textarea></div>
+        <div><label>Attach files</label><input type="file" data-f="files" multiple />
+          <div class="muted" style="font-size:12px">Images, files or documents, up to 10 MB each.${compressImages ? ' Images over 1&nbsp;MB are compressed before sending.' : ''}</div></div>`,
       confirmText: 'Send',
       onConfirm: async (overlay, showErr) => {
         const recipient_id = overlay.querySelector('[data-f="recipient"]').value;
         const body = overlay.querySelector('[data-f="body"]').value.trim();
+        const files = overlay.querySelector('[data-f="files"]').files;
         if (!recipient_id) { showErr('Please choose a recipient'); return false; }
         if (!body) { showErr('Message body cannot be empty'); return false; }
-        await API.post('/messages', {
-          recipient_id: Number(recipient_id),
-          subject: overlay.querySelector('[data-f="subject"]').value,
-          body,
-        });
+        const oversize = [...files].find((f) => f.size > 10 * 1024 * 1024);
+        if (oversize) { showErr(`"${oversize.name}" is over 10 MB`); return false; }
+        if (files.length) {
+          let outFiles = [...files];
+          if (compressImages && window.ImageCompress) {
+            outFiles = await Promise.all(outFiles.map((f) => window.ImageCompress.maybeCompress(f)));
+          }
+          const fd = new FormData();
+          fd.append('recipient_id', recipient_id);
+          fd.append('subject', overlay.querySelector('[data-f="subject"]').value);
+          fd.append('body', body);
+          outFiles.forEach((f) => fd.append('files', f));
+          await API.upload('/messages', fd);
+        } else {
+          await API.post('/messages', {
+            recipient_id: Number(recipient_id),
+            subject: overlay.querySelector('[data-f="subject"]').value,
+            body,
+          });
+        }
         UI.toast('Message sent');
         if (box === 'sent') load();
       },

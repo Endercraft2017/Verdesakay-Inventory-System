@@ -13,10 +13,12 @@ import { spawnSync } from 'node:child_process';
 import { init, cleanupSessions } from './src/db';
 import { createApp } from './src/app';
 import { sendDueTaskReminders } from './src/push';
+import { cleanupPlatformSessions } from './src/platform-users';
 
 init();
-cleanupSessions(); // sweep stale sessions / old audit-log rows once at boot, then hourly
-setInterval(cleanupSessions, 60 * 60 * 1000).unref(); // hourly
+const housekeeping = () => { cleanupSessions(); cleanupPlatformSessions(); };
+housekeeping(); // sweep stale sessions / old audit-log rows once at boot, then hourly
+setInterval(housekeeping, 60 * 60 * 1000).unref(); // hourly
 setInterval(() => { void sendDueTaskReminders(); }, 60 * 1000).unref(); // task reminders
 
 const app = createApp();

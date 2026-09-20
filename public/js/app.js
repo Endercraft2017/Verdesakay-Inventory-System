@@ -16,6 +16,10 @@ const App = (() => {
   function getDepartments() { return departments; }
   function isAdmin() { return me && me.role === 'admin'; }
   function hasPermission(key) { return me && Array.isArray(me.permissions) && me.permissions.includes(key); }
+  /** SaaS feature-module entitlement for this workspace (see src/modules.ts). When the
+      list is absent — self-hosted, or the moment before /auth/me resolves — treat every
+      module as on so nothing is hidden. */
+  function hasModule(key) { return !me || !Array.isArray(me.modules) || me.modules.includes(key); }
 
   async function reloadDepartments() {
     try { departments = await API.get('/users/departments/list'); } catch { /* ignore */ }
@@ -72,6 +76,9 @@ const App = (() => {
     try { departments = await API.get('/users/departments/list'); } catch { departments = []; }
 
     renderPrimaryNav(); // (re)build chrome; honours admin-only visibility
+    // The AI Assistant bubble is a per-tenant feature module.
+    const aiFab = document.getElementById('ai-fab');
+    if (aiFab) aiFab.classList.toggle('hidden', !hasModule('ai'));
     showWorkspaceBanner();
 
     refreshUnread();
@@ -107,27 +114,40 @@ const App = (() => {
     try {
       const { count } = await API.get('/messages/unread-count');
       const badge = document.getElementById('msg-badge');
-      if (!badge) return;
-      badge.textContent = count;
-      badge.classList.toggle('hidden', !count);
+      if (badge) {
+        badge.textContent = count;
+        badge.classList.toggle('hidden', !count);
+      }
     } catch { /* ignore */ }
+    if (hasPermission('users.manage')) {
+      try {
+        const { count } = await API.get('/bug-reports/open-count');
+        const bugBadge = document.getElementById('bug-badge');
+        if (bugBadge) {
+          bugBadge.textContent = count;
+          bugBadge.classList.toggle('hidden', !count);
+        }
+      } catch { /* ignore */ }
+    }
   }
 
   /* ---------- Nav-config helpers ---------- */
 
-  /** Visible primaries — filtered by adminOnly (legacy) and requiredPermission. */
+  /** Visible primaries — filtered by adminOnly (legacy), requiredPermission, requiredModule. */
   function visiblePrimaries() {
     return NAV.filter((p) => {
       if (p.adminOnly && !isAdmin()) return false;
       if (p.requiredPermission && !hasPermission(p.requiredPermission)) return false;
+      if (p.requiredModule && !hasModule(p.requiredModule)) return false;
       return true;
     });
   }
 
-  /** Visible subtabs for a primary — filtered by requiredPermission. */
+  /** Visible subtabs for a primary — filtered by requiredPermission and requiredModule. */
   function visibleSubtabs(primary) {
     return (primary.subtabs || []).filter((s) =>
-      !s.requiredPermission || hasPermission(s.requiredPermission));
+      (!s.requiredPermission || hasPermission(s.requiredPermission)) &&
+      (!s.requiredModule || hasModule(s.requiredModule)));
   }
 
   function filtersEqual(a, b) {
@@ -246,7 +266,14 @@ const App = (() => {
     if (!routes[name]) { name = 'dashboard'; filter = undefined; }
 
     // Resolve where this lives in the nav tree (for chrome highlighting).
-    const loc = findLeaf(name, filter);
+    let loc = findLeaf(name, filter);
+    // Deep-link (hand-typed hash / stale bookmark) into a feature module this workspace
+    // doesn't have → bounce to the dashboard rather than let the view 402.
+    if (loc && ((loc.primary.requiredModule && !hasModule(loc.primary.requiredModule)) ||
+                (loc.subtab.requiredModule && !hasModule(loc.subtab.requiredModule)))) {
+      name = 'dashboard'; filter = undefined;
+      loc = findLeaf(name, filter);
+    }
     if (loc) {
       activePrimaryId = loc.primary.id;
       activeSubtabId = loc.subtab.id;
@@ -473,7 +500,7 @@ const App = (() => {
   }
 
   return {
-    register, navigate, getMe, getDepartments, isAdmin, hasPermission, showLogin, refreshUnread,
+    register, navigate, getMe, getDepartments, isAdmin, hasPermission, hasModule, showLogin, refreshUnread,
     logout, boot, reloadDepartments, setMe, currentLocation,
     _routeNames: () => Object.keys(routes), // test/debug seam
   };

@@ -6,13 +6,13 @@
       count: function () { return openCount('/orders?type=purchase'); } },
     { icon: '🚚', label: 'Pick Order', sub: 'sales orders', route: 'pick', color: 'var(--m-low)',
       count: function () { return openCount('/orders?type=sale'); } },
-    { icon: '🔢', label: 'Cycle Count', sub: 'spot check a location', route: 'cycle-count', color: 'var(--m-med)', count: null },
-    { icon: '🏭', label: 'Job Orders', sub: 'shop floor', route: 'job-orders', color: '#7c3aed',
+    { icon: '🏷️', label: 'Release SOs', sub: 'scan units out to a sale order', route: 'so', color: 'var(--m-ok)',
       count: function () {
-        return API.get('/job-orders').then(function (j) {
-          return (j || []).filter(function (x) { return ['released', 'in_progress', 'paused'].indexOf(x.status) !== -1; }).length;
-        });
+        return API.get('/orders?type=sale').then(function (o) {
+          return (o || []).filter(function (x) { var s = String(x.status).toLowerCase(); return s === 'approved' || s === 'released'; }).length;
+        }).catch(function () { return 0; });
       } },
+    { icon: '🔢', label: 'Cycle Count', sub: 'spot check a location', route: 'cycle-count', color: 'var(--m-med)', count: null },
     { icon: '🚀', label: 'Ship Units', sub: 'allocate QC-passed units', route: 'allocate', color: 'var(--m-ok)', count: null },
   ];
 

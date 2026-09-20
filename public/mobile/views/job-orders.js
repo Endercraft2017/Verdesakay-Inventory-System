@@ -50,6 +50,7 @@
       '<h2>' + mEsc(jo.product_name) + '</h2>' +
       '<div class="m-jo-meta"><span class="m-jo-status ' + jo.status + '">' + jo.status.replace('_', ' ') + '</span>' +
       ' · done ' + jo.qty_done + ' · scrap ' + jo.qty_scrapped + ' · of ' + jo.qty_ordered + '</div>' +
+      (jo.team_name ? '<div class="m-hint">Team: ' + mEsc(jo.team_name) + (jo.due_date ? ' · due ' + mEsc(jo.due_date) : '') + '</div>' : (jo.due_date ? '<div class="m-hint">Due ' + mEsc(jo.due_date) + '</div>' : '')) +
       (jo.released_by_name
         ? '<div class="m-hint">Released from warehouse by ' + mEsc(jo.released_by_name) +
           (jo.released_at ? ' · ' + mEsc((jo.released_at || '').slice(0, 16).replace('T', ' ')) : '') + '</div>'
@@ -82,14 +83,18 @@
         '<div class="m-two">' +
         '<label class="m-field"><span class="m-label">Finished</span><input type="number" inputmode="numeric" class="m-input" data-done value="0" min="0" /></label>' +
         '<label class="m-field"><span class="m-label">Scrapped</span><input type="number" inputmode="numeric" class="m-input" data-scrap value="0" min="0" /></label>' +
-        '</div></div>'
+        '</div>' +
+        '<label class="m-field"><span class="m-label">Batch / lot ' + (jo.qc_stages > 0 ? '(optional)' : '(auto)') + '</span>' +
+        '<input class="m-input" data-batch placeholder="' + (jo.qc_stages > 0 ? 'label to group these units' : 'auto BATCH-#####') + '" /></label>' +
+        '</div>'
       );
       view.appendChild(prog);
       addBtn(acts, 'Save progress', function () {
         var d = parseInt(prog.querySelector('[data-done]').value, 10) || 0;
         var s = parseInt(prog.querySelector('[data-scrap]').value, 10) || 0;
         if (d + s < 1) { mToast('Enter finished and/or scrapped', 'err'); return; }
-        act(view, jo.id, 'progress', { done_delta: d, scrapped_delta: s });
+        var bl = (prog.querySelector('[data-batch]').value || '').trim();
+        act(view, jo.id, 'progress', { done_delta: d, scrapped_delta: s, batch_label: bl || null });
       });
       addBtn(acts, 'Pause', function () { act(view, jo.id, 'pause'); }, true);
       addBtn(acts, 'Close out early', function () { act(view, jo.id, 'close'); }, true);

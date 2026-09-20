@@ -98,6 +98,7 @@ function classify(priorToday: PunchRow[]): { kind: 'in' | 'out'; segment: string
 export interface PunchResult {
   ok: true;
   duplicate?: boolean;
+  id: number;
   employee_id: number;
   employee_name: string;
   kind: 'in' | 'out';
@@ -121,8 +122,21 @@ function hoursToday(punches: PunchRow[]): number {
   return Math.round((total / 3_600_000) * 100) / 100;
 }
 
+/** Thrown by recordPunch once the day's final out has already happened -- the central error
+ *  handler (src/app.ts) turns this into the given HTTP status automatically. */
+export class AlreadyClockedOutError extends Error {
+  status = 409;
+  constructor(message: string) {
+    super(message);
+    this.name = 'AlreadyClockedOutError';
+  }
+}
+
 /** Record a punch for an employee. Caller has already validated the kiosk code
- *  and resolved the employee. De-dupes a repeat within 45s. */
+ *  and resolved the employee. De-dupes a repeat within 45s. Once the day's final
+ *  ('afternoon_out') punch has happened, refuses to start a new in/out cycle -- e.g. an
+ *  employee called back for overtime doesn't get a fresh "morning in" here; the kiosk's
+ *  click-to-correct flow (see correctPunch) is the only way to log more time that day. */
 export function recordPunch(
   employee: { id: number; name: string },
   source: 'phone' | 'kiosk',
@@ -140,11 +154,17 @@ export function recordPunch(
     const gap = Date.now() - new Date(last.ts.replace(' ', 'T')).getTime();
     if (gap >= 0 && gap < 45_000) {
       return {
-        ok: true, duplicate: true, employee_id: employee.id, employee_name: employee.name,
+        ok: true, duplicate: true, id: last.id, employee_id: employee.id, employee_name: employee.name,
         kind: last.kind as 'in' | 'out', segment: last.segment, at: last.ts.slice(11, 16),
         work_date: date, hours_today: hoursToday(prior), source,
       };
     }
+  }
+
+  if (prior.some((p) => p.segment === 'afternoon_out')) {
+    throw new AlreadyClockedOutError(
+      'Already timed out for today. To log more time (e.g. overtime), use the kiosk\'s Out slot and confirm with your employee number.'
+    );
   }
 
   const { kind, segment } = classify(prior);
@@ -154,10 +174,120 @@ export function recordPunch(
     employee.id, userId, date, kind, segment, source
   );
   const row = queryOne<PunchRow>('SELECT * FROM time_punches WHERE id = ?', Number(info.lastInsertRowid))!;
+  applyPunchToAttendance(employee.id, date);
   return {
-    ok: true, employee_id: employee.id, employee_name: employee.name,
+    ok: true, id: row.id, employee_id: employee.id, employee_name: employee.name,
     kind, segment, at: row.ts.slice(11, 16), work_date: date,
     hours_today: hoursToday([...prior, row]), source,
+  };
+}
+
+/** The four brackets the kiosk screen shows per day, and the attendance_records column each
+ *  one feeds. Matches deriveDayColumns's own vocabulary below. */
+export type CorrectionSlot = 'in' | 'lunchOut' | 'lunchIn' | 'out';
+const SLOT_COLUMN: Record<CorrectionSlot, 'time_in' | 'lunch_out' | 'lunch_in' | 'time_out'> = {
+  in: 'time_in', lunchOut: 'lunch_out', lunchIn: 'lunch_in', out: 'time_out',
+};
+
+/** Whichever existing punch currently fills this slot, using the exact same rules
+ *  deriveDayColumns uses to derive it -- so correcting it can't disagree with the display. */
+function findSlotPunch(punches: PunchRow[], slot: CorrectionSlot): PunchRow | null {
+  if (slot === 'in') return punches.find((p) => p.kind === 'in') ?? null;
+  const lunchOutPunch = punches.find((p) => p.segment === 'lunch_out') ?? null;
+  if (slot === 'lunchOut') return lunchOutPunch;
+  if (slot === 'lunchIn') return lunchOutPunch ? punches.find((p) => p.kind === 'in' && p.id > lunchOutPunch.id) ?? null : null;
+  return [...punches].reverse().find((p) => p.kind === 'out') ?? null; // 'out'
+}
+
+/** For each of `workDates`, which time_punches.id (if any) currently fills each of the day's
+ *  four slots -- one query for the whole range, not one per day. Used by the HR timekeeping
+ *  grid to know which cells have a kiosk photo worth showing (see GET /periods/:id/attendance
+ *  in hr.routes.ts) without guessing: this reuses the exact same findSlotPunch rule the kiosk's
+ *  own correction flow and deriveDayColumns use, so it can never point at the wrong punch. */
+export function slotPunchIdsForDates(employeeId: number, workDates: string[]): Map<string, Record<CorrectionSlot, number | null>> {
+  const result = new Map<string, Record<CorrectionSlot, number | null>>();
+  if (!workDates.length) return result;
+  const placeholders = workDates.map(() => '?').join(',');
+  const punches = queryAll<PunchRow>(
+    `SELECT * FROM time_punches WHERE employee_id = ? AND work_date IN (${placeholders}) ORDER BY id`,
+    employeeId, ...workDates
+  );
+  const byDate = new Map<string, PunchRow[]>();
+  for (const p of punches) {
+    if (!byDate.has(p.work_date)) byDate.set(p.work_date, []);
+    byDate.get(p.work_date)!.push(p);
+  }
+  for (const date of workDates) {
+    const dayPunches = byDate.get(date) ?? [];
+    result.set(date, {
+      in: findSlotPunch(dayPunches, 'in')?.id ?? null,
+      lunchOut: findSlotPunch(dayPunches, 'lunchOut')?.id ?? null,
+      lunchIn: findSlotPunch(dayPunches, 'lunchIn')?.id ?? null,
+      out: findSlotPunch(dayPunches, 'out')?.id ?? null,
+    });
+  }
+  return result;
+}
+
+function segmentAndKindFor(slot: CorrectionSlot, hour: number): { kind: 'in' | 'out'; segment: string } {
+  if (slot === 'in') return { kind: 'in', segment: hour < 12 ? 'morning_in' : 'afternoon_in' };
+  if (slot === 'lunchOut') return { kind: 'out', segment: 'lunch_out' };
+  if (slot === 'lunchIn') return { kind: 'in', segment: 'afternoon_in' };
+  return { kind: 'out', segment: 'afternoon_out' }; // 'out'
+}
+
+/** Manually set one of the day's four slots to "now" -- the kiosk's click-to-fix flow for when
+ *  the system (or the employee) got a punch wrong, or a slot never got punched at all. Whoever
+ *  is at the kiosk taps the slot, then the actual employee re-enters their own number to confirm
+ *  it's them (checked by the caller against which row was tapped -- see the kiosk view) before
+ *  this runs. Updates the existing punch for that slot if there is one, so it can't disagree with
+ *  findSlotPunch/deriveDayColumns by landing at a different position in id order; inserts a new
+ *  one otherwise. This is also the only way to log a further "time out" once the day's final one
+ *  has already happened (see recordPunch's AlreadyClockedOutError) -- e.g. called back for OT,
+ *  tap Out again and it just advances the recorded time.
+ *
+ *  Unlike applyPunchToAttendance (which only fills attendance_records columns that are still
+ *  empty, so it never clobbers a manual HR edit), this is a deliberate, explicit fix and always
+ *  overwrites the corresponding column -- otherwise the "correction" would be cosmetic only and
+ *  the wrong value would silently stay on the payroll side. */
+export function correctPunch(
+  employee: { id: number; name: string },
+  slot: CorrectionSlot,
+  source: 'kiosk'
+): PunchResult {
+  const { date, hour } = localParts();
+  const prior = queryAll<PunchRow>(
+    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
+    employee.id, date
+  );
+  const { kind, segment } = segmentAndKindFor(slot, hour);
+  const existing = findSlotPunch(prior, slot);
+
+  let row: PunchRow;
+  let finalPunches: PunchRow[];
+  if (existing) {
+    run("UPDATE time_punches SET ts = datetime('now','localtime'), segment = ? WHERE id = ?", segment, existing.id);
+    row = queryOne<PunchRow>('SELECT * FROM time_punches WHERE id = ?', existing.id)!;
+    finalPunches = prior.map((p) => (p.id === existing.id ? row : p));
+  } else {
+    const info = run(
+      'INSERT INTO time_punches (employee_id, user_id, work_date, kind, segment, source) VALUES (?, NULL, ?, ?, ?, ?)',
+      employee.id, date, kind, segment, source
+    );
+    row = queryOne<PunchRow>('SELECT * FROM time_punches WHERE id = ?', Number(info.lastInsertRowid))!;
+    finalPunches = [...prior, row];
+  }
+
+  run(
+    `UPDATE attendance_records SET ${SLOT_COLUMN[slot]} = ?, updated_at = datetime('now')
+     WHERE employee_id = ? AND work_date = ?`,
+    row.ts.slice(11, 16), employee.id, date
+  );
+
+  return {
+    ok: true, id: row.id, employee_id: employee.id, employee_name: employee.name,
+    kind: row.kind as 'in' | 'out', segment: row.segment, at: row.ts.slice(11, 16),
+    work_date: date, hours_today: hoursToday(finalPunches), source,
   };
 }
 
@@ -181,29 +311,108 @@ export function myClockStatus(employeeId: number): {
   };
 }
 
-/** Reconcile punches into attendance_records for a cutoff period:
- *  first punch of a work_date → time_in, last → time_out. Only touches roster
- *  rows that don't already have a manual time set. Returns how many were filled. */
+interface DayColumns { time_in: string; lunch_out: string | null; lunch_in: string | null; time_out: string | null }
+
+/** Split one day's raw punches into the four brackets classify() already tags them with:
+ *  first in → time_in, the lunch_out punch → lunch_out, the first in after it → lunch_in (back
+ *  from lunch), last out → time_out. lunch_out/lunch_in are display-only (payroll still uses
+ *  PayrollPolicy.lunch_break_minutes). Shared by importPunchesForPeriod (a whole period, on
+ *  demand) and applyPunchToAttendance (one day, live on every punch) so the two can never
+ *  derive these columns differently. `punches` must be non-empty. */
+function deriveDayColumns(punches: PunchRow[]): DayColumns {
+  const hm = (p: PunchRow) => p.ts.slice(11, 16);
+  // First actual in-punch → time_in (fall back to the very first punch of the day, matching
+  // the old MIN(ts) behavior for a day whose first punch was somehow an 'out').
+  const firstIn = punches.find((p) => p.kind === 'in') ?? punches[0]!;
+  // Lunch bracket: the lunch_out punch, then the first in-punch that follows it (afternoon_in
+  // = "back from lunch"). No lunch_out punch → no lunch bracket, exactly as before this existed.
+  const lunchOutPunch = punches.find((p) => p.segment === 'lunch_out') ?? null;
+  const lunchInPunch = lunchOutPunch
+    ? punches.find((p) => p.kind === 'in' && p.id > lunchOutPunch.id) ?? null
+    : null;
+  // Last out-punch → time_out, but only when there's more than one punch so a lone morning
+  // time-in doesn't get a bogus time-out (same intent as the old `n > 1` guard).
+  const lastOut = punches.length > 1
+    ? [...punches].reverse().find((p) => p.kind === 'out') ?? null
+    : null;
+  return {
+    time_in: hm(firstIn),
+    lunch_out: lunchOutPunch ? hm(lunchOutPunch) : null,
+    lunch_in: lunchInPunch ? hm(lunchInPunch) : null,
+    time_out: lastOut ? hm(lastOut) : null,
+  };
+}
+
+/** Fill this employee+date's attendance_records row(s) from whatever's in time_punches so far —
+ *  only columns that don't already hold a manual value, same rule as importPunchesForPeriod.
+ *  Called live on every punch (see recordPunch) so HR doesn't have to click Import while a
+ *  period is still open; a no-op if the employee isn't on any period's roster for this date yet
+ *  (nothing lost — Import (or adding them to the roster) still picks these punches up later). */
+function applyPunchToAttendance(employeeId: number, workDate: string): void {
+  const rows = queryAll<{
+    period_id: number; time_in: string | null; lunch_out: string | null; lunch_in: string | null; time_out: string | null;
+  }>(
+    'SELECT period_id, time_in, lunch_out, lunch_in, time_out FROM attendance_records WHERE employee_id = ? AND work_date = ?',
+    employeeId, workDate
+  );
+  if (!rows.length) return;
+  const punches = queryAll<PunchRow>(
+    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
+    employeeId, workDate
+  );
+  if (!punches.length) return;
+  const cols = deriveDayColumns(punches);
+  for (const r of rows) {
+    const timeIn = r.time_in || cols.time_in;
+    const lunchOut = r.lunch_out || cols.lunch_out;
+    const lunchIn = r.lunch_in || cols.lunch_in;
+    const timeOut = r.time_out || cols.time_out;
+    if (timeIn === r.time_in && lunchOut === r.lunch_out && lunchIn === r.lunch_in && timeOut === r.time_out) continue;
+    run(
+      `UPDATE attendance_records SET time_in = ?, lunch_out = ?, lunch_in = ?, time_out = ?,
+         updated_at = datetime('now')
+       WHERE period_id = ? AND employee_id = ? AND work_date = ?`,
+      timeIn, lunchOut ?? null, lunchIn ?? null, timeOut ?? null, r.period_id, employeeId, workDate
+    );
+  }
+}
+
+/** Reconcile punches into attendance_records for a cutoff period — a catch-up/backfill pass for
+ *  whatever applyPunchToAttendance's live per-punch fill couldn't cover: punches recorded before
+ *  the employee was added to this period's roster. Only touches roster columns that don't
+ *  already have a manual value set. Returns how many rows were filled. */
 export function importPunchesForPeriod(periodId: number): { filled: number; dates: number } {
-  const roster = queryAll<{ employee_id: number; work_date: string; time_in: string | null; time_out: string | null }>(
-    'SELECT employee_id, work_date, time_in, time_out FROM attendance_records WHERE period_id = ?',
+  const roster = queryAll<{
+    employee_id: number; work_date: string;
+    time_in: string | null; lunch_out: string | null; lunch_in: string | null; time_out: string | null;
+  }>(
+    'SELECT employee_id, work_date, time_in, lunch_out, lunch_in, time_out FROM attendance_records WHERE period_id = ?',
     periodId
   );
   let filled = 0;
   const seen = new Set<string>();
   for (const r of roster) {
-    const agg = queryOne<{ first: string; last: string; n: number }>(
-      `SELECT MIN(ts) AS first, MAX(ts) AS last, COUNT(*) AS n
-       FROM time_punches WHERE employee_id = ? AND work_date = ?`,
+    const punches = queryAll<PunchRow>(
+      'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
       r.employee_id, r.work_date
     );
-    if (!agg || !agg.n) continue;
-    const timeIn = r.time_in || agg.first.slice(11, 16);
-    const timeOut = r.time_out || (agg.n > 1 ? agg.last.slice(11, 16) : r.time_out);
-    if (timeIn === r.time_in && timeOut === r.time_out) continue;
+    if (!punches.length) continue;
+    const cols = deriveDayColumns(punches);
+
+    const timeIn = r.time_in || cols.time_in;
+    const lunchOut = r.lunch_out || cols.lunch_out;
+    const lunchIn = r.lunch_in || cols.lunch_in;
+    const timeOut = r.time_out || cols.time_out;
+
+    if (
+      timeIn === r.time_in && lunchOut === r.lunch_out
+      && lunchIn === r.lunch_in && timeOut === r.time_out
+    ) continue;
     run(
-      "UPDATE attendance_records SET time_in = ?, time_out = ?, updated_at = datetime('now') WHERE period_id = ? AND employee_id = ? AND work_date = ?",
-      timeIn, timeOut ?? null, periodId, r.employee_id, r.work_date
+      `UPDATE attendance_records SET time_in = ?, lunch_out = ?, lunch_in = ?, time_out = ?,
+         updated_at = datetime('now')
+       WHERE period_id = ? AND employee_id = ? AND work_date = ?`,
+      timeIn, lunchOut ?? null, lunchIn ?? null, timeOut ?? null, periodId, r.employee_id, r.work_date
     );
     filled++;
     seen.add(r.work_date);

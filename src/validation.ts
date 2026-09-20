@@ -244,6 +244,8 @@ export const transferStockSchema = z.object({
 
 // ---- Bill of materials (finished products) ----
 export const saveBomSchema = z.object({
+  // An empty list is allowed — a finished product may have no BOM yet and still be
+  // built (a job order for it just consumes nothing unless components are added ad hoc).
   components: z
     .array(
       z.object({
@@ -253,8 +255,15 @@ export const saveBomSchema = z.object({
       })
     )
     .max(200),
-  // Which QA/QC checklist this product uses. Absent = leave unchanged; '' / null = clear.
-  qc_checklist_id: optionalId.optional(),
+  // Which QA/QC checklist this product uses at each stage. Absent = leave unchanged;
+  // '' / null = clear (falls back to that stage's default).
+  qc_checklist_qa_id: optionalId.optional(),
+  qc_checklist_qc_id: optionalId.optional(),
+  // Optional standard costs per unit, added on top of the rolled-up material cost when
+  // set. Stored in the item's `attributes` JSON (std_labor_cost / std_overhead_cost).
+  // Absent = leave unchanged; null = clear.
+  std_labor_cost: z.coerce.number().min(0).max(1e12).optional().nullable(),
+  std_overhead_cost: z.coerce.number().min(0).max(1e12).optional().nullable(),
 });
 
 /** POST /api/finished-products/:id/units/allocate — sell or relocate in-stock units.
@@ -282,6 +291,8 @@ export const allocateUnitsSchema = z
   });
 
 // ---- Manufacturing job orders ----
+const jobOrderDate = trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional().nullable();
+
 export const createJobOrderSchema = z.object({
   product_item_id: z.coerce.number().int().positive(),
   qty_ordered: z.coerce.number().int().positive('Quantity to build must be at least 1'),
@@ -289,6 +300,11 @@ export const createJobOrderSchema = z.object({
   source_location_id: optionalId,
   output_location_id: optionalId,
   qc_stages: z.coerce.number().int().min(0).max(2).default(0),
+  team_id: optionalId,
+  planned_start: jobOrderDate,
+  due_date: jobOrderDate,
+  priority: z.coerce.number().int().min(0).max(9).optional(),
+  work_center: trimmed.max(80).optional().nullable(),
   notes: optionalText,
 });
 
@@ -297,7 +313,28 @@ export const updateJobOrderSchema = z.object({
   source_location_id: optionalId,
   output_location_id: optionalId,
   qc_stages: z.coerce.number().int().min(0).max(2).optional(),
+  team_id: optionalId,
+  planned_start: jobOrderDate,
+  due_date: jobOrderDate,
+  priority: z.coerce.number().int().min(0).max(9).optional(),
+  work_center: trimmed.max(80).optional().nullable(),
   notes: optionalText,
+});
+
+// ---- Production teams ----
+export const productionTeamSchema = z.object({
+  name: trimmed.min(1, 'Give the team a name').max(120),
+  notes: trimmed.max(1000).optional().nullable(),
+  is_active: boolish.optional(),
+});
+
+export const teamMemberSchema = z.object({
+  employee_id: z.coerce.number().int().positive(),
+  role: trimmed.max(60).optional().nullable(),
+});
+
+export const productionCapacitySchema = z.object({
+  daily_capacity: z.coerce.number().int().min(0).max(1_000_000),
 });
 
 export const jobOrderComponentsSchema = z.object({
@@ -306,6 +343,9 @@ export const jobOrderComponentsSchema = z.object({
       z.object({
         component_item_id: z.coerce.number().int().positive(),
         qty_planned: z.coerce.number().int().min(0),
+        // Given only for a line that isn't already on the job order (an ad-hoc add on a
+        // draft). Defaults to qty_planned spread over the ordered quantity server-side.
+        qty_per_unit: z.coerce.number().int().min(0).optional(),
       })
     )
     .max(200),
@@ -315,6 +355,9 @@ export const jobOrderProgressSchema = z
   .object({
     done_delta: z.coerce.number().int().min(0).default(0),
     scrapped_delta: z.coerce.number().int().min(0).default(0),
+    // Serialized job orders only: give this progress entry a batch/lot label. A
+    // non-serialized job order always batches each progress entry automatically.
+    batch_label: trimmed.max(80).optional().nullable(),
   })
   .refine((d) => d.done_delta + d.scrapped_delta > 0, 'Enter a finished or scrapped quantity');
 
@@ -333,24 +376,100 @@ const checklistResultSchema = z.object({
   note: trimmed.max(500).optional().nullable(),
 });
 
-export const inspectUnitsSchema = z.object({
-  unit_ids: z.array(z.coerce.number().int().positive()).min(1).max(500),
-  result: z.enum(['pass', 'fail']),
-  remarks: trimmed.max(2000).optional().nullable(),
-  identifier: unitIdentifier,
-  checklist: z.array(checklistResultSchema).max(60).optional(),
+export const inspectUnitsSchema = z
+  .object({
+    unit_ids: z.array(z.coerce.number().int().positive()).min(1).max(500),
+    result: z.enum(['pass', 'fail']),
+    remarks: trimmed.max(2000).optional().nullable(),
+    identifier: unitIdentifier,
+    checklist: z.array(checklistResultSchema).max(60).optional(),
+    // Required on a fail: what to do with the unit. 'repair' sends it to rework;
+    // the others are terminal (the unit counts as scrapped).
+    disposition: z.enum(['scrap', 'dispose', 'recycle', 'repair']).optional(),
+  })
+  .refine((v) => v.result !== 'fail' || !!v.disposition, {
+    message: 'Pick what to do with the failed unit (scrap / dispose / recycle / repair)',
+    path: ['disposition'],
+  });
+
+/** POST /job-orders/:id/products-in — receive finished output into stock. Either
+    serialized `unit_ids` (units at status 'passed'), or a non-serialized `batch_id` +
+    the `quantity` of it being received (a batch's un-received qty may be received across
+    more than one receipt). */
+export const productsInSchema = z
+  .object({
+    received_date: trimmed.max(40).optional().nullable(),
+    location_id: z.coerce.number().int().positive('Pick the location stock is received into'),
+    notes: optionalText,
+    unit_ids: z.array(z.coerce.number().int().positive()).max(500).optional(),
+    batch_id: z.coerce.number().int().positive().optional(),
+    quantity: z.coerce.number().min(0).optional(),
+  })
+  .refine(
+    (v) => (v.unit_ids && v.unit_ids.length > 0) || (v.batch_id != null && (v.quantity || 0) > 0),
+    'Select at least one unit, or a batch and a received quantity'
+  );
+
+// ---- Repair / rework parts requests (src/routes/production.routes.ts) ----
+const repairFault = z.enum(['assembler', 'production', 'supplier', 'wear', 'other']);
+
+export const repairRequestSchema = z.object({
+  kind: z.enum(['add', 'replace']),
+  component_item_id: z.coerce.number().int().positive(),
+  quantity: z.coerce.number().int().positive().max(9999).default(1),
+  fault: repairFault.optional().nullable(),
+  // replace only — book the removed part into its damage twin (default yes).
+  return_to_damage: boolish.default(true),
+  notes: trimmed.max(1000).optional().nullable(),
 });
 
-/** POST/PUT /api/qc/checklists/:id — one named, reusable QA/QC checklist. */
+export const repairAcceptSchema = z.object({
+  from_location_id: optionalId,
+  warehouse_remarks: trimmed.max(1000).optional().nullable(),
+});
+
+export const repairRejectSchema = z.object({
+  warehouse_remarks: trimmed.min(1, 'Say why the request is rejected').max(1000),
+});
+
+// ---- Production batches / lots ----
+export const createBatchSchema = z.object({
+  job_order_id: optionalId,
+  product_item_id: optionalId,
+  qty: z.coerce.number().int().min(0).max(1_000_000).default(0),
+  identifier: trimmed.max(80).optional().nullable(),
+  notes: trimmed.max(1000).optional().nullable(),
+});
+
+export const updateBatchSchema = z.object({
+  identifier: trimmed.max(80).optional().nullable(),
+  notes: trimmed.max(1000).optional().nullable(),
+  status: z.enum(['open', 'released', 'closed']).optional(),
+});
+
+export const batchInspectSchema = z
+  .object({
+    result: z.enum(['pass', 'fail']),
+    disposition: z.enum(['scrap', 'dispose', 'recycle', 'repair']).optional(),
+    remarks: trimmed.max(2000).optional().nullable(),
+    checklist: z.array(checklistResultSchema).max(60).optional(),
+  })
+  .refine((v) => v.result !== 'fail' || !!v.disposition, {
+    message: 'Pick what happens to the batch on a fail',
+    path: ['disposition'],
+  });
+
+/** POST/PUT /api/qc/checklists/:id — one named, reusable QA/QC checklist. Belongs to one
+    stage as a whole: 1 = QA (first pass), 2 = QC (final pass). */
 export const qcChecklistSchema = z.object({
   name: trimmed.min(1, 'Give the checklist a name').max(120),
+  stage: z.coerce.number().int().min(1).max(2).default(1),
   is_default: boolish.default(false),
   items: z
     .array(
       z.object({
         label: trimmed.min(1, 'Each check needs a label').max(200),
         required: boolish.default(false),
-        stage: z.coerce.number().int().min(0).max(2).default(0),
       })
     )
     .max(60, 'Keep the checklist under 60 items'),
@@ -385,6 +504,14 @@ export const damageStockSchema = z.object({
   quantity: z.coerce.number().int().positive('Quantity must be a positive whole number'),
   reason: optionalText,
   location_id: optionalId, // defaults server-side to the default location
+});
+
+/** Draft purchase orders for items at/under their reorder level. `item_ids` restricts to
+    a chosen set (else every low-stock item); `multiplier` sets the top-up target as a
+    multiple of each item's reorder level (default 2×). See POST /api/inventory/reorder-po. */
+export const reorderPoSchema = z.object({
+  item_ids: z.array(z.coerce.number().int().positive()).max(2000).optional(),
+  multiplier: z.coerce.number().min(1).max(20).optional(),
 });
 
 // ---- Messages ----
@@ -425,6 +552,18 @@ export const bookmarkSchema = z.object({
     .nullable(),
 });
 
+// ---- Bug reports (in-app bug reporting; see src/routes/bug-reports.routes.ts) ----
+export const createBugReportSchema = z.object({
+  title: trimmed.min(1, 'Title is required').max(200),
+  steps_to_reproduce: trimmed.min(1, 'Steps to reproduce are required').max(4000),
+  description: trimmed.max(4000).optional().nullable(),
+  page_context: trimmed.max(200).optional().nullable(),
+});
+
+export const updateBugReportSchema = z.object({
+  status: z.enum(['open', 'resolved']),
+});
+
 // ---- Documents: orders + templates ----
 const numCoerce = z.coerce.number();
 
@@ -454,6 +593,9 @@ const orderFields = {
   // Purchase orders: which supplier + expected delivery date.
   supplier_id: optionalId,
   expected_date: trimmed.max(40).optional().nullable(),
+  // Sale orders: override the stock-availability gate when moving to a firm status
+  // (approve / confirm / complete) — creates an explicit backorder.
+  force: boolish.optional(),
 };
 
 export const createOrderSchema = z.object({
@@ -462,6 +604,37 @@ export const createOrderSchema = z.object({
 });
 
 export const updateOrderSchema = z.object(orderFields);
+
+// ---- Sale-order status-only change (no line-item body) — used by the delivery→fulfil
+// prompt and any "just advance the order" action. Runs the same availability gate. ----
+export const orderStatusSchema = z.object({
+  status: trimmed.min(1).max(40),
+  force: boolish.optional(),
+});
+
+// ---- Sale-order release (warehouse scans goods out against an approved SO) ----
+export const releaseOrderSchema = z
+  .object({
+    // Serialized finished units — by id and/or by scanned QR-label text (identifier).
+    unit_ids: z.array(z.coerce.number().int().positive()).max(2000).optional(),
+    codes: z.array(trimmed.min(1).max(120)).max(2000).optional(),
+    // Non-serialized (bulk) lines — { item_id, quantity } to add to that line's released_qty.
+    bulk: z.array(z.object({
+      item_id: z.coerce.number().int().positive(),
+      quantity: numCoerce.positive().max(1_000_000),
+    })).max(300).optional(),
+  })
+  .refine((v) => (v.unit_ids?.length || v.codes?.length || v.bulk?.length), {
+    message: 'Scan or enter something to release',
+  });
+
+export const unreserveOrderSchema = z.object({
+  unit_ids: z.array(z.coerce.number().int().positive()).max(2000).optional(),
+  bulk: z.array(z.object({
+    item_id: z.coerce.number().int().positive(),
+    quantity: numCoerce.positive().max(1_000_000),
+  })).max(300).optional(),
+});
 
 // ---- Purchasing: goods receipts + vendor bills (3-way match) ----
 const receiptLineSchema = z.object({
@@ -671,6 +844,27 @@ export const templateSchema = z.object({
   type: z.enum(['sale', 'job', 'purchase', 'generic']).default('generic'),
   period: trimmed.max(60).optional().nullable(),
   body: trimmed.min(1, 'Template body cannot be empty').max(5000000),
+  // N-up print tiling (SCHEMA_VERSION 30/32) — the template editor shows these as Grid Rows /
+  // Grid Columns / Fill mode. Both grid dimensions default to 1 (today's plain
+  // one-record-per-page behavior). Capped at 6 each and 12 combined — past that a real page
+  // layout (columns/rows this small) stops being legible anyway.
+  copies_per_record: intCoerce.min(1).max(6).default(1), // grid rows
+  records_per_page: intCoerce.min(1).max(6).default(1), // grid columns
+  // 'blank' (default): unfilled cells stay empty — right when each cell is meant to be a
+  // specific record (HR Payroll Slip's "2 employees x 2 copies"). 'repeat': cycle back through
+  // the printed records to fill every cell — right for repeating ONE design across its whole
+  // grid (print one record as a 3x3 sheet of itself).
+  tile_fill: z.enum(['blank', 'repeat']).default('blank'),
+  // (SCHEMA_VERSION 35) Continuous tiling: repeat_count is only consulted when tile_continuous
+  // is on — copies_per_record/records_per_page then become a fixed page shape instead of the
+  // repeat count itself. Capped well above the grid-cell cap (12) since a repeat count isn't
+  // bounded by page legibility the way grid dimensions are — it just controls how many pages
+  // the continuous stream spans.
+  repeat_count: intCoerce.min(1).max(100).default(1),
+  tile_continuous: boolish.default(false),
+}).refine((v) => v.copies_per_record * v.records_per_page <= 12, {
+  message: 'Copies per record × records per page can\'t exceed 12',
+  path: ['copies_per_record'],
 });
 
 // ---- Form builder ----
@@ -748,6 +942,7 @@ export const companyProfileSchema = z.object({
   phone: trimmed.max(80).optional().nullable(),
   email: trimmed.max(160).optional().nullable(),
   logo_url: trimmed.max(500).optional().nullable(),
+  compress_images: boolish.default(true),
 });
 
 /** A document-template variable (constant / bound field / formula). */
@@ -769,6 +964,13 @@ export const docVariableSchema = z.object({
 
 const employeeStatusEnum = z.enum(['probationary', 'regular', 'resigned', 'terminated']);
 const optionalIdText = trimmed.max(40).optional().nullable();
+// A fixed peso amount replacing a computed statutory deduction (SSS/PhilHealth/Pag-IBIG/
+// withholding tax) for one employee. '' / null / omitted -> null (use the normal computed
+// amount) — shared by all four override fields on employeeSchema below.
+const optionalOverrideAmount = (label: string) => z.preprocess(
+  (v) => (v === '' || v === undefined || v === null ? null : v),
+  numCoerce.min(0, `${label} override cannot be negative`).nullable()
+).optional();
 
 export const employeeSchema = z.object({
   employee_no: trimmed.min(1, 'Employee number is required').max(40),
@@ -782,6 +984,11 @@ export const employeeSchema = z.object({
   rate_type: z.enum(['daily', 'monthly']).default('daily'),
   daily_rate: numCoerce.min(0, 'Daily rate cannot be negative').default(0),
   monthly_rate: numCoerce.min(0, 'Monthly rate cannot be negative').optional().nullable(),
+  // Only used when this save actually changes the effective daily rate — logs it to
+  // employee_rate_history instead of just overwriting the flat current value. Not persisted as
+  // an employees column. See src/employee-rate-history.ts and hr.routes.ts PUT /employees/:id.
+  rate_effective_date: trimmed.max(10).optional().nullable(),
+  rate_change_note: trimmed.max(200).optional().nullable(),
   status: employeeStatusEnum.default('probationary'),
   start_date: trimmed.max(40).optional().nullable(),
   sss_no: optionalIdText,
@@ -794,6 +1001,24 @@ export const employeeSchema = z.object({
   // Exempt from late deductions (e.g. the company president) — real lateness still shows on the
   // payslip detail, it just never subtracts pay. See src/hr-payroll-compute.ts.
   late_exempt: boolish.optional(),
+  // Exempt from overtime pay entirely — real OT hours still show on the payslip detail, it
+  // just never adds pay. See src/hr-payroll-compute.ts.
+  ot_exempt: boolish.optional(),
+  // Per-employee statutory-deduction switches — the same columns Accounting → Statutory
+  // Deductions edits, now also editable straight from the Edit Employee form. Default true
+  // (deduct) when omitted, matching how those columns already default in the database.
+  deduct_sss: boolish.optional(),
+  deduct_philhealth: boolish.optional(),
+  deduct_pagibig: boolish.optional(),
+  deduct_withholding_tax: boolish.optional(),
+  // A fixed peso amount replacing the computed BIR withholding formula for this employee every
+  // cutoff, and the same for the three contribution funds (still divided across cutoffs the
+  // same way the computed amount is — see computeEmployeeStatutory in hr.routes.ts). Each only
+  // takes effect while its matching deduct_* switch above is also on.
+  withholding_tax_override: optionalOverrideAmount('Withholding tax'),
+  sss_override: optionalOverrideAmount('SSS'),
+  philhealth_override: optionalOverrideAmount('PhilHealth'),
+  pagibig_override: optionalOverrideAmount('Pag-IBIG'),
   photo: z.preprocess(
     (v) => (v === '' ? null : v),
     z.string().max(2_000_000).regex(/^data:image\//, 'Photo must be an image').optional().nullable()
@@ -820,10 +1045,18 @@ const nullableId = z.coerce.number().int().positive().nullable().optional();
 const attendanceDaySchema = z.object({
   work_date: trimmed.min(1).max(40),
   time_in: timeOfDay,
+  // Lunch-break bracket — display-only (payroll subtracts PayrollPolicy.lunch_break_minutes,
+  // it never reads these). Split from the raw punches on reconcile, or hand-typed in the grid.
+  lunch_out: timeOfDay,
+  lunch_in: timeOfDay,
   time_out: timeOfDay,
   notes: optionalText,
   shift_id: nullableId,
+  // Legacy single link — still accepted for back-compat. New clients send form_record_ids.
   form_record_id: nullableId,
+  // A day can link multiple OT/Half Day/Leave/Undertime/Offset forms. When present this wins
+  // over form_record_id; the route also mirrors the first entry back into form_record_id.
+  form_record_ids: z.array(z.coerce.number().int().positive()).max(20).optional().nullable(),
   holiday_type: z.enum(['regular', 'special_non_working', 'special_working', 'cancelled_paid', 'cancelled_unpaid', 'none']).nullable().optional(),
   // 'yes'/'no' force this one date on/off as a rest day for this employee; null inherits the
   // weekly rest-day pattern. See attendance_records.rest_day (db.ts, SCHEMA_VERSION 18).
@@ -831,6 +1064,12 @@ const attendanceDaySchema = z.object({
   // HR's explicit allow/deny decision on a day under PayrollPolicy.min_work_minutes — see
   // attendance_records.min_hours_decision (db.ts).
   min_hours_decision: z.enum(['allow', 'deny']).nullable().optional(),
+  // HR manually crediting this day as a half day (AM or PM) with NO linked Half Day Request
+  // backing it — for when the raw times don't happen to match the automatic "possible half
+  // day" heuristic but HR knows it was one anyway. Ignored by the payroll engine when a real
+  // halfday_request IS linked (that always wins). See attendance_records.half_day_override
+  // (db.ts) and hr-payroll-compute.ts's halfDayOverride.
+  half_day_override: z.enum(['am', 'pm']).nullable().optional(),
 });
 
 export const saveAttendanceSchema = z.object({
@@ -908,6 +1147,8 @@ export const payrollPolicySchema = z.object({
   min_work_minutes: z.coerce.number().int().min(0).max(1440).default(0),
   lunch_break_minutes: z.coerce.number().int().min(0).max(480).default(60),
   count_lunch_as_worked: boolish.default(false),
+  // false (default) preserves the pre-2026-09 behavior — lunch_out/lunch_in stay record-only.
+  count_lunch_late_as_late: boolish.default(false),
   hours_basis: z.enum(['fixed', 'per_hour']).default('fixed'),
   hours_basis_unit: z.enum(['minute', '30min', 'hour']).default('30min'),
   // 0 (default) = off, preserving the pre-existing "any presence at all is a whole day"
@@ -917,6 +1158,12 @@ export const payrollPolicySchema = z.object({
   whole_day_min_minutes: z.coerce.number().int().min(0).max(1440).default(0),
   // Blank/null (default) = no cap, same "opt-in" safety convention.
   max_ot_hours: z.coerce.number().min(0).max(24).nullable().optional().default(null),
+  // 'flat' (default) preserves the pre-2026-09 behavior — same opt-in-by-default safety
+  // convention as whole_day_min_minutes/max_ot_hours above.
+  special_holiday_premium_mode: z.enum(['flat', 'prorated']).default('flat'),
+  // 'none' (default) preserves the pre-2026-09 behavior — holiday pay is never withheld for an
+  // adjacent-day absence unless HR explicitly opts in.
+  holiday_adjacency_requirement: z.enum(['none', 'before', 'after', 'both']).default('none'),
 });
 
 // POST /api/hr/payroll/:recordId/preview-deductions, PUT .../deductions — which of the four
@@ -983,7 +1230,12 @@ export const phonePunchSchema = z.object({
 export const kioskPunchSchema = z.object({
   code: z.string().trim().length(10, 'The office code has changed — the screen shows a fresh one'),
   employee_no: trimmed.min(1, 'Employee number is required').max(40),
-  name: trimmed.min(1, 'Name is required').max(160),
+});
+
+export const kioskCorrectSchema = z.object({
+  code: z.string().trim().length(10, 'The office code has changed — the screen shows a fresh one'),
+  employee_no: trimmed.min(1, 'Employee number is required').max(40),
+  slot: z.enum(['in', 'lunchOut', 'lunchIn', 'out']),
 });
 
 // ---- Announcements ----

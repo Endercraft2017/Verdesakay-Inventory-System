@@ -516,9 +516,11 @@ describe('global variables', () => {
 describe('hr payroll csv import', () => {
   let payrollFormId: number;
 
-  // 46-column rows (matching the real "Summary" sheet's column count) built positionally
-  // so the fixed offsets in src/hr-payroll-import.ts stay honest — see that test file's
-  // row()/COL helpers for why this isn't hand-typed comma text.
+  // 46-column rows (matching the real "Summary" sheet's column count), with the header row
+  // labeled to match — src/hr-payroll-import.ts locates each field by the header row's own
+  // text (column position drifts between exports, see that file's resolveColumns), so the
+  // header row here must carry real labels, not just be wide enough. See
+  // tests/hr-payroll-import.test.ts for the header-text-driven parsing this exercises.
   const COLS = 46;
   const COL = { no: 0, name: 1, totalDaysWork: 19, dailyRate: 24, hourlyRate: 25, otPay: 28, lateUndertimePay: 30, basicPay: 36, totalDeductions: 42, totalSalary: 43 };
   function csvRow(set: Record<number, string | number>): string {
@@ -529,7 +531,12 @@ describe('hr payroll csv import', () => {
 
   const SUMMARY_CSV = [
     'June 16-30  2026,,,SUMMARY JUNE 01 -15 2026',
-    csvRow({ [COL.no]: 'No.', [COL.name]: 'Employee Name' }),
+    csvRow({
+      [COL.no]: 'No.', [COL.name]: 'Employee Name', [COL.totalDaysWork]: 'Total Days Work',
+      [COL.dailyRate]: 'Daily Rate', [COL.hourlyRate]: 'Hourly Rate', [COL.otPay]: 'Reg OT 25%',
+      [COL.lateUndertimePay]: 'Late/ Undertime', [COL.basicPay]: 'BASIC PAY',
+      [COL.totalDeductions]: 'TOTAL DEDUCTIONS', [COL.totalSalary]: 'Total Salary',
+    }),
     csvRow({ [COL.no]: 'WAREHOUSE' }),
     csvRow({
       [COL.no]: 1, [COL.name]: 'Dela Cruz, Juan', [COL.totalDaysWork]: 13,
@@ -573,7 +580,7 @@ describe('hr payroll csv import', () => {
     expect(records.body[0].data.employee_name).toBe('Dela Cruz, Juan');
     expect(records.body[0].data.dept_position).toBe('WAREHOUSE');
     expect(records.body[0].data.daily_rate).toBe(600);
-    expect(records.body[0].data.total_earnings).toBe(7800); // basic_salary from BASIC PAY column
+    expect(records.body[0].data.total_earnings).toBe(7800); // basic_salary (BASIC PAY column) — no OT/holiday this row, late is not added back (see hr-payroll-import.ts)
     expect(records.body[0].data.net_pay).toBe(7796.7);
     expect(records.body[0].data.pay_date).toBe('2026-07-05');
     expect(records.body[0].status).toBe('completed');

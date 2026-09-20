@@ -82,6 +82,13 @@ function productionSection() {
            SUM(MAX(qty_ordered - qty_done - qty_scrapped, 0)) AS qty
     FROM job_orders WHERE status IN ('released','in_progress','paused')`);
 
+  const OPEN = "status IN ('draft','released','in_progress','paused')";
+  const sched = queryOne<{ overdue: number; due_week: number }>(`
+    SELECT SUM(CASE WHEN due_date IS NOT NULL AND due_date < date('now') THEN 1 ELSE 0 END) AS overdue,
+           SUM(CASE WHEN due_date IS NOT NULL AND due_date >= date('now')
+                    AND due_date < date('now','+7 day') THEN 1 ELSE 0 END) AS due_week
+    FROM job_orders WHERE ${OPEN}`);
+
   const windowStats = (days: number) =>
     queryOne<{ mos: number; done: number; scrapped: number }>(`
       SELECT COUNT(*) AS mos, SUM(qty_done) AS done, SUM(qty_scrapped) AS scrapped
@@ -105,6 +112,8 @@ function productionSection() {
     by_status: byStatus,
     wip_orders: wip?.orders ?? 0,
     wip_qty: Number(wip?.qty) || 0,
+    overdue: Number(sched?.overdue) || 0,
+    due_this_week: Number(sched?.due_week) || 0,
     last_30: { mos: w30?.mos ?? 0, units_done: Number(w30?.done) || 0, units_scrapped: Number(w30?.scrapped) || 0, scrap_rate_pct: scrapRate(w30 ?? undefined) },
     last_90: { mos: w90?.mos ?? 0, units_done: Number(w90?.done) || 0, units_scrapped: Number(w90?.scrapped) || 0, scrap_rate_pct: scrapRate(w90 ?? undefined) },
     recent_completed: recent,
@@ -174,9 +183,22 @@ function salesSection() {
     WHERE type = 'sale' AND COALESCE(order_date, created_at) >= date('now','-56 day')
     GROUP BY week ORDER BY week`);
 
+  // Backordered: approved/released, not fulfilled, with a line not yet fully released.
+  const backorder = queryOne<{ n: number; value: number }>(`
+    SELECT COUNT(*) AS n, SUM(o.total) AS value FROM orders o
+    WHERE o.type = 'sale' AND o.fulfilled_at IS NULL AND LOWER(o.status) IN ('approved','released')
+      AND EXISTS (
+        SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL
+          AND oi.quantity > COALESCE(oi.released_qty,0)
+            + (SELECT COUNT(*) FROM job_order_units ju
+                WHERE ju.order_id = o.id AND ju.product_item_id = oi.item_id AND ju.status IN ('reserved','sold'))
+      )`);
+
   return {
     open_orders: open?.n ?? 0,
     open_value: num(open?.value),
+    backorder_count: backorder?.n ?? 0,
+    backorder_value: num(backorder?.value),
     by_status: byStatus,
     weekly: weekly.map((r) => ({ week: r.week, count: r.n, value: num(r.value) })),
   };

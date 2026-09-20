@@ -136,6 +136,84 @@ const UI = (() => {
     });
   }
 
+  /* ---------- Searchable combobox (replaces a plain <select> once the option list is long
+     enough that scrolling through it is worse than typing a few letters — a growing list of
+     cutoff periods, employees, items…). Type to filter, click (or Enter on a highlighted row)
+     to pick; clicking away without picking snaps the text back to whatever's actually selected,
+     so it can never be left in a half-typed, nothing-selected state the way a real <select>
+     never can either. */
+  function combo(container, options, opts = {}) {
+    let list = options.slice();
+    let selected = opts.selected != null ? opts.selected : null;
+    container.classList.add('combo');
+    container.innerHTML = `
+      <input type="text" class="combo-input" autocomplete="off" placeholder="${esc(opts.placeholder || '')}" />
+      <div class="combo-menu" hidden></div>`;
+    const input = container.querySelector('.combo-input');
+    const menu = container.querySelector('.combo-menu');
+    let filtered = [];
+    let activeIdx = -1;
+
+    const labelFor = (value) => {
+      const o = list.find((x) => String(x.value) === String(value));
+      return o ? o.label : '';
+    };
+    const setSelected = (value) => { selected = value; input.value = labelFor(value); };
+    setSelected(selected);
+
+    // `showAll` skips filtering by the input's current text — used on focus, where the input
+    // is pre-filled with the current selection's own full label, so filtering against it would
+    // otherwise collapse the list to just that one entry the moment it opens (nothing left to
+    // browse). Actually typing still filters normally.
+    function render(showAll) {
+      const q = showAll ? '' : input.value.trim().toLowerCase();
+      filtered = q ? list.filter((o) => o.label.toLowerCase().includes(q)) : list;
+      activeIdx = -1;
+      menu.innerHTML = filtered.length
+        ? filtered.map((o, i) => `<div class="combo-option" data-i="${i}">${esc(o.label)}</div>`).join('')
+        : `<div class="combo-empty">${esc(opts.emptyText || 'No matches')}</div>`;
+      menu.hidden = false;
+    }
+    function highlight(idx) {
+      activeIdx = idx;
+      [...menu.children].forEach((el, i) => el.classList.toggle('active', i === idx));
+      const el = menu.children[idx];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+    function pick(o) {
+      setSelected(o ? o.value : null);
+      menu.hidden = true;
+      if (opts.onSelect) opts.onSelect(selected, o || null);
+    }
+
+    // Select-all on focus too, so a click that lands with the input already focused (e.g.
+    // re-clicking after Tab) still lets an immediate keystroke replace the whole label instead
+    // of inserting into the middle of it.
+    input.addEventListener('focus', () => { input.select(); render(true); });
+    input.addEventListener('input', () => render(false));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (menu.hidden) render(true); else highlight(Math.min(activeIdx + 1, filtered.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (!menu.hidden) highlight(Math.max(activeIdx - 1, 0)); }
+      else if (e.key === 'Enter') { if (activeIdx >= 0 && filtered[activeIdx]) { e.preventDefault(); pick(filtered[activeIdx]); } }
+      else if (e.key === 'Escape') { menu.hidden = true; input.blur(); }
+    });
+    // mousedown (not click) + preventDefault keeps focus on the input throughout the click, so
+    // it never blurs (and snap-reverts) before the pick below can run.
+    menu.addEventListener('mousedown', (e) => {
+      const optEl = e.target.closest('.combo-option');
+      if (!optEl) return;
+      e.preventDefault();
+      pick(filtered[Number(optEl.dataset.i)]);
+    });
+    input.addEventListener('blur', () => { menu.hidden = true; input.value = labelFor(selected); });
+
+    return {
+      setOptions(newOptions) { list = newOptions.slice(); input.value = labelFor(selected); },
+      setSelected,
+      getValue: () => selected,
+    };
+  }
+
   /* ---------- Right-docked drawer (single instance) ---------- */
   let currentDrawer = null;
 
@@ -223,7 +301,7 @@ const UI = (() => {
   // Fixed black-on-white print stylesheet (independent of the app theme).
   const PRINT_CSS = `
     * { box-sizing: border-box; }
-    body { position: relative; font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #111; margin: 0; padding: 24px; font-size: 13px; }
+    body { position: relative; isolation: isolate; font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #111; margin: 0; padding: 24px; font-size: 13px; }
     img { max-width: 100%; }
     .doc { max-width: 800px; margin: 0 auto; }
     .doc-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 12px; margin-bottom: 16px; gap: 20px; }
@@ -231,10 +309,21 @@ const UI = (() => {
     .doc-meta { text-align: right; white-space: nowrap; }
     .doc-meta h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 0.05em; }
     .doc-parties { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
-    .doc-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-    .doc-table th, .doc-table td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 12px; vertical-align: top; }
-    .doc-table th { background: #f0f0f0; }
+    /* Tables — kept border-collapse for clean page-breaks; palette matches the editor (doc-editor.js). */
+    .doc-table { width: 100%; border-collapse: collapse; margin: 12px 0 14px; font-size: 12.5px; }
+    .doc-table th, .doc-table td { border: 1px solid #d7dee8; padding: 7px 10px; text-align: left; vertical-align: top; }
+    .doc-table th { background: #f4f7fb; font-weight: 600; color: #1a2740; }
+    .doc-table thead th { border-bottom: 2px solid #ccd6e2; }
+    .doc-table.striped tbody tr:nth-child(even) td { background: #f8fafc; }
+    .doc-table.shaded thead th { background: #16243d; color: #fff; border-bottom-color: #16243d; }
+    .doc-table.plain th, .doc-table.plain td { border: 0; }
+    .doc-table.plain thead th { border-bottom: 1px solid #ccd6e2; }
     .doc-table .r { text-align: right; }
+    /* Floating objects placed in the template editor (position/size are % on the element). */
+    .doc-float { position: absolute; box-sizing: border-box; }
+    .doc-float-shape { width: 100%; height: 100%; box-sizing: border-box; }
+    .doc-float-body { width: 100%; height: 100%; box-sizing: border-box; overflow: hidden; padding: 4px; }
+    .doc-float[data-float-kind="image"] img { width: 100%; height: 100%; object-fit: contain; }
     .doc-totals { margin-left: auto; width: 280px; text-align: right; }
     .doc-totals .grand { font-size: 15px; font-weight: 700; border-top: 2px solid #222; margin-top: 6px; padding-top: 6px; }
     .doc-notes { margin-top: 14px; }
@@ -276,6 +365,7 @@ const UI = (() => {
     key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
     building: '<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M16 10h.01"/>',
     image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+    camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/>',
     sheet: '<rect width="18" height="18" x="3" y="3" rx="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="3" x2="21" y1="15" y2="15"/><line x1="9" x2="9" y1="3" y2="21"/><line x1="15" x2="15" y1="3" y2="21"/>',
     archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
     filter: '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
@@ -294,6 +384,8 @@ const UI = (() => {
     file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/>',
     idcard: '<rect width="20" height="14" x="2" y="5" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M14 9h4"/><path d="M14 12h4"/><path d="M6 15.5c.6-1 1.3-1.5 2-1.5s1.4.5 2 1.5"/>',
     'arrow-left': '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+    bug: '<path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>',
+    factory: '<path d="M3 21V10.5L9 14v-3.5L15 14V7l6 4.5V21Z"/><path d="M3 21h18"/><path d="M7 21v-3"/><path d="M12 21v-3"/><path d="M17 21v-3"/>',
   };
 
   /** A "?" help icon with a tooltip shown on hover (desktop) and tap (mobile).
@@ -304,7 +396,12 @@ const UI = (() => {
     return `<button type="button" class="help-icon" aria-label="${esc(text)}" data-tip="${esc(text)}">?</button>`;
   }
 
-  /* Tooltip controller: hover (mouse) + tap/click (touch) → floating bubble. */
+  /* Tooltip controller: hover (mouse) + tap/click (touch) → floating bubble.
+     Delegated off any [data-tip] element, not just .help-icon, so plain hoverable
+     controls (e.g. the permission chips in Accounts) get the same bubble without
+     each needing their own show/hide wiring. .help-icon relies on click-to-show
+     for touch devices, so its click still opens the tip rather than toggling it
+     away like a generic target would. */
   (function initHelpTips() {
     let tip = null;
     const hide = () => { if (tip) { tip.remove(); tip = null; } };
@@ -326,11 +423,11 @@ const UI = (() => {
       tip.style.left = `${Math.round(left)}px`;
     }
     document.addEventListener('mouseover', (e) => {
-      const h = e.target.closest && e.target.closest('.help-icon');
+      const h = e.target.closest && e.target.closest('[data-tip]');
       if (h) show(h);
     });
     document.addEventListener('mouseout', (e) => {
-      const h = e.target.closest && e.target.closest('.help-icon');
+      const h = e.target.closest && e.target.closest('[data-tip]');
       if (h && !(e.relatedTarget && h.contains(e.relatedTarget))) hide();
     });
     document.addEventListener('click', (e) => {
@@ -465,7 +562,7 @@ const UI = (() => {
 
   return {
     esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
-    drawer, contextMenu, closeContextMenu, printableHtml,
+    drawer, contextMenu, closeContextMenu, printableHtml, combo,
     icon, helpIcon, emptyState, fileIconName, downloadCsv, csvImportModal,
   };
 })();

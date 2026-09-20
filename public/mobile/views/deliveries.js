@@ -187,14 +187,24 @@
       }
       chain
         .then(function () { return API.post('/deliveries/' + d.id + '/complete', payload); })
-        .then(function () {
+        .then(function (r) {
+          var lines = [d.number + (d.customer_name ? ' · ' + d.customer_name : '')];
+          var acts = [
+            { label: 'Back to list', onClick: function () { list(view); } },
+            { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
+          ];
+          var ord = r && r.order;
+          if (ord) {
+            lines.push('Sale order ' + ord.number + ' is still ' + ord.status + '.');
+            acts.unshift({
+              label: 'Mark ' + ord.number + ' completed',
+              onClick: function () { completeOrder(view, ord, d); },
+            });
+          }
           mSuccess(view, {
             title: outcome === 'delivered' ? 'Delivered' : 'Marked not delivered',
-            lines: [d.number + (d.customer_name ? ' · ' + d.customer_name : '')],
-            actions: [
-              { label: 'Back to list', onClick: function () { list(view); } },
-              { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
-            ],
+            lines: lines,
+            actions: acts,
           });
         })
         .catch(function (ex) {
@@ -204,6 +214,40 @@
     }
     acts.querySelector('[data-ok]').onclick = function () { submit('delivered'); };
     acts.querySelector('[data-fail]').onclick = function () { submit('failed'); };
+  }
+
+  // Post-delivery: mark the dropped sale order completed (ships remaining stock via the
+  // server's fulfil hook). A stock shortfall comes back 409 — offer to force a backorder.
+  function completeOrder(view, ord, d, force) {
+    view.innerHTML = '<div class="m-hint">Completing ' + mEsc(ord.number) + '…</div>';
+    API.post('/orders/' + ord.id + '/status', force ? { status: 'completed', force: true } : { status: 'completed' })
+      .then(function () {
+        mSuccess(view, {
+          title: ord.number + ' completed',
+          lines: [(d.customer_name || '') + ' · delivery ' + d.number + ' done'],
+          actions: [
+            { label: 'Back to list', onClick: function () { list(view); } },
+            { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
+          ],
+        });
+      })
+      .catch(function (ex) {
+        if (ex && ex.status === 409 && ex.data && ex.data.availability) {
+          var n = ex.data.availability.short_lines || 0;
+          mSuccess(view, {
+            title: 'Stock is short',
+            lines: [n + ' line(s) on ' + ord.number + " aren't covered by stock.",
+              'Complete anyway to ship as a backorder (stock may go negative).'],
+            actions: [
+              { label: 'Complete as backorder', onClick: function () { completeOrder(view, ord, d, true); } },
+              { label: 'Leave it for now', secondary: true, onClick: function () { list(view); } },
+            ],
+          });
+          return;
+        }
+        mToast((ex && ex.message) || 'Could not complete the order', 'err');
+        list(view);
+      });
   }
 
   function actions(items) {

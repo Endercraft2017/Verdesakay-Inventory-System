@@ -6,15 +6,19 @@
    tree sidebar). A leaf points to a real registered route, optionally with a
    `filter` object passed to the view as its 2nd argument.
 
-     primary { id, label, icon, adminOnly?, subtabs[] }
-       subtab  { id, label, tree[] }
+     primary { id, label, icon, adminOnly?, requiredPermission?, requiredModule?, subtabs[] }
+       subtab  { id, label, requiredPermission?, requiredModule?, tree[] }
          leaf    { label, icon, route, filter? }
+
+   `requiredModule` hides the primary/subtab when the tenant's SaaS plan / entitlements
+   don't include that feature module (see src/modules.ts; App.hasModule in app.js).
+   Self-hosted / single-tenant has every module, so nothing is hidden there.
 
    To add navigation, edit THIS file — do not hand-wire buttons in the shell.
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'job-orders', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'announcements'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'announcements', 'sop'];
 
 const NAV = [
   {
@@ -25,13 +29,14 @@ const NAV = [
         tree: [
           { label: 'Dashboard', icon: 'dashboard', route: 'dashboard' },
           { label: 'Reports', icon: 'sheet', route: 'analytics' },
+          { label: 'Help / SOP', icon: 'help', route: 'sop' },
           { label: 'Announcements', icon: 'messages', route: 'announcements' },
         ],
       },
     ],
   },
   {
-    id: 'inventory', label: 'Inventory', icon: 'inventory',
+    id: 'inventory', label: 'Inventory', icon: 'inventory', requiredModule: 'inventory',
     subtabs: [
       {
         id: 'items', label: 'Items',
@@ -44,12 +49,6 @@ const NAV = [
         id: 'movements', label: 'Stock Movements',
         tree: [
           { label: 'All Movements', icon: 'adjust', route: 'inventory-movements' },
-        ],
-      },
-      {
-        id: 'finished', label: 'Finished Products',
-        tree: [
-          { label: 'Finished Products', icon: 'sparkles', route: 'finished-products' },
         ],
       },
       {
@@ -79,22 +78,83 @@ const NAV = [
         ],
       },
       {
-        id: 'purchasing', label: 'Purchasing', requiredPermission: 'orders.view',
+        id: 'purchasing', label: 'Purchasing', requiredPermission: 'orders.view', requiredModule: 'purchasing',
         tree: [
           { label: 'Goods Receipts', icon: 'inbox', route: 'purchasing', filter: { tab: 'receipts' } },
           { label: 'Vendor Bills', icon: 'sheet', route: 'purchasing', filter: { tab: 'bills' } },
         ],
       },
       {
-        id: 'production', label: 'Production',
-        tree: [
-          { label: 'Job Orders (Production)', icon: 'adjust', route: 'job-orders' },
-        ],
-      },
-      {
         id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.inventory',
         tree: [
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'inventory' } },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'production', label: 'Production', icon: 'factory', requiredModule: 'manufacturing',
+    /* Subtabs are ordered to match the real build pipeline, not alphabetically or by
+       feature-add order: overview (home/summary) -> setup (prerequisite) -> schedule/start ->
+       scheduling (supporting, monitoring-only) -> QC -> repair branch -> receive ("Products
+       In", mirrors Purchasing's Goods Receipt) -> traceability log -> warehouse-ready stock.
+       See docs/guides/production-sop.md. */
+    subtabs: [
+      {
+        id: 'overview', label: 'Overview',
+        tree: [
+          { label: 'Overview', icon: 'dashboard', route: 'production-overview' },
+        ],
+      },
+      {
+        id: 'products', label: 'Product Setup',
+        tree: [
+          { label: 'Products & BOM', icon: 'sparkles', route: 'finished-products' },
+        ],
+      },
+      {
+        id: 'shop-floor', label: 'Job Orders',
+        tree: [
+          { label: 'Job Orders', icon: 'adjust', route: 'job-orders' },
+        ],
+      },
+      {
+        id: 'scheduling', label: 'Scheduling',
+        tree: [
+          { label: 'Schedule', icon: 'calendar', route: 'production-schedule' },
+          { label: 'Teams', icon: 'users', route: 'production-teams' },
+        ],
+      },
+      {
+        id: 'qc', label: 'QA / QC',
+        tree: [
+          { label: 'Inspection Queue', icon: 'check', route: 'production-qc', filter: { tab: 'queue' } },
+          { label: 'Findings & Reports', icon: 'sheet', route: 'production-qc', filter: { tab: 'findings' } },
+        ],
+      },
+      {
+        id: 'repairs', label: 'Repairs & Parts Requests',
+        tree: [
+          { label: 'Repairs & Parts Requests', icon: 'inbox', route: 'repairs' },
+        ],
+      },
+      {
+        id: 'products-in', label: 'Products In',
+        tree: [
+          { label: 'Ready to Receive', icon: 'inbox', route: 'production-receiving', filter: { tab: 'queue' } },
+          { label: 'Receipt History', icon: 'sheet', route: 'production-receiving', filter: { tab: 'history' } },
+        ],
+      },
+      {
+        id: 'batches', label: 'Batches / Lots',
+        tree: [
+          { label: 'Batches / Lots', icon: 'archive', route: 'production-batches' },
+        ],
+      },
+      {
+        id: 'finished-goods', label: 'Finished Goods',
+        tree: [
+          { label: 'Finished Goods', icon: 'sparkles', route: 'finished-goods' },
         ],
       },
     ],
@@ -123,7 +183,7 @@ const NAV = [
     ],
   },
   {
-    id: 'hr', label: 'HR', icon: 'users', requiredPermission: 'hr.view',
+    id: 'hr', label: 'HR', icon: 'users', requiredPermission: 'hr.view', requiredModule: 'hr',
     subtabs: [
       {
         id: 'overview', label: 'Overview',
@@ -154,6 +214,7 @@ const NAV = [
         tree: [
           { label: 'Time Keeping', icon: 'calendar', route: 'hr-timekeeping' },
           { label: 'Time-in Kiosk', icon: 'calendar', route: 'hr-kiosk' },
+          { label: 'Daily Report', icon: 'sheet', route: 'hr-daily-report' },
         ],
       },
       {
@@ -165,7 +226,7 @@ const NAV = [
     ],
   },
   {
-    id: 'accounting', label: 'Accounting', icon: 'sheet',
+    id: 'accounting', label: 'Accounting', icon: 'sheet', requiredModule: 'accounting',
     subtabs: [
       {
         id: 'tax', label: 'Tax & Compliance', requiredPermission: 'accounting.view',

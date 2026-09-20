@@ -1,11 +1,11 @@
 /* Dashboard: stats overview, quick actions, low-stock list + recent messages. */
 App.register('dashboard', async (view) => {
   const me = App.getMe();
-  const canInv = App.hasPermission('inventory.view');
+  const canInv = App.hasPermission('inventory.view') && App.hasModule('inventory');
   const canMsg = App.hasPermission('messages.view');
   const canForms = App.hasPermission('forms.view');
   const canUsers = App.hasPermission('users.manage');
-  const canHr = App.hasPermission('hr.view');
+  const canHr = App.hasPermission('hr.view') && App.hasModule('hr');
 
   const [stats, items, inbox, forms, unread, users, hrOverview] = await Promise.all([
     canInv ? API.get('/inventory/stats') : Promise.resolve({ items: 0, total_units: 0, low_stock: 0, out_of_stock: 0 }),

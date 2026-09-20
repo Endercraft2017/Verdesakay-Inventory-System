@@ -29,14 +29,22 @@ const bomRows = (productId: number) =>
     productId
   );
 
+// Optional per-unit standard costs live in the item's `attributes` JSON (same place
+// as standard_cost / purchase_price). Surface them as plain numbers on responses.
+const STD_COST_COLS = `
+  COALESCE(CAST(json_extract(i.attributes, '$.std_labor_cost')    AS REAL), 0) AS std_labor_cost,
+  COALESCE(CAST(json_extract(i.attributes, '$.std_overhead_cost') AS REAL), 0) AS std_overhead_cost
+`;
+
 // GET /api/finished-products — every item flagged as a finished product
 router.get('/', requirePermission('inventory.view'), (_req, res) => {
   const rows = queryAll<InventoryItem & { component_count: number; max_buildable: number }>(
-    `SELECT i.*, cl.name AS qc_checklist_name,
+    `SELECT i.*, cl_qa.name AS qc_checklist_qa_name, cl_qc.name AS qc_checklist_qc_name, ${STD_COST_COLS},
             (SELECT COUNT(*) FROM bom_components b WHERE b.product_item_id = i.id) AS component_count,
             (${MAX_BUILDABLE_SQL}) AS max_buildable
      FROM inventory_items i
-     LEFT JOIN qc_checklists cl ON cl.id = i.qc_checklist_id
+     LEFT JOIN qc_checklists cl_qa ON cl_qa.id = i.qc_checklist_qa_id
+     LEFT JOIN qc_checklists cl_qc ON cl_qc.id = i.qc_checklist_qc_id
      WHERE i.is_finished_product = 1
      ORDER BY i.name COLLATE NOCASE`
   );
@@ -47,8 +55,10 @@ router.get('/', requirePermission('inventory.view'), (_req, res) => {
 router.get('/:id', requirePermission('inventory.view'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>(
-    `SELECT i.*, cl.name AS qc_checklist_name
-     FROM inventory_items i LEFT JOIN qc_checklists cl ON cl.id = i.qc_checklist_id
+    `SELECT i.*, cl_qa.name AS qc_checklist_qa_name, cl_qc.name AS qc_checklist_qc_name, ${STD_COST_COLS}
+     FROM inventory_items i
+     LEFT JOIN qc_checklists cl_qa ON cl_qa.id = i.qc_checklist_qa_id
+     LEFT JOIN qc_checklists cl_qc ON cl_qc.id = i.qc_checklist_qc_id
      WHERE i.id = ?`,
     id
   );
@@ -64,11 +74,13 @@ router.get('/:id', requirePermission('inventory.view'), (req, res) => {
     id
   )?.n ?? 0;
 
-  // "Explode" the in-stock quantity by unit identifier (serial / chassis / motor no.).
+  // "Explode" the on-hand quantity by unit identifier (serial / chassis / motor no.).
+  // `reserved` units are earmarked for a sale order but still physically in stock, so they
+  // count toward the on-hand total the same as `in_stock`.
   const units = queryAll<{ identifier: string; quantity: number }>(
     `SELECT COALESCE(NULLIF(TRIM(identifier), ''), '') AS identifier, COUNT(*) AS quantity
      FROM job_order_units
-     WHERE product_item_id = ? AND status = 'in_stock'
+     WHERE product_item_id = ? AND status IN ('in_stock', 'reserved')
      GROUP BY COALESCE(NULLIF(TRIM(identifier), ''), '')
      ORDER BY quantity DESC, identifier`,
     id
@@ -130,12 +142,13 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  const { components, qc_checklist_id } = parseBody(saveBomSchema, req.body);
+  const { components, qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost } = parseBody(saveBomSchema, req.body);
 
-  if (qc_checklist_id !== undefined && qc_checklist_id !== null
-    && !queryOne('SELECT id FROM qc_checklists WHERE id = ?', qc_checklist_id)) {
-    res.status(400).json({ error: 'That QA/QC checklist does not exist' });
-    return;
+  for (const [label, stage, checklistId] of [['QA', 1, qc_checklist_qa_id], ['QC', 2, qc_checklist_qc_id]] as const) {
+    if (checklistId === undefined || checklistId === null) continue;
+    const row = queryOne<{ stage: number }>('SELECT stage FROM qc_checklists WHERE id = ?', checklistId);
+    if (!row) { res.status(400).json({ error: `That ${label} checklist does not exist` }); return; }
+    if (row.stage !== stage) { res.status(400).json({ error: `That checklist isn't a ${label} checklist` }); return; }
   }
 
   const seen = new Set<number>();
@@ -158,8 +171,24 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
   db.exec('BEGIN');
   try {
     run("UPDATE inventory_items SET is_finished_product = 1, updated_at = datetime('now') WHERE id = ?", id);
-    if (qc_checklist_id !== undefined) {
-      run('UPDATE inventory_items SET qc_checklist_id = ? WHERE id = ?', qc_checklist_id, id);
+    if (qc_checklist_qa_id !== undefined) {
+      run('UPDATE inventory_items SET qc_checklist_qa_id = ? WHERE id = ?', qc_checklist_qa_id, id);
+    }
+    if (qc_checklist_qc_id !== undefined) {
+      run('UPDATE inventory_items SET qc_checklist_qc_id = ? WHERE id = ?', qc_checklist_qc_id, id);
+    }
+    if (std_labor_cost !== undefined || std_overhead_cost !== undefined) {
+      const row = queryOne<{ attributes: string | null }>('SELECT attributes FROM inventory_items WHERE id = ?', id);
+      let attrs: Record<string, unknown> = {};
+      try { attrs = row?.attributes ? (JSON.parse(row.attributes) as Record<string, unknown>) : {}; } catch { attrs = {}; }
+      const setOrClear = (key: string, val: number | null | undefined): void => {
+        if (val === undefined) return;
+        if (val === null) delete attrs[key];
+        else attrs[key] = val;
+      };
+      setOrClear('std_labor_cost', std_labor_cost);
+      setOrClear('std_overhead_cost', std_overhead_cost);
+      run("UPDATE inventory_items SET attributes = ?, updated_at = datetime('now') WHERE id = ?", JSON.stringify(attrs), id);
     }
     run('DELETE FROM bom_components WHERE product_item_id = ?', id);
     components.forEach((c, i) => {

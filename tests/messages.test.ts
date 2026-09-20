@@ -73,6 +73,55 @@ describe('messages', () => {
   });
 });
 
+describe('messages: attachments', () => {
+  const FILE = Buffer.from('a'.repeat(1000));
+
+  it('sends files with a message, lists and downloads them, and blocks a non-participant', async () => {
+    const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
+      .field('recipient_id', String(alice.id)).field('body', 'see attached')
+      .attach('files', FILE, 'report.txt')
+      .attach('files', FILE, 'photo.png');
+    expect(send.status).toBe(201);
+    expect(send.body.attachments).toBe(2);
+
+    const inbox = await ctx.api.get('/api/messages?box=inbox').set(bearer(alice.token));
+    const msg = inbox.body.find((m: { id: number }) => m.id === send.body.id);
+    expect(msg.attachments).toHaveLength(2);
+    expect(msg.attachments[0].name).toBe('report.txt');
+    expect(msg.attachments[0].url).toBe(`/messages/${msg.id}/attachments/${msg.attachments[0].id}`);
+
+    const dl = await ctx.api.get(`/api${msg.attachments[0].url}`).set(bearer(alice.token));
+    expect(dl.status).toBe(200);
+    expect(dl.text).toBe(FILE.toString());
+
+    const stranger = await createEmployee(ctx.api, adminToken, { username: 'dave_stranger' });
+    const blocked = await ctx.api.get(`/api${msg.attachments[0].url}`).set(bearer(stranger.token));
+    expect(blocked.status).toBe(403);
+  });
+
+  it('rejects a file over 10 MB', async () => {
+    const big = Buffer.alloc(11 * 1024 * 1024);
+    const res = await ctx.api.post('/api/messages').set(bearer(adminToken))
+      .field('recipient_id', String(alice.id)).field('body', 'too big')
+      .attach('files', big, 'huge.bin');
+    expect(res.status).toBe(400);
+  });
+
+  it('frees the sender quota when the message is deleted', async () => {
+    const before = (await ctx.api.get('/api/messages/quota').set(bearer(adminToken))).body.used_bytes;
+    const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
+      .field('recipient_id', String(alice.id)).field('body', 'quota check')
+      .attach('files', FILE, 'a.txt');
+    const mid = send.body.id;
+    const after = (await ctx.api.get('/api/messages/quota').set(bearer(adminToken))).body.used_bytes;
+    expect(after).toBe(before + FILE.length);
+
+    await ctx.api.delete(`/api/messages/${mid}`).set(bearer(alice.token));
+    const final = (await ctx.api.get('/api/messages/quota').set(bearer(adminToken))).body.used_bytes;
+    expect(final).toBe(before);
+  });
+});
+
 describe('messages: RBAC honors per-user overrides', () => {
   it('revoking messages.send via override blocks sending, without touching messages.view', async () => {
     const bob = await createEmployee(ctx.api, adminToken, { username: 'bob_rbac' });

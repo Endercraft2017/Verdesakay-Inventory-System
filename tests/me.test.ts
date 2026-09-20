@@ -178,6 +178,27 @@ describe('unrecorded OT (mobile prompt + Home reminder)', () => {
     expect(res.body).toHaveLength(0);
   });
 
+  it('stops flagging a day once the employee has filed an Overtime Request for it, even before HR links it', async () => {
+    const a = await linked();
+    const shiftId = await shiftEndingAt('17:00');
+    const p = await ctx.api.post('/api/hr/periods').set(A())
+      .send({ label: 'OT Filed Cutoff', start_date: today(), end_date: today() });
+    run(
+      'INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, shift_id) VALUES (?, ?, ?, ?, ?, ?)',
+      p.body.id, a.id, today(), '08:00', '19:00', shiftId
+    );
+    // Flagged before filing…
+    let res = await ctx.api.get('/api/me/unrecorded-ot').set({ Authorization: `Bearer ${a.token}` });
+    expect(res.body).toHaveLength(1);
+    // …the employee self-files an OT request (lands as 'pending', not linked to the day)…
+    const otFormId = await formBySlug('overtime_request');
+    await ctx.api.post('/api/form-records').set({ Authorization: `Bearer ${a.token}` })
+      .send({ form_def_id: otFormId, data: { employee_name: a.name, work_date: today(), reason: 'stayed late' }, status: 'pending' });
+    // …and the nudge goes away.
+    res = await ctx.api.get('/api/me/unrecorded-ot').set({ Authorization: `Bearer ${a.token}` });
+    expect(res.body).toHaveLength(0);
+  });
+
   it('a day left on time is never flagged', async () => {
     const a = await linked();
     const shiftId = await shiftEndingAt('17:00');

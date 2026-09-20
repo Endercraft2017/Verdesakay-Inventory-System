@@ -20,7 +20,7 @@
       .then(function (rows) {
         view.innerHTML = '';
         var need = (rows || []).filter(function (j) {
-          return j.qc_stages > 0 && (j.units_pending || 0) > 0 && j.status !== 'cancelled';
+          return j.qc_stages > 0 && ((j.units_pending || 0) > 0 || (j.units_rework || 0) > 0) && j.status !== 'cancelled';
         });
         if (!need.length) {
           view.appendChild(mEl('<div class="m-empty">Nothing waiting for inspection.</div>'));
@@ -29,10 +29,13 @@
         }
         var ul = mEl('<ul class="m-list"></ul>');
         need.forEach(function (j) {
+          var bits = [];
+          if (j.units_pending) bits.push(j.units_pending + ' to check');
+          if (j.units_rework) bits.push(j.units_rework + ' repair');
           var li = mEl(
             '<li class="m-list-row"><div><b>' + mEsc(j.number) + '</b>' +
             '<span>' + mEsc(j.product_name) + (j.qc_stages > 1 ? ' · ' + j.qc_stages + '-stage' : '') + '</span></div>' +
-            '<div class="m-list-qty">' + j.units_pending + ' to check</div></li>'
+            '<div class="m-list-qty">' + mEsc(bits.join(' · ')) + '</div></li>'
           );
           li.onclick = function () { MApp.go('qc', { id: j.id }); };
           ul.appendChild(li);
@@ -50,10 +53,11 @@
       API.get('/job-orders/' + id),
       API.get('/job-orders/' + id + '/units'),
       API.get('/job-orders/' + id + '/qc').catch(function () { return []; }),
+      API.get('/production/repairs?job_order=' + id).catch(function () { return []; }),
     ])
       .then(function (r) {
         var checklist = (r[0] && r[0].qc_checklist && r[0].qc_checklist.items) || [];
-        render(view, id, r[0], r[1], checklist, r[2] || []);
+        render(view, id, r[0], r[1], checklist, r[2] || [], r[3] || []);
       })
       .catch(function (ex) { view.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div>'; });
   }
@@ -68,12 +72,19 @@
     });
   }
 
-  function render(view, id, jo, units, checklist, log) {
+  function render(view, id, jo, units, checklist, log, repairs) {
     view.innerHTML = '';
+    repairs = repairs || [];
     var stages = Math.max(1, jo.qc_stages || 1);
     var pending = (units || []).filter(function (u) { return u.status === 'pending'; });
-    var passed = (units || []).filter(function (u) { return u.status === 'in_stock'; }).length;
+    var rework = (units || []).filter(function (u) { return u.status === 'rework'; });
+    // 'passed' = queued for Products In (not yet received); 'in_stock' = already received —
+    // both count as "passed" here, since this is an inspection summary, not a stock count.
+    var passed = (units || []).filter(function (u) { return u.status === 'passed' || u.status === 'in_stock'; }).length;
     var failed = (units || []).filter(function (u) { return u.status === 'failed'; }).length;
+    var openReq = function (uid) {
+      return repairs.filter(function (r) { return r.unit_id === uid && r.status === 'requested'; }).length;
+    };
 
     view.appendChild(mEl(
       '<div class="m-hint">' + mEsc(jo.number) + ' · ' + mEsc(jo.product_name) +
@@ -82,15 +93,17 @@
       (jo.qc_checklist ? ' · checklist: ' + mEsc(jo.qc_checklist.name) : '') + '</div>'
     ));
 
-    if (!pending.length) {
+    if (!pending.length && !rework.length) {
       view.appendChild(mEl('<div class="m-empty">Nothing waiting for inspection.</div>'));
       if (log.length) view.appendChild(historyBlock(log));
       view.appendChild(actionBar([{ label: 'Back to QA/QC', fn: function () { worklist(view); } }]));
       return;
     }
 
-    // ---- Pass a batch by count ----
     var single = stages === 1;
+
+    // ---- Pass a batch by count (fresh units only) ----
+    if (pending.length) {
     var batchStage = pending[0].stage + 1;
     var card = mEl(
       '<div class="m-jo-progress">' +
@@ -164,8 +177,94 @@
       wrap.appendChild(row);
     });
     view.appendChild(wrap);
+    } // end if (pending.length)
+
+    // ---- Units back from repair ----
+    if (rework.length) {
+      view.appendChild(mEl('<h3 class="m-h3">Back from repair (' + rework.length + ')</h3>'));
+      var rw = mEl('<div class="m-qc-units"></div>');
+      rework.forEach(function (u) {
+        var uStage = u.stage + 1;
+        var blocked = openReq(u.id) > 0;
+        var row = mEl(
+          '<div class="m-qc-unit">' +
+          '<div class="m-qc-id">Unit #' + u.id + (u.identifier ? ' · ' + mEsc(u.identifier) : '') +
+          (stages > 1 ? ' · stage ' + uStage + ' / ' + stages : '') + '</div>' +
+          (blocked ? '<div class="m-hint">Waiting on the warehouse for parts — can\'t re-inspect yet.</div>' : '') +
+          '<div class="m-qc-btns">' +
+          '<button class="m-btn m-btn-sm" data-pass ' + (blocked ? 'disabled' : '') + '>Pass</button>' +
+          '<button class="m-btn m-btn-sm m-btn-warn" data-fail>Fail</button>' +
+          '<button class="m-btn m-btn-sm m-btn-secondary" data-parts>Request part</button>' +
+          '</div></div>'
+        );
+        row.querySelector('[data-pass]').onclick = function () {
+          if (blocked) return;
+          checklistSheet(view, {
+            title: 'Re-inspect Unit #' + u.id,
+            items: itemsForStage(checklist, uStage, stages),
+            unitId: u.id,
+            onCancel: function () { load(view, id); },
+            onConfirm: function (payload) {
+              submit(view, id, { unit_ids: [u.id], result: 'pass', checklist: payload.checklist, remarks: payload.remarks }, 'Unit #' + u.id + ' passed');
+            },
+          });
+        };
+        row.querySelector('[data-fail]').onclick = function () { failPrompt(view, id, u, itemsForStage(checklist, uStage, stages)); };
+        row.querySelector('[data-parts]').onclick = function () { partsPrompt(view, id, u); };
+        rw.appendChild(row);
+      });
+      view.appendChild(rw);
+    }
+
     if (log.length) view.appendChild(historyBlock(log));
     view.appendChild(actionBar([{ label: 'Back to QA/QC', fn: function () { worklist(view); }, secondary: true }]));
+  }
+
+  /* ---------- request a part for a rework unit ---------- */
+  function partsPrompt(view, id, unit) {
+    var picked = null;
+    var box = mEl(
+      '<div class="m-qc-prompt"><div class="m-qc-prompt-t">Request a part — Unit #' + unit.id + '</div>' +
+      '<label class="m-field"><span class="m-label">Kind</span><select class="m-input" data-kind>' +
+      '<option value="replace">Replace a fitted part</option><option value="add">Add a missing part</option></select></label>' +
+      '<div data-picker></div>' +
+      '<div class="m-hint" data-pick-lbl>No component picked.</div>' +
+      '<div class="m-two">' +
+      '<label class="m-field"><span class="m-label">Qty</span><input type="number" inputmode="numeric" class="m-input" data-qty value="1" min="1" /></label>' +
+      '<label class="m-field"><span class="m-label">Fault</span><select class="m-input" data-fault>' +
+      '<option value="assembler">Assembler</option><option value="production">Production</option>' +
+      '<option value="supplier">Supplier</option><option value="wear">Wear</option><option value="other">Other</option></select></label>' +
+      '</div>' +
+      '<label class="m-check"><input type="checkbox" data-dmg checked /> Old part goes to the damage record</label>' +
+      '<label class="m-field"><span class="m-label">Note (optional)</span><input class="m-input" data-note /></label>' +
+      '</div>'
+    );
+    var picker = mItemPicker({ label: 'Component', onPick: function (it) {
+      picked = it;
+      box.querySelector('[data-pick-lbl]').textContent = it.name + (it.sku ? ' (#' + it.sku + ')' : '');
+    } });
+    box.querySelector('[data-picker]').appendChild(picker.el);
+    var acts = mEl('<div class="m-actions"><button class="m-btn" data-ok>Send request</button>' +
+      '<button class="m-btn m-btn-secondary" data-cancel>Cancel</button></div>');
+    box.appendChild(acts);
+    acts.querySelector('[data-cancel]').onclick = function () { load(view, id); };
+    acts.querySelector('[data-ok]').onclick = function () {
+      if (!picked) { mToast('Pick a component', 'err'); return; }
+      acts.querySelector('[data-ok]').disabled = true;
+      var body = {
+        kind: box.querySelector('[data-kind]').value,
+        component_item_id: picked.id,
+        quantity: parseInt(box.querySelector('[data-qty]').value, 10) || 1,
+        fault: box.querySelector('[data-fault]').value,
+        return_to_damage: box.querySelector('[data-dmg]').checked,
+        notes: (box.querySelector('[data-note]').value || '').trim() || null,
+      };
+      mSubmit('/production/units/' + unit.id + '/repairs', body, { label: 'Part request · unit #' + unit.id })
+        .then(function (res) { mToast(res && res.queued ? 'Queued (offline)' : 'Request sent to the warehouse'); load(view, id); })
+        .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); acts.querySelector('[data-ok]').disabled = false; });
+    };
+    view.innerHTML = '';
+    view.appendChild(box);
   }
 
   function submit(view, id, body, okMsg) {
@@ -226,7 +325,12 @@
       '<div class="m-qc-prompt">' +
       '<div class="m-qc-prompt-t">Unit #' + unit.id + ' — Fail</div>' +
       '<input class="m-input" data-val placeholder="What failed? (required)" />' +
-      '<div class="m-hint">A failed unit is scrapped and is not added to finished stock.</div>' +
+      '<label class="m-field"><span class="m-label">What to do with it</span>' +
+      '<select class="m-input" data-disp>' +
+      '<option value="scrap">Scrap</option><option value="dispose">Dispose</option>' +
+      '<option value="recycle">Recycle</option><option value="repair">Repair (send to rework)</option>' +
+      '</select></label>' +
+      '<div class="m-hint">Scrap / dispose / recycle are final. Repair sends the unit to rework — parts are then requested from the warehouse.</div>' +
       '</div>'
     );
     var rows = [];
@@ -243,12 +347,13 @@
     acts.querySelector('[data-ok]').onclick = function () {
       var val = box.querySelector('[data-val]').value.trim();
       if (!val) { mToast('Say what failed', 'err'); return; }
-      var body = { unit_ids: [unit.id], result: 'fail', remarks: val };
+      var disp = box.querySelector('[data-disp]').value;
+      var body = { unit_ids: [unit.id], result: 'fail', disposition: disp, remarks: val };
       if (rows.length) {
         body.checklist = rows.map(function (r) { return { label: r._item.label, ok: r.querySelector('[data-ok]').checked }; });
       }
       acts.querySelector('[data-ok]').disabled = true;
-      submit(view, id, body, 'Recorded — unit scrapped');
+      submit(view, id, body, disp === 'repair' ? 'Sent to repair' : 'Recorded — unit scrapped');
     };
     view.innerHTML = '';
     view.appendChild(box);
@@ -264,7 +369,8 @@
       var row = mEl(
         '<div class="m-qc-log-row">' +
         '<div><b class="m-qc-log-' + (q.result === 'pass' ? 'ok' : 'bad') + '">' + (q.result === 'pass' ? 'PASS' : 'FAIL') + '</b> ' +
-        'Unit #' + (q.unit_id || '?') + (q.stage ? ' · stage ' + q.stage : '') + '</div>' +
+        'Unit #' + (q.unit_id || '?') + (q.stage ? ' · stage ' + q.stage : '') +
+        (q.disposition ? ' · ' + mEsc(q.disposition) : '') + '</div>' +
         '<div class="m-qc-log-meta">' + mEsc(q.inspector_name || 'unknown') + ' · ' + mEsc((q.created_at || '').slice(0, 16).replace('T', ' ')) + '</div>' +
         (q.remarks ? '<div class="m-qc-log-note">' + mEsc(q.remarks) + '</div>' : '') +
         (fails ? '<div class="m-qc-log-note">Checklist issues: ' + mEsc(fails) + '</div>' : '') +
@@ -272,6 +378,9 @@
       );
       if (q.unit_id && !seenUnits[q.unit_id]) {
         seenUnits[q.unit_id] = 1;
+        var link = mEl('<button class="m-btn m-btn-sm m-btn-secondary" style="margin-top:4px">View record</button>');
+        link.onclick = function () { MApp.go('record', { unit: q.unit_id }); };
+        row.appendChild(link);
         row.appendChild(mPhoto.thumbs('qc_unit', q.unit_id, { editable: false }));
       }
       wrap.appendChild(row);

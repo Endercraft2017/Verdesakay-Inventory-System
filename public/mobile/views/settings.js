@@ -20,6 +20,10 @@ MApp.route('settings', function (view) {
     '    <button class="m-toggle" data-notif disabled>…</button></div>' +
     '  <div class="m-hint" data-notif-hint></div>' +
 
+    (MApp.can('messages.view') ?
+    '  <h3 class="m-h3">Message attachment storage</h3>' +
+    '  <div data-storage><div class="m-hint">Loading…</div></div>' : '') +
+
     '  <h3 class="m-h3">Change password</h3>' +
     '  <form data-pw>' +
     '    <label class="m-field"><span class="m-label">Current password</span>' +
@@ -44,6 +48,20 @@ MApp.route('settings', function (view) {
     this.textContent = next === 'dark' ? 'On' : 'Off';
     this.setAttribute('aria-pressed', next === 'dark');
   };
+
+  // Storage usage: attachments sent on internal messages count against a fixed 5 GB
+  // per-user pool (see MESSAGE_STORAGE_CAP in src/routes/messages.routes.ts).
+  var storageBox = wrap.querySelector('[data-storage]');
+  if (storageBox) {
+    API.get('/messages/quota').then(function (q) {
+      var pct = q.cap_bytes > 0 ? Math.min(100, Math.round((q.used_bytes / q.cap_bytes) * 100)) : 0;
+      var stage = pct >= 100 ? 'over' : pct >= 80 ? 'near' : 'ok';
+      storageBox.innerHTML =
+        '<div class="usage-bar"><div class="usage-fill ' + stage + '" style="width:' + pct + '%"></div></div>' +
+        '<div class="m-hint">' + mFmtBytes(q.used_bytes) + ' / ' + mFmtBytes(q.cap_bytes) + ' used (' + pct + '%)' +
+        (pct >= 100 ? ' — limit reached' : '') + '</div>';
+    }).catch(function (e) { storageBox.innerHTML = '<div class="m-hint">' + mEsc(e.message) + '</div>'; });
+  }
 
   // Notifications toggle
   var notifBtn = wrap.querySelector('[data-notif]');

@@ -196,7 +196,7 @@ describe('ai-analytics: manufacturing reports', () => {
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
       .send({ unit_ids: [units[0]!.id, units[1]!.id], result: 'pass' });
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
-      .send({ unit_ids: [units[2]!.id], result: 'fail', remarks: 'crack' });
+      .send({ unit_ids: [units[2]!.id], result: 'fail', disposition: 'scrap', remarks: 'crack' });
 
     const jr = exec('job_order_report', {}, admin()) as { data: { totals: { ordered: number; done: number; scrapped: number } } };
     expect(jr.data.totals.ordered).toBeGreaterThanOrEqual(3);

@@ -78,18 +78,24 @@
       <aside class="tree" id="tree-nav"></aside>
       <main class="main" id="view"></main>
       <aside class="rail" id="rail">
-        <button class="rail-btn" id="rail-messages" data-route="messages" title="Messages" aria-label="Messages">
-          <span class="badge hidden" id="msg-badge">0</span>
-        </button>
-        <button class="rail-btn" data-tool="notes" title="Notes" aria-label="Notes"></button>
-        <button class="rail-btn" data-tool="email" title="Email" aria-label="Email"></button>
-        <button class="rail-btn" data-tool="scheduler" title="Scheduler" aria-label="Scheduler"></button>
-        <button class="rail-btn" data-tool="bookmarks" title="Bookmarks" aria-label="Bookmarks"></button>
-        <div class="rail-spacer"></div>
-        <button class="rail-btn" data-tool="help" title="Help &amp; explainers" aria-label="Help"></button>
-        <button class="rail-btn rail-avatar" id="rail-account" data-route="account" title="My Account" aria-label="My Account"></button>
-        <button class="rail-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"></button>
-        <button class="rail-btn" id="logout-btn" title="Sign out" aria-label="Sign out"></button>
+        <div class="rail-top">
+          <button class="rail-btn" id="rail-messages" data-route="messages" title="Messages" aria-label="Messages">
+            <span class="badge hidden" id="msg-badge">0</span>
+          </button>
+          <button class="rail-btn" data-tool="notes" title="Notes" aria-label="Notes"></button>
+          <button class="rail-btn" data-tool="email" title="Email" aria-label="Email"></button>
+          <button class="rail-btn" data-tool="scheduler" title="Scheduler" aria-label="Scheduler"></button>
+          <button class="rail-btn" data-tool="bookmarks" title="Bookmarks" aria-label="Bookmarks"></button>
+          <button class="rail-btn" data-tool="bug" title="Report a Bug" aria-label="Report a Bug">
+            <span class="badge hidden" id="bug-badge">0</span>
+          </button>
+        </div>
+        <div class="rail-bottom">
+          <button class="rail-btn" data-tool="help" title="Help &amp; explainers" aria-label="Help"></button>
+          <button class="rail-btn rail-avatar" id="rail-account" data-route="account" title="My Account" aria-label="My Account"></button>
+          <button class="rail-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"></button>
+          <button class="rail-btn" id="logout-btn" title="Sign out" aria-label="Sign out"></button>
+        </div>
       </aside>
     </div>
 
@@ -109,16 +115,23 @@
   <script src="/js/api.js"></script>
   <script src="/js/ui.js"></script>
   <script src="/js/nav-config.js"></script>
+  <script src="/js/guide-data.js"></script>
   <script src="/js/currencies.js"></script>
   <script src="/js/item-form-config.js"></script>
   <script src="/js/lib/barcode.js"></script>
+  <script src="/js/lib/image-compress.js"></script>
+  <script src="/js/lib/qc-checklists.js"></script>
+  <script src="/js/vendor/xlsx-style.min.js"></script>
+  <script src="/js/hr-payroll-export.js"></script>
   <script src="/js/doc-formula.js"></script>
   <script src="/js/doc-template.js"></script>
   <script src="/js/doc-context.js"></script>
   <script src="/js/vendor/codemirror-bundle.js"></script>
   <script src="/js/doc-editor.js"></script>
   <script src="/js/hr-payroll-print.js"></script>
+  <script src="/js/print-tiling.js"></script>
   <script src="/js/help.js"></script>
+  <script src="/js/guide-tour.js"></script>
   <script src="/js/app.js"></script>
   <script src="/js/views/dashboard.js"></script>
   <script src="/js/views/analytics.js"></script>
@@ -132,7 +145,17 @@
   <script src="/js/views/customers.js"></script>
   <script src="/js/views/locations.js"></script>
   <script src="/js/views/finished-products.js"></script>
+  <script src="/js/views/production-overview.js"></script>
   <script src="/js/views/job-orders.js"></script>
+  <script src="/js/views/production-qc.js"></script>
+  <script src="/js/views/production-batches.js"></script>
+  <script src="/js/views/production-schedule.js"></script>
+  <script src="/js/views/production-teams.js"></script>
+  <script src="/js/views/production-record.js"></script>
+  <script src="/js/views/repairs.js"></script>
+  <script src="/js/views/production-receiving.js"></script>
+  <script src="/js/views/finished-goods.js"></script>
+  <script src="/js/views/sop.js"></script>
   <script src="/js/views/activity.js"></script>
   <script src="/js/views/forms.js"></script>
   <script src="/js/views/orders.js"></script>
@@ -147,6 +170,7 @@
   <script src="/js/views/hr-employees.js"></script>
   <script src="/js/views/hr-timekeeping.js"></script>
   <script src="/js/views/hr-kiosk.js"></script>
+  <script src="/js/views/hr-daily-report.js"></script>
   <script src="/js/views/announcements.js"></script>
   <script src="/js/tools.js"></script>
 </body>

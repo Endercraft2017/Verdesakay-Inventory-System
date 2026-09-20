@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Workspace Console</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #1c2430; --muted: #67707d; --line: #e2e5ea;
+    --accent: #2f6feb; --accent-ink: #fff; --danger: #d64545; --ok: #2e7d46; --warn: #b8860b;
+    --chip: #eef1f6; --shadow: 0 1px 2px rgba(20,30,45,.06), 0 8px 24px rgba(20,30,45,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151a; --panel: #1b1f26; --ink: #e7eaef; --muted: #97a0ac; --line: #2b313b;
+      --accent: #5b8cf5; --chip: #262b34; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  button { font: inherit; cursor: pointer; }
+  input, select { font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; width: 100%; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 7px;
+    padding: 8px 14px; font-weight: 600; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .btn.danger { background: var(--danger); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .muted { color: var(--muted); }
+  .hidden { display: none !important; }
+
+  /* login */
+  #login { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+  #login .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 28px; width: 100%; max-width: 360px; }
+  #login h1 { font-size: 17px; margin: 0 0 4px; }
+  #login label { display: block; font-size: 12px; font-weight: 600; margin: 14px 0 5px; }
+  #login .btn { width: 100%; margin-top: 18px; }
+  .err { color: var(--danger); font-size: 13px; margin-top: 12px; min-height: 18px; }
+
+  /* shell */
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px;
+    background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 15px; margin: 0; flex: 1; }
+  main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; }
+  .toolbar input { max-width: 240px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: var(--bg); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--chip); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+  .badge.active { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .badge.trial { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .badge.past_due, .badge.suspended { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+  .chip { display: inline-block; background: var(--chip); border-radius: 6px; padding: 1px 7px;
+    font-size: 11.5px; margin: 1px 3px 1px 0; }
+  .chip.ovr { outline: 1px solid var(--accent); }
+
+  /* drawer */
+  .scrim { position: fixed; inset: 0; background: rgba(10,15,25,.4); z-index: 20; }
+  .drawer { position: fixed; top: 0; right: 0; height: 100%; width: 460px; max-width: 100vw;
+    background: var(--panel); border-left: 1px solid var(--line); box-shadow: var(--shadow);
+    z-index: 21; display: flex; flex-direction: column; }
+  .drawer header { position: static; }
+  .drawer .body { padding: 18px 20px; overflow-y: auto; flex: 1; }
+  .drawer .foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; gap: 10px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 5px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .mods { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; }
+  .mods .opt { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .mods .opt input { width: auto; }
+  .mods .opt.dep label { color: var(--muted); }
+  .usage { font-size: 12.5px; }
+  .usage div { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+  .danger-zone { margin-top: 22px; border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line)); border-radius: 9px; padding: 12px; }
+  .danger-zone h3 { margin: 0 0 6px; font-size: 12px; color: var(--danger); text-transform: uppercase; letter-spacing: .04em; }
+  .log { margin-top: 20px; font-size: 12px; }
+  .log .e { padding: 5px 0; border-bottom: 1px solid var(--line); }
+  .log .e .when { color: var(--muted); }
+
+  /* modal */
+  .modal { position: fixed; inset: 0; display: grid; place-items: center; z-index: 30; padding: 20px; }
+  .modal .card { background: var(--panel); border-radius: 14px; box-shadow: var(--shadow);
+    width: 100%; max-width: 400px; padding: 22px; }
+  .modal h2 { margin: 0 0 12px; font-size: 16px; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 8px; z-index: 40; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<section id="login">
+  <form class="card" id="login-form">
+    <h1>Workspace Console</h1>
+    <div class="muted">Operator sign-in</div>
+    <label for="lu">Username</label>
+    <input id="lu" autocomplete="username" autofocus>
+    <label for="lp">Password</label>
+    <input id="lp" type="password" autocomplete="current-password">
+    <button class="btn" type="submit">Sign in</button>
+    <div class="err" id="login-err"></div>
+  </form>
+</section>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>Workspace Console</h1>
+    <span class="muted" id="who"></span>
+    <button class="btn ghost" id="logout">Log out</button>
+  </header>
+  <main>
+    <div class="toolbar">
+      <button class="btn" id="new-btn">＋ New workspace</button>
+      <button class="btn ghost" id="refresh-btn">Refresh</button>
+      <input id="filter" placeholder="Filter by slug or name…">
+      <span class="muted" id="count"></span>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Slug</th><th>Name</th><th>Status</th><th>Plan</th><th>Modules</th>
+        <th>Users</th><th>Items</th><th>Created</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

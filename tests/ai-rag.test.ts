@@ -35,7 +35,7 @@ beforeAll(async () => {
   await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 1 });
   const unit = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(authHdr())).body[0].id;
   await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
-    .send({ unit_ids: [unit], result: 'fail', remarks: 'Recurring gasket seal leak on the left intake manifold.' });
+    .send({ unit_ids: [unit], result: 'fail', disposition: 'scrap', remarks: 'Recurring gasket seal leak on the left intake manifold.' });
 
   await ctx.api.post('/api/forms').set(authHdr())
     .field('title', 'Overtime Policy')

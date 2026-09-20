@@ -286,6 +286,7 @@ App.register('inventory', async (view, filter) => {
       <button class="btn secondary" id="inv-import" title="Create or update items from a CSV file">${UI.icon('upload')} Import</button>
       <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
       <button class="btn secondary" id="inv-labels" title="Print barcode labels for the current list">${UI.icon('printer')} Labels</button>
+      ${App.hasPermission('orders.create') ? `<button class="btn secondary" id="inv-reorder" title="Draft purchase orders to restock everything below its reorder level">${UI.icon('inbox')} Reorder PO</button>` : ''}
       <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
     </div>
     <div class="panel"><div id="inv-table"></div></div>`;
@@ -360,6 +361,48 @@ App.register('inventory', async (view, filter) => {
         ['Cutting Disc 4in', 'CD-4', 'Consumables', '', '', 'pcs', '24', '0', '', 'No opening stock yet — will receive later'],
       ],
       onDone: () => load(),
+    });
+  }
+
+  /* ---------- Reorder-level purchase orders ---------- */
+  // Drafts one PO per supplier for items at/under their reorder level. Respects the current
+  // filters when the Low-stock filter is on (sends just those item ids); otherwise sweeps
+  // every low item on the server.
+  function reorderPoModal() {
+    const scoped = state.low ? lastItems.filter((i) => i.low_stock && i.category !== 'Damage' && !i.is_finished_product) : [];
+    const scopeNote = state.low
+      ? `${scoped.length} low-stock item${scoped.length === 1 ? '' : 's'} in the current list.`
+      : 'Every item at or below its reorder level (finished products are excluded — those are produced).';
+    UI.modal({
+      title: 'Draft reorder purchase orders',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">${scopeNote} One draft PO is created per preferred supplier; items with no supplier land on a single unassigned PO you can fix up in Purchasing.</p>
+        <div class="field-row">
+          <div><label>Restock up to</label>
+            <select data-f="mult">
+              <option value="1">1× reorder level</option>
+              <option value="2" selected>2× reorder level</option>
+              <option value="3">3× reorder level</option>
+              <option value="4">4× reorder level</option>
+            </select></div>
+        </div>
+        <p class="muted" style="font-size:12px">Order quantity per item = target − on hand, always at least 1. Unit price is prefilled from each item's standard cost.</p>`,
+      confirmText: 'Create draft POs',
+      onConfirm: async (ov, showErr) => {
+        const mult = Number(ov.querySelector('[data-f="mult"]').value) || 2;
+        const body = { multiplier: mult };
+        if (state.low) {
+          if (!scoped.length) { showErr('No low-stock items in the current list'); return false; }
+          body.item_ids = scoped.map((i) => i.id);
+        }
+        let r;
+        try { r = await API.post('/inventory/reorder-po', body); }
+        catch (e) { showErr(e.message); return false; }
+        if (!r.created || !r.created.length) { UI.toast(r.note || 'Nothing to reorder'); return; }
+        const lines = r.created.reduce((s, c) => s + c.lines, 0);
+        UI.toast(`${r.created.length} draft PO${r.created.length === 1 ? '' : 's'} · ${lines} line${lines === 1 ? '' : 's'}`, 'success');
+        App.navigate('orders', { type: 'purchase' });
+      },
     });
   }
 
@@ -926,6 +969,8 @@ App.register('inventory', async (view, filter) => {
   view.querySelector('#inv-export').addEventListener('click', exportCsv);
   view.querySelector('#inv-labels').addEventListener('click', barcodeLabelsModal);
   view.querySelector('#inv-import').addEventListener('click', importCsv);
+  const reorderBtn = view.querySelector('#inv-reorder');
+  if (reorderBtn) reorderBtn.addEventListener('click', reorderPoModal);
   view.querySelector('#inv-add').addEventListener('click', () => itemModal(null));
 
   await Promise.all([

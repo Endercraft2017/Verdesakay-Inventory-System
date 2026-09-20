@@ -26,6 +26,9 @@ one `default` tenant, exactly as before.
 | `DB_PATH` | The `default` tenant's DB file. | `<root>/data.db` |
 | `UPLOAD_DIR` | Uploaded files. | `<root>/uploads` |
 | `SIGNUPS_OPEN` | `"true"` makes `POST /api/signup` live (self-serve tenant creation). Anything else ⇒ 404; you provision manually. | *(off)* |
+| `PLATFORM_CONSOLE` | `"true"` mounts the owner console at `/_platform`. Anything else ⇒ the whole path 404s. | *(off)* |
+| `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` | Bootstrap the first console operator on boot (only when there are none yet). Or use `npm run platform:user`. | *(unset)* |
+| `PLATFORM_ADMIN_TOKEN` | Optional shared secret — when set, every `/_platform/api` request must also send `X-Platform-Token: <token>`. | *(unset)* |
 | `APP_SECRET` / `MAIL_SECRET_KEY` | AES key for secrets at rest (SMTP password, etc.). **Set this in SaaS mode** so tenant DB files aren't self-decrypting. | auto-generated per DB |
 
 ## Tenant resolution
@@ -55,15 +58,70 @@ usage; the frontend shows a trial-countdown / past-due banner from it.
 **read-only** — reads and login still work, every write returns 402 until the status is
 cleared. `suspended` / `purged` → the whole workspace 403s.
 
-## Provisioning (CLI)
+## Feature modules
+
+Which capability *areas* a workspace has switched on, independent of the quota numbers.
+The toggleable modules (`src/modules.ts`): `inventory`, `manufacturing`, `purchasing`,
+`hr`, `accounting`, `ai`, `mobile`, `email`, `quickbooks`. Everything else — Home &
+dashboards, Documents & file storage, Templates, Messages, user Admin, the Activity log —
+is the always-on **core** and can't be turned off.
+
+- **Default set comes from the plan** (`PLAN_MODULES` in `src/plans.ts`): `starter` =
+  inventory + purchasing + mobile; `operations` adds manufacturing + hr + email;
+  `complete` / `trial` / `unlimited` = everything.
+- **Per-tenant override** (`tenants.modules`, a JSON array) beats the plan default. Set it
+  for one-off deals — "this customer only wants HR". Clear it to fall back to the plan.
+- **Dependencies** are unioned in automatically: `manufacturing` and `purchasing` both
+  require `inventory`, so enabling either pulls `inventory` in.
+- **Enforcement** is in two places: `requireModule()` 402s the whole API area server-side,
+  and the desktop/mobile nav hides what's off (from `modules` on `GET /api/tenant` and the
+  auth payloads). The `default` tenant has every module — self-hosted is unaffected.
 
 ```
-npm run tenant:create -- --slug acme --name "Acme Mfg" --admin owner --password s3cret [--plan starter]
+npm run tenant:modules -- --slug acme                          # show enabled / disabled + where the set comes from
+npm run tenant:modules -- --slug acme --set inventory,hr       # explicit override (deps auto-added)
+npm run tenant:modules -- --slug acme --add ai --remove email  # delta against the current effective set
+npm run tenant:modules -- --slug acme --reset                  # drop the override → back to the plan default
+```
+
+## Owner console (`/_platform`)
+
+A small web app for managing every workspace from a browser — the primary interface; the
+CLI below does the same things headless.
+
+1. **Enable it:** run the server with `PLATFORM_CONSOLE=true`.
+2. **Make an operator** (separate from every tenant's users — a `platform_users` row can
+   never sign into a workspace and a tenant token is rejected by the console):
+   ```
+   npm run platform:user -- --username owner --password s3cret --name "System Owner"
+   npm run platform:user -- --list
+   ```
+   Or set `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` and the first one is seeded on boot.
+3. **Open** `https://<your-apex-domain>/_platform` (or `http://localhost:3000/_platform`
+   in dev) and sign in. The console only answers on the apex / default host — requests
+   that resolved to a tenant sub-domain 404.
+
+From there: a table of all workspaces (status, plan, module chips, live user/item counts),
+a **New workspace** form, and a per-workspace editor for name, plan, status (+ trial end
+date), and feature modules (a "use plan default" toggle, or a custom checkbox set with
+dependencies auto-selected). A danger-zone **Purge** requires typing the slug back. Every
+change is written to `provisioning_log` and shown in the editor's activity list.
+
+Hardening options: `PLATFORM_ADMIN_TOKEN` (a shared secret required as an `X-Platform-Token`
+header on every API call), and front it with an IP allow-list / VPN at the reverse proxy.
+
+## Provisioning (CLI)
+
+The headless equivalent of the console — for scripts and servers with no browser access.
+
+```
+npm run tenant:create  -- --slug acme --name "Acme Mfg" --admin owner --password s3cret [--plan starter]
 npm run tenant:list
-npm run tenant:status -- --slug acme --status suspended       # active | suspended | trial | past_due
-npm run tenant:plan   -- --slug acme --plan operations        # trial | starter | operations | complete
-npm run tenant:usage  -- --slug acme                          # current counts vs the plan limits
-npm run tenant:purge  -- --slug acme                          # deletes the tenant DB + uploads — irreversible
+npm run tenant:status  -- --slug acme --status suspended      # active | suspended | trial | past_due
+npm run tenant:plan    -- --slug acme --plan operations       # trial | starter | operations | complete
+npm run tenant:modules -- --slug acme --set inventory,hr      # feature modules (see above)
+npm run tenant:usage   -- --slug acme                         # current counts vs the plan limits
+npm run tenant:purge   -- --slug acme                         # deletes the tenant DB + uploads — irreversible
 ```
 
 `create` makes the catalog row, creates + seeds `DATA_DIR/<slug>.db`, and sets the admin

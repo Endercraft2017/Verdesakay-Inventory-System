@@ -57,6 +57,11 @@
           <li><b>Transfer</b> — move units from one location to another; the grand total
               doesn't change.</li>
           <li><b>Low Stock</b> filter — everything at or below its reorder level.</li>
+          <li><b>Reorder PO</b> — one click drafts purchase orders for everything below its
+              reorder level, one per preferred supplier, topping each item up to a multiple
+              of its reorder level. With the Low Stock filter on it acts on just the
+              filtered list. Finished products are skipped (those are produced). Review and
+              send the drafts from <i>Purchase Orders</i>.</li>
           <li><b>Import / Export</b> — bulk-load or update items from a spreadsheet
               (see the <i>Bulk import & export</i> topic).</li>
           <li><b>Labels</b> — print <b>Code 128 barcode labels</b> for the items in the
@@ -114,7 +119,7 @@
         you can <b>Transfer</b> between them.</p>`,
     },
     {
-      id: 'finished-products', title: 'Finished products & BOM', group: 'Manufacturing',
+      id: 'finished-products', title: 'Product Setup & BOM', group: 'Manufacturing',
       routes: ['finished-products'], html: `
         <p>A <b>finished product</b> is something you build rather than buy. Its
         <b>Bill of Materials (BOM)</b> lists the parts and quantities needed to make one
@@ -141,20 +146,78 @@
     },
     {
       id: 'job-orders', title: 'Job Orders (production)', group: 'Manufacturing',
-      routes: ['job-orders'], html: `
-        <p>A Job Order builds N units of a finished product.</p>
+      routes: ['job-orders', 'production-qc', 'repairs', 'production-receiving', 'finished-goods', 'production-overview'], html: `
+        <p>A Job Order builds N units of a finished product. <b>Production</b>'s tabs run in
+        the order a build actually happens: Overview → Product Setup → Job Orders →
+        Scheduling → QA / QC → Repairs → Products In → Batches / Lots → Finished Goods.
+        <b>Overview</b> is the home screen — a summary of what's overdue, in rework, or
+        waiting on you, with a short production report.</p>
         <ol>
           <li><b>Create</b> it: choose the product and quantity. It starts as a draft.</li>
           <li><b>Release</b> it: the BOM parts are consumed from the source location. You
               can still add or remove components manually for one-off builds.</li>
           <li><b>Track</b> progress: mark units done or scrapped. <b>Pause</b> or
-              <b>cancel</b> anytime — cancelling returns the <i>unused</i> parts only.</li>
+              <b>cancel</b> anytime — cancelling returns the <i>unused</i> parts only. This
+              doesn't post to stock yet — see Products In below.</li>
           <li><b>QA/QC</b>: inspectors record pass / fail per unit, with remarks on
-              failures. You can require one or two QC stages.</li>
-          <li>Give each physical unit an <b>identifier</b> (serial / chassis / motor no.).
-              Passed units are added to the finished product's quantity and can be
+              failures. You can require one or two QC stages. <b>Production → QA / QC</b> is
+              QA/QC's home — <b>Inspection Queue</b> lists every unit waiting across all job
+              orders, <b>Findings &amp; Reports</b> is the full pass/fail history (filterable,
+              exportable), and <b>Manage Checklists</b> is where the named checklists
+              themselves get built.</li>
+          <li><b>Failed units</b>: pick a disposition — <i>scrap / dispose / recycle</i>
+              (terminal, counts as scrapped) or <i>repair</i>. A <b>repair</b> unit goes
+              to rework: raise <b>parts requests</b> to the warehouse (add a missing part,
+              or replace one — the old part is booked into its damage record). The
+              warehouse <b>accepts</b> each request (that's when the <i>parts</i> move) on the
+              <b>Repairs &amp; Parts Requests</b> screen. The unit can only be
+              re-inspected once its requests are settled.</li>
+          <li><b>Products In</b>: a QC pass (or, with no QC stages, recorded progress) only
+              queues output as <i>receivable</i> — it isn't stock yet. <b>Production →
+              Products In</b> lists everything waiting; tick units or enter a batch's counted
+              quantity, pick the destination location (this is also how a unit lands in a
+              different warehouse than the job order's default), and post. Mirrors
+              Purchasing's Goods Receipt. A unit only becomes sellable/reservable once
+              received here.</li>
+          <li>Give each physical unit an <b>identifier</b> (serial / chassis / motor no.) at
+              inspection. Once received, it shows up in <b>Finished Goods</b> and can be
               <b>exploded</b> to show every serial.</li>
         </ol>`,
+    },
+    {
+      id: 'production-batches', title: 'Batches / lots & records', group: 'Manufacturing',
+      routes: ['production-batches', 'production-record'], html: `
+        <p>A <b>batch / lot</b> groups the units off one job order under a
+        <code>BATCH-#####</code> number.</p>
+        <ul>
+          <li>A job order with <b>no inspection stages</b> records one batch per
+              production-progress entry automatically. A job order <b>with QA/QC</b> only
+              makes a batch when you type a <b>batch label</b> on the progress form — its
+              units are then tagged with it.</li>
+          <li>Open a batch to <b>relabel</b> it, change its status, or record a
+              <b>batch-level QA/QC sign-off</b> (checklist + pass/fail), and to
+              <b>print QR labels</b> for it.</li>
+          <li>Scanning a unit or batch QR opens its <b>Production record</b> — a printable
+              page with the build details, every QA/QC sign-off, repairs, and the stock
+              movements it drove. Also reachable from the units table in Finished
+              Products.</li>
+        </ul>`,
+    },
+    {
+      id: 'production-schedule', title: 'Teams & schedule', group: 'Manufacturing',
+      routes: ['production-schedule', 'production-teams'], html: `
+        <p>Assign job orders to a crew and plan them on a calendar.</p>
+        <ul>
+          <li><b>Teams</b> — make a named production team and add its members. A job order
+              is assigned a team (and a free-text <i>work centre / line</i>) on its
+              New / Edit form or the <b>Team / schedule…</b> button. A team can't be
+              deleted while a job order points at it — deactivate it instead.</li>
+          <li><b>Schedule</b> — a month calendar places each job order across its
+              <i>planned start → due date</i>, coloured by status and filterable by team
+              or work centre. Set an advisory <b>units/day capacity</b> and days over it
+              are flagged; overdue job orders show in red. <b>Home → Reports</b> shows the
+              overdue count.</li>
+        </ul>`,
     },
     {
       id: 'quickbooks', title: 'QuickBooks Online', group: 'Orders', routes: [],
@@ -186,7 +249,26 @@
         </ul>
         <p>Numbers (SO-#####, JO-#####, PR-#####) are assigned automatically. Totals and
         tax are computed for you. Use <b>Templates</b> to control how the printed
-        document looks.</p>`,
+        document looks.</p>
+        <h4>Sale-order release</h4>
+        <p>A sale order runs <b>open → approved → released → confirmed/completed</b>.
+        <b>Approving is blocked if a line can't be met from stock</b> — you're prompted to
+        <i>trim the order to what's available</i>, <i>create job orders for the shortfall</i>
+        (which also checks whether the components are on hand to build it),
+        <i>draft purchase orders for the shortfall</i> (one per supplier, for the parts that
+        have to be bought), or <i>approve as a backorder</i>. The toolbar's <b>Backorders</b>
+        toggle lists every approved order still waiting on stock, and those rows carry a
+        ⚠ badge. Moving it to <b>approved</b> unlocks the warehouse: on the phone
+        (<i>Work → Release SOs</i>) the releaser opens the order and <b>scans every
+        unit's printed QR label</b> to add it (and types a quantity for non-serialized
+        lines). Scanned units go to <b>reserved</b> — earmarked for the order but still
+        on hand. Once every line is covered the order flips to <b>released</b>. Stock
+        actually leaves inventory (and COGS posts, when the ledger is on) when the order
+        reaches <b>confirmed/completed</b>. Each line shows released / shipped progress.
+        Cancelling or re-opening a released order returns its reserved units to stock.</p>
+        <p>When a <b>delivery</b> for the order is completed on the phone, the driver is
+        offered <i>"mark SO-xxxx completed?"</i> — one tap ships the remaining stock and
+        closes the order.</p>`,
     },
     {
       id: 'purchasing', title: 'Purchasing — receiving & vendor bills', group: 'Orders',
@@ -542,19 +624,57 @@
     </select>`;
   }
 
-  function renderBody(el, topicId) {
+  /** The Guide pipeline (guide-data.js) that best matches a help topic — via the
+      live app route first, then the topic's own routes. */
+  function pipelineFor(t) {
+    if (!window.GUIDE) return null;
+    try {
+      const r = (window.App && App.currentLocation && App.currentLocation().route) || '';
+      const byRoute = GUIDE.forRoute(r);
+      if (byRoute) return byRoute;
+    } catch (_) { /* ignore */ }
+    for (const r of (t.routes || [])) {
+      const g = GUIDE.forRoute(r);
+      if (g) return g;
+    }
+    return null;
+  }
+
+  function renderBody(el, topicId, close) {
     const t = byId[topicId] || TOPICS[0];
+    const pipe = pipelineFor(t);
     el.querySelector('.drawer-body').innerHTML = `
+      <div class="help-jump">
+        <button type="button" class="btn secondary small" id="help-open-guide">${UI.icon('forms', 14)} Open the full Guide</button>
+        ${pipe ? `<button type="button" class="btn small" id="help-walk">${UI.icon('sparkles', 14)} Walk me through this</button>` : ''}
+      </div>
       ${pickerHtml(t.id)}
       <div class="help-content">
         <h4 style="margin:0 0 8px">${UI.esc(t.title)}</h4>
         ${t.html}
+        ${pipe ? `<p style="margin-top:10px"><a href="#" id="help-sop">Full workflow — ${UI.esc(pipe.title)}, end to end &rarr;</a></p>` : ''}
       </div>
       <p class="muted" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px">
         Trainers: full written guides are in <code>docs/guides/</code>.
       </p>`;
+
     const pick = el.querySelector('#help-pick');
-    if (pick) pick.addEventListener('change', () => renderBody(el, pick.value));
+    if (pick) pick.addEventListener('change', () => renderBody(el, pick.value, close));
+
+    const gotoGuide = () => {
+      try { window.App && App.navigate('sop', pipe ? { topic: pipe.id } : undefined); } catch (_) {}
+      if (close) close();
+    };
+    const openGuide = el.querySelector('#help-open-guide');
+    if (openGuide) openGuide.addEventListener('click', gotoGuide);
+    const sopLink = el.querySelector('#help-sop');
+    if (sopLink) sopLink.addEventListener('click', (e) => { e.preventDefault(); gotoGuide(); });
+
+    const walk = el.querySelector('#help-walk');
+    if (walk) walk.addEventListener('click', () => {
+      if (close) close();
+      try { window.GuideTour && pipe && GuideTour.start(pipe.id, 0); } catch (_) {}
+    });
   }
 
   function open(topicId) {
@@ -562,7 +682,7 @@
     try { route = (window.App && App.currentLocation && App.currentLocation().route) || ''; } catch (_) {}
     const id = topicId || routeIndex[route] || 'getting-started';
     const d = UI.drawer({ title: 'Help', icon: 'help', key: 'help', bodyHTML: '' });
-    if (d) renderBody(d.el, id);
+    if (d) renderBody(d.el, id, d.close);
   }
 
   window.Help = { open, topics: TOPICS };

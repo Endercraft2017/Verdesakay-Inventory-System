@@ -15,13 +15,16 @@ import {
   transferStockSchema,
   formConfigSchema,
   importInventorySchema,
+  reorderPoSchema,
 } from '../validation';
+import { createDraftPurchaseOrders } from './orders.routes';
 import {
   applyStockChange,
   transferStock,
   stockAt,
   stockBreakdown,
   getDefaultLocationId,
+  findOrCreateDamageTwin,
 } from '../inventory-stock';
 import { notifyLowStockCrossed } from '../push';
 import { enforceQuota } from '../quota';
@@ -187,6 +190,41 @@ router.get('/product-groups', (_req, res) => {
   res.json(rows.map((r) => r.product_group));
 });
 
+// POST /api/inventory/reorder-po — draft purchase order(s) to restock items at/under their
+// reorder level, grouped by each item's preferred supplier. Body: { item_ids?, multiplier? }.
+// With no item_ids it sweeps every low-stock item (damage twins + finished products excluded
+// — a low finished product is produced, not bought). Order qty tops each item up to
+// `min_quantity * multiplier` (default 2×), always at least 1.
+router.post('/reorder-po', requirePermission('orders.create'), (req, res) => {
+  const { item_ids, multiplier } = parseBody(reorderPoSchema, req.body);
+  const mult = multiplier ?? 2;
+
+  const where = [
+    'i.quantity <= i.min_quantity',
+    '(i.category IS NULL OR i.category <> ?)',
+    'COALESCE(i.is_finished_product, 0) = 0',
+  ];
+  const params: unknown[] = [DAMAGE_CATEGORY];
+  if (item_ids && item_ids.length) {
+    where.push(`i.id IN (${item_ids.map(() => '?').join(',')})`);
+    params.push(...item_ids);
+  }
+  const low = queryAll<{ id: number; quantity: number; min_quantity: number }>(
+    `SELECT i.id, i.quantity, i.min_quantity FROM inventory_items i WHERE ${where.join(' AND ')}`,
+    ...params
+  );
+  if (!low.length) {
+    res.json({ created: [], considered: 0, note: 'Nothing is at or below its reorder level.' });
+    return;
+  }
+  const wants = low.map((it) => {
+    const target = Math.ceil((Number(it.min_quantity) || 0) * mult);
+    return { item_id: it.id, quantity: Math.max(1, target - (Number(it.quantity) || 0)) };
+  });
+  const created = createDraftPurchaseOrders(wants, 'Reorder-level restock', req.user!.id);
+  res.json({ created, considered: low.length });
+});
+
 // GET /api/inventory/movements — the cross-item stock movement feed (all items)
 router.get('/movements', requirePermission('inventory.view'), (req, res) => {
   const { item_id, user_id, dir, from, to, q } = req.query;
@@ -267,6 +305,29 @@ router.get('/lookup', requirePermission('inventory.view'), (req, res) => {
       });
       return;
     }
+  }
+
+  // Or a production batch/lot — by its BATCH-##### number or its identifier label.
+  const batch = queryOne<{ id: number; number: string; identifier: string | null; status: string; qty: number; product_item_id: number | null; job_order_number: string | null }>(
+    `SELECT b.id, b.number, b.identifier, b.status, b.qty, b.product_item_id, jo.number AS job_order_number
+     FROM production_batches b LEFT JOIN job_orders jo ON jo.id = b.job_order_id
+     WHERE b.number = ? OR b.identifier = ?
+     ORDER BY b.id DESC LIMIT 1`,
+    code,
+    code
+  );
+  if (batch) {
+    const prod = batch.product_item_id
+      ? queryOne<InventoryItem>(ITEM_SELECT + ' WHERE i.id = ? LIMIT 1', batch.product_item_id)
+      : null;
+    res.json({
+      ...(prod ? withParsedAttributes(prod) : {}),
+      batch: {
+        id: batch.id, number: batch.number, identifier: batch.identifier,
+        status: batch.status, qty: batch.qty, job_order_number: batch.job_order_number,
+      },
+    });
+    return;
   }
 
   res.status(404).json({ error: 'No item matches that code' });
@@ -666,37 +727,7 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), (req, res) => 
   let inn;
   let twinId: number;
   try {
-    // Find or create the damage twin.
-    const twin = queryOne<{ id: number }>(
-      `SELECT id FROM inventory_items
-       WHERE category = ? AND json_extract(attributes, '$.damaged_of') = ?`,
-      DAMAGE_CATEGORY,
-      id
-    );
-    if (twin) {
-      twinId = twin.id;
-    } else {
-      let srcAttrs: Record<string, unknown> = {};
-      if (typeof source.attributes === 'string' && source.attributes) {
-        try { srcAttrs = JSON.parse(source.attributes) as Record<string, unknown>; } catch { /* ignore */ }
-      }
-      const twinAttrs = { ...srcAttrs, damaged_of: id };
-      delete (twinAttrs as { barcode?: unknown }).barcode; // the twin isn't separately scannable
-      const info = run(
-        `INSERT INTO inventory_items
-          (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, location, notes, attributes)
-         VALUES (?, NULL, ?, ?, ?, 0, ?, 0, ?, ?, ?)`,
-        source.name,
-        DAMAGE_CATEGORY,
-        source.department_id,
-        source.supplier_id,
-        source.unit ?? 'pcs',
-        source.location ?? null,
-        source.notes ?? null,
-        JSON.stringify(twinAttrs)
-      );
-      twinId = Number(info.lastInsertRowid);
-    }
+    twinId = findOrCreateDamageTwin(id);
 
     out = applyStockChange({
       itemId: id, locationId: locId, change: -quantity, userId: req.user!.id,

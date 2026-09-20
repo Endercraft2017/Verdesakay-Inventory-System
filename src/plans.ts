@@ -27,3 +27,25 @@ export const PLANS: Record<PlanName, PlanLimits> = {
 export function planLimitsFor(plan: string | null | undefined): PlanLimits {
   return PLANS[(plan as PlanName)] ?? PLANS.trial;
 }
+
+/**
+ * Feature modules bundled into each plan — the default set a tenant on that plan gets
+ * before any per-tenant `tenants.modules` override. src/modules.ts owns the canonical
+ * ModuleName union and filters these strings through it (+ unions dependencies). The
+ * always-on "core" area (Home, Documents, Templates, Messages, user Admin, Activity)
+ * is never listed here. Kept as plain strings so this file stays dependency-free.
+ */
+export const PLAN_MODULES: Record<PlanName, string[]> = {
+  // Self-hosted / single-tenant — every module (also short-circuited in modules.ts).
+  unlimited:  ['inventory', 'manufacturing', 'purchasing', 'hr', 'accounting', 'ai', 'mobile', 'email', 'quickbooks'],
+  // Evaluators see the whole product during the trial.
+  trial:      ['inventory', 'manufacturing', 'purchasing', 'hr', 'accounting', 'ai', 'mobile', 'email', 'quickbooks'],
+  // Paid tiers — a sensible default bundle; tune per deal with `tenant:modules`.
+  starter:    ['inventory', 'purchasing', 'mobile'],
+  operations: ['inventory', 'manufacturing', 'purchasing', 'hr', 'mobile', 'email'],
+  complete:   ['inventory', 'manufacturing', 'purchasing', 'hr', 'accounting', 'ai', 'mobile', 'email', 'quickbooks'],
+};
+
+export function planModules(plan: string | null | undefined): string[] {
+  return PLAN_MODULES[(plan as PlanName)] ?? PLAN_MODULES.trial;
+}

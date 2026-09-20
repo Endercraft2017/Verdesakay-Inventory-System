@@ -5,9 +5,10 @@
     Half Days/Undertime Days, Undertime Day Pay, Night Differential, and the itemized Other
     Deductions loop patched in, or those new payslip fields would just silently never appear on
     an existing install's printed slip even after upgrading and restarting. Simulates an install
-    already at schema_version 21 (one behind this fix), same shape tests/late-exempt-migration.
+    already at schema_version 21 (behind this fix), same shape tests/late-exempt-migration.
     test.ts and tests/offset-form-migration.test.ts use for their own "upgrading an old DB"
-    scenarios. */
+    scenarios. Also covers the SCHEMA_VERSION 23 follow-up: the always-on "Cash Advance" row is
+    stripped back out (a cash advance is now just an itemized Other Deductions line). */
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import os from 'node:os';
@@ -31,8 +32,8 @@ const OLD_BODY = `<div class="slip">
   </div>
 </div>`;
 
-describe('HR Payroll Slip template migration (SCHEMA_VERSION 22)', () => {
-  it('patches Half Days/Undertime Days, Undertime Day Pay, Night Differential, and the Other Deductions loop into an existing install\'s template', async () => {
+describe('HR Payroll Slip template migration (SCHEMA_VERSION 22 + 23)', () => {
+  it('patches in Half Days/Undertime Days, Undertime Day Pay, Night Differential, the Other Deductions loop, and strips the always-on Cash Advance row', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-slip-tpl-migrate-'));
     const dbPath = path.join(tmpDir, 'old.db');
 
@@ -62,7 +63,7 @@ describe('HR Payroll Slip template migration (SCHEMA_VERSION 22)', () => {
     delete process.env.ADMIN_PASSWORD;
 
     const db = await import('../src/db');
-    expect(db.SCHEMA_VERSION).toBeGreaterThan(21); // the fix itself: this must have been bumped
+    expect(db.SCHEMA_VERSION).toBeGreaterThan(22); // the fix itself: this must have been bumped
     expect(() => db.init()).not.toThrow();
 
     const tpl = db.queryOne<{ body: string }>("SELECT body FROM doc_templates WHERE name = 'HR Payroll Slip'");
@@ -73,8 +74,12 @@ describe('HR Payroll Slip template migration (SCHEMA_VERSION 22)', () => {
     expect(tpl!.body).toContain('{{night_diff_pay}}');
     expect(tpl!.body).toContain('{{#other_deductions}}');
     expect(tpl!.body).toContain('{{/other_deductions}}');
-    // Nothing else in the admin's own body was disturbed — the two untouched rows survive verbatim.
+    // SCHEMA_VERSION 23: the always-on Cash Advance row is gone.
+    expect(tpl!.body).not.toContain('{{cash_advance}}');
+    expect(tpl!.body).not.toContain('Cash Advance');
+    // Nothing else in the admin's own body was disturbed — the untouched rows survive verbatim.
     expect(tpl!.body).toContain('<span>Late</span><span>{{late_absences}}</span></div>');
+    expect(tpl!.body).toContain('<span>Rest Day OT</span><span>{{rest_day_ot}}</span></div>');
 
     expect(db.getSetting<number>('schema_version')).toBe(db.SCHEMA_VERSION);
 

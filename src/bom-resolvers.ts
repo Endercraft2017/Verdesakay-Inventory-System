@@ -13,7 +13,9 @@ const ITEM_SQL = `
            CAST(json_extract(attributes, '$.standard_cost')  AS REAL),
            CAST(json_extract(attributes, '$.purchase_price') AS REAL),
            0
-         ) AS unit_cost
+         ) AS unit_cost,
+         COALESCE(CAST(json_extract(attributes, '$.std_labor_cost')    AS REAL), 0) AS labor_cost,
+         COALESCE(CAST(json_extract(attributes, '$.std_overhead_cost') AS REAL), 0) AS overhead_cost
   FROM inventory_items WHERE id = ?
 `;
 

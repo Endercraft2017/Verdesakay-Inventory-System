@@ -13,6 +13,14 @@
     return t.content.firstElementChild;
   };
 
+  window.mFmtBytes = function (n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  };
+
   window.mToast = function (msg, kind) {
     var host = document.getElementById('m-toasts');
     var t = mEl('<div class="m-toast ' + (kind || '') + '">' + mEsc(msg) + '</div>');

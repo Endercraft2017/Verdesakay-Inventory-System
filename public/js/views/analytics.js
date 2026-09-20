@@ -52,6 +52,7 @@ App.register('analytics', async (view) => {
       <h3 class="rep-h">Production</h3>
       <div class="cards">
         ${card('', 'adjust', 'Work in progress', p.wip_qty, `${p.wip_orders} MO`)}
+        ${card(p.overdue ? 'warn' : '', 'alert', 'Overdue MOs', p.overdue || 0, `${p.due_this_week || 0} due this week`)}
         ${card('', 'sparkles', 'Units done · 30d', p.last_30.units_done)}
         ${card(p.last_30.scrap_rate_pct > 5 ? 'warn' : '', 'alert', 'Scrap rate · 30d', p.last_30.scrap_rate_pct + '%')}
         ${card('', 'sparkles', 'Units done · 90d', p.last_90.units_done)}
@@ -95,7 +96,8 @@ App.register('analytics', async (view) => {
       <h3 class="rep-h">Sales orders</h3>
       <div class="cards">
         ${card('', 'forms', 'Open sale orders', s.open_orders, money(s.open_value))}
-        ${Object.entries(s.by_status).map(([k, v]) => card('', 'forms', k, v.count, money(v.value))).slice(0, 4).join('')}
+        ${s.backorder_count ? card('warn', 'alert', 'On backorder', s.backorder_count, money(s.backorder_value)) : ''}
+        ${Object.entries(s.by_status).map(([k, v]) => card('', 'forms', k, v.count, money(v.value))).slice(0, s.backorder_count ? 3 : 4).join('')}
       </div>
       ${panel('Sale orders — last 8 weeks', s.weekly.length ? `
         <table><thead><tr><th>Week</th><th class="right">Orders</th><th class="right">Value</th><th style="width:40%">&nbsp;</th></tr></thead>

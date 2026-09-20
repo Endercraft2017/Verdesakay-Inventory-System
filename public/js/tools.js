@@ -5,7 +5,7 @@
    (src/mailer.ts, /api/mail/*) — Settings configures the mailbox, Sent log shows
    src/mailer.ts's mail_log (users.manage for both). */
 (function () {
-  const TOOL_ICONS = { notes: 'note', email: 'mail', scheduler: 'calendar', bookmarks: 'bookmark', help: 'help' };
+  const TOOL_ICONS = { notes: 'note', email: 'mail', scheduler: 'calendar', bookmarks: 'bookmark', help: 'help', bug: 'bug' };
 
   function init() {
     document.querySelectorAll('.rail-btn[data-tool]').forEach((b) => {
@@ -25,6 +25,7 @@
     else if (tool === 'email') openEmail();
     else if (tool === 'scheduler') openScheduler();
     else if (tool === 'bookmarks') openBookmarks();
+    else if (tool === 'bug') openBugReport();
     else if (tool === 'help' && window.Help) window.Help.open();
   }
 
@@ -130,7 +131,10 @@
   let aiOpen = false;
   let aiEscHandler = null;
 
-  function toggleAI() { if (aiOpen) closeAI(); else openAI(); }
+  function toggleAI() {
+    if (window.App && App.getMe() && !App.hasModule('ai')) return; // module off for this workspace
+    if (aiOpen) closeAI(); else openAI();
+  }
 
   function closeAI() {
     aiOpen = false;
@@ -657,6 +661,184 @@
       await API.post('/bookmarks', { label, route, params: params || null });
       UI.toast('Bookmark added');
     } catch (e) { UI.toast(e.message, 'error'); }
+  }
+
+  /* ---------------- Report a Bug ---------------- */
+  // Any signed-in user can file a report (title, steps to reproduce, up to 5
+  // screenshots — pasted or attached). users.manage additionally gets a "View
+  // reports" button in the footer to review/resolve what's been filed
+  // (src/routes/bug-reports.routes.ts).
+  const MAX_SHOTS = 5;
+
+  function openBugReport() {
+    const canReview = App.hasPermission('users.manage');
+    let shots = [];
+
+    const d = UI.drawer({
+      key: 'bug', icon: 'bug', title: 'Report a Bug',
+      bodyHTML: `
+        <label>Title *</label><input id="bug-title" maxlength="200" placeholder="Short summary of the problem" />
+        <label>Steps to reproduce *</label>
+        <textarea id="bug-steps" style="min-height:90px" placeholder="1. Go to…&#10;2. Click…&#10;3. See error"></textarea>
+        <label>What happened? <span class="muted" style="font-weight:400">(optional)</span></label>
+        <textarea id="bug-desc" style="min-height:60px" placeholder="Expected vs. actual behavior, error messages, etc."></textarea>
+        <label>Screenshots <span class="muted" style="font-weight:400">— up to ${MAX_SHOTS}</span></label>
+        <input type="file" id="bug-shots-input" accept="image/*" multiple />
+        <div class="muted" style="font-size:11.5px;margin-top:3px">You can also paste a screenshot (Ctrl+V) while this panel is open.</div>
+        <div class="shot-grid" id="bug-shot-grid"></div>
+        <div id="bug-status" class="muted" style="font-size:12px;margin-top:8px"></div>`,
+      footHTML: `${canReview ? `<button class="btn secondary" id="bug-view-reports">${UI.icon('history', 15)} View reports</button>` : ''}
+        <button class="btn" id="bug-submit">${UI.icon('send', 16)} Submit report</button>`,
+      onOpen: (el) => {
+        const grid = el.querySelector('#bug-shot-grid');
+        const input = el.querySelector('#bug-shots-input');
+        const statusEl = el.querySelector('#bug-status');
+
+        function renderShots() {
+          grid.innerHTML = shots.map((_, i) =>
+            `<div class="shot-thumb" data-i="${i}"><img alt="Screenshot ${i + 1}" />
+              <button type="button" class="shot-remove" data-rm="${i}" aria-label="Remove">${UI.icon('close', 12)}</button></div>`
+          ).join('');
+          grid.querySelectorAll('.shot-thumb img').forEach((img, i) => { img.src = URL.createObjectURL(shots[i]); });
+          grid.querySelectorAll('[data-rm]').forEach((b) =>
+            b.onclick = () => { shots.splice(Number(b.dataset.rm), 1); renderShots(); });
+        }
+
+        async function addFiles(fileList) {
+          let list = Array.from(fileList || []).filter((f) => /^image\//.test(f.type));
+          if (!list.length) return;
+          const room = MAX_SHOTS - shots.length;
+          if (room <= 0) { UI.toast(`You can attach up to ${MAX_SHOTS} screenshots`, 'error'); return; }
+          if (list.length > room) list = list.slice(0, room);
+          if (window.ImageCompress) list = await Promise.all(list.map((f) => window.ImageCompress.maybeCompress(f)));
+          shots = shots.concat(list);
+          renderShots();
+        }
+
+        input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
+        el.addEventListener('paste', (e) => {
+          const items = (e.clipboardData && e.clipboardData.items) || [];
+          const files = Array.from(items)
+            .filter((it) => it.kind === 'file' && /^image\//.test(it.type))
+            .map((it) => it.getAsFile())
+            .filter(Boolean);
+          if (files.length) addFiles(files);
+        });
+
+        const viewBtn = el.querySelector('#bug-view-reports');
+        if (viewBtn) viewBtn.onclick = () => bugReportsModal();
+
+        el.querySelector('#bug-submit').onclick = async () => {
+          const title = el.querySelector('#bug-title').value.trim();
+          const steps = el.querySelector('#bug-steps').value.trim();
+          const description = el.querySelector('#bug-desc').value.trim();
+          if (!title) { statusEl.textContent = 'Title is required.'; return; }
+          if (!steps) { statusEl.textContent = 'Steps to reproduce are required.'; return; }
+          const btn = el.querySelector('#bug-submit');
+          btn.disabled = true;
+          statusEl.textContent = 'Submitting…';
+          try {
+            const fd = new FormData();
+            fd.append('title', title);
+            fd.append('steps_to_reproduce', steps);
+            if (description) fd.append('description', description);
+            fd.append('page_context', App.currentLocation().label);
+            shots.forEach((f) => fd.append('screenshots', f));
+            await API.upload('/bug-reports', fd);
+            UI.toast('Bug report submitted — thank you!');
+            d.close();
+          } catch (e) {
+            statusEl.textContent = e.message;
+          } finally {
+            btn.disabled = false;
+          }
+        };
+      },
+    });
+  }
+
+  /** Admin: browse/filter filed reports (users.manage). */
+  async function bugReportsModal() {
+    let status = ''; // '' | 'open' | 'resolved'
+    UI.modal({
+      title: 'Bug Reports',
+      size: 'lg',
+      cancelText: 'Close',
+      confirmText: null,
+      bodyHTML: `
+        <div class="msg-tabs" style="margin-bottom:10px">
+          <button class="btn secondary small" data-f="">All</button>
+          <button class="btn secondary small" data-f="open">Open</button>
+          <button class="btn secondary small" data-f="resolved">Resolved</button>
+        </div>
+        <div id="bug-list-body"><div class="empty">Loading…</div></div>`,
+      onOpen: (ov) => {
+        ov.querySelectorAll('[data-f]').forEach((b) =>
+          b.onclick = () => { status = b.dataset.f; setTabs(ov); load(ov); });
+        setTabs(ov);
+        load(ov);
+      },
+    });
+    function setTabs(ov) {
+      ov.querySelectorAll('[data-f]').forEach((b) => b.classList.toggle('secondary', b.dataset.f !== status));
+    }
+    async function load(ov) {
+      const body = ov.querySelector('#bug-list-body');
+      body.innerHTML = '<div class="empty">Loading…</div>';
+      let rows;
+      try { rows = await API.get('/bug-reports' + (status ? `?status=${status}` : '')); }
+      catch (e) { body.innerHTML = `<div class="empty">${UI.esc(e.message)}</div>`; return; }
+      if (!rows.length) {
+        body.innerHTML = UI.emptyState({ icon: 'bug', title: 'No bug reports', hint: 'Reports filed from the sidebar will show up here.' });
+        return;
+      }
+      body.innerHTML = `<table><thead><tr><th>Title</th><th>Reported by</th><th>When</th><th>Screens</th><th>Status</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr data-id="${r.id}" style="cursor:pointer">
+          <td>${UI.esc(r.title)}</td>
+          <td class="muted">${UI.esc(r.reporter_name || '—')}</td>
+          <td class="muted mono" style="white-space:nowrap">${UI.fmtDateShort(r.created_at)}</td>
+          <td class="muted">${r.screenshot_count || 0}</td>
+          <td><span class="badge-pill ${r.status === 'resolved' ? 'status-completed' : 'status-open'}">${r.status}</span></td>
+        </tr>`).join('')}</tbody></table>`;
+      body.querySelectorAll('[data-id]').forEach((tr) =>
+        tr.onclick = () => bugReportDetail(Number(tr.dataset.id), () => load(ov)));
+    }
+  }
+
+  /** Admin: full report + screenshot gallery + resolve/reopen toggle. */
+  async function bugReportDetail(id, onChanged) {
+    let r;
+    try { r = await API.get(`/bug-reports/${id}`); } catch (e) { UI.toast(e.message, 'error'); return; }
+    const shotsHTML = (r.screenshots || []).map((s) =>
+      `<div class="shot-thumb" data-view="${UI.esc(s.url)}" title="${UI.esc(s.original_name)}"><img alt="${UI.esc(s.original_name)}" /></div>`
+    ).join('');
+    UI.modal({
+      title: r.title,
+      size: 'lg',
+      cancelText: 'Close',
+      confirmText: r.status === 'resolved' ? 'Reopen' : 'Mark resolved',
+      bodyHTML: `
+        <div class="muted" style="font-size:12px;margin-bottom:10px">
+          Reported by <strong>${UI.esc(r.reporter_name || 'Unknown')}</strong> · ${UI.fmtDate(r.created_at)}
+          ${r.page_context ? ` · from ${UI.esc(r.page_context)}` : ''}
+        </div>
+        <div class="msg-full"><label>Steps to reproduce</label><div class="body">${UI.esc(r.steps_to_reproduce)}</div></div>
+        ${r.description ? `<div class="msg-full" style="margin-top:10px"><label>What happened</label><div class="body">${UI.esc(r.description)}</div></div>` : ''}
+        ${shotsHTML ? `<label style="display:block;margin-top:12px">Screenshots</label><div class="shot-grid">${shotsHTML}</div>` : ''}`,
+      onOpen: (ov) => {
+        ov.querySelectorAll('[data-view]').forEach((box) => {
+          API.blobUrl(box.dataset.view)
+            .then((u) => { box.querySelector('img').src = u; box.onclick = () => window.open(u, '_blank'); })
+            .catch(() => {});
+        });
+      },
+      onConfirm: async () => {
+        const next = r.status === 'resolved' ? 'open' : 'resolved';
+        await API.put(`/bug-reports/${id}`, { status: next });
+        UI.toast(next === 'resolved' ? 'Marked resolved' : 'Reopened');
+        if (onChanged) onChanged();
+      },
+    });
   }
 
   /* ---------------- Right-click a nav item → add bookmark ---------------- */

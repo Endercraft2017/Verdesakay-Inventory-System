@@ -2,14 +2,17 @@
    time-in/time-out grid per employee. "Generate Payslips" creates/updates one
    record per roster employee in the existing "HR Payroll" form (Documents >
    Data Forms), reusing that module's print-ready payslip flow.
-   Route: hr-timekeeping. filter.period_id = <id> opens a specific cutoff. */
+   Route: hr-timekeeping. filter.period_id = <id> opens a specific cutoff;
+   filter.employee_id (with period_id) also auto-opens that employee's Daily Time
+   modal — e.g. the HR Overview "Needs Attention" panel jumping straight to one flagged
+   employee's grid instead of just landing on the roster and making HR find them. */
 App.register('hr-timekeeping', async (view, filter) => {
   if (!App.hasPermission('hr.view')) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
   if (filter && filter.period_id) {
-    await renderPeriod(view, Number(filter.period_id));
+    await renderPeriod(view, Number(filter.period_id), filter.employee_id ? Number(filter.employee_id) : null);
   } else {
     await renderList(view);
   }
@@ -220,6 +223,15 @@ async function policySettingsModal() {
         a per-hours-basis worked span. Minimum time flags any day under it for review in Time Keeping's daily grid
         (an Allow/Deny button appears there) — it never withholds pay by itself; a short day still pays for the
         actual hours worked unless HR explicitly denies it. Leave at 0 to never flag short days at all.</p>
+      <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" data-p="count_lunch_late_as_late" style="width:auto" /> Count a late lunch return as late
+      </label></div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">Off (default): lunch out/in times shown on the Daily
+        Time grid are just a record — they never affect pay. On: returning from lunch later than the shift's own
+        lunch window (or, for one specific day, later than an approved Lunch/Break Offset Request) adds the excess
+        to that day's late deduction, same grace period and rounding as an ordinary late arrival. An employee who
+        times out for lunch and never punches back in at all is always auto-credited a half day either way,
+        regardless of this setting.</p>
       <div class="field-row" style="margin-top:10px">
         <div><label>Whole-day minimum, Fixed mode only (minutes)</label>
           <input data-p="whole_day_min_minutes" type="number" min="0" max="1440" placeholder="0 = off (any presence is a whole day)" /></div>
@@ -231,6 +243,30 @@ async function policySettingsModal() {
         half day) or an Undertime Request filed with pay (always a full paid day). Suggested: 420 (7 hours) for an
         8-hour shift — up to an hour late still reads as a whole day. Leave at 0 to keep the old behavior: any
         presence at all is a flat whole day.</p>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
+      <strong>Holiday Pay Rules</strong>
+      <div class="field-row" style="margin-top:8px">
+        <div><label>Special Non-Working Holiday premium</label>
+          <select data-p="special_holiday_premium_mode">
+            <option value="flat">Flat 30% regardless of hours worked (default)</option>
+            <option value="prorated">Prorated by actual hours present, capped at 8 hours' worth</option>
+          </select></div>
+        <div><label>Require attendance next to a holiday</label>
+          <select data-p="holiday_adjacency_requirement">
+            <option value="none">No requirement (default)</option>
+            <option value="before">Present the day before</option>
+            <option value="after">Present the day after</option>
+            <option value="both">Present both the day before and after</option>
+          </select></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0"><b>Special Holiday premium</b>: Regular Holiday's pay is
+        always the full statutory rate regardless of hours worked either way — this only changes Special
+        Non-Working Holiday's 30% (or 50%, on a rest day). Flat: a half-day worked still earns the same premium as
+        a full day. Prorated: a half-day earns roughly half. <b>Attendance requirement</b>: some companies withhold
+        a Regular or Special Non-Working Holiday's pay/premium entirely if the employee was unexcused-absent on the
+        required adjacent day — being present, on approved paid leave, or that day simply not being a scheduled
+        workday for them (a rest day, or itself another holiday) all satisfy it; only a genuine unexcused absence
+        disqualifies.</p>
       <div class="field-row" style="margin-top:10px">
         <div><label>Pay frequency</label>
           <select data-p="pay_frequency">
@@ -301,9 +337,12 @@ async function policySettingsModal() {
         p('hours_basis_unit').value = policy.hours_basis_unit || '30min';
         p('lunch_break_minutes').value = policy.lunch_break_minutes ?? 60;
         p('count_lunch_as_worked').checked = !!policy.count_lunch_as_worked;
+        p('count_lunch_late_as_late').checked = !!policy.count_lunch_late_as_late;
         p('min_work_minutes').value = policy.min_work_minutes ?? 0;
         p('whole_day_min_minutes').value = policy.whole_day_min_minutes ?? 0;
         p('max_ot_hours').value = policy.max_ot_hours ?? '';
+        p('special_holiday_premium_mode').value = policy.special_holiday_premium_mode || 'flat';
+        p('holiday_adjacency_requirement').value = policy.holiday_adjacency_requirement || 'none';
         (policy.default_rest_days || [0, 6]).forEach((d) => {
           const cb = ov.querySelector(`[data-rd="${d}"]`);
           if (cb) cb.checked = true;
@@ -386,8 +425,11 @@ async function policySettingsModal() {
           hours_basis_unit: p('hours_basis_unit').value,
           lunch_break_minutes: Number(p('lunch_break_minutes').value) || 0,
           count_lunch_as_worked: p('count_lunch_as_worked').checked,
+          count_lunch_late_as_late: p('count_lunch_late_as_late').checked,
           min_work_minutes: Number(p('min_work_minutes').value) || 0,
           whole_day_min_minutes: Number(p('whole_day_min_minutes').value) || 0,
+          special_holiday_premium_mode: p('special_holiday_premium_mode').value,
+          holiday_adjacency_requirement: p('holiday_adjacency_requirement').value,
           default_rest_days: [...ov.querySelectorAll('[data-rd]:checked')].map((cb) => Number(cb.dataset.rd)),
         };
         const dedCells = [...ov.querySelectorAll('[data-ded]')];
@@ -839,7 +881,7 @@ async function rateTablesModal() {
 }
 
 /* ── Cutoff detail: roster + daily grid ──────────────────────────────────── */
-async function renderPeriod(view, periodId) {
+async function renderPeriod(view, periodId, initialEmployeeId) {
   let period = null;
   try { period = await API.get('/hr/periods/' + periodId); }
   catch { view.innerHTML = '<div class="empty">Cutoff not found.</div>'; return; }
@@ -854,27 +896,35 @@ async function renderPeriod(view, periodId) {
       <span class="muted" style="margin-left:6px">${UI.esc(period.start_date)} &ndash; ${UI.esc(period.end_date)}</span>
       <div class="grow"></div>
       <button class="btn secondary" id="tk-edit-period">${UI.icon('edit')} Edit Cutoff</button>
-      <button class="btn secondary" id="tk-import-punches" style="margin-left:8px" title="Fill time-in/out from time-clock punches">${UI.icon('calendar')} Import Punches</button>
+      <button class="btn secondary" id="tk-import-punches" style="margin-left:8px" title="Punches fill time-in/out live while someone's on this cutoff's roster — use this to backfill anyone who punched before being added">${UI.icon('calendar')} Import Punches</button>
       <button class="btn secondary" id="tk-export-csv" style="margin-left:8px" title="Download this cutoff's whole timekeeping roster as CSV">${UI.icon('download')} Export CSV</button>
       <button class="btn secondary" id="tk-post-gl" style="margin-left:8px" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 15)} Post to GL</button>
       <button class="btn" id="tk-generate" style="margin-left:8px">${UI.icon('sheet')} Generate Payslips</button>
     </div>
     <div class="panel">
-      <div class="topbar" style="padding:0 0 14px;background:none;border:none">
-        <label class="muted" style="font-size:12.5px;margin-right:4px">Group by</label>
-        <select id="tk-roster-group">
-          <option value="none">None</option>
-          <option value="department">Department</option>
-          <option value="status">Status</option>
-        </select>
-        <label class="muted" style="font-size:12.5px;margin:0 4px 0 12px">Sort by</label>
-        <select id="tk-roster-sort">
-          <option value="name">Name</option>
-          <option value="department">Department</option>
-          <option value="status">Status</option>
-          <option value="daily_rate">Daily Rate</option>
-          <option value="days_logged">Days Logged</option>
-        </select>
+      <div class="tk-roster-filters">
+        <div class="search-box search">
+          <span class="ic">${UI.icon('search', 15)}</span>
+          <input type="search" id="tk-roster-search" placeholder="Search name…" autocomplete="off" />
+        </div>
+        <div class="fld">
+          <label for="tk-roster-group">Group</label>
+          <select id="tk-roster-group">
+            <option value="department" selected>Department</option>
+            <option value="none">None</option>
+            <option value="status">Status</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label for="tk-roster-sort">Sort</label>
+          <select id="tk-roster-sort">
+            <option value="name">Name</option>
+            <option value="department">Department</option>
+            <option value="status">Status</option>
+            <option value="daily_rate">Daily Rate</option>
+            <option value="days_logged">Days Logged</option>
+          </select>
+        </div>
         <button type="button" class="icon-btn" id="tk-roster-sort-dir" title="Reverse sort order">${UI.icon('adjust', 15)}</button>
         <div class="grow"></div>
         <button class="btn danger small" id="tk-remove-selected" hidden>${UI.icon('trash')} Remove selected</button>
@@ -918,7 +968,8 @@ async function renderPeriod(view, periodId) {
   const groupSel = view.querySelector('#tk-roster-group');
   const sortSel = view.querySelector('#tk-roster-sort');
   const sortDirBtn = view.querySelector('#tk-roster-sort-dir');
-  const rosterView = { groupBy: 'none', sortBy: 'name', sortDir: 'asc' };
+  const searchInput = view.querySelector('#tk-roster-search');
+  const rosterView = { groupBy: 'department', sortBy: 'name', sortDir: 'asc', search: '' };
 
   const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', resigned: 'Resigned', terminated: 'Terminated' };
   const SORTERS = {
@@ -940,31 +991,47 @@ async function renderPeriod(view, periodId) {
     });
   }
 
-  function rosterTableHtml(list) {
+  function rosterRowHtml(r) {
     return `
-      <table>
+      <tr class="clickable" data-open="${r.employee_id}">
+        <td><input type="checkbox" class="tk-roster-chk" data-emp="${r.employee_id}" data-name="${UI.esc(r.name)}" /></td>
+        <td><strong>${UI.esc(r.name)}</strong></td>
+        <td>${UI.esc(r.department_name || '—')}</td>
+        <td>${UI.esc(STATUS_LABELS[r.status] || r.status || '—')}</td>
+        <td class="right">${UI.money(r.daily_rate)}</td>
+        <td class="right">${r.days_logged || 0} / ${r.days_total || 0}${r.days_incomplete
+          ? ` <span class="tk-roster-incomplete" title="${r.days_incomplete} incomplete day(s) — only one of time in/out set">${UI.icon('alert', 13)} ${r.days_incomplete}</span>`
+          : ''}</td>
+        <td class="actions">${r.days_incomplete && r.user_id
+          ? `<button class="icon-btn" title="Send this employee a notice to fix their missing time-out and see HR" data-notify="${r.employee_id}">${UI.icon('send', 15)}</button>`
+          : ''}<button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
+      </tr>`;
+  }
+
+  // One table for the whole roster — group headers are separator rows inside its <tbody>, not
+  // separate <table>s, so every group's columns line up on the same fixed grid. `sections` is
+  // [{ name, rows }]; name === null renders no header (the ungrouped case).
+  function rosterTableHtml(sections) {
+    const body = sections.map((s) => {
+      const head = s.name != null
+        ? `<tr class="tk-group-row"><td colspan="7">${UI.esc(s.name)} <span>(${s.rows.length})</span></td></tr>`
+        : '';
+      return head + s.rows.map(rosterRowHtml).join('');
+    }).join('');
+    return `
+      <table class="tk-roster-table">
+        <colgroup>
+          <col class="c-chk" /><col class="c-emp" /><col class="c-dept" />
+          <col class="c-status" /><col class="c-rate" /><col class="c-days" /><col class="c-act" />
+        </colgroup>
         <thead><tr><th></th><th>Employee</th><th>Department</th><th>Status</th><th class="right">Daily Rate</th><th class="right">Days Logged</th><th></th></tr></thead>
-        <tbody>${list.map((r) => `
-          <tr class="clickable" data-open="${r.employee_id}">
-            <td><input type="checkbox" class="tk-roster-chk" data-emp="${r.employee_id}" data-name="${UI.esc(r.name)}" /></td>
-            <td><strong>${UI.esc(r.name)}</strong></td>
-            <td>${UI.esc(r.department_name || '—')}</td>
-            <td>${UI.esc(STATUS_LABELS[r.status] || r.status || '—')}</td>
-            <td class="right">${UI.money(r.daily_rate)}</td>
-            <td class="right">${r.days_logged || 0} / ${r.days_total || 0}${r.days_incomplete
-              ? ` <span class="tk-roster-incomplete" title="${r.days_incomplete} incomplete day(s) — only one of time in/out set">${UI.icon('alert', 13)} ${r.days_incomplete}</span>`
-              : ''}</td>
-            <td class="actions">${r.days_incomplete && r.user_id
-              ? `<button class="icon-btn" title="Send this employee a notice to fix their missing time-out and see HR" data-notify="${r.employee_id}">${UI.icon('send', 15)}</button>`
-              : ''}<button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
-          </tr>`).join('')}
-        </tbody>
+        <tbody>${body}</tbody>
       </table>`;
   }
 
   function renderRoster() {
-    const roster = period.roster || [];
-    if (!roster.length) {
+    const fullRoster = period.roster || [];
+    if (!fullRoster.length) {
       rosterEl.innerHTML = UI.emptyState({
         icon: 'users',
         title: 'No employees on this cutoff yet',
@@ -973,8 +1040,20 @@ async function renderPeriod(view, periodId) {
       return;
     }
 
+    const q = rosterView.search.trim().toLowerCase();
+    const roster = q ? fullRoster.filter((r) => (r.name || '').toLowerCase().includes(q)) : fullRoster;
+    if (!roster.length) {
+      rosterEl.innerHTML = UI.emptyState({
+        icon: 'search',
+        title: `No one on this cutoff matches “${rosterView.search.trim()}”`,
+        hint: 'Clear the search to see the whole roster.',
+      });
+      updateRemoveSelectedBtn();
+      return;
+    }
+
     if (rosterView.groupBy === 'none') {
-      rosterEl.innerHTML = rosterTableHtml(sortRoster(roster));
+      rosterEl.innerHTML = rosterTableHtml([{ name: null, rows: sortRoster(roster) }]);
     } else {
       const groupLabel = (r) => rosterView.groupBy === 'department'
         ? (r.department_name || 'No Department')
@@ -986,11 +1065,9 @@ async function renderPeriod(view, periodId) {
         groups.get(key).push(r);
       });
       const groupNames = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b));
-      rosterEl.innerHTML = groupNames.map((name) => `
-        <div class="muted" style="font-weight:600;margin:14px 0 6px;text-transform:uppercase;font-size:12px">
-          ${UI.esc(name)} <span style="font-weight:400">(${groups.get(name).length})</span>
-        </div>
-        ${rosterTableHtml(sortRoster(groups.get(name)))}`).join('');
+      rosterEl.innerHTML = rosterTableHtml(
+        groupNames.map((name) => ({ name, rows: sortRoster(groups.get(name)) }))
+      );
     }
 
     rosterEl.querySelectorAll('[data-rm]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); removeEmployee(b.dataset.rm, roster); });
@@ -1074,6 +1151,8 @@ async function renderPeriod(view, periodId) {
     rosterView.sortDir = rosterView.sortDir === 'asc' ? 'desc' : 'asc';
     renderRoster();
   });
+  // Only #tk-roster is re-rendered, so the search field keeps focus/caret while typing.
+  searchInput.addEventListener('input', () => { rosterView.search = searchInput.value; renderRoster(); });
 
   async function reload() {
     period = await API.get('/hr/periods/' + periodId);
@@ -1196,8 +1275,8 @@ async function renderPeriod(view, periodId) {
 
   /* ---- Daily time-in/out grid for one roster employee ----
      Each day can also be assigned a Shift (covers rotating shifts — a day just points at
-     whichever shift applied) and optionally linked to an OT/Half Day/Leave/Undertime/Offset
-     form record, both purely optional — Generate Payslips picks these up automatically, but
+     whichever shift applied) and optionally linked to an OT/Half Day/Leave/Undertime/Offset/
+     Reported form record, both purely optional — Generate Payslips picks these up automatically, but
      nothing here is required to just log plain time-in/out like before. */
   const HOLIDAY_LABELS = {
     regular: 'Regular Holiday', special_non_working: 'Special Non-Working', special_working: 'Special Working',
@@ -1215,17 +1294,26 @@ async function renderPeriod(view, periodId) {
       client-side approximation of PayrollPolicy.min_work_minutes for the grid's flag/button,
       not itself the real payroll computation (see hr-payroll-compute.ts for that). null if
       either side is blank. */
+  // Timed out for lunch and never punched again (no lunch_in, no time_out) — mirrors
+  // hr-payroll-compute.ts's own abandonedAfterLunch substitution so this client-side
+  // approximation flags the same days the real payroll computation now auto-half-days, instead
+  // of the two silently disagreeing.
+  function effectiveTimeOut(d) {
+    if (d.time_out) return d.time_out;
+    return d.lunch_out && !d.lunch_in ? d.lunch_out : null;
+  }
   function workedMinutesFor(d) {
-    if (!d.time_in || !d.time_out) return null;
+    const timeOut = effectiveTimeOut(d);
+    if (!d.time_in || !timeOut) return null;
     const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-    let inMin = toMin(d.time_in), outMin = toMin(d.time_out);
+    let inMin = toMin(d.time_in), outMin = toMin(timeOut);
     if (outMin < inMin) outMin += 24 * 60;
     return outMin - inMin;
   }
 
   async function dailyGridModal(rosterRow) {
     const employeeId = rosterRow.employee_id;
-    const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form'];
+    const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form', 'lunch_offset_form', 'reported_absence'];
     const [days, shifts, policy, holidayForms] = await Promise.all([
       API.get(`/hr/periods/${periodId}/attendance?employee_id=${employeeId}`),
       API.get('/hr/shifts').catch(() => []),
@@ -1235,7 +1323,55 @@ async function renderPeriod(view, periodId) {
     const defaultShift = shifts.find((s) => s.is_default) || null;
     days.forEach((d) => {
       if (d.shift_id == null) d.shift_id = rosterRow.default_shift_id || (defaultShift ? defaultShift.id : null);
+      // A day can link multiple forms now (attendance_records.form_record_ids, a JSON array);
+      // fall back to the legacy single form_record_id for rows saved before that. _links holds
+      // the resolved {id,label,slug,session} for each, filled by the resolution pass below.
+      let ids = [];
+      try { ids = d.form_record_ids ? JSON.parse(d.form_record_ids) : []; } catch { ids = []; }
+      if (!Array.isArray(ids) || !ids.length) ids = d.form_record_id ? [d.form_record_id] : [];
+      d._formIds = ids.filter((n) => Number.isInteger(n) && n > 0);
+      d._links = [];
     });
+
+    // "Make a new form" — the fields that actually drive payroll for each request type; the
+    // record is created approved and linked to this day in one step (POST /form-records).
+    const MAKE_FORM_TYPES = [
+      { slug: 'halfday_request', label: 'Half Day', dateKey: 'date', fields: [
+        { key: 'session', label: 'Session', type: 'select', options: ['Morning (AM)', 'Afternoon (PM)'], required: true },
+      ] },
+      // OT itself needs no input — the form just AUTHORISES overtime; payroll computes the
+      // actual hours from the logged Time Out vs the shift end (rounded to the OT unit, capped
+      // by max_ot_hours). The modal shows that detected figure instead of asking for an
+      // estimate. approved_hours is the one optional exception: a per-day override of the
+      // policy cap for when it's been specifically approved higher than usual (e.g. "policy
+      // caps OT at 2h/day but the boss okayed 4h today") — read directly by the compute engine.
+      { slug: 'overtime_request', label: 'Overtime', dateKey: 'work_date', fields: [
+        { key: 'approved_hours', label: 'Approved OT hours today (optional — overrides the cap above for just this day)', type: 'number' },
+      ], detectOt: true },
+      { slug: 'undertime_request', label: 'Undertime', dateKey: 'work_date', fields: [
+        { key: 'with_pay', label: 'With pay?', type: 'select', options: ['Yes', 'No'], required: true },
+      ] },
+      { slug: 'offset_form', label: 'Offset', dateKey: 'work_date', fields: [
+        { key: 'new_time_out', label: 'New time out', type: 'time', required: true },
+        { key: 'new_time_in', label: 'New time in (optional)', type: 'time' },
+      ] },
+      { slug: 'lunch_offset_form', label: 'Lunch/Break Offset', dateKey: 'work_date', fields: [
+        { key: 'new_lunch_out', label: 'Approved lunch/break start', type: 'time', required: true },
+        { key: 'new_lunch_in', label: 'Approved return (optional)', type: 'time' },
+      ] },
+      { slug: 'leave_request', label: 'Leave (this day)', dateKey: 'date_from', fields: [
+        { key: 'leave_type', label: 'Leave type', type: 'select', required: true,
+          options: ['Vacation Leave', 'Sick Leave', 'Emergency Leave', 'Maternity/Paternity Leave', 'Bereavement Leave', 'Unpaid Leave'] },
+      ] },
+      // Not a formal leave form — for an unplanned absence/lateness reported informally by
+      // chat or a call to a supervisor (sick and messaged the group chat, an accident on the
+      // way to work, etc.) instead of a real Leave/Undertime request. Purely documentation:
+      // the day is still judged as a plain absence/late by payroll unless a real form is also
+      // linked (hr-payroll-compute.ts never checks this slug).
+      { slug: 'reported_absence', label: 'Reported', dateKey: 'work_date', fields: [
+        { key: 'reason', label: 'What was reported', type: 'text', required: true },
+      ] },
+    ];
 
     // Same two-layer resolution as the payroll engine (hr-payroll-compute.ts via hr.routes.ts)
     // — a per-record override wins, else the Company Holidays calendar, else not a holiday —
@@ -1285,14 +1421,48 @@ async function renderPeriod(view, periodId) {
       <option value="yes" ${selected === 'yes' ? 'selected' : ''}>Rest day</option>
       <option value="no" ${selected === 'no' ? 'selected' : ''}>Working day</option>`;
 
+    // Manual "credit this as a half day anyway" call (attendance_records.half_day_override) —
+    // for a day HR knows was a half day but that neither has a linked Half Day request nor
+    // happens to match the automatic possible-half-day heuristic (see possibleHalfDayFlagged
+    // below). Ignored server-side whenever a real Half Day request IS linked.
+    const halfDayOverrideOptions = (selected) => `
+      <option value="" ${!selected ? 'selected' : ''}>None</option>
+      <option value="am" ${selected === 'am' ? 'selected' : ''}>Half Day (AM) — unauthorized</option>
+      <option value="pm" ${selected === 'pm' ? 'selected' : ''}>Half Day (PM) — unauthorized</option>`;
+
     // A real, live bug found this way: HR types raw times straight into this grid without also
     // filing+linking a Half Day request, so the day gets judged (and any late/undertime
     // deduction charged) against the WHOLE shift instead of correctly being a half day. Quick
     // client-side approximation of hr-payroll-compute.ts's looksLikeUnlinkedHalfDay — not the
     // real payroll computation (same "approximation, not authoritative" caveat as
     // workedMinutesFor above), just enough to flag it here before Generate Payslips ever runs.
+    // What payroll will actually pay as OT for this row — clock-out past the shift end, rounded
+    // DOWN to policy.ot_unit, capped at policy.max_ot_hours. Mirrors hr-payroll-compute.ts; a
+    // linked Offset form's shifted end isn't reflected here (rare combo, still correct at
+    // generate time). Purely a hint shown when "Make a new form → Overtime" is picked, so HR
+    // doesn't have to guess an "estimate" the engine ignores anyway.
+    function detectedOtText(d) {
+      if (!d.time_in || !d.time_out) return 'Enter the day’s Time Out first — OT is computed from it.';
+      const shift = shifts.find((s) => String(s.id) === String(d.shift_id));
+      if (!shift) return 'Assign a shift to this day — OT is measured against the shift’s end time.';
+      const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+      const start = toMin(shift.start_time);
+      let end = toMin(shift.end_time); if (end < start) end += 24 * 60;
+      let out = toMin(d.time_out); if (out < toMin(d.time_in)) out += 24 * 60;
+      const raw = out - end;
+      if (raw <= 0) return 'No time logged past the shift end — nothing to pay as OT.';
+      const unitMin = policy.ot_unit === 'hour' ? 60 : policy.ot_unit === '30min' ? 30 : 1;
+      let mins = Math.floor(raw / unitMin) * unitMin;
+      let capped = false;
+      if (policy.max_ot_hours != null && mins > policy.max_ot_hours * 60) { mins = policy.max_ot_hours * 60; capped = true; }
+      if (mins <= 0) return `${raw} min past the shift end — under one ${policy.ot_unit} block, so it rounds to 0 OT.`;
+      const h = mins % 60 ? (mins / 60).toFixed(2) : String(mins / 60);
+      return `≈ ${h} h will be paid as OT — computed from the logged Time Out${capped ? `, capped at ${policy.max_ot_hours} h` : ''}.`;
+    }
+
     function possibleHalfDayFlagged(d) {
-      if (d._linkSlug === 'halfday_request') return false; // already correctly linked
+      if ((d._links || []).some((l) => l.slug === 'halfday_request')) return false; // already correctly linked
+      if (d.half_day_override) return false; // HR already manually credited this day a half day
       const workedMin = workedMinutesFor(d);
       if (workedMin == null) return false;
       const shift = shifts.find((s) => String(s.id) === String(d.shift_id));
@@ -1306,7 +1476,7 @@ async function renderPeriod(view, periodId) {
       if (workedMin <= 0 || workedMin >= workSpan * 0.75) return false;
       const half = workSpan / 2;
       const lunchStart = shiftStart + half, lunchEnd = lunchStart + lunchMinutes;
-      let inMin = toMin(d.time_in), outMin = toMin(d.time_out);
+      let inMin = toMin(d.time_in), outMin = toMin(effectiveTimeOut(d));
       if (outMin < inMin) outMin += 24 * 60;
       const tolerance = 60;
       return (inMin >= lunchStart - tolerance && inMin <= lunchEnd + tolerance)
@@ -1320,7 +1490,7 @@ async function renderPeriod(view, periodId) {
         ? `<button type="button" class="btn secondary small" id="tk-notify-emp">${UI.icon('send', 14)} Send notice</button>`
         : '',
       bodyHTML: `<div class="line-items"><table class="line-table"><thead><tr>
-          <th>Date</th><th>Shift</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Rest Day</th><th>Notes</th><th>Linked Form</th>
+          <th>Date</th><th>Shift</th><th>Time In</th><th>Lunch Out</th><th>Lunch In</th><th>Time Out</th><th>Day Type</th><th>Half Day</th><th>Rest Day</th><th>Notes</th><th>Linked Form</th>
         </tr></thead><tbody id="tk-days"></tbody></table></div>`,
       confirmText: 'Save',
       onOpen: (ov) => {
@@ -1329,6 +1499,24 @@ async function renderPeriod(view, periodId) {
         if (notifyBtn) notifyBtn.onclick = () => notifyIncompleteEmployee(rosterRow);
 
         const today = new Date().toISOString().slice(0, 10);
+        // One of time_in/time_out set but not both, for a day that's already happened. Shared
+        // by renderRows (initial paint) and renderIncompleteRow (live refresh on commit) so the
+        // two never drift out of sync.
+        function isIncomplete(d) {
+          return !!d.time_in !== !!d.time_out && d.work_date <= today;
+        }
+        // Same "own function, refreshed on blur/commit not every keystroke" pattern as
+        // minFlagHtml/renderMinFlag below — toggles the row's highlight the instant a time field
+        // commits, instead of only after the next full save+reload, without re-rendering (and
+        // stealing focus out of) the whole table.
+        function renderIncompleteRow(i) {
+          const tr = body.querySelector(`tr[data-row="${i}"]`);
+          if (!tr) return;
+          const incomplete = isIncomplete(days[i]);
+          tr.classList.toggle('tk-incomplete', incomplete);
+          if (incomplete) tr.title = 'Incomplete — only one of time in/out is set';
+          else tr.removeAttribute('title');
+        }
         // Below PayrollPolicy.min_work_minutes (0 = off) — flags for review, never withholds pay
         // by itself; only an explicit Deny click does (see hr-payroll-compute.ts). Its own
         // function (not inlined in renderRows) so a time-field blur can refresh just this one
@@ -1370,7 +1558,7 @@ async function renderPeriod(view, periodId) {
           return `<div style="margin-top:3px">
               <button type="button" class="badge-pill status-confirmed" data-halfday-flag="${i}"
                 style="cursor:pointer;border:none;font:inherit"
-                title="Times look like a half day, but no Half Day request is linked — it's being judged (and any late/undertime deduction charged) against the FULL shift. Click to link one.">
+                title="Times look like a half day with no Half Day request linked — payroll pays it as a half day automatically, but click to file the actual request and keep the record straight.">
                 Possible Half Day?
               </button>
             </div>`;
@@ -1381,12 +1569,141 @@ async function renderPeriod(view, periodId) {
           el.innerHTML = halfDayFlagHtml(days[i], i);
           el.querySelectorAll('[data-halfday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.halfdayFlag)));
         }
+        const TIME_KEYS = ['time_in', 'lunch_out', 'lunch_in', 'time_out'];
+        // Small camera badge, shown only when the kiosk actually captured a photo for that
+        // slot (see the `photos` object GET /periods/:id/attendance now attaches to each day —
+        // src/routes/hr.routes.ts). `url` is /api-relative, per API.blobUrl's convention.
+        function photoBtnHtml(url) {
+          return url ? `<button type="button" class="tk-photo-btn" data-photo-url="${UI.esc(url)}" title="View kiosk photo">${UI.icon('camera', 12)}</button>` : '';
+        }
+        function openPunchPhoto(url) {
+          const m = UI.modal({ title: 'Kiosk Photo', cancelText: 'Close', bodyHTML: '<div id="tk-photo-body" class="muted" style="text-align:center">Loading…</div>' });
+          const body = m.overlay.querySelector('#tk-photo-body');
+          API.blobUrl(url).then((objUrl) => {
+            body.className = '';
+            body.innerHTML = `<img src="${objUrl}" style="max-width:100%;border-radius:10px;display:block;margin:0 auto" />`;
+          }).catch(() => { body.textContent = 'Could not load the photo.'; });
+        }
+        const pad2 = (n) => String(n).padStart(2, '0');
+        // 24h value ("HH:MM", same format the old native <input type=time> stored) → the
+        // "hh:mm AM/PM" text shown in the fast-entry time fields below.
+        function fmtTimeDisplay(v) {
+          if (!v) return '';
+          const [hh, mm] = v.split(':').map(Number);
+          const ampm = hh < 12 ? 'AM' : 'PM';
+          let h12 = hh % 12; if (h12 === 0) h12 = 12;
+          return `${pad2(h12)}:${pad2(mm)} ${ampm}`;
+        }
+        // Fast-entry time field: type digits and it fills in the same way a spreadsheet does
+        // ("2015" → 08:15 PM), instead of the native <input type=time> segmented control, which
+        // treats the hour as 12-hour (max 12) and commits after one keystroke whenever no valid
+        // two-digit continuation exists in THAT range — so "20" only ever registered as "2".
+        // Hours are read as 24-hour (0-23) and AM/PM is derived automatically: 00-11 → AM,
+        // 12-23 → PM. Minutes work the same way (0-59, greedy two-digit entry).
+        function wireTimeInput(inp) {
+          let h = null, m = null, seg = 'h', segBuf = '', dirty = false;
+          const reset = () => { h = null; m = null; seg = 'h'; segBuf = ''; };
+          const rawDisplay = () => (h === null ? segBuf : `${pad2(h)}:${segBuf}`);
+          const commitValue = (v24) => {
+            const row = Number(inp.closest('[data-row]').dataset.row);
+            days[row][inp.dataset.k] = v24;
+            inp.value = fmtTimeDisplay(v24);
+            renderMinFlag(row);
+            renderHalfDayFlag(row);
+            renderIncompleteRow(row);
+          };
+          const finalizeAndCycle = () => {
+            commitValue(`${pad2(h)}:${pad2(m)}`);
+            reset(); dirty = false;
+          };
+          const processMinuteDigit = (d) => {
+            if (segBuf === '') {
+              segBuf = String(d);
+              if (d <= 5) { inp.value = rawDisplay(); return; }
+              m = d; finalizeAndCycle(); return;
+            }
+            m = Number(segBuf + d);
+            finalizeAndCycle();
+          };
+          const commitPending = () => {
+            if (!dirty) return;
+            if (seg === 'h') {
+              if (h === null) {
+                if (segBuf === '') { dirty = false; return; }
+                h = Number(segBuf);
+              }
+              m = 0;
+            } else if (m === null) {
+              m = segBuf === '' ? 0 : Number(segBuf);
+            }
+            finalizeAndCycle();
+          };
+          inp.addEventListener('focus', () => { dirty = false; });
+          inp.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+              e.preventDefault();
+              reset(); dirty = false;
+              commitValue('');
+              return;
+            }
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitPending();
+              if (e.shiftKey) {
+                // Shift+Enter saves the whole grid instead of hopping to the next field —
+                // same as clicking the modal's Save button.
+                const confirmBtn = ov.querySelector('[data-confirm]');
+                if (confirmBtn) confirmBtn.click();
+                return;
+              }
+              // Finish whatever's pending, then jump straight to the next TIME field (Time In →
+              // Lunch Out → Lunch In → Time Out → next row's Time In) — skipping the Shift/Day
+              // Type/Rest Day/Notes fields Tab would otherwise stop at.
+              const row = Number(inp.closest('[data-row]').dataset.row);
+              const idx = TIME_KEYS.indexOf(inp.dataset.k);
+              const nextRow = idx < TIME_KEYS.length - 1 ? row : row + 1;
+              const nextKey = TIME_KEYS[(idx + 1) % TIME_KEYS.length];
+              const nextInp = body.querySelector(`tr[data-row="${nextRow}"] input[data-k="${nextKey}"]`);
+              if (nextInp) nextInp.focus();
+              return;
+            }
+            if (!/^[0-9]$/.test(e.key)) {
+              if (e.key.length === 1) e.preventDefault(); // block stray letters; let nav keys (Tab, arrows...) through
+              return;
+            }
+            e.preventDefault();
+            const d = Number(e.key);
+            if (!dirty) { reset(); dirty = true; }
+            if (seg === 'h') {
+              if (segBuf === '') {
+                segBuf = String(d);
+                if (d === 0 || d === 1 || d === 2) { inp.value = rawDisplay(); return; } // 0x/1x/2x could still extend
+                h = d; seg = 'm'; segBuf = '';
+                inp.value = rawDisplay();
+                return;
+              }
+              const combined = Number(segBuf + d);
+              if (combined <= 23) {
+                h = combined; seg = 'm'; segBuf = '';
+                inp.value = rawDisplay();
+              } else {
+                // e.g. "2" then "5" — 25 isn't a valid hour, so "2" stands alone and the "5"
+                // starts the minute segment instead of being dropped.
+                h = Number(segBuf);
+                seg = 'm'; segBuf = '';
+                processMinuteDigit(d);
+              }
+              return;
+            }
+            processMinuteDigit(d);
+          });
+          inp.addEventListener('blur', () => commitPending());
+        }
         function renderRows() {
           body.innerHTML = days.map((d, i) => {
-            // Item 7: one of time_in/time_out set but not both, for a day that's already
-            // happened — flagged so HR can spot & fix it at a glance, distinct from a plain
-            // blank (unremarkable — not yet worked, or a known absence) or a fully-filled day.
-            const incomplete = !!d.time_in !== !!d.time_out && d.work_date <= today;
+            // Flagged so HR can spot & fix it at a glance, distinct from a plain blank
+            // (unremarkable — not yet worked, or a known absence) or a fully-filled day.
+            const incomplete = isIncomplete(d);
             // Effective holiday: override (if not '' and not 'none') else the calendar's entry.
             const effHoliday = d.holiday_type ? (d.holiday_type === 'none' ? null : d.holiday_type) : holidayByDate[d.work_date];
             // Per-date override wins, else the weekly rest-day pattern for this weekday.
@@ -1398,9 +1715,12 @@ async function renderPeriod(view, periodId) {
             // Explicit "Half Day" identifier — the linked-form badge in the last column already
             // names the form, but doesn't stand out as a distinct DAY TYPE the way the holiday/
             // rest-day tags above it do, so a half day was easy to miss at a glance.
-            const halfDayTag = d._linkSlug === 'halfday_request'
-              ? `<span class="badge-pill status-confirmed" title="Judged against just this half's own AM/PM window, not the full shift">Half Day${d._linkSession ? ` (${d._linkSession.startsWith('After') ? 'PM' : 'AM'})` : ''}</span>`
-              : '';
+            const hdLink = (d._links || []).find((l) => l.slug === 'halfday_request');
+            const halfDayTag = hdLink
+              ? `<span class="badge-pill status-confirmed" title="Judged against just this half's own AM/PM window, not the full shift">Half Day${hdLink.session ? ` (${hdLink.session.startsWith('After') ? 'PM' : 'AM'})` : ''}</span>`
+              : d.half_day_override
+                ? `<span class="badge-pill status-confirmed" title="HR manually credited this day a half day — no Half Day request filed">Half Day (${d.half_day_override.toUpperCase()}, unauthorized)</span>`
+                : '';
             const tag = effHoliday
               ? `<span class="badge-pill ${isCancellation ? 'status-cancelled' : 'status-completed'}" title="${isCancellation ? 'Not worked — credited as a paid/unpaid day per the selection, no premium' : 'Pays the DOLE premium automatically'}">${UI.esc(HOLIDAY_LABELS[effHoliday] || effHoliday)}</span>`
               : noWork
@@ -1410,29 +1730,28 @@ async function renderPeriod(view, periodId) {
             <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
               <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}<div data-min-flag="${i}">${minFlagHtml(d, i)}</div><div data-halfday-flag-cell="${i}">${halfDayFlagHtml(d, i)}</div></td>
               <td><select data-k="shift_id">${shiftOptions(d.shift_id)}</select></td>
-              <td><input data-k="time_in" type="time" value="${UI.esc(d.time_in || '')}" /></td>
-              <td><input data-k="time_out" type="time" value="${UI.esc(d.time_out || '')}" /></td>
+              <td><div class="tk-time-cell"><input data-k="time_in" type="text" inputmode="numeric" autocomplete="off" placeholder="--:-- --" value="${UI.esc(fmtTimeDisplay(d.time_in))}" />${photoBtnHtml(d.photos && d.photos.time_in)}</div></td>
+              <td><div class="tk-time-cell"><input data-k="lunch_out" type="text" inputmode="numeric" autocomplete="off" placeholder="--:-- --" value="${UI.esc(fmtTimeDisplay(d.lunch_out))}" title="Start of the unpaid lunch break — for the record only; payroll still deducts the fixed lunch minutes" />${photoBtnHtml(d.photos && d.photos.lunch_out)}</div></td>
+              <td><div class="tk-time-cell"><input data-k="lunch_in" type="text" inputmode="numeric" autocomplete="off" placeholder="--:-- --" value="${UI.esc(fmtTimeDisplay(d.lunch_in))}" title="Back from lunch — for the record only; payroll still deducts the fixed lunch minutes" />${photoBtnHtml(d.photos && d.photos.lunch_in)}</div></td>
+              <td><div class="tk-time-cell"><input data-k="time_out" type="text" inputmode="numeric" autocomplete="off" placeholder="--:-- --" value="${UI.esc(fmtTimeDisplay(d.time_out))}" />${photoBtnHtml(d.photos && d.photos.time_out)}</div></td>
               <td><select data-k="holiday_type" title="Default inherits the Company Holidays calendar. Work Cancellation is a per-employee paid/unpaid excused day (equipment failure, sent home early, etc.) — the one-employee version of a company-wide No Work Memo.">${dayTypeOptions(d.holiday_type)}</select></td>
+              <td><select data-k="half_day_override" title="HR's own call that this day counts as a half day (0.5 day, judged against just that AM/PM window) even though no Half Day request is filed — for a day the automatic Possible Half Day check doesn't happen to catch. Ignored if a real Half Day request is linked below.">${halfDayOverrideOptions(d.half_day_override)}</select></td>
               <td><select data-k="rest_day" title="Override this one day/employee — leave at Default to inherit the weekly rest-day pattern. Use for a rest day that moves week to week.">${restDayOptions(d.rest_day)}</select></td>
               <td><input data-k="notes" value="${UI.esc(d.notes || '')}" placeholder="optional" /></td>
-              <td>${d._linkLabel
-                ? `<span class="badge-pill" data-unlink="${i}" title="Click to unlink" style="cursor:pointer">${UI.esc(d._linkLabel)} ✕</span>`
-                : `<button type="button" class="icon-btn" data-link="${i}" title="Link an OT/Half Day/Leave/Undertime/Offset form (optional)">${UI.icon('edit', 14)}</button>`}
+              <td>
+                ${(d._links || []).map((l, li) => `<span class="badge-pill" data-unlink="${i}" data-unlink-idx="${li}" title="Click to unlink" style="cursor:pointer;margin:1px 2px 1px 0;display:inline-block">${UI.esc(l.label)} ✕</span>`).join('')}
+                <button type="button" class="icon-btn" data-link="${i}" title="Link or create an OT/Half Day/Leave/Undertime/Offset/Reported form — a day can have more than one">${UI.icon('plus', 14)}</button>
               </td>
             </tr>`;
           }).join('');
+          body.querySelectorAll('[data-photo-url]').forEach((b) => b.addEventListener('click', () => openPunchPhoto(b.dataset.photoUrl)));
           body.querySelectorAll('input[data-k], select[data-k]').forEach((inp) => {
+            if (TIME_KEYS.includes(inp.dataset.k)) { wireTimeInput(inp); return; }
             const evt = inp.tagName === 'SELECT' ? 'change' : 'input';
             inp.addEventListener(evt, () => {
               const row = Number(inp.closest('[data-row]').dataset.row);
               days[row][inp.dataset.k] = inp.value;
-              if (inp.dataset.k === 'holiday_type' || inp.dataset.k === 'rest_day') renderRows(); // refresh the tag next to the date
-              // A time change can flip the below-minimum flag on or off — refreshed on blur (not
-              // every keystroke/'input' event) so a full renderRows() here can't steal focus out
-              // of the field the user is still typing/picking a time into.
-              if (inp.dataset.k === 'time_in' || inp.dataset.k === 'time_out') {
-                inp.addEventListener('blur', () => { renderMinFlag(row); renderHalfDayFlag(row); }, { once: true });
-              }
+              if (inp.dataset.k === 'holiday_type' || inp.dataset.k === 'rest_day' || inp.dataset.k === 'half_day_override') renderRows(); // refresh the tag next to the date, and the Possible Half Day? nudge
             });
           });
           body.querySelectorAll('[data-min-allow]').forEach((b) => b.onclick = () => {
@@ -1447,64 +1766,139 @@ async function renderPeriod(view, periodId) {
           body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.link)));
           body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = () => {
             const i = Number(b.dataset.unlink);
-            days[i].form_record_id = null;
-            days[i]._linkLabel = null;
+            const li = Number(b.dataset.unlinkIdx);
+            days[i]._links.splice(li, 1);
+            days[i]._formIds = days[i]._links.map((l) => l.id);
             renderRows();
           });
         }
 
         async function linkFormModal(rowIndex) {
-          const forms = await API.get('/form-definitions').catch(() => []);
-          const relevant = forms.filter((f) => FORM_LINK_SLUGS.includes(f.slug));
-          const lists = await Promise.all(relevant.map((f) => API.get(`/form-definitions/${f.id}/records`).catch(() => [])));
+          const day = days[rowIndex];
+          const defs = await API.get('/form-definitions').catch(() => []);
+          const relevant = defs.filter((f) => FORM_LINK_SLUGS.includes(f.slug));
+          const [lists, linkedIds] = await Promise.all([
+            Promise.all(relevant.map((f) => API.get(`/form-definitions/${f.id}/records`).catch(() => []))),
+            API.get('/hr/linked-form-record-ids').catch(() => []),
+          ]);
+          // A form record is "already used" if it's linked to any attendance day system-wide
+          // (linkedIds, from the server) OR to any day in THIS grid that hasn't been saved yet
+          // (days[]._formIds). Either way it shouldn't be offered again.
+          const used = new Set(linkedIds);
+          days.forEach((dd) => (dd._formIds || []).forEach((id) => used.add(id)));
           const options = [];
           relevant.forEach((f, fi) => {
             (lists[fi] || []).forEach((r) => {
               const name = (r.data && r.data.employee_name) || '';
-              if (String(name).trim() === String(rosterRow.name).trim()) options.push({ form: f, record: r });
+              if (String(name).trim() === String(rosterRow.name).trim() && !used.has(r.id)) {
+                options.push({ form: f, record: r });
+              }
             });
           });
+
+          const typeOpts = MAKE_FORM_TYPES.map((t) => `<option value="${t.slug}">${UI.esc(t.label)}</option>`).join('');
           const m2 = UI.modal({
-            title: `Link a form — ${rosterRow.name}`,
+            title: `Link a form — ${rosterRow.name} · ${day.work_date}`,
             headActionHTML: `<button type="button" class="btn secondary small" id="tk-link-goto">${UI.icon('forms', 14)} Data Forms</button>`,
-            bodyHTML: options.length
-              ? `<div class="var-pick-list">${options.map((o, i) => `
-                  <button type="button" class="var-pick" data-pick="${i}">
-                    <span>${UI.esc(o.form.name)} — ${UI.esc(o.record.number)}</span>
-                    <span class="muted">${UI.esc(o.record.status)}</span>
-                  </button>`).join('')}</div>`
-              : `<p class="muted">No OT/Half Day/Leave/Undertime/Offset records found for ${UI.esc(rosterRow.name)} yet — create one in Data Forms first.</p>`,
+            bodyHTML: `
+              <div style="font-weight:600;margin-bottom:6px">Link an existing form</div>
+              ${options.length
+                ? `<div class="var-pick-list">${options.map((o, i) => `
+                    <button type="button" class="var-pick" data-pick="${i}">
+                      <span>${UI.esc(o.form.name)} — ${UI.esc(o.record.number)}</span>
+                      <span class="muted">${UI.esc(o.record.status)}</span>
+                    </button>`).join('')}</div>`
+                : `<p class="muted" style="font-size:12.5px;margin:2px 0">No unlinked OT/Half Day/Leave/Undertime/Offset/Reported records for ${UI.esc(rosterRow.name)}.</p>`}
+              <hr style="margin:14px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
+              <div style="font-weight:600;margin-bottom:2px">Make a new form</div>
+              <p class="muted" style="font-size:12px;margin:2px 0 8px">Created approved for ${UI.esc(rosterRow.name)} on ${day.work_date} and linked to this day.</p>
+              <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+                <div><label style="font-size:12px">Type</label><select id="mf-type"><option value="">Choose…</option>${typeOpts}</select></div>
+              </div>
+              <div id="mf-fields" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+              <button type="button" class="btn small" id="mf-create" style="margin-top:12px" disabled>Create &amp; link</button>
+              <p id="mf-err" class="muted" style="color:var(--danger,#c0392b);font-size:12px;margin:6px 0 0"></p>`,
             cancelText: 'Close',
             onOpen: (ov2) => {
+              ov2.querySelector('#tk-link-goto').onclick = () => App.navigate('form-records');
               ov2.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
                 const o = options[Number(b.dataset.pick)];
-                days[rowIndex].form_record_id = o.record.id;
-                days[rowIndex]._linkLabel = `${o.form.name} ${o.record.number}`;
-                // Set immediately (not just on the next full form_record_id resolution pass) so
-                // the Half Day tag/flag next to the date reflect this link right away.
-                days[rowIndex]._linkSlug = o.form.slug;
-                days[rowIndex]._linkSession = (o.record.data && o.record.data.session) || null;
+                day._formIds.push(o.record.id);
+                day._links.push({ id: o.record.id, label: `${o.form.name} ${o.record.number}`, slug: o.form.slug, session: (o.record.data && o.record.data.session) || null });
                 m2.close();
                 renderRows();
               });
-              ov2.querySelector('#tk-link-goto').onclick = () => App.navigate('form-records');
+
+              const typeSel = ov2.querySelector('#mf-type');
+              const fieldsEl = ov2.querySelector('#mf-fields');
+              const createBtn = ov2.querySelector('#mf-create');
+              const errEl = ov2.querySelector('#mf-err');
+              typeSel.onchange = () => {
+                const t = MAKE_FORM_TYPES.find((x) => x.slug === typeSel.value);
+                errEl.textContent = '';
+                if (!t) { fieldsEl.innerHTML = ''; createBtn.disabled = true; return; }
+                createBtn.disabled = false;
+                const hintHtml = t.detectOt
+                  ? `<p class="muted" style="font-size:12.5px;margin:2px 0;flex-basis:100%">${UI.esc(detectedOtText(day))}</p>`
+                  : '';
+                fieldsEl.innerHTML = hintHtml + t.fields.map((f) => {
+                  const lbl = `<label style="font-size:12px">${UI.esc(f.label)}${f.required ? ' *' : ''}</label>`;
+                  if (f.type === 'select') {
+                    return `<div>${lbl}<select data-mf="${f.key}"><option value="">—</option>${f.options.map((o) => `<option value="${UI.esc(o)}">${UI.esc(o)}</option>`).join('')}</select></div>`;
+                  }
+                  const inputType = f.type === 'number' ? 'number' : f.type === 'time' ? 'time' : 'text';
+                  return `<div>${lbl}<input type="${inputType}" data-mf="${f.key}" ${f.type === 'number' ? 'min="0" step="0.5"' : ''} /></div>`;
+                }).join('');
+              };
+
+              createBtn.onclick = async () => {
+                const t = MAKE_FORM_TYPES.find((x) => x.slug === typeSel.value);
+                if (!t) return;
+                const def = defs.find((d) => d.slug === t.slug);
+                if (!def) { errEl.textContent = `The "${t.label}" form isn't set up in Data Forms.`; return; }
+                const data = {
+                  employee_name: rosterRow.name,
+                  department: rosterRow.department_name || rosterRow.department || '',
+                  reason: 'Filed from Time Keeping',
+                };
+                data[t.dateKey] = day.work_date;
+                if (t.slug === 'leave_request') { data.date_to = day.work_date; data.days = 1; }
+                for (const f of t.fields) {
+                  const el = ov2.querySelector(`[data-mf="${f.key}"]`);
+                  const v = el ? el.value.trim() : '';
+                  if (f.required && !v) { errEl.textContent = `${f.label} is required.`; return; }
+                  if (v) data[f.key] = f.type === 'number' ? Number(v) : v;
+                }
+                // Leave: the payroll engine treats a leave day as paid only when with_pay==='Yes'
+                // — infer it from the leave type so a leave made here computes correctly.
+                if (t.slug === 'leave_request') data.with_pay = data.leave_type === 'Unpaid Leave' ? 'No' : 'Yes';
+                createBtn.disabled = true;
+                try {
+                  const res = await API.post('/form-records', { form_def_id: def.id, data, status: 'approved' });
+                  day._formIds.push(res.id);
+                  day._links.push({ id: res.id, label: `${def.name} ${res.number || ''}`.trim(), slug: def.slug, session: data.session || null });
+                  UI.toast(`${def.name} ${res.number || ''} created & linked`);
+                  m2.close();
+                  renderRows();
+                } catch (err) {
+                  createBtn.disabled = false;
+                  errEl.textContent = err.message || 'Could not create the form.';
+                }
+              };
             },
           });
         }
 
-        // Resolve a readable label for whatever's already linked (form_record_id came back from
-        // GET as a bare id — fetch each once to show "Overtime Request OT-00003" etc.). Also
-        // stashes the slug/session so renderRows can show an explicit "Half Day (AM/PM)"
-        // identifier next to the date — the linked-form badge alone (in the last column) didn't
-        // stand out enough to tell a half day apart from any other linked request at a glance.
+        // Resolve a readable label + slug/session for every linked form (the GET returns bare
+        // ids in _formIds — fetch each once to show "Overtime Request OT-00003" etc., and so
+        // renderRows can put an explicit "Half Day (AM/PM)" identifier next to the date).
         Promise.all(days.map(async (d) => {
-          if (d.form_record_id) {
+          d._links = [];
+          for (const id of d._formIds) {
             try {
-              const r = await API.get('/form-records/' + d.form_record_id);
-              d._linkLabel = `${r.form_name || 'Form'} ${r.number || ''}`.trim();
-              d._linkSlug = r.form_slug || null;
-              d._linkSession = (r.data && r.data.session) || null;
-            } catch { d._linkLabel = 'Linked'; }
+              const r = await API.get('/form-records/' + id);
+              d._links.push({ id, label: `${r.form_name || 'Form'} ${r.number || ''}`.trim(), slug: r.form_slug || null, session: (r.data && r.data.session) || null });
+            } catch { d._links.push({ id, label: 'Linked', slug: null, session: null }); }
           }
         })).then(renderRows);
         renderRows();
@@ -1513,10 +1907,14 @@ async function renderPeriod(view, periodId) {
         await API.put(`/hr/periods/${periodId}/attendance`, {
           employee_id: employeeId,
           days: days.map((d) => ({
-            work_date: d.work_date, time_in: d.time_in || '', time_out: d.time_out || '', notes: d.notes || '',
-            shift_id: d.shift_id || null, form_record_id: d.form_record_id || null,
+            work_date: d.work_date, time_in: d.time_in || '', time_out: d.time_out || '',
+            lunch_out: d.lunch_out || '', lunch_in: d.lunch_in || '', notes: d.notes || '',
+            shift_id: d.shift_id || null,
+            form_record_ids: d._formIds || [],
+            form_record_id: (d._formIds && d._formIds[0]) || null, // legacy mirror
             holiday_type: d.holiday_type || null, rest_day: d.rest_day || null,
             min_hours_decision: d.min_hours_decision || null,
+            half_day_override: d.half_day_override || null,
           })),
         });
         UI.toast('Attendance saved');
@@ -1545,12 +1943,12 @@ async function renderPeriod(view, periodId) {
         lastPayrollPeriod = payroll_period;
         UI.toast(`Payslips ready: ${res.created} created, ${res.updated} updated`);
         // Active nudge, not just something HR happens to notice by opening a specific payslip —
-        // a real bug found this way: a day whose raw times look like a half day but has no
-        // linked Half Day request gets judged (and any late/undertime deduction charged)
-        // against the full shift instead. Click-through goes straight to the payroll list,
-        // where each flagged payslip's own detail view names the exact day(s).
+        // a day whose raw times look like a half day but has no linked Half Day request is now
+        // paid as a half day automatically — this nudge is just so HR files the actual request
+        // for the record. Click-through goes straight to the payroll list, where each flagged
+        // payslip's own detail view names the exact day(s).
         const halfDayWarning = res.possible_half_day_employees
-          ? `<p class="muted" style="color:var(--warn)">⚠ ${res.possible_half_day_employees} employee${res.possible_half_day_employees === 1 ? '' : 's'} ha${res.possible_half_day_employees === 1 ? 's' : 've'} at least one day that looks like a half day but has no Half Day request linked — open a payslip below to see which day(s), or check the Daily Time grid.</p>`
+          ? `<p class="muted" style="color:var(--warn)">⚠ ${res.possible_half_day_employees} employee${res.possible_half_day_employees === 1 ? '' : 's'} ha${res.possible_half_day_employees === 1 ? 's' : 've'} at least one day paid as a half day off its times alone (no Half Day request linked) — open a payslip below to see which day(s), or file the request on the Daily Time grid.</p>`
           : '';
         UI.modal({
           title: 'Payslips ready',
@@ -1583,4 +1981,26 @@ async function renderPeriod(view, periodId) {
   }
 
   renderRoster();
+
+  // Deep-link straight into one employee's Daily Time modal (see the module comment's
+  // filter.employee_id note) — opened once, right after the roster itself is on screen, not
+  // instead of it (so Back/closing the modal still lands somewhere useful).
+  if (initialEmployeeId) {
+    const row = (period.roster || []).find((r) => r.employee_id === initialEmployeeId);
+    if (row) dailyGridModal(row);
+  }
 }
+
+// Opens one employee's Daily Time modal for a cutoff WITHOUT navigating to the Time Keeping
+// tab at all — no App.navigate, no URL/nav-highlight change, whatever page the caller is on
+// stays exactly as it is. Reuses renderPeriod's own setup (period/shift/policy fetch, roster
+// resolution, dailyGridModal itself — all of it, unmodified) by running it against a plain
+// <div> that's never attached to the document; UI.modal() always renders into the global
+// #modal-root regardless of where it's invoked from, so the modal still shows up normally
+// while renderPeriod's own (invisible) roster markup just sits in a detached, harmless
+// scratch element. Used by the HR Overview "Needs Attention" panel — see hr.js.
+async function openEmployeeDailyGrid(periodId, employeeId) {
+  const scratch = document.createElement('div');
+  await renderPeriod(scratch, periodId, employeeId);
+}
+window.HrTimekeeping = { openEmployeeDailyGrid };

@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run, newToken } from '../db';
 import { createSession, destroySession, requireAuth } from '../auth';
 import { resolvePermissions } from '../permissions';
+import { enabledModules } from '../modules';
 import {
   parseBody, loginSchema, changePasswordSchema, updateProfileSchema,
   forgotPasswordSchema, selfResetPasswordSchema,
@@ -49,6 +50,7 @@ router.post('/login', (req, res) => {
       department_id: user.department_id,
       department_name: dept ? dept.name : null,
       permissions: resolvePermissions(user.role, overrides),
+      modules: [...enabledModules()], // feature areas enabled for this workspace
     },
   });
 });
@@ -71,7 +73,7 @@ router.get('/me', requireAuth, (req, res) => {
   // registered head of at least one department.
   const headsDept = queryOne('SELECT 1 AS x FROM departments WHERE head_user_id = ?', req.user!.id);
   const canApprove = req.user!.permissions.includes('hr.manage') || !!headsDept;
-  res.json({ user: { ...req.user, employee: emp ?? null, can_approve: canApprove } });
+  res.json({ user: { ...req.user, employee: emp ?? null, can_approve: canApprove, modules: [...enabledModules()] } });
 });
 
 // POST /api/auth/change-password

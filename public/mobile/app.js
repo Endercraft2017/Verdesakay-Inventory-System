@@ -13,8 +13,11 @@ window.MApp = (function () {
 
   function getMe() { return me; }
   function can(perm) { return me && Array.isArray(me.permissions) && me.permissions.indexOf(perm) !== -1; }
+  /** SaaS feature-module entitlement for this workspace (see src/modules.ts). Absent list
+      (self-hosted, or pre-login) → treat every module as on. */
+  function hasModule(m) { return !me || !Array.isArray(me.modules) || me.modules.indexOf(m) !== -1; }
   function isEmployee() { return !!(me && me.employee); }
-  function isWarehouse() { return can('inventory.mobile'); }
+  function isWarehouse() { return can('inventory.mobile') && hasModule('inventory'); }
   function canApprove() { return !!(me && me.can_approve); }
 
   /* ---------- routing ---------- */
@@ -54,14 +57,15 @@ window.MApp = (function () {
   function setTitle(t) { document.getElementById('m-title').textContent = t || 'Home'; }
 
   /* ---------- chrome: tabs + segments ---------- */
-  var TAB_ROOTS = { home: 1, work: 1, scan: 1, clock: 1, inbox: 1, settings: 1 };
+  var TAB_ROOTS = { home: 1, work: 1, production: 1, scan: 1, clock: 1, inbox: 1, settings: 1 };
   // which bottom tab lights up for a given route ('action' = the role Scan/Clock tab)
   var TAB_OF = {
     home: 'home',
     work: 'work', 'stock-move': 'work', transfer: 'work', damage: 'work', 'new-item': 'work',
-    batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work', 'job-orders': 'work',
-    qc: 'work', allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
-    'my-log': 'work', item: 'work', scan: 'action', deliveries: 'work',
+    batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work',
+    allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
+    'my-log': 'work', item: 'work', scan: 'action', deliveries: 'work', so: 'work',
+    production: 'production', 'job-orders': 'production', qc: 'production', repairs: 'production', record: 'production',
     inbox: 'inbox', directory: 'inbox',
     settings: 'profile', queue: 'profile',
     clock: 'action', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home',
@@ -121,6 +125,9 @@ window.MApp = (function () {
     document.querySelectorAll('#m-tabbar .m-tab').forEach(function (t) {
       t.classList.toggle('on', t.dataset.tab === activeTab);
     });
+    // the Production tab only applies to warehouse/shop-floor accounts
+    var prodTab = document.getElementById('m-tab-production');
+    if (prodTab) prodTab.classList.toggle('hidden', !isWarehouse());
 
     // context line
     var role = me && me.role ? me.role.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : '';
@@ -235,6 +242,7 @@ window.MApp = (function () {
         var tab = t.dataset.tab;
         if (tab === 'home') go('home', { seg: currentSeg() });
         else if (tab === 'work') go('work');
+        else if (tab === 'production') go('production');
         else if (tab === 'action') go(actionConfig().route);
         else if (tab === 'inbox') go('inbox');
         else if (tab === 'profile') go('settings');
@@ -318,7 +326,7 @@ window.MApp = (function () {
 
   return {
     route: route, go: go, back: back, nav: hashFor,
-    getMe: getMe, can: can, isEmployee: isEmployee, isWarehouse: isWarehouse, canApprove: canApprove,
+    getMe: getMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse, canApprove: canApprove,
     seg: seg, setTitle: setTitle, render: render, refreshInboxBadge: refreshInboxBadge,
     routes: function () { return Object.keys(routes); },
   };

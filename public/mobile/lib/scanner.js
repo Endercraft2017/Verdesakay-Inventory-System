@@ -13,7 +13,9 @@
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
 
-  /** open({ onResult(text), title }) */
+  /** open({ onResult(text), title, continuous }) — with `continuous`, the overlay stays
+      open and onResult fires for each new code (same code ignored for ~1.2 s); close with
+      the X button or the returned `.close()`. */
   function open(opts) {
     opts = opts || {};
     var overlay = mEl(
@@ -60,10 +62,20 @@
       overlay.remove();
     }
 
+    var lastCode = null, lastAt = 0;
     function finish(text) {
       if (done || !text) return;
+      text = String(text).trim();
+      if (opts.continuous) {
+        var now = Date.now();
+        if (text === lastCode && now - lastAt < 1200) return;   // debounce repeat reads
+        lastCode = text; lastAt = now;
+        try { if (navigator.vibrate) navigator.vibrate(30); } catch (e) { /* ignore */ }
+        opts.onResult(text);
+        return;
+      }
       stop();
-      opts.onResult(String(text).trim());
+      opts.onResult(text);
     }
 
     overlay.querySelector('.m-scan-x').onclick = stop;
@@ -87,8 +99,11 @@
 
     overlay.querySelector('.m-scan-manual').onsubmit = function (e) {
       e.preventDefault();
-      var v = e.target.querySelector('input').value.trim();
-      if (v) finish(v);
+      var inp = e.target.querySelector('input');
+      var v = inp.value.trim();
+      if (!v) return;
+      if (opts.continuous) { lastCode = null; opts.onResult(v); inp.value = ''; inp.focus(); }
+      else finish(v);
     };
 
     function camError(err) {

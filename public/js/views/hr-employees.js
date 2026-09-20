@@ -251,6 +251,16 @@ App.register('hr-employees', async (view) => {
   }
 
   /* ---------- Create / edit modal ---------- */
+  // Four tabs (Basic Info / Pay & Schedule / Payroll Rules / Leave & Records) keep this from
+  // being one long scroll of ~25 fields — same .form-tabs/.form-tab/.form-panel shell
+  // inventory.js's item form already uses, so the interaction is familiar rather than a new
+  // pattern. Shared by the tab-bar's own click handler and onConfirm (which jumps to whichever
+  // tab holds the field that failed validation, so an error banner never points at a hidden field).
+  function activateEmpTab(overlay, id) {
+    overlay.querySelectorAll('[data-formtab]').forEach((b) => b.classList.toggle('active', b.dataset.formtab === id));
+    overlay.querySelectorAll('[data-formpanel]').forEach((p) => p.classList.toggle('hidden', p.dataset.formpanel !== id));
+  }
+
   function employeeModal(existing) {
     const editing = !!existing;
     let photoData = editing ? (existing.photo || '') : '';
@@ -294,106 +304,169 @@ App.register('hr-employees', async (view) => {
         size: 'lg',
         headActionHTML: editing ? `<button type="button" class="btn secondary small" id="emp-gen-id">${UI.icon('idcard', 15)} Generate ID</button>` : '',
         bodyHTML: `
-          <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px">
-            <div style="text-align:center">
-              <img id="emp-photo-preview" src="${UI.esc(photoData || PLACEHOLDER_PHOTO)}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:1px solid var(--border-strong)" />
-              <div style="margin-top:6px">
-                <input type="file" accept="image/*" id="emp-photo-file" style="display:none" />
-                <button type="button" class="btn secondary small" id="emp-photo-pick">Choose photo</button>
-                <button type="button" class="btn secondary small" id="emp-photo-clear" style="margin-top:4px">Remove</button>
-              </div>
-            </div>
-            <div style="flex:1">
-              <div class="field-row">
-                <div><label>Employee No. *</label>
-                  <div style="display:flex;gap:6px">
-                    <input data-f="employee_no" class="mono" style="flex:1" value="${UI.esc(suggestedNo)}" autofocus />
-                    <button type="button" class="icon-btn" id="emp-no-suggest" title="Suggest a number">${UI.icon('sparkles', 15)}</button>
-                  </div>
+          <div class="form-tabs">
+            <button type="button" class="form-tab active" data-formtab="basic">Basic Info</button>
+            <button type="button" class="form-tab" data-formtab="pay">Pay &amp; Schedule</button>
+            <button type="button" class="form-tab" data-formtab="rules">Payroll Rules</button>
+            <button type="button" class="form-tab" data-formtab="leave">Leave &amp; Records</button>
+          </div>
+
+          <div data-formpanel="basic" class="form-panel">
+            <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px">
+              <div style="text-align:center">
+                <img id="emp-photo-preview" src="${UI.esc(photoData || PLACEHOLDER_PHOTO)}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:1px solid var(--border-strong)" />
+                <div style="margin-top:6px">
+                  <input type="file" accept="image/*" id="emp-photo-file" style="display:none" />
+                  <button type="button" class="btn secondary small" id="emp-photo-pick">Choose photo</button>
+                  <button type="button" class="btn secondary small" id="emp-photo-clear" style="margin-top:4px">Remove</button>
                 </div>
-                <div><label>Full name *</label><input data-f="name" value="${UI.esc(editing ? existing.name : '')}" /></div>
               </div>
-              <div class="field-row" style="margin-top:10px">
-                <div><label>Department</label>
-                  <div style="display:flex;gap:6px">
-                    <select data-f="department_id" style="flex:1">${deptOpts}</select>
-                    <button type="button" class="icon-btn" id="emp-dept-new" title="Add new department">${UI.icon('plus', 15)}</button>
-                    <button type="button" class="icon-btn danger" id="emp-dept-del" title="Delete selected department">${UI.icon('trash', 15)}</button>
+              <div style="flex:1">
+                <div class="field-row">
+                  <div><label>Employee No. *</label>
+                    <div style="display:flex;gap:6px">
+                      <input data-f="employee_no" class="mono" style="flex:1" value="${UI.esc(suggestedNo)}" autofocus />
+                      <button type="button" class="icon-btn" id="emp-no-suggest" title="Suggest a number">${UI.icon('sparkles', 15)}</button>
+                    </div>
                   </div>
+                  <div><label>Full name *</label><input data-f="name" value="${UI.esc(editing ? existing.name : '')}" /></div>
                 </div>
-                <div><label>Position</label><input data-f="position" value="${UI.esc(editing ? (existing.position || '') : '')}" /></div>
+                <div class="field-row" style="margin-top:10px">
+                  <div><label>Department</label>
+                    <div style="display:flex;gap:6px">
+                      <select data-f="department_id" style="flex:1">${deptOpts}</select>
+                      <button type="button" class="icon-btn" id="emp-dept-new" title="Add new department">${UI.icon('plus', 15)}</button>
+                      <button type="button" class="icon-btn danger" id="emp-dept-del" title="Delete selected department">${UI.icon('trash', 15)}</button>
+                    </div>
+                  </div>
+                  <div><label>Position</label><input data-f="position" value="${UI.esc(editing ? (existing.position || '') : '')}" /></div>
+                </div>
+              </div>
+            </div>
+            <div class="field-row">
+              <div><label>Status</label><select data-f="status">${statusOpts}</select></div>
+              <div><label>Start date</label><input data-f="start_date" type="date" value="${UI.esc(editing ? (existing.start_date || '') : '')}" /></div>
+            </div>
+            <div class="field-row" style="margin-top:10px">
+              <div><label>Linked user account</label><select data-f="user_id">${userOpts}</select>
+                <div class="muted" style="font-size:12px;margin-top:3px">Ties this employee's 201-file record to their login account (optional).</div>
               </div>
             </div>
           </div>
-          <div class="field-row">
-            <div><label>Rate type</label><select data-f="rate_type">
-              <option value="daily" ${rateType === 'daily' ? 'selected' : ''}>Daily</option>
-              <option value="monthly" ${rateType === 'monthly' ? 'selected' : ''}>Monthly</option>
-            </select></div>
-            <div><label id="emp-rate-label">${rateType === 'monthly' ? 'Monthly rate' : 'Daily rate'}</label>
-              <input data-f="rate_amount" type="number" step="0.01" min="0" value="${UI.esc(String(rateAmount || 0))}" />
-              <div class="muted" id="emp-rate-hint" style="font-size:12px;margin-top:3px"></div>
+
+          <div data-formpanel="pay" class="form-panel hidden">
+            <div class="field-row">
+              <div><label>Rate type</label><select data-f="rate_type">
+                <option value="daily" ${rateType === 'daily' ? 'selected' : ''}>Daily</option>
+                <option value="monthly" ${rateType === 'monthly' ? 'selected' : ''}>Monthly</option>
+              </select></div>
+              <div><label id="emp-rate-label">${rateType === 'monthly' ? 'Monthly rate' : 'Daily rate'}</label>
+                <input data-f="rate_amount" type="number" step="0.01" min="0" value="${UI.esc(String(rateAmount || 0))}" />
+                <div class="muted" id="emp-rate-hint" style="font-size:12px;margin-top:3px"></div>
+              </div>
+            </div>
+            ${editing ? `
+            <div class="field-row" id="emp-rate-change-row" style="display:none;margin-top:8px">
+              <div><label>Effective date</label><input data-f="rate_effective_date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
+              <div><label>Note (optional)</label><input data-f="rate_change_note" placeholder="e.g. Annual raise" /></div>
+            </div>
+            <p class="muted" id="emp-rate-change-hint" style="font-size:12px;margin:4px 0 0;display:none">
+              Logged to this employee's rate history — payroll will use ${UI.esc(existing.daily_rate != null ? money(existing.daily_rate) + '/day' : 'the old rate')}
+              for cutoff days before this date, and the new rate from this date on. Can be backdated; not before today for a future raise yet.</p>
+            <div style="margin-top:10px">
+              <button type="button" class="btn secondary small" id="emp-rate-history-toggle">${UI.icon('history', 15)} Rate history</button>
+              <div id="emp-rate-history" style="display:none;margin-top:8px"></div>
+            </div>` : ''}
+            <label style="margin-top:18px;display:block">Default shift</label>
+            <select data-f="default_shift_id">${shiftOpts}</select>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">Pre-fills new Daily Time rows in Time Keeping — a
+              rotating employee can still be set to a different shift, or none, on any single day there. Without a
+              shift, late/OT/undertime can't be judged (nothing to compare the clock-in against), though holiday and
+              rest-day pay still compute fine either way.</p>
+            <label style="margin-top:18px;display:block">Rest days</label>
+            <label style="display:flex;align-items:center;gap:6px;font-weight:normal">
+              <input type="checkbox" id="emp-rd-custom" style="width:auto" ${existing && existing.rest_days ? 'checked' : ''} />
+              Custom for this employee (otherwise uses the company-wide default from HR &rarr; Time Keeping &rarr; Policy Settings)
+            </label>
+            <div id="emp-rest-days" style="display:${existing && existing.rest_days ? 'flex' : 'none'};gap:12px;flex-wrap:wrap;margin-top:6px">
+              ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((n, i) => `
+                <label style="display:flex;align-items:center;gap:4px;font-weight:normal">
+                  <input type="checkbox" data-rd="${i}" style="width:auto" ${existing && existing.rest_days && existing.rest_days.includes(i) ? 'checked' : ''} />${n}</label>`).join('')}
+            </div>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">Worked on a rest day pays +30% automatically (more
+              if it also lands on a holiday) — nothing else to fill in on the daily grid.</p>
+          </div>
+
+          <div data-formpanel="rules" class="form-panel hidden">
+            <label style="display:block;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted)">Exemptions</label>
+            <label style="margin-top:10px;display:flex;align-items:center;gap:6px">
+              <input type="checkbox" data-f="late_exempt" style="width:auto" ${existing && existing.late_exempt ? 'checked' : ''} />
+              Exempt from late deductions
+            </label>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">For someone whose actual clock-in time shouldn't be
+              penalized (e.g. the company president). Late minutes still show on the payslip detail for the record —
+              this only zeroes the peso deduction.</p>
+            <label style="margin-top:14px;display:flex;align-items:center;gap:6px">
+              <input type="checkbox" data-f="ot_exempt" style="width:auto" ${existing && existing.ot_exempt ? 'checked' : ''} />
+              Exempt from overtime pay
+            </label>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">For salaried staff never entitled to overtime (e.g.
+              a supervisor). OT hours still show on the payslip detail for the record — this only zeroes the peso pay.</p>
+
+            <label style="margin-top:24px;display:block;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted)">Statutory Deductions</label>
+            <p class="muted" style="font-size:12px;margin:4px 0 12px">Also editable in bulk from Accounting &rarr;
+              Statutory Deductions. Unchecking one zeroes that contribution on this employee's next generated
+              payslip and drops them from that fund's remittance schedule. An override replaces the computed
+              amount with a fixed peso figure whenever its checkbox stays on (SSS/PhilHealth/Pag-IBIG still
+              split across cutoffs the normal way; leave blank to keep using the computed table amount).</p>
+            <div style="display:grid;grid-template-columns:160px 1fr;gap:10px 12px;align-items:center">
+              <div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase">Fund</div>
+              <div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase">Override amount</div>
+              ${[
+                { key: 'sss', label: 'SSS' },
+                { key: 'philhealth', label: 'PhilHealth' },
+                { key: 'pagibig', label: 'Pag-IBIG' },
+                { key: 'withholding_tax', label: 'Withholding Tax' },
+              ].map((d) => `
+                <label style="display:flex;align-items:center;gap:6px;font-weight:normal">
+                  <input type="checkbox" data-f="deduct_${d.key}" style="width:auto" ${!existing || existing['deduct_' + d.key] ? 'checked' : ''} /> ${d.label}
+                </label>
+                <input type="number" step="0.01" min="0" data-f="${d.key}_override" placeholder="Computed amount"
+                  value="${existing && existing[d.key + '_override'] != null ? existing[d.key + '_override'] : ''}" />`).join('')}
             </div>
           </div>
-          <div class="field-row">
-            <div><label>Status</label><select data-f="status">${statusOpts}</select></div>
-            <div><label>Start date</label><input data-f="start_date" type="date" value="${UI.esc(editing ? (existing.start_date || '') : '')}" /></div>
-          </div>
-          <div class="field-row" style="margin-top:10px">
-            <div><label>Linked user account</label><select data-f="user_id">${userOpts}</select>
-              <div class="muted" style="font-size:12px;margin-top:3px">Ties this employee's 201-file record to their login account (optional).</div>
+
+          <div data-formpanel="leave" class="form-panel hidden">
+            <label style="display:block">Paid leave (simple fixed bank — not accrual-based)</label>
+            <div class="field-row">
+              <div><label>Days / year</label><input data-f="leave_days_per_year" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_per_year ?? 5) : 5))}" /></div>
+              <div><label>Days used (this year)</label><input data-f="leave_days_used" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_used ?? 0) : 0))}" />
+                ${editing ? `<div class="muted" style="font-size:12px;margin-top:3px">${UI.esc(String((existing.leave_days_per_year ?? 5) - (existing.leave_days_used ?? 0)))} remaining</div>` : ''}
+              </div>
             </div>
-          </div>
-          <label style="margin-top:12px;display:block">Statutory numbers</label>
-          <div class="field-row">
-            <div><label>SSS No.</label><input data-f="sss_no" value="${UI.esc(editing ? (existing.sss_no || '') : '')}" /></div>
-            <div><label>PhilHealth No.</label><input data-f="philhealth_no" value="${UI.esc(editing ? (existing.philhealth_no || '') : '')}" /></div>
-          </div>
-          <div class="field-row">
-            <div><label>Pag-IBIG No.</label><input data-f="pagibig_no" value="${UI.esc(editing ? (existing.pagibig_no || '') : '')}" /></div>
-            <div><label>TIN</label><input data-f="tin_no" value="${UI.esc(editing ? (existing.tin_no || '') : '')}" /></div>
-          </div>
-          <label style="margin-top:12px;display:block">Paid leave (simple fixed bank — not accrual-based)</label>
-          <div class="field-row">
-            <div><label>Days / year</label><input data-f="leave_days_per_year" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_per_year ?? 5) : 5))}" /></div>
-            <div><label>Days used (this year)</label><input data-f="leave_days_used" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_used ?? 0) : 0))}" />
-              ${editing ? `<div class="muted" style="font-size:12px;margin-top:3px">${UI.esc(String((existing.leave_days_per_year ?? 5) - (existing.leave_days_used ?? 0)))} remaining</div>` : ''}
+            <label style="margin-top:18px;display:block">Statutory numbers</label>
+            <div class="field-row">
+              <div><label>SSS No.</label><input data-f="sss_no" value="${UI.esc(editing ? (existing.sss_no || '') : '')}" /></div>
+              <div><label>PhilHealth No.</label><input data-f="philhealth_no" value="${UI.esc(editing ? (existing.philhealth_no || '') : '')}" /></div>
             </div>
-          </div>
-          <label style="margin-top:12px;display:block">Default shift</label>
-          <select data-f="default_shift_id">${shiftOpts}</select>
-          <p class="muted" style="font-size:12px;margin:4px 0 0">Pre-fills new Daily Time rows in Time Keeping — a
-            rotating employee can still be set to a different shift, or none, on any single day there. Without a
-            shift, late/OT/undertime can't be judged (nothing to compare the clock-in against), though holiday and
-            rest-day pay still compute fine either way.</p>
-          <label style="margin-top:12px;display:block">Rest days</label>
-          <label style="display:flex;align-items:center;gap:6px;font-weight:normal">
-            <input type="checkbox" id="emp-rd-custom" style="width:auto" ${existing && existing.rest_days ? 'checked' : ''} />
-            Custom for this employee (otherwise uses the company-wide default from HR &rarr; Time Keeping &rarr; Policy Settings)
-          </label>
-          <div id="emp-rest-days" style="display:${existing && existing.rest_days ? 'flex' : 'none'};gap:12px;flex-wrap:wrap;margin-top:6px">
-            ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((n, i) => `
-              <label style="display:flex;align-items:center;gap:4px;font-weight:normal">
-                <input type="checkbox" data-rd="${i}" style="width:auto" ${existing && existing.rest_days && existing.rest_days.includes(i) ? 'checked' : ''} />${n}</label>`).join('')}
-          </div>
-          <p class="muted" style="font-size:12px;margin:4px 0 0">Worked on a rest day pays +30% automatically (more
-            if it also lands on a holiday) — nothing else to fill in on the daily grid.</p>
-          <label style="margin-top:12px;display:flex;align-items:center;gap:6px">
-            <input type="checkbox" data-f="late_exempt" style="width:auto" ${existing && existing.late_exempt ? 'checked' : ''} />
-            Exempt from late deductions
-          </label>
-          <p class="muted" style="font-size:12px;margin:4px 0 0">For someone whose actual clock-in time shouldn't be
-            penalized (e.g. the company president). Late minutes still show on the payslip detail for the record —
-            this only zeroes the peso deduction.</p>
-          ${editing ? `
-          <label style="margin-top:14px;display:block">201 documents</label>
-          <div id="emp-docs"><div class="empty">Loading…</div></div>
-          <div class="line-actions">
-            <input type="file" id="emp-doc-file" style="display:none" />
-            <button type="button" class="btn secondary small" id="emp-doc-add">${UI.icon('upload', 15)} Upload document</button>
-          </div>` : ''}`,
+            <div class="field-row" style="margin-top:8px">
+              <div><label>Pag-IBIG No.</label><input data-f="pagibig_no" value="${UI.esc(editing ? (existing.pagibig_no || '') : '')}" /></div>
+              <div><label>TIN</label><input data-f="tin_no" value="${UI.esc(editing ? (existing.tin_no || '') : '')}" /></div>
+            </div>
+            ${editing ? `
+            <label style="margin-top:18px;display:block">201 documents</label>
+            <div id="emp-docs"><div class="empty">Loading…</div></div>
+            <div class="line-actions">
+              <input type="file" id="emp-doc-file" style="display:none" />
+              <button type="button" class="btn secondary small" id="emp-doc-add">${UI.icon('upload', 15)} Upload document</button>
+            </div>` : ''}
+          </div>`,
         confirmText: editing ? 'Save' : 'Create',
         onOpen: (ov) => {
+          ov.querySelectorAll('[data-formtab]').forEach((btn) => {
+            btn.onclick = () => activateEmpTab(ov, btn.dataset.formtab);
+          });
+
           const genBtn = ov.querySelector('#emp-gen-id');
           if (genBtn) genBtn.onclick = () => generateId(existing);
 
@@ -419,6 +492,8 @@ App.register('hr-employees', async (view) => {
           const rateLabel = ov.querySelector('#emp-rate-label');
           const rateHint = ov.querySelector('#emp-rate-hint');
           const rateAmountInp = ov.querySelector('[data-f="rate_amount"]');
+          const rateChangeRow = ov.querySelector('#emp-rate-change-row');
+          const rateChangeHint = ov.querySelector('#emp-rate-change-hint');
           function updateRateUI() {
             if (rateTypeSel.value === 'monthly') {
               rateLabel.textContent = 'Monthly rate';
@@ -430,10 +505,49 @@ App.register('hr-employees', async (view) => {
               rateLabel.textContent = 'Daily rate';
               rateHint.textContent = '';
             }
+            // Only editing mode has these elements — the effective-date/note fields (and their
+            // hint) matter only when this save would actually change the resolved daily rate,
+            // so they stay hidden the rest of the time instead of cluttering every edit.
+            if (rateChangeRow) {
+              const amt = Number(rateAmountInp.value) || 0;
+              const newDaily = rateTypeSel.value === 'monthly' ? amt / monthlyRateDivisor : amt;
+              const changed = Math.round(newDaily * 100) !== Math.round((existing.daily_rate || 0) * 100);
+              rateChangeRow.style.display = changed ? 'flex' : 'none';
+              rateChangeHint.style.display = changed ? 'block' : 'none';
+            }
           }
           rateTypeSel.addEventListener('change', updateRateUI);
           rateAmountInp.addEventListener('input', updateRateUI);
           updateRateUI();
+
+          const rateHistoryToggle = ov.querySelector('#emp-rate-history-toggle');
+          if (rateHistoryToggle) {
+            const historyEl = ov.querySelector('#emp-rate-history');
+            let historyLoaded = false;
+            rateHistoryToggle.onclick = async () => {
+              const opening = historyEl.style.display === 'none';
+              historyEl.style.display = opening ? 'block' : 'none';
+              if (!opening || historyLoaded) return;
+              historyLoaded = true;
+              historyEl.innerHTML = '<div class="muted" style="padding:6px 0">Loading…</div>';
+              try {
+                const rows = await API.get(`/hr/employees/${existing.id}/rate-history`);
+                historyEl.innerHTML = rows.length
+                  ? rows.map((r) => `
+                    <div class="tool-row">
+                      <div class="tool-row-main">
+                        <div class="tool-row-title">${r.rate_type === 'monthly'
+                          ? `${money(r.monthly_rate)}/mo <span class="muted" style="font-weight:normal">(${money(r.daily_rate)}/day)</span>`
+                          : `${money(r.daily_rate)}/day`}</div>
+                        <div class="tool-row-sub">Since ${UI.fmtDateShort(r.effective_from)}${r.note ? ' · ' + UI.esc(r.note) : ''}</div>
+                      </div>
+                    </div>`).join('')
+                  : '<div class="muted" style="padding:6px 0">No rate changes logged yet.</div>';
+              } catch (e) {
+                historyEl.innerHTML = `<div class="muted" style="padding:6px 0">${UI.esc(e.message || 'Failed to load')}</div>`;
+              }
+            };
+          }
 
           ov.querySelector('#emp-dept-new').onclick = () => addDepartmentInline(ov.querySelector('[data-f="department_id"]'));
           ov.querySelector('#emp-dept-del').onclick = () => removeDepartmentInline(ov.querySelector('[data-f="department_id"]'));
@@ -493,12 +607,12 @@ App.register('hr-employees', async (view) => {
         },
         onConfirm: async (ov, showErr) => {
           const name = ov.querySelector('[data-f="name"]').value.trim();
-          if (!name) { showErr('Employee name is required'); return false; }
+          if (!name) { activateEmpTab(ov, 'basic'); showErr('Employee name is required'); return false; }
           const employeeNo = ov.querySelector('[data-f="employee_no"]').value.trim();
-          if (!employeeNo) { showErr('Employee number is required'); return false; }
+          if (!employeeNo) { activateEmpTab(ov, 'basic'); showErr('Employee number is required'); return false; }
           const rateTypeVal = ov.querySelector('[data-f="rate_type"]').value;
           const rateAmountVal = Number(ov.querySelector('[data-f="rate_amount"]').value) || 0;
-          if (rateTypeVal === 'monthly' && rateAmountVal <= 0) { showErr('Monthly rate is required'); return false; }
+          if (rateTypeVal === 'monthly' && rateAmountVal <= 0) { activateEmpTab(ov, 'pay'); showErr('Monthly rate is required'); return false; }
           const body = {
             employee_no: employeeNo,
             name,
@@ -521,8 +635,23 @@ App.register('hr-employees', async (view) => {
               ? [...ov.querySelectorAll('[data-rd]:checked')].map((cb) => Number(cb.dataset.rd))
               : null,
             late_exempt: ov.querySelector('[data-f="late_exempt"]').checked,
+            ot_exempt: ov.querySelector('[data-f="ot_exempt"]').checked,
+            deduct_sss: ov.querySelector('[data-f="deduct_sss"]').checked,
+            deduct_philhealth: ov.querySelector('[data-f="deduct_philhealth"]').checked,
+            deduct_pagibig: ov.querySelector('[data-f="deduct_pagibig"]').checked,
+            deduct_withholding_tax: ov.querySelector('[data-f="deduct_withholding_tax"]').checked,
+            withholding_tax_override: ov.querySelector('[data-f="withholding_tax_override"]').value.trim() || null,
+            sss_override: ov.querySelector('[data-f="sss_override"]').value.trim() || null,
+            philhealth_override: ov.querySelector('[data-f="philhealth_override"]').value.trim() || null,
+            pagibig_override: ov.querySelector('[data-f="pagibig_override"]').value.trim() || null,
             photo: photoData,
           };
+          if (editing) {
+            const effDateInp = ov.querySelector('[data-f="rate_effective_date"]');
+            if (effDateInp) body.rate_effective_date = effDateInp.value;
+            const noteInp = ov.querySelector('[data-f="rate_change_note"]');
+            if (noteInp) body.rate_change_note = noteInp.value.trim();
+          }
           if (editing) await API.put('/hr/employees/' + existing.id, body);
           else await API.post('/hr/employees', body);
           UI.toast(editing ? 'Employee saved' : 'Employee created');
@@ -640,7 +769,8 @@ App.register('hr-employees', async (view) => {
         API.get('/templates/company'),
       ]);
       const meta = templateList.find((t) => t.name === 'Employee ID Card');
-      const tplBody = meta ? (await API.get('/templates/' + meta.id)).body : FALLBACK_ID_TEMPLATE;
+      const tpl = meta ? await API.get('/templates/' + meta.id) : null;
+      const tplBody = tpl ? tpl.body : FALLBACK_ID_TEMPLATE;
       const ctx = {
         company,
         employee: {
@@ -649,7 +779,16 @@ App.register('hr-employees', async (view) => {
         },
         today: new Date().toLocaleDateString(),
       };
-      const full = UI.printableHtml(renderTemplate(tplBody, ctx), 'ID - ' + emp.name);
+      // Same opt-in Print Grid tiling as form-linked templates (public/js/print-tiling.js) —
+      // e.g. a sheet of several ID card blanks (grid > 1x1), or 2 copies of the same card.
+      const tiled = tpl && typeof buildTiledPagesHtml === 'function'
+        ? buildTiledPagesHtml([emp], () => renderTemplate(tplBody, ctx), {
+          copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
+          continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+          pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tplBody) : undefined,
+        })
+        : '';
+      const full = UI.printableHtml(tiled || renderTemplate(tplBody, ctx), 'ID - ' + emp.name);
 
       UI.modal({
         title: 'ID Card Preview',
@@ -657,7 +796,11 @@ App.register('hr-employees', async (view) => {
         bodyHTML: `<iframe id="idcard-preview-frame" style="width:100%;height:50vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
         cancelText: 'Close',
         confirmText: 'Print…',
-        onOpen: (ov) => { ov.querySelector('#idcard-preview-frame').srcdoc = full; },
+        onOpen: (ov) => {
+          const ifr = ov.querySelector('#idcard-preview-frame');
+          if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
+          ifr.srcdoc = full;
+        },
         onConfirm: (ov) => {
           const ifr = ov.querySelector('#idcard-preview-frame');
           ifr.contentWindow.focus();

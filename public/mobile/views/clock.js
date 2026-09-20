@@ -1,7 +1,7 @@
 /* Time clock — scan the office kiosk QR to clock in / out. */
 (function () {
   var SEG_LABEL = {
-    morning_in: 'Morning time-in', lunch_out: 'Lunch out', afternoon_in: 'Afternoon time-in',
+    morning_in: 'Morning time-in', lunch_out: 'Lunch out', afternoon_in: 'Back from lunch',
     afternoon_out: 'Time-out', other_in: 'Time-in', other_out: 'Time-out',
   };
 

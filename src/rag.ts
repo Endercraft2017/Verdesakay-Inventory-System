@@ -13,7 +13,10 @@ import { db, run, queryAll, queryOne, getSetting, setSetting, uploadDir } from '
 import type { AuthUser } from './types';
 
 const STALE_MS = 5 * 60 * 1000;
-const KB_FILES = ['README.md', 'docs/README.md', 'docs/DECISIONS.md', 'docs/AI-AGENT.md', 'docs/ARCHITECTURE.md'];
+const KB_FILES = [
+  'README.md', 'docs/README.md', 'docs/DECISIONS.md', 'docs/AI-AGENT.md', 'docs/ARCHITECTURE.md',
+  'docs/guides/production-sop.md',
+];
 const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.json', '.log']);
 
 interface ChunkRow {

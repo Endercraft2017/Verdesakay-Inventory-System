@@ -448,13 +448,21 @@ App.register('form-builder', async (view, filter) => {
       type: tpl.type,
       typeOptions: ['sale', 'job', 'purchase', 'generic'],
       body: tpl.body,
+      copiesPerRecord: tpl.copies_per_record || 1,
+      recordsPerPage: tpl.records_per_page || 1,
+      tileFill: tpl.tile_fill || 'blank',
+      continuous: !!tpl.tile_continuous,
+      repeatCount: tpl.repeat_count || 1,
       getVariables: () => formTemplateVariables(form),
       sampleContext: sample,
       renderPreview: (body) => UI.printableHtml(renderTemplate(body, sample), 'Preview'),
-      onSave: async ({ name, type, body }) => {
+      onSave: async ({ name, type, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount }) => {
         if (!name.trim()) return 'Template name is required';
         if (!body.trim()) return 'Template body cannot be empty';
-        const res = await API.put(`/form-definitions/${form.id}/template-body`, { name: name.trim(), type, body });
+        const res = await API.put(`/form-definitions/${form.id}/template-body`, {
+          name: name.trim(), type, body, copies_per_record: copiesPerRecord, records_per_page: recordsPerPage, tile_fill: tileFill,
+          tile_continuous: continuous, repeat_count: repeatCount,
+        });
         form.template_id = res.id; // keep the in-memory row in sync until the next loadForms()
         UI.toast('Template saved');
         loadForms();

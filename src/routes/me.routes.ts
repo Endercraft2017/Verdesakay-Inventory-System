@@ -80,8 +80,8 @@ router.get('/schedule', (req, res) => {
 /** Slugs an employee may self-file from mobile. */
 export const REQUEST_SLUGS = [
   'leave_request', 'overtime_request', 'undertime_request', 'halfday_request', 'offset_form',
-  'holiday_work_request', 'travel_order', 'coe_request', 'reimbursement_request',
-  'loan_application', 'training_request', 'incident_report',
+  'lunch_offset_form', 'holiday_work_request', 'travel_order', 'coe_request',
+  'reimbursement_request', 'loan_application', 'training_request', 'incident_report',
 ];
 
 // GET /api/me/request-types — the HR request forms available to file
@@ -92,7 +92,15 @@ router.get('/request-types', (_req, res) => {
      ORDER BY name`,
     ...REQUEST_SLUGS
   );
-  res.json(rows.map((r) => ({ ...r, fields: parse(r.fields) })));
+  res.json(rows.map((r) => {
+    const fields = parse(r.fields) as Array<{ key: string }>;
+    // overtime_request.approved_hours overrides PayrollPolicy.max_ot_hours for the day — it's
+    // meant to be set by whoever approves the request (HR, when linking it to an attendance
+    // day), not handed to the employee filing it, so it's stripped out of the self-file form
+    // even though it's a normal field everywhere else (Data Forms, Daily Time's own quick-add).
+    const visibleFields = r.slug === 'overtime_request' ? fields.filter((f) => f.key !== 'approved_hours') : fields;
+    return { ...r, fields: visibleFields };
+  }));
 });
 
 // GET /api/me/requests — records this user filed for any request form, newest first
@@ -341,28 +349,51 @@ interface UnrecordedOtDay { work_date: string; period_label: string; time_in: st
 function unrecordedOtDays(employeeId: number): UnrecordedOtDay[] {
   const rows = queryAll<{
     work_date: string; time_in: string; time_out: string; period_label: string;
-    shift_start: string | null; shift_end: string | null; fr_data: string | null; fd_slug: string | null;
+    shift_start: string | null; shift_end: string | null;
+    form_slugs: string | null; form_datas: string | null;
   }>(
     `SELECT ar.work_date, ar.time_in, ar.time_out, p.label AS period_label,
        s.start_time AS shift_start, s.end_time AS shift_end,
-       fr.data AS fr_data, fd.slug AS fd_slug
+       (SELECT group_concat(fd.slug, char(30)) FROM json_each(COALESCE(ar.form_record_ids, json_array(ar.form_record_id))) je
+          JOIN form_records fr ON fr.id = je.value JOIN form_definitions fd ON fd.id = fr.form_def_id) AS form_slugs,
+       (SELECT group_concat(fr.data, char(30)) FROM json_each(COALESCE(ar.form_record_ids, json_array(ar.form_record_id))) je
+          JOIN form_records fr ON fr.id = je.value) AS form_datas
      FROM attendance_records ar
      JOIN attendance_periods p ON p.id = ar.period_id
      LEFT JOIN shifts s ON s.id = ar.shift_id
-     LEFT JOIN form_records fr ON fr.id = ar.form_record_id
-     LEFT JOIN form_definitions fd ON fd.id = fr.form_def_id
      WHERE ar.employee_id = ? AND ar.time_in IS NOT NULL AND ar.time_out IS NOT NULL
        AND ar.work_date >= date('now', 'localtime', '-45 days')
      ORDER BY ar.work_date DESC`,
     employeeId
   );
   const policy = currentPolicy();
+  // Dates this employee has ALREADY filed an Overtime Request for (any live status) — even if
+  // HR hasn't linked it to the attendance day yet. Suppresses the nudge the moment they file,
+  // so the payslip callout / Home stack item don't keep pestering about something handled.
+  const empName = queryOne<{ name: string }>('SELECT name FROM employees WHERE id = ?', employeeId)?.name ?? '';
+  const filedOtDates = new Set(
+    queryAll<{ data: string }>(
+      `SELECT fr.data FROM form_records fr
+       JOIN form_definitions fd ON fd.id = fr.form_def_id
+       WHERE fd.slug = 'overtime_request' AND fr.status NOT IN ('rejected', 'cancelled')`
+    )
+      .map((r) => { try { return JSON.parse(r.data) as Record<string, unknown>; } catch { return null; } })
+      .filter((x): x is Record<string, unknown> => !!x && String(x.employee_name ?? '').trim() === empName.trim())
+      .map((x) => String(x.work_date ?? x.date ?? ''))
+      .filter(Boolean)
+  );
   const out: UnrecordedOtDay[] = [];
   for (const r of rows) {
+    if (filedOtDates.has(r.work_date)) continue;
+    const slugs = r.form_slugs ? r.form_slugs.split('\x1e') : [];
+    const datas = r.form_datas ? r.form_datas.split('\x1e') : [];
+    const linkedForms = slugs.map((slug, i) => {
+      try { return { slug, data: JSON.parse(datas[i] || '{}') }; } catch { return { slug, data: {} }; }
+    });
     const day: AttendanceDay = {
       work_date: r.work_date, time_in: r.time_in, time_out: r.time_out,
       shift: r.shift_start && r.shift_end ? { start_time: r.shift_start, end_time: r.shift_end } : null,
-      linkedForm: r.fd_slug ? { slug: r.fd_slug, data: JSON.parse(r.fr_data || '{}') } : null,
+      linkedForms,
     };
     const mins = unrecordedOtMinutes(day, policy);
     if (mins > 0) out.push({ work_date: r.work_date, period_label: r.period_label, time_in: r.time_in, time_out: r.time_out, ot_minutes: mins });

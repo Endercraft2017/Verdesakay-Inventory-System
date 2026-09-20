@@ -15,8 +15,10 @@
     "tenant:list": "tsx scripts/tenant.ts list",
     "tenant:status": "tsx scripts/tenant.ts status",
     "tenant:plan": "tsx scripts/tenant.ts plan",
+    "tenant:modules": "tsx scripts/tenant.ts modules",
     "tenant:usage": "tsx scripts/tenant.ts usage",
     "tenant:purge": "tsx scripts/tenant.ts purge",
+    "platform:user": "tsx scripts/platform-user.ts",
     "migrate:all": "tsx scripts/migrate-all.ts"
   },
   "engines": {

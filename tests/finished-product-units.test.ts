@@ -35,6 +35,18 @@ const pendingUnits = async (mo: number) =>
   ((await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number; status: string }>)
     .filter((u) => u.status === 'pending');
 
+/** A QC pass only queues a unit for Products In (status 'passed') — receive everything
+    awaiting it on this job order so it's actually on hand ('in_stock'), same as a real
+    warehouse flow. See job-orders.routes.ts GET /:id/receivable, POST /:id/products-in. */
+async function receiveAll(mo: number): Promise<void> {
+  const rec = (await ctx.api.get(`/api/job-orders/${mo}/receivable`).set(H())).body;
+  if (rec.units?.length) {
+    const r = await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H())
+      .send({ location_id: rec.output_location_id, unit_ids: rec.units.map((u: { id: number }) => u.id) });
+    if (r.status !== 201) throw new Error(`receive units failed: ${JSON.stringify(r.body)}`);
+  }
+}
+
 async function saleOrder(): Promise<number> {
   const r = await ctx.api.post('/api/orders').set(H()).send({
     type: 'sale', customer_name: 'ACME',
@@ -52,6 +64,7 @@ describe('finished-product units list', () => {
     const u = await pendingUnits(mo);
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: [u[0]!.id], result: 'pass', identifier: 'SN-100' });
+    await receiveAll(mo);
 
     const units = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body;
     expect(units).toHaveLength(1);
@@ -66,6 +79,7 @@ describe('sell / move units', () => {
     const u = await pendingUnits(mo);
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: u.map((x) => x.id), result: 'pass' }); // 3 units in stock, no identifier
+    await receiveAll(mo);
     expect(await onHand(product)).toBe(3);
 
     const so = await saleOrder();
@@ -96,11 +110,35 @@ describe('sell / move units', () => {
     expect(r.status).toBe(409);
   });
 
+  it('exposes allocated_qty per line on GET /orders/:id for a finished-product line', async () => {
+    const { product, mo } = await buildUnits('ALLOC', 3);
+    const u = await pendingUnits(mo);
+    await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
+      .send({ unit_ids: u.map((x) => x.id), result: 'pass' });
+    await receiveAll(mo);
+
+    const so = (await ctx.api.post('/api/orders').set(H()).send({
+      type: 'sale', customer_name: 'ACME',
+      items: [{ name: 'ALLOC Product', item_id: product, quantity: 5, unit_price: 200 }],
+    })).body.id;
+
+    let detail = (await ctx.api.get(`/api/orders/${so}`).set(H())).body;
+    expect(detail.items[0].allocated_qty).toBe(0);
+
+    const inStock = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body;
+    await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
+      .send({ action: 'sell', unit_ids: [inStock[0].id, inStock[1].id], order_id: so });
+
+    detail = (await ctx.api.get(`/api/orders/${so}`).set(H())).body;
+    expect(detail.items[0].allocated_qty).toBe(2);
+  });
+
   it('moves units to another location without changing the grand total', async () => {
     const { product, mo } = await buildUnits('MOVE', 2);
     const u = await pendingUnits(mo);
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: u.map((x) => x.id), result: 'pass' });
+    await receiveAll(mo);
     const dest = (await ctx.api.post('/api/locations').set(H()).send({ name: 'MOVE Branch', type: 'branch' })).body.id;
     const list = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body;
 
@@ -119,6 +157,7 @@ describe('label lookup', () => {
     const u = await pendingUnits(mo);
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: [u[0]!.id], result: 'pass', identifier: 'CHASSIS-777' });
+    await receiveAll(mo);
 
     const r = await ctx.api.get('/api/inventory/lookup?code=CHASSIS-777').set(H());
     expect(r.status).toBe(200);

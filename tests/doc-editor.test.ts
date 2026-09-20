@@ -56,6 +56,12 @@ describe('doc-editor transforms', () => {
     expect(norm(roundTrip(body))).toBe(norm(body));
   });
 
+  it('round-trips a <thead> table with a repeatable body row (Insert Table shape)', () => {
+    const body = '<table class="doc-table"><thead><tr><th>Item</th><th>Total</th></tr></thead>'
+      + '<tbody>{{#items}}<tr><td>{{name}}</td><td>{{line_total}}</td></tr>{{/items}}</tbody></table>';
+    expect(norm(roundTrip(body))).toBe(norm(body));
+  });
+
   it('marks the repeat row in the editor DOM', () => {
     const html = bodyToEditorHtml('<table><tbody>{{#items}}<tr><td>x</td></tr>{{/items}}</tbody></table>');
     expect(html).toContain('data-repeat="items"');
@@ -66,6 +72,15 @@ describe('doc-editor transforms', () => {
     const body = 'Agree <span class="doc-checkbox" data-checked="1">&#9745;</span>';
     expect(roundTrip(body)).toContain('class="doc-checkbox"');
     expect(roundTrip(body)).toContain('data-checked="1"');
+  });
+
+  it('strips a stray snap-guide element left in the surface', () => {
+    const dom = new JSDOM('<!DOCTYPE html><div id="r"></div>');
+    const el = dom.window.document.getElementById('r')!;
+    el.innerHTML = '<p>keep me</p><div class="doc-snap-guide v" style="left:50%"></div>';
+    const out = serializeEditor(el);
+    expect(out).toContain('keep me');
+    expect(out).not.toContain('doc-snap-guide');
   });
 
   it('keeps control tokens (e.g. {{#if}}) as chips that round-trip', () => {

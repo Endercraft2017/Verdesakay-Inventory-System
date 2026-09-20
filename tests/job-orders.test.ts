@@ -19,6 +19,24 @@ const mkItem = async (name: string, quantity = 0) =>
 const onHand = async (id: number) =>
   (await ctx.api.get(`/api/inventory/${id}`).set(authHdr())).body.quantity as number;
 
+/** Receive everything currently awaiting Products In on a job order (see
+    job-orders.routes.ts POST /:id/receivable + /:id/products-in) — production no longer
+    lands in stock on its own; this is the step that posts it. */
+async function receiveAll(moId: number): Promise<void> {
+  const rec = (await ctx.api.get(`/api/job-orders/${moId}/receivable`).set(authHdr())).body;
+  const location_id = rec.output_location_id;
+  if (rec.units?.length) {
+    const r = await ctx.api.post(`/api/job-orders/${moId}/products-in`).set(authHdr())
+      .send({ location_id, unit_ids: rec.units.map((u: { id: number }) => u.id) });
+    if (r.status !== 201) throw new Error(`receive units failed: ${JSON.stringify(r.body)}`);
+  }
+  for (const b of rec.batches ?? []) {
+    const r = await ctx.api.post(`/api/job-orders/${moId}/products-in`).set(authHdr())
+      .send({ location_id, batch_id: b.id, quantity: b.remaining_qty });
+    if (r.status !== 201) throw new Error(`receive batch failed: ${JSON.stringify(r.body)}`);
+  }
+}
+
 /** A finished product built from 2 bolts + 3 panels, with plenty of stock. */
 async function setupProduct(prefix: string, boltStock = 100, panelStock = 100) {
   const product = await mkItem(`${prefix} Product`);
@@ -51,9 +69,47 @@ describe('job orders', () => {
     expect(bolt.qty_consumed).toBe(0);
   });
 
-  it('rejects a product that is not a finished product / has no BOM', async () => {
+  it('rejects a product that is not flagged as a finished product', async () => {
     const plain = await mkItem('Just An Item', 5);
     expect((await createMO({ product_item_id: plain, qty_ordered: 1 })).status).toBe(400);
+  });
+
+  it('builds a finished product that has no BOM — reserves and consumes nothing', async () => {
+    const product = await mkItem('Bare Product');
+    await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({ components: [] });
+
+    const mo = await createMO({ product_item_id: product, qty_ordered: 3 });
+    expect(mo.status).toBe(201);
+    const jo = (await ctx.api.get(`/api/job-orders/${mo.body.id}`).set(authHdr())).body;
+    expect(jo.components).toEqual([]);
+
+    const rel = await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+    expect(rel.status).toBe(200);
+    expect(rel.body.job_order.status).toBe('released');
+
+    const r = await ctx.api.post(`/api/job-orders/${mo.body.id}/progress`).set(authHdr()).send({ done_delta: 3 });
+    expect(r.body.job_order.status).toBe('completed');
+    expect(await onHand(product)).toBe(0); // produced, but not yet received — Products In posts it
+    await receiveAll(mo.body.id);
+    expect(await onHand(product)).toBe(3);
+  });
+
+  it('a draft can add a component that is not on the product BOM', async () => {
+    const { product } = await setupProduct('AdHoc');
+    const extra = await mkItem('AdHoc Extra Part', 50);
+    const { body } = await createMO({ product_item_id: product, qty_ordered: 4 });
+
+    const upd = await ctx.api.put(`/api/job-orders/${body.id}/components`).set(authHdr())
+      .send({ components: [{ component_item_id: extra, qty_planned: 8 }] });
+    expect(upd.status).toBe(200);
+    const jo = (await ctx.api.get(`/api/job-orders/${body.id}`).set(authHdr())).body;
+    const line = jo.components.find((c: { component_item_id: number }) => c.component_item_id === extra);
+    expect(line).toBeTruthy();
+    expect(line.qty_planned).toBe(8);
+    expect(line.qty_per_unit).toBe(2); // 8 / 4 ordered
+
+    await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
+    expect(await onHand(extra)).toBe(42); // 50 − 8 reserved
   });
 
   it('lets a draft override planned quantities, but not after release', async () => {
@@ -100,10 +156,13 @@ describe('job orders', () => {
     expect(r.status).toBe(200);
     expect(r.body.job_order.status).toBe('in_progress');
     expect(r.body.job_order.qty_done).toBe(3);
+    expect(await onHand(product)).toBe(0); // produced, but awaiting Products In
+    await receiveAll(body.id);
     expect(await onHand(product)).toBe(3); // 3 finished units in stock
 
     r = await ctx.api.post(`/api/job-orders/${body.id}/progress`).set(authHdr()).send({ done_delta: 1 });
     expect(r.body.job_order.status).toBe('completed'); // 4/4 accounted
+    await receiveAll(body.id);
     expect(await onHand(product)).toBe(4);
     // all reserved components consumed, none left to return
     expect(await onHand(bolt)).toBe(92);
@@ -129,6 +188,7 @@ describe('job orders', () => {
     expect(r.body.job_order.status).toBe('completed');
     expect(await onHand(bolt)).toBe(94);   // 100 - 6 actually used
     expect(await onHand(panel)).toBe(91);  // 100 - 9
+    await receiveAll(body.id); // closing early doesn't un-produce the 3 already built
     expect(await onHand(product)).toBe(3);
   });
 
@@ -225,6 +285,7 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
     const done = await ctx.api.post(`/api/job-orders/${mo.body.id}/progress`).set(authHdr())
       .send({ done_delta: 5, scrapped_delta: 0 });
     expect(done.body.job_order.status).toBe('completed');
+    await receiveAll(mo.body.id); // Products In is what actually posts the 'produce' GL entry now
 
     const entries = await joEntries(mo.body.id);
     const produce = entries.find((e) => /finished goods/i.test(e.memo));
@@ -242,6 +303,7 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
     const r = await ctx.api.post(`/api/job-orders/${mo.body.id}/progress`).set(authHdr())
       .send({ done_delta: 8, scrapped_delta: 2 }); // 8 good (₱320), 2 scrapped (₱80)
     expect(r.body.job_order.status).toBe('completed');
+    await receiveAll(mo.body.id); // settleJobOrderGl waits for this while the 8 good units are unreceived
 
     expect(await acctBalance('5150')).toBe(Math.round((varBefore + 80) * 100) / 100);
     const tb = (await ctx.api.get('/api/accounting/ledger/reports/trial-balance').set(authHdr())).body;

@@ -55,9 +55,73 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 22; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 41; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
+// 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
+// advance is now just an itemized Other Deductions line)
+// 24: attendance_records.form_record_ids (JSON array) — a day can link multiple HR request forms
+// 25: attendance_records.lunch_out / lunch_in — the day's lunch-break bracket, split from the
+// raw punches on reconcile; display-only (payroll still uses PayrollPolicy.lunch_break_minutes)
+// 26: QC disposition + repair/rework — job_order_units.disposition, qc_records.disposition,
+// new repair_part_requests table (production asks the warehouse for add/replace parts)
+// 27: first-class production batches — production_batches table, job_order_units.batch_id,
+// qc_records.batch_id (batch-level QC sign-off for non-serialized job orders)
+// 28: production teams + scheduling — production_teams / production_team_members tables,
+// job_orders.team_id / planned_start / due_date / priority / work_center
+// 29: sale-order release/pick — orders.released_at / released_by, order_items.released_qty,
+// job_order_units 'reserved' status (a unit earmarked for a SO before stock-out on confirm)
+// 30: doc_templates.copies_per_record / records_per_page — opt-in N-up print tiling (multiple
+// copies of a record, multiple records per page) for any form's linked template, generalizing
+// the layout hr-payroll-print.js already hand-built for HR Payroll Slip. That module is
+// untouched (still its own bespoke 2x2); this only drives the generic printRecordsViaTemplate()
+// path other forms use.
+// 31: production_team_members now references employees, not users — a production crew is
+// made up of HR employees, most of whom have no login account at all.
+// 32: doc_templates.tile_fill ('blank' | 'repeat') — how N-up tiling (SCHEMA_VERSION 30) fills
+// grid cells once there are fewer printed records than cells: 'blank' (default, unchanged —
+// right for HR Payroll Slip-style batches where each cell is a specific person) or 'repeat'
+// (cycle back through the printed records so a single design fills its whole grid — a 1x2 /
+// 2x2 / 3x3 / etc. repeat of one design, "Records per page" and "Copies per record" now read
+// as Grid Columns / Grid Rows in the template editor).
+// 33: bug_reports / bug_report_attachments — in-app bug reporting (sidebar button), steps to
+// reproduce + up to 5 screenshots; reviewed/resolved from the Admin section (users.manage).
+// 34: employee_rate_history — versioned per-employee daily_rate (same pattern as
+// payroll_tables), so a mid-cutoff raise pays each day at the rate that actually applied.
+// Logged automatically from the Edit Employee form; see src/employee-rate-history.ts.
+// 35: doc_templates.repeat_count / tile_continuous — decouples "how many copies of each
+// record" from the Print Grid's physical rows x columns shape (SCHEMA_VERSION 30/32).
+// tile_continuous=0 (default, every existing template): unchanged — copies_per_record IS
+// the repeat count, one clean page-block of records_per_page records at a time.
+// tile_continuous=1: copies_per_record x records_per_page is a fixed page capacity;
+// repeat_count copies of every record flatten into one stream poured continuously across as
+// many such pages as needed (a record's own repeat run can end up split across a page
+// boundary — see print-tiling.js's module comment). Only the generic printRecordsViaTemplate()
+// path (print-tiling.js) consults these; HR Payroll Slip keeps its own bespoke 2x2 layout.
+// 36: field_punches -- a separate out/in log for staff on field work (deliveries, site visits),
+// logged from the kiosk's new "Field Work" tab. Deliberately its own table, untouched by
+// classify()/applyPunchToAttendance, so a mid-day field trip never skews payroll hours or the
+// lunch-bracket split. See src/field.ts.
+// 37: attendance_records.half_day_override ('am'/'pm'/null) -- HR manually crediting a day as
+// a half day with no linked Half Day Request backing it, for when the raw punch times don't
+// happen to match the automatic "possible half day" heuristic. See hr-payroll-compute.ts.
+// 38: punch_photos -- one photo per punch, captured from the kiosk's camera at the moment of
+// the punch (attendance or field work). Re-punching an already-photographed slot (a
+// click-to-correct fix, an OT re-punch of Out) replaces the photo rather than accumulating.
+// Retention (max age / max total size) is a per-tenant, owner-only setting on the platform.db
+// tenants row (src/platform.ts), enforced lazily in src/punch-photos.ts.
+// 39: employees.ot_exempt (never paid OT, same convention as late_exempt) and
+// employees.withholding_tax_override (a fixed peso amount replacing the computed BIR
+// withholding formula for this employee) -- both now editable from the Edit Employee form
+// alongside the existing deduct_sss/deduct_philhealth/deduct_pagibig/deduct_withholding_tax
+// switches (previously Accounting-screen-only).
+// 40: qc_checklists.stage (1 = QA, 2 = QC) -- a checklist now belongs to one stage as a
+// whole instead of tagging each item with its own stage. inventory_items.qc_checklist_id
+// (one checklist for the whole product) splits into qc_checklist_qa_id / qc_checklist_qc_id
+// (one per stage), so a 2-step product can run a different checklist at each pass. Existing
+// checklists/links are migrated below rather than dropped.
+// 41: employees.sss_override / philhealth_override / pagibig_override -- the same fixed-amount
+// override withholding_tax_override already had, now for the three contribution funds too.
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -213,6 +277,39 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_punch_emp_date ON time_punches(employee_id, work_date);
 
+    -- Field-work out/in log, separate from time_punches -- a mid-day field trip (delivery,
+    -- site visit, errand) must never skew payroll hours or the lunch-bracket classification
+    -- that classify()/applyPunchToAttendance derive from time_punches. Logged from the
+    -- kiosk's "Field Work" tab. See src/field.ts.
+    CREATE TABLE IF NOT EXISTS field_punches (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      ts          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      work_date   TEXT NOT NULL,
+      kind        TEXT NOT NULL,     -- 'out' | 'in'
+      source      TEXT NOT NULL,     -- 'kiosk'
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_field_punch_emp_date ON field_punches(employee_id, work_date);
+
+    -- One photo per punch (attendance time_punches.id, or field field_punches.id), captured
+    -- from the kiosk's camera at the moment of the punch. Re-punching a slot that already has
+    -- one (a click-to-correct fix, or an OT re-punch of Out) replaces it in place -- see
+    -- src/punch-photos.ts -- so this stays one row per punch, not an ever-growing log. Files
+    -- live under uploadDir()/kiosk-punches; retention (max age / max total size) is a
+    -- per-tenant, owner-only setting (src/platform.ts), enforced lazily on each save.
+    CREATE TABLE IF NOT EXISTS punch_photos (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      punch_kind  TEXT NOT NULL,     -- 'attendance' | 'field'
+      punch_id    INTEGER NOT NULL,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      file_name   TEXT NOT NULL,
+      file_size   INTEGER NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(punch_kind, punch_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_punch_photo_created ON punch_photos(created_at);
+
     -- Company-wide announcements shown on the mobile home + an announcements view.
     -- Anyone can read the active ones; posting/editing needs the 'announce' permission.
     CREATE TABLE IF NOT EXISTS announcements (
@@ -284,7 +381,8 @@ function createSchema(): void {
       attributes    TEXT,
       image_path    TEXT,
       is_finished_product INTEGER NOT NULL DEFAULT 0,
-      qc_checklist_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL,
+      qc_checklist_qa_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL,
+      qc_checklist_qc_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -396,6 +494,11 @@ function createSchema(): void {
       source_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       output_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       qc_stages          INTEGER NOT NULL DEFAULT 0,
+      team_id            INTEGER REFERENCES production_teams(id) ON DELETE SET NULL,
+      planned_start      TEXT,
+      due_date           TEXT,
+      priority           INTEGER NOT NULL DEFAULT 0,
+      work_center        TEXT,
       notes              TEXT,
       created_by         INTEGER REFERENCES users(id) ON DELETE SET NULL,
       released_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -416,9 +519,78 @@ function createSchema(): void {
       UNIQUE(job_order_id, component_item_id)
     );
 
+    -- Production teams: a named crew a job order is assigned to, with a member roster.
+    CREATE TABLE IF NOT EXISTS production_teams (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      notes      TEXT,
+      is_active  INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS production_team_members (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      team_id     INTEGER NOT NULL REFERENCES production_teams(id) ON DELETE CASCADE,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      role        TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(team_id, employee_id)
+    );
+
+    -- A production batch / lot: a named group of units off one job order. For a
+    -- non-serialized job order (qc_stages = 0) each /progress entry creates one; for a
+    -- serialized job order a batch is opt-in and its units carry batch_id. status:
+    -- open (in production / QC) | released | closed.
+    -- status: open (QC-stage: still has pending/rework units; non-serialized: hasn't had its
+    -- optional batch-level QA sign-off) | released (free-form manual label, unrelated to
+    -- job_orders.status) | closed (every unit inspected / batch-level sign-off passed —
+    -- production.routes.ts POST /batches/:id/inspect, maybeCloseBatches). This is a QUALITY
+    -- sign-off flag, independent of whether the batch has been received — see
+    -- production_receipts below; receivable/received is computed from qty vs.
+    -- SUM(production_receipt_items.quantity), not from this column.
+    CREATE TABLE IF NOT EXISTS production_batches (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      number          TEXT NOT NULL UNIQUE,
+      job_order_id    INTEGER REFERENCES job_orders(id) ON DELETE SET NULL,
+      product_item_id INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      qty             INTEGER NOT NULL DEFAULT 0,
+      identifier      TEXT,
+      status          TEXT NOT NULL DEFAULT 'open',
+      notes           TEXT,
+      created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Products In: the Purchasing "Goods Receipt" pattern mirrored for production output.
+    -- A job order's finished output (serialized units once they reach job_order_units.status
+    -- = 'passed', or a whole non-serialized batch while production_batches.status = 'open')
+    -- sits "receivable" until this posts it into stock at a chosen location — see
+    -- job-orders.routes.ts POST /:id/products-in. One receipt can cover several units and/or
+    -- one batch; the location is picked at receiving time (this is also where a "warehouse
+    -- transfer" away from the job order's default output_location_id happens, if needed).
+    CREATE TABLE IF NOT EXISTS production_receipts (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      number        TEXT NOT NULL UNIQUE,               -- PI-00001
+      job_order_id  INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      location_id   INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      received_date TEXT,
+      notes         TEXT,
+      received_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS production_receipt_items (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      receipt_id INTEGER NOT NULL REFERENCES production_receipts(id) ON DELETE CASCADE,
+      unit_id    INTEGER REFERENCES job_order_units(id) ON DELETE SET NULL,      -- serialized
+      batch_id   INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,  -- non-serialized
+      quantity   REAL NOT NULL DEFAULT 1
+    );
+
     -- Phase C: one row per physical unit produced by a job order, plus its QA/QC log.
-    -- status: pending | in_stock | failed | scrapped | sold. order_id ties a
-    -- sold / relocated unit to the sales order that consumed or moved it.
+    -- status: pending | in_stock | failed | scrapped | sold | rework. order_id ties a
+    -- sold / relocated unit to the sales order that consumed or moved it. disposition
+    -- (set on a fail): scrap | dispose | recycle | repair — 'repair' sends it to rework.
     CREATE TABLE IF NOT EXISTS job_order_units (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       job_order_id    INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
@@ -428,6 +600,8 @@ function createSchema(): void {
       stage           INTEGER NOT NULL DEFAULT 0,
       location_id     INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       order_id        INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      batch_id        INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
+      disposition     TEXT,
       remarks         TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
@@ -437,8 +611,11 @@ function createSchema(): void {
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
       unit_id      INTEGER REFERENCES job_order_units(id) ON DELETE CASCADE,
+      batch_id     INTEGER REFERENCES production_batches(id) ON DELETE CASCADE,
       stage        INTEGER NOT NULL,
       result       TEXT NOT NULL,
+      -- On a fail: scrap | dispose | recycle | repair (mirrors job_order_units.disposition).
+      disposition  TEXT,
       remarks      TEXT,
       -- JSON snapshot of the checklist the inspector filled: [{label, ok, note}].
       checklist    TEXT,
@@ -446,13 +623,43 @@ function createSchema(): void {
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    -- Named QA/QC checklist templates. A finished product points at one via
-    -- inventory_items.qc_checklist_id; the is_default row is used for products
-    -- with none attached. The items column is JSON: [{label, required, stage}].
+    -- A repair (rework) unit's parts requests to the warehouse. kind: add (missing part)
+    -- | replace (swap a fitted part — the removed one is booked into its damage twin).
+    -- status: requested -> accepted (stock moved) | rejected | cancelled. Nothing moves
+    -- until the warehouse accepts.
+    CREATE TABLE IF NOT EXISTS repair_part_requests (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      number            TEXT NOT NULL UNIQUE,
+      unit_id           INTEGER NOT NULL REFERENCES job_order_units(id) ON DELETE CASCADE,
+      job_order_id      INTEGER REFERENCES job_orders(id) ON DELETE SET NULL,
+      kind              TEXT NOT NULL DEFAULT 'replace',
+      component_item_id INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      component_name    TEXT NOT NULL,
+      quantity          INTEGER NOT NULL DEFAULT 1,
+      fault             TEXT,
+      return_to_damage  INTEGER NOT NULL DEFAULT 1,
+      from_location_id  INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      status            TEXT NOT NULL DEFAULT 'requested',
+      requested_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      warehouse_remarks TEXT,
+      notes             TEXT,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_at        TEXT
+    );
+
+    -- Named QA/QC checklist templates. Each checklist belongs to one stage as a whole
+    -- (stage: 1 = QA / first pass, 2 = QC / final pass) rather than tagging items
+    -- individually. A finished product points at one checklist per stage via
+    -- inventory_items.qc_checklist_qa_id / qc_checklist_qc_id; the is_default row for
+    -- that stage covers products with none attached. The items column is JSON:
+    -- [{label, required}].
     CREATE TABLE IF NOT EXISTS qc_checklists (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT NOT NULL,
       items      TEXT NOT NULL DEFAULT '[]',
+      stage      INTEGER NOT NULL DEFAULT 1,
       is_default INTEGER NOT NULL DEFAULT 0,
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -649,6 +856,27 @@ function createSchema(): void {
       UNIQUE(kind, effective_from)
     );
 
+    -- Same versioned-table pattern as payroll_tables above, but per employee: one row per
+    -- (employee_id, effective_from), the latest whose effective_from is on or before a given
+    -- work_date wins. Lets a mid-cutoff raise (e.g. ₱600/day through Jun 8, ₱650/day from Jun 9)
+    -- pay each day at the rate that actually applied, instead of one flat rate for the whole
+    -- cutoff. daily_rate is always the resolved, payroll-ready value (monthly ÷ divisor already
+    -- applied), same convention as employees.daily_rate — see effectiveDailyRate() in
+    -- hr.routes.ts. See src/employee-rate-history.ts.
+    CREATE TABLE IF NOT EXISTS employee_rate_history (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id    INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      effective_from TEXT NOT NULL,
+      rate_type      TEXT NOT NULL CHECK (rate_type IN ('daily','monthly')),
+      daily_rate     REAL NOT NULL,
+      monthly_rate   REAL,
+      note           TEXT,
+      created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(employee_id, effective_from)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rate_history_employee ON employee_rate_history(employee_id, effective_from);
+
     CREATE TABLE IF NOT EXISTS attendance_periods (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       label      TEXT NOT NULL,
@@ -664,6 +892,8 @@ function createSchema(): void {
       employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,
       work_date   TEXT NOT NULL,
       time_in     TEXT,
+      lunch_out   TEXT,   -- start of the unpaid lunch break; display-only, split from punches on reconcile
+      lunch_in    TEXT,   -- back from lunch; display-only (payroll uses PayrollPolicy.lunch_break_minutes)
       time_out    TEXT,
       notes       TEXT,
       updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -694,6 +924,17 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_jou_job_order ON job_order_units(job_order_id);
     CREATE INDEX IF NOT EXISTS idx_jou_product ON job_order_units(product_item_id, status);
     CREATE INDEX IF NOT EXISTS idx_qc_job_order ON qc_records(job_order_id);
+    CREATE INDEX IF NOT EXISTS idx_rpr_unit ON repair_part_requests(unit_id);
+    CREATE INDEX IF NOT EXISTS idx_rpr_status ON repair_part_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_batch_job_order ON production_batches(job_order_id);
+    CREATE INDEX IF NOT EXISTS idx_prod_receipts_job_order ON production_receipts(job_order_id);
+    CREATE INDEX IF NOT EXISTS idx_prod_receipt_items_receipt ON production_receipt_items(receipt_id);
+    CREATE INDEX IF NOT EXISTS idx_prod_receipt_items_unit ON production_receipt_items(unit_id);
+    CREATE INDEX IF NOT EXISTS idx_prod_receipt_items_batch ON production_receipt_items(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_ptm_team ON production_team_members(team_id);
+    -- NOTE: indexes on job_order_units.batch_id / qc_records.batch_id / job_orders.team_id
+    -- / job_orders.due_date are created in migrate(), right after the ALTER TABLE that adds
+    -- each column — an existing DB reaches createSchema() before those columns exist.
     CREATE INDEX IF NOT EXISTS idx_employees_dept ON employees(department_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_period ON attendance_records(period_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance_records(employee_id);
@@ -724,6 +965,34 @@ function createSchema(): void {
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_attachments_ref ON attachments(kind, ref_id);
+
+    -- In-app bug reports: any signed-in user can file one (title + steps to reproduce +
+    -- up to 5 screenshots); users.manage reviews/resolves them. See
+    -- src/routes/bug-reports.routes.ts.
+    CREATE TABLE IF NOT EXISTS bug_reports (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      title              TEXT NOT NULL,
+      steps_to_reproduce TEXT NOT NULL,
+      description        TEXT,
+      page_context       TEXT,
+      status             TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
+      reported_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at        TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_bug_reports_status ON bug_reports(status, id);
+
+    CREATE TABLE IF NOT EXISTS bug_report_attachments (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      bug_report_id INTEGER NOT NULL REFERENCES bug_reports(id) ON DELETE CASCADE,
+      stored_name   TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type     TEXT,
+      size_bytes    INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_bug_report_attachments_report ON bug_report_attachments(bug_report_id);
 
     -- Field deliveries / drops + their proof of delivery (recipient, signature,
     -- GPS, photos). See src/routes/deliveries.routes.ts. Permission-gated:
@@ -1179,6 +1448,29 @@ function migrate(): void {
     db.exec('ALTER TABLE doc_templates ADD COLUMN period TEXT');
   }
 
+  // (SCHEMA_VERSION 30) Opt-in N-up print tiling — see the version-history comment above.
+  // Both default to 1 (today's plain one-record-per-page behavior) for every existing template.
+  if (!tplCols.some((c) => c.name === 'copies_per_record')) {
+    db.exec('ALTER TABLE doc_templates ADD COLUMN copies_per_record INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!tplCols.some((c) => c.name === 'records_per_page')) {
+    db.exec('ALTER TABLE doc_templates ADD COLUMN records_per_page INTEGER NOT NULL DEFAULT 1');
+  }
+
+  // (SCHEMA_VERSION 32) See the version-history comment above.
+  if (!tplCols.some((c) => c.name === 'tile_fill')) {
+    db.exec("ALTER TABLE doc_templates ADD COLUMN tile_fill TEXT NOT NULL DEFAULT 'blank' CHECK (tile_fill IN ('blank','repeat'))");
+  }
+
+  // (SCHEMA_VERSION 35) See the version-history comment above. Defaults (1 / 0) reproduce
+  // every existing template's current output exactly — continuous mode is opt-in.
+  if (!tplCols.some((c) => c.name === 'repeat_count')) {
+    db.exec('ALTER TABLE doc_templates ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!tplCols.some((c) => c.name === 'tile_continuous')) {
+    db.exec('ALTER TABLE doc_templates ADD COLUMN tile_continuous INTEGER NOT NULL DEFAULT 0');
+  }
+
   // Add period column to form_records for payroll-period grouping.
   const frCols = db.prepare('PRAGMA table_info(form_records)').all() as { name: string }[];
   if (!frCols.some((c) => c.name === 'period')) {
@@ -1279,6 +1571,39 @@ function migrate(): void {
   if (!arCols.some((c) => c.name === 'min_hours_decision')) {
     db.exec('ALTER TABLE attendance_records ADD COLUMN min_hours_decision TEXT');
   }
+  // (SCHEMA_VERSION 24) A day can now link MORE THAN ONE OT/Half Day/Leave/Undertime/Offset
+  // form (e.g. a Half Day AM + an Overtime for the afternoon). Stored as a JSON array of
+  // form_records ids; the legacy single form_record_id column is kept and mirrored to the
+  // first entry so anything still reading it (CSV export's LEFT JOIN, older code paths) keeps
+  // working. Backfilled from the existing single link so nothing already linked is lost.
+  if (!arCols.some((c) => c.name === 'form_record_ids')) {
+    db.exec('ALTER TABLE attendance_records ADD COLUMN form_record_ids TEXT');
+    db.exec(
+      `UPDATE attendance_records SET form_record_ids = json_array(form_record_id)
+       WHERE form_record_id IS NOT NULL AND form_record_ids IS NULL`
+    );
+  }
+  // (SCHEMA_VERSION 25) The day's lunch-break bracket — split from the raw time_punches on
+  // reconcile (importPunchesForPeriod), or hand-typed in the Daily Time grid. Purely for the
+  // record / CSV: payroll still subtracts the structural PayrollPolicy.lunch_break_minutes, it
+  // never reads these. No backfill — older rows stay null until re-reconciled or edited.
+  if (!arCols.some((c) => c.name === 'lunch_out')) {
+    db.exec('ALTER TABLE attendance_records ADD COLUMN lunch_out TEXT');
+  }
+  if (!arCols.some((c) => c.name === 'lunch_in')) {
+    db.exec('ALTER TABLE attendance_records ADD COLUMN lunch_in TEXT');
+  }
+  // (SCHEMA_VERSION 37) HR manually crediting this day as a half day (AM or PM) with no linked
+  // Half Day Request behind it — null = no override (default). Distinct from the automatic
+  // "possible half day" heuristic (unlinkedHalfDaySession in hr-payroll-compute.ts), which only
+  // fires when the raw punch times happen to structurally resemble one of the shift's own AM/PM
+  // half windows; this lets HR force the same 0.5-day credit on a day that doesn't. Ignored
+  // whenever a real halfday_request IS linked — that always takes precedence. Surfaced
+  // separately on the payslip detail (DayBreakdown.half_day_manual) so a reader can tell "HR
+  // called this one" apart from either an actual filed request or the auto-detected kind.
+  if (!arCols.some((c) => c.name === 'half_day_override')) {
+    db.exec('ALTER TABLE attendance_records ADD COLUMN half_day_override TEXT');
+  }
 
   // An employee's *usual* shift — purely a UI pre-fill for new attendance days, never enforced,
   // so a rotating employee can still be assigned a different shift on any given day.
@@ -1322,6 +1647,35 @@ function migrate(): void {
   if (!empCols3.some((c) => c.name === 'late_exempt')) {
     db.exec('ALTER TABLE employees ADD COLUMN late_exempt INTEGER NOT NULL DEFAULT 0');
   }
+  // (SCHEMA_VERSION 39) Per-employee "exempt from overtime pay" — for salaried staff (e.g. a
+  // supervisor) never entitled to OT regardless of hours worked past their shift. Same
+  // "flag-only, never touch the underlying figure" convention as late_exempt: ot_hours still
+  // computes and shows on the payslip detail, only the peso overtime_pay is zeroed. See
+  // hr-payroll-compute.ts's computeAttendanceForEmployee.
+  if (!empCols3.some((c) => c.name === 'ot_exempt')) {
+    db.exec('ALTER TABLE employees ADD COLUMN ot_exempt INTEGER NOT NULL DEFAULT 0');
+  }
+  // (SCHEMA_VERSION 39) A fixed withholding-tax amount for this employee, replacing the
+  // computed BIR withholding formula (src/ph-statutory.ts's withholdingTax) every cutoff —
+  // e.g. a BIR-registered special/negotiated rate. null (default) = use the normal computed
+  // amount. Only takes effect when deduct_withholding_tax is also on — see
+  // computeEmployeeStatutory in hr.routes.ts; exempting the employee always wins over an
+  // override amount, it doesn't get silently re-applied by clearing the exempt flag.
+  if (!empCols3.some((c) => c.name === 'withholding_tax_override')) {
+    db.exec('ALTER TABLE employees ADD COLUMN withholding_tax_override REAL');
+  }
+  // (SCHEMA_VERSION 41) Same fixed-amount override, now for the three contribution funds too —
+  // replaces the computed employee-side SSS/PhilHealth/Pag-IBIG contribution with a flat peso
+  // figure for this employee (e.g. a negotiated arrangement), still divided across cutoffs the
+  // same way the computed amount is. null (default) = use the normal computed amount. Only
+  // takes effect while the matching deduct_* switch is also on; the employer-side contribution
+  // (remitted regardless of any employee-side arrangement) is never affected by these. See
+  // computeEmployeeStatutory in hr.routes.ts.
+  for (const col of ['sss_override', 'philhealth_override', 'pagibig_override']) {
+    if (!empCols3.some((c) => c.name === col)) {
+      db.exec(`ALTER TABLE employees ADD COLUMN ${col} REAL`);
+    }
+  }
 
   // Simple fixed-bank paid-leave balance, admin-set per employee (not accrual-based — no
   // monthly math, no carry-over rules). Default 5 matches PH Service Incentive Leave's
@@ -1360,15 +1714,86 @@ function migrate(): void {
     db.exec('ALTER TABLE qc_records ADD COLUMN checklist TEXT');
   }
   // Named QA/QC checklists + per-product attachment (replaces the single settings key).
-  const iiCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
-  if (!iiCols.some((c) => c.name === 'qc_checklist_id')) {
-    db.exec('ALTER TABLE inventory_items ADD COLUMN qc_checklist_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL');
+  // (SCHEMA_VERSION 40) A checklist now belongs to one stage as a whole (qc_checklists.stage:
+  // 1 = QA, 2 = QC) instead of tagging items individually, and a product can point at a
+  // QA checklist and a QC checklist independently. Split any pre-40 checklist whose items
+  // mixed QA- and QC-tagged checks into two stage-specific checklists first, so existing
+  // checks survive the split instead of half of them silently vanishing from one stage.
+  const qclCols = db.prepare('PRAGMA table_info(qc_checklists)').all() as { name: string }[];
+  if (!qclCols.some((c) => c.name === 'stage')) {
+    db.exec('ALTER TABLE qc_checklists ADD COLUMN stage INTEGER NOT NULL DEFAULT 1');
+    const legacyChecklists = db.prepare('SELECT id, name, items, is_default, created_by FROM qc_checklists').all() as
+      { id: number; name: string; items: string; is_default: number; created_by: number | null }[];
+    for (const row of legacyChecklists) {
+      let items: { label: string; required?: boolean; stage?: number }[] = [];
+      try { items = JSON.parse(row.items || '[]'); } catch { items = []; }
+      const strip = (it: { label: string; required?: boolean }) => ({ label: it.label, required: !!it.required });
+      const qaItems = items.filter((it) => !it.stage || it.stage === 0 || it.stage === 1).map(strip);
+      const qcItems = items.filter((it) => !it.stage || it.stage === 0 || it.stage === 2).map(strip);
+      if (qaItems.length && qcItems.length && JSON.stringify(qaItems) !== JSON.stringify(qcItems)) {
+        db.prepare('UPDATE qc_checklists SET stage = 1, items = ? WHERE id = ?').run(JSON.stringify(qaItems), row.id);
+        db.prepare(
+          'INSERT INTO qc_checklists (name, items, stage, is_default, created_by) VALUES (?, ?, 2, ?, ?)'
+        ).run(row.name + ' (QC)', JSON.stringify(qcItems), row.is_default, row.created_by);
+      } else if (qcItems.length && !qaItems.length) {
+        db.prepare('UPDATE qc_checklists SET stage = 2, items = ? WHERE id = ?').run(JSON.stringify(qcItems), row.id);
+      } else {
+        db.prepare('UPDATE qc_checklists SET stage = 1, items = ? WHERE id = ?').run(JSON.stringify(qaItems), row.id);
+      }
+    }
+  }
+  // inventory_items.qc_checklist_id (one checklist for the whole product) becomes the QA
+  // slot; qc_checklist_qc_id is new. A fresh install's CREATE TABLE already has both.
+  let iiCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (iiCols.some((c) => c.name === 'qc_checklist_id') && !iiCols.some((c) => c.name === 'qc_checklist_qa_id')) {
+    db.exec('ALTER TABLE inventory_items RENAME COLUMN qc_checklist_id TO qc_checklist_qa_id');
+    iiCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  }
+  if (!iiCols.some((c) => c.name === 'qc_checklist_qa_id')) {
+    db.exec('ALTER TABLE inventory_items ADD COLUMN qc_checklist_qa_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL');
+    iiCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  }
+  if (!iiCols.some((c) => c.name === 'qc_checklist_qc_id')) {
+    db.exec('ALTER TABLE inventory_items ADD COLUMN qc_checklist_qc_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL');
   }
   // Serialized-unit lifecycle: link a sold / relocated finished unit to its sales order.
   const jouCols = db.prepare('PRAGMA table_info(job_order_units)').all() as { name: string }[];
   if (!jouCols.some((c) => c.name === 'order_id')) {
     db.exec('ALTER TABLE job_order_units ADD COLUMN order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL');
   }
+
+  // (SCHEMA_VERSION 26) QC disposition on a fail + the repair/rework loop.
+  // repair_part_requests table itself comes from createSchema().
+  if (!jouCols.some((c) => c.name === 'disposition')) {
+    db.exec('ALTER TABLE job_order_units ADD COLUMN disposition TEXT');
+  }
+  if (!qcCols.some((c) => c.name === 'disposition')) {
+    db.exec('ALTER TABLE qc_records ADD COLUMN disposition TEXT');
+  }
+
+  // (SCHEMA_VERSION 27) First-class production batches. production_batches table
+  // itself comes from createSchema().
+  if (!jouCols.some((c) => c.name === 'batch_id')) {
+    db.exec('ALTER TABLE job_order_units ADD COLUMN batch_id INTEGER REFERENCES production_batches(id) ON DELETE SET NULL');
+  }
+  if (!qcCols.some((c) => c.name === 'batch_id')) {
+    db.exec('ALTER TABLE qc_records ADD COLUMN batch_id INTEGER REFERENCES production_batches(id) ON DELETE CASCADE');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_jou_batch ON job_order_units(batch_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_qc_batch ON qc_records(batch_id)');
+
+  // (SCHEMA_VERSION 28) Production teams + scheduling. production_teams /
+  // production_team_members tables come from createSchema().
+  const joCols2 = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
+  if (!joCols2.some((c) => c.name === 'team_id')) {
+    db.exec('ALTER TABLE job_orders ADD COLUMN team_id INTEGER REFERENCES production_teams(id) ON DELETE SET NULL');
+  }
+  if (!joCols2.some((c) => c.name === 'planned_start')) db.exec('ALTER TABLE job_orders ADD COLUMN planned_start TEXT');
+  if (!joCols2.some((c) => c.name === 'due_date')) db.exec('ALTER TABLE job_orders ADD COLUMN due_date TEXT');
+  if (!joCols2.some((c) => c.name === 'priority')) db.exec('ALTER TABLE job_orders ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
+  if (!joCols2.some((c) => c.name === 'work_center')) db.exec('ALTER TABLE job_orders ADD COLUMN work_center TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_job_orders_team ON job_orders(team_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_job_orders_due ON job_orders(due_date)');
 
   // Purchasing: a purchase order can name the supplier it's raised against + an
   // expected delivery date (both optional; older POs just carried the vendor name in
@@ -1452,6 +1877,20 @@ function migrate(): void {
   }
   if (!orderCols2.some((c) => c.name === 'fulfilled_at')) {
     db.exec('ALTER TABLE orders ADD COLUMN fulfilled_at TEXT');
+  }
+
+  // (SCHEMA_VERSION 29) Sale-order release: who released the goods from the warehouse and
+  // when, plus a per-line released quantity for non-serialized lines. Serialized finished
+  // units earmarked for a SO carry job_order_units.status = 'reserved' (physical stock is
+  // only drawn down when the order reaches a confirmed/completed status).
+  if (!orderCols2.some((c) => c.name === 'released_at')) {
+    db.exec('ALTER TABLE orders ADD COLUMN released_at TEXT');
+  }
+  if (!orderCols2.some((c) => c.name === 'released_by')) {
+    db.exec('ALTER TABLE orders ADD COLUMN released_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+  if (!oiCols.some((c) => c.name === 'released_qty')) {
+    db.exec('ALTER TABLE order_items ADD COLUMN released_qty REAL NOT NULL DEFAULT 0');
   }
 
   // Backfill chart-of-accounts entries added to DEFAULT_COA after a tenant already ran
@@ -1553,6 +1992,19 @@ function migrate(): void {
       );
       touched = true;
     }
+    // (SCHEMA_VERSION 23) The dedicated always-on "Cash Advance" deduction row is gone — a cash
+    // advance is now just one of the itemized Other Deductions lines (see the payroll detail
+    // view's "Other Deductions" editor / hr.routes.ts recomputeDeductionsFor), so an all-zero
+    // row no longer clutters every slip. Any legacy non-zero top-level cash_advance still shows,
+    // folded into the itemized list by hr-payroll-print.js's buildSlipContext. Drop just that
+    // element (with its own leading newline+indent from the seed), leaving surrounding markup —
+    // and the {{#other_deductions}} loop the SCHEMA_VERSION 22 step above just added — intact.
+    if (body.includes('<span>Cash Advance</span><span>{{cash_advance}}</span></div>')) {
+      body = body
+        .replace('\n      <div class="slip-line"><span>Cash Advance</span><span>{{cash_advance}}</span></div>', '')
+        .replace(/\s*<div[^>]*><span>Cash Advance<\/span><span>\{\{cash_advance\}\}<\/span><\/div>/, '');
+      touched = true;
+    }
     if (touched) db.prepare('UPDATE doc_templates SET body = ?, updated_at = datetime(\'now\') WHERE id = ?').run(body, slipTpl.id);
   }
 
@@ -1577,6 +2029,35 @@ function migrate(): void {
     CREATE INDEX IF NOT EXISTS idx_form_record_action_runs_record
       ON form_record_action_runs(form_record_id);
   `);
+
+  // (SCHEMA_VERSION 31) Production team members are tracked by HR employee, not login
+  // account — most floor workers have no system account at all. Rebuild the table (SQLite
+  // can't change a column's FK target in place); a pre-existing row only carries across if
+  // its user has a linked employee record (employees.user_id) — anything else has nothing
+  // to migrate to and is dropped.
+  const ptmCols = db.prepare('PRAGMA table_info(production_team_members)').all() as { name: string }[];
+  if (ptmCols.length && !ptmCols.some((c) => c.name === 'employee_id')) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    db.exec(`
+      BEGIN;
+      CREATE TABLE production_team_members_new (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_id     INTEGER NOT NULL REFERENCES production_teams(id) ON DELETE CASCADE,
+        employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+        role        TEXT,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(team_id, employee_id)
+      );
+      INSERT INTO production_team_members_new (id, team_id, employee_id, role, created_at)
+        SELECT m.id, m.team_id, e.id, m.role, m.created_at
+        FROM production_team_members m JOIN employees e ON e.user_id = m.user_id;
+      DROP TABLE production_team_members;
+      ALTER TABLE production_team_members_new RENAME TO production_team_members;
+      CREATE INDEX IF NOT EXISTS idx_ptm_team ON production_team_members(team_id);
+      COMMIT;
+    `);
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
@@ -1862,6 +2343,12 @@ function seedHrRequestForms(): void {
         // out against the shift (src/hr-payroll-compute.ts); this form only authorizes it.
         { key: 'hours_estimate', label: 'Estimated OT Hours', type: 'number', required: false, options: [], default: '' },
         area('reason', 'Reason', true),
+        // Read directly by the compute engine as a per-day override of PayrollPolicy.max_ot_hours
+        // — leave blank for a routine request (policy cap applies as usual); filled in by
+        // whoever approves it when the cap needs to flex for that one day (e.g. policy caps OT
+        // at 2h/day but the boss okayed 4h today), this day's OT is capped at THIS number
+        // instead. Doesn't lower the cap if set below policy.max_ot_hours — only ever raises it.
+        { key: 'approved_hours', label: 'Approved OT Hours (overrides the daily OT cap for this day only — leave blank to use the policy max)', type: 'number', required: false, options: [], default: '' },
       ],
     },
     {
@@ -1897,6 +2384,24 @@ function seedHrRequestForms(): void {
       ],
     },
     {
+      // Authorizes a shifted lunch/break window for one specific day — e.g. an approved 1:00-
+      // 2:00 lunch instead of the shift's own structural midday slot (see lunchWindow in
+      // hr-payroll-compute.ts). Read directly by the compute engine's lunch-lateness check
+      // (PayrollPolicy.count_lunch_late_as_late) so a lunch taken later than the structural
+      // window, but returned from on time for ITS OWN length, isn't flagged as a late return.
+      name: 'Lunch/Break Offset Request', slug: 'lunch_offset_form', prefix: 'LOF', icon: 'history',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Date'),
+        { key: 'new_lunch_out', label: 'Approved Lunch/Break Start', type: 'time', required: true, options: [], default: '' },
+        // Optional — left blank, the compute engine defaults the approved return to new_lunch_out
+        // + PayrollPolicy.lunch_break_minutes (the company's normal lunch duration, just shifted
+        // later). Only needed when the approved break is a different LENGTH too, not just later.
+        { key: 'new_lunch_in', label: 'Approved Return (optional — leave blank for the normal lunch length)', type: 'time', required: false, options: [], default: '' },
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
       name: 'Holiday Work Request', slug: 'holiday_work_request', prefix: 'HW', icon: 'calendar',
       fields: [
         { ...employeeField },
@@ -1926,6 +2431,21 @@ function seedHrRequestForms(): void {
         { key: 'approved_by', label: 'Approved By', type: 'text', required: false, options: [], default: '' },
       ],
     },
+    {
+      // Not a formal leave/OT/undertime form and never checked by hasForm() in
+      // hr-payroll-compute.ts — purely documentation for an unplanned absence/lateness the
+      // employee couldn't file a real request for (sick and messaged the group chat, an
+      // accident on the way to work, etc.), reported informally by chat or a call to a
+      // supervisor. The day is still judged as a plain absence/late unless a real Leave/
+      // Undertime/Half Day form is also linked — this just records that it WAS reported, not a
+      // no-call-no-show.
+      name: 'Reported (Chat/Verbal)', slug: 'reported_absence', prefix: 'RPT', icon: 'messages',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Date'),
+        area('reason', 'What was reported', true),
+      ],
+    },
   ];
   for (const f of FORMS) {
     const existing = db.prepare('SELECT id, fields FROM form_definitions WHERE slug = ?').get(f.slug) as
@@ -1947,6 +2467,20 @@ function seedHrRequestForms(): void {
           const newTimeIn = (f.fields as { key: string }[]).find((fl) => fl.key === 'new_time_in');
           if (newTimeIn) {
             fields.splice(at >= 0 ? at : fields.length, 0, newTimeIn);
+            db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
+          }
+        }
+      } catch { /* leave as-is if the stored fields are somehow unparseable */ }
+    }
+    // Same self-correcting touch-up for an install that already had overtime_request seeded
+    // before approved_hours (the per-day OT-cap override) existed.
+    if (f.slug === 'overtime_request') {
+      try {
+        const fields = JSON.parse(existing.fields) as { key: string }[];
+        if (!fields.some((fl) => fl.key === 'approved_hours')) {
+          const approvedHours = (f.fields as { key: string }[]).find((fl) => fl.key === 'approved_hours');
+          if (approvedHours) {
+            fields.push(approvedHours);
             db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
           }
         }
@@ -2356,7 +2890,6 @@ function payrollSlipTemplateBody(): string {
       <div class="slip-line"><span>PhilHealth</span><span>{{philhealth}}</span></div>
       <div class="slip-line"><span>Pag-IBIG</span><span>{{pagibig}}</span></div>
       <div class="slip-line"><span>Withholding Tax</span><span>{{withholding_tax}}</span></div>
-      <div class="slip-line"><span>Cash Advance</span><span>{{cash_advance}}</span></div>
       {{#other_deductions}}<div class="slip-line"><span>{{label}}</span><span>{{amount}}</span></div>{{/other_deductions}}
       <div class="slip-line"><span>Late</span><span>{{late_absences}}</span></div>
       <div class="slip-total"><span>Total Deductions</span><span>{{total_deductions}}</span></div>

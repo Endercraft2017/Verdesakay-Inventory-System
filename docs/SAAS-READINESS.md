@@ -1,10 +1,14 @@
 # SaaS / Multi-Tenancy Readiness — Schema Sweep
 
-> **Status:** Phases 1–2 landed (§10). Connection registry + async context (2026-08-28),
-> then the `platform.db` catalog + tenant-resolution middleware + provisioning CLI +
-> `/api/signup` (2026-08-29). Single-tenant / self-hosted still behaves exactly as before
-> (the `default` tenant needs no catalog row). Steps 3+ not started.
-> **Last updated:** 2026-08-29
+> **Status:** Phases 1–8 landed (§10). Connection registry + async context (2026-08-28);
+> `platform.db` catalog + tenant-resolution middleware + provisioning CLI + `/api/signup`
+> (2026-08-29); per-tenant uploads + BYO AI key + `users.email`/password reset + plan
+> quotas & lifecycle (2026-08-29); **per-tenant feature modules + the `/_platform` owner
+> console (2026-09-10)**. Single-tenant / self-hosted still behaves exactly as before (the
+> `default` tenant needs no catalog row, has every module, and the console is off unless
+> `PLATFORM_CONSOLE=true`). Remaining: custom domains / branding / billing, backups job,
+> retention policies.
+> **Last updated:** 2026-09-10
 > **Question asked:** "Can this be a SaaS (many companies on one deployment)?"
 
 **Short answer:** yes, and the current design is closer than it looks — *because* it's
@@ -225,17 +229,30 @@ New, and it lives **outside** the tenant DBs (its own `platform.db` or Postgres)
 
 ---
 
-## 9. Plans, quotas, lifecycle
+## 9. Plans, quotas, lifecycle, feature modules
 
-None of this exists yet; all enforceable cheaply per-tenant because the data is one file:
+All enforceable cheaply per-tenant because the data is one file:
 
 - **Quotas:** users, inventory items, storage MB (`uploads/<slug>` size), AI calls/month,
   emails/day (you already log every send in `mail_log`). Check at the create endpoints;
-  surface usage in an admin page.
+  surface usage in an admin page. ✅ **done 2026-08-29** (`src/quota.ts`).
 - **Lifecycle states** gate the tenant-resolution middleware: `trial` (banner +
   countdown), `past_due` (read-only or lock), `suspended` (holding page), `purged`.
+  ✅ **done 2026-08-29**.
+- **Feature modules** — which capability *areas* a workspace has, not just how many rows.
+  ✅ **done 2026-09-10** — `src/modules.ts`: `MODULES` = inventory / manufacturing /
+  purchasing / hr / accounting / ai / mobile / email / quickbooks; the rest (Home,
+  Documents, Templates, Messages, user Admin, Activity) is un-gated "core". The enabled
+  set = `PLAN_MODULES[plan]` (`src/plans.ts`) overridden by a nullable `tenants.modules`
+  JSON array, with `MODULE_DEPS` unioned in (`manufacturing`/`purchasing` → `inventory`).
+  `requireModule(name)` wraps the route mounts in `src/app.ts` (402 when off, ahead of
+  `requireAuth`); `GET /api/tenant`, `POST /auth/login` and `GET /auth/me` carry
+  `modules[]`; `nav-config.js` leaves/subtabs take a `requiredModule` and `app.js` /
+  mobile `app.js` expose `hasModule()`; the `/m` PWA serves a "not enabled" notice when
+  `mobile` is off. CLI: `npm run tenant:modules`. `default` tenant = every module.
+  Tests: `tests/modules.test.ts`.
 - **Retention** by plan for `activity_log`, `mail_log`, `idempotency_keys`,
-  soft-deleted rows.
+  soft-deleted rows. *(still TODO.)*
 
 ---
 
@@ -268,8 +285,21 @@ None of this exists yet; all enforceable cheaply per-tenant because the data is 
    `/ai/chat`; `GET /api/tenant` + a frontend trial/past-due banner; a lapsed `trial` or
    `past_due` → writes blocked (reads + auth still work); `npm run tenant:plan|usage`.
    *Retention policies still TODO.*
-7. **Custom domains, per-tenant branding, billing integration** (§8).
-8. **Backups job, deploy-time migration runner** (§5, §7).
+7. ~~**Feature modules** — enable/disable whole capability areas per tenant (§9).~~ ✅
+   2026-09-10 — `src/modules.ts` (`requireModule()` gate + plan-bundle defaults + nullable
+   `tenants.modules` override + dep union), `modules[]` on `/api/tenant` & the auth
+   payloads, `requiredModule` in `nav-config.js` + `hasModule()` in desktop & mobile
+   `app.js`, `npm run tenant:modules`. `tests/modules.test.ts`.
+8. ~~**Owner console** — the `/_platform` control-plane UI + `platform_users` (§8, §11).~~
+   ✅ 2026-09-10 — `src/platform-users.ts` (operator accounts + sessions in `platform.db`,
+   `requirePlatformAuth`, `PLATFORM_ADMIN_TOKEN` option), `src/routes/platform.routes.ts`
+   (`/_platform/api/*`: login / tenants CRUD / plan+status+modules PATCH / purge / log;
+   404s off the apex host), `web-console/` (dependency-free SPA), mounted in `src/app.ts`
+   only when `PLATFORM_CONSOLE=true`. CLI: `npm run platform:user`. Tests:
+   `tests/platform-console*.test.ts`.
+9. **Custom domains, per-tenant branding, billing integration** (§8).
+10. **Backups job, deploy-time migration runner** (§5, §7).
+11. **Retention policies** by plan (`activity_log` / `mail_log` / soft-deletes) (§9).
 
 Steps 1–3 are "multi-tenant at all". 4–8 are "a product you can sell".
 

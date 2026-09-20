@@ -160,14 +160,16 @@ router.put('/form-definitions/:id/template-body', (req, res) => {
   const input = parseBody(templateSchema, req.body);
   if (existing.template_id) {
     run(
-      `UPDATE doc_templates SET name = ?, type = ?, period = ?, body = ?, updated_at = datetime('now') WHERE id = ?`,
-      input.name, input.type, input.period ?? null, input.body, existing.template_id
+      `UPDATE doc_templates SET name = ?, type = ?, period = ?, body = ?, copies_per_record = ?, records_per_page = ?, tile_fill = ?, repeat_count = ?, tile_continuous = ?, updated_at = datetime('now') WHERE id = ?`,
+      input.name, input.type, input.period ?? null, input.body, input.copies_per_record, input.records_per_page, input.tile_fill,
+      input.repeat_count, input.tile_continuous ? 1 : 0, existing.template_id
     );
     res.json({ id: existing.template_id });
   } else {
     const info = run(
-      'INSERT INTO doc_templates (name, type, period, body, created_by) VALUES (?, ?, ?, ?, ?)',
-      input.name, input.type, input.period ?? null, input.body, req.user!.id
+      'INSERT INTO doc_templates (name, type, period, body, copies_per_record, records_per_page, tile_fill, repeat_count, tile_continuous, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      input.name, input.type, input.period ?? null, input.body, input.copies_per_record, input.records_per_page, input.tile_fill,
+      input.repeat_count, input.tile_continuous ? 1 : 0, req.user!.id
     );
     run(`UPDATE form_definitions SET template_id = ?, updated_at = datetime('now') WHERE id = ?`, info.lastInsertRowid, id);
     res.status(201).json({ id: info.lastInsertRowid });

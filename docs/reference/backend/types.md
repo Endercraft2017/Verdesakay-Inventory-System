@@ -38,12 +38,12 @@ Each mirrors a table in `src/db.ts` (`init()`). One-line summaries (see `db.md` 
 - `Employee` — the 201-file row; `photo: string | null` holds a data URI, not a file path; optional `department_name` (joined).
 - `EmployeeDocument` — 201-file document metadata, optional `uploaded_by_name` (joined).
 - `AttendancePeriod` — a payroll cutoff; optional `employee_count` (computed, roster size).
-- `AttendanceRecord` — one employee/day row within a cutoff.
+- `AttendanceRecord` — one employee/day row within a cutoff. `lunch_out`/`lunch_in` (SCHEMA_VERSION 25) hold the day's lunch-break bracket — split from the raw `time_punches` on reconcile or hand-typed in the grid; **display-only**, the payroll engine ignores them and subtracts the structural `PayrollPolicy.lunch_break_minutes` instead.
 - `FieldDef` — one field definition inside a `form_definitions.fields` JSON array: `{ key, label, type: 'text'|'number'|'date'|'select'|'textarea'|'checkbox', required, options: string[], default: string }` (`options` only meaningful for `type: 'select'`).
 - `FormDefinition` — `fields: string | FieldDef[]` (raw JSON string in the DB row; parsed array once a route deserializes it), optional `record_count`.
 - `FormRecord` — `data: string | Record<string, unknown>` (same raw/parsed duality as `fields` above), optional `created_by_name`/`form_name` (joined).
 - `GlobalVariable` — `{ key, label, value, updated_by, updated_at }`.
-- `CompanyProfile` — `{ name, address, phone, email, logo_url }` (not a DB row — this shape is actually persisted via the `settings` key-value store under a single key, not its own table; see `templates.routes.ts`).
+- `CompanyProfile` — `{ name, address, phone, email, logo_url, compress_images }` (not a DB row — this shape is actually persisted via the `settings` key-value store under a single key, not its own table; see `templates.routes.ts`). `compress_images` (default `true`) is a client-only flag: the Messages composers downscale image attachments over ~1 MB before upload when it's on.
 - `DocVariable` — a `doc_variables` registry row (constant / bound field / formula variable for the document-template editor).
 - `CatalogEntry` / `CatalogGroup` — `{ path, label }` / `{ group, items: CatalogEntry[] }`, the shape of `DATA_SOURCE_CATALOG` in `src/doc-catalog.ts`.
 

@@ -43,7 +43,10 @@ const API = (() => {
     if (ct.includes('application/json')) data = await res.json();
 
     if (!res.ok) {
-      throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+      const err = new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+      err.status = res.status;
+      err.data = data;   // full parsed body — callers can inspect extra fields (e.g. a 409's details)
+      throw err;
     }
     return data;
   }

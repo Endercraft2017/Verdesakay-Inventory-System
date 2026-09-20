@@ -24,10 +24,11 @@ function loadModule() {
     buildPayrollSlipsHtml: (data: unknown[], templateBody?: string) => string;
     buildSlipContext: (d: Record<string, unknown>) => Record<string, string>;
     FALLBACK_BODY: string;
+    _fitScale: (contentHeight: number, boxHeight: number) => number | null;
   };
 }
 
-const { buildPayrollSlipsHtml, buildSlipContext, FALLBACK_BODY } = loadModule();
+const { buildPayrollSlipsHtml, buildSlipContext, FALLBACK_BODY, _fitScale } = loadModule();
 
 const CUSTOM_BODY = '<div class="slip">{{employee_name}} | earn {{total_earnings}} | ded {{total_deductions}} | net {{net_pay}}</div>';
 
@@ -81,6 +82,18 @@ describe('buildSlipContext', () => {
     expect(buildSlipContext(emp()).other_deductions).toEqual([]);
     expect(buildSlipContext(emp({ other_deductions: null })).other_deductions).toEqual([]);
   });
+
+  it('folds a legacy non-zero top-level cash_advance into other_deductions as the first line (the template no longer has its own Cash Advance row)', () => {
+    const ctx = buildSlipContext(emp({ cash_advance: 1500, other_deductions: [{ label: 'Uniform', amount: 350 }] }));
+    expect(ctx.other_deductions).toEqual([
+      { label: 'Cash Advance', amount: '1,500.00' },
+      { label: 'Uniform', amount: '350.00' },
+    ]);
+  });
+
+  it('a zero cash_advance is not folded in — no empty Cash Advance line', () => {
+    expect(buildSlipContext(emp({ cash_advance: 0 })).other_deductions).toEqual([]);
+  });
 });
 
 describe('buildPayrollSlipsHtml', () => {
@@ -124,5 +137,42 @@ describe('buildPayrollSlipsHtml', () => {
     const html = buildPayrollSlipsHtml([emp({ other_deductions: [{ label: 'Cash Advance', amount: 2000 }, { label: 'Uniform', amount: 350 }] })], body);
     expect(html).toContain('Cash Advance: 2,000.00');
     expect(html).toContain('Uniform: 350.00');
+  });
+
+  // Regression: each of the 4 slip cells on a page must be its own CSS positioning boundary
+  // (position:relative), or a floating object (an image "made movable" in the template editor)
+  // inside the slip body resolves its %-based position against the shared page instead of its
+  // own quarter — every copy's float lands at the same spot, oversized (the payslip-logo bug).
+  it('gives each grid cell its own positioning boundary for floating template content', () => {
+    const html = buildPayrollSlipsHtml([emp()], CUSTOM_BODY);
+    expect(html).toContain('.payslip-grid > div { position: relative; overflow: hidden; }');
+  });
+
+  // Regression: fitPayslipCells() must scale a naturally-sized *inner* wrapper, never the
+  // fixed-height/overflow:hidden cell itself — an element's own overflow clip is resolved
+  // against its own box before its own transform, so scaling that same element only ever
+  // shrinks the content that already survived the clip (NET PAY/signature already gone).
+  // Each of the 4 cells needs its own such wrapper for fitPayslipCells() to find and scale.
+  it('wraps each of the 4 rendered slips in its own .payslip-cell-inner, inside the (unscaled) grid cell', () => {
+    const html = buildPayrollSlipsHtml([emp()], CUSTOM_BODY);
+    expect(html.split('<div class="payslip-cell-inner">').length - 1).toBe(4);
+  });
+});
+
+// _fitScale is the pure-math half of fitPayslipCells() (the DOM-measuring half needs a real
+// browser layout — scrollHeight/clientHeight — so it isn't exercised here; see
+// hr-payroll-print.js and its call site in form-records.js's printSlips()).
+describe('_fitScale', () => {
+  it('returns null when content already fits its cell', () => {
+    expect(_fitScale(100, 150)).toBeNull();
+    expect(_fitScale(150, 150)).toBeNull();
+  });
+
+  it('returns the shrink factor needed when content overflows its cell (a customized template with a logo, or extra other_deductions lines, taller than the fixed 2x2 grid cell)', () => {
+    expect(_fitScale(200, 150)).toBeCloseTo(0.75);
+  });
+
+  it('treats a zero/negative box height as unmeasured (not yet laid out) rather than dividing by it', () => {
+    expect(_fitScale(200, 0)).toBeNull();
   });
 });

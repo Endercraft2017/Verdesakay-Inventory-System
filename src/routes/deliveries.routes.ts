@@ -187,7 +187,21 @@ router.post('/:id/complete', requirePermission('delivery.run'), (req, res) => {
       url: '#/deliveries', tag: 'del-' + d.id,
     });
   }
-  res.json({ ok: true, status: input.outcome });
+
+  // If this delivery drops a sale order that hasn't been fulfilled yet, hand the client
+  // enough to offer "mark SO-xxxx completed?" (which ships the remaining stock).
+  let order: { id: number; number: string; status: string } | null = null;
+  if (input.outcome === 'delivered' && d.order_id
+      && req.user!.permissions.includes('orders.edit')) {
+    const o = queryOne<{ id: number; number: string; status: string; type: string }>(
+      'SELECT id, number, status, type FROM orders WHERE id = ?', d.order_id
+    );
+    if (o && o.type === 'sale' && !['completed', 'cancelled'].includes(String(o.status).toLowerCase())) {
+      order = { id: o.id, number: o.number, status: o.status };
+    }
+  }
+
+  res.json({ ok: true, status: input.outcome, order });
 });
 
 // DELETE /api/deliveries/:id — remove a not-yet-started delivery (delivery.manage)

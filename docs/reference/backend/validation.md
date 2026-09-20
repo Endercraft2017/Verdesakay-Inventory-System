@@ -79,7 +79,7 @@ Runs `schema.safeParse(data)`. On failure, builds a message from the *first* iss
 - `employeeSchema` — `{ name: min 1 max 160, department_id: optionalId, position: max 120 optional/nullable, daily_rate: numCoerce.min(0) default 0, status: employeeStatusEnum default 'probationary', start_date: max 40 optional/nullable, sss_no/philhealth_no/pagibig_no/tin_no: optionalIdText, photo: preprocess('' -> null) then string max 2,000,000 chars matching /^data:image\// optional/nullable }` — the 2MB cap bounds the client-resized JPEG data URI.
 - `attendancePeriodSchema` — `{ label: min 1 max 120, start_date: min 1 max 40, end_date: min 1 max 40 }`, `.refine(end_date >= start_date)` with the error attached to the `end_date` path.
 - `timeOfDay` (not exported) — `union([trimmed.max(20), null]).optional()`.
-- `attendanceDaySchema` (not exported) — `{ work_date: min 1 max 40, time_in/time_out: timeOfDay, notes: optionalText }`.
+- `attendanceDaySchema` (not exported) — `{ work_date: min 1 max 40, time_in/lunch_out/lunch_in/time_out: timeOfDay, notes: optionalText, shift_id?, form_record_id(s)?, holiday_type?, rest_day?, min_hours_decision? }`. `lunch_out`/`lunch_in` are the day's lunch bracket — recorded/displayed only, never read by the payroll engine.
 - `saveAttendanceSchema` — `{ employee_id: coerce.number().int().positive(), days: array(attendanceDaySchema).max(62) }` — the 62-day cap is a sanity bound (covers any realistic cutoff length, including a full two-month range).
 - `addRosterEmployeeSchema` — `{ employee_id: coerce.number().int().positive() }`.
 - `generatePayslipsSchema` — `{ payroll_period: min 1 max 120, pay_date: max 40 optional/nullable }`.

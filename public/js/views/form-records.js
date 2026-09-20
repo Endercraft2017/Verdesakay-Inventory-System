@@ -16,11 +16,11 @@ App.register('form-records', async (view, filter) => {
     try {
       const forms = await API.get('/form-definitions');
       const f = forms.find((x) => x.slug === filter.slug);
-      if (f) { await renderFormView(view, f.id, filter.period || ''); return; }
+      if (f) { await renderFormView(view, f.id, filter.period || '', filter.status || ''); return; }
     } catch { /* fall through to the index */ }
   }
   if (filter.form_id) {
-    await renderFormView(view, Number(filter.form_id), filter.period || '');
+    await renderFormView(view, Number(filter.form_id), filter.period || '', filter.status || '');
   } else {
     await renderIndex(view, filter.scope || '');
   }
@@ -99,12 +99,12 @@ async function renderIndex(view, onlyScope) {
 }
 
 /* ── Per-form records view ───────────────────────────────────────────────── */
-async function renderFormView(view, formId, initialPeriod) {
+async function renderFormView(view, formId, initialPeriod, initialStatus) {
   let formDef = null;
   let searchTimer;
   let currentRecords = [];
   let selectedIds = new Set();
-  const state = { q: '', status: '', period: initialPeriod || '' };
+  const state = { q: '', status: initialStatus || '', period: initialPeriod || '' };
   // Payroll "All periods" view: attendance_periods rows (id/dates), matched to a payslip's
   // free-text `period` label — that label is independently editable at Generate Payslips time
   // (see hr.routes.ts), so a match isn't guaranteed. A bundle with no match still shows its
@@ -161,9 +161,9 @@ async function renderFormView(view, formId, initialPeriod) {
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="fr-search" placeholder="${isPayroll ? 'Search employee name…' : 'Search number…'}" /></div>
       <select id="fr-status" style="margin-left:8px">
-        <option value="">All statuses</option>
-        ${['draft', 'submitted', 'approved', 'rejected', 'completed'].concat(isPayroll ? ['paid'] : [])
-          .map((s) => `<option value="${s}">${s}</option>`).join('')}
+        <option value="" ${state.status ? '' : 'selected'}>All statuses</option>
+        ${['pending', 'draft', 'submitted', 'approved', 'rejected', 'completed'].concat(isPayroll ? ['paid'] : [])
+          .map((s) => `<option value="${s}" ${state.status === s ? 'selected' : ''}>${s}</option>`).join('')}
       </select>
       ${isPayroll ? `
         <select id="fr-period" style="margin-left:8px;padding:6px 8px;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:13px" title="Filter by payroll period">
@@ -172,7 +172,7 @@ async function renderFormView(view, formId, initialPeriod) {
         <button class="btn secondary" id="fr-import-csv" style="margin-left:8px">${UI.icon('upload')} Upload CSV</button>
         <button class="btn secondary" id="fr-print-slips" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
       ${canBulkPrint ? `<button class="btn secondary" id="fr-print-all-tpl" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
-      <button class="btn secondary" id="fr-download-csv" style="margin-left:8px" title="Download the currently filtered records as a CSV file">${UI.icon('download')} Download CSV</button>
+      <button class="btn secondary" id="fr-download-csv" style="margin-left:8px" title="${isPayroll ? 'Download the currently filtered payslips as a styled Excel workbook, with summary and per-department totals' : 'Download the currently filtered records as a CSV file'}">${UI.icon('download')} ${isPayroll ? 'Download Excel' : 'Download CSV'}</button>
       <button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete Period</button>
       <button class="btn" id="fr-new" style="margin-left:8px">${UI.icon('plus')} New Record</button>
     </div>
@@ -347,12 +347,33 @@ async function renderFormView(view, formId, initialPeriod) {
     const s = v == null ? '' : String(v);
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
-  // `records`/`labelHint` are only passed by a payroll bundle's own "Export CSV" button (scopes
-  // the download to just that period); the top-level header button calls this with no args,
-  // exporting whatever's currently filtered — unchanged from before.
+  // `records`/`labelHint` are only passed by a payroll bundle's own "Export Excel" button
+  // (scopes the download to just that period); the top-level header button calls this with no
+  // args, exporting whatever's currently filtered — unchanged from before.
+  //
+  // Payroll gets a real styled .xlsx (colored header/summary/department bands, currency +
+  // date cell formats — see hr-payroll-export.js; CSV is plain text and can't carry any of
+  // that). Every other form keeps the original plain-CSV export, unchanged.
   function downloadCsv(records, labelHint) {
     const list = records || currentRecords;
     if (!list.length) { UI.toast('No records to export', 'error'); return; }
+    const baseName = `${(formDef.slug || 'records') + (labelHint || state.period ? '-' + (labelHint || state.period) : '')}`.replace(/[^a-z0-9._-]+/gi, '_');
+
+    if (isPayroll) {
+      if (typeof downloadPayrollWorkbook === 'undefined' || typeof XLSX === 'undefined') {
+        UI.toast('Excel export module failed to load', 'error');
+        return;
+      }
+      // The period IS the workbook's title (a bundle's own labelHint, else whatever period is
+      // selected) — only an unfiltered "All periods" export has no single period to name it
+      // after, so that falls back to the form's own name instead.
+      const title = labelHint || state.period || formDef.name;
+      const subtitle = `${list.length} payslip${list.length === 1 ? '' : 's'}` +
+        (!labelHint && !state.period && state.status ? ` — status "${state.status}"` : '');
+      downloadPayrollWorkbook(list, formDef, { title, subtitle, filename: `${baseName}.xlsx` });
+      return;
+    }
+
     const headers = ['Number', ...formDef.fields.map((f) => f.label), 'Status', 'Date'];
     const rows = list.map((r) => [
       r.number,
@@ -365,7 +386,7 @@ async function renderFormView(view, formId, initialPeriod) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${(formDef.slug || 'records') + (labelHint || state.period ? '-' + (labelHint || state.period) : '')}.csv`.replace(/[^a-z0-9._-]+/gi, '_');
+    a.download = `${baseName}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -414,7 +435,14 @@ async function renderFormView(view, formId, initialPeriod) {
       bodyHTML: `<iframe id="payslip-preview-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
       cancelText: 'Close',
       confirmText: 'Print…',
-      onOpen: (ov) => { ov.querySelector('#payslip-preview-frame').srcdoc = full; },
+      onOpen: (ov) => {
+        const ifr = ov.querySelector('#payslip-preview-frame');
+        // Once the slip HTML has actually rendered (real layout needed — scrollHeight is
+        // meaningless before then), shrink any cell whose content overflows its fixed-height
+        // grid cell instead of leaving it silently clipped by .payslip-grid's overflow:hidden.
+        ifr.onload = () => { if (typeof fitPayslipCells === 'function') fitPayslipCells(ifr.contentDocument); };
+        ifr.srcdoc = full;
+      },
       onConfirm: (ov) => {
         const ifr = ov.querySelector('#payslip-preview-frame');
         ifr.contentWindow.focus();
@@ -443,10 +471,11 @@ async function renderFormView(view, formId, initialPeriod) {
     if (d.status === 'below_minimum_denied') return '<span class="badge-pill status-cancelled" title="Under the configured minimum work time, HR denied pay for it">Below Min — Denied</span>';
     if (d.status === 'absent') return '<span class="badge-pill status-cancelled">Absent</span>';
     if (d.status === 'paid_leave') return '<span class="badge-pill status-completed">Paid Leave</span>';
+    if (d.half_day_manual) return '<span class="badge-pill status-confirmed" title="HR manually credited this day a half day (0.5 day) on the Daily Time grid — no Half Day request was ever filed for it.">Half Day (recorded, no request)</span>';
+    if (d.possible_half_day) return '<span class="badge-pill status-confirmed" title="This day\'s times look like a half day with no Half Day request linked — it\'s paid as a half day (0.5 day, judged against just that AM/PM window), but file the actual Half Day request on the Daily Time grid to keep the record straight.">Half Day (unlinked)</span>';
     if (d.status === 'half_day') return '<span class="badge-pill status-confirmed" title="Judged against just this half\'s own AM/PM window, not the full shift">Half Day</span>';
     if (d.status === 'undertime') return `<span class="badge-pill status-cancelled" title="Under the configured whole-day minimum — paid proportionally for actual hours present (${UI.money(d.undertime_day_pay)}), not counted as a whole day worked">Undertime Day</span>`;
     if (d.below_minimum) return '<span class="badge-pill status-confirmed" title="Under the configured minimum work time — still paid for actual hours (allowed by default)">Below Min — Allowed</span>';
-    if (d.possible_half_day) return '<span class="badge-pill status-confirmed" title="This day\'s times look like a half day, but no Half Day request is linked — it was judged (and any late/undertime deduction charged) against the FULL shift instead of just a half. Link a Half Day request on the Daily Time grid if that\'s what this was.">Possible Half Day (unlinked)</span>';
     return '';
   }
 
@@ -622,8 +651,11 @@ async function renderFormView(view, formId, initialPeriod) {
   // Print one or many records through the form's linked template (data filled in) — additive
   // to, not a replacement for, the payroll-specific printSlips() above (which stays the
   // specialized 2-up slip layout for hr_payroll). Any other form that has a template linked in
-  // Form Builder can print its records this way, including "Print All"/"Print selected" — each
-  // record renders as its own page (page-break-after between them), unlike payroll's 2-up grid.
+  // Form Builder can print its records this way, including "Print All"/"Print selected". By
+  // default each record renders as its own page (page-break-after between them); if the
+  // template opts into a grid (Layout tab > Print Grid: rows/columns/fill mode), records are
+  // tiled N-up instead via print-tiling.js's buildTiledPagesHtml — the same layout
+  // hr-payroll-print.js hand-built for payroll, generalized for any template.
   async function printRecordsViaTemplate(records) {
     if (!formDef.template_id) { UI.toast('No print template linked to this form', 'error'); return; }
     if (!records.length) { UI.toast('No records to print', 'error'); return; }
@@ -632,11 +664,15 @@ async function renderFormView(view, formId, initialPeriod) {
     catch { UI.toast('The linked template could not be loaded', 'error'); return; }
     let company = {};
     try { company = await API.get('/templates/company'); } catch { /* optional */ }
-    const pages = records.map((r) => {
-      const ctx = { ...r.data, record: { number: r.number, status: r.status, created_at: r.created_at }, company };
-      return renderTemplate(tpl.body, ctx);
-    });
-    const html = pages.map((p, i) => (i < pages.length - 1 ? `<div style="page-break-after:always">${p}</div>` : p)).join('');
+    const renderRecord = (r) => renderTemplate(tpl.body, { ...r.data, record: { number: r.number, status: r.status, created_at: r.created_at }, company });
+    const tiled = (typeof buildTiledPagesHtml === 'function')
+      ? buildTiledPagesHtml(records, renderRecord, {
+        copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
+        continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+        pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tpl.body) : undefined,
+      })
+      : '';
+    const html = tiled || records.map((r, i) => (i < records.length - 1 ? `<div style="page-break-after:always">${renderRecord(r)}</div>` : renderRecord(r))).join('');
     const title = records.length > 1 ? `${formDef.name} (${records.length})` : formDef.name + ' - ' + records[0].number;
     const full = UI.printableHtml(html, title);
     // Attaching a saved PDF to Files only makes sense for a single record — a bulk print's
@@ -652,7 +688,13 @@ async function renderFormView(view, formId, initialPeriod) {
       cancelText: 'Close',
       confirmText: 'Print…',
       onOpen: (ov) => {
-        ov.querySelector('#fr-tpl-preview-frame').srcdoc = full;
+        const ifr = ov.querySelector('#fr-tpl-preview-frame');
+        // Same shrink-to-fit as printSlips()'s fitPayslipCells() above, generalized for any
+        // tiled template: once the tiled grid has actually rendered (real layout needed),
+        // shrink any cell whose content overflows its fixed-height grid cell instead of
+        // leaving it silently clipped by .tiled-grid's overflow:hidden.
+        if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
+        ifr.srcdoc = full;
         const attachBtn = ov.querySelector('#fr-attach-pdf');
         if (attachBtn) attachBtn.onclick = () => attachPdfModal(records[0]);
       },
@@ -754,6 +796,14 @@ async function renderFormView(view, formId, initialPeriod) {
     renderRecords(records);
   }
 
+  // Shared with downloadCsv()'s Excel export, so the file's subtitle always reads the same as
+  // what's on screen. labelHint (a payroll bundle's own period) overrides the state.period/
+  // state.status filter — that's the only case a caller ever passes it.
+  function payslipPeriodLabel(labelHint) {
+    if (labelHint) return `for "${labelHint}"`;
+    return state.period ? `for "${state.period}"` : (state.status ? `for status "${state.status}"` : '(all periods shown)');
+  }
+
   // Item 3: a total-salary summary for the currently-filtered payslips (usually one payroll
   // period, via the period dropdown — but works for whatever's on screen, e.g. a status
   // filter too). Summed client-side from the already-loaded records' data, no extra request.
@@ -766,7 +816,7 @@ async function renderFormView(view, formId, initialPeriod) {
     const otherDeductions = sum('total_deductions') - statutory;
     const totalDeductions = sum('total_deductions');
     const net = sum('net_pay');
-    const label = state.period ? `for "${state.period}"` : (state.status ? `for status "${state.status}"` : '(all periods shown)');
+    const label = payslipPeriodLabel();
     const cell = (l, v) => `<div><div class="muted" style="font-size:11px">${UI.esc(l)}</div><div style="font-weight:700;font-size:15px">${UI.money(v)}</div></div>`;
     return `<div class="panel" style="margin-bottom:14px;padding:12px 16px">
       <div class="muted" style="font-size:12px;margin-bottom:8px">Summary — ${records.length} payslip${records.length === 1 ? '' : 's'} ${UI.esc(label)}</div>
@@ -872,7 +922,7 @@ async function renderFormView(view, formId, initialPeriod) {
           <div class="grow"></div>
           <div class="payroll-bundle-actions" data-bundle-actions style="display:flex;gap:6px" onclick="event.stopPropagation()">
             <button type="button" class="btn secondary small" data-bundle-print="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print All</button>
-            <button type="button" class="btn secondary small" data-bundle-csv="${UI.esc(b.label)}">${UI.icon('download', 13)} Export CSV</button>
+            <button type="button" class="btn secondary small" data-bundle-csv="${UI.esc(b.label)}">${UI.icon('download', 13)} Export Excel</button>
             ${canManagePayroll && b.meta ? `<button type="button" class="btn secondary small" data-bundle-post-gl="${b.meta.id}" data-bundle-post-gl-label="${UI.esc(b.label)}">${UI.icon('building', 13)} Post to GL</button>` : ''}
           </div>
         </div>

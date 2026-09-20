@@ -92,6 +92,51 @@ describe('deliveries', () => {
       .send({ status: 'cancelled' })).status).toBe(200);
   });
 
+  it('completing a delivery for an unfulfilled sale order hands back an `order` hint', async () => {
+    // `releasing` role has delivery.run AND orders.edit — the hint is gated on orders.edit.
+    const rel = await createEmployee(ctx.api, adminToken, { role: 'releasing' });
+    const order = await ctx.api.post('/api/orders').set(A()).send({
+      type: 'sale', customer_name: 'Fulfil Me', status: 'approved',
+      items: [{ name: 'loose widget', quantity: 1, unit_price: 10 }],
+    });
+    const del = (await ctx.api.post('/api/deliveries').set(A())
+      .send({ order_id: order.body.id, assigned_to: rel.id })).body.id;
+    await ctx.api.post(`/api/deliveries/${del}/status`).set(bearer(rel.token)).send({ status: 'out_for_delivery' });
+
+    const done = await ctx.api.post(`/api/deliveries/${del}/complete`).set(bearer(rel.token))
+      .send({ outcome: 'delivered', recipient: 'R' });
+    expect(done.status).toBe(200);
+    expect(done.body.order).toMatchObject({ id: order.body.id, status: 'approved' });
+    expect(done.body.order.number).toMatch(/^SO-\d+$/);
+  });
+
+  it('no `order` hint for a driver without orders.edit, a failed drop, or a completed order', async () => {
+    const wh = await driver(); // warehouse: delivery.run but NOT orders.edit
+    const rel = await createEmployee(ctx.api, adminToken, { role: 'releasing' });
+
+    const approved = (await ctx.api.post('/api/orders').set(A()).send({
+      type: 'sale', customer_name: 'No Edit', status: 'approved',
+      items: [{ name: 'w', quantity: 1, unit_price: 1 }],
+    })).body.id;
+    const dWh = (await ctx.api.post('/api/deliveries').set(A())
+      .send({ order_id: approved, assigned_to: wh.id })).body.id;
+    await ctx.api.post(`/api/deliveries/${dWh}/status`).set(bearer(wh.token)).send({ status: 'out_for_delivery' });
+    const doneWh = await ctx.api.post(`/api/deliveries/${dWh}/complete`).set(bearer(wh.token))
+      .send({ outcome: 'delivered', recipient: 'R' });
+    expect(doneWh.body.order).toBeNull();
+
+    const completed = (await ctx.api.post('/api/orders').set(A()).send({
+      type: 'sale', customer_name: 'Done Already', status: 'completed',
+      items: [{ name: 'w', quantity: 1, unit_price: 1 }],
+    })).body.id;
+    const dDone = (await ctx.api.post('/api/deliveries').set(A())
+      .send({ order_id: completed, assigned_to: rel.id })).body.id;
+    await ctx.api.post(`/api/deliveries/${dDone}/status`).set(bearer(rel.token)).send({ status: 'out_for_delivery' });
+    const doneDone = await ctx.api.post(`/api/deliveries/${dDone}/complete`).set(bearer(rel.token))
+      .send({ outcome: 'delivered', recipient: 'R' });
+    expect(doneDone.body.order).toBeNull();
+  });
+
   it('copies the customer from a linked order; deletes only a pending one', async () => {
     const order = await ctx.api.post('/api/orders').set(A()).send({
       type: 'sale', customer_name: 'Order Customer',

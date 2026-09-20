@@ -783,6 +783,11 @@ input, select, button, textarea { font-family: inherit; }
 .m-set-who span { color: var(--m-muted); font-size: 12.5px; }
 .m-set-who .m-role { text-transform: capitalize; }
 .m-set-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; font-size: 15px; }
+
+.usage-bar { height: 8px; border-radius: 999px; background: var(--m-surface-2); overflow: hidden; margin: 4px 0; }
+.usage-fill { height: 100%; border-radius: 999px; background: var(--m-accent); transition: width 0.25s ease, background-color 0.25s ease; }
+.usage-fill.near { background: var(--m-warn); }
+.usage-fill.over { background: var(--m-danger); }
 .m-toggle {
   min-width: 56px; padding: 8px 14px; border: 1px solid var(--m-border); border-radius: 999px;
   background: var(--m-surface); color: var(--m-text); font-weight: 600; cursor: pointer;
@@ -831,6 +836,11 @@ textarea.m-input { resize: vertical; min-height: 84px; line-height: 1.4; }
 .m-msg-head span { color: var(--m-muted); font-size: 12px; }
 .m-msg-subj { font-weight: 700; margin: 8px 0; }
 .m-msg-body { white-space: pre-wrap; line-height: 1.5; font-size: 14.5px; }
+.m-msg-attachments { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.m-msg-attach { border: 1px solid var(--m-border); border-radius: 10px; padding: 10px; cursor: pointer; }
+.m-msg-attach-img { max-width: 100%; max-height: 240px; border-radius: 8px; display: block; margin-bottom: 6px; }
+.m-msg-attach-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.m-clip { vertical-align: -1px; opacity: 0.7; }
 
 .m-check { flex-direction: row; align-items: center; gap: 8px; }
 .m-check input { width: auto; }
@@ -847,6 +857,11 @@ textarea.m-input { resize: vertical; min-height: 84px; line-height: 1.4; }
 .m-payslip-top { text-align: center; padding: 10px 0 6px; }
 .m-payslip-net { font-size: 30px; font-weight: 800; }
 .m-payslip-net span { display: block; font-size: 12px; font-weight: 400; color: var(--m-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* Payslip-screen callout — "you have unrecorded OT", with an inline action to file it. */
+.m-payslip-alert { background: var(--m-warn-bg); border: 1px solid color-mix(in srgb, var(--m-warn) 40%, transparent); border-radius: var(--m-r-sm); padding: 12px 14px; margin: 12px 0; font-size: 13px; line-height: 1.45; }
+.m-payslip-alert b { color: var(--m-warn); }
+.m-payslip-alert .m-btn { margin-top: 10px; }
 
 .m-jo-status.warn { background: var(--m-warn-bg); color: var(--m-warn); }
 .m-jo-status.ok { background: color-mix(in srgb, var(--m-ok) 16%, var(--m-surface)); color: var(--m-ok); }

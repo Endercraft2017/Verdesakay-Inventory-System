@@ -22,10 +22,13 @@ const POLICY: PayrollPolicy = {
   min_work_minutes: 0,
   lunch_break_minutes: 60,
   count_lunch_as_worked: false,
+  count_lunch_late_as_late: false,
   hours_basis: 'fixed',
   hours_basis_unit: '30min',
   whole_day_min_minutes: 0,
   max_ot_hours: null,
+  special_holiday_premium_mode: 'flat',
+  holiday_adjacency_requirement: 'none',
 };
 const DAILY_RATE = 800; // hourly = 100
 const SHIFT = { start_time: '08:00', end_time: '17:00' };
@@ -104,6 +107,55 @@ describe('computeAttendanceForEmployee — exemptLate (e.g. the company presiden
     expect(r.late_deduction).toBe(0); // exempt
     expect(r.ot_hours).toBeGreaterThan(0); // unaffected
     expect(r.holiday_pay).toBeGreaterThan(0); // unaffected
+  });
+});
+
+describe('computeAttendanceForEmployee — exemptOt (e.g. a salaried supervisor never entitled to OT)', () => {
+  it('an exempt employee has no overtime_pay despite working past shift end — the 6th (exemptOt) parameter', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '19:00', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, POLICY, false, true
+    );
+    expect(r.overtime_pay).toBe(0);
+  });
+
+  it('ot_hours is still reported per-day even when exempt — HR can see the pattern, it just costs nothing', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '19:00', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, POLICY, false, true
+    );
+    expect(r.days[0]!.ot_hours).toBeGreaterThan(0);
+    expect(r.days[0]!.ot_pay).toBe(0);
+  });
+
+  it('exemptOt defaults to false when omitted — every existing non-exempt call site is unaffected', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '19:00', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.overtime_pay).toBeGreaterThan(0);
+  });
+
+  it('exemptOt only affects OT — late, undertime, and holiday/rest-day premiums still compute normally', () => {
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '09:10', time_out: '19:00', holiday: 'regular',
+        linkedForm: { slug: 'overtime_request', data: {} },
+      })],
+      DAILY_RATE, POLICY, false, true
+    );
+    expect(r.overtime_pay).toBe(0); // exempt
+    expect(r.late_deduction).toBeGreaterThan(0); // unaffected
+    expect(r.holiday_pay).toBeGreaterThan(0); // unaffected
+  });
+
+  it('exemptOt in per-hour hours_basis mode also zeroes overtime_pay while still reporting ot_hours', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '19:00', linkedForm: { slug: 'overtime_request', data: {} } })],
+      DAILY_RATE, { ...POLICY, hours_basis: 'per_hour' }, false, true
+    );
+    expect(r.overtime_pay).toBe(0);
+    expect(r.ot_hours).toBeGreaterThan(0);
   });
 });
 
@@ -579,6 +631,157 @@ describe('computeAttendanceForEmployee — HR-marked holidays + rest-day pay (DO
       DAILY_RATE, POLICY
     );
     expect(r.overtime_pay).toBeCloseTo(2 * 100 * 1.25, 6);
+  });
+});
+
+// policy.special_holiday_premium_mode: 'flat' (default, pre-2026-09 behavior) always pays the
+// full 30%/50% regardless of hours present; 'prorated' scales it by actual hours present that
+// day (lunch excluded), capped at 8 hours' worth. Regular Holiday's premium is unaffected either
+// way — this setting is Special Non-Working Holiday-only, confirmed by the DOLE combo-rate tests
+// above already covering Regular Holiday under the default (flat) policy.
+describe('computeAttendanceForEmployee — special_holiday_premium_mode', () => {
+  it('flat mode (default): a half-day worked on a Special Non-Working Holiday still earns the full 30%', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '12:00', holiday: 'special_non_working' })], DAILY_RATE, POLICY
+    );
+    expect(r.special_holiday_30).toBeCloseTo(DAILY_RATE * 0.3, 6);
+  });
+
+  it('prorated mode: a full 8-hour day earns the same 30% as flat mode', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', holiday: 'special_non_working' })],
+      DAILY_RATE, { ...POLICY, special_holiday_premium_mode: 'prorated' }
+    );
+    // 08:00-17:00 minus the 60-min structural lunch = 8 hours present.
+    expect(r.special_holiday_30).toBeCloseTo(DAILY_RATE * 0.3, 6);
+  });
+
+  it('prorated mode: a half-day (4 hours present) earns half the premium — 15%, not 30%', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '12:00', holiday: 'special_non_working' })],
+      DAILY_RATE, { ...POLICY, special_holiday_premium_mode: 'prorated' }
+    );
+    expect(r.special_holiday_30).toBeCloseTo(4 * 100 * 0.3, 6); // 4 hrs present * hourlyRate * 30%
+  });
+
+  it('prorated mode: hours present are capped at 8 — working 10 hours doesn\'t earn more than a full day\'s premium', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '07:00', time_out: '18:00', holiday: 'special_non_working' })], // 11h span, 60m lunch -> 10h present
+      DAILY_RATE, { ...POLICY, special_holiday_premium_mode: 'prorated' }
+    );
+    expect(r.special_holiday_30).toBeCloseTo(8 * 100 * 0.3, 6); // capped at 8, not 10
+  });
+
+  it('prorated mode + rest day combo: a half-day earns half of the 50% combo premium, not half of the plain 30%', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '12:00', holiday: 'special_non_working', isRestDay: true })],
+      DAILY_RATE, { ...POLICY, special_holiday_premium_mode: 'prorated' }
+    );
+    expect(r.special_holiday_30).toBeCloseTo(4 * 100 * 0.5, 6);
+  });
+
+  it('prorated mode with no shift assigned falls back to the plain clocked span (no lunch to subtract)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '12:00', shift: null, holiday: 'special_non_working' })],
+      DAILY_RATE, { ...POLICY, special_holiday_premium_mode: 'prorated' }
+    );
+    expect(r.special_holiday_30).toBeCloseTo(4 * 100 * 0.3, 6);
+  });
+
+  it('a self-filed holiday_work_request form respects the same setting: flat pays a full day\'s worth once ANY hours are reported', () => {
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '12:00',
+        linkedForm: { slug: 'holiday_work_request', data: { hours_worked: 4, holiday_type: 'Special Non-Working Holiday' } },
+      })],
+      DAILY_RATE, POLICY // flat (default)
+    );
+    expect(r.special_holiday_30).toBeCloseTo(8 * 100 * 0.3, 6); // full 8-hours'-worth despite reporting only 4
+  });
+
+  it('a self-filed holiday_work_request form in prorated mode scales with its own reported hours, capped at 8', () => {
+    const under = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '12:00',
+        linkedForm: { slug: 'holiday_work_request', data: { hours_worked: 4, holiday_type: 'Special Non-Working Holiday' } },
+      })],
+      DAILY_RATE, { ...POLICY, special_holiday_premium_mode: 'prorated' }
+    );
+    expect(under.special_holiday_30).toBeCloseTo(4 * 100 * 0.3, 6);
+
+    const over = computeAttendanceForEmployee(
+      [day({
+        time_in: '07:00', time_out: '18:00',
+        linkedForm: { slug: 'holiday_work_request', data: { hours_worked: 10, holiday_type: 'Special Non-Working Holiday' } },
+      })],
+      DAILY_RATE, { ...POLICY, special_holiday_premium_mode: 'prorated' }
+    );
+    expect(over.special_holiday_30).toBeCloseTo(8 * 100 * 0.3, 6); // capped, not 10 * 100 * 0.3
+  });
+
+  it('Regular Holiday premium is unaffected by this setting either way — always the full statutory rate', () => {
+    const flat = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '12:00', holiday: 'regular' })], DAILY_RATE, POLICY
+    );
+    const prorated = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '12:00', holiday: 'regular' })],
+      DAILY_RATE, { ...POLICY, special_holiday_premium_mode: 'prorated' }
+    );
+    expect(flat.holiday_pay).toBeCloseTo(DAILY_RATE * 1.0, 6);
+    expect(prorated.holiday_pay).toBeCloseTo(DAILY_RATE * 1.0, 6); // same as flat — half-day presence doesn't reduce it
+  });
+});
+
+// policy.holiday_adjacency_requirement — the compute engine itself just trusts whatever
+// AttendanceDay.holidayEligible the caller (hr.routes.ts's holidayAdjacencyOk) already resolved;
+// see tests/hr.test.ts for coverage of that resolver's own DB-backed adjacent-day lookup. These
+// tests cover only the compute engine's own gating behavior once holidayEligible is known.
+describe('computeAttendanceForEmployee — holidayEligible gating (policy.holiday_adjacency_requirement support)', () => {
+  it('holidayEligible: false withholds an unworked Regular Holiday\'s pay entirely, with its own distinct status (not an absence)', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'regular', holidayEligible: false })], DAILY_RATE, POLICY);
+    expect(r.holiday_pay).toBe(0);
+    expect(r.days_absent).toBe(0); // still not an absence — the employee just isn't entitled to this day's holiday pay
+    expect(r.days[0]!.status).toBe('holiday_ineligible');
+  });
+
+  it('holidayEligible: false withholds a WORKED Regular Holiday\'s premium (direct marking), but the day is still paid normally otherwise', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', holiday: 'regular', holidayEligible: false })], DAILY_RATE, POLICY
+    );
+    expect(r.holiday_pay).toBe(0);
+    expect(r.days_worked).toBe(1); // ordinary attendance credit is untouched — only the holiday premium is withheld
+  });
+
+  it('holidayEligible: false withholds a worked Special Non-Working Holiday\'s premium (direct marking)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', holiday: 'special_non_working', holidayEligible: false })], DAILY_RATE, POLICY
+    );
+    expect(r.special_holiday_30).toBe(0);
+    expect(r.days_worked).toBe(1);
+  });
+
+  it('holidayEligible: false also withholds the self-filed holiday_work_request path\'s premium', () => {
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '17:00', holidayEligible: false,
+        linkedForm: { slug: 'holiday_work_request', data: { hours_worked: 8, holiday_type: 'Regular Holiday' } },
+      })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.holiday_pay).toBe(0);
+  });
+
+  it('holidayEligible has no effect on a plain rest day (not a holiday) — rest_day_ot is still paid', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', isRestDay: true, holidayEligible: false })], DAILY_RATE, POLICY
+    );
+    expect(r.rest_day_ot).toBeCloseTo(DAILY_RATE * 0.3, 6);
+  });
+
+  it('holidayEligible: undefined (the default, i.e. the caller never set it, or policy.holiday_adjacency_requirement is \'none\') behaves exactly like true', () => {
+    const r = computeAttendanceForEmployee([day({ holiday: 'regular' })], DAILY_RATE, POLICY);
+    expect(r.holiday_pay).toBe(DAILY_RATE);
+    expect(r.days[0]!.status).toBe('paid_holiday');
   });
 });
 
@@ -1190,46 +1393,381 @@ describe('computeAttendanceForEmployee — max_ot_hours (policy.max_ot_hours, nu
   });
 });
 
-describe('computeAttendanceForEmployee — possible_half_day (a day that LOOKS like a half day but has no linked Half Day request)', () => {
-  it('a real live case: 12:45-17:04 on an 08:00-17:00 shift (no linked form) is flagged, and — this is the actual bug — still gets docked a huge peso late deduction for "arriving 4h45m late" against the whole shift', () => {
+describe('computeAttendanceForEmployee — Overtime Request approved_hours (per-day cap override)', () => {
+  it('raises the paid OT above the policy cap when the linked request carries a higher approved_hours', () => {
+    const policy = { ...POLICY, max_ot_hours: 2 };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '21:00', linkedForm: { slug: 'overtime_request', data: { approved_hours: 4 } } })], // 4h raw OT
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBeCloseTo(4, 6);
+    expect(r.overtime_pay).toBeCloseTo(4 * 100 * 1.25, 6);
+  });
+
+  it('never lowers the cap below policy.max_ot_hours even if approved_hours is smaller', () => {
+    const policy = { ...POLICY, max_ot_hours: 3 };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '21:00', linkedForm: { slug: 'overtime_request', data: { approved_hours: 1 } } })], // 4h raw OT
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBeCloseTo(3, 6);
+  });
+
+  it('never introduces a cap when policy has none (max_ot_hours null)', () => {
+    const policy = { ...POLICY, max_ot_hours: null };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '21:00', linkedForm: { slug: 'overtime_request', data: { approved_hours: 1 } } })], // 4h raw OT
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBeCloseTo(4, 6);
+  });
+
+  it('blank/non-numeric approved_hours falls back to the policy cap unchanged', () => {
+    const policy = { ...POLICY, max_ot_hours: 2 };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '21:00', linkedForm: { slug: 'overtime_request', data: { approved_hours: '' } } })], // 4h raw OT
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBeCloseTo(2, 6);
+  });
+
+  it('also raises the cap under hours_basis: per_hour', () => {
+    const policy = { ...POLICY, hours_basis: 'per_hour' as const, max_ot_hours: 1 };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '20:00', linkedForm: { slug: 'overtime_request', data: { approved_hours: 3 } } })], // ~4h raw OT
+      DAILY_RATE, policy
+    );
+    expect(r.ot_hours).toBeCloseTo(3, 6);
+  });
+});
+
+describe('computeAttendanceForEmployee — undocumented half day (looks like a half day by its times, no linked Half Day request)', () => {
+  it('a real live case: 12:45-17:04 on an 08:00-17:00 shift (no linked form) is paid as a PM half day, not a whole day docked for "arriving 4h45m late" against the full shift', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '12:45', time_out: '17:04' })], DAILY_RATE, POLICY);
-    expect(r.days[0]!.possible_half_day).toBe(true);
-    expect(r.days[0]!.status).toBe('worked'); // NOT reclassified — the flag never changes pay on its own
-    expect(r.late_deduction).toBeGreaterThan(0); // this is the actual damage the flag exists to catch
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+    expect(r.late_deduction).toBe(0); // 12:45 vs the PM half's own 13:00 start -> not late
+    expect(r.days[0]!.status).toBe('half_day');
+    expect(r.days[0]!.possible_half_day).toBe(true); // still surfaced so HR files the actual request
   });
 
-  it('leaving early, AM pattern: 08:00-12:10 is also flagged', () => {
+  it('leaving early, AM pattern: 08:00-12:10 is a morning half day', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '12:10' })], DAILY_RATE, POLICY);
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+    expect(r.days[0]!.status).toBe('half_day');
     expect(r.days[0]!.possible_half_day).toBe(true);
   });
 
-  it('a linked Half Day request is never flagged (already correctly handled)', () => {
+  it('a linked Half Day request is never flagged as undocumented (already correctly handled)', () => {
     const r = computeAttendanceForEmployee(
       [day({ time_in: '12:45', time_out: '17:04', linkedForm: { slug: 'halfday_request', data: { session: 'Afternoon (PM)' } } })],
       DAILY_RATE, POLICY
     );
     expect(r.days[0]!.possible_half_day).toBe(false);
+    expect(r.days_half).toBe(1);
   });
 
-  it('an ordinary whole day (arrived a bit late, worked most of the day) is not flagged', () => {
+  it('a day linked to some OTHER form (offset) is flagged but NOT reclassified — that form keeps its own handling', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '12:45', time_out: '17:04', linkedForm: { slug: 'offset_form', data: {} } })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.possible_half_day).toBe(true);
+    expect(r.days[0]!.status).toBe('worked'); // still a whole day per the offset form's own rules
+    expect(r.days_worked).toBe(1);
+  });
+
+  it('an ordinary whole day (arrived a bit late, worked most of the day) is untouched', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '08:30', time_out: '17:00' })], DAILY_RATE, POLICY);
     expect(r.days[0]!.possible_half_day).toBe(false);
+    expect(r.days_worked).toBe(1);
   });
 
-  it('a genuine, ordinary undertime day (left at 15:00, not lunch-adjacent) is not flagged', () => {
+  it('a genuine, ordinary undertime day (left at 15:00, not lunch-adjacent) is untouched', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '15:00' })], DAILY_RATE, POLICY);
     expect(r.days[0]!.possible_half_day).toBe(false);
+    expect(r.days[0]!.status).toBe('worked');
   });
 
-  it('no shift assigned -> never flagged (nothing to judge the pattern against)', () => {
+  it('no shift assigned -> never treated as a half day (nothing to judge the pattern against)', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '12:45', time_out: '17:04', shift: null })], DAILY_RATE, POLICY);
     expect(r.days[0]!.possible_half_day).toBe(false);
+    expect(r.days_worked).toBe(1);
   });
 
-  it('still flagged under hours_basis: per_hour (informational there too, even though pay already self-corrects)', () => {
+  it('under hours_basis: per_hour it is flagged but pay is left to the per-hour proration (not forced to a flat 0.5)', () => {
     const r = computeAttendanceForEmployee(
       [day({ time_in: '12:45', time_out: '17:04' })], DAILY_RATE, { ...POLICY, hours_basis: 'per_hour' }
     );
     expect(r.days[0]!.possible_half_day).toBe(true);
+    expect(r.days[0]!.status).toBe('worked');
+    expect(r.days_worked).toBeCloseTo(4 / 8, 6); // ~4 paid hours of actual presence (13:00-17:04, blocks rounded down), via proration — not a flat half-day credit
+  });
+});
+
+describe('computeAttendanceForEmployee — multiple linked forms on one day (linkedForms)', () => {
+  it('Half Day AM + Overtime: 0.5 day credit AND the afternoon past the AM window is paid OT', () => {
+    // AM half window is 08:00-12:00. Worked 08:00-16:00 -> 4h past the window; require_ot_form
+    // is on so the Overtime form is what authorises it. OT rounds down per ot_unit (30min here).
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '16:00',
+        linkedForms: [
+          { slug: 'halfday_request', data: { session: 'Morning (AM)' } },
+          { slug: 'overtime_request', data: {} },
+        ],
+      })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+    expect(r.days[0]!.status).toBe('half_day');
+    expect(r.ot_hours).toBeCloseTo(4, 6);       // 12:00 -> 16:00
+    expect(r.overtime_pay).toBeCloseTo(4 * 100 * 1.25, 6);
+    expect(r.undertime_pay).toBe(0);            // OT form present -> never also books undertime
+  });
+
+  it('Offset + Overtime: the offset shifts the expected end, OT is only what runs past THAT', () => {
+    // Offset new_time_out 19:00; worked to 21:00 -> 2h OT past the offset end (not 4h past 17:00).
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '21:00',
+        linkedForms: [
+          { slug: 'offset_form', data: { new_time_out: '19:00' } },
+          { slug: 'overtime_request', data: {} },
+        ],
+      })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days_worked).toBe(1);
+    expect(r.ot_hours).toBeCloseTo(2, 6);       // 19:00 -> 21:00
+    expect(r.overtime_pay).toBeCloseTo(2 * 100 * 1.25, 6);
+  });
+
+  it('the legacy single linkedForm still works (normalised to a one-element linkedForms)', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '13:00', time_out: '17:00', linkedForm: { slug: 'halfday_request', data: { session: 'Afternoon (PM)' } } })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+  });
+
+  it('an unlinked day is only auto-treated as a half day when it has NO linked forms at all', () => {
+    // Same 12:45-17:04 PM-shaped day, but linked to an Overtime form -> not reclassified.
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '12:45', time_out: '17:04', linkedForms: [{ slug: 'overtime_request', data: {} }] })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.possible_half_day).toBe(true); // still flagged for HR
+    expect(r.days[0]!.status).toBe('worked');        // but paid as a whole day (its OT form governs)
+    expect(r.days_worked).toBe(1);
+  });
+});
+
+describe('computeAttendanceForEmployee — abandoned after lunch (lunch_out set, never punched again)', () => {
+  it('timed in, timed out for lunch, no lunch_in and no time_out -> auto half day, not a flat absence', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: null, lunch_out: '12:00', lunch_in: null })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('half_day');
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+    expect(r.days_absent).toBe(0);
+    expect(r.days[0]!.possible_half_day).toBe(true); // still nudges HR to file the real Half Day request
+    expect(r.late_deduction).toBe(0); // arrived exactly on time for the AM half
+  });
+
+  it('a real time_out on record is never overridden by lunch_out — unaffected regression check', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:00' })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('worked');
+    expect(r.days_worked).toBe(1);
+  });
+
+  it('no lunch_out at all (never even started lunch) still falls to a plain absence, unchanged', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: null, lunch_out: null, lunch_in: null })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('absent');
+    expect(r.days_absent).toBe(1);
+  });
+
+  it('lunch_out AND lunch_in both set (a normal completed lunch) never triggers the substitution even with no time_out', () => {
+    // Present through lunch and back, but never clocked a final time_out — still just a
+    // straightforward "no usable time logged" absence (time_out itself is what's missing),
+    // not the specific "vanished right after lunch" signature this feature targets.
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: null, lunch_out: '12:00', lunch_in: '13:00' })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('absent');
+  });
+});
+
+describe('computeAttendanceForEmployee — halfDayOverride (HR manually credits a half day, no linked request)', () => {
+  it('an ordinary short morning stint that does NOT match the auto-detected pattern is still forced to a half day when overridden', () => {
+    // 08:03-10:00 on the 08:00-17:00/60min-lunch shift is nowhere near the lunch gap (12:00-
+    // 13:00 ± the 60min tolerance) — the automatic heuristic would NOT flag this on its own.
+    const auto = computeAttendanceForEmployee([day({ time_in: '08:03', time_out: '10:00' })], DAILY_RATE, POLICY);
+    expect(auto.days[0]!.possible_half_day).toBe(false);
+    expect(auto.days[0]!.status).not.toBe('half_day');
+
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:03', time_out: '10:00', halfDayOverride: 'am' })], DAILY_RATE, POLICY
+    );
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+    expect(r.days[0]!.status).toBe('half_day');
+    expect(r.days[0]!.half_day_manual).toBe(true);
+    expect(r.days[0]!.possible_half_day).toBe(false); // manual call, not the auto-detected kind
+    expect(r.late_deduction).toBe(0); // 08:03 is within grace of the AM half's own 08:00 start
+  });
+
+  it('missing time_out entirely, no lunch_out to substitute — still a flat 0.5 credit, no late/OT computed', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '10:02', time_out: null, halfDayOverride: 'am' })], DAILY_RATE, POLICY
+    );
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+    expect(r.days_absent).toBe(0);
+    expect(r.days[0]!.status).toBe('half_day');
+    expect(r.days[0]!.half_day_manual).toBe(true);
+    expect(r.late_deduction).toBe(0);
+    expect(r.ot_hours).toBe(0);
+  });
+
+  it('missing time_in entirely (only an afternoon lunch_in + time_out on record) — still a flat 0.5 credit instead of a full absence', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: null, time_out: '17:49', lunch_in: '13:07', halfDayOverride: 'pm' })], DAILY_RATE, POLICY
+    );
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+    expect(r.days_absent).toBe(0);
+    expect(r.days[0]!.status).toBe('half_day');
+    expect(r.days[0]!.half_day_manual).toBe(true);
+  });
+
+  it('a real linked Half Day request always wins over the override', () => {
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '13:00', time_out: '17:00', halfDayOverride: 'am',
+        linkedForm: { slug: 'halfday_request', data: { session: 'Afternoon (PM)' } },
+      })],
+      DAILY_RATE, POLICY
+    );
+    expect(r.days[0]!.status).toBe('half_day');
+    expect(r.days[0]!.half_day_manual).toBe(false); // credited via the real request, not the override
+    expect(r.late_deduction).toBe(0); // judged against the linked form's own PM session, not the override's AM
+  });
+
+  it('no shift assigned — still 0.5 day (not a flat full day) when overridden', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', shift: null, halfDayOverride: 'am' })], DAILY_RATE, POLICY
+    );
+    expect(r.days_worked).toBe(0.5);
+    expect(r.days_half).toBe(1);
+    expect(r.days[0]!.half_day_manual).toBe(true);
+  });
+});
+
+describe('computeAttendanceForEmployee — lunch-break lateness (PayrollPolicy.count_lunch_late_as_late)', () => {
+  it('off by default: a long lunch has zero effect on late_deduction even with lunch_out/lunch_in recorded', () => {
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:30' })],
+      DAILY_RATE, POLICY // count_lunch_late_as_late: false
+    );
+    expect(r.late_deduction).toBe(0);
+  });
+
+  it('on: returning 30 min past the structural lunch window (12-1) adds to late_deduction, same grace/rounding as arrival lateness', () => {
+    const policy = { ...POLICY, count_lunch_late_as_late: true, late_unit: 'minute' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:30' })],
+      DAILY_RATE, policy
+    );
+    // 30 min raw, 10 min grace -> 20 min past grace, minute-unit rounding -> 20 min deducted
+    expect(r.days[0]!.late_minutes).toBe(20);
+    expect(r.late_deduction).toBeCloseTo((20 / 60) * 100, 6);
+  });
+
+  it('within grace (5 min late back) -> no deduction', () => {
+    const policy = { ...POLICY, count_lunch_late_as_late: true, late_unit: 'minute' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:05' })],
+      DAILY_RATE, policy
+    );
+    expect(r.late_deduction).toBe(0);
+  });
+
+  it('adds on top of ordinary arrival lateness the same day, both in late_minutes and late_deduction', () => {
+    const policy = { ...POLICY, count_lunch_late_as_late: true, late_unit: 'minute' as const };
+    // 15 min late arrival (5 min past grace) + 30 min late back from lunch (20 min past grace)
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:15', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:30' })],
+      DAILY_RATE, policy
+    );
+    expect(r.days[0]!.late_minutes).toBe(25);
+    expect(r.late_deduction).toBeCloseTo((25 / 60) * 100, 6);
+  });
+
+  it('exemptLate zeroes the lunch-late peso deduction too, but still reports the minutes', () => {
+    const policy = { ...POLICY, count_lunch_late_as_late: true, late_unit: 'minute' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:30' })],
+      DAILY_RATE, policy, true
+    );
+    expect(r.days[0]!.late_minutes).toBe(20);
+    expect(r.late_deduction).toBe(0);
+  });
+
+  it('a linked Lunch/Break Offset Request authorizes a shifted window — an on-time return against IT is not late', () => {
+    const policy = { ...POLICY, count_lunch_late_as_late: true, late_unit: 'minute' as const };
+    // Approved 1:00-2:00 lunch (structural window is still 12-1); returned exactly at 2:00.
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '17:00', lunch_out: '13:00', lunch_in: '14:00',
+        linkedForms: [{ slug: 'lunch_offset_form', data: { new_lunch_out: '13:00' } }],
+      })],
+      DAILY_RATE, policy
+    );
+    expect(r.late_deduction).toBe(0);
+  });
+
+  it('without the linked offset, the same 1:00-2:00 lunch reads as late against the structural 12-1 window', () => {
+    const policy = { ...POLICY, count_lunch_late_as_late: true, late_unit: 'minute' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', lunch_out: '13:00', lunch_in: '14:00' })],
+      DAILY_RATE, policy
+    );
+    // Back at 14:00 vs. structural end 13:00 -> 60 min raw, 10 min grace -> 50 min deducted
+    expect(r.days[0]!.late_minutes).toBe(50);
+  });
+
+  it('an explicit new_lunch_in on the offset form overrides the default +lunch_break_minutes window', () => {
+    const policy = { ...POLICY, count_lunch_late_as_late: true, late_unit: 'minute' as const };
+    // Approved a longer, 1:00-2:30 break (90 min); returned right at 2:30 -> not late.
+    const r = computeAttendanceForEmployee(
+      [day({
+        time_in: '08:00', time_out: '17:00', lunch_out: '13:00', lunch_in: '14:30',
+        linkedForms: [{ slug: 'lunch_offset_form', data: { new_lunch_out: '13:00', new_lunch_in: '14:30' } }],
+      })],
+      DAILY_RATE, policy
+    );
+    expect(r.late_deduction).toBe(0);
+  });
+
+  it('applies under hours_basis: per_hour too, unlike ordinary arrival lateness there (not self-correcting)', () => {
+    const policy = { ...POLICY, count_lunch_late_as_late: true, late_unit: 'minute' as const, hours_basis: 'per_hour' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:30' })],
+      DAILY_RATE, policy
+    );
+    expect(r.late_deduction).toBeCloseTo((20 / 60) * 100, 6);
   });
 });

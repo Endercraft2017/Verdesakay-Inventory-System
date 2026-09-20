@@ -245,8 +245,10 @@ export interface InventoryItem {
   image_path: string | null;
   /** 1 ⇒ this item is a built product with a BOM (bom_components). */
   is_finished_product: number;
-  /** Finished products only: which QA/QC checklist applies (else the default). */
-  qc_checklist_id: number | null;
+  /** Finished products only: which QA/QC checklist applies at each stage (else that
+   *  stage's default). */
+  qc_checklist_qa_id: number | null;
+  qc_checklist_qc_id: number | null;
   /** Plain-text grouping key shared by variants of the same base product (e.g. "Office
    *  Chair" for Red/Blue/Green rows, each its own full item with its own stock/SKU/BOM).
    *  The variant's own descriptor lives in the existing attributes.spec field, not here. */
@@ -256,7 +258,8 @@ export interface InventoryItem {
   department_name?: string | null;
   supplier_name?: string | null;
   low_stock?: number;
-  qc_checklist_name?: string | null;
+  qc_checklist_qa_name?: string | null;
+  qc_checklist_qc_name?: string | null;
 }
 
 export interface BomComponent {
@@ -296,31 +299,43 @@ export interface JobOrder {
   created_at: string;
   updated_at: string;
   released_by: number | null;
+  /** Production team assigned to run this job order (nullable). */
+  team_id: number | null;
+  /** Scheduling — planned start / due date (YYYY-MM-DD), priority (higher = sooner),
+   *  and a free-text work centre / line. */
+  planned_start: string | null;
+  due_date: string | null;
+  priority: number;
+  work_center: string | null;
   created_by_name?: string | null;
   released_by_name?: string | null;
+  team_name?: string | null;
   order_number?: string | null;
   source_location_name?: string | null;
   output_location_name?: string | null;
   components?: JobOrderComponent[];
-  /** Resolved at load time: the checklist for this MO's product (or the default). */
-  qc_checklist?: { id: number; name: string; items: QcChecklistItem[] } | null;
+  /** Resolved at load time: this MO's product's checklist for each stage (its own, else
+   *  that stage's default, else null). */
+  qc_checklist_qa?: { id: number; name: string; items: QcChecklistItem[] } | null;
+  qc_checklist_qc?: { id: number; name: string; items: QcChecklistItem[] } | null;
 }
 
-/** One configurable QA/QC checklist line.
-    stage: 0 = every inspection, 1 = QA (first) stage only, 2 = QC (final) stage only. */
+/** One configurable QA/QC checklist line. */
 export interface QcChecklistItem {
   label: string;
   required: boolean;
-  stage: 0 | 1 | 2;
 }
 
-/** A named, reusable QA/QC checklist. Finished products point at one via
-    `inventory_items.qc_checklist_id`; the `is_default` row covers products with none. */
+/** A named, reusable QA/QC checklist, belonging to one stage as a whole (stage: 1 = QA /
+    first pass, 2 = QC / final pass). Finished products point at one per stage via
+    `inventory_items.qc_checklist_qa_id` / `qc_checklist_qc_id`; the `is_default` row for
+    that stage covers products with none. */
 export interface QcChecklist {
   id: number;
   name: string;
   /** JSON string in the row; parsed to QcChecklistItem[] in API responses. */
   items: string | QcChecklistItem[];
+  stage: 1 | 2;
   is_default: number; // 0 | 1
   created_by: number | null;
   created_at: string;
@@ -393,7 +408,19 @@ export interface JobOrderComponent {
   component_on_hand?: number;
 }
 
-export type JobOrderUnitStatus = 'pending' | 'in_stock' | 'failed' | 'scrapped' | 'sold';
+export type JobOrderUnitStatus =
+  | 'pending'
+  /** Passed its final QC stage but not yet posted to stock — see production_receipts /
+   *  POST /job-orders/:id/products-in. Not sellable/reservable until it becomes 'in_stock'. */
+  | 'passed'
+  | 'in_stock' | 'failed' | 'scrapped' | 'sold' | 'rework'
+  /** Earmarked for a sale order by a warehouse release; still physical on-hand stock
+   *  until the order reaches a confirmed status and `maybeFulfillSale` draws it down. */
+  | 'reserved';
+
+/** What the inspector decided for a failed unit. `repair` sends it to rework; the
+ *  others are terminal (the unit is counted as scrapped). */
+export type UnitDisposition = 'scrap' | 'dispose' | 'recycle' | 'repair';
 
 export interface JobOrderUnit {
   id: number;
@@ -406,6 +433,10 @@ export interface JobOrderUnit {
   location_id: number | null;
   /** Sales order that sold or relocated this unit (nullable). */
   order_id: number | null;
+  /** Production batch this unit belongs to (nullable — serialized units may be loose). */
+  batch_id: number | null;
+  /** Set when the unit was failed (see UnitDisposition). */
+  disposition: UnitDisposition | null;
   remarks: string | null;
   created_at: string;
   updated_at: string;
@@ -413,6 +444,121 @@ export interface JobOrderUnit {
   job_order_number?: string;
   location_name?: string | null;
   order_number?: string | null;
+}
+
+/** A production team — a named crew a job order is assigned to. */
+export interface ProductionTeam {
+  id: number;
+  name: string;
+  notes: string | null;
+  is_active: number; // 0 | 1
+  created_at: string;
+  updated_at: string;
+  /** Joined for API responses. */
+  member_count?: number;
+  members?: ProductionTeamMember[];
+  open_job_orders?: number;
+}
+
+export interface ProductionTeamMember {
+  id: number;
+  team_id: number;
+  employee_id: number;
+  role: string | null;
+  created_at: string;
+  /** Joined. */
+  name?: string | null;
+  employee_no?: string | null;
+  position?: string | null;
+}
+
+export type ProductionBatchStatus = 'open' | 'released' | 'closed';
+
+/** A named group of units off one job order. Non-serialized job orders create one per
+ *  progress entry; serialized ones can opt in. See src/routes/production.routes.ts. */
+export interface ProductionBatch {
+  id: number;
+  number: string;
+  job_order_id: number | null;
+  product_item_id: number | null;
+  qty: number;
+  identifier: string | null;
+  status: ProductionBatchStatus;
+  notes: string | null;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  /** Joined for API responses. */
+  job_order_number?: string | null;
+  product_name?: string | null;
+  created_by_name?: string | null;
+  unit_count?: number;
+}
+
+/** "Products In" — the Purchasing Goods Receipt pattern mirrored for finished-goods output.
+ *  Posting one moves stock in at `location_id`. See src/routes/job-orders.routes.ts
+ *  POST /:id/products-in. */
+export interface ProductionReceipt {
+  id: number;
+  number: string;
+  job_order_id: number;
+  location_id: number | null;
+  received_date: string | null;
+  notes: string | null;
+  received_by: number | null;
+  created_at: string;
+  received_by_name?: string | null;
+  location_name?: string | null;
+  job_order_number?: string | null;
+  product_name?: string | null;
+  items?: ProductionReceiptItem[];
+}
+
+export interface ProductionReceiptItem {
+  id: number;
+  receipt_id: number;
+  unit_id: number | null;
+  batch_id: number | null;
+  quantity: number;
+  unit_identifier?: string | null;
+  batch_number?: string | null;
+}
+
+export type RepairRequestKind = 'add' | 'replace';
+export type RepairRequestStatus = 'requested' | 'accepted' | 'rejected' | 'cancelled';
+/** Who/what caused the part to be missing or need replacing. */
+export type RepairFault = 'assembler' | 'production' | 'supplier' | 'wear' | 'other';
+
+/** A rework unit's request to the warehouse for a part. Nothing moves until the
+ *  warehouse accepts (then stock is issued, and for a `replace` the removed part is
+ *  booked into its damage twin). See src/routes/production.routes.ts. */
+export interface RepairPartRequest {
+  id: number;
+  number: string;
+  unit_id: number;
+  job_order_id: number | null;
+  kind: RepairRequestKind;
+  component_item_id: number | null;
+  component_name: string;
+  quantity: number;
+  fault: RepairFault | null;
+  return_to_damage: number; // 0 | 1
+  from_location_id: number | null;
+  status: RepairRequestStatus;
+  requested_by: number | null;
+  decided_by: number | null;
+  warehouse_remarks: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  decided_at: string | null;
+  /** Joined for API responses. */
+  requested_by_name?: string | null;
+  decided_by_name?: string | null;
+  unit_identifier?: string | null;
+  job_order_number?: string | null;
+  product_name?: string | null;
+  from_location_name?: string | null;
 }
 
 export interface MailSettings {
@@ -540,6 +686,24 @@ export interface Bookmark {
   created_at: string;
 }
 
+export type BugReportStatus = 'open' | 'resolved';
+
+/** An in-app bug report — steps to reproduce + up to 5 screenshots (see
+    bug_report_attachments). Any signed-in user can file one; users.manage can
+    review/resolve them (src/routes/bug-reports.routes.ts). */
+export interface BugReport {
+  id: number;
+  title: string;
+  steps_to_reproduce: string;
+  description: string | null;
+  page_context: string | null;
+  status: BugReportStatus;
+  reported_by: number | null;
+  created_at: string;
+  resolved_by: number | null;
+  resolved_at: string | null;
+}
+
 export type OrderType = 'sale' | 'job' | 'purchase';
 
 export interface Order {
@@ -569,6 +733,11 @@ export interface Order {
   /** Sale orders only: set once the sale's lines have been drawn down from stock and COGS
    *  posted; cleared when the sale is pulled back to a non-firm status. */
   fulfilled_at: string | null;
+  /** Sale orders only: set on the first `POST /orders/:id/release` (a warehouse releaser
+   *  scanned/entered goods out) and stamped with `released_by`; cleared when the order is
+   *  cancelled / re-opened. Does NOT move stock — that still happens on confirm. */
+  released_at: string | null;
+  released_by: number | null;
   /** Optional VAT / tax classification (drives the GL post + the BIR journals). */
   tax_code_id: number | null;
   created_by_name?: string | null;
@@ -597,6 +766,14 @@ export interface OrderItem {
   line_total: number;
   tax_code_id: number | null; // per-line VAT / tax classification for mixed-rate documents
   sort: number;
+  /** Released quantity for a non-serialized (bulk) sale-order line — a warehouse releaser
+   *  entering goods out; capped at `quantity`. Serialized units use `job_order_units`. */
+  released_qty: number;
+  /** Sale orders (joined into GET /orders/:id only): serialized finished units of this
+   *  product that are `sold` against this order (`allocated_qty`) or `reserved` for it but
+   *  not yet stock-out (`reserved_qty`). */
+  allocated_qty?: number;
+  reserved_qty?: number;
 }
 
 /** A goods receipt (GRN) recording what physically arrived against a purchase order.
@@ -787,6 +964,18 @@ export interface DocTemplate {
   type: 'sale' | 'job' | 'purchase' | 'generic';
   period: string | null;
   body: string;
+  // N-up print tiling (SCHEMA_VERSION 30/32) — shown in the template editor as "Grid rows" /
+  // "Grid columns" / fill mode. Default 1/1/'blank' (plain one-record-per-page). Only consulted
+  // by the generic printRecordsViaTemplate() path; HR Payroll Slip keeps its own hand-built
+  // 2x2 layout in hr-payroll-print.js regardless of these.
+  copies_per_record: number; // grid rows
+  records_per_page: number; // grid columns
+  tile_fill: 'blank' | 'repeat';
+  // (SCHEMA_VERSION 35) Continuous tiling — see the db.ts version-history comment. Only
+  // meaningful when tile_continuous is truthy; otherwise copies_per_record alone is still
+  // the repeat count, exactly as before these two fields existed.
+  repeat_count: number;
+  tile_continuous: number; // 0 | 1
   created_by: number | null;
   created_at: string;
   updated_at: string;
@@ -824,6 +1013,21 @@ export interface Employee {
   // computeAttendanceForEmployee. Stored as a plain 0/1 SQLite integer; truthy checks work fine
   // at runtime despite the boolean type here (same as every other INTEGER flag on this table).
   late_exempt: boolean;
+  // Exempt from overtime pay entirely (e.g. a salaried supervisor) — same convention as
+  // late_exempt: ot_hours still computes and shows on the payslip detail, only overtime_pay
+  // is zeroed. See hr-payroll-compute.ts.
+  ot_exempt: boolean;
+  // A fixed withholding-tax peso amount for this employee, replacing the computed BIR formula
+  // every cutoff (e.g. a negotiated/BIR-registered special rate). null = use the normal
+  // computed amount. Only takes effect while deduct_withholding_tax is also on — see
+  // computeEmployeeStatutory in hr.routes.ts.
+  withholding_tax_override: number | null;
+  // Same fixed-amount override as withholding_tax_override, for the three contribution funds —
+  // null = use the normal computed (and slot-divided) amount. Each only takes effect while its
+  // matching deduct_* switch is also on; never affects the employer-side contribution.
+  sss_override: number | null;
+  philhealth_override: number | null;
+  pagibig_override: number | null;
 }
 
 /** Company-wide format for the RECOMMENDED employee number (settings key "employee_no_policy") —
@@ -902,6 +1106,16 @@ export interface PayrollPolicy {
       effect on fixed-basis pay (a full flat day already included lunch) or half-day window
       derivation, which always assumes the structural lunch gap regardless of this flag. */
   count_lunch_as_worked: boolean;
+  /** When true, a lunch break that runs past PayrollPolicy.lunch_break_minutes adds the excess
+      to that day's late deduction, exactly like an ordinary late arrival (same grace_minutes/
+      late_unit rounding, same employees.late_exempt exemption) — judged against the shift's own
+      structural lunch window (see lunchWindow in hr-payroll-compute.ts) unless a linked Lunch/
+      Break Offset Request shifts the expected window for that specific day. When false (default
+      — preserves the pre-2026-09 behavior), attendance_records.lunch_out/lunch_in stay a plain
+      record HR can see on the Daily Time grid, with no effect on pay: some companies track lunch
+      times purely for reference and don't want a long lunch to cost anything. See
+      computeAttendanceForEmployee's lunch-lateness block. */
+  count_lunch_late_as_late: boolean;
   /** 'fixed' (default): a worked day credits a flat 1 day (0.5 for a linked Half Day request,
       0 for an "Undertime Day" — see whole_day_min_minutes) once present for at least
       whole_day_min_minutes; late/OT/undertime are peso adjustments around the shift's fixed
@@ -934,6 +1148,36 @@ export interface PayrollPolicy {
       into undertime either). null/undefined (default): no cap. Applies in both hours_basis
       modes, scaled by hours_basis_unit's own rounding as usual before the cap is applied. */
   max_ot_hours: number | null;
+  /** How the Special (Non-Working) Holiday 30% premium is computed for a day marked via the
+      Company Holidays calendar / a per-record override (NOT the employee-filed Holiday Work
+      Request form, which has always reported its own hours_worked — this setting now also caps
+      that path at 8 hours' worth, but doesn't change its shape). 'flat' (default, the pre-2026-09
+      behavior): the full 30% of daily rate, regardless of how many hours were actually worked
+      that day — a half-day worked on a special holiday still earns the same premium as a full
+      day. 'prorated': the premium scales with actual hours present that day (lunch excluded,
+      same convention as hours_basis: 'per_hour'), capped at 8 hours' worth — a half-day (~4
+      hours) earns roughly half the premium a full day would. Regular Holiday's premium is
+      unaffected either way — it's always the full statutory rate regardless of hours, per Labor
+      Code Art. 94. See the special_non_working branch in computeAttendanceForEmployee. */
+  special_holiday_premium_mode: 'flat' | 'prorated';
+  /** Whether an employee must have attended (or been on an excused/paid day — see below) the day
+      immediately before and/or after a Regular or Special Non-Working Holiday to receive that
+      holiday's pay/premium at all — some companies' policy (a common, though not universally
+      applied, DOLE-adjacent practice) withholds the holiday benefit entirely if the employee was
+      unexcused-absent on the qualifying adjacent day(s). 'none' (default, the pre-2026-09
+      behavior): no such requirement — holiday pay/premium is never withheld for this reason.
+      'before'/'after'/'both': the employee must satisfy the requirement for that specific
+      adjacent date (or both). "Satisfies" means: actually present (clocked in and out), on an
+      approved paid leave, or the date wasn't a scheduled workday for them at all (a rest day, or
+      itself another holiday) — only a genuine unexcused absence on the required day disqualifies.
+      When there's no attendance record at all for the adjacent date (e.g. it falls outside any
+      period on file), the requirement is treated as satisfied rather than guessed as a failure.
+      Applies to both Regular Holiday's full-day pay and Special Non-Working Holiday's premium (in
+      either mode above) — never to a plain rest day with no holiday involved. See
+      holidayAdjacencyOk / attendanceDaysForEmployee in hr.routes.ts (the check needs a
+      period-independent DB lookup, so it can't live in the DB-free compute engine itself) and
+      AttendanceDay.holidayEligible in hr-payroll-compute.ts. */
+  holiday_adjacency_requirement: 'none' | 'before' | 'after' | 'both';
 }
 
 export interface EmployeeDocument {
@@ -965,10 +1209,27 @@ export interface AttendanceRecord {
   employee_id: number;
   work_date: string;
   time_in: string | null;
+  /** Lunch-break bracket — start of / return from the unpaid lunch. Split from the raw
+      time_punches on reconcile (importPunchesForPeriod) or hand-typed in the Daily Time grid.
+      Payroll still always subtracts the structural PayrollPolicy.lunch_break_minutes for pay
+      purposes (these two fields never change how much lunch time is excluded) — but the compute
+      engine now also reads them for two things: (1) lunch_out set with neither lunch_in nor
+      time_out ever recorded (timed out for lunch and never punched again) is treated as an
+      effective time-out at lunch, auto-crediting a half day instead of a flat absence; (2)
+      PayrollPolicy.count_lunch_late_as_late's optional lunch-return-lateness deduction. See
+      hr-payroll-compute.ts. */
+  lunch_out: string | null;
+  lunch_in: string | null;
   time_out: string | null;
   notes: string | null;
   shift_id: number | null;
+  /** Legacy single link — kept and mirrored to the first entry of form_record_ids for
+      anything still reading it. Prefer form_record_ids. */
   form_record_id: number | null;
+  /** JSON array of form_records ids — a day can link multiple OT/Half Day/Leave/Undertime/
+      Offset forms (SCHEMA_VERSION 24). null/absent on rows that predate the feature and were
+      never re-saved; the resolver falls back to form_record_id in that case. */
+  form_record_ids: string | null;
   /** Per-record holiday override; null inherits the Company Holidays calendar. */
   holiday_type: 'regular' | 'special_non_working' | 'special_working' | 'none' | null;
   /** Per-record rest-day override; null inherits the weekly rest-day pattern
@@ -1056,6 +1317,9 @@ export interface CompanyProfile {
   phone: string;
   email: string;
   logo_url: string;
+  /** When true, image attachments over ~1 MB are downscaled/re-encoded by the client
+      before upload (Messages). Purely a client-side storage saver; default on. */
+  compress_images: boolean;
 }
 
 /** A document-template variable (registry row). */

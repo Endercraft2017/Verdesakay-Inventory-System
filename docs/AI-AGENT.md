@@ -96,13 +96,13 @@ The AI route calls `getToolsForUser(user)` which filters the full tool catalogue
 
 | Role | Key capabilities |
 |---|---|
-| `admin` | All 28 tools |
+| `admin` | Every tool |
 | `admin_staff` | Inventory CRUD + adjust, order CRUD, messages, forms, personal tools |
 | `accounting` | Inventory view, order create/edit, messages, forms, personal tools |
 | `warehouse` | Inventory CRUD + adjust, order view, messages, forms, personal tools |
 | `releasing` | Inventory view + adjust, order view/edit, messages, forms, personal tools |
 | `csr` | Inventory view, order create/edit, messages, forms, personal tools |
-| `hr` | User list, messages, forms, personal tools |
+| `hr` | User list, messages, forms, HR forms/memos (read + propose), attendance reports, personal tools |
 | `marketing` | Inventory view, order view, messages, forms, personal tools |
 
 Personal tools (notes, tasks) are available to **every authenticated user** regardless of role.
@@ -206,6 +206,24 @@ Read-only report tools, merged into `getToolsForUser` / `executeTool` and gated 
 
 The index (`doc_chunks` FTS5 virtual table) is **rebuilt lazily** — `retrieve()` re-indexes if it's older than 5 minutes — and can be forced with **`POST /api/ai/reindex`** (`audit.view`).
 
+### HR forms / memos / notices (`src/ai-hr-forms.ts`)
+
+Read the data-form / memo / NTE catalogue and **propose** (never issue) a new record. Offered
+to any user with `hr.view` or at least one `forms.manage.<scope>`.
+
+| Tool | Permission | Description |
+|---|---|---|
+| `list_form_types` | hr.view or forms.manage.* | Every form definition with its fields and configured actions (notify employee, file to 201, …). |
+| `search_form_records` | forms.manage.`<scope>` of the form | Search issued records by slug/scope/status/text; returns field values. |
+| `get_form_record` | forms.manage.`<scope>` | One record in full by id. |
+| `propose_form_record` | forms.manage.`<scope>` | **Does not write.** Returns a pre-filled draft `{ proposed: true, form_def_id, slug, form_name, data, employee_match, missing_required }`. |
+
+The `propose_form_record` result renders a **"Review & issue &lt;form&gt;"** button under the
+assistant's reply (`public/js/tools.js` `actionForStep`). Clicking it calls
+`App.openFormRecordDraft(...)`, which opens the normal Data Forms "New record" modal
+pre-filled — the user edits/confirms, and the real `POST /api/form-records` runs the form's
+actions (`src/form-actions.ts`). The AI never issues or sends a memo directly.
+
 ---
 
 ## API Reference
@@ -223,7 +241,7 @@ The index (`doc_chunks` FTS5 virtual table) is **rebuilt lazily** — `retrieve(
 }
 ```
 
-The client should include the full conversation history on every request (the server is stateless — it does not store conversation history).
+The client includes recent conversation history on every request — the `/chat` call itself is stateless per request. As a side effect of a successful call, though, the route saves the new user message and the final assistant reply (+ `steps`) to `ai_messages`, scoped to the caller, so the conversation survives reloads/new sessions until the user clears it (see `GET`/`DELETE /api/ai/messages` below).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -247,6 +265,20 @@ The client should include the full conversation history on every request (the se
 | 401 | `{ "error": "Not authenticated" }` | Missing or expired session. |
 | 503 | `{ "error": "AI is not configured…" }` | `CEREBRAS_API_KEY` not set. |
 | 500 | `{ "error": "Internal server error" }` | Cerebras API error or unexpected exception. |
+
+---
+
+### `GET /api/ai/messages`
+
+**Auth:** Bearer token (any logged-in user, own conversation only)
+
+Returns the caller's saved conversation, oldest first: `[{ id, role, content, steps?, created_at }]`. `steps` is the tool-call trail (present only on an assistant turn that used tools), so record/report links still render after a reload.
+
+### `DELETE /api/ai/messages`
+
+**Auth:** Bearer token (any logged-in user)
+
+Permanently deletes the caller's saved conversation. This is the only way it goes away — nothing expires or auto-clears it otherwise.
 
 ---
 
@@ -275,7 +307,7 @@ The `steps` array in the response contains every `(tool, args, result)` triplet 
 
 The `openAI()` function in the right-rail tools manages the UI. Key points:
 
-- **Conversation history** is kept in the `aiHistory` closure array and cleared when the drawer closes. It grows by one `{role:'user', content}` + one `{role:'assistant', content}` per round-trip.
+- **Conversation history** — the saved conversation (`GET /api/ai/messages`) is loaded and replayed into the chat pane every time the drawer opens, so it survives closing the drawer, reloading the page, or logging back in later; a "Clear conversation" button in the header (`DELETE /api/ai/messages`) is the only way to wipe it. The `aiHistory` closure array is just the recent-context window sent to the LLM each turn (capped at `AI_HISTORY_LIMIT` = 38, under the route's 40-message ceiling) — it grows by one `{role:'user', content}` + one `{role:'assistant', content}` per round-trip and is reseeded from the saved history whenever the drawer opens.
 - **Typing indicator** — three bouncing dots shown while waiting for the backend.
 - **Tool chips** — displayed above the reply to show which tools were called (e.g. `search inventory`, `get order`).
 - **Markdown** — light rendering: `**bold**`, `` `code` ``, and line breaks.

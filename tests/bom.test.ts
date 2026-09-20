@@ -75,6 +75,45 @@ describe('finished products + BOM', () => {
       .send({ components: [{ component_item_id: c, quantity: 0 }] })).status).toBe(400);
   });
 
+  it('allows a finished product with an empty BOM', async () => {
+    const product = await mkItem('No-BOM Product');
+    const put = await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({ components: [] });
+    expect(put.status).toBe(200);
+    const list = await ctx.api.get('/api/finished-products').set(authHdr());
+    const row = list.body.find((p: { id: number }) => p.id === product);
+    expect(row).toBeTruthy();
+    expect(row.component_count).toBe(0);
+  });
+
+  it('stores optional standard labor + overhead and adds them to the rolled-up cost', async () => {
+    const product = await mkItem('Costed FG');
+    const part = await mkCosted('Costed Part', 30, 100);
+    const put = await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({
+      components: [{ component_item_id: part, quantity: 2 }],
+      std_labor_cost: 15,
+      std_overhead_cost: 5,
+    });
+    expect(put.status).toBe(200);
+
+    const detail = await ctx.api.get(`/api/finished-products/${product}`).set(authHdr());
+    expect(detail.body.std_labor_cost).toBe(15);
+    expect(detail.body.std_overhead_cost).toBe(5);
+
+    const cost = await ctx.api.get(`/api/finished-products/${product}/cost`).set(authHdr());
+    expect(cost.body.unit_material_cost).toBe(60); // 2 × 30
+    expect(cost.body.unit_labor_cost).toBe(15);
+    expect(cost.body.unit_overhead_cost).toBe(5);
+    expect(cost.body.unit_total_cost).toBe(80);
+
+    // clearing with null removes them from the roll-up
+    await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({
+      components: [{ component_item_id: part, quantity: 2 }],
+      std_labor_cost: null, std_overhead_cost: null,
+    });
+    const cleared = await ctx.api.get(`/api/finished-products/${product}/cost`).set(authHdr());
+    expect(cleared.body.unit_total_cost).toBe(60);
+  });
+
   it('unflag clears the BOM but keeps the item', async () => {
     const product = await mkItem('Temp Product');
     const c = await mkItem('Temp Part', 3);

@@ -63,11 +63,13 @@ describe('analytics overview', () => {
     expect(Array.isArray(r.body.sales.weekly)).toBe(true);
   });
 
-  it('includes a production section with status counts', async () => {
+  it('includes a production section with status counts + schedule KPIs', async () => {
     const r = await ctx.api.get('/api/analytics/overview').set(authHdr());
     expect(r.body.production).toBeTruthy();
     expect(typeof r.body.production.by_status).toBe('object');
     expect(r.body.production.last_30).toHaveProperty('scrap_rate_pct');
+    expect(r.body.production).toHaveProperty('overdue');
+    expect(r.body.production).toHaveProperty('due_this_week');
   });
 
   it('omits sections the caller has no permission for', async () => {

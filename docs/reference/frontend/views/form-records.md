@@ -146,7 +146,11 @@ count, "Print selected" (payroll only), "Delete selected", "Clear".
   2. Builds `html = buildPayrollSlipsHtml(list, templateBody)` and wraps it with
      `UI.printableHtml(html, formDef.name)` into a full standalone document (`full`).
   3. Opens a `UI.modal` sized `'xl'` containing an `<iframe id="payslip-preview-frame">`;
-     `onOpen` sets `srcdoc = full` (no `window.open`, avoiding popup blockers entirely).
+     `onOpen` wires `ifr.onload` to call `fitPayslipCells(ifr.contentDocument)` (from
+     `hr-payroll-print.js` — shrinks any grid cell whose rendered content overflowed its
+     fixed-height cell, so a customized template or a record with several
+     `other_deductions` lines doesn't get its NET PAY/signature rows silently clipped)
+     before setting `srcdoc = full` (no `window.open`, avoiding popup blockers entirely).
   4. The modal's confirm button (labeled `'Print…'`) calls `ifr.contentWindow.focus();
      ifr.contentWindow.print();` and **returns `false`**, which per `UI.modal`'s contract
      keeps the modal open — i.e. clicking Print does not close the preview; the user closes

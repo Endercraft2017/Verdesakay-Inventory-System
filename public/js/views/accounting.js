@@ -1198,7 +1198,8 @@ async function bir2316Modal() {
           const detail = await API.get(`/accounting/bir-2316/${row.employee_id}?year=${yearSel.value}`);
           const meta = templates.find((t) => t.name === 'BIR 2316');
           if (!meta) { UI.toast('BIR 2316 template not found (Documents → Templates)', 'error'); return; }
-          const tplBody = (await API.get('/templates/' + meta.id)).body;
+          const tpl = await API.get('/templates/' + meta.id);
+          const tplBody = tpl.body;
           const g = detail.figures;
           const f = {};
           Object.keys(g).forEach((k) => { f[k] = typeof g[k] === 'number' ? accPeso(g[k]) : g[k]; });
@@ -1207,11 +1208,24 @@ async function bir2316Modal() {
           f.over_withheld_label = g.over_withheld >= 0 ? 'OVER-WITHHELD (refund to employee)' : 'TAX STILL DUE FROM EMPLOYEE';
           f.over_withheld_abs = accPeso(Math.abs(g.over_withheld));
           const ctx = { company: detail.company || {}, employee: detail.employee || {}, f, year: detail.year, today: new Date().toLocaleDateString() };
-          const full = UI.printableHtml(renderTemplate(tplBody, ctx), '2316 - ' + (detail.employee.name || ''));
+          // Same opt-in Print Grid tiling as form-linked templates (public/js/print-tiling.js) —
+          // e.g. 2 copies of the 2316 (one for BIR filing, one for the employee's file).
+          const tiled = typeof buildTiledPagesHtml === 'function'
+            ? buildTiledPagesHtml([detail], () => renderTemplate(tplBody, ctx), {
+              copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
+              continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+              pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tplBody) : undefined,
+            })
+            : '';
+          const full = UI.printableHtml(tiled || renderTemplate(tplBody, ctx), '2316 - ' + (detail.employee.name || ''));
           UI.modal({
             title: `BIR 2316 — ${detail.employee.name || ''}`, size: 'lg', cancelText: 'Close', confirmText: 'Print…',
             bodyHTML: `<iframe id="b16-frame" style="width:100%;height:56vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
-            onOpen: (o2) => { o2.querySelector('#b16-frame').srcdoc = full; },
+            onOpen: (o2) => {
+              const ifr = o2.querySelector('#b16-frame');
+              if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
+              ifr.srcdoc = full;
+            },
             onConfirm: (o2) => { const ifr = o2.querySelector('#b16-frame'); ifr.contentWindow.focus(); ifr.contentWindow.print(); return false; },
           });
         } catch (e) { UI.toast(e.message, 'error'); }

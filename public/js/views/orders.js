@@ -3,7 +3,7 @@
 App.register('orders', async (view, filter) => {
   const type = filter && filter.type === 'job' ? 'job' : filter && filter.type === 'purchase' ? 'purchase' : 'sale';
   const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Job Order' : 'Purchase Request';
-  const state = { q: '' };
+  const state = { q: '', backorder: false };
   const qbDoc = type === 'purchase' ? 'Bill' : 'Invoice';
   let qb = { connected: false };
   try { qb = await API.get('/quickbooks/status'); } catch { /* not configured */ }
@@ -13,10 +13,13 @@ App.register('orders', async (view, filter) => {
   if (type === 'purchase') { try { suppliers = await API.get('/suppliers'); } catch { /* optional */ } }
   let customers = [];
   let locations = [];
+  let finishedProducts = [];
   if (type === 'sale') {
     try { customers = await API.get('/customers'); } catch { /* optional */ }
     try { locations = await API.get('/locations'); } catch { /* optional */ }
+    try { finishedProducts = await API.get('/finished-products'); } catch { /* optional */ }
   }
+  const fpIds = new Set(finishedProducts.map((p) => p.id));
   let taxCodes = [];
   if (type !== 'job') { try { taxCodes = await API.get('/accounting/tax-codes?active=1'); } catch { /* needs accounting.view */ } }
   const partyLabel = type === 'purchase' ? 'Vendor' : 'Customer';
@@ -26,10 +29,18 @@ App.register('orders', async (view, filter) => {
       <h2>${noun}s</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" placeholder="Search number, customer…" /></div>
+      ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show only approved/released orders with an unfulfilled line">${UI.icon('alert', 15)} Backorders</button>` : ''}
       ${App.hasPermission('users.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
       <button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>
     </div>
     <div class="panel"><div id="ord-table"></div></div>`;
+
+  const backorderBtn = view.querySelector('#ord-backorder');
+  if (backorderBtn) backorderBtn.onclick = () => {
+    state.backorder = !state.backorder;
+    backorderBtn.classList.toggle('active', state.backorder);
+    load();
+  };
 
   const qbBtn = view.querySelector('#ord-qb');
   if (qbBtn) qbBtn.onclick = () => quickbooksModal(() => App.navigate('orders', filter));
@@ -41,6 +52,7 @@ App.register('orders', async (view, filter) => {
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     const params = new URLSearchParams({ type });
     if (state.q) params.set('q', state.q);
+    if (state.backorder) params.set('backorder', '1');
     const list = await API.get('/orders?' + params.toString());
     render(list);
   }
@@ -49,9 +61,10 @@ App.register('orders', async (view, filter) => {
     if (!list.length) {
       tableEl.innerHTML = UI.emptyState({
         icon: 'forms',
-        title: state.q ? 'No matching orders' : `No ${noun.toLowerCase()}s yet`,
-        hint: state.q ? 'Try a different search.' : `Create your first ${noun.toLowerCase()} to start.`,
-        action: state.q ? '' : `<button class="btn" id="ord-empty-new">${UI.icon('plus')} New ${noun}</button>`,
+        title: state.backorder ? 'No backorders' : state.q ? 'No matching orders' : `No ${noun.toLowerCase()}s yet`,
+        hint: state.backorder ? 'Every approved order is fully covered by stock or released units.'
+          : state.q ? 'Try a different search.' : `Create your first ${noun.toLowerCase()} to start.`,
+        action: (state.q || state.backorder) ? '' : `<button class="btn" id="ord-empty-new">${UI.icon('plus')} New ${noun}</button>`,
       });
       const en = tableEl.querySelector('#ord-empty-new');
       if (en) en.onclick = () => orderModal(null);
@@ -66,7 +79,7 @@ App.register('orders', async (view, filter) => {
             <td>${UI.esc(o.customer_name || '—')}</td>
             <td>${UI.esc(o.order_date || UI.fmtDateShort(o.created_at))}</td>
             <td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>
-            <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span></td>
+            <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span>${o.backordered ? ' <span class="badge-pill low" title="A line is not yet fully released from stock">⚠ backorder</span>' : ''}</td>
             <td class="actions">
               ${type === 'job' && App.hasPermission('inventory.adjust')
                 ? (o.job_order_id
@@ -107,6 +120,163 @@ App.register('orders', async (view, filter) => {
     orderModal(order);
   }
 
+  /* ---------- Stock shortfall on approve/confirm: trim, produce, or backorder ---------- */
+  function shortfallModal(opts) {
+    const av = opts.availability || { lines: [] };
+    const short = (av.lines || []).filter((l) => l.shortfall > 0);
+    const finishUp = () => { try { sfm.close(); } catch (e) {} try { opts.closeParent && opts.closeParent(); } catch (e) {} load(); };
+
+    async function ensureOrder() {
+      if (opts.orderId) return opts.orderId;
+      const r = await API.post('/orders', { type, ...opts.body, status: 'open' });
+      opts.orderId = r.id;
+      return r.id;
+    }
+    async function resave(extra) {
+      const oid = await ensureOrder();
+      await API.put('/orders/' + oid, Object.assign({}, opts.body, extra || {}));
+    }
+
+    const sfm = UI.modal({
+      title: 'Not enough stock',
+      size: 'lg',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">${short.length} line${short.length === 1 ? '' : 's'} can't be met from stock. Choose how to proceed.</p>
+        <table>
+          <thead><tr><th>Line</th><th class="right">Ordered</th><th class="right">Available</th><th class="right">Short</th><th>Make it?</th></tr></thead>
+          <tbody>${short.map((l) => `<tr>
+            <td>${UI.esc(l.name)}</td>
+            <td class="right">${l.ordered}</td>
+            <td class="right">${l.available}</td>
+            <td class="right danger">${l.shortfall}</td>
+            <td>${!l.is_finished_product ? '<span class="muted">not built here</span>'
+              : !l.has_bom ? '<span class="muted">no BOM</span>'
+              : l.buildable ? '<span class="badge-pill ok">components on hand</span>'
+              : `<span class="badge-pill low">short: ${l.component_shortfalls.map((c) => `${UI.esc(c.name)} (need ${c.need}, have ${c.have})`).join('; ')}</span>`}${
+              l.linked_job_orders.length ? `<div class="muted" style="font-size:11px">MO: ${l.linked_job_orders.map((j) => UI.esc(j.number) + ' (' + j.remaining + ' left)').join(', ')}</div>` : ''}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+        <div id="sf-result" class="muted" style="font-size:12px;margin-top:8px"></div>`,
+      confirmText: null,
+      cancelText: 'Back',
+      onOpen: (ov) => {
+        const result = ov.querySelector('#sf-result');
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
+        actions.innerHTML = `
+          <button type="button" class="btn secondary" id="sf-trim">Trim order to available</button>
+          <button type="button" class="btn secondary" id="sf-produce">Create job orders for the shortfall</button>
+          <button type="button" class="btn secondary" id="sf-purchase">Draft purchase orders for the shortfall</button>
+          <button type="button" class="btn secondary danger" id="sf-force">Approve as a backorder</button>`;
+        ov.querySelector('#sf-result').before(actions);
+
+        ov.querySelector('#sf-trim').onclick = async () => {
+          opts.cleaned.forEach((c) => {
+            const s = short.find((x) => x.name === c.name && x.item_id === (c.item_id || null));
+            if (s) c.quantity = Math.max(0, c.quantity - s.shortfall);
+          });
+          const trimmed = opts.cleaned.filter((c) => c.quantity > 0);
+          if (!trimmed.length) { result.textContent = 'Every short line would drop to zero — adjust manually.'; return; }
+          try {
+            const oid = await ensureOrder();
+            await API.put('/orders/' + oid, Object.assign({}, opts.body, { items: trimmed }));
+            UI.toast('Order trimmed to available stock'); finishUp();
+          } catch (e) { result.textContent = e.message; }
+        };
+
+        ov.querySelector('#sf-produce').onclick = async (ev) => {
+          ev.target.disabled = true;
+          try {
+            const oid = await ensureOrder();
+            const r = await API.post('/orders/' + oid + '/produce-shortfall', {});
+            const made = (r.created || []).map((c) => `${c.number} — ${c.line} ×${c.qty}${c.buildable ? '' : ' ⚠ components short'}`);
+            const skip = (r.skipped || []).map((s) => `${s.line}: ${s.reason}`);
+            result.innerHTML = (made.length ? '<b>Created:</b> ' + made.map(UI.esc).join('<br>') : 'No job orders created.')
+              + (skip.length ? '<br><b>Skipped:</b> ' + skip.map(UI.esc).join('<br>') : '')
+              + '<br>The shortfall is now on the production line. Approve as a backorder to lock the order.';
+          } catch (e) { result.textContent = e.message; ev.target.disabled = false; }
+        };
+
+        ov.querySelector('#sf-purchase').onclick = async (ev) => {
+          ev.target.disabled = true;
+          try {
+            const oid = await ensureOrder();
+            const r = await API.post('/orders/' + oid + '/purchase-shortfall', {});
+            const made = (r.created || []).map((c) =>
+              `${UI.esc(c.number)} → ${UI.esc(c.supplier_name || 'no supplier on the items')} (${c.lines} line${c.lines === 1 ? '' : 's'})`);
+            result.innerHTML = made.length
+              ? '<b>Draft POs:</b><br>' + made.join('<br>') + '<br>Review &amp; send them from Purchasing, then approve this order as a backorder.'
+              : UI.esc(r.note || 'Nothing to buy — the shortfall is all built here, not purchased.');
+          } catch (e) { result.textContent = e.message; ev.target.disabled = false; }
+        };
+
+        ov.querySelector('#sf-force').onclick = async (ev) => {
+          if (!(await UI.confirmDialog('Approve this order even though stock is short? It becomes a backorder — stock may go negative when it ships.', 'Approve backorder'))) return;
+          ev.target.disabled = true;
+          try {
+            await resave({ force: true });
+            UI.toast('Approved (backorder)'); finishUp();
+          } catch (e) { result.textContent = e.message; ev.target.disabled = false; }
+        };
+      },
+    });
+  }
+
+  /* ---------- Allocate finished (built) units to this sale order ---------- */
+  async function allocateUnitsModal(order) {
+    const fpLines = (order.items || []).filter((li) => fpIds.has(li.item_id));
+    if (!fpLines.length) { UI.toast('No finished-product lines on this order', 'error'); return; }
+    // For each finished-product line, load its units once.
+    const perLine = await Promise.all(fpLines.map(async (li) => {
+      const units = await API.get(`/finished-products/${li.item_id}/units?status=all`).catch(() => []);
+      const inStock = units.filter((u) => u.status === 'in_stock');
+      const serial = inStock.filter((u) => u.identifier && u.identifier.trim());
+      const bulk = inStock.length - serial.length;
+      const allocated = units.filter((u) => u.status === 'sold' && String(u.order_id) === String(order.id)).length;
+      return { li, serial, bulk, allocated, ordered: Number(li.quantity) || 0 };
+    }));
+
+    UI.modal({
+      title: `Allocate finished units — ${order.number}`,
+      size: 'lg',
+      bodyHTML: `
+        <p class="muted" style="margin-top:0">Reserve built units for this order. Allocating removes them from finished-goods stock and stamps this order.</p>
+        ${perLine.map((row, i) => `
+          <div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px" data-row="${i}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <strong>${UI.esc(row.li.name)}</strong>
+              <span class="muted">ordered ${row.ordered} · allocated ${row.allocated} · in stock ${row.serial.length + row.bulk}</span>
+            </div>
+            ${row.serial.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">
+              ${row.serial.map((u) => `<label class="check"><input type="checkbox" class="al-u" data-line="${i}" value="${u.id}" /> <span class="mono">${UI.esc(u.identifier)}</span></label>`).join('')}
+            </div>` : ''}
+            ${row.bulk ? `<div class="field-row" style="margin-top:6px"><div><label>Bulk / untracked units</label>
+              <input class="al-q" data-line="${i}" type="number" min="0" max="${row.bulk}" value="0" style="width:90px" /></div></div>` : ''}
+            ${!row.serial.length && !row.bulk ? '<div class="muted" style="margin-top:4px">No units in stock — build some first.</div>' : ''}
+          </div>`).join('')}`,
+      confirmText: 'Allocate',
+      onConfirm: async (ov, showErr) => {
+        let done = 0;
+        for (let i = 0; i < perLine.length; i++) {
+          const itemId = perLine[i].li.item_id;
+          const unit_ids = [...ov.querySelectorAll(`.al-u[data-line="${i}"]:checked`)].map((c) => Number(c.value));
+          const qEl = ov.querySelector(`.al-q[data-line="${i}"]`);
+          const qty = qEl ? (parseInt(qEl.value, 10) || 0) : 0;
+          if (unit_ids.length) {
+            await API.post(`/finished-products/${itemId}/units/allocate`, { action: 'sell', order_id: order.id, unit_ids });
+            done += unit_ids.length;
+          }
+          if (qty > 0) {
+            await API.post(`/finished-products/${itemId}/units/allocate`, { action: 'sell', order_id: order.id, quantity: qty });
+            done += qty;
+          }
+        }
+        if (!done) { showErr('Pick units or enter a quantity on at least one line'); return false; }
+        UI.toast(`${done} unit${done === 1 ? '' : 's'} allocated to ${order.number}`);
+      },
+    });
+  }
+
   /* ---------- Start a production run linked to this job order ---------- */
   async function startProduction(orderId) {
     const [order, products, locations] = await Promise.all([
@@ -114,7 +284,7 @@ App.register('orders', async (view, filter) => {
       API.get('/finished-products'),
       API.get('/locations'),
     ]);
-    if (!products.length) { UI.toast('Define a finished product with a BOM first (Inventory → Finished Products)', 'error'); return; }
+    if (!products.length) { UI.toast('Define a finished product with a BOM first (Production → Finished Products)', 'error'); return; }
     // Prefill from a line item that maps to a finished product, if any.
     const match = (order.items || []).find((li) => products.some((p) => p.id === li.item_id));
     const locOpts = locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('');
@@ -154,8 +324,14 @@ App.register('orders', async (view, filter) => {
     const lines = editing ? (order.items || []).map((it) => ({ ...it })) : [];
     const get = (k, d) => (editing && order[k] != null ? order[k] : d);
 
-    const statusOpts = ['open', 'confirmed', 'completed', 'cancelled']
-      .map((s) => `<option value="${s}" ${get('status', 'open') === s ? 'selected' : ''}>${s}</option>`).join('');
+    // Sale orders get the release lifecycle: open → approved (unlocks warehouse
+    // release) → released (auto once fully picked) → confirmed/completed (stock out).
+    const STATUS_VALUES = type === 'sale'
+      ? ['open', 'approved', 'released', 'confirmed', 'completed', 'cancelled']
+      : ['open', 'confirmed', 'completed', 'cancelled'];
+    const curStatus = get('status', 'open');
+    const statusOpts = (STATUS_VALUES.includes(curStatus) ? STATUS_VALUES : STATUS_VALUES.concat(curStatus))
+      .map((s) => `<option value="${s}" ${curStatus === s ? 'selected' : ''}>${s}</option>`).join('');
 
     const m = UI.modal({
       title: editing ? `Edit ${order.number}` : `New ${noun}`,
@@ -190,6 +366,8 @@ App.register('orders', async (view, filter) => {
         <div class="line-actions">
           <button type="button" class="btn secondary small" id="ord-add-inv">${UI.icon('inventory', 15)} Add inventory item</button>
           <button type="button" class="btn secondary small" id="ord-add-blank">${UI.icon('plus', 15)} Add blank line</button>
+          ${editing && type === 'sale' && (order.items || []).some((li) => fpIds.has(li.item_id))
+            ? `<button type="button" class="btn secondary small" id="ord-allocate">${UI.icon('sparkles', 15)} Allocate finished units</button>` : ''}
         </div>
         <div class="order-totals">
           <div class="row"><span>Subtotal</span><strong id="ord-subtotal">0.00</strong></div>
@@ -235,7 +413,11 @@ App.register('orders', async (view, filter) => {
           }
           body.innerHTML = lines.map((l, i) => `
             <tr data-row="${i}">
-              <td><input data-k="name" value="${UI.esc(l.name || '')}" placeholder="Item name" /></td>
+              <td><input data-k="name" value="${UI.esc(l.name || '')}" placeholder="Item name" />${
+                type === 'sale' && (l.allocated_qty || l.reserved_qty || l.released_qty)
+                  ? `<div class="muted" style="font-size:11px">${
+                      Math.max(Number(l.allocated_qty || 0) + Number(l.reserved_qty || 0), Number(l.released_qty || 0))
+                    } / ${Number(l.quantity) || 0} released${Number(l.allocated_qty || 0) ? ` (${l.allocated_qty} shipped)` : ''}</div>` : ''}</td>
               <td><input data-k="sku" value="${UI.esc(l.sku || '')}" style="width:90px" /></td>
               <td><input data-k="quantity" type="number" step="any" value="${UI.esc(String(l.quantity ?? 1))}" class="right" style="width:70px" /></td>
               <td><input data-k="unit" value="${UI.esc(l.unit || '')}" style="width:60px" /></td>
@@ -270,6 +452,8 @@ App.register('orders', async (view, filter) => {
           });
           renderLines();
         });
+        const allocBtn = ov.querySelector('#ord-allocate');
+        if (allocBtn) allocBtn.onclick = () => allocateUnitsModal(order);
         renderLines();
       },
       onConfirm: async (ov, showErr) => {
@@ -318,8 +502,20 @@ App.register('orders', async (view, filter) => {
           if (locations.length) body.location_id = fOpt('location_id') || null;
         }
         if (taxCodes.length) body.tax_code_id = fOpt('tax_code_id') || null;
-        if (editing) await API.put('/orders/' + order.id, body);
-        else await API.post('/orders', { type, ...body });
+
+        try {
+          if (editing) await API.put('/orders/' + order.id, body);
+          else await API.post('/orders', { type, ...body });
+        } catch (e) {
+          if (e && e.status === 409 && e.data && e.data.availability) {
+            shortfallModal({
+              orderId: editing ? order.id : null, body, lines, cleaned,
+              availability: e.data.availability, closeParent: () => m.close && m.close(),
+            });
+            return false;   // keep this modal open behind the shortfall prompt
+          }
+          throw e;
+        }
         UI.toast(editing ? 'Order saved' : 'Order created');
         load();
       },
@@ -426,15 +622,26 @@ App.register('orders', async (view, filter) => {
         API.get('/templates?type=' + order.type),
         API.get('/templates/company'),
       ]);
-      // List returns metadata only; fetch full body for the first matching template.
-      const tpl = templateList[0];
-      const [tplBody, variables] = await Promise.all([
-        tpl ? API.get('/templates/' + tpl.id).then((t) => t.body) : Promise.resolve(FALLBACK_TEMPLATE),
+      // List returns metadata only; fetch the full row (body + Print Grid settings) for the
+      // first matching template.
+      const tplMeta = templateList[0];
+      const [tpl, variables] = await Promise.all([
+        tplMeta ? API.get('/templates/' + tplMeta.id) : Promise.resolve(null),
         // Global variables always apply; template-scoped ones only when a real template matched.
-        API.get('/templates/variables' + (tpl ? `?template_id=${tpl.id}` : '')).catch(() => []),
+        API.get('/templates/variables' + (tplMeta ? `?template_id=${tplMeta.id}` : '')).catch(() => []),
       ]);
+      const tplBody = tpl ? tpl.body : FALLBACK_TEMPLATE;
       const ctx = buildDocContext({ order, company, user: App.getMe(), variables });
-      const full = UI.printableHtml(renderTemplate(tplBody, ctx), order.number);
+      // Same opt-in Print Grid tiling as form-linked templates (public/js/print-tiling.js) —
+      // e.g. printing 2 copies of one order side by side, or a Continuous run of several.
+      const tiled = tpl && typeof buildTiledPagesHtml === 'function'
+        ? buildTiledPagesHtml([order], () => renderTemplate(tplBody, ctx), {
+          copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
+          continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+          pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tplBody) : undefined,
+        })
+        : '';
+      const full = UI.printableHtml(tiled || renderTemplate(tplBody, ctx), order.number);
 
       UI.modal({
         title: order.number + ' — Preview',
@@ -442,7 +649,11 @@ App.register('orders', async (view, filter) => {
         bodyHTML: `<iframe id="ord-preview-frame" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
         cancelText: 'Close',
         confirmText: 'Print…',
-        onOpen: (ov) => { ov.querySelector('#ord-preview-frame').srcdoc = full; },
+        onOpen: (ov) => {
+          const ifr = ov.querySelector('#ord-preview-frame');
+          if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
+          ifr.srcdoc = full;
+        },
         onConfirm: (ov) => {
           const ifr = ov.querySelector('#ord-preview-frame');
           ifr.contentWindow.focus();
