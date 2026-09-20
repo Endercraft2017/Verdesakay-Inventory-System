@@ -1,4 +1,4 @@
-# `src/routes/orders.routes.ts`
+# `src/modules/inventory/orders.routes.ts`
 
 ## Purpose
 Implements `/api/orders`: CRUD for Job, Sale, and Purchase orders, each with a header row (`orders`) and line items (`order_items`). One router serves all three types, selected via `?type=` on list and via `type` in the create body. Auto-generates order numbers and always recomputes totals server-side rather than trusting client-submitted numbers.

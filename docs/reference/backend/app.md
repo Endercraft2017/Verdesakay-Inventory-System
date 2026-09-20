@@ -34,7 +34,7 @@ Builds and returns a fully configured Express app. Call order inside:
    app.use((err, _req, res, next) => { ... })
    ```
    - If headers are already sent, delegates to `next(err)` (Express default behavior) instead of trying to send a second response.
-   - Reads `err.status` if present and numeric (this is how `ValidationError` from `src/validation.ts`, and any other thrown object with a numeric `.status`, gets its intended HTTP code); otherwise defaults to `500`.
+   - Reads `err.status` if present and numeric (this is how `ValidationError` from `src/shared/validation.ts`, and any other thrown object with a numeric `.status`, gets its intended HTTP code); otherwise defaults to `500`.
    - Logs to `console.error` only for `status >= 500` (keeps expected 4xx validation/permission errors out of the error log).
    - Response body message: the real `err.message` for `status < 500` when `err instanceof Error`; otherwise the generic `'Internal server error'` (so 5xx responses never leak internal error detail to the client).
 
@@ -48,7 +48,7 @@ None beyond the inline middleware closures described above (request logger, SPA 
 - `express`, `helmet`, `express-rate-limit` — npm middleware.
 - `./routes/auth.routes`, `./routes/users.routes`, `./routes/inventory.routes`, `./routes/forms.routes`, `./routes/messages.routes`, `./routes/personal.routes`, `./routes/orders.routes`, `./routes/templates.routes`, `./routes/form-builder.routes`, `./routes/ai.routes`, `./routes/hr.routes` — every feature router.
 
-Note: `app.ts` does **not** import `src/db.ts` directly — DB initialization is the caller's responsibility (`server.ts` calls `init()` before `createApp()`; `tests/helpers.ts` does the same against a throwaway DB).
+Note: `app.ts` does **not** import `src/shared/db.ts` directly — DB initialization is the caller's responsibility (`server.ts` calls `init()` before `createApp()`; `tests/helpers.ts` does the same against a throwaway DB).
 
 ## Used by
 - `server.ts` — calls `createApp()` after `init()`, then `.listen()`.

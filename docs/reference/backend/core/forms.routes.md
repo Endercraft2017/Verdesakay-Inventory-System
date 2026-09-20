@@ -1,4 +1,4 @@
-# `src/routes/forms.routes.ts`
+# `src/core/forms.routes.ts`
 
 ## Purpose
 Company document/file management: list (department-visibility-scoped), multipart upload to disk,

@@ -19,7 +19,7 @@ Zero native compilation (a real pain point on Windows), zero extra services, one
 backups. A single connection is fine for office-scale concurrency. Note: `node:sqlite` has
 no `.transaction()` helper — use explicit `BEGIN/COMMIT/ROLLBACK` via `db.exec`.
 
-## 2026-06-20 — Validation with `zod`, centralized in `src/validation.ts`
+## 2026-06-20 — Validation with `zod`, centralized in `src/shared/validation.ts`
 One place for all input rules; schemas double as TypeScript types via `z.infer`. Replaces
 scattered hand-rolled checks, improving both security and readability.
 

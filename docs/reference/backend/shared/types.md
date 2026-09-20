@@ -1,7 +1,7 @@
-# `src/types.ts`
+# `src/shared/types.ts`
 
 ## Purpose
-The single source of truth for shared backend domain types: DB row shapes, API-response shapes, the `Role`/`Permission` enums, and the Express `Request` augmentation that gives `req.user`/`req.token` types everywhere. Mirrors the schema in `src/db.ts` — kept in sync by hand (no codegen).
+The single source of truth for shared backend domain types: DB row shapes, API-response shapes, the `Role`/`Permission` enums, and the Express `Request` augmentation that gives `req.user`/`req.token` types everywhere. Mirrors the schema in `src/shared/db.ts` — kept in sync by hand (no codegen).
 
 ## Exports / Public API
 
@@ -17,10 +17,10 @@ export type Permission = 'inventory.view' | 'inventory.create' | 'inventory.edit
   | 'templates.view' | 'templates.edit' | 'templates.company'
   | 'users.manage' | 'hr.view' | 'hr.manage';
 ```
-8-variant and 22-variant string-literal unions respectively. Must be kept in sync by hand with `roleEnum` in `src/validation.ts` and `ALL_PERMISSIONS`/`ROLE_DEFAULTS` in `src/permissions.ts` — nothing enforces this automatically.
+8-variant and 22-variant string-literal unions respectively. Must be kept in sync by hand with `roleEnum` in `src/shared/validation.ts` and `ALL_PERMISSIONS`/`ROLE_DEFAULTS` in `src/shared/permissions.ts` — nothing enforces this automatically.
 
 ### Row / entity interfaces
-Each mirrors a table in `src/db.ts` (`init()`). One-line summaries (see `db.md` for full column semantics):
+Each mirrors a table in `src/shared/db.ts` (`init()`). One-line summaries (see `db.md` for full column semantics):
 - `Department` — `{ id, name, created_at }`.
 - `UserRow` — full `users` row including `password_hash` (never sent to clients — used only where the raw row is read for auth, e.g. login).
 - `AuthUser` — the sanitized, request-attached user shape: same as `UserRow` minus `password_hash`, plus `department_name` (joined) and `permissions: Permission[]` (computed by `resolvePermissions()`, not a DB column). This is what `req.user` is typed as everywhere.
@@ -45,7 +45,7 @@ Each mirrors a table in `src/db.ts` (`init()`). One-line summaries (see `db.md` 
 - `GlobalVariable` — `{ key, label, value, updated_by, updated_at }`.
 - `CompanyProfile` — `{ name, address, phone, email, logo_url, compress_images }` (not a DB row — this shape is actually persisted via the `settings` key-value store under a single key, not its own table; see `templates.routes.ts`). `compress_images` (default `true`) is a client-only flag: the Messages composers downscale image attachments over ~1 MB before upload when it's on.
 - `DocVariable` — a `doc_variables` registry row (constant / bound field / formula variable for the document-template editor).
-- `CatalogEntry` / `CatalogGroup` — `{ path, label }` / `{ group, items: CatalogEntry[] }`, the shape of `DATA_SOURCE_CATALOG` in `src/doc-catalog.ts`.
+- `CatalogEntry` / `CatalogGroup` — `{ path, label }` / `{ group, items: CatalogEntry[] }`, the shape of `DATA_SOURCE_CATALOG` in `src/core/doc-catalog.ts`.
 
 ### Express augmentation
 ```ts
@@ -67,10 +67,10 @@ None — this file contains only type/interface declarations, no runtime logic.
 None (no imports) — this is a leaf module in the dependency graph, imported by nearly everything else.
 
 ## Used by
-Nearly every backend TypeScript file: `src/auth.ts` (`AuthUser`, `Role`), `src/permissions.ts` (`Role`, `Permission`), `src/doc-catalog.ts` (`CatalogGroup`), and every file under `src/routes/*.ts` (`users.routes.ts`, `hr.routes.ts`, `templates.routes.ts`, `personal.routes.ts`, `orders.routes.ts`, `inventory.routes.ts`, `auth.routes.ts`, `form-builder.routes.ts`, `ai.routes.ts`) for the relevant row/response types. Also `src/ai-tools.ts`.
+Nearly every backend TypeScript file: `src/shared/auth.ts` (`AuthUser`, `Role`), `src/shared/permissions.ts` (`Role`, `Permission`), `src/core/doc-catalog.ts` (`CatalogGroup`), and every file under `src/routes/*.ts` (`users.routes.ts`, `hr.routes.ts`, `templates.routes.ts`, `personal.routes.ts`, `orders.routes.ts`, `inventory.routes.ts`, `auth.routes.ts`, `form-builder.routes.ts`, `ai.routes.ts`) for the relevant row/response types. Also `src/modules/ai/ai-tools.ts`.
 
 ## Notes / gotchas
-- **No runtime validation lives here** — these are compile-time-only TypeScript types. A `SELECT` in a route file that doesn't actually match a declared interface's shape will not error; the mismatch only shows up as `undefined`/wrong-typed data at the point a field is read, since `queryOne`/`queryAll` in `src/db.ts` cast rather than parse.
+- **No runtime validation lives here** — these are compile-time-only TypeScript types. A `SELECT` in a route file that doesn't actually match a declared interface's shape will not error; the mismatch only shows up as `undefined`/wrong-typed data at the point a field is read, since `queryOne`/`queryAll` in `src/shared/db.ts` cast rather than parse.
 - **Raw-vs-parsed JSON duality** appears repeatedly (`InventoryItem.attributes`, `FormDefinition.fields`, `FormRecord.data`) — each is typed as a union of the raw stored string and its parsed form specifically because the same interface is reused for "row straight out of the DB" and "shape sent back to the client after a route parses the JSON column." Callers must check which state they're in; the type alone doesn't disambiguate.
-- Three enums must be kept manually consistent across files: `Role`/`Permission` here, `roleEnum` (and the analogous inline permission-key validation) in `src/validation.ts`, and `ALL_PERMISSIONS`/`ROLE_DEFAULTS` in `src/permissions.ts`. Adding an 8th... 9th role or 23rd permission means touching all three files (plus the frontend's own duplicated copies, e.g. `admin.js`'s `ROLE_DEFAULTS`).
+- Three enums must be kept manually consistent across files: `Role`/`Permission` here, `roleEnum` (and the analogous inline permission-key validation) in `src/shared/validation.ts`, and `ALL_PERMISSIONS`/`ROLE_DEFAULTS` in `src/shared/permissions.ts`. Adding an 8th... 9th role or 23rd permission means touching all three files (plus the frontend's own duplicated copies, e.g. `admin.js`'s `ROLE_DEFAULTS`).
 - `CompanyProfile` is the one interface here that doesn't correspond to its own table — worth remembering when searching for "where is company profile stored" (`settings` table, single JSON blob, via `getSetting`/`setSetting`).

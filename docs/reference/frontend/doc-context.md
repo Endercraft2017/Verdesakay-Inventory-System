@@ -67,11 +67,11 @@ which callers rely on: it also returns `ctx` for chaining).
 after `doc-template.js` and before `doc-editor.js`.
 
 ## Used by
-- **`public/js/views/templates.js`** — `previewContext(custom)` calls the bare global
+- **`public/js/modules/core/templates.js`** — `previewContext(custom)` calls the bare global
   `applyVariables(ctx, custom || [])` (guarded by `typeof applyVariables !== 'undefined'`)
   to layer a template's custom variables onto a deep-cloned `SAMPLE` context for the editor's
   live preview and the "Preview" action.
-- **`public/js/views/orders.js`** *(wired up 2026-08-25 — see Notes)* — `printOrder()` calls
+- **`public/js/modules/inventory/orders.js`** *(wired up 2026-08-25 — see Notes)* — `printOrder()` calls
   `buildDocContext({ order, company, user, variables })` to build the real print context for
   Sale/Job/Purchase orders, fetching that order's applicable `doc_variables` from
   `GET /templates/variables?template_id=` first.

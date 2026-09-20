@@ -116,7 +116,7 @@ to **post** them.
 | **Payslips** (`hr_payroll` records) | Payroll Journal → Dr Salaries, Dr ER contributions, Cr SSS/PHIC/HDMF payable, Cr WT payable, Cr Cash/Net-pay payable — **✅ shipped, §5 Phase 3a** |
 | **Stock adjustments / damage** (`inventory_transactions`) | Inventory shrinkage / write-off entries |
 | **Job orders** (WIP consumption + finished-goods) | Manufacturing journal → Dr WIP, Cr Raw materials; Dr Finished goods, Cr WIP |
-| **QuickBooks push** (`src/quickbooks.ts`) | Interim bridge — a customer can keep QBO as the GL while we build ours; once ours exists, it's the same posting logic pointed inward |
+| **QuickBooks push** (`src/modules/quickbooks/quickbooks.ts`) | Interim bridge — a customer can keep QBO as the GL while we build ours; once ours exists, it's the same posting logic pointed inward |
 
 So the incremental work is: a **chart of accounts**, a **journal-entry engine**, a
 **posting rule per document type**, **period close**, and the **reports**.
@@ -211,7 +211,7 @@ return worksheets can find the right balances without the user wiring anything.
   register + QAP + 2307 printing + 1604-E are new.
 - **1702Q / 1702-RT** worksheet — trial balance → book income → the common
   add-backs/deductions → tax due; attach the AFS. ✅ **Phase 4d** (`bir-1702`,
-  `src/ph-income-tax.ts`; RCIT / MCIT / OSD / credits).
+  `src/modules/payroll/ph-income-tax.ts`; RCIT / MCIT / OSD / credits).
 - **Books of Accounts export** for CAS presentation. ✅ **Phase 4b** — `GET /books-of-accounts`
   bundles the General Journal / General Ledger / Cash books / Sales & Purchase Journals with
   the company header; printable + per-book CSV (Accounting → Tax & Compliance → Books of Accounts).
@@ -225,7 +225,7 @@ return worksheets can find the right balances without the user wiring anything.
   on-screen view + a **Print** to a cover page + page-broken statements + notes. A *draft*
   from the ledger — the app doesn't write the disclosures or audit. `tests/accounting.test.ts`
   ("comparative AFS pack").
-- **1702Q / 1702-RT income tax worksheet.** ✅ **Phase 4d** — pure `src/ph-income-tax.ts`
+- **1702Q / 1702-RT income tax worksheet.** ✅ **Phase 4d** — pure `src/modules/payroll/ph-income-tax.ts`
   (`incomeTax1702(input)`) + **`GET /api/accounting/bir-1702?period=YYYY|YYYY-Qn`**. Book net
   income and gross income (net sales − COGS + other) are sourced from the posted ledger for
   the range (year-to-date through the quarter for 1702Q; the full year for 1702-RT; the
@@ -261,7 +261,7 @@ statement.
 ## 5. Build order (phased — ship each)
 
 **Phase 0 — foundation. ✅ SHIPPED 2026-08-30.** `accounts` + `accounting_periods` +
-`journal_entries` + `journal_lines`; `src/ledger.ts` (`DEFAULT_COA` + pure validators);
+`journal_entries` + `journal_lines`; `src/modules/accounting/ledger.ts` (`DEFAULT_COA` + pure validators);
 `POST /api/accounting/ledger/setup` seeds the PH SMB COA + fiscal year; **Accounting →
 General Ledger → Books** (`public/js/views/accounting-ledger.js`) — Chart of Accounts
 tree CRUD, Journal (draft → post → reverse, gapless `JV-` numbers), **Trial Balance /
@@ -272,8 +272,8 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
 
 **Phase 1 — AR / AP subledgers + auto-posting sales & purchases.**
 
-- **1a — auto-posting + posting rules. ✅ SHIPPED 2026-08-30.** `src/accounting-posting.ts`
-  (pure `buildSalesEntry` / `buildPurchaseEntry`) + `src/accounting-autopost.ts` (the
+- **1a — auto-posting + posting rules. ✅ SHIPPED 2026-08-30.** `src/modules/accounting/accounting-posting.ts`
+  (pure `buildSalesEntry` / `buildPurchaseEntry`) + `src/modules/accounting/accounting-autopost.ts` (the
   DB-facing `maybeAutoPostSale` / `maybeAutoPostVendorBill` / `unpostSource`, best-effort,
   same pattern as `maybeAutoPush`). A **confirmed** sale order (`status` confirmed /
   completed / …) posts **DR AR / CR Sales / CR Output VAT** to the *sales* journal; an
@@ -379,7 +379,7 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   `pagibig_payable_account_id`, `withholding_tax_payable_account_id`,
   `net_pay_payable_account_id`, `employee_advance_account_id`) map to the already-seeded
   COA codes 2130/2150/2160/2170/2185/6100/6110/1190 via `seedPostingRulesFromCoa()`.
-  `src/accounting-posting.ts`'s `buildPayrollEntry()` — a self-check sums debits vs.
+  `src/modules/accounting/accounting-posting.ts`'s `buildPayrollEntry()` — a self-check sums debits vs.
   credits and refuses to post (with a specific error) if a run assembled from
   hand-edited payslips (`auto_statutory` off) doesn't actually balance, rather than
   silently posting garbage. Employer-side shares are computed and **persisted on each
@@ -458,11 +458,11 @@ closed-period lock, `activity_log` on every write. `tests/ledger.test.ts` +
   turning the GL on is what opts a tenant into perpetual inventory; all of it is
   best-effort (never blocks the order save) and stock is allowed to go negative (a
   backorder — no shortage block yet). `buildCogsEntry` + `maybeFulfillSale`
-  (`src/accounting-autopost.ts`); UI: a **Ship from** picker on the sale-order form.
+  (`src/modules/accounting/accounting-autopost.ts`); UI: a **Ship from** picker on the sale-order form.
   `tests/accounting-posting.test.ts` ("buildCogsEntry") + `tests/accounting.test.ts`
   ("COGS on sale").
 - **3b — moving-average valuation. ✅ SHIPPED 2026-08-31.** `applyStockChange`
-  (`src/inventory-stock.ts`) gained an optional `unitCost`; on a **positive** change that
+  (`src/modules/inventory/inventory-stock.ts`) gained an optional `unitCost`; on a **positive** change that
   passes one, it rolls `inventory_items.unit_cost` to the weighted moving average
   `(max(prevQty,0) × prevCost + inQty × unitCost) / newQty` (a pre-existing negative
   on-hand counts as 0 so a backorder doesn't distort the blend). **Goods receipts** pass
@@ -656,7 +656,7 @@ None of the above ship BIR compliance. The RELIEF/SLSP `.DAT`, 2550Q, 1601-EQ + 
 2307 issuance, alphalists, books-of-accounts printouts and the CAS audit-trail rules
 (§1, §4.2) are our own build — this document is that spec. For the **BIR-report surface a
 PH buyer expects**, benchmark against **QuickBooks Online** (already integrated —
-`src/quickbooks.ts`), **Xero**, and the PH-local **Oojeema** / **ECOUNT** (our price-floor
+`src/modules/quickbooks/quickbooks.ts`), **Xero**, and the PH-local **Oojeema** / **ECOUNT** (our price-floor
 competitor).
 
 ---
@@ -731,7 +731,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | `SetupWizard` / `GetStarted` | `POST /accounting/ledger/setup` (seed COA + fiscal year) | ✅ **Phase 0** |
 | Dashboard | `analytics` (Reports) | ✅ |
 | Data import | CSV import (items/suppliers/employees); COA/opening-balance import | 🟡 → Phase 0.1 |
-| `ERPNextSyncSettings` / sync queue | our QuickBooks push (`src/quickbooks.ts`) is the analogous "external accounting bridge" | ✅ (different target) |
+| `ERPNextSyncSettings` / sync queue | our QuickBooks push (`src/modules/quickbooks/quickbooks.ts`) is the analogous "external accounting bridge" | ✅ (different target) |
 
 **Phase 0 (this build) = the GL foundation**: chart of accounts, fiscal periods,
 manual journal entries with the CAS invariants, and the four core financial reports.

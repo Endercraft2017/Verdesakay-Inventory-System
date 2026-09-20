@@ -74,7 +74,7 @@ modules to consume. It is the *last* script tag in `index.html`.
 
 ## Notes / gotchas
 - **(Fixed 2026-08-26)** The AI assistant used to be a hard-coded echo stub — despite a fully
-  built, tested backend already existing (`src/routes/ai.routes.ts`, `src/ai-tools.ts`, 18
+  built, tested backend already existing (`src/modules/ai/ai.routes.ts`, `src/modules/ai/ai-tools.ts`, 18
   passing tests in `tests/ai.test.ts`) and `docs/AI-AGENT.md` documenting this exact frontend
   contract (`aiHistory`, typing indicator, tool chips, light markdown) as if it were already
   wired up. It wasn't — the file's own header comment claimed "no backend yet," which had

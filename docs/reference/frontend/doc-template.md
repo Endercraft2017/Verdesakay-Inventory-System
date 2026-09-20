@@ -77,10 +77,10 @@ class/closure-heavy state — every function is pure given its inputs (aside fro
   doc-context.js, doc-editor.js, hr-payroll-print.js, app.js, ...`.
 
 ## Used by
-- `public/js/views/orders.js` — `printOrder()` calls `renderTemplate(tplBody, ctx)` (with a
+- `public/js/modules/inventory/orders.js` — `printOrder()` calls `renderTemplate(tplBody, ctx)` (with a
   hand-built `ctx` from its own local `buildContext()`, not `doc-context.js`'s
   `buildDocContext`) and feeds the result to `UI.printDocument()`.
-- `public/js/views/templates.js` — template list "Preview" action and the editor's live
+- `public/js/modules/core/templates.js` — template list "Preview" action and the editor's live
   preview both call `renderTemplate(t.body, SAMPLE | previewContext(custom))`; `ORDER_VARIABLES`
   is not directly read here (the editor gets its variable list from the server's `/templates/
   variables/catalog` route plus custom variables — see `buildVarList` in that file), but

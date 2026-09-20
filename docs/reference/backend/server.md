@@ -7,15 +7,15 @@ The process entry point. Initializes the database, schedules periodic session cl
 This file exports nothing — it is a script, not a module. It runs top-to-bottom on import/execution:
 
 ```ts
-init();                                          // src/db.ts — create schema, migrate, seed
+init();                                          // src/shared/db.ts — create schema, migrate, seed
 setInterval(cleanupSessions, 60 * 60 * 1000).unref(); // hourly expired-session sweep
 const app = createApp();                         // src/app.ts
 const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, '0.0.0.0', () => { /* log local + LAN URLs */ });
 ```
 
-- **`init()`** (from `src/db.ts`) — runs synchronously before anything else; creates tables if missing, runs `migrate()`, seeds default data. Must complete before `createApp()` mounts routes that assume the schema exists.
-- **`cleanupSessions`** (from `src/db.ts`) — deletes expired rows from `sessions`. Scheduled hourly via `setInterval(...).unref()` — `.unref()` means this timer alone won't keep the Node process alive (doesn't block a clean shutdown).
+- **`init()`** (from `src/shared/db.ts`) — runs synchronously before anything else; creates tables if missing, runs `migrate()`, seeds default data. Must complete before `createApp()` mounts routes that assume the schema exists.
+- **`cleanupSessions`** (from `src/shared/db.ts`) — deletes expired rows from `sessions`. Scheduled hourly via `setInterval(...).unref()` — `.unref()` means this timer alone won't keep the Node process alive (doesn't block a clean shutdown).
 - **`createApp()`** (from `src/app.ts`) — builds the Express app (middleware + routes); does not itself start listening, which is why `server.ts` (not `app.ts`) is the thing that calls `.listen()`.
 - **Listening**: binds to `0.0.0.0:PORT` (not `localhost`) specifically so other machines on the office LAN can connect, not just the host machine. `PORT` is read from the `PORT` env var, defaulting to `3000`.
 - **Startup log**: on successful listen, iterates `os.networkInterfaces()` to collect non-internal IPv4 addresses and prints one `http://<ip>:<port>` line per LAN-facing interface, plus a `localhost` line, so whoever starts the server can read the URL to give coworkers off the console.

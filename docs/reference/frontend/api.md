@@ -47,7 +47,7 @@ logic — every call hits the network directly.
 
 ## Used by
 Every view file and `app.js`/`tools.js` call `API.get/post/put/del/upload` for all backend
-communication — effectively the entire `public/js/views/*.js` set, plus `app.js` (login,
+communication — effectively the entire `public/js/modules/*/*.js` set, plus `app.js` (login,
 logout, session resume, department list, unread count) and `tools.js` (notes/tasks/
 bookmarks). `doc-editor.js` does not call `API` directly (callers pass `onSave`/`getVariables`
 closures that use `API` on the editor's behalf).

@@ -1,4 +1,4 @@
-# `src/ai-tools.ts`
+# `src/modules/ai/ai-tools.ts`
 
 ## Purpose
 Defines the full catalogue of tools the AI Assistant (Cerebras-backed agentic loop) can call, the
@@ -24,7 +24,7 @@ Note: `ToolName` is a local (non-exported) type — `executeTool`'s `name` param
 `string` and cast to `ToolName` internally via `name as ToolName`.
 
 ### `TOOL_PERMISSION: Record<ToolName, Permission | null>` (line ~46)
-Maps every tool to the single `Permission` key (from `src/types.ts`) required to call it, or
+Maps every tool to the single `Permission` key (from `src/shared/types.ts`) required to call it, or
 `null` for tools open to any authenticated user (utility + all Notes/Tasks tools). Exact mapping:
 
 | Tool | Permission |
@@ -46,7 +46,7 @@ Maps every tool to the single `Permission` key (from `src/types.ts`) required to
 | `get_notes`/`create_note`/`update_note`/`delete_note`, `get_tasks`/`create_task`/`update_task`/`delete_task` | `null` |
 
 Note `create_order`/`update_order`/`delete_order` here map to `orders.create`/`orders.edit`/`orders.delete`,
-but `ALL_PERMISSIONS` in `src/permissions.ts` only actually defines `orders.view`/`orders.create`/`orders.edit`/`orders.delete`
+but `ALL_PERMISSIONS` in `src/shared/permissions.ts` only actually defines `orders.view`/`orders.create`/`orders.edit`/`orders.delete`
 — consistent. (There is no separate `orders.delete` role default granted to any role except `admin`; see permissions.ts.)
 
 ### `TOOL_SPECS: Record<ToolName, CerebrasTool>` (line ~82)
@@ -61,12 +61,12 @@ the LLM only; the actual tool functions do their own coercion/guards):
 - `send_message`: requires `recipient_id`, `body`; optional `subject`.
 - `create_user`: requires `username`, `full_name`, `password`; `role` enum of all 8 roles; optional `department_id`.
 - `update_user`: requires `id`; optional `full_name`, `role`, `department_id`, `active`.
-- Personal tools mirror the shapes of `noteSchema`/`taskSchema` in `src/validation.ts` but are hand-declared here, not derived from those schemas.
+- Personal tools mirror the shapes of `noteSchema`/`taskSchema` in `src/shared/validation.ts` but are hand-declared here, not derived from those schemas.
 
 ### `getToolsForUser(user: AuthUser): CerebrasTool[]` (exported, line ~584)
 Filters `TOOL_SPECS` down to the tools whose `TOOL_PERMISSION` entry is `null` or is included in
 `user.permissions`. This is the **first** permission gate — the model is never even shown a tool
-name it isn't allowed to call. Called by `src/routes/ai.routes.ts` both to build the system
+name it isn't allowed to call. Called by `src/modules/ai/ai.routes.ts` both to build the system
 prompt's tool-name list and to pass as the `tools` array to the Cerebras chat-completions call.
 
 ### `executeTool(name: string, args: unknown, user: AuthUser): Promise<ToolResult>` (exported, line ~599)
@@ -117,7 +117,7 @@ Flow:
   Wrapped in an explicit `db.exec('BEGIN')`/`COMMIT`/`ROLLBACK`
   transaction across the `UPDATE inventory_items` + `INSERT inventory_transactions`.
 - `delete_inventory_item({id})` — 404 if missing; hard `DELETE FROM inventory_items` (cascades to
-  transaction history via FK `ON DELETE CASCADE` defined in `src/db.ts`).
+  transaction history via FK `ON DELETE CASCADE` defined in `src/shared/db.ts`).
 
 **Orders**
 - `search_orders({type?, query?})` — `type` filters exact match (`'sale'`/`'job'` per the tool spec,
@@ -195,7 +195,7 @@ Flow:
   top-level dependency of the module.
 
 ## Used by
-- `src/routes/ai.routes.ts` — imports `getToolsForUser` (to build the system prompt and the
+- `src/modules/ai/ai.routes.ts` — imports `getToolsForUser` (to build the system prompt and the
   Cerebras `tools` payload) and `executeTool` (to run each tool call the model requests).
 - `tests/ai.test.ts` — exercises the AI chat route (and therefore this module) end-to-end (grep
   confirms this is the only other referencing file besides `app.ts`'s indirect mount of
@@ -212,7 +212,7 @@ Flow:
 - **(Fixed 2026-08-25)** `create_user`/`update_user` (AI tools) used to skip zod validation and
   the "don't strip the last admin" guard entirely, relying only on the `users.manage` permission
   gate plus whatever the LLM chose to pass. Both now run through `createUserSchema`/
-  `updateUserSchema` (`src/validation.ts`) and `update_user` replicates `users.routes.ts`'s
+  `updateUserSchema` (`src/shared/validation.ts`) and `update_user` replicates `users.routes.ts`'s
   last-active-admin guard (blocks demoting/disabling the sole remaining `admin`, and clears
   sessions on disable) — same behavior as the REST route.
 - **(Fixed 2026-08-25)** `create_order`'s tool spec used to advertise only `type: 'sale'|'job'`

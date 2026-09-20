@@ -1,4 +1,4 @@
-# `src/routes/personal.routes.ts`
+# `src/core/personal.routes.ts`
 
 ## Purpose
 Per-user CRUD for the right-rail personal productivity tools: Notes, Tasks (Scheduler), and
@@ -36,7 +36,7 @@ delete another user's data — there is no admin override. Mounted at `/api` (so
 | `POST /bookmarks` | 🔑 any user | `bookmarkSchema` | `INSERT INTO bookmarks (user_id, label, route, params)` (`params` JSON-stringified if present) | `201 {id}` | 400 via zod |
 | `DELETE /bookmarks/:id` | 🔑 any user | — | `DELETE FROM bookmarks WHERE id = ? AND user_id = ?` | `200 {ok: true}` | `404 {error:'Bookmark not found'}` |
 
-### Schemas (from `src/validation.ts`)
+### Schemas (from `src/shared/validation.ts`)
 - `noteSchema` — `{title: optional text ≤200 (nullable), body: 1-20000 chars}`.
 - `taskSchema` — `{title: 1-300 chars, due_date: optional text ≤40 (nullable), done: boolish optional}`.
 - `updateTaskSchema` — same shape, all fields optional (`title` optional too, unlike `taskSchema`).
@@ -60,7 +60,7 @@ delete another user's data — there is no admin override. Mounted at `/api` (so
   read/update/delete), auth + validation.
 - `public/js/tools.js` — right-rail Notes / Scheduler (tasks) / Bookmarks tools, and
   right-click-to-bookmark on nav items.
-- `src/ai-tools.ts` — the AI Assistant's `get_notes`/`create_note`/`update_note`/`delete_note` and
+- `src/modules/ai/ai-tools.ts` — the AI Assistant's `get_notes`/`create_note`/`update_note`/`delete_note` and
   `get_tasks`/`create_task`/`update_task`/`delete_task` tools implement equivalent per-caller-scoped
   logic directly against the same tables (bookmarks have no AI tool equivalent).
 

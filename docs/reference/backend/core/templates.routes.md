@@ -1,4 +1,4 @@
-# `src/routes/templates.routes.ts`
+# `src/core/templates.routes.ts`
 
 ## Purpose
 Implements `/api/templates`: CRUD for printable document templates (`doc_templates`), the single company profile used for `{{company.*}}` template variables, and a template-variable registry (`doc_variables`) that backs the editor's variable palette — plus a read-only catalog of the data sources those variables can bind to. Reading templates/variables/company is open to any logged-in user; writes require specific permissions.
@@ -33,7 +33,7 @@ All routes are mounted at `/api/templates` (`src/app.ts`) and require `requireAu
 | `PUT /:id` | `requirePermission('templates.edit')` | `templateSchema` | Updates `name, type, period, body, updated_at`. | `200 { ok: true }` | `404` if not found |
 | `DELETE /:id` | `requirePermission('templates.edit')` | — | Deletes the template row. | `200 { ok: true }` | `404` if not found |
 
-`templateSchema` (`src/validation.ts`): `name` (1-120 chars), `type` enum `sale\|job\|purchase\|generic` (default `generic`), `period` (optional, ≤60 chars), `body` (1 to 5,000,000 chars — templates are full HTML+CSS documents). `companyProfileSchema` fields are optional/defaulted text plus `compress_images` (`boolish`, default `true`); `docVariableSchema` fields are all optional/defaulted text except `key` which must match `/^[a-zA-Z_][\w]{0,63}$/`.
+`templateSchema` (`src/shared/validation.ts`): `name` (1-120 chars), `type` enum `sale\|job\|purchase\|generic` (default `generic`), `period` (optional, ≤60 chars), `body` (1 to 5,000,000 chars — templates are full HTML+CSS documents). `companyProfileSchema` fields are optional/defaulted text plus `compress_images` (`boolish`, default `true`); `docVariableSchema` fields are all optional/defaulted text except `key` which must match `/^[a-zA-Z_][\w]{0,63}$/`.
 
 ## Dependencies
 - `express` — `Router`.
@@ -50,7 +50,7 @@ All routes are mounted at `/api/templates` (`src/app.ts`) and require `requireAu
 - Tests: `tests/templates.test.ts` — default seeds, admin-only (`templates.edit`) CRUD, company profile get/put with a 403 check for a non-privileged role.
 
 ## Notes / gotchas
-- `docs/ARCHITECTURE.md`'s §4 API catalog only lists the `company`, base CRUD, and `templates.company`/`templates.edit` rows for this file — it does **not** document the `/variables*` and `/variables/catalog` endpoints or the `doc_variables` table, which exist in the current code (confirmed via `src/db.ts`'s `CREATE TABLE IF NOT EXISTS doc_variables` and the unique index `idx_doc_variables_key`). Treat this file as the more current source for that surface.
+- `docs/ARCHITECTURE.md`'s §4 API catalog only lists the `company`, base CRUD, and `templates.company`/`templates.edit` rows for this file — it does **not** document the `/variables*` and `/variables/catalog` endpoints or the `doc_variables` table, which exist in the current code (confirmed via `src/shared/db.ts`'s `CREATE TABLE IF NOT EXISTS doc_variables` and the unique index `idx_doc_variables_key`). Treat this file as the more current source for that surface.
 - `POST /variables`'s uniqueness is per **scope + template_id**, not globally per key — the same `key` string can exist once in `scope='global'` and again in a specific template's `scope='template'` rows without conflicting (index is on `(scope, IFNULL(template_id, 0), key)`).
 - `GET /variables` defaults `template_id` to `0` when not supplied, which will never match any real `template_id` (autoincrement PKs start at 1) — so an unscoped call to `GET /variables` effectively returns only `scope='global'` rows, not an error.
 - `PUT /variables/:id` deliberately excludes `key`/`scope` from the update — the schema still requires them in the request body (via `docVariableSchema`) but the SQL only touches the other columns, meaning a client that "renames" the key by resubmitting won't actually change it. Callers should not read `key` back as reflecting a change if the UI only exposed `PUT`.

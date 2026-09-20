@@ -1,4 +1,4 @@
-# `src/db.ts`
+# `src/shared/db.ts`
 
 ## Purpose
 The database module: opens the SQLite connection (Node's built-in `node:sqlite`), owns the entire schema definition, runs idempotent migrations for existing databases, seeds first-run data (admin account, departments, default document templates, the HR Payroll form), and exports the typed query helpers (`queryOne`/`queryAll`/`run`) and settings key-value store (`getSetting`/`setSetting`) that every route module uses instead of touching `db.prepare(...)` directly. This is the single largest and most central file in the backend.
@@ -58,7 +58,7 @@ export function cleanupSessions(): void
 export function newToken(): string
 ```
 - `cleanupSessions()` — `DELETE FROM sessions WHERE expires_at < datetime('now')`. Called on an hourly `setInterval` from `server.ts` and directly by `auth.ts`-adjacent test/route code where relevant.
-- `newToken()` — `crypto.randomBytes(32).toString('hex')`, a 256-bit random session token. Used by `createSession()` in `src/auth.ts` (the only caller).
+- `newToken()` — `crypto.randomBytes(32).toString('hex')`, a 256-bit random session token. Used by `createSession()` in `src/shared/auth.ts` (the only caller).
 
 ## Internal / non-exported helpers
 - `ensureUploadDir()` — `fs.mkdirSync(UPLOAD_DIR, { recursive: true })` if it doesn't already exist. Called once from `init()`.
@@ -77,12 +77,12 @@ export function newToken(): string
 `db.ts` imports nothing from elsewhere in `src/` — it is the foundation every other backend module sits on.
 
 ## Used by
-Every route module imports from `db.ts`: `src/routes/users.routes.ts`, `src/routes/hr.routes.ts`, `src/routes/templates.routes.ts`, `src/routes/personal.routes.ts`, `src/routes/messages.routes.ts`, `src/routes/orders.routes.ts`, `src/routes/forms.routes.ts`, `src/routes/inventory.routes.ts`, `src/routes/auth.routes.ts`, `src/routes/form-builder.routes.ts`, plus `src/ai-tools.ts`. `src/auth.ts` imports `db` (for direct session/user lookups) and `newToken`. `server.ts` imports `init` and `cleanupSessions` directly. `tests/helpers.ts` sets `DB_PATH`/`UPLOAD_DIR` env vars before importing `src/db` (so every test file gets its own throwaway database) and calls `init()`.
+Every route module imports from `db.ts`: `src/core/users.routes.ts`, `src/modules/hr/hr.routes.ts`, `src/core/templates.routes.ts`, `src/core/personal.routes.ts`, `src/core/messages.routes.ts`, `src/modules/inventory/orders.routes.ts`, `src/core/forms.routes.ts`, `src/modules/inventory/inventory.routes.ts`, `src/core/auth.routes.ts`, `src/core/form-builder.routes.ts`, plus `src/modules/ai/ai-tools.ts`. `src/shared/auth.ts` imports `db` (for direct session/user lookups) and `newToken`. `server.ts` imports `init` and `cleanupSessions` directly. `tests/helpers.ts` sets `DB_PATH`/`UPLOAD_DIR` env vars before importing `src/db` (so every test file gets its own throwaway database) and calls `init()`.
 
 ## Notes / gotchas
 - **`migrate()` runs on every process start**, not just "once ever" — each block's guard condition (missing column, CHECK-constraint text, table row count) is what makes it safe to call repeatedly; a new migration must follow the same self-guarding pattern rather than assuming it runs only once.
 - **Foreign keys are ON globally** (`PRAGMA foreign_keys = ON` at module load). Any table rebuild during a migration that involves `DROP TABLE` on a table with incoming FK references from other tables (as `employees` does from `attendance_records`) must bracket the rebuild with `PRAGMA foreign_keys = OFF/ON` *outside* the transaction, exactly as the `employees` migration does — `PRAGMA` can't be toggled mid-transaction in SQLite.
-- **`queryOne`/`queryAll` perform no runtime shape validation** — the generic type parameter `T` is trusted, not checked. A schema drift between a `SELECT` and its declared `T` in `src/types.ts` will not surface as an error; it'll surface as `undefined`/garbage at the field the caller reads.
+- **`queryOne`/`queryAll` perform no runtime shape validation** — the generic type parameter `T` is trusted, not checked. A schema drift between a `SELECT` and its declared `T` in `src/shared/types.ts` will not surface as an error; it'll surface as `undefined`/garbage at the field the caller reads.
 - Table rebuild migrations (`users`, `orders`, `doc_templates`, `employees`) all follow the same recipe: `CREATE ..._new`, `INSERT INTO ..._new SELECT ... FROM <old>`, `DROP TABLE <old>`, `ALTER TABLE ..._new RENAME TO <old>`, re-create any indexes that were dropped along with the old table. Any future column/constraint change serious enough to need a rebuild (rather than a plain `ALTER TABLE ADD COLUMN`) should follow this same pattern for consistency.
 - The `settings` table doubles as a counter store for auto-numbering (`order_seq_*`, `form_seq_<id>`, `employee_seq`) — those counter keys are read/written from the *route* files, not from `db.ts`; if you're hunting for where `EMP-#####`/`SO-#####`/etc. numbers are generated, look in the relevant `*.routes.ts`, not here.
 - `seedHrPayrollForm()`'s existence check is by exact `slug`, and `seedTemplates()`'s per-template checks are by exact `name` — renaming a seeded template/form in the UI does **not** make it get "re-seeded" under the old name on next restart (each seed function only checks for its own specific expected identifier), but it also means the guard won't catch a same-named-but-different-shape row an admin created independently.

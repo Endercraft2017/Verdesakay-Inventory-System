@@ -1,4 +1,4 @@
-# `src/validation.ts`
+# `src/shared/validation.ts`
 
 ## Purpose
 Every request-body validation rule for the API lives here as `zod` schemas, plus the `parseBody` helper routes call to apply them and the `ValidationError` class the central error handler (`src/app.ts`) turns into a 400 response. Keeps validation out of route handlers entirely (per `docs/ARCHITECTURE.md` §5: "never inline in a route").
@@ -33,7 +33,7 @@ Runs `schema.safeParse(data)`. On failure, builds a message from the *first* iss
 - `updateProfileSchema` — `{ full_name: trimmed.min(1).max(120) }`.
 
 ### Users / departments
-- `roleEnum` (not exported) — `z.enum(['admin','admin_staff','accounting','warehouse','releasing','csr','hr','marketing'])` — the 8 roles; must stay in sync with `Role` in `src/types.ts`.
+- `roleEnum` (not exported) — `z.enum(['admin','admin_staff','accounting','warehouse','releasing','csr','hr','marketing'])` — the 8 roles; must stay in sync with `Role` in `src/shared/types.ts`.
 - `createUserSchema` — `username` (lowercased, regex `^[a-z0-9._-]{3,30}$`), `full_name` (1-120 chars), `password` (min 6), `role` (defaults `'admin_staff'`), `department_id` (`optionalId`).
 - `updateUserSchema` — same fields as create but all optional (partial update), plus `active: boolish.optional()`.
 - `resetPasswordSchema` — `{ new_password: string.min(6) }`.
@@ -67,7 +67,7 @@ Runs `schema.safeParse(data)`. On failure, builds a message from the *first* iss
 
 ### Form builder
 - `fieldTypeEnum` (not exported) — `z.enum(['text','number','date','select','textarea','checkbox'])`.
-- `fieldDefSchema` — `{ key: regex ^[a-z0-9_]+$ max 64, label: min 1 max 120, type: fieldTypeEnum, required: boolish default false, options: array(text max 200) max 100 default [], default: text max 500 default '' }` — mirrors `FieldDef` in `src/types.ts`.
+- `fieldDefSchema` — `{ key: regex ^[a-z0-9_]+$ max 64, label: min 1 max 120, type: fieldTypeEnum, required: boolish default false, options: array(text max 200) max 100 default [], default: text max 500 default '' }` — mirrors `FieldDef` in `src/shared/types.ts`.
 - `formDefinitionSchema` — `{ name: min 1 max 120, slug: regex ^[a-z0-9_]+$ max 60, number_prefix: regex ^[A-Z0-9]+$ max 10 default 'FM', icon: max 40 default 'file', fields: array(fieldDefSchema) max 100 default [] }`.
 - `createFormRecordSchema` — `{ form_def_id: coerce.number().int().positive(), data: Record<string,...> default {}, status: max 40 default 'draft' }`.
 - `updateFormRecordSchema` — `{ data: same record type default {}, status: max 40 optional }`.
@@ -101,11 +101,11 @@ The primitive builders (`trimmed`, `optionalText`, `optionalId`, `boolish`, `int
 - `zod` (`z`) — the only import.
 
 ## Used by
-Every route module that accepts a request body: `src/routes/users.routes.ts`, `src/routes/hr.routes.ts`, `src/routes/templates.routes.ts`, `src/routes/personal.routes.ts`, `src/routes/orders.routes.ts`, `src/routes/inventory.routes.ts`, `src/routes/auth.routes.ts`, `src/routes/form-builder.routes.ts` — each calls `parseBody(<schema>, req.body)` at the top of the relevant handler and imports whichever named schemas it needs, plus `ValidationError` where a route needs to throw a 400 for a reason zod itself can't express (e.g. a business-rule check after parsing).
+Every route module that accepts a request body: `src/core/users.routes.ts`, `src/modules/hr/hr.routes.ts`, `src/core/templates.routes.ts`, `src/core/personal.routes.ts`, `src/modules/inventory/orders.routes.ts`, `src/modules/inventory/inventory.routes.ts`, `src/core/auth.routes.ts`, `src/core/form-builder.routes.ts` — each calls `parseBody(<schema>, req.body)` at the top of the relevant handler and imports whichever named schemas it needs, plus `ValidationError` where a route needs to throw a 400 for a reason zod itself can't express (e.g. a business-rule check after parsing).
 
 ## Notes / gotchas
 - **`parseBody` reports only the first validation issue**, not all of them — a request failing multiple rules gets one error message back; the client doesn't learn about the second problem until it fixes the first and resubmits.
 - **Zod schemas here both validate and transform**: `.default(...)`, `.coerce.number()`, and the custom `z.preprocess(...)` calls (`optionalId`, `boolish`) mean `parseBody`'s return value is not simply "the input, if valid" — it can differ from what was posted (empty string → `null`, `'1'` → `true`, missing `quantity` → `0`, etc.). Route code should use the parsed result, not `req.body`, after calling `parseBody`.
-- **`roleEnum` and `employeeStatusEnum`/`fieldTypeEnum` etc. are separate hand-maintained enums** that must track `Role`/`EmployeeStatus`/`FieldDef['type']` in `src/types.ts` — a role or status added to one without the other will surface as either a TypeScript mismatch (types.ts side) or a runtime 400 (validation.ts side rejecting an otherwise-valid value), not a compile error tying the two together.
+- **`roleEnum` and `employeeStatusEnum`/`fieldTypeEnum` etc. are separate hand-maintained enums** that must track `Role`/`EmployeeStatus`/`FieldDef['type']` in `src/shared/types.ts` — a role or status added to one without the other will surface as either a TypeScript mismatch (types.ts side) or a runtime 400 (validation.ts side rejecting an otherwise-valid value), not a compile error tying the two together.
 - `updateItemSchema` intentionally has no `quantity` field — attempting to update quantity through `PUT /inventory/:id` is simply ignored by the schema (unknown keys aren't errors in zod's default non-strict object mode, but they also aren't captured in the parsed output), reinforcing that stock changes must go through `POST /inventory/:id/adjust` (`adjustStockSchema`) so every change is logged to `inventory_transactions`.
 - `formConfigSchema` uses `.passthrough()` — the only schema in the file that deliberately allows extra unvalidated keys through, because the item-form layout's per-field config can carry more properties (`default`, etc.) than the two this schema explicitly checks (`visible`, `required`).

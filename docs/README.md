@@ -25,36 +25,51 @@ Start here. This folder has two layers:
 
 ## Reference docs (per source file)
 
-### Backend — core (`docs/reference/backend/`)
+Backend docs mirror `src/`'s `shared/` / `platform/` / `core/` / `modules/<name>/`
+layout (see [modules/catalog.md](modules/catalog.md) for what each owns); frontend
+view docs mirror `public/js/modules/<name>/` the same way. Not every source file has
+a doc yet — this table only lists ones that exist.
+
+### Backend — top level (`docs/reference/backend/`)
 
 | Source file | Doc |
 |---|---|
 | `server.ts` | [server.md](reference/backend/server.md) |
 | `src/app.ts` | [app.md](reference/backend/app.md) |
-| `src/db.ts` | [db.md](reference/backend/db.md) |
-| `src/auth.ts` | [auth.md](reference/backend/auth.md) |
-| `src/permissions.ts` | [permissions.md](reference/backend/permissions.md) |
-| `src/types.ts` | [types.md](reference/backend/types.md) |
-| `src/validation.ts` | [validation.md](reference/backend/validation.md) |
-| `src/doc-catalog.ts` | [doc-catalog.md](reference/backend/doc-catalog.md) |
-| `src/ai-tools.ts` | [ai-tools.md](reference/backend/ai-tools.md) |
-| `src/hr-payroll-import.ts` | [hr-payroll-import.md](reference/backend/hr-payroll-import.md) |
 
-### Backend — routes (`docs/reference/backend/routes/`)
+### Backend — shared (`docs/reference/backend/shared/`)
 
 | Source file | Doc |
 |---|---|
-| `src/routes/auth.routes.ts` | [auth.routes.md](reference/backend/routes/auth.routes.md) |
-| `src/routes/users.routes.ts` | [users.routes.md](reference/backend/routes/users.routes.md) |
-| `src/routes/inventory.routes.ts` | [inventory.routes.md](reference/backend/routes/inventory.routes.md) |
-| `src/routes/forms.routes.ts` | [forms.routes.md](reference/backend/routes/forms.routes.md) |
-| `src/routes/messages.routes.ts` | [messages.routes.md](reference/backend/routes/messages.routes.md) |
-| `src/routes/personal.routes.ts` | [personal.routes.md](reference/backend/routes/personal.routes.md) |
-| `src/routes/orders.routes.ts` | [orders.routes.md](reference/backend/routes/orders.routes.md) |
-| `src/routes/templates.routes.ts` | [templates.routes.md](reference/backend/routes/templates.routes.md) |
-| `src/routes/form-builder.routes.ts` | [form-builder.routes.md](reference/backend/routes/form-builder.routes.md) |
-| `src/routes/hr.routes.ts` | [hr.routes.md](reference/backend/routes/hr.routes.md) |
-| `src/routes/ai.routes.ts` | [ai.routes.md](reference/backend/routes/ai.routes.md) |
+| `src/shared/db.ts` | [db.md](reference/backend/shared/db.md) |
+| `src/shared/auth.ts` | [auth.md](reference/backend/shared/auth.md) |
+| `src/shared/permissions.ts` | [permissions.md](reference/backend/shared/permissions.md) |
+| `src/shared/types.ts` | [types.md](reference/backend/shared/types.md) |
+| `src/shared/validation.ts` | [validation.md](reference/backend/shared/validation.md) |
+
+### Backend — core (`docs/reference/backend/core/`)
+
+| Source file | Doc |
+|---|---|
+| `src/core/doc-catalog.ts` | [doc-catalog.md](reference/backend/core/doc-catalog.md) |
+| `src/core/auth.routes.ts` | [auth.routes.md](reference/backend/core/auth.routes.md) |
+| `src/core/users.routes.ts` | [users.routes.md](reference/backend/core/users.routes.md) |
+| `src/core/forms.routes.ts` | [forms.routes.md](reference/backend/core/forms.routes.md) |
+| `src/core/messages.routes.ts` | [messages.routes.md](reference/backend/core/messages.routes.md) |
+| `src/core/personal.routes.ts` | [personal.routes.md](reference/backend/core/personal.routes.md) |
+| `src/core/templates.routes.ts` | [templates.routes.md](reference/backend/core/templates.routes.md) |
+| `src/core/form-builder.routes.ts` | [form-builder.routes.md](reference/backend/core/form-builder.routes.md) |
+
+### Backend — modules (`docs/reference/backend/modules/<name>/`)
+
+| Source file | Doc |
+|---|---|
+| `src/modules/inventory/inventory.routes.ts` | [inventory.routes.md](reference/backend/modules/inventory/inventory.routes.md) |
+| `src/modules/inventory/orders.routes.ts` | [orders.routes.md](reference/backend/modules/inventory/orders.routes.md) |
+| `src/modules/hr/hr.routes.ts` | [hr.routes.md](reference/backend/modules/hr/hr.routes.md) |
+| `src/modules/payroll/hr-payroll-import.ts` | [hr-payroll-import.md](reference/backend/modules/payroll/hr-payroll-import.md) |
+| `src/modules/ai/ai-tools.ts` | [ai-tools.md](reference/backend/modules/ai/ai-tools.md) |
+| `src/modules/ai/ai.routes.ts` | [ai.routes.md](reference/backend/modules/ai/ai.routes.md) |
 
 ### Frontend — core libraries (`docs/reference/frontend/`)
 
@@ -72,23 +87,23 @@ Start here. This folder has two layers:
 | `public/js/doc-formula.js` | [doc-formula.md](reference/frontend/doc-formula.md) |
 | `public/js/hr-payroll-print.js` | [hr-payroll-print.md](reference/frontend/hr-payroll-print.md) |
 
-### Frontend — views (`docs/reference/frontend/views/`)
+### Frontend — modules (`docs/reference/frontend/modules/<name>/`)
 
 | Source file | Doc |
 |---|---|
-| `public/js/views/dashboard.js` | [dashboard.md](reference/frontend/views/dashboard.md) |
-| `public/js/views/inventory.js` | [inventory.md](reference/frontend/views/inventory.md) |
-| `public/js/views/forms.js` | [forms.md](reference/frontend/views/forms.md) |
-| `public/js/views/orders.js` | [orders.md](reference/frontend/views/orders.md) |
-| `public/js/views/messages.js` | [messages.md](reference/frontend/views/messages.md) |
-| `public/js/views/form-builder.js` | [form-builder.md](reference/frontend/views/form-builder.md) |
-| `public/js/views/form-records.js` | [form-records.md](reference/frontend/views/form-records.md) |
-| `public/js/views/templates.js` | [templates.md](reference/frontend/views/templates.md) |
-| `public/js/views/admin.js` | [admin.md](reference/frontend/views/admin.md) |
-| `public/js/views/account.js` | [account.md](reference/frontend/views/account.md) |
-| `public/js/views/hr.js` | [hr.md](reference/frontend/views/hr.md) |
-| `public/js/views/hr-employees.js` | [hr-employees.md](reference/frontend/views/hr-employees.md) |
-| `public/js/views/hr-timekeeping.js` | [hr-timekeeping.md](reference/frontend/views/hr-timekeeping.md) |
+| `public/js/modules/core/dashboard.js` | [dashboard.md](reference/frontend/modules/core/dashboard.md) |
+| `public/js/modules/core/forms.js` | [forms.md](reference/frontend/modules/core/forms.md) |
+| `public/js/modules/core/messages.js` | [messages.md](reference/frontend/modules/core/messages.md) |
+| `public/js/modules/core/form-builder.js` | [form-builder.md](reference/frontend/modules/core/form-builder.md) |
+| `public/js/modules/core/form-records.js` | [form-records.md](reference/frontend/modules/core/form-records.md) |
+| `public/js/modules/core/templates.js` | [templates.md](reference/frontend/modules/core/templates.md) |
+| `public/js/modules/core/admin.js` | [admin.md](reference/frontend/modules/core/admin.md) |
+| `public/js/modules/core/account.js` | [account.md](reference/frontend/modules/core/account.md) |
+| `public/js/modules/inventory/inventory.js` | [inventory.md](reference/frontend/modules/inventory/inventory.md) |
+| `public/js/modules/inventory/orders.js` | [orders.md](reference/frontend/modules/inventory/orders.md) |
+| `public/js/modules/hr/hr.js` | [hr.md](reference/frontend/modules/hr/hr.md) |
+| `public/js/modules/hr/hr-employees.js` | [hr-employees.md](reference/frontend/modules/hr/hr-employees.md) |
+| `public/js/modules/hr/hr-timekeeping.js` | [hr-timekeeping.md](reference/frontend/modules/hr/hr-timekeeping.md) |
 
 ### Tests
 

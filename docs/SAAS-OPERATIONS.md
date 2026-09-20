@@ -50,7 +50,7 @@ Custom domains (`inventory.acme.com`) are a later phase.
 
 Each tenant has a `plan` (`trial` / `starter` / `operations` / `complete`; the `default`
 tenant is always `unlimited`). Limits — active users, inventory items, upload storage MB,
-AI chats/month — are in `src/plans.ts`. A `POST` that would exceed a limit gets a **402**
+AI chats/month — are in `src/platform/plans.ts`. A `POST` that would exceed a limit gets a **402**
 with an "upgrade the plan" message. `GET /api/tenant` returns the plan + limits + current
 usage; the frontend shows a trial-countdown / past-due banner from it.
 
@@ -61,12 +61,12 @@ cleared. `suspended` / `purged` → the whole workspace 403s.
 ## Feature modules
 
 Which capability *areas* a workspace has switched on, independent of the quota numbers.
-The toggleable modules (`src/modules.ts`): `inventory`, `manufacturing`, `purchasing`,
+The toggleable modules (`src/shared/modules.ts`): `inventory`, `manufacturing`, `purchasing`,
 `hr`, `accounting`, `ai`, `mobile`, `email`, `quickbooks`. Everything else — Home &
 dashboards, Documents & file storage, Templates, Messages, user Admin, the Activity log —
 is the always-on **core** and can't be turned off.
 
-- **Default set comes from the plan** (`PLAN_MODULES` in `src/plans.ts`): `starter` =
+- **Default set comes from the plan** (`PLAN_MODULES` in `src/platform/plans.ts`): `starter` =
   inventory + purchasing + mobile; `operations` adds manufacturing + hr + email;
   `complete` / `trial` / `unlimited` = everything.
 - **Per-tenant override** (`tenants.modules`, a JSON array) beats the plan default. Set it

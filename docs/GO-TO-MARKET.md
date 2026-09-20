@@ -154,7 +154,7 @@ hardening.
 - **Added 2026-08-29:** **multi-level BOM** (sub-assembly / BOM-within-BOM) with recursive
   explosion to raw materials, **per-unit standard material cost roll-up** (sub-assembly
   cost rolled up from its own parts), **where-used**, and BOM cycle detection.
-  `src/bom-explode.ts`; `/api/finished-products/:id/explode|cost|where-used`.
+  `src/modules/manufacturing/bom-explode.ts`; `/api/finished-products/:id/explode|cost|where-used`.
 - **Gap (harden / extend):** production **scheduling / calendar**, work centers &
   routings, capacity view, cost roll-up extended to **labor + overhead** (materials done),
   scrap/rework reporting, subcontracting, WIP valuation, BOM versioning/effectivity.
@@ -209,7 +209,7 @@ Great in the sales meeting; do not bet the roadmap on it.
   print templates, links from job orders. **Purchasing (2026-08-29):** PO carries a
   supplier + expected date; **goods receipts** post stock against the PO; **vendor
   bills** are gated on a **3-way match** (PO ↔ receipts ↔ bill, price/qty tolerance,
-  recorded force-approve). `src/purchasing-match.ts`, `/api/purchasing/*`.
+  recorded force-approve). `src/modules/purchasing/purchasing-match.ts`, `/api/purchasing/*`.
 - **Gap (invest — see §6):** PO approval workflow, landed cost, partial
   fulfilment / backorders on sale orders, customer records (light CRM),
   AR/AP aging, payment/collection tracking, quotations → SO conversion, price lists.
@@ -225,39 +225,39 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    Scoped with current 2026 figures + a 4-phase plan in
    [PH-PAYROLL-COMPLIANCE.md](PH-PAYROLL-COMPLIANCE.md).
    *Phase A + B-step-1 done 2026-08-29: `payroll_tables` versioned data,
-   `src/ph-statutory.ts` (SSS/PhilHealth/Pag-IBIG + BIR withholding math),
-   `src/payroll-tables.ts` (effective-date resolution), `GET/POST /hr/payroll-tables`,
+   `src/modules/payroll/ph-statutory.ts` (SSS/PhilHealth/Pag-IBIG + BIR withholding math),
+   `src/modules/payroll/payroll-tables.ts` (effective-date resolution), `GET/POST /hr/payroll-tables`,
    generate-payslips auto-fills the statutory + withholding-tax lines (policy toggle
    `auto_statutory`, `pay_frequency`), a **rate-tables admin screen** (Time Keeping →
    Policy Settings), a **13th-month worksheet** (`GET /hr/thirteenth-month`), and
-   **BIR 2316** (per-employee year-end certificate — `src/ph-2316.ts`, `GET /hr/bir-2316`,
+   **BIR 2316** (per-employee year-end certificate — `src/modules/payroll/ph-2316.ts`, `GET /hr/bir-2316`,
    printable template, Time Keeping → BIR 2316), and a **BIR 1601-C monthly worksheet**
    (`GET /hr/bir-1601c`), and the **1604-C Alphalist Schedule-1** CSV in the BIR column
-   order (`src/ph-alphalist.ts`, `GET /hr/bir-alphalist`; the `.DAT` conversion isn't a
+   order (`src/modules/payroll/ph-alphalist.ts`, `GET /hr/bir-alphalist`; the `.DAT` conversion isn't a
    public spec, so customer runs BIR's validation tool). Government agencies have **no
    filing APIs** — we generate the upload files (PH-PAYROLL-COMPLIANCE §3b). **2026-08-30:
    + 1604-C return face with Alphalist reconciliation (`GET /hr/bir-1604c`), final-pay /
-   back-pay worksheet with year-end tax annualisation (`src/ph-final-pay.ts`,
+   back-pay worksheet with year-end tax annualisation (`src/modules/payroll/ph-final-pay.ts`,
    `GET /hr/final-pay/:id`), and the monthly SSS R-3 / PhilHealth RF-1·EPRS / Pag-IBIG
-   MCRF·eSRS contribution schedules with CSV (`src/ph-contributions.ts`).** **2026-08-30
+   MCRF·eSRS contribution schedules with CSV (`src/modules/payroll/ph-contributions.ts`).** **2026-08-30
    (later): the tax filings moved to their own Accounting → Tax & Compliance section
-   (`accounting.view` perm, `src/routes/accounting.routes.ts`) + added BIR 0619-E
-   (expanded WT) and 2550M (monthly VAT) worksheets (`src/ph-vat-ewt.ts`). HR keeps
+   (`accounting.view` perm, `src/modules/accounting/accounting.routes.ts`) + added BIR 0619-E
+   (expanded WT) and 2550M (monthly VAT) worksheets (`src/modules/payroll/ph-vat-ewt.ts`). HR keeps
    13th-month + final pay.** Remaining: leave balances/accrual, BIR 2307 + 1601-EQ/QAP,
    loan ledger.*
 2. **Data import tools (CSV) for items, stock, BOMs, employees, opening balances.**
    Onboarding is impossible without this; it's also billable services. Blocks *every*
    deal. — *Items, suppliers, employees done 2026-08-29 (export + import, upsert by
-   natural key, dry-run, per-row errors; `src/csv.ts` + `src/csv-import.ts`;
+   natural key, dry-run, per-row errors; `src/shared/csv.ts` + `src/shared/csv-import.ts`;
    `UI.csvImportModal`). User guide: `docs/guides/csv-import-export.md`. Still to do:
    opening stock levels, BOM components.*
 3. **SaaS multi-tenancy** (SAAS-READINESS.md). *Phase 1 (per-tenant DB connections) +
    Phase 2 (`platform.db` catalog, sub-domain tenant resolution, `tenant:*` CLI,
    `/api/signup`) + Phase 3 (per-tenant upload folders via `db.uploadDir()`,
    `schema_version` short-circuit, `npm run migrate:all`) + BYO per-tenant AI key
-   (`src/ai-config.ts`, `GET/PUT /api/ai/config`, AI Assistant → AI settings) done
+   (`src/modules/ai/ai-config.ts`, `GET/PUT /api/ai/config`, AI Assistant → AI settings) done
    2026-08-29. + Phase 5 (`users.email` + password reset) + Phase 6 (plans/quotas —
-   `src/plans.ts` + `enforceQuota` 402s at the create endpoints, `GET /api/tenant` +
+   `src/platform/plans.ts` + `enforceQuota` 402s at the create endpoints, `GET /api/tenant` +
    trial/past-due banner, lapsed-trial read-only, `npm run tenant:plan|usage`) done
    2026-08-29. Then custom domains + billing, per-tenant backups job.*
 4. **Manufacturing hardening** (Pillar 3): ~~multi-level BOM, per-unit cost roll-up~~
@@ -267,7 +267,7 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
 5. **Purchasing depth** (Pillar 8): ~~PO → goods receipt → 3-way match~~ *(shipped
    2026-08-29 — `goods_receipts` post stock against a PO, `vendor_bills` gated on a
    PO↔receipts↔bill match with a price/qty tolerance and a recorded force-approve;
-   `src/purchasing-match.ts`, `/api/purchasing/*`, Inventory → Purchasing)*. Still to do:
+   `src/modules/purchasing/purchasing-match.ts`, `/api/purchasing/*`, Inventory → Purchasing)*. Still to do:
    PO approval workflow, landed cost, partial-invoice AP aging report.
 6. **Accounting integration** (see §7) — decide partner-vs-build now; it shapes the pitch.
 7. **Mobile hardening** (Pillar 2): ~~1D barcodes~~ *(already in `scanner.js`)*, ~~label
@@ -279,7 +279,7 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
    production throughput, payroll cost, aging)~~ *(shipped 2026-08-29 — Home → Reports,
    `GET /api/analytics/overview`: inventory value / dead stock, production throughput +
    scrap rate, purchasing & AP aging, sales volume, payroll trend; permission-gated
-   sections. `src/routes/analytics.routes.ts`, `public/js/views/analytics.js`)*. Still
+   sections. `src/core/analytics.routes.ts`, `public/js/views/analytics.js`)*. Still
    to do: date-range pickers, CSV export per panel, drill-through.
 9. **SSO + 2FA** (Pillar 6) — the moment a 150+ employee prospect appears.
 10. **Backups + per-tenant restore + data export** (SAAS-READINESS §5) — "no lock-in" is a
@@ -291,7 +291,7 @@ Ordered. These are the gaps that lose deals or block onboarding in the primary I
 
 Not needed for first sales; each opens a segment or raises price.
 
-- **Accounting integration** — *v1 shipped 2026-08-29: QuickBooks Online (`src/quickbooks.ts`),
+- **Accounting integration** — *v1 shipped 2026-08-29: QuickBooks Online (`src/modules/quickbooks/quickbooks.ts`),
   one Intuit app, per-tenant OAuth, one-way push of sale orders → Invoices / purchase
   requests → Bills, manual button + auto-push. Beta.* Next on this line: Xero, a
   two-way sync (payments/status back), and deeper AR/AP if a segment demands it. We

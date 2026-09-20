@@ -1,4 +1,4 @@
-# `src/auth.ts`
+# `src/shared/auth.ts`
 
 ## Purpose
 Session-token authentication and role/permission-based access control. Owns the session lifecycle (create/destroy/resolve a bearer token to a user) and exposes the Express middleware factories every protected route uses to gate access: `requireAuth`, `requirePermission`, `requireAnyPermission`, and the now-unused-but-still-exported `requireRole`.
@@ -9,7 +9,7 @@ Session-token authentication and role/permission-based access control. Owns the 
 ```ts
 export function createSession(userId: number): string
 ```
-Generates a new token (`newToken()` from `src/db.ts`), inserts a row into `sessions` with `expires_at = datetime('now', '+12 hours')` (`SESSION_HOURS = 12`, a module-level constant), returns the token. Called by `auth.routes.ts` on successful login.
+Generates a new token (`newToken()` from `src/shared/db.ts`), inserts a row into `sessions` with `expires_at = datetime('now', '+12 hours')` (`SESSION_HOURS = 12`, a module-level constant), returns the token. Called by `auth.routes.ts` on successful login.
 
 ```ts
 export function destroySession(token: string): void
@@ -19,7 +19,7 @@ export function destroySession(token: string): void
 ```ts
 export function userFromToken(token: string | null): AuthUser | null
 ```
-The core session-resolution query. Returns `null` immediately if `token` is falsy. Otherwise joins `sessions` → `users` → `departments` (LEFT JOIN, since `department_id` can be null) filtered to `s.token = ? AND s.expires_at >= datetime('now')` — an expired session simply returns no row, so expiry is enforced at read time (no separate "is expired" check needed; combined with hourly `cleanupSessions()` this keeps the `sessions` table from growing unbounded). Returns `null` if no row is found or the user's `active` flag is not `1` (disabled accounts fail auth even with a technically-valid, non-expired token). On a hit: parses `permission_overrides` (stored as a JSON string on the `users` row) into `Record<string, boolean>`, swallowing parse errors to an empty object; strips `permission_overrides` off the returned object; calls `resolvePermissions(row.role, overrides)` (from `src/permissions.ts`) to compute the final `permissions: Permission[]` array attached to the returned `AuthUser`.
+The core session-resolution query. Returns `null` immediately if `token` is falsy. Otherwise joins `sessions` → `users` → `departments` (LEFT JOIN, since `department_id` can be null) filtered to `s.token = ? AND s.expires_at >= datetime('now')` — an expired session simply returns no row, so expiry is enforced at read time (no separate "is expired" check needed; combined with hourly `cleanupSessions()` this keeps the `sessions` table from growing unbounded). Returns `null` if no row is found or the user's `active` flag is not `1` (disabled accounts fail auth even with a technically-valid, non-expired token). On a hit: parses `permission_overrides` (stored as a JSON string on the `users` row) into `Record<string, boolean>`, swallowing parse errors to an empty object; strips `permission_overrides` off the returned object; calls `resolvePermissions(row.role, overrides)` (from `src/shared/permissions.ts`) to compute the final `permissions: Permission[]` array attached to the returned `AuthUser`.
 
 ```ts
 export function getToken(req: Request): string | null
@@ -30,7 +30,7 @@ Reads the `Authorization` header; if it starts with `'Bearer '`, returns the tri
 ```ts
 export function requireAuth(req: Request, res: Response, next: NextFunction): void
 ```
-Reads the token via `getToken`, resolves it via `userFromToken`. If no valid user, responds `401 { error: 'Not authenticated' }` and stops. On success, sets `req.user` (typed `AuthUser`, augmented onto Express's `Request` in `src/types.ts`) and `req.token`, then calls `next()`. Every feature router calls `router.use(requireAuth)` near the top so all its routes require a session, per `docs/ARCHITECTURE.md` §5 conventions.
+Reads the token via `getToken`, resolves it via `userFromToken`. If no valid user, responds `401 { error: 'Not authenticated' }` and stops. On success, sets `req.user` (typed `AuthUser`, augmented onto Express's `Request` in `src/shared/types.ts`) and `req.token`, then calls `next()`. Every feature router calls `router.use(requireAuth)` near the top so all its routes require a session, per `docs/ARCHITECTURE.md` §5 conventions.
 
 ```ts
 export function requireRole(role: Role): (req, res, next) => void
@@ -45,7 +45,7 @@ Returns middleware that 403s unless `req.user.permissions.includes(permission)`.
 ```ts
 export function requireAnyPermission(permissions: Permission[]): (req, res, next) => void
 ```
-Returns middleware that 403s unless `req.user.permissions` includes **at least one** of the given keys (`.some(...)`). Used where two independent feature areas are each legitimately allowed to perform the same action — concretely, `POST /users/departments` and `DELETE /users/departments/:id` in `src/routes/users.routes.ts` accept either `users.manage` or `hr.manage` (see that route's own extra in-handler logic for the additional "only if unused" restriction on `hr.manage`'s delete).
+Returns middleware that 403s unless `req.user.permissions` includes **at least one** of the given keys (`.some(...)`). Used where two independent feature areas are each legitimately allowed to perform the same action — concretely, `POST /users/departments` and `DELETE /users/departments/:id` in `src/core/users.routes.ts` accept either `users.manage` or `hr.manage` (see that route's own extra in-handler logic for the additional "only if unused" restriction on `hr.manage`'s delete).
 
 ## Internal / non-exported helpers
 - `SESSION_HOURS = 12` — module-level constant controlling session lifetime; interpolated directly into the SQL string in `createSession` (`datetime('now', '+${SESSION_HOURS} hours')`) — not a bound parameter, but the value is a hardcoded number, not user input, so this is safe from injection.
@@ -58,7 +58,7 @@ Returns middleware that 403s unless `req.user.permissions` includes **at least o
 - `./permissions` — `resolvePermissions`.
 
 ## Used by
-Every route module: `src/routes/users.routes.ts`, `src/routes/hr.routes.ts`, `src/routes/templates.routes.ts`, `src/routes/personal.routes.ts`, `src/routes/messages.routes.ts`, `src/routes/orders.routes.ts`, `src/routes/forms.routes.ts`, `src/routes/inventory.routes.ts`, `src/routes/auth.routes.ts`, `src/routes/form-builder.routes.ts`, `src/routes/ai.routes.ts` — typically for `requireAuth` plus one or more of `requirePermission`/`requireAnyPermission`; `auth.routes.ts` additionally calls `createSession`/`destroySession`/`getToken` directly for login/logout/me.
+Every route module: `src/core/users.routes.ts`, `src/modules/hr/hr.routes.ts`, `src/core/templates.routes.ts`, `src/core/personal.routes.ts`, `src/core/messages.routes.ts`, `src/modules/inventory/orders.routes.ts`, `src/core/forms.routes.ts`, `src/modules/inventory/inventory.routes.ts`, `src/core/auth.routes.ts`, `src/core/form-builder.routes.ts`, `src/modules/ai/ai.routes.ts` — typically for `requireAuth` plus one or more of `requirePermission`/`requireAnyPermission`; `auth.routes.ts` additionally calls `createSession`/`destroySession`/`getToken` directly for login/logout/me.
 
 ## Notes / gotchas
 - `requirePermission`/`requireAnyPermission` type their `permission`/`permissions` parameter via an inline `import('./types').Permission` rather than a top-of-file `import type { Permission }` — purely a stylistic choice in this file, has no runtime effect, but means a reader searching for "where is `Permission` imported" in this file needs to look at the function signatures, not the top import block.

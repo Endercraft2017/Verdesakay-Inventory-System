@@ -1,13 +1,13 @@
 # Philippine Payroll & Statutory Compliance — scope + current figures
 
 > **Status:** Phase A (engine), Phase B (payslip wiring, rate-tables screen, 13th-month,
-> **final-pay worksheet** — `src/ph-final-pay.ts`, 2026-08-30), Phase C (BIR 2316, 1601-C,
+> **final-pay worksheet** — `src/modules/payroll/ph-final-pay.ts`, 2026-08-30), Phase C (BIR 2316, 1601-C,
 > **1604-C return face + reconciliation** — `GET /hr/bir-1604c`, 2026-08-30, Alphalist
 > Schedule 1), and Phase D (**SSS R-3 / PhilHealth RF-1·EPRS / Pag-IBIG MCRF·eSRS monthly
-> contribution schedules** — `src/ph-contributions.ts`, 2026-08-30) all built. **The tax
+> contribution schedules** — `src/modules/payroll/ph-contributions.ts`, 2026-08-30) all built. **The tax
 > filings then moved to Accounting → Tax & Compliance** (`accounting.view`,
-> `src/routes/accounting.routes.ts`, `/api/accounting/bir-*`) — plus **BIR 0619-E**
-> (expanded WT) and **2550M** (monthly VAT) worksheets (`src/ph-vat-ewt.ts`). HR keeps
+> `src/modules/accounting/accounting.routes.ts`, `/api/accounting/bir-*`) — plus **BIR 0619-E**
+> (expanded WT) and **2550M** (monthly VAT) worksheets (`src/modules/payroll/ph-vat-ewt.ts`). HR keeps
 > 13th-month + final pay. **Per-employee statutory switches** (`employees.deduct_*`, set
 > from Accounting → Statutory Deductions, `accounting.manage`) turn SSS / PhilHealth /
 > Pag-IBIG / withholding off for a given person — zeroed on the payslip, dropped from
@@ -110,11 +110,11 @@ Store the 5-row RWT table (per frequency) as versioned data keyed by effective d
 
 - `payroll_tables` table — versioned reference data: `(kind, effective_from)` unique,
   JSON `data` blob, `note`. Seeded with the 2026 schedule (`INSERT OR IGNORE`, idempotent
-  per kind). `src/db.ts`.
-- `src/payroll-tables.ts` — `effectiveTables(date?)` resolves each kind to the latest row
+  per kind). `src/shared/db.ts`.
+- `src/modules/payroll/payroll-tables.ts` — `effectiveTables(date?)` resolves each kind to the latest row
   whose `effective_from ≤ date` (falls back to the built-in 2026 seed); `listPayrollTables`,
   `upsertPayrollTable` (replace on same kind+date), `deletePayrollTable`.
-- `src/ph-statutory.ts` — pure, DB-free:
+- `src/modules/payroll/ph-statutory.ts` — pure, DB-free:
   - `monthlySalaryCredit(comp)` + `sssContribution(comp)` → `{ msc, employee, employer, ec, total }`
     (5 % / 10 % of MSC; WISP above ₱20 k is the same split; EC ₱10 / ₱30 employer-only)
   - `philHealthContribution(basic)` → `{ employee, employer, total }` (5 %, half each, ₱10 k–₱100 k)
@@ -123,7 +123,7 @@ Store the 5-row RWT table (per frequency) as versioned data keyed by effective d
     semi-monthly / weekly / daily)
   - `taxableCompensation(gross, nonTaxable, employeeStatutory)` and
     `statutoryDeductions(comp, basic, tables)` roll-up
-- API (`src/routes/hr.routes.ts`): `GET /api/hr/payroll-tables?date=` (list + resolved set,
+- API (`src/modules/hr/hr.routes.ts`): `GET /api/hr/payroll-tables?date=` (list + resolved set,
   `hr.view`), `POST` (add/replace a version, `hr.manage`), `DELETE /:id` (`hr.manage`).
 - Tests: `tests/ph-statutory.test.ts` (math vs the 2026 schedules),
   `tests/payroll-tables.test.ts` (seeding, effective-date resolution, RBAC).
@@ -169,7 +169,7 @@ tracking first).
 
 ### Phase C — BIR outputs
 
-- **2316** ✅ step 1 done 2026-08-29. `src/ph-2316.ts` `compute2316(payslipRows, rwt, year,
+- **2316** ✅ step 1 done 2026-08-29. `src/modules/payroll/ph-2316.ts` `compute2316(payslipRows, rwt, year,
   opts)` → Part IV-A / IV-B lines (gross comp, non-taxable = Σ statutory + 13th-month up to
   the ceiling, taxable comp, annual `tax_due` via the new `rwt.annual` bracket table, tax
   withheld, over/under). `GET /api/hr/bir-2316?year=` (list) + `/bir-2316/:employeeId?year=`
@@ -184,7 +184,7 @@ tracking first).
   from the payslips (by pay-date month) + year totals. Time Keeping → 1601-C (table +
   CSV). Non-taxable = statutory EE shares only (13th-month isn't a payslip line — noted
   in the UI + guide). `tests/hr.test.ts` endpoint case.
-- **1604-C + Alphalist** ✅ Schedule 1 done 2026-08-29. `src/ph-alphalist.ts`
+- **1604-C + Alphalist** ✅ Schedule 1 done 2026-08-29. `src/modules/payroll/ph-alphalist.ts`
   `alphalistScheduleRow(seq, emp, figures)` → the BIR's published Schedule-1 column set
   (per the "1604C Alphalist Format" annex — gross, non-taxable 7b–7f, taxable 7g–7j,
   previous-employer, tax due, withheld, YEA, adjusted, substituted-filing). `GET
@@ -247,4 +247,4 @@ Notes:
 - **Keep the existing "HR Payroll" form + print pipeline.** Phase B enriches it rather
   than replacing it.
 - Localisation hook: this whole module is the template for a future "country pack"
-  (GO-TO-MARKET §7) — keep PH specifics behind `src/ph-statutory.ts` + the tables.
+  (GO-TO-MARKET §7) — keep PH specifics behind `src/modules/payroll/ph-statutory.ts` + the tables.

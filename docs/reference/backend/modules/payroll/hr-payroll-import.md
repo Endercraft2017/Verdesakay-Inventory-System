@@ -1,4 +1,4 @@
-# `src/hr-payroll-import.ts`
+# `src/modules/payroll/hr-payroll-import.ts`
 
 ## Purpose
 Pure, dependency-free parsing of the payroll "Summary" CSV export (an external payroll system's spreadsheet) into `PayrollSlip` objects the app can insert as `hr_payroll` form records. No I/O, no Express, no DB access — everything here is a plain function over a string, which is why it's unit-tested directly (`tests/hr-payroll-import.test.ts`) rather than through HTTP.
@@ -92,9 +92,9 @@ The full shape emitted per row: `employee_name, dept_position, payroll_period, p
 None — no imports at all. Pure TypeScript/JavaScript over strings, arrays, and `parseFloat`.
 
 ## Used by
-- `src/routes/form-builder.routes.ts` — `POST /api/form-definitions/:id/import` imports `parsePayrollSummaryCsv` and is its **only production call site** (confirmed via grep across `src/`): reads the uploaded CSV buffer as UTF-8 text, calls `parsePayrollSummaryCsv(text, { payDate })`, then inserts one `form_records` row per returned slip.
+- `src/core/form-builder.routes.ts` — `POST /api/form-definitions/:id/import` imports `parsePayrollSummaryCsv` and is its **only production call site** (confirmed via grep across `src/`): reads the uploaded CSV buffer as UTF-8 text, calls `parsePayrollSummaryCsv(text, { payDate })`, then inserts one `form_records` row per returned slip.
 - `tests/hr-payroll-import.test.ts` — direct unit tests of both exported functions.
-- Not used by `src/routes/hr.routes.ts` — that file's `generate-payslips` endpoint builds its own zeroed/prefilled payslip data independently (see `hr.routes.md`) and has nothing to do with CSV import.
+- Not used by `src/modules/hr/hr.routes.ts` — that file's `generate-payslips` endpoint builds its own zeroed/prefilled payslip data independently (see `hr.routes.md`) and has nothing to do with CSV import.
 
 ## Notes / gotchas
 - **(Fixed 2026-09-15)** Column lookup used to be a fixed index map (itself already patched once, 2026-08-25, for a `specialHoliday30`-onward off-by-one). A real Aug 16-31 2026 export — a 16-day second-half cutoff — exposed that fixed indices can't survive the sheet's column count varying with cutoff length: `days_worked` read from "Total Work Hrs" instead of "Total Days Work", and `holiday_pay` from the days-worked count instead of the holiday-day count (7-9x overstated for every row). Replaced with header-text resolution (`resolveColumns`, see the map above) so the parser no longer cares how many day-columns precede the summary columns, or which order same-looking columns appear in.

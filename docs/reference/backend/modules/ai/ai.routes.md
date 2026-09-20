@@ -1,9 +1,9 @@
-# `src/routes/ai.routes.ts`
+# `src/modules/ai/ai.routes.ts`
 
 ## Purpose
 Implements the single AI Assistant endpoint, `POST /api/ai/chat`: builds a system prompt scoped to
 the caller's identity/permissions, drives an agentic loop against the Cerebras chat-completions API
-(OpenAI-compatible), executes any tool calls the model requests via `src/ai-tools.ts`, and returns
+(OpenAI-compatible), executes any tool calls the model requests via `src/modules/ai/ai-tools.ts`, and returns
 the final natural-language reply plus a step-by-step trace of tool calls.
 
 ## Routes / Exports
@@ -25,7 +25,7 @@ z.object({
 })
 ```
 Validated with `chatSchema.safeParse(req.body)` directly (not via the shared `parseBody` helper
-from `src/validation.ts` — this route does its own inline 400 handling instead of throwing a
+from `src/shared/validation.ts` — this route does its own inline 400 handling instead of throwing a
 `ValidationError`).
 
 ### `POST /chat` — step by step
@@ -33,7 +33,7 @@ from `src/validation.ts` — this route does its own inline 400 handling instead
    (does not use the central error handler's `ValidationError` path).
 2. Reads `req.user!` (guaranteed by `requireAuth`).
 3. Reads `process.env.CEREBRAS_API_KEY`; if unset/empty, responds `503 {error: 'AI is not configured — set CEREBRAS_API_KEY on the server.'}`.
-4. `tools = getToolsForUser(user)` — the permission-filtered tool list (see `src/ai-tools.ts`).
+4. `tools = getToolsForUser(user)` — the permission-filtered tool list (see `src/modules/ai/ai-tools.ts`).
 5. Builds the initial Cerebras message list: one `system` message from `buildSystemPrompt(user, today)`
    followed by the client-supplied `messages` (role/content only — no history persisted server-side;
    the client resends full history each turn per the file's top comment).

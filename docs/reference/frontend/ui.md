@@ -135,7 +135,7 @@ exist in the DOM (defined in `index.html`'s shell).
 
 ## Used by
 Every other frontend file: `app.js`, `tools.js`, `doc-editor.js`, `doc-template.js` (does
-not call UI but is invoked by code that does), and all of `public/js/views/*.js`. This is
+not call UI but is invoked by code that does), and all of `public/js/modules/*/*.js`. This is
 the single most widely-depended-upon frontend module besides `api.js`.
 
 ## Notes / gotchas
@@ -144,8 +144,8 @@ the single most widely-depended-upon frontend module besides `api.js`.
   payroll slip HTML). Popup blockers — including strict "always block" browser settings,
   not just gesture-timing heuristics — can silently prevent `window.open()`. An `<iframe>`
   inside an already-open `UI.modal()` can never be popup-blocked because no new
-  window/tab is requested. See `printSlips()` in `public/js/views/form-records.js` and the
-  "Generate ID" flow in `public/js/views/hr-employees.js` for the reference implementation:
+  window/tab is requested. See `printSlips()` in `public/js/modules/core/form-records.js` and the
+  "Generate ID" flow in `public/js/modules/hr/hr-employees.js` for the reference implementation:
   `UI.modal({ bodyHTML: '<iframe>...' })` then set `frame.srcdoc = UI.printableHtml(html, title)`,
   with a "Print…" confirm button that calls `frame.contentWindow.print()`.
 - `fmtDate`/`fmtDateShort` assume the input is a SQLite `DATETIME` string in UTC with a

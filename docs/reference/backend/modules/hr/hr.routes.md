@@ -1,4 +1,4 @@
-# `src/routes/hr.routes.ts`
+# `src/modules/hr/hr.routes.ts`
 
 ## Purpose
 Implements `/api/hr`: the Employees master list ("201 file" — status, statutory numbers, photo, per-employee document uploads) and Time Keeping (pay-period "cutoffs" with a daily time-in/out roster). It also generates payslip records into the existing `hr_payroll` custom form (`form_records`) so printing reuses the generic Form Records / `hr-payroll-print.js` pipeline rather than a bespoke payroll UI.
@@ -15,7 +15,7 @@ Mounted at `/api/hr` (`src/app.ts`), `router.use(requireAuth)` applies to all ro
 | `PUT /employees/:id` | `hr.manage` | `employeeSchema` | Checks existence (404), then updates all fields (name, department, position, daily_rate, status, start_date, statutory numbers, photo). `employee_no` is never touched by update. | `200 { ok: true }` | `404` if not found |
 | `DELETE /employees/:id` | `hr.manage` | — | Attempts `DELETE FROM employees WHERE id = ?`. | `200 { ok: true }` | `404` if `info.changes === 0`; **`409`** if the delete throws (caught in a `try/catch`) — this happens when `attendance_records.employee_id` (declared `RESTRICT`, per `docs/ARCHITECTURE.md` §3) still references the employee; message instructs to set status to resigned/terminated instead |
 
-`employeeSchema` (`src/validation.ts`): `name` (1-160), `department_id` (optional id), `position` (optional, ≤120), `daily_rate` (coerced number ≥0, default 0), `status` enum `probationary|regular|resigned|terminated` (default `probationary`), `start_date`/`sss_no`/`philhealth_no`/`pagibig_no`/`tin_no` (all optional text), `photo` (optional, `''`→`null`, else must match `/^data:image\//`, max 2,000,000 chars — a client-resized data-URI, never a disk file).
+`employeeSchema` (`src/shared/validation.ts`): `name` (1-160), `department_id` (optional id), `position` (optional, ≤120), `daily_rate` (coerced number ≥0, default 0), `status` enum `probationary|regular|resigned|terminated` (default `probationary`), `start_date`/`sss_no`/`philhealth_no`/`pagibig_no`/`tin_no` (all optional text), `photo` (optional, `''`→`null`, else must match `/^data:image\//`, max 2,000,000 chars — a client-resized data-URI, never a disk file).
 
 ### Employee 201 documents
 | Method & path | Auth | What it does | Response | Errors |

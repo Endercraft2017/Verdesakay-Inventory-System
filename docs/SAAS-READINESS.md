@@ -40,7 +40,7 @@ The rest of this document assumes **A**.
 
 ## 2. The one hard blocker — ✅ done (Phase 1)
 
-`src/db.ts` used to open a **single process-wide connection at import time**
+`src/shared/db.ts` used to open a **single process-wide connection at import time**
 (`export const db = new DatabaseSync(DB_PATH)`). Every module (**26 files**, **~159**
 `db.prepare` / `db.exec` call sites) imported that singleton or the helpers bound to it.
 Nothing carried a tenant.
@@ -145,7 +145,7 @@ choosing A:
 
 ## 5. Filesystem & secrets
 
-**Uploads.** [src/db.ts:15](../src/db.ts#L15) — one flat `UPLOAD_DIR` for everything:
+**Uploads.** [src/shared/db.ts:15](../src/shared/db.ts#L15) — one flat `UPLOAD_DIR` for everything:
 `forms.stored_name`, `employee_documents.stored_name`, `inventory_items.image_path`,
 `employees.photo`, AI report files (`ai-report-*`), mobile damage photos. Filenames are
 random hex so they won't collide, but there's **no tenant boundary** for quota accounting,
@@ -153,7 +153,7 @@ bulk export, or "delete this customer". Move to `uploads/<tenant>/…` and deriv
 from request context. The download routes already auth-check + allowlist filenames; they'd
 additionally scope to the caller's tenant folder.
 
-**Encryption key.** [src/secrets.ts:15](../src/secrets.ts#L15) — falls back to an
+**Encryption key.** [src/shared/secrets.ts:15](../src/shared/secrets.ts#L15) — falls back to an
 auto-generated key stored in each DB's `settings._secret_key`. Under SaaS that means every
 tenant file is self-decrypting if someone copies it. **Decision needed:**
 - *Simplest:* require `APP_SECRET` in the environment for SaaS mode, refuse the
@@ -186,12 +186,12 @@ Consequences:
 - `helmet({ contentSecurityPolicy: false })` — acceptable for now; a shared apex domain
   with per-tenant subdomains eventually wants a real CSP.
 
-**AI key.** [src/routes/ai.routes.ts:171](../src/routes/ai.routes.ts#L171) reads one
+**AI key.** [src/modules/ai/ai.routes.ts:171](../src/modules/ai/ai.routes.ts#L171) reads one
 global `CEREBRAS_API_KEY`. You already decided each tenant brings their own (or you set it
 for them) — so give it the **exact BYO treatment `mail` just got**: an encrypted
 `settings.ai_config` per tenant (key + model + optional base URL), a small settings UI, and
 a fallback to the platform env key when a tenant hasn't set one. See
-[EMAIL-SETUP.md](EMAIL-SETUP.md) / `src/mailer.ts` for the pattern to copy.
+[EMAIL-SETUP.md](EMAIL-SETUP.md) / `src/shared/mailer.ts` for the pattern to copy.
 
 ---
 
@@ -235,15 +235,15 @@ All enforceable cheaply per-tenant because the data is one file:
 
 - **Quotas:** users, inventory items, storage MB (`uploads/<slug>` size), AI calls/month,
   emails/day (you already log every send in `mail_log`). Check at the create endpoints;
-  surface usage in an admin page. ✅ **done 2026-08-29** (`src/quota.ts`).
+  surface usage in an admin page. ✅ **done 2026-08-29** (`src/platform/quota.ts`).
 - **Lifecycle states** gate the tenant-resolution middleware: `trial` (banner +
   countdown), `past_due` (read-only or lock), `suspended` (holding page), `purged`.
   ✅ **done 2026-08-29**.
 - **Feature modules** — which capability *areas* a workspace has, not just how many rows.
-  ✅ **done 2026-09-10** — `src/modules.ts`: `MODULES` = inventory / manufacturing /
+  ✅ **done 2026-09-10** — `src/shared/modules.ts`: `MODULES` = inventory / manufacturing /
   purchasing / hr / accounting / ai / mobile / email / quickbooks; the rest (Home,
   Documents, Templates, Messages, user Admin, Activity) is un-gated "core". The enabled
-  set = `PLAN_MODULES[plan]` (`src/plans.ts`) overridden by a nullable `tenants.modules`
+  set = `PLAN_MODULES[plan]` (`src/platform/plans.ts`) overridden by a nullable `tenants.modules`
   JSON array, with `MODULE_DEPS` unioned in (`manufacturing`/`purchasing` → `inventory`).
   `requireModule(name)` wraps the route mounts in `src/app.ts` (402 when off, ahead of
   `requireAuth`); `GET /api/tenant`, `POST /auth/login` and `GET /auth/me` carry
@@ -260,8 +260,8 @@ All enforceable cheaply per-tenant because the data is one file:
 
 1. ~~**Connection registry + async context** (§2).~~ ✅ **done 2026-08-28.**
 2. ~~**Tenant resolution middleware + `platform.db` with `tenants`** (§6, §8).~~ ✅ **done
-   2026-08-29** — `src/platform.ts` (`platform.db`: `tenants` + `provisioning_log`,
-   `resolveTenantSlug`, catalog helpers), `src/provisioning.ts` (`createTenant` /
+   2026-08-29** — `src/platform/platform.ts` (`platform.db`: `tenants` + `provisioning_log`,
+   `resolveTenantSlug`, catalog helpers), `src/platform/provisioning.ts` (`createTenant` /
    `suspend` / `resume` / `purge`), the resolver middleware in `src/app.ts` (sub-domain,
    or `X-Tenant`/`?tenant` in non-prod; `default` needs no row; unknown → 404, suspended
    → 403), `scripts/tenant.ts` (`npm run tenant:create|list|status|purge`), and
@@ -273,26 +273,26 @@ All enforceable cheaply per-tenant because the data is one file:
    `SCHEMA_VERSION` + `settings.schema_version` short-circuit in `getDb()` and a
    `npm run migrate:all` deploy-time runner (`scripts/migrate-all.ts`, `db.forceMigrate`).
    Still to do: per-tenant upload *quota* accounting (§9).
-4. ~~**BYO AI key** mirroring mail (§6).~~ ✅ 2026-08-29 — `src/ai-config.ts`
+4. ~~**BYO AI key** mirroring mail (§6).~~ ✅ 2026-08-29 — `src/modules/ai/ai-config.ts`
    (`settings.ai_config` + AES `ai_api_key`), `GET/PUT /api/ai/config` (`users.manage`),
    AI Assistant → AI settings modal; falls back to the `CEREBRAS_*` env key.
 5. ~~**`users.email` + password reset** (§3).~~ ✅ 2026-08-29 — `users.email` column +
    admin-UI field; `password_resets` table; `POST /auth/forgot-password` (no
    account-existence leak, emails a 1 h link via the tenant mailbox) + `/auth/reset-password`;
    "Forgot password?" on the login screen + a `?reset=<token>` set-new-password flow.
-6. ~~**Plans, quotas, lifecycle states** (§9).~~ ✅ 2026-08-29 — `src/plans.ts` +
-   `src/quota.ts`: `enforceQuota()` (402) at `POST /users` / `/inventory` / file uploads /
+6. ~~**Plans, quotas, lifecycle states** (§9).~~ ✅ 2026-08-29 — `src/platform/plans.ts` +
+   `src/platform/quota.ts`: `enforceQuota()` (402) at `POST /users` / `/inventory` / file uploads /
    `/ai/chat`; `GET /api/tenant` + a frontend trial/past-due banner; a lapsed `trial` or
    `past_due` → writes blocked (reads + auth still work); `npm run tenant:plan|usage`.
    *Retention policies still TODO.*
 7. ~~**Feature modules** — enable/disable whole capability areas per tenant (§9).~~ ✅
-   2026-09-10 — `src/modules.ts` (`requireModule()` gate + plan-bundle defaults + nullable
+   2026-09-10 — `src/shared/modules.ts` (`requireModule()` gate + plan-bundle defaults + nullable
    `tenants.modules` override + dep union), `modules[]` on `/api/tenant` & the auth
    payloads, `requiredModule` in `nav-config.js` + `hasModule()` in desktop & mobile
    `app.js`, `npm run tenant:modules`. `tests/modules.test.ts`.
 8. ~~**Owner console** — the `/_platform` control-plane UI + `platform_users` (§8, §11).~~
-   ✅ 2026-09-10 — `src/platform-users.ts` (operator accounts + sessions in `platform.db`,
-   `requirePlatformAuth`, `PLATFORM_ADMIN_TOKEN` option), `src/routes/platform.routes.ts`
+   ✅ 2026-09-10 — `src/platform/platform-users.ts` (operator accounts + sessions in `platform.db`,
+   `requirePlatformAuth`, `PLATFORM_ADMIN_TOKEN` option), `src/platform/platform.routes.ts`
    (`/_platform/api/*`: login / tenants CRUD / plan+status+modules PATCH / purge / log;
    404s off the apex host), `web-console/` (dependency-free SPA), mounted in `src/app.ts`
    only when `PLATFORM_CONSOLE=true`. CLI: `npm run platform:user`. Tests:
@@ -339,7 +339,7 @@ Some pure per-file SQLite setups let the filesystem *be* the registry
 fine until you need status/plan/billing, which we do.
 
 **Pick:** `platform.db` (its own SQLite file, its own connection — **not** via
-`tenantStore`), wrapped by a new `src/platform.ts`. Tables now: `tenants`
+`tenantStore`), wrapped by a new `src/platform/platform.ts`. Tables now: `tenants`
 (`id, slug UNIQUE, name, status, plan, created_at, trial_ends_at`), `provisioning_log`.
 Later: `platform_users`, `tenant_domains`, `subscriptions`. Control-plane routes live
 under `/_platform` (later `admin.verdesakay.app`), guarded separately. The tenant

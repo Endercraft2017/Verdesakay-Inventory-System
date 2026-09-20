@@ -63,7 +63,7 @@ Attached as the global `const App` (IIFE). `document.addEventListener('DOMConten
 
 ### Module state
 - `me` — the logged-in user object (`null` when logged out), including its resolved
-  `permissions: Permission[]` array (see `src/permissions.ts`).
+  `permissions: Permission[]` array (see `src/shared/permissions.ts`).
 - `departments` — cached department list for selects.
 - `routes` — `{ [name]: renderFn }`, populated by every view file's `App.register(...)`
   call at script-load time (before `boot()` runs, since all `<script>` tags load

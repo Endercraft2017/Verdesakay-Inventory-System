@@ -194,7 +194,7 @@ plus the `hr_payroll`-slug check, per `docs/ARCHITECTURE.md` §4).
 
 ## Notes / gotchas
 - **`GET /form-definitions/:id/periods` is not listed in `docs/ARCHITECTURE.md`'s §4 API
-  catalog** even though it exists in `src/routes/form-builder.routes.ts` and is actively
+  catalog** even though it exists in `src/core/form-builder.routes.ts` and is actively
   used here — worth double-checking against the live route file rather than the catalog
   alone if periods behavior seems off.
 - **The list only ever shows the form's first 4 fields as columns** (`formDef.fields.slice(0,

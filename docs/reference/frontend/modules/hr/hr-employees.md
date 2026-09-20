@@ -28,7 +28,7 @@ No `filter` keys are read by this view (unlike `hr-timekeeping`'s `filter.period
 - **`openEmployee(id, list)`** — looks up the employee in the already-loaded `list` and opens `employeeModal(emp)`.
 
 ### Photo capture
-- **`resizeImageToDataUrl(file, maxDim, quality)`** — Promise-based pipeline: `FileReader.readAsDataURL` → `Image` load → draw onto an offscreen `<canvas>` scaled so the longer side is at most `maxDim` (aspect-preserving) → `canvas.toDataURL('image/jpeg', quality)`. Called with `(file, 320, 0.82)` from the modal's file-picker `change` handler. The result is a plain JPEG data URI string held in the closure variable `photoData` — nothing is uploaded to a separate endpoint; it travels as a normal field in the employee create/update payload (`photo`). There is no server-side image file storage for employee photos (see `src/db.ts`/`employees.photo` column in `docs/ARCHITECTURE.md` §3).
+- **`resizeImageToDataUrl(file, maxDim, quality)`** — Promise-based pipeline: `FileReader.readAsDataURL` → `Image` load → draw onto an offscreen `<canvas>` scaled so the longer side is at most `maxDim` (aspect-preserving) → `canvas.toDataURL('image/jpeg', quality)`. Called with `(file, 320, 0.82)` from the modal's file-picker `change` handler. The result is a plain JPEG data URI string held in the closure variable `photoData` — nothing is uploaded to a separate endpoint; it travels as a normal field in the employee create/update payload (`photo`). There is no server-side image file storage for employee photos (see `src/shared/db.ts`/`employees.photo` column in `docs/ARCHITECTURE.md` §3).
 
 ### Create/edit modal
 - **`employeeModal(existing)`** *(async wrapper around `ensureDepts().then(...)`)* — builds and opens a `size: 'lg'` `UI.modal`:
@@ -66,7 +66,7 @@ No `filter` keys are read by this view (unlike `hr-timekeeping`'s `filter.period
 - `GET /templates`, `GET /templates/:id`, `GET /templates/company` — ID card generation.
 
 ## Permissions honored
-No `App.hasPermission` calls appear in this file at all — every action (create/edit/delete employee, document upload/delete, department add/delete) is offered unconditionally in the UI and relies entirely on the server (`hr.view` for reads, `hr.manage` for writes, per `src/routes/hr.routes.ts`) to reject unauthorized calls. A user with only `hr.view` would see all the buttons but get server errors attempting writes — the UI does not hide/disable them proactively.
+No `App.hasPermission` calls appear in this file at all — every action (create/edit/delete employee, document upload/delete, department add/delete) is offered unconditionally in the UI and relies entirely on the server (`hr.view` for reads, `hr.manage` for writes, per `src/modules/hr/hr.routes.ts`) to reject unauthorized calls. A user with only `hr.view` would see all the buttons but get server errors attempting writes — the UI does not hide/disable them proactively.
 
 ## Dependencies
 - `App.register`.
@@ -78,7 +78,7 @@ No `App.hasPermission` calls appear in this file at all — every action (create
 
 ## Notes / gotchas
 - **No permission gating in the UI** (see above) — this is the one HR view among the three that has zero `App.hasPermission` checks; `hr-timekeeping.js` is the same in this respect, but worth flagging explicitly since it means UI affordances (buttons) don't reflect what the current user can actually do.
-- Photos are never uploaded as files — they live entirely as base64 JPEG data URIs inside the `employees.photo` TEXT column, capped implicitly by the `320`px/`0.82`-quality resize call. Changing those two literals in `resizeImageToDataUrl(file, 320, 0.82)` is the only lever for photo size/quality; there's no server-side validation of the data URI's byte size (only a max-length string check via `employeeSchema`, if any — see `src/validation.ts`).
+- Photos are never uploaded as files — they live entirely as base64 JPEG data URIs inside the `employees.photo` TEXT column, capped implicitly by the `320`px/`0.82`-quality resize call. Changing those two literals in `resizeImageToDataUrl(file, 320, 0.82)` is the only lever for photo size/quality; there's no server-side validation of the data URI's byte size (only a max-length string check via `employeeSchema`, if any — see `src/shared/validation.ts`).
 - The inline department delete (`removeDepartmentInline`) can fail silently-ish from the user's perspective if the department is used elsewhere — the only feedback is a generic `UI.toast(e.message, 'error')` with whatever message the server returned; there is no pre-check in the frontend to warn before attempting.
 - Document `title` is always the original filename on upload — there's no rename-after-upload UI; to give a document a different display title, this file would need a text input added to the upload flow or a dedicated edit action.
 - `generateId()`'s employee context's `department` field name (`employee.department`) differs from the raw employee row's own field name (`department_id`/`department_name` from the API) — deliberately reshaped for the `{{employee.department}}` template token to be a plain readable string, not the joined `department_name` field's original key.

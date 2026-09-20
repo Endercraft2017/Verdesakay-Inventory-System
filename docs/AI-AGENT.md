@@ -15,7 +15,7 @@ User types message
 POST /api/ai/chat  (Bearer token)
        │
        ▼
-src/routes/ai.routes.ts
+src/modules/ai/ai.routes.ts
   - builds system prompt with user context
   - filters tools to those user can call (via effective permissions)
   - calls the LLM API with tool specs
@@ -25,7 +25,7 @@ The LLM (default: gemini-2.5-flash-lite)
   - may call 0-N tools per turn
        │
        ▼
-src/ai-tools.ts  executeTool()
+src/modules/ai/ai-tools.ts  executeTool()
   - checks permission again (defence in depth)
   - runs the tool against the SQLite DB
   - returns ToolResult {success, data|error}
@@ -50,7 +50,7 @@ public/js/tools.js  openAI()
 ## Configuration
 
 **Per-tenant, BYO key.** Settings live in the `settings` k/v store (key `ai_config` + the
-AES-encrypted `ai_api_key`) via `src/ai-config.ts`, editable at **AI Assistant → AI
+AES-encrypted `ai_api_key`) via `src/modules/ai/ai-config.ts`, editable at **AI Assistant → AI
 settings** (`users.manage`) or `PUT /api/ai/config` — `{model, base_url, api_key}`. Any
 **OpenAI-compatible** chat-completions endpoint works; the modal has presets for Gemini /
 OpenAI / Groq / Cerebras / OpenRouter. The env vars below are the **platform fallback**
@@ -84,9 +84,9 @@ npm start
 
 ## Permission Model
 
-Tools are gated by the caller's **effective permissions**, which are resolved when the user's session is loaded (`src/auth.ts → userFromToken`):
+Tools are gated by the caller's **effective permissions**, which are resolved when the user's session is loaded (`src/shared/auth.ts → userFromToken`):
 
-1. The user's `role` maps to a default permission set (`src/permissions.ts → ROLE_DEFAULTS`).
+1. The user's `role` maps to a default permission set (`src/shared/permissions.ts → ROLE_DEFAULTS`).
 2. Admin can grant or revoke individual permissions per user via `users.permission_overrides` (sparse JSON diff).
 3. The merged set is stored on `req.user.permissions: Permission[]`.
 
@@ -111,7 +111,7 @@ Personal tools (notes, tasks) are available to **every authenticated user** rega
 
 ## Tool Catalogue
 
-All tools are defined in `src/ai-tools.ts`. The full list by category:
+All tools are defined in `src/modules/ai/ai-tools.ts`. The full list by category:
 
 ### Utility
 
@@ -177,7 +177,7 @@ All tools are defined in `src/ai-tools.ts`. The full list by category:
 | `update_task` | Update title, due date, or done status. |
 | `delete_task` | Delete a task. |
 
-### Analytics & reporting (`src/ai-analytics.ts`)
+### Analytics & reporting (`src/modules/ai/ai-analytics.ts`)
 
 Read-only report tools, merged into `getToolsForUser` / `executeTool` and gated the same way.
 
@@ -195,10 +195,10 @@ Read-only report tools, merged into `getToolsForUser` / `executeTool` and gated 
 | `job_order_report` | `inventory.view` | MO counts by status + units ordered/done/scrapped. |
 | `qc_report` | `inventory.view` | QA/QC pass–fail counts, pass rate, top failure remarks. |
 | `run_analytics_query` | `audit.view` | Escape hatch: one read-only `SELECT`/`WITH` (no writes, no stacked statements, no `users`/`sessions`). |
-| `create_report_document` | *(any user)* | `src/ai-reporting.ts` — turns a Markdown report into HTML + `.docx` files under `UPLOAD_DIR`; downloaded via `GET /api/ai/reports/:name` (auth-checked, name-allowlisted). |
-| `send_email` | `mail.send` | `src/ai-mail.ts` — sends an email through the company mailbox (`src/mailer.ts`, BYO SMTP; recorded in `mail_log`). Offered only when configured *and* the user holds `mail.send`. |
+| `create_report_document` | *(any user)* | `src/modules/ai/ai-reporting.ts` — turns a Markdown report into HTML + `.docx` files under `UPLOAD_DIR`; downloaded via `GET /api/ai/reports/:name` (auth-checked, name-allowlisted). |
+| `send_email` | `mail.send` | `src/modules/ai/ai-mail.ts` — sends an email through the company mailbox (`src/shared/mailer.ts`, BYO SMTP; recorded in `mail_log`). Offered only when configured *and* the user holds `mail.send`. |
 
-### Knowledge search / RAG (`src/rag.ts`, `src/ai-rag.ts`)
+### Knowledge search / RAG (`src/modules/ai/rag.ts`, `src/modules/ai/ai-rag.ts`)
 
 | Tool | Permission | Description |
 |---|---|---|
@@ -206,7 +206,7 @@ Read-only report tools, merged into `getToolsForUser` / `executeTool` and gated 
 
 The index (`doc_chunks` FTS5 virtual table) is **rebuilt lazily** — `retrieve()` re-indexes if it's older than 5 minutes — and can be forced with **`POST /api/ai/reindex`** (`audit.view`).
 
-### HR forms / memos / notices (`src/ai-hr-forms.ts`)
+### HR forms / memos / notices (`src/modules/ai/ai-hr-forms.ts`)
 
 Read the data-form / memo / NTE catalogue and **propose** (never issue) a new record. Offered
 to any user with `hr.view` or at least one `forms.manage.<scope>`.
@@ -222,7 +222,7 @@ The `propose_form_record` result renders a **"Review & issue &lt;form&gt;"** but
 assistant's reply (`public/js/tools.js` `actionForStep`). Clicking it calls
 `App.openFormRecordDraft(...)`, which opens the normal Data Forms "New record" modal
 pre-filled — the user edits/confirms, and the real `POST /api/form-records` runs the form's
-actions (`src/form-actions.ts`). The AI never issues or sends a memo directly.
+actions (`src/core/form-actions.ts`). The AI never issues or sends a memo directly.
 
 ---
 
@@ -317,11 +317,11 @@ The `openAI()` function in the right-rail tools manages the UI. Key points:
 
 ## Adding a New Tool
 
-1. Add the tool name to the `ToolName` union in `src/ai-tools.ts`.
+1. Add the tool name to the `ToolName` union in `src/modules/ai/ai-tools.ts`.
 2. Add a `Permission | null` entry to `TOOL_PERMISSION`.
 3. Add the `CerebrasTool` spec to `TOOL_SPECS` (OpenAI function-calling format).
 4. Add a `case` in the `executeTool` switch.
-5. If a new permission is needed, add it to `src/types.ts → Permission` and `src/permissions.ts → ALL_PERMISSIONS` + `ROLE_DEFAULTS`.
+5. If a new permission is needed, add it to `src/shared/types.ts → Permission` and `src/shared/permissions.ts → ALL_PERMISSIONS` + `ROLE_DEFAULTS`.
 6. Add a row to the **Tool Catalogue** table above and to the **API catalog** in `docs/ARCHITECTURE.md §4`.
 7. Write a test in `tests/ai.test.ts`.
 

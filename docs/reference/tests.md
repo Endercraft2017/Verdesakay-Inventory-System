@@ -59,7 +59,7 @@ files never share state with each other.
 
 ## Notes / gotchas
 - Backend tests never touch the real `data.db` — each file gets its own temp DB via
-  `setupApp()`/env var overrides in `src/db.ts` (`DB_PATH`/`UPLOAD_DIR`).
+  `setupApp()`/env var overrides in `src/shared/db.ts` (`DB_PATH`/`UPLOAD_DIR`).
 - When adding a new route or a new pure-logic module, add its test file here and follow the
   existing pattern (`setupApp()` for HTTP, sandbox `vm`/`require` load for browser-global
   frontend modules) rather than inventing a new harness.

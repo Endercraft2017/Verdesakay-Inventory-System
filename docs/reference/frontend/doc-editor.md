@@ -544,7 +544,7 @@ Key sub-concerns:
   storage, or the variable-catalog server route.
 
 ## Used by
-- **`public/js/views/templates.js`** — the only caller (`window.DocEditor.open({...})` in
+- **`public/js/modules/core/templates.js`** — the only caller (`window.DocEditor.open({...})` in
   its `editor(tpl)` function), for both "New template" and "Edit template". Supplies
   `getVariables` (built from `/templates/variables/catalog` + custom variables),
   `sampleContext`/`renderPreview` (built from the module's `SAMPLE` context +

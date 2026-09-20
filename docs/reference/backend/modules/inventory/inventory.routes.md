@@ -1,4 +1,4 @@
-# `src/routes/inventory.routes.ts`
+# `src/modules/inventory/inventory.routes.ts`
 
 ## Purpose
 Inventory item CRUD, search/filter, stock adjustment with an append-only audit trail
@@ -10,8 +10,8 @@ item-form layout (`attributes` JSON round-trip + `form-config` GET/PUT). Mounted
 `router.use(requireAuth)` (line 15) — every route requires a valid session. Note: unlike
 `users.routes.ts`, this router does **not** gate any CRUD route by a specific permission (e.g.
 `inventory.create`/`inventory.edit`/`inventory.adjust`/`inventory.delete`) at the route layer —
-those permissions exist in `src/permissions.ts` and are enforced by the frontend
-(`App.hasPermission`) and by the AI tool layer (`src/ai-tools.ts`'s `TOOL_PERMISSION`), but any
+those permissions exist in `src/shared/permissions.ts` and are enforced by the frontend
+(`App.hasPermission`) and by the AI tool layer (`src/modules/ai/ai-tools.ts`'s `TOOL_PERMISSION`), but any
 authenticated user can call these HTTP endpoints directly. The one exception is `PUT /form-config`,
 which is gated by `inventory.configure`.
 
@@ -28,7 +28,7 @@ which is gated by `inventory.configure`.
 | `POST /:id/adjust` | 🔑 any user | `adjustStockSchema` | Existence check; computes `balance = item.quantity + change`; rejects if `balance < 0`; transactional (`BEGIN`/`COMMIT`/`ROLLBACK`): `UPDATE inventory_items SET quantity`, `INSERT INTO inventory_transactions` | `200 {ok: true, quantity: balance}` | `404 {error:'Item not found'}`; `400 {error:'Not enough stock. Only <n> available.'}` |
 | `DELETE /:id` | 🔑 any user | — | `DELETE FROM inventory_items WHERE id = ?` (cascades transaction history via FK) | `200 {ok: true}` | `404 {error:'Item not found'}` (`info.changes === 0`) |
 
-### Schemas (from `src/validation.ts`)
+### Schemas (from `src/shared/validation.ts`)
 - `createItemSchema` — `name` (1-160), `sku`/`category`/`location`/`notes` (optional text, ≤2000),
   `department_id` (optional positive int/null), `quantity` (int, default 0), `unit` (≤40, optional,
   nullable), `min_quantity` (int ≥0, default 0), `attributes` (`attributesSchema`: flat
@@ -64,7 +64,7 @@ which is gated by `inventory.configure`.
 
 ## Notes / gotchas
 - `POST /:id/adjust`'s negative-balance guard (`balance < 0` → 400) is **stricter** than the
-  equivalent AI tool `adjust_stock` in `src/ai-tools.ts`, which allows a negative resulting quantity
+  equivalent AI tool `adjust_stock` in `src/modules/ai/ai-tools.ts`, which allows a negative resulting quantity
   — a deliberate-looking asymmetry between the HTTP API and the AI assistant's tool.
 - `POST /`'s insert of the initial-stock transaction (when `quantity !== 0`) is **not** wrapped in
   an explicit `BEGIN`/`COMMIT`/`ROLLBACK` transaction, unlike `/adjust`'s two writes — mirroring the

@@ -1,4 +1,4 @@
-# `src/routes/form-builder.routes.ts`
+# `src/core/form-builder.routes.ts`
 
 ## Purpose
 Implements three related API surfaces under one router: `/api/form-definitions` (admin-managed custom form types with JSON field definitions), `/api/form-records` (per-form-definition record CRUD, auto-numbered), and `/api/global-variables` (admin-managed key-value pairs injectable into any document template as `{{global.key}}`). Also owns the HR Payroll CSV bulk-import endpoint, which delegates parsing to `../hr-payroll-import`.
@@ -17,7 +17,7 @@ Mounted with `app.use('/api', formBuilderRoutes)` (note: **not** prefixed `/form
 | `DELETE /form-definitions/:id` | `requirePermission('forms.manage')` | — | Deletes the definition; `form_records` rows cascade via FK `ON DELETE CASCADE`. | `200 { ok: true }` | `404` if `info.changes === 0` |
 | `GET /form-definitions/:id/periods` | 🔑 any user | — | Distinct non-empty `period` values from that form's `form_records`, ordered descending. Used to populate a period filter dropdown. | `200 string[]` | `404` if form id not found |
 
-`formDefinitionSchema` (`src/validation.ts`): `name` (1-120), `slug` (lowercase/digits/underscore, 1-60), `number_prefix` (uppercase letters/digits, default `'FM'`), `icon` (default `'file'`), `fields: FieldDef[]` (each with `key` matching `/^[a-z0-9_]+$/`, `label`, `type` enum `text|number|date|select|textarea|checkbox`, `required`, `options[]`, `default`).
+`formDefinitionSchema` (`src/shared/validation.ts`): `name` (1-120), `slug` (lowercase/digits/underscore, 1-60), `number_prefix` (uppercase letters/digits, default `'FM'`), `icon` (default `'file'`), `fields: FieldDef[]` (each with `key` matching `/^[a-z0-9_]+$/`, `label`, `type` enum `text|number|date|select|textarea|checkbox`, `required`, `options[]`, `default`).
 
 ### CSV import (HR Payroll only)
 **`POST /form-definitions/:id/import`** — `requirePermission('hr.manage')` *(added 2026-08-25 — see Notes)*, then `csvUpload.single('file')` (multer, `memoryStorage`, 5 MB limit).

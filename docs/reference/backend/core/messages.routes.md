@@ -1,4 +1,4 @@
-# `src/routes/messages.routes.ts`
+# `src/core/messages.routes.ts`
 
 ## Purpose
 Internal user-to-user messaging: inbox/sent listing, unread count, send, mark-read, delete. Mounted
@@ -16,7 +16,7 @@ at `/api/messages`. All queries are scoped to the caller (`req.user!.id`) as sen
 | `POST /:id/read` | 🔑 any user | — | `UPDATE messages SET read_at = datetime('now') WHERE id = ? AND recipient_id = ? AND read_at IS NULL` (single scoped statement — no separate existence/ownership check) | `200 {ok: true, updated: info.changes}` (`updated` is `0` if the message didn't exist, wasn't addressed to the caller, or was already read) | — (no error status; "no-op" is reported via `updated: 0`, not a 404) |
 | `DELETE /:id` | 🔑 any user (sender or recipient) | — | `DELETE FROM messages WHERE id = ? AND (sender_id = ? OR recipient_id = ?)` | `200 {ok: true}` | `404 {error:'Message not found'}` (`info.changes === 0` — covers both nonexistent and not-owned-by-caller) |
 
-### Schema (from `src/validation.ts`)
+### Schema (from `src/shared/validation.ts`)
 - `sendMessageSchema = z.object({ recipient_id: z.coerce.number().int().positive(), subject: trimmed.max(200).optional().nullable(), body: trimmed.min(1).max(5000) })`
 
 ## Dependencies
@@ -32,7 +32,7 @@ at `/api/messages`. All queries are scoped to the caller (`req.user!.id`) as sen
 - `tests/messages.test.ts` — send, inbox/sent, unread count, mark-read, self-message guard, delete.
 - `public/js/views/messages.js` — Inbox/sent tabs, open/read thread, compose/reply modal, delete.
 - `public/js/app.js` — unread-badge polling in the chrome (calls `GET /messages/unread-count`).
-- `src/ai-tools.ts` — the AI Assistant's `get_messages`/`send_message`/`get_unread_count`/`mark_message_read`
+- `src/modules/ai/ai-tools.ts` — the AI Assistant's `get_messages`/`send_message`/`get_unread_count`/`mark_message_read`
   tools implement equivalent logic directly against the same tables (not by calling this HTTP route).
 
 ## Notes / gotchas

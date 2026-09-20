@@ -50,7 +50,7 @@ None — loaded fourth in `index.html` (`api.js`, `ui.js`, `nav-config.js`,
 `item-form-config.js`), before `app.js` and any view.
 
 ## Used by
-- `public/js/views/inventory.js` — reads `ITEM_FORM_DEFAULTS`/`ITEM_FORM_TABS` to render
+- `public/js/modules/inventory/inventory.js` — reads `ITEM_FORM_DEFAULTS`/`ITEM_FORM_TABS` to render
   the New/Edit Item modal's 7 tabs and every field, merges the server-saved layout override
   on top (`mergeFormConfig`), and uses `ITEM_CORE_KEYS` to split submitted form data between
   real columns and the `attributes` JSON payload.
@@ -66,8 +66,8 @@ None — loaded fourth in `index.html` (`api.js`, `ui.js`, `nav-config.js`,
   needed. To surface it in the inventory table/filters, read `item.attributes.<key>` in
   `views/inventory.js`.
 - Only promote a field to `core: true` (a real `inventory_items` column) when it needs SQL
-  filtering/sorting — that requires a DB migration (`src/db.ts`), schema updates
-  (`createItemSchema`/`updateItemSchema` in `src/validation.ts`), a `src/types.ts` update,
+  filtering/sorting — that requires a DB migration (`src/shared/db.ts`), schema updates
+  (`createItemSchema`/`updateItemSchema` in `src/shared/validation.ts`), a `src/shared/types.ts` update,
   and adding the key to both `ITEM_CORE_KEYS` here and setting `core: true` on the field def
   — see ARCHITECTURE.md §6 "A new *core* item column" recipe.
 - Several fields are cosmetic/decorative (mirroring the ECOUNT UI this app's inventory

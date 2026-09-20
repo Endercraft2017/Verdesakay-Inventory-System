@@ -96,7 +96,7 @@ from `doc-template.js`). No persistent state; everything is a pure function of i
 `doc-context.js`/`doc-editor.js`, before `app.js`.
 
 ## Used by
-- **`public/js/views/form-records.js`** — the sole call site. `printSlips(dataList)`
+- **`public/js/modules/core/form-records.js`** — the sole call site. `printSlips(dataList)`
   (triggered by the "Print Slips" toolbar button, a per-row row-level Print button, or bulk
   "Print Selected") fetches the live "HR Payroll Slip" template body from `/templates`
   (falling back silently to `buildPayrollSlipsHtml`'s own `FALLBACK_BODY` if the template
