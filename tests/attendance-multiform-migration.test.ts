@@ -45,7 +45,7 @@ describe('attendance_records.form_record_ids migration (SCHEMA_VERSION 24)', () 
     process.env.UPLOAD_DIR = path.join(tmpDir, 'uploads');
     delete process.env.ADMIN_PASSWORD;
 
-    const db = await import('../src/db');
+    const db = await import('../src/shared/db');
     expect(db.SCHEMA_VERSION).toBeGreaterThan(23); // the fix itself: version must have been bumped
     expect(() => db.init()).not.toThrow();
 

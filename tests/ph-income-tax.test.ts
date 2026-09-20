@@ -1,6 +1,6 @@
 /** Pure tests for the corporate income tax worksheet (src/ph-income-tax.ts). */
 import { describe, it, expect } from 'vitest';
-import { incomeTax1702 } from '../src/ph-income-tax';
+import { incomeTax1702 } from '../src/modules/payroll/ph-income-tax';
 
 describe('incomeTax1702', () => {
   it('itemized: book net income ± adjustments × 25%, less credits', () => {

@@ -45,7 +45,7 @@ describe('employees.late_exempt migration', () => {
     process.env.UPLOAD_DIR = path.join(tmpDir, 'uploads');
     delete process.env.ADMIN_PASSWORD;
 
-    const db = await import('../src/db');
+    const db = await import('../src/shared/db');
     expect(db.SCHEMA_VERSION).toBeGreaterThan(19); // the fix itself: this must have been bumped
     expect(() => db.init()).not.toThrow();
 

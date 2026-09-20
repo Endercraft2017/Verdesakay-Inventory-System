@@ -1,7 +1,7 @@
 /** Pure unit tests for src/hr-employee-numbering.ts's suggestEmployeeNumber(). */
 import { describe, it, expect } from 'vitest';
-import { suggestEmployeeNumber } from '../src/hr-employee-numbering';
-import type { EmployeeNumberPolicy } from '../src/types';
+import { suggestEmployeeNumber } from '../src/modules/hr/hr-employee-numbering';
+import type { EmployeeNumberPolicy } from '../src/shared/types';
 
 const SEQ: EmployeeNumberPolicy = { prefix: 'EMP', mode: 'sequential', pad: 5, date_format: 'YYYYMMDD' };
 const HIRE: EmployeeNumberPolicy = { prefix: 'HD', mode: 'hire_date', pad: 2, date_format: 'YYYYMMDD' };

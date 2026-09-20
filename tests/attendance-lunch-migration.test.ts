@@ -45,7 +45,7 @@ describe('attendance_records.lunch_out / lunch_in migration (SCHEMA_VERSION 25)'
     process.env.UPLOAD_DIR = path.join(tmpDir, 'uploads');
     delete process.env.ADMIN_PASSWORD;
 
-    const db = await import('../src/db');
+    const db = await import('../src/shared/db');
     expect(db.SCHEMA_VERSION).toBeGreaterThan(24); // the fix itself: version must have been bumped
     expect(() => db.init()).not.toThrow();
 

@@ -401,9 +401,9 @@ describe('token usage cap', () => {
 
 describe('executeTool unit tests', () => {
   it('adjust_stock rejects zero change', async () => {
-    const { executeTool } = await import('../src/ai-tools');
+    const { executeTool } = await import('../src/modules/ai/ai-tools');
     // Need a user object — we'll build a minimal one
-    const { db } = await import('../src/db');
+    const { db } = await import('../src/shared/db');
     const user = db.prepare('SELECT u.id, u.role FROM users u LIMIT 1').get() as { id: number; role: string };
     const result = await executeTool('adjust_stock', { id: 999, change: 0 }, {
       id: user.id, username: 'admin', full_name: 'Admin', role: user.role as 'admin',
@@ -415,8 +415,8 @@ describe('executeTool unit tests', () => {
   });
 
   it('send_message rejects self-messages', async () => {
-    const { executeTool } = await import('../src/ai-tools');
-    const { db } = await import('../src/db');
+    const { executeTool } = await import('../src/modules/ai/ai-tools');
+    const { db } = await import('../src/shared/db');
     const user = db.prepare('SELECT id FROM users LIMIT 1').get() as { id: number };
     const result = await executeTool('send_message', { recipient_id: user.id, body: 'hello' }, {
       id: user.id, username: 'admin', full_name: 'Admin', role: 'admin',
@@ -428,8 +428,8 @@ describe('executeTool unit tests', () => {
   });
 
   it('adjust_stock rejects a change that would drop quantity below zero', async () => {
-    const { executeTool } = await import('../src/ai-tools');
-    const { db } = await import('../src/db');
+    const { executeTool } = await import('../src/modules/ai/ai-tools');
+    const { db } = await import('../src/shared/db');
     const user = db.prepare('SELECT u.id, u.role FROM users u LIMIT 1').get() as { id: number; role: string };
     const admin = {
       id: user.id, username: 'admin', full_name: 'Admin', role: user.role as 'admin',
@@ -447,8 +447,8 @@ describe('executeTool unit tests', () => {
   });
 
   it('create_order supports purchase orders with a PR- number', async () => {
-    const { executeTool } = await import('../src/ai-tools');
-    const { db } = await import('../src/db');
+    const { executeTool } = await import('../src/modules/ai/ai-tools');
+    const { db } = await import('../src/shared/db');
     const user = db.prepare('SELECT id FROM users LIMIT 1').get() as { id: number };
     const result = await executeTool('create_order', {
       type: 'purchase', items: [{ name: 'Bond paper', quantity: 2, unit_price: 150 }],
@@ -465,8 +465,8 @@ describe('executeTool unit tests', () => {
   });
 
   it('update_user refuses to demote the last active administrator', async () => {
-    const { executeTool } = await import('../src/ai-tools');
-    const { db } = await import('../src/db');
+    const { executeTool } = await import('../src/modules/ai/ai-tools');
+    const { db } = await import('../src/shared/db');
     const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get() as { id: number };
     const result = await executeTool('update_user', { id: admin.id, role: 'admin_staff' }, {
       id: admin.id, username: 'admin', full_name: 'Admin', role: 'admin',
@@ -478,8 +478,8 @@ describe('executeTool unit tests', () => {
   });
 
   it('create_user rejects an invalid username via the same validation as the REST route', async () => {
-    const { executeTool } = await import('../src/ai-tools');
-    const { db } = await import('../src/db');
+    const { executeTool } = await import('../src/modules/ai/ai-tools');
+    const { db } = await import('../src/shared/db');
     const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get() as { id: number };
     const result = await executeTool('create_user', {
       username: 'AN INVALID USERNAME!', full_name: 'Test', password: 'password123',

@@ -1,6 +1,6 @@
 /** Permission catalog: the mobile-app gate key exists and lands in the right roles. */
 import { describe, it, expect } from 'vitest';
-import { ALL_PERMISSIONS, roleDefaults, resolvePermissions } from '../src/permissions';
+import { ALL_PERMISSIONS, roleDefaults, resolvePermissions } from '../src/shared/permissions';
 
 describe('inventory.mobile permission', () => {
   it('is part of the canonical catalog', () => {

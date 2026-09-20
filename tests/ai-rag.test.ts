@@ -2,13 +2,13 @@
     filtering, the search_knowledge tool, and the admin reindex endpoint. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
-import { ALL_PERMISSIONS } from '../src/permissions';
-import type { AuthUser, Permission } from '../src/types';
+import { ALL_PERMISSIONS } from '../src/shared/permissions';
+import type { AuthUser, Permission } from '../src/shared/types';
 
 let ctx: TestContext;
 let token: string;
-let rag: typeof import('../src/rag');
-let air: typeof import('../src/ai-rag');
+let rag: typeof import('../src/modules/ai/rag');
+let air: typeof import('../src/modules/ai/ai-rag');
 
 const authHdr = () => ({ Authorization: `Bearer ${token}` });
 const mkUser = (perms: Permission[]): AuthUser => ({
@@ -20,8 +20,8 @@ const admin = () => mkUser([...ALL_PERMISSIONS]);
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  rag = await import('../src/rag');
-  air = await import('../src/ai-rag');
+  rag = await import('../src/modules/ai/rag');
+  air = await import('../src/modules/ai/ai-rag');
 
   // Distinctive unstructured text across a few sources.
   await ctx.api.post('/api/inventory').set(authHdr())

@@ -3,10 +3,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 // NOTE: `run` is imported dynamically inside beforeAll, after setupApp() sets DB_PATH — a
-// top-level `import ... from '../src/db'` would evaluate DB_PATH before it's set (real
+// top-level `import ... from '../src/shared/db'` would evaluate DB_PATH before it's set (real
 // data.db, not the throwaway per-file one). See helpers.ts's own doc comment.
-let run: typeof import('../src/db').run;
-let __sentPush: typeof import('../src/push').__sentPush;
+let run: typeof import('../src/shared/db').run;
+let __sentPush: typeof import('../src/shared/push').__sentPush;
 
 let ctx: TestContext;
 let adminToken: string;
@@ -14,8 +14,8 @@ const A = () => ({ Authorization: `Bearer ${adminToken}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
-  ({ run } = await import('../src/db'));
-  ({ __sentPush } = await import('../src/push'));
+  ({ run } = await import('../src/shared/db'));
+  ({ __sentPush } = await import('../src/shared/push'));
   adminToken = await login(ctx.api);
   // leave_request isn't auto-seeded (same as no_work_memo before it got a seed function —
   // real installs build it via Form Builder); create it here so this file's own throwaway

@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   explode, rollupCost, whereUsed,
   type BomResolvers, type BomNodeItem,
-} from '../src/bom-explode';
+} from '../src/modules/manufacturing/bom-explode';
 
 /**
  * Fixture tree:

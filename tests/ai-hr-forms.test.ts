@@ -2,13 +2,13 @@
     which must NOT persist anything. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
-import { ALL_PERMISSIONS } from '../src/permissions';
-import type { AuthUser, Permission } from '../src/types';
+import { ALL_PERMISSIONS } from '../src/shared/permissions';
+import type { AuthUser, Permission } from '../src/shared/types';
 
 let ctx: TestContext;
 let token: string;
-let exec: typeof import('../src/ai-hr-forms').executeHrFormTool;
-let toolsFor: typeof import('../src/ai-hr-forms').hrFormToolsForUser;
+let exec: typeof import('../src/modules/ai/ai-hr-forms').executeHrFormTool;
+let toolsFor: typeof import('../src/modules/ai/ai-hr-forms').hrFormToolsForUser;
 
 const authHdr = () => ({ Authorization: `Bearer ${token}` });
 const user = (perms: Permission[]): AuthUser => ({
@@ -20,7 +20,7 @@ const admin = () => user([...ALL_PERMISSIONS]);
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  const mod = await import('../src/ai-hr-forms');
+  const mod = await import('../src/modules/ai/ai-hr-forms');
   exec = mod.executeHrFormTool;
   toolsFor = mod.hrFormToolsForUser;
 });

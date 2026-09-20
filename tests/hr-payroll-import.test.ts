@@ -13,7 +13,7 @@
     purely so the header-row labels and the data-row values they describe can't drift apart
     inside this file. */
 import { describe, it, expect } from 'vitest';
-import { parseCsvRows, parsePayrollSummaryCsv } from '../src/hr-payroll-import';
+import { parseCsvRows, parsePayrollSummaryCsv } from '../src/modules/payroll/hr-payroll-import';
 
 const COLS = 46;
 const COL = {

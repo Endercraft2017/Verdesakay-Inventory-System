@@ -2,9 +2,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 // See clock.test.ts's doc comment for why these are imported dynamically inside beforeAll.
-let run: typeof import('../src/db').run;
-let queryOne: typeof import('../src/db').queryOne;
-let currentKioskCode: typeof import('../src/clock').currentKioskCode;
+let run: typeof import('../src/shared/db').run;
+let queryOne: typeof import('../src/shared/db').queryOne;
+let currentKioskCode: typeof import('../src/modules/hr/clock').currentKioskCode;
 
 let ctx: TestContext;
 let adminToken: string;
@@ -12,8 +12,8 @@ const A = () => ({ Authorization: `Bearer ${adminToken}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
-  ({ run, queryOne } = await import('../src/db'));
-  ({ currentKioskCode } = await import('../src/clock'));
+  ({ run, queryOne } = await import('../src/shared/db'));
+  ({ currentKioskCode } = await import('../src/modules/hr/clock'));
   adminToken = await login(ctx.api);
 });
 afterAll(() => cleanup(ctx));

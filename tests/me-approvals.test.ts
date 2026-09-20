@@ -3,9 +3,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 // NOTE: `queryOne` is imported dynamically inside beforeAll, after setupApp() sets DB_PATH
-// — a top-level `import ... from '../src/db'` would evaluate DB_PATH before it's set (real
+// — a top-level `import ... from '../src/shared/db'` would evaluate DB_PATH before it's set (real
 // data.db, not the throwaway per-file one). See helpers.ts's own doc comment.
-let queryOne: typeof import('../src/db').queryOne;
+let queryOne: typeof import('../src/shared/db').queryOne;
 
 let ctx: TestContext;
 let adminToken: string;
@@ -14,7 +14,7 @@ const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
-  ({ queryOne } = await import('../src/db'));
+  ({ queryOne } = await import('../src/shared/db'));
   adminToken = await login(ctx.api);
   // leave_request isn't auto-seeded (same as no_work_memo before it got a seed function —
   // real installs build it via Form Builder); create it here so this file's own throwaway

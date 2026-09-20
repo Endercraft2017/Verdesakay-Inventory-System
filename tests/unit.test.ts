@@ -9,7 +9,7 @@ import {
   sendMessageSchema,
   parseBody,
   ValidationError,
-} from '../src/validation';
+} from '../src/shared/validation';
 
 describe('validation: login', () => {
   it('accepts valid credentials', () => {

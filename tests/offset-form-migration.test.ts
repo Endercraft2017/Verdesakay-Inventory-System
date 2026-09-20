@@ -45,7 +45,7 @@ describe('offset_form migration', () => {
     process.env.UPLOAD_DIR = tmpUploads;
     delete process.env.ADMIN_PASSWORD;
 
-    const db = await import('../src/db');
+    const db = await import('../src/shared/db');
     expect(() => db.init()).not.toThrow();
 
     const form = db.queryOne<{ id: number; fields: string }>(

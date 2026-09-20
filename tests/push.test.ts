@@ -3,11 +3,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 // NOTE: `run`/`__sentPush` are imported dynamically inside beforeAll, after setupApp() sets
-// DB_PATH — a top-level `import ... from '../src/db'` (directly, or transitively via
-// '../src/push', which itself imports './db') would evaluate DB_PATH before it's set (real
+// DB_PATH — a top-level `import ... from '../src/shared/db'` (directly, or transitively via
+// '../src/shared/push', which itself imports './db') would evaluate DB_PATH before it's set (real
 // data.db, not the throwaway per-file one). See helpers.ts's own doc comment.
-let run: typeof import('../src/db').run;
-let __sentPush: typeof import('../src/push').__sentPush;
+let run: typeof import('../src/shared/db').run;
+let __sentPush: typeof import('../src/shared/push').__sentPush;
 
 let ctx: TestContext;
 let token: string;
@@ -20,8 +20,8 @@ const fakeSub = (endpoint: string) => ({
 
 beforeAll(async () => {
   ctx = await setupApp();
-  ({ run } = await import('../src/db'));
-  ({ __sentPush } = await import('../src/push'));
+  ({ run } = await import('../src/shared/db'));
+  ({ __sentPush } = await import('../src/shared/push'));
   token = await login(ctx.api);
 });
 afterAll(() => cleanup(ctx));

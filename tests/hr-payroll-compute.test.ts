@@ -2,8 +2,8 @@
     exactly the kind of finicky business logic worth pinning down precisely, independent of any
     DB or HTTP concerns (the module itself takes plain data in, plain numbers out). */
 import { describe, it, expect } from 'vitest';
-import { computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../src/hr-payroll-compute';
-import type { PayrollPolicy } from '../src/types';
+import { computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../src/modules/payroll/hr-payroll-compute';
+import type { PayrollPolicy } from '../src/shared/types';
 
 const POLICY: PayrollPolicy = {
   grace_minutes: 10,

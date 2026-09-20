@@ -5,15 +5,15 @@ import { setupApp, cleanup, login, createEmployee, type TestContext } from './he
 
 let ctx: TestContext;
 let token: string;
-let qbo: typeof import('../src/quickbooks');
-let dbmod: typeof import('../src/db');
+let qbo: typeof import('../src/modules/quickbooks/quickbooks');
+let dbmod: typeof import('../src/shared/db');
 const authHdr = () => ({ Authorization: `Bearer ${token}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  qbo = await import('../src/quickbooks');
-  dbmod = await import('../src/db');
+  qbo = await import('../src/modules/quickbooks/quickbooks');
+  dbmod = await import('../src/shared/db');
 });
 afterAll(() => cleanup(ctx));
 

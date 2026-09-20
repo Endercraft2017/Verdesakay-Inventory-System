@@ -2,7 +2,7 @@
     upsert by natural key, department-by-name, per-row errors, dry-run, RBAC, round-trip. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
-import { parseCsvTable } from '../src/csv';
+import { parseCsvTable } from '../src/shared/csv';
 
 let ctx: TestContext;
 let token: string;

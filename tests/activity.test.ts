@@ -104,7 +104,7 @@ describe('activity log', () => {
   });
 
   it('auto-sweeps audit rows older than the retention window on housekeeping', async () => {
-    const { run, queryOne, cleanupSessions, ACTIVITY_LOG_RETENTION_DAYS } = await import('../src/db');
+    const { run, queryOne, cleanupSessions, ACTIVITY_LOG_RETENTION_DAYS } = await import('../src/shared/db');
     run(
       `INSERT INTO activity_log (created_at, method, path, entity, action, summary)
        VALUES (datetime('now', '-${ACTIVITY_LOG_RETENTION_DAYS + 5} days'), 'POST', '/api/x', 'x', 'create', 'ancient')`

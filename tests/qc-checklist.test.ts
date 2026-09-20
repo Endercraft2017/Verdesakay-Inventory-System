@@ -5,7 +5,7 @@
  *  with the acting account. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
-import { ALL_PERMISSIONS, roleDefaults } from '../src/permissions';
+import { ALL_PERMISSIONS, roleDefaults } from '../src/shared/permissions';
 
 let ctx: TestContext;
 let token: string;

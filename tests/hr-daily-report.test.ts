@@ -1,7 +1,7 @@
 /** src/hr-daily-report.ts (pure classifier) + GET /api/hr/daily-report (the route that
     resolves DB inputs for it). */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { classifyDailyStatus, type DailyStatusInput } from '../src/hr-daily-report';
+import { classifyDailyStatus, type DailyStatusInput } from '../src/modules/hr/hr-daily-report';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
 
 const SHIFT = { start_time: '08:00', end_time: '17:00' };

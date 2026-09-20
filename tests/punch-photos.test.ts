@@ -4,12 +4,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 // See clock.test.ts's doc comment for why these are imported dynamically inside beforeAll.
-let queryOne: typeof import('../src/db').queryOne;
-let run: typeof import('../src/db').run;
-let withTenant: typeof import('../src/db').withTenant;
-let currentKioskCode: typeof import('../src/clock').currentKioskCode;
-let provisioning: typeof import('../src/provisioning');
-let platform: typeof import('../src/platform');
+let queryOne: typeof import('../src/shared/db').queryOne;
+let run: typeof import('../src/shared/db').run;
+let withTenant: typeof import('../src/shared/db').withTenant;
+let currentKioskCode: typeof import('../src/modules/hr/clock').currentKioskCode;
+let provisioning: typeof import('../src/platform/provisioning');
+let platform: typeof import('../src/platform/platform');
 
 let ctx: TestContext;
 let adminToken: string;
@@ -17,10 +17,10 @@ const A = () => ({ Authorization: `Bearer ${adminToken}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
-  ({ queryOne, run, withTenant } = await import('../src/db'));
-  ({ currentKioskCode } = await import('../src/clock'));
-  provisioning = await import('../src/provisioning');
-  platform = await import('../src/platform');
+  ({ queryOne, run, withTenant } = await import('../src/shared/db'));
+  ({ currentKioskCode } = await import('../src/modules/hr/clock'));
+  provisioning = await import('../src/platform/provisioning');
+  platform = await import('../src/platform/platform');
   adminToken = await login(ctx.api);
 });
 afterAll(() => cleanup(ctx));

@@ -5,16 +5,16 @@ import { setupApp, cleanup, login, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
-let provisioning: typeof import('../src/provisioning');
-let platform: typeof import('../src/platform');
+let provisioning: typeof import('../src/platform/provisioning');
+let platform: typeof import('../src/platform/platform');
 const authHdr = () => ({ Authorization: `Bearer ${token}` });
 const asTenant = (slug: string) => ({ 'X-Tenant': slug });
 
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  provisioning = await import('../src/provisioning');
-  platform = await import('../src/platform');
+  provisioning = await import('../src/platform/provisioning');
+  platform = await import('../src/platform/platform');
 });
 afterAll(() => cleanup(ctx));
 

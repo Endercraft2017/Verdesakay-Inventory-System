@@ -2,14 +2,14 @@
     the attendance/activity/inventory/manufacturing reports, and run_analytics_query. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
-import { ALL_PERMISSIONS } from '../src/permissions';
-import type { AuthUser, Permission } from '../src/types';
+import { ALL_PERMISSIONS } from '../src/shared/permissions';
+import type { AuthUser, Permission } from '../src/shared/types';
 
 let ctx: TestContext;
 let token: string;
-let exec: typeof import('../src/ai-analytics').executeAnalyticsTool;
-let toolsFor: typeof import('../src/ai-analytics').analyticsToolsForUser;
-let db: typeof import('../src/db');
+let exec: typeof import('../src/modules/ai/ai-analytics').executeAnalyticsTool;
+let toolsFor: typeof import('../src/modules/ai/ai-analytics').analyticsToolsForUser;
+let db: typeof import('../src/shared/db');
 
 const authHdr = () => ({ Authorization: `Bearer ${token}` });
 const user = (perms: Permission[]): AuthUser => ({
@@ -21,10 +21,10 @@ const admin = () => user([...ALL_PERMISSIONS]);
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  const mod = await import('../src/ai-analytics');
+  const mod = await import('../src/modules/ai/ai-analytics');
   exec = mod.executeAnalyticsTool;
   toolsFor = mod.analyticsToolsForUser;
-  db = await import('../src/db');
+  db = await import('../src/shared/db');
 });
 afterAll(() => cleanup(ctx));
 

@@ -1,6 +1,6 @@
 /** BIR 2550M (VAT) + 0619-E (expanded withholding) worksheets — pure. */
 import { describe, it, expect } from 'vitest';
-import { vat2550m, ewt0619e, EWT_ATCS } from '../src/ph-vat-ewt';
+import { vat2550m, ewt0619e, EWT_ATCS } from '../src/modules/payroll/ph-vat-ewt';
 
 describe('vat2550m', () => {
   it('nets output VAT against input VAT using each side\'s booked amount', () => {

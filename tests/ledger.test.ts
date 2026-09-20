@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   naturalSide, accountBalance, validateJournalLines, DEFAULT_COA,
   type AccountRef,
-} from '../src/ledger';
+} from '../src/modules/accounting/ledger';
 
 const accts = (spec: Array<[number, Partial<AccountRef>]>): Map<number, AccountRef> =>
   new Map(spec.map(([id, o]) => [id, { id, is_group: 0, archived: 0, ...o }]));

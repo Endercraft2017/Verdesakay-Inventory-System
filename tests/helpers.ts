@@ -26,9 +26,9 @@ export async function setupApp(): Promise<TestContext> {
   process.env.PLATFORM_DB_PATH = path.join(tmpDir, 'platform.db'); // the SaaS control plane
   delete process.env.ADMIN_PASSWORD;
 
-  const db = await import('../src/db');
+  const db = await import('../src/shared/db');
   db.init();
-  const platform = await import('../src/platform');
+  const platform = await import('../src/platform/platform');
   platform._resetPlatformDb(); // drop any cached handle from a previous test file
   const { createApp } = await import('../src/app');
   const app = createApp();

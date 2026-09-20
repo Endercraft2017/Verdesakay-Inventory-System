@@ -1,7 +1,7 @@
 /** Final-pay / back-pay worksheet (pure). */
 import { describe, it, expect } from 'vitest';
-import { computeFinalPay, type FinalPayInput } from '../src/ph-final-pay';
-import { RWT_2026 } from '../src/ph-statutory';
+import { computeFinalPay, type FinalPayInput } from '../src/modules/payroll/ph-final-pay';
+import { RWT_2026 } from '../src/modules/payroll/ph-statutory';
 
 const base = (o: Partial<FinalPayInput> = {}): FinalPayInput => ({
   employee_name: 'Dela Cruz, Juan',

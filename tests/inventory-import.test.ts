@@ -2,7 +2,7 @@
     per-row error reporting, dry-run, name/department/supplier resolution, round-trip. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
-import { parseCsvTable, toCsv } from '../src/csv';
+import { parseCsvTable, toCsv } from '../src/shared/csv';
 
 let ctx: TestContext;
 let token: string;

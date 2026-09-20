@@ -6,7 +6,7 @@ import { setupApp, cleanup, login, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let op: string; // operator bearer token
-let users: typeof import('../src/platform-users');
+let users: typeof import('../src/platform/platform-users');
 const opHdr = () => ({ Authorization: `Bearer ${op}` });
 const asTenant = (slug: string) => ({ 'X-Tenant': slug });
 
@@ -14,7 +14,7 @@ beforeAll(async () => {
   process.env.PLATFORM_CONSOLE = 'true';
   ctx = await setupApp();
   await login(ctx.api); // seeds the default tenant
-  users = await import('../src/platform-users');
+  users = await import('../src/platform/platform-users');
   users.upsertPlatformUser('owner', 'ownerpass1', 'System Owner');
   const r = await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1' });
   op = r.body.token;

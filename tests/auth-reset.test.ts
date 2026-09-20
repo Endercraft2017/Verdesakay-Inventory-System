@@ -5,14 +5,14 @@ import { setupApp, cleanup, login, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
-let dbmod: typeof import('../src/db');
+let dbmod: typeof import('../src/shared/db');
 const authHdr = () => ({ Authorization: `Bearer ${token}` });
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
 
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  dbmod = await import('../src/db');
+  dbmod = await import('../src/shared/db');
   // Give the admin an email + turn on email (jsonTransport in test → sends succeed).
   await ctx.api.put('/api/users/1').set(authHdr()).send({ email: 'admin@acme.test' });
   await ctx.api.put('/api/mail/settings').set(authHdr()).send({

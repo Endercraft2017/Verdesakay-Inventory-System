@@ -5,8 +5,8 @@
  *
  *   npm run migrate:all
  */
-import { forceMigrate, SCHEMA_VERSION, DEFAULT_TENANT } from '../src/db';
-import { listTenants } from '../src/platform';
+import { forceMigrate, SCHEMA_VERSION, DEFAULT_TENANT } from '../src/shared/db';
+import { listTenants } from '../src/platform/platform';
 
 const slugs = [
   DEFAULT_TENANT,

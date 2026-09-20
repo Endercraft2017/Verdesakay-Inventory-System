@@ -62,7 +62,7 @@ describe('HR Payroll Slip template migration (SCHEMA_VERSION 22 + 23)', () => {
     process.env.UPLOAD_DIR = path.join(tmpDir, 'uploads');
     delete process.env.ADMIN_PASSWORD;
 
-    const db = await import('../src/db');
+    const db = await import('../src/shared/db');
     expect(db.SCHEMA_VERSION).toBeGreaterThan(22); // the fix itself: this must have been bumped
     expect(() => db.init()).not.toThrow();
 

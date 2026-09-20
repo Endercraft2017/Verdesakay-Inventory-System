@@ -2,7 +2,7 @@
  *  delivery.run does its own assigned drops. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
-import { roleDefaults, ALL_PERMISSIONS } from '../src/permissions';
+import { roleDefaults, ALL_PERMISSIONS } from '../src/shared/permissions';
 
 let ctx: TestContext;
 let adminToken: string;

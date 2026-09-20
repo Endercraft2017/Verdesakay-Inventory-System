@@ -15,7 +15,7 @@ import {
   PAGIBIG_2026,
   RWT_2026,
   STATUTORY_TABLES_2026,
-} from '../src/ph-statutory';
+} from '../src/modules/payroll/ph-statutory';
 
 describe('SSS', () => {
   it('snaps monthly comp to the MSC schedule', () => {

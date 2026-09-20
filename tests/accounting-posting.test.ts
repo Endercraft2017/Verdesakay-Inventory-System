@@ -4,7 +4,7 @@ import {
   buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
   buildJobOrderEntry, buildReceiptEntry, buildCogsEntry,
   type PostingRules, type PayrollDoc,
-} from '../src/accounting-posting';
+} from '../src/modules/accounting/accounting-posting';
 
 const RULES: PostingRules = {
   ar_account_id: 11, sales_income_account_id: 41, output_vat_account_id: 21,

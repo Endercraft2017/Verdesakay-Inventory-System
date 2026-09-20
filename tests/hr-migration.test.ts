@@ -52,7 +52,7 @@ describe('employees migration', () => {
     process.env.UPLOAD_DIR = tmpUploads;
     delete process.env.ADMIN_PASSWORD;
 
-    const db = await import('../src/db');
+    const db = await import('../src/shared/db');
     expect(() => db.init()).not.toThrow();
 
     const active = db.queryOne<{ employee_no: string; status: string; name: string }>(

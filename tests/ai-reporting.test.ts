@@ -4,12 +4,12 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
-import { parseMarkdown, renderHtml, renderDocx } from '../src/reporting';
-import type { AuthUser } from '../src/types';
+import { parseMarkdown, renderHtml, renderDocx } from '../src/modules/ai/reporting';
+import type { AuthUser } from '../src/shared/types';
 
 let ctx: TestContext;
 let token: string;
-let exec: typeof import('../src/ai-reporting').executeReportingTool;
+let exec: typeof import('../src/modules/ai/ai-reporting').executeReportingTool;
 
 const authHdr = () => ({ Authorization: `Bearer ${token}` });
 const someUser: AuthUser = {
@@ -39,7 +39,7 @@ Some **bold** intro text.
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  exec = (await import('../src/ai-reporting')).executeReportingTool;
+  exec = (await import('../src/modules/ai/ai-reporting')).executeReportingTool;
 });
 afterAll(() => cleanup(ctx));
 

@@ -1,7 +1,7 @@
 /** Purchasing depth: goods receipts + vendor bills + 3-way match. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
-import { threeWayMatch, receiptStatus } from '../src/purchasing-match';
+import { threeWayMatch, receiptStatus } from '../src/modules/purchasing/purchasing-match';
 
 /* ------------------------------------------------------------------- pure --- */
 

@@ -54,7 +54,7 @@ describe('no_work_memo form migration', () => {
     process.env.UPLOAD_DIR = tmpUploads;
     delete process.env.ADMIN_PASSWORD;
 
-    const db = await import('../src/db');
+    const db = await import('../src/shared/db');
     expect(() => db.init()).not.toThrow();
 
     const form = db.queryOne<{ id: number; actions: string }>(
@@ -66,7 +66,7 @@ describe('no_work_memo form migration', () => {
 
     // Confirm noWorkFormIds() (src/form-actions.ts) — the actual function generate-payslips
     // uses — now picks this form up, not just that the raw column looks right.
-    const formActions = await import('../src/form-actions');
+    const formActions = await import('../src/core/form-actions');
     expect(formActions.noWorkFormIds()).toContain(form!.id);
 
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }

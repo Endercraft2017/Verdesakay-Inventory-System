@@ -3,13 +3,13 @@
     in test mode — nothing is actually delivered. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
-import type { AuthUser } from '../src/types';
+import type { AuthUser } from '../src/shared/types';
 
 let ctx: TestContext;
 let token: string;
-let mailTool: typeof import('../src/ai-mail');
-let encryptSecret: typeof import('../src/secrets').encryptSecret;
-let decryptSecret: typeof import('../src/secrets').decryptSecret;
+let mailTool: typeof import('../src/modules/ai/ai-mail');
+let encryptSecret: typeof import('../src/shared/secrets').encryptSecret;
+let decryptSecret: typeof import('../src/shared/secrets').decryptSecret;
 
 const authHdr = () => ({ Authorization: `Bearer ${token}` });
 const user = (perms: string[]): AuthUser => ({
@@ -25,8 +25,8 @@ const SMTP = {
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  mailTool = await import('../src/ai-mail');
-  ({ encryptSecret, decryptSecret } = await import('../src/secrets'));
+  mailTool = await import('../src/modules/ai/ai-mail');
+  ({ encryptSecret, decryptSecret } = await import('../src/shared/secrets'));
 });
 afterAll(() => cleanup(ctx));
 

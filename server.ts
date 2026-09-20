@@ -10,10 +10,10 @@ import path from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
 import { spawnSync } from 'node:child_process';
-import { init, cleanupSessions } from './src/db';
+import { init, cleanupSessions } from './src/shared/db';
 import { createApp } from './src/app';
-import { sendDueTaskReminders } from './src/push';
-import { cleanupPlatformSessions } from './src/platform-users';
+import { sendDueTaskReminders } from './src/shared/push';
+import { cleanupPlatformSessions } from './src/platform/platform-users';
 
 init();
 const housekeeping = () => { cleanupSessions(); cleanupPlatformSessions(); };

@@ -5,17 +5,17 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
 
 let ctx: TestContext;
-let platform: typeof import('../src/platform');
-let provisioning: typeof import('../src/provisioning');
-let dbmod: typeof import('../src/db');
+let platform: typeof import('../src/platform/platform');
+let provisioning: typeof import('../src/platform/provisioning');
+let dbmod: typeof import('../src/shared/db');
 
 const asTenant = (slug: string) => ({ 'X-Tenant': slug });
 
 beforeAll(async () => {
   ctx = await setupApp();
-  platform = await import('../src/platform');
-  provisioning = await import('../src/provisioning');
-  dbmod = await import('../src/db');
+  platform = await import('../src/platform/platform');
+  provisioning = await import('../src/platform/provisioning');
+  dbmod = await import('../src/shared/db');
 });
 afterAll(() => cleanup(ctx));
 

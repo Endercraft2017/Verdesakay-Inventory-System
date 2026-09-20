@@ -2369,11 +2369,11 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
 
 describe('mid-cutoff rate changes (employee_rate_history)', () => {
   // Dynamically imported after setupApp() sets DB_PATH — a top-level `import ... from
-  // '../src/db'` would evaluate DB_PATH too early (real data.db, not this file's throwaway
+  // '../src/shared/db'` would evaluate DB_PATH too early (real data.db, not this file's throwaway
   // one); see clock.test.ts's own doc comment for the same hazard.
-  let run: typeof import('../src/db').run;
+  let run: typeof import('../src/shared/db').run;
   beforeAll(async () => {
-    ({ run } = await import('../src/db'));
+    ({ run } = await import('../src/shared/db'));
   });
 
   it('backfills the old rate for an employee with no logged history yet (pre-existing before this feature)', async () => {

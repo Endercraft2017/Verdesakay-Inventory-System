@@ -8,7 +8,7 @@
  * You can also bootstrap the first operator with PLATFORM_ADMIN_USERNAME /
  * PLATFORM_ADMIN_PASSWORD env vars (seeded on boot when the table is empty).
  */
-import { upsertPlatformUser, listPlatformUsers } from '../src/platform-users';
+import { upsertPlatformUser, listPlatformUsers } from '../src/platform/platform-users';
 
 function flags(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};

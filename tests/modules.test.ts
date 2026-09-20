@@ -6,18 +6,18 @@ import { setupApp, cleanup, login, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
-let provisioning: typeof import('../src/provisioning');
-let platform: typeof import('../src/platform');
-let mod: typeof import('../src/modules'); // dynamic — after setupApp sets the env (see helpers.ts)
+let provisioning: typeof import('../src/platform/provisioning');
+let platform: typeof import('../src/platform/platform');
+let mod: typeof import('../src/shared/modules'); // dynamic — after setupApp sets the env (see helpers.ts)
 const authHdr = () => ({ Authorization: `Bearer ${token}` });
 const asTenant = (slug: string) => ({ 'X-Tenant': slug });
 
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  provisioning = await import('../src/provisioning');
-  platform = await import('../src/platform');
-  mod = await import('../src/modules');
+  provisioning = await import('../src/platform/provisioning');
+  platform = await import('../src/platform/platform');
+  mod = await import('../src/shared/modules');
 });
 afterAll(() => cleanup(ctx));
 

@@ -1,7 +1,7 @@
 /** Agency monthly contribution schedules (pure). */
 import { describe, it, expect } from 'vitest';
-import { contributionSchedule, type ContribEmployeeInput } from '../src/ph-contributions';
-import { STATUTORY_TABLES_2026 } from '../src/ph-statutory';
+import { contributionSchedule, type ContribEmployeeInput } from '../src/modules/payroll/ph-contributions';
+import { STATUTORY_TABLES_2026 } from '../src/modules/payroll/ph-statutory';
 
 const emps: ContribEmployeeInput[] = [
   { name: 'Zamora, Ana', id_number: '34-1111111-1', monthly_comp: 30_000, monthly_basic: 28_000 },

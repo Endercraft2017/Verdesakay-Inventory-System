@@ -11,13 +11,13 @@
  *   npm run tenant:modules -- --slug acme --reset                  (clear override → plan default)
  *   npm run tenant:purge  -- --slug acme                           (deletes the tenant DB + uploads!)
  */
-import { createTenant, purgeTenant } from '../src/provisioning';
+import { createTenant, purgeTenant } from '../src/platform/provisioning';
 import {
   listTenants, setTenantStatus, setTenantPlan, setTenantModules, getTenant, type TenantStatus,
-} from '../src/platform';
-import { withTenant } from '../src/db';
-import { tenantUsage, planFor } from '../src/quota';
-import { MODULES, enabledModules, withDeps } from '../src/modules';
+} from '../src/platform/platform';
+import { withTenant } from '../src/shared/db';
+import { tenantUsage, planFor } from '../src/platform/quota';
+import { MODULES, enabledModules, withDeps } from '../src/shared/modules';
 
 function flags(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};

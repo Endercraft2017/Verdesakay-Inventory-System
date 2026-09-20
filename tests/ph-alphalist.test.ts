@@ -3,9 +3,9 @@ import { describe, it, expect } from 'vitest';
 import {
   splitName, statusCode, separationCode, alphalistScheduleRow, alphalistRowCells,
   ALPHALIST_SCHEDULE1_HEADERS,
-} from '../src/ph-alphalist';
-import { compute2316, type PayslipYearRow } from '../src/ph-2316';
-import { RWT_2026 } from '../src/ph-statutory';
+} from '../src/modules/payroll/ph-alphalist';
+import { compute2316, type PayslipYearRow } from '../src/modules/payroll/ph-2316';
+import { RWT_2026 } from '../src/modules/payroll/ph-statutory';
 
 const slip = (o: Partial<PayslipYearRow>): PayslipYearRow => ({
   basic_salary: 0, total_earnings: 0, sss: 0, philhealth: 0, pagibig: 0, withholding_tax: 0, ...o,
