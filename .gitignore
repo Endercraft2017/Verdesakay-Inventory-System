@@ -1,14 +1,7 @@
 node_modules/
-data.db
-data.db-journal
-data.db-wal
-data.db-shm
-# SaaS control plane + non-default tenant DB files (runtime state, never source)
-platform.db
-platform.db-journal
-platform.db-wal
-platform.db-shm
-data/
+# All runtime SQLite state: the default tenant's data.db, the SaaS control-plane
+# platform.db, and non-default tenant DBs under db/tenants/ — never source.
+db/
 uploads/
 certs/
 .env

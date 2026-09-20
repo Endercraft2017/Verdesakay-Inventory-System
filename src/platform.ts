@@ -6,6 +6,7 @@
  * Single-tenant / self-hosted installs never touch this: the `default` tenant resolves
  * without a catalog row and everything behaves exactly as before.
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
@@ -13,7 +14,7 @@ import { DEFAULT_TENANT } from './db';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
-export const PLATFORM_DB_PATH = process.env.PLATFORM_DB_PATH || path.join(ROOT, 'platform.db');
+export const PLATFORM_DB_PATH = process.env.PLATFORM_DB_PATH || path.join(ROOT, 'db', 'platform.db');
 /** Root domain for tenant subdomains, e.g. `verdesakay.app`. Empty ⇒ single-tenant. */
 export const APP_DOMAIN = (process.env.APP_DOMAIN || '').toLowerCase().trim();
 /** Self-serve `POST /api/signup` is only live when this is exactly "true". */
@@ -54,6 +55,7 @@ export interface TenantRow {
 let _db: DatabaseSync | null = null;
 function pdb(): DatabaseSync {
   if (_db) return _db;
+  fs.mkdirSync(path.dirname(PLATFORM_DB_PATH), { recursive: true });
   const d = new DatabaseSync(PLATFORM_DB_PATH);
   d.exec('PRAGMA journal_mode = WAL;');
   d.exec(`

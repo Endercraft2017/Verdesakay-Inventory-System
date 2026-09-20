@@ -7,8 +7,8 @@ one `default` tenant, exactly as before.
 
 ## Data model
 
-- **One SQLite file per tenant.** The `default` tenant lives at `DB_PATH` (`data.db`);
-  every other tenant is `DATA_DIR/<slug>.db`, created on first use.
+- **One SQLite file per tenant.** The `default` tenant lives at `DB_PATH` (`db/data.db`);
+  every other tenant is `DATA_DIR/<slug>.db` (`db/tenants/<slug>.db`), created on first use.
 - **`platform.db`** (`PLATFORM_DB_PATH`) is the control plane — the `tenants` catalog and
   `provisioning_log`. It is **not** a tenant database and is never reachable from
   tenant-facing request code.
@@ -21,9 +21,9 @@ one `default` tenant, exactly as before.
 | Var | Purpose | Default |
 |---|---|---|
 | `APP_DOMAIN` | Root domain for tenant sub-domains, e.g. `verdesakay.app`. **Empty ⇒ single-tenant** (host is ignored; only the `default` tenant). | *(empty)* |
-| `PLATFORM_DB_PATH` | The control-plane DB file. | `<root>/platform.db` |
-| `DATA_DIR` | Where non-`default` tenant DB files live. | `<root>/data` |
-| `DB_PATH` | The `default` tenant's DB file. | `<root>/data.db` |
+| `PLATFORM_DB_PATH` | The control-plane DB file. | `<root>/db/platform.db` |
+| `DATA_DIR` | Where non-`default` tenant DB files live. | `<root>/db/tenants` |
+| `DB_PATH` | The `default` tenant's DB file. | `<root>/db/data.db` |
 | `UPLOAD_DIR` | Uploaded files. | `<root>/uploads` |
 | `SIGNUPS_OPEN` | `"true"` makes `POST /api/signup` live (self-serve tenant creation). Anything else ⇒ 404; you provision manually. | *(off)* |
 | `PLATFORM_CONSOLE` | `"true"` mounts the owner console at `/_platform`. Anything else ⇒ the whole path 404s. | *(off)* |

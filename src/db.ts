@@ -20,10 +20,10 @@ import { DEFAULT_COA } from './ledger';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
-export const DB_PATH = process.env.DB_PATH || path.join(ROOT, 'data.db');
+export const DB_PATH = process.env.DB_PATH || path.join(ROOT, 'db', 'data.db');
 export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(ROOT, 'uploads');
 /** Where non-default tenant DB files live (`<DATA_DIR>/<slug>.db`). */
-export const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
+export const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'db', 'tenants');
 /** The tenant used when nothing else is resolved — the single-tenant install. */
 export const DEFAULT_TENANT = 'default';
 
@@ -46,7 +46,9 @@ function openConnection(slug: string): DatabaseSync {
   if (slug !== DEFAULT_TENANT && !fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
-  const conn = new DatabaseSync(connectionPath(slug));
+  const dbFile = connectionPath(slug);
+  fs.mkdirSync(path.dirname(dbFile), { recursive: true });
+  const conn = new DatabaseSync(dbFile);
   conn.exec('PRAGMA journal_mode = WAL;');
   conn.exec('PRAGMA foreign_keys = ON;');
   return conn;
