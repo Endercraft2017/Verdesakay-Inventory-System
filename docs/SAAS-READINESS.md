@@ -6,8 +6,8 @@
 > quotas & lifecycle (2026-08-29); **per-tenant feature modules + the `/_platform` owner
 > console (2026-09-10)**. Single-tenant / self-hosted still behaves exactly as before (the
 > `default` tenant needs no catalog row, has every module, and the console is off unless
-> `PLATFORM_CONSOLE=true`). Remaining: custom domains / branding / billing, backups job,
-> retention policies.
+> `PLATFORM_CONSOLE=true`). Backups job done 2026-09-24 (daily + pre-migration snapshots, see
+> SAAS-OPERATIONS.md#backups). Remaining: custom domains / branding / billing, retention policies.
 > **Last updated:** 2026-09-10
 > **Question asked:** "Can this be a SaaS (many companies on one deployment)?"
 

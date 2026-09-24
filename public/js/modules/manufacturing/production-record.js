@@ -59,6 +59,7 @@ App.register('production-record', async (view, filter) => {
         ${kv('Team', UI.esc(jo.team_name || '—'))}
         ${kv('Created by', UI.esc(jo.created_by_name || '—'))}
         ${kv('Released by', UI.esc(jo.released_by_name || '—'))}
+        ${kv('Accepted by', UI.esc(jo.accepted_by_name || '—'))}
         ${kv('Planned', UI.esc(jo.planned_start || '—') + ' → ' + UI.esc(jo.due_date || '—'))}
         ${kv('Pull / output', UI.esc(jo.source_location_name || '—') + ' → ' + UI.esc(jo.output_location_name || '—'))}
       </div>` : '<p class="muted">Not linked to a job order.</p>'}

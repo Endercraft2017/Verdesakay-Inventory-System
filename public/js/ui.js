@@ -169,18 +169,23 @@ const UI = (() => {
       const q = showAll ? '' : input.value.trim().toLowerCase();
       filtered = q ? list.filter((o) => o.label.toLowerCase().includes(q)) : list;
       activeIdx = -1;
-      menu.innerHTML = filtered.length
-        ? filtered.map((o, i) => `<div class="combo-option" data-i="${i}">${esc(o.label)}</div>`).join('')
-        : `<div class="combo-empty">${esc(opts.emptyText || 'No matches')}</div>`;
+      menu.innerHTML = (filtered.length
+        ? filtered.map((o, i) => `<div class="combo-option${o.disabled ? ' disabled' : ''}" data-i="${i}">${esc(o.label)}</div>`).join('')
+        : `<div class="combo-empty">${esc(opts.emptyText || 'No matches')}</div>`)
+        // Optional trailing action row (e.g. "+ Create new account"), always shown, fed the
+        // text typed so far so the action can prefill from it.
+        + (opts.action ? `<div class="combo-action">${esc(opts.action.label)}</div>` : '');
       menu.hidden = false;
+      menu.scrollIntoView({ block: 'nearest' });
     }
     function highlight(idx) {
       activeIdx = idx;
-      [...menu.children].forEach((el, i) => el.classList.toggle('active', i === idx));
-      const el = menu.children[idx];
+      [...menu.querySelectorAll('.combo-option')].forEach((el, i) => el.classList.toggle('active', i === idx));
+      const el = menu.querySelectorAll('.combo-option')[idx];
       if (el) el.scrollIntoView({ block: 'nearest' });
     }
     function pick(o) {
+      if (o && o.disabled) return;
       setSelected(o ? o.value : null);
       menu.hidden = true;
       if (opts.onSelect) opts.onSelect(selected, o || null);
@@ -200,6 +205,14 @@ const UI = (() => {
     // mousedown (not click) + preventDefault keeps focus on the input throughout the click, so
     // it never blurs (and snap-reverts) before the pick below can run.
     menu.addEventListener('mousedown', (e) => {
+      if (opts.action && e.target.closest('.combo-action')) {
+        e.preventDefault();
+        const typed = input.value.trim();
+        menu.hidden = true;
+        input.blur();
+        opts.action.onClick(typed === labelFor(selected) ? '' : typed);
+        return;
+      }
       const optEl = e.target.closest('.combo-option');
       if (!optEl) return;
       e.preventDefault();

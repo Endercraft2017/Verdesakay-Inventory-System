@@ -97,6 +97,7 @@ describe('POST /api/job-orders/:id/purchase-shortfall', () => {
       .send({ product_item_id: product, qty_ordered: 5 })).body.id;
 
     const rel = await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+    await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
     expect(rel.status).toBe(400);
     expect(rel.body.shortfalls[0]).toMatchObject({ component_name: 'MO Frame', need: 5, have: 1, short: 4 });
 

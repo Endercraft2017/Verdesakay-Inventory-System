@@ -261,7 +261,9 @@ App.register('messages', async (view, filter) => {
   /* ---------- interactions (event delegation on #chat-messages) ---------- */
 
   function closeEmojiPopover() {
-    view.querySelectorAll('.chat-emoji-popover').forEach((p) => p.remove());
+    // The popover is appended to document.body (so it can float outside the scrollable
+    // thread), not to `view` — querying `view` here would never find it to remove.
+    document.querySelectorAll('.chat-emoji-popover').forEach((p) => p.remove());
   }
 
   function openEmojiPopover(btn, messageId) {

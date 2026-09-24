@@ -17,6 +17,7 @@ session.
 |---|---|---|
 | [Bulk import & export (CSV)](csv-import-export.md) | Inventory / HR staff | Load or update many items, suppliers, or employees from a spreadsheet; export data back out. Fill-in [templates/](templates/) included. |
 | [SOP — Production, end to end](production-sop.md) | Production / shop floor / QA/QC / warehouse | The full flow: BOM → job order + team + schedule → release → progress → QA/QC → repair/rework → batch → finished stock → labels/QR/dossier → sale-order allocation. Mirrors Home → Help / SOP. |
+| [SOP — Parts release to delivery (shop-floor roles)](shop-floor-to-delivery-sop.md) | Warehouse, production leads, QC, QA, product clerks, releasing clerks, drivers | Role-by-role steps from releasing parts to a job order through recording units (serial + photo), QC → QA, repair parts requests, Products In / RTS, SO release by QR scan, and delivery with proof of delivery. Includes a photos/scans checklist. |
 | [Multi-level BOMs, costing & where-used](multi-level-bom.md) | Production / purchasing | Explode a product through sub-assemblies to raw materials, roll up standard cost, find where a part is used |
 | [Purchasing: receiving & vendor bills](purchasing.md) | Warehouse / purchasing / AP | Record goods receipts against a PO (posts stock), enter vendor bills, and the 3-way match that gates approval |
 | [Reports (operational dashboards)](reports.md) | Owners / ops / purchasing / HR | The fixed Home → Reports snapshot: stock value, production throughput, purchasing & payables aging, sales, payroll |

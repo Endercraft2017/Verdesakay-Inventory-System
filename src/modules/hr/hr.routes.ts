@@ -1096,11 +1096,13 @@ router.get('/periods/:id/attendance/export', requirePermission('hr.view'), (req,
 
 // GET /api/hr/daily-report?date=YYYY-MM-DD — a live, whole-company snapshot for one calendar
 // date (default today): who's present / late / absent / on leave, with a per-department
-// breakdown. Unlike everything else in this file, it isn't scoped to one cutoff period — every
-// active employee is included regardless of which (if any) period's roster they're on, and
-// today's time_in falls back to a raw, not-yet-reconciled time_punches row when nothing's been
-// typed or imported into attendance_records yet (see src/hr-daily-report.ts for why this can't
-// just reuse computeAttendanceForEmployee).
+// breakdown. Scoped to the roster of the cutoff period(s) covering that date — an active
+// employee who isn't on that cutoff isn't expected to work it, so they're left off the board
+// rather than read as absent. If no cutoff covers the date the board is empty (HR is expected
+// to always have a cutoff made). Today's
+// time_in falls back to a raw, not-yet-reconciled time_punches row when nothing's been typed or
+// imported into attendance_records yet (see src/hr-daily-report.ts for why this can't just
+// reuse computeAttendanceForEmployee).
 router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
   const requested = typeof req.query.date === 'string' ? req.query.date : '';
   const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : localDateStr();
@@ -1110,6 +1112,17 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
   const policy = currentPolicy();
   const noWorkFor = buildNoWorkResolver();
   const holidayFor = buildHolidayResolver();
+
+  const periods = queryAll<{ id: number; label: string; start_date: string; end_date: string }>(
+    `SELECT id, label, start_date, end_date FROM attendance_periods
+     WHERE start_date <= ? AND end_date >= ? ORDER BY start_date DESC, id DESC`,
+    date, date
+  );
+  const periodIds = periods.map((p) => p.id);
+  // No cutoff covering the date -> nobody is expected to work it; HR always makes one.
+  const rosterFilter = periodIds.length
+    ? `AND e.id IN (SELECT employee_id FROM attendance_records WHERE period_id IN (${periodIds.map(() => '?').join(',')}))`
+    : 'AND 0';
 
   const employees = queryAll<{
     id: number; name: string; employee_no: string | null; department_id: number | null;
@@ -1121,8 +1134,9 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
      FROM employees e
      LEFT JOIN departments d ON d.id = e.department_id
      LEFT JOIN shifts s ON s.id = e.default_shift_id
-     WHERE e.status IN ('probationary', 'regular')
-     ORDER BY d.name IS NULL, d.name, e.name`
+     WHERE e.status IN ('probationary', 'regular') ${rosterFilter}
+     ORDER BY d.name IS NULL, d.name, e.name`,
+    ...periodIds
   );
 
   const employeeRows = employees.map((emp) => {
@@ -1151,12 +1165,10 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
         emp.id, date
       );
       if (punches.length) {
-        const firstIn = punches.find((p) => p.kind === 'in') ?? punches[0]!;
-        timeIn = firstIn.ts.slice(11, 16);
-        if (!timeOut && punches.length > 1) {
-          const lastOut = [...punches].reverse().find((p) => p.kind === 'out');
-          if (lastOut) timeOut = lastOut.ts.slice(11, 16);
-        }
+        const firstIn = punches.find((p) => p.kind === 'in');
+        if (firstIn) timeIn = firstIn.ts.slice(11, 16);
+        const lastOut = [...punches].reverse().find((p) => p.kind === 'out');
+        if (!timeOut && lastOut) timeOut = lastOut.ts.slice(11, 16);
       }
     }
 
@@ -1184,7 +1196,7 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
     const noWork = noWorkFor(date);
 
     const result = classifyDailyStatus({
-      time_in: timeIn, shift, on_leave: onLeave, reported, holiday, no_work: noWork,
+      time_in: timeIn, time_out: timeOut, shift, on_leave: onLeave, reported, holiday, no_work: noWork,
       is_rest_day: isRestDay, grace_minutes: policy.grace_minutes, now: nowStr,
     });
 
@@ -1208,6 +1220,7 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
 
   res.json({
     date, is_today: isToday, generated_at: new Date().toISOString(),
+    periods, // cutoff(s) whose roster scoped this board; [] = none covers the date, board is empty
     totals, by_department: [...byDept.values()], employees: employeeRows,
   });
 });

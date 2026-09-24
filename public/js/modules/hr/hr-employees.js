@@ -103,6 +103,69 @@ App.register('hr-employees', async (view) => {
     });
   }
 
+  /* Create a login account without leaving the employee form, then link it. The role list is
+     whatever the server says this caller may assign (catalog.assignableRoles — staff roles only
+     for HR, per HR_ASSIGNABLE_ROLES in src/shared/permissions.ts); POST /users enforces it too. */
+  /** "Christian Dave Enola" -> "christian.enola" (first + last word, username-safe). */
+  function suggestUsername(fullName) {
+    const words = fullName.toLowerCase().normalize('NFD').replace(/[^\w\s.-]/g, '').split(/\s+/).filter(Boolean);
+    if (!words.length) return '';
+    const base = words.length > 1 ? `${words[0]}.${words[words.length - 1]}` : words[0];
+    return base.replace(/[^a-z0-9._-]/g, '').slice(0, 30);
+  }
+
+  function tempPassword() {
+    const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    return [...bytes].map((b) => chars[b % chars.length]).join('');
+  }
+
+  async function createLinkedAccount(empOv, typedName, onCreated) {
+    const fullName = typedName || empOv.querySelector('[data-f="name"]').value.trim();
+    const deptId = empOv.querySelector('[data-f="department_id"]').value;
+    let catalog;
+    try { catalog = await AccessEditor.getCatalog(); } catch (e) { UI.toast(e.message, 'error'); return; }
+    const roleOpts = '<option value="">— choose role —</option>'
+      + catalog.assignableRoles.map((v) => `<option value="${v}">${UI.esc(AccessEditor.ROLE_LABELS[v] || v)}</option>`).join('');
+    const deptOpts = '<option value="">— none —</option>'
+      + depts.map((d) => `<option value="${d.id}" ${String(d.id) === deptId ? 'selected' : ''}>${UI.esc(d.name)}</option>`).join('');
+    UI.modal({
+      title: 'Create new account',
+      bodyHTML: `
+        <div class="field-row">
+          <div><label>Full name *</label><input id="na-name" value="${UI.esc(fullName)}" /></div>
+          <div><label>Username *</label><input id="na-user" class="mono" value="${UI.esc(suggestUsername(fullName))}" placeholder="letters, numbers, . _ -" /></div>
+        </div>
+        <div class="field-row" style="margin-top:10px">
+          <div><label>Base role *</label><select id="na-role">${roleOpts}</select></div>
+          <div><label>Department</label><select id="na-dept">${deptOpts}</select></div>
+        </div>
+        <div style="margin-top:10px"><label>Email <span class="muted">(for password resets)</span></label>
+          <input id="na-email" type="email" placeholder="name@company.com" /></div>
+        <div style="margin-top:10px"><label>Temporary password *</label><input id="na-pw" class="mono" value="${tempPassword()}" /></div>
+        <p class="muted" style="font-size:12px">Share this with the employee; they can change it under My Account. The account is created right away and linked to this employee when you save the form. Need more access than one role gives? Add it afterwards with the <strong>Access</strong> button next to the linked account.</p>`,
+      confirmText: 'Create account',
+      onConfirm: async (ov, showErr) => {
+        const val = (id) => ov.querySelector(id).value.trim();
+        const body = {
+          full_name: val('#na-name'), username: val('#na-user'), password: ov.querySelector('#na-pw').value,
+          email: val('#na-email'), role: val('#na-role'), department_id: val('#na-dept') || null,
+        };
+        if (!body.full_name || !body.username || !body.password) { showErr('Full name, username and password are required'); return false; }
+        if (!body.role) { showErr('Choose a role for the account'); return false; }
+        let created;
+        try {
+          created = await API.post('/users', body);
+        } catch (e) {
+          showErr(e.message);
+          return false;
+        }
+        onCreated({ id: Number(created.id), full_name: body.full_name, username: body.username.toLowerCase() });
+        UI.toast(`Account @${body.username.toLowerCase()} created — temp password: ${body.password}`);
+      },
+    });
+  }
+
   async function removeDepartmentInline(targetSelect) {
     const id = targetSelect.value;
     if (!id) { UI.toast('Select a department first', 'error'); return; }
@@ -291,15 +354,18 @@ App.register('hr-employees', async (view) => {
       allEmployees.forEach((e) => {
         if (e.user_id != null && (!editing || e.id !== existing.id)) linkedElsewhere.set(e.user_id, e.name);
       });
-      const userOpts = ['<option value="">— none —</option>']
+      // Options for the searchable "Linked user account" combo — accounts already tied to a
+      // different employee stay listed (so a search for them explains why) but can't be picked.
+      const userComboOptions = () => [{ value: '', label: '— none —' }]
         .concat(users.map((u) => {
           const taken = linkedElsewhere.get(u.id);
-          const label = `${u.full_name} (${u.username})${taken ? ` — linked to ${taken}` : ''}`;
-          const selected = currentUserId === u.id ? 'selected' : '';
-          const disabled = taken && currentUserId !== u.id ? 'disabled' : '';
-          return `<option value="${u.id}" ${selected} ${disabled}>${UI.esc(label)}</option>`;
-        }))
-        .join('');
+          return {
+            value: u.id,
+            label: `${u.full_name} (${u.username})${taken ? ` — linked to ${taken}` : ''}`,
+            disabled: !!taken && currentUserId !== u.id,
+          };
+        }));
+      let userCombo; // built in onOpen
 
       UI.modal({
         title: editing ? `Edit ${existing.name}` : 'New Employee',
@@ -350,8 +416,12 @@ App.register('hr-employees', async (view) => {
               <div><label>Start date</label><input data-f="start_date" type="date" value="${UI.esc(editing ? (existing.start_date || '') : '')}" /></div>
             </div>
             <div class="field-row" style="margin-top:10px">
-              <div><label>Linked user account</label><select data-f="user_id">${userOpts}</select>
-                <div class="muted" style="font-size:12px;margin-top:3px">Ties this employee's 201-file record to their login account (optional).</div>
+              <div><label>Linked user account</label>
+                <div style="display:flex;gap:6px">
+                  <div id="emp-user-combo" style="flex:1"></div>
+                  <button type="button" class="btn secondary small" id="emp-user-access" title="Roles &amp; access for the linked account">${UI.icon('key', 15)} Access</button>
+                </div>
+                <div class="muted" style="font-size:12px;margin-top:3px">Ties this employee's 201-file record to their login account (optional). Type a name to search, or create a new account. Use Access to give it more than its base role.</div>
               </div>
             </div>
           </div>
@@ -556,6 +626,27 @@ App.register('hr-employees', async (view) => {
             };
           }
 
+          const accessBtn = ov.querySelector('#emp-user-access');
+          const syncAccessBtn = () => { accessBtn.disabled = !userCombo.getValue(); };
+          accessBtn.onclick = () => { if (userCombo.getValue()) AccessEditor.open(Number(userCombo.getValue())); };
+          userCombo = UI.combo(ov.querySelector('#emp-user-combo'), userComboOptions(), {
+            selected: currentUserId != null ? currentUserId : '',
+            placeholder: 'Type a name or username…',
+            emptyText: 'No matching account',
+            onSelect: syncAccessBtn,
+            action: {
+              label: '+ Create new account',
+              onClick: (typed) => createLinkedAccount(ov, typed, (u) => {
+                users.push(u);
+                users.sort((a, b) => a.full_name.localeCompare(b.full_name));
+                userCombo.setOptions(userComboOptions());
+                userCombo.setSelected(u.id);
+                syncAccessBtn();
+              }),
+            },
+          });
+          syncAccessBtn();
+
           ov.querySelector('#emp-dept-new').onclick = () => addDepartmentInline(ov.querySelector('[data-f="department_id"]'));
           ov.querySelector('#emp-dept-del').onclick = () => removeDepartmentInline(ov.querySelector('[data-f="department_id"]'));
 
@@ -661,7 +752,7 @@ App.register('hr-employees', async (view) => {
             name,
             department_id: ov.querySelector('[data-f="department_id"]').value || null,
             position: ov.querySelector('[data-f="position"]').value.trim(),
-            user_id: ov.querySelector('[data-f="user_id"]').value || null,
+            user_id: userCombo.getValue() || null,
             default_shift_id: ov.querySelector('[data-f="default_shift_id"]').value || null,
             rate_type: rateTypeVal,
             daily_rate: rateTypeVal === 'daily' ? rateAmountVal : 0,

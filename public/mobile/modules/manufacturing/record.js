@@ -48,6 +48,7 @@
       if (jo.team_name) row('Team', mEsc(jo.team_name));
       if (jo.created_by_name) row('Made by', mEsc(jo.created_by_name));
       if (jo.released_by_name) row('Released by', mEsc(jo.released_by_name));
+      if (jo.accepted_by_name) row('Accepted by', mEsc(jo.accepted_by_name));
     }
     view.appendChild(kv);
 

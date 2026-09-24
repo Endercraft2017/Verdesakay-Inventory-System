@@ -48,6 +48,13 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
    location (fails with a shortfall list, no partial release). With the GL on, material
    value moves Inventory → Work in Process. Records who released it.
 
+4a. **Accept the parts kit (production lead)** — on the job order (desktop or phone), the
+   production lead counts the released kit against the **Components** list, ticks *I
+   counted the kit*, adds an optional handover note, and taps **Accept job order**. Records
+   who accepted and when (shown on the job order and the production record). **Output can't
+   be recorded until this is done.** A short or damaged kit isn't accepted — report it
+   (phone: **Report a kit problem**) and the warehouse/supervisor fixes the release.
+
 5. **Build (record production progress)** — units **finished** / **scrapped**; every unit
    off the line consumes its components. Either way this does **not** post to stock yet:
    **0 stages** → one **batch/lot** recorded per entry, awaiting Products In. **1–2 stages**

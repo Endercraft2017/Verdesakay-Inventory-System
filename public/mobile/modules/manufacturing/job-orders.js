@@ -1,5 +1,5 @@
-/* Manufacturing shop-floor — job order board. List by status, open one, record
-   production progress, pause / resume / close, release a draft. */
+/* Manufacturing shop-floor — job order board. List by status, open one, accept the
+   released parts kit, record production progress, pause / resume / close, release a draft. */
 (function () {
   var OPEN = ['draft', 'released', 'in_progress', 'paused'];
   var SCAN_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></svg>';
@@ -17,7 +17,8 @@
           var li = mEl(
             '<li class="m-list-row">' +
             '<div><b>' + mEsc(j.number) + '</b><span>' + mEsc(j.product_name) + '</span></div>' +
-            '<div class="m-list-qty"><span class="m-jo-status ' + j.status + '">' + j.status.replace('_', ' ') + '</span>' +
+            '<div class="m-list-qty"><span class="m-jo-status ' + j.status + '">' +
+            (j.status === 'released' && !j.accepted_at && !(j.qty_done > 0 || j.qty_scrapped > 0) ? 'to accept' : j.status.replace('_', ' ')) + '</span>' +
             '<br>' + j.qty_done + '/' + j.qty_ordered + '</div></li>'
           );
           li.onclick = function () { open1(view, j.id); };
@@ -66,6 +67,11 @@
         ? '<div class="m-hint">Released from warehouse by ' + mEsc(jo.released_by_name) +
           (jo.released_at ? ' · ' + mEsc((jo.released_at || '').slice(0, 16).replace('T', ' ')) : '') + '</div>'
         : '') +
+      (jo.accepted_by_name
+        ? '<div class="m-hint">Accepted by production: ' + mEsc(jo.accepted_by_name) +
+          (jo.accepted_at ? ' · ' + mEsc((jo.accepted_at || '').slice(0, 16).replace('T', ' ')) : '') +
+          (jo.accept_notes ? ' — ' + mEsc(jo.accept_notes) : '') + '</div>'
+        : '') +
       '</div>'
     ));
 
@@ -101,10 +107,17 @@
       addBtn(acts0, 'Release to production', function () { act(view, jo.id, 'release'); });
       view.appendChild(acts0);
     }
-    if (canRecord && (jo.status === 'released' || jo.status === 'in_progress') && jo.qc_stages > 0) {
+    // The production lead signs for the released parts kit before any output can be
+    // recorded (POST /:id/accept — the server 409s /progress and /units until then).
+    var awaitingAccept = awaitingAcceptance(jo);
+    if (canRecord && awaitingAccept && jo.status !== 'paused') {
+      acceptBox(view, jo);
+    }
+    var canBuild = canRecord && !awaitingAccept && (jo.status === 'released' || jo.status === 'in_progress');
+    if (canBuild && jo.qc_stages > 0) {
       recordUnitsBox(view, jo, remaining);
     }
-    if (canRecord && (jo.status === 'released' || jo.status === 'in_progress') && jo.qc_stages <= 0) {
+    if (canBuild && jo.qc_stages <= 0) {
       var prog = mEl(
         '<div class="m-jo-progress">' +
         '<h3 class="m-h3">Record production (' + remaining + ' left)</h3>' +
@@ -142,6 +155,44 @@
     var back = mEl('<div class="m-actions"><button type="button" class="m-btn m-btn-secondary">Back to board</button></div>');
     back.querySelector('button').onclick = function () { board(view); };
     view.appendChild(back);
+  }
+
+  // Mirrors job-orders.routes.ts needsAcceptance(): released, not yet accepted, and no
+  // output on record (older job orders built before the accept step stay exempt).
+  function awaitingAcceptance(jo) {
+    if (jo.accepted_at || jo.status === 'draft') return false;
+    if (['released', 'in_progress', 'paused'].indexOf(jo.status) === -1) return false;
+    if ((jo.qty_done || 0) > 0 || (jo.qty_scrapped || 0) > 0) return false;
+    var s = jo.units_summary || {};
+    return !Object.keys(s).some(function (k) { return s[k] > 0; });
+  }
+
+  // "Accept parts kit" — the production lead counts the kit against the Components list
+  // above, then signs for it. A short/damaged kit goes back through Report a problem
+  // instead (only the warehouse / a supervisor can fix a release).
+  function acceptBox(view, jo) {
+    var box = mEl(
+      '<div class="m-jo-progress">' +
+      '<h3 class="m-h3">Accept parts kit</h3>' +
+      '<div class="m-hint" style="margin:0 0 10px">Count the parts you received against the Components list above. ' +
+      'Accept only if the kit is complete — you cannot record production until you do.</div>' +
+      '<label class="m-check"><input type="checkbox" data-counted /> I counted the kit and it matches the list</label>' +
+      '<label class="m-field"><span class="m-label">Note (optional)</span>' +
+      '<input class="m-input" data-note maxlength="500" placeholder="e.g. bolts swapped for equivalent" /></label>' +
+      '<div class="m-actions"><button type="button" class="m-btn" data-accept>Accept job order</button>' +
+      '<button type="button" class="m-btn m-btn-secondary" data-problem>Report a kit problem</button></div>' +
+      '</div>'
+    );
+    box.querySelector('[data-accept]').onclick = function () {
+      if (!box.querySelector('[data-counted]').checked) { mToast('Count the kit first, then tick the box', 'err'); return; }
+      var note = (box.querySelector('[data-note]').value || '').trim();
+      this.disabled = true;
+      act(view, jo.id, 'accept', { notes: note || null });
+    };
+    box.querySelector('[data-problem]').onclick = function () {
+      MApp.go('report-problem', { about: 'Parts kit for ' + jo.number + ' (' + jo.product_name + ')' });
+    };
+    view.appendChild(box);
   }
 
   // "More actions" — Pause / Close out early, collapsed by default. These are rare,

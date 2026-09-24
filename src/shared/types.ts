@@ -323,6 +323,10 @@ export interface JobOrder {
   created_at: string;
   updated_at: string;
   released_by: number | null;
+  /** Production lead's sign-off that the released parts kit arrived (POST /:id/accept). */
+  accepted_by: number | null;
+  accepted_at: string | null;
+  accept_notes: string | null;
   /** Production team assigned to run this job order (nullable). */
   team_id: number | null;
   /** Scheduling — planned start / due date (YYYY-MM-DD), priority (higher = sooner),
@@ -333,6 +337,7 @@ export interface JobOrder {
   work_center: string | null;
   created_by_name?: string | null;
   released_by_name?: string | null;
+  accepted_by_name?: string | null;
   team_name?: string | null;
   order_number?: string | null;
   source_location_name?: string | null;

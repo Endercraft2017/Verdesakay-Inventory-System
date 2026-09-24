@@ -1,8 +1,8 @@
 /* Daily Report — a live, whole-company attendance snapshot for one calendar date: who's
    present / late / absent / on leave, with a per-department breakdown. Sits next to the
-   Time-in Kiosk in HR > Time Keeping, but unlike everything else under Time Keeping it isn't
-   scoped to one cutoff — GET /hr/daily-report covers every active employee regardless of
-   which (if any) period's roster they're on, and reads live kiosk/phone punches when nothing's
+   Time-in Kiosk in HR > Time Keeping. GET /hr/daily-report covers only the roster of the
+   cutoff(s) covering the date (nobody if no cutoff covers it), and reads live
+   kiosk/phone punches when nothing's
    been typed or imported into a cutoff's attendance grid yet. See src/hr-daily-report.ts for
    why this deliberately doesn't reuse the payroll engine's day classification. */
 App.register('hr-daily-report', async (view, filter) => {
@@ -179,7 +179,9 @@ App.register('hr-daily-report', async (view, filter) => {
     if (!filtered.length) {
       return UI.emptyState({
         icon: 'users', title: 'No employees match',
-        hint: q || state.status ? 'Try a different search or status filter.' : 'No active employees yet.',
+        hint: q || state.status ? 'Try a different search or status filter.'
+          : !(state.data.periods || []).length ? 'No cutoff covers this date yet — create one in Time Keeping and add employees to its roster.'
+          : 'No active employees are on this cutoff\'s roster.',
       });
     }
     return `<div class="panel">${groupedTableHTML(filtered)}</div>`;
@@ -188,9 +190,13 @@ App.register('hr-daily-report', async (view, filter) => {
   function draw() {
     const d = state.data;
     if (!d) return;
-    asOfEl.textContent = d.is_today
+    const live = d.is_today
       ? `Live — as of ${new Date(d.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}, refreshes automatically`
       : '';
+    const scope = (d.periods || []).length
+      ? `Cutoff: ${d.periods.map((p) => p.label).join(', ')}`
+      : 'No cutoff covers this date';
+    asOfEl.textContent = live ? `${live} · ${scope}` : scope;
     bodyEl.innerHTML = `
       ${statCardsHTML(d.totals, d.is_today)}
       ${deptTableHTML(d.by_department)}

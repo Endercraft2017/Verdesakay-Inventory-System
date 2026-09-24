@@ -19,10 +19,15 @@
     "tenant:usage": "tsx scripts/tenant.ts usage",
     "tenant:purge": "tsx scripts/tenant.ts purge",
     "platform:user": "tsx scripts/platform-user.ts",
-    "migrate:all": "tsx scripts/migrate-all.ts"
+    "migrate:all": "tsx scripts/migrate-all.ts",
+    "db:types": "tsx scripts/gen-db-types.ts",
+    "backup": "tsx scripts/backup.ts now",
+    "backup:list": "tsx scripts/backup.ts list",
+    "backup:restore": "tsx scripts/backup.ts restore",
+    "backup:offsite": "tsx scripts/offsite.ts"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -30,8 +35,10 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
+    "kysely": "^0.29.6",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.6",
+    "tsx": "^4.23.15",
     "web-push": "^3.6.7",
     "ws": "^8.21.3",
     "zod": "^4.4.3"
@@ -48,7 +55,6 @@
     "@types/ws": "^8.18.1",
     "jsdom": "^29.1.1",
     "supertest": "^7.2.2",
-    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }

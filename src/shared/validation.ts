@@ -362,6 +362,12 @@ export const jobOrderComponentsSchema = z.object({
     .max(200),
 });
 
+/** POST /job-orders/:id/accept — the production lead confirms the parts kit arrived.
+ *  notes: optional remarks about the handover (e.g. a part swapped for an equivalent). */
+export const acceptJobOrderSchema = z.object({
+  notes: trimmed.max(500).optional().nullable(),
+});
+
 export const jobOrderProgressSchema = z
   .object({
     done_delta: z.coerce.number().int().min(0).default(0),

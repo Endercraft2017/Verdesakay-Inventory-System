@@ -30,6 +30,7 @@ async function releasedMO(prefix: string, qty: number, qc_stages: number) {
   const mo = (await ctx.api.post('/api/job-orders').set(authHdr())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages })).body.id;
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(authHdr());
+  await ctx.api.post(`/api/job-orders/${mo}/accept`).set(authHdr());
   return { mo, product, part };
 }
 

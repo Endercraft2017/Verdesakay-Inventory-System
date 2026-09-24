@@ -34,6 +34,15 @@ export const ROLES: Role[] = [
   'releasing_clerk',
 ];
 
+/** Roles an hr.manage user WITHOUT users.manage may give a new account (the employee form's
+    "create account" shortcut). Excludes every role that carries management/finance/HR powers,
+    so HR can onboard floor staff but can never mint an admin, another HR user, or accounting. */
+export const HR_ASSIGNABLE_ROLES: Role[] = [
+  'warehouse', 'releasing', 'csr', 'marketing',
+  'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+  'releasing_clerk',
+];
+
 const ROLE_DEFAULTS: Record<Role, Permission[]> = {
   admin: [...ALL_PERMISSIONS],
   admin_staff: [
@@ -149,6 +158,14 @@ export function resolvePermissions(
   }
   return result;
 }
+
+/** Permissions an hr.manage user WITHOUT users.manage may grant/revoke as per-user overrides
+    (the employee form's Access editor): exactly what the HR-assignable staff roles carry by
+    default, so HR can widen a staff account across floor tasks but never hand out management,
+    finance, HR or admin powers. */
+export const HR_GRANTABLE_PERMISSIONS: Permission[] = [
+  ...new Set(HR_ASSIGNABLE_ROLES.flatMap((r) => ROLE_DEFAULTS[r])),
+];
 
 /** Default permission list for a role with no overrides applied. */
 export function roleDefaults(role: Role): Permission[] {

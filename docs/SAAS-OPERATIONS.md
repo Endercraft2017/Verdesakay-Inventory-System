@@ -27,6 +27,9 @@ one `default` tenant, exactly as before.
 | `UPLOAD_DIR` | Uploaded files. | `<root>/uploads` |
 | `SIGNUPS_OPEN` | `"true"` makes `POST /api/signup` live (self-serve tenant creation). Anything else ⇒ 404; you provision manually. | *(off)* |
 | `PLATFORM_CONSOLE` | `"true"` mounts the owner console at `/_platform`. Anything else ⇒ the whole path 404s. | *(off)* |
+| `PLATFORM_HOST` | Dedicated console host, e.g. `admin.app.example.com`. When set, `/_platform` answers **only** there and every other path on that host redirects to `/_platform/` (no tenant app is served on it). | *(unset: apex/default host)* |
+| `TZ` | Office time zone, e.g. `Asia/Manila`. Attendance/payroll dates and kiosk rules use server-local time (Node + SQLite `'localtime'`), so it must be set **before the process starts**. Required behind a proxy: the server refuses to start without it. | *(OS time zone)* |
+| `BEHIND_PROXY` | `"true"` when a TLS-terminating proxy fronts the app: serve plain HTTP on `PORT`, trust `X-Forwarded-*`. Auto-on when `RAILWAY_ENVIRONMENT` is set. See [DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md). | *(off)* |
 | `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` | Bootstrap the first console operator on boot (only when there are none yet). Or use `npm run platform:user`. | *(unset)* |
 | `PLATFORM_ADMIN_TOKEN` | Optional shared secret — when set, every `/_platform/api` request must also send `X-Platform-Token: <token>`. | *(unset)* |
 | `APP_SECRET` / `MAIL_SECRET_KEY` | AES key for secrets at rest (SMTP password, etc.). **Set this in SaaS mode** so tenant DB files aren't self-decrypting. | auto-generated per DB |
@@ -99,12 +102,16 @@ CLI below does the same things headless.
    Or set `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` and the first one is seeded on boot.
 3. **Open** `https://<your-apex-domain>/_platform` (or `http://localhost:3000/_platform`
    in dev) and sign in. The console only answers on the apex / default host — requests
-   that resolved to a tenant sub-domain 404.
+   that resolved to a tenant sub-domain 404. With `PLATFORM_HOST` set, it answers only on
+   that host instead, and the host's root opens the console directly.
 
 From there: a table of all workspaces (status, plan, module chips, live user/item counts),
 a **New workspace** form, and a per-workspace editor for name, plan, status (+ trial end
 date), and feature modules (a "use plan default" toggle, or a custom checkbox set with
-dependencies auto-selected). A danger-zone **Purge** requires typing the slug back. Every
+dependencies auto-selected). **Import workspace** adopts an existing install's database
+snapshot (`npm run backup` on that install) as a new tenant: the file is integrity-checked,
+its login sessions are dropped, and it migrates on first open. Users, passwords and records
+carry over; uploaded files do not. A danger-zone **Purge** requires typing the slug back. Every
 change is written to `provisioning_log` and shown in the editor's activity list.
 
 Hardening options: `PLATFORM_ADMIN_TOKEN` (a shared secret required as an `X-Platform-Token`
@@ -146,13 +153,56 @@ npm run migrate:all
 
 Run it as part of the deploy, after pulling the new release.
 
+Migrations never wipe data. They add columns and tables, or rebuild a table by copying every row into it first. Before any database that already has data is migrated, it is snapshotted to
+`BACKUP_DIR/<slug>/pre-migrate/<slug>-v<old>-to-v<new>-<timestamp>.db`. If that snapshot
+can't be written, the migration **refuses to run** and the server doesn't start, so a release never
+upgrades a database it can't roll back. (`BACKUP_BEFORE_MIGRATE=off` overrides this. Not
+recommended.)
+
 ## Backups
 
-Per-tenant and trivial because each tenant is a file:
+Automatic (src/shared/backup.ts + src/platform/backups.ts). Nothing to set up for the defaults.
+
+| What | When | Where (under `BACKUP_DIR`) | Kept |
+|---|---|---|---|
+| Every tenant DB (`default` = data.db) + `platform.db` (`_platform`) | Daily: at boot, then the first hourly check after midnight | `<name>/daily/<name>-YYYY-MM-DD.db` | Newest `BACKUP_KEEP_DAILY` (14) + the last one of each month for `BACKUP_KEEP_MONTHLY` (12) months |
+| Same | Right before a schema migration | `<name>/pre-migrate/` | `BACKUP_KEEP_PREMIGRATE` (10) per DB |
+| Same | `npm run backup` (manual) | `<name>/manual/` | 20 per DB |
+| `UPLOAD_DIR` (images, attachments, photos) | With each daily/manual run | `uploads/` | Additive mirror; files deleted in the app are **not** deleted here, **except kiosk punch photos** (`kiosk-punches/`): when the app's photo retention deletes one, the backup copy goes too, locally and off-site, so employee photos never outlive the retention policy |
+
+Snapshots use `VACUUM INTO`, which gives a consistent copy while the server is running, and
+each one is integrity-checked before it's kept. `BACKUP_DIR/status.json` records the last run
+and `last_success_at`. Failures are logged as `[backup] FAILED …`.
+
+**Default location:** `db/backups/`, on the **same disk** as the live data. That protects
+against bad migrations, mistakes, and corruption, **not** against losing the disk or the machine. For real
+redundancy, set one or both:
+
+- `BACKUP_DIR`: put the backups on another drive.
+- `BACKUP_MIRROR_DIR`: a **second copy** of every snapshot and upload, for example a USB/NAS
+  share or a folder synced by OneDrive / Google Drive / Dropbox, so a copy leaves the building.
+
+- **Off-site buckets** (src/platform/offsite.ts): set `BACKUP_S3_<NAME>_BUCKET/_ENDPOINT/_KEY_ID/_SECRET`
+  (+ optional `_REGION`, `_KEEP_DAYS`) for any number of S3-compatible buckets (Backblaze B2,
+  Railway Buckets, R2, S3), plus `BACKUP_KEY`. Every daily snapshot and every upload is gzipped,
+  AES-256-GCM encrypted with `BACKUP_KEY`, and sent hourly-if-new; failures are retried on the next
+  run and recorded under `offsite` in `status.json`. **Lose `BACKUP_KEY` and the off-site copies
+  are unreadable.** Setup walkthrough: [DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md) Part 4.
 
 ```
-sqlite3 DATA_DIR/acme.db "VACUUM INTO 'backups/acme-$(date +%F).db'"
+npm run backup                 # snapshot everything now
+npm run backup:list            # what's on disk
+npm run backup:restore -- default db/backups/default/daily/default-2026-09-23.db --yes
+npm run backup:offsite -- test                     # prove each bucket + BACKUP_KEY work
+npm run backup:offsite -- list b2 db/verdesakay/   # off-site snapshots of one tenant
+npm run backup:offsite -- fetch b2 db/verdesakay/verdesakay-2026-09-23.db.gz.enc restored.db
+npm run backup:offsite -- fetch-uploads b2 ./uploads-restored
 ```
 
-Snapshot `platform.db` the same way. Then push `backups/` to object storage. Restoring one
-tenant = swap its file.
+**Restore:** stop the server first. The restore command checks the backup's integrity, snapshots the
+current file to `<name>/pre-restore/` (so the restore can be undone), copies the backup over the live file, and removes the stale
+`-wal`/`-shm` files. `<name>` is `default`, a tenant slug, or `_platform`. Restoring an
+older-schema backup is fine: it's migrated (and snapshotted again) when the server starts.
+Uploads are restored by copying files back from `BACKUP_DIR/uploads/`.
+
+Test a restore now and then. A backup you've never restored from hasn't been proven to work.

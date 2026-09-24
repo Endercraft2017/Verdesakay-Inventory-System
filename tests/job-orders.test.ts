@@ -84,6 +84,7 @@ describe('job orders', () => {
     expect(jo.components).toEqual([]);
 
     const rel = await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
     expect(rel.status).toBe(200);
     expect(rel.body.job_order.status).toBe('released');
 
@@ -109,6 +110,7 @@ describe('job orders', () => {
     expect(line.qty_per_unit).toBe(2); // 8 / 4 ordered
 
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     expect(await onHand(extra)).toBe(42); // 50 − 8 reserved
   });
 
@@ -123,6 +125,7 @@ describe('job orders', () => {
     expect(jo.components.find((c: { component_item_id: number }) => c.component_item_id === bolt).qty_planned).toBe(14);
 
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     const after = await ctx.api.put(`/api/job-orders/${body.id}/components`).set(authHdr())
       .send({ components: [{ component_item_id: bolt, qty_planned: 2 }] });
     expect(after.status).toBe(409);
@@ -133,6 +136,7 @@ describe('job orders', () => {
     const { body } = await createMO({ product_item_id: product, qty_ordered: 10 }); // 20 bolts, 30 panels
 
     const rel = await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     expect(rel.status).toBe(200);
     expect(rel.body.job_order.status).toBe('released');
     expect(await onHand(bolt)).toBe(30);
@@ -143,6 +147,7 @@ describe('job orders', () => {
     const { product, bolt } = await setupProduct('Short', 5, 100); // only 5 bolts, need 20
     const { body } = await createMO({ product_item_id: product, qty_ordered: 10 });
     const rel = await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     expect(rel.status).toBe(400);
     expect(await onHand(bolt)).toBe(5); // untouched
   });
@@ -151,6 +156,7 @@ describe('job orders', () => {
     const { product, bolt, panel } = await setupProduct('Progress', 100, 100);
     const { body } = await createMO({ product_item_id: product, qty_ordered: 4 }); // 8 bolts, 12 panels
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
 
     let r = await ctx.api.post(`/api/job-orders/${body.id}/progress`).set(authHdr()).send({ done_delta: 3 });
     expect(r.status).toBe(200);
@@ -173,6 +179,7 @@ describe('job orders', () => {
     const { product } = await setupProduct('Over');
     const { body } = await createMO({ product_item_id: product, qty_ordered: 2 });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     const r = await ctx.api.post(`/api/job-orders/${body.id}/progress`).set(authHdr()).send({ done_delta: 3 });
     expect(r.status).toBe(400);
   });
@@ -181,6 +188,7 @@ describe('job orders', () => {
     const { product, bolt, panel } = await setupProduct('Close', 100, 100);
     const { body } = await createMO({ product_item_id: product, qty_ordered: 10 }); // 20 bolts / 30 panels reserved
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     expect(await onHand(bolt)).toBe(80);
 
     await ctx.api.post(`/api/job-orders/${body.id}/progress`).set(authHdr()).send({ done_delta: 3 }); // uses 6 bolts / 9 panels
@@ -196,6 +204,7 @@ describe('job orders', () => {
     const { product, bolt } = await setupProduct('Cancel', 100, 100);
     const { body } = await createMO({ product_item_id: product, qty_ordered: 5 });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr()); // -10 bolts
+    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     expect(await onHand(bolt)).toBe(90);
 
     const r = await ctx.api.post(`/api/job-orders/${body.id}/cancel`).set(authHdr());
@@ -207,6 +216,7 @@ describe('job orders', () => {
     const { product, bolt } = await setupProduct('Pause');
     const { body } = await createMO({ product_item_id: product, qty_ordered: 2 });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     const before = await onHand(bolt);
 
     expect((await ctx.api.post(`/api/job-orders/${body.id}/pause`).set(authHdr())).body.job_order.status).toBe('paused');
@@ -221,6 +231,7 @@ describe('job orders', () => {
 
     const b = await createMO({ product_item_id: product, qty_ordered: 1 });
     await ctx.api.post(`/api/job-orders/${b.body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${b.body.id}/accept`).set(authHdr());
     expect((await ctx.api.delete(`/api/job-orders/${b.body.id}`).set(authHdr())).status).toBe(409);
   });
 
@@ -268,6 +279,7 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
     const { product } = await costedProduct('WIP-A');
     const mo = await createMO({ product_item_id: product, qty_ordered: 10 }); // 20 bolts (₱100) + 30 panels (₱300) = ₱400
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
 
     const [entry] = await joEntries(mo.body.id);
     const byCode = Object.fromEntries(entry.lines.map((l: { account_code: string; debit: number; credit: number }) => [l.account_code, l]));
@@ -282,6 +294,7 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
     const { product } = await costedProduct('WIP-B');
     const mo = await createMO({ product_item_id: product, qty_ordered: 5 }); // released value ₱200
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
     const done = await ctx.api.post(`/api/job-orders/${mo.body.id}/progress`).set(authHdr())
       .send({ done_delta: 5, scrapped_delta: 0 });
     expect(done.body.job_order.status).toBe('completed');
@@ -300,6 +313,7 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
     const { product } = await costedProduct('WIP-C');
     const mo = await createMO({ product_item_id: product, qty_ordered: 10 }); // released ₱400, ₱40/unit
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
     const r = await ctx.api.post(`/api/job-orders/${mo.body.id}/progress`).set(authHdr())
       .send({ done_delta: 8, scrapped_delta: 2 }); // 8 good (₱320), 2 scrapped (₱80)
     expect(r.body.job_order.status).toBe('completed');
@@ -314,6 +328,7 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
     const { product } = await costedProduct('WIP-D');
     const mo = await createMO({ product_item_id: product, qty_ordered: 4 }); // released ₱160
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${mo.body.id}/cancel`).set(authHdr());
 
     const settle = (await joEntries(mo.body.id)).find((e) => /settled/i.test(e.memo));

@@ -219,7 +219,13 @@ App.register('job-orders', async (view, filter) => {
       const el = host();
       if (!el) return;
       const isDraft = jo.status === 'draft';
-      const running = jo.status === 'released' || jo.status === 'in_progress';
+      // Production must accept the released parts kit before output can be recorded
+      // (server: job-orders.routes.ts needsAcceptance — older job orders with output
+      // already on record are exempt).
+      const sumAny = Object.values(jo.units_summary || {}).some((n) => n > 0);
+      const awaitingAccept = !jo.accepted_at && ['released', 'in_progress', 'paused'].includes(jo.status)
+        && !(jo.qty_done > 0 || jo.qty_scrapped > 0 || sumAny);
+      const running = (jo.status === 'released' || jo.status === 'in_progress') && !awaitingAccept;
       const comps = jo.components || [];
       const sum = jo.units_summary || { pending: 0, passed: 0, in_stock: 0, failed: 0, scrapped: 0, rework: 0 };
       const qc = jo.qc_stages > 0;
@@ -248,7 +254,9 @@ App.register('job-orders', async (view, filter) => {
             <div><span class="muted">Team</span><div>${UI.esc(jo.team_name || '—')}${jo.work_center ? ` <span class="muted">· ${UI.esc(jo.work_center)}</span>` : ''}</div></div>
             ${(jo.planned_start || jo.due_date) ? `<div><span class="muted">Schedule</span><div>${UI.esc(jo.planned_start || '?')} → ${UI.esc(jo.due_date || '?')}${jo.priority ? ` <span class="muted">P${jo.priority}</span>` : ''}</div></div>` : ''}
             ${jo.released_by_name ? `<div><span class="muted">Released by</span><div>${UI.esc(jo.released_by_name)}${jo.released_at ? ` <span class="muted">${UI.esc(jo.released_at.slice(0, 16).replace('T', ' '))}</span>` : ''}</div></div>` : ''}
+            ${jo.accepted_by_name ? `<div><span class="muted">Accepted by</span><div>${UI.esc(jo.accepted_by_name)}${jo.accepted_at ? ` <span class="muted">${UI.esc(jo.accepted_at.slice(0, 16).replace('T', ' '))}</span>` : ''}</div></div>` : ''}
           </div>
+          ${jo.accept_notes ? `<p class="muted" style="white-space:pre-wrap;margin:10px 0 0"><b>Handover note:</b> ${UI.esc(jo.accept_notes)}</p>` : ''}
           ${jo.notes ? `<p class="muted" style="white-space:pre-wrap;margin:10px 0 0">${UI.esc(jo.notes)}</p>` : ''}`)}
 
         ${box(`
@@ -277,6 +285,16 @@ App.register('job-orders', async (view, filter) => {
               <button type="button" class="btn secondary small" id="jo-comp-add">Add</button>
             </div>
             <button type="button" class="btn secondary small" id="jo-save-plan" style="margin-top:8px">Save planned quantities</button>` : ''}`)}
+
+        ${awaitingAccept && jo.status !== 'paused' ? box(`
+          ${boxTitle('Accept parts kit')}
+          <p class="muted" style="font-size:12px;margin:0 0 8px">Released by the warehouse — waiting for production to count the kit against the Components list and accept it. Output can't be recorded until then.</p>
+          ${canRecord ? `
+            <label style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox" id="jo-acc-counted" /> I counted the kit and it matches the Components list</label>
+            <div class="field-row">
+              <div style="flex:1"><label>Note (optional)</label><input id="jo-acc-note" maxlength="500" placeholder="e.g. bolts swapped for equivalent" /></div>
+              <div style="display:flex;align-items:flex-end"><button type="button" class="btn" id="jo-accept">Accept job order</button></div>
+            </div>` : ''}`) : ''}
 
         ${running && canRecord && !qc ? box(`
           ${boxTitle('Record production')}
@@ -451,6 +469,12 @@ App.register('job-orders', async (view, filter) => {
           const r = await API.put('/job-orders/' + id + '/components', { components });
           jo = r.job_order; UI.toast('Planned quantities saved'); draw();
         } catch (e) { UI.toast(e.message, 'error'); }
+      };
+      const acc = el.querySelector('#jo-accept');
+      if (acc) acc.onclick = () => {
+        if (!el.querySelector('#jo-acc-counted').checked) { UI.toast('Count the kit first, then tick the box', 'error'); return; }
+        const notes = (el.querySelector('#jo-acc-note').value || '').trim();
+        act('/accept', { notes: notes || null });
       };
       const pg = el.querySelector('#jo-progress');
       if (pg) pg.onclick = () => {

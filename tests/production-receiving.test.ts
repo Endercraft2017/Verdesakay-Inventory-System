@@ -32,6 +32,7 @@ async function releasedMO(prefix: string, qty: number, qc_stages: number) {
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages })).body.id as number;
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+  await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
   return { mo, product, part };
 }
 
@@ -188,6 +189,7 @@ describe('GL: the "produce" entry posts at receiving, not before', () => {
     const mo = (await ctx.api.post('/api/job-orders').set(H())
       .send({ product_item_id: product, qty_ordered: qty, qc_stages: 0 })).body.id;
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+    await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
     return { mo, product };
   }
 

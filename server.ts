@@ -15,12 +15,18 @@ import { createApp } from './src/app';
 import { sendDueTaskReminders } from './src/shared/push';
 import { cleanupPlatformSessions } from './src/platform/platform-users';
 import { attachWebSocket } from './src/shared/ws';
+import { runDailyBackups } from './src/platform/backups';
 
 init();
 const housekeeping = () => { cleanupSessions(); cleanupPlatformSessions(); };
 housekeeping(); // sweep stale sessions / old audit-log rows once at boot, then hourly
 setInterval(housekeeping, 60 * 60 * 1000).unref(); // hourly
 setInterval(() => { void sendDueTaskReminders(); }, 60 * 1000).unref(); // task reminders
+// Daily DB snapshots: at boot, then an hourly check that takes today's once the date rolls
+// over (a no-op for any DB that already has one). Never let a backup error crash the server.
+const dailyBackup = () => { try { runDailyBackups(); } catch (e) { console.error(`[backup] daily run failed: ${(e as Error).message}`); } };
+dailyBackup();
+setInterval(dailyBackup, 60 * 60 * 1000).unref();
 
 const app = createApp();
 const PORT = Number(process.env.PORT) || 3000;

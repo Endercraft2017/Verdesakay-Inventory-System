@@ -27,6 +27,7 @@ describe('production record — unit dossier', () => {
     const mo = (await ctx.api.post('/api/job-orders').set(H())
       .send({ product_item_id: product, qty_ordered: 1, qc_stages: 1 })).body.id;
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+    await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
     await addSerializedUnits(ctx.api, token, mo, 1, 'DOSSIER');
     const unit = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body[0];
 
@@ -73,6 +74,7 @@ describe('production record — unit dossier', () => {
     const mo = (await ctx.api.post('/api/job-orders').set(H())
       .send({ product_item_id: product, qty_ordered: 3, qc_stages: 0 })).body.id;
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+    await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
     await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 3, batch_label: 'LOT-Z' });
     const batch = (await ctx.api.get('/api/production/batches?job_order=' + mo).set(H())).body[0];
     await ctx.api.post(`/api/production/batches/${batch.id}/inspect`).set(H())

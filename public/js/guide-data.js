@@ -87,6 +87,15 @@ const GUIDE_PIPELINES = [
           material value moves from Inventory into Work in Process. Records who released it.`,
       },
       {
+        title: 'Accept the parts kit',
+        role: 'Production lead · production.record',
+        to: { route: 'job-orders', label: 'Job order → Accept parts kit' },
+        body: `The production lead counts the released kit against the job order's Components
+          list and taps <b>Accept job order</b> (optional handover note). Records who accepted it
+          and when. Output can't be recorded until the kit is accepted — a short or damaged kit
+          goes back to the warehouse via <b>Report a problem</b> instead.`,
+      },
+      {
         title: 'Build (record production progress)',
         role: 'Shop floor · inventory.adjust',
         to: { route: 'job-orders', label: 'Job order → Record production' },

@@ -52,9 +52,12 @@ export function isValidKioskCode(code: string): boolean {
 interface ClockPolicy {
   lunch_start: string; // "HH:MM"
   lunch_end: string;
+  /** "HH:MM" — when no shift resolves at all (not even a company default), a first punch of the
+   *  day at/after this is a time-out (forgot to time in), not a time-in. "24:00" = never. */
+  first_punch_out_after: string;
 }
 function policy(): ClockPolicy {
-  return { lunch_start: '11:00', lunch_end: '14:00', ...(getSetting<Partial<ClockPolicy>>('clock_policy') || {}) };
+  return { lunch_start: '11:00', lunch_end: '14:00', first_punch_out_after: '17:00', ...(getSetting<Partial<ClockPolicy>>('clock_policy') || {}) };
 }
 
 function localParts(): { date: string; hm: string; hour: number } {
@@ -77,11 +80,37 @@ export interface PunchRow {
   source: string;
 }
 
-/** Classify what this punch means from the day's punches so far. */
-function classify(priorToday: PunchRow[]): { kind: 'in' | 'out'; segment: string } {
+/** From what time ("HH:MM") a first punch of the day on `date` counts as a time-out rather than
+ *  a time-in: the end of the shift the employee is working — that day's attendance_records shift
+ *  if HR set one, else their own default shift, else the company default shift
+ *  (shifts.is_default) — or, with no shift at all, clock_policy.first_punch_out_after. null for
+ *  an overnight shift (end before start): there a wall-clock time can't tell an arrival from a
+ *  departure, so the first punch is always an in. */
+function firstPunchOutAfter(employeeId: number, date: string): string | null {
+  const s = queryOne<{ start_time: string | null; end_time: string | null }>(
+    `SELECT s.start_time, s.end_time FROM shifts s
+     WHERE s.id = COALESCE(
+       (SELECT ar.shift_id FROM attendance_records ar
+         WHERE ar.employee_id = ? AND ar.work_date = ? AND ar.shift_id IS NOT NULL
+         ORDER BY ar.id DESC LIMIT 1),
+       (SELECT e.default_shift_id FROM employees e WHERE e.id = ?),
+       (SELECT id FROM shifts WHERE is_default = 1 ORDER BY id LIMIT 1))`,
+    employeeId, date, employeeId
+  );
+  if (!s?.start_time || !s.end_time) return policy().first_punch_out_after;
+  if (s.end_time <= s.start_time) return null;
+  return s.end_time.slice(0, 5);
+}
+
+/** Classify what this punch means from the day's punches so far. The very first punch of the
+ *  day is normally an in — except at/after `outAfter` (see firstPunchOutAfter): that's someone
+ *  who forgot to time in and is now leaving, so it's recorded as the day's time-out, leaving
+ *  time-in blank for HR to follow up. */
+function classify(priorToday: PunchRow[], outAfter: string | null): { kind: 'in' | 'out'; segment: string } {
   const { hm, hour } = localParts();
   const pol = policy();
   const prevPunch = priorToday[priorToday.length - 1];
+  if (!prevPunch && outAfter != null && hm >= outAfter) return { kind: 'out', segment: 'afternoon_out' };
   const kind: 'in' | 'out' = prevPunch && prevPunch.kind === 'in' ? 'out' : 'in';
 
   if (kind === 'in') {
@@ -167,7 +196,7 @@ export function recordPunch(
     );
   }
 
-  const { kind, segment } = classify(prior);
+  const { kind, segment } = classify(prior, firstPunchOutAfter(employee.id, date));
   const info = run(
     `INSERT INTO time_punches (employee_id, user_id, work_date, kind, segment, source)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -311,7 +340,7 @@ export function myClockStatus(employeeId: number): {
   };
 }
 
-interface DayColumns { time_in: string; lunch_out: string | null; lunch_in: string | null; time_out: string | null }
+interface DayColumns { time_in: string | null; lunch_out: string | null; lunch_in: string | null; time_out: string | null }
 
 /** Split one day's raw punches into the four brackets classify() already tags them with:
  *  first in → time_in, the lunch_out punch → lunch_out, the first in after it → lunch_in (back
@@ -321,22 +350,19 @@ interface DayColumns { time_in: string; lunch_out: string | null; lunch_in: stri
  *  derive these columns differently. `punches` must be non-empty. */
 function deriveDayColumns(punches: PunchRow[]): DayColumns {
   const hm = (p: PunchRow) => p.ts.slice(11, 16);
-  // First actual in-punch → time_in (fall back to the very first punch of the day, matching
-  // the old MIN(ts) behavior for a day whose first punch was somehow an 'out').
-  const firstIn = punches.find((p) => p.kind === 'in') ?? punches[0]!;
+  // First actual in-punch → time_in. None (the employee forgot to time in and only timed out)
+  // → time_in stays blank, so the day reads as a missing time-in rather than a bogus arrival.
+  const firstIn = punches.find((p) => p.kind === 'in') ?? null;
   // Lunch bracket: the lunch_out punch, then the first in-punch that follows it (afternoon_in
   // = "back from lunch"). No lunch_out punch → no lunch bracket, exactly as before this existed.
   const lunchOutPunch = punches.find((p) => p.segment === 'lunch_out') ?? null;
   const lunchInPunch = lunchOutPunch
     ? punches.find((p) => p.kind === 'in' && p.id > lunchOutPunch.id) ?? null
     : null;
-  // Last out-punch → time_out, but only when there's more than one punch so a lone morning
-  // time-in doesn't get a bogus time-out (same intent as the old `n > 1` guard).
-  const lastOut = punches.length > 1
-    ? [...punches].reverse().find((p) => p.kind === 'out') ?? null
-    : null;
+  // Last out-punch → time_out (a lone time-in has no out-punch, so it never gets one).
+  const lastOut = [...punches].reverse().find((p) => p.kind === 'out') ?? null;
   return {
-    time_in: hm(firstIn),
+    time_in: firstIn ? hm(firstIn) : null,
     lunch_out: lunchOutPunch ? hm(lunchOutPunch) : null,
     lunch_in: lunchInPunch ? hm(lunchInPunch) : null,
     time_out: lastOut ? hm(lastOut) : null,
@@ -372,7 +398,7 @@ function applyPunchToAttendance(employeeId: number, workDate: string): void {
       `UPDATE attendance_records SET time_in = ?, lunch_out = ?, lunch_in = ?, time_out = ?,
          updated_at = datetime('now')
        WHERE period_id = ? AND employee_id = ? AND work_date = ?`,
-      timeIn, lunchOut ?? null, lunchIn ?? null, timeOut ?? null, r.period_id, employeeId, workDate
+      timeIn ?? null, lunchOut ?? null, lunchIn ?? null, timeOut ?? null, r.period_id, employeeId, workDate
     );
   }
 }
@@ -412,7 +438,7 @@ export function importPunchesForPeriod(periodId: number): { filled: number; date
       `UPDATE attendance_records SET time_in = ?, lunch_out = ?, lunch_in = ?, time_out = ?,
          updated_at = datetime('now')
        WHERE period_id = ? AND employee_id = ? AND work_date = ?`,
-      timeIn, lunchOut ?? null, lunchIn ?? null, timeOut ?? null, periodId, r.employee_id, r.work_date
+      timeIn ?? null, lunchOut ?? null, lunchIn ?? null, timeOut ?? null, periodId, r.employee_id, r.work_date
     );
     filled++;
     seen.add(r.work_date);

@@ -33,3 +33,16 @@ app is ever exposed beyond the LAN.)
 `vitest` runs TypeScript natively; `supertest` drives the real Express app in-process.
 Each test file gets its own throwaway SQLite DB + uploads dir (`DB_PATH`/`UPLOAD_DIR`), so
 `npm test` is fully headless and needs no manual setup or a running server.
+
+## 2026-09-24: Typed query builder (Kysely), not an ORM
+We use Kysely as a **SQL compiler only**, in `src/shared/qb.ts`. `qb.selectFrom(...)` checks table
+and column names and result types against `src/shared/db-types.ts`. That file is generated from
+the real, migrated schema by `npm run db:types`, and `tests/db-types.test.ts` fails when it's stale.
+The compiled SQL runs through the existing sync `queryAll`/`queryOne`/`run` helpers (Kysely's
+`DummyDriver` never opens a connection). Tenancy (`activeDb()`), `BEGIN/COMMIT` transactions and
+`node:sqlite` stay exactly as before. We rejected a full ORM (Prisma/TypeORM): it would mean
+rewriting every query and the hand-written migrations, it fits the database-per-tenant model
+poorly, and the payroll and report SQL is easier to read raw. Migration is gradual: new code
+may use `qb` or raw SQL, and modules move over when they're touched. First converted module:
+`core/personal.routes.ts`. Schema changes stay in `db.ts` (createSchema/migrate). Kysely's
+migrator is not used.

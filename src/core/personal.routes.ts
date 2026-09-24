@@ -1,40 +1,37 @@
 /** Personal tools: per-user notes, tasks (scheduler), and bookmarks.
-    Every query is scoped to req.user!.id so users never see each other's data. */
+    Every query is scoped to req.user!.id so users never see each other's data.
+    Uses the typed query builder (src/shared/qb.ts): column names and row types are checked
+    against the generated schema types. */
 import { Router } from 'express';
-import { queryOne, queryAll, run } from '../shared/db';
 import { requireAuth } from '../shared/auth';
+import { qb, all, first, exec, sql } from '../shared/qb';
 import { parseBody, noteSchema, taskSchema, updateTaskSchema, bookmarkSchema } from '../shared/validation';
-import type { Note, Task, Bookmark } from '../shared/types';
 
 const router = Router();
 router.use(requireAuth);
 
 /* ---------------- Notes ---------------- */
 router.get('/notes', (req, res) => {
-  res.json(
-    queryAll<Note>('SELECT * FROM notes WHERE user_id = ? ORDER BY updated_at DESC', req.user!.id)
-  );
+  res.json(all(
+    qb.selectFrom('notes').selectAll().where('user_id', '=', req.user!.id).orderBy('updated_at', 'desc')
+  ));
 });
 
 router.post('/notes', (req, res) => {
   const input = parseBody(noteSchema, req.body);
-  const info = run(
-    'INSERT INTO notes (user_id, title, body) VALUES (?, ?, ?)',
-    req.user!.id,
-    input.title ?? null,
-    input.body
+  const info = exec(
+    qb.insertInto('notes').values({ user_id: req.user!.id, title: input.title ?? null, body: input.body })
   );
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
 router.put('/notes/:id', (req, res) => {
   const input = parseBody(noteSchema, req.body);
-  const info = run(
-    "UPDATE notes SET title = ?, body = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
-    input.title ?? null,
-    input.body,
-    Number(req.params.id),
-    req.user!.id
+  const info = exec(
+    qb.updateTable('notes')
+      .set({ title: input.title ?? null, body: input.body, updated_at: sql<string>`datetime('now')` })
+      .where('id', '=', Number(req.params.id))
+      .where('user_id', '=', req.user!.id)
   );
   if (info.changes === 0) {
     res.status(404).json({ error: 'Note not found' });
@@ -44,7 +41,9 @@ router.put('/notes/:id', (req, res) => {
 });
 
 router.delete('/notes/:id', (req, res) => {
-  const info = run('DELETE FROM notes WHERE id = ? AND user_id = ?', Number(req.params.id), req.user!.id);
+  const info = exec(
+    qb.deleteFrom('notes').where('id', '=', Number(req.params.id)).where('user_id', '=', req.user!.id)
+  );
   if (info.changes === 0) {
     res.status(404).json({ error: 'Note not found' });
     return;
@@ -54,57 +53,60 @@ router.delete('/notes/:id', (req, res) => {
 
 /* ---------------- Tasks (scheduler) ---------------- */
 router.get('/tasks', (req, res) => {
-  res.json(
-    queryAll<Task>(
-      `SELECT * FROM tasks WHERE user_id = ?
-       ORDER BY done ASC, (due_date IS NULL) ASC, due_date ASC, created_at ASC`,
-      req.user!.id
-    )
-  );
+  res.json(all(
+    qb.selectFrom('tasks').selectAll()
+      .where('user_id', '=', req.user!.id)
+      .orderBy('done', 'asc')
+      .orderBy(sql`(due_date IS NULL)`, 'asc')
+      .orderBy('due_date', 'asc')
+      .orderBy('created_at', 'asc')
+  ));
 });
 
 router.post('/tasks', (req, res) => {
   const input = parseBody(taskSchema, req.body);
-  const info = run(
-    'INSERT INTO tasks (user_id, title, due_date, notes, remind_at, done) VALUES (?, ?, ?, ?, ?, ?)',
-    req.user!.id,
-    input.title,
-    input.due_date ?? null,
-    input.notes ?? null,
-    input.remind_at ?? null,
-    input.done ? 1 : 0
-  );
+  const info = exec(qb.insertInto('tasks').values({
+    user_id: req.user!.id,
+    title: input.title,
+    due_date: input.due_date ?? null,
+    notes: input.notes ?? null,
+    remind_at: input.remind_at ?? null,
+    done: input.done ? 1 : 0,
+  }));
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
 router.put('/tasks/:id', (req, res) => {
   const id = Number(req.params.id);
-  const task = queryOne<Task>('SELECT * FROM tasks WHERE id = ? AND user_id = ?', id, req.user!.id);
+  const task = first(qb.selectFrom('tasks').selectAll().where('id', '=', id).where('user_id', '=', req.user!.id));
   if (!task) {
     res.status(404).json({ error: 'Task not found' });
     return;
   }
   const input = parseBody(updateTaskSchema, req.body);
-  const t = task as Task & { remind_at?: string | null; notes?: string | null; remind_sent?: number };
-  const remindAt = input.remind_at !== undefined ? input.remind_at ?? null : t.remind_at ?? null;
+  const remindAt = input.remind_at !== undefined ? input.remind_at ?? null : task.remind_at;
   // A changed reminder time re-arms the one-shot push.
-  const remindSent = remindAt === (t.remind_at ?? null) ? t.remind_sent ?? 0 : 0;
-  run(
-    'UPDATE tasks SET title = ?, due_date = ?, notes = ?, remind_at = ?, remind_sent = ?, done = ? WHERE id = ? AND user_id = ?',
-    input.title ?? task.title,
-    input.due_date !== undefined ? input.due_date : task.due_date,
-    input.notes !== undefined ? input.notes ?? null : t.notes ?? null,
-    remindAt,
-    remindSent,
-    input.done !== undefined ? (input.done ? 1 : 0) : task.done,
-    id,
-    req.user!.id
+  const remindSent = remindAt === task.remind_at ? task.remind_sent : 0;
+  exec(
+    qb.updateTable('tasks')
+      .set({
+        title: input.title ?? task.title,
+        due_date: input.due_date !== undefined ? input.due_date : task.due_date,
+        notes: input.notes !== undefined ? input.notes ?? null : task.notes,
+        remind_at: remindAt,
+        remind_sent: remindSent,
+        done: input.done !== undefined ? (input.done ? 1 : 0) : task.done,
+      })
+      .where('id', '=', id)
+      .where('user_id', '=', req.user!.id)
   );
   res.json({ ok: true });
 });
 
 router.delete('/tasks/:id', (req, res) => {
-  const info = run('DELETE FROM tasks WHERE id = ? AND user_id = ?', Number(req.params.id), req.user!.id);
+  const info = exec(
+    qb.deleteFrom('tasks').where('id', '=', Number(req.params.id)).where('user_id', '=', req.user!.id)
+  );
   if (info.changes === 0) {
     res.status(404).json({ error: 'Task not found' });
     return;
@@ -114,9 +116,8 @@ router.delete('/tasks/:id', (req, res) => {
 
 /* ---------------- Bookmarks ---------------- */
 router.get('/bookmarks', (req, res) => {
-  const rows = queryAll<Bookmark>(
-    'SELECT * FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC',
-    req.user!.id
+  const rows = all(
+    qb.selectFrom('bookmarks').selectAll().where('user_id', '=', req.user!.id).orderBy('created_at', 'desc')
   );
   res.json(
     rows.map((b) => ({
@@ -128,18 +129,19 @@ router.get('/bookmarks', (req, res) => {
 
 router.post('/bookmarks', (req, res) => {
   const input = parseBody(bookmarkSchema, req.body);
-  const info = run(
-    'INSERT INTO bookmarks (user_id, label, route, params) VALUES (?, ?, ?, ?)',
-    req.user!.id,
-    input.label,
-    input.route,
-    input.params ? JSON.stringify(input.params) : null
-  );
+  const info = exec(qb.insertInto('bookmarks').values({
+    user_id: req.user!.id,
+    label: input.label,
+    route: input.route,
+    params: input.params ? JSON.stringify(input.params) : null,
+  }));
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
 router.delete('/bookmarks/:id', (req, res) => {
-  const info = run('DELETE FROM bookmarks WHERE id = ? AND user_id = ?', Number(req.params.id), req.user!.id);
+  const info = exec(
+    qb.deleteFrom('bookmarks').where('id', '=', Number(req.params.id)).where('user_id', '=', req.user!.id)
+  );
   if (info.changes === 0) {
     res.status(404).json({ error: 'Bookmark not found' });
     return;

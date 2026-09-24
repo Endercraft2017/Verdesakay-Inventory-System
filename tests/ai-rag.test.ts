@@ -32,6 +32,7 @@ beforeAll(async () => {
   await ctx.api.put(`/api/finished-products/${pid}`).set(authHdr()).send({ components: [{ component_item_id: cid, quantity: 1 }] });
   const mo = (await ctx.api.post('/api/job-orders').set(authHdr()).send({ product_item_id: pid, qty_ordered: 1, qc_stages: 1 })).body.id;
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(authHdr());
+  await ctx.api.post(`/api/job-orders/${mo}/accept`).set(authHdr());
   await addSerializedUnits(ctx.api, token, mo, 1, 'RAG');
   const unit = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(authHdr())).body[0].id;
   await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())

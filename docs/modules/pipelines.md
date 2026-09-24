@@ -64,7 +64,17 @@ raised by the sales-order shortfall flow.
    slot (Scheduling) before release — supporting, not a gating stage.
 2. **Parts released** (`manufacturing`) — `POST /:id/release`; BOM components are
    deducted from the source location's `inventory` stock (GL: Raw Materials → WIP)
-   and the job order moves to `released`.
+   and the job order moves to `released`. Done by the warehouse (`inventory.adjust`);
+   stamps `released_by`/`released_at`.
+   - **Parts kit accepted** (`manufacturing`) — the production lead (`production_lead`
+     role / `production.record`, or `inventory.adjust`) counts the kit against the
+     Components list and signs for it: `POST /:id/accept` stamps `accepted_by` /
+     `accepted_at` / `accept_notes` (SCHEMA_VERSION 45). No status change and no stock
+     movement — it's the handover record. **Gate:** `/progress` and `/units` 409
+     (`needs_acceptance: true`) until it's done (`needsAcceptance()`); job orders that
+     already had output recorded before this step existed are exempt. **Branch — kit
+     short/damaged:** the lead doesn't accept and reports it (mobile Report a problem);
+     the warehouse/supervisor fixes the release (cancel returns unused components).
 3. **Actual production / recording** (`manufacturing`) — done by the line lead
    (`production_lead` role, or any account holding `production.record`). How a unit
    is recorded depends on whether the job order is QC-gated (`qc_stages > 0`,

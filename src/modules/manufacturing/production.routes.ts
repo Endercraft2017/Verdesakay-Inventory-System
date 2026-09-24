@@ -639,13 +639,14 @@ router.get('/record', readGate, (req, res) => {
   }
   if (joId) {
     out.job_order = queryOne(
-      `SELECT j.id, j.number, j.product_name, j.status, j.planned_start, j.due_date,
-              t.name AS team_name, cb.full_name AS created_by_name, rb.full_name AS released_by_name,
+      `SELECT j.id, j.number, j.product_name, j.status, j.planned_start, j.due_date, j.accepted_at,
+              t.name AS team_name, cb.full_name AS created_by_name, rb.full_name AS released_by_name, ab.full_name AS accepted_by_name,
               sl.name AS source_location_name, ol.name AS output_location_name
        FROM job_orders j
        LEFT JOIN production_teams t ON t.id = j.team_id
        LEFT JOIN users cb ON cb.id = j.created_by
        LEFT JOIN users rb ON rb.id = j.released_by
+       LEFT JOIN users ab ON ab.id = j.accepted_by
        LEFT JOIN locations sl ON sl.id = j.source_location_id
        LEFT JOIN locations ol ON ol.id = j.output_location_id
        WHERE j.id = ?`, joId

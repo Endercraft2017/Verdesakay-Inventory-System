@@ -10,6 +10,7 @@ import { setupApp, cleanup, login, createEmployee, type TestContext } from './he
 let run: typeof import('../src/shared/db').run;
 let queryOne: typeof import('../src/shared/db').queryOne;
 let currentKioskCode: typeof import('../src/modules/hr/clock').currentKioskCode;
+let setSetting: typeof import('../src/shared/db').setSetting;
 
 let ctx: TestContext;
 let adminToken: string;
@@ -17,7 +18,7 @@ const A = () => ({ Authorization: `Bearer ${adminToken}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
-  ({ run, queryOne } = await import('../src/shared/db'));
+  ({ run, queryOne, setSetting } = await import('../src/shared/db'));
   ({ currentKioskCode } = await import('../src/modules/hr/clock'));
   adminToken = await login(ctx.api);
 });
@@ -117,7 +118,7 @@ describe('time clock', () => {
   it('fills the attendance row live on punch, with no Import step, when already on the roster', async () => {
     const e = await linkedEmployee();
     const h = { Authorization: `Bearer ${e.accountToken}` };
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = new Date().toLocaleDateString('en-CA'); // local date, like the server's work_date
     const period = await ctx.api.post('/api/hr/periods').set(A())
       .send({ label: 'Live fill', start_date: todayStr, end_date: todayStr });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees/bulk`).set(A())
@@ -236,10 +237,80 @@ describe('time clock', () => {
     expect(res.body.error).toMatch(/already timed out/i);
   });
 
+  describe('first punch after shift end (forgot to time in)', () => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const nowHm = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+    const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+    const restore = () => setSetting('clock_policy', { first_punch_out_after: '24:00' });
+
+    it('with no shift, a first punch at/after the cut-off is recorded as the time-out, time-in left blank', async () => {
+      setSetting('clock_policy', { first_punch_out_after: '00:00' });
+      try {
+        const e = await linkedEmployee();
+        const today = localToday();
+        const period = await ctx.api.post('/api/hr/periods').set(A())
+          .send({ label: 'Forgot time-in', start_date: today, end_date: today });
+        await ctx.api.post(`/api/hr/periods/${period.body.id}/employees/bulk`).set(A()).send({ employee_ids: [e.employeeId] });
+
+        const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+        expect(punch.status).toBe(200);
+        expect(punch.body.kind).toBe('out');
+        expect(punch.body.segment).toBe('afternoon_out');
+
+        const row = queryOne<{ time_in: string | null; time_out: string | null }>(
+          'SELECT time_in, time_out FROM attendance_records WHERE period_id = ? AND employee_id = ? AND work_date = ?',
+          period.body.id, e.employeeId, punch.body.work_date
+        )!;
+        expect(row.time_in).toBeNull();
+        expect(row.time_out).toBe(punch.body.at);
+
+        // Timing out again is refused like any other already-timed-out day.
+        run("UPDATE time_punches SET ts = datetime(ts, '-10 minutes') WHERE employee_id = ?", e.employeeId);
+        const again = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+        expect(again.status).toBe(409);
+
+        // The Daily Report reads them as present (they were at work), not absent.
+        const report = await ctx.api.get('/api/hr/daily-report').set(A());
+        const r = report.body.employees.find((x: { id: number }) => x.id === e.employeeId);
+        expect(r.status).toBe('present');
+        expect(r.note).toMatch(/no time-in/i);
+      } finally { restore(); }
+    });
+
+    it("the employee's shift end beats the no-shift cut-off (before shift end -> still an in)", async () => {
+      setSetting('clock_policy', { first_punch_out_after: '00:00' });
+      try {
+        if (nowHm() >= '23:59') return; // can't be "before" a 23:59 shift end right now
+        const shift = await ctx.api.post('/api/hr/shifts').set(A()).send({ name: 'All day', start_time: '00:00', end_time: '23:59' });
+        const e = await linkedEmployee({ default_shift_id: shift.body.id });
+        const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+        expect(punch.body.kind).toBe('in');
+      } finally { restore(); }
+    });
+
+    it("at/after the employee's own shift end, the first punch is a time-out", async () => {
+      if (nowHm() < '00:01') return;
+      const shift = await ctx.api.post('/api/hr/shifts').set(A()).send({ name: 'Tiny', start_time: '00:00', end_time: '00:01' });
+      const e = await linkedEmployee({ default_shift_id: shift.body.id });
+      const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+      expect(punch.body.kind).toBe('out');
+    });
+
+    it('an overnight shift never turns the first punch into a time-out', async () => {
+      setSetting('clock_policy', { first_punch_out_after: '00:00' });
+      try {
+        const shift = await ctx.api.post('/api/hr/shifts').set(A()).send({ name: 'Night', start_time: '22:00', end_time: '06:00' });
+        const e = await linkedEmployee({ default_shift_id: shift.body.id });
+        const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+        expect(punch.body.kind).toBe('in');
+      } finally { restore(); }
+    });
+  });
+
   describe('kiosk slot correction (/correct)', () => {
     it('fills an empty slot by inserting a new punch, and writes it straight into attendance_records', async () => {
       const e = await linkedEmployee();
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = new Date().toLocaleDateString('en-CA'); // local date, like the server's work_date
       const period = await ctx.api.post('/api/hr/periods').set(A())
         .send({ label: 'Correction A', start_date: todayStr, end_date: todayStr });
       await ctx.api.post(`/api/hr/periods/${period.body.id}/employees/bulk`).set(A())

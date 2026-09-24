@@ -18,6 +18,9 @@ App.register('production-overview', async (view) => {
   const open = (jobOrders || []).filter((j) => ['draft', 'released', 'in_progress', 'paused'].includes(j.status));
   const overdue = open.filter((j) => j.overdue);
   const inRework = open.filter((j) => (j.units_rework || 0) > 0);
+  // Released by the warehouse but not yet accepted by production (and nothing built yet —
+  // mirrors job-orders.routes.ts needsAcceptance()).
+  const toAccept = open.filter((j) => j.status === 'released' && !j.accepted_at && !(j.qty_done > 0 || j.qty_scrapped > 0));
   const awaitingQc = open.filter((j) => (j.units_pending || 0) > 0);
   const readyToReceive = open.filter((j) => (j.units_passed || 0) > 0 || (j.batches_receivable || 0) > 0);
   const qcUnitCount = awaitingQc.reduce((s, j) => s + (j.units_pending || 0), 0);
@@ -67,6 +70,7 @@ App.register('production-overview', async (view) => {
       )}
       ${panel('Waiting on you', `
         <table><tbody>
+          ${actionRow('job-orders', null, 'adjust', 'Job Orders', 'parts kits to accept', toAccept.length)}
           ${actionRow('production-qc', { tab: 'queue' }, 'check', 'QC / QA', 'units awaiting inspection', qcUnitCount)}
           ${actionRow('production-receiving', { tab: 'queue' }, 'inbox', 'Products In', 'ready to receive', receiveCount)}
           ${actionRow('repairs', null, 'inbox', 'Repairs', 'parts requests to accept', repairs.length)}

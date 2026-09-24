@@ -28,6 +28,10 @@ export async function setupApp(): Promise<TestContext> {
 
   const db = await import('../src/shared/db');
   db.init();
+  // Test punches happen at whatever the real wall-clock time is; without this, any test that
+  // punches after 17:00 would see its first punch recorded as a forgot-to-time-in time-out
+  // (src/modules/hr/clock.ts firstPunchOutAfter). Tests of that rule set it explicitly.
+  db.setSetting('clock_policy', { first_punch_out_after: '24:00' });
   const platform = await import('../src/platform/platform');
   platform._resetPlatformDb(); // drop any cached handle from a previous test file
   const { createApp } = await import('../src/app');

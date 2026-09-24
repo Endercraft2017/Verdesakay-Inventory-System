@@ -83,6 +83,7 @@ describe('production teams', () => {
 
     // re-plan after release
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(H());
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(H());
     const resched = await ctx.api.put(`/api/job-orders/${mo.body.id}/schedule`).set(H())
       .send({ due_date: '2099-12-31', team_id: null, priority: 0 });
     expect(resched.status).toBe(200);

@@ -11,6 +11,7 @@ import {
   updateJobOrderSchema,
   jobOrderComponentsSchema,
   jobOrderProgressSchema,
+  acceptJobOrderSchema,
   addUnitSchema,
   inspectUnitsSchema,
   setUnitIdentifierSchema,
@@ -119,11 +120,13 @@ function settleJobOrderGl(joId: number, userId: number | null): void {
 function loadJobOrder(id: number): JobOrder | null {
   const jo = queryOne<JobOrder>(
     `SELECT j.*, u.full_name AS created_by_name, rb.full_name AS released_by_name,
+            ab.full_name AS accepted_by_name,
             o.number AS order_number, t.name AS team_name,
             sl.name AS source_location_name, ol.name AS output_location_name
      FROM job_orders j
      LEFT JOIN users u ON u.id = j.created_by
      LEFT JOIN users rb ON rb.id = j.released_by
+     LEFT JOIN users ab ON ab.id = j.accepted_by
      LEFT JOIN orders o ON o.id = j.order_id
      LEFT JOIN production_teams t ON t.id = j.team_id
      LEFT JOIN locations sl ON sl.id = j.source_location_id
@@ -153,6 +156,18 @@ function loadJobOrder(id: number): JobOrder | null {
 }
 
 const OPEN_STATES = new Set(['draft', 'released', 'in_progress', 'paused']);
+
+/** True when the production lead still has to accept this job order's parts kit (POST
+ *  /:id/accept) before output can be recorded. Job orders that already have output on
+ *  record — anything built before the accept step existed (SCHEMA_VERSION 45) — are
+ *  exempt, so they keep working without a backfilled acceptance. */
+function needsAcceptance(jo: JobOrder): boolean {
+  if (jo.accepted_at) return false;
+  if (jo.qty_done > 0 || jo.qty_scrapped > 0) return false;
+  return !queryOne('SELECT 1 FROM job_order_units WHERE job_order_id = ? LIMIT 1', jo.id)
+    && !queryOne('SELECT 1 FROM production_batches WHERE job_order_id = ? LIMIT 1', jo.id);
+}
+const ACCEPT_FIRST = 'Production has to accept the parts kit for this job order before recording output.';
 
 function pendingCount(joId: number): number {
   return queryOne<{ n: number }>(
@@ -694,6 +709,36 @@ router.post('/:id/release', writeGate, (req, res) => {
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
+// POST /api/job-orders/:id/accept — the production lead signs for the parts kit the
+// warehouse released. Records who/when (+ optional handover notes); no stock movement —
+// the parts already left the source location at /release. Unlocks recording output.
+router.post('/:id/accept', recordGate, (req, res) => {
+  const id = Number(req.params.id);
+  const jo = loadJobOrder(id);
+  if (!jo) {
+    res.status(404).json({ error: 'Job order not found' });
+    return;
+  }
+  if (jo.status === 'draft') {
+    res.status(409).json({ error: 'The warehouse has not released the parts for this job order yet' });
+    return;
+  }
+  if (!OPEN_STATES.has(jo.status)) {
+    res.status(409).json({ error: `Cannot accept a job order that is ${jo.status}` });
+    return;
+  }
+  if (jo.accepted_at) {
+    res.status(409).json({ error: `Already accepted by ${jo.accepted_by_name ?? 'production'}` });
+    return;
+  }
+  const { notes } = parseBody(acceptJobOrderSchema, req.body);
+  run(
+    "UPDATE job_orders SET accepted_by = ?, accepted_at = datetime('now'), accept_notes = ?, updated_at = datetime('now') WHERE id = ?",
+    req.user!.id, notes ?? null, id
+  );
+  res.json({ ok: true, job_order: loadJobOrder(id) });
+});
+
 // POST /api/job-orders/:id/progress — record finished / scrapped units
 router.post('/:id/progress', recordGate, (req, res) => {
   const id = Number(req.params.id);
@@ -704,6 +749,10 @@ router.post('/:id/progress', recordGate, (req, res) => {
   }
   if (jo.status !== 'released' && jo.status !== 'in_progress') {
     res.status(409).json({ error: `Job order must be released before recording progress (it is ${jo.status})` });
+    return;
+  }
+  if (needsAcceptance(jo)) {
+    res.status(409).json({ error: ACCEPT_FIRST, needs_acceptance: true });
     return;
   }
   const { done_delta, scrapped_delta, batch_label } = parseBody(jobOrderProgressSchema, req.body);
@@ -807,6 +856,10 @@ router.post('/:id/units', recordGate, (req, res) => {
   }
   if (jo.status !== 'released' && jo.status !== 'in_progress') {
     res.status(409).json({ error: `Job order must be released before recording progress (it is ${jo.status})` });
+    return;
+  }
+  if (needsAcceptance(jo)) {
+    res.status(409).json({ error: ACCEPT_FIRST, needs_acceptance: true });
     return;
   }
   if (jo.qc_stages <= 0) {

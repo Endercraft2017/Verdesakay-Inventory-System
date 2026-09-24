@@ -22,6 +22,9 @@ export interface DailyStatusInput {
    *  first raw time-clock punch of the day. Its mere presence means "showed up" here — unlike
    *  the payroll engine, a missing time_out never demotes this back to "no time logged". */
   time_in: string | null;
+  /** "HH:MM" — the day's time_out, if any. Only consulted when there's no time_in: someone who
+   *  forgot to time in but timed out was still at work, so they read present, not absent. */
+  time_out?: string | null;
   shift: { start_time: string; end_time: string } | null;
   /** Whether an HR request form with slug 'leave_request' is linked to this day — regardless
    *  of its own with_pay field; unlike payroll (which only treats a *paid* leave specially),
@@ -84,6 +87,10 @@ export function classifyDailyStatus(input: DailyStatusInput): DailyStatusResult 
     return lateMinutes > 0
       ? { status: 'late', late_minutes: lateMinutes, note: `Arrived ${input.time_in} — ${lateRaw}m late` }
       : { status: 'present', late_minutes: 0, note: `Arrived ${input.time_in}` };
+  }
+
+  if (input.time_out) {
+    return { status: 'present', late_minutes: 0, note: `Timed out ${input.time_out} — no time-in recorded` };
   }
 
   // No time_in at all. In order of precedence (mirrors hr-payroll-compute.ts's own unworked-day

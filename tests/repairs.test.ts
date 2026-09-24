@@ -33,6 +33,7 @@ async function reworkReady(prefix: string, qty: number) {
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages: 1 })).body.id;
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+  await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
   await addSerializedUnits(ctx.api, token, mo, qty, prefix);
   const units = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number }>;
   return { product, part, bolt, mo, units };

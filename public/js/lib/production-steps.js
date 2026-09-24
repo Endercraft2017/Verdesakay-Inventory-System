@@ -1,5 +1,5 @@
 /* Shared "current step" labeling for the production pipeline: Job Order Creation →
-   Parts Released → Actual Production → QC → QA → RTS Recording → Ready to Sell.
+   Parts Released → Accepted by Production → Actual Production → QC → QA → RTS Recording → Ready to Sell.
    Purely a display computation over fields the API already returns (job_orders.status,
    job_order_units.status/stage, job_orders.qc_stages, production_batches.status +
    receivable qty) — no new stored field. Used from both the desktop and mobile
@@ -14,6 +14,7 @@
   const LABELS = {
     created: 'Job Order Created',
     parts_released: 'Parts Released',
+    accepted: 'Accepted by Production',
     in_production: 'In Production',
     qc: 'In QC',
     qa: 'In QA',
@@ -29,6 +30,7 @@
   const CLASSES = {
     created: 'ok',
     parts_released: 'ok',
+    accepted: 'ok',
     in_production: 'status-open',
     qc: 'status-open',
     qa: 'status-open',
@@ -84,7 +86,8 @@
   // order's own detail response too).
   function jobOrderStep(jo) {
     if (jo.status === 'draft') return make('created');
-    if (jo.status === 'released') return make('parts_released');
+    // released: waiting on the production lead to accept the kit until accepted_at is set.
+    if (jo.status === 'released') return make(jo.accepted_at ? 'accepted' : 'parts_released');
     if (jo.status === 'paused') return make('paused');
     if (jo.status === 'cancelled') return make('cancelled');
     if (jo.status === 'completed') {

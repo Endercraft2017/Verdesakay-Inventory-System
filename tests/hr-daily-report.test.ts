@@ -44,6 +44,12 @@ describe('classifyDailyStatus', () => {
     expect(r.status).toBe('present');
   });
 
+  it('no time_in but a time_out (forgot to time in) -> present, not absent', () => {
+    const r = classifyDailyStatus(input({ time_out: '17:06' }));
+    expect(r.status).toBe('present');
+    expect(r.note).toMatch(/no time-in/i);
+  });
+
   it('no time_in, linked leave form -> leave (beats absent, rest day, everything)', () => {
     const r = classifyDailyStatus(input({ on_leave: true, is_rest_day: true }));
     expect(r.status).toBe('leave');
@@ -108,7 +114,17 @@ describe('classifyDailyStatus', () => {
 describe('GET /api/hr/daily-report', () => {
   let ctx: TestContext;
   let adminToken: string;
+  let cutoffId: number;
   const hdr = () => ({ Authorization: `Bearer ${adminToken}` });
+  const todayStr = (() => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  })();
+  const addToRoster = async (employeeId: number) => {
+    const r = await ctx.api.post(`/api/hr/periods/${cutoffId}/employees`).set(hdr()).send({ employee_id: employeeId });
+    expect(r.status).toBe(201);
+  };
 
   beforeAll(async () => {
     ctx = await setupApp();
@@ -120,11 +136,26 @@ describe('GET /api/hr/daily-report', () => {
     expect((await ctx.api.get('/api/hr/daily-report')).status).toBe(401);
   });
 
-  it('defaults to today, includes every active employee grouped with totals that add up', async () => {
+  it('with no cutoff covering the date, the board is empty', async () => {
+    await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'DR-0', name: 'No Cutoff Yet', rest_days: [] });
+    const res = await ctx.api.get('/api/hr/daily-report').set(hdr());
+    expect(res.status).toBe(200);
+    expect(res.body.periods).toEqual([]);
+    expect(res.body.employees).toEqual([]);
+    expect(res.body.totals.total).toBe(0);
+
+    const cutoff = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'DR Today Cutoff', start_date: todayStr, end_date: todayStr });
+    expect(cutoff.status).toBe(201);
+    cutoffId = cutoff.body.id;
+  });
+
+  it('defaults to today, includes every rostered active employee grouped with totals that add up', async () => {
     const dept = await ctx.api.post('/api/users/departments').set(hdr()).send({ name: 'DR Dept' });
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'DR-1', name: 'Daily Report Testee', department_id: dept.body.id, rest_days: [] });
     expect(emp.status).toBe(201);
+    await addToRoster(emp.body.id);
 
     const res = await ctx.api.get('/api/hr/daily-report').set(hdr());
     expect(res.status).toBe(200);
@@ -134,7 +165,7 @@ describe('GET /api/hr/daily-report', () => {
     const row = res.body.employees.find((e: { id: number }) => e.id === emp.body.id);
     expect(row).toBeTruthy();
     expect(row.department_name).toBe('DR Dept');
-    // No shift, no punches, no cutoff at all yet -> plain absent (or pending, but this
+    // No shift, no punches, empty cutoff day -> plain absent (or pending, but this
     // employee has no default_shift_id so "not yet due" can't apply -> absent).
     expect(row.status).toBe('absent');
 
@@ -152,6 +183,7 @@ describe('GET /api/hr/daily-report', () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'DR-2', name: 'Resigned Person' });
     await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
       .send({ employee_no: 'DR-2', name: 'Resigned Person', status: 'resigned' });
+    await addToRoster(emp.body.id);
     const res = await ctx.api.get('/api/hr/daily-report').set(hdr());
     expect(res.body.employees.some((e: { id: number }) => e.id === emp.body.id)).toBe(false);
   });
@@ -163,6 +195,7 @@ describe('GET /api/hr/daily-report', () => {
       .send({ username: 'dr_puncher', full_name: 'Puncher Only', password: 'secret1', role: 'admin_staff' });
     await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
       .send({ employee_no: 'DR-3', name: 'Puncher Only', user_id: acct.body.id });
+    await addToRoster(emp.body.id);
     const punchToken = await login(ctx.api, 'dr_puncher', 'secret1');
     const { code } = (await ctx.api.get('/api/hr/clock/code').set(hdr())).body;
     const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${punchToken}` }).send({ code });
@@ -174,10 +207,16 @@ describe('GET /api/hr/daily-report', () => {
     expect(row.time_in).toBeTruthy();
   });
 
-  it('an explicit past date with no data at all is absent, not pending', async () => {
-    const res = await ctx.api.get('/api/hr/daily-report').query({ date: '2020-01-06' }).set(hdr()); // a Monday
+  it('an explicit past date on a cutoff with no data at all is absent, not pending', async () => {
+    const past = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'DR Past Cutoff', start_date: '2020-01-06', end_date: '2020-01-06' }); // a Monday
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'DR-4', name: 'Past Person', rest_days: [] });
+    await ctx.api.post(`/api/hr/periods/${past.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+
+    const res = await ctx.api.get('/api/hr/daily-report').query({ date: '2020-01-06' }).set(hdr());
     expect(res.status).toBe(200);
     expect(res.body.is_today).toBe(false);
+    expect(res.body.employees.map((e: { id: number }) => e.id)).toEqual([emp.body.id]);
     expect(res.body.employees.every((e: { status: string }) => e.status !== 'pending')).toBe(true);
   });
 
@@ -188,11 +227,6 @@ describe('GET /api/hr/daily-report', () => {
   });
 
   it('a day linked to a reported_absence form reads "reported", not plain absent', async () => {
-    const todayStr = (() => {
-      const d = new Date();
-      const p = (n: number) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-    })();
     const dept = await ctx.api.post('/api/users/departments').set(hdr()).send({ name: 'DR Reported Dept' });
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'DR-5', name: 'Reported Person', department_id: dept.body.id, rest_days: [] });
@@ -220,5 +254,22 @@ describe('GET /api/hr/daily-report', () => {
     const deptRow = res.body.by_department.find((d: { department_name: string }) => d.department_name === 'DR Reported Dept');
     expect(deptRow.reported).toBe(1);
     expect(deptRow.absent).toBe(0);
+  });
+
+  it('once a cutoff covers the date, only that cutoff\'s roster is reported', async () => {
+    // Two cutoffs cover today by now (DR Today Cutoff + DR Reported Cutoff): the roster is their union.
+    const offRoster = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'DR-6', name: 'Not On Cutoff', rest_days: [] });
+    expect(offRoster.status).toBe(201);
+
+    const res = await ctx.api.get('/api/hr/daily-report').set(hdr());
+    expect(res.body.periods.map((p: { label: string }) => p.label).sort()).toEqual(['DR Reported Cutoff', 'DR Today Cutoff']);
+    const ids = res.body.employees.map((e: { id: number }) => e.id);
+    expect(ids).not.toContain(offRoster.body.id);
+    expect(ids).not.toContain((await ctx.api.get('/api/hr/employees').set(hdr())).body
+      .find((e: { employee_no: string }) => e.employee_no === 'DR-0')?.id);
+    const names = res.body.employees.map((e: { name: string }) => e.name);
+    expect(names).toEqual(expect.arrayContaining(['Daily Report Testee', 'Puncher Only', 'Reported Person']));
+    expect(res.body.totals.total).toBe(res.body.employees.length);
   });
 });

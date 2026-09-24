@@ -17,6 +17,7 @@ import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
 import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from '../modules/payroll/ph-statutory';
 import { DEFAULT_COA } from '../modules/accounting/ledger';
+import { preMigrationSnapshot } from './backup';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
@@ -57,7 +58,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 44; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 45; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -140,12 +141,30 @@ export const SCHEMA_VERSION = 44; // 20: employees.late_exempt; 21: attendance_r
 // edit, and sender-only soft "unsend" -- see src/core/messages.routes.ts); new
 // message_reactions (one emoji reaction per user per message) and link_previews (cached
 // OG-tag fetch results, keyed by URL) tables.
+// 45: job_orders.accepted_by / accepted_at / accept_notes -- the production lead's explicit
+// sign-off that the released parts kit arrived. Recording output (/progress, /units) now
+// requires it (job-orders.routes.ts needsAcceptance); older job orders that already have
+// output recorded are exempt, so no backfill is needed.
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
   const existing = registry.get(slug);
   if (existing) return existing;
   const conn = openConnection(slug);
+  // Snapshot an existing DB before this release's schema changes touch it (before
+  // createSchema too — it can add tables). If the snapshot fails we refuse to open the DB
+  // rather than migrate without a way back. See src/shared/backup.ts.
+  try {
+    const snap = preMigrationSnapshot(conn, slug, SCHEMA_VERSION);
+    if (snap) console.log(`[backup] "${slug}" is being upgraded to schema v${SCHEMA_VERSION}; snapshot saved to ${snap}`);
+  } catch (e) {
+    conn.close();
+    throw new Error(
+      `Refusing to migrate "${slug}" to schema v${SCHEMA_VERSION}: pre-migration backup failed (${(e as Error).message}). ` +
+      'Fix the backup location (BACKUP_DIR) or free disk space, then restart. ' +
+      'BACKUP_BEFORE_MIGRATE=off skips this check (not recommended).'
+    );
+  }
   registry.set(slug, conn);
   // Run schema setup with this connection active so the db.exec / getSetting calls
   // inside createSchema/migrate/seed resolve to it via activeDb().
@@ -521,6 +540,9 @@ function createSchema(): void {
       created_by         INTEGER REFERENCES users(id) ON DELETE SET NULL,
       released_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
       released_at        TEXT,
+      accepted_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      accepted_at        TEXT,
+      accept_notes       TEXT,
       closed_at          TEXT,
       created_at         TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
@@ -2159,6 +2181,18 @@ function migrate(): void {
   }
   if (!msgCols.some((c) => c.name === 'deleted_by')) {
     db.exec('ALTER TABLE messages ADD COLUMN deleted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+
+  // (SCHEMA_VERSION 45) Production lead accepts a released job order's parts kit.
+  const joAccCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
+  if (!joAccCols.some((c) => c.name === 'accepted_by')) {
+    db.exec('ALTER TABLE job_orders ADD COLUMN accepted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+  if (!joAccCols.some((c) => c.name === 'accepted_at')) {
+    db.exec('ALTER TABLE job_orders ADD COLUMN accepted_at TEXT');
+  }
+  if (!joAccCols.some((c) => c.name === 'accept_notes')) {
+    db.exec('ALTER TABLE job_orders ADD COLUMN accept_notes TEXT');
   }
 }
 

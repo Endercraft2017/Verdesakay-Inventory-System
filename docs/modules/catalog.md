@@ -17,7 +17,12 @@ every module. Not gated by `requireModule()`, not licensed, never disabled.
 schema/migrations), `types.ts`, `validation.ts`, `permissions.ts`, `auth.ts`
 (session/login middleware), `activity.ts` (audit log writer), `idempotency.ts`,
 `csv.ts`, `csv-import.ts`, `mailer.ts` (BYO-SMTP transport), `secrets.ts` (AES-GCM),
-`push.ts` (task-reminder notifications), `modules.ts` (the `requireModule()` gate
+`push.ts` (task-reminder notifications), `qb.ts` (typed Kysely query builder used as a SQL
+compiler over the sync db helpers; `qb`/`all`/`first`/`exec`), `db-types.ts` (GENERATED Kysely
+schema types, via `npm run db:types` / `db-types-codegen.ts`; drift-checked by
+`tests/db-types.test.ts`), `backup.ts` (`VACUUM INTO` snapshot +
+retention primitives; `preMigrationSnapshot()` is called by `db.ts`'s `getDb()` before
+`migrate()` and blocks the migration if it fails), `modules.ts` (the `requireModule()` gate
 every business module below is mounted behind), `ws.ts` (WebSocket real-time push —
 the app's one live channel; everything else is REST + polling. `attachWebSocket(server)`
 is wired from `server.ts`; `broadcast(tenantSlug, userIds, event)` is exported for a
@@ -40,11 +45,15 @@ above the tenant-facing app, not one of its features. Single-tenant/self-hosted
 installs never touch this.
 **Owned files:** `plans.ts`, `quota.ts`, `provisioning.ts`, `platform.ts` (tenant
 catalog in `platform.db`), `platform-users.ts` (operator accounts, separate auth from
-`shared/auth.ts`), routes: `signup.routes.ts`, `tenant.routes.ts`, `platform.routes.ts`.
+`shared/auth.ts`), `backups.ts` (daily backup job over every tenant DB + `platform.db` +
+uploads, run from `server.ts`; manual backup/list/restore behind `npm run backup*` /
+`scripts/backup.ts`. Also runs for single-tenant installs, covering only `default` + `platform.db`), `offsite.ts` (encrypted copies of daily snapshots + uploads to S3-compatible buckets, e.g. Backblaze B2 / Railway Buckets, via `shared/s3.ts`; CLI `scripts/offsite.ts`), routes: `signup.routes.ts`, `tenant.routes.ts`, `platform.routes.ts`.
 Frontend: `web-console/` (its own mini-app, not under `public/`).
 **Public interface:** `enabledModules()`/`requireModule()` (re-exported from
 `shared/modules.ts`, which reads `platform/plans.ts` + `platform/platform.ts`),
-`getTenant()`.
+`getTenant()`, `platformHost()` (the dedicated console host, `PLATFORM_HOST`; gated in
+`src/app.ts`), and provisioning `createTenant()` / `importTenant()` (adopt an existing
+workspace DB as a tenant; console route `POST /_platform/api/tenants/import`).
 **Dependencies:** `shared/` only, downward. One reverse pull: `modules/hr/punch-photos.ts`
 reads `platform/platform.ts` for per-tenant photo-retention settings.
 **Status:** working.
@@ -65,6 +74,16 @@ personal notes/tasks, announcements, activity log, analytics, push-reminder rout
 `messages.routes.ts` also calls `shared/ws.ts`'s `broadcast()` after each mutation for
 live chat updates — VOIP/calling is explicitly out of scope for this feature (deferred as
 its own future project; needs WebRTC + a STUN/TURN server, unrelated infra).
+`POST /api/users` accepts `users.manage` **or** `hr.manage`: HR's employee form
+(Linked user account → "+ Create new account") calls it directly, and a caller without
+`users.manage` is limited to the staff roles in `shared/permissions.ts`
+`HR_ASSIGNABLE_ROLES` (403 otherwise — never admin/admin_staff/hr/accounting).
+Per-account access (base role + permission overrides) is edited in one shared drawer,
+`public/js/lib/access-editor.js` (`AccessEditor.open`), used by Admin → Accounts and by the
+employee form's **Access** button. `GET /users/permissions/catalog` reports what the caller
+may change (`grantable`, `assignableRoles`); `GET /users/:id/access` returns one account's
+role + overrides; `PUT /users/:id/permissions` lets an HR-only caller edit staff-role
+accounts and only `HR_GRANTABLE_PERMISSIONS` keys (the union of the staff roles' defaults).
 **Dependencies:** `shared/` only. **Known wart:** `modules/ai/ai-tools.ts` imports
 `visibilityClause` out of `core/forms.routes.ts` — a routes file used as a library.
 Pre-existing; not fixed by this reorg.
