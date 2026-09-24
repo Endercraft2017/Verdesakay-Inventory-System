@@ -36,8 +36,10 @@
     var headers = {};
     var tk = token();
     if (tk) headers['Authorization'] = 'Bearer ' + tk;
-    if (body !== undefined) headers['Content-Type'] = 'application/json';
-    var res = await fetch(API + path, { method: method, headers: headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    var isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+    if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
+    var payload = body === undefined ? undefined : (isForm ? body : JSON.stringify(body));
+    var res = await fetch(API + path, { method: method, headers: headers, body: payload });
     if (res.status === 401) { setToken(null); showLogin(); throw new Error('Session expired — sign in again.'); }
     var data = null;
     if ((res.headers.get('content-type') || '').indexOf('json') !== -1) data = await res.json();
@@ -367,6 +369,50 @@
         toast('Created ' + created.slug);
         openDrawer(created.slug);
       } catch (ex) { $('n-err').textContent = ex.message; $('n-go').disabled = false; }
+    });
+  });
+
+  /* ---------- import an existing workspace (.db file) ---------- */
+  $('import-btn').addEventListener('click', function () {
+    var planOpts = ref.plans.map(function (p) {
+      return el('option', { value: p, text: p, selected: p === 'complete' ? 'selected' : null });
+    });
+    var card = el('div', { class: 'card' }, [
+      el('h2', { text: 'Import workspace' }),
+      el('p', { class: 'muted', text: 'Upload a database snapshot from an existing install (npm run backup). ' +
+        'Its users, passwords and records carry over unchanged. Uploaded files are not included.' }),
+      el('div', { class: 'field' }, [el('label', { text: 'Database file' }), el('input', { id: 'i-file', type: 'file', accept: '.db,.sqlite,.sqlite3' })]),
+      el('div', { class: 'field' }, [el('label', { text: 'Slug' }), el('input', { id: 'i-slug', placeholder: 'acme' })]),
+      el('div', { class: 'field' }, [el('label', { text: 'Company name' }), el('input', { id: 'i-name', placeholder: 'Acme Mfg' })]),
+      el('div', { class: 'field' }, [el('label', { text: 'Plan' }), el('select', { id: 'i-plan' }, planOpts)]),
+      el('div', { class: 'err', id: 'i-err' }),
+      el('div', { style: 'display:flex;gap:10px;margin-top:6px' }, [
+        el('button', { class: 'btn', id: 'i-go' }, ['Import']),
+        el('button', { class: 'btn ghost', id: 'i-cancel' }, ['Cancel']),
+      ]),
+    ]);
+    var modal = el('div', { class: 'modal', id: 'modal' }, [card]);
+    document.body.appendChild(modal);
+    var close = function () { modal.remove(); };
+    $('i-cancel').addEventListener('click', close);
+    $('i-go').addEventListener('click', async function () {
+      $('i-err').textContent = '';
+      var f = $('i-file').files[0];
+      if (!f) { $('i-err').textContent = 'Choose a database file.'; return; }
+      var fd = new FormData();
+      fd.append('db', f);
+      fd.append('slug', $('i-slug').value.trim());
+      fd.append('name', $('i-name').value.trim());
+      fd.append('plan', $('i-plan').value);
+      $('i-go').disabled = true;
+      $('i-go').textContent = 'Importing…';
+      try {
+        var created = await api('POST', '/tenants/import', fd);
+        close();
+        await load();
+        toast('Imported ' + created.slug + ' (' + created.imported_users + ' users)');
+        openDrawer(created.slug);
+      } catch (ex) { $('i-err').textContent = ex.message; $('i-go').disabled = false; $('i-go').textContent = 'Import'; }
     });
   });
 

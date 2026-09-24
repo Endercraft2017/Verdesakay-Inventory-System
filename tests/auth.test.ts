@@ -9,6 +9,13 @@ beforeAll(async () => {
 afterAll(() => cleanup(ctx));
 
 describe('auth', () => {
+  it('/api/health answers without a login — the deploy healthcheck probes it anonymously, and ' +
+    'the bare-/api routers (personal, form builder) used to 401 it', async () => {
+    const res = await ctx.api.get('/api/health');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
   it('logs in the seeded admin', async () => {
     const res = await ctx.api.post('/api/auth/login').send({ username: 'admin', password: 'admin123' });
     expect(res.status).toBe(200);

@@ -20,6 +20,7 @@ import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir, tenantStore, DEFAULT_TENANT } from '../../shared/db';
 import { getTenant } from '../../platform/platform';
 import { requirePermission } from '../../shared/auth';
+import { PUNCH_PHOTOS_SUBDIR } from '../../shared/backup';
 
 function currentSlug(): string {
   return tenantStore.getStore()?.slug ?? DEFAULT_TENANT;
@@ -31,7 +32,7 @@ const DEFAULT_RETENTION_DAYS = 60;
 const DEFAULT_MAX_MB = 300;
 
 function photoDir(): string {
-  const dir = path.join(uploadDir(), 'kiosk-punches');
+  const dir = path.join(uploadDir(), PUNCH_PHOTOS_SUBDIR); // backups mirror this folder's deletions
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

@@ -11,11 +11,22 @@ import http from 'node:http';
 import https from 'node:https';
 import { spawnSync } from 'node:child_process';
 import { init, cleanupSessions } from './src/shared/db';
-import { createApp } from './src/app';
+import { createApp, BEHIND_PROXY } from './src/app';
 import { sendDueTaskReminders } from './src/shared/push';
 import { cleanupPlatformSessions } from './src/platform/platform-users';
 import { attachWebSocket } from './src/shared/ws';
 import { runDailyBackups } from './src/platform/backups';
+import { pushOffsite } from './src/platform/offsite';
+
+// Attendance, payroll dates and the kiosk rules use the server's local time (see
+// src/modules/hr/clock.ts localParts and SQLite 'localtime'). On-site that is the office clock;
+// a cloud host runs on UTC, which would silently date punches 8 hours off. TZ must be set in
+// the environment before the process starts (SQLite does not pick up a runtime change).
+if (BEHIND_PROXY && !process.env.TZ) {
+  console.error('\nRefusing to start: set the TZ variable to the office time zone (e.g. TZ=Asia/Manila).\n' +
+    'Cloud servers run on UTC, which would record attendance and payroll dates on the wrong day.\n');
+  process.exit(1);
+}
 
 init();
 const housekeeping = () => { cleanupSessions(); cleanupPlatformSessions(); };
@@ -24,7 +35,11 @@ setInterval(housekeeping, 60 * 60 * 1000).unref(); // hourly
 setInterval(() => { void sendDueTaskReminders(); }, 60 * 1000).unref(); // task reminders
 // Daily DB snapshots: at boot, then an hourly check that takes today's once the date rolls
 // over (a no-op for any DB that already has one). Never let a backup error crash the server.
-const dailyBackup = () => { try { runDailyBackups(); } catch (e) { console.error(`[backup] daily run failed: ${(e as Error).message}`); } };
+const dailyBackup = () => {
+  try { runDailyBackups(); } catch (e) { console.error(`[backup] daily run failed: ${(e as Error).message}`); }
+  // Then copy anything new (or previously failed) to the off-site buckets, if configured.
+  void pushOffsite();
+};
 dailyBackup();
 setInterval(dailyBackup, 60 * 60 * 1000).unref();
 
@@ -95,7 +110,9 @@ function banner(scheme: string): void {
   console.log('');
 }
 
-const creds = loadOrCreateCert();
+// Behind a TLS-terminating proxy (e.g. Railway) the proxy owns HTTPS and forwards plain
+// HTTP to PORT — serving our own self-signed cert there would break every request.
+const creds = BEHIND_PROXY ? null : loadOrCreateCert();
 
 if (creds) {
   const httpsServer = https.createServer(creds, app).listen(PORT, '0.0.0.0', () => banner('https'));

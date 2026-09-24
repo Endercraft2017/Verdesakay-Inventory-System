@@ -6,15 +6,18 @@
  * `npm run tenant:*` CLI uses. Requests that resolved to a tenant sub-domain are 404'd:
  * the console only answers on the apex / default host.
  */
+import fs from 'node:fs';
+import os from 'node:os';
 import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import multer from 'multer';
 import { tenantStore, withTenant, DEFAULT_TENANT } from '../shared/db';
 import {
   listTenants, getTenant, setTenantPlan, setTenantStatus, setTenantName,
   setTrialEndsAt, setTenantModules, setTenantPhotoRetention, listProvisioningLog, logProvisioning,
   type TenantRow, type TenantStatus,
 } from './platform';
-import { createTenant, purgeTenant } from './provisioning';
+import { createTenant, importTenant, purgeTenant } from './provisioning';
 import { tenantUsage } from './quota';
 import { punchPhotoUsageBytes } from '../modules/hr/punch-photos';
 import { enabledModules, isModuleName, withDeps, MODULES, MODULE_DEPS } from '../shared/modules';
@@ -160,6 +163,30 @@ router.post('/tenants', (req: Request, res: Response, next) => {
     if (err.status && err.status < 500) { res.status(err.status).json({ error: err.message }); return; }
     if (err instanceof Error && /module/i.test(err.message)) { res.status(400).json({ error: err.message }); return; }
     next(e);
+  }
+});
+
+// POST /_platform/api/tenants/import — multipart { db: <.db file>, slug, name, plan? }.
+// Adopts an existing workspace database (e.g. a self-hosted install's snapshot) as a tenant.
+const importUpload = multer({ dest: os.tmpdir(), limits: { fileSize: 1024 * 1024 * 1024 } });
+router.post('/tenants/import', importUpload.single('db'), (req: Request, res: Response, next) => {
+  const file = req.file;
+  try {
+    if (!file) { res.status(400).json({ error: 'Choose a database (.db) file to import.' }); return; }
+    const b = req.body || {};
+    const { slug, users } = importTenant({
+      slug: String(b.slug || ''),
+      name: String(b.name || ''),
+      plan: b.plan ? String(b.plan) : undefined,
+      sourceFile: file.path,
+    });
+    res.status(201).json({ ...tenantView(getTenant(slug)!), imported_users: users });
+  } catch (e) {
+    const err = e as Error & { status?: number };
+    if (err.status && err.status < 500) { res.status(err.status).json({ error: err.message }); return; }
+    next(e);
+  } finally {
+    if (file) fs.rmSync(file.path, { force: true });
   }
 });
 

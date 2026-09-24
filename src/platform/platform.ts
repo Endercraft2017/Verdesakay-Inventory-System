@@ -22,6 +22,12 @@ export const SIGNUPS_OPEN = process.env.SIGNUPS_OPEN === 'true';
 /** The owner console at `/_platform` is only mounted when this is exactly "true".
  *  Off ⇒ the path 404s entirely (single-tenant / self-hosted installs never expose it). */
 export const PLATFORM_CONSOLE = process.env.PLATFORM_CONSOLE === 'true';
+/** Optional dedicated host for the owner console, e.g. `admin.app.example.com`. When set,
+ *  `/_platform` answers only on this host, and every other path on it redirects to the
+ *  console, so the host never serves a tenant app. Read per call (tests toggle it). */
+export function platformHost(): string {
+  return (process.env.PLATFORM_HOST || '').toLowerCase().trim();
+}
 
 /** Sub-domains that can never be a tenant slug. */
 export const RESERVED_SLUGS = new Set([

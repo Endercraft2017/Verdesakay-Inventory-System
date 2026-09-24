@@ -5,6 +5,8 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
 import { withTenant, run, DATA_DIR, UPLOAD_DIR } from '../shared/db';
 import {
@@ -48,6 +50,72 @@ export function createTenant(input: CreateTenantInput): { slug: string } {
 
   logProvisioning(slug, 'create', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', admin: username }));
   return { slug };
+}
+
+export interface ImportTenantInput {
+  slug: string;
+  name: string;
+  plan?: string;
+  /** A self-contained SQLite file of an existing workspace — ideally an `npm run backup`
+   *  snapshot (VACUUM INTO), not a live data.db whose recent writes may sit in a -wal file. */
+  sourceFile: string;
+}
+
+/** Adopt an existing workspace DB (e.g. a self-hosted install's data.db) as a new tenant:
+ *  validate it, copy it to `<DATA_DIR>/<slug>.db`, drop its login sessions, add the catalog
+ *  row, then open it once so it migrates to the current schema. Users, passwords and all
+ *  records carry over unchanged. Uploaded files are not part of the DB and are not copied. */
+export function importTenant(input: ImportTenantInput): { slug: string; users: number } {
+  const slug = String(input.slug || '').toLowerCase().trim();
+  if (!isValidSlug(slug)) {
+    throw httpError(400, 'Workspace name must be 2–31 chars: a letter, then letters/numbers/hyphens (no reserved words).');
+  }
+  if (getTenant(slug)) throw httpError(409, 'That workspace name is already taken.');
+  const dest = path.join(DATA_DIR, `${slug}.db`);
+  if (fs.existsSync(dest)) throw httpError(409, `A database file for "${slug}" already exists on disk.`);
+
+  const head = Buffer.alloc(16);
+  const fd = fs.openSync(input.sourceFile, 'r');
+  try { fs.readSync(fd, head, 0, 16, 0); } finally { fs.closeSync(fd); }
+  if (head.toString('latin1') !== 'SQLite format 3\0') throw httpError(400, 'That file is not a SQLite database.');
+
+  // Work on a private copy so a rejected import never leaves anything behind.
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const staging = path.join(DATA_DIR, `.import-${slug}-${crypto.randomBytes(4).toString('hex')}.db`);
+  fs.copyFileSync(input.sourceFile, staging);
+  let users = 0;
+  try {
+    const conn = new DatabaseSync(staging);
+    try {
+      const ok = (conn.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check;
+      if (ok !== 'ok') throw httpError(400, `The database failed its integrity check (${ok}).`);
+      const hasUsers = conn.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+      if (!hasUsers) throw httpError(400, 'That database is not a workspace from this app (no users table).');
+      users = (conn.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
+      if (users === 0) throw httpError(400, 'That database has no user accounts, so nobody could log in.');
+      // Tokens issued by the old install must not log anyone in here.
+      const hasSessions = conn.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sessions'").get();
+      if (hasSessions) conn.exec('DELETE FROM sessions');
+      conn.exec('PRAGMA journal_mode = DELETE'); // fold any WAL back into the single file
+    } finally {
+      conn.close();
+    }
+    fs.renameSync(staging, dest);
+  } catch (e) {
+    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(staging + suffix, { force: true });
+    throw e;
+  }
+
+  createTenantRow({ slug, name: input.name.trim() || slug, plan: input.plan });
+  try {
+    withTenant(slug, () => {}); // open → pre-migration snapshot → migrate to the current schema
+  } catch (e) {
+    setTenantStatus(slug, 'suspended');
+    logProvisioning(slug, 'import-failed', (e as Error).message);
+    throw e;
+  }
+  logProvisioning(slug, 'import', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', users }));
+  return { slug, users };
 }
 
 export function suspendTenant(slug: string): boolean {

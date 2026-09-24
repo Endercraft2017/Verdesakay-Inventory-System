@@ -98,7 +98,7 @@ describe('punch photos: upload, serve, replace', () => {
 describe('attendance grid surfaces photo urls', () => {
   it('GET /periods/:id/attendance includes a photo url only for the slot that has one', async () => {
     const e = await employee();
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = new Date().toLocaleDateString('en-CA'); // local date, like the server's work_date
     const period = await ctx.api.post('/api/hr/periods').set(A())
       .send({ label: 'Photo grid test', start_date: todayStr, end_date: todayStr });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees/bulk`).set(A())
@@ -122,7 +122,7 @@ describe('attendance grid surfaces photo urls', () => {
 
   it('a day with no punches at all still gets an all-null photos object', async () => {
     const e = await employee();
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = new Date().toLocaleDateString('en-CA'); // local date, like the server's work_date
     const period = await ctx.api.post('/api/hr/periods').set(A())
       .send({ label: 'Photo grid blank', start_date: todayStr, end_date: todayStr });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees/bulk`).set(A())

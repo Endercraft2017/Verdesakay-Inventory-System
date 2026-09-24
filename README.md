@@ -29,6 +29,7 @@ same network open it in a browser — no installation needed on the other machin
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — the codebase map: every file, the data
   model, and the full API catalog. **Read this before adding code; keep it updated.**
 - **[docs/DECISIONS.md](docs/DECISIONS.md)** — why the stack is what it is.
+- **[docs/DEPLOY-RAILWAY.md](docs/DEPLOY-RAILWAY.md)** — hosting on Railway (volume, variables, domain).
 
 ## Working on the code
 

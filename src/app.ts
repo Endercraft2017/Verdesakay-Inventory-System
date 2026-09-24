@@ -45,13 +45,21 @@ import quickbooksRoutes from './modules/quickbooks/quickbooks.routes';
 import { recordActivity } from './shared/activity';
 import { idempotency } from './shared/idempotency';
 import { tenantStore, getDb, DEFAULT_TENANT } from './shared/db';
-import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE } from './platform/platform';
+import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost } from './platform/platform';
 import { requireModule, moduleEnabled } from './shared/modules';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
+/** True when a TLS-terminating reverse proxy (Railway, a load balancer, nginx) sits in
+ *  front of the app: auto-detected on Railway, or forced with BEHIND_PROXY=true. The
+ *  server then speaks plain HTTP and trusts the proxy's X-Forwarded-* headers. */
+export const BEHIND_PROXY = process.env.BEHIND_PROXY === 'true' || !!process.env.RAILWAY_ENVIRONMENT;
+
 export function createApp() {
   const app = express();
+  // Behind a proxy, req.ip / req.protocol must come from X-Forwarded-*, or the login rate
+  // limiter would bucket every user under the proxy's single IP.
+  if (BEHIND_PROXY) app.set('trust proxy', 1);
 
   // Security headers. Disable CSP defaults that would block our inline view scripts;
   // a tailored policy can be added later if the app is exposed beyond the LAN.
@@ -59,6 +67,18 @@ export function createApp() {
   app.use(helmet({ contentSecurityPolicy: false, hsts: false }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
+
+  // Dedicated owner-console host (PLATFORM_HOST): that host serves only the console, and
+  // the console is served on no other host. Unset ⇒ the console stays on the apex/default host.
+  app.use((req, res, next) => {
+    const consoleHost = PLATFORM_CONSOLE ? platformHost() : '';
+    if (!consoleHost) { next(); return; }
+    const onConsoleHost = String(req.headers.host || '').toLowerCase().split(':')[0] === consoleHost;
+    const consolePath = req.path === '/_platform' || req.path.startsWith('/_platform/');
+    if (onConsoleHost === consolePath || req.path === '/api/health') { next(); return; }
+    if (onConsoleHost && !req.path.startsWith('/api/')) { res.redirect('/_platform/'); return; }
+    res.status(404).json({ error: 'Not found' });
+  });
 
   // Resolve the tenant from the request (sub-domain, or X-Tenant / ?tenant in non-prod)
   // and pin its DB connection for the rest of the request (see src/platform.ts + src/db.ts
@@ -129,6 +149,11 @@ export function createApp() {
   // (used by the mobile offline queue). No-op for requests without the header.
   app.use('/api', idempotency);
 
+  // Unauthenticated liveness probe (Railway healthcheck). Must precede the routers mounted
+  // on bare '/api' (personal, form builder), whose blanket auth would otherwise 401 it.
+  app.get('/api/health', (_req, res) => {
+    res.json({ ok: true, time: new Date().toISOString() });
+  });
   app.use('/api/auth/login', loginLimiter);
   app.use('/api/auth', authRoutes);
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
@@ -174,9 +199,6 @@ export function createApp() {
   app.use('/api/accounting', requireModule('accounting'), accountingRoutes);
   app.use('/api/mail', requireModule('email'), mailRoutes);
   app.use('/api/push', pushRoutes);
-  app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, time: new Date().toISOString() });
-  });
 
   // Owner console — a separate mini-app under /_platform with its own operator auth
   // (src/platform-users.ts). Mounted only when PLATFORM_CONSOLE=true; the whole path 404s
