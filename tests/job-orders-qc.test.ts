@@ -1,6 +1,6 @@
 /** Manufacturing Phase C: QA/QC gating, serialized units, explode-by-identifier. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, addSerializedUnits, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
@@ -49,22 +49,28 @@ async function receiveAll(mo: number): Promise<void> {
 }
 
 describe('job orders — QA/QC', () => {
-  it('progress with qc_stages > 0 queues units for inspection (no stock yet)', async () => {
+  it('adding serialized units via POST /:id/units queues them for inspection (no stock yet)', async () => {
     const { mo, product } = await releasedMO('QC1', 5, 1);
-    const r = await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 4 });
-    expect(r.status).toBe(200);
-    expect(r.body.job_order.qty_done).toBe(0);
-    expect(r.body.job_order.units_summary.pending).toBe(4);
+    const ids = await addSerializedUnits(ctx.api, token, mo, 4, 'QC1');
+    expect(ids).toHaveLength(4);
+    const jo = (await ctx.api.get(`/api/job-orders/${mo}`).set(authHdr())).body;
+    expect(jo.qty_done).toBe(0);
+    expect(jo.units_summary.pending).toBe(4);
     expect(await onHand(product)).toBe(0);
 
     const units = await unitsOf(mo);
     expect(units.length).toBe(4);
     expect(units.every((u) => u.status === 'pending' && u.stage === 0)).toBe(true);
+
+    // the old bulk done_delta path is no longer available for a serialized job order
+    // (see tests/job-order-add-unit.test.ts for the full coverage of that rejection)
+    const bulk = await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 1 });
+    expect(bulk.status).toBe(400);
   });
 
   it('the job-order list carries units_pending for the mobile QA/QC worklist', async () => {
     const { mo } = await releasedMO('QCLIST', 5, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 3 });
+    await addSerializedUnits(ctx.api, token, mo, 3, 'QCLIST');
     const list = await ctx.api.get('/api/job-orders').set(authHdr());
     const row = list.body.find((j: { id: number }) => j.id === mo);
     expect(row.units_pending).toBe(3);
@@ -73,7 +79,7 @@ describe('job orders — QA/QC', () => {
 
   it('a single-stage pass queues the unit for Products In; a fail scraps it with remarks', async () => {
     const { mo, product } = await releasedMO('QC2', 5, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 3 });
+    await addSerializedUnits(ctx.api, token, mo, 3, 'QC2');
     const units = await unitsOf(mo);
 
     const pass = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
@@ -103,7 +109,7 @@ describe('job orders — QA/QC', () => {
 
   it('a repair disposition sends the unit to rework and holds the job order open', async () => {
     const { mo } = await releasedMO('QCRW', 2, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 2 });
+    await addSerializedUnits(ctx.api, token, mo, 2, 'QCRW');
     const units = await unitsOf(mo);
 
     // one passes into stock, the other goes to repair
@@ -120,7 +126,7 @@ describe('job orders — QA/QC', () => {
 
   it('two-stage QA→QC needs two passes before the unit counts', async () => {
     const { mo, product } = await releasedMO('QC3', 2, 2);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 2 });
+    await addSerializedUnits(ctx.api, token, mo, 2, 'QC3');
     const units = await unitsOf(mo);
 
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
@@ -140,7 +146,7 @@ describe('job orders — QA/QC', () => {
 
   it('an identifier can be set at inspection and shared across units', async () => {
     const { mo, product } = await releasedMO('QC4', 4, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 4 });
+    await addSerializedUnits(ctx.api, token, mo, 4, 'QC4');
     const units = await unitsOf(mo);
 
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
@@ -160,7 +166,7 @@ describe('job orders — QA/QC', () => {
   it('explode shows bulk (non-serialised) stock alongside identified units', async () => {
     const { mo, product } = await releasedMO('QC5', 2, 1);
     await ctx.api.post(`/api/inventory/${product}/adjust`).set(authHdr()).send({ change: 5, reason: 'opening balance' });
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 2 });
+    await addSerializedUnits(ctx.api, token, mo, 2, 'QC5');
     const units = await unitsOf(mo);
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
       .send({ unit_ids: units.map((u) => u.id), result: 'pass', identifier: 'SN-9' });
@@ -175,7 +181,7 @@ describe('job orders — QA/QC', () => {
   it('auto-completes only once nothing is left pending; rejects bad inspect targets', async () => {
     const { mo, part } = await releasedMO('QC6', 3, 1);
     const beforePart = await onHand(part); // released already deducted 6
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 3 });
+    await addSerializedUnits(ctx.api, token, mo, 3, 'QC6');
     let jo = (await ctx.api.get(`/api/job-orders/${mo}`).set(authHdr())).body;
     expect(jo.status).toBe('in_progress'); // 3 pending, not done
 

@@ -47,6 +47,13 @@
   function render(view, order) {
     MApp.setTitle(order.number);
     view.innerHTML = '';
+    if (!MApp.can('inventory.adjust') && !MApp.can('orders.release')) {
+      view.appendChild(mEl('<div class="m-hint">You don\'t have permission to release sale orders.</div>'));
+      var backBar = mEl('<div class="m-actions"><button class="m-btn m-btn-secondary">Back to list</button></div>');
+      backBar.querySelector('button').onclick = function () { MApp.go('so'); };
+      view.appendChild(backBar);
+      return;
+    }
     var releasable = RELEASABLE.indexOf(String(order.status).toLowerCase()) !== -1;
 
     view.appendChild(mEl(

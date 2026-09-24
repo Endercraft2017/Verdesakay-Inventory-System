@@ -4,13 +4,14 @@
     QA/QC gating (qc_stages > 0) and serialized units come in Phase C. */
 import { Router } from 'express';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
   parseBody,
   createJobOrderSchema,
   updateJobOrderSchema,
   jobOrderComponentsSchema,
   jobOrderProgressSchema,
+  addUnitSchema,
   inspectUnitsSchema,
   setUnitIdentifierSchema,
   productsInSchema,
@@ -26,6 +27,18 @@ router.use(requireAuth);
 
 const readGate = requirePermission('inventory.view');
 const writeGate = requirePermission('inventory.adjust');
+// Narrow alternatives to writeGate for the actions a dedicated shop-floor role
+// (production_lead / qc_inspector / qa_inspector / receiving_clerk — see
+// shared/permissions.ts) performs without needing full inventory.adjust. inventory.adjust
+// still works too, so admin/warehouse/admin_staff/releasing accounts are unaffected.
+const recordGate = requireAnyPermission(['inventory.adjust', 'production.record']);
+// Door-level gate for /:id/units/inspect only — lets a caller with EITHER inspect
+// permission in; which *specific* pass(es) they're actually allowed to record is then
+// checked inside the handler once it knows which stage(s) the requested units are on
+// (see the inspectPermissionError() call below). qc.configure is a separate concern
+// (checklist administration, not the pass/fail action itself).
+const inspectDoorGate = requireAnyPermission(['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa']);
+const receiveGate = requireAnyPermission(['inventory.adjust', 'production.receive']);
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -134,8 +147,8 @@ function loadJobOrder(id: number): JobOrder | null {
   const summary: Record<string, number> = { pending: 0, in_stock: 0, failed: 0, scrapped: 0, rework: 0, sold: 0 };
   for (const c of counts) summary[c.status] = c.n;
   (jo as JobOrder & { units_summary: Record<string, number> }).units_summary = summary;
-  jo.qc_checklist_qa = jo.qc_stages > 0 ? checklistForProduct(jo.product_item_id, 1) : null;
-  jo.qc_checklist_qc = jo.qc_stages > 0 ? checklistForProduct(jo.product_item_id, 2) : null;
+  jo.qc_checklist_qc = jo.qc_stages > 0 ? checklistForProduct(jo.product_item_id, 1) : null;
+  jo.qc_checklist_qa = jo.qc_stages > 0 ? checklistForProduct(jo.product_item_id, 2) : null;
   return jo;
 }
 
@@ -182,6 +195,22 @@ function createBatch(
   return Number(info.lastInsertRowid);
 }
 
+/** Find this job order's open batch/lot with the given label, or start a new one — so
+ *  POST /:id/units (one call per unit) can still group serialized units under a shared
+ *  label the same way a bulk /progress entry used to, one unit at a time. */
+function findOrCreateOpenBatch(joId: number, productId: number | null, label: string, userId: number): number {
+  const existing = queryOne<{ id: number }>(
+    "SELECT id FROM production_batches WHERE job_order_id = ? AND identifier = ? AND status = 'open'",
+    joId,
+    label
+  );
+  if (existing) {
+    run('UPDATE production_batches SET qty = qty + 1 WHERE id = ?', existing.id);
+    return existing.id;
+  }
+  return createBatch(joId, productId, 1, label, 'open', userId);
+}
+
 /** Consume `units` units' worth of every component, capped at what was reserved. */
 function consumeComponents(joId: number, units: number): void {
   if (units <= 0) return;
@@ -218,6 +247,7 @@ router.get('/', readGate, (req, res) => {
   const rows = queryAll<JobOrder & {
     remaining: number; units_pending: number; units_rework: number; units_passed: number;
     batches_receivable: number; overdue: number;
+    units_first_pass_open: number; units_final_pass_open: number;
   }>(
     `SELECT j.*, o.number AS order_number, t.name AS team_name,
             (j.qty_ordered - j.qty_done - j.qty_scrapped) AS remaining,
@@ -233,7 +263,18 @@ router.get('/', readGate, (req, res) => {
               WHERE pb.job_order_id = j.id
                 AND NOT EXISTS (SELECT 1 FROM job_order_units u WHERE u.batch_id = pb.id)
                 AND pb.qty > COALESCE((SELECT SUM(quantity) FROM production_receipt_items WHERE batch_id = pb.id), 0)
-            ) AS batches_receivable
+            ) AS batches_receivable,
+            -- Awaiting inspection units bucketed by which pass they're actually on (QC =
+            -- first, QA = final; a single-stage MO's one pass satisfies both buckets at
+            -- once) — lets the caller's own units_actionable below reflect only what a
+            -- narrow qc_inspector/qa_inspector account can act on, not every open unit
+            -- regardless of stage.
+            (SELECT COUNT(*) FROM job_order_units u
+              WHERE u.job_order_id = j.id AND u.status IN ('pending','rework') AND (u.stage + 1) = 1
+            ) AS units_first_pass_open,
+            (SELECT COUNT(*) FROM job_order_units u
+              WHERE u.job_order_id = j.id AND u.status IN ('pending','rework') AND (u.stage + 1) >= j.qc_stages
+            ) AS units_final_pass_open
      FROM job_orders j
      LEFT JOIN orders o ON o.id = j.order_id
      LEFT JOIN production_teams t ON t.id = j.team_id
@@ -241,6 +282,25 @@ router.get('/', readGate, (req, res) => {
      ORDER BY j.id DESC`,
     ...params
   );
+  // units_actionable: how many of this job order's pending/rework units the CALLER's own
+  // account can actually pass/fail — inventory.adjust (or holding both split permissions)
+  // covers everything; a qc_inspector-only or qa_inspector-only account only its own pass.
+  // Drives mobile's Production-tab and Home QA badge counts (see production.js / home.js) —
+  // without this, those badges showed every open unit regardless of stage, which didn't
+  // match qc.js's own queue (already filtered to just what that account can act on).
+  const perms = req.user!.permissions;
+  const canAdjust = perms.includes('inventory.adjust');
+  const hasQc = perms.includes('production.inspect_qc');
+  const hasQa = perms.includes('production.inspect_qa');
+  for (const r of rows as unknown as Array<{
+    units_pending: number; units_rework: number; units_first_pass_open: number;
+    units_final_pass_open: number; units_actionable: number;
+  }>) {
+    if (canAdjust || (hasQc && hasQa)) r.units_actionable = r.units_pending + r.units_rework;
+    else if (hasQc) r.units_actionable = r.units_first_pass_open;
+    else if (hasQa) r.units_actionable = r.units_final_pass_open;
+    else r.units_actionable = 0;
+  }
   res.json(rows);
 });
 
@@ -635,7 +695,7 @@ router.post('/:id/release', writeGate, (req, res) => {
 });
 
 // POST /api/job-orders/:id/progress — record finished / scrapped units
-router.post('/:id/progress', writeGate, (req, res) => {
+router.post('/:id/progress', recordGate, (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) {
@@ -647,6 +707,12 @@ router.post('/:id/progress', writeGate, (req, res) => {
     return;
   }
   const { done_delta, scrapped_delta, batch_label } = parseBody(jobOrderProgressSchema, req.body);
+  if (jo.qc_stages > 0 && done_delta > 0) {
+    res.status(400).json({
+      error: 'Serialized job orders record finished units individually (with their own identifier + photo) via "Add unit", not a bulk count here.',
+    });
+    return;
+  }
   const madeUnits = done_delta + scrapped_delta; // every unit off the line consumes components
   const outputLoc = jo.output_location_id ?? getDefaultLocationId();
   // "Accounted for" = in stock + scrapped + still under inspection + out for repair.
@@ -719,6 +785,64 @@ router.post('/:id/progress', writeGate, (req, res) => {
   // on its own while this job order still has receivable output (hasReceivable()).
   settleJobOrderGl(id, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id) });
+});
+
+// POST /api/job-orders/:id/units — add ONE serialized (QC-gated) unit "off the line" with
+// its identifier captured at creation (required) instead of added later. A photo is also
+// required, but that's a separate POST /api/attachments (kind: 'qc_unit', ref_id: this
+// unit's id) right after this call succeeds — the same attachment kind the QC/QA
+// pass/fail flow already uses for defect photos, just attached earlier in this unit's
+// life. "N units finished at once" loops this endpoint once per unit rather than one
+// request for many, so each keeps its own identifier + photo; an optional batch_label
+// still groups them under a shared lot the same way a bulk progress entry used to (each
+// call with the same label adds to that job order's open batch of it). A non-serialized
+// (qc_stages = 0) job order has no individual unit to attach either to, so it still
+// records output as a batch quantity via /progress, unchanged.
+router.post('/:id/units', recordGate, (req, res) => {
+  const id = Number(req.params.id);
+  const jo = loadJobOrder(id);
+  if (!jo) {
+    res.status(404).json({ error: 'Job order not found' });
+    return;
+  }
+  if (jo.status !== 'released' && jo.status !== 'in_progress') {
+    res.status(409).json({ error: `Job order must be released before recording progress (it is ${jo.status})` });
+    return;
+  }
+  if (jo.qc_stages <= 0) {
+    res.status(400).json({ error: "This job order isn't serialized — record output as a batch quantity via progress instead." });
+    return;
+  }
+  const { identifier, batch_label } = parseBody(addUnitSchema, req.body);
+  const accounted = jo.qty_done + jo.qty_scrapped + unresolvedCount(id);
+  if (accounted + 1 > jo.qty_ordered) {
+    res.status(400).json({ error: `That exceeds the ${jo.qty_ordered} ordered (${accounted} already produced).` });
+    return;
+  }
+  const outputLoc = jo.output_location_id ?? getDefaultLocationId();
+
+  db.exec('BEGIN');
+  let unitId: number;
+  try {
+    consumeComponents(id, 1);
+    const batchId = batch_label ? findOrCreateOpenBatch(id, jo.product_item_id, batch_label, req.user!.id) : null;
+    const info = run(
+      `INSERT INTO job_order_units (job_order_id, product_item_id, identifier, status, stage, location_id, batch_id)
+       VALUES (?, ?, ?, 'pending', 0, ?, ?)`,
+      id,
+      jo.product_item_id,
+      identifier,
+      outputLoc,
+      batchId
+    );
+    unitId = Number(info.lastInsertRowid);
+    run("UPDATE job_orders SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?", id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  res.status(201).json({ id: unitId, job_order: loadJobOrder(id) });
 });
 
 /** Put `qty_planned - qty_consumed` of every component back at the source location.
@@ -915,7 +1039,7 @@ router.get('/:id/qc', readGate, (req, res) => {
 });
 
 // POST /api/job-orders/:id/units/inspect — pass/fail one or more pending units
-router.post('/:id/units/inspect', writeGate, (req, res) => {
+router.post('/:id/units/inspect', inspectDoorGate, (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) {
@@ -955,11 +1079,30 @@ router.post('/:id/units/inspect', writeGate, (req, res) => {
   const outputLoc = jo.output_location_id ?? getDefaultLocationId();
   const stages = Math.max(1, jo.qc_stages || 1);
 
-  // Which checklist(s) apply to this pass: the QA checklist on the first pass, the QC
+  // Which checklist(s) apply to this pass: the QC checklist on the first pass, the QA
   // checklist on the final one. On a single-stage MO the one inspection is both first
-  // and final, so both the product's QA and QC checklists apply together.
+  // and final, so both the product's QC and QA checklists apply together.
   const isFirstPass = units.some((u) => u.stage + 1 === 1);
   const isFinalPass = units.some((u) => u.stage + 1 >= stages);
+
+  // inspectDoorGate only confirmed the caller holds SOME inspect permission; a
+  // qc_inspector/qa_inspector account is further restricted to the specific pass(es)
+  // these units are actually on. A single-stage job order's one pass is both first and
+  // final together (it runs both checklists in one go), so either permission covers it.
+  if (!req.user!.permissions.includes('inventory.adjust')) {
+    const hasQc = req.user!.permissions.includes('production.inspect_qc');
+    const hasQa = req.user!.permissions.includes('production.inspect_qa');
+    const combinedPass = stages <= 1;
+    const covered = combinedPass ? (hasQc || hasQa) : ((!isFirstPass || hasQc) && (!isFinalPass || hasQa));
+    if (!covered) {
+      res.status(403).json({
+        error: combinedPass
+          ? 'Forbidden: needs QC or QA inspection permission'
+          : `Forbidden: needs ${isFirstPass ? 'QC' : 'QA'} inspection permission for this pass`,
+      });
+      return;
+    }
+  }
 
   // A unit can only become finished stock once its checklist is complete — every
   // configured *required* check that applies to this pass must be ticked OK.
@@ -973,7 +1116,7 @@ router.post('/:id/units/inspect', writeGate, (req, res) => {
       const ticked = new Map((checklist ?? []).map((c) => [c.label, c.ok]));
       const missing = required.filter((it) => ticked.get(it.label) !== true).map((it) => it.label);
       if (missing.length) {
-        res.status(400).json({ error: `Complete the required QA/QC checks before passing: ${missing.join(', ')}` });
+        res.status(400).json({ error: `Complete the required QC/QA checks before passing: ${missing.join(', ')}` });
         return;
       }
     }
@@ -1083,7 +1226,7 @@ router.get('/:id/receivable', readGate, (req, res) => {
 
 // POST /api/job-orders/:id/products-in — "Products In": receive produced output into stock
 // at a chosen location (the Purchasing Goods Receipt pattern mirrored for production).
-router.post('/:id/products-in', writeGate, (req, res) => {
+router.post('/:id/products-in', receiveGate, (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1193,7 +1336,7 @@ router.post('/:id/products-in', writeGate, (req, res) => {
 });
 
 // PUT /api/job-orders/:id/units/:unitId/identifier — set / clear a unit's identifier
-router.put('/:id/units/:unitId/identifier', writeGate, (req, res) => {
+router.put('/:id/units/:unitId/identifier', recordGate, (req, res) => {
   const id = Number(req.params.id);
   const unitId = Number(req.params.unitId);
   const unit = queryOne<JobOrderUnit>(

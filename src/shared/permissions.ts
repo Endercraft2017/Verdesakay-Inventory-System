@@ -22,11 +22,16 @@ export const ALL_PERMISSIONS: Permission[] = [
   'announce',
   'qc.configure',
   'delivery.run', 'delivery.manage',
+  'production.repairs', 'production.record', 'production.inspect_qc', 'production.inspect_qa',
+  'production.receive',
+  'orders.release',
 ];
 
 /** Canonical role list — the single source of truth for iterating all roles. */
 export const ROLES: Role[] = [
   'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
+  'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+  'releasing_clerk',
 ];
 
 const ROLE_DEFAULTS: Record<Role, Permission[]> = {
@@ -84,6 +89,44 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
     'messages.view', 'messages.send',
     'templates.view',
     'announce',
+  ],
+  // ---- Narrow shop-floor roles (mobile-first) — see the Role type's doc comment. Each
+  // gets inventory.view (browse) + inventory.mobile (reach the mobile Production tab) +
+  // exactly the one production.* permission its task needs, plus baseline messaging.
+  // 'warehouse'/'admin'/'admin_staff'/'releasing' already satisfy every production.*
+  // requireAnyPermission check via their existing inventory.adjust, so granting these
+  // to those roles isn't needed for anything to keep working.
+  parts_clerk: [
+    'inventory.view', 'inventory.mobile', 'production.repairs',
+    'messages.view', 'messages.send',
+  ],
+  production_lead: [
+    'inventory.view', 'inventory.mobile', 'production.record',
+    'messages.view', 'messages.send',
+  ],
+  // QC (first pass, technical/performance) and QA (final pass, appearance) are separate
+  // people in this permission model, matching the pipeline's own stage split — see
+  // job-orders.routes.ts POST /:id/units/inspect, which checks the *specific* pass being
+  // recorded against production.inspect_qc/qa (a single-stage job order's one combined
+  // pass accepts either, since it runs both checklists together).
+  qc_inspector: [
+    'inventory.view', 'inventory.mobile', 'production.inspect_qc',
+    'messages.view', 'messages.send',
+  ],
+  qa_inspector: [
+    'inventory.view', 'inventory.mobile', 'production.inspect_qa',
+    'messages.view', 'messages.send',
+  ],
+  receiving_clerk: [
+    'inventory.view', 'inventory.mobile', 'production.receive',
+    'messages.view', 'messages.send',
+  ],
+  // Same narrowing, orders module — see orders.routes.ts POST /:id/release[/unreserve].
+  // Mobile-only account for scanning/entering goods out against an approved sale order,
+  // without the broad inventory.adjust 'releasing' otherwise needs for that same action.
+  releasing_clerk: [
+    'inventory.view', 'inventory.mobile', 'orders.view', 'orders.release',
+    'messages.view', 'messages.send',
   ],
 };
 

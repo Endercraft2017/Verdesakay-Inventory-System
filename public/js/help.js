@@ -149,7 +149,7 @@
       routes: ['job-orders', 'production-qc', 'repairs', 'production-receiving', 'finished-goods', 'production-overview'], html: `
         <p>A Job Order builds N units of a finished product. <b>Production</b>'s tabs run in
         the order a build actually happens: Overview → Product Setup → Job Orders →
-        Scheduling → QA / QC → Repairs → Products In → Batches / Lots → Finished Goods.
+        Scheduling → QC / QA → Repairs → Products In → Batches / Lots → Finished Goods.
         <b>Overview</b> is the home screen — a summary of what's overdue, in rework, or
         waiting on you, with a short production report.</p>
         <ol>
@@ -159,9 +159,9 @@
           <li><b>Track</b> progress: mark units done or scrapped. <b>Pause</b> or
               <b>cancel</b> anytime — cancelling returns the <i>unused</i> parts only. This
               doesn't post to stock yet — see Products In below.</li>
-          <li><b>QA/QC</b>: inspectors record pass / fail per unit, with remarks on
-              failures. You can require one or two QC stages. <b>Production → QA / QC</b> is
-              QA/QC's home — <b>Inspection Queue</b> lists every unit waiting across all job
+          <li><b>QC/QA</b>: inspectors record pass / fail per unit, with remarks on
+              failures. You can require one or two QC stages. <b>Production → QC / QA</b> is
+              QC/QA's home — <b>Inspection Queue</b> lists every unit waiting across all job
               orders, <b>Findings &amp; Reports</b> is the full pass/fail history (filterable,
               exportable), and <b>Manage Checklists</b> is where the named checklists
               themselves get built.</li>
@@ -191,14 +191,14 @@
         <code>BATCH-#####</code> number.</p>
         <ul>
           <li>A job order with <b>no inspection stages</b> records one batch per
-              production-progress entry automatically. A job order <b>with QA/QC</b> only
+              production-progress entry automatically. A job order <b>with QC/QA</b> only
               makes a batch when you type a <b>batch label</b> on the progress form — its
               units are then tagged with it.</li>
           <li>Open a batch to <b>relabel</b> it, change its status, or record a
-              <b>batch-level QA/QC sign-off</b> (checklist + pass/fail), and to
+              <b>batch-level QC/QA sign-off</b> (checklist + pass/fail), and to
               <b>print QR labels</b> for it.</li>
           <li>Scanning a unit or batch QR opens its <b>Production record</b> — a printable
-              page with the build details, every QA/QC sign-off, repairs, and the stock
+              page with the build details, every QC/QA sign-off, repairs, and the stock
               movements it drove. Also reachable from the units table in Finished
               Products.</li>
         </ul>`,

@@ -5,7 +5,7 @@
  *  See src/routes/job-orders.routes.ts GET /:id/receivable, POST /:id/products-in,
  *  GET /production-receipts[/:id], hasReceivable(). */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, addSerializedUnits, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
@@ -41,7 +41,7 @@ const extraLocation = async (name: string) =>
 describe('serialized (QC-gated) job orders', () => {
   it('a unit is not receivable until it passes final QC, then is, then is received', async () => {
     const { mo, product } = await releasedMO('PR1', 1, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 1 });
+    await addSerializedUnits(ctx.api, token, mo, 1, 'PR1');
     const units = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number }>;
 
     let rec = (await ctx.api.get(`/api/job-orders/${mo}/receivable`).set(H())).body;
@@ -72,7 +72,7 @@ describe('serialized (QC-gated) job orders', () => {
 
   it('rejects receiving a unit that has not passed (still pending)', async () => {
     const { mo } = await releasedMO('PR2', 1, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 1 });
+    await addSerializedUnits(ctx.api, token, mo, 1, 'PR2');
     const units = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number }>;
     const r = await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H())
       .send({ location_id: 1, unit_ids: [units[0]!.id] });
@@ -81,7 +81,7 @@ describe('serialized (QC-gated) job orders', () => {
 
   it('choosing a different location than the job order default is how a warehouse transfer happens', async () => {
     const { mo, product } = await releasedMO('PR3', 1, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 1 });
+    await addSerializedUnits(ctx.api, token, mo, 1, 'PR3');
     const units = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number }>;
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: [units[0]!.id], result: 'pass' });
@@ -97,7 +97,7 @@ describe('serialized (QC-gated) job orders', () => {
 
   it('a unit only becomes sellable/reservable once received, not merely passed', async () => {
     const { mo, product } = await releasedMO('PR4', 1, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 1 });
+    await addSerializedUnits(ctx.api, token, mo, 1, 'PR4');
     const units = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number }>;
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: [units[0]!.id], result: 'pass' });
@@ -222,7 +222,7 @@ describe('GL: the "produce" entry posts at receiving, not before', () => {
 describe('receipt history', () => {
   it('lists past receipts and reads one back with its lines', async () => {
     const { mo, product } = await releasedMO('PR7', 2, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2 });
+    await addSerializedUnits(ctx.api, token, mo, 2, 'PR7');
     const units = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number }>;
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: units.map((u) => u.id), result: 'pass', identifier: 'PR7-SN' });
@@ -246,7 +246,7 @@ describe('receipt history', () => {
 describe('permissions', () => {
   it('needs inventory.adjust to post a receipt, inventory.view to read', async () => {
     const { mo } = await releasedMO('PR8', 1, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 1 });
+    await addSerializedUnits(ctx.api, token, mo, 1, 'PR8');
     const units = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number }>;
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: [units[0]!.id], result: 'pass' });

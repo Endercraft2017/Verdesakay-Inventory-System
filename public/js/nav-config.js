@@ -126,7 +126,7 @@ const NAV = [
         ],
       },
       {
-        id: 'qc', label: 'QA / QC',
+        id: 'qc', label: 'QC / QA',
         tree: [
           { label: 'Inspection Queue', icon: 'check', route: 'production-qc', filter: { tab: 'queue' } },
           { label: 'Findings & Reports', icon: 'sheet', route: 'production-qc', filter: { tab: 'findings' } },
@@ -266,10 +266,9 @@ const NAV = [
     id: 'messages', label: 'Messages', icon: 'messages',
     subtabs: [
       {
-        id: 'mailbox', label: 'Mailbox',
+        id: 'chat', label: 'Messages',
         tree: [
-          { label: 'Inbox', icon: 'inbox', route: 'messages', filter: { box: 'inbox' } },
-          { label: 'Sent', icon: 'send', route: 'messages', filter: { box: 'sent' } },
+          { label: 'Messages', icon: 'messages', route: 'messages' },
         ],
       },
     ],

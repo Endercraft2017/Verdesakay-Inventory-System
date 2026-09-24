@@ -14,6 +14,7 @@ import { init, cleanupSessions } from './src/shared/db';
 import { createApp } from './src/app';
 import { sendDueTaskReminders } from './src/shared/push';
 import { cleanupPlatformSessions } from './src/platform/platform-users';
+import { attachWebSocket } from './src/shared/ws';
 
 init();
 const housekeeping = () => { cleanupSessions(); cleanupPlatformSessions(); };
@@ -91,7 +92,8 @@ function banner(scheme: string): void {
 const creds = loadOrCreateCert();
 
 if (creds) {
-  https.createServer(creds, app).listen(PORT, '0.0.0.0', () => banner('https'));
+  const httpsServer = https.createServer(creds, app).listen(PORT, '0.0.0.0', () => banner('https'));
+  attachWebSocket(httpsServer);
 
   // Redirect any plain-HTTP request to the HTTPS origin on the canonical port.
   http
@@ -102,5 +104,6 @@ if (creds) {
     })
     .listen(HTTP_PORT, '0.0.0.0');
 } else {
-  http.createServer(app).listen(PORT, '0.0.0.0', () => banner('http'));
+  const httpServer = http.createServer(app).listen(PORT, '0.0.0.0', () => banner('http'));
+  attachWebSocket(httpServer);
 }

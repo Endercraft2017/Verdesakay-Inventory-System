@@ -5,7 +5,19 @@
 
 export type Role =
   | 'admin' | 'admin_staff' | 'accounting' | 'warehouse'
-  | 'releasing' | 'csr' | 'hr' | 'marketing';
+  | 'releasing' | 'csr' | 'hr' | 'marketing'
+  // Narrow, single-task shop-floor roles — each holds only the one production
+  // permission its person needs (see permissions.ts ROLE_DEFAULTS), on top of what
+  // 'warehouse' already covers for general operations. Introduced so a parts-request
+  // clerk, a line lead, a QC inspector, a QA inspector and a Products In clerk can each
+  // get an account scoped to exactly their own task instead of sharing inventory.adjust.
+  // QC and QA are deliberately separate roles/people, matching the pipeline's own
+  // first-pass-QC-then-final-pass-QA distinction (docs/modules/pipelines.md).
+  | 'parts_clerk' | 'production_lead' | 'qc_inspector' | 'qa_inspector' | 'receiving_clerk'
+  // Same narrowing, orders module: a mobile-only account that just scans/enters goods out
+  // against an approved sale order, without the broad inventory.adjust that also lets it
+  // adjust arbitrary stock.
+  | 'releasing_clerk';
 
 export type Permission =
   | 'inventory.view' | 'inventory.create' | 'inventory.edit' | 'inventory.delete'
@@ -22,7 +34,19 @@ export type Permission =
   | 'mail.send'
   | 'announce'
   | 'qc.configure'
-  | 'delivery.run' | 'delivery.manage';
+  | 'delivery.run' | 'delivery.manage'
+  // Narrow production-pipeline actions, each independently grantable alongside (or
+  // instead of) the broad inventory.adjust — see job-orders.routes.ts / production.routes.ts
+  // requireAnyPermission(['inventory.adjust', 'production.xxx']) call sites.
+  | 'production.repairs'    // warehouse: accept/reject a rework parts request
+  | 'production.record'     // line lead: record units/batches off the line
+  | 'production.inspect_qc' // QC inspector: pass/fail a unit's first pass
+  | 'production.inspect_qa' // QA inspector: pass/fail a unit's final pass
+  | 'production.receive'    // Products In: receive passed output into stock
+  // Same narrowing, orders module (orders.routes.ts requireAnyPermission(['inventory.adjust',
+  // 'orders.release'])) — a releasing_clerk mobile account scoped to just scanning/entering
+  // goods out against an approved sale order.
+  | 'orders.release';
 
 /** Which section a Form Builder form belongs to — drives per-section access control
     (see `forms.manage.*` permissions) and where it's organized in the nav/Data Forms.
@@ -326,9 +350,9 @@ export interface QcChecklistItem {
   required: boolean;
 }
 
-/** A named, reusable QA/QC checklist, belonging to one stage as a whole (stage: 1 = QA /
-    first pass, 2 = QC / final pass). Finished products point at one per stage via
-    `inventory_items.qc_checklist_qa_id` / `qc_checklist_qc_id`; the `is_default` row for
+/** A named, reusable QC/QA checklist, belonging to one stage as a whole (stage: 1 = QC /
+    first pass, 2 = QA / final pass). Finished products point at one per stage via
+    `inventory_items.qc_checklist_qc_id` / `qc_checklist_qa_id`; the `is_default` row for
     that stage covers products with none. */
 export interface QcChecklist {
   id: number;
@@ -1191,6 +1215,38 @@ export interface EmployeeDocument {
   uploaded_by: number | null;
   created_at: string;
   uploaded_by_name?: string | null;
+}
+
+/** One asset (laptop, tool, uniform, ID, …) on an AssetIssuance form — independently
+    returnable, since items issued together don't necessarily come back together. Standalone
+    register: not linked to Inventory stock. */
+export interface AssetIssuanceItem {
+  id: number;
+  issuance_id: number;
+  asset_name: string;
+  category: string | null;
+  asset_tag: string | null; // serial / property number, if any
+  quantity: number;
+  condition_on_issue: string | null;
+  status: 'issued' | 'returned' | 'lost' | 'damaged';
+  returned_date: string | null;
+  condition_on_return: string | null;
+  return_notes: string | null;
+  sort: number;
+}
+
+/** A printable "Asset Issuance Form" — one or more assets (AssetIssuanceItem rows) handed to
+    one employee on one date. See EmployeeDocument for the analogous 201-file pattern. */
+export interface AssetIssuance {
+  id: number;
+  number: string; // AI-00001
+  employee_id: number;
+  issued_date: string;
+  issued_by: number | null;
+  notes: string | null;
+  created_at: string;
+  issued_by_name?: string | null;
+  items?: AssetIssuanceItem[];
 }
 
 export interface AttendancePeriod {

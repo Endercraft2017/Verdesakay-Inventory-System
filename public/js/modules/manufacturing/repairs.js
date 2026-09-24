@@ -2,7 +2,7 @@
    rework unit needs. Accepting a request issues the replacement from storage and (for a
    'replace') books the removed part into its damage record. Nothing moves until accepted. */
 App.register('repairs', async (view, filter) => {
-  const canWrite = App.hasPermission('inventory.adjust');
+  const canWrite = App.hasPermission('inventory.adjust') || App.hasPermission('production.repairs');
   const STATUS = ['requested', 'accepted', 'rejected', 'cancelled', ''];
   const state = { status: (filter && filter.status) || 'requested' };
   let rows = [];

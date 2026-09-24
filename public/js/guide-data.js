@@ -25,8 +25,8 @@ const GUIDE_PIPELINES = [
     id: 'production',
     title: 'Production',
     icon: 'printer',
-    tagline: 'Bill of materials → job order → QA/QC → Products In → warehouse-ready stock',
-    audience: 'Production planners, shop floor, QA/QC, warehouse',
+    tagline: 'Bill of materials → job order → QC/QA → Products In → warehouse-ready stock',
+    audience: 'Production planners, shop floor, QC/QA, warehouse',
     intro: `How a product goes from a parts list to finished, labelled, traceable stock —
       in the order it actually happens, screen by screen. Each step names the screen it
       lives on and the permission it needs.`,
@@ -38,7 +38,7 @@ const GUIDE_PIPELINES = [
         spot: '.tree-leaf[data-route="production-overview"]',
         body: `The home screen for this whole tab, not a working screen of its own — a
           summary of where things stand: overdue job orders, units stuck in rework, what's
-          waiting on someone (QA/QC queue, Products In, repair requests to accept), and a
+          waiting on someone (QC/QA queue, Products In, repair requests to accept), and a
           short production report. Every row links straight to the screen that handles it.`,
       },
       {
@@ -56,12 +56,12 @@ const GUIDE_PIPELINES = [
           consumes nothing until you add components.`,
       },
       {
-        title: 'Attach a QA/QC checklist (optional)',
+        title: 'Attach a QC/QA checklist (optional)',
         role: 'QA · qc.configure',
-        to: { route: 'production-qc', label: 'Production → QA / QC → Manage Checklists' },
+        to: { route: 'production-qc', label: 'Production → QC / QA → Manage Checklists' },
         body: `Also setup: build named, reusable checklists (each check scoped to <i>every</i>
           inspection, the <i>QA</i> pass, or the <i>QC</i> pass) from <b>Manage Checklists</b> —
-          reachable from either QA/QC page — then attach one to the product on its BOM editor
+          reachable from either QC/QA page — then attach one to the product on its BOM editor
           in Product Setup. Required checks must be ticked before a unit or batch can pass.`,
       },
       {
@@ -72,7 +72,7 @@ const GUIDE_PIPELINES = [
         body: `Where the day-to-day pipeline actually starts. Choose the product and quantity.
           Set the <b>team</b>, <b>work centre</b>, <b>planned start</b>, <b>due date</b> and
           <b>priority</b> right here, and how many <b>inspection stages</b> apply (0 = straight
-          to Products In, 1 = QA/QC, 2 = QA then QC). Pick the <b>source</b> location (parts are
+          to Products In, 1 = QC/QA, 2 = QC then QA). Pick the <b>source</b> location (parts are
           pulled from) and the <b>output</b> location (a default destination — Products In can
           still send finished units elsewhere at receiving time). It starts as a <b>draft</b>.
           <b>Production → Scheduling</b> is the supporting calendar/roster view across every
@@ -96,9 +96,9 @@ const GUIDE_PIPELINES = [
           give the entry a <b>batch label</b> to group them.`,
       },
       {
-        title: 'Inspect (QA/QC)',
-        role: 'QA/QC inspector · inventory.adjust',
-        to: { route: 'production-qc', label: 'Production → QA / QC' },
+        title: 'Inspect (QC/QA)',
+        role: 'QC/QA inspector · inventory.adjust',
+        to: { route: 'production-qc', label: 'Production → QC / QA' },
         spot: '.tree-leaf[data-route="production-qc"]',
         body: `Select a unit or a batch, work the checklist, then <b>Pass</b> or <b>Fail</b>. The
           final pass queues the unit for Products In (below) — it isn't stock yet. A <b>fail</b>
@@ -108,7 +108,7 @@ const GUIDE_PIPELINES = [
       {
         title: 'Findings & reports',
         role: 'read: inventory.view',
-        to: { route: 'production-qc', filter: { tab: 'findings' }, label: 'Production → QA / QC → Findings & Reports' },
+        to: { route: 'production-qc', filter: { tab: 'findings' }, label: 'Production → QC / QA → Findings & Reports' },
         body: `Every pass/fail ever recorded, across every job order — filter by result, date, or a
           job order / product search, and export to CSV. Open a row for the full finding: the
           checklist snapshot, remarks, disposition and inspector.`,
@@ -144,7 +144,7 @@ const GUIDE_PIPELINES = [
         to: { route: 'production-batches', label: 'Production → Batches / Lots' },
         body: `A <b>batch/lot</b> groups the units off one job order under a <code>BATCH-#####</code>
           number — the traceability log, independent of whether it's been received yet. Open one
-          to relabel it, change its status, or record an optional batch-level QA/QC sign-off (a
+          to relabel it, change its status, or record an optional batch-level QC/QA sign-off (a
           quality flag, not a receipt). Scanning a unit or batch QR opens its printable
           <b>Production record</b> — the build details, every sign-off, repairs, and the stock
           movements it drove.`,
@@ -593,13 +593,13 @@ const GUIDE_PIPELINES = [
     title: 'QC repair / rework',
     icon: 'check',
     tagline: 'Quick reference — fail → disposition → parts → re-inspect',
-    audience: 'QA/QC, production, warehouse',
+    audience: 'QC/QA, production, warehouse',
     intro: `The short version of Production steps 6–7.`,
     steps: [
       {
         title: 'Fail → disposition',
         role: 'Inspector',
-        to: { route: 'production-qc', label: 'Production → QA / QC' },
+        to: { route: 'production-qc', label: 'Production → QC / QA' },
         body: `<i>scrap / dispose / recycle</i> = terminal (counts as scrapped). <b>repair</b> = the
           unit goes to rework and the job order stays open.`,
       },
@@ -620,7 +620,7 @@ const GUIDE_PIPELINES = [
       {
         title: 'Re-inspect',
         role: 'Inspector',
-        to: { route: 'production-qc', label: 'Production → QA / QC' },
+        to: { route: 'production-qc', label: 'Production → QC / QA' },
         body: `Allowed only once no request is still open. Pass → the unit resumes its stage flow;
           the final pass queues it for <b>Products In</b>, which is what actually posts it to
           stock.`,

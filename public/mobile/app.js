@@ -18,6 +18,15 @@ window.MApp = (function () {
   function hasModule(m) { return !me || !Array.isArray(me.modules) || me.modules.indexOf(m) !== -1; }
   function isEmployee() { return !!(me && me.employee); }
   function isWarehouse() { return can('inventory.mobile') && hasModule('inventory'); }
+  // Narrower than isWarehouse(): a releasing_clerk account also holds inventory.mobile (to
+  // reach the app + the Work tab's "Release SOs" row) but has none of the production.*
+  // permissions or inventory.adjust — the Production tab has nothing for it to do, so it
+  // stays hidden rather than opening on an empty queue (see public/mobile/modules/
+  // manufacturing/production.js's own per-row permission filtering).
+  function hasProductionAccess() {
+    return isWarehouse() && !!(me && Array.isArray(me.permissions) &&
+      me.permissions.some(function (p) { return p === 'inventory.adjust' || p.indexOf('production.') === 0; }));
+  }
   function canApprove() { return !!(me && me.can_approve); }
 
   /* ---------- routing ---------- */
@@ -127,7 +136,7 @@ window.MApp = (function () {
     });
     // the Production tab only applies to warehouse/shop-floor accounts
     var prodTab = document.getElementById('m-tab-production');
-    if (prodTab) prodTab.classList.toggle('hidden', !isWarehouse());
+    if (prodTab) prodTab.classList.toggle('hidden', !hasProductionAccess());
 
     // context line
     var role = me && me.role ? me.role.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : '';
@@ -163,6 +172,7 @@ window.MApp = (function () {
   function showLogin() {
     me = null;
     API.clearToken();
+    if (window.ChatWS) ChatWS.disconnect();
     appScreen().classList.add('hidden');
     loginScreen().classList.remove('hidden');
     var pw = document.getElementById('m-password');
@@ -209,6 +219,13 @@ window.MApp = (function () {
     if (al) al.textContent = act.label;
 
     refreshInboxBadge();
+    if (window.ChatWS) {
+      ChatWS.off('message:new', refreshInboxBadge);
+      ChatWS.off('message:deleted', refreshInboxBadge);
+      ChatWS.on('message:new', refreshInboxBadge);
+      ChatWS.on('message:deleted', refreshInboxBadge);
+      ChatWS.connect();
+    }
     if (!location.hash || location.hash === '#' || location.hash === '#/') {
       location.hash = hashFor('home', { seg: currentSeg() });
     } else {
@@ -326,7 +343,8 @@ window.MApp = (function () {
 
   return {
     route: route, go: go, back: back, nav: hashFor,
-    getMe: getMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse, canApprove: canApprove,
+    getMe: getMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse,
+    hasProductionAccess: hasProductionAccess, canApprove: canApprove,
     seg: seg, setTitle: setTitle, render: render, refreshInboxBadge: refreshInboxBadge,
     routes: function () { return Object.keys(routes); },
   };

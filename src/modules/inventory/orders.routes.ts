@@ -2,7 +2,7 @@
     totals. One router serves both types (?type=sale|job). */
 import { Router } from 'express';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
   parseBody, createOrderSchema, updateOrderSchema, orderStatusSchema,
   releaseOrderSchema, unreserveOrderSchema,
@@ -17,6 +17,12 @@ const router = Router();
 router.use(requireAuth);
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+// Narrow releasing_clerk role (src/shared/permissions.ts) — a mobile-only account scoped
+// to just scanning/entering goods out against an approved sale order, without the broad
+// inventory.adjust the 'releasing'/'warehouse'/'admin'/'admin_staff' roles use for this
+// same action (those roles already satisfy this via inventory.adjust, unaffected).
+const releaseGate = requireAnyPermission(['inventory.adjust', 'orders.release']);
 
 /** Best-effort background push after a save when the tenant has QuickBooks auto-push on.
     Never blocks the response; failures are logged only. */
@@ -367,7 +373,7 @@ export function releaseTeardown(orderId: number): void {
 // POST /api/orders/:id/release — a warehouse releaser scans / enters goods out against an
 // approved sale order. Records only — reserves the serialized units + bumps each bulk
 // line's released_qty; stock is drawn down later when the order is confirmed/completed.
-router.post('/:id/release', requirePermission('inventory.adjust'), (req, res) => {
+router.post('/:id/release', releaseGate, (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -472,7 +478,7 @@ router.post('/:id/release', requirePermission('inventory.adjust'), (req, res) =>
 });
 
 // POST /api/orders/:id/release/unreserve — undo a release (units back to stock, bulk down)
-router.post('/:id/release/unreserve', requirePermission('inventory.adjust'), (req, res) => {
+router.post('/:id/release/unreserve', releaseGate, (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }

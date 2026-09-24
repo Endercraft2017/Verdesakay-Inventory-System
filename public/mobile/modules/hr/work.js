@@ -1,12 +1,17 @@
 /* Work tab — the by-urgency work queue for warehouse users; a short task list for
    other employees. `mWorkQueue()` is reused by the Warehouse home hub. */
 (function () {
+  // `perm`: the narrow permission that also unlocks this row for a single-task account
+  // (production_lead / qc_inspector / parts_clerk / receiving_clerk / releasing_clerk —
+  // see src/shared/permissions.ts) that doesn't hold the broad inventory.adjust every other
+  // row here still implicitly requires. A row with no `perm` stays inventory.adjust-only —
+  // there's no finer permission for general receive/pick/cycle-count/ship-units duty yet.
   var ROWS = [
     { icon: '📦', label: 'Receive PR', sub: 'purchase requests', route: 'receive', color: 'var(--m-high)',
       count: function () { return openCount('/orders?type=purchase'); } },
     { icon: '🚚', label: 'Pick Order', sub: 'sales orders', route: 'pick', color: 'var(--m-low)',
       count: function () { return openCount('/orders?type=sale'); } },
-    { icon: '🏷️', label: 'Release SOs', sub: 'scan units out to a sale order', route: 'so', color: 'var(--m-ok)',
+    { icon: '🏷️', label: 'Release SOs', sub: 'scan units out to a sale order', route: 'so', color: 'var(--m-ok)', perm: 'orders.release',
       count: function () {
         return API.get('/orders?type=sale').then(function (o) {
           return (o || []).filter(function (x) { var s = String(x.status).toLowerCase(); return s === 'approved' || s === 'released'; }).length;
@@ -14,6 +19,14 @@
       } },
     { icon: '🔢', label: 'Cycle Count', sub: 'spot check a location', route: 'cycle-count', color: 'var(--m-med)', count: null },
     { icon: '🚀', label: 'Ship Units', sub: 'allocate QC-passed units', route: 'allocate', color: 'var(--m-ok)', count: null },
+    { icon: '🔩', label: 'Accept Parts Request', sub: 'issue parts a rework unit needs', route: 'repairs', color: '#d97706', perm: 'production.repairs',
+      count: function () { return API.get('/production/repairs?status=requested').then(function (r) { return (r || []).length; }).catch(function () { return 0; }); } },
+    { icon: '📦', label: 'Products In', sub: 'receive passed units/batches', route: 'receiving', color: '#0ea5e9', perm: 'production.receive',
+      count: function () {
+        return API.get('/job-orders').then(function (j) {
+          return (j || []).reduce(function (a, x) { return a + (x.units_passed || 0) + (x.batches_receivable || 0); }, 0);
+        }).catch(function () { return 0; });
+      } },
   ];
 
   function openCount(path) {
@@ -26,6 +39,10 @@
 
   var DELIVERY_ROW = {
     icon: '🛻', label: 'Deliveries', sub: 'field drops + proof of delivery', route: 'deliveries', color: '#0891b2',
+    // Already conditionally added below only when canDeliver() is true — alwaysShow skips
+    // the inventory.adjust/perm filter so a delivery-only account (no inventory.adjust)
+    // still sees the row it was just given.
+    alwaysShow: true,
     count: function () {
       return API.get('/deliveries?mine=1').then(function (rows) {
         return (rows || []).filter(function (r) { return r.status === 'pending' || r.status === 'out_for_delivery'; }).length;
@@ -35,7 +52,8 @@
 
   function mWorkQueue() {
     var wrap = mEl('<div class="m-wq"></div>');
-    var rows = canDeliver() ? [DELIVERY_ROW].concat(ROWS) : ROWS;
+    var rows = canDeliver() ? [DELIVERY_ROW].concat(ROWS) : ROWS.slice();
+    rows = rows.filter(function (r) { return r.alwaysShow || MApp.can('inventory.adjust') || (r.perm && MApp.can(r.perm)); });
     rows.forEach(function (r) {
       var row = mEl(
         '<div class="m-wq-row" style="--wq:' + r.color + '">' +

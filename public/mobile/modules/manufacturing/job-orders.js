@@ -2,6 +2,7 @@
    production progress, pause / resume / close, release a draft. */
 (function () {
   var OPEN = ['draft', 'released', 'in_progress', 'paused'];
+  var SCAN_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></svg>';
 
   function board(view) {
     MApp.setTitle('Job orders');
@@ -44,6 +45,16 @@
     MApp.setTitle(jo.number);
     view.innerHTML = '';
     var remaining = jo.qty_ordered - jo.qty_done - jo.qty_scrapped;
+    // canAdjust: broad job-order-lifecycle actions (release/pause/close/resume) stay
+    // restricted to it. canRecord/canInspect: a production_lead/qc_inspector/qa_inspector
+    // account (production.record/production.inspect_qc/production.inspect_qa, no
+    // inventory.adjust) also gets just its own section — same narrowing as the backend's
+    // recordGate/inspectDoorGate. canInspect is only this door check (does the callout
+    // render at all) — which specific pass a qc_inspector/qa_inspector account may actually
+    // perform is enforced per-unit once inside the QC/QA screen (mobile/modules/manufacturing/qc.js).
+    var canAdjust = MApp.can('inventory.adjust');
+    var canRecord = canAdjust || MApp.can('production.record');
+    var canInspect = canAdjust || MApp.can('production.inspect_qc') || MApp.can('production.inspect_qa');
 
     view.appendChild(mEl(
       '<div class="m-jo-head">' +
@@ -71,12 +82,29 @@
       view.appendChild(cu);
     }
 
-    var acts = mEl('<div class="m-actions"></div>');
-
-    if (jo.status === 'draft') {
-      addBtn(acts, 'Release to production', function () { act(view, jo.id, 'release'); });
+    // ---- The one thing most likely to need attention right now: units already
+    // recorded and waiting on QC/QA. Shown before "Record production" — inspecting a
+    // backlog is usually more urgent than adding to it. ----
+    if (canInspect && jo.qc_stages > 0 && jo.units_summary && jo.units_summary.pending > 0) {
+      var inspectCard = mEl(
+        '<button type="button" class="m-jo-callout">' +
+        '<span>🔍 ' + jo.units_summary.pending + ' unit(s) waiting for inspection</span>' +
+        '<span class="m-jo-callout-go">Inspect →</span>' +
+        '</button>'
+      );
+      inspectCard.onclick = function () { MApp.go('qc', { id: jo.id }); };
+      view.appendChild(inspectCard);
     }
-    if (jo.status === 'released' || jo.status === 'in_progress') {
+
+    if (canAdjust && jo.status === 'draft') {
+      var acts0 = mEl('<div class="m-actions"></div>');
+      addBtn(acts0, 'Release to production', function () { act(view, jo.id, 'release'); });
+      view.appendChild(acts0);
+    }
+    if (canRecord && (jo.status === 'released' || jo.status === 'in_progress') && jo.qc_stages > 0) {
+      recordUnitsBox(view, jo, remaining);
+    }
+    if (canRecord && (jo.status === 'released' || jo.status === 'in_progress') && jo.qc_stages <= 0) {
       var prog = mEl(
         '<div class="m-jo-progress">' +
         '<h3 class="m-h3">Record production (' + remaining + ' left)</h3>' +
@@ -84,29 +112,180 @@
         '<label class="m-field"><span class="m-label">Finished</span><input type="number" inputmode="numeric" class="m-input" data-done value="0" min="0" /></label>' +
         '<label class="m-field"><span class="m-label">Scrapped</span><input type="number" inputmode="numeric" class="m-input" data-scrap value="0" min="0" /></label>' +
         '</div>' +
-        '<label class="m-field"><span class="m-label">Batch / lot ' + (jo.qc_stages > 0 ? '(optional)' : '(auto)') + '</span>' +
-        '<input class="m-input" data-batch placeholder="' + (jo.qc_stages > 0 ? 'label to group these units' : 'auto BATCH-#####') + '" /></label>' +
+        '<label class="m-field"><span class="m-label">Batch / lot (auto)</span>' +
+        '<input class="m-input" data-batch placeholder="auto BATCH-#####" /></label>' +
+        '<div class="m-actions"><button type="button" class="m-btn" data-save>Save progress</button></div>' +
         '</div>'
       );
-      view.appendChild(prog);
-      addBtn(acts, 'Save progress', function () {
+      prog.querySelector('[data-save]').onclick = function () {
         var d = parseInt(prog.querySelector('[data-done]').value, 10) || 0;
         var s = parseInt(prog.querySelector('[data-scrap]').value, 10) || 0;
         if (d + s < 1) { mToast('Enter finished and/or scrapped', 'err'); return; }
         var bl = (prog.querySelector('[data-batch]').value || '').trim();
         act(view, jo.id, 'progress', { done_delta: d, scrapped_delta: s, batch_label: bl || null });
+      };
+      view.appendChild(prog);
+    }
+    if (canAdjust && jo.status === 'paused') {
+      var actsR = mEl('<div class="m-actions"></div>');
+      addBtn(actsR, 'Resume', function () { act(view, jo.id, 'resume'); });
+      view.appendChild(actsR);
+    }
+
+    // ---- Rare/admin actions, tucked behind a toggle so they don't compete with the
+    // actual production work above. Pause/Close stay inventory.adjust-only — not part
+    // of what a narrow production_lead/qc_inspector account does. ----
+    if (canAdjust && (jo.status === 'released' || jo.status === 'in_progress')) {
+      view.appendChild(moreActions(view, jo));
+    }
+
+    var back = mEl('<div class="m-actions"><button type="button" class="m-btn m-btn-secondary">Back to board</button></div>');
+    back.querySelector('button').onclick = function () { board(view); };
+    view.appendChild(back);
+  }
+
+  // "More actions" — Pause / Close out early, collapsed by default. These are rare,
+  // job-management actions a floor worker doesn't need staring at them alongside the
+  // actual production work every time they open a job order.
+  function moreActions(view, jo) {
+    var wrap = mEl('<div class="m-jo-more"></div>');
+    var toggle = mEl('<button type="button" class="m-jo-more-toggle">⋯ More actions</button>');
+    var body = mEl('<div class="m-actions" hidden></div>');
+    addBtn(body, 'Pause', function () { act(view, jo.id, 'pause'); }, true);
+    addBtn(body, 'Close out early', function () { act(view, jo.id, 'close'); }, true);
+    toggle.onclick = function () {
+      body.hidden = !body.hidden;
+      toggle.textContent = body.hidden ? '⋯ More actions' : '⋯ Hide';
+    };
+    wrap.appendChild(toggle);
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  // Serialized (QC-gated) job orders: scrap stays a bulk count via /progress, but each
+  // finished unit needs its own identifier + a required photo, so it's added one at a
+  // time through POST /:id/units + POST /attachments (kind 'qc_unit') — the same
+  // attachment kind QC/QA's pass/fail flow already uses for defect photos. `rows` holds
+  // { identifier, file } per unit (index-aligned with the on-screen rows); a File is
+  // kept in memory from mPhoto.pickFile() rather than a native <input type=file>, so
+  // redrawing a row on count-change doesn't lose an already-picked photo.
+  function recordUnitsBox(view, jo, remaining) {
+    var rows = [{ identifier: '', file: null }];
+
+    var box = mEl(
+      '<div class="m-jo-progress">' +
+      '<h3 class="m-h3">Record production (' + remaining + ' left)</h3>' +
+      '<div class="m-hint" style="margin:0 0 10px">Each finished unit needs its own identifier and a photo.</div>' +
+      '<div class="m-two" style="align-items:center;margin-bottom:10px">' +
+      '<button type="button" class="m-btn m-btn-secondary" data-dec>−</button>' +
+      '<input type="number" inputmode="numeric" class="m-input" data-count value="1" min="1" style="text-align:center" />' +
+      '<button type="button" class="m-btn m-btn-secondary" data-inc>+</button>' +
+      '</div>' +
+      '<div data-rows></div>' +
+      '<label class="m-field"><span class="m-label">Batch / lot (optional)</span><input class="m-input" data-ubatch placeholder="label to group these units" /></label>' +
+      '<div class="m-actions"><button type="button" class="m-btn" data-submit>Record unit(s)</button></div>' +
+      '<div class="m-hint" data-uprogress></div>' +
+      '<button type="button" class="m-jo-more-toggle" data-scrap-toggle style="margin-top:14px">⋯ Report scrap instead</button>' +
+      '<div hidden data-scrap-body style="margin-top:8px">' +
+      '<label class="m-field"><span class="m-label">Scrapped now</span><input type="number" inputmode="numeric" class="m-input" data-scrap value="0" min="0" /></label>' +
+      '<div class="m-actions"><button type="button" class="m-btn m-btn-secondary" data-scrap-btn>Record scrap</button></div>' +
+      '</div>' +
+      '</div>'
+    );
+    view.appendChild(box);
+
+    var scrapToggle = box.querySelector('[data-scrap-toggle]');
+    var scrapBody = box.querySelector('[data-scrap-body]');
+    scrapToggle.onclick = function () {
+      scrapBody.hidden = !scrapBody.hidden;
+      scrapToggle.textContent = scrapBody.hidden ? '⋯ Report scrap instead' : '⋯ Hide';
+    };
+
+    var rowsEl = box.querySelector('[data-rows]');
+    var countEl = box.querySelector('[data-count]');
+
+    function renderRows() {
+      rowsEl.innerHTML = '';
+      rows.forEach(function (r, i) {
+        var row = mEl(
+          '<div class="m-unit-row" style="margin-bottom:8px;padding:8px;border:1px solid var(--m-border,#333);border-radius:8px">' +
+          '<label class="m-field"><span class="m-label">Unit ' + (i + 1) + ' identifier *</span>' +
+          '<span class="m-picker-row"><input class="m-input" data-ident value="' + mEsc(r.identifier) + '" placeholder="motor / serial no." />' +
+          '<button type="button" class="m-scan-btn" data-scan aria-label="Scan">' + SCAN_SVG + '</button></span></label>' +
+          '<button type="button" class="m-btn m-btn-secondary" data-photo>' + (r.file ? '✓ Photo attached (retake)' : '📷 Take photo *') + '</button>' +
+          '</div>'
+        );
+        row.querySelector('[data-ident]').oninput = function (e) { rows[i].identifier = e.target.value; };
+        row.querySelector('[data-scan]').onclick = function () {
+          mScanner.open({ title: 'Scan the part\'s serial/motor tag', onResult: function (c) {
+            rows[i].identifier = (c || '').trim();
+            renderRows();
+          } });
+        };
+        row.querySelector('[data-photo]').onclick = function () {
+          mPhoto.pickFile().then(function (file) { rows[i].file = file; renderRows(); }).catch(function () {});
+        };
+        rowsEl.appendChild(row);
       });
-      addBtn(acts, 'Pause', function () { act(view, jo.id, 'pause'); }, true);
-      addBtn(acts, 'Close out early', function () { act(view, jo.id, 'close'); }, true);
     }
-    if (jo.status === 'paused') {
-      addBtn(acts, 'Resume', function () { act(view, jo.id, 'resume'); });
+    function setCount(n) {
+      n = Math.max(1, n);
+      while (rows.length < n) rows.push({ identifier: '', file: null });
+      while (rows.length > n) rows.pop();
+      countEl.value = rows.length;
+      renderRows();
     }
-    if (jo.qc_stages > 0 && jo.units_summary && jo.units_summary.pending > 0) {
-      addBtn(acts, 'Inspect ' + jo.units_summary.pending + ' unit(s)', function () { MApp.go('qc', { id: jo.id }); });
-    }
-    addBtn(acts, 'Back to board', function () { board(view); }, true);
-    view.appendChild(acts);
+    box.querySelector('[data-dec]').onclick = function () { setCount(rows.length - 1); };
+    box.querySelector('[data-inc]').onclick = function () { setCount(rows.length + 1); };
+    countEl.oninput = function () { setCount(parseInt(countEl.value, 10) || 1); };
+    renderRows();
+
+    box.querySelector('[data-scrap-btn]').onclick = function () {
+      var s = parseInt(box.querySelector('[data-scrap]').value, 10) || 0;
+      if (s <= 0) { mToast('Enter a scrapped quantity', 'err'); return; }
+      act(view, jo.id, 'progress', { scrapped_delta: s });
+    };
+
+    var progressEl = box.querySelector('[data-uprogress]');
+    box.querySelector('[data-submit]').onclick = function () {
+      for (var i = 0; i < rows.length; i++) {
+        if (!rows[i].identifier.trim()) { mToast('Every unit needs an identifier', 'err'); return; }
+        if (!rows[i].file) { mToast('Every unit needs a photo', 'err'); return; }
+      }
+      var batch_label = (box.querySelector('[data-ubatch]').value || '').trim() || null;
+      var submitBtn = box.querySelector('[data-submit]');
+      submitBtn.disabled = true;
+      var total = rows.length;
+      // Not offline-queueable like the rest of this app's shop-floor writes (repairs,
+      // receiving, QC pass/fail): each unit needs the server-assigned id back before its
+      // photo can attach, and the identifier + photo are both required together at
+      // creation by design (see the pipeline note above) — queuing the identifier alone
+      // and hoping the photo follows later would defeat that. A dropped connection here
+      // just fails the row and leaves it for a retry once back online.
+      // Completed rows are dropped from `rows` below (once, after the chain settles) so a
+      // retry after a partial failure only re-submits what's actually left, instead of
+      // re-creating the units that already went through.
+      var chain = Promise.resolve();
+      var succeeded = [];
+      rows.forEach(function (r) {
+        chain = chain.then(function () {
+          progressEl.textContent = 'Recording unit ' + (succeeded.length + 1) + ' of ' + total + '…';
+          return API.post('/job-orders/' + jo.id + '/units', { identifier: r.identifier.trim(), batch_label })
+            .then(function (res) {
+              return mPhoto.attachBlob('qc_unit', res.id, r.file, r.file.name || 'unit.jpg').then(function () { succeeded.push(r); });
+            });
+        });
+      });
+      chain.then(function () {
+        mToast('Recorded ' + succeeded.length + ' unit' + (succeeded.length === 1 ? '' : 's'));
+        open1(view, jo.id);
+      }).catch(function (e) {
+        rows = rows.filter(function (r) { return succeeded.indexOf(r) === -1; });
+        setCount(rows.length || 1);
+        mToast('Recorded ' + succeeded.length + ' of ' + total + ' — ' + (e.message || 'connection lost — retry once back online'), 'err');
+        submitBtn.disabled = false;
+      });
+    };
   }
 
   function addBtn(host, label, fn, secondary) {

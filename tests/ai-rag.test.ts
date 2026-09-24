@@ -1,7 +1,7 @@
 /** RAG knowledge search (FTS5): indexing, BM25 retrieval, per-chunk ACL
     filtering, the search_knowledge tool, and the admin reindex endpoint. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, addSerializedUnits, type TestContext } from './helpers';
 import { ALL_PERMISSIONS } from '../src/shared/permissions';
 import type { AuthUser, Permission } from '../src/shared/types';
 
@@ -32,7 +32,7 @@ beforeAll(async () => {
   await ctx.api.put(`/api/finished-products/${pid}`).set(authHdr()).send({ components: [{ component_item_id: cid, quantity: 1 }] });
   const mo = (await ctx.api.post('/api/job-orders').set(authHdr()).send({ product_item_id: pid, qty_ordered: 1, qc_stages: 1 })).body.id;
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(authHdr());
-  await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 1 });
+  await addSerializedUnits(ctx.api, token, mo, 1, 'RAG');
   const unit = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(authHdr())).body[0].id;
   await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
     .send({ unit_ids: [unit], result: 'fail', disposition: 'scrap', remarks: 'Recurring gasket seal leak on the left intake manifold.' });

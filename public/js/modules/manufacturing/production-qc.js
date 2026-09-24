@@ -1,17 +1,357 @@
-/* Production → QA / QC: everything QA/QC-related lives here.
+/* Production → QC / QA: everything QC/QA-related lives here.
    - Inspection queue: every unit waiting on a pass, or back from repair, across every
      open job order (filter.tab omitted or 'queue'). Row click opens a lightweight,
-     QA/QC-only inspect modal in place (inspectModal below) — deliberately not the full
+     QC/QA-only inspect modal in place (inspectModal below) — deliberately not the full
      Job Orders detail modal (job-orders.js trackModal), which carries components,
      production progress, batches and other job-management chrome this screen doesn't need.
    - Findings & reports: the full pass/fail history across every job order, filterable
      and exportable (filter.tab = 'findings'), backed by GET /qc/records.
    - Manage Checklists (qc.configure): the shared named-checklist library
      (public/js/lib/qc-checklists.js) — also reachable from Finished Products, where a
-     checklist gets attached to a product. */
+     checklist gets attached to a product.
+   inspectModal is hoisted to module scope (not nested in App.register) and exposed as
+   window.ProductionQC.inspect so job-orders.js's trackModal can open the exact same
+   inspect UI over the job order detail instead of keeping its own duplicate. */
+
+// Simple, QC/QA-only inspect dialog for one job order's queue — opened in place (no
+// navigating away to the full Job Orders detail, which carries components, production
+// progress, batches and other job-management chrome this screen doesn't need).
+// Master-detail layout: the unit list on the left stays a plain list (no inline
+// checklist/pass/fail), the checklist form always lives in the side panel on the right —
+// clicking a row loads that one unit there; checking one or more boxes switches the same
+// panel to a bulk pass/fail scoped to the checked units.
+async function inspectModal(jobOrderId, onDone) {
+  const canConfigQc = App.hasPermission('qc.configure');
+  const canAdjust = App.hasPermission('inventory.adjust');
+  const hasQc = App.hasPermission('production.inspect_qc');
+  const hasQa = App.hasPermission('production.inspect_qa');
+  const canInspect = canAdjust || hasQc || hasQa;
+
+  let jo = await API.get('/job-orders/' + jobOrderId);
+  let units = [];
+  let qcLog = [];
+  let repairs = [];
+  let activeUnitId = null;
+  const checkedIds = new Set();
+  // The checklist library + this product's own QC/QA links (raw ids, not the resolved
+  // fallback-to-default object jo.qc_checklist_qc/qa carries) — only needed to run the
+  // assign-checklist pickers below, so only loaded for qc.configure users.
+  let allChecklists = [];
+  let product = null;
+
+  const m = UI.modal({ title: `Inspect — ${jo.number}`, size: 'xl', cancelText: 'Close', bodyHTML: '<div id="qi-body"></div>' });
+  const host = () => m.overlay ? m.overlay.querySelector('#qi-body') : null;
+
+  async function refresh() {
+    try { units = await API.get('/job-orders/' + jobOrderId + '/units'); } catch { units = []; }
+    try { qcLog = await API.get('/job-orders/' + jobOrderId + '/qc'); } catch { qcLog = []; }
+    try { repairs = await API.get('/production/repairs?job_order=' + jobOrderId); } catch { repairs = []; }
+    if (canConfigQc) {
+      try { allChecklists = await API.get('/qc/checklists'); } catch { allChecklists = []; }
+      try { product = jo.product_item_id ? await API.get('/finished-products/' + jo.product_item_id) : null; } catch { product = null; }
+    }
+  }
+
+  const reworkOpen = (uid) => repairs.some((r) => r.unit_id === uid && r.status === 'requested');
+  const DISPOSITIONS = ['scrap', 'dispose', 'recycle', 'repair'];
+
+  // Mirrors job-orders.routes.ts's /:id/units/inspect stage-aware check: a qc_inspector
+  // account may only pass/fail the first (QC) pass, a qa_inspector only the final (QA)
+  // one; a single-stage job order's one combined pass accepts either. Used to disable the
+  // Pass/Fail buttons up front instead of letting the account hit a 403 after filling the
+  // form — same "guide the user" reasoning as the rest of this screen.
+  function passAllowed(firstP, finalP) {
+    if (canAdjust) return true;
+    const combinedPass = (jo.qc_stages || 1) <= 1;
+    return combinedPass ? (hasQc || hasQa) : ((!firstP || hasQc) && (!finalP || hasQa));
+  }
+  function passLabelFor(firstP, finalP) {
+    if ((jo.qc_stages || 1) <= 1) return 'QC or QA';
+    return firstP ? 'QC' : 'QA';
+  }
+
+  function checklistFor(unitSubset) {
+    const totalStages = Math.max(1, jo.qc_stages || 1);
+    const firstP = unitSubset.some((u) => (u.stage || 0) + 1 === 1);
+    const finalP = unitSubset.some((u) => (u.stage || 0) + 1 >= totalStages);
+    const items = [
+      ...(firstP && jo.qc_checklist_qc ? jo.qc_checklist_qc.items.map((it) => ({ ...it, _from: 'QC' })) : []),
+      ...(finalP && jo.qc_checklist_qa ? jo.qc_checklist_qa.items.map((it) => ({ ...it, _from: 'QA' })) : []),
+    ];
+    const names = [firstP && jo.qc_checklist_qc ? jo.qc_checklist_qc.name : null,
+      finalP && jo.qc_checklist_qa ? jo.qc_checklist_qa.name : null].filter(Boolean);
+    return { items, names, firstP, finalP };
+  }
+
+  // One stage's "assign checklist" button — qc.configure only. Shows the product's
+  // current link (or "Default"); opens a right-docked, searchable drawer (UI.drawer) to
+  // pick a different one from the library loaded in refresh() — a drawer + search rather
+  // than a plain <select> so this scales once there are many checklists to choose from.
+  // Picking one PATCHes it straight through (bom.routes.ts /:id/checklist) and redraws so
+  // the freshly assigned checklist's items show up immediately.
+  function checklistButtonHTML(stage) {
+    if (!canConfigQc) return '';
+    const label = stage === 1 ? 'QC' : 'QA';
+    const currentId = product ? (stage === 1 ? product.qc_checklist_qc_id : product.qc_checklist_qa_id) : null;
+    const current = currentId ? allChecklists.find((c) => String(c.id) === String(currentId)) : null;
+    return `<button type="button" class="btn secondary small qi-assign-btn" data-stage="${stage}" title="Assign this product's ${label} checklist">
+      ${label}: ${UI.esc(current ? current.name : 'Default')} ${UI.icon('edit', 12)}
+    </button>`;
+  }
+
+  function wireChecklistButtons(container) {
+    container.querySelectorAll('.qi-assign-btn').forEach((btn) =>
+      btn.onclick = () => openChecklistDrawer(Number(btn.dataset.stage)));
+  }
+
+  function openChecklistDrawer(stage) {
+    const label = stage === 1 ? 'QC' : 'QA';
+    const currentId = product ? (stage === 1 ? product.qc_checklist_qc_id : product.qc_checklist_qa_id) : null;
+    const rows = [{ id: null, name: 'Use default', is_default: false },
+      ...allChecklists.filter((c) => Number(c.stage) === stage)];
+
+    const d = UI.drawer({
+      title: `Assign ${label} checklist`,
+      icon: 'check',
+      bodyHTML: `
+        <div class="search-box" style="margin-bottom:10px">${UI.icon('search', 16)}<input id="qcd-search" placeholder="Search checklists…" /></div>
+        <div id="qcd-list"></div>`,
+      footHTML: `<button type="button" class="btn secondary" id="qcd-new">${UI.icon('plus')} New ${label} checklist</button>`,
+    });
+    if (!d) return;
+    const listEl = d.el.querySelector('#qcd-list');
+    const searchEl = d.el.querySelector('#qcd-search');
+    const newBtn = d.el.querySelector('#qcd-new');
+    if (newBtn) newBtn.onclick = () => QCChecklists.new(stage, (newId) => assign(newId));
+
+    async function assign(id) {
+      try {
+        await API.patch('/finished-products/' + jo.product_item_id + '/checklist', { stage, checklist_id: id });
+        // refresh() reloads units/checklist-library/product but not jo itself — and the
+        // checklist items the form actually renders come from jo.qc_checklist_qc/qa
+        // (resolved server-side per job order), so that needs its own re-fetch here too.
+        jo = await API.get('/job-orders/' + jobOrderId);
+        await refresh();
+        UI.toast('Checklist assigned');
+        d.close();
+        draw();
+      } catch (e) { UI.toast(e.message, 'error'); }
+    }
+
+    function render() {
+      const q = searchEl.value.trim().toLowerCase();
+      const filtered = q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
+      listEl.innerHTML = filtered.length
+        ? filtered.map((r) => `
+          <div class="combo-option qcd-row" data-id="${r.id ?? ''}" style="display:flex;justify-content:space-between;align-items:center">
+            <span>${UI.esc(r.name)}${r.is_default ? ' <span class="badge-pill ok">default</span>' : ''}</span>
+            ${String(r.id ?? '') === String(currentId ?? '') ? UI.icon('check', 14) : ''}
+          </div>`).join('')
+        : `<div class="combo-empty">No checklists match</div>`;
+      listEl.querySelectorAll('.qcd-row').forEach((row) => row.onclick = () => assign(row.dataset.id || null));
+    }
+    searchEl.addEventListener('input', render);
+    render();
+    searchEl.focus();
+  }
+
+  function inspectFormHTML(qcCl, qcClNames, allowed, passLabel) {
+    return `
+      ${qcCl.length ? `
+        <div style="margin-top:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);padding:10px">
+          <label style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">QC/QA checklist${qcClNames.length ? ` — ${qcClNames.map(UI.esc).join(' + ')}` : ''}</label>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+            ${qcCl.map((it, i) => `
+              <label class="check"><input type="checkbox" class="qi-chk-item" data-i="${i}" data-label="${UI.esc(it.label)}" ${allowed ? '' : 'disabled'} />
+                ${UI.esc(it.label)}${it.required ? ' <span style="color:var(--danger,#dc2626)">*</span>' : ''}
+                ${qcClNames.length > 1 ? `<span class="muted" style="font-size:11px">(${it._from})</span>` : ''}</label>`).join('')}
+          </div>
+        </div>` : ''}
+      <div style="margin-top:8px">
+        <div style="margin-bottom:8px"><label>Identifier (optional, applies to passed units)</label><input id="qi-ident" ${allowed ? '' : 'disabled'} placeholder="e.g. chassis / serial no." /></div>
+        <div style="margin-bottom:8px"><label>Remarks</label><input id="qi-remarks" ${allowed ? '' : 'disabled'} placeholder="Notes / reason if failing" /></div>
+        <div><label>On fail</label>
+          <select id="qi-disp" ${allowed ? '' : 'disabled'}>${DISPOSITIONS.map((d) => `<option value="${d}">${d[0].toUpperCase() + d.slice(1)}</option>`).join('')}</select></div>
+      </div>
+      ${allowed ? `
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button type="button" class="btn" id="qi-pass">Pass</button>
+          <button type="button" class="btn secondary danger" id="qi-fail">Fail</button>
+        </div>
+        <p class="muted" style="font-size:11px;margin:6px 0 0">Fail → <b>repair</b> sends the unit to rework; it can only be re-inspected once its parts requests are settled.</p>`
+        : `<p class="muted" style="font-size:12px;margin-top:10px">This pass needs ${UI.esc(passLabel)} inspection permission — not part of your account.</p>`}`;
+  }
+
+  function wireInspectForm(el, unitIds, qcCl) {
+    const inspect = (result) => {
+      const identifier = (el.querySelector('#qi-ident').value || '').trim() || undefined;
+      const remarks = (el.querySelector('#qi-remarks').value || '').trim() || undefined;
+      const disposition = result === 'fail' ? (el.querySelector('#qi-disp') || {}).value : undefined;
+      if (result === 'fail' && !remarks) { UI.toast('Add a remark when failing units', 'error'); return; }
+
+      let checklist;
+      const boxes = [...el.querySelectorAll('.qi-chk-item')];
+      if (boxes.length) {
+        checklist = boxes.map((b) => ({ label: b.dataset.label, ok: b.checked }));
+        if (result === 'pass') {
+          const missing = boxes.filter((b, i) => qcCl[i] && qcCl[i].required && !b.checked)
+            .map((b) => b.dataset.label);
+          if (missing.length) { UI.toast('Tick the required checks first: ' + missing.join(', '), 'error'); return; }
+        }
+      }
+      API.post('/job-orders/' + jobOrderId + '/units/inspect', { unit_ids: unitIds, result, identifier, remarks, checklist, disposition })
+        .then(async (r) => {
+          jo = r.job_order; await refresh();
+          activeUnitId = null; checkedIds.clear();
+          UI.toast(result === 'pass' ? 'Unit(s) passed' : disposition === 'repair' ? 'Sent to repair' : 'Unit(s) failed');
+          draw();
+          if (onDone) onDone();
+        })
+        .catch((e) => UI.toast(e.message, 'error'));
+    };
+    const pb = el.querySelector('#qi-pass'); if (pb) pb.onclick = () => inspect('pass');
+    const fb = el.querySelector('#qi-fail'); if (fb) fb.onclick = () => inspect('fail');
+  }
+
+  function placeholderHTML() {
+    return UI.emptyState({ icon: 'check', title: 'Nothing selected', hint: 'Click a unit, or check one or more boxes, to inspect it here.' });
+  }
+
+  function sideHTML(queue) {
+    if (checkedIds.size) {
+      const selected = queue.filter((u) => checkedIds.has(u.id));
+      if (!selected.length) return placeholderHTML();
+      const { items, names, firstP, finalP } = checklistFor(selected);
+      const pickers = `${firstP ? checklistButtonHTML(1) : ''}${finalP ? checklistButtonHTML(2) : ''}`;
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+          <div><strong>${selected.length} unit${selected.length > 1 ? 's' : ''} selected</strong>
+            <div class="muted" style="font-size:12px">${selected.map((u) => '#' + u.id).join(', ')}</div></div>
+          ${pickers ? `<div style="display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:4px">${pickers}</div>` : ''}
+        </div>
+        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP))}`;
+    }
+    if (activeUnitId != null) {
+      const unit = queue.find((u) => u.id === activeUnitId);
+      if (!unit) return placeholderHTML();
+      const blocked = unit.status === 'rework' && reworkOpen(unit.id);
+      const step = ProductionSteps.unitStep(unit, jo.qc_stages);
+      if (blocked) {
+        return `
+          <div style="margin-bottom:8px"><strong>Unit #${unit.id}</strong> <span class="badge-pill ${step.cls}">${step.label}</span></div>
+          ${UI.emptyState({ icon: 'alert', title: 'Parts request still open', hint: 'This unit can only be re-inspected once its repair/parts request is settled.' })}`;
+      }
+      const { items, names, firstP, finalP } = checklistFor([unit]);
+      const pickers = `${firstP ? checklistButtonHTML(1) : ''}${finalP ? checklistButtonHTML(2) : ''}`;
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+          <div><strong>Unit #${unit.id}</strong> <span class="badge-pill ${step.cls}">${step.label}</span>
+            <span class="muted" style="font-size:11px">(pass ${(unit.stage || 0) + 1} / ${jo.qc_stages})</span>
+            ${unit.identifier ? `<div class="muted mono" style="font-size:12px;margin-top:4px">${UI.esc(unit.identifier)}</div>` : ''}</div>
+          ${pickers ? `<div style="display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:4px">${pickers}</div>` : ''}
+        </div>
+        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP))}`;
+    }
+    return placeholderHTML();
+  }
+
+  function draw() {
+    const el = host();
+    if (!el) return;
+    const pending = units.filter((u) => u.status === 'pending');
+    const rework = units.filter((u) => u.status === 'rework');
+    const queue = pending.concat(rework);
+    for (const id of [...checkedIds]) if (!queue.some((u) => u.id === id)) checkedIds.delete(id);
+    if (activeUnitId != null && !queue.some((u) => u.id === activeUnitId)) activeUnitId = null;
+
+    el.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <strong>${UI.esc(jo.product_name)}</strong>
+        <span class="muted">${jo.qc_stages}-step inspection</span>
+        ${jo.team_name ? `<span class="muted">· ${UI.esc(jo.team_name)}</span>` : ''}
+      </div>
+      ${queue.length ? `
+        <div style="display:flex;gap:16px;align-items:flex-start">
+          <div style="flex:1 1 55%;min-width:0">
+            <table>
+              <thead><tr>
+                <th style="width:28px"><input type="checkbox" id="qi-chk-all" /></th>
+                <th>Unit</th><th>Step</th><th>Identifier</th>
+              </tr></thead>
+              <tbody>${queue.map((u) => {
+                const blocked = u.status === 'rework' && reworkOpen(u.id);
+                const step = ProductionSteps.unitStep(u, jo.qc_stages);
+                return `<tr class="clickable${u.id === activeUnitId ? ' active' : ''}" data-unit="${u.id}">
+                  <td><input type="checkbox" class="qi-chk" value="${u.id}" ${checkedIds.has(u.id) ? 'checked' : ''} ${blocked ? 'disabled title="Parts request still open"' : ''} /></td>
+                  <td>#${u.id}${u.status === 'rework' ? ' <span class="badge-pill confirmed">repair</span>' : ''}</td>
+                  <td><span class="badge-pill ${step.cls}">${step.label}</span> <span class="muted" style="font-size:11px">(${u.stage} / ${jo.qc_stages})</span></td>
+                  <td class="mono">${UI.esc(u.identifier || '—')}</td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table>
+          </div>
+          ${canInspect ? `<div id="qi-side" style="flex:1 1 45%;min-width:260px;border-left:1px solid var(--border);padding-left:16px">${sideHTML(queue)}</div>` : ''}
+        </div>`
+        : UI.emptyState({ icon: 'check', title: 'Nothing waiting for inspection', hint: 'All units on this job order have been inspected.' })}
+
+      ${qcLog.length ? `
+        <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Recent inspections</h4>
+        <table>
+          <thead><tr><th>When</th><th>Unit</th><th>Result</th><th>Inspector</th><th>Remarks / issues</th></tr></thead>
+          <tbody>${qcLog.slice(0, 10).map((q) => {
+            const issues = (Array.isArray(q.checklist) ? q.checklist : []).filter((c) => c.ok === false).map((c) => c.label).join(', ');
+            return `<tr>
+              <td class="muted" style="white-space:nowrap">${UI.esc((q.created_at || '').slice(0, 16).replace('T', ' '))}</td>
+              <td>#${q.unit_id || '—'}${q.stage ? ` <span class="muted">s${q.stage}</span>` : ''}</td>
+              <td>${q.result === 'pass' ? '<span class="badge-pill ok">pass</span>' : `<span class="badge-pill low">fail</span>${q.disposition ? ` <span class="muted" style="font-size:11px">${UI.esc(q.disposition)}</span>` : ''}`}</td>
+              <td>${UI.esc(q.inspector_name || '—')}</td>
+              <td>${UI.esc(q.remarks || '')}${issues ? `<div class="muted" style="font-size:11px">✗ ${UI.esc(issues)}</div>` : ''}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>` : ''}`;
+
+    if (!queue.length || !canInspect) return;
+
+    const redrawSide = () => {
+      const side = el.querySelector('#qi-side');
+      if (!side) return;
+      side.innerHTML = sideHTML(queue);
+      wireChecklistButtons(side);
+      const unitIds = checkedIds.size ? [...checkedIds] : (activeUnitId != null ? [activeUnitId] : []);
+      const qcCl = checkedIds.size ? checklistFor(queue.filter((u) => checkedIds.has(u.id))).items
+        : (activeUnitId != null ? checklistFor(queue.filter((u) => u.id === activeUnitId)).items : []);
+      if (unitIds.length) wireInspectForm(side, unitIds, qcCl);
+    };
+
+    const chkAll = el.querySelector('#qi-chk-all');
+    if (chkAll) chkAll.onclick = () => {
+      el.querySelectorAll('.qi-chk:not(:disabled)').forEach((c) => {
+        c.checked = chkAll.checked;
+        if (chkAll.checked) checkedIds.add(Number(c.value)); else checkedIds.delete(Number(c.value));
+      });
+      redrawSide();
+    };
+    el.querySelectorAll('.qi-chk').forEach((c) => c.onclick = (e) => {
+      e.stopPropagation();
+      if (e.target.checked) checkedIds.add(Number(e.target.value)); else checkedIds.delete(Number(e.target.value));
+      redrawSide();
+    });
+    el.querySelectorAll('tr[data-unit]').forEach((tr) => tr.onclick = () => {
+      activeUnitId = Number(tr.dataset.unit);
+      checkedIds.clear();
+      draw();
+    });
+    redrawSide();
+  }
+
+  await refresh();
+  draw();
+}
+
+window.ProductionQC = { inspect: inspectModal };
+
 App.register('production-qc', async (view, filter) => {
   const canConfigQc = App.hasPermission('qc.configure');
-  const canInspect = App.hasPermission('inventory.adjust');
   const tab = filter && filter.tab === 'findings' ? 'findings' : 'queue';
   const checklistBtnHTML = canConfigQc
     ? `<button class="btn secondary" id="qc-checklists">${UI.icon('edit')} Manage Checklists</button>`
@@ -32,7 +372,7 @@ App.register('production-qc', async (view, filter) => {
   async function renderQueue() {
     view.innerHTML = `
       <div class="topbar">
-        <h2>QA / QC <span class="muted" style="font-weight:400;font-size:14px">Inspection queue</span></h2>
+        <h2>QC / QA <span class="muted" style="font-weight:400;font-size:14px">Inspection queue</span></h2>
         <div class="grow"></div>
         ${checklistBtnHTML}
       </div>
@@ -47,7 +387,7 @@ App.register('production-qc', async (view, filter) => {
       tableEl.innerHTML = UI.emptyState({
         icon: 'check',
         title: 'Nothing waiting for inspection',
-        hint: 'Units queue here once production progress is recorded on a job order with QA/QC stages.',
+        hint: 'Units queue here once production progress is recorded on a job order with QC/QA stages.',
       });
       return;
     }
@@ -72,149 +412,13 @@ App.register('production-qc', async (view, filter) => {
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = () => inspectModal(tr.dataset.open, renderQueue));
   }
 
-  // Simple, QA/QC-only inspect dialog for one job order's queue — opened in place
-  // (no navigating away to the full Job Orders detail, which carries components,
-  // production progress, batches and other job-management chrome this screen doesn't need).
-  async function inspectModal(jobOrderId, onDone) {
-    let jo = await API.get('/job-orders/' + jobOrderId);
-    let units = [];
-    let qcLog = [];
-    let repairs = [];
-
-    const m = UI.modal({ title: `Inspect — ${jo.number}`, size: 'lg', cancelText: 'Close', bodyHTML: '<div id="qi-body"></div>' });
-    const host = () => m.overlay ? m.overlay.querySelector('#qi-body') : null;
-
-    async function refresh() {
-      try { units = await API.get('/job-orders/' + jobOrderId + '/units'); } catch { units = []; }
-      try { qcLog = await API.get('/job-orders/' + jobOrderId + '/qc'); } catch { qcLog = []; }
-      try { repairs = await API.get('/production/repairs?job_order=' + jobOrderId); } catch { repairs = []; }
-    }
-
-    function draw() {
-      const el = host();
-      if (!el) return;
-      const pending = units.filter((u) => u.status === 'pending');
-      const rework = units.filter((u) => u.status === 'rework');
-      const queue = pending.concat(rework);
-      const reworkOpen = (uid) => repairs.some((r) => r.unit_id === uid && r.status === 'requested');
-      const totalStages = Math.max(1, jo.qc_stages || 1);
-      const firstP = queue.some((u) => u.stage + 1 === 1);
-      const finalP = queue.some((u) => u.stage + 1 >= totalStages);
-      const qcCl = [
-        ...(firstP && jo.qc_checklist_qa ? jo.qc_checklist_qa.items.map((it) => ({ ...it, _from: 'QA' })) : []),
-        ...(finalP && jo.qc_checklist_qc ? jo.qc_checklist_qc.items.map((it) => ({ ...it, _from: 'QC' })) : []),
-      ];
-      const qcClNames = [firstP && jo.qc_checklist_qa ? jo.qc_checklist_qa.name : null,
-        finalP && jo.qc_checklist_qc ? jo.qc_checklist_qc.name : null].filter(Boolean);
-      const DISPOSITIONS = ['scrap', 'dispose', 'recycle', 'repair'];
-
-      el.innerHTML = `
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-          <strong>${UI.esc(jo.product_name)}</strong>
-          <span class="muted">${jo.qc_stages}-step inspection</span>
-          ${jo.team_name ? `<span class="muted">· ${UI.esc(jo.team_name)}</span>` : ''}
-        </div>
-        ${queue.length ? `
-          <table>
-            <thead><tr>
-              <th style="width:28px"><input type="checkbox" id="qi-chk-all" /></th>
-              <th>Unit</th><th>Stage</th><th>Identifier</th>
-            </tr></thead>
-            <tbody>${queue.map((u) => {
-              const blocked = u.status === 'rework' && reworkOpen(u.id);
-              return `<tr>
-                <td><input type="checkbox" class="qi-chk" value="${u.id}" ${blocked ? 'disabled title="Parts request still open"' : ''} /></td>
-                <td>#${u.id}${u.status === 'rework' ? ' <span class="badge-pill confirmed">repair</span>' : ''}</td>
-                <td>${u.stage} / ${jo.qc_stages}</td>
-                <td class="mono">${UI.esc(u.identifier || '—')}</td>
-              </tr>`;
-            }).join('')}</tbody>
-          </table>
-          ${canInspect ? `
-            ${qcCl.length ? `
-              <div style="margin-top:10px">
-                <label style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">QA/QC checklist${qcClNames.length ? ` — ${qcClNames.map(UI.esc).join(' + ')}` : ''}</label>
-                <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
-                  ${qcCl.map((it, i) => `
-                    <label class="check"><input type="checkbox" class="qi-chk-item" data-i="${i}" data-label="${UI.esc(it.label)}" />
-                      ${UI.esc(it.label)}${it.required ? ' <span style="color:var(--danger,#dc2626)">*</span>' : ''}
-                      ${qcClNames.length > 1 ? `<span class="muted" style="font-size:11px">(${it._from})</span>` : ''}</label>`).join('')}
-                </div>
-              </div>` : ''}
-            <div class="field-row" style="margin-top:8px">
-              <div><label>Identifier (optional, applies to passed units)</label><input id="qi-ident" placeholder="e.g. chassis / serial no." /></div>
-              <div><label>Remarks</label><input id="qi-remarks" placeholder="Notes / reason if failing…" /></div>
-              <div><label>On fail</label>
-                <select id="qi-disp">${DISPOSITIONS.map((d) => `<option value="${d}">${d[0].toUpperCase() + d.slice(1)}</option>`).join('')}</select></div>
-            </div>
-            <div style="display:flex;gap:8px;margin-top:8px">
-              <button type="button" class="btn" id="qi-pass">Pass selected</button>
-              <button type="button" class="btn secondary danger" id="qi-fail">Fail selected</button>
-            </div>
-            <p class="muted" style="font-size:11px;margin:6px 0 0">Fail → <b>repair</b> sends the unit to rework; it can only be re-inspected once its parts requests are settled.</p>` : ''}`
-          : UI.emptyState({ icon: 'check', title: 'Nothing waiting for inspection', hint: 'All units on this job order have been inspected.' })}
-
-        ${qcLog.length ? `
-          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Recent inspections</h4>
-          <table>
-            <thead><tr><th>When</th><th>Unit</th><th>Result</th><th>Inspector</th><th>Remarks / issues</th></tr></thead>
-            <tbody>${qcLog.slice(0, 10).map((q) => {
-              const issues = (Array.isArray(q.checklist) ? q.checklist : []).filter((c) => c.ok === false).map((c) => c.label).join(', ');
-              return `<tr>
-                <td class="muted" style="white-space:nowrap">${UI.esc((q.created_at || '').slice(0, 16).replace('T', ' '))}</td>
-                <td>#${q.unit_id || '—'}${q.stage ? ` <span class="muted">s${q.stage}</span>` : ''}</td>
-                <td>${q.result === 'pass' ? '<span class="badge-pill ok">pass</span>' : `<span class="badge-pill low">fail</span>${q.disposition ? ` <span class="muted" style="font-size:11px">${UI.esc(q.disposition)}</span>` : ''}`}</td>
-                <td>${UI.esc(q.inspector_name || '—')}</td>
-                <td>${UI.esc(q.remarks || '')}${issues ? `<div class="muted" style="font-size:11px">✗ ${UI.esc(issues)}</div>` : ''}</td>
-              </tr>`;
-            }).join('')}</tbody>
-          </table>` : ''}`;
-
-      const chkAll = el.querySelector('#qi-chk-all');
-      if (chkAll) chkAll.onclick = () => el.querySelectorAll('.qi-chk:not(:disabled)').forEach((c) => { c.checked = chkAll.checked; });
-
-      const inspect = (result) => {
-        const unit_ids = [...el.querySelectorAll('.qi-chk:checked')].map((c) => Number(c.value));
-        if (!unit_ids.length) { UI.toast('Select one or more units', 'error'); return; }
-        const identifier = (el.querySelector('#qi-ident').value || '').trim() || undefined;
-        const remarks = (el.querySelector('#qi-remarks').value || '').trim() || undefined;
-        const disposition = result === 'fail' ? (el.querySelector('#qi-disp') || {}).value : undefined;
-        if (result === 'fail' && !remarks) { UI.toast('Add a remark when failing units', 'error'); return; }
-
-        let checklist;
-        const boxes = [...el.querySelectorAll('.qi-chk-item')];
-        if (boxes.length) {
-          checklist = boxes.map((b) => ({ label: b.dataset.label, ok: b.checked }));
-          if (result === 'pass') {
-            const missing = boxes.filter((b, i) => qcCl[i] && qcCl[i].required && !b.checked)
-              .map((b) => b.dataset.label);
-            if (missing.length) { UI.toast('Tick the required checks first: ' + missing.join(', '), 'error'); return; }
-          }
-        }
-        API.post('/job-orders/' + jobOrderId + '/units/inspect', { unit_ids, result, identifier, remarks, checklist, disposition })
-          .then(async (r) => {
-            jo = r.job_order; await refresh();
-            UI.toast(result === 'pass' ? 'Units passed' : disposition === 'repair' ? 'Sent to repair' : 'Units failed');
-            draw();
-            if (onDone) onDone();
-          })
-          .catch((e) => UI.toast(e.message, 'error'));
-      };
-      const pb = el.querySelector('#qi-pass'); if (pb) pb.onclick = () => inspect('pass');
-      const fb = el.querySelector('#qi-fail'); if (fb) fb.onclick = () => inspect('fail');
-    }
-
-    await refresh();
-    draw();
-  }
-
   async function renderFindings() {
     const state = { result: '', q: '', from: '', to: '', offset: 0, limit: 50 };
     let last = { rows: [], total: 0, summary: { pass: 0, fail: 0 } };
 
     view.innerHTML = `
       <div class="topbar">
-        <h2>QA / QC <span class="muted" style="font-weight:400;font-size:14px">Findings &amp; reports</span></h2>
+        <h2>QC / QA <span class="muted" style="font-weight:400;font-size:14px">Findings &amp; reports</span></h2>
         <div class="grow"></div>
         <div class="search-box search">${UI.icon('search', 16)}<input id="qf-q" placeholder="Search job order, product…" /></div>
         <select id="qf-result" style="width:120px">

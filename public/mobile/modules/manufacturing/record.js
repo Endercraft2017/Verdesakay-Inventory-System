@@ -51,8 +51,20 @@
     }
     view.appendChild(kv);
 
-    // QA/QC
-    view.appendChild(mEl('<h3 class="m-h3">QA / QC</h3>'));
+    // QR — the plain identifier/number, same convention as every printed label in this
+    // app (never a URL); scanning it anywhere resolves back here via inventory/lookup.
+    var qrCode = u ? (u.identifier || ('UNIT-' + u.id)) : b.number;
+    view.appendChild(mEl(
+      '<div class="m-record-qr"><img alt="" src="' + mProductionPrint.qrDataUrl(qrCode) + '" /><div class="m-hint">' + mEsc(qrCode) + '</div></div>'
+    ));
+
+    if (u) {
+      view.appendChild(mEl('<h3 class="m-h3">Photos</h3>'));
+      view.appendChild(mPhoto.thumbs('qc_unit', u.id, { editable: false }));
+    }
+
+    // QC/QA
+    view.appendChild(mEl('<h3 class="m-h3">QC / QA</h3>'));
     var qc = d.qc || [];
     if (!qc.length) {
       view.appendChild(mEl('<div class="m-hint">No inspection recorded.</div>'));
@@ -99,6 +111,11 @@
     }
 
     var acts = mEl('<div class="m-actions"></div>');
+    if (u) {
+      var printBtn = mEl('<button class="m-btn">Print label</button>');
+      printBtn.onclick = function () { mProductionPrint.printUnitRecords([d]); };
+      acts.appendChild(printBtn);
+    }
     var back = mEl('<button class="m-btn m-btn-secondary">Back</button>');
     back.onclick = function () { history.length > 1 ? history.back() : MApp.go('home'); };
     acts.appendChild(back);

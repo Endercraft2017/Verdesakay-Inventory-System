@@ -5,6 +5,15 @@
    created-record links). */
 App.register('job-orders', async (view, filter) => {
   const canWrite = App.hasPermission('inventory.adjust');
+  // Narrower than canWrite: a production_lead/qc_inspector/qa_inspector account
+  // (production.record / production.inspect_qc / production.inspect_qa, no
+  // inventory.adjust) can use just the Record production / QC callout + repair-parts
+  // sections below — not the job-order-lifecycle actions (new/release/pause/cancel/
+  // close/components) that stay canWrite-only. This is only the door check (does the
+  // section render at all) — which specific pass a qc_inspector/qa_inspector account
+  // may actually perform is enforced per-unit by the server (see production-qc.js).
+  const canRecord = canWrite || App.hasPermission('production.record');
+  const canInspectHere = canWrite || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa');
   const STATUS = ['', 'draft', 'released', 'in_progress', 'paused', 'completed', 'cancelled'];
   const state = { status: '' };
   let rows = [];
@@ -57,9 +66,11 @@ App.register('job-orders', async (view, filter) => {
       <table>
         <thead><tr>
           <th>Number</th><th>Product</th><th>Team</th><th>Due</th><th class="right">Ordered</th><th class="right">Done</th>
-          <th class="right">Scrapped</th><th class="right">Left</th><th>Status</th>
+          <th class="right">Scrapped</th><th class="right">Left</th><th>Status</th><th>Step</th>
         </tr></thead>
-        <tbody>${rows.map((j) => `
+        <tbody>${rows.map((j) => {
+          const step = ProductionSteps.jobOrderStep(j);
+          return `
           <tr class="clickable" data-open="${j.id}">
             <td><strong>${UI.esc(j.number)}</strong>${j.order_number ? `<div class="muted" style="font-size:11px">${UI.esc(j.order_number)}</div>` : ''}</td>
             <td>${UI.esc(j.product_name)}</td>
@@ -70,7 +81,9 @@ App.register('job-orders', async (view, filter) => {
             <td class="right">${j.qty_scrapped}</td>
             <td class="right">${j.remaining}</td>
             <td>${badge(j.status)}</td>
-          </tr>`).join('')}
+            <td><span class="badge-pill ${step.cls}">${step.label}</span></td>
+          </tr>`;
+        }).join('')}
         </tbody>
       </table>`;
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = () => trackModal(tr.dataset.open));
@@ -101,8 +114,8 @@ App.register('job-orders', async (view, filter) => {
         <div class="form-field"><div class="field-label"><label>Inspection before stock</label></div>
           <select data-f="qc">
             <option value="0">None — straight to stock</option>
-            <option value="1">1 step (QA/QC)</option>
-            <option value="2">2 steps — QA then QC</option>
+            <option value="1">1 step (QC/QA)</option>
+            <option value="2">2 steps — QC then QA</option>
           </select></div>
         <div class="form-field"><div class="field-label"><label>Production team</label></div>
           <select data-f="team"><option value="">— unassigned —</option>
@@ -210,125 +223,100 @@ App.register('job-orders', async (view, filter) => {
       const comps = jo.components || [];
       const sum = jo.units_summary || { pending: 0, passed: 0, in_stock: 0, failed: 0, scrapped: 0, rework: 0 };
       const qc = jo.qc_stages > 0;
-      const pending = units.filter((u) => u.status === 'pending');
       const rework = units.filter((u) => u.status === 'rework');
-      // Units that can be (re-)inspected right now: awaiting first inspection + back from repair.
-      const queue = pending.concat(rework);
-      const reworkOpen = (uid) => repairs.some((r) => r.unit_id === uid && r.status === 'requested');
-      // Which of the product's checklists apply to the units currently in the queue: the
-      // QA checklist on a first pass, the QC checklist on a final one — both together on a
-      // single-stage MO, where the one inspection is both first and final.
-      const totalStages = Math.max(1, jo.qc_stages || 1);
-      const firstP = queue.some((u) => u.stage + 1 === 1);
-      const finalP = queue.some((u) => u.stage + 1 >= totalStages);
-      const qcCl = [
-        ...(firstP && jo.qc_checklist_qa ? jo.qc_checklist_qa.items.map((it) => ({ ...it, _from: 'QA' })) : []),
-        ...(finalP && jo.qc_checklist_qc ? jo.qc_checklist_qc.items.map((it) => ({ ...it, _from: 'QC' })) : []),
-      ];
-      const qcClNames = [firstP && jo.qc_checklist_qa ? jo.qc_checklist_qa.name : null,
-        finalP && jo.qc_checklist_qc ? jo.qc_checklist_qc.name : null].filter(Boolean);
-      const DISPOSITIONS = ['scrap', 'dispose', 'recycle', 'repair'];
       const FAULTS = ['assembler', 'production', 'supplier', 'wear', 'other'];
+      const box = (inner) => `<div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:12px;background:var(--surface-2)">${inner}</div>`;
+      const boxTitle = (t) => `<h4 style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${t}</h4>`;
       el.innerHTML = `
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-          ${badge(jo.status)}
-          <strong>${UI.esc(jo.product_name)}</strong>
-          ${jo.order_number ? `<span class="muted">from ${UI.esc(jo.order_number)}</span>` : ''}
-        </div>
-        <div class="kv" style="margin:10px 0">
-          <div><span class="muted">Ordered</span><div>${jo.qty_ordered}</div></div>
-          <div><span class="muted">Done</span><div>${jo.qty_done}</div></div>
-          <div><span class="muted">Scrapped</span><div>${jo.qty_scrapped}</div></div>
-          <div><span class="muted">Remaining</span><div>${jo.qty_ordered - jo.qty_done - jo.qty_scrapped}</div></div>
-          <div><span class="muted">Inspection</span><div>${qc ? `${jo.qc_stages}-step` : 'none'}</div></div>
-          ${qc ? `<div><span class="muted">Under inspection</span><div>${sum.pending}</div></div>` : ''}
-          ${qc && sum.rework ? `<div><span class="muted">In repair</span><div>${sum.rework}</div></div>` : ''}
-          ${sum.passed ? `<div><span class="muted">Awaiting Products In</span><div>${sum.passed}</div></div>` : ''}
-          <div><span class="muted">Pull from</span><div>${UI.esc(jo.source_location_name || '—')}</div></div>
-          <div><span class="muted">Output to</span><div>${UI.esc(jo.output_location_name || '—')}</div></div>
-          <div><span class="muted">Team</span><div>${UI.esc(jo.team_name || '—')}${jo.work_center ? ` <span class="muted">· ${UI.esc(jo.work_center)}</span>` : ''}</div></div>
-          ${(jo.planned_start || jo.due_date) ? `<div><span class="muted">Schedule</span><div>${UI.esc(jo.planned_start || '?')} → ${UI.esc(jo.due_date || '?')}${jo.priority ? ` <span class="muted">P${jo.priority}</span>` : ''}</div></div>` : ''}
-          ${jo.released_by_name ? `<div><span class="muted">Released by</span><div>${UI.esc(jo.released_by_name)}${jo.released_at ? ` <span class="muted">${UI.esc(jo.released_at.slice(0, 16).replace('T', ' '))}</span>` : ''}</div></div>` : ''}
-        </div>
-        ${jo.notes ? `<p class="muted" style="white-space:pre-wrap">${UI.esc(jo.notes)}</p>` : ''}
-
-        <h4 style="margin:14px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Components</h4>
-        <table>
-          <thead><tr><th>Component</th><th class="right">Per unit</th><th class="right">Planned</th><th class="right">Consumed</th><th class="right">On hand</th></tr></thead>
-          <tbody id="jo-comp-body">${comps.length ? comps.map((c) => `<tr>
-            <td>${UI.esc(c.component_name)}</td>
-            <td class="right">${c.qty_per_unit}</td>
-            <td class="right">${isDraft
-              ? `<input data-plan="${c.component_item_id}" type="number" min="0" value="${c.qty_planned}" style="width:80px" />`
-              : c.qty_planned}</td>
-            <td class="right">${c.qty_consumed}</td>
-            <td class="right">${c.component_on_hand ?? '—'}</td>
-          </tr>`).join('') : `<tr><td colspan="5" class="muted">No components — this product has no BOM. ${isDraft && canWrite ? 'Add parts below, or build it as-is.' : 'Nothing is reserved or consumed.'}</td></tr>`}</tbody>
-        </table>
-        ${isDraft && canWrite ? `
-          <div class="field-row" style="align-items:flex-end;gap:8px;margin-top:8px">
-            <div style="flex:1"><label class="muted" style="font-size:12px">Add a component</label>
-              <select id="jo-comp-pick"><option value="">— pick an item —</option>
-                ${items.filter((it) => !comps.some((c) => String(c.component_item_id) === String(it.id)))
-                  .map((it) => `<option value="${it.id}">${UI.esc(it.name)}${it.sku ? ' (' + UI.esc(it.sku) + ')' : ''}</option>`).join('')}
-              </select></div>
-            <div><label class="muted" style="font-size:12px">Total planned</label>
-              <input id="jo-comp-qty" type="number" min="0" value="1" style="width:90px" /></div>
-            <button type="button" class="btn secondary small" id="jo-comp-add">Add</button>
+        ${box(`
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+            ${badge(jo.status)}
+            <strong>${UI.esc(jo.product_name)}</strong>
+            ${jo.order_number ? `<span class="muted">from ${UI.esc(jo.order_number)}</span>` : ''}
           </div>
-          <button type="button" class="btn secondary small" id="jo-save-plan" style="margin-top:8px">Save planned quantities</button>` : ''}
+          <div class="kv" style="margin:10px 0 0">
+            <div><span class="muted">Ordered</span><div>${jo.qty_ordered}</div></div>
+            <div><span class="muted">Done</span><div>${jo.qty_done}</div></div>
+            <div><span class="muted">Scrapped</span><div>${jo.qty_scrapped}</div></div>
+            <div><span class="muted">Remaining</span><div>${jo.qty_ordered - jo.qty_done - jo.qty_scrapped}</div></div>
+            <div><span class="muted">Inspection</span><div>${qc ? `${jo.qc_stages}-step` : 'none'}</div></div>
+            ${qc ? `<div><span class="muted">Under inspection</span><div>${sum.pending}</div></div>` : ''}
+            ${qc && sum.rework ? `<div><span class="muted">In repair</span><div>${sum.rework}</div></div>` : ''}
+            ${sum.passed ? `<div><span class="muted">Awaiting Products In</span><div>${sum.passed}</div></div>` : ''}
+            <div><span class="muted">Pull from</span><div>${UI.esc(jo.source_location_name || '—')}</div></div>
+            <div><span class="muted">Output to</span><div>${UI.esc(jo.output_location_name || '—')}</div></div>
+            <div><span class="muted">Team</span><div>${UI.esc(jo.team_name || '—')}${jo.work_center ? ` <span class="muted">· ${UI.esc(jo.work_center)}</span>` : ''}</div></div>
+            ${(jo.planned_start || jo.due_date) ? `<div><span class="muted">Schedule</span><div>${UI.esc(jo.planned_start || '?')} → ${UI.esc(jo.due_date || '?')}${jo.priority ? ` <span class="muted">P${jo.priority}</span>` : ''}</div></div>` : ''}
+            ${jo.released_by_name ? `<div><span class="muted">Released by</span><div>${UI.esc(jo.released_by_name)}${jo.released_at ? ` <span class="muted">${UI.esc(jo.released_at.slice(0, 16).replace('T', ' '))}</span>` : ''}</div></div>` : ''}
+          </div>
+          ${jo.notes ? `<p class="muted" style="white-space:pre-wrap;margin:10px 0 0">${UI.esc(jo.notes)}</p>` : ''}`)}
 
-        ${running && canWrite ? `
-          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Record production</h4>
+        ${box(`
+          ${boxTitle('Components')}
+          <table>
+            <thead><tr><th>Component</th><th class="right">Per unit</th><th class="right">Planned</th><th class="right">Consumed</th><th class="right">On hand</th></tr></thead>
+            <tbody id="jo-comp-body">${comps.length ? comps.map((c) => `<tr>
+              <td>${UI.esc(c.component_name)}</td>
+              <td class="right">${c.qty_per_unit}</td>
+              <td class="right">${isDraft
+                ? `<input data-plan="${c.component_item_id}" type="number" min="0" value="${c.qty_planned}" style="width:80px" />`
+                : c.qty_planned}</td>
+              <td class="right">${c.qty_consumed}</td>
+              <td class="right">${c.component_on_hand ?? '—'}</td>
+            </tr>`).join('') : `<tr><td colspan="5" class="muted">No components — this product has no BOM. ${isDraft && canWrite ? 'Add parts below, or build it as-is.' : 'Nothing is reserved or consumed.'}</td></tr>`}</tbody>
+          </table>
+          ${isDraft && canWrite ? `
+            <div class="field-row" style="align-items:flex-end;gap:8px;margin-top:8px">
+              <div style="flex:1"><label class="muted" style="font-size:12px">Add a component</label>
+                <select id="jo-comp-pick"><option value="">— pick an item —</option>
+                  ${items.filter((it) => !comps.some((c) => String(c.component_item_id) === String(it.id)))
+                    .map((it) => `<option value="${it.id}">${UI.esc(it.name)}${it.sku ? ' (' + UI.esc(it.sku) + ')' : ''}</option>`).join('')}
+                </select></div>
+              <div><label class="muted" style="font-size:12px">Total planned</label>
+                <input id="jo-comp-qty" type="number" min="0" value="1" style="width:90px" /></div>
+              <button type="button" class="btn secondary small" id="jo-comp-add">Add</button>
+            </div>
+            <button type="button" class="btn secondary small" id="jo-save-plan" style="margin-top:8px">Save planned quantities</button>` : ''}`)}
+
+        ${running && canRecord && !qc ? box(`
+          ${boxTitle('Record production')}
           <div class="field-row">
-            <div><label>${qc ? 'Off the line (to inspect)' : 'Finished now'}</label><input id="jo-done" type="number" min="0" value="0" /></div>
+            <div><label>Finished now</label><input id="jo-done" type="number" min="0" value="0" /></div>
             <div><label>Scrapped now</label><input id="jo-scrap" type="number" min="0" value="0" /></div>
-            <div><label>Batch / lot ${qc ? '(optional)' : '(auto)'}</label><input id="jo-batch" placeholder="${qc ? 'label to group these units' : 'auto BATCH-#####'}" ${qc ? '' : 'title="A batch is recorded automatically for each entry"'} /></div>
+            <div><label>Batch / lot (auto)</label><input id="jo-batch" placeholder="auto BATCH-#####" title="A batch is recorded automatically for each entry" /></div>
             <div style="display:flex;align-items:flex-end"><button type="button" class="btn" id="jo-progress">Apply</button></div>
-          </div>` : ''}
+          </div>`) : ''}
 
-        ${qc && canWrite && (queue.length || running) ? `
-          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Inspection queue — ${pending.length} pending${rework.length ? `, ${rework.length} back from repair` : ''}</h4>
-          ${queue.length ? `
-            <table>
-              <thead><tr>
-                <th style="width:28px"><input type="checkbox" id="jo-chk-all" /></th>
-                <th>Unit</th><th>Stage</th><th>Identifier</th>
-              </tr></thead>
-              <tbody>${queue.map((u) => {
-                const blocked = u.status === 'rework' && reworkOpen(u.id);
-                return `<tr>
-                <td><input type="checkbox" class="jo-chk" value="${u.id}" ${blocked ? 'disabled title="Parts request still open"' : ''} /></td>
-                <td>#${u.id}${u.status === 'rework' ? ' <span class="badge-pill confirmed">repair</span>' : ''}</td>
-                <td>${u.stage} / ${jo.qc_stages}</td>
-                <td class="mono">${UI.esc(u.identifier || '—')}</td>
-              </tr>`;
-              }).join('')}</tbody>
-            </table>
-            ${qcCl.length ? `
-              <div style="margin-top:10px">
-                <label style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">QA/QC checklist${qcClNames.length ? ` — ${qcClNames.map(UI.esc).join(' + ')}` : ''}</label>
-                <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
-                  ${qcCl.map((it, i) => `
-                    <label class="check"><input type="checkbox" class="jo-chk-item" data-i="${i}" data-label="${UI.esc(it.label)}" />
-                      ${UI.esc(it.label)}${it.required ? ' <span style="color:var(--danger,#dc2626)">*</span>' : ''}
-                      ${qcClNames.length > 1 ? `<span class="muted" style="font-size:11px">(${it._from})</span>` : ''}</label>`).join('')}
-                </div>
-              </div>` : ''}
+        ${running && canRecord && qc ? box(`
+          ${boxTitle('Record production')}
+          <div class="field-row">
+            <div><label>Scrapped now</label><input id="jo-scrap" type="number" min="0" value="0" /></div>
+            <div style="display:flex;align-items:flex-end"><button type="button" class="btn secondary" id="jo-scrap-apply">Record scrap</button></div>
+          </div>
+          <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+            <label style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Units finished — off the line</label>
+            <p class="muted" style="font-size:12px;margin:4px 0 8px">Each unit needs its own identifier (motor/serial no.) and a photo. Use the +/− (or type a number) for several at once.</p>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <button type="button" class="btn secondary small" id="jo-unit-dec">−</button>
+              <input id="jo-unit-count" type="number" min="1" value="1" style="width:64px;text-align:center" />
+              <button type="button" class="btn secondary small" id="jo-unit-inc">+</button>
+              <span class="muted" style="font-size:12px">unit(s) to add</span>
+            </div>
+            <div id="jo-unit-rows"></div>
             <div class="field-row" style="margin-top:8px">
-              <div><label>Identifier (optional, applies to passed units)</label><input id="jo-ident" placeholder="e.g. chassis / serial no." /></div>
-              <div><label>Remarks</label><input id="jo-remarks" placeholder="Notes / reason if failing…" /></div>
-              <div><label>On fail</label>
-                <select id="jo-disp">${DISPOSITIONS.map((d) => `<option value="${d}">${d[0].toUpperCase() + d.slice(1)}</option>`).join('')}</select></div>
+              <div><label>Batch / lot (optional)</label><input id="jo-unit-batch" placeholder="label to group these units" /></div>
             </div>
-            <div style="display:flex;gap:8px;margin-top:8px">
-              <button type="button" class="btn" id="jo-pass">Pass selected</button>
-              <button type="button" class="btn secondary danger" id="jo-fail">Fail selected</button>
-            </div>
-            <p class="muted" style="font-size:11px;margin:6px 0 0">Fail → <b>repair</b> sends the unit to rework; it can only be re-inspected once its parts requests are settled.</p>` : '<p class="muted">No units waiting for inspection.</p>'}` : ''}
+            <button type="button" class="btn" id="jo-units-submit" style="margin-top:10px">${UI.icon('plus')} Record unit(s)</button>
+            <div id="jo-unit-progress" class="muted" style="font-size:12px;margin-top:6px"></div>
+          </div>`) : ''}
 
-        ${qc && canWrite && (rework.length || repairs.length) ? `
-          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Repair — parts requests to the warehouse</h4>
+        ${qc && canInspectHere && (sum.pending > 0 || sum.rework > 0) ? box(`
+          ${boxTitle(`Inspection queue — ${sum.pending} pending${sum.rework ? `, ${sum.rework} back from repair` : ''}`)}
+          <p class="muted" style="margin:0 0 8px">Pass/fail and each unit's checklist happen in QC / QA, not here.</p>
+          <button type="button" class="btn secondary" id="jo-open-qc">${UI.icon('check')} Open in QC / QA</button>`) : ''}
+
+        ${qc && canInspectHere && (rework.length || repairs.length) ? box(`
+          ${boxTitle('Repair — parts requests to the warehouse')}
           ${rework.length ? `
             <div class="field-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
               <div><label class="muted" style="font-size:12px">Unit</label>
@@ -357,10 +345,10 @@ App.register('job-orders', async (view, filter) => {
                 <td class="muted">${UI.esc(r.warehouse_remarks || '')}</td>
                 <td>${r.status === 'requested' ? `<button type="button" class="btn secondary small" data-rp-cancel="${r.id}">Cancel</button>` : ''}</td>
               </tr>`).join('')}</tbody>
-            </table>` : '<p class="muted">No parts requested yet.</p>'}` : ''}
+            </table>` : '<p class="muted">No parts requested yet.</p>'}`) : ''}
 
-        ${qc && qcLog.length ? `
-          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Inspection history</h4>
+        ${qc && qcLog.length ? box(`
+          ${boxTitle('Inspection history')}
           <table>
             <thead><tr><th>When</th><th>Unit</th><th>Result</th><th>Inspector</th><th>Remarks / issues</th></tr></thead>
             <tbody>${qcLog.slice(0, 50).map((q) => {
@@ -373,10 +361,10 @@ App.register('job-orders', async (view, filter) => {
                 <td>${UI.esc(q.remarks || '')}${issues ? `<div class="muted" style="font-size:11px">✗ ${UI.esc(issues)}</div>` : ''}</td>
               </tr>`;
             }).join('')}</tbody>
-          </table>` : ''}
+          </table>`) : ''}
 
-        ${batches.length ? `
-          <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Batches / lots</h4>
+        ${batches.length ? box(`
+          ${boxTitle('Batches / lots')}
           <table>
             <thead><tr><th>Batch</th><th>Lot</th><th class="right">Qty</th><th class="right">Units</th><th>Status</th></tr></thead>
             <tbody>${batches.map((b) => `<tr class="clickable" data-batch="${b.id}">
@@ -386,7 +374,7 @@ App.register('job-orders', async (view, filter) => {
               <td class="right">${b.unit_count || 0}</td>
               <td>${UI.esc(b.status)}</td>
             </tr>`).join('')}</tbody>
-          </table>` : ''}
+          </table>`) : ''}
 
         ${canWrite ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           ${jo.status !== 'completed' && jo.status !== 'cancelled' ? `<button type="button" class="btn secondary" id="jo-resched">Team / schedule…</button>` : ''}
@@ -472,38 +460,101 @@ App.register('job-orders', async (view, filter) => {
         const batch_label = (el.querySelector('#jo-batch') || {}).value;
         act('/progress', { done_delta, scrapped_delta, batch_label: (batch_label || '').trim() || null });
       };
-
-      const chkAll = el.querySelector('#jo-chk-all');
-      if (chkAll) chkAll.onclick = () => el.querySelectorAll('.jo-chk:not(:disabled)').forEach((c) => { c.checked = chkAll.checked; });
-      const inspect = (result) => {
-        const unit_ids = [...el.querySelectorAll('.jo-chk:checked')].map((c) => Number(c.value));
-        if (!unit_ids.length) { UI.toast('Select one or more units', 'error'); return; }
-        const identifier = (el.querySelector('#jo-ident').value || '').trim() || undefined;
-        const remarks = (el.querySelector('#jo-remarks').value || '').trim() || undefined;
-        const disposition = result === 'fail' ? (el.querySelector('#jo-disp') || {}).value : undefined;
-        if (result === 'fail' && !remarks) { UI.toast('Add a remark when failing units', 'error'); return; }
-
-        let checklist;
-        const boxes = [...el.querySelectorAll('.jo-chk-item')];
-        if (boxes.length) {
-          checklist = boxes.map((b) => ({ label: b.dataset.label, ok: b.checked }));
-          if (result === 'pass') {
-            const missing = boxes.filter((b, i) => qcCl[i] && qcCl[i].required && !b.checked)
-              .map((b) => b.dataset.label);
-            if (missing.length) { UI.toast('Tick the required checks first: ' + missing.join(', '), 'error'); return; }
-          }
-        }
-        API.post('/job-orders/' + id + '/units/inspect', { unit_ids, result, identifier, remarks, checklist, disposition })
-          .then(async (r) => {
-            jo = r.job_order; await refreshUnits();
-            UI.toast(result === 'pass' ? 'Units passed'
-              : disposition === 'repair' ? 'Sent to repair' : 'Units failed');
-            draw(); load();
-          })
-          .catch((e) => UI.toast(e.message, 'error'));
+      const scrapApply = el.querySelector('#jo-scrap-apply');
+      if (scrapApply) scrapApply.onclick = () => {
+        const scrapped_delta = parseInt(el.querySelector('#jo-scrap').value, 10) || 0;
+        if (scrapped_delta <= 0) { UI.toast('Enter a scrapped quantity', 'error'); return; }
+        act('/progress', { scrapped_delta });
       };
-      const pb = el.querySelector('#jo-pass'); if (pb) pb.onclick = () => inspect('pass');
-      const fb = el.querySelector('#jo-fail'); if (fb) fb.onclick = () => inspect('fail');
+
+      // Units finished — one row per unit (identifier + photo required each), row count
+      // driven by the +/− buttons or typing a number directly into #jo-unit-count. Rows
+      // are appended/removed rather than fully redrawn so a file already picked for an
+      // earlier row survives changing the count (a <input type=file>'s value can't be
+      // reapplied programmatically once the DOM node is replaced).
+      const unitRowsEl = el.querySelector('#jo-unit-rows');
+      if (unitRowsEl) {
+        const unitRowHTML = (i) => `
+          <div class="field-row" style="align-items:flex-end;gap:8px;margin-bottom:8px" data-unit-row="${i}">
+            <div style="flex:1"><label class="muted" style="font-size:12px">Unit ${i + 1} — identifier <span class="req">*</span></label>
+              <input class="jo-unit-ident" placeholder="e.g. chassis / motor / serial no." /></div>
+            <div><label class="muted" style="font-size:12px">Photo <span class="req">*</span></label>
+              <input type="file" accept="image/*" class="jo-unit-photo" /></div>
+            <div class="jo-unit-thumb" style="width:44px;height:44px;border-radius:6px;overflow:hidden;background:var(--surface-3);flex-shrink:0"></div>
+          </div>`;
+        const wirePhotoPreview = (row) => {
+          const fileInput = row.querySelector('.jo-unit-photo');
+          const thumb = row.querySelector('.jo-unit-thumb');
+          fileInput.onchange = () => {
+            const file = fileInput.files && fileInput.files[0];
+            thumb.innerHTML = file ? `<img src="${URL.createObjectURL(file)}" style="width:100%;height:100%;object-fit:cover" />` : '';
+          };
+        };
+        const countEl = el.querySelector('#jo-unit-count');
+        const syncUnitRows = () => {
+          let n = parseInt(countEl.value, 10) || 1;
+          if (n < 1) n = 1;
+          countEl.value = n;
+          const existingRows = [...unitRowsEl.querySelectorAll('[data-unit-row]')];
+          if (n > existingRows.length) {
+            for (let i = existingRows.length; i < n; i++) {
+              unitRowsEl.insertAdjacentHTML('beforeend', unitRowHTML(i));
+              wirePhotoPreview(unitRowsEl.querySelector(`[data-unit-row="${i}"]`));
+            }
+          } else if (n < existingRows.length) {
+            for (let i = existingRows.length - 1; i >= n; i--) existingRows[i].remove();
+          }
+        };
+        el.querySelector('#jo-unit-dec').onclick = () => { countEl.value = Math.max(1, (parseInt(countEl.value, 10) || 1) - 1); syncUnitRows(); };
+        el.querySelector('#jo-unit-inc').onclick = () => { countEl.value = (parseInt(countEl.value, 10) || 1) + 1; syncUnitRows(); };
+        countEl.addEventListener('input', syncUnitRows);
+        syncUnitRows();
+
+        const unitsSubmit = el.querySelector('#jo-units-submit');
+        const progressEl = el.querySelector('#jo-unit-progress');
+        unitsSubmit.onclick = async () => {
+          const rowEls = [...unitRowsEl.querySelectorAll('[data-unit-row]')];
+          const batch_label = (el.querySelector('#jo-unit-batch').value || '').trim() || null;
+          const pending = [];
+          for (const row of rowEls) {
+            const identifier = row.querySelector('.jo-unit-ident').value.trim();
+            const file = row.querySelector('.jo-unit-photo').files[0];
+            if (!identifier) { UI.toast('Every unit needs an identifier', 'error'); return; }
+            if (!file) { UI.toast('Every unit needs a photo', 'error'); return; }
+            pending.push({ identifier, file });
+          }
+          unitsSubmit.disabled = true;
+          let done = 0;
+          try {
+            for (const p of pending) {
+              progressEl.textContent = `Recording unit ${done + 1} of ${pending.length}…`;
+              const r = await API.post('/job-orders/' + id + '/units', { identifier: p.identifier, batch_label });
+              const fd = new FormData();
+              fd.append('image', p.file, p.file.name || 'unit.jpg');
+              fd.append('kind', 'qc_unit');
+              fd.append('ref_id', String(r.id));
+              await API.upload('/attachments', fd);
+              jo = r.job_order;
+              done++;
+            }
+            progressEl.textContent = '';
+            UI.toast(`Recorded ${done} unit${done === 1 ? '' : 's'}`);
+            await refreshUnits();
+            draw(); load();
+          } catch (e) {
+            progressEl.textContent = '';
+            UI.toast(`Recorded ${done} of ${pending.length} — ${e.message}`, 'error');
+            unitsSubmit.disabled = false;
+          }
+        };
+      }
+
+      const openQc = el.querySelector('#jo-open-qc');
+      if (openQc) openQc.onclick = () => ProductionQC.inspect(id, async () => {
+        jo = await API.get('/job-orders/' + id);
+        await refreshUnits();
+        draw(); load();
+      });
 
       const rpAdd = el.querySelector('#rp-add');
       if (rpAdd) rpAdd.onclick = async () => {

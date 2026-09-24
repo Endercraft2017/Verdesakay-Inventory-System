@@ -2,7 +2,7 @@
  *  line can't be met from stock, unless forced (backorder). Plus the availability
  *  read and the "produce the shortfall" action (with a BOM component check). */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, addSerializedUnits, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
@@ -104,7 +104,7 @@ describe('sale-order availability gate', () => {
     const mo = (await ctx.api.post('/api/job-orders').set(H())
       .send({ product_item_id: product, qty_ordered: 2, qc_stages: 1 })).body.id;
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2 });
+    await addSerializedUnits(ctx.api, token, mo, 2, 'AVReady');
     const u = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number }>;
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: u.map((x) => x.id), result: 'pass' });

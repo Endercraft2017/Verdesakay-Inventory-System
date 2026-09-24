@@ -11,12 +11,15 @@
  *  can only be re-inspected once none of its requests are still `requested`
  *  (see job-orders.routes.ts /units/inspect).
  *
- *  Read = inventory.view; every write = inventory.adjust (same soft segregation as the
- *  rest of the manufacturing module — the request/accept states carry the handoff).
- *  Mounted at /api/production. */
+ *  Read = inventory.view. Writes: raising/cancelling a request needs inventory.adjust
+ *  or production.inspect_qc/qa (the QC or QA inspector who failed the unit — either
+ *  covers it, this isn't pass-specific the way job-orders.routes.ts /:id/units/inspect
+ *  is); accept/reject needs inventory.adjust or production.repairs (the warehouse parts
+ *  clerk) — see inspectGate / repairsGate below. Everything else here (teams, batches,
+ *  capacity, label templates) stays plain inventory.adjust. Mounted at /api/production. */
 import { Router } from 'express';
 import { db, queryOne, queryAll, run, nextSequence, getSetting, setSetting } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
   parseBody,
   repairRequestSchema,
@@ -45,6 +48,12 @@ router.use(requireAuth);
 
 const readGate = requirePermission('inventory.view');
 const writeGate = requirePermission('inventory.adjust');
+// See job-orders.routes.ts for why these exist alongside writeGate: a dedicated
+// qc_inspector/parts_clerk account can act here without full inventory.adjust.
+// Either QC or QA covers these — none of them (parts request, batch sign-off, request
+// cancel) is specific to one pass the way job-orders.routes.ts /:id/units/inspect is.
+const inspectGate = requireAnyPermission(['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa']);
+const repairsGate = requireAnyPermission(['inventory.adjust', 'production.repairs']);
 
 const REQUEST_SELECT = `
   SELECT r.*,
@@ -103,7 +112,7 @@ router.get('/units/:unitId/repairs', readGate, (req, res) => {
 });
 
 // POST /api/production/units/:unitId/repairs — production raises a parts request
-router.post('/units/:unitId/repairs', writeGate, (req, res) => {
+router.post('/units/:unitId/repairs', inspectGate, (req, res) => {
   const unitId = Number(req.params.unitId);
   const unit = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ?', unitId);
   if (!unit) { res.status(404).json({ error: 'Unit not found' }); return; }
@@ -137,7 +146,7 @@ router.post('/units/:unitId/repairs', writeGate, (req, res) => {
 });
 
 // POST /api/production/repairs/:id/accept — warehouse issues the part (stock moves now)
-router.post('/repairs/:id/accept', writeGate, (req, res) => {
+router.post('/repairs/:id/accept', repairsGate, (req, res) => {
   const id = Number(req.params.id);
   const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
@@ -201,7 +210,7 @@ router.post('/repairs/:id/accept', writeGate, (req, res) => {
 });
 
 // POST /api/production/repairs/:id/reject — warehouse declines (no stock movement)
-router.post('/repairs/:id/reject', writeGate, (req, res) => {
+router.post('/repairs/:id/reject', repairsGate, (req, res) => {
   const id = Number(req.params.id);
   const r = queryOne<RepairPartRequest>('SELECT status FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
@@ -359,9 +368,10 @@ router.put('/capacity', writeGate, (req, res) => {
 // ---------------------------------------------------------------- batches / lots ---
 
 const BATCH_SELECT = `
-  SELECT b.*, jo.number AS job_order_number, i.name AS product_name,
+  SELECT b.*, jo.number AS job_order_number, jo.qc_stages AS job_order_qc_stages, i.name AS product_name,
          cb.full_name AS created_by_name,
-         (SELECT COUNT(*) FROM job_order_units u WHERE u.batch_id = b.id) AS unit_count
+         (SELECT COUNT(*) FROM job_order_units u WHERE u.batch_id = b.id) AS unit_count,
+         (SELECT COALESCE(SUM(quantity), 0) FROM production_receipt_items WHERE batch_id = b.id) AS received_qty
   FROM production_batches b
   LEFT JOIN job_orders jo ON jo.id = b.job_order_id
   LEFT JOIN inventory_items i ON i.id = b.product_item_id
@@ -455,14 +465,14 @@ router.put('/batches/:id', writeGate, (req, res) => {
 // a quality record (this batch's `status` open<->closed here means "signed off", not
 // "received") — independent of Products In, which is what actually posts the batch's stock
 // (see job-orders.routes.ts POST /:id/products-in).
-router.post('/batches/:id/inspect', writeGate, (req, res) => {
+router.post('/batches/:id/inspect', inspectGate, (req, res) => {
   const id = Number(req.params.id);
   const batch = queryOne<ProductionBatch>('SELECT * FROM production_batches WHERE id = ?', id);
   if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
   const { result, disposition, remarks, checklist } = parseBody(batchInspectSchema, req.body);
 
   if (result === 'pass') {
-    // A non-serialized batch gets one sign-off pass, not a QA-then-QC sequence — combine
+    // A non-serialized batch gets one sign-off pass, not a QC-then-QA sequence — combine
     // both of the product's checklists (if any) into that one pass.
     const activeItems = [
       ...(checklistForProduct(batch.product_item_id, 1)?.items ?? []),
@@ -473,7 +483,7 @@ router.post('/batches/:id/inspect', writeGate, (req, res) => {
       const ticked = new Map((checklist ?? []).map((c) => [c.label, c.ok]));
       const missing = required.filter((it) => ticked.get(it.label) !== true).map((it) => it.label);
       if (missing.length) {
-        res.status(400).json({ error: `Complete the required QA/QC checks before passing: ${missing.join(', ')}` });
+        res.status(400).json({ error: `Complete the required QC/QA checks before passing: ${missing.join(', ')}` });
         return;
       }
     }
@@ -599,6 +609,14 @@ router.get('/record', readGate, (req, res) => {
     joId = u.job_order_id;
     out.repairs = queryAll<RepairPartRequest>(`${REQUEST_SELECT} WHERE r.unit_id = ? ORDER BY r.id`, unitId);
     out.qc = qcRows('unit_id', unitId);
+    // Photos attached to this unit (kind 'qc_unit') — the one taken when the unit was
+    // added off the line (job-orders.routes.ts POST /:id/units) plus any added later
+    // during a QC/QA fail (production-qc.js / mobile qc.js checklist sheets).
+    out.photos = queryAll<{ id: number; caption: string | null; created_at: string }>(
+      'SELECT id, caption, created_at FROM attachments WHERE kind = ? AND ref_id = ? ORDER BY id',
+      'qc_unit',
+      unitId
+    ).map((r) => ({ ...r, url: `/api/attachments/${r.id}/image` }));
   } else {
     const b = loadBatch(batchId!);
     if (!b) { res.status(404).json({ error: 'Batch not found' }); return; }
@@ -649,7 +667,7 @@ router.get('/record', readGate, (req, res) => {
 });
 
 // POST /api/production/repairs/:id/cancel — pull a request back before the warehouse acts
-router.post('/repairs/:id/cancel', writeGate, (req, res) => {
+router.post('/repairs/:id/cancel', inspectGate, (req, res) => {
   const id = Number(req.params.id);
   const r = queryOne<RepairPartRequest>('SELECT status FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }

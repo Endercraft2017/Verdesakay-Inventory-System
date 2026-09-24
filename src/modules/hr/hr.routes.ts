@@ -24,8 +24,10 @@ import {
   payrollPolicySchema,
   employeeNumberPolicySchema,
   payrollDeductionTogglesSchema,
+  createAssetIssuanceSchema,
+  returnAssetItemSchema,
 } from '../../shared/validation';
-import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord, Shift, PayrollPolicy, EmployeeNumberPolicy } from '../../shared/types';
+import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord, Shift, PayrollPolicy, EmployeeNumberPolicy, AssetIssuance, AssetIssuanceItem } from '../../shared/types';
 import { computeAttendanceMultiRate, computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../payroll/hr-payroll-compute';
 import { classifyDailyStatus } from './hr-daily-report';
 import { suggestEmployeeNumber } from './hr-employee-numbering';
@@ -581,6 +583,108 @@ router.delete('/employees/:id/documents/:docId', requirePermission('hr.manage'),
   if (!doc) { res.status(404).json({ error: 'Document not found' }); return; }
   run('DELETE FROM employee_documents WHERE id = ?', doc.id);
   fs.promises.unlink(path.join(uploadDir(), doc.stored_name)).catch(() => {});
+  res.json({ ok: true });
+});
+
+// ─── Employee assets (company property issued/returned — standalone register, not linked
+// to Inventory stock; see SCHEMA_VERSION 43 in db.ts) ───────────────────────
+
+// GET /api/hr/employees/:id/assets — this employee's issuance history, items included.
+router.get('/employees/:id/assets', requirePermission('hr.view'), (req, res) => {
+  const employeeId = Number(req.params.id);
+  if (!queryOne('SELECT id FROM employees WHERE id = ?', employeeId)) {
+    res.status(404).json({ error: 'Employee not found' }); return;
+  }
+  const issuances = queryAll<AssetIssuance>(
+    `SELECT ai.*, u.full_name AS issued_by_name
+     FROM asset_issuances ai LEFT JOIN users u ON u.id = ai.issued_by
+     WHERE ai.employee_id = ? ORDER BY ai.issued_date DESC, ai.id DESC`,
+    employeeId
+  );
+  if (issuances.length) {
+    const items = queryAll<AssetIssuanceItem>(
+      `SELECT * FROM asset_issuance_items WHERE issuance_id IN (${issuances.map(() => '?').join(',')}) ORDER BY sort, id`,
+      ...issuances.map((i) => i.id)
+    );
+    const byIssuance = new Map<number, AssetIssuanceItem[]>();
+    for (const it of items) {
+      if (!byIssuance.has(it.issuance_id)) byIssuance.set(it.issuance_id, []);
+      byIssuance.get(it.issuance_id)!.push(it);
+    }
+    issuances.forEach((i) => { i.items = byIssuance.get(i.id) || []; });
+  }
+  res.json(issuances);
+});
+
+// POST /api/hr/employees/:id/assets — issue one or more assets on a new Asset Issuance Form.
+router.post('/employees/:id/assets', requirePermission('hr.manage'), (req, res) => {
+  const employeeId = Number(req.params.id);
+  if (!queryOne('SELECT id FROM employees WHERE id = ?', employeeId)) {
+    res.status(404).json({ error: 'Employee not found' }); return;
+  }
+  const input = parseBody(createAssetIssuanceSchema, req.body);
+  db.exec('BEGIN');
+  try {
+    const number = nextSequence('asset_issuance_seq', 'AI');
+    const info = run(
+      `INSERT INTO asset_issuances (number, employee_id, issued_date, issued_by, notes) VALUES (?, ?, ?, ?, ?)`,
+      number, employeeId, input.issued_date, req.user!.id, input.notes ?? null
+    );
+    const issuanceId = Number(info.lastInsertRowid);
+    input.items.forEach((it, i) => {
+      run(
+        `INSERT INTO asset_issuance_items (issuance_id, asset_name, category, asset_tag, quantity, condition_on_issue, sort)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        issuanceId, it.asset_name, it.category ?? null, it.asset_tag ?? null, it.quantity ?? 1, it.condition_on_issue ?? null, i
+      );
+    });
+    db.exec('COMMIT');
+    res.status(201).json({ id: issuanceId, number });
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+});
+
+// GET /api/hr/assets/:id — one issuance + its lines + employee identity (print/detail view).
+router.get('/assets/:id', requirePermission('hr.view'), (req, res) => {
+  const issuance = queryOne<AssetIssuance & {
+    employee_name: string; employee_no: string | null; department_name: string | null; position: string | null;
+  }>(
+    `SELECT ai.*, u.full_name AS issued_by_name,
+            e.name AS employee_name, e.employee_no, e.position, d.name AS department_name
+     FROM asset_issuances ai
+     LEFT JOIN users u ON u.id = ai.issued_by
+     JOIN employees e ON e.id = ai.employee_id
+     LEFT JOIN departments d ON d.id = e.department_id
+     WHERE ai.id = ?`,
+    Number(req.params.id)
+  );
+  if (!issuance) { res.status(404).json({ error: 'Asset issuance not found' }); return; }
+  issuance.items = queryAll<AssetIssuanceItem>('SELECT * FROM asset_issuance_items WHERE issuance_id = ? ORDER BY sort, id', issuance.id);
+  res.json(issuance);
+});
+
+// POST /api/hr/assets/:id/items/:itemId/return — check in one line (returned / lost / damaged).
+router.post('/assets/:id/items/:itemId/return', requirePermission('hr.manage'), (req, res) => {
+  const item = queryOne<AssetIssuanceItem>(
+    'SELECT * FROM asset_issuance_items WHERE id = ? AND issuance_id = ?',
+    Number(req.params.itemId), Number(req.params.id)
+  );
+  if (!item) { res.status(404).json({ error: 'Asset line not found' }); return; }
+  const input = parseBody(returnAssetItemSchema, req.body);
+  run(
+    `UPDATE asset_issuance_items SET status = ?, returned_date = ?, condition_on_return = ?, return_notes = ? WHERE id = ?`,
+    input.status, input.returned_date, input.condition_on_return ?? null, input.return_notes ?? null, item.id
+  );
+  res.json({ ok: true });
+});
+
+// DELETE /api/hr/assets/:id — remove an issuance record entirely (e.g. entered in error).
+router.delete('/assets/:id', requirePermission('hr.manage'), (req, res) => {
+  const issuance = queryOne<{ id: number }>('SELECT id FROM asset_issuances WHERE id = ?', Number(req.params.id));
+  if (!issuance) { res.status(404).json({ error: 'Asset issuance not found' }); return; }
+  run('DELETE FROM asset_issuances WHERE id = ?', issuance.id);
   res.json({ ok: true });
 });
 

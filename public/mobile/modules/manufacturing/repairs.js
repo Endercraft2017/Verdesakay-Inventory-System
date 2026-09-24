@@ -12,6 +12,10 @@
 
   function render(view, rows) {
     view.innerHTML = '';
+    if (!MApp.can('inventory.adjust') && !MApp.can('production.repairs')) {
+      view.appendChild(mEl('<div class="m-hint">You don\'t have permission to accept or reject parts requests.</div>'));
+      return;
+    }
     if (!rows.length) {
       view.appendChild(mEl('<div class="m-empty">No open parts requests.</div>'));
       view.appendChild(mEl('<div class="m-hint">Requests land here when a QA/QC inspector fails a unit for repair and asks for parts.</div>'));

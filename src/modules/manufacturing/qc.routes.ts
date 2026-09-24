@@ -1,6 +1,6 @@
-/** QA/QC checklists — named, reusable inspection checklists. Each belongs to one stage
- *  as a whole (stage: 1 = QA / first pass, 2 = QC / final pass). A finished product
- *  points at one per stage via `inventory_items.qc_checklist_qa_id` / `qc_checklist_qc_id`;
+/** QC/QA checklists — named, reusable inspection checklists. Each belongs to one stage
+ *  as a whole (stage: 1 = QC / first pass, 2 = QA / final pass). A finished product
+ *  points at one per stage via `inventory_items.qc_checklist_qc_id` / `qc_checklist_qa_id`;
  *  the `is_default` row for that stage covers products with none. Inspectors fill the
  *  resolved checklist(s) when passing units on a job order (see job-orders.routes.ts
  *  `/units/inspect`). Reading is open to any logged-in user; creating / editing needs
@@ -29,14 +29,14 @@ export function checklistById(id: number): { id: number; name: string; items: Qc
   return row ? { id: row.id, name: row.name, items: parseItems(row.items as string) } : undefined;
 }
 
-/** The checklist that applies to a job order's product at a given stage (1 = QA,
- *  2 = QC): the product's own checklist for that stage, else that stage's default,
+/** The checklist that applies to a job order's product at a given stage (1 = QC,
+ *  2 = QA): the product's own checklist for that stage, else that stage's default,
  *  else null (no checks → no enforcement). */
 export function checklistForProduct(
   productItemId: number | null | undefined,
   stage: 1 | 2
 ): { id: number; name: string; items: QcChecklistItem[] } | null {
-  const col = stage === 1 ? 'qc_checklist_qa_id' : 'qc_checklist_qc_id';
+  const col = stage === 1 ? 'qc_checklist_qc_id' : 'qc_checklist_qa_id';
   if (productItemId) {
     const link = queryOne<{ checklist_id: number | null }>(
       `SELECT ${col} AS checklist_id FROM inventory_items WHERE id = ?`,

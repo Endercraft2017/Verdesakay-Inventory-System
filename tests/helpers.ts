@@ -54,6 +54,34 @@ export async function login(
   return res.body.token as string;
 }
 
+/** Add `count` serialized units to a released, QC-gated (qc_stages > 0) job order via
+    POST /:id/units — that endpoint replaced bulk done_delta for serialized job orders
+    (see job-orders.routes.ts), so every test that just needs some pending units to exist,
+    rather than testing production-recording itself, creates them this way. Returns the
+    created unit ids. */
+export async function addSerializedUnits(
+  api: supertest.Agent,
+  token: string,
+  jobOrderId: number,
+  count: number,
+  identifierPrefix = 'U',
+  batchLabel?: string
+): Promise<number[]> {
+  const ids: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const res = await api
+      .post(`/api/job-orders/${jobOrderId}/units`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        identifier: `${identifierPrefix}-${Date.now()}-${i}-${Math.floor(Math.random() * 1e6)}`,
+        ...(batchLabel ? { batch_label: batchLabel } : {}),
+      });
+    if (res.status !== 201) throw new Error(`Failed to add unit: ${JSON.stringify(res.body)}`);
+    ids.push(res.body.id as number);
+  }
+  return ids;
+}
+
 /** Convenience: create an employee account (as admin) and return its id + token. */
 export async function createEmployee(
   api: supertest.Agent,

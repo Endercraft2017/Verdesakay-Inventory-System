@@ -1,7 +1,7 @@
 /** AI analytics tools — executed directly (no LLM). Covers permission gating,
     the attendance/activity/inventory/manufacturing reports, and run_analytics_query. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, addSerializedUnits, type TestContext } from './helpers';
 import { ALL_PERMISSIONS } from '../src/shared/permissions';
 import type { AuthUser, Permission } from '../src/shared/types';
 
@@ -191,7 +191,7 @@ describe('ai-analytics: manufacturing reports', () => {
     await ctx.api.put(`/api/finished-products/${p}`).set(authHdr()).send({ components: [{ component_item_id: c, quantity: 1 }] });
     const mo = (await ctx.api.post('/api/job-orders').set(authHdr()).send({ product_item_id: p, qty_ordered: 3, qc_stages: 1 })).body.id;
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(authHdr());
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(authHdr()).send({ done_delta: 3 });
+    await addSerializedUnits(ctx.api, token, mo, 3, 'AAMFG');
     const units = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(authHdr())).body as Array<{ id: number }>;
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
       .send({ unit_ids: [units[0]!.id, units[1]!.id], result: 'pass' });

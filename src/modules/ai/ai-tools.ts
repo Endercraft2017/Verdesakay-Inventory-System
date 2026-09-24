@@ -439,7 +439,11 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
           password: { type: 'string', description: 'Initial password (min 6 characters).' },
           role: {
             type: 'string',
-            enum: ['admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing'],
+            enum: [
+              'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
+              'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+              'releasing_clerk',
+            ],
             description: 'Role determines default permissions.',
           },
           department_id: { type: 'number' },
@@ -461,7 +465,11 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
           full_name: { type: 'string' },
           role: {
             type: 'string',
-            enum: ['admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing'],
+            enum: [
+              'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
+              'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+              'releasing_clerk',
+            ],
           },
           department_id: { type: 'number' },
           active: { type: 'boolean', description: 'Set false to deactivate the account.' },
@@ -883,15 +891,17 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       // ── Messages ───────────────────────────────────────────────────────────
       case 'get_messages': {
         const box = a.box === 'sent' ? 'sent' : 'inbox';
+        // deleted_at IS NULL: skip sender-unsent messages, which are cleared to an empty
+        // body (see DELETE /api/messages/:id) and would otherwise read as blank content.
         const sql = box === 'inbox'
           ? `SELECT m.id, m.subject, m.body, m.read_at, m.created_at,
                     u.id AS sender_id, u.full_name AS sender_name
              FROM messages m JOIN users u ON u.id = m.sender_id
-             WHERE m.recipient_id = ? ORDER BY m.created_at DESC LIMIT 20`
+             WHERE m.recipient_id = ? AND m.deleted_at IS NULL ORDER BY m.created_at DESC LIMIT 20`
           : `SELECT m.id, m.subject, m.body, m.created_at,
                     u.id AS recipient_id, u.full_name AS recipient_name
              FROM messages m JOIN users u ON u.id = m.recipient_id
-             WHERE m.sender_id = ? ORDER BY m.created_at DESC LIMIT 20`;
+             WHERE m.sender_id = ? AND m.deleted_at IS NULL ORDER BY m.created_at DESC LIMIT 20`;
         return { success: true, data: queryAll(sql, user.id) };
       }
 

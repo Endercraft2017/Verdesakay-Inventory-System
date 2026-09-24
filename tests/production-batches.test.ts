@@ -1,6 +1,6 @@
 /** First-class production batches / lots. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, addSerializedUnits, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
@@ -52,8 +52,8 @@ describe('production batches', () => {
 
   it('a serialized job order batches a progress entry only when given a label', async () => {
     const { mo } = await releasedMO('B2', 4, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2 });                       // no batch
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2, batch_label: 'RUN-7' }); // batched
+    await addSerializedUnits(ctx.api, token, mo, 2, 'B2');                       // no batch
+    await addSerializedUnits(ctx.api, token, mo, 2, 'B2run', 'RUN-7'); // batched
 
     const b = await batchesFor(mo);
     expect(b.length).toBe(1);
@@ -68,7 +68,7 @@ describe('production batches', () => {
 
   it('a serialized batch auto-closes once all its units reach a terminal state', async () => {
     const { mo } = await releasedMO('B4', 2, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2, batch_label: 'RUN-9' });
+    await addSerializedUnits(ctx.api, token, mo, 2, 'B4', 'RUN-9');
     const statusNow = async () => (await batchesFor(mo))[0]!.status;
     expect(await statusNow()).toBe('open');
 

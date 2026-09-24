@@ -59,6 +59,7 @@ const App = (() => {
 
   function showLogin() {
     me = null;
+    if (window.ChatWS) ChatWS.disconnect();
     appScreen().classList.add('hidden');
     loginScreen().classList.remove('hidden');
     document.getElementById('login-password').value = '';
@@ -83,7 +84,16 @@ const App = (() => {
 
     refreshUnread();
     if (App._unreadTimer) clearInterval(App._unreadTimer);
-    App._unreadTimer = setInterval(refreshUnread, 20000);
+    // Live push (ChatWS) keeps the badge current when connected; this poll is the
+    // fallback for whenever it isn't (reconnecting, blocked by a proxy, ...).
+    App._unreadTimer = setInterval(() => { if (!(window.ChatWS && ChatWS.connected)) refreshUnread(); }, 20000);
+    if (window.ChatWS) {
+      ChatWS.off('message:new', refreshUnread);
+      ChatWS.off('message:deleted', refreshUnread);
+      ChatWS.on('message:new', refreshUnread);
+      ChatWS.on('message:deleted', refreshUnread);
+      ChatWS.connect();
+    }
 
     const parsed = parseHash();
     const start = routes[parsed.route] ? parsed.route : 'dashboard';
@@ -461,7 +471,7 @@ const App = (() => {
     // Right icon rail.
     const railMsg = document.getElementById('rail-messages');
     railMsg.insertAdjacentHTML('afterbegin', UI.icon('messages'));
-    railMsg.addEventListener('click', () => navigate('messages', { box: 'inbox' }));
+    railMsg.addEventListener('click', () => navigate('messages'));
     const railAcct = document.getElementById('rail-account');
     railAcct.innerHTML = UI.icon('user'); // default profile image icon
     railAcct.addEventListener('click', () => navigate('account'));

@@ -6,7 +6,7 @@
    needed. See src/routes/job-orders.routes.ts GET /:id/receivable, POST /:id/products-in.
    filter.tab = 'queue' (default) | 'history' */
 App.register('production-receiving', async (view, filter) => {
-  const canReceive = App.hasPermission('inventory.adjust');
+  const canReceive = App.hasPermission('inventory.adjust') || App.hasPermission('production.receive');
   const tab = filter && filter.tab === 'history' ? 'history' : 'queue';
   const LABEL = 'margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)';
 

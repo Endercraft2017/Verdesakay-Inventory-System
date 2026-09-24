@@ -15,6 +15,8 @@ App.register('hr-employees', async (view) => {
 
   const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', resigned: 'Resigned', terminated: 'Terminated' };
   const STATUS_CLASS = { probationary: 'status-confirmed', regular: 'status-completed', resigned: 'muted', terminated: 'status-cancelled' };
+  const ASSET_STATUS_LABELS = { issued: 'Issued', returned: 'Returned', lost: 'Lost', damaged: 'Damaged' };
+  const ASSET_STATUS_CLASS = { issued: 'status-confirmed', returned: 'status-completed', lost: 'status-cancelled', damaged: 'status-cancelled' };
   const PLACEHOLDER_PHOTO = UI.PLACEHOLDER_PHOTO;
 
   view.innerHTML = `
@@ -459,6 +461,11 @@ App.register('hr-employees', async (view) => {
             <div class="line-actions">
               <input type="file" id="emp-doc-file" style="display:none" />
               <button type="button" class="btn secondary small" id="emp-doc-add">${UI.icon('upload', 15)} Upload document</button>
+            </div>
+            <label style="margin-top:18px;display:block">Assets issued</label>
+            <div id="emp-assets"><div class="empty">Loading…</div></div>
+            <div class="line-actions">
+              <button type="button" class="btn secondary small" id="emp-asset-issue">${UI.icon('archive', 15)} Issue asset</button>
             </div>` : ''}
           </div>`,
         confirmText: editing ? 'Save' : 'Create',
@@ -604,6 +611,42 @@ App.register('hr-employees', async (view) => {
             }
           });
           loadDocs();
+
+          const assetsEl = ov.querySelector('#emp-assets');
+          async function loadAssets() {
+            const issuances = await API.get(`/hr/employees/${existing.id}/assets`).catch(() => []);
+            if (!issuances.length) { assetsEl.innerHTML = '<div class="muted" style="padding:6px 0">No assets issued yet.</div>'; return; }
+            assetsEl.innerHTML = issuances.map((f) => `
+              <div class="tool-row" data-issuance="${f.id}" style="align-items:flex-start">
+                <div class="tool-row-main">
+                  <div class="tool-row-title">${UI.esc(f.number)} <span class="muted" style="font-weight:normal">· ${UI.fmtDateShort(f.issued_date)}${f.issued_by_name ? ' · by ' + UI.esc(f.issued_by_name) : ''}</span></div>
+                  <div style="margin-top:4px">
+                    ${(f.items || []).map((it) => `
+                      <div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12.5px">
+                        <span class="badge-pill ${ASSET_STATUS_CLASS[it.status] || 'muted'}" style="min-width:64px;text-align:center">${ASSET_STATUS_LABELS[it.status] || it.status}</span>
+                        <span>${UI.esc(it.asset_name)}${it.asset_tag ? ' · ' + UI.esc(it.asset_tag) : ''}${it.quantity > 1 ? ' ×' + it.quantity : ''}</span>
+                        ${it.status === 'issued' ? `<button type="button" class="icon-btn" data-asset-return="${it.id}" data-issuance-id="${f.id}" title="Mark returned">${UI.icon('check', 14)}</button>` : ''}
+                      </div>`).join('')}
+                  </div>
+                  ${f.notes ? `<div class="tool-row-sub" style="margin-top:4px">${UI.esc(f.notes)}</div>` : ''}
+                </div>
+                <button type="button" class="icon-btn" data-asset-print="${f.id}" title="Print form">${UI.icon('printer')}</button>
+                <button type="button" class="icon-btn danger" data-asset-del="${f.id}" title="Delete">${UI.icon('trash')}</button>
+              </div>`).join('');
+            assetsEl.querySelectorAll('[data-asset-return]').forEach((b) => b.onclick = () =>
+              returnAssetModal(Number(b.dataset.issuanceId), Number(b.dataset.assetReturn), loadAssets));
+            assetsEl.querySelectorAll('[data-asset-print]').forEach((b) => b.onclick = () => {
+              const full = issuances.find((x) => String(x.id) === b.dataset.assetPrint);
+              if (full) printAssetIssuance(existing, full);
+            });
+            assetsEl.querySelectorAll('[data-asset-del]').forEach((b) => b.onclick = async () => {
+              if (!await UI.confirmDialog('Delete this asset issuance record?', 'Delete')) return;
+              await API.del(`/hr/assets/${b.dataset.assetDel}`);
+              loadAssets();
+            });
+          }
+          ov.querySelector('#emp-asset-issue').onclick = () => assetIssuanceModal(existing, loadAssets);
+          loadAssets();
         },
         onConfirm: async (ov, showErr) => {
           const name = ov.querySelector('[data-f="name"]').value.trim();
@@ -743,6 +786,170 @@ App.register('hr-employees', async (view) => {
       a.href = url; a.download = (doc && doc.original_name) || 'document';
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
+    } catch (e) {
+      UI.toast(e.message, 'error');
+    }
+  }
+
+  /* ---------- Assets issued: an "Asset Issuance Form" per submission, one or more asset
+     lines per form, each independently returnable ---------- */
+
+  function assetLineRow(l) {
+    l = l || {};
+    return `<tr>
+      <td><input data-name value="${UI.esc(l.asset_name || '')}" placeholder="e.g. Laptop - Dell XPS 13" style="width:100%" /></td>
+      <td><input data-cat value="${UI.esc(l.category || '')}" placeholder="Laptop, Tool, Uniform…" style="width:100%" /></td>
+      <td><input data-tag value="${UI.esc(l.asset_tag || '')}" placeholder="Serial / tag" style="width:100%" /></td>
+      <td><input data-qty type="number" min="1" step="1" value="${l.quantity || 1}" style="width:64px" /></td>
+      <td><input data-cond value="${UI.esc(l.condition_on_issue || '')}" placeholder="New, Good…" style="width:100%" /></td>
+      <td><button type="button" class="icon-btn danger" data-rm title="Remove">${UI.icon('trash')}</button></td>
+    </tr>`;
+  }
+
+  function assetIssuanceModal(emp, after) {
+    UI.modal({
+      title: 'Issue asset — ' + emp.name,
+      size: 'lg',
+      bodyHTML: `
+        <div class="field-row">
+          <div><label>Issue date</label><input data-f="date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
+          <div style="flex:1"><label>Notes</label><input data-f="note" placeholder="Optional" /></div>
+        </div>
+        <h4 style="margin-top:14px;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted)">Assets</h4>
+        <table><thead><tr><th>Asset</th><th>Category</th><th>Tag / Serial</th><th style="width:64px">Qty</th><th>Condition</th><th></th></tr></thead>
+          <tbody id="asset-rows">${assetLineRow()}</tbody></table>
+        <button type="button" class="btn secondary small" id="asset-add-row" style="margin-top:8px">${UI.icon('plus')} Add asset</button>`,
+      confirmText: 'Issue',
+      onOpen: (ov) => {
+        ov.querySelector('#asset-add-row').onclick = () =>
+          ov.querySelector('#asset-rows').insertAdjacentHTML('beforeend', assetLineRow());
+        ov.querySelector('#asset-rows').addEventListener('click', (e) => {
+          const rm = e.target.closest('[data-rm]');
+          if (rm) rm.closest('tr').remove();
+        });
+      },
+      onConfirm: async (ov, showErr) => {
+        const items = [];
+        ov.querySelectorAll('#asset-rows tr').forEach((tr) => {
+          const asset_name = tr.querySelector('[data-name]').value.trim();
+          if (!asset_name) return;
+          items.push({
+            asset_name,
+            category: tr.querySelector('[data-cat]').value.trim() || null,
+            asset_tag: tr.querySelector('[data-tag]').value.trim() || null,
+            quantity: Number(tr.querySelector('[data-qty]').value) || 1,
+            condition_on_issue: tr.querySelector('[data-cond]').value.trim() || null,
+          });
+        });
+        if (!items.length) { showErr('Add at least one asset'); return false; }
+        const issueDate = ov.querySelector('[data-f="date"]').value;
+        if (!issueDate) { showErr('Issue date is required'); return false; }
+        let created;
+        try {
+          created = await API.post(`/hr/employees/${emp.id}/assets`, {
+            issued_date: issueDate,
+            notes: ov.querySelector('[data-f="note"]').value.trim() || null,
+            items,
+          });
+        } catch (e) { showErr(e.message); return false; }
+        UI.toast('Asset(s) issued');
+        if (after) after();
+        const full = await API.get(`/hr/assets/${created.id}`).catch(() => null);
+        if (full) printAssetIssuance(emp, full);
+      },
+    });
+  }
+
+  function returnAssetModal(issuanceId, itemId, after) {
+    UI.modal({
+      title: 'Mark asset returned',
+      bodyHTML: `
+        <div class="field-row">
+          <div><label>Return date</label><input data-f="date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
+          <div><label>Status</label><select data-f="status">
+            <option value="returned">Returned</option>
+            <option value="lost">Lost</option>
+            <option value="damaged">Damaged</option>
+          </select></div>
+        </div>
+        <div style="margin-top:8px"><label>Condition</label><input data-f="cond" placeholder="Good, worn, scratched…" /></div>
+        <div style="margin-top:8px"><label>Notes</label><textarea data-f="notes" rows="2"></textarea></div>`,
+      confirmText: 'Save',
+      onConfirm: async (ov, showErr) => {
+        const returnDate = ov.querySelector('[data-f="date"]').value;
+        if (!returnDate) { showErr('Return date is required'); return false; }
+        try {
+          await API.post(`/hr/assets/${issuanceId}/items/${itemId}/return`, {
+            returned_date: returnDate,
+            status: ov.querySelector('[data-f="status"]').value,
+            condition_on_return: ov.querySelector('[data-f="cond"]').value.trim() || null,
+            return_notes: ov.querySelector('[data-f="notes"]').value.trim() || null,
+          });
+          UI.toast('Asset updated');
+          if (after) after();
+        } catch (e) { showErr(e.message); return false; }
+      },
+    });
+  }
+
+  /* Default body used only if the editable "Asset Issuance Form" document template (Documents >
+     Templates) is somehow missing — normal installs always have the seeded one. */
+  const FALLBACK_ASSET_FORM_TEMPLATE = `<div style="font-family:Arial,sans-serif;font-size:12px;max-width:680px;margin:0 auto">
+    <h2 style="text-align:center;margin:0 0 4px">ASSET ISSUANCE FORM</h2>
+    <div style="text-align:center;color:#555;font-size:11px;margin-bottom:14px">{{company.name}} · Form {{issuance.number}} · Issued {{issuance.issued_date}}</div>
+    <p><strong>Employee:</strong> {{employee.name}} ({{employee.employee_no}})</p>
+    <table style="width:100%;border-collapse:collapse;margin-top:6px">
+      <thead><tr><th style="border:1px solid #ccc;padding:4px">Asset</th><th style="border:1px solid #ccc;padding:4px">Tag</th><th style="border:1px solid #ccc;padding:4px">Qty</th><th style="border:1px solid #ccc;padding:4px">Condition</th></tr></thead>
+      <tbody>{{#items}}<tr><td style="border:1px solid #ccc;padding:4px">{{asset_name}}</td><td style="border:1px solid #ccc;padding:4px">{{asset_tag}}</td><td style="border:1px solid #ccc;padding:4px">{{quantity}}</td><td style="border:1px solid #ccc;padding:4px">{{condition_on_issue}}</td></tr>{{/items}}</tbody>
+    </table>
+    <div style="display:flex;justify-content:space-between;margin-top:40px;font-size:10px">
+      <div style="width:46%;border-top:1px solid #666;padding-top:3px;text-align:center">{{employee.name}}<br/>Employee signature</div>
+      <div style="width:46%;border-top:1px solid #666;padding-top:3px;text-align:center">{{issuance.issued_by_name}}<br/>Issued by</div>
+    </div>
+  </div>`;
+
+  // Same preview-modal + iframe pattern as generateId() below — avoids window.open() popup blocking.
+  async function printAssetIssuance(emp, issuance) {
+    try {
+      const [templateList, company] = await Promise.all([
+        API.get('/templates'),
+        API.get('/templates/company'),
+      ]);
+      const meta = templateList.find((t) => t.name === 'Asset Issuance Form');
+      const tpl = meta ? await API.get('/templates/' + meta.id) : null;
+      const tplBody = tpl ? tpl.body : FALLBACK_ASSET_FORM_TEMPLATE;
+      const ctx = {
+        company,
+        employee: {
+          name: emp.name, employee_no: emp.employee_no || '', position: emp.position || '',
+          department: emp.department_name || '',
+        },
+        issuance: {
+          number: issuance.number, issued_date: UI.fmtDateShort(issuance.issued_date),
+          notes: issuance.notes || '', issued_by_name: issuance.issued_by_name || '',
+        },
+        items: (issuance.items || []).map((it) => ({
+          asset_name: it.asset_name, category: it.category || '', asset_tag: it.asset_tag || '',
+          quantity: it.quantity, condition_on_issue: it.condition_on_issue || '',
+        })),
+        today: new Date().toLocaleDateString(),
+      };
+      const full = UI.printableHtml(renderTemplate(tplBody, ctx), 'Asset Issuance - ' + emp.name);
+
+      UI.modal({
+        title: 'Asset Issuance Form Preview',
+        size: 'lg',
+        bodyHTML: `<iframe id="asset-form-frame" style="width:100%;height:60vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+        cancelText: 'Close',
+        confirmText: 'Print…',
+        onOpen: (ov) => { ov.querySelector('#asset-form-frame').srcdoc = full; },
+        onConfirm: (ov) => {
+          const ifr = ov.querySelector('#asset-form-frame');
+          ifr.contentWindow.focus();
+          ifr.contentWindow.print();
+          return false; // keep the preview open — printing shouldn't close it
+        },
+      });
     } catch (e) {
       UI.toast(e.message, 'error');
     }

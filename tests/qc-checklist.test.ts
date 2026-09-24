@@ -1,10 +1,10 @@
-/** Multiple named QA/QC checklists: a library of checklists, each belonging to one
- *  stage as a whole (QA = first pass, QC = final pass), one attachable per stage per
+/** Multiple named QC/QA checklists: a library of checklists, each belonging to one
+ *  stage as a whole (QC = first pass, QA = final pass), one attachable per stage per
  *  finished product (with a per-stage `is_default` fallback), filled by the inspector
  *  and enforced on a pass. Plus: every inspection + the warehouse release are stamped
  *  with the acting account. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, addSerializedUnits, type TestContext } from './helpers';
 import { ALL_PERMISSIONS, roleDefaults } from '../src/shared/permissions';
 
 let ctx: TestContext;
@@ -97,11 +97,11 @@ describe('per-product resolution + enforcement', () => {
     const def = await makeChecklist('Company default', [{ label: 'Serial number legible', required: true }], { is_default: true, stage: 1 });
     const { mo } = await releasedMO('QDEF', 2, 1); // no checklist attached to the product
     const jo = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
-    expect(jo.qc_checklist_qa.id).toBe(def);
-    expect(jo.qc_checklist_qa.name).toBe('Company default');
-    expect(jo.qc_checklist_qc).toBeNull();
+    expect(jo.qc_checklist_qc.id).toBe(def);
+    expect(jo.qc_checklist_qc.name).toBe('Company default');
+    expect(jo.qc_checklist_qa).toBeNull();
 
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2 });
+    await addSerializedUnits(ctx.api, token, mo, 2, 'QDEF');
     const units = await pendingUnits(mo);
     expect((await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: [units[0]!.id], result: 'pass' })).status).toBe(400);
@@ -112,20 +112,20 @@ describe('per-product resolution + enforcement', () => {
   });
 
   it('uses the product-attached checklists over the defaults, and stores the snapshot + inspector', async () => {
-    await makeChecklist('Generic QA default', [{ label: 'Generic QA check', required: true }], { is_default: true, stage: 1 });
-    await makeChecklist('Generic QC default', [{ label: 'Generic QC check', required: true }], { is_default: true, stage: 2 });
-    const qa = await makeChecklist('Engine line QA', [{ label: 'Torque to spec', required: true }], { stage: 1 });
-    const qc = await makeChecklist('Engine line QC', [{ label: 'Leak test', required: true }], { stage: 2 });
+    await makeChecklist('Generic QC default', [{ label: 'Generic QC check', required: true }], { is_default: true, stage: 1 });
+    await makeChecklist('Generic QA default', [{ label: 'Generic QA check', required: true }], { is_default: true, stage: 2 });
+    const qc = await makeChecklist('Engine line QC', [{ label: 'Torque to spec', required: true }], { stage: 1 });
+    const qa = await makeChecklist('Engine line QA', [{ label: 'Leak test', required: true }], { stage: 2 });
     const { mo } = await releasedMO('QATT', 2, 1, { qa, qc });
     const jo = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
-    expect(jo.qc_checklist_qa.name).toBe('Engine line QA');
     expect(jo.qc_checklist_qc.name).toBe('Engine line QC');
+    expect(jo.qc_checklist_qa.name).toBe('Engine line QA');
 
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 1 });
+    await addSerializedUnits(ctx.api, token, mo, 1, 'QATT');
     const units = await pendingUnits(mo);
     const bad = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: [units[0]!.id], result: 'pass', checklist: [{ label: 'Torque to spec', ok: true }] });
-    expect(bad.status).toBe(400); // single-stage MO → both the QA and QC checklists apply together, "Leak test" is also required
+    expect(bad.status).toBe(400); // single-stage MO → both the QC and QA checklists apply together, "Leak test" is also required
 
     const ok = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H()).send({
       unit_ids: [units[0]!.id], result: 'pass', remarks: 'ok',
@@ -141,7 +141,7 @@ describe('per-product resolution + enforcement', () => {
   it('a fail needs no checklist', async () => {
     await makeChecklist('D', [{ label: 'Q', required: true }], { is_default: true, stage: 1 });
     const { mo } = await releasedMO('QF', 2, 1);
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2 });
+    await addSerializedUnits(ctx.api, token, mo, 2, 'QF');
     const units = await pendingUnits(mo);
     const r = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: [units[0]!.id], result: 'fail', disposition: 'scrap', remarks: 'cracked' });
@@ -159,10 +159,10 @@ describe('BOM checklist attach + who released', () => {
     expect(r.status).toBe(400);
   });
 
-  it('rejects a QC-stage checklist in the QA slot', async () => {
+  it('rejects a first-pass-stage checklist in the QA (final-pass) slot', async () => {
     const product = await mkItem('MismatchCl Product');
     const part = await mkItem('MismatchCl Part', 10);
-    const qc = await makeChecklist('QC-only', [], { stage: 2 });
+    const qc = await makeChecklist('QC-only', [], { stage: 1 });
     const r = await ctx.api.put(`/api/finished-products/${product}`).set(H())
       .send({ components: [{ component_item_id: part, quantity: 1 }], qc_checklist_qa_id: qc });
     expect(r.status).toBe(400);
@@ -178,16 +178,60 @@ describe('BOM checklist attach + who released', () => {
   });
 });
 
+describe('PATCH /api/finished-products/:id/checklist — assign one stage without touching the BOM', () => {
+  it('assigns then clears a stage checklist, leaving components untouched', async () => {
+    const product = await mkItem('PatchCl Product');
+    const part = await mkItem('PatchCl Part', 10);
+    await ctx.api.put(`/api/finished-products/${product}`).set(H())
+      .send({ components: [{ component_item_id: part, quantity: 2 }] });
+    const qc = await makeChecklist('Patch QC', [{ label: 'Check A', required: true }], { stage: 1 });
+
+    const r = await ctx.api.patch(`/api/finished-products/${product}/checklist`).set(H())
+      .send({ stage: 1, checklist_id: qc });
+    expect(r.status).toBe(200);
+    let full = (await ctx.api.get(`/api/finished-products/${product}`).set(H())).body;
+    expect(full.qc_checklist_qc_id).toBe(qc);
+    expect(full.bom).toHaveLength(1);
+    expect(full.bom[0].quantity).toBe(2);
+
+    const cleared = await ctx.api.patch(`/api/finished-products/${product}/checklist`).set(H())
+      .send({ stage: 1, checklist_id: null });
+    expect(cleared.status).toBe(200);
+    full = (await ctx.api.get(`/api/finished-products/${product}`).set(H())).body;
+    expect(full.qc_checklist_qc_id).toBeNull();
+    expect(full.bom).toHaveLength(1); // still untouched
+  });
+
+  it('rejects a stage mismatch, an unknown checklist, and an unknown product', async () => {
+    const product = await mkItem('PatchCl2 Product');
+    const qa = await makeChecklist('Patch QA', [], { stage: 2 });
+    expect((await ctx.api.patch(`/api/finished-products/${product}/checklist`).set(H())
+      .send({ stage: 1, checklist_id: qa })).status).toBe(400);
+    expect((await ctx.api.patch(`/api/finished-products/${product}/checklist`).set(H())
+      .send({ stage: 1, checklist_id: 999999 })).status).toBe(400);
+    expect((await ctx.api.patch('/api/finished-products/999999/checklist').set(H())
+      .send({ stage: 1, checklist_id: null })).status).toBe(404);
+  });
+
+  it('needs qc.configure — inventory.edit alone (e.g. warehouse) is not enough', async () => {
+    const product = await mkItem('PatchCl3 Product');
+    const qc = await makeChecklist('Patch QC 3', [], { stage: 1 });
+    const wh = await createEmployee(ctx.api, token, { role: 'warehouse' });
+    expect((await ctx.api.patch(`/api/finished-products/${product}/checklist`).set(bearer(wh.token))
+      .send({ stage: 1, checklist_id: qc })).status).toBe(403);
+  });
+});
+
 describe('GET /api/qc/records — cross-job-order findings feed', () => {
   it('aggregates pass/fail records from multiple job orders with job order + inspector context', async () => {
-    // Empty QA + QC checklists (no required checks) so pass/fail here doesn't depend on
+    // Empty QC + QA checklists (no required checks) so pass/fail here doesn't depend on
     // whatever default checklist earlier tests in this file left behind.
-    const noReqsQa = await makeChecklist('QREC no-op QA', [], { stage: 1 });
-    const noReqsQc = await makeChecklist('QREC no-op QC', [], { stage: 2 });
+    const noReqsQc = await makeChecklist('QREC no-op QC', [], { stage: 1 });
+    const noReqsQa = await makeChecklist('QREC no-op QA', [], { stage: 2 });
     const noReqs = { qa: noReqsQa, qc: noReqsQc };
 
     const { mo: mo1 } = await releasedMO('QREC1', 2, 1, noReqs);
-    await ctx.api.post(`/api/job-orders/${mo1}/progress`).set(H()).send({ done_delta: 2 });
+    await addSerializedUnits(ctx.api, token, mo1, 2, 'QREC1');
     const units1 = await pendingUnits(mo1);
     const r1 = await ctx.api.post(`/api/job-orders/${mo1}/units/inspect`).set(H())
       .send({ unit_ids: [units1[0]!.id], result: 'pass' });
@@ -197,7 +241,7 @@ describe('GET /api/qc/records — cross-job-order findings feed', () => {
     expect(r2.status).toBe(200);
 
     const { mo: mo2 } = await releasedMO('QREC2', 1, 1, noReqs);
-    await ctx.api.post(`/api/job-orders/${mo2}/progress`).set(H()).send({ done_delta: 1 });
+    await addSerializedUnits(ctx.api, token, mo2, 1, 'QREC2');
     const units2 = await pendingUnits(mo2);
     const r3 = await ctx.api.post(`/api/job-orders/${mo2}/units/inspect`).set(H())
       .send({ unit_ids: [units2[0]!.id], result: 'pass' });

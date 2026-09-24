@@ -28,6 +28,15 @@ App.register('admin', async (view, filter) => {
     csr: 'Customer Service',
     hr: 'HR',
     marketing: 'Marketing',
+    // Narrow, single-task shop-floor roles (mobile-first) — each holds only the one
+    // production permission its person needs, not the broad Warehouse role's full
+    // inventory.adjust. See src/shared/permissions.ts ROLE_DEFAULTS.
+    parts_clerk: 'Parts Clerk (accepts repair parts requests)',
+    production_lead: 'Production Lead (records units off the line)',
+    qc_inspector: 'QC Inspector (first-pass inspection)',
+    qa_inspector: 'QA Inspector (final-pass inspection)',
+    receiving_clerk: 'Products In Clerk (receives passed units)',
+    releasing_clerk: 'Releasing Clerk (scans SOs out)',
   };
 
   // Grouping/labels are a frontend-only presentation concern. The actual permission keys and
@@ -52,11 +61,19 @@ App.register('admin', async (view, filter) => {
     { label: 'Quality Control', items: [
       { key: 'qc.configure', label: 'Configure QC checklists', desc: 'Set up QC checklists and inspection criteria' },
     ] },
+    { label: 'Production', items: [
+      { key: 'production.repairs', label: 'Accept/reject parts requests', desc: 'Warehouse: issue or decline parts a rework unit needs' },
+      { key: 'production.record', label: 'Record production', desc: 'Add finished units/batches off the line' },
+      { key: 'production.inspect_qc', label: 'Inspect units (QC, first pass)', desc: 'Pass/fail units and batches on the first inspection pass, request repair parts' },
+      { key: 'production.inspect_qa', label: 'Inspect units (QA, final pass)', desc: 'Pass/fail units and batches on the final inspection pass, request repair parts' },
+      { key: 'production.receive', label: 'Products In', desc: 'Receive QC/QA-passed output into stock' },
+    ] },
     { label: 'Orders', items: [
       { key: 'orders.view', label: 'View', desc: 'See sales and purchase orders' },
       { key: 'orders.create', label: 'Create', desc: 'Create new orders' },
       { key: 'orders.edit', label: 'Edit', desc: 'Edit existing orders' },
       { key: 'orders.delete', label: 'Delete', desc: 'Delete orders' },
+      { key: 'orders.release', label: 'Release sale orders', desc: 'Scan/enter goods out against an approved sale order' },
     ] },
     { label: 'Files', items: [
       { key: 'forms.view', label: 'View', desc: 'See uploaded files and documents' },

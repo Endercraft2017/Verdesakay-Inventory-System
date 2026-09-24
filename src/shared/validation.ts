@@ -55,7 +55,11 @@ export const changePasswordSchema = z.object({
 });
 
 // ---- Users / departments ----
-const roleEnum = z.enum(['admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing']);
+const roleEnum = z.enum([
+  'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
+  'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+  'releasing_clerk',
+]);
 
 const emailOpt = z.union([z.literal(''), z.string().trim().toLowerCase().email('Enter a valid email')])
   .optional().nullable();
@@ -266,6 +270,13 @@ export const saveBomSchema = z.object({
   std_overhead_cost: z.coerce.number().min(0).max(1e12).optional().nullable(),
 });
 
+/** PATCH /api/finished-products/:id/checklist — assign (or clear, via null) one stage's
+    checklist without touching the rest of the BOM/costs. stage: 1 = QC, 2 = QA. */
+export const assignChecklistSchema = z.object({
+  stage: z.coerce.number().int().min(1).max(2),
+  checklist_id: optionalId,
+});
+
 /** POST /api/finished-products/:id/units/allocate — sell or relocate in-stock units.
     Provide either explicit `unit_ids` (serialized) or a `quantity` of bulk units. */
 export const allocateUnitsSchema = z
@@ -360,6 +371,16 @@ export const jobOrderProgressSchema = z
     batch_label: trimmed.max(80).optional().nullable(),
   })
   .refine((d) => d.done_delta + d.scrapped_delta > 0, 'Enter a finished or scrapped quantity');
+
+/** POST /api/job-orders/:id/units — add one serialized unit "off the line" with its
+    identifier captured at creation (required). See job-orders.routes.ts for why this is
+    separate from jobOrderProgressSchema's bulk done_delta. batch_label is optional —
+    same grouping label a bulk progress entry used to take, just applied one unit at a
+    time (repeat calls with the same label add to that job order's open batch of it). */
+export const addUnitSchema = z.object({
+  identifier: trimmed.min(1, 'An identifier is required for each unit').max(120),
+  batch_label: trimmed.max(80).optional().nullable(),
+});
 
 /** An alphanumeric identifier for a produced unit (serial / chassis / motor no.).
     Not required to be unique — several units may share one. */
@@ -519,6 +540,17 @@ export const sendMessageSchema = z.object({
   recipient_id: z.coerce.number().int().positive('Recipient is required'),
   subject: trimmed.max(200).optional().nullable(),
   body: trimmed.min(1, 'Message body is required').max(5000),
+  reply_to_id: z.coerce.number().int().positive().optional(),
+});
+
+export const editMessageSchema = z.object({
+  body: trimmed.min(1, 'Message body is required').max(5000),
+});
+
+/** A single emoji grapheme (allows a short cluster for skin-tone/ZWJ variants), not
+    arbitrary text — this becomes a `message_reactions.emoji` value. */
+export const reactSchema = z.object({
+  emoji: trimmed.min(1, 'Emoji is required').max(8),
 });
 
 // ---- Personal tools (notes / tasks / bookmarks) ----
@@ -1027,6 +1059,28 @@ export const employeeSchema = z.object({
   (v) => v.rate_type !== 'monthly' || (v.monthly_rate != null && v.monthly_rate > 0),
   { message: 'Monthly rate is required when rate type is monthly', path: ['monthly_rate'] }
 );
+
+// ---- HR: Asset issuance (company property issued to an employee) ----
+const assetIssuanceLineSchema = z.object({
+  asset_name: trimmed.min(1, 'Asset name is required').max(160),
+  category: trimmed.max(60).optional().nullable(),
+  asset_tag: trimmed.max(80).optional().nullable(),
+  quantity: intCoerce.min(1, 'Quantity must be at least 1').max(100_000).default(1),
+  condition_on_issue: trimmed.max(60).optional().nullable(),
+});
+
+export const createAssetIssuanceSchema = z.object({
+  issued_date: trimmed.min(1, 'Issue date is required').max(40),
+  notes: optionalText,
+  items: z.array(assetIssuanceLineSchema).min(1, 'Add at least one asset').max(100),
+});
+
+export const returnAssetItemSchema = z.object({
+  status: z.enum(['returned', 'lost', 'damaged']).default('returned'),
+  returned_date: trimmed.min(1, 'Return date is required').max(40),
+  condition_on_return: trimmed.max(60).optional().nullable(),
+  return_notes: optionalText,
+});
 
 export const attendancePeriodSchema = z
   .object({

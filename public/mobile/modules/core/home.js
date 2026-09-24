@@ -192,25 +192,46 @@
     view.appendChild(picker.el);
     view.appendChild(mEl('<div class="m-scanbar-sub">type a name or SKU, or tap the scanner</div>'));
 
-    var stat = mEl('<div class="m-stat3">' +
-      '<button data-go="low-stock"><span class="n" data-k="low">–</span><span class="l warn">Low Stock</span></button>' +
-      '<button data-go="pick"><span class="n" data-k="picks">–</span><span class="l">Picks</span></button>' +
-      '<button data-go="qc"><span class="n" data-k="qa">–</span><span class="l ok">QA</span></button>' +
-      '</div>');
-    stat.querySelectorAll('button').forEach(function (b) { b.onclick = function () { MApp.go(b.dataset.go); }; });
-    view.appendChild(stat);
+    // Each tile needs inventory.adjust (general warehouse ops) except QA, which a narrow
+    // qc_inspector/qa_inspector account (production.inspect_qc/_qa, no inventory.adjust)
+    // also gets — same "only what this account can act on" filtering as the Production
+    // tab / Work queue.
+    var canAdjust = MApp.can('inventory.adjust');
+    var tiles = [];
+    if (canAdjust) tiles.push({ go: 'low-stock', key: 'low', label: 'Low Stock', cls: 'warn' });
+    if (canAdjust) tiles.push({ go: 'pick', key: 'picks', label: 'Picks', cls: '' });
+    if (canAdjust || MApp.can('production.inspect_qc') || MApp.can('production.inspect_qa')) tiles.push({ go: 'qc', key: 'qa', label: 'QA', cls: 'ok' });
 
-    API.get('/inventory/stats').then(function (s) {
-      var el = stat.querySelector('[data-k="low"]'); if (el) el.textContent = s.low_stock != null ? s.low_stock : '0';
-    }).catch(function () {});
-    API.get('/orders?type=sale').then(function (o) {
-      var open = (o || []).filter(function (x) { return x.status !== 'cancelled' && x.status !== 'closed' && x.status !== 'completed'; }).length;
-      var el = stat.querySelector('[data-k="picks"]'); if (el) el.textContent = open;
-    }).catch(function () {});
-    API.get('/job-orders').then(function (j) {
-      var qa = (j || []).reduce(function (a, x) { return a + (x.units_pending || 0) + (x.units_rework || 0); }, 0);
-      var el = stat.querySelector('[data-k="qa"]'); if (el) el.textContent = qa;
-    }).catch(function () {});
+    if (tiles.length) {
+      var stat = mEl('<div class="m-stat3">' +
+        tiles.map(function (t) {
+          return '<button data-go="' + t.go + '"><span class="n" data-k="' + t.key + '">–</span><span class="l ' + t.cls + '">' + mEsc(t.label) + '</span></button>';
+        }).join('') +
+        '</div>');
+      stat.querySelectorAll('button').forEach(function (b) { b.onclick = function () { MApp.go(b.dataset.go); }; });
+      view.appendChild(stat);
+
+      if (stat.querySelector('[data-k="low"]')) {
+        API.get('/inventory/stats').then(function (s) {
+          var el = stat.querySelector('[data-k="low"]'); if (el) el.textContent = s.low_stock != null ? s.low_stock : '0';
+        }).catch(function () {});
+      }
+      if (stat.querySelector('[data-k="picks"]')) {
+        API.get('/orders?type=sale').then(function (o) {
+          var open = (o || []).filter(function (x) { return x.status !== 'cancelled' && x.status !== 'closed' && x.status !== 'completed'; }).length;
+          var el = stat.querySelector('[data-k="picks"]'); if (el) el.textContent = open;
+        }).catch(function () {});
+      }
+      if (stat.querySelector('[data-k="qa"]')) {
+        // units_actionable is already scoped to what this account's own inspect
+        // permission(s) cover (see job-orders.routes.ts GET /) — matches production.js's
+        // QC/QA tile and qc.js's own filtered queue.
+        API.get('/job-orders').then(function (j) {
+          var qa = (j || []).reduce(function (a, x) { return a + (x.units_actionable || 0); }, 0);
+          var el = stat.querySelector('[data-k="qa"]'); if (el) el.textContent = qa;
+        }).catch(function () {});
+      }
+    }
 
     view.appendChild(mEl('<div class="m-sectitle">Work queue (by urgency)</div>'));
     view.appendChild(window.mWorkQueue ? mWorkQueue() : mEl('<div class="m-hint">Loading…</div>'));

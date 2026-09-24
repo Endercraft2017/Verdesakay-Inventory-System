@@ -18,7 +18,11 @@ schema/migrations), `types.ts`, `validation.ts`, `permissions.ts`, `auth.ts`
 (session/login middleware), `activity.ts` (audit log writer), `idempotency.ts`,
 `csv.ts`, `csv-import.ts`, `mailer.ts` (BYO-SMTP transport), `secrets.ts` (AES-GCM),
 `push.ts` (task-reminder notifications), `modules.ts` (the `requireModule()` gate
-every business module below is mounted behind).
+every business module below is mounted behind), `ws.ts` (WebSocket real-time push —
+the app's one live channel; everything else is REST + polling. `attachWebSocket(server)`
+is wired from `server.ts`; `broadcast(tenantSlug, userIds, event)` is exported for a
+route to call after a mutation. First (and so far only) consumer:
+`core/messages.routes.ts`'s chat feature).
 **Public interface:** plain named function/class exports, imported directly — no HTTP
 surface of its own except where `core/` exposes one (e.g. `core/push.routes.ts` wraps
 `shared/push.ts`).
@@ -48,15 +52,19 @@ reads `platform/platform.ts` for per-tenant photo-retention settings.
 ## core/ — ungated baseline
 
 **Responsibility:** the product features every workspace has regardless of plan —
-login, user/department admin, documents & templates, forms engine, messages,
-attachments, bug reports, personal notes/tasks, announcements, activity log,
-analytics, push-reminder routes.
+login, user/department admin, documents & templates, forms engine, real-time 1:1 chat
+messaging (conversations, reply, edit, reactions, sender-only soft delete, link/file
+previews — see `messages.routes.ts` below and `shared/ws.ts`), attachments, bug reports,
+personal notes/tasks, announcements, activity log, analytics, push-reminder routes.
 **Owned files:** `doc-catalog.ts`, `form-actions.ts`, routes: `auth.routes.ts`,
 `users.routes.ts`, `attachments.routes.ts`, `bug-reports.routes.ts`, `forms.routes.ts`,
 `form-builder.routes.ts`, `messages.routes.ts`, `personal.routes.ts`,
 `templates.routes.ts`, `me.routes.ts`, `announcements.routes.ts`, `activity.routes.ts`,
 `analytics.routes.ts`, `push.routes.ts`.
 **Public interface:** standard REST routes mounted with no `requireModule()` gate.
+`messages.routes.ts` also calls `shared/ws.ts`'s `broadcast()` after each mutation for
+live chat updates — VOIP/calling is explicitly out of scope for this feature (deferred as
+its own future project; needs WebRTC + a STUN/TURN server, unrelated infra).
 **Dependencies:** `shared/` only. **Known wart:** `modules/ai/ai-tools.ts` imports
 `visibilityClause` out of `core/forms.routes.ts` — a routes file used as a library.
 Pre-existing; not fixed by this reorg.
@@ -96,10 +104,13 @@ batches/teams/scheduling.
 ## modules/hr
 
 **Responsibility:** employee records, timekeeping/kiosk clock, field work log, daily
-attendance reporting, punch photos. Pay computation itself is `modules/payroll`.
+attendance reporting, punch photos, company-property issuance (laptops, tools, uniforms, …
+issued/returned per employee, standalone register — not linked to Inventory stock). Pay
+computation itself is `modules/payroll`.
 **Owned files:** `clock.ts`, `field.ts`, `hr-daily-report.ts`,
-`hr-employee-numbering.ts`, `punch-photos.ts`, routes: `hr.routes.ts`,
-`clock.routes.ts`, `field.routes.ts`.
+`hr-employee-numbering.ts`, `punch-photos.ts`, routes: `hr.routes.ts` (also owns the
+`asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
+doc_template, SCHEMA_VERSION 43), `clock.routes.ts`, `field.routes.ts`.
 **Dependencies:** `modules/payroll` (pay computation + statutory tables),
 `modules/accounting` (`accounting-autopost.ts`, to post payroll to the ledger),
 `platform/` (photo-retention settings).

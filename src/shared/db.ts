@@ -57,7 +57,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 41; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 44; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -124,6 +124,22 @@ export const SCHEMA_VERSION = 41; // 20: employees.late_exempt; 21: attendance_r
 // checklists/links are migrated below rather than dropped.
 // 41: employees.sss_override / philhealth_override / pagibig_override -- the same fixed-amount
 // override withholding_tax_override already had, now for the three contribution funds too.
+// 42: inspection stage order flipped -- stage 1 (first pass) is now QC (performance/technical
+// check), stage 2 (final pass) is now QA (appearance check); was QA-then-QC. Stage numbers and
+// pass order are unchanged, only which label attaches to which stage. inventory_items'
+// qc_checklist_qa_id / qc_checklist_qc_id columns are swapped in place (data stays with its
+// stage, only the column names trade places) so each name still matches what it holds.
+// 43: asset_issuances / asset_issuance_items -- company property (laptops, tools, uniforms,
+// IDs, …) issued to an employee, as a header (one printable "Asset Issuance Form", numbered
+// AI-00001) + line items so one form can cover several assets at once. Each line tracks its
+// own status (issued/returned/lost/damaged) and return date/condition independently, since
+// items issued together don't necessarily come back together. Standalone register, not linked
+// to Inventory stock -- see the "Asset Issuance Form" doc_template and the Assets section on
+// the Edit Employee modal (public/js/modules/hr/hr-employees.js).
+// 44: messages gain reply_to_id / edited_at / deleted_at / deleted_by (chat-style reply,
+// edit, and sender-only soft "unsend" -- see src/core/messages.routes.ts); new
+// message_reactions (one emoji reaction per user per message) and link_previews (cached
+// OG-tag fetch results, keyed by URL) tables.
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -651,10 +667,10 @@ function createSchema(): void {
       decided_at        TEXT
     );
 
-    -- Named QA/QC checklist templates. Each checklist belongs to one stage as a whole
-    -- (stage: 1 = QA / first pass, 2 = QC / final pass) rather than tagging items
+    -- Named QC/QA checklist templates. Each checklist belongs to one stage as a whole
+    -- (stage: 1 = QC / first pass, 2 = QA / final pass) rather than tagging items
     -- individually. A finished product points at one checklist per stage via
-    -- inventory_items.qc_checklist_qa_id / qc_checklist_qc_id; the is_default row for
+    -- inventory_items.qc_checklist_qc_id / qc_checklist_qa_id; the is_default row for
     -- that stage covers products with none attached. The items column is JSON:
     -- [{label, required}].
     CREATE TABLE IF NOT EXISTS qc_checklists (
@@ -754,6 +770,31 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
 
+    -- One emoji reaction per user per message (SCHEMA_VERSION 44). Re-reacting with the
+    -- same emoji toggles it off; a different emoji replaces it (see UNIQUE below).
+    CREATE TABLE IF NOT EXISTS message_reactions (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      emoji      TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(message_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_reactions_message ON message_reactions(message_id);
+
+    -- Cached Open Graph metadata for a link preview card, keyed by URL (SCHEMA_VERSION 44)
+    -- so the same link shared repeatedly isn't refetched on every render. failed marks a
+    -- URL that couldn't be fetched/parsed (blocked, timed out, not HTML, ...).
+    CREATE TABLE IF NOT EXISTS link_previews (
+      url         TEXT PRIMARY KEY,
+      title       TEXT,
+      description TEXT,
+      image_url   TEXT,
+      site_name   TEXT,
+      fetched_at  TEXT NOT NULL,
+      failed      INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS form_definitions (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       name          TEXT NOT NULL,
@@ -833,6 +874,34 @@ function createSchema(): void {
       size_bytes    INTEGER NOT NULL DEFAULT 0,
       uploaded_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Company property issued to an employee -- header (SCHEMA_VERSION 43). One row per
+    -- printed/signed "Asset Issuance Form"; number is human-readable (AI-00001).
+    CREATE TABLE IF NOT EXISTS asset_issuances (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      number      TEXT NOT NULL UNIQUE,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      issued_date TEXT NOT NULL,
+      issued_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      notes       TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    -- One asset per line -- each returned/lost/damaged independently of its siblings on the
+    -- same issuance, since a batch of gear issued together doesn't necessarily come back together.
+    CREATE TABLE IF NOT EXISTS asset_issuance_items (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      issuance_id         INTEGER NOT NULL REFERENCES asset_issuances(id) ON DELETE CASCADE,
+      asset_name          TEXT NOT NULL,
+      category            TEXT,
+      asset_tag           TEXT,   -- serial / property number, if any
+      quantity            INTEGER NOT NULL DEFAULT 1,
+      condition_on_issue  TEXT,
+      status              TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued','returned','lost','damaged')),
+      returned_date       TEXT,
+      condition_on_return TEXT,
+      return_notes        TEXT,
+      sort                INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS shifts (
@@ -941,6 +1010,9 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_attendance_period ON attendance_records(period_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_employee ON attendance_records(employee_id);
     CREATE INDEX IF NOT EXISTS idx_employee_documents_employee ON employee_documents(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_asset_issuances_employee ON asset_issuances(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_asset_issuance_items_issuance ON asset_issuance_items(issuance_id);
+    CREATE INDEX IF NOT EXISTS idx_asset_issuance_items_status ON asset_issuance_items(status);
 
     CREATE TABLE IF NOT EXISTS mail_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1758,6 +1830,18 @@ function migrate(): void {
   if (!iiCols.some((c) => c.name === 'qc_checklist_qc_id')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN qc_checklist_qc_id INTEGER REFERENCES qc_checklists(id) ON DELETE SET NULL');
   }
+  // (SCHEMA_VERSION 42) Stage order flipped: stage 1 (first pass) is now QC, stage 2 (final
+  // pass) is now QA -- was QA-then-QC. Swap the two column NAMES (not the stage each one
+  // feeds) so qc_checklist_qa_id keeps meaning "the QA checklist" and qc_checklist_qc_id keeps
+  // meaning "the QC checklist"; the data itself stays put, still attached to its original
+  // stage. A settings flag guards this since, unlike an ADD COLUMN, a rename isn't detectable
+  // by column presence alone.
+  if (!getSetting<boolean>('qc_stage_labels_swapped_v42')) {
+    db.exec('ALTER TABLE inventory_items RENAME COLUMN qc_checklist_qa_id TO qc_checklist_tmp_id');
+    db.exec('ALTER TABLE inventory_items RENAME COLUMN qc_checklist_qc_id TO qc_checklist_qa_id');
+    db.exec('ALTER TABLE inventory_items RENAME COLUMN qc_checklist_tmp_id TO qc_checklist_qc_id');
+    setSetting('qc_stage_labels_swapped_v42', true);
+  }
   // Serialized-unit lifecycle: link a sold / relocated finished unit to its sales order.
   const jouCols = db.prepare('PRAGMA table_info(job_order_units)').all() as { name: string }[];
   if (!jouCols.some((c) => c.name === 'order_id')) {
@@ -2059,6 +2143,22 @@ function migrate(): void {
       COMMIT;
     `);
     db.exec('PRAGMA foreign_keys = ON;');
+  }
+
+  // (SCHEMA_VERSION 44) Chat-style reply / edit / sender-only soft "unsend" on messages.
+  // message_reactions / link_previews themselves come from createSchema().
+  const msgCols = db.prepare('PRAGMA table_info(messages)').all() as { name: string }[];
+  if (!msgCols.some((c) => c.name === 'reply_to_id')) {
+    db.exec('ALTER TABLE messages ADD COLUMN reply_to_id INTEGER REFERENCES messages(id) ON DELETE SET NULL');
+  }
+  if (!msgCols.some((c) => c.name === 'edited_at')) {
+    db.exec('ALTER TABLE messages ADD COLUMN edited_at TEXT');
+  }
+  if (!msgCols.some((c) => c.name === 'deleted_at')) {
+    db.exec('ALTER TABLE messages ADD COLUMN deleted_at TEXT');
+  }
+  if (!msgCols.some((c) => c.name === 'deleted_by')) {
+    db.exec('ALTER TABLE messages ADD COLUMN deleted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
   }
 }
 
@@ -2705,6 +2805,9 @@ function seedTemplates(): void {
   if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('BIR 2316')) {
     insert.run('BIR 2316', 'generic', bir2316TemplateBody());
   }
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Asset Issuance Form')) {
+    insert.run('Asset Issuance Form', 'generic', assetIssuanceTemplateBody());
+  }
 }
 
 /** Printable BIR-2316-style Certificate of Compensation Payment / Tax Withheld.
@@ -2774,6 +2877,61 @@ function bir2316TemplateBody(): string {
   <p class="note">Worksheet computed from {{f.payslip_count}} payslip(s) for {{year}}. De-minimis, allowances and
     previous-employer amounts are not tracked in payroll &mdash; verify and complete them, and validate against the
     official BIR form before issuing or filing.</p>
+</div>`;
+}
+
+/** Default printable Asset Issuance Form — company property handed to one employee, with a
+    line per asset and a signature block for both sides to acknowledge. Rendered against
+    {company, employee, issuance: {number, issued_date, notes, issued_by_name}, items, today} —
+    see printAssetIssuance() in hr-employees.js. */
+function assetIssuanceTemplateBody(): string {
+  return `<style>
+  .aif { font-family: Arial, sans-serif; font-size: 11px; color: #111; max-width: 720px; margin: 0 auto; }
+  .aif h2 { text-align: center; font-size: 15px; margin: 0 0 2px; letter-spacing: .04em; }
+  .aif .sub { text-align: center; font-size: 10px; color: #555; margin-bottom: 14px; }
+  .aif .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; margin-bottom: 14px; }
+  .aif .kv .row { display: flex; justify-content: space-between; border-bottom: 1px dotted #ccc; padding: 2px 0; }
+  .aif .kv .l { color: #555; }
+  .aif .kv .v { font-weight: 600; }
+  .aif table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .aif th, .aif td { border: 1px solid #ccc; padding: 5px 6px; font-size: 10.5px; text-align: left; }
+  .aif th { background: #eef4fb; text-transform: uppercase; font-size: 9.5px; letter-spacing: .03em; }
+  .aif .notes { margin-top: 14px; font-size: 10.5px; color: #333; }
+  .aif .ack { margin-top: 18px; font-size: 10px; color: #444; line-height: 1.5; }
+  .aif .sig { display: flex; justify-content: space-between; margin-top: 30px; font-size: 10px; color: #444; }
+  .aif .sig div { width: 46%; border-top: 1px solid #666; padding-top: 3px; text-align: center; }
+</style>
+<div class="aif">
+  <h2>ASSET ISSUANCE FORM</h2>
+  <div class="sub">{{company.name}} &nbsp;&middot;&nbsp; Form {{issuance.number}} &nbsp;&middot;&nbsp; Issued {{issuance.issued_date}}</div>
+
+  <div class="kv">
+    <div class="row"><span class="l">Employee</span><span class="v">{{employee.name}}</span></div>
+    <div class="row"><span class="l">Employee No.</span><span class="v">{{employee.employee_no}}</span></div>
+    <div class="row"><span class="l">Department</span><span class="v">{{employee.department}}</span></div>
+    <div class="row"><span class="l">Position</span><span class="v">{{employee.position}}</span></div>
+  </div>
+
+  <table>
+    <thead><tr><th style="width:26px">#</th><th>Asset</th><th>Category</th><th>Tag / Serial</th><th style="width:50px">Qty</th><th>Condition</th></tr></thead>
+    <tbody>
+      {{#items}}
+      <tr><td>{{index}}</td><td>{{asset_name}}</td><td>{{category}}</td><td>{{asset_tag}}</td><td>{{quantity}}</td><td>{{condition_on_issue}}</td></tr>
+      {{/items}}
+    </tbody>
+  </table>
+
+  {{#if issuance.notes}}<div class="notes"><strong>Notes:</strong> {{issuance.notes}}</div>{{/if}}
+
+  <p class="ack">I acknowledge receipt of the item(s) listed above, in the condition stated, for use in
+    connection with my work at {{company.name}}. I agree to take reasonable care of them and to return
+    them, in serviceable condition (normal wear excepted), upon request or upon separation from the
+    company.</p>
+
+  <div class="sig">
+    <div>{{employee.name}}<br/><span style="font-size:9px">Employee signature over printed name</span></div>
+    <div>{{issuance.issued_by_name}}<br/><span style="font-size:9px">Issued by</span></div>
+  </div>
 </div>`;
 }
 

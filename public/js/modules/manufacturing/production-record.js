@@ -1,5 +1,5 @@
 /* Production record — the read-only dossier for one produced unit or one batch:
-   what it is, who built it and when, its QA/QC sign-offs, any repairs, and the stock
+   what it is, who built it and when, its QC/QA sign-offs, any repairs, and the stock
    movements it drove. Opened from a scanned QR label, the Finished Products units
    table, or a batch. filter.unit = <unit id> | filter.batch = <batch id>. */
 App.register('production-record', async (view, filter) => {
@@ -63,7 +63,7 @@ App.register('production-record', async (view, filter) => {
         ${kv('Pull / output', UI.esc(jo.source_location_name || '—') + ' → ' + UI.esc(jo.output_location_name || '—'))}
       </div>` : '<p class="muted">Not linked to a job order.</p>'}
 
-      <h4 class="pr-h">QA / QC</h4>
+      <h4 class="pr-h">QC / QA</h4>
       ${(d.qc && d.qc.length) ? `<table>
         <thead><tr><th>When</th><th>Stage</th><th>Result</th><th>Inspector</th><th>Remarks / checklist</th></tr></thead>
         <tbody>${d.qc.map((q) => {

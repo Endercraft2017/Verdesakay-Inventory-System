@@ -2,11 +2,12 @@
  *  enters a quantity for bulk lines) against an approved SO. Records only — units go
  *  'reserved', stock is drawn down later on confirm (perpetual inventory / GL on). */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, addSerializedUnits, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
 const H = () => ({ Authorization: `Bearer ${token}` });
+const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
@@ -29,7 +30,7 @@ async function productWithUnits(prefix: string, qty: number, unit_cost = 10) {
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages: 1 })).body.id;
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
-  await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: qty });
+  await addSerializedUnits(ctx.api, token, mo, qty, prefix);
   const pending = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body as Array<{ id: number }>;
   const codes: string[] = [];
   for (let i = 0; i < pending.length; i++) {
@@ -155,5 +156,30 @@ describe('sale-order release', () => {
     expect(await onHand(product)).toBe(before);
     const back = (await ctx.api.get(`/api/finished-products/${product}/units?status=all`).set(H())).body;
     expect(back.every((u: { status: string; order_id: number | null }) => u.status === 'in_stock' && u.order_id === null)).toBe(true);
+  });
+});
+
+/** Narrow releasing_clerk role (src/shared/permissions.ts) — a mobile-only account scoped
+ *  to just POST /:id/release[/unreserve] via orders.release, same narrowing as the
+ *  production-side roles in production-roles.test.ts, but without the broad inventory.adjust
+ *  that also lets an account adjust arbitrary stock. */
+describe('releasing_clerk role', () => {
+  it('can release and unreserve a sale order, but cannot adjust inventory directly', async () => {
+    const clerk = await createEmployee(ctx.api, token, { role: 'releasing_clerk' });
+    const { product, codes } = await productWithUnits('RelClerk', 1);
+    const so = await saleOrder([{ name: 'RelClerk Product', item_id: product, quantity: 1, unit_price: 50 }], 'approved');
+
+    const release = await ctx.api.post(`/api/orders/${so}/release`).set(bearer(clerk.token))
+      .send({ codes: [codes[0]!] });
+    expect(release.status).toBe(200);
+
+    const units = (await ctx.api.get(`/api/finished-products/${product}/units?status=all`).set(H())).body;
+    const un = await ctx.api.post(`/api/orders/${so}/release/unreserve`).set(bearer(clerk.token))
+      .send({ unit_ids: [units[0].id] });
+    expect(un.status).toBe(200);
+
+    const adjust = await ctx.api.post('/api/inventory').set(bearer(clerk.token))
+      .send({ name: 'Should not be creatable', quantity: 1 });
+    expect(adjust.status).toBe(403);
   });
 });

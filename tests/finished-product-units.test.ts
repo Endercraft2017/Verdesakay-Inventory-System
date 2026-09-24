@@ -2,7 +2,7 @@
  *  sell or relocate them against a sales order, and resolve a printed label's
  *  identifier back to its product via /inventory/lookup. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, addSerializedUnits, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
@@ -28,7 +28,8 @@ async function buildUnits(prefix: string, qty: number, qc_stages = 1) {
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages })).body.id;
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
-  await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: qty });
+  if (qc_stages > 0) await addSerializedUnits(ctx.api, token, mo, qty, prefix);
+  else await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: qty });
   return { product, mo };
 }
 const pendingUnits = async (mo: number) =>

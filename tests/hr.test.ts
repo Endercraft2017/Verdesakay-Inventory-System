@@ -319,6 +319,58 @@ describe('hr', () => {
     expect(listAfter.body).toHaveLength(0);
   });
 
+  it('issues assets on a numbered form, lists them per employee, checks one back in, and deletes the record', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'TEST-ASSETOWNER', name: 'Asset Owner' });
+
+    const issue = await ctx.api.post(`/api/hr/employees/${emp.body.id}/assets`).set(hdr()).send({
+      issued_date: '2026-09-22',
+      notes: 'Starter kit',
+      items: [
+        { asset_name: 'Laptop - Dell XPS 13', category: 'Laptop', asset_tag: 'LAP-001', condition_on_issue: 'New' },
+        { asset_name: 'Company ID Lanyard', quantity: 2 },
+      ],
+    });
+    expect(issue.status).toBe(201);
+    expect(issue.body.number).toMatch(/^AI-\d+$/);
+
+    const list = await ctx.api.get(`/api/hr/employees/${emp.body.id}/assets`).set(hdr());
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0].number).toBe(issue.body.number);
+    expect(list.body[0].items).toHaveLength(2);
+    expect(list.body[0].items.every((it: { status: string }) => it.status === 'issued')).toBe(true);
+    const laptopItem = list.body[0].items.find((it: { asset_name: string }) => it.asset_name === 'Laptop - Dell XPS 13');
+
+    const detail = await ctx.api.get(`/api/hr/assets/${issue.body.id}`).set(hdr());
+    expect(detail.status).toBe(200);
+    expect(detail.body.employee_name).toBe('Asset Owner');
+    expect(detail.body.items).toHaveLength(2);
+
+    const ret = await ctx.api.post(`/api/hr/assets/${issue.body.id}/items/${laptopItem.id}/return`).set(hdr()).send({
+      returned_date: '2026-09-23', status: 'damaged', condition_on_return: 'Cracked screen',
+    });
+    expect(ret.status).toBe(200);
+    const afterReturn = await ctx.api.get(`/api/hr/employees/${emp.body.id}/assets`).set(hdr());
+    const updatedLaptop = afterReturn.body[0].items.find((it: { id: number }) => it.id === laptopItem.id);
+    expect(updatedLaptop.status).toBe('damaged');
+    expect(updatedLaptop.condition_on_return).toBe('Cracked screen');
+
+    const delRes = await ctx.api.delete(`/api/hr/assets/${issue.body.id}`).set(hdr());
+    expect(delRes.status).toBe(200);
+    const afterDelete = await ctx.api.get(`/api/hr/employees/${emp.body.id}/assets`).set(hdr());
+    expect(afterDelete.body).toHaveLength(0);
+  });
+
+  it('rejects issuing assets with no lines and returns 404 for an unknown employee', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'TEST-ASSETVALID', name: 'Asset Validation' });
+    const empty = await ctx.api.post(`/api/hr/employees/${emp.body.id}/assets`).set(hdr())
+      .send({ issued_date: '2026-09-22', items: [] });
+    expect(empty.status).toBe(400);
+
+    const missing = await ctx.api.post('/api/hr/employees/999999/assets').set(hdr())
+      .send({ issued_date: '2026-09-22', items: [{ asset_name: 'Radio' }] });
+    expect(missing.status).toBe(404);
+  });
+
   it('creates a cutoff, adds an employee, and pre-populates blank day rows for the range', async () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-MARIA', name: 'Maria Santos', daily_rate: 700 });

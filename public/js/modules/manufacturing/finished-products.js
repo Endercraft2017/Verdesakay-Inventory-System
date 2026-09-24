@@ -14,7 +14,7 @@ App.register('finished-products', async (view, filter) => {
       <h2>Finished Products</h2>
       <div class="grow"></div>
       ${canAdjust ? `<button class="btn secondary" id="fp-label">${UI.icon('printer') || UI.icon('edit')} Label design</button>` : ''}
-      ${canConfigQc ? `<button class="btn secondary" id="fp-qc">${UI.icon('edit')} QA/QC Checklists</button>` : ''}
+      ${canConfigQc ? `<button class="btn secondary" id="fp-qc">${UI.icon('edit')} QC/QA Checklists</button>` : ''}
       ${canWrite ? `<button class="btn" id="fp-add">${UI.icon('plus')} New finished product</button>` : ''}
     </div>
     <div class="panel"><div id="fp-table"></div></div>`;
@@ -46,15 +46,15 @@ App.register('finished-products', async (view, filter) => {
     tableEl.innerHTML = `
       <table>
         <thead><tr>
-          <th>Product</th><th class="right">Components</th><th>QA checklist</th><th>QC checklist</th>
+          <th>Product</th><th class="right">Components</th><th>QC checklist</th><th>QA checklist</th>
           <th class="right">Buildable now</th><th class="right">In stock</th><th></th>
         </tr></thead>
         <tbody>${list.map((p) => `
           <tr class="clickable" data-open="${p.id}">
             <td><strong>${UI.esc(p.name)}</strong><div class="muted mono">${UI.esc(p.sku || '—')}</div></td>
             <td class="right">${p.component_count}</td>
-            <td>${p.qc_checklist_qa_name ? UI.esc(p.qc_checklist_qa_name) : '<span class="muted">Default</span>'}</td>
             <td>${p.qc_checklist_qc_name ? UI.esc(p.qc_checklist_qc_name) : '<span class="muted">Default</span>'}</td>
+            <td>${p.qc_checklist_qa_name ? UI.esc(p.qc_checklist_qa_name) : '<span class="muted">Default</span>'}</td>
             <td class="right">${p.component_count ? p.max_buildable : '—'}</td>
             <td class="right">${p.quantity} ${UI.esc(p.unit || '')}</td>
             <td class="actions">
@@ -128,13 +128,13 @@ App.register('finished-products', async (view, filter) => {
 
     const checklistOptions = (stage, currentId) => {
       const opts = checklists.filter((c) => Number(c.stage) === stage);
-      return `<option value="">Use the default ${stage === 1 ? 'QA' : 'QC'} checklist</option>
+      return `<option value="">Use the default ${stage === 1 ? 'QC' : 'QA'} checklist</option>
         ${opts.map((c) => `<option value="${c.id}" ${String(c.id) === String(currentId) ? 'selected' : ''}>${UI.esc(c.name)}${c.is_default ? ' (default)' : ''}</option>`).join('')}`;
     };
     const checklistHTML = `
       <div class="field-row" style="margin-top:6px">
-        <div><label>QA checklist</label><select data-f="checklist-qa">${checklistOptions(1, currentChecklistQaId)}</select></div>
-        <div><label>QC checklist</label><select data-f="checklist-qc">${checklistOptions(2, currentChecklistQcId)}</select></div>
+        <div><label>QC checklist</label><select data-f="checklist-qc">${checklistOptions(1, currentChecklistQcId)}</select></div>
+        <div><label>QA checklist</label><select data-f="checklist-qa">${checklistOptions(2, currentChecklistQaId)}</select></div>
       </div>`;
 
     const costHTML = `
@@ -294,8 +294,8 @@ App.register('finished-products', async (view, filter) => {
           ${Number(cost.unit_labor_cost) ? `<div><span class="muted">Std. labor / unit</span><div>${UI.money(cost.unit_labor_cost)}</div></div>` : ''}
           ${Number(cost.unit_overhead_cost) ? `<div><span class="muted">Std. overhead / unit</span><div>${UI.money(cost.unit_overhead_cost)}</div></div>` : ''}
           <div><span class="muted">Std. unit cost</span><div><strong>${stdTotal != null ? UI.money(stdTotal) : '—'}</strong></div></div>
-          <div><span class="muted">QA checklist</span><div>${p.qc_checklist_qa_name ? UI.esc(p.qc_checklist_qa_name) : 'Default'}</div></div>
           <div><span class="muted">QC checklist</span><div>${p.qc_checklist_qc_name ? UI.esc(p.qc_checklist_qc_name) : 'Default'}</div></div>
+          <div><span class="muted">QA checklist</span><div>${p.qc_checklist_qa_name ? UI.esc(p.qc_checklist_qa_name) : 'Default'}</div></div>
         </div>
         <h4 style="margin:16px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Bill of materials <span class="muted" style="text-transform:none;letter-spacing:0">(direct components)</span></h4>
         ${bom.length ? `<table>
@@ -313,7 +313,7 @@ App.register('finished-products', async (view, filter) => {
         ${multiLevelHTML}
 
         <div style="display:flex;align-items:center;gap:10px;margin:18px 0 4px">
-          <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">In-stock units (passed QA/QC)</h4>
+          <h4 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">In-stock units (passed QC/QA)</h4>
           <div class="grow"></div>
           ${canWrite ? `<button type="button" class="btn secondary small" id="fp-print">${UI.icon('printer') || ''} Print QR labels</button>
           <button type="button" class="btn secondary small" id="fp-sell">Sell / move…</button>` : ''}

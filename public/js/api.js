@@ -81,6 +81,7 @@ const API = (() => {
     get: (p) => request('GET', p),
     post: (p, b, opts) => request('POST', p, b, false, opts),
     put: (p, b, opts) => request('PUT', p, b, false, opts),
+    patch: (p, b, opts) => request('PATCH', p, b, false, opts),
     del: (p) => request('DELETE', p),
     upload: (p, formData) => request('POST', p, formData, true),
     blobUrl, download,

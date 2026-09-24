@@ -1,6 +1,6 @@
 /** Unit / batch dossier (GET /api/production/record) + editable label templates. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, addSerializedUnits, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
@@ -14,6 +14,7 @@ afterAll(() => cleanup(ctx));
 
 const mkItem = async (name: string, quantity = 0) =>
   (await ctx.api.post('/api/inventory').set(H()).send({ name, quantity })).body.id as number;
+const PNG = Buffer.from('fake-png-bytes');
 
 describe('production record — unit dossier', () => {
   it('assembles product, job order, QC, repairs and movements for a produced unit', async () => {
@@ -26,7 +27,7 @@ describe('production record — unit dossier', () => {
     const mo = (await ctx.api.post('/api/job-orders').set(H())
       .send({ product_item_id: product, qty_ordered: 1, qc_stages: 1 })).body.id;
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
-    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 1 });
+    await addSerializedUnits(ctx.api, token, mo, 1, 'DOSSIER');
     const unit = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body[0];
 
     // fail → repair → request a part → accept → re-pass
@@ -44,6 +45,10 @@ describe('production record — unit dossier', () => {
       .send({ location_id: receivable.output_location_id, unit_ids: [unit.id] });
     expect(recv.status).toBe(201);
 
+    const photo = await ctx.api.post('/api/attachments').set(H())
+      .field('kind', 'qc_unit').field('ref_id', String(unit.id)).attach('image', PNG, 'bike.png');
+    expect(photo.status).toBe(201);
+
     const rec = await ctx.api.get(`/api/production/record?unit=${unit.id}`).set(H());
     expect(rec.status).toBe(200);
     expect(rec.body.kind).toBe('unit');
@@ -56,6 +61,8 @@ describe('production record — unit dossier', () => {
     expect(rec.body.repairs.length).toBe(1);
     expect(rec.body.repairs[0].status).toBe('accepted');
     expect(rec.body.movements.some((m: { reason: string }) => /produced|passed QC|received/i.test(m.reason))).toBe(true);
+    expect(rec.body.photos).toHaveLength(1);
+    expect(rec.body.photos[0].url).toBe(photo.body.url);
   });
 
   it('assembles a batch dossier with its units + QC sign-off', async () => {

@@ -97,5 +97,5 @@
     return strip;
   }
 
-  window.mPhoto = { capture: capture, attach: attach, attachBlob: attachBlob, thumbs: thumbs, view: view };
+  window.mPhoto = { capture: capture, attach: attach, attachBlob: attachBlob, thumbs: thumbs, view: view, pickFile: pickFile };
 })();

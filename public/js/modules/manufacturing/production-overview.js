@@ -1,6 +1,6 @@
 /* Production → Overview: the home screen for the Production tab — a summary of the whole
    pipeline's current state, not a working screen of its own. Warnings/problems (overdue job
-   orders, units stuck in rework), what's waiting on someone's action (QA/QC queue, Products
+   orders, units stuck in rework), what's waiting on someone's action (QC/QA queue, Products
    In, repair requests to accept), and a short production report (WIP, scrap rate, recently
    completed) pulled from the same GET /analytics/overview the Home → Reports page uses.
    Every row links straight to the screen that actually handles it. */
@@ -67,7 +67,7 @@ App.register('production-overview', async (view) => {
       )}
       ${panel('Waiting on you', `
         <table><tbody>
-          ${actionRow('production-qc', { tab: 'queue' }, 'check', 'QA / QC', 'units awaiting inspection', qcUnitCount)}
+          ${actionRow('production-qc', { tab: 'queue' }, 'check', 'QC / QA', 'units awaiting inspection', qcUnitCount)}
           ${actionRow('production-receiving', { tab: 'queue' }, 'inbox', 'Products In', 'ready to receive', receiveCount)}
           ${actionRow('repairs', null, 'inbox', 'Repairs', 'parts requests to accept', repairs.length)}
         </tbody></table>`

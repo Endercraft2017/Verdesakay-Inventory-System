@@ -1,6 +1,6 @@
 /* Production → Batches / Lots: production batches / lots. A non-serialized job
    order records one batch per progress entry; serialized job orders can label a batch
-   on the progress form. Each batch has its own number, QA/QC sign-off and dossier.
+   on the progress form. Each batch has its own number, QC/QA sign-off and dossier.
    filter.id deep-links straight into one batch. */
 App.register('production-batches', async (view, filter) => {
   const canWrite = App.hasPermission('inventory.adjust');
@@ -43,9 +43,12 @@ App.register('production-batches', async (view, filter) => {
       <table>
         <thead><tr>
           <th>Batch</th><th>Product</th><th>Job order</th><th class="right">Qty</th>
-          <th class="right">Units</th><th>Status</th><th>Created</th>
+          <th class="right">Units</th><th>Status</th><th>Step</th><th>Created</th>
         </tr></thead>
-        <tbody>${rows.map((b) => `
+        <tbody>${rows.map((b) => {
+          const remaining = b.qty - (b.received_qty || 0);
+          const step = ProductionSteps.batchStep(b, remaining, b.job_order_qc_stages);
+          return `
           <tr class="clickable" data-open="${b.id}">
             <td><strong>${UI.esc(b.number)}</strong>${b.identifier ? `<div class="muted mono" style="font-size:11px">${UI.esc(b.identifier)}</div>` : ''}</td>
             <td>${UI.esc(b.product_name || '—')}</td>
@@ -53,8 +56,10 @@ App.register('production-batches', async (view, filter) => {
             <td class="right">${b.qty}</td>
             <td class="right">${b.unit_count || 0}</td>
             <td>${badge(b.status)}</td>
+            <td><span class="badge-pill ${step.cls}">${step.label}</span></td>
             <td class="muted">${UI.esc((b.created_at || '').slice(0, 10))}</td>
-          </tr>`).join('')}
+          </tr>`;
+        }).join('')}
         </tbody>
       </table>`;
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = () => detailModal(tr.dataset.open));
@@ -73,9 +78,12 @@ App.register('production-batches', async (view, filter) => {
       if (!el) return;
       const units = data.units || [];
       const qc = data.qc || [];
+      const remaining = data.qty - (data.received_qty || 0);
+      const step = ProductionSteps.batchStep(data, remaining, data.job_order_qc_stages);
       el.innerHTML = `
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
           ${badge(data.status)}
+          <span class="badge-pill ${step.cls}">${step.label}</span>
           <strong>${UI.esc(data.product_name || '—')}</strong>
           ${data.job_order_number ? `<span class="muted">from ${UI.esc(data.job_order_number)}</span>` : ''}
         </div>
@@ -101,7 +109,7 @@ App.register('production-batches', async (view, filter) => {
             <button type="button" class="btn secondary small" id="pb-save">Save</button>
           </div>` : ''}
 
-        <h4 style="margin:14px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">QA/QC sign-off</h4>
+        <h4 style="margin:14px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">QC/QA sign-off</h4>
         ${qc.length ? `<table>
           <thead><tr><th>When</th><th>Result</th><th>Inspector</th><th>Remarks / issues</th></tr></thead>
           <tbody>${qc.map((q) => {
@@ -140,7 +148,7 @@ App.register('production-batches', async (view, filter) => {
     }
 
     function inspectModal() {
-      // A non-serialized batch gets one sign-off pass, not a QA-then-QC sequence — combine
+      // A non-serialized batch gets one sign-off pass, not a QC-then-QA sequence — combine
       // the default QA and QC checklists (server resolves the product's own the same way).
       const defs = [1, 2].map((stage) => checklists.find((c) => c.is_default && Number(c.stage) === stage)).filter(Boolean);
       const items = defs.flatMap((d) => d.items || []);

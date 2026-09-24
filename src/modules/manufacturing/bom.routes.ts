@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { db, queryOne, queryAll, run } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
-import { parseBody, saveBomSchema, allocateUnitsSchema } from '../../shared/validation';
+import { parseBody, saveBomSchema, assignChecklistSchema, allocateUnitsSchema } from '../../shared/validation';
 import { applyStockChange, transferStock, getDefaultLocationId } from '../inventory/inventory-stock';
 import { explode, rollupCost, whereUsed } from './bom-explode';
 import { dbBomResolvers } from './bom-resolvers';
@@ -144,7 +144,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
   }
   const { components, qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost } = parseBody(saveBomSchema, req.body);
 
-  for (const [label, stage, checklistId] of [['QA', 1, qc_checklist_qa_id], ['QC', 2, qc_checklist_qc_id]] as const) {
+  for (const [label, stage, checklistId] of [['QC', 1, qc_checklist_qc_id], ['QA', 2, qc_checklist_qa_id]] as const) {
     if (checklistId === undefined || checklistId === null) continue;
     const row = queryOne<{ stage: number }>('SELECT stage FROM qc_checklists WHERE id = ?', checklistId);
     if (!row) { res.status(400).json({ error: `That ${label} checklist does not exist` }); return; }
@@ -208,6 +208,28 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
     throw e;
   }
   res.json({ ok: true, bom: bomRows(id) });
+});
+
+// PATCH /api/finished-products/:id/checklist — assign or clear (null) one stage's
+// checklist only, without touching components/costs. Scoped to qc.configure rather than
+// inventory.edit — deciding which checklist enforces a stage is a QC decision, not a BOM
+// edit — so it works from the QC/QA inspection queue's side panel when a unit shows up
+// with no checklist (production-qc.js), without requiring BOM-edit rights.
+router.patch('/:id/checklist', requirePermission('qc.configure'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Item not found' });
+    return;
+  }
+  const { stage, checklist_id } = parseBody(assignChecklistSchema, req.body);
+  if (checklist_id != null) {
+    const row = queryOne<{ stage: number }>('SELECT stage FROM qc_checklists WHERE id = ?', checklist_id);
+    if (!row) { res.status(400).json({ error: 'That checklist does not exist' }); return; }
+    if (row.stage !== stage) { res.status(400).json({ error: `That checklist isn't a ${stage === 1 ? 'QC' : 'QA'} checklist` }); return; }
+  }
+  const col = stage === 1 ? 'qc_checklist_qc_id' : 'qc_checklist_qa_id';
+  run(`UPDATE inventory_items SET ${col} = ?, updated_at = datetime('now') WHERE id = ?`, checklist_id, id);
+  res.json({ ok: true });
 });
 
 // GET /api/finished-products/:id/units — this product's physical units.
