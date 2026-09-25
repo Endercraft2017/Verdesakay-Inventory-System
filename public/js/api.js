@@ -13,6 +13,11 @@ const API = (() => {
     // Opt-in idempotency: a caller (e.g. the mobile offline queue) passes a stable
     // key so a retried request is de-duplicated server-side instead of re-applied.
     if (opts && opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
+    // Set on an office PC an HR manager approved as a time-in kiosk (hr-kiosk.js); the kiosk
+    // endpoints refuse other browsers when the kiosk lock is on (src/modules/hr/kiosk-devices.ts).
+    let kioskToken = null;
+    try { kioskToken = localStorage.getItem('vds_kiosk_token'); } catch (e) { /* storage blocked */ }
+    if (kioskToken) headers['X-Kiosk-Token'] = kioskToken;
 
     let payload;
     if (isForm) {

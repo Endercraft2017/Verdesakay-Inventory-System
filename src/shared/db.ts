@@ -58,7 +58,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 46; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 47; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -149,6 +149,8 @@ export const SCHEMA_VERSION = 46; // 20: employees.late_exempt; 21: attendance_r
 // (field staff may punch from anywhere, without the QR) and time_punches.lat / lng / accuracy_m /
 // distance_m / geo_site (where each phone punch came from, for HR review). The policy itself is
 // the clock_geofence setting; off by default, so existing installs punch exactly as before.
+// 47: kiosk_devices -- office PCs an HR manager approved to run the time-in kiosk. With the
+// kiosk lock on (default when internet-facing), the kiosk endpoints refuse any other browser.
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -2209,6 +2211,21 @@ function migrate(): void {
   for (const [col, decl] of [['lat', 'REAL'], ['lng', 'REAL'], ['accuracy_m', 'REAL'], ['distance_m', 'REAL'], ['geo_site', 'TEXT']]) {
     if (!punchGeoCols.some((c) => c.name === col)) db.exec(`ALTER TABLE time_punches ADD COLUMN ${col} ${decl}`);
   }
+
+  // (SCHEMA_VERSION 47) Approved time-in kiosk devices (src/modules/hr/kiosk-devices.ts). Only a
+  // SHA-256 of each device's token is kept; revoking sets revoked_at rather than deleting, so the
+  // list of who approved what stays on record.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kiosk_devices (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      name         TEXT NOT NULL,
+      token_hash   TEXT NOT NULL UNIQUE,
+      created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at TEXT,
+      revoked_at   TEXT
+    )
+  `);
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */

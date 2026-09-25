@@ -150,6 +150,33 @@ describe('"can time in outside the office" exemption', () => {
   });
 });
 
+describe('Punch Log', () => {
+  it('lists punches in a date range with where each phone punch came from, filterable by source', async () => {
+    const onsite = await linkedEmployee();
+    const field = await linkedEmployee({ clock_anywhere: true });
+    const a = await ctx.api.post('/api/hr/clock/punch').set(onsite.h).send({ code: code(), location: NEAR });
+    const b = await ctx.api.post('/api/hr/clock/punch').set(field.h).send({ location: FAR });
+    const day = a.body.work_date;
+
+    const all = await ctx.api.get(`/api/hr/clock/punches?from=${day}&to=${day}`).set(A());
+    expect(all.status).toBe(200);
+    const rowA = all.body.find((r: { id: number }) => r.id === a.body.id);
+    expect(rowA).toMatchObject({ source: 'phone', geo_site: 'Main office' });
+    expect(all.body.find((r: { id: number }) => r.id === b.body.id)).toMatchObject({ source: 'remote', lat: FAR.lat, geo_site: null });
+
+    const remote = await ctx.api.get(`/api/hr/clock/punches?from=${day}&to=${day}&source=remote`).set(A());
+    expect(remote.body.every((r: { source: string }) => r.source === 'remote')).toBe(true);
+    expect(remote.body.some((r: { id: number }) => r.id === b.body.id)).toBe(true);
+  });
+
+  it('rejects a bad range and needs hr.view', async () => {
+    expect((await ctx.api.get('/api/hr/clock/punches?from=2026-09-30&to=2026-09-01').set(A())).status).toBe(400);
+    expect((await ctx.api.get('/api/hr/clock/punches?from=yesterday&to=today').set(A())).status).toBe(400);
+    const e = await linkedEmployee();
+    expect((await ctx.api.get('/api/hr/clock/punches?from=2026-09-01&to=2026-09-30').set(e.h)).status).toBe(403);
+  });
+});
+
 describe('settings API', () => {
   it('HR managers save the lock; it refuses "on" with no locations; employees cannot change it', async () => {
     const off = await ctx.api.put('/api/hr/clock/geofence').set(A()).send({ enabled: false, sites: [], max_accuracy_m: 100 });

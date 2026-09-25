@@ -128,7 +128,8 @@ issued/returned per employee, standalone register — not linked to Inventory st
 computation itself is `modules/payroll`.
 **Owned files:** `clock.ts`, `clock-geofence.ts` (phone time-in office location lock:
 `clock_geofence` setting + `employees.clock_anywhere` exemption + per-punch location,
-SCHEMA_VERSION 46), `field.ts`, `hr-daily-report.ts`,
+SCHEMA_VERSION 46), `kiosk-devices.ts` (approved time-in kiosk PCs + the `kiosk_lock`
+setting; locked by default when internet-facing, SCHEMA_VERSION 47), `field.ts`, `hr-daily-report.ts`,
 `hr-employee-numbering.ts`, `punch-photos.ts`, routes: `hr.routes.ts` (also owns the
 `asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
 doc_template, SCHEMA_VERSION 43), `clock.routes.ts`, `field.routes.ts`.

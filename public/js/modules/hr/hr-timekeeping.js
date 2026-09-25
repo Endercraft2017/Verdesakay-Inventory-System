@@ -27,11 +27,13 @@ async function renderList(view) {
       <button class="btn secondary" id="tk-govforms">${UI.icon('sheet')} Payroll Worksheets ▾</button>
       <button class="btn secondary" id="tk-holidays" style="margin-left:8px" title="The PH holiday calendar (Regular / Special Non-Working / Special Working) — pays every employee automatically unless overridden on that person's own Daily Time record">${UI.icon('calendar')} Holidays</button>
       <button class="btn secondary" id="tk-noWork" style="margin-left:8px" title="Company-wide suspensions and other no-work declarations (typhoon, equipment failure, etc.) — not a public holiday, see the Holidays button for those — applies to every employee automatically, no per-employee linking needed">${UI.icon('alert')} No Work / Suspension</button>
+      <button class="btn secondary" id="tk-punchlog" style="margin-left:8px" title="Every raw time-clock punch — where each phone punch came from (office, distance, map), and remote punches by field staff">${UI.icon('sheet')} Punch Log</button>
       <button class="btn secondary" id="tk-policy" style="margin-left:8px">${UI.icon('settings')} Policy Settings</button>
       <button class="btn" id="tk-new" style="margin-left:8px">${UI.icon('plus')} New Cutoff</button>
     </div>
     <div class="panel"><div id="tk-table"></div></div>`;
 
+  view.querySelector('#tk-punchlog').addEventListener('click', () => punchLogModal());
   view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
   view.querySelector('#tk-govforms').addEventListener('click', () => govFormsModal());
   view.querySelector('#tk-holidays').addEventListener('click', () => companyHolidaysModal());
@@ -215,6 +217,145 @@ async function geofenceModal() {
         });
       } catch (e) { showErr(e.message || 'Could not save'); return false; }
       UI.toast(enabled ? 'Phone time-in locked to the office' : 'Office locations saved (lock is off)');
+    },
+  });
+}
+
+/* ── Punch Log (GET /hr/clock/punches) — raw punches with where each phone punch came from ─── */
+function punchLogModal() {
+  const today = new Date().toLocaleDateString('en-CA');
+  const SOURCE = { phone: 'Phone (QR)', remote: 'Phone — outside office', kiosk: 'Kiosk' };
+  UI.modal({
+    title: 'Punch Log',
+    size: 'lg',
+    bodyHTML: `
+      <div class="field-row" style="align-items:end">
+        <div><label>From</label><input type="date" id="pl-from" value="${today}" /></div>
+        <div><label>To</label><input type="date" id="pl-to" value="${today}" /></div>
+        <div><label>Source</label><select id="pl-source">
+          <option value="">All</option><option value="phone">Phone (QR)</option>
+          <option value="remote">Phone — outside office</option><option value="kiosk">Kiosk</option></select></div>
+        <div style="flex:0 0 auto"><button type="button" class="btn secondary small" id="pl-go">Show</button></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:6px 0 10px">Phone punches keep the location the phone reported:
+        the office it was within, or its distance from the nearest office. <b>Outside office</b> punches come from staff
+        allowed to time in anywhere. A phone can fake its GPS, so look into anything that doesn't fit.</p>
+      <div id="pl-list"><p class="muted">Loading…</p></div>`,
+    cancelText: 'Close',
+    onOpen: (ov) => {
+      const load = async () => {
+        const q = new URLSearchParams({ from: ov.querySelector('#pl-from').value, to: ov.querySelector('#pl-to').value });
+        const src = ov.querySelector('#pl-source').value;
+        if (src) q.set('source', src);
+        const list = ov.querySelector('#pl-list');
+        try {
+          const rows = await API.get('/hr/clock/punches?' + q.toString());
+          const where = (r) => {
+            if (r.lat == null) return r.source === 'kiosk' ? 'Office kiosk' : '<span class="muted">no location</span>';
+            const map = `<a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${encodeURIComponent(r.lat + ',' + r.lng)}">map</a>`;
+            const place = r.geo_site ? UI.esc(r.geo_site)
+              : r.distance_m != null ? `<b>${r.distance_m >= 1000 ? (r.distance_m / 1000).toFixed(1) + ' km' : Math.round(r.distance_m) + ' m'} from office</b>`
+              : 'Location recorded';
+            return `${place} · ±${Math.round(r.accuracy_m || 0)} m · ${map}`;
+          };
+          list.innerHTML = rows.length ? `
+            <table class="line-table">
+              <thead><tr><th>Time</th><th>Employee</th><th>In/Out</th><th>Source</th><th>Where</th></tr></thead>
+              <tbody>${rows.map((r) => `<tr>
+                <td>${UI.esc((r.ts || '').slice(0, 16))}</td>
+                <td>${UI.esc(r.name)}${r.employee_no ? ` <span class="muted">${UI.esc(r.employee_no)}</span>` : ''}</td>
+                <td>${r.kind === 'in' ? 'IN' : 'OUT'}</td>
+                <td>${UI.esc(SOURCE[r.source] || r.source)}</td>
+                <td>${where(r)}</td>
+              </tr>`).join('')}</tbody>
+            </table>
+            ${rows.length >= 1000 ? '<p class="muted" style="font-size:12px">Showing the latest 1000 — narrow the dates to see more.</p>' : ''}`
+            : '<p class="muted">No punches in this range.</p>';
+        } catch (e) { list.innerHTML = `<p class="form-error">${UI.esc(e.message || 'Could not load punches')}</p>`; }
+      };
+      ov.querySelector('#pl-go').onclick = load;
+      load();
+    },
+  });
+}
+
+/* ── Approved kiosk devices (GET/POST/DELETE /hr/clock/kiosk-devices, PUT /hr/clock/kiosk-lock) ──
+   See src/modules/hr/kiosk-devices.ts. A PC is approved from the kiosk screen itself (or here,
+   for this PC); approval stores a token in that browser. */
+async function kioskDevicesModal() {
+  let info = await API.get('/hr/clock/kiosk-devices');
+  const canManage = App.hasPermission('hr.manage');
+
+  UI.modal({
+    title: 'Kiosk Devices',
+    size: 'lg',
+    bodyHTML: `
+      <label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="kd-lock" style="width:auto" ${info.lock_active ? 'checked' : ''} ${canManage ? '' : 'disabled'} />
+        Only approved PCs can run the Time-in Kiosk
+      </label>
+      <p class="muted" style="font-size:12px;margin:4px 0 12px" id="kd-lock-note"></p>
+      <div id="kd-list"></div>
+      ${canManage ? `<div style="display:flex;gap:8px;align-items:end;margin-top:12px">
+        <div style="flex:1"><label>Approve this PC as a kiosk</label><input id="kd-name" placeholder="e.g. Front desk PC" maxlength="60" /></div>
+        <button type="button" class="btn secondary small" id="kd-approve">Approve this PC</button>
+      </div>` : ''}
+      <p class="muted" style="font-size:12px;margin:10px 0 0">A PC is usually approved from the kiosk screen itself
+        (HR → Time Keeping → Time-in Kiosk). Approval is stored in that browser — clearing its data, or using
+        another browser, needs approving again. Revoke a PC that's replaced or lost.</p>`,
+    cancelText: 'Close',
+    onOpen: (ov) => {
+      const render = () => {
+        ov.querySelector('#kd-lock-note').textContent = info.lock_setting === null
+          ? `Following the default for this server (${info.lock_active ? 'on — it is reachable from the internet' : 'off — office network install'}).`
+          : `Set by HR: ${info.lock_active ? 'on' : 'off'}.`;
+        const list = ov.querySelector('#kd-list');
+        list.innerHTML = info.devices.length ? `
+          <table class="line-table">
+            <thead><tr><th>Name</th><th>Approved by</th><th>Approved</th><th>Last used</th><th></th></tr></thead>
+            <tbody>${info.devices.map((d) => `<tr>
+              <td>${UI.esc(d.name)}${info.this_device && info.this_device.id === d.id ? ' <span class="muted">(this PC)</span>' : ''}</td>
+              <td>${UI.esc(d.created_by_name || '—')}</td>
+              <td>${UI.esc((d.created_at || '').slice(0, 10))}</td>
+              <td>${UI.esc(d.last_seen_at ? d.last_seen_at.slice(0, 16) : 'never')}</td>
+              <td>${canManage ? `<button type="button" class="btn secondary small" data-revoke="${d.id}">Revoke</button>` : ''}</td>
+            </tr>`).join('')}</tbody>
+          </table>` : '<p class="muted" style="font-size:13px">No approved kiosk PCs yet.</p>';
+        list.querySelectorAll('[data-revoke]').forEach((b) => {
+          b.onclick = async () => {
+            b.disabled = true;
+            try {
+              await API.del('/hr/clock/kiosk-devices/' + b.dataset.revoke);
+              if (info.this_device && String(info.this_device.id) === b.dataset.revoke) localStorage.removeItem('vds_kiosk_token');
+              info = await API.get('/hr/clock/kiosk-devices');
+              UI.toast('Kiosk PC revoked');
+              render();
+            } catch (e) { UI.toast(e.message || 'Could not revoke', 'error'); b.disabled = false; }
+          };
+        });
+      };
+      const lock = ov.querySelector('#kd-lock');
+      lock.onchange = async () => {
+        try {
+          await API.put('/hr/clock/kiosk-lock', { enabled: lock.checked });
+          info = await API.get('/hr/clock/kiosk-devices');
+          UI.toast(lock.checked ? 'Kiosk locked to approved PCs' : 'Kiosk lock turned off');
+          render();
+        } catch (e) { UI.toast(e.message || 'Could not save', 'error'); lock.checked = !lock.checked; }
+      };
+      const approve = ov.querySelector('#kd-approve');
+      if (approve) approve.onclick = async () => {
+        approve.disabled = true;
+        try {
+          const r = await API.post('/hr/clock/kiosk-devices', { name: ov.querySelector('#kd-name').value.trim() });
+          localStorage.setItem('vds_kiosk_token', r.token);
+          info = await API.get('/hr/clock/kiosk-devices');
+          UI.toast('This PC is now an approved kiosk');
+          render();
+        } catch (e) { UI.toast(e.message || 'Could not approve', 'error'); }
+        approve.disabled = false;
+      };
+      render();
     },
   });
 }
@@ -424,12 +565,18 @@ async function policySettingsModal() {
       <p class="muted" style="font-size:12px;margin-top:2px">Only accept phone time-in at the office: the phone's GPS
         must be within the radius of an office location, on top of scanning the office QR. Staff marked "Can time in
         outside the office" on their Employee record are exempt.</p>
-      <button type="button" class="btn secondary small" id="tk-geofence" style="margin-top:8px">${UI.icon('sheet', 14)} Set office locations</button>`,
+      <button type="button" class="btn secondary small" id="tk-geofence" style="margin-top:8px">${UI.icon('sheet', 14)} Set office locations</button>
+      <hr style="margin:18px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
+      <strong>Kiosk Devices</strong>
+      <p class="muted" style="font-size:12px;margin-top:2px">Which office PCs may run the Time-in Kiosk (its QR code
+        and typing an employee number). On an internet-facing server only approved PCs can.</p>
+      <button type="button" class="btn secondary small" id="tk-kiosks" style="margin-top:8px">${UI.icon('sheet', 14)} Kiosk devices</button>`,
     cancelText: 'Close',
     onOpen: (ov) => {
       const p = (k) => ov.querySelector(`[data-p="${k}"]`);
       ov.querySelector('#tk-rate-tables').onclick = () => rateTablesModal();
       ov.querySelector('#tk-geofence').onclick = () => geofenceModal();
+      ov.querySelector('#tk-kiosks').onclick = () => kioskDevicesModal();
       if (policy) {
         p('grace_minutes').value = policy.grace_minutes;
         p('late_unit').value = policy.late_unit;

@@ -14,6 +14,11 @@
  *                            from anywhere, location recorded. See clock-geofence.ts.
  *  - GET  /my-status        that employee's clock state today (any linked user)
  *  - GET/PUT /geofence      the office location lock: sites + radius (hr.view / hr.manage)
+ *  - GET  /punches          Punch Log: punches in a work-date range with their location (hr.view)
+ *  - GET /kiosk-devices, POST /kiosk-devices, DELETE /kiosk-devices/:id, PUT /kiosk-lock
+ *                            approved kiosk devices (hr.view to see, hr.manage to change). With
+ *                            the kiosk lock on, /code, /kiosk-punch and /correct (and the field
+ *                            kiosk punch) only answer an approved browser. See kiosk-devices.ts.
  *  - POST /import/:periodId backfill/catch-up: pull any punches recorded before an employee was
  *                            added to this period's roster into attendance_records (hr.manage).
  *                            Ongoing punches during an open period fill in live — see
@@ -23,8 +28,15 @@
 import { Router } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
-import { parseBody, phonePunchSchema, kioskPunchSchema, kioskCorrectSchema, clockGeofenceSchema } from '../../shared/validation';
+import {
+  parseBody, phonePunchSchema, kioskPunchSchema, kioskCorrectSchema, clockGeofenceSchema, kioskDeviceSchema, kioskLockSchema,
+  punchLogQuerySchema,
+} from '../../shared/validation';
 import { checkPunchLocation, GeofenceError, geofenceActive, getGeofence, setGeofence } from './clock-geofence';
+import {
+  requireKioskDevice, kioskDeviceFor, kioskLockActive, kioskLockSetting, setKioskLock,
+  listKioskDevices, approveKioskDevice, revokeKioskDevice,
+} from './kiosk-devices';
 import {
   currentKioskCode, isValidKioskCode, recordPunch, correctPunch, myClockStatus, recordedBrackets,
   importPunchesForPeriod, ROTATE_SECONDS,
@@ -42,7 +54,52 @@ function linkedEmployee(userId: number): EmpRow | undefined {
 
 // --- Kiosk screen (office PC, logged in as HR/admin) ---
 
-router.get('/code', requirePermission('hr.view'), (_req, res) => {
+// Punch Log (Time Keeping → Punch Log): raw punches in a work-date range, with where each phone
+// punch came from — for HR to review remote punches and anything far from the office.
+router.get('/punches', requirePermission('hr.view'), (req, res) => {
+  const { from, to, source } = parseBody(punchLogQuerySchema, req.query);
+  const where = ['p.work_date BETWEEN ? AND ?'];
+  const params: unknown[] = [from, to];
+  if (source) { where.push('p.source = ?'); params.push(source); }
+  res.json(queryAll(
+    `SELECT p.id, p.ts, p.work_date, p.kind, p.segment, p.source, p.lat, p.lng, p.accuracy_m, p.distance_m, p.geo_site,
+            e.name, e.employee_no
+     FROM time_punches p JOIN employees e ON e.id = p.employee_id
+     WHERE ${where.join(' AND ')} ORDER BY p.ts DESC, p.id DESC LIMIT 1000`,
+    ...params
+  ));
+});
+
+// --- Approved kiosk devices (see kiosk-devices.ts) ---
+
+// The kiosk screen asks this first: is the lock on, and is THIS browser approved?
+router.get('/kiosk-devices', requirePermission('hr.view'), (req, res) => {
+  const current = kioskDeviceFor(req.get('x-kiosk-token'));
+  res.json({
+    lock_active: kioskLockActive(),
+    lock_setting: kioskLockSetting(), // null = following the hosting default
+    this_device: current ?? null,
+    devices: listKioskDevices(),
+  });
+});
+
+router.post('/kiosk-devices', requirePermission('hr.manage'), (req, res) => {
+  const { name } = parseBody(kioskDeviceSchema, req.body);
+  res.status(201).json(approveKioskDevice(name, req.user!.id));
+});
+
+router.delete('/kiosk-devices/:id', requirePermission('hr.manage'), (req, res) => {
+  if (!revokeKioskDevice(Number(req.params.id))) { res.status(404).json({ error: 'Kiosk device not found' }); return; }
+  res.json({ ok: true });
+});
+
+router.put('/kiosk-lock', requirePermission('hr.manage'), (req, res) => {
+  const { enabled } = parseBody(kioskLockSchema, req.body);
+  setKioskLock(enabled);
+  res.json({ lock_active: kioskLockActive(), lock_setting: kioskLockSetting() });
+});
+
+router.get('/code', requirePermission('hr.view'), requireKioskDevice, (_req, res) => {
   res.json({ ...currentKioskCode(), rotate_seconds: ROTATE_SECONDS });
 });
 
@@ -63,7 +120,7 @@ router.get('/recent', requirePermission('hr.view'), (req, res) => {
   res.json(rows.map(({ employee_id, work_date, ...r }) => ({ ...r, recorded: recordedBrackets(employee_id, work_date) })));
 });
 
-router.post('/kiosk-punch', requirePermission('hr.view'), (req, res) => {
+router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, (req, res) => {
   const { code, employee_no } = parseBody(kioskPunchSchema, req.body);
   if (!isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code is not current. Use the code on the screen.' });
@@ -84,7 +141,7 @@ router.post('/kiosk-punch', requirePermission('hr.view'), (req, res) => {
   res.json(recordPunch(emp, 'kiosk', null));
 });
 
-router.post('/correct', requirePermission('hr.view'), (req, res) => {
+router.post('/correct', requirePermission('hr.view'), requireKioskDevice, (req, res) => {
   const { code, employee_no, slot } = parseBody(kioskCorrectSchema, req.body);
   if (!isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code is not current. Use the code on the screen.' });

@@ -167,6 +167,34 @@ covers it, so there's nothing to add per customer.
 
 ---
 
+## Part 3b — Time-in on the internet
+
+On the office network, the kiosk and phone time-in could only be used at the office. Once the
+app is on the internet, two things keep it that way:
+
+1. **Approve the kiosk PC.** On the office PC that runs the Time-in Kiosk, sign in as an HR
+   manager and open HR → Time Keeping → Time-in Kiosk. It asks you to **approve this PC**.
+   Until you do, the kiosk won't show its QR or accept typed employee numbers. That's the
+   default on a hosted server, so nobody can clock people in from home. You can review and
+   revoke PCs in Time Keeping → Policy Settings → Kiosk devices.
+2. **Lock phone time-in to the office.** Time Keeping → Policy Settings → **Set office
+   locations**: stand in the office and press "Use this device's location" (or paste
+   coordinates from Google Maps), keep the radius around 150 m, and tick "Only allow phone
+   time-in at an office location".
+3. **Mark field staff.** On each driver's or sales rep's Employee record (Rules → Exemptions),
+   tick **Can time in outside the office**. They get a "Clock in here" button that works
+   without the QR and saves their location.
+
+Review punches any time in Time Keeping → **Punch Log**. It shows each phone punch's office
+or distance, with a map link.
+
+### Cutting over
+Once your company is imported, stop using the office server. Nothing merges data back from
+it. Point every PC to `https://<slug>.app.afkcube.com`, and on phones open
+`https://<slug>.app.afkcube.com/m` and add it to the home screen again.
+
+---
+
 ## Part 4 — Off-site backups (Railway bucket + Backblaze B2)
 
 The server already snapshots every database daily to `/data/db/backups`, but that's on the

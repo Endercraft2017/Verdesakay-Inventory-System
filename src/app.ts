@@ -47,13 +47,13 @@ import { idempotency } from './shared/idempotency';
 import { tenantStore, getDb, DEFAULT_TENANT } from './shared/db';
 import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost } from './platform/platform';
 import { requireModule, moduleEnabled } from './shared/modules';
+import { BEHIND_PROXY } from './shared/hosting';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
-/** True when a TLS-terminating reverse proxy (Railway, a load balancer, nginx) sits in
- *  front of the app: auto-detected on Railway, or forced with BEHIND_PROXY=true. The
- *  server then speaks plain HTTP and trusts the proxy's X-Forwarded-* headers. */
-export const BEHIND_PROXY = process.env.BEHIND_PROXY === 'true' || !!process.env.RAILWAY_ENVIRONMENT;
+/** Behind a TLS-terminating proxy (see src/shared/hosting.ts) the server speaks plain HTTP
+ *  and trusts the proxy's X-Forwarded-* headers. Re-exported for server.ts. */
+export { BEHIND_PROXY };
 
 export function createApp() {
   const app = express();

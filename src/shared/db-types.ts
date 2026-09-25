@@ -562,6 +562,16 @@ export interface JournalLines {
   sort: Generated<number>;
 }
 
+export interface KioskDevices {
+  id: Generated<number>;
+  name: string;
+  token_hash: string;
+  created_by: number | null;
+  created_at: Generated<string>;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+}
+
 export interface LinkPreviews {
   url: string;
   title: string | null;
@@ -1062,6 +1072,7 @@ export interface DB {
   job_orders: JobOrders;
   journal_entries: JournalEntries;
   journal_lines: JournalLines;
+  kiosk_devices: KioskDevices;
   link_previews: LinkPreviews;
   locations: Locations;
   mail_log: MailLog;

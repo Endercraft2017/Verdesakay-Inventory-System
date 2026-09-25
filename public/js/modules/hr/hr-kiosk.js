@@ -9,10 +9,52 @@
    in its own table (field_punches) so it never touches payroll hours. The QR only ever
    proves attendance (a phone scan always hits the regular clock endpoint), so its badge is
    hidden while on the Field Work tab; Field Work is guard-typed, same as the "no phone"
-   fallback — the camera keeps running and capturing on both tabs. */
+   fallback — the camera keeps running and capturing on both tabs.
+
+   On an internet-facing server the kiosk only runs on a PC an HR manager approved
+   (src/modules/hr/kiosk-devices.ts); an unapproved browser gets the approval screen instead. */
 App.register('hr-kiosk', async (view) => {
   if (!App.hasPermission('hr.view')) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
+    return;
+  }
+
+  // Kiosk lock (src/modules/hr/kiosk-devices.ts): on an internet-facing server the kiosk — its
+  // QR and typed employee numbers — only runs on office PCs an HR manager approved once.
+  let kioskInfo = null;
+  try { kioskInfo = await API.get('/hr/clock/kiosk-devices'); } catch (e) { /* show the kiosk; the server still guards it */ }
+  if (kioskInfo && kioskInfo.lock_active && !kioskInfo.this_device) {
+    const canApprove = App.hasPermission('hr.manage');
+    view.innerHTML = `
+      <div class="panel" style="max-width:600px;margin:40px auto;padding:24px">
+        <h2 style="margin-top:0">This screen isn't an approved time-in kiosk</h2>
+        <p class="muted">The system can be reached from the internet, so the kiosk (its QR code and typing an
+          employee number) only runs on office PCs an HR manager has approved. That stops anyone clocking
+          people in from home.</p>
+        ${canApprove ? `
+          <label>Name this kiosk</label>
+          <input id="kg-name" value="Front desk PC" maxlength="60" />
+          <button type="button" class="btn" id="kg-approve" style="margin-top:12px">Approve this PC as a kiosk</button>
+          <p class="muted" style="font-size:12px;margin-top:8px">Only do this on the office PC that will run the
+            kiosk. You can revoke it any time in Time Keeping → Policy Settings → Kiosk devices.</p>
+          <div class="form-error hidden" id="kg-err"></div>`
+        : '<p>Ask an HR manager to sign in on this PC once and approve it as a kiosk.</p>'}
+      </div>`;
+    const btn = view.querySelector('#kg-approve');
+    if (btn) btn.onclick = async () => {
+      const errEl = view.querySelector('#kg-err');
+      btn.disabled = true;
+      try {
+        const r = await API.post('/hr/clock/kiosk-devices', { name: view.querySelector('#kg-name').value.trim() });
+        localStorage.setItem('vds_kiosk_token', r.token);
+        UI.toast('This PC is now an approved kiosk');
+        location.reload();
+      } catch (e) {
+        errEl.textContent = e.message || 'Could not approve this PC';
+        errEl.classList.remove('hidden');
+        btn.disabled = false;
+      }
+    };
     return;
   }
 
@@ -457,7 +499,11 @@ App.register('hr-kiosk', async (view) => {
       const r = await API.get('/hr/clock/code');
       if (r.code !== curCode) { curCode = r.code; renderQR(curCode); }
       secsLeft = r.seconds_left;
-    } catch (e) { /* keep showing the old one */ }
+    } catch (e) {
+      // Revoked while running: drop back to the approval screen instead of a stale QR.
+      if (e && e.data && e.data.code === 'KIOSK_NOT_APPROVED') { location.reload(); return; }
+      /* otherwise keep showing the old one */
+    }
   }
 
   async function pollRecent(kind, path, opts) {

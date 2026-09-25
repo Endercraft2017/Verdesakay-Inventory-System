@@ -1298,6 +1298,21 @@ export const phonePunchSchema = z.object({
   }).optional().nullable(),
 });
 
+/** Approve this browser as a time-in kiosk (src/modules/hr/kiosk-devices.ts). */
+export const kioskDeviceSchema = z.object({
+  name: trimmed.min(1, 'Name this kiosk, e.g. "Front desk PC"').max(60),
+});
+
+/** Punch Log filter (GET /api/hr/clock/punches) — a work-date range; the route caps rows at 1000. */
+export const punchLogQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'from must be YYYY-MM-DD'),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'to must be YYYY-MM-DD'),
+  source: z.enum(['phone', 'remote', 'kiosk']).optional(),
+}).refine((q) => q.from <= q.to, { message: '"From" must be on or before "To"', path: ['to'] });
+
+/** Turn the approved-kiosk-devices lock on/off (setting `kiosk_lock`). */
+export const kioskLockSchema = z.object({ enabled: z.boolean() });
+
 /** Office location lock for phone time-in (setting `clock_geofence`). */
 export const clockGeofenceSchema = z.object({
   enabled: z.boolean(),
