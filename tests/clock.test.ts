@@ -237,6 +237,38 @@ describe('time clock', () => {
     expect(res.body.error).toMatch(/already timed out/i);
   });
 
+  it('a time-in HR typed into the grid makes the next punch a time-out, filling time_out', async () => {
+    setSetting('clock_policy', { first_punch_out_after: '24:00', lunch_start: '25:00', lunch_end: '25:00' });
+    try {
+      const e = await linkedEmployee();
+      const h = { Authorization: `Bearer ${e.accountToken}` };
+      const todayStr = new Date().toLocaleDateString('en-CA');
+      const period = await ctx.api.post('/api/hr/periods').set(A())
+        .send({ label: 'Manual in', start_date: todayStr, end_date: todayStr });
+      await ctx.api.post(`/api/hr/periods/${period.body.id}/employees/bulk`).set(A()).send({ employee_ids: [e.employeeId] });
+      run("UPDATE attendance_records SET time_in = '00:00' WHERE period_id = ? AND employee_id = ?", period.body.id, e.employeeId);
+
+      const status = await ctx.api.get('/api/hr/clock/my-status').set(h);
+      expect(status.body.clocked_in).toBe(true);
+
+      const punch = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+      expect(punch.status).toBe(200);
+      expect(punch.body.kind).toBe('out');
+      expect(punch.body.segment).toBe('afternoon_out');
+      const row = queryOne<{ time_in: string; time_out: string | null }>(
+        'SELECT time_in, time_out FROM attendance_records WHERE period_id = ? AND employee_id = ?',
+        period.body.id, e.employeeId
+      )!;
+      expect(row.time_in).toBe('00:00');
+      expect(row.time_out).toBe(punch.body.at);
+
+      // The kiosk card gets the typed time-in too, both on the punch reply and in the live feed.
+      expect(punch.body.recorded.in).toBe('00:00');
+      const feed = await ctx.api.get('/api/hr/clock/recent?since_id=' + (punch.body.id - 1)).set(A());
+      expect(feed.body[0].recorded.in).toBe('00:00');
+    } finally { setSetting('clock_policy', { first_punch_out_after: '24:00' }); }
+  });
+
   describe('first punch after shift end (forgot to time in)', () => {
     const pad = (n: number) => String(n).padStart(2, '0');
     const nowHm = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };

@@ -8,6 +8,7 @@
  */
 import crypto from 'node:crypto';
 import { getSetting, setSetting, queryOne, queryAll, run } from '../../shared/db';
+import type { PunchGeo } from './clock-geofence';
 
 export const ROTATE_SECONDS = 60;
 /** Codes for the current and previous window both validate (≈2 min grace). */
@@ -102,6 +103,41 @@ function firstPunchOutAfter(employeeId: number, date: string): string | null {
   return s.end_time.slice(0, 5);
 }
 
+/** When the employee has no real punches yet today, stand-ins for the brackets HR already typed
+ *  into that day's attendance_records (time_in / lunch_out / lunch_in) -- so a manually entered
+ *  time-in makes the next kiosk/phone punch a time-out instead of a second "first in" that
+ *  applyPunchToAttendance would then discard. time_out is deliberately not mirrored: a pre-filled
+ *  out shouldn't block the employee's real punch. Only fed to classify(), never stored or used
+ *  for hours. */
+function manualBracketsAsPunches(employeeId: number, date: string): PunchRow[] {
+  const r = queryOne<{ time_in: string | null; lunch_out: string | null; lunch_in: string | null }>(
+    `SELECT time_in, lunch_out, lunch_in FROM attendance_records
+     WHERE employee_id = ? AND work_date = ? AND time_in IS NOT NULL AND time_in <> ''
+     ORDER BY id DESC LIMIT 1`,
+    employeeId, date
+  );
+  if (!r) return [];
+  const mk = (kind: string, segment: string, hm: string): PunchRow =>
+    ({ id: 0, employee_id: employeeId, ts: `${date} ${hm}:00`, work_date: date, kind, segment, source: 'manual' });
+  const out = [mk('in', r.time_in! < '12:00' ? 'morning_in' : 'afternoon_in', r.time_in!)];
+  if (r.lunch_out) {
+    out.push(mk('out', 'lunch_out', r.lunch_out));
+    if (r.lunch_in) out.push(mk('in', 'afternoon_in', r.lunch_in));
+  }
+  return out;
+}
+
+/** The in-side brackets the day's attendance_records row currently holds -- punch-derived or typed
+ *  by HR -- for the kiosk card, which otherwise only sees punches and would show a manual time-in
+ *  as blank. null when the employee isn't on a roster for that date. */
+export function recordedBrackets(employeeId: number, date: string): { in: string | null; lunchOut: string | null; lunchIn: string | null } | null {
+  const r = queryOne<{ time_in: string | null; lunch_out: string | null; lunch_in: string | null }>(
+    'SELECT time_in, lunch_out, lunch_in FROM attendance_records WHERE employee_id = ? AND work_date = ? ORDER BY id DESC LIMIT 1',
+    employeeId, date
+  );
+  return r ? { in: r.time_in || null, lunchOut: r.lunch_out || null, lunchIn: r.lunch_in || null } : null;
+}
+
 /** Classify what this punch means from the day's punches so far. The very first punch of the
  *  day is normally an in — except at/after `outAfter` (see firstPunchOutAfter): that's someone
  *  who forgot to time in and is now leaving, so it's recorded as the day's time-out, leaving
@@ -135,7 +171,9 @@ export interface PunchResult {
   at: string;          // "HH:MM"
   work_date: string;
   hours_today: number;  // paired in→out so far
-  source: 'phone' | 'kiosk';
+  source: 'phone' | 'kiosk' | 'remote';
+  /** See recordedBrackets -- set on recordPunch results so the kiosk card can show HR-typed times. */
+  recorded?: ReturnType<typeof recordedBrackets>;
 }
 
 /** Sum paired in/out intervals for a day (open 'in' counts up to now). */
@@ -168,8 +206,9 @@ export class AlreadyClockedOutError extends Error {
  *  click-to-correct flow (see correctPunch) is the only way to log more time that day. */
 export function recordPunch(
   employee: { id: number; name: string },
-  source: 'phone' | 'kiosk',
-  userId: number | null
+  source: 'phone' | 'kiosk' | 'remote',
+  userId: number | null,
+  geo: PunchGeo | null = null
 ): PunchResult {
   const { date } = localParts();
   const prior = queryAll<PunchRow>(
@@ -196,11 +235,13 @@ export function recordPunch(
     );
   }
 
-  const { kind, segment } = classify(prior, firstPunchOutAfter(employee.id, date));
+  const context = prior.length ? prior : manualBracketsAsPunches(employee.id, date);
+  const { kind, segment } = classify(context, firstPunchOutAfter(employee.id, date));
   const info = run(
-    `INSERT INTO time_punches (employee_id, user_id, work_date, kind, segment, source)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    employee.id, userId, date, kind, segment, source
+    `INSERT INTO time_punches (employee_id, user_id, work_date, kind, segment, source, lat, lng, accuracy_m, distance_m, geo_site)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    employee.id, userId, date, kind, segment, source,
+    geo?.lat ?? null, geo?.lng ?? null, geo?.accuracy_m ?? null, geo?.distance_m ?? null, geo?.site ?? null
   );
   const row = queryOne<PunchRow>('SELECT * FROM time_punches WHERE id = ?', Number(info.lastInsertRowid))!;
   applyPunchToAttendance(employee.id, date);
@@ -208,6 +249,7 @@ export function recordPunch(
     ok: true, id: row.id, employee_id: employee.id, employee_name: employee.name,
     kind, segment, at: row.ts.slice(11, 16), work_date: date,
     hours_today: hoursToday([...prior, row]), source,
+    recorded: recordedBrackets(employee.id, date),
   };
 }
 
@@ -330,7 +372,8 @@ export function myClockStatus(employeeId: number): {
     'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
     employeeId, date
   );
-  const last = rows[rows.length - 1];
+  // No punches yet but HR typed a time-in → already clocked in (same rule recordPunch uses).
+  const last = rows[rows.length - 1] ?? manualBracketsAsPunches(employeeId, date).pop();
   return {
     work_date: date,
     punches: rows.map((r) => ({ at: r.ts.slice(11, 16), kind: r.kind, segment: r.segment, source: r.source })),

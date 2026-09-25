@@ -484,6 +484,13 @@ App.register('hr-employees', async (view) => {
             </label>
             <p class="muted" style="font-size:12px;margin:4px 0 0">For salaried staff never entitled to overtime (e.g.
               a supervisor). OT hours still show on the payslip detail for the record — this only zeroes the peso pay.</p>
+            <label style="margin-top:14px;display:flex;align-items:center;gap:6px">
+              <input type="checkbox" data-f="clock_anywhere" style="width:auto" ${existing && existing.clock_anywhere ? 'checked' : ''} />
+              Can time in outside the office
+            </label>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">For field staff (drivers, sales, site crews). They
+              skip the office location lock and get a "Clock in here" button on their phone that works without the
+              office QR. Their location is still saved with every punch.</p>
 
             <label style="margin-top:24px;display:block;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted)">Statutory Deductions</label>
             <p class="muted" style="font-size:12px;margin:4px 0 12px">Also editable in bulk from Accounting &rarr;
@@ -770,6 +777,7 @@ App.register('hr-employees', async (view) => {
               : null,
             late_exempt: ov.querySelector('[data-f="late_exempt"]').checked,
             ot_exempt: ov.querySelector('[data-f="ot_exempt"]').checked,
+            clock_anywhere: ov.querySelector('[data-f="clock_anywhere"]').checked,
             deduct_sss: ov.querySelector('[data-f="deduct_sss"]').checked,
             deduct_philhealth: ov.querySelector('[data-f="deduct_philhealth"]').checked,
             deduct_pagibig: ov.querySelector('[data-f="deduct_pagibig"]').checked,

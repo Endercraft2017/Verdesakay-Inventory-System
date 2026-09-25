@@ -1,4 +1,7 @@
-/* Time clock — scan the office kiosk QR to clock in / out. */
+/* Time clock — scan the office kiosk QR to clock in / out. With the office location lock on
+   (HR → Time Keeping → Policy Settings), the phone's GPS position is sent too and must be
+   on-site; staff allowed to clock in anywhere get a no-QR "Clock in here" button instead.
+   See src/modules/hr/clock-geofence.ts. */
 (function () {
   var SEG_LABEL = {
     morning_in: 'Morning time-in', lunch_out: 'Lunch out', afternoon_in: 'Back from lunch',
@@ -56,17 +59,48 @@
     btn.querySelector('button').onclick = function () {
       mScanner.open({
         title: 'Scan the time-in screen',
-        onResult: function (code) { punch(view, (code || '').trim()); },
+        onResult: function (code) {
+          code = (code || '').trim();
+          if (!code) return;
+          // With the office location lock on, the server also needs to know the phone is on-site.
+          if (s.location_required) withLocation(view, function (loc) { punch(view, { code: code, location: loc }); });
+          else punch(view, { code: code });
+        },
       });
     };
     view.appendChild(btn);
-    view.appendChild(mEl('<div class="m-hint">Point at the QR on the office time-in monitor. It changes every minute.</div>'));
+    view.appendChild(mEl('<div class="m-hint">Point at the QR on the office time-in monitor. It changes every minute.' +
+      (s.location_required ? ' Your location is checked — time-in only works at the office.' : '') + '</div>'));
+
+    // Field staff (HR's "can time in outside the office") can't see the QR — punch where they are.
+    if (s.can_clock_anywhere) {
+      var here = mEl('<div class="m-actions"><button class="m-btn m-btn-secondary">📍  Clock ' +
+        (s.clocked_in ? 'out' : 'in') + ' here (outside the office)</button></div>');
+      here.querySelector('button').onclick = function () {
+        withLocation(view, function (loc) { punch(view, { location: loc }); });
+      };
+      view.appendChild(here);
+      view.appendChild(mEl('<div class="m-hint">Your location is saved with the punch for HR.</div>'));
+    }
   }
 
-  function punch(view, code) {
-    if (!code) return;
+  /** Ask the phone for a GPS fix, then call `done({lat, lng, accuracy_m})`. */
+  function withLocation(view, done) {
+    if (!navigator.geolocation) { mToast('This phone can’t share its location', 'err'); return; }
+    view.innerHTML = '<div class="m-hint">Getting your location…</div>';
+    navigator.geolocation.getCurrentPosition(function (p) {
+      done({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy_m: p.coords.accuracy });
+    }, function (err) {
+      mToast(err && err.code === 1
+        ? 'Location is blocked — allow location for this site in your browser settings, then try again'
+        : 'Could not get your location — turn on location / GPS and try again', 'err');
+      load(view);
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+  }
+
+  function punch(view, body) {
     view.innerHTML = '<div class="m-hint">Recording…</div>';
-    API.post('/hr/clock/punch', { code: code })
+    API.post('/hr/clock/punch', body)
       .then(function (r) {
         chime(r.kind);
         var actions = [
@@ -85,7 +119,7 @@
         // OT (a shift-aware check against attendance_records — this raw punch alone doesn't
         // know the shift) with no Overtime Request form linked, and offer to file one right
         // here if so.
-        var today = new Date().toISOString().slice(0, 10);
+        var today = r.work_date; // the server's local date (toISOString would be UTC — wrong before 8 AM in PH)
         API.get('/me/unrecorded-ot').then(function (rows) {
           var mine = (rows || []).filter(function (d) { return d.work_date === today; })[0];
           if (mine) {

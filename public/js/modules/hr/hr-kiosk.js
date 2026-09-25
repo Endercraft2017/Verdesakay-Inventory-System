@@ -391,6 +391,9 @@ App.register('hr-kiosk', async (view) => {
     else row = emptyRow(p.name);
     if (p.employee_no) row.employee_no = p.employee_no;
     const wasFirstIn = !row.in; // read before slotFor/assignment mutate this row
+    // Times already on the day's timekeeping row with no punch of their own (e.g. a time-in HR
+    // typed in) -- fill empty slots so the card shows them instead of "–".
+    if (p.recorded) for (const k of ['in', 'lunchOut', 'lunchIn']) { if (!row[k] && p.recorded[k]) row[k] = p.recorded[k]; }
     row[slotFor(kind, p, row)] = (p.ts || '').slice(11, 16);
     bucket.rows.set(key, row);
     bucket.last = p;
@@ -490,7 +493,7 @@ App.register('hr-kiosk', async (view) => {
       msgEl.className = 'kiosk-msg ok';
       recordEvent('attendance', {
         name: r.employee_name, employee_no, ts: r.work_date + ' ' + r.at, kind: r.kind, segment: r.segment, id: r.id,
-        slot: correcting ? correcting.slot : undefined,
+        slot: correcting ? correcting.slot : undefined, recorded: r.recorded,
       });
       lastSeenId.attendance = Math.max(lastSeenId.attendance, r.id); // so the next poll doesn't re-announce this same punch
       capturePunchPhoto('attendance', r.id); // fire-and-forget

@@ -116,6 +116,109 @@ function periodModal(existing, onSaved) {
   });
 }
 
+/* ── Phone time-in location lock (GET/PUT /hr/clock/geofence) ───────────────
+   One or more office sites (lat/lng + radius). With the lock on, a phone punch must come from
+   inside one of them — see src/modules/hr/clock-geofence.ts. */
+async function geofenceModal() {
+  const policy = await API.get('/hr/clock/geofence');
+  let sites = (policy.sites || []).map((s) => ({ ...s }));
+
+  UI.modal({
+    title: 'Phone Time-in Location',
+    size: 'lg',
+    bodyHTML: `
+      <label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" data-g="enabled" style="width:auto" ${policy.enabled ? 'checked' : ''} />
+        Only allow phone time-in at an office location
+      </label>
+      <p class="muted" style="font-size:12px;margin:4px 0 12px">Off: phones only need the office QR (as before).
+        On: they also need to be inside one of these locations. Kiosk punches at the office PC are not affected.</p>
+      <div id="geo-sites"></div>
+      <button type="button" class="btn secondary small" id="geo-add" style="margin-top:6px">${UI.icon('plus', 14)} Add location</button>
+      <div class="field-row" style="margin-top:14px">
+        <div><label>Reject a location less precise than (± metres)</label>
+          <input data-g="max_accuracy_m" type="number" min="10" max="1000" value="${Number(policy.max_accuracy_m) || 100}" /></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:4px 0 0"><b>Tip:</b> stand in the office and press
+        "Use this device's location", or in Google Maps right-click the building, click the coordinates to copy
+        them, and paste into Latitude. A radius of 100–200 m covers normal GPS drift indoors.
+        This stops someone clocking in from home with a forwarded QR; it can't detect a phone that fakes its
+        GPS, so every phone punch also keeps its location for review.</p>`,
+    confirmText: 'Save',
+    onOpen: (ov) => {
+      const listEl = ov.querySelector('#geo-sites');
+      const render = () => {
+        listEl.innerHTML = sites.length ? sites.map((s, i) => `
+          <div class="field-row" data-row="${i}" style="align-items:end;margin-bottom:8px">
+            <div><label>Name</label><input data-s="name" value="${UI.esc(s.name || '')}" placeholder="Main office" /></div>
+            <div><label>Latitude</label><input data-s="lat" value="${s.lat ?? ''}" placeholder="14.5995" /></div>
+            <div><label>Longitude</label><input data-s="lng" value="${s.lng ?? ''}" placeholder="120.9842" /></div>
+            <div style="max-width:110px"><label>Radius (m)</label><input data-s="radius_m" type="number" min="30" max="5000" value="${s.radius_m ?? 150}" /></div>
+            <div style="display:flex;gap:6px;flex:0 0 auto">
+              <button type="button" class="btn secondary small" data-here="${i}">Use this device's location</button>
+              ${s.lat != null && s.lng != null ? `<a class="btn secondary small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${encodeURIComponent(s.lat + ',' + s.lng)}">Map</a>` : ''}
+              <button type="button" class="btn secondary small" data-del="${i}">Remove</button>
+            </div>
+          </div>`).join('') : '<p class="muted" style="font-size:13px">No office locations yet.</p>';
+        listEl.querySelectorAll('[data-row]').forEach((row) => {
+          const i = Number(row.dataset.row);
+          row.querySelectorAll('[data-s]').forEach((inp) => {
+            inp.oninput = () => { sites[i][inp.dataset.s] = inp.value; };
+          });
+          // Pasting "14.5995, 120.9842" (Google Maps' copy format) into Latitude fills both fields.
+          row.querySelector('[data-s="lat"]').onpaste = (e) => {
+            const txt = (e.clipboardData || window.clipboardData).getData('text');
+            const m = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(txt);
+            if (!m) return;
+            e.preventDefault();
+            sites[i].lat = m[1]; sites[i].lng = m[2]; render();
+          };
+        });
+        listEl.querySelectorAll('[data-del]').forEach((b) => {
+          b.onclick = () => { sites.splice(Number(b.dataset.del), 1); render(); };
+        });
+        listEl.querySelectorAll('[data-here]').forEach((b) => {
+          b.onclick = () => {
+            if (!navigator.geolocation) { UI.toast('This device can’t share its location', 'error'); return; }
+            b.disabled = true; b.textContent = 'Locating…';
+            navigator.geolocation.getCurrentPosition((pos) => {
+              const i = Number(b.dataset.here);
+              sites[i].lat = pos.coords.latitude.toFixed(6);
+              sites[i].lng = pos.coords.longitude.toFixed(6);
+              UI.toast(`Location set (±${Math.round(pos.coords.accuracy)} m)`);
+              render();
+            }, () => {
+              UI.toast('Could not get this device’s location — allow location access, or paste coordinates', 'error');
+              render();
+            }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+          };
+        });
+      };
+      ov.querySelector('#geo-add').onclick = () => { sites.push({ name: sites.length ? '' : 'Main office', lat: '', lng: '', radius_m: 150 }); render(); };
+      render();
+    },
+    onConfirm: async (ov, showErr) => {
+      const clean = [];
+      for (const s of sites) {
+        const lat = Number(s.lat), lng = Number(s.lng), radius_m = Math.round(Number(s.radius_m));
+        if (!String(s.name || '').trim()) { showErr('Give each location a name'); return false; }
+        if (s.lat === '' || s.lng === '' || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+          showErr(`Set the latitude and longitude for ${s.name}`); return false;
+        }
+        clean.push({ name: String(s.name).trim(), lat, lng, radius_m });
+      }
+      const enabled = ov.querySelector('[data-g="enabled"]').checked;
+      if (enabled && !clean.length) { showErr('Add at least one office location before turning the lock on'); return false; }
+      try {
+        await API.put('/hr/clock/geofence', {
+          enabled, sites: clean, max_accuracy_m: Math.round(Number(ov.querySelector('[data-g="max_accuracy_m"]').value) || 100),
+        });
+      } catch (e) { showErr(e.message || 'Could not save'); return false; }
+      UI.toast(enabled ? 'Phone time-in locked to the office' : 'Office locations saved (lock is off)');
+    },
+  });
+}
+
 /* ── Shift create/edit modal ──────────────────────────────────────────────── */
 function shiftModal(existing, onSaved) {
   const editing = !!existing;
@@ -315,11 +418,18 @@ async function policySettingsModal() {
       <p class="muted" style="font-size:12px;margin-top:2px">The SSS / PhilHealth / Pag-IBIG / BIR-withholding
         figures the payslip computation uses. The 2026 schedule is built in; add a new dated version each January
         if the government changes the rates.</p>
-      <button type="button" class="btn secondary small" id="tk-rate-tables" style="margin-top:8px">${UI.icon('sheet', 14)} Open rate tables</button>`,
+      <button type="button" class="btn secondary small" id="tk-rate-tables" style="margin-top:8px">${UI.icon('sheet', 14)} Open rate tables</button>
+      <hr style="margin:18px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
+      <strong>Phone Time-in Location</strong>
+      <p class="muted" style="font-size:12px;margin-top:2px">Only accept phone time-in at the office: the phone's GPS
+        must be within the radius of an office location, on top of scanning the office QR. Staff marked "Can time in
+        outside the office" on their Employee record are exempt.</p>
+      <button type="button" class="btn secondary small" id="tk-geofence" style="margin-top:8px">${UI.icon('sheet', 14)} Set office locations</button>`,
     cancelText: 'Close',
     onOpen: (ov) => {
       const p = (k) => ov.querySelector(`[data-p="${k}"]`);
       ov.querySelector('#tk-rate-tables').onclick = () => rateTablesModal();
+      ov.querySelector('#tk-geofence').onclick = () => geofenceModal();
       if (policy) {
         p('grace_minutes').value = policy.grace_minutes;
         p('late_unit').value = policy.late_unit;

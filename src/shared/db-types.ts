@@ -330,6 +330,7 @@ export interface Employees {
   leave_days_per_year: Generated<number>;
   leave_days_used: Generated<number>;
   user_id: number | null;
+  clock_anywhere: Generated<number>;
 }
 
 export interface FieldPunches {
@@ -957,6 +958,11 @@ export interface TimePunches {
   segment: string;
   source: string;
   created_at: Generated<string>;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  distance_m: number | null;
+  geo_site: string | null;
 }
 
 export interface Users {

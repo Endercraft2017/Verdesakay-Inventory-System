@@ -140,6 +140,12 @@ releases any reserved components back to available stock).
 
 **Trigger:** a payroll period/cutoff is closed (`hr`, `hr.routes.ts`).
 
+0. **Punch capture** (`hr`, runs daily before any cutoff) — kiosk punches at the office PC,
+   or phone punches: the rotating kiosk QR, plus the phone's GPS inside an office radius
+   when the location lock is on (`clock-geofence.ts`). Branches: no/imprecise location or
+   outside every office radius → refused; employee marked "can time in outside the office"
+   → may punch without the QR from anywhere (`source = remote`), location required and
+   stored. Lands in `time_punches` with its location.
 1. **Attendance reconciliation** (`hr`) — punches/kiosk data reconciled into
    `attendance_records` (lunch bracket, offsets, corrections all applied before
    this point).

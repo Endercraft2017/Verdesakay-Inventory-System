@@ -98,4 +98,47 @@ describe('mobile bootstrap', () => {
     expect(text).not.toContain('Accept Parts Request');
     expect(text).not.toContain('Products In');
   });
+
+  /** Boot the time clock view with a fake server + GPS; returns the view and the punch bodies sent. */
+  async function bootClock(status: Record<string, unknown>) {
+    const win = await bootAs({
+      id: 3, username: 'drv1', full_name: 'Driver One', role: 'employee', employee: true, modules: null,
+      permissions: ['messages.view', 'messages.send'],
+    });
+    const punches: unknown[] = [];
+    const json = (data: unknown) => ({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => data });
+    win.fetch = async (url: string, init: { body?: string } = {}) => {
+      if (url.endsWith('/hr/clock/my-status')) {
+        return json({ employee_name: 'Driver One', clocked_in: false, punches: [], hours_today: 0, ...status });
+      }
+      if (url.endsWith('/hr/clock/punch')) {
+        punches.push(JSON.parse(init.body || '{}'));
+        return json({ kind: 'in', segment: 'morning_in', at: '08:00', hours_today: 0, work_date: '2026-09-25' });
+      }
+      return json([]);
+    };
+    Object.defineProperty(win.navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition: (ok: (p: unknown) => void) => ok({ coords: { latitude: 14.65, longitude: 120.98, accuracy: 12 } }) },
+    });
+    win.location.hash = '#/clock';
+    win.MApp.render();
+    await new Promise((r) => setTimeout(r, 0));
+    return { win, view: win.document.getElementById('m-view'), punches };
+  }
+
+  it('time clock: staff who may clock in anywhere get "Clock in here", which sends GPS and no QR code', async () => {
+    const { view, punches } = await bootClock({ location_required: false, can_clock_anywhere: true });
+    const here = [...view.querySelectorAll('button')].find((b: { textContent: string }) => b.textContent.includes('Clock in here'));
+    expect(here).toBeTruthy();
+    here.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(punches).toEqual([{ location: { lat: 14.65, lng: 120.98, accuracy_m: 12 } }]);
+  });
+
+  it('time clock: ordinary staff get no "Clock in here" button, and are told location is checked when locked', async () => {
+    const { view } = await bootClock({ location_required: true, can_clock_anywhere: false });
+    expect(view.textContent).not.toContain('Clock in here');
+    expect(view.textContent).toContain('time-in only works at the office');
+  });
 });

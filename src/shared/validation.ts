@@ -1042,6 +1042,9 @@ export const employeeSchema = z.object({
   // Exempt from overtime pay entirely — real OT hours still show on the payslip detail, it
   // just never adds pay. See src/hr-payroll-compute.ts.
   ot_exempt: boolish.optional(),
+  // May time in from anywhere (field staff) — exempt from the office location lock, and may
+  // punch without the kiosk QR. Omitted on update ⇒ unchanged. See clock-geofence.ts.
+  clock_anywhere: boolish.optional(),
   // Per-employee statutory-deduction switches — the same columns Accounting → Statutory
   // Deductions edits, now also editable straight from the Edit Employee form. Default true
   // (deduct) when omitted, matching how those columns already default in the database.
@@ -1284,8 +1287,28 @@ export const pushUnsubscribeSchema = z.object({
 
 // ---- Time clock ----
 export const phonePunchSchema = z.object({
-  code: z.string().trim().length(10, 'Scan the current office code'),
+  // Omitted only by employees exempt from the office location lock (clock_anywhere), punching
+  // away from the office — see src/modules/hr/clock-geofence.ts. The route enforces that.
+  code: z.string().trim().length(10, 'Scan the current office code').optional(),
+  // The phone's GPS position (browser geolocation). Required when the location lock applies.
+  location: z.object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    accuracy_m: z.number().min(0).max(100_000),
+  }).optional().nullable(),
 });
+
+/** Office location lock for phone time-in (setting `clock_geofence`). */
+export const clockGeofenceSchema = z.object({
+  enabled: z.boolean(),
+  sites: z.array(z.object({
+    name: trimmed.min(1, 'Name each office location').max(80),
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    radius_m: z.number().int().min(30, 'Radius must be at least 30 m (GPS is rarely more precise)').max(5000),
+  })).max(20),
+  max_accuracy_m: z.number().int().min(10).max(1000).default(100),
+}).refine((p) => !p.enabled || p.sites.length > 0, { message: 'Add at least one office location before turning the lock on.', path: ['sites'] });
 
 export const kioskPunchSchema = z.object({
   code: z.string().trim().length(10, 'The office code has changed — the screen shows a fresh one'),

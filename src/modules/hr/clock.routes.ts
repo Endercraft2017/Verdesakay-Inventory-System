@@ -8,8 +8,12 @@
  *                            the day's final out already happened.
  *  - POST /photo/:punchId,
  *    GET  /photo/:id        kiosk camera capture per punch -- see src/punch-photos.ts (hr.view)
- *  - POST /punch            an employee scans the kiosk QR from the mobile app (any linked user)
+ *  - POST /punch            an employee scans the kiosk QR from the mobile app (any linked user);
+ *                            with the office location lock on, the phone's GPS must be on-site.
+ *                            Staff exempt from the lock (clock_anywhere) may omit the QR and punch
+ *                            from anywhere, location recorded. See clock-geofence.ts.
  *  - GET  /my-status        that employee's clock state today (any linked user)
+ *  - GET/PUT /geofence      the office location lock: sites + radius (hr.view / hr.manage)
  *  - POST /import/:periodId backfill/catch-up: pull any punches recorded before an employee was
  *                            added to this period's roster into attendance_records (hr.manage).
  *                            Ongoing punches during an open period fill in live — see
@@ -19,9 +23,10 @@
 import { Router } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
-import { parseBody, phonePunchSchema, kioskPunchSchema, kioskCorrectSchema } from '../../shared/validation';
+import { parseBody, phonePunchSchema, kioskPunchSchema, kioskCorrectSchema, clockGeofenceSchema } from '../../shared/validation';
+import { checkPunchLocation, GeofenceError, geofenceActive, getGeofence, setGeofence } from './clock-geofence';
 import {
-  currentKioskCode, isValidKioskCode, recordPunch, correctPunch, myClockStatus,
+  currentKioskCode, isValidKioskCode, recordPunch, correctPunch, myClockStatus, recordedBrackets,
   importPunchesForPeriod, ROTATE_SECONDS,
 } from './clock';
 import { punchPhotoRoutes } from './punch-photos';
@@ -29,10 +34,10 @@ import { punchPhotoRoutes } from './punch-photos';
 const router = Router();
 router.use(requireAuth);
 
-interface EmpRow { id: number; name: string; user_id: number | null; status: string }
+interface EmpRow { id: number; name: string; user_id: number | null; status: string; clock_anywhere?: number }
 
 function linkedEmployee(userId: number): EmpRow | undefined {
-  return queryOne<EmpRow>('SELECT id, name, user_id, status FROM employees WHERE user_id = ?', userId);
+  return queryOne<EmpRow>('SELECT id, name, user_id, status, clock_anywhere FROM employees WHERE user_id = ?', userId);
 }
 
 // --- Kiosk screen (office PC, logged in as HR/admin) ---
@@ -45,13 +50,17 @@ router.get('/recent', requirePermission('hr.view'), (req, res) => {
   const sinceId = Number(req.query.since_id) || 0;
   const rows = queryAll<{
     id: number; ts: string; kind: string; segment: string; source: string; name: string; employee_no: string | null;
+    employee_id: number; work_date: string; lat: number | null; lng: number | null; distance_m: number | null; geo_site: string | null;
   }>(
-    `SELECT p.id, p.ts, p.kind, p.segment, p.source, e.name, e.employee_no
+    `SELECT p.id, p.ts, p.kind, p.segment, p.source, e.name, e.employee_no, p.lat, p.lng, p.distance_m, p.geo_site,
+            p.employee_id, p.work_date
      FROM time_punches p JOIN employees e ON e.id = p.employee_id
      WHERE p.id > ? ORDER BY p.id DESC LIMIT 20`,
     sinceId
   );
-  res.json(rows);
+  // What the day's grid row already holds (incl. times HR typed in), so the kiosk card can show
+  // an HR-entered time-in that has no punch of its own.
+  res.json(rows.map(({ employee_id, work_date, ...r }) => ({ ...r, recorded: recordedBrackets(employee_id, work_date) })));
 });
 
 router.post('/kiosk-punch', requirePermission('hr.view'), (req, res) => {
@@ -102,8 +111,11 @@ router.use('/photo', punchPhotoRoutes('attendance', (punchId) =>
 
 // --- Employee, from the mobile app ---
 
+// Phone punch. With the kiosk QR (`code`), or — only for employees exempt from the office
+// location lock (clock_anywhere) — without it, from wherever they are. The location rules are
+// in clock-geofence.ts's checkPunchLocation.
 router.post('/punch', (req, res) => {
-  const { code } = parseBody(phonePunchSchema, req.body);
+  const { code, location } = parseBody(phonePunchSchema, req.body);
   const emp = linkedEmployee(req.user!.id);
   if (!emp) {
     res.status(403).json({ error: 'Your account is not linked to an employee record. Ask HR to link it.' });
@@ -113,11 +125,22 @@ router.post('/punch', (req, res) => {
     res.status(403).json({ error: 'Your employee record is inactive.' });
     return;
   }
-  if (!isValidKioskCode(code)) {
+  if (code === undefined && !emp.clock_anywhere) {
+    res.status(400).json({ error: 'Scan the code on the office time-in screen.' });
+    return;
+  }
+  if (code !== undefined && !isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code has expired — scan the one on the office screen now.' });
     return;
   }
-  res.json(recordPunch(emp, 'phone', req.user!.id));
+  let geo;
+  try {
+    geo = checkPunchLocation({ exempt: !!emp.clock_anywhere, hasCode: code !== undefined, location: location ?? null });
+  } catch (e) {
+    if (e instanceof GeofenceError) { res.status(e.status).json({ error: e.message }); return; }
+    throw e;
+  }
+  res.json(recordPunch(emp, code === undefined ? 'remote' : 'phone', req.user!.id, geo));
 });
 
 router.get('/my-status', (req, res) => {
@@ -126,7 +149,24 @@ router.get('/my-status', (req, res) => {
     res.status(403).json({ error: 'Your account is not linked to an employee record.' });
     return;
   }
-  res.json({ employee_name: emp.name, ...myClockStatus(emp.id) });
+  res.json({
+    employee_name: emp.name,
+    ...myClockStatus(emp.id),
+    // The phone asks for GPS before a QR punch when this is on, and offers a no-QR
+    // "clock in here" button when the employee may clock in anywhere.
+    location_required: geofenceActive() && !emp.clock_anywhere,
+    can_clock_anywhere: !!emp.clock_anywhere,
+  });
+});
+
+// --- Office location lock settings (Time Keeping → Policy Settings) ---
+
+router.get('/geofence', requirePermission('hr.view'), (_req, res) => {
+  res.json(getGeofence());
+});
+
+router.put('/geofence', requirePermission('hr.manage'), (req, res) => {
+  res.json(setGeofence(parseBody(clockGeofenceSchema, req.body)));
 });
 
 // --- HR reconciliation ---

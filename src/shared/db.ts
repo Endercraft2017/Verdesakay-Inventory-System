@@ -58,7 +58,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 45; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 46; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -145,6 +145,10 @@ export const SCHEMA_VERSION = 45; // 20: employees.late_exempt; 21: attendance_r
 // sign-off that the released parts kit arrived. Recording output (/progress, /units) now
 // requires it (job-orders.routes.ts needsAcceptance); older job orders that already have
 // output recorded are exempt, so no backfill is needed.
+// 46: phone time-in location lock (src/modules/hr/clock-geofence.ts) -- employees.clock_anywhere
+// (field staff may punch from anywhere, without the QR) and time_punches.lat / lng / accuracy_m /
+// distance_m / geo_site (where each phone punch came from, for HR review). The policy itself is
+// the clock_geofence setting; off by default, so existing installs punch exactly as before.
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -309,7 +313,7 @@ function createSchema(): void {
       work_date   TEXT NOT NULL,
       kind        TEXT NOT NULL,     -- 'in' | 'out'
       segment     TEXT NOT NULL,     -- morning_in | lunch_out | afternoon_in | afternoon_out | other_in | other_out
-      source      TEXT NOT NULL,     -- 'phone' | 'kiosk'
+      source      TEXT NOT NULL,     -- 'phone' | 'kiosk' | 'remote' (exempt staff, no QR)
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_punch_emp_date ON time_punches(employee_id, work_date);
@@ -2193,6 +2197,17 @@ function migrate(): void {
   }
   if (!joAccCols.some((c) => c.name === 'accept_notes')) {
     db.exec('ALTER TABLE job_orders ADD COLUMN accept_notes TEXT');
+  }
+
+  // (SCHEMA_VERSION 46) Phone time-in location lock: the per-employee exemption, and where each
+  // phone punch came from. Kiosk punches leave the location columns NULL (the kiosk is on-site).
+  const empGeoCols = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
+  if (!empGeoCols.some((c) => c.name === 'clock_anywhere')) {
+    db.exec('ALTER TABLE employees ADD COLUMN clock_anywhere INTEGER NOT NULL DEFAULT 0');
+  }
+  const punchGeoCols = db.prepare('PRAGMA table_info(time_punches)').all() as { name: string }[];
+  for (const [col, decl] of [['lat', 'REAL'], ['lng', 'REAL'], ['accuracy_m', 'REAL'], ['distance_m', 'REAL'], ['geo_site', 'TEXT']]) {
+    if (!punchGeoCols.some((c) => c.name === col)) db.exec(`ALTER TABLE time_punches ADD COLUMN ${col} ${decl}`);
   }
 }
 
