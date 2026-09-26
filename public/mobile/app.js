@@ -109,17 +109,10 @@ window.MApp = (function () {
     var isRoot = !!TAB_ROOTS[name];
     document.getElementById('m-back').classList.toggle('hidden', isRoot);
 
-    // segmented control only on Home; hide segments that don't apply to this user
+    // V2 uses one employee-first Home. Approvals, People and role work have
+    // dedicated routes instead of a second navigation system inside Home.
     var segEl = document.getElementById('m-segments');
-    var onHome = name === 'home';
-    segEl.classList.toggle('hidden', !onHome);
-    if (onHome) {
-      var cur = currentSeg();
-      segEl.querySelectorAll('button').forEach(function (b) {
-        b.classList.toggle('hidden', !segAllowed(b.dataset.seg));
-        b.classList.toggle('on', b.dataset.seg === cur);
-      });
-    }
+    if (segEl) segEl.classList.add('hidden');
 
     // active bottom tab
     var activeTab = name === 'home' ? 'home' : (TAB_OF[name] || 'home');
@@ -212,7 +205,7 @@ window.MApp = (function () {
       ChatWS.connect();
     }
     if (!location.hash || location.hash === '#' || location.hash === '#/') {
-      location.hash = hashFor('home', { seg: currentSeg() });
+      location.hash = hashFor('home');
     } else {
       render();
     }
@@ -242,7 +235,7 @@ window.MApp = (function () {
     document.querySelectorAll('#m-tabbar .m-tab').forEach(function (t) {
       t.onclick = function () {
         var tab = t.dataset.tab;
-        if (tab === 'home') go('home', { seg: currentSeg() });
+        if (tab === 'home') go('home');
         else if (tab === 'work') go('work');
         else if (tab === 'clock') go('clock');
         else if (tab === 'inbox') go('inbox');
