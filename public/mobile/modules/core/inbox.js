@@ -17,58 +17,91 @@
   /* ---------- conversation list ---------- */
 
   function convoList(view) {
-    MApp.setTitle('Messages');
-    view.innerHTML = '<div class="m-hint">Loading…</div>';
-    API.get('/messages/conversations').then(function (rows) {
-      if (!rows.length) {
-        view.innerHTML = '<div class="m-stack-empty">No conversations yet.<br><button class="m-btn" data-new>New message</button></div>';
-        view.querySelector('[data-new]').onclick = function () { newMessage(view); };
+    MApp.setTitle('Inbox');
+    view.setAttribute('data-figma-node', '46:808');
+    view.innerHTML =
+      '<section class="m-v2-page m-inbox-v2"><header class="m-v2-heading"><h1>Inbox</h1>' +
+      '<p>Messages and direct employee conversations</p></header>' +
+      '<label class="m-inbox-search"><span aria-hidden="true">⌕</span><input type="search" id="m-inbox-search" placeholder="Search conversations" aria-label="Search conversations"></label>' +
+      '<div class="m-inbox-filters" role="tablist"><button type="button" data-filter="all" aria-selected="true">All</button>' +
+      '<button type="button" data-filter="unread" aria-selected="false">Unread</button></div>' +
+      '<div id="m-inbox-list"><div class="m-hint">Loading…</div></div>' +
+      '<div class="m-inbox-actions"><button class="m-v2-primary" id="m-inbox-new" type="button">＋ New message</button></div></section>';
+    var host = view.querySelector('#m-inbox-list');
+    var search = view.querySelector('#m-inbox-search');
+    var activeFilter = 'all';
+    var conversations = [];
+    view.querySelector('#m-inbox-new').onclick = function () { newMessage(view); };
+
+    function renderList() {
+      var query = String(search.value || '').trim().toLowerCase();
+      var visible = conversations.filter(function (c) {
+        if (activeFilter === 'unread' && !c.unread_count) return false;
+        return !query || String(c.other_name || '').toLowerCase().indexOf(query) >= 0 ||
+          String(c.last_message || '').toLowerCase().indexOf(query) >= 0;
+      });
+      if (!visible.length) {
+        host.innerHTML = '<div class="m-empty">' + (conversations.length ? 'No conversations match this view.' : 'No conversations yet.') + '</div>';
         return;
       }
-      var ul = mEl('<ul class="m-list"></ul>');
-      rows.forEach(function (c) {
-        var li = mEl(
-          '<li class="m-list-row' + (c.unread_count ? ' unread' : '') + '">' +
-          '<div><b>' + mEsc(c.other_name) + (c.unread_count ? ' <span class="m-badge-inline">' + c.unread_count + '</span>' : '') + '</b>' +
-          '<span>' + (c.last_message_mine ? 'You: ' : '') + mEsc((c.last_message || '').slice(0, 60)) + '</span></div>' +
-          '<div class="m-list-qty">' + mEsc((c.last_message_at || '').slice(5, 10)) + '</div></li>'
-        );
-        li.onclick = function () { MApp.go('inbox', { thread: c.other_id }); };
-        ul.appendChild(li);
+      host.innerHTML = '';
+      visible.forEach(function (c) {
+        var button = mEl('<button class="m-inbox-row' + (c.unread_count ? ' unread' : '') + '" type="button">' +
+          '<span class="m-inbox-avatar" aria-hidden="true">' + mEsc(String(c.other_name || '?').slice(0, 1).toUpperCase()) + '</span>' +
+          '<span class="m-inbox-copy"><b>' + mEsc(c.other_name) + '</b><small>' + (c.last_message_mine ? 'You: ' : '') +
+          mEsc((c.last_message || '').slice(0, 74)) + '</small></span>' +
+          '<span class="m-inbox-meta"><time>' + mEsc(mFmtTime(c.last_message_at)) + '</time>' +
+          (c.unread_count ? '<em>' + (c.unread_count > 99 ? '99+' : c.unread_count) + '</em>' : '') + '</span>' +
+          '<i aria-hidden="true">›</i></button>');
+        button.onclick = function () { MApp.go('inbox', { thread: c.other_id, name: c.other_name }); };
+        host.appendChild(button);
       });
-      view.innerHTML = '';
-      var newBtn = mEl('<button class="m-btn m-btn-secondary" style="margin-bottom:10px">+ New message</button>');
-      newBtn.onclick = function () { newMessage(view); };
-      view.appendChild(newBtn);
-      view.appendChild(ul);
+    }
+
+    search.addEventListener('input', renderList);
+    Array.prototype.forEach.call(view.querySelectorAll('[data-filter]'), function (button) {
+      button.onclick = function () {
+        activeFilter = this.getAttribute('data-filter');
+        Array.prototype.forEach.call(view.querySelectorAll('[data-filter]'), function (item) {
+          item.setAttribute('aria-selected', item === button ? 'true' : 'false');
+        });
+        renderList();
+      };
+    });
+
+    API.get('/messages/conversations').then(function (rows) {
+      conversations = rows || [];
+      renderList();
     }).catch(function (ex) {
-      view.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div>';
+      host.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div><button class="m-v2-secondary" id="m-inbox-retry" type="button">Try again</button>';
+      host.querySelector('#m-inbox-retry').onclick = function () { convoList(view); };
     });
   }
 
   function newMessage(view) {
     MApp.setTitle('New message');
+    view.setAttribute('data-figma-node', '46:808');
+    view.innerHTML = '<section class="m-v2-page m-inbox-v2"><header class="m-v2-heading m-chat-heading">' +
+      '<button class="m-chat-back" type="button" aria-label="Back">‹</button><div><h1>New message</h1><p>Choose an employee to start a conversation</p></div></header>' +
+      '<div id="m-new-message"><div class="m-hint">Loading directory…</div></div></section>';
+    view.querySelector('.m-chat-back').onclick = function () { convoList(view); };
+    var host = view.querySelector('#m-new-message');
     API.get('/users').then(function (users) {
       var me = MApp.getMe();
-      var opts = users.filter(function (u) { return u.id !== me.id; })
-        .map(function (u) { return '<option value="' + u.id + '" data-name="' + mEsc(u.full_name) + '">' + mEsc(u.full_name) + ' (@' + mEsc(u.username) + ')</option>'; })
-        .join('');
-      var f = mEl(
-        '<div class="m-form">' +
-        '<label class="m-field"><span class="m-label">To</span><select data-to>' +
-        '<option value="">— Select recipient —</option>' + opts + '</select></label>' +
-        '<div class="m-actions"><button class="m-btn" data-start>Start</button>' +
-        '<button class="m-btn m-btn-secondary" data-cancel>Cancel</button></div></div>'
-      );
-      f.querySelector('[data-cancel]').onclick = function () { convoList(view); };
-      f.querySelector('[data-start]').onclick = function () {
-        var sel = f.querySelector('[data-to]');
-        if (!sel.value) { mToast('Choose a recipient', 'err'); return; }
-        MApp.go('inbox', { thread: sel.value });
+      var available = (users || []).filter(function (u) { return u.id !== me.id; });
+      host.innerHTML = '<label class="m-new-recipient"><span>Recipient</span><select data-to><option value="">Choose an employee</option>' +
+        available.map(function (u) { return '<option value="' + u.id + '" data-name="' + mEsc(u.full_name) + '">' +
+          mEsc(u.full_name) + (u.department_name ? ' — ' + mEsc(u.department_name) : '') + '</option>'; }).join('') +
+        '</select></label><button class="m-v2-primary" data-start type="button">Start conversation</button>';
+      host.querySelector('[data-start]').onclick = function () {
+        var select = host.querySelector('[data-to]');
+        if (!select.value) { mToast('Choose a recipient', 'err'); select.focus(); return; }
+        var option = select.options[select.selectedIndex];
+        MApp.go('inbox', { thread: select.value, name: option.getAttribute('data-name') || option.text });
       };
-      view.innerHTML = '';
-      view.appendChild(f);
-    }).catch(function (ex) { mToast(ex.message || 'Failed to load users', 'err'); });
+    }).catch(function (ex) {
+      host.innerHTML = '<div class="m-error">' + mEsc(ex.message || 'Failed to load employees') + '</div>';
+    });
   }
 
   /* ---------- thread ---------- */
@@ -78,19 +111,22 @@
       view: view, otherId: otherId, otherName: knownName || '',
       messages: [], replyTo: null, editingId: null, linkPreviewCache: {},
     };
-    MApp.setTitle(state.otherName || 'Message');
+    MApp.setTitle(state.otherName || 'Conversation');
+    view.setAttribute('data-figma-node', '46:837');
     view.innerHTML =
-      '<button class="m-btn m-btn-secondary" data-back style="margin-bottom:10px">&larr; Back</button>' +
+      '<section class="m-v2-page m-chat-v2"><header class="m-v2-heading m-chat-heading">' +
+      '<button class="m-chat-back" data-back type="button" aria-label="Back">‹</button><div><h1>' +
+      mEsc(state.otherName || 'Conversation') + '</h1><p>Private work conversation</p></div></header>' +
       '<div id="m-chat-typing" class="m-chat-typing hidden">typing…</div>' +
-      '<div id="m-chat-load-older" class="m-chat-load-older hidden"><button class="m-btn m-btn-secondary">Load earlier</button></div>' +
+      '<div id="m-chat-load-older" class="m-chat-load-older hidden"><button class="m-v2-secondary" type="button">Load earlier</button></div>' +
       '<div id="m-chat-messages" class="m-chat-messages"><div class="m-hint">Loading…</div></div>' +
       '<div id="m-chat-reply-strip" class="m-chat-reply-strip hidden"></div>' +
       '<div class="m-chat-compose">' +
-      '<button class="m-btn m-btn-secondary" id="m-chat-attach" type="button">📎</button>' +
+      '<button class="m-chat-attach-button" id="m-chat-attach" type="button" aria-label="Attach files">＋</button>' +
       '<input type="file" id="m-chat-file" multiple class="hidden" />' +
-      '<textarea id="m-chat-input" rows="1" placeholder="Message…"></textarea>' +
-      '<button class="m-btn" id="m-chat-send">Send</button>' +
-      '</div>';
+      '<textarea id="m-chat-input" rows="1" placeholder="Write a message…" aria-label="Message"></textarea>' +
+      '<button class="m-chat-send-button" id="m-chat-send" type="button" aria-label="Send message">➤</button>' +
+      '</div></section>';
     view.querySelector('[data-back]').onclick = function () { MApp.go('inbox'); };
     wireComposer();
     view.querySelector('#m-chat-load-older button').onclick = loadOlder;
@@ -561,8 +597,8 @@
 
   MApp.route('inbox', function (view, params) {
     wireWs();
-    if (params && params.thread) {
-      var otherId = Number(params.thread);
+    if (params && (params.thread || params.user)) {
+      var otherId = Number(params.thread || params.user);
       var known = params.name || null;
       openThread(view, otherId, known);
     } else {
