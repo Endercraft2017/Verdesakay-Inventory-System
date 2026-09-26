@@ -21,6 +21,23 @@ describe('mobile bootstrap', () => {
   const html = fs.readFileSync(path.join(PUBLIC, 'mobile', 'index.html'), 'utf8');
   const srcs = [...html.matchAll(/<script src="(\/[^"]+)"><\/script>/g)].map((m) => m[1] as string);
 
+  it('uses the approved five-destination V2 dock and keeps Clock universal', () => {
+    const tabs = [...html.matchAll(/data-tab="([^"]+)"/g)].map((m) => m[1]);
+    expect(tabs).toEqual(['home', 'work', 'clock', 'inbox', 'profile']);
+    expect(html).not.toContain('data-tab="production"');
+    expect(html).not.toContain('data-tab="action"');
+    expect(html).toContain('/mobile/mobile-v2.css');
+    expect(html).toContain('/mobile/lib/quick-orbit.js');
+  });
+
+  it('maps Home to the approved Figma V2 frame', () => {
+    const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'core', 'home.js'), 'utf8');
+    expect(source).toContain('data-figma-node="46:519"');
+    expect(source).toContain('TODAY’S ATTENDANCE');
+    expect(source).toContain('New request');
+    expect(source).toContain('Report issue');
+  });
+
   it('declares app.js before any view module', () => {
     const appIdx = srcs.indexOf('/mobile/app.js');
     const firstView = srcs.findIndex((s) => s.startsWith('/mobile/modules/'));
