@@ -178,4 +178,13 @@ describe('mobile bootstrap', () => {
     expect(view.textContent).toContain('time-in only works at the office');
     expect(view.textContent).toContain('Review & confirm');
   });
+
+  it('maps the Schedule route to approved Figma node 46:606 and keeps its live API/request flow', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/schedule.js'), 'utf8');
+    expect(source).toContain("view.setAttribute('data-figma-node', '46:606')");
+    expect(source).toContain("API.get('/me/schedule')");
+    expect(source).toContain("MApp.go('requests')");
+    expect(source).toContain('Request schedule change');
+  });
+
 });
