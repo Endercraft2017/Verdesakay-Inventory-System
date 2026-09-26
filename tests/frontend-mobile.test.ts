@@ -187,4 +187,17 @@ describe('mobile bootstrap', () => {
     expect(source).toContain('Request schedule change');
   });
 
+
+  it('maps universal Requests to the approved center, form, and detail Figma nodes', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/requests.js'), 'utf8');
+    expect(source).toContain("shell(view, '46:634'");
+    expect(source).toContain("shell(view, '46:663'");
+    expect(source).toContain("shell(view, '46:692'");
+    expect(source).toContain("API.get('/me/request-types')");
+    expect(source).toContain("API.get('/me/requests')");
+    expect(source).toContain("API.post('/form-records'");
+    expect(source).toContain('Half-day · Undertime');
+    expect(source).toContain('Offset · Time correction · Schedule change');
+  });
+
 });
