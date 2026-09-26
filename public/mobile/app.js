@@ -76,7 +76,7 @@ window.MApp = (function () {
     inbox: 'inbox', directory: 'inbox',
     settings: 'profile', queue: 'profile',
     clock: 'clock', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home', notifications: 'home',
-    tasks: 'work', approvals: 'home', announcements: 'home', 'report-problem': 'home',
+    tasks: 'work', approvals: 'home', announcements: 'home', 'report-problem': 'home', 'anonymous-report': 'home',
   };
   var SEGMENTS = ['me', 'approvals', 'people', 'warehouse'];
   var SEG_KEY = 'vds_m_seg';
