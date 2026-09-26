@@ -38,6 +38,14 @@ describe('mobile bootstrap', () => {
     expect(source).toContain("MApp.can(op.permission)");
   });
 
+  it('maps Clock to the approved Figma V2 frame and server-authoritative review flow', () => {
+    const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'hr', 'clock.js'), 'utf8');
+    expect(source).toContain('data-figma-node="46:577"');
+    expect(source).toContain('Select an action before confirming');
+    expect(source).toContain('Review & confirm');
+    expect(source).toContain("API.post('/hr/clock/punch'");
+  });
+
   it('maps Home to the approved Figma V2 frame', () => {
     const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'core', 'home.js'), 'utf8');
     expect(source).toContain('data-figma-node="46:519"');
@@ -154,6 +162,9 @@ describe('mobile bootstrap', () => {
 
   it('time clock: staff who may clock in anywhere get "Clock in here", which sends GPS and no QR code', async () => {
     const { view, punches } = await bootClock({ location_required: false, can_clock_anywhere: true });
+    const review = [...view.querySelectorAll('button')].find((b: { textContent: string }) => b.textContent.includes('Review & confirm'));
+    expect(review).toBeTruthy();
+    review.click();
     const here = [...view.querySelectorAll('button')].find((b: { textContent: string }) => b.textContent.includes('Clock in here'));
     expect(here).toBeTruthy();
     here.click();
@@ -165,5 +176,6 @@ describe('mobile bootstrap', () => {
     const { view } = await bootClock({ location_required: true, can_clock_anywhere: false });
     expect(view.textContent).not.toContain('Clock in here');
     expect(view.textContent).toContain('time-in only works at the office');
+    expect(view.textContent).toContain('Review & confirm');
   });
 });
