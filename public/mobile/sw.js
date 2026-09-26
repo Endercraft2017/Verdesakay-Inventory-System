@@ -5,7 +5,7 @@
      device reconnects, even if no tab is open (Android; iOS flushes on open).
 
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
-var CACHE_VERSION = 'vds-m-v24';
+var CACHE_VERSION = 'vds-m-v25';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -15,11 +15,13 @@ var SHELL = [
   '/mobile/icons/icon-192.png',
   '/mobile/icons/icon-512.png',
   '/mobile/mobile.css',
+  '/mobile/mobile-v2.css',
   '/js/api.js',
   '/mobile/vendor/qrcode.js',
   '/mobile/vendor/zxing.js',
   '/mobile/app.js',
   '/mobile/lib/dom.js',
+  '/mobile/lib/quick-orbit.js',
   '/mobile/lib/locations.js',
   '/mobile/lib/users.js',
   '/mobile/lib/stats.js',
@@ -50,6 +52,7 @@ var SHELL = [
   '/mobile/modules/manufacturing/qc.js',
   '/mobile/modules/manufacturing/repairs.js',
   '/mobile/modules/manufacturing/record.js',
+  '/mobile/modules/manufacturing/receiving.js',
   '/mobile/modules/inventory/allocate.js',
   '/mobile/modules/inventory/so.js',
   '/mobile/modules/inventory/deliveries.js',
@@ -58,6 +61,7 @@ var SHELL = [
   '/mobile/modules/inventory/queue-view.js',
   '/mobile/modules/hr/clock.js',
   '/mobile/modules/core/inbox.js',
+  '/mobile/modules/core/notifications.js',
   '/mobile/modules/hr/directory.js',
   '/mobile/modules/hr/payslips.js',
   '/mobile/modules/hr/schedule.js',
