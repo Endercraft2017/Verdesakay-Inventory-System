@@ -167,3 +167,10 @@ body { background: var(--v2-bg); color: var(--v2-text); }
   .m-tabbar { left: 50%; right: auto; width: min(358px, calc(100vw - 32px)); transform: translateX(-50%); }
   .v2-orbit { right: calc(50% - 205px); }
 }
+.v2-notification-intro { margin-bottom: 20px; padding: 18px; background: var(--v2-surface); }
+.v2-notification-intro h2 { margin: 14px 0 5px; color: var(--v2-text); font-size: 21px; letter-spacing: -.025em; }
+.v2-notification-intro p { margin: 0; color: var(--v2-muted); font-size: 12px; }
+.v2-notification-row { width: 100%; margin-bottom: 10px; text-align: left; background: var(--v2-surface); }
+.v2-notification-row small { color: var(--v2-muted); font-size: 10px; text-transform: capitalize; }
+.v2-notification-row.ok small { color: var(--v2-green); }
+.v2-notification-row.err small { color: var(--v2-danger); }
