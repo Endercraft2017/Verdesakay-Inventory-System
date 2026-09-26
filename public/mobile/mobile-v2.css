@@ -264,3 +264,54 @@ body { background: var(--v2-bg); color: var(--v2-text); }
 }
 .v2-work-wide-tool { width: 100%; min-height: 44px; margin-top: 10px; border: 1px solid var(--v2-line); border-radius: 999px; }
 @media (max-width: 350px) { .v2-work-tools { grid-template-columns: 1fr; } .v2-work-tool { min-height: 48px; } }
+
+/* Timekeeping — Figma node 46:577 */
+.v2-clock { max-width: 430px; margin: 0 auto; padding: 2px 0 24px; }
+.v2-clock-heading { padding: 0 6px 14px; }
+.v2-clock-heading h1 { margin: 0; color: var(--v2-text); font-size: 24px; letter-spacing: -.035em; }
+.v2-clock-heading p { margin: 7px 0 0; color: var(--v2-muted); font-size: 12px; }
+.v2-live-time {
+  position: relative; min-height: 126px; padding: 19px 24px; color: white;
+  background: #143f2c; border: 1px solid var(--v2-line); border-radius: var(--v2-radius-lg);
+}
+.v2-live-time strong { display: block; font-size: 30px; line-height: 1.15; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.v2-live-time p { margin: 11px 0 0; color: #cbe3d3; font-size: 12px; }
+.v2-live-time span { position: absolute; right: 24px; bottom: 36px; color: #cbe3d3; font-size: 10px; font-weight: 700; }
+.v2-clock > h2 { margin: 20px 6px 11px; color: var(--v2-text); font-size: 16px; letter-spacing: -.015em; }
+.v2-clock-select { position: relative; display: block; }
+.v2-clock-select select {
+  width: 100%; height: 58px; padding: 0 52px 0 18px; appearance: none;
+  color: var(--v2-text); background: var(--v2-surface); border: 1px solid var(--v2-line);
+  border-radius: var(--v2-radius-lg); font: inherit; font-size: 14px; font-weight: 700;
+}
+.v2-clock-select svg { position: absolute; right: 20px; top: 20px; color: var(--v2-muted); pointer-events: none; }
+.v2-clock-notice { min-height: 76px; margin-top: 14px; padding: 13px 16px; background: var(--v2-surface-soft); border: 1px solid var(--v2-line); border-radius: var(--v2-radius-lg); }
+.v2-clock-notice b { color: #345a43; font-size: 12px; }
+.v2-clock-notice p { margin: 9px 0 0; color: var(--v2-muted); font-size: 11px; line-height: 1.45; }
+.v2-clock-primary { width: 100%; min-height: 44px; margin-top: 20px; color: white; background: var(--v2-green); border: 0; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 700; }
+.v2-clock-primary:disabled { opacity: .45; }
+.v2-clock-log-title { margin-top: 23px !important; }
+.v2-clock-empty {
+  width: 100%; min-height: 72px; padding: 12px 15px; display: grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center;
+  color: var(--v2-text-2); background: var(--v2-surface); border: 1px solid var(--v2-line);
+  border-radius: var(--v2-radius-lg); text-align: left; font: inherit;
+}
+.v2-clock-empty span { display: flex; flex-direction: column; }
+.v2-clock-empty b { font-size: 14px; }
+.v2-clock-empty small { margin-top: 7px; color: var(--v2-muted); font-size: 11px; }
+.v2-clock-empty svg { color: var(--v2-muted); }
+.v2-clock-log { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }
+.v2-clock-log li { min-height: 60px; padding: 10px 15px; display: flex; align-items: center; justify-content: space-between; background: var(--v2-surface); border: 1px solid var(--v2-line); border-radius: 18px; }
+.v2-clock-log li span { display: flex; flex-direction: column; }
+.v2-clock-log li b { font-size: 13px; }
+.v2-clock-log li small { margin-top: 5px; color: var(--v2-muted); font-size: 10px; text-transform: capitalize; }
+.v2-clock-log time { color: var(--v2-green); font-size: 13px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.v2-clock-confirm { max-width: 430px; margin: 0 auto; padding: 8px 0 24px; }
+.v2-clock-confirm h1 { margin: 18px 0 6px; color: var(--v2-text); font-size: 24px; }
+.v2-clock-confirm > p { margin: 0 0 18px; color: var(--v2-muted); font-size: 12px; line-height: 1.5; }
+.v2-clock-confirm dl { margin: 0; padding: 4px 16px; background: var(--v2-surface); border: 1px solid var(--v2-line); border-radius: var(--v2-radius-lg); }
+.v2-clock-confirm dl div { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--v2-line); }
+.v2-clock-confirm dl div:last-child { border-bottom: 0; }
+.v2-clock-confirm dt { color: var(--v2-muted); font-size: 11px; }
+.v2-clock-confirm dd { margin: 0; color: var(--v2-text); font-size: 12px; font-weight: 700; text-align: right; }
+.v2-clock-confirm-actions { margin-top: 18px; display: grid; gap: 10px; }
