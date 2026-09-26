@@ -419,3 +419,41 @@ body { background: var(--v2-bg); color: var(--v2-text); }
 .m-request-review-type{flex-direction:column!important;gap:.2rem!important;background:#eef5f0}.m-request-review-type b{text-align:left;font-size:.9rem}
 .m-request-review+.m-request-guidance{margin-bottom:.8rem}
 @media(max-width:360px){.m-request-tabs button{padding-inline:.32rem}.m-request-state{max-width:4.6rem;text-align:right}.m-request-row{grid-template-columns:minmax(0,1fr) 4.8rem 1rem}}
+
+
+/* Reporting · Figma 46:721, 46:750, 46:779 */
+.m-report-v2{padding-bottom:10.5rem}
+.m-report-heading{display:flex;gap:.55rem;align-items:flex-start;margin-bottom:1rem}
+.m-report-heading>div{min-width:0}
+.m-report-back{appearance:none;border:0;background:transparent;color:#28593f;width:2rem;height:2rem;margin:.05rem 0 0 -.35rem;padding:0;border-radius:50%;font:400 2rem/1 sans-serif}
+.m-report-choice{padding:1.05rem;border:1px solid #e0e8e2;border-radius:1.45rem;margin-bottom:.9rem}
+.m-report-choice.identified{background:rgba(232,242,235,.94);color:#173e29}
+.m-report-choice.anonymous{background:rgba(255,243,223,.94);color:#684318}
+.m-report-choice h2{margin:0 0 .62rem;font-size:1.05rem}
+.m-report-choice p{margin:0 0 .8rem;color:#536b5c;font-size:.75rem;line-height:1.38}
+.m-report-choice.anonymous p{color:#745c3d}
+.m-report-choice button{width:auto;min-width:8.25rem;padding-inline:1rem}
+.m-report-row{appearance:none;width:100%;border:1px solid #e0e8e2;background:rgba(255,255,255,.94);border-radius:1.4rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem;padding:.85rem .95rem;margin-bottom:.65rem;text-align:left;color:inherit;font:inherit}
+.m-report-row>span{min-width:0;display:flex;flex-direction:column;gap:.32rem}.m-report-row b{font-size:.85rem}.m-report-row small{font-size:.69rem;color:#66746b}
+.m-report-row i{font-style:normal;color:#789083;font-size:1.25rem}
+.m-report-count{text-align:center;color:#5f7167;font-size:.68rem;margin:.8rem 0}
+.m-report-form{display:flex;flex-direction:column;gap:.16rem}
+.m-report-form>label,.m-report-context-grid label{display:flex;flex-direction:column;gap:.35rem;padding:.72rem .92rem;margin-bottom:.05rem;border:1px solid #e0e8e2;background:rgba(255,255,255,.94);border-radius:1.35rem}
+.m-report-form>label:focus-within,.m-report-context-grid label:focus-within{border-color:#62a27d;box-shadow:0 0 0 3px rgba(52,126,82,.1)}
+.m-report-form label>span{font-size:.76rem;font-weight:750;color:#1b3023}
+.m-report-form input,.m-report-form select,.m-report-form textarea{appearance:none;width:100%;border:0;outline:0;background:transparent;padding:0;color:#34493d;font:400 .72rem/1.42 inherit;resize:vertical}
+.m-report-form label.is-tall textarea{min-height:4.4rem}
+.m-report-context-grid{display:grid;grid-template-columns:1fr 1fr;gap:.18rem}
+.m-report-files small{font-size:.64rem;color:#758078;line-height:1.35}
+.m-report-form>.m-v2-primary{width:100%;margin-top:1rem}
+.m-report-review{display:flex;flex-direction:column;border:1px solid #e0e8e2;border-radius:1.4rem;background:rgba(255,255,255,.94);overflow:hidden}
+.m-report-review>div{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;padding:.85rem .95rem;border-bottom:1px solid #edf0ee}
+.m-report-review>div:last-child{border-bottom:0}.m-report-review span{font-size:.68rem;color:#718077}.m-report-review b{max-width:65%;font-size:.74rem;text-align:right;white-space:pre-wrap;overflow-wrap:anywhere}
+.m-report-notice{margin:.8rem 0;padding:.9rem;border-radius:1.25rem;background:#eaf3ed;color:#456352;font-size:.69rem;line-height:1.45}
+.m-report-anon-notice,.m-report-backend-block{display:flex;flex-direction:column;gap:.45rem;padding:1rem;border:1px solid #ecd9b9;border-radius:1.4rem;background:#fff1d7;color:#694516;margin-bottom:1rem}
+.m-report-anon-notice b,.m-report-backend-block b{font-size:.8rem}.m-report-anon-notice span,.m-report-backend-block span{font-size:.68rem;line-height:1.4;color:#735d3f}
+.m-report-backend-block{margin:.75rem 0 0;background:#f8eee0}
+.m-report-form button:disabled{opacity:.58}
+.m-report-guide{padding:1rem;border:1px solid #e0e8e2;border-radius:1.4rem;background:rgba(255,255,255,.94);margin-bottom:.7rem}
+.m-report-guide h2{font-size:.88rem;margin:0 0 .45rem;color:#1b3023}.m-report-guide p{font-size:.72rem;line-height:1.45;color:#66746b;margin:0}
+@media(max-width:360px){.m-report-context-grid{grid-template-columns:1fr}.m-report-review>div{flex-direction:column;gap:.3rem}.m-report-review b{max-width:100%;text-align:left}}
