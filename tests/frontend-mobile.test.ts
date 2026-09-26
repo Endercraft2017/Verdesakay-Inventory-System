@@ -200,4 +200,16 @@ describe('mobile bootstrap', () => {
     expect(source).toContain('Offset · Time correction · Schedule change');
   });
 
+
+  it('maps Reporting Hub and both protected report paths to their Figma nodes', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/core/report-problem.js'), 'utf8');
+    expect(source).toContain("shell(view, '46:721'");
+    expect(source).toContain("shell(view, '46:750'");
+    expect(source).toContain("shell(view, '46:779'");
+    expect(source).toContain("API.upload('/messages'");
+    expect(source).toContain("MApp.route('anonymous-report'");
+    expect(source).toContain('Anonymous submission unavailable');
+    expect(source).toContain('not sent through Messages or Bug Reports');
+  });
+
 });
