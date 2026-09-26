@@ -30,6 +30,14 @@ describe('mobile bootstrap', () => {
     expect(html).toContain('/mobile/lib/quick-orbit.js');
   });
 
+  it('maps Work to the approved Figma V2 frame and permission-driven queues', () => {
+    const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'hr', 'work.js'), 'utf8');
+    expect(source).toContain('data-figma-node="46:548"');
+    expect(source).toContain('What do I need to do now?');
+    expect(source).toContain('Report a blocker');
+    expect(source).toContain("MApp.can(op.permission)");
+  });
+
   it('maps Home to the approved Figma V2 frame', () => {
     const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'core', 'home.js'), 'utf8');
     expect(source).toContain('data-figma-node="46:519"');
