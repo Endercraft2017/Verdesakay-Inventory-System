@@ -14,12 +14,45 @@ const EXPECTED_ROUTES = [
   'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
   'batch', 'job-orders', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'settings', 'queue', 'clock',
   'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks',
-  'announcements', 'time-fix', 'approvals', 'allocate', 'deliveries',
+  'announcements', 'notifications', 'time-fix', 'approvals', 'allocate', 'deliveries',
 ];
 
 describe('mobile bootstrap', () => {
   const html = fs.readFileSync(path.join(PUBLIC, 'mobile', 'index.html'), 'utf8');
   const srcs = [...html.matchAll(/<script src="(\/[^"]+)"><\/script>/g)].map((m) => m[1] as string);
+
+  it('uses the approved five-destination V2 dock and keeps Clock universal', () => {
+    const tabs = [...html.matchAll(/data-tab="([^"]+)"/g)].map((m) => m[1]);
+    expect(tabs).toEqual(['home', 'work', 'clock', 'inbox', 'profile']);
+    expect(html).not.toContain('data-tab="production"');
+    expect(html).not.toContain('data-tab="action"');
+    expect(html).toContain('/mobile/mobile-v2.css');
+    expect(html).toContain('/mobile/lib/quick-orbit.js');
+  });
+
+  it('maps Work to the approved Figma V2 frame and permission-driven queues', () => {
+    const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'hr', 'work.js'), 'utf8');
+    expect(source).toContain('data-figma-node="46:548"');
+    expect(source).toContain('What do I need to do now?');
+    expect(source).toContain('Report a blocker');
+    expect(source).toContain("MApp.can(op.permission)");
+  });
+
+  it('maps Clock to the approved Figma V2 frame and server-authoritative review flow', () => {
+    const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'hr', 'clock.js'), 'utf8');
+    expect(source).toContain('data-figma-node="46:577"');
+    expect(source).toContain('Select an action before confirming');
+    expect(source).toContain('Review & confirm');
+    expect(source).toContain("API.post('/hr/clock/punch'");
+  });
+
+  it('maps Home to the approved Figma V2 frame', () => {
+    const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'core', 'home.js'), 'utf8');
+    expect(source).toContain('data-figma-node="46:519"');
+    expect(source).toContain('TODAY’S ATTENDANCE');
+    expect(source).toContain('New request');
+    expect(source).toContain('Report issue');
+  });
 
   it('declares app.js before any view module', () => {
     const appIdx = srcs.indexOf('/mobile/app.js');
@@ -129,6 +162,9 @@ describe('mobile bootstrap', () => {
 
   it('time clock: staff who may clock in anywhere get "Clock in here", which sends GPS and no QR code', async () => {
     const { view, punches } = await bootClock({ location_required: false, can_clock_anywhere: true });
+    const review = [...view.querySelectorAll('button')].find((b: { textContent: string }) => b.textContent.includes('Review & confirm'));
+    expect(review).toBeTruthy();
+    review.click();
     const here = [...view.querySelectorAll('button')].find((b: { textContent: string }) => b.textContent.includes('Clock in here'));
     expect(here).toBeTruthy();
     here.click();
@@ -140,5 +176,106 @@ describe('mobile bootstrap', () => {
     const { view } = await bootClock({ location_required: true, can_clock_anywhere: false });
     expect(view.textContent).not.toContain('Clock in here');
     expect(view.textContent).toContain('time-in only works at the office');
+    expect(view.textContent).toContain('Review & confirm');
   });
+
+  it('maps the Schedule route to approved Figma node 46:606 and keeps its live API/request flow', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/schedule.js'), 'utf8');
+    expect(source).toContain("view.setAttribute('data-figma-node', '46:606')");
+    expect(source).toContain("API.get('/me/schedule')");
+    expect(source).toContain("MApp.go('requests')");
+    expect(source).toContain('Request schedule change');
+  });
+
+
+  it('maps universal Requests to the approved center, form, and detail Figma nodes', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/requests.js'), 'utf8');
+    expect(source).toContain("shell(view, '46:634'");
+    expect(source).toContain("shell(view, '46:663'");
+    expect(source).toContain("shell(view, '46:692'");
+    expect(source).toContain("API.get('/me/request-types')");
+    expect(source).toContain("API.get('/me/requests')");
+    expect(source).toContain("API.post('/form-records'");
+    expect(source).toContain('Half-day · Undertime');
+    expect(source).toContain('Offset · Time correction · Schedule change');
+  });
+
+
+  it('maps Reporting Hub and both protected report paths to their Figma nodes', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/core/report-problem.js'), 'utf8');
+    expect(source).toContain("shell(view, '46:721'");
+    expect(source).toContain("shell(view, '46:750'");
+    expect(source).toContain("shell(view, '46:779'");
+    expect(source).toContain("API.upload('/messages'");
+    expect(source).toContain("MApp.route('anonymous-report'");
+    expect(source).toContain('Anonymous submission unavailable');
+    expect(source).toContain('not sent through Messages or Bug Reports');
+  });
+
+
+  it('maps Inbox and Conversation to approved Figma nodes while retaining messaging capabilities', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/core/inbox.js'), 'utf8');
+    expect(source).toContain("view.setAttribute('data-figma-node', '46:808')");
+    expect(source).toContain("view.setAttribute('data-figma-node', '46:837')");
+    expect(source).toContain("API.get('/messages/conversations')");
+    expect(source).toContain("API.upload('/messages'");
+    expect(source).toContain("API.patch('/messages/'");
+    expect(source).toContain("API.del('/messages/'");
+    expect(source).toContain("'/react'");
+    expect(source).toContain("ChatWS.send({ type: 'typing'");
+  });
+
+
+  it('maps Payslips and Payslip Detail to Figma with a fail-closed download gate', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/payslips.js'), 'utf8');
+    expect(source).toContain("shell(view, '46:895'");
+    expect(source).toContain("shell(view, '46:924'");
+    expect(source).toContain("API.get('/me/payslips')");
+    expect(source).toContain("record.finalized === true");
+    expect(source).toContain("typeof record.download_url === 'string'");
+    expect(source).toContain('API.download(record.download_url');
+    expect(source).toContain('Payroll is still being finalized');
+  });
+
+
+  it('maps Profile & Settings to Figma and preserves employee-safe controls', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/core/settings.js'), 'utf8');
+    expect(source).toContain("view.setAttribute('data-figma-node', nodeId || '46:953')");
+    expect(source).toContain("API.get('/me')");
+    expect(source).toContain("localStorage.setItem('vds_profile_nickname'");
+    expect(source).toContain('Nickname is saved on this device only');
+    expect(source).toContain('HR-controlled information');
+    expect(source).toContain("MApp.go('payslips')");
+    expect(source).toContain("MApp.go('requests')");
+    expect(source).toContain("MApp.go('report-problem')");
+    expect(source).toContain("API.post('/auth/change-password'");
+    expect(source).toContain("API.post('/auth/logout')");
+    expect(source).not.toContain("API.put('/auth/profile'");
+  });
+
+
+  it('marks every special-access pipeline screen with its role context and preserves live transactions', () => {
+    const files = {
+      warehouse: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/repairs.js'), 'utf8'),
+      production: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/job-orders.js'), 'utf8'),
+      hub: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/production.js'), 'utf8'),
+      quality: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/qc.js'), 'utf8'),
+      rts: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/receiving.js'), 'utf8'),
+      releasing: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/inventory/so.js'), 'utf8'),
+    };
+    expect(files.warehouse).toContain("data-role-screen', 'warehouseman'");
+    expect(files.warehouse).toContain("'/production/repairs/' + r.id + '/accept'");
+    expect(files.warehouse).toContain("'/production/repairs/' + r.id + '/reject'");
+    expect(files.hub).toContain("data-role-screen', 'production-manager'");
+    expect(files.production).toContain("data-role-screen', 'production-manager'");
+    expect(files.production).toContain("API.post('/job-orders/'");
+    expect(files.quality).toContain("data-role-screen', qualityRole");
+    expect(files.quality).toContain("qualityRole === 'qa'");
+    expect(files.quality).toContain("API.get('/qc/checklists");
+    expect(files.rts).toContain("data-role-screen', 'rts'");
+    expect(files.rts).toContain("'/job-orders/' + id + '/receive'");
+    expect(files.releasing).toContain("data-role-screen', 'releasing'");
+    expect(files.releasing).toContain("'/orders/' + order.id + '/release'");
+  });
+
 });

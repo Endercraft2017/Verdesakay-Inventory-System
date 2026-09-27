@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
-  <meta name="theme-color" content="#2b7fff" />
-  <title>Verdesakay Warehouse</title>
+  <meta name="theme-color" content="#1b6b46" />
+  <title>Verdesakay Mobile</title>
   <link rel="manifest" href="/mobile/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/mobile/icons/icon-192.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -21,6 +21,7 @@
     })();
   </script>
   <link rel="stylesheet" href="/mobile/mobile.css" />
+  <link rel="stylesheet" href="/mobile/mobile-v2.css" />
 </head>
 <body>
   <!-- Login -->
@@ -54,9 +55,9 @@
         </div>
         <div class="m-title" id="m-title">Home</div>
       </div>
-      <button class="m-icbtn m-top-inbox" id="m-inbox-top" aria-label="Inbox">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 8h4l2 3h4l2-3h4"/></svg>
-        <span class="m-badge hidden" id="m-inbox-badge">0</span>
+      <button class="m-icbtn m-top-notifications" id="m-notifications-top" aria-label="Notifications">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+        <span class="m-notification-dot hidden" id="m-notification-dot"></span>
       </button>
       <button class="m-icbtn m-top-sync" id="m-qbadge" aria-label="Sync queue" title="Sync queue">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10a5 5 0 0 0-4.9-4A6 6 0 0 0 2 8.5 4.5 4.5 0 0 0 6.5 18H18a4 4 0 0 0 0-8z"/></svg>
@@ -73,29 +74,22 @@
 
     <main class="m-view" id="m-view"></main>
 
-    <nav class="m-tabbar" id="m-tabbar">
+    <nav class="m-tabbar" id="m-tabbar" aria-label="Primary navigation">
+      <button class="m-tab m-tab-fab" data-tab="home" id="m-fab">
+        <span class="m-fab-in"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg></span>
+        <span class="m-fab-lbl">Home</span>
+      </button>
       <button class="m-tab" data-tab="work">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6l1 3H8z"/><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 12h18"/></svg>
         <span>Work</span>
       </button>
-      <button class="m-tab hidden" data-tab="production" id="m-tab-production">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V10.5L9 14v-3.5L15 14V7l6 4.5V21Z"/><path d="M3 21h18"/></svg>
-        <span>Production</span>
-      </button>
-      <button class="m-tab" data-tab="action" id="m-action">
-        <span class="m-action-ic" id="m-action-icon"></span>
-        <span id="m-action-lbl">Scan</span>
-      </button>
-      <button class="m-tab m-tab-fab" data-tab="home" id="m-fab">
-        <span class="m-fab-in">
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
-        </span>
-        <span class="m-fab-lbl">Home</span>
+      <button class="m-tab" data-tab="clock">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span>Clock</span>
       </button>
       <button class="m-tab" data-tab="inbox">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4z"/><path d="m4 7 8 6 8-6"/></svg>
-        <span>Inbox</span>
-        <span class="m-badge hidden" id="m-tab-inbox-badge">0</span>
+        <span>Inbox</span><span class="m-badge hidden" id="m-tab-inbox-badge">0</span>
       </button>
       <button class="m-tab" data-tab="profile">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
@@ -116,6 +110,7 @@
   <script src="/mobile/vendor/zxing.js"></script>
   <script src="/mobile/app.js"></script>
   <script src="/mobile/lib/dom.js"></script>
+  <script src="/mobile/lib/quick-orbit.js"></script>
   <script src="/mobile/lib/locations.js"></script>
   <script src="/mobile/lib/users.js"></script>
   <script src="/mobile/lib/stats.js"></script>
@@ -156,6 +151,7 @@
   <script src="/mobile/modules/inventory/queue-view.js"></script>
   <script src="/mobile/modules/hr/clock.js"></script>
   <script src="/mobile/modules/core/inbox.js"></script>
+  <script src="/mobile/modules/core/notifications.js"></script>
   <script src="/mobile/modules/hr/directory.js"></script>
   <script src="/mobile/modules/hr/payslips.js"></script>
   <script src="/mobile/modules/hr/schedule.js"></script>

@@ -386,5 +386,10 @@
     host.appendChild(b);
   }
 
-  MApp.route('job-orders', function (view) { board(view); });
+  MApp.route('job-orders', function (view) {
+    view.setAttribute('data-role-screen', 'production-manager');
+    view.setAttribute('data-role-title', 'Job orders');
+    view.setAttribute('data-role-subtitle', 'Accept released work and record units or batches');
+    board(view);
+  });
 })();

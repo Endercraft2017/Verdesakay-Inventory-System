@@ -1,8 +1,6 @@
-/* Mobile app — login, hash router, and the app chrome (bottom tab bar, the
-   Me/Approvals/People/Warehouse segmented control on Home, and a role-aware
-   centre action button). Shares the desktop API client (/js/api.js) and its
-   bearer token. Views register with MApp.route(name, render) at load;
-   render(viewEl, params) draws into #m-view. */
+/* Mobile app — login, hash router, and shared V2 chrome. The persistent dock is
+   Home / Work / Clock / Inbox / Profile for every employee. Role operations stay
+   in Work and the movable Quick Orbit instead of replacing universal Clock. */
 window.MApp = (function () {
   var routes = {};
   var me = null;
@@ -66,19 +64,19 @@ window.MApp = (function () {
   function setTitle(t) { document.getElementById('m-title').textContent = t || 'Home'; }
 
   /* ---------- chrome: tabs + segments ---------- */
-  var TAB_ROOTS = { home: 1, work: 1, production: 1, scan: 1, clock: 1, inbox: 1, settings: 1 };
-  // which bottom tab lights up for a given route ('action' = the role Scan/Clock tab)
+  var TAB_ROOTS = { home: 1, work: 1, clock: 1, inbox: 1, settings: 1, notifications: 1 };
+  // Which stable bottom destination owns each route.
   var TAB_OF = {
     home: 'home',
     work: 'work', 'stock-move': 'work', transfer: 'work', damage: 'work', 'new-item': 'work',
     batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work',
     allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
-    'my-log': 'work', item: 'work', scan: 'action', deliveries: 'work', so: 'work',
-    production: 'production', 'job-orders': 'production', qc: 'production', repairs: 'production', record: 'production',
+    'my-log': 'work', item: 'work', scan: 'work', deliveries: 'work', so: 'work',
+    production: 'work', 'job-orders': 'work', qc: 'work', repairs: 'work', record: 'work', receiving: 'work',
     inbox: 'inbox', directory: 'inbox',
     settings: 'profile', queue: 'profile',
-    clock: 'action', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home',
-    tasks: 'work', approvals: 'home', announcements: 'home', 'report-problem': 'home',
+    clock: 'clock', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home', notifications: 'home',
+    tasks: 'work', approvals: 'home', announcements: 'home', 'report-problem': 'home', 'anonymous-report': 'home',
   };
   var SEGMENTS = ['me', 'approvals', 'people', 'warehouse'];
   var SEG_KEY = 'vds_m_seg';
@@ -100,43 +98,28 @@ window.MApp = (function () {
   }
   function seg() { return currentSeg(); }
 
-  /** The role action tab (left of the raised Home button): Scan for warehouse,
-      Clock for other employees. */
+  /** Clock is universal. Scanning belongs to Work and Quick Orbit. */
   function actionConfig() {
-    if (isWarehouse()) {
-      return { route: 'scan', label: 'Scan',
-        svg: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M4 12h16"/></svg>' };
-    }
     return { route: 'clock', label: 'Clock',
       svg: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' };
   }
 
   function paintChrome(parsed) {
     var name = parsed.name;
-    var isRoot = !!TAB_ROOTS[name] || name === actionConfig().route;
+    var isRoot = !!TAB_ROOTS[name];
     document.getElementById('m-back').classList.toggle('hidden', isRoot);
 
-    // segmented control only on Home; hide segments that don't apply to this user
+    // V2 uses one employee-first Home. Approvals, People and role work have
+    // dedicated routes instead of a second navigation system inside Home.
     var segEl = document.getElementById('m-segments');
-    var onHome = name === 'home';
-    segEl.classList.toggle('hidden', !onHome);
-    if (onHome) {
-      var cur = currentSeg();
-      segEl.querySelectorAll('button').forEach(function (b) {
-        b.classList.toggle('hidden', !segAllowed(b.dataset.seg));
-        b.classList.toggle('on', b.dataset.seg === cur);
-      });
-    }
+    if (segEl) segEl.classList.add('hidden');
 
     // active bottom tab
     var activeTab = name === 'home' ? 'home' : (TAB_OF[name] || 'home');
-    if (name === actionConfig().route) activeTab = 'action';
+    
     document.querySelectorAll('#m-tabbar .m-tab').forEach(function (t) {
       t.classList.toggle('on', t.dataset.tab === activeTab);
     });
-    // the Production tab only applies to warehouse/shop-floor accounts
-    var prodTab = document.getElementById('m-tab-production');
-    if (prodTab) prodTab.classList.toggle('hidden', !hasProductionAccess());
 
     // context line
     var role = me && me.role ? me.role.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : '';
@@ -211,12 +194,7 @@ window.MApp = (function () {
     appScreen().classList.remove('hidden');
     document.getElementById('m-tabbar').classList.remove('hidden');
 
-    // paint the role-aware action tab (Scan / Clock) once we know the user
-    var act = actionConfig();
-    var ai = document.getElementById('m-action-icon');
-    var al = document.getElementById('m-action-lbl');
-    if (ai) ai.innerHTML = act.svg;
-    if (al) al.textContent = act.label;
+    if (window.mQuickOrbit) mQuickOrbit.refresh();
 
     refreshInboxBadge();
     if (window.ChatWS) {
@@ -227,7 +205,7 @@ window.MApp = (function () {
       ChatWS.connect();
     }
     if (!location.hash || location.hash === '#' || location.hash === '#/') {
-      location.hash = hashFor('home', { seg: currentSeg() });
+      location.hash = hashFor('home');
     } else {
       render();
     }
@@ -241,7 +219,7 @@ window.MApp = (function () {
   function refreshInboxBadge() {
     API.get('/messages/unread-count').then(function (r) {
       var n = (r && (r.count != null ? r.count : r.unread)) || 0;
-      [document.getElementById('m-inbox-badge'), document.getElementById('m-tab-inbox-badge')].forEach(function (el) {
+      [document.getElementById('m-tab-inbox-badge')].forEach(function (el) {
         if (!el) return;
         el.textContent = n > 99 ? '99+' : n;
         el.classList.toggle('hidden', !n);
@@ -251,16 +229,15 @@ window.MApp = (function () {
 
   function boot() {
     document.getElementById('m-back').onclick = back;
-    document.getElementById('m-inbox-top').onclick = function () { go('inbox'); };
+    document.getElementById('m-notifications-top').onclick = function () { go('notifications'); };
 
     // bottom tab bar
     document.querySelectorAll('#m-tabbar .m-tab').forEach(function (t) {
       t.onclick = function () {
         var tab = t.dataset.tab;
-        if (tab === 'home') go('home', { seg: currentSeg() });
+        if (tab === 'home') go('home');
         else if (tab === 'work') go('work');
-        else if (tab === 'production') go('production');
-        else if (tab === 'action') go(actionConfig().route);
+        else if (tab === 'clock') go('clock');
         else if (tab === 'inbox') go('inbox');
         else if (tab === 'profile') go('settings');
       };

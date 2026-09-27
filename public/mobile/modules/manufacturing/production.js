@@ -61,6 +61,9 @@
   }
 
   MApp.route('production', function (view) {
+    view.setAttribute('data-role-screen', 'production-manager');
+    view.setAttribute('data-role-title', 'Production control');
+    view.setAttribute('data-role-subtitle', 'Job orders, inspection handoffs and finished output');
     MApp.setTitle('Production');
     view.appendChild(mProductionQueue());
   });
