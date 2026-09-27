@@ -2797,6 +2797,20 @@ function seedHrRequestForms(): void {
         area('reason', 'What was reported', true),
       ],
     },
+    {
+      // Correction to an authoritative HR field (legal name, gov IDs, …) — applied only when an
+      // hr.manage approver approves it (src/modules/hr/info-change.ts). Options must match
+      // INFO_CHANGE_FIELDS there (pinned by tests/info-change.test.ts). Keys avoid position/
+      // department, which the mobile form auto-fills from the signed-in employee.
+      name: 'Employee Information Change', slug: 'information_change', prefix: 'IC', icon: 'user',
+      fields: [
+        { ...employeeField },
+        { key: 'field', label: 'Information to change', type: 'select', required: true, default: '',
+          options: ['Legal name', 'SSS number', 'PhilHealth number', 'Pag-IBIG number', 'TIN', 'Birth date', 'Civil status', 'Other official record'] },
+        { key: 'requested_value', label: 'Correct value', type: 'text', required: true, options: [], default: '' },
+        area('reason', 'Reason / supporting document', true),
+      ],
+    },
   ];
   for (const f of FORMS) {
     const existing = db.prepare('SELECT id, fields FROM form_definitions WHERE slug = ?').get(f.slug) as

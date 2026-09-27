@@ -15,6 +15,7 @@ import {
 import { parsePayrollSummaryCsv } from '../modules/payroll/hr-payroll-import';
 import { runFormActions } from './form-actions';
 import { REQUEST_SLUGS } from './me.routes';
+import { INFO_CHANGE_SLUG, prepareInfoChange } from '../modules/hr/info-change';
 import type { FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../shared/types';
 
 const router = Router();
@@ -312,12 +313,17 @@ router.post('/form-records', (req, res) => {
   const canManage = form.scope
     ? req.user!.permissions.includes(`forms.manage.${form.scope}` as Permission)
     : FORM_SCOPES.every((s) => req.user!.permissions.includes(`forms.manage.${s}` as Permission));
-  const selfFile = !canManage && REQUEST_SLUGS.includes(form.slug);
+  // An information-change request is always the caller's own, always starts pending, and its
+  // identity/current value are set server-side (never trusted from the client) — even for HR
+  // staff who could otherwise create any record in their section.
+  const infoChange = form.slug === INFO_CHANGE_SLUG;
+  const selfFile = infoChange || (!canManage && REQUEST_SLUGS.includes(form.slug));
   if (!canManage && !selfFile) {
     res.status(403).json({ error: 'Forbidden: insufficient permissions' });
     return;
   }
   const status = selfFile ? 'pending' : input.status;
+  if (infoChange) input.data = prepareInfoChange(req.user!.id, input.data as Record<string, unknown>);
 
   let recordId: number;
   let number: string;
@@ -373,6 +379,11 @@ router.put('/form-records/:id', (req, res) => {
   }
   if (existing.slug === 'hr_payroll' && input.status === 'paid' && existing.status !== 'paid') {
     res.status(400).json({ error: 'Use "Mark as Paid" on the payslip instead of setting status directly.' }); return;
+  }
+  // Information-change requests are decided only in Approvals, which applies the change to the
+  // employee record in the same step — editing or approving here would skip or desync that.
+  if (existing.slug === INFO_CHANGE_SLUG) {
+    res.status(400).json({ error: 'Decide information-change requests in Approvals so the change is applied to the employee record.' }); return;
   }
   const newStatus = input.status ?? existing.status;
   run(

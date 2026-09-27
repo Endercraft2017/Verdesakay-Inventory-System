@@ -217,6 +217,28 @@ compare); ticket cap reached → 429; follow-up on a closed report → 409.
 **Terminal states:** resolved or closed (closed also blocks further reporter messages). A lost
 access code can't be recovered — the reporter files a new report.
 
+## Employee information change
+
+**Trigger:** an employee opens Profile → Personal details on mobile.
+
+**Branch A — direct edit (no approval):** preferred name and personal contact / emergency
+details. `PUT /api/me/profile` with the current password → saved at once, one history row per
+field → a contact change clears HR verification and pings `hr.manage` → HR confirms via
+`POST /api/hr/employee-profiles/:id/verify`. Terminal: saved (verified or awaiting verification).
+
+**Branch B — authoritative field (approval required):** legal name, SSS/PhilHealth/Pag-IBIG/TIN,
+birth date, civil status, other official record.
+1. **File** (`core/form-builder` → `hr/info-change`) — "Request an information change" opens the
+   Request Center on `information_change`; the server validates, fixes the subject to the filer
+   and snapshots the current value; status `pending`. The record is unchanged.
+2. **Decide** (`core/me` approvals, `hr.manage` only) — approve applies the change to the
+   employee record in the same transaction as the decision and logs it; reject changes nothing.
+3. **Notify** — the filer gets a push; the Request Center shows the decision and note.
+
+**Branches:** duplicate legal name → 409, stays pending; field not stored on the record →
+approved with an "update by hand" note; the filer may cancel while pending; a second decision → 400.
+**Terminal states:** approved (applied or noted for manual update), rejected, cancelled.
+
 ## Payroll run
 
 **Trigger:** a payroll period/cutoff is closed (`hr`, `hr.routes.ts`).

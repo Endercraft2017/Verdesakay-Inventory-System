@@ -25,11 +25,17 @@
       .then(function (res) {
         var items = [];
         (res.requests || []).forEach(function (r) {
+          var d = r.data || {};
           items.push({
             kind: 'req', id: r.id, path: '/me/approvals/requests/' + r.id + '/decide',
             type: r.form_name, number: r.number,
             who: r.employee_name || r.filed_by || 'Someone', role: '',
-            created_at: r.created_at, data: r.data || {},
+            created_at: r.created_at,
+            // An information change is shown as a before/after so HR sees exactly what approving
+            // writes to the employee record (the server applies it on approval).
+            data: r.slug === 'information_change'
+              ? { Change: d.field, 'On record now': d.current_value || '—', 'Correct value': d.requested_value, Reason: d.reason }
+              : d,
           });
         });
         (res.time_corrections || []).forEach(function (r) {
@@ -159,8 +165,10 @@
     window.removeEventListener('hashchange', flushOnLeave);
     hideUndo();
     API.post(p.it.path, { decision: p.decision, note: p.note || null })
-      .then(function () {
-        mToast(p.decision === 'approved' ? 'Approved' : 'Rejected');
+      .then(function (res) {
+        mToast(res && res.applied_note ? 'Approved — ' + res.applied_note
+          : res && res.applied ? 'Approved — employee record updated'
+          : p.decision === 'approved' ? 'Approved' : 'Rejected');
         MApp.refreshInboxBadge && MApp.refreshInboxBadge();
       })
       .catch(function (ex) {

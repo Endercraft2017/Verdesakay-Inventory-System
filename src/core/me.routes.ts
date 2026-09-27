@@ -3,12 +3,13 @@
  *  isn't linked to an `employees` row. */
 import { Router, type Request } from 'express';
 import bcrypt from 'bcryptjs';
-import { queryOne, queryAll, run, getSetting } from '../shared/db';
+import { db, queryOne, queryAll, run, getSetting } from '../shared/db';
 import { logEvent } from '../shared/activity';
 import { renderPayslipPdf } from '../modules/payroll/payslip-pdf';
 import { requireAuth } from '../shared/auth';
 import { parseBody, timeCorrectionSchema, approvalDecisionSchema, selfProfileSchema } from '../shared/validation';
 import { getProfile, updateProfile, profileHistory, PROFILE_FIELDS } from '../modules/hr/employee-profile';
+import { INFO_CHANGE_SLUG, applyInfoChange, previousNames } from '../modules/hr/info-change';
 import { notifyUser, notifyPermission } from '../shared/push';
 import { myClockStatus } from '../modules/hr/clock';
 import { unrecordedOtMinutes, type AttendanceDay } from '../modules/payroll/hr-payroll-compute';
@@ -100,16 +101,19 @@ router.get('/profile/history', (req, res) => {
  *  the moment it was marked paid (nothing else may touch the row). */
 const isFinalPayslip = (status: string) => status === 'paid';
 
-/** This employee's hr_payroll records (payslips carry only the employee's name). */
+/** This employee's hr_payroll records. Payslips carry only the employee's name as it was when
+ *  generated, so legal names replaced by an approved information change still match. */
 function myPayslips(emp: Emp, id?: number): FormRecord[] {
   const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
   if (!form) return [];
+  const names = [emp.name, ...previousNames(emp.id)];
   return queryAll<FormRecord>(
     `SELECT id, number, period, status, data, created_at, updated_at
      FROM form_records
-     WHERE form_def_id = ? AND json_extract(data, '$.employee_name') = ? ${id != null ? 'AND id = ?' : ''}
+     WHERE form_def_id = ? AND json_extract(data, '$.employee_name') IN (${names.map(() => '?').join(',')})
+       ${id != null ? 'AND id = ?' : ''}
      ORDER BY id DESC`,
-    form.id, emp.name, ...(id != null ? [id] : [])
+    form.id, ...names, ...(id != null ? [id] : [])
   );
 }
 
@@ -184,6 +188,7 @@ export const REQUEST_SLUGS = [
   'leave_request', 'overtime_request', 'undertime_request', 'halfday_request', 'offset_form',
   'lunch_offset_form', 'holiday_work_request', 'travel_order', 'coe_request',
   'reimbursement_request', 'loan_application', 'training_request', 'incident_report',
+  'information_change',
 ];
 
 // GET /api/me/request-types — the HR request forms available to file
@@ -330,7 +335,10 @@ router.get('/approvals', (req, res) => {
     req.user!.id
   );
   res.json({
-    requests: reqRows.filter((r) => inScope(r.department_id)).map((r) => ({ ...r, data: parse(r.data) })),
+    // Information changes touch the official HR record, so only hr.manage sees/decides them.
+    requests: reqRows
+      .filter((r) => inScope(r.department_id) && (r.slug !== INFO_CHANGE_SLUG || isHrManager))
+      .map((r) => ({ ...r, data: parse(r.data) })),
     time_corrections: tcRows.filter((r) => inScope(r.department_id)),
   });
 });
@@ -353,10 +361,47 @@ router.post('/approvals/requests/:id/decide', (req, res) => {
   if (!rec || !REQUEST_SLUGS.includes(rec.slug)) { res.status(404).json({ error: 'Request not found' }); return; }
   if (rec.created_by === req.user!.id) { res.status(403).json({ error: 'You can’t decide your own request' }); return; }
   if (!mayDecide(req, rec.department_id)) { res.status(403).json({ error: 'Not an approver for this request' }); return; }
+  const infoChange = rec.slug === INFO_CHANGE_SLUG;
+  if (infoChange && !req.user!.permissions.includes('hr.manage')) {
+    res.status(403).json({ error: 'Only HR can decide information-change requests' }); return;
+  }
   if (rec.status !== 'pending') { res.status(400).json({ error: 'This request is no longer pending' }); return; }
 
   const { decision, note, override_balance } = parseBody(approvalDecisionSchema, req.body);
   const data = parse(rec.data);
+
+  // Information change: apply to the employee record and record the decision in ONE
+  // transaction, re-checking pending inside it so a double-tap can't apply twice.
+  if (infoChange) {
+    let applied: ReturnType<typeof applyInfoChange> | null = null;
+    db.exec('BEGIN');
+    try {
+      const still = queryOne<{ status: string }>('SELECT status FROM form_records WHERE id = ?', id);
+      if (still?.status !== 'pending') { db.exec('ROLLBACK'); res.status(400).json({ error: 'This request is no longer pending' }); return; }
+      if (decision === 'approved') {
+        applied = applyInfoChange(data, req.user!.id);
+        data.applied = applied.applied;
+        if (applied.note) data.applied_note = applied.note;
+      }
+      data.decided_by = req.user!.full_name;
+      data.decided_at = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      if (note) data.decision_note = note;
+      run("UPDATE form_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?", decision, JSON.stringify(data), id);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    if (rec.created_by) {
+      void notifyUser(rec.created_by, {
+        title: `Information change ${decision}`,
+        body: String(data.field ?? rec.form_name) + (note ? ' — ' + note : ''),
+        url: '#/requests', tag: 'req-' + id,
+      });
+    }
+    res.json({ ok: true, status: decision, applied: applied?.applied ?? false, applied_note: applied?.note ?? null });
+    return;
+  }
 
   // Approving a paid Leave request consumes the employee's fixed leave-day bank. Blocked if it
   // would go negative, unless the approver explicitly overrides — a rejected decision, or one

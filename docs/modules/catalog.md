@@ -190,6 +190,18 @@ changed field. A contact change clears `verified_at` and pings `hr.manage`; HR r
 `/api/hr/employee-profiles` (`GET /` unverified worklist + `GET /:id` history: hr.view;
 `POST /:id/verify`: hr.manage). The preferred name feeds the mobile greeting and Profile header
 but never replaces `employees.name`. Tests: `tests/me-profile.test.ts`.
+**Information-change requests:** `info-change.ts` owns the `information_change` request form
+(seeded in `db.ts` `seedHrRequestForms`, listed in `core/me.routes.ts` `REQUEST_SLUGS`). Filing
+goes through the universal `POST /api/form-records`, which for this slug always forces
+`pending`, sets the subject to the caller's own employee and snapshots the current value
+(`prepareInfoChange`, 400 on unknown field / bad gov-ID format / no-op). Only `hr.manage` sees
+and decides it in `/api/me/approvals` (department heads and the generic `PUT /form-records`
+are refused); approval runs `applyInfoChange` and the status update in one transaction —
+legal name → `employees.name` (409 on a duplicate name), SSS/PhilHealth/Pag-IBIG/TIN → their
+columns, each logged to `employee_profile_changes` (source `info_change`); birth date, civil
+status and "other" are approved without writing (`applied_note` tells HR to update by hand).
+`GET /api/me/payslips` also matches legal names replaced this way (`previousNames`).
+Tests: `tests/info-change.test.ts`.
 **Dependencies:** `modules/payroll` (pay computation + statutory tables),
 `modules/accounting` (`accounting-autopost.ts`, to post payroll to the ledger),
 `platform/` (photo-retention settings).
