@@ -253,4 +253,29 @@ describe('mobile bootstrap', () => {
     expect(source).not.toContain("API.put('/auth/profile'");
   });
 
+
+  it('marks every special-access pipeline screen with its role context and preserves live transactions', () => {
+    const files = {
+      warehouse: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/repairs.js'), 'utf8'),
+      production: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/job-orders.js'), 'utf8'),
+      hub: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/production.js'), 'utf8'),
+      quality: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/qc.js'), 'utf8'),
+      rts: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/receiving.js'), 'utf8'),
+      releasing: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/inventory/so.js'), 'utf8'),
+    };
+    expect(files.warehouse).toContain("data-role-screen', 'warehouseman'");
+    expect(files.warehouse).toContain("'/production/repairs/' + r.id + '/accept'");
+    expect(files.warehouse).toContain("'/production/repairs/' + r.id + '/reject'");
+    expect(files.hub).toContain("data-role-screen', 'production-manager'");
+    expect(files.production).toContain("data-role-screen', 'production-manager'");
+    expect(files.production).toContain("API.post('/job-orders/'");
+    expect(files.quality).toContain("data-role-screen', qualityRole");
+    expect(files.quality).toContain("qualityRole === 'qa'");
+    expect(files.quality).toContain("API.get('/qc/checklists");
+    expect(files.rts).toContain("data-role-screen', 'rts'");
+    expect(files.rts).toContain("'/job-orders/' + id + '/receive'");
+    expect(files.releasing).toContain("data-role-screen', 'releasing'");
+    expect(files.releasing).toContain("'/orders/' + order.id + '/release'");
+  });
+
 });
