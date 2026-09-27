@@ -502,3 +502,27 @@ body { background: var(--v2-bg); color: var(--v2-text); }
 .m-chat-v2 .m-chat-attach-img{display:block;max-width:100%;border-radius:.8rem;margin-top:.5rem}.m-chat-v2 .m-msg-attach{margin-top:.45rem;padding:.55rem;border-radius:.75rem;background:rgba(255,255,255,.16);display:flex;justify-content:space-between;gap:.6rem;font-size:.65rem}
 .m-chat-v2 .m-chat-link-preview{display:block;margin-top:.5rem;border-radius:.75rem;overflow:hidden;background:rgba(255,255,255,.14);color:inherit;text-decoration:none}
 @media(max-width:360px){.m-inbox-row{grid-template-columns:2.4rem minmax(0,1fr) auto .7rem;gap:.55rem}.m-inbox-avatar{width:2.4rem;height:2.4rem}.m-chat-v2 .m-chat-row{max-width:88%}}
+
+
+/* Payslips · Figma 46:895 and 46:924 */
+.m-payslip-v2{padding-bottom:10.5rem}
+.m-payslip-heading{display:flex;align-items:flex-start;gap:.55rem;margin-bottom:1rem}.m-payslip-heading>div{min-width:0}
+.m-payslip-back{appearance:none;border:0;background:transparent;color:#28593f;width:2rem;height:2rem;margin:.05rem 0 0 -.35rem;padding:0;border-radius:50%;font:400 2rem/1 sans-serif}
+.m-payslip-rule{padding:1rem;border:1px solid #e0e8e2;border-radius:1.4rem;background:rgba(238,244,239,.94);color:#3f624d;font-size:.75rem;line-height:1.42;margin-bottom:1rem}
+.m-payslip-row{appearance:none;width:100%;border:1px solid #e0e8e2;border-radius:1.4rem;background:rgba(255,255,255,.94);display:grid;grid-template-columns:minmax(0,1fr) 3rem .8rem;align-items:center;gap:.65rem;padding:.85rem .95rem;margin-bottom:.65rem;text-align:left;color:inherit;font:inherit}
+.m-payslip-row.ready{background:rgba(231,242,233,.94)}
+.m-payslip-row>span{min-width:0;display:flex;flex-direction:column;gap:.32rem}.m-payslip-row b{font-size:.84rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.m-payslip-row small{font-size:.69rem;color:#66746b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-payslip-row em{font-size:.61rem;font-style:normal;font-weight:800;text-transform:uppercase;text-align:right;color:#7b682d}.m-payslip-row em.final{color:#176b45}.m-payslip-row i{font-style:normal;color:#7b8e83;font-size:1.15rem}
+.m-payslip-access-note{margin:1.8rem .35rem;color:#65736a;font-size:.68rem}
+.m-payslip-net-card{position:relative;display:flex;flex-direction:column;gap:.4rem;padding:1rem 1.05rem 1.15rem;border-radius:1.4rem;background:linear-gradient(145deg,#143f2c,#215a41);color:#fff;margin-bottom:1rem;overflow:hidden}
+.m-payslip-net-card:after{content:"";position:absolute;width:9rem;height:9rem;border-radius:50%;right:-4rem;top:-5rem;background:rgba(255,255,255,.07)}
+.m-payslip-net-card small{color:#bfe0ca;font-size:.62rem;text-transform:uppercase;font-weight:800;letter-spacing:.04em}.m-payslip-net-card strong{font-size:1.7rem;line-height:1.1}.m-payslip-net-card span{align-self:flex-end;color:#cde5d5;font-size:.63rem}
+.m-payslip-lines{display:flex;flex-direction:column;margin:0 .35rem 1rem}.m-payslip-lines>div{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;padding:.9rem .25rem;border-bottom:1px solid #dde6e0;color:#405348}
+.m-payslip-lines span{font-size:.74rem;text-transform:capitalize}.m-payslip-lines b{max-width:52%;font-size:.74rem;text-align:right;color:#22382b;overflow-wrap:anywhere}
+.m-payslip-lines>div:nth-last-child(-n+2) b,.m-payslip-lines>div:nth-last-child(-n+2) span{font-weight:750}
+.m-payslip-download{width:100%;margin-top:.45rem}.m-payslip-download-note{margin:.65rem .35rem 0;color:#69776e;font-size:.63rem}
+.m-payslip-wait{display:flex;flex-direction:column;gap:.42rem;padding:1rem;border:1px solid #eadfc9;border-radius:1.35rem;background:#fff7e8;color:#765224}
+.m-payslip-wait b{font-size:.8rem}.m-payslip-wait span{font-size:.68rem;line-height:1.42}
+.m-payslip-request{width:100%;margin-top:.8rem}
+.m-payslip-ot{display:flex;flex-direction:column;gap:.38rem;padding:.9rem;margin:0 0 .8rem;border-radius:1.25rem;background:#eef5f0;color:#315c45}
+.m-payslip-ot b{font-size:.78rem}.m-payslip-ot span{font-size:.68rem;line-height:1.4}.m-payslip-ot button{appearance:none;align-self:flex-start;border:0;border-radius:999px;background:#1b6b46;color:#fff;padding:.55rem .8rem;font:700 .68rem/1 inherit}
