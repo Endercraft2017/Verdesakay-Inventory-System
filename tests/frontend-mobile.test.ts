@@ -225,4 +225,16 @@ describe('mobile bootstrap', () => {
     expect(source).toContain("ChatWS.send({ type: 'typing'");
   });
 
+
+  it('maps Payslips and Payslip Detail to Figma with a fail-closed download gate', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/payslips.js'), 'utf8');
+    expect(source).toContain("shell(view, '46:895'");
+    expect(source).toContain("shell(view, '46:924'");
+    expect(source).toContain("API.get('/me/payslips')");
+    expect(source).toContain("record.finalized === true");
+    expect(source).toContain("typeof record.download_url === 'string'");
+    expect(source).toContain('API.download(record.download_url');
+    expect(source).toContain('Payroll is still being finalized');
+  });
+
 });
