@@ -212,4 +212,17 @@ describe('mobile bootstrap', () => {
     expect(source).toContain('not sent through Messages or Bug Reports');
   });
 
+
+  it('maps Inbox and Conversation to approved Figma nodes while retaining messaging capabilities', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/core/inbox.js'), 'utf8');
+    expect(source).toContain("view.setAttribute('data-figma-node', '46:808')");
+    expect(source).toContain("view.setAttribute('data-figma-node', '46:837')");
+    expect(source).toContain("API.get('/messages/conversations')");
+    expect(source).toContain("API.upload('/messages'");
+    expect(source).toContain("API.patch('/messages/'");
+    expect(source).toContain("API.del('/messages/'");
+    expect(source).toContain("'/react'");
+    expect(source).toContain("ChatWS.send({ type: 'typing'");
+  });
+
 });
