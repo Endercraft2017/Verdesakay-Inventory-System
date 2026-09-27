@@ -63,6 +63,34 @@ export interface Announcements {
   created_at: Generated<string>;
 }
 
+export interface AnonymousReportMessages {
+  id: Generated<number>;
+  report_id: number;
+  author: string;
+  handler_id: number | null;
+  body: string;
+  created_on: string;
+}
+
+export interface AnonymousReportTickets {
+  token_hash: string;
+  expires_at: string;
+}
+
+export interface AnonymousReports {
+  id: Generated<number>;
+  number: string;
+  category: string;
+  subject: string | null;
+  description: string;
+  incident_date: string | null;
+  location: string | null;
+  status: Generated<string>;
+  access_hash: string;
+  created_on: string;
+  updated_on: string;
+}
+
 export interface AssetIssuanceItems {
   id: Generated<number>;
   issuance_id: number;
@@ -1109,6 +1137,9 @@ export interface DB {
   activity_log: ActivityLog;
   ai_messages: AiMessages;
   announcements: Announcements;
+  anonymous_report_messages: AnonymousReportMessages;
+  anonymous_report_tickets: AnonymousReportTickets;
+  anonymous_reports: AnonymousReports;
   asset_issuance_items: AssetIssuanceItems;
   asset_issuances: AssetIssuances;
   attachments: Attachments;

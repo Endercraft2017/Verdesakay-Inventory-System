@@ -1,7 +1,7 @@
 /* Employee reporting — Figma V2 nodes 46:721, 46:750 and 46:779.
-   Identified reports use the existing scoped messages API. Anonymous submission is
-   intentionally blocked until an identity-free backend exists; never send it through
-   authenticated messages or software bug reports. */
+   Identified reports use the existing scoped messages API. Anonymous reports use the
+   separate identity-free /api/anonymous-reports channel (src/core/confidential-reports.ts)
+   — never authenticated messages or software bug reports, and never the offline queue. */
 (function () {
   var CATEGORIES = ['Workplace concern', 'Harassment or misconduct', 'Safety risk', 'Payroll or attendance', 'Equipment or facility', 'Stock or operations', 'System support', 'Other'];
   var DESTINATIONS = [
@@ -170,26 +170,152 @@
     };
   }
 
+  /* Identity-free transport for the anonymous channel. Deliberately NOT API.post: that adds
+     the bearer token (and the offline queue would persist it with an idempotency key). Only
+     the ticket request is authenticated; the server keeps no link between ticket and user. */
+  function anonPost(path, body) {
+    return fetch('/api/anonymous-reports' + path, {
+      method: 'POST', credentials: 'omit', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).catch(function () {
+      var e = new Error('You’re offline. Nothing was sent — your draft is still on this device.'); e.offline = true; throw e;
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) { var e = new Error(data.error || 'Request failed (' + res.status + ')'); e.status = res.status; throw e; }
+        return data;
+      });
+    });
+  }
+
   function anonymous(view) {
     MApp.setTitle('Anonymous report');
     var draft = loadDraft(ANON_DRAFT_KEY);
     var host = shell(view, '46:779', 'Anonymous report', 'Separate protected reporting channel', function () { hub(view); });
     host.innerHTML =
-      '<aside class="m-report-anon-notice"><b>Before you continue</b><span>No employee identity should be added. Attachments may contain identifying details.</span></aside>' +
-      '<form class="m-report-form m-report-anon-form">' +
-        '<label><span>Category</span><select data-anon="category">' + selectOptions(CATEGORIES, draft.category || CATEGORIES[0]) + '</select></label>' +
-        '<label class="is-tall"><span>Report details</span><textarea data-anon="details" rows="5" maxlength="3000" placeholder="Describe the concern">' + mEsc(draft.details || '') + '</textarea></label>' +
+      '<aside class="m-report-anon-notice"><b>Before you continue</b><span>Your name, account, device and exact time are not stored with this report. What you write can still identify you — leave out names or details only you would know if that matters to you.</span></aside>' +
+      '<form class="m-report-form m-report-anon-form" novalidate>' +
+        '<label><span>Category *</span><select data-anon="category">' + selectOptions(CATEGORIES, draft.category || CATEGORIES[0]) + '</select></label>' +
+        '<label><span>Short title</span><input data-anon="subject" maxlength="160" value="' + mEsc(draft.subject || '') + '" placeholder="Optional"></label>' +
+        '<label class="is-tall"><span>Report details *</span><textarea data-anon="details" rows="5" maxlength="5000" placeholder="Describe the concern (at least 10 characters)">' + mEsc(draft.details || '') + '</textarea></label>' +
         '<div class="m-report-context-grid"><label><span>Incident date</span><input data-anon="date" type="date" value="' + mEsc(draft.date || '') + '"></label>' +
-        '<label><span>Location</span><input data-anon="location" value="' + mEsc(draft.location || '') + '" placeholder="Optional"></label></div>' +
-        '<label class="m-report-files"><span>Evidence</span><input type="file" disabled><small>Attachments stay disabled until metadata stripping and isolated storage are available.</small></label>' +
-        '<aside class="m-report-backend-block"><b>Secure submission is not enabled yet</b><span>The current server has no identity-free anonymous reporting endpoint. Your draft stays only on this device and is not sent through Messages or Bug Reports.</span></aside>' +
-        '<button class="m-v2-primary" type="submit" disabled>Anonymous submission unavailable</button></form>';
+        '<label><span>Location</span><input data-anon="location" maxlength="160" value="' + mEsc(draft.location || '') + '" placeholder="Optional"></label></div>' +
+        '<aside class="m-report-backend-block"><b>No attachments on this channel</b><span>Photos and files carry hidden details (device, place, time) that can identify you. Describe the evidence instead; the case handler can ask for more through your follow-up code.</span></aside>' +
+        '<button class="m-v2-primary" type="submit">Review anonymous report</button></form>' +
+      '<button class="m-report-row" id="m-anon-check" type="button"><span><b>Check a report I filed</b><small>Use the report number and access code</small></span><i aria-hidden="true">›</i></button>';
     var form = host.querySelector('form');
-    form.addEventListener('input', function () {
-      var state = {};
-      Array.prototype.forEach.call(form.querySelectorAll('[data-anon]'), function (field) { state[field.getAttribute('data-anon')] = field.value; });
-      saveDraft(ANON_DRAFT_KEY, state);
-    });
+    function state() {
+      var s = {};
+      Array.prototype.forEach.call(form.querySelectorAll('[data-anon]'), function (field) { s[field.getAttribute('data-anon')] = String(field.value || '').trim(); });
+      return s;
+    }
+    form.addEventListener('input', function () { saveDraft(ANON_DRAFT_KEY, state()); });
+    host.querySelector('#m-anon-check').onclick = function () { anonymousLookup(view); };
+    form.onsubmit = function (event) {
+      event.preventDefault();
+      var data = state();
+      if (data.details.length < 10) { mToast('Describe the concern (at least 10 characters)', 'err'); form.querySelector('[data-anon="details"]').focus(); return; }
+      anonymousReview(view, data);
+    };
+  }
+
+  function anonymousReview(view, data) {
+    MApp.setTitle('Review anonymous report');
+    var host = shell(view, '46:779', 'Review', 'Nothing is sent until you confirm', function () { anonymous(view); });
+    host.innerHTML =
+      '<section class="m-report-review">' +
+        '<div><span>Category</span><b>' + mEsc(data.category) + '</b></div>' +
+        (data.subject ? '<div><span>Title</span><b>' + mEsc(data.subject) + '</b></div>' : '') +
+        '<div><span>Details</span><b>' + mEsc(data.details) + '</b></div>' +
+        '<div><span>Incident context</span><b>' + mEsc([data.date, data.location].filter(Boolean).join(' · ') || 'Not provided') + '</b></div>' +
+      '</section>' +
+      '<aside class="m-report-anon-notice"><b>You’ll get a report number and a one-time access code</b><span>Save both — they are the only way to see replies. The code is shown once and can’t be recovered.</span></aside>' +
+      '<button class="m-v2-primary" id="m-anon-send" type="button">Send anonymously</button>';
+    var button = host.querySelector('#m-anon-send');
+    button.onclick = function () {
+      if (navigator.onLine === false) { mToast('You’re offline. Nothing was sent — your draft is still on this device.', 'err'); return; }
+      button.disabled = true;
+      button.textContent = 'Sending securely…';
+      API.post('/anonymous-reports/ticket').then(function (t) {
+        return anonPost('', {
+          ticket: t.ticket, category: data.category, subject: data.subject || null, description: data.details,
+          incident_date: data.date || null, location: data.location || null
+        });
+      }).then(function (res) {
+        clearDraft(ANON_DRAFT_KEY);
+        anonymousReceipt(view, res);
+      }).catch(function (error) {
+        mToast(error.offline ? 'You’re offline. Nothing was sent — your draft is still on this device.' : (error.message || 'Could not send the report'), 'err');
+        button.disabled = false;
+        button.textContent = 'Send anonymously';
+      });
+    };
+  }
+
+  function anonymousReceipt(view, res) {
+    MApp.setTitle('Report received');
+    var host = shell(view, '46:779', 'Report received', 'Save these now — they are shown only once');
+    host.innerHTML =
+      '<section class="m-anon-receipt">' +
+        '<div><span>Report number</span><b>' + mEsc(res.number) + '</b></div>' +
+        '<div><span>Access code</span><b class="m-anon-code">' + mEsc(res.access_code) + '</b></div>' +
+      '</section>' +
+      '<aside class="m-report-anon-notice"><b>Anyone with this code can read the replies</b><span>Write it down or keep it somewhere private. It isn’t stored on this device and can’t be recovered.</span></aside>' +
+      '<div class="m-anon-actions"><button class="m-v2-primary" id="m-anon-copy" type="button">Copy number and code</button>' +
+      '<button class="m-v2-secondary" id="m-anon-done" type="button">Done</button></div>';
+    host.querySelector('#m-anon-copy').onclick = function () {
+      var text = 'Report ' + res.number + ' · code ' + res.access_code;
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard')))
+        .then(function () { mToast('Copied'); }, function () { mToast('Copy isn’t available — write it down', 'err'); });
+    };
+    host.querySelector('#m-anon-done').onclick = function () { hub(view); };
+  }
+
+  function anonymousLookup(view) {
+    MApp.setTitle('Check a report');
+    var host = shell(view, '46:779', 'Check a report', 'Status and replies from the case handler', function () { anonymous(view); });
+    host.innerHTML =
+      '<form class="m-report-form" novalidate>' +
+        '<label><span>Report number *</span><input data-k="number" autocomplete="off" placeholder="CR-00001"></label>' +
+        '<label><span>Access code *</span><input data-k="code" autocomplete="off" autocapitalize="characters" placeholder="XXXXX-XXXXX-XXXXX-XXXXX"></label>' +
+        '<button class="m-v2-primary" type="submit">Open report</button></form><div id="m-anon-result"></div>';
+    var form = host.querySelector('form');
+    var out = host.querySelector('#m-anon-result');
+    function creds() {
+      return { number: form.querySelector('[data-k="number"]').value.trim(), access_code: form.querySelector('[data-k="code"]').value.trim() };
+    }
+    function show(report) {
+      var c = creds();
+      out.innerHTML =
+        '<section class="m-report-review"><div><span>' + mEsc(report.number) + ' · ' + mEsc(report.category) + '</span><b>' + mEsc(report.subject || 'Anonymous report') + '</b></div>' +
+        '<div><span>Status</span><b class="m-anon-status ' + mEsc(report.status) + '">' + mEsc(report.status) + '</b></div>' +
+        '<div><span>Filed · last update</span><b>' + mEsc(report.created_on) + ' · ' + mEsc(report.updated_on) + '</b></div></section>' +
+        '<div class="m-anon-thread">' + (report.messages.length ? report.messages.map(function (m) {
+          return '<div class="m-anon-msg ' + mEsc(m.author) + '"><small>' + (m.author === 'handler' ? 'Case handler' : 'You') + ' · ' + mEsc(m.created_on) + '</small><p>' + mEsc(m.body) + '</p></div>';
+        }).join('') : '<div class="m-empty">No replies yet.</div>') + '</div>' +
+        (report.status === 'closed' ? '<div class="m-hint">This report is closed.</div>'
+          : '<form class="m-report-form" id="m-anon-reply" novalidate><label class="is-tall"><span>Add information</span><textarea rows="3" maxlength="3000" placeholder="Answer a question or add details"></textarea></label>' +
+            '<button class="m-v2-primary" type="submit">Send</button></form>');
+      var reply = out.querySelector('#m-anon-reply');
+      if (reply) reply.onsubmit = function (event) {
+        event.preventDefault();
+        var text = reply.querySelector('textarea').value.trim();
+        if (!text) { mToast('Write a message', 'err'); return; }
+        var b = reply.querySelector('button'); b.disabled = true;
+        anonPost('/followup', { number: c.number, access_code: c.access_code, body: text })
+          .then(show)
+          .catch(function (error) { mToast(error.message, 'err'); b.disabled = false; });
+      };
+    }
+    form.onsubmit = function (event) {
+      event.preventDefault();
+      var c = creds();
+      if (!c.number || !c.access_code) { mToast('Enter the report number and access code', 'err'); return; }
+      var b = form.querySelector('button'); b.disabled = true;
+      out.innerHTML = '<div class="m-hint">Checking…</div>';
+      anonPost('/lookup', c).then(show).catch(function (error) {
+        out.innerHTML = '<div class="m-error">' + mEsc(error.message) + '</div>';
+      }).then(function () { b.disabled = false; });
+    };
   }
 
   function identifiedList(view) {
@@ -216,7 +342,7 @@
     host.innerHTML =
       '<article class="m-report-guide"><h2>Immediate danger or emergency</h2><p>Move to safety and contact the designated on-site responder or emergency services first. Do not wait for an in-app report.</p></article>' +
       '<article class="m-report-guide"><h2>Need a reply or formal follow-up</h2><p>Use an identified report. The recipient can ask questions, provide updates, and continue the conversation in Inbox.</p></article>' +
-      '<article class="m-report-guide"><h2>Identity-sensitive concern</h2><p>Use the separate anonymous channel only after secure submission becomes available. Do not use a shared account or another employee’s identity.</p></article>';
+      '<article class="m-report-guide"><h2>Identity-sensitive concern</h2><p>Use the anonymous channel. You get a report number and a one-time access code to read replies; nothing about your account is stored with it.</p></article>';
   }
 
   MApp.route('report-problem', function (view, params) {
@@ -224,5 +350,8 @@
     if (params && params.mode === 'anonymous') { anonymous(view); return; }
     hub(view);
   });
-  MApp.route('anonymous-report', anonymous);
+  MApp.route('anonymous-report', function (view, params) {
+    if (params && params.check) { anonymousLookup(view); return; }
+    anonymous(view);
+  });
 })();

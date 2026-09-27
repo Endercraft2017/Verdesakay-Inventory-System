@@ -616,3 +616,22 @@ body { background: var(--v2-bg); color: var(--v2-text); }
 .m-v2-primary:focus-visible,.m-v2-secondary:focus-visible{outline:3px solid color-mix(in srgb,var(--v2-green) 45%,transparent);outline-offset:2px}
 :root[data-theme="dark"] .m-v2-primary{color:#07140d;box-shadow:none}
 .m-v2-eyebrow{font-size:.66rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--v2-muted)}
+
+/* Anonymous channel — receipt (number + one-time code), status and reporter/handler thread. */
+.m-anon-receipt{display:grid;gap:.75rem;padding:1.1rem;margin-bottom:1rem;border:1px solid var(--v2-line);border-radius:1.4rem;background:var(--v2-surface)}
+.m-anon-receipt div{display:flex;flex-direction:column;gap:.3rem}
+.m-anon-receipt span{font-size:.7rem;font-weight:700;color:var(--v2-muted);text-transform:uppercase;letter-spacing:.06em}
+.m-anon-receipt b{font-size:1.15rem;color:var(--v2-text);word-break:break-all}
+.m-anon-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:1.05rem!important;letter-spacing:.04em;padding:.6rem .7rem;border-radius:.9rem;background:var(--v2-surface-soft)}
+.m-anon-actions{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1rem}.m-anon-actions>*{flex:1 1 10rem}
+.m-anon-status{text-transform:capitalize}.m-anon-status.resolved,.m-anon-status.closed{color:var(--v2-green)}.m-anon-status.new{color:var(--v2-warn-text)}
+.m-anon-thread{display:flex;flex-direction:column;gap:.55rem;margin:1rem 0}
+.m-anon-msg{max-width:88%;padding:.7rem .85rem;border-radius:1.1rem;border:1px solid var(--v2-line);background:var(--v2-surface)}
+.m-anon-msg.reporter{align-self:flex-end;background:var(--v2-green-soft);border-color:transparent}
+.m-anon-msg small{display:block;font-size:.66rem;color:var(--v2-muted);margin-bottom:.25rem}
+.m-anon-msg p{margin:0;font-size:.82rem;line-height:1.45;color:var(--v2-text);white-space:pre-wrap;word-break:break-word}
+.m-cr-filter{display:flex;gap:.4rem;overflow-x:auto;padding-bottom:.4rem;margin-bottom:.6rem;scrollbar-width:none}
+.m-cr-filter button{appearance:none;flex:0 0 auto;border:1px solid var(--v2-line);background:var(--v2-surface);color:var(--v2-text-2);border-radius:999px;padding:.4rem .8rem;font:inherit;font-size:.74rem;text-transform:capitalize}
+.m-cr-filter button.on{background:var(--v2-green);border-color:var(--v2-green);color:#fff}
+.m-cr-detail{white-space:pre-wrap;word-break:break-word;font-size:.84rem;line-height:1.5;color:var(--v2-text)}
+#m-anon-result{margin-top:1rem}

@@ -93,6 +93,7 @@ window.AccessEditor = (() => {
     { label: 'Admin', items: [
       { key: 'users.manage', label: 'Manage users & permissions', desc: 'Create/edit staff accounts and set their permissions' },
       { key: 'audit.view', label: 'View activity log', desc: 'View the app-wide activity/audit log' },
+      { key: 'reports.confidential', label: 'Handle anonymous reports', desc: 'Read, reply to and close reports filed through the anonymous channel' },
     ] },
     { label: 'Announcements', items: [
       { key: 'announce', label: 'Post announcements', desc: 'Post company-wide announcements' },

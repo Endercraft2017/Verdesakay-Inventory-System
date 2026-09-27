@@ -21,6 +21,7 @@ import partsSlipsRoutes from './modules/manufacturing/parts-slips.routes';
 import productionIssuesRoutes from './modules/manufacturing/production-issues.routes';
 import attachmentsRoutes from './core/attachments.routes';
 import bugReportsRoutes from './core/bug-reports.routes';
+import { reporterRouter as anonymousReportRoutes, staffRouter as confidentialReportRoutes, isAnonymousReportPath } from './core/confidential-reports.routes';
 import deliveriesRoutes from './modules/inventory/deliveries.routes';
 import releaseSlipsRoutes from './modules/inventory/release-slips.routes';
 import formsRoutes from './core/forms.routes';
@@ -143,14 +144,15 @@ export function createApp() {
       if (req.path.startsWith('/api')) {
         console.log(`${req.method} ${req.path} -> ${res.statusCode} (${Date.now() - start}ms)`);
       }
-      recordActivity(req, res);
+      // Anonymous-report requests leave no identity trail (user, IP, body) — see confidential-reports.ts.
+      if (!isAnonymousReportPath((req.originalUrl || req.url).split('?')[0] ?? '')) recordActivity(req, res);
     });
     next();
   });
 
   // De-duplicate retried mutating requests that carry an Idempotency-Key header
   // (used by the mobile offline queue). No-op for requests without the header.
-  app.use('/api', idempotency);
+  app.use('/api', (req, res, next) => (isAnonymousReportPath(req.originalUrl.split('?')[0] ?? '') ? next() : idempotency(req, res, next)));
 
   // Unauthenticated liveness probe (Railway healthcheck). Must precede the routers mounted
   // on bare '/api' (personal, form builder), whose blanket auth would otherwise 401 it.
@@ -159,6 +161,9 @@ export function createApp() {
   });
   app.use('/api/auth/login', loginLimiter);
   app.use('/api/auth', authRoutes);
+  // Before the bare-'/api' routers below: their blanket requireAuth would otherwise 401 it.
+  app.use('/api/anonymous-reports', anonymousReportRoutes);
+  app.use('/api/confidential-reports', confidentialReportRoutes);
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
   app.use('/api/tenant', tenantRoutes); // current workspace plan / status / usage
   // Mounted here (before the bare-'/api' routers below) so its public OAuth /callback

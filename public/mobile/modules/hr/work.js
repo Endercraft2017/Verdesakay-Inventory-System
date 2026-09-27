@@ -132,6 +132,8 @@
     tools.appendChild(commonTool('Schedule', 'schedule'));
     tools.appendChild(commonTool('Announcements', 'announcements'));
     if (ops.length > 4) tools.appendChild(commonTool('All role queues', 'production'));
+    // Case handlers for the anonymous channel (HR/admin by default).
+    if (MApp.can('reports.confidential')) tools.appendChild(commonTool('Anonymous reports', 'confidential-reports'));
     page.appendChild(tools);
 
     if (MApp.canApprove()) {

@@ -31,6 +31,8 @@ export type Permission =
   | 'hr.view' | 'hr.manage'
   | 'accounting.view' | 'accounting.manage'
   | 'audit.view'
+  // Case handlers for the anonymous reporting channel (src/core/confidential-reports.ts).
+  | 'reports.confidential'
   | 'mail.send'
   | 'announce'
   | 'qc.configure'

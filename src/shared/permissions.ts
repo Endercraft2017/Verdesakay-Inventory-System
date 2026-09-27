@@ -18,6 +18,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'hr.view', 'hr.manage',
   'accounting.view', 'accounting.manage',
   'audit.view',
+  'reports.confidential',
   'mail.send',
   'announce',
   'qc.configure',
@@ -92,6 +93,7 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
     'templates.view',
     'hr.view', 'hr.manage',
     'announce',
+    'reports.confidential',
   ],
   marketing: [
     'forms.view', 'forms.upload',

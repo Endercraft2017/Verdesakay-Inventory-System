@@ -196,6 +196,27 @@ Orders list/detail, the QC/QA inspection queue, and Production Batches.
 **Terminal states:** completed (stock posted); cancelled (job-order cancel cleanup
 releases any reserved components back to available stock).
 
+## Confidential (anonymous) report
+
+**Trigger:** an employee chooses "Anonymous report" in the mobile Reporting hub
+(`#/anonymous-report`).
+
+1. **Draft** (mobile, device only) — category, optional title, details, date, location; kept
+   in localStorage until sent. No attachments. Offline → nothing is sent or queued.
+2. **Ticket** (`core/confidential-reports`) — signed-in `POST /ticket`; the row stores only a
+   hash + expiry, the request isn't logged, so the ticket can't be traced to the employee.
+3. **Submit** — `POST /api/anonymous-reports` with the ticket and no auth header; ticket
+   consumed in the same transaction; returns `CR-#####` + a one-time access code (shown once).
+   Handlers get a push with number + category only.
+4. **Triage / investigate** (`reports.confidential`) — status new → triaged → investigating;
+   replies are shown to the reporter as "Case handler".
+5. **Reporter follow-up** — `POST /lookup` / `POST /followup` with number + code.
+
+**Branches:** missing/expired/reused ticket → 403, nothing stored; wrong code → 404 (constant-time
+compare); ticket cap reached → 429; follow-up on a closed report → 409.
+**Terminal states:** resolved or closed (closed also blocks further reporter messages). A lost
+access code can't be recovered — the reporter files a new report.
+
 ## Payroll run
 
 **Trigger:** a payroll period/cutoff is closed (`hr`, `hr.routes.ts`).

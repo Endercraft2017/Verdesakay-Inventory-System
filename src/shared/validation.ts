@@ -649,6 +649,38 @@ export const updateBugReportSchema = z.object({
   status: z.enum(['open', 'resolved']),
 });
 
+// ---- Confidential (anonymous) reports (see src/core/confidential-reports.ts) ----
+export const REPORT_STATUSES = ['new', 'triaged', 'investigating', 'resolved', 'closed'] as const;
+export const REPORT_CATEGORIES = [
+  'Workplace concern', 'Harassment or misconduct', 'Safety risk', 'Payroll or attendance',
+  'Equipment or facility', 'Stock or operations', 'System support', 'Other',
+] as const;
+const isoDateOpt = z.preprocess(
+  (v) => (v === '' ? null : v),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date').optional().nullable()
+);
+export const anonymousReportSchema = z.object({
+  ticket: trimmed.min(10, 'Submission ticket missing').max(200),
+  category: z.enum(REPORT_CATEGORIES, { message: 'Choose a category' }),
+  subject: trimmed.max(160).optional().nullable(),
+  description: trimmed.min(10, 'Describe the concern (at least 10 characters)').max(5000),
+  incident_date: isoDateOpt,
+  location: trimmed.max(160).optional().nullable(),
+});
+export const anonymousLookupSchema = z.object({
+  number: trimmed.min(1, 'Enter the report number').max(20),
+  access_code: trimmed.min(10, 'Enter the access code').max(40),
+});
+export const anonymousFollowupSchema = anonymousLookupSchema.extend({
+  body: trimmed.min(1, 'Write a message').max(3000),
+});
+export const confidentialStatusSchema = z.object({
+  status: z.enum(REPORT_STATUSES),
+});
+export const confidentialReplySchema = z.object({
+  body: trimmed.min(1, 'Write a message').max(3000),
+});
+
 // ---- Documents: orders + templates ----
 const numCoerce = z.coerce.number();
 

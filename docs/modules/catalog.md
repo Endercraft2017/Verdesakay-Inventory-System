@@ -89,6 +89,31 @@ accounts and only `HR_GRANTABLE_PERMISSIONS` keys (the union of the staff roles'
 Pre-existing; not fixed by this reorg.
 **Status:** working.
 
+### core — confidential reporting (anonymous channel)
+
+**Responsibility:** an identity-free reporting channel for workplace, safety, misconduct and
+operations concerns — separate from identified reports (Messages) and software bug reports.
+**Owned data:** `anonymous_reports`, `anonymous_report_messages`, `anonymous_report_tickets`
+(created in `createSchema()`, no SCHEMA_VERSION bump). No reporter column of any kind;
+dates only (never times); the follow-up access code is stored as SHA-256 only; numbering
+(`CR-00001`) comes from the table, not `settings` (whose `updated_at` would timestamp it).
+**Owned files:** `core/confidential-reports.ts` (service), `core/confidential-reports.routes.ts`,
+mobile `core/report-problem.js` (anonymous form, receipt, check/reply) and
+`core/confidential-reports.js` (case-handler queue).
+**Public interface:** reporter — `/api/anonymous-reports` `POST /ticket` (signed in; single-use,
+unlinkable, 10/day in-memory cap), `POST /` (no auth read), `POST /lookup`, `POST /followup`
+(number + access code). Handlers — `/api/confidential-reports` (`reports.confidential`, HR +
+admin by default, not HR-grantable): list, detail, `POST /:id/status`, `POST /:id/reply`.
+**Connections:** `shared/push` notifyPermission('reports.confidential') on new report / reporter
+follow-up (number + category only). `app.ts` exempts `/api/anonymous-reports*` from the activity
+log and idempotency store (`isAnonymousReportPath`); handler routes are audited normally.
+In-memory rate limits only (15-min window).
+**Known limits:** no attachments (metadata stripping not built); no desktop handler screen yet
+(mobile route `#/confidential-reports`).
+**Tests:** `tests/confidential-reports.test.ts`, anonymous transport checks in
+`tests/frontend-mobile.test.ts`.
+**Status:** working.
+
 ## modules/inventory
 
 **Responsibility:** items, stock levels, suppliers, customers, locations, sale/purchase

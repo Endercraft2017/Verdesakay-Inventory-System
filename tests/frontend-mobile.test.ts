@@ -15,7 +15,7 @@ const EXPECTED_ROUTES = [
   'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
   'batch', 'job-orders', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
   'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks',
-  'announcements', 'notifications', 'time-fix', 'approvals', 'allocate', 'deliveries',
+  'announcements', 'notifications', 'confidential-reports', 'time-fix', 'approvals', 'allocate', 'deliveries',
 ];
 
 describe('mobile bootstrap', () => {
@@ -84,11 +84,21 @@ describe('mobile bootstrap', () => {
       .offline, so boot() falls back to the cached `me` it just read from localStorage,
       same path a real phone takes reopening the app offline) so route rendering can be
       exercised under a specific account's actual permissions, not just route registration. */
-  async function bootAs(me: Record<string, unknown>) {
+  /** `respond(url, init)` may return a JSON body for a URL; anything it doesn't answer (returns
+   *  undefined) rejects like a dead network, which is the default for every call. */
+  async function bootAs(me: Record<string, unknown>, respond?: (url: string, init: any) => unknown) {
     const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://localhost/m' });
     const win = dom.window as unknown as Record<string, any>;
     win.matchMedia = win.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
-    win.fetch = () => Promise.reject(new Error('no network in test'));
+    win.fetch = (url: string, init: unknown) => {
+      const body = respond ? respond(String(url), init) : undefined;
+      if (body === undefined) return Promise.reject(new Error('no network in test'));
+      return Promise.resolve({
+        ok: true, status: 200,
+        headers: { get: (h: string) => (h.toLowerCase() === 'content-type' ? 'application/json' : null) },
+        json: () => Promise.resolve(body),
+      });
+    };
     win.localStorage.setItem('vds_token', 'test-token');
     win.localStorage.setItem('vds_m_me', JSON.stringify(me));
 
@@ -209,8 +219,43 @@ describe('mobile bootstrap', () => {
     expect(source).toContain("shell(view, '46:779'");
     expect(source).toContain("API.upload('/messages'");
     expect(source).toContain("MApp.route('anonymous-report'");
-    expect(source).toContain('Anonymous submission unavailable');
-    expect(source).toContain('not sent through Messages or Bug Reports');
+    // Anonymous path: identity-free transport — a bare fetch with no Authorization header or
+    // cookies, never the token-adding API client / offline queue, never Messages or Bug Reports.
+    const anon = source.slice(source.indexOf('function anonPost('), source.indexOf('function identifiedList('));
+    expect(anon).toContain("fetch('/api/anonymous-reports' + path");
+    expect(anon).toContain("credentials: 'omit'");
+    expect(anon).not.toMatch(/Authorization|getToken/);
+    expect(anon).not.toMatch(/API\.(post|upload)\('\/anonymous-reports'\s*,/);
+    expect(anon).not.toMatch(/mSubmit|\/messages|\/bug-reports/);
+    expect(anon).toContain("API.post('/anonymous-reports/ticket')"); // only the ticket is authenticated
+    expect(anon).not.toMatch(/type="file"/); // no attachments on this channel
+  });
+
+  it('keeps the anonymous submit off the auth header at runtime', async () => {
+    const calls: Array<{ url: string; init: { headers?: Record<string, string>; credentials?: string } }> = [];
+    const win = await bootAs({
+      id: 5, username: 'e5', full_name: 'Emp Five', role: 'csr', employee: true, modules: null,
+      permissions: ['messages.view', 'messages.send'],
+    }, (url: string, init: { method?: string; headers?: Record<string, string>; credentials?: string; body?: string }) => {
+      calls.push({ url, init: init || {} });
+      if (url === '/api/anonymous-reports/ticket') return { ticket: 't'.repeat(32), expires_in_minutes: 120 };
+      if (url === '/api/anonymous-reports') return { number: 'CR-00007', access_code: 'ABCDE-FGHJK-MNPQR-STVWX' };
+      return undefined;
+    });
+    win.location.hash = '#/anonymous-report';
+    await new Promise((r) => setTimeout(r, 20)); // let the hashchange render settle first
+    const doc = win.document;
+    (doc.querySelector('[data-anon="details"]') as HTMLTextAreaElement).value = 'Pallets are blocking the fire exit.';
+    (doc.querySelector('.m-report-anon-form') as HTMLFormElement).dispatchEvent(new win.Event('submit', { cancelable: true }));
+    (doc.getElementById('m-anon-send') as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 30));
+    const submit = calls.find((c) => c.url === '/api/anonymous-reports');
+    expect(submit).toBeTruthy();
+    expect(submit!.init.credentials).toBe('omit');
+    expect(JSON.stringify(submit!.init.headers || {})).not.toMatch(/Authorization/i);
+    const ticketCall = calls.find((c) => c.url === '/api/anonymous-reports/ticket');
+    expect(JSON.stringify(ticketCall!.init.headers || {})).toMatch(/Authorization/i);
+    expect(doc.getElementById('m-view')!.textContent).toContain('ABCDE-FGHJK-MNPQR-STVWX');
   });
 
 

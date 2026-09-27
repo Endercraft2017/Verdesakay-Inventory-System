@@ -1086,6 +1086,40 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_attachments_ref ON attachments(kind, ref_id);
 
+    -- Confidential (anonymous) reporting — src/core/confidential-reports.ts. Deliberately NO
+    -- reporter column of any kind (user, IP, device), and dates only, never times. Tickets are
+    -- single-use submission tokens (hash only, no user column); access_hash is the SHA-256 of
+    -- the one-time code the reporter follows up with. Created here (not migrate()) so it needs
+    -- no SCHEMA_VERSION bump.
+    CREATE TABLE IF NOT EXISTS anonymous_report_tickets (
+      token_hash TEXT PRIMARY KEY,
+      expires_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS anonymous_reports (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      number        TEXT NOT NULL UNIQUE,
+      category      TEXT NOT NULL,
+      subject       TEXT,
+      description   TEXT NOT NULL,
+      incident_date TEXT,
+      location      TEXT,
+      status        TEXT NOT NULL DEFAULT 'new'
+                      CHECK (status IN ('new','triaged','investigating','resolved','closed')),
+      access_hash   TEXT NOT NULL,
+      created_on    TEXT NOT NULL,
+      updated_on    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_anonymous_reports_status ON anonymous_reports(status, id);
+    CREATE TABLE IF NOT EXISTS anonymous_report_messages (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id  INTEGER NOT NULL REFERENCES anonymous_reports(id) ON DELETE CASCADE,
+      author     TEXT NOT NULL CHECK (author IN ('reporter','handler')),
+      handler_id INTEGER REFERENCES users(id) ON DELETE SET NULL,  -- staff only; NULL for the reporter
+      body       TEXT NOT NULL,
+      created_on TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_anonymous_report_messages ON anonymous_report_messages(report_id, id);
+
     -- In-app bug reports: any signed-in user can file one (title + steps to reproduce +
     -- up to 5 screenshots); users.manage reviews/resolves them. See
     -- src/routes/bug-reports.routes.ts.
