@@ -1,8 +1,10 @@
 /** Manufacturing job orders (Phase B). Build N units of a finished product by
-    consuming its BOM. Lifecycle: draft → released → in_progress → completed,
+    consuming its BOM. Lifecycle: draft (→ approved, a sign-off stamp, not a status) →
+    released → in_progress → completed,
     with pause / cancel returning components that weren't consumed.
     QA/QC gating (qc_stages > 0) and serialized units come in Phase C. */
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import multer from 'multer';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
@@ -16,7 +18,14 @@ import {
   inspectUnitsSchema,
   setUnitIdentifierSchema,
   productsInSchema,
+  jobOrderIdsSchema,
+  prepareJobOrdersSchema,
+  releaseJobOrderSchema,
+  pauseJobOrderSchema,
 } from '../../shared/validation';
+import { imageUpload, saveAttachment, unlink } from '../../core/attachments.routes';
+import { enforceQuota } from '../../platform/quota';
+import { pickListHtml } from './parts-slip-print';
 import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory/inventory-stock';
 import { postJobOrderMovement, jobOrderWipBalance } from '../accounting/accounting-autopost';
 import { createDraftPurchaseOrders } from '../inventory/orders.routes';
@@ -40,6 +49,10 @@ const recordGate = requireAnyPermission(['inventory.adjust', 'production.record'
 // (checklist administration, not the pass/fail action itself).
 const inspectDoorGate = requireAnyPermission(['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa']);
 const receiveGate = requireAnyPermission(['inventory.adjust', 'production.receive']);
+// Deliberately NOT satisfied by inventory.adjust: approval is the production manager's
+// sign-off, separate from the warehouse that releases the parts. Admin holds every permission.
+const approveGate = requirePermission('production.approve');
+const pauseGate = requireAnyPermission(['inventory.adjust', 'production.pause']);
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -120,13 +133,22 @@ function settleJobOrderGl(joId: number, userId: number | null): void {
 function loadJobOrder(id: number): JobOrder | null {
   const jo = queryOne<JobOrder>(
     `SELECT j.*, u.full_name AS created_by_name, rb.full_name AS released_by_name,
-            ab.full_name AS accepted_by_name,
+            ab.full_name AS accepted_by_name, apb.full_name AS approved_by_name,
+            wab.full_name AS warehouse_accepted_by_name, prb.full_name AS prepared_by_name,
+            pab.full_name AS paused_by_name,
+            prs.id AS parts_slip_id, prs.number AS parts_slip_number,
+            (SELECT COUNT(*) FROM production_issues pi WHERE pi.job_order_id = j.id AND pi.status = 'open') AS open_issues,
             o.number AS order_number, t.name AS team_name,
             sl.name AS source_location_name, ol.name AS output_location_name
      FROM job_orders j
      LEFT JOIN users u ON u.id = j.created_by
      LEFT JOIN users rb ON rb.id = j.released_by
      LEFT JOIN users ab ON ab.id = j.accepted_by
+     LEFT JOIN users apb ON apb.id = j.approved_by
+     LEFT JOIN users wab ON wab.id = j.warehouse_accepted_by
+     LEFT JOIN users prb ON prb.id = j.prepared_by
+     LEFT JOIN users pab ON pab.id = j.paused_by
+     LEFT JOIN parts_release_slips prs ON prs.job_order_id = j.id
      LEFT JOIN orders o ON o.id = j.order_id
      LEFT JOIN production_teams t ON t.id = j.team_id
      LEFT JOIN locations sl ON sl.id = j.source_location_id
@@ -156,6 +178,19 @@ function loadJobOrder(id: number): JobOrder | null {
 }
 
 const OPEN_STATES = new Set(['draft', 'released', 'in_progress', 'paused']);
+
+/** A draft's plan changed (or its approval was withdrawn): drop the approval and everything the
+ *  warehouse did on the strength of it — acceptance, picked quantities — so it goes round
+ *  again. Nothing to undo in stock: parts only leave at /release. */
+function resetPreRelease(joId: number): void {
+  run(
+    `UPDATE job_orders SET approved_by = NULL, approved_at = NULL, approve_notes = NULL,
+       warehouse_accepted_by = NULL, warehouse_accepted_at = NULL, prepared_by = NULL, prepared_at = NULL
+     WHERE id = ?`,
+    joId
+  );
+  run('UPDATE job_order_components SET qty_picked = 0 WHERE job_order_id = ?', joId);
+}
 
 /** True when the production lead still has to accept this job order's parts kit (POST
  *  /:id/accept) before output can be recorded. Job orders that already have output on
@@ -251,7 +286,7 @@ function maybeComplete(joId: number, userId: number): void {
 
 // GET /api/job-orders — list, filterable by ?status= / ?order_id= / ?product_item_id= / ?team_id= / ?scheduled=1
 router.get('/', readGate, (req, res) => {
-  const { status, order_id, product_item_id, team_id, scheduled } = req.query;
+  const { status, order_id, product_item_id, team_id, scheduled, stage } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
   if (typeof status === 'string' && status.trim()) { where.push('j.status = ?'); params.push(status.trim()); }
@@ -259,6 +294,14 @@ router.get('/', readGate, (req, res) => {
   if (product_item_id) { where.push('j.product_item_id = ?'); params.push(Number(product_item_id)); }
   if (team_id) { where.push('j.team_id = ?'); params.push(Number(team_id)); }
   if (scheduled === '1' || scheduled === 'true') where.push('(j.planned_start IS NOT NULL OR j.due_date IS NOT NULL)');
+  // Pre-release queues: drafts waiting for the manager's approval, and approved drafts
+  // waiting for the warehouse to release the parts.
+  // awaiting_release covers every approved draft; the other three split it by warehouse step.
+  if (stage === 'awaiting_approval') where.push("j.status = 'draft' AND j.approved_at IS NULL");
+  if (stage === 'awaiting_release') where.push("j.status = 'draft' AND j.approved_at IS NOT NULL");
+  if (stage === 'awaiting_warehouse') where.push("j.status = 'draft' AND j.approved_at IS NOT NULL AND j.warehouse_accepted_at IS NULL");
+  if (stage === 'preparing') where.push("j.status = 'draft' AND j.warehouse_accepted_at IS NOT NULL AND j.prepared_at IS NULL");
+  if (stage === 'ready_to_release') where.push("j.status = 'draft' AND j.prepared_at IS NOT NULL");
   const rows = queryAll<JobOrder & {
     remaining: number; units_pending: number; units_rework: number; units_passed: number;
     batches_receivable: number; overdue: number;
@@ -266,6 +309,7 @@ router.get('/', readGate, (req, res) => {
   }>(
     `SELECT j.*, o.number AS order_number, t.name AS team_name,
             (j.qty_ordered - j.qty_done - j.qty_scrapped) AS remaining,
+            (SELECT COUNT(*) FROM production_issues pi WHERE pi.job_order_id = j.id AND pi.status = 'open') AS open_issues,
             (j.due_date IS NOT NULL AND j.due_date < date('now')
               AND j.status IN ('draft','released','in_progress','paused')) AS overdue,
             (SELECT COUNT(*) FROM job_order_units u
@@ -317,6 +361,54 @@ router.get('/', readGate, (req, res) => {
     else r.units_actionable = 0;
   }
   res.json(rows);
+});
+
+// GET /api/job-orders/pick-list?ids=1,2,3[&format=html] — one consolidated pick list for
+// several job orders the warehouse is preparing together: each component (per source
+// location) with the total needed, already picked, on hand, and the per-job-order split.
+// format=html returns a printable page.
+router.get('/pick-list', readGate, (req, res) => {
+  const ids = [...new Set(String(req.query.ids || '').split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) { res.status(400).json({ error: 'Pass ?ids= with at least one job order id' }); return; }
+  const jos = ids.map((id) => loadJobOrder(id));
+  const missing = ids.find((_, i) => !jos[i]);
+  if (missing) { res.status(404).json({ error: `Job order #${missing} not found` }); return; }
+  type Line = {
+    component_item_id: number; component_name: string; sku: string | null; unit: string | null;
+    location_id: number; location_name: string | null; need: number; picked: number; on_hand: number;
+    job_orders: Array<{ job_order_id: number; number: string; need: number; picked: number }>;
+  };
+  const lines = new Map<string, Line>();
+  for (const jo of jos as JobOrder[]) {
+    const loc = jo.source_location_id ?? getDefaultLocationId();
+    for (const c of jo.components ?? []) {
+      if (c.qty_planned <= 0 || c.component_item_id == null) continue;
+      const key = `${c.component_item_id}@${loc}`;
+      let l = lines.get(key);
+      if (!l) {
+        const it = queryOne<{ sku: string | null; unit: string | null }>('SELECT sku, unit FROM inventory_items WHERE id = ?', c.component_item_id);
+        l = {
+          component_item_id: c.component_item_id, component_name: c.component_name, sku: it?.sku ?? null, unit: it?.unit ?? null,
+          location_id: loc, location_name: jo.source_location_name ?? null, need: 0, picked: 0,
+          on_hand: stockAt(c.component_item_id, loc), job_orders: [],
+        };
+        lines.set(key, l);
+      }
+      l.need += c.qty_planned;
+      l.picked += c.qty_picked ?? 0;
+      l.job_orders.push({ job_order_id: jo.id, number: jo.number, need: c.qty_planned, picked: c.qty_picked ?? 0 });
+    }
+  }
+  const out = {
+    job_orders: (jos as JobOrder[]).map((j) => ({
+      id: j.id, number: j.number, product_name: j.product_name, qty_ordered: j.qty_ordered,
+      source_location_name: j.source_location_name ?? null, team_name: j.team_name ?? null,
+      warehouse_accepted_at: j.warehouse_accepted_at, prepared_at: j.prepared_at,
+    })),
+    lines: [...lines.values()].sort((a, b) => (a.location_name ?? '').localeCompare(b.location_name ?? '') || a.component_name.localeCompare(b.component_name)),
+  };
+  if (req.query.format === 'html') { res.type('html').send(pickListHtml(out)); return; }
+  res.json(out);
 });
 
 // GET /api/job-orders/production-receipts — Products In history (declared before /:id so
@@ -513,6 +605,7 @@ router.put('/:id', writeGate, (req, res) => {
     if (input.qty_ordered !== undefined && input.qty_ordered !== jo.qty_ordered) {
       run('UPDATE job_order_components SET qty_planned = qty_per_unit * ? WHERE job_order_id = ?', qty, id);
     }
+    resetPreRelease(id); // the approved plan changed — it needs signing off again
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -617,6 +710,7 @@ router.put('/:id/components', writeGate, (req, res) => {
         );
       }
     }
+    resetPreRelease(id); // the approved component plan changed — it needs signing off again
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -644,6 +738,216 @@ function jobOrderComponentShortfalls(joId: number): Array<{
   return out;
 }
 
+/** Every planned component vs. what's on hand at the source location, for the pre-release
+ *  stock check. `short` is 0 when covered. */
+function jobOrderComponentAvailability(joId: number): Array<{
+  component_item_id: number; component_name: string; need: number; have: number; short: number; picked: number;
+}> {
+  const jo = loadJobOrder(joId);
+  if (!jo) return [];
+  const sourceLoc = jo.source_location_id ?? getDefaultLocationId();
+  const out: Array<{ component_item_id: number; component_name: string; need: number; have: number; short: number; picked: number }> = [];
+  for (const c of jo.components ?? []) {
+    if (c.qty_planned <= 0 || c.component_item_id == null) continue;
+    const have = stockAt(c.component_item_id, sourceLoc);
+    out.push({
+      component_item_id: c.component_item_id, component_name: c.component_name,
+      need: c.qty_planned, have, short: Math.max(0, c.qty_planned - have), picked: c.qty_picked ?? 0,
+    });
+  }
+  return out;
+}
+
+/** Quantity of `itemId` already picked at `locationId` for other not-yet-released job orders
+ *  (their kits are set aside but haven't left stock yet), so two kits can't both claim it. */
+function pickedElsewhere(itemId: number, locationId: number, excludeJoIds: number[]): number {
+  const defLoc = getDefaultLocationId();
+  const ex = excludeJoIds.length ? `AND j.id NOT IN (${excludeJoIds.map(() => '?').join(',')})` : '';
+  return queryOne<{ n: number }>(
+    `SELECT COALESCE(SUM(c.qty_picked), 0) AS n
+     FROM job_order_components c JOIN job_orders j ON j.id = c.job_order_id
+     WHERE j.status = 'draft' AND c.component_item_id = ? AND COALESCE(j.source_location_id, ?) = ? ${ex}`,
+    itemId, defLoc, locationId, ...excludeJoIds
+  )?.n ?? 0;
+}
+
+/** Why a job order can't enter the warehouse's hands (accept / prepare), or null if it can. */
+function warehouseStepError(jo: JobOrder | null, needAccepted: boolean): { status: number; error: string } | null {
+  if (!jo) return { status: 404, error: 'Job order not found' };
+  if (jo.status !== 'draft') return { status: 409, error: `${jo.number} is already ${jo.status}` };
+  if (!jo.approved_at) return { status: 409, error: `${jo.number} has not been approved yet` };
+  if (needAccepted && !jo.warehouse_accepted_at) return { status: 409, error: `The warehouse has not accepted ${jo.number} yet` };
+  return null;
+}
+
+// POST /api/job-orders/warehouse-accept — the warehouse takes on one or more approved drafts
+// for preparing. All-or-nothing; already-accepted ones are left as they are.
+router.post('/warehouse-accept', writeGate, (req, res) => {
+  const { job_order_ids } = parseBody(jobOrderIdsSchema, req.body);
+  const ids = [...new Set(job_order_ids)];
+  for (const id of ids) {
+    const err = warehouseStepError(loadJobOrder(id), false);
+    if (err) { res.status(err.status).json({ error: err.error, job_order_id: id }); return; }
+  }
+  for (const id of ids) {
+    run(
+      `UPDATE job_orders SET warehouse_accepted_by = ?, warehouse_accepted_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ? AND warehouse_accepted_at IS NULL`,
+      req.user!.id, id
+    );
+  }
+  res.json({ ok: true, job_orders: ids.map((id) => loadJobOrder(id)) });
+});
+
+// POST /api/job-orders/prepare — the warehouse records what it picked for one or more accepted
+// job orders (several kits can be picked in one go). A job order without `lines` is picked in
+// full. A job order whose every line is fully picked is marked prepared (ready to release);
+// a partial pick is saved but leaves it preparing. Picks are checked against on-hand stock
+// minus what other unreleased kits already set aside. All-or-nothing.
+router.post('/prepare', writeGate, (req, res) => {
+  const { job_orders } = parseBody(prepareJobOrdersSchema, req.body);
+  const ids = job_orders.map((j) => j.id);
+  if (new Set(ids).size !== ids.length) { res.status(400).json({ error: 'The same job order is listed twice' }); return; }
+
+  // Resolve the requested pick per job order + component.
+  const plan: Array<{ jo: JobOrder; picks: Map<number, number> }> = [];
+  for (const req0 of job_orders) {
+    const jo = loadJobOrder(req0.id);
+    const err = warehouseStepError(jo, true);
+    if (err) { res.status(err.status).json({ error: err.error, job_order_id: req0.id }); return; }
+    const comps = (jo!.components ?? []).filter((c) => c.component_item_id != null);
+    const picks = new Map<number, number>(comps.map((c) => [c.component_item_id!, c.qty_picked ?? 0]));
+    if (!req0.lines) {
+      for (const c of comps) picks.set(c.component_item_id!, c.qty_planned);
+    } else {
+      for (const l of req0.lines) {
+        const c = comps.find((x) => x.component_item_id === l.component_item_id);
+        if (!c) { res.status(400).json({ error: `Component #${l.component_item_id} is not on ${jo!.number}` }); return; }
+        if (l.qty_picked > c.qty_planned) {
+          res.status(400).json({ error: `${c.component_name} on ${jo!.number}: picked ${l.qty_picked} but only ${c.qty_planned} planned` });
+          return;
+        }
+        picks.set(c.component_item_id!, l.qty_picked);
+      }
+    }
+    plan.push({ jo: jo!, picks });
+  }
+
+  // Stock check per component + location across the whole request.
+  const demand = new Map<string, { itemId: number; loc: number; qty: number; name: string }>();
+  for (const { jo, picks } of plan) {
+    const loc = jo.source_location_id ?? getDefaultLocationId();
+    for (const [itemId, qty] of picks) {
+      const key = `${itemId}@${loc}`;
+      const name = (jo.components ?? []).find((c) => c.component_item_id === itemId)?.component_name ?? `#${itemId}`;
+      const d = demand.get(key) ?? { itemId, loc, qty: 0, name };
+      d.qty += qty;
+      demand.set(key, d);
+    }
+  }
+  const short: Array<{ component_item_id: number; component_name: string; picking: number; available: number }> = [];
+  for (const d of demand.values()) {
+    const available = stockAt(d.itemId, d.loc) - pickedElsewhere(d.itemId, d.loc, ids);
+    if (d.qty > available) short.push({ component_item_id: d.itemId, component_name: d.name, picking: d.qty, available: Math.max(0, available) });
+  }
+  if (short.length) {
+    res.status(400).json({
+      error: 'Not enough stock to pick — ' + short.map((s) => `${s.component_name}: picking ${s.picking}, available ${s.available}`).join('; '),
+      shortfalls: short,
+    });
+    return;
+  }
+
+  db.exec('BEGIN');
+  try {
+    for (const { jo, picks } of plan) {
+      for (const [itemId, qty] of picks) {
+        run('UPDATE job_order_components SET qty_picked = ? WHERE job_order_id = ? AND component_item_id = ?', qty, jo.id, itemId);
+      }
+      const complete = (jo.components ?? []).every((c) => c.component_item_id == null || c.qty_planned <= 0
+        || (picks.get(c.component_item_id) ?? 0) >= c.qty_planned);
+      if (complete) {
+        run(
+          `UPDATE job_orders SET prepared_by = ?, prepared_at = COALESCE(prepared_at, datetime('now')), updated_at = datetime('now') WHERE id = ?`,
+          req.user!.id, jo.id
+        );
+      } else {
+        run("UPDATE job_orders SET prepared_by = NULL, prepared_at = NULL, updated_at = datetime('now') WHERE id = ?", jo.id);
+      }
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  res.json({ ok: true, job_orders: ids.map((id) => loadJobOrder(id)) });
+});
+
+// GET /api/job-orders/:id/availability — stock check before release: each planned component's
+// need vs. on-hand at the source location, plus whether the job order can be released now.
+router.get('/:id/availability', readGate, (req, res) => {
+  const id = Number(req.params.id);
+  const jo = loadJobOrder(id);
+  if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
+  const lines = jobOrderComponentAvailability(id);
+  const shortfalls = lines.filter((l) => l.short > 0);
+  const approved = !!jo.approved_at;
+  const warehouseAccepted = !!jo.warehouse_accepted_at;
+  const prepared = !!jo.prepared_at;
+  res.json({
+    job_order_id: id,
+    status: jo.status,
+    source_location_id: jo.source_location_id ?? getDefaultLocationId(),
+    source_location_name: jo.source_location_name ?? null,
+    lines,
+    shortfalls,
+    in_stock: shortfalls.length === 0,
+    approved,
+    warehouse_accepted: warehouseAccepted,
+    prepared,
+    // Everything /release checks, in one flag.
+    releasable: jo.status === 'draft' && approved && warehouseAccepted && prepared && shortfalls.length === 0,
+  });
+});
+
+// POST /api/job-orders/:id/approve — the production manager signs off the draft (quantity,
+// locations, components) so the warehouse may release its parts. Short stock doesn't block
+// approval (purchasing can fill the gap before release); the response lists it as a warning.
+router.post('/:id/approve', approveGate, (req, res) => {
+  const id = Number(req.params.id);
+  const jo = loadJobOrder(id);
+  if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
+  if (jo.status !== 'draft') {
+    res.status(409).json({ error: `Only a draft job order can be approved (this one is ${jo.status})` });
+    return;
+  }
+  if (jo.approved_at) {
+    res.status(409).json({ error: `Already approved by ${jo.approved_by_name ?? 'a manager'}` });
+    return;
+  }
+  const { notes } = parseBody(acceptJobOrderSchema, req.body);
+  run(
+    "UPDATE job_orders SET approved_by = ?, approved_at = datetime('now'), approve_notes = ?, updated_at = datetime('now') WHERE id = ?",
+    req.user!.id, notes ?? null, id
+  );
+  res.json({ ok: true, job_order: loadJobOrder(id), shortfalls: jobOrderComponentShortfalls(id) });
+});
+
+// POST /api/job-orders/:id/unapprove — withdraw the approval of a not-yet-released draft.
+router.post('/:id/unapprove', approveGate, (req, res) => {
+  const id = Number(req.params.id);
+  const jo = queryOne<JobOrder>('SELECT status, approved_at FROM job_orders WHERE id = ?', id);
+  if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
+  if (jo.status !== 'draft') {
+    res.status(409).json({ error: 'The parts are already released — cancel the job order instead' });
+    return;
+  }
+  if (!jo.approved_at) { res.status(409).json({ error: 'This job order is not approved' }); return; }
+  resetPreRelease(id);
+  run("UPDATE job_orders SET updated_at = datetime('now') WHERE id = ?", id);
+  res.json({ ok: true, job_order: loadJobOrder(id) });
+});
+
 // POST /api/job-orders/:id/purchase-shortfall — draft purchase order(s) for the components
 // this job order can't cover from its source location, grouped by supplier.
 router.post('/:id/purchase-shortfall', writeGate, (req, res) => {
@@ -660,7 +964,11 @@ router.post('/:id/purchase-shortfall', writeGate, (req, res) => {
   res.json({ created, shortfalls: short });
 });
 
-// POST /api/job-orders/:id/release — deduct planned components from the source location
+// POST /api/job-orders/:id/release — issue the parts release slip for a prepared kit: the
+// numbered record (PRS-#####) of what the warehouse handed to production, snapshotting the
+// lines. Issuing it IS the release — planned components leave the source location here.
+// Needs approval → warehouse acceptance → a fully picked kit. Photos of the kit attach
+// afterwards as `attachments` kind 'parts_release' on the slip id.
 router.post('/:id/release', writeGate, (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
@@ -672,6 +980,19 @@ router.post('/:id/release', writeGate, (req, res) => {
     res.status(409).json({ error: `Cannot release a job order that is ${jo.status}` });
     return;
   }
+  if (!jo.approved_at) {
+    res.status(409).json({ error: 'This job order has not been approved yet', needs_approval: true });
+    return;
+  }
+  if (!jo.warehouse_accepted_at) {
+    res.status(409).json({ error: 'The warehouse has not accepted this job order yet', needs_warehouse_accept: true });
+    return;
+  }
+  if (!jo.prepared_at) {
+    res.status(409).json({ error: 'Prepare (pick) the whole parts kit before releasing it', needs_prepare: true });
+    return;
+  }
+  const input = parseBody(releaseJobOrderSchema, req.body ?? {});
   const shortfalls = jobOrderComponentShortfalls(id);
   if (shortfalls.length) {
     res.status(400).json({
@@ -683,17 +1004,29 @@ router.post('/:id/release', writeGate, (req, res) => {
   }
   const sourceLoc = jo.source_location_id ?? getDefaultLocationId();
 
+  let slipId: number;
+  let slipNumber: string;
   db.exec('BEGIN');
   try {
+    slipNumber = nextSequence('parts_release_slip_number', 'PRS');
+    slipId = Number(run(
+      'INSERT INTO parts_release_slips (number, job_order_id, released_by, received_by, notes) VALUES (?, ?, ?, ?, ?)',
+      slipNumber, id, req.user!.id, input.received_by ?? null, input.notes ?? null
+    ).lastInsertRowid);
     for (const c of jo.components ?? []) {
       if (c.qty_planned <= 0 || c.component_item_id == null) continue;
       applyStockChange({
         itemId: c.component_item_id,
         locationId: sourceLoc,
         change: -c.qty_planned,
-        reason: `${jo.number}: released to production`,
+        reason: `${jo.number}: released to production (${slipNumber})`,
         userId: req.user!.id,
       });
+      const it = queryOne<{ sku: string | null; unit: string | null }>('SELECT sku, unit FROM inventory_items WHERE id = ?', c.component_item_id);
+      run(
+        'INSERT INTO parts_release_slip_items (slip_id, component_item_id, name, sku, unit, quantity) VALUES (?, ?, ?, ?, ?, ?)',
+        slipId, c.component_item_id, c.component_name, it?.sku ?? null, it?.unit ?? null, c.qty_planned
+      );
     }
     run(
       "UPDATE job_orders SET status = 'released', released_by = ?, released_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
@@ -706,7 +1039,7 @@ router.post('/:id/release', writeGate, (req, res) => {
   }
   // GL: raw materials leave Inventory into Work in Process (best-effort).
   postJobOrderMovement(id, jo.number, today(), 'release', componentCostFor(id).released, req.user!.id);
-  res.json({ ok: true, job_order: loadJobOrder(id) });
+  res.json({ ok: true, job_order: loadJobOrder(id), slip: { id: slipId, number: slipNumber } });
 });
 
 // POST /api/job-orders/:id/accept — the production lead signs for the parts kit the
@@ -837,41 +1170,44 @@ router.post('/:id/progress', recordGate, (req, res) => {
 });
 
 // POST /api/job-orders/:id/units — add ONE serialized (QC-gated) unit "off the line" with
-// its identifier captured at creation (required) instead of added later. A photo is also
-// required, but that's a separate POST /api/attachments (kind: 'qc_unit', ref_id: this
-// unit's id) right after this call succeeds — the same attachment kind the QC/QA
-// pass/fail flow already uses for defect photos, just attached earlier in this unit's
-// life. "N units finished at once" loops this endpoint once per unit rather than one
+// its identifier AND its photo, both required, in one multipart request (fields
+// `identifier`, `batch_label`, file `image`). The photo is saved as `attachments` kind
+// 'qc_unit' on the new unit — the same kind the QC/QA pass/fail flow uses for defect
+// photos. Unit and photo commit together, so no unit reaches QC without one (SCHEMA 50;
+// it used to be a separate POST /api/attachments that could fail after the unit was
+// already created). "N units finished at once" loops this endpoint once per unit rather than one
 // request for many, so each keeps its own identifier + photo; an optional batch_label
 // still groups them under a shared lot the same way a bulk progress entry used to (each
 // call with the same label adds to that job order's open batch of it). A non-serialized
 // (qc_stages = 0) job order has no individual unit to attach either to, so it still
 // records output as a batch quantity via /progress, unchanged.
-router.post('/:id/units', recordGate, (req, res) => {
+router.post('/:id/units', recordGate, imageUpload.single('image'), (req, res) => {
+  // The photo arrives with the unit (multipart field `image`), so a unit can't reach QC
+  // without one. Any refusal below deletes the uploaded file again.
+  const file = req.file;
+  const fail = (status: number, body: Record<string, unknown>) => { unlink(file?.filename); res.status(status).json(body); };
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
-  if (!jo) {
-    res.status(404).json({ error: 'Job order not found' });
-    return;
-  }
+  if (!jo) { fail(404, { error: 'Job order not found' }); return; }
   if (jo.status !== 'released' && jo.status !== 'in_progress') {
-    res.status(409).json({ error: `Job order must be released before recording progress (it is ${jo.status})` });
+    fail(409, { error: `Job order must be released before recording progress (it is ${jo.status})` });
     return;
   }
-  if (needsAcceptance(jo)) {
-    res.status(409).json({ error: ACCEPT_FIRST, needs_acceptance: true });
-    return;
-  }
+  if (needsAcceptance(jo)) { fail(409, { error: ACCEPT_FIRST, needs_acceptance: true }); return; }
   if (jo.qc_stages <= 0) {
-    res.status(400).json({ error: "This job order isn't serialized — record output as a batch quantity via progress instead." });
+    fail(400, { error: "This job order isn't serialized — record output as a batch quantity via progress instead." });
     return;
   }
-  const { identifier, batch_label } = parseBody(addUnitSchema, req.body);
+  let parsed: { identifier: string; batch_label?: string | null };
+  try { parsed = parseBody(addUnitSchema, req.body); } catch (e) { unlink(file?.filename); throw e; }
+  const { identifier, batch_label } = parsed;
+  if (!file) { fail(400, { error: 'A photo of the unit is required (JPG, PNG, GIF or WebP)', needs_photo: true }); return; }
   const accounted = jo.qty_done + jo.qty_scrapped + unresolvedCount(id);
   if (accounted + 1 > jo.qty_ordered) {
-    res.status(400).json({ error: `That exceeds the ${jo.qty_ordered} ordered (${accounted} already produced).` });
+    fail(400, { error: `That exceeds the ${jo.qty_ordered} ordered (${accounted} already produced).` });
     return;
   }
+  try { enforceQuota('storage_mb', file.size); } catch (e) { unlink(file.filename); throw e; }
   const outputLoc = jo.output_location_id ?? getDefaultLocationId();
 
   db.exec('BEGIN');
@@ -889,10 +1225,12 @@ router.post('/:id/units', recordGate, (req, res) => {
       batchId
     );
     unitId = Number(info.lastInsertRowid);
+    saveAttachment('qc_unit', unitId, file.filename, 'Off the line', req.user!.id);
     run("UPDATE job_orders SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?", id);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
+    unlink(file.filename);
     throw e;
   }
   res.status(201).json({ id: unitId, job_order: loadJobOrder(id) });
@@ -958,7 +1296,9 @@ function maybeCloseBatches(joId: number): void {
 }
 
 // POST /api/job-orders/:id/pause  &  /resume — no stock movement
-router.post('/:id/pause', writeGate, (req, res) => {
+// (inventory.adjust, or production.pause for a line lead trusted to hold the line — e.g. to
+// switch to a higher-priority job order). The reason and who paused are kept until resume.
+router.post('/:id/pause', pauseGate, (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -966,11 +1306,16 @@ router.post('/:id/pause', writeGate, (req, res) => {
     res.status(409).json({ error: `Cannot pause a job order that is ${jo.status}` });
     return;
   }
-  run("UPDATE job_orders SET status = 'paused', updated_at = datetime('now') WHERE id = ?", id);
+  const { reason } = parseBody(pauseJobOrderSchema, req.body ?? {});
+  run(
+    `UPDATE job_orders SET status = 'paused', paused_by = ?, paused_at = datetime('now'), pause_reason = ?,
+       updated_at = datetime('now') WHERE id = ?`,
+    req.user!.id, reason ?? null, id
+  );
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
-router.post('/:id/resume', writeGate, (req, res) => {
+router.post('/:id/resume', pauseGate, (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -978,7 +1323,11 @@ router.post('/:id/resume', writeGate, (req, res) => {
     res.status(409).json({ error: 'Only a paused job order can be resumed' });
     return;
   }
-  run("UPDATE job_orders SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?", id);
+  run(
+    `UPDATE job_orders SET status = 'in_progress', paused_by = NULL, paused_at = NULL, pause_reason = NULL,
+       updated_at = datetime('now') WHERE id = ?`,
+    id
+  );
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
@@ -1408,6 +1757,12 @@ router.put('/:id/units/:unitId/identifier', recordGate, (req, res) => {
     unitId
   );
   res.json({ ok: true });
+});
+
+// Multer errors on the unit photo (file too large, wrong field) → 400
+router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof multer.MulterError) { res.status(400).json({ error: `Upload failed: ${err.message}` }); return; }
+  next(err);
 });
 
 export default router;

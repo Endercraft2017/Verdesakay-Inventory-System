@@ -300,14 +300,18 @@ function saleLines(orderId: number): FulfilLine[] {
 }
 
 /** Move a firm sale's goods out of stock (and reverse the move when pulled back), keeping
- *  perpetual inventory + COGS in step. Only acts while the general ledger is on — turning
- *  the GL on is what opts a tenant into perpetual inventory. `force` = 'release' runs the
+ *  perpetual inventory + COGS in step. Acts while the general ledger is on (turning the GL on
+ *  opts a tenant into perpetual inventory), and also — without COGS — for any sale whose goods
+ *  left on a release slip, since that slip is the physical stock-out. `force` = 'release' runs the
  *  restore branch regardless of status (used just before a sale is deleted). Best-effort. */
 export function maybeFulfillSale(orderId: number, userId: number | null, force?: 'release'): void {
   try {
-    if (!ledgerEnabled()) return;
     const o = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
     if (!o || o.type !== 'sale') return;
+    // Stock follows the sale when the ledger is on (perpetual inventory), or — ledger or not —
+    // once a release slip recorded the goods physically leaving. COGS only posts with the ledger.
+    const ledger = ledgerEnabled();
+    if (!ledger && !queryOne('SELECT id FROM release_slips WHERE order_id = ?', orderId)) return;
     const wantFulfilled = force === 'release' ? false : CONFIRMED_SALE.has(String(o.status || '').toLowerCase());
     if (wantFulfilled === !!o.fulfilled_at) return;   // already in the right state
 
@@ -338,6 +342,7 @@ export function maybeFulfillSale(orderId: number, userId: number | null, force?:
       db.exec('COMMIT');
     } catch (e) { db.exec('ROLLBACK'); throw e; }
 
+    if (!ledger) return;
     if (wantFulfilled) {
       // `fulfilled_at` (just set above) is the idempotency guard — this block only runs on
       // the not-fulfilled → fulfilled transition, so post unconditionally. A stale reversal

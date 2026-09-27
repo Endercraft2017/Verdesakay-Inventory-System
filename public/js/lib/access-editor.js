@@ -46,6 +46,8 @@ window.AccessEditor = (() => {
       { key: 'qc.configure', label: 'Configure QC checklists', desc: 'Set up QC checklists and inspection criteria' },
     ] },
     { label: 'Production', items: [
+      { key: 'production.approve', label: 'Approve job orders', desc: 'Sign off a draft job order so the warehouse can release its parts' },
+      { key: 'production.pause', label: 'Pause / resume job orders', desc: 'Hold a running job order (e.g. for a higher-priority one) and continue it later' },
       { key: 'production.repairs', label: 'Accept/reject parts requests', desc: 'Warehouse: issue or decline parts a rework unit needs' },
       { key: 'production.record', label: 'Record production', desc: 'Add finished units/batches off the line' },
       { key: 'production.inspect_qc', label: 'Inspect units (QC, first pass)', desc: 'Pass/fail units and batches on the first inspection pass, request repair parts' },

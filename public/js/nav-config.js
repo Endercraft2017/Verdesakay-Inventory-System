@@ -18,7 +18,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'announcements', 'sop'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'announcements', 'sop'];
 
 const NAV = [
   {
@@ -75,6 +75,15 @@ const NAV = [
           { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
           { label: 'Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
           { label: 'Purchase Orders', icon: 'adjust', route: 'orders', filter: { type: 'purchase' } },
+        ],
+      },
+      {
+        /* Warehouse side of a sale order, in pipeline order: accept an approved SO -> pick /
+           scan it out -> issue the release slip (stock leaves here) -> slip history. */
+        id: 'releasing', label: 'Releasing', requiredPermission: 'orders.view',
+        tree: [
+          { label: 'Release Queue', icon: 'inbox', route: 'releasing', filter: { tab: 'queue' } },
+          { label: 'Release Slips', icon: 'sheet', route: 'releasing', filter: { tab: 'slips' } },
         ],
       },
       {

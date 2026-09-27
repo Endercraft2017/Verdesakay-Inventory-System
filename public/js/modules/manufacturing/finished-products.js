@@ -5,6 +5,7 @@ App.register('finished-products', async (view, filter) => {
   const canWrite = App.hasPermission('inventory.edit');
   const canConfigQc = App.hasPermission('qc.configure');
   const canAdjust = App.hasPermission('inventory.adjust');
+  const canCreate = App.hasPermission('inventory.create');
   let list = [];
   let allItems = [];
   let checklists = [];
@@ -74,17 +75,35 @@ App.register('finished-products', async (view, filter) => {
     });
   }
 
-  function componentSelect(productId, selected) {
-    return '<option value="">— component —</option>' +
-      allItems
-        .filter((i) => String(i.id) !== String(productId))
-        .map((i) => `<option value="${i.id}" ${String(i.id) === String(selected) ? 'selected' : ''}>${UI.esc(i.name)}${i.sku ? ' (' + UI.esc(i.sku) + ')' : ''}</option>`)
-        .join('');
+  // UI.combo escapes labels itself, so these stay raw.
+  const itemLabel = (i) => i.name + (i.sku ? ' (' + i.sku + ')' : '');
+  // Items that can become a new finished product — ones already flagged would have their BOM
+  // silently replaced, so those are edited from the table instead.
+  const productOptions = () => allItems
+    .filter((i) => !list.some((p) => p.id === i.id))
+    .map((i) => ({ value: i.id, label: itemLabel(i) }));
+  // Any item can be a component except the product being built.
+  const componentOptions = (productId) => allItems
+    .filter((i) => String(i.id) !== String(productId))
+    .map((i) => ({ value: i.id, label: itemLabel(i) }));
+
+  // Create a bare inventory item (name only) straight from a picker; the rest of its details
+  // can be filled in later from Inventory.
+  async function createItem(name) {
+    if (!name) { UI.toast('Type the new item\'s name first', 'error'); return null; }
+    try {
+      const r = await API.post('/inventory', { name });
+      const item = { id: Number(r.id), name, sku: null };
+      allItems.push(item);
+      allItems.sort((a, b) => a.name.localeCompare(b.name));
+      UI.toast(`Created item "${name}"`);
+      return item;
+    } catch (e) { UI.toast(e.message, 'error'); return null; }
   }
 
-  function compRow(productId, c) {
-    return `<div class="bom-row">
-      <select data-c="item">${componentSelect(productId, c && c.component_item_id)}</select>
+  function compRow(c) {
+    return `<div class="bom-row" data-sel="${c && c.component_item_id || ''}">
+      <div data-c="item"></div>
       <input data-c="qty" type="number" min="1" step="1" value="${c ? c.quantity : 1}" style="width:90px" title="Quantity per 1 finished unit" />
       <input data-c="notes" placeholder="Notes (optional)" value="${UI.esc(c && c.notes || '')}" />
       <button type="button" class="icon-btn danger" data-c="rm" title="Remove">${UI.icon('trash')}</button>
@@ -111,10 +130,7 @@ App.register('finished-products', async (view, filter) => {
     const pickerHTML = existing
       ? `<p class="muted" style="margin-top:0">Product: <strong>${UI.esc(existing.name)}</strong></p>`
       : `<div class="form-field span2"><div class="field-label"><label>Item to build <span class="req">*</span></label></div>
-          <select data-f="product">
-            <option value="">— pick an item —</option>
-            ${allItems.map((i) => `<option value="${i.id}">${UI.esc(i.name)}${i.sku ? ' (' + UI.esc(i.sku) + ')' : ''}</option>`).join('')}
-          </select></div>`;
+          <div id="fp-product-combo"></div></div>`;
 
     const copyFromHTML = list.length ? `
       <div class="field-row" style="align-items:flex-end;gap:8px;margin:10px 0">
@@ -132,13 +148,13 @@ App.register('finished-products', async (view, filter) => {
         ${opts.map((c) => `<option value="${c.id}" ${String(c.id) === String(currentId) ? 'selected' : ''}>${UI.esc(c.name)}${c.is_default ? ' (default)' : ''}</option>`).join('')}`;
     };
     const checklistHTML = `
-      <div class="field-row" style="margin-top:6px">
+      <div class="field-row" style="margin-top:12px">
         <div><label>QC checklist</label><select data-f="checklist-qc">${checklistOptions(1, currentChecklistQcId)}</select></div>
         <div><label>QA checklist</label><select data-f="checklist-qa">${checklistOptions(2, currentChecklistQaId)}</select></div>
       </div>`;
 
     const costHTML = `
-      <div class="form-field span2" style="margin-top:6px"><div class="field-label"><label>Standard costs per unit (optional)</label></div>
+      <div class="form-field span2" style="margin-top:16px"><div class="field-label"><label>Standard costs per unit (optional)</label></div>
         <div class="field-row">
           <div><label class="muted" style="font-size:12px">Labor</label>
             <input data-f="labor" type="number" min="0" step="0.01" value="${currentLabor}" placeholder="0.00" /></div>
@@ -148,35 +164,81 @@ App.register('finished-products', async (view, filter) => {
         <p class="muted" style="font-size:11px;margin:4px 0 0">Added on top of the rolled-up material cost when set — used for the standard unit cost and to value finished units into stock.</p>
       </div>`;
 
+    // Shared by onOpen (wires the pickers) and onConfirm (reads them).
+    const rowCombos = new Map(); // .bom-row element → UI.combo handle
+    let pidNow = () => productId;
+
     UI.modal({
       title: existing ? `Bill of materials — ${existing.name}` : 'New finished product',
       size: 'lg',
       bodyHTML: `
         ${pickerHTML}
-        ${checklistHTML}
-        ${costHTML}
         ${copyFromHTML}
         <h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Components (per 1 unit)</h4>
-        <div id="bom-rows">${(bom.length ? bom : [null]).map((c) => compRow(productId, c)).join('')}</div>
-        <button type="button" class="btn secondary small" id="bom-add" style="margin-top:8px">${UI.icon('plus')} Add component</button>`,
+        <div id="bom-rows">${(bom.length ? bom : [null]).map((c) => compRow(c)).join('')}</div>
+        <button type="button" class="btn secondary small" id="bom-add" style="margin-top:8px">${UI.icon('plus')} Add component</button>
+        ${costHTML}
+        ${checklistHTML}`,
       confirmText: existing ? 'Save BOM' : 'Create',
       onOpen: (ov) => {
         const rowsEl = ov.querySelector('#bom-rows');
-        const prodSel = ov.querySelector('[data-f="product"]');
-        const pidNow = () => (prodSel ? prodSel.value : productId);
+        const productHost = ov.querySelector('#fp-product-combo');
+        let productCombo = null;
+        pidNow = () => (productCombo ? productCombo.getValue() : productId);
+        const refreshOptions = () => {
+          if (productCombo) productCombo.setOptions(productOptions());
+          rowCombos.forEach((cb) => cb.setOptions(componentOptions(pidNow())));
+        };
+        const wireRow = (rowEl) => {
+          const cb = UI.combo(rowEl.querySelector('[data-c="item"]'), componentOptions(pidNow()), {
+            selected: rowEl.dataset.sel ? Number(rowEl.dataset.sel) : null,
+            placeholder: 'Type to search parts…',
+            emptyText: 'No matching item',
+            action: canCreate ? {
+              label: '+ Create new item',
+              onClick: async (typed) => {
+                const item = await createItem(typed);
+                if (!item) return;
+                refreshOptions();
+                cb.setSelected(item.id);
+              },
+            } : undefined,
+          });
+          rowCombos.set(rowEl, cb);
+        };
+        rowsEl.querySelectorAll('.bom-row').forEach(wireRow);
+
+        if (productHost) {
+          productCombo = UI.combo(productHost, productOptions(), {
+            placeholder: 'Type to search items, or a new product name…',
+            emptyText: 'No matching item',
+            // Keep component options in sync with the chosen product (exclude self).
+            onSelect: (pid) => {
+              rowCombos.forEach((cb) => { if (String(cb.getValue()) === String(pid)) cb.setSelected(null); });
+              refreshOptions();
+            },
+            action: canCreate ? {
+              label: '+ Create new product item',
+              onClick: async (typed) => {
+                const item = await createItem(typed);
+                if (!item) return;
+                refreshOptions();
+                productCombo.setSelected(item.id);
+              },
+            } : undefined,
+          });
+        }
+
         ov.querySelector('#bom-add').onclick = () => {
-          rowsEl.insertAdjacentHTML('beforeend', compRow(pidNow(), null));
+          rowsEl.insertAdjacentHTML('beforeend', compRow(null));
+          wireRow(rowsEl.lastElementChild);
         };
         rowsEl.addEventListener('click', (e) => {
           const rm = e.target.closest('[data-c="rm"]');
-          if (rm) rm.closest('.bom-row').remove();
-        });
-        // Keep component options in sync with the chosen product (exclude self).
-        if (prodSel) prodSel.addEventListener('change', () => {
-          rowsEl.querySelectorAll('[data-c="item"]').forEach((sel) => {
-            const keep = sel.value;
-            sel.innerHTML = componentSelect(prodSel.value, keep);
-          });
+          if (!rm) return;
+          const row = rm.closest('.bom-row');
+          rowCombos.delete(row);
+          row.remove();
         });
         // Copy the BOM of another product into the editor (as a starting point).
         const copyBtn = ov.querySelector('#bom-copy');
@@ -188,21 +250,22 @@ App.register('finished-products', async (view, filter) => {
             const src = await API.get('/finished-products/' + from);
             const lines = (src.bom || []);
             if (!lines.length) { UI.toast('That product has no components', 'error'); return; }
-            rowsEl.innerHTML = lines.map((c) => compRow(pidNow(), {
+            rowCombos.clear();
+            rowsEl.innerHTML = lines.map((c) => compRow({
               component_item_id: c.component_item_id, quantity: c.quantity, notes: c.notes,
             })).join('');
+            rowsEl.querySelectorAll('.bom-row').forEach(wireRow);
             UI.toast(`Copied ${lines.length} component${lines.length === 1 ? '' : 's'} — review and save`);
           } catch (e) { UI.toast(e.message, 'error'); }
           finally { copyBtn.disabled = false; }
         };
       },
       onConfirm: async (ov, showErr) => {
-        const prodSel = ov.querySelector('[data-f="product"]');
-        const pid = prodSel ? prodSel.value : productId;
+        const pid = pidNow();
         if (!pid) { showErr('Pick an item to build'); return false; }
         const components = [];
         for (const row of ov.querySelectorAll('.bom-row')) {
-          const item = row.querySelector('[data-c="item"]').value;
+          const item = rowCombos.get(row).getValue();
           const qty = parseInt(row.querySelector('[data-c="qty"]').value, 10);
           const notes = row.querySelector('[data-c="notes"]').value.trim();
           if (!item) continue;

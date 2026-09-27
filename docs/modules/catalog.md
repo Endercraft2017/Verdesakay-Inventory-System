@@ -93,10 +93,15 @@ Pre-existing; not fixed by this reorg.
 
 **Responsibility:** items, stock levels, suppliers, customers, locations, sale/purchase
 orders (the order shell — 3-way-match purchase logic lives in `purchasing/`),
-deliveries.
+sale-order releasing (warehouse acceptance → pick → release slip), deliveries.
 **Owned files:** `inventory-stock.ts`, routes: `inventory.routes.ts`,
 `suppliers.routes.ts`, `customers.routes.ts`, `locations.routes.ts`,
-`deliveries.routes.ts`, `orders.routes.ts`.
+`deliveries.routes.ts`, `orders.routes.ts`, `release-slips.routes.ts`.
+UI: desktop Inventory → Releasing (`public/js/modules/inventory/releasing.js`),
+mobile `so` view (`public/mobile/modules/inventory/so.js`).
+**Owned data (releasing):** `orders.warehouse_accepted_by/_at`, `release_slips`,
+`release_slip_items` (snapshot of lines + unit serials); photos are core `attachments`
+kind `release` (ref = slip id).
 **Public interface:** stock-mutation functions in `inventory-stock.ts` (called
 directly by `manufacturing/`, `purchasing/`, and `modules/ai/ai-tools.ts`).
 **Dependencies:** `shared/`.
@@ -106,11 +111,26 @@ directly by `manufacturing/`, `purchasing/`, and `modules/ai/ai-tools.ts`).
 
 **Responsibility:** BOM / finished products, job orders, QC dispositions, production
 batches/teams/scheduling.
-**Owned files:** `bom-explode.ts`, `bom-resolvers.ts`, routes: `bom.routes.ts`,
-`job-orders.routes.ts`, `qc.routes.ts`, `production.routes.ts`.
+**Owned files:** `bom-explode.ts`, `bom-resolvers.ts`, `parts-slip-print.ts`, routes:
+`bom.routes.ts`, `job-orders.routes.ts`, `qc.routes.ts`, `production.routes.ts`,
+`parts-slips.routes.ts` (`/api/parts-slips`), `production-issues.routes.ts`
+(`/api/production-issues`).
+**Owned data (additions):** `parts_release_slips` / `parts_release_slip_items`,
+`production_issues`, `job_order_components.qty_picked`.
 **Dependencies:** `modules/inventory` (stock consumption/output),
 `modules/accounting` (`accounting-autopost.ts`, to post job-order costs).
-**Status:** working.
+**Pre-release interface (job orders):** `POST /job-orders/:id/approve|unapprove`
+(`production.approve`, not implied by `inventory.adjust`), `GET /job-orders/:id/availability`
+(component need vs. on-hand at the source location + `releasable`), and
+`GET /job-orders?stage=awaiting_approval|awaiting_release|awaiting_warehouse|preparing|ready_to_release`.
+**Warehouse release interface:** `POST /job-orders/warehouse-accept`, `POST /job-orders/prepare`
+(bulk), `GET /job-orders/pick-list?ids=[&format=html]`, `POST /job-orders/:id/release`
+(issues the `PRS-#####` parts release slip, deducts stock). **Floor:** `POST /job-orders/:id/units`
+is multipart and requires the photo; pause/resume accept `production.pause`; issue reports
+live at `/api/production-issues`. Uses `core/attachments.routes.ts` (`imageUpload`,
+`saveAttachment`) for photos sent together with the record they belong to.
+**Status:** working. Open gaps from the 2026-09-27 walkthrough:
+`docs/PRODUCTION-WALKTHROUGH-GAPS.md`.
 
 ## modules/purchasing
 

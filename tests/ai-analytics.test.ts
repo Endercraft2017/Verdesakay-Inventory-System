@@ -190,6 +190,9 @@ describe('ai-analytics: manufacturing reports', () => {
     const c = (await ctx.api.post('/api/inventory').set(authHdr()).send({ name: 'AA MFG Part', quantity: 100 })).body.id;
     await ctx.api.put(`/api/finished-products/${p}`).set(authHdr()).send({ components: [{ component_item_id: c, quantity: 1 }] });
     const mo = (await ctx.api.post('/api/job-orders').set(authHdr()).send({ product_item_id: p, qty_ordered: 3, qc_stages: 1 })).body.id;
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${mo}/accept`).set(authHdr());
     await addSerializedUnits(ctx.api, token, mo, 3, 'AAMFG');

@@ -383,6 +383,53 @@ export const jobOrderProgressSchema = z
     separate from jobOrderProgressSchema's bulk done_delta. batch_label is optional —
     same grouping label a bulk progress entry used to take, just applied one unit at a
     time (repeat calls with the same label add to that job order's open batch of it). */
+// ---- Job-order parts release (warehouse) + floor tools ----
+
+const idList = z.array(z.coerce.number().int().positive()).min(1, 'Pick at least one job order').max(200);
+
+/** POST /job-orders/warehouse-accept — take on one or more approved drafts. */
+export const jobOrderIdsSchema = z.object({ job_order_ids: idList });
+
+/** POST /job-orders/prepare — picked quantities for one or more job orders. Leaving `lines`
+ *  out picks that job order's whole planned kit. */
+export const prepareJobOrdersSchema = z.object({
+  job_orders: z.array(z.object({
+    id: z.coerce.number().int().positive(),
+    lines: z.array(z.object({
+      component_item_id: z.coerce.number().int().positive(),
+      qty_picked: z.coerce.number().int().min(0),
+    })).optional(),
+  })).min(1, 'Pick at least one job order').max(200),
+});
+
+/** POST /job-orders/:id/release — issuing the parts release slip. */
+export const releaseJobOrderSchema = z.object({
+  received_by: trimmed.max(160).optional().nullable(),
+  notes: optionalText,
+});
+
+export const pauseJobOrderSchema = z.object({
+  reason: trimmed.max(500).optional().nullable(),
+});
+
+const ISSUE_SEVERITIES = ['low', 'normal', 'high', 'critical'] as const;
+export const createProductionIssueSchema = z.object({
+  job_order_id: z.coerce.number().int().positive(),
+  unit_id: z.coerce.number().int().positive().optional().nullable(),
+  category: trimmed.min(1, 'Pick what the issue is about').max(80),
+  severity: z.enum(ISSUE_SEVERITIES).optional(),
+  description: trimmed.min(1, 'Describe the issue').max(4000),
+});
+export const updateProductionIssueSchema = z.object({
+  unit_id: z.coerce.number().int().positive().optional().nullable(),
+  category: trimmed.min(1).max(80).optional(),
+  severity: z.enum(ISSUE_SEVERITIES).optional(),
+  description: trimmed.min(1).max(4000).optional(),
+});
+export const resolveProductionIssueSchema = z.object({
+  resolution: trimmed.max(2000).optional().nullable(),
+});
+
 export const addUnitSchema = z.object({
   identifier: trimmed.min(1, 'An identifier is required for each unit').max(120),
   batch_label: trimmed.max(80).optional().nullable(),
@@ -672,6 +719,13 @@ export const unreserveOrderSchema = z.object({
     item_id: z.coerce.number().int().positive(),
     quantity: numCoerce.positive().max(1_000_000),
   })).max(300).optional(),
+});
+
+// Issuing a release slip — who physically collected the goods, and the vehicle they left in.
+export const releaseSlipSchema = z.object({
+  collected_by: trimmed.min(1, 'Enter who collected the goods').max(160),
+  vehicle_plate: optionalText,
+  notes: optionalText,
 });
 
 // ---- Purchasing: goods receipts + vendor bills (3-way match) ----

@@ -82,6 +82,9 @@ describe('production teams', () => {
     expect(!!lrow.overdue).toBe(true);
 
     // re-plan after release
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo.body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo.body.id }] });
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(H());
     await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(H());
     const resched = await ctx.api.put(`/api/job-orders/${mo.body.id}/schedule`).set(H())

@@ -26,6 +26,9 @@ describe('production record — unit dossier', () => {
 
     const mo = (await ctx.api.post('/api/job-orders').set(H())
       .send({ product_item_id: product, qty_ordered: 1, qc_stages: 1 })).body.id;
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
     await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
     await addSerializedUnits(ctx.api, token, mo, 1, 'DOSSIER');
@@ -62,8 +65,8 @@ describe('production record — unit dossier', () => {
     expect(rec.body.repairs.length).toBe(1);
     expect(rec.body.repairs[0].status).toBe('accepted');
     expect(rec.body.movements.some((m: { reason: string }) => /produced|passed QC|received/i.test(m.reason))).toBe(true);
-    expect(rec.body.photos).toHaveLength(1);
-    expect(rec.body.photos[0].url).toBe(photo.body.url);
+    expect(rec.body.photos).toHaveLength(2); // the off-the-line photo sent with the unit + this one
+    expect(rec.body.photos[1].url).toBe(photo.body.url);
   });
 
   it('assembles a batch dossier with its units + QC sign-off', async () => {
@@ -73,6 +76,9 @@ describe('production record — unit dossier', () => {
       .send({ components: [{ component_item_id: part, quantity: 1 }] });
     const mo = (await ctx.api.post('/api/job-orders').set(H())
       .send({ product_item_id: product, qty_ordered: 3, qc_stages: 0 })).body.id;
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
     await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
     await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 3, batch_label: 'LOT-Z' });

@@ -5,7 +5,7 @@ import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
   parseBody, createOrderSchema, updateOrderSchema, orderStatusSchema,
-  releaseOrderSchema, unreserveOrderSchema,
+  releaseOrderSchema, unreserveOrderSchema, releaseSlipSchema,
 } from '../../shared/validation';
 import { getQboStatus, pushOrder } from '../quickbooks/quickbooks';
 import { maybeAutoPostSale, maybeFulfillSale, unpostSource } from '../accounting/accounting-autopost';
@@ -144,11 +144,15 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   const order = queryOne<Order>(
     `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name,
-            jo.id AS job_order_id, jo.number AS job_order_number, jo.status AS job_order_status
+            jo.id AS job_order_id, jo.number AS job_order_number, jo.status AS job_order_status,
+            wa.full_name AS warehouse_accepted_by_name,
+            rs.id AS release_slip_id, rs.number AS release_slip_number
      FROM orders o
      LEFT JOIN users u ON u.id = o.created_by
      LEFT JOIN suppliers s ON s.id = o.supplier_id
      LEFT JOIN job_orders jo ON jo.id = (SELECT id FROM job_orders WHERE order_id = o.id ORDER BY id DESC LIMIT 1)
+     LEFT JOIN users wa ON wa.id = o.warehouse_accepted_by
+     LEFT JOIN release_slips rs ON rs.order_id = o.id
      WHERE o.id = ?`,
     Number(req.params.id)
   );
@@ -368,7 +372,83 @@ export function releaseTeardown(orderId: number): void {
     orderId
   );
   run('UPDATE order_items SET released_qty = 0 WHERE order_id = ?', orderId);
+  // Re-opened/cancelled: a re-approved order goes back through warehouse acceptance.
+  run('UPDATE orders SET warehouse_accepted_at = NULL, warehouse_accepted_by = NULL WHERE id = ?', orderId);
 }
+
+// POST /api/orders/:id/accept-release — the warehouse takes on an approved sale order for
+// releasing. Picking (/release) is refused until this is done.
+router.post('/:id/accept-release', releaseGate, (req, res) => {
+  const id = Number(req.params.id);
+  const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
+  if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
+  if (!RELEASE_STATES.has(String(order.status || '').toLowerCase())) {
+    res.status(409).json({ error: order.status === 'open'
+      ? 'The sale order must be approved before the warehouse can accept it.'
+      : `Cannot accept an order that is ${order.status}.` });
+    return;
+  }
+  if (order.warehouse_accepted_at) { res.json({ ok: true, order: orderWithLines(id) }); return; }
+  run(
+    "UPDATE orders SET warehouse_accepted_at = datetime('now'), warehouse_accepted_by = ?, updated_at = datetime('now') WHERE id = ?",
+    req.user!.id, id
+  );
+  res.json({ ok: true, order: orderWithLines(id) });
+});
+
+// POST /api/orders/:id/release-slip — issue the release slip for a fully released sale order:
+// the numbered record of what physically left (lines + unit serials, who collected it). Issuing
+// it confirms the order, which is when stock goes out (maybeFulfillSale). Photos of the
+// outgoing goods are attached afterwards as `attachments` kind 'release' on the slip id.
+router.post('/:id/release-slip', releaseGate, (req, res) => {
+  const id = Number(req.params.id);
+  const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
+  if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
+  if (queryOne('SELECT id FROM release_slips WHERE order_id = ?', id)) {
+    res.status(409).json({ error: 'A release slip was already issued for this order.' });
+    return;
+  }
+  if (String(order.status || '').toLowerCase() !== 'released') {
+    res.status(409).json({ error: 'Release every line of the order before issuing the release slip.' });
+    return;
+  }
+  const input = parseBody(releaseSlipSchema, req.body);
+  const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
+
+  let slipId: number;
+  db.exec('BEGIN');
+  try {
+    const number = nextSequence('release_slip_number', 'RS');
+    slipId = Number(run(
+      'INSERT INTO release_slips (number, order_id, released_by, collected_by, vehicle_plate, notes) VALUES (?, ?, ?, ?, ?, ?)',
+      number, id, req.user!.id, input.collected_by, input.vehicle_plate ?? null, input.notes ?? null
+    ).lastInsertRowid);
+    for (const l of lines) {
+      if (l.item_id == null) continue; // free-text / service lines — nothing physical leaves
+      const serials = queryAll<{ identifier: string | null }>(
+        `SELECT identifier FROM job_order_units
+         WHERE order_id = ? AND product_item_id = ? AND status IN ('reserved', 'sold') ORDER BY id`,
+        id, l.item_id
+      ).map((u) => u.identifier).filter(Boolean);
+      run(
+        `INSERT INTO release_slip_items (slip_id, order_item_id, item_id, name, sku, unit, quantity, unit_identifiers)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        slipId, l.id, l.item_id, l.name, l.sku ?? null, l.unit ?? null, l.quantity,
+        serials.length ? serials.join(', ') : null
+      );
+    }
+    run("UPDATE orders SET status = 'confirmed', updated_at = datetime('now') WHERE id = ?", id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  // Goods have left: post the sale and draw the stock down (COGS too when the ledger is on).
+  maybeAutoPostSale(id, req.user!.id);
+  maybeFulfillSale(id, req.user!.id);
+  maybeAutoPush(id);
+  res.status(201).json({ ok: true, id: slipId, order: orderWithLines(id) });
+});
 
 // POST /api/orders/:id/release — a warehouse releaser scans / enters goods out against an
 // approved sale order. Records only — reserves the serialized units + bumps each bulk
@@ -383,6 +463,10 @@ router.post('/:id/release', releaseGate, (req, res) => {
   }
   if (!RELEASE_STATES.has(String(order.status || '').toLowerCase())) {
     res.status(409).json({ error: `Cannot release goods against an order that is ${order.status}.` });
+    return;
+  }
+  if (!order.warehouse_accepted_at) {
+    res.status(409).json({ error: 'The warehouse must accept this order for releasing first.' });
     return;
   }
   const input = parseBody(releaseOrderSchema, req.body);
@@ -482,6 +566,10 @@ router.post('/:id/release/unreserve', releaseGate, (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
+  if (queryOne('SELECT id FROM release_slips WHERE order_id = ?', id)) {
+    res.status(409).json({ error: 'These goods already left on a release slip.' });
+    return;
+  }
   const input = parseBody(unreserveOrderSchema, req.body);
 
   db.exec('BEGIN');

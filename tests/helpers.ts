@@ -73,13 +73,13 @@ export async function addSerializedUnits(
 ): Promise<number[]> {
   const ids: number[] = [];
   for (let i = 0; i < count; i++) {
-    const res = await api
+    // Identifier + the required photo travel together as one multipart request.
+    let req = api
       .post(`/api/job-orders/${jobOrderId}/units`)
       .set('Authorization', `Bearer ${token}`)
-      .send({
-        identifier: `${identifierPrefix}-${Date.now()}-${i}-${Math.floor(Math.random() * 1e6)}`,
-        ...(batchLabel ? { batch_label: batchLabel } : {}),
-      });
+      .field('identifier', `${identifierPrefix}-${Date.now()}-${i}-${Math.floor(Math.random() * 1e6)}`);
+    if (batchLabel) req = req.field('batch_label', batchLabel);
+    const res = await req.attach('image', Buffer.from('unit-photo'), 'unit.png');
     if (res.status !== 201) throw new Error(`Failed to add unit: ${JSON.stringify(res.body)}`);
     ids.push(res.body.id as number);
   }

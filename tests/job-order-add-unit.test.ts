@@ -31,6 +31,9 @@ async function releasedMO(prefix: string, qty: number, qc_stages: number) {
   });
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages })).body.id;
+  await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+  await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+  await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
   await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
   return { mo, product };
@@ -39,7 +42,7 @@ async function releasedMO(prefix: string, qty: number, qc_stages: number) {
 describe('POST /api/job-orders/:id/units', () => {
   it('adds one unit with its identifier, consumes components, and counts toward the ordered qty', async () => {
     const { mo } = await releasedMO('AddUnit', 3, 1);
-    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'MTR-0001' });
+    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'MTR-0001').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(r.status).toBe(201);
     expect(r.body.job_order.status).toBe('in_progress');
 
@@ -53,21 +56,21 @@ describe('POST /api/job-orders/:id/units', () => {
 
   it('requires a non-empty identifier', async () => {
     const { mo } = await releasedMO('AddUnitNoId', 2, 1);
-    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: '  ' });
+    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', '  ').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(r.status).toBe(400);
   });
 
   it('refuses on a non-serialized (qc_stages = 0) job order', async () => {
     const { mo } = await releasedMO('AddUnitBatch', 2, 0);
-    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'X' });
+    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'X').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(r.status).toBe(400);
   });
 
   it('refuses once every ordered unit is accounted for', async () => {
     const { mo } = await releasedMO('AddUnitCap', 1, 1);
-    const ok = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'CAP-1' });
+    const ok = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'CAP-1').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(ok.status).toBe(201);
-    const over = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'CAP-2' });
+    const over = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'CAP-2').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(over.status).toBe(400);
   });
 
@@ -81,15 +84,15 @@ describe('POST /api/job-orders/:id/units', () => {
   it('needs inventory.adjust, not just inventory.view', async () => {
     const { mo } = await releasedMO('AddUnitPerm', 2, 1);
     const viewer = await createEmployee(ctx.api, token, { role: 'csr' });
-    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(bearer(viewer.token)).send({ identifier: 'X' });
+    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(bearer(viewer.token)).field('identifier', 'X').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(r.status).toBe(403);
   });
 
   it('groups units under a shared batch_label, one call per unit', async () => {
     const { mo } = await releasedMO('AddUnitBatchLabel', 3, 1);
-    const a = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'RUN-A', batch_label: 'RUN-7' });
-    const b = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'RUN-B', batch_label: 'RUN-7' });
-    const c = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'RUN-C' }); // no label
+    const a = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'RUN-A').field('batch_label', 'RUN-7').attach('image', Buffer.from('unit-photo'), 'unit.png');
+    const b = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'RUN-B').field('batch_label', 'RUN-7').attach('image', Buffer.from('unit-photo'), 'unit.png');
+    const c = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'RUN-C').attach('image', Buffer.from('unit-photo'), 'unit.png'); // no label
     expect([a.status, b.status, c.status]).toEqual([201, 201, 201]);
 
     const batches = (await ctx.api.get(`/api/production/batches?job_order=${mo}`).set(H())).body;
@@ -101,19 +104,33 @@ describe('POST /api/job-orders/:id/units', () => {
     expect(units.find((u) => u.identifier === 'RUN-C')!.batch_id).toBeNull();
   });
 
-  it('full sequence: add a unit, then attach its required photo via /attachments (kind: qc_unit)', async () => {
+  it('saves the photo with the unit in the same request (kind: qc_unit)', async () => {
     const { mo } = await releasedMO('AddUnitPhoto', 1, 1);
-    const added = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'PHOTO-1' });
+    const added = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'PHOTO-1').attach('image', PNG, 'unit.png');
     expect(added.status).toBe(201);
-    const unitId = added.body.id;
-
-    const photo = await ctx.api.post('/api/attachments').set(H())
-      .field('kind', 'qc_unit').field('ref_id', String(unitId))
-      .attach('image', PNG, 'unit.png');
-    expect(photo.status).toBe(201);
-
-    const list = (await ctx.api.get(`/api/attachments?kind=qc_unit&ref_id=${unitId}`).set(H())).body;
+    const list = (await ctx.api.get(`/api/attachments?kind=qc_unit&ref_id=${added.body.id}`).set(H())).body;
     expect(list).toHaveLength(1);
-    expect(list[0].url).toBe(photo.body.url);
+  });
+
+  it('refuses a unit without a photo, and creates nothing', async () => {
+    const { mo } = await releasedMO('AddUnitNoPhoto', 2, 1);
+    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'NOPHOTO-1' });
+    expect(r.status).toBe(400);
+    expect(r.body.needs_photo).toBe(true);
+    expect((await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body).toHaveLength(0);
+    const jo = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
+    expect(jo.components[0].qty_consumed).toBe(0);
+  });
+
+  it('lets a production lead (no inventory.adjust) add a unit with its photo, and inspectors add defect photos', async () => {
+    const { mo } = await releasedMO('AddUnitLeadPhoto', 1, 1);
+    const lead = await createEmployee(ctx.api, token, { role: 'production_lead' });
+    const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(bearer(lead.token))
+      .field('identifier', 'LEADPH-1').attach('image', PNG, 'unit.png');
+    expect(r.status).toBe(201);
+    const qc = await createEmployee(ctx.api, token, { role: 'qc_inspector' });
+    const defect = await ctx.api.post('/api/attachments').set(bearer(qc.token))
+      .field('kind', 'qc_unit').field('ref_id', String(r.body.id)).attach('image', PNG, 'defect.png');
+    expect(defect.status).toBe(201);
   });
 });

@@ -13,6 +13,8 @@ App.register('job-orders', async (view, filter) => {
   // section render at all) — which specific pass a qc_inspector/qa_inspector account
   // may actually perform is enforced per-unit by the server (see production-qc.js).
   const canRecord = canWrite || App.hasPermission('production.record');
+  // Approval is its own permission (production.approve), not implied by inventory.adjust.
+  const canApprove = App.hasPermission('production.approve');
   const canInspectHere = canWrite || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa');
   const STATUS = ['', 'draft', 'released', 'in_progress', 'paused', 'completed', 'cancelled'];
   const state = { status: '' };
@@ -394,15 +396,33 @@ App.register('job-orders', async (view, filter) => {
             </tr>`).join('')}</tbody>
           </table>`) : ''}
 
+        ${isDraft ? `<p class="muted" style="font-size:12px;margin:12px 0 0">${!jo.approved_at
+          ? 'Waiting for approval before the warehouse can release the parts.'
+          : !jo.warehouse_accepted_at ? `Approved by ${UI.esc(jo.approved_by_name || '—')} — waiting for the warehouse to accept.`
+          : !jo.prepared_at ? `Warehouse (${UI.esc(jo.warehouse_accepted_by_name || '—')}) is preparing the parts kit.`
+          : `Kit prepared by ${UI.esc(jo.prepared_by_name || '—')} — ready to release.`}</p>` : ''}
+        ${jo.parts_slip_id ? `<p class="muted" style="font-size:12px;margin:12px 0 0">Parts release slip <b>${UI.esc(jo.parts_slip_number)}</b>
+          <button type="button" class="btn secondary small" id="jo-slip-print">Print slip</button></p>` : ''}
+        ${jo.status === 'paused' && jo.pause_reason ? `<p class="muted" style="font-size:12px;margin:12px 0 0">Paused by ${UI.esc(jo.paused_by_name || '—')}: ${UI.esc(jo.pause_reason)}</p>` : ''}
+        ${isDraft && canApprove ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          ${jo.approved_at ? `<button type="button" class="btn secondary" data-do="unapprove">Withdraw approval</button>`
+                           : `<button type="button" class="btn" data-do="approve">Approve</button>`}
+        </div>` : ''}
         ${canWrite ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           ${jo.status !== 'completed' && jo.status !== 'cancelled' ? `<button type="button" class="btn secondary" id="jo-resched">Team / schedule…</button>` : ''}
-          ${isDraft ? `<button type="button" class="btn" data-do="release">Release</button>
+          ${isDraft ? `${jo.approved_at && !jo.warehouse_accepted_at ? `<button type="button" class="btn" data-do="_wh_accept">Accept (warehouse)</button>` : ''}
+                       ${jo.warehouse_accepted_at && !jo.prepared_at ? `<button type="button" class="btn" data-do="_prepare">Mark kit picked</button>` : ''}
+                       ${jo.prepared_at ? `<button type="button" class="btn" data-do="_release">Release &amp; issue slip</button>` : ''}
                        <button type="button" class="btn secondary danger" data-do="_delete">Delete</button>` : ''}
           ${running ? `<button type="button" class="btn secondary" data-do="pause">Pause</button>` : ''}
           ${jo.status === 'paused' ? `<button type="button" class="btn secondary" data-do="resume">Resume</button>` : ''}
           ${(running || jo.status === 'paused') ? `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>
                        <button type="button" class="btn secondary danger" data-do="cancel">Cancel</button>` : ''}
         </div>` : ''}`;
+
+      const slipPrint = el.querySelector('#jo-slip-print');
+      if (slipPrint) slipPrint.onclick = () => API.blobUrl('/parts-slips/' + jo.parts_slip_id + '/print')
+        .then((u) => window.open(u, '_blank')).catch((e) => UI.toast(e.message, 'error'));
 
       const rs = el.querySelector('#jo-resched');
       if (rs) rs.onclick = () => {
@@ -552,12 +572,12 @@ App.register('job-orders', async (view, filter) => {
           try {
             for (const p of pending) {
               progressEl.textContent = `Recording unit ${done + 1} of ${pending.length}…`;
-              const r = await API.post('/job-orders/' + id + '/units', { identifier: p.identifier, batch_label });
+              // Identifier + photo in one request — the server refuses a unit without its photo.
               const fd = new FormData();
+              fd.append('identifier', p.identifier);
+              if (batch_label) fd.append('batch_label', batch_label);
               fd.append('image', p.file, p.file.name || 'unit.jpg');
-              fd.append('kind', 'qc_unit');
-              fd.append('ref_id', String(r.id));
-              await API.upload('/attachments', fd);
+              const r = await API.upload('/job-orders/' + id + '/units', fd);
               jo = r.job_order;
               done++;
             }
@@ -606,6 +626,23 @@ App.register('job-orders', async (view, filter) => {
       el.querySelectorAll('[data-batch]').forEach((tr) => tr.onclick = () => App.navigate('production-batches', { id: tr.dataset.batch }));
       el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => {
         const d = b.dataset.do;
+        const bulk = (path, body) => API.post('/job-orders/' + path, body)
+          .then(async () => { jo = await API.get('/job-orders/' + id); UI.toast('Done'); draw(); load(); })
+          .catch((e) => UI.toast(e.message, 'error'));
+        if (d === '_wh_accept') { bulk('warehouse-accept', { job_order_ids: [Number(id)] }); return; }
+        if (d === '_prepare') { bulk('prepare', { job_orders: [{ id: Number(id) }] }); return; }
+        if (d === '_release') {
+          const who = window.prompt('Received by (production) — optional', jo.team_name || '');
+          if (who === null) return;
+          act('/release', { received_by: who.trim() || null });
+          return;
+        }
+        if (d === 'pause') {
+          const reason = window.prompt('Why pause this job order? (optional)', '');
+          if (reason === null) return;
+          act('/pause', { reason: reason.trim() || null });
+          return;
+        }
         if (d === '_delete') {
           UI.confirmDialog(`Delete draft ${jo.number}?`, 'Delete').then((ok) => {
             if (!ok) return;

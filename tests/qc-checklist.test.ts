@@ -38,6 +38,9 @@ async function releasedMO(prefix: string, qty: number, qc_stages: number, checkl
   });
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages })).body.id;
+  await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+  await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+  await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
   await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
   return { mo, product };

@@ -102,10 +102,28 @@
       view.appendChild(inspectCard);
     }
 
-    if (canAdjust && jo.status === 'draft') {
+    if (jo.status === 'draft') {
+      // Before release: approval (production.approve) → warehouse accepts → picks the kit →
+      // releases, which issues the parts release slip (server 409s any step out of order).
+      view.appendChild(mEl('<div class="m-hint">' + (!jo.approved_at
+        ? 'Waiting for approval before the parts can be released.'
+        : !jo.warehouse_accepted_at ? 'Approved by ' + mEsc(jo.approved_by_name || '—') + ' — waiting for the warehouse.'
+        : !jo.prepared_at ? 'Warehouse is preparing the parts kit.'
+        : 'Kit prepared — ready to release.') + '</div>'));
       var acts0 = mEl('<div class="m-actions"></div>');
-      addBtn(acts0, 'Release to production', function () { act(view, jo.id, 'release'); });
-      view.appendChild(acts0);
+      if (MApp.can('production.approve') && !jo.approved_at) addBtn(acts0, 'Approve', function () { act(view, jo.id, 'approve'); });
+      if (canAdjust && jo.approved_at && !jo.warehouse_accepted_at) addBtn(acts0, 'Accept (warehouse)', function () { bulk(view, jo.id, 'warehouse-accept', { job_order_ids: [jo.id] }); });
+      if (canAdjust && jo.warehouse_accepted_at && !jo.prepared_at) addBtn(acts0, 'Mark kit picked', function () { bulk(view, jo.id, 'prepare', { job_orders: [{ id: jo.id }] }); });
+      if (canAdjust && jo.prepared_at) addBtn(acts0, 'Release & issue slip', function () {
+        var who = window.prompt('Received by (production) — optional', jo.team_name || '');
+        if (who === null) return;
+        act(view, jo.id, 'release', { received_by: who.trim() || null });
+      });
+      if (acts0.children.length) view.appendChild(acts0);
+    }
+    if (jo.parts_slip_number) view.appendChild(mEl('<div class="m-hint">Parts release slip ' + mEsc(jo.parts_slip_number) + '</div>'));
+    if (jo.status === 'paused' && jo.pause_reason) {
+      view.appendChild(mEl('<div class="m-hint">Paused by ' + mEsc(jo.paused_by_name || '—') + ': ' + mEsc(jo.pause_reason) + '</div>'));
     }
     // The production lead signs for the released parts kit before any output can be
     // recorded (POST /:id/accept — the server 409s /progress and /units until then).
@@ -139,7 +157,14 @@
       };
       view.appendChild(prog);
     }
-    if (canAdjust && jo.status === 'paused') {
+    // production.pause: a line lead trusted to hold the line (e.g. for a higher-priority job order).
+    var canPause = canAdjust || MApp.can('production.pause');
+    if (!canAdjust && canPause && (jo.status === 'released' || jo.status === 'in_progress')) {
+      var actsP = mEl('<div class="m-actions"></div>');
+      addBtn(actsP, 'Pause', function () { pauseJo(view, jo); }, true);
+      view.appendChild(actsP);
+    }
+    if (canPause && jo.status === 'paused') {
       var actsR = mEl('<div class="m-actions"></div>');
       addBtn(actsR, 'Resume', function () { act(view, jo.id, 'resume'); });
       view.appendChild(actsR);
@@ -202,7 +227,7 @@
     var wrap = mEl('<div class="m-jo-more"></div>');
     var toggle = mEl('<button type="button" class="m-jo-more-toggle">⋯ More actions</button>');
     var body = mEl('<div class="m-actions" hidden></div>');
-    addBtn(body, 'Pause', function () { act(view, jo.id, 'pause'); }, true);
+    addBtn(body, 'Pause', function () { pauseJo(view, jo); }, true);
     addBtn(body, 'Close out early', function () { act(view, jo.id, 'close'); }, true);
     toggle.onclick = function () {
       body.hidden = !body.hidden;
@@ -215,8 +240,8 @@
 
   // Serialized (QC-gated) job orders: scrap stays a bulk count via /progress, but each
   // finished unit needs its own identifier + a required photo, so it's added one at a
-  // time through POST /:id/units + POST /attachments (kind 'qc_unit') — the same
-  // attachment kind QC/QA's pass/fail flow already uses for defect photos. `rows` holds
+  // time through POST /:id/units, identifier + photo in one multipart request (saved as
+  // attachment kind 'qc_unit', the same kind QC/QA's pass/fail flow uses for defect photos). `rows` holds
   // { identifier, file } per unit (index-aligned with the on-screen rows); a File is
   // kept in memory from mPhoto.pickFile() rather than a native <input type=file>, so
   // redrawing a row on count-change doesn't lose an already-picked photo.
@@ -321,10 +346,13 @@
       rows.forEach(function (r) {
         chain = chain.then(function () {
           progressEl.textContent = 'Recording unit ' + (succeeded.length + 1) + ' of ' + total + '…';
-          return API.post('/job-orders/' + jo.id + '/units', { identifier: r.identifier.trim(), batch_label })
-            .then(function (res) {
-              return mPhoto.attachBlob('qc_unit', res.id, r.file, r.file.name || 'unit.jpg').then(function () { succeeded.push(r); });
-            });
+          // Identifier + photo in one request — the server refuses a unit without its photo.
+          var fd = new FormData();
+          fd.append('identifier', r.identifier.trim());
+          if (batch_label) fd.append('batch_label', batch_label);
+          fd.append('image', r.file, r.file.name || 'unit.jpg');
+          return API.upload('/job-orders/' + jo.id + '/units', fd)
+            .then(function () { succeeded.push(r); });
         });
       });
       chain.then(function () {
@@ -337,6 +365,19 @@
         submitBtn.disabled = false;
       });
     };
+  }
+
+  function pauseJo(view, jo) {
+    var reason = window.prompt('Why pause this job order? (optional)', '');
+    if (reason === null) return;
+    act(view, jo.id, 'pause', { reason: reason.trim() || null });
+  }
+
+  // Warehouse steps that take one or more job orders (POST /job-orders/<path>).
+  function bulk(view, id, path, body) {
+    return API.post('/job-orders/' + path, body)
+      .then(function () { open1(view, id); })
+      .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); });
   }
 
   function addBtn(host, label, fn, secondary) {

@@ -17,9 +17,12 @@ import bomRoutes from './modules/manufacturing/bom.routes';
 import jobOrdersRoutes from './modules/manufacturing/job-orders.routes';
 import qcRoutes from './modules/manufacturing/qc.routes';
 import productionRoutes from './modules/manufacturing/production.routes';
+import partsSlipsRoutes from './modules/manufacturing/parts-slips.routes';
+import productionIssuesRoutes from './modules/manufacturing/production-issues.routes';
 import attachmentsRoutes from './core/attachments.routes';
 import bugReportsRoutes from './core/bug-reports.routes';
 import deliveriesRoutes from './modules/inventory/deliveries.routes';
+import releaseSlipsRoutes from './modules/inventory/release-slips.routes';
 import formsRoutes from './core/forms.routes';
 import messagesRoutes from './core/messages.routes';
 import personalRoutes from './core/personal.routes';
@@ -178,9 +181,12 @@ export function createApp() {
   app.use('/api/job-orders', requireModule('manufacturing'), jobOrdersRoutes);
   app.use('/api/qc', requireModule('manufacturing'), qcRoutes);
   app.use('/api/production', requireModule('manufacturing'), productionRoutes);
+  app.use('/api/parts-slips', requireModule('manufacturing'), partsSlipsRoutes);
+  app.use('/api/production-issues', requireModule('manufacturing'), productionIssuesRoutes);
   app.use('/api/attachments', attachmentsRoutes);
   app.use('/api/bug-reports', bugReportsRoutes);
   app.use('/api/deliveries', requireModule('inventory'), deliveriesRoutes);
+  app.use('/api/release-slips', requireModule('inventory'), releaseSlipsRoutes);
   app.use('/api/forms', formsRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks

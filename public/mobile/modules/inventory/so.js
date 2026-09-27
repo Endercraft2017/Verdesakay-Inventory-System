@@ -1,6 +1,7 @@
-/* Sale Order release — the warehouse releaser opens an approved SO, scans every unit's
+/* Sale Order release — the warehouse releaser accepts an approved SO, scans every unit's
    printed QR label to add it to the order (and enters a quantity for non-serialized
-   lines). Records only: stock is drawn down later when the SO is confirmed/completed.
+   lines), then issues the release slip (who collected it + photos of the goods). Scanning
+   is records only; issuing the slip confirms the SO, which is when stock goes out.
    #/so  → list of approved / released SOs   ·   #/so?id=<id>  → release screen */
 (function () {
   var RELEASABLE = ['approved', 'released'];
@@ -23,7 +24,7 @@
             '<li class="m-list-row"><div><b>' + mEsc(o.number) + '</b>' +
             '<span>' + mEsc(o.customer_name || 'walk-in') + '</span></div>' +
             '<div class="m-list-qty"><span class="m-jo-status ' + (o.status === 'released' ? 'completed' : 'released') + '">' +
-            mEsc(o.status) + '</span></div></li>'
+            mEsc(o.warehouse_accepted_at ? o.status : 'to accept') + '</span></div></li>'
           );
           li.onclick = function () { MApp.go('so', { id: o.id }); };
           ul.appendChild(li);
@@ -55,12 +56,15 @@
       return;
     }
     var releasable = RELEASABLE.indexOf(String(order.status).toLowerCase()) !== -1;
+    var accepted = !!order.warehouse_accepted_at;
 
     view.appendChild(mEl(
       '<div class="m-jo-head"><h2>' + mEsc(order.customer_name || 'Walk-in') + '</h2>' +
       '<div class="m-jo-meta">' + mEsc(order.number) + ' · <span class="m-jo-status ' +
       (order.status === 'released' ? 'completed' : 'released') + '">' + mEsc(order.status) + '</span></div>' +
-      (order.status === 'released' ? '<div class="m-hint">Fully released — hand off to delivery.</div>'
+      (order.release_slip_number ? '<div class="m-hint">Released on slip <b>' + mEsc(order.release_slip_number) + '</b> — stock deducted.</div>'
+        : order.status === 'released' ? '<div class="m-hint">Every line is out — issue the release slip as the goods leave.</div>'
+        : releasable && !accepted ? '<div class="m-hint">Accept this order to start releasing it.</div>'
         : !releasable ? '<div class="m-hint">This order isn’t in a releasable state.</div>' : '') +
       '</div>'
     ));
@@ -84,7 +88,7 @@
           '<div class="m-count-name"><b>' + mEsc(l.name) + (done ? ' ✓' : '') + '</b>' +
           '<span>' + got + ' / ' + need + ' released' +
           (Number(l.allocated_qty || 0) ? ' · ' + l.allocated_qty + ' shipped' : '') + '</span></div>' +
-          (releasable && !done
+          (releasable && accepted && !done
             ? '<input type="number" inputmode="numeric" class="m-input m-count-in" value="0" min="0" style="width:64px" />' +
               '<button class="m-btn m-btn-sm" data-bulk>Release</button>'
             : '') +
@@ -112,7 +116,25 @@
 
     function refresh() { render(view, order); }
 
-    if (releasable && order.status !== 'released') {
+    if (releasable && !accepted) {
+      var accBar = mEl('<div class="m-actions"><button class="m-btn">✅  Accept for release</button></div>');
+      accBar.querySelector('button').onclick = function () {
+        var b = accBar.querySelector('button');
+        b.disabled = true;
+        API.post('/orders/' + order.id + '/accept-release', {})
+          .then(function (r) { order = r.order; items = order.items || []; mToast('Accepted'); refresh(); })
+          .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); b.disabled = false; });
+      };
+      view.appendChild(accBar);
+    }
+
+    if (String(order.status).toLowerCase() === 'released' && !order.release_slip_id) slipForm(view, order);
+    if (order.release_slip_id) {
+      view.appendChild(mEl('<div class="m-label" style="margin-top:10px">Photos on slip ' + mEsc(order.release_slip_number) + '</div>'));
+      view.appendChild(mPhoto.thumbs('release', order.release_slip_id, { editable: true }));
+    }
+
+    if (releasable && accepted && order.status !== 'released') {
       var scanBtn = mEl('<div class="m-actions"><button class="m-btn">📷  Scan units to release</button></div>');
       var tally = mEl('<div class="m-hint" data-tally></div>');
       var n = 0;
@@ -151,6 +173,62 @@
     back.onclick = function () { MApp.go('so'); };
     acts.appendChild(back);
     view.appendChild(acts);
+  }
+
+  /** Release slip: who collected the goods + photos. Needs a connection (photos can't queue). */
+  function slipForm(view, order) {
+    var files = [];
+    var box = mEl(
+      '<div class="m-card" style="margin-top:12px">' +
+      '<div class="m-label">Release slip</div>' +
+      '<input class="m-input" data-f="collected_by" placeholder="Collected by (driver / customer rep) *" />' +
+      '<input class="m-input" data-f="vehicle_plate" placeholder="Vehicle / plate no. (optional)" style="margin-top:8px" />' +
+      '<input class="m-input" data-f="notes" placeholder="Notes (optional)" style="margin-top:8px" />' +
+      '<div class="m-label" style="margin-top:10px">Photos of the outgoing goods *</div>' +
+      '<div class="m-thumbs" data-thumbs></div>' +
+      '<div class="m-actions"><button class="m-btn" data-issue>🧾  Issue release slip</button></div>' +
+      '</div>'
+    );
+    var strip = box.querySelector('[data-thumbs]');
+    function drawThumbs() {
+      strip.innerHTML = '';
+      files.forEach(function (f, i) {
+        var cell = mEl('<div class="m-thumb"><img alt="" /></div>');
+        cell.querySelector('img').src = URL.createObjectURL(f);
+        var x = mEl('<button class="m-thumb-x" type="button" aria-label="Remove">×</button>');
+        x.onclick = function () { files.splice(i, 1); drawThumbs(); };
+        cell.appendChild(x);
+        strip.appendChild(cell);
+      });
+      var add = mEl('<button class="m-thumb m-thumb-add" type="button">＋<span>Photo</span></button>');
+      add.onclick = function () { mPhoto.pickFile().then(function (f) { files.push(f); drawThumbs(); }).catch(function () {}); };
+      strip.appendChild(add);
+    }
+    drawThumbs();
+
+    var btn = box.querySelector('[data-issue]');
+    btn.onclick = function () {
+      var val = function (k) { return box.querySelector('[data-f="' + k + '"]').value.trim(); };
+      if (!val('collected_by')) { mToast('Enter who collected the goods', 'err'); return; }
+      if (!files.length) { mToast('Add at least one photo of the goods', 'err'); return; }
+      btn.disabled = true;
+      API.post('/orders/' + order.id + '/release-slip', {
+        collected_by: val('collected_by'), vehicle_plate: val('vehicle_plate') || null, notes: val('notes') || null,
+      })
+        .then(function (r) {
+          var failed = 0;
+          return files.reduce(function (p, f) {
+            return p.then(function () {
+              return mPhoto.attachBlob('release', r.id, f, f.name || 'photo.jpg').catch(function () { failed += 1; });
+            });
+          }, Promise.resolve()).then(function () {
+            mToast(failed ? 'Slip issued — ' + failed + ' photo(s) failed, add them below' : 'Release slip issued', failed ? 'err' : undefined);
+            detail(view, order.id);
+          });
+        })
+        .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); btn.disabled = false; });
+    };
+    view.appendChild(box);
   }
 
   MApp.route('so', function (view, params) {

@@ -34,6 +34,9 @@ async function releasedMO(prefix: string, qty: number, qc_stages: number) {
   });
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages })).body.id;
+  await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+  await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+  await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
   await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
   return { mo, product };
@@ -44,7 +47,7 @@ describe('production_lead role', () => {
     const lead = await createEmployee(ctx.api, token, { role: 'production_lead' });
     const { mo } = await releasedMO('LeadRole', 3, 1);
 
-    const add = await ctx.api.post(`/api/job-orders/${mo}/units`).set(bearer(lead.token)).send({ identifier: 'LEAD-1' });
+    const add = await ctx.api.post(`/api/job-orders/${mo}/units`).set(bearer(lead.token)).field('identifier', 'LEAD-1').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(add.status).toBe(201);
     const scrap = await ctx.api.post(`/api/job-orders/${mo}/progress`).set(bearer(lead.token)).send({ scrapped_delta: 1 });
     expect(scrap.status).toBe(200);

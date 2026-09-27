@@ -892,7 +892,7 @@ textarea { resize: vertical; min-height: 84px; }
 
 /* ---------- BOM component editor rows ---------- */
 .bom-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
-.bom-row select[data-c="item"] { flex: 2 1 0; min-width: 0; }
+.bom-row [data-c="item"] { flex: 2 1 0; min-width: 0; }
 .bom-row input[data-c="notes"] { flex: 1 1 0; min-width: 0; }
 .bom-row .icon-btn { flex: 0 0 auto; }
 

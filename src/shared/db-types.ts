@@ -485,6 +485,7 @@ export interface JobOrderComponents {
   qty_per_unit: number;
   qty_planned: number;
   qty_consumed: Generated<number>;
+  qty_picked: Generated<number>;
 }
 
 export interface JobOrderUnits {
@@ -525,12 +526,22 @@ export interface JobOrders {
   created_by: number | null;
   released_by: number | null;
   released_at: string | null;
+  approved_by: number | null;
+  approved_at: string | null;
+  approve_notes: string | null;
   accepted_by: number | null;
   accepted_at: string | null;
   accept_notes: string | null;
   closed_at: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+  warehouse_accepted_by: number | null;
+  warehouse_accepted_at: string | null;
+  prepared_by: number | null;
+  prepared_at: string | null;
+  paused_by: number | null;
+  paused_at: string | null;
+  pause_reason: string | null;
 }
 
 export interface JournalEntries {
@@ -686,6 +697,28 @@ export interface Orders {
   fulfilled_at: string | null;
   released_at: string | null;
   released_by: number | null;
+  warehouse_accepted_by: number | null;
+  warehouse_accepted_at: string | null;
+}
+
+export interface PartsReleaseSlipItems {
+  id: Generated<number>;
+  slip_id: number;
+  component_item_id: number | null;
+  name: string;
+  sku: string | null;
+  unit: string | null;
+  quantity: number;
+}
+
+export interface PartsReleaseSlips {
+  id: Generated<number>;
+  number: string;
+  job_order_id: number;
+  released_by: number | null;
+  released_at: Generated<string>;
+  received_by: string | null;
+  notes: string | null;
 }
 
 export interface PasswordResets {
@@ -771,6 +804,23 @@ export interface ProductionBatches {
   created_by: number | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+}
+
+export interface ProductionIssues {
+  id: Generated<number>;
+  job_order_id: number;
+  unit_id: number | null;
+  category: string;
+  severity: Generated<string>;
+  description: string;
+  status: Generated<string>;
+  resolution: string | null;
+  reported_by: number | null;
+  created_at: Generated<string>;
+  updated_by: number | null;
+  updated_at: Generated<string>;
+  resolved_by: number | null;
+  resolved_at: string | null;
 }
 
 export interface ProductionReceiptItems {
@@ -861,6 +911,29 @@ export interface QcRecords {
   checklist: string | null;
   inspector_id: number | null;
   created_at: Generated<string>;
+}
+
+export interface ReleaseSlipItems {
+  id: Generated<number>;
+  slip_id: number;
+  order_item_id: number | null;
+  item_id: number | null;
+  name: string;
+  sku: string | null;
+  unit: string | null;
+  quantity: number;
+  unit_identifiers: string | null;
+}
+
+export interface ReleaseSlips {
+  id: Generated<number>;
+  number: string;
+  order_id: number;
+  released_by: number | null;
+  released_at: Generated<string>;
+  collected_by: string | null;
+  vehicle_plate: string | null;
+  notes: string | null;
 }
 
 export interface RepairPartRequests {
@@ -1082,6 +1155,8 @@ export interface DB {
   notes: Notes;
   order_items: OrderItems;
   orders: Orders;
+  parts_release_slip_items: PartsReleaseSlipItems;
+  parts_release_slips: PartsReleaseSlips;
   password_resets: PasswordResets;
   payment_allocations: PaymentAllocations;
   payments: Payments;
@@ -1089,6 +1164,7 @@ export interface DB {
   petty_cash_entries: PettyCashEntries;
   petty_cash_funds: PettyCashFunds;
   production_batches: ProductionBatches;
+  production_issues: ProductionIssues;
   production_receipt_items: ProductionReceiptItems;
   production_receipts: ProductionReceipts;
   production_team_members: ProductionTeamMembers;
@@ -1098,6 +1174,8 @@ export interface DB {
   qbo_links: QboLinks;
   qc_checklists: QcChecklists;
   qc_records: QcRecords;
+  release_slip_items: ReleaseSlipItems;
+  release_slips: ReleaseSlips;
   repair_part_requests: RepairPartRequests;
   sessions: Sessions;
   settings: Settings;

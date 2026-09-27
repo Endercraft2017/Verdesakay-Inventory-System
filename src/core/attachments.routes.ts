@@ -1,5 +1,5 @@
 /** Photo attachments hung off another record — QC unit inspections, damage
- *  reports, problem reports, delivery proofs (photos + signature). Files stored
+ *  reports, problem reports, delivery proofs (photos + signature), release-slip photos. Files stored
  *  under UPLOAD_DIR; rows in `attachments`. Mounted at /api/attachments.
  *
  *  Permissions are per `kind` (see `canRead` / `canWrite`), so a delivery driver
@@ -17,7 +17,7 @@ import type { Permission } from '../shared/types';
 const router = Router();
 router.use(requireAuth);
 
-const KINDS = new Set(['qc_unit', 'damage', 'problem', 'delivery', 'signature']);
+const KINDS = new Set(['qc_unit', 'damage', 'problem', 'delivery', 'signature', 'release', 'parts_release', 'production_issue']);
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 /** Which permission(s) a kind needs. `[]` = any authenticated user. */
@@ -27,19 +27,33 @@ const READ_PERMS: Record<string, Permission[]> = {
   problem: [],
   delivery: ['delivery.run', 'delivery.manage'],
   signature: ['delivery.run', 'delivery.manage'],
+  // Photos of goods leaving on a release slip (ref_id = release_slips.id).
+  release: ['inventory.adjust', 'orders.release', 'orders.view'],
+  // Photos of the parts kit on a job order's parts release slip (ref_id = parts_release_slips.id).
+  parts_release: ['inventory.view'],
+  // Photos on a production issue report (ref_id = production_issues.id).
+  production_issue: ['inventory.view'],
 };
+// Everyone on the production floor: the line lead photographs each unit off the line, and the
+// QC/QA inspectors photograph defects — none of them hold inventory.adjust.
+const FLOOR_PERMS: Permission[] = [
+  'inventory.adjust', 'production.record', 'production.inspect_qc', 'production.inspect_qa',
+];
 const WRITE_PERMS: Record<string, Permission[]> = {
-  qc_unit: ['inventory.adjust'],
+  qc_unit: FLOOR_PERMS,
   damage: ['inventory.adjust'],
   problem: [],
   delivery: ['delivery.run', 'delivery.manage'],
   signature: ['delivery.run', 'delivery.manage'],
+  release: ['inventory.adjust', 'orders.release'],
+  parts_release: ['inventory.adjust'],
+  production_issue: [...FLOOR_PERMS, 'production.approve'],
 };
 function allows(req: Request, perms: Permission[]): boolean {
   return perms.length === 0 || perms.some((p) => req.user!.permissions.includes(p));
 }
 
-const upload = multer({
+export const imageUpload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadDir()),
     filename: (_req, file, cb) => {
@@ -51,7 +65,7 @@ const upload = multer({
   fileFilter: (_req, file, cb) => cb(null, IMAGE_MIME.has(file.mimetype)),
 });
 
-function unlink(name: string | null | undefined): void {
+export function unlink(name: string | null | undefined): void {
   if (name) fs.promises.unlink(path.join(uploadDir(), name)).catch(() => {});
 }
 
@@ -90,7 +104,7 @@ router.get('/:id/image', (req, res) => {
 });
 
 // POST /api/attachments — { kind, ref_id, caption? } + an `image` file
-router.post('/', upload.single('image'), (req, res) => {
+router.post('/', imageUpload.single('image'), (req, res) => {
   const kind = String(req.body?.kind || '');
   const refId = Number(req.body?.ref_id);
   const caption = typeof req.body?.caption === 'string' ? req.body.caption.trim().slice(0, 300) : null;
@@ -114,13 +128,20 @@ router.post('/', upload.single('image'), (req, res) => {
     unlink(req.file.filename);
     throw e;
   }
-  const info = run(
-    'INSERT INTO attachments (kind, ref_id, image_path, caption, uploaded_by) VALUES (?, ?, ?, ?, ?)',
-    kind, refId, req.file.filename, caption || null, req.user!.id
-  );
-  const id = Number(info.lastInsertRowid);
+  const id = saveAttachment(kind, refId, req.file.filename, caption || null, req.user!.id);
   res.status(201).json({ id, url: `/api/attachments/${id}/image` });
 });
+
+/** Record an already-uploaded file (multer, via `imageUpload`) as an attachment. For routes
+ *  that take a photo together with the record it belongs to (e.g. POST /job-orders/:id/units),
+ *  so the two are saved in one request. Caller checks permissions and the storage quota. */
+export function saveAttachment(kind: string, refId: number, filename: string, caption: string | null, userId: number): number {
+  const info = run(
+    'INSERT INTO attachments (kind, ref_id, image_path, caption, uploaded_by) VALUES (?, ?, ?, ?, ?)',
+    kind, refId, filename, caption, userId
+  );
+  return Number(info.lastInsertRowid);
+}
 
 // DELETE /api/attachments/:id
 router.delete('/:id', (req, res) => {

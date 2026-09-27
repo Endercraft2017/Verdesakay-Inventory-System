@@ -203,10 +203,11 @@ const GUIDE_PIPELINES = [
     id: 'sales',
     title: 'Sales orders',
     icon: 'forms',
-    tagline: 'Order → approve (stock check) → release → deliver → confirm',
+    tagline: 'Order → approve (stock check) → warehouse accepts → release → release slip → deliver',
     audience: 'CSR / sales, warehouse releaser, delivery, accounting',
     intro: `How a customer order moves from raw document to goods out the door. Status runs
-      <b>open → approved → released → confirmed / completed</b>.`,
+      <b>open → approved → released → confirmed / completed</b>; the release slip is what
+      confirms it.`,
     steps: [
       {
         title: 'Raise the sale order',
@@ -236,13 +237,32 @@ const GUIDE_PIPELINES = [
           parts that must be bought), or <b>Approve as a backorder</b> (proceed anyway).`,
       },
       {
+        title: 'Warehouse accepts the order',
+        role: 'Warehouse releaser · inventory.adjust / orders.release',
+        to: { route: 'releasing', filter: { tab: 'queue' }, label: 'Inventory → Releasing → Release Queue' },
+        spot: '.tree-leaf[data-route="releasing"]',
+        body: `Approved orders wait under <b>Waiting for warehouse acceptance</b>. Press <b>Accept for
+          release</b> (or <b>Accept</b> on the phone) to take the order on — that records who
+          accepted it and when. Nothing can be picked until it's accepted.`,
+      },
+      {
         title: 'Release the goods',
-        role: 'Warehouse releaser · inventory.adjust',
-        to: { external: 'Phone → Work → Release SOs' },
-        body: `Open the order on the phone and press <b>Scan units to release</b>. Scan each unit's
-          printed QR label; for non-serialized lines, type the quantity. Scanned units go to
+        role: 'Warehouse releaser · inventory.adjust / orders.release',
+        to: { route: 'releasing', filter: { tab: 'queue' }, label: 'Release Queue → open the order' },
+        body: `Scan each unit's printed QR label (desktop scan box, or <b>Scan units to release</b> on
+          the phone); for non-serialized lines, enter the quantity. Scanned units go to
           <b>reserved</b> — earmarked for the order but still physically on hand. Once every line is
           covered the order flips to <b>released</b>. <b>Nothing leaves inventory yet.</b>`,
+      },
+      {
+        title: 'Issue the release slip',
+        role: 'Warehouse releaser · inventory.adjust / orders.release',
+        to: { route: 'releasing', filter: { tab: 'slips' }, label: 'Release order → Issue release slip' },
+        body: `As the goods leave, press <b>Issue release slip</b>: enter who collected them, the
+          vehicle, and take at least one photo of what's going out. The slip (RS-xxxxx) lists every
+          line and unit serial. <b>This is when stock leaves inventory</b> — the order becomes
+          <b>confirmed</b>, reserved units flip to <b>sold</b>, and (with the general ledger on) COGS
+          is posted. Print it from <b>Release Slips</b> for signatures.`,
       },
       {
         title: 'Deliver',
@@ -254,19 +274,18 @@ const GUIDE_PIPELINES = [
           next step.`,
       },
       {
-        title: 'Confirm / invoice',
+        title: 'Complete / invoice',
         role: 'Accounting / CSR · orders.edit',
-        to: { route: 'orders', filter: { type: 'sale' }, label: 'Sale order → Status → Confirm' },
-        body: `Move the order to <b>confirmed</b> or <b>completed</b>. <b>This is when stock actually
-          leaves inventory</b> — reserved units flip to <b>sold</b>, line quantities are drawn down
-          from the ship-from location, and (when the general ledger is on) COGS is posted. Re-opening
-          or cancelling reverses all of it.`,
+        to: { route: 'orders', filter: { type: 'sale' }, label: 'Sale order → Status → Completed' },
+        body: `Once delivered, move the order to <b>completed</b> and invoice it. Re-opening or
+          cancelling a slipped order reverses the stock-out; the slip stays on record.`,
       },
     ],
     gotchas: [
-      `A releaser can't scan against an <b>open</b> order — approve it first.`,
-      `<b>Records only:</b> releasing doesn't move stock. If the ledger is off, use
-       <i>Phone → Work → Pick Order</i> to deduct stock, or just confirm the order.`,
+      `A releaser can't scan against an <b>open</b> order (approve it first) or one the warehouse
+       hasn't accepted yet.`,
+      `<b>Scanning is records only</b> — stock moves when the release slip is issued, even with the
+       general ledger off.`,
       `"Allocate finished units" on the desktop order screen <b>sells</b> units immediately
        (over-the-counter), skipping the reserve step.`,
     ],

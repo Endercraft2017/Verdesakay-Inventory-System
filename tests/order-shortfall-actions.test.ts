@@ -96,10 +96,14 @@ describe('POST /api/job-orders/:id/purchase-shortfall', () => {
     const mo = (await ctx.api.post('/api/job-orders').set(H())
       .send({ product_item_id: product, qty_ordered: 5 })).body.id;
 
-    const rel = await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
-    await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
-    expect(rel.status).toBe(400);
-    expect(rel.body.shortfalls[0]).toMatchObject({ component_name: 'MO Frame', need: 5, have: 1, short: 4 });
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    // The shortage now surfaces when the warehouse tries to pick the kit.
+    const prep = await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
+    expect(prep.status).toBe(400);
+    expect(prep.body.shortfalls[0]).toMatchObject({ component_name: 'MO Frame', picking: 5, available: 1 });
+    const av = (await ctx.api.get(`/api/job-orders/${mo}/availability`).set(H())).body;
+    expect(av.shortfalls[0]).toMatchObject({ component_name: 'MO Frame', need: 5, have: 1, short: 4 });
 
     const r = await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({});
     expect(r.status).toBe(200);

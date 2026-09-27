@@ -58,7 +58,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 47; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 50; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -151,6 +151,21 @@ export const SCHEMA_VERSION = 47; // 20: employees.late_exempt; 21: attendance_r
 // the clock_geofence setting; off by default, so existing installs punch exactly as before.
 // 47: kiosk_devices -- office PCs an HR manager approved to run the time-in kiosk. With the
 // kiosk lock on (default when internet-facing), the kiosk endpoints refuse any other browser.
+// 48: sale-order releasing -- orders.warehouse_accepted_by / warehouse_accepted_at (the warehouse
+// takes on an approved SO before picking; /release requires it) + release_slips /
+// release_slip_items (numbered record of what physically left, snapshotting lines + unit
+// serials; issuing one confirms the SO, which is when stock goes out). Older approved/released
+// SOs are backfilled as accepted so in-flight picks aren't blocked.
+// 49: job_orders.approved_by / approved_at / approve_notes -- a production.approve holder signs
+// off a draft before the warehouse may release its parts (job-orders.routes.ts POST /:id/approve).
+// No backfill: drafts already in the queue simply need approving; released ones are past it.
+// 50: job-order parts release, warehouse side + the line lead's floor tools --
+// job_orders.warehouse_accepted_by/_at + prepared_by/_at (warehouse takes on an approved draft,
+// then picks the kit; several can be picked together), job_order_components.qty_picked,
+// parts_release_slips / parts_release_slip_items (numbered record of the kit handed to
+// production; issuing one IS the release, when stock is deducted), job_orders.paused_by/_at +
+// pause_reason, and production_issues (issue reports per job order or per unit, editable while
+// open). No backfill: drafts in the queue go through accept + prepare; released ones are past it.
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -546,6 +561,9 @@ function createSchema(): void {
       created_by         INTEGER REFERENCES users(id) ON DELETE SET NULL,
       released_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
       released_at        TEXT,
+      approved_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      approved_at        TEXT,
+      approve_notes      TEXT,
       accepted_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
       accepted_at        TEXT,
       accept_notes       TEXT,
@@ -2225,6 +2243,107 @@ function migrate(): void {
       last_seen_at TEXT,
       revoked_at   TEXT
     )
+  `);
+
+  // (SCHEMA_VERSION 48) Sale-order releasing: the warehouse accepts an approved SO before
+  // picking, and a release slip records what physically left (and is when stock goes out).
+  const ordRelCols = db.prepare('PRAGMA table_info(orders)').all() as { name: string }[];
+  if (!ordRelCols.some((c) => c.name === 'warehouse_accepted_by')) {
+    db.exec('ALTER TABLE orders ADD COLUMN warehouse_accepted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+  if (!ordRelCols.some((c) => c.name === 'warehouse_accepted_at')) {
+    db.exec('ALTER TABLE orders ADD COLUMN warehouse_accepted_at TEXT');
+    // SOs already mid-release predate the acceptance step — don't block their picking.
+    db.exec(`UPDATE orders SET warehouse_accepted_at = COALESCE(released_at, updated_at, datetime('now')),
+               warehouse_accepted_by = released_by
+             WHERE type = 'sale' AND LOWER(status) IN ('approved', 'released')`);
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS release_slips (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      number         TEXT NOT NULL UNIQUE,
+      order_id       INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      released_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      released_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      collected_by   TEXT,
+      vehicle_plate  TEXT,
+      notes          TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_slips_order ON release_slips(order_id);
+    CREATE TABLE IF NOT EXISTS release_slip_items (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      slip_id          INTEGER NOT NULL REFERENCES release_slips(id) ON DELETE CASCADE,
+      order_item_id    INTEGER,
+      item_id          INTEGER,
+      name             TEXT NOT NULL,
+      sku              TEXT,
+      unit             TEXT,
+      quantity         REAL NOT NULL,
+      unit_identifiers TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_slip_items_slip ON release_slip_items(slip_id);
+  `);
+
+  // (SCHEMA_VERSION 49) Job-order approval before the warehouse releases parts.
+  const joApvCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
+  for (const [col, decl] of [
+    ['approved_by', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'], ['approved_at', 'TEXT'], ['approve_notes', 'TEXT'],
+  ]) {
+    if (!joApvCols.some((c) => c.name === col)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${col} ${decl}`);
+  }
+
+  // (SCHEMA_VERSION 50) Job-order parts release (warehouse accept → prepare → slip), pause
+  // reason, and production issue reports.
+  const joWhCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
+  for (const [col, decl] of [
+    ['warehouse_accepted_by', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'], ['warehouse_accepted_at', 'TEXT'],
+    ['prepared_by', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'], ['prepared_at', 'TEXT'],
+    ['paused_by', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'], ['paused_at', 'TEXT'], ['pause_reason', 'TEXT'],
+  ]) {
+    if (!joWhCols.some((c) => c.name === col)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${col} ${decl}`);
+  }
+  const jocPickCols = db.prepare('PRAGMA table_info(job_order_components)').all() as { name: string }[];
+  if (!jocPickCols.some((c) => c.name === 'qty_picked')) {
+    db.exec('ALTER TABLE job_order_components ADD COLUMN qty_picked INTEGER NOT NULL DEFAULT 0');
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS parts_release_slips (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      number        TEXT NOT NULL UNIQUE,
+      job_order_id  INTEGER NOT NULL UNIQUE REFERENCES job_orders(id) ON DELETE CASCADE,
+      released_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      released_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      received_by   TEXT,
+      notes         TEXT
+    );
+    CREATE TABLE IF NOT EXISTS parts_release_slip_items (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      slip_id           INTEGER NOT NULL REFERENCES parts_release_slips(id) ON DELETE CASCADE,
+      component_item_id INTEGER,
+      name              TEXT NOT NULL,
+      sku               TEXT,
+      unit              TEXT,
+      quantity          REAL NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_parts_release_slip_items_slip ON parts_release_slip_items(slip_id);
+    CREATE TABLE IF NOT EXISTS production_issues (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id  INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      unit_id       INTEGER REFERENCES job_order_units(id) ON DELETE SET NULL,
+      category      TEXT NOT NULL,
+      severity      TEXT NOT NULL DEFAULT 'normal' CHECK (severity IN ('low','normal','high','critical')),
+      description   TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
+      resolution    TEXT,
+      reported_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_production_issues_jo ON production_issues(job_order_id);
+    CREATE INDEX IF NOT EXISTS idx_production_issues_unit ON production_issues(unit_id);
   `);
 }
 

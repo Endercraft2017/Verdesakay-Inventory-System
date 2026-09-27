@@ -38,6 +38,8 @@ export type Permission =
   // Narrow production-pipeline actions, each independently grantable alongside (or
   // instead of) the broad inventory.adjust — see job-orders.routes.ts / production.routes.ts
   // requireAnyPermission(['inventory.adjust', 'production.xxx']) call sites.
+  | 'production.approve'    // production manager: approve a draft job order for release
+  | 'production.pause'      // pause / resume a running job order (e.g. for a higher-priority one)
   | 'production.repairs'    // warehouse: accept/reject a rework parts request
   | 'production.record'     // line lead: record units/batches off the line
   | 'production.inspect_qc' // QC inspector: pass/fail a unit's first pass
@@ -323,6 +325,21 @@ export interface JobOrder {
   created_at: string;
   updated_at: string;
   released_by: number | null;
+  /** Manager's approval of the draft; /release refuses until set (POST /:id/approve).
+   *  Editing the draft clears it. */
+  approved_by: number | null;
+  approved_at: string | null;
+  approve_notes: string | null;
+  /** Warehouse took on the approved draft (POST /job-orders/warehouse-accept), then picked
+   *  the whole kit (POST /job-orders/prepare). /release needs both. */
+  warehouse_accepted_by: number | null;
+  warehouse_accepted_at: string | null;
+  prepared_by: number | null;
+  prepared_at: string | null;
+  /** Last pause (POST /:id/pause); cleared on resume. */
+  paused_by: number | null;
+  paused_at: string | null;
+  pause_reason: string | null;
   /** Production lead's sign-off that the released parts kit arrived (POST /:id/accept). */
   accepted_by: number | null;
   accepted_at: string | null;
@@ -337,6 +354,13 @@ export interface JobOrder {
   work_center: string | null;
   created_by_name?: string | null;
   released_by_name?: string | null;
+  approved_by_name?: string | null;
+  warehouse_accepted_by_name?: string | null;
+  prepared_by_name?: string | null;
+  paused_by_name?: string | null;
+  open_issues?: number;
+  parts_slip_id?: number | null;
+  parts_slip_number?: string | null;
   accepted_by_name?: string | null;
   team_name?: string | null;
   order_number?: string | null;
@@ -380,6 +404,87 @@ export interface QcChecklistResult {
   note?: string | null;
 }
 
+/** A numbered record of goods physically leaving the warehouse against a sale order.
+ *  Issuing it confirms the SO (stock out). See src/modules/inventory/release-slips.routes.ts. */
+export interface ReleaseSlip {
+  id: number;
+  number: string;
+  order_id: number;
+  released_by: number | null;
+  released_at: string;
+  collected_by: string | null;
+  vehicle_plate: string | null;
+  notes: string | null;
+  order_number?: string;
+  customer_name?: string | null;
+  released_by_name?: string | null;
+  photo_count?: number;
+  items?: ReleaseSlipItem[];
+}
+/** A job order's parts release slip — the numbered record of the kit the warehouse handed
+ *  to production. Issuing it (POST /job-orders/:id/release) is when components leave stock. */
+export interface PartsReleaseSlip {
+  id: number;
+  number: string;
+  job_order_id: number;
+  released_by: number | null;
+  released_at: string;
+  received_by: string | null;
+  notes: string | null;
+  job_order_number?: string;
+  product_name?: string | null;
+  qty_ordered?: number;
+  source_location_name?: string | null;
+  released_by_name?: string | null;
+  photo_count?: number;
+  items?: PartsReleaseSlipItem[];
+}
+export interface PartsReleaseSlipItem {
+  id: number;
+  slip_id: number;
+  component_item_id: number | null;
+  name: string;
+  sku: string | null;
+  unit: string | null;
+  quantity: number;
+}
+
+/** An issue reported on the production floor, against a whole job order or one unit. */
+export interface ProductionIssue {
+  id: number;
+  job_order_id: number;
+  unit_id: number | null;
+  category: string;
+  severity: 'low' | 'normal' | 'high' | 'critical';
+  description: string;
+  status: 'open' | 'resolved';
+  resolution: string | null;
+  reported_by: number | null;
+  created_at: string;
+  updated_by: number | null;
+  updated_at: string;
+  resolved_by: number | null;
+  resolved_at: string | null;
+  job_order_number?: string;
+  unit_identifier?: string | null;
+  reported_by_name?: string | null;
+  updated_by_name?: string | null;
+  resolved_by_name?: string | null;
+  photo_count?: number;
+}
+export interface ReleaseSlipItem {
+  id: number;
+  slip_id: number;
+  order_item_id: number | null;
+  item_id: number | null;
+  name: string;
+  sku: string | null;
+  unit: string | null;
+  quantity: number;
+  /** Comma-separated serials of the units that left on this line, when serialized. */
+  unit_identifiers: string | null;
+}
+
 /** A field delivery / drop with its proof of delivery. See src/routes/deliveries.routes.ts. */
 export type DeliveryStatus = 'pending' | 'out_for_delivery' | 'delivered' | 'failed' | 'cancelled';
 export interface Delivery {
@@ -414,7 +519,7 @@ export interface Delivery {
     See src/routes/attachments.routes.ts. */
 export interface Attachment {
   id: number;
-  kind: 'qc_unit' | 'damage' | 'problem' | 'delivery' | 'signature';
+  kind: 'qc_unit' | 'damage' | 'problem' | 'delivery' | 'signature' | 'release' | 'parts_release' | 'production_issue';
   ref_id: number;
   image_path: string;
   caption: string | null;
@@ -433,6 +538,8 @@ export interface JobOrderComponent {
   qty_per_unit: number;
   qty_planned: number;
   qty_consumed: number;
+  /** Warehouse's picked count while preparing the kit (POST /job-orders/prepare). */
+  qty_picked: number;
   /** Joined: the component's current grand total on hand. */
   component_on_hand?: number;
 }
@@ -767,6 +874,10 @@ export interface Order {
    *  cancelled / re-opened. Does NOT move stock — that still happens on confirm. */
   released_at: string | null;
   released_by: number | null;
+  /** Sale orders only: the warehouse took on this approved SO for releasing
+   *  (`POST /orders/:id/accept-release`). `/release` requires it. */
+  warehouse_accepted_at?: string | null;
+  warehouse_accepted_by?: number | null;
   /** Optional VAT / tax classification (drives the GL post + the BIR journals). */
   tax_code_id: number | null;
   created_by_name?: string | null;
@@ -779,6 +890,9 @@ export interface Order {
   job_order_id?: number | null;
   job_order_number?: string | null;
   job_order_status?: string | null;
+  warehouse_accepted_by_name?: string | null;
+  release_slip_id?: number | null;
+  release_slip_number?: string | null;
   items?: OrderItem[];
 }
 

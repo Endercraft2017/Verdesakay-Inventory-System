@@ -103,6 +103,9 @@ describe('sale-order availability gate', () => {
       .send({ components: [{ component_item_id: part, quantity: 1 }] });
     const mo = (await ctx.api.post('/api/job-orders').set(H())
       .send({ product_item_id: product, qty_ordered: 2, qc_stages: 1 })).body.id;
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
     await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
     await addSerializedUnits(ctx.api, token, mo, 2, 'AVReady');

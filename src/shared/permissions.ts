@@ -22,7 +22,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'announce',
   'qc.configure',
   'delivery.run', 'delivery.manage',
-  'production.repairs', 'production.record', 'production.inspect_qc', 'production.inspect_qa',
+  'production.approve', 'production.pause', 'production.repairs', 'production.record', 'production.inspect_qc', 'production.inspect_qa',
   'production.receive',
   'orders.release',
 ];

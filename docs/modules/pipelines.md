@@ -17,23 +17,37 @@ find its pipeline and stage here before deciding where the code goes.
      draft MO in `manufacturing` (BOM-checked first), or
      `POST /orders/:id/purchase-shortfall` raises draft POs in `purchasing`
      (one per supplier).
-3. **Approved → Released** (`inventory`) — done by the releasing person
-   (`releasing`/`warehouse`/`admin`/`admin_staff` roles via `inventory.adjust`, or the
-   narrow `releasing_clerk` role via `orders.release` — mobile-only account scoped to
-   just this action, not general stock adjustment; `POST /:id/release` /
-   `/:id/release/unreserve` accept either). Release scans unit QR codes and marks
-   `job_order_units` `reserved` (`manufacturing` data, records only — no stock
-   movement yet).
-4. **Confirmed** (`inventory` → `manufacturing`) — `maybeFulfillSale` moves stock at
-   confirm time, not release time.
-5. **Delivery / fulfil** (`inventory`) — `POST /orders/:id/status` transitions
-   delivery → fulfilled (mobile-triggered prompt supported).
-6. **Posting** (`accounting`) — `accounting-autopost.ts` posts the sale to the
+3. **Warehouse acceptance** (`inventory`) — the approved SO waits in Inventory →
+   Releasing → Release Queue ("waiting for warehouse acceptance") until a releaser
+   accepts it (`POST /orders/:id/accept-release`, stamps `warehouse_accepted_by/_at`).
+   Picking is refused until then. Re-opening / cancelling clears the acceptance.
+   Done by `inventory.adjust` holders (`releasing`/`warehouse`/`admin`/`admin_staff`) or
+   the narrow mobile `releasing_clerk` role via `orders.release`.
+4. **Pick / release** (`inventory`) — `POST /:id/release` (desktop Release Queue or
+   mobile `so` view): scan unit QR labels → `job_order_units` `reserved`
+   (`manufacturing` data), or enter quantities for bulk lines (`released_qty`). Records
+   only — no stock movement. Auto-advances approved → `released` once every line is
+   covered; `/:id/release/unreserve` undoes a pick (refused once a slip exists).
+5. **Release slip — goods out** (`inventory` → `accounting`) —
+   `POST /:id/release-slip` once the order is `released`: records who collected it,
+   vehicle, notes, and snapshots lines + unit serials into `release_slips` /
+   `release_slip_items` (number `RS-00001`); photos of the outgoing goods attach as
+   `attachments` kind `release` (UI requires ≥1). Issuing it sets the SO `confirmed`,
+   which runs `maybeFulfillSale`: **stock is deducted here** and reserved units → `sold`.
+   A slipped order moves stock even with the general ledger off (COGS only posts with
+   the ledger on). One slip per order. Printable from Release Slips.
+   - **Branch — manual confirm (legacy):** an SO confirmed from the order form without a
+     slip still behaves as before (stock + COGS only when the ledger is on).
+6. **Delivery / fulfil** (`inventory`) — `POST /orders/:id/status` transitions
+   delivery → fulfilled (mobile-triggered prompt supported); the delivery's proof of
+   delivery (signature/GPS/photos) is captured at the customer.
+7. **Posting** (`accounting`) — `accounting-autopost.ts` posts the sale to the
    ledger.
 
 **Terminal states:** fulfilled (success); backordered (flagged via
 `GET /orders?backorder=1`, surfaced on the analytics card) if a shortfall was never
-resolved; cancelled at any pre-confirm stage.
+resolved; cancelled at any stage (cancelling a slipped order reverses the stock-out; the
+slip stays on record and shows the order as cancelled).
 
 ## Purchase-to-pay
 
@@ -62,10 +76,43 @@ raised by the sales-order shortfall flow.
    `bom-resolvers.ts`); products with no BOM are allowed (standard labor/overhead
    costing instead of component explosion). Optionally assigned to a team/schedule
    slot (Scheduling) before release — supporting, not a gating stage.
-2. **Parts released** (`manufacturing`) — `POST /:id/release`; BOM components are
-   deducted from the source location's `inventory` stock (GL: Raw Materials → WIP)
-   and the job order moves to `released`. Done by the warehouse (`inventory.adjust`);
-   stamps `released_by`/`released_at`.
+   - **Approval** (`manufacturing`, SCHEMA_VERSION 49) — a `production.approve` holder
+     signs off the draft: `POST /:id/approve` stamps `approved_by` / `approved_at` /
+     `approve_notes` (no status change; `POST /:id/unapprove` withdraws it). **Gate:**
+     `/release` 409s (`needs_approval: true`) until approved. Editing the draft
+     (`PUT /:id`, `PUT /:id/components`) clears the approval. `inventory.adjust` does
+     *not* grant it, so the warehouse can't approve its own release. Short stock doesn't
+     block approval — the response lists `shortfalls` as a warning.
+   - **Stock check** — `GET /:id/availability` returns each planned component's
+     need / have / short at the source location plus `in_stock`, `approved`, `releasable`.
+   - Queues: `GET /job-orders?stage=awaiting_approval` (manager); for the warehouse,
+     `?stage=awaiting_release` (every approved draft), split into `awaiting_warehouse`
+     → `preparing` → `ready_to_release`.
+   - Editing the draft or withdrawing approval (`resetPreRelease()`) also clears the
+     warehouse's acceptance and picks, so the job order goes through every step again.
+2. **Parts released — warehouse** (`manufacturing` → `inventory`, SCHEMA_VERSION 50).
+   Done by the warehouse (`inventory.adjust`), in three steps that mirror sale-order
+   releasing:
+   1. **Accept** — `POST /job-orders/warehouse-accept {job_order_ids}` (one or many)
+      stamps `warehouse_accepted_by/_at`. Refused unless the job order is an approved draft.
+   2. **Prepare (pick)** — `POST /job-orders/prepare {job_orders:[{id, lines?}]}` sets
+      `job_order_components.qty_picked`; leaving out `lines` picks the whole kit. Several
+      kits can be picked in one request. `GET /job-orders/pick-list?ids=…` returns one
+      combined pick list (per component and location, with a per-job-order split), and
+      `&format=html` returns a printable version. A fully picked kit gets
+      `prepared_by/_at`; a partial pick is saved but stays in `preparing`. Picks are
+      checked against on-hand stock minus what other unreleased kits already picked
+      (`pickedElsewhere()`), so two kits can't claim the same parts. **Branch — short:**
+      the pick returns 400 with `shortfalls`, and
+      `POST /:id/purchase-shortfall` drafts POs for the missing parts. No stock moves at
+      this step.
+   3. **Release = parts release slip** — `POST /:id/release {received_by?, notes?}`
+      needs approved + accepted + prepared. It issues the numbered slip `PRS-#####`
+      (`parts_release_slips` / `_items` store a copy of the lines), deducts the components
+      from the source location (GL: Raw Materials → WIP), and moves the job order to
+      `released`. The slip is kept in the app (paperless): `GET /parts-slips`,
+      `/parts-slips/:id`, `/parts-slips/:id/print` (printable HTML). Photos of the kit
+      are attachments of kind `parts_release` on the slip.
    - **Parts kit accepted** (`manufacturing`) — the production lead (`production_lead`
      role / `production.record`, or `inventory.adjust`) counts the kit against the
      Components list and signs for it: `POST /:id/accept` stamps `accepted_by` /
@@ -73,18 +120,31 @@ raised by the sales-order shortfall flow.
      movement — it's the handover record. **Gate:** `/progress` and `/units` 409
      (`needs_acceptance: true`) until it's done (`needsAcceptance()`); job orders that
      already had output recorded before this step existed are exempt. **Branch — kit
-     short/damaged:** the lead doesn't accept and reports it (mobile Report a problem);
+     short/damaged:** the lead doesn't accept and files a production issue (below);
      the warehouse/supervisor fixes the release (cancel returns unused components).
 3. **Actual production / recording** (`manufacturing`) — done by the line lead
    (`production_lead` role, or any account holding `production.record`). How a unit
    is recorded depends on whether the job order is QC-gated (`qc_stages > 0`,
    serialized) or not: non-serialized output still goes through `POST /:id/progress`
    ("Record production") as a bulk `production_batches` quantity; a serialized job
-   order's units are each added individually via `POST /:id/units`, with their
-   identifier (motor/serial no.) required at creation and a photo required right
-   after via `POST /attachments` (`kind: 'qc_unit'`) — `/progress`'s bulk `done_delta`
-   refuses to run on a serialized job order for this reason. Either path consumes
-   components by BOM ratio and moves the job order to `in_progress`.
+   order's units are each added individually via `POST /:id/units`, a multipart request
+   in which the identifier (motor/serial no.) **and** the photo (`image`, saved as
+   `qc_unit` attachment) are both required and saved together. Since SCHEMA_VERSION 50 a
+   unit can't exist, and so can't reach QC, without its photo; the request returns 400
+   `needs_photo` if the photo is missing. `/progress`'s bulk `done_delta` refuses to run
+   on a serialized job order for this reason. Either path consumes components by BOM
+   ratio and moves the job order to `in_progress`.
+   - **Pause / resume** — `POST /:id/pause {reason?}` / `/resume`. Allowed with
+     `inventory.adjust`, or `production.pause` for a line lead trusted to stop the line,
+     e.g. to switch to a higher-priority job order. Records `paused_by/_at` and
+     `pause_reason` until resume.
+   - **Issue reports** (`/api/production-issues`, `production-issues.routes.ts`) — anyone
+     on the floor (`production.record`, `inspect_qc`/`inspect_qa`, `inventory.adjust`,
+     `production.approve`) files an issue against the whole job order or one unit
+     (category, severity, description, photos as `production_issue` attachments). The
+     reporter can edit it while it's open, and a manager can too. The reporter or a manager
+     resolves or re-opens it. Records only; nothing is blocked. `open_issues` is shown on the
+     job order.
 4. **Inspection — QC then QA** (`manufacturing`) — done by two distinct inspector
    roles, not one shared one: `qc_inspector` (`production.inspect_qc`) does the
    first pass (performance/technical check), `qa_inspector` (`production.inspect_qa`)

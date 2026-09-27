@@ -29,6 +29,9 @@ async function productWithUnits(prefix: string, qty: number, unit_cost = 10) {
     .send({ components: [{ component_item_id: part, quantity: 1 }] });
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages: 1 })).body.id;
+  await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+  await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+  await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
   await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
   await addSerializedUnits(ctx.api, token, mo, qty, prefix);
@@ -50,8 +53,12 @@ async function productWithUnits(prefix: string, qty: number, unit_cost = 10) {
   return { product, codes };
 }
 
-const saleOrder = async (lines: Array<Record<string, unknown>>, status = 'open') =>
-  (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', status, items: lines })).body.id as number;
+/** An approved order is also warehouse-accepted, ready to pick (pass accept=false to skip). */
+const saleOrder = async (lines: Array<Record<string, unknown>>, status = 'open', accept = true) => {
+  const id = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', status, items: lines })).body.id as number;
+  if (status === 'approved' && accept) await ctx.api.post(`/api/orders/${id}/accept-release`).set(H());
+  return id;
+};
 const getOrder = async (id: number) => (await ctx.api.get(`/api/orders/${id}`).set(H())).body;
 
 describe('sale-order release', () => {
@@ -67,6 +74,10 @@ describe('sale-order release', () => {
       customer_name: 'ACME', status: 'approved',
       items: [{ name: 'R1 Product', item_id: product, quantity: 2, unit_price: 50 }],
     });
+    const unaccepted = await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ codes: [codes[0]!] });
+    expect(unaccepted.status).toBe(409);
+    expect(unaccepted.body.error).toMatch(/warehouse must accept/i);
+    expect((await ctx.api.post(`/api/orders/${so}/accept-release`).set(H())).status).toBe(200);
     const ok = await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ codes: [codes[0]!] });
     expect(ok.status).toBe(200);
     expect(ok.body.reserved).toBe(1);
