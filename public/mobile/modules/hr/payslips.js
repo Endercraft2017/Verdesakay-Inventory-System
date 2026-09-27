@@ -1,97 +1,157 @@
-/* My payslips — read-only view of this employee's HR Payroll records. */
+/* Employee payslips — Figma V2 nodes 46:895 and 46:924.
+   Viewing uses the existing employee-scoped endpoint. Download is fail-closed:
+   it requires explicit finalized === true and a server-issued download_url. */
 (function () {
-  function titleCase(k) {
-    return String(k).replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  var HIDE = {
+    employee_name: 1, dept_position: 1, name: 1, department: 1, position: 1,
+    period: 1, payroll_period: 1, finalized: 1, finalized_at: 1, download_url: 1
+  };
+
+  function titleCase(value) {
+    return String(value || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }
-  function num(v) {
-    var n = Number(v);
-    return isFinite(n) && String(v).trim() !== '' ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v;
+
+  function amount(value) {
+    var number = Number(value);
+    if (!isFinite(number) || String(value).trim() === '') return String(value == null ? '' : value);
+    return '₱' + number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
-  var HIDE = { employee_name: 1, dept_position: 1, name: 1, department: 1, position: 1, period: 1 };
+
+  function dateText(value) {
+    if (!value) return '';
+    var raw = String(value);
+    var date = new Date(raw.length === 10 ? raw + 'T00:00:00' : raw.replace(' ', 'T') + (raw.indexOf('Z') >= 0 ? '' : 'Z'));
+    if (isNaN(date.getTime())) return raw;
+    return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function periodText(record) {
+    var data = record.data || {};
+    return record.period || data.payroll_period || data.period || record.number || 'Payroll period';
+  }
+
+  function isFinalized(record) {
+    return record && record.finalized === true;
+  }
+
+  function canDownload(record) {
+    return isFinalized(record) && typeof record.download_url === 'string' && record.download_url.length > 0;
+  }
+
+  function netPay(record) {
+    var data = record.data || {};
+    return data.net_pay != null ? data.net_pay :
+      Number(data.total_earnings || data.gross_pay || 0) - Number(data.total_deductions || data.deductions || 0);
+  }
+
+  function shell(view, node, heading, subheading, back) {
+    view.setAttribute('data-figma-node', node);
+    view.innerHTML = '<section class="m-v2-page m-payslip-v2"><header class="m-v2-heading m-payslip-heading">' +
+      (back ? '<button class="m-payslip-back" type="button" aria-label="Back">‹</button>' : '') +
+      '<div><h1>' + mEsc(heading) + '</h1><p>' + mEsc(subheading) + '</p></div></header><div id="m-payslip-body"></div></section>';
+    if (back) view.querySelector('.m-payslip-back').onclick = back;
+    return view.querySelector('#m-payslip-body');
+  }
 
   function list(view) {
     MApp.setTitle('Payslips');
-    view.innerHTML = '<div class="m-hint">Loading…</div>';
-    API.get('/me/payslips')
-      .then(function (rows) {
-        view.innerHTML = '';
-        if (!rows.length) { view.appendChild(mEl('<div class="m-empty">No payslips yet.</div>')); return; }
-        var ul = mEl('<ul class="m-list"></ul>');
-        rows.forEach(function (r) {
-          var net = r.data.net_pay != null ? r.data.net_pay
-            : (Number(r.data.total_earnings || 0) - Number(r.data.total_deductions || 0));
-          var li = mEl(
-            '<li class="m-list-row"><div><b>' + mEsc(r.period || r.data.period || r.number) + '</b>' +
-            '<span>' + mEsc(r.status || '') + ' · ' + mEsc((r.created_at || '').slice(0, 10)) + '</span></div>' +
-            '<div class="m-list-qty">₱' + mEsc(num(net)) + '</div></li>'
-          );
-          li.onclick = function () { detail(view, r); };
-          ul.appendChild(li);
-        });
-        view.appendChild(ul);
-      })
-      .catch(function (ex) { view.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div>'; });
+    var host = shell(view, '46:895', 'Payslips', 'Available after payroll is finalized', function () { MApp.go('settings'); });
+    host.innerHTML =
+      '<aside class="m-payslip-rule">Draft payroll may still change. Download appears only after HR explicitly finalizes and releases the payroll.</aside>' +
+      '<div id="m-payslip-list"><div class="m-hint">Loading…</div></div>' +
+      '<p class="m-payslip-access-note">Open Profile → Pay & documents anytime.</p>';
+    var rowsHost = host.querySelector('#m-payslip-list');
+
+    API.get('/me/payslips').then(function (rows) {
+      if (!rows || !rows.length) {
+        rowsHost.innerHTML = '<div class="m-empty">No payroll records are available yet.</div>';
+        return;
+      }
+      rowsHost.innerHTML = '';
+      rows.forEach(function (record) {
+        var finalized = isFinalized(record);
+        var downloadable = canDownload(record);
+        var description = finalized
+          ? 'Finalized' + (record.finalized_at ? ' · Released ' + dateText(record.finalized_at) : '')
+          : 'Payroll in progress · Amounts may still change';
+        var state = downloadable ? 'Ready' : (finalized ? 'Final' : 'Wait');
+        var button = mEl('<button class="m-payslip-row' + (downloadable ? ' ready' : '') + '" type="button">' +
+          '<span><b>' + mEsc(periodText(record)) + '</b><small>' + mEsc(description) + '</small></span>' +
+          '<em class="' + (finalized ? 'final' : 'wait') + '">' + state + '</em><i aria-hidden="true">›</i></button>');
+        button.onclick = function () { detail(view, record); };
+        rowsHost.appendChild(button);
+      });
+    }).catch(function (error) {
+      rowsHost.innerHTML = '<div class="m-error">' + mEsc(error.message) + '</div><button class="m-v2-secondary" id="m-pay-retry" type="button">Try again</button>';
+      rowsHost.querySelector('#m-pay-retry').onclick = function () { list(view); };
+    });
   }
 
-  function detail(view, r) {
-    MApp.setTitle(r.period || (r.data && r.data.period) || 'Payslip');
-    view.innerHTML = '';
-    var d = r.data || {};
-    var net = d.net_pay != null ? d.net_pay : (Number(d.total_earnings || 0) - Number(d.total_deductions || 0));
-    view.appendChild(mEl(
-      '<div class="m-payslip-top">' +
-      '<div class="m-payslip-net">₱' + mEsc(num(net)) + '<span>net pay</span></div>' +
-      '<div class="m-hint">' + mEsc(d.employee_name || '') + (d.dept_position ? ' · ' + mEsc(d.dept_position) : '') +
-      ' · ' + mEsc(r.number) + '</div></div>'
-    ));
+  function preferredRows(data) {
+    var keys = ['basic_pay', 'overtime', 'overtime_pay', 'allowances', 'total_allowances', 'deductions', 'total_deductions', 'gross_pay', 'total_earnings'];
+    var used = {};
+    var rows = [];
+    keys.forEach(function (key) {
+      if (data[key] == null || data[key] === '' || used[key]) return;
+      used[key] = true;
+      rows.push({ key: key, value: data[key] });
+    });
+    Object.keys(data).forEach(function (key) {
+      if (used[key] || HIDE[key] || data[key] == null || String(data[key]).trim() === '' || typeof data[key] === 'object') return;
+      rows.push({ key: key, value: data[key] });
+    });
+    return rows;
+  }
 
-    // Slot for the "unrecorded OT" callout — filled in async so it never delays the numbers.
-    var alertHost = mEl('<div></div>');
-    view.appendChild(alertHost);
+  function detail(view, record) {
+    MApp.setTitle('Payslip detail');
+    var data = record.data || {};
+    var finalized = isFinalized(record);
+    var downloadable = canDownload(record);
+    var host = shell(view, '46:924', 'Payslip detail', periodText(record), function () { list(view); });
+    host.innerHTML =
+      '<section class="m-payslip-net-card"><small>Net pay</small><strong>' + mEsc(amount(netPay(record))) + '</strong>' +
+        '<span>' + (finalized ? 'Finalized' + (record.finalized_at ? ' · ' + mEsc(dateText(record.finalized_at)) : '') : 'Preview · not finalized') + '</span></section>' +
+      '<div class="m-payslip-lines">' + preferredRows(data).map(function (row) {
+        var numeric = isFinite(Number(row.value)) && String(row.value).trim() !== '';
+        return '<div><span>' + mEsc(titleCase(row.key)) + '</span><b>' + mEsc(numeric ? amount(row.value) : String(row.value)) + '</b></div>';
+      }).join('') + '</div>' +
+      '<div id="m-payslip-ot-alert"></div>' +
+      (downloadable
+        ? '<button class="m-v2-primary m-payslip-download" id="m-pay-download" type="button">↓ Download PDF</button>' +
+          '<p class="m-payslip-download-note">Download is enabled because the payroll record is finalized and released.</p>'
+        : '<aside class="m-payslip-wait"><b>' + (finalized ? 'PDF not released yet' : 'Payroll is still being finalized') + '</b>' +
+          '<span>' + (finalized ? 'HR has finalized this record, but no authenticated PDF is available yet.' : 'You can review this preview, but it may change. Download will appear only after finalization.') + '</span></aside>') +
+      '<button class="m-v2-secondary m-payslip-request" type="button">File a payroll request</button>';
 
-    var rows = Object.keys(d)
-      .filter(function (k) { return !HIDE[k] && d[k] != null && String(d[k]).trim() !== '' && typeof d[k] !== 'object'; })
-      .map(function (k) { return '<li><span>' + mEsc(titleCase(k)) + '</span><b>' + mEsc(num(d[k])) + '</b></li>'; })
-      .join('');
-    view.appendChild(mEl('<ul class="m-kv">' + rows + '</ul>'));
+    var download = host.querySelector('#m-pay-download');
+    if (download) download.onclick = function () {
+      download.disabled = true;
+      download.textContent = 'Preparing download…';
+      API.download(record.download_url, 'Payslip-' + String(periodText(record)).replace(/[^a-z0-9]+/gi, '-') + '.pdf')
+        .then(function () { download.textContent = '✓ Downloaded'; })
+        .catch(function (error) {
+          mToast(error.message || 'Download failed', 'err');
+          download.disabled = false;
+          download.textContent = '↓ Download PDF';
+        });
+    };
+    host.querySelector('.m-payslip-request').onclick = function () { MApp.go('requests'); };
 
-    var acts = mEl(
-      '<div class="m-actions">' +
-      '<button class="m-btn m-btn-secondary" data-back>Back</button>' +
-      '<button class="m-btn m-btn-secondary" data-file>File a request…</button>' +
-      '</div>'
-    );
-    acts.querySelector('[data-back]').onclick = function () { list(view); };
-    // Any other form — OT, half day, undertime, offset, leave, reimbursement, … (the picker).
-    acts.querySelector('[data-file]').onclick = function () { MApp.go('requests'); };
-    view.appendChild(acts);
-
-    // Unrecorded OT for this payslip's cutoff — worked past the shift with no OT request filed,
-    // so it wasn't paid. Match the /me/unrecorded-ot days to this slip by its period label;
-    // if nothing matches (e.g. an old slip outside the 45-day window) the callout stays hidden.
-    var slipPeriod = String(r.period || d.payroll_period || d.period || '').trim().toLowerCase();
+    var slipPeriod = String(record.period || data.payroll_period || data.period || '').trim().toLowerCase();
     API.get('/me/unrecorded-ot').then(function (allDays) {
-      var mine = (allDays || []).filter(function (x) {
-        return !slipPeriod || String(x.period_label || '').trim().toLowerCase() === slipPeriod;
+      var mine = (allDays || []).filter(function (day) {
+        return !slipPeriod || String(day.period_label || '').trim().toLowerCase() === slipPeriod;
       });
       if (!mine.length) return;
-      var totalH = Math.round(mine.reduce(function (s, x) { return s + x.ot_minutes; }, 0) / 60 * 10) / 10;
-      var dayList = mine.map(function (x) {
-        return x.work_date + ' (' + (Math.round(x.ot_minutes / 60 * 10) / 10) + ' h)';
-      }).join(', ');
-      var box = mEl(
-        '<div class="m-payslip-alert">' +
-        '<b>⏱️ Unrecorded overtime</b><br>' +
-        'You worked past your shift on ' + mEsc(dayList) + ' — about <b>' + mEsc(String(totalH)) + ' h</b> total — ' +
-        'with no Overtime Request filed, so it isn’t on this payslip. File one so HR can review and pay it.' +
-        '<button class="m-btn" data-ot>File OT request</button>' +
-        '</div>'
-      );
-      box.querySelector('[data-ot]').onclick = function () {
+      var hours = Math.round(mine.reduce(function (sum, day) { return sum + day.ot_minutes; }, 0) / 60 * 10) / 10;
+      var alertHost = host.querySelector('#m-payslip-ot-alert');
+      alertHost.innerHTML = '<aside class="m-payslip-ot"><b>Unrecorded overtime</b><span>' + hours +
+        ' hour(s) may need HR review before they can be included.</span><button type="button">File OT request</button></aside>';
+      alertHost.querySelector('button').onclick = function () {
         MApp.go('requests', { type: 'overtime_request', date: mine[0].work_date });
       };
-      alertHost.appendChild(box);
-    }).catch(function () { /* non-fatal — the payslip still shows without the callout */ });
+    }).catch(function () {});
   }
 
   MApp.route('payslips', function (view) { list(view); });
