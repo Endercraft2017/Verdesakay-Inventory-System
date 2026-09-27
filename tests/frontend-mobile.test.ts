@@ -8,11 +8,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 
-const PUBLIC = path.join(import.meta.dirname, '..', 'public');
+const ROOT = path.join(import.meta.dirname, '..');
+const PUBLIC = path.join(ROOT, 'public');
 const EXPECTED_ROUTES = [
   'home', 'work', 'production', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
   'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
-  'batch', 'job-orders', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'settings', 'queue', 'clock',
+  'batch', 'job-orders', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
   'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks',
   'announcements', 'notifications', 'time-fix', 'approvals', 'allocate', 'deliveries',
 ];
@@ -118,7 +119,7 @@ describe('mobile bootstrap', () => {
     expect(text).not.toContain('Products In');
   });
 
-  it('a releasing_clerk-only account has no Production tab access but sees Release SOs on Work', async () => {
+  it('a releasing_clerk-only account has no Production tab access but sees Release orders on Work', async () => {
     const win = await bootAs({
       id: 2, username: 'rel1', full_name: 'Release One', role: 'releasing_clerk', employee: true, modules: null,
       permissions: ['inventory.view', 'inventory.mobile', 'orders.view', 'orders.release', 'messages.view', 'messages.send'],
@@ -127,7 +128,7 @@ describe('mobile bootstrap', () => {
     win.location.hash = '#/work';
     win.MApp.render();
     const text = win.document.getElementById('m-view').textContent;
-    expect(text).toContain('Release SOs');
+    expect(text).toContain('Release orders');
     expect(text).not.toContain('Accept Parts Request');
     expect(text).not.toContain('Products In');
   });
@@ -273,7 +274,7 @@ describe('mobile bootstrap', () => {
     expect(files.quality).toContain("qualityRole === 'qa'");
     expect(files.quality).toContain("API.get('/qc/checklists");
     expect(files.rts).toContain("data-role-screen', 'rts'");
-    expect(files.rts).toContain("'/job-orders/' + id + '/receive'");
+    expect(files.rts).toContain("'/job-orders/' + id + '/products-in'");
     expect(files.releasing).toContain("data-role-screen', 'releasing'");
     expect(files.releasing).toContain("'/orders/' + order.id + '/release'");
   });

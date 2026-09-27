@@ -25,12 +25,28 @@
   function render(view) {
     MApp.setTitle('Notifications');
     view.innerHTML = '<div class="m-hint">Loading updates…</div>';
+    // Each source degrades on its own, but a failure is counted so an offline or failing
+    // load never masquerades as "You're all caught up".
+    var failed = 0, lastError = null;
+    function soft(p, fallback) {
+      return p.catch(function (ex) { failed++; lastError = ex; return fallback; });
+    }
     Promise.all([
-      API.get('/me/requests').catch(function () { return []; }),
-      API.get('/me/payslips').catch(function () { return []; }),
-      API.get('/messages/unread-count').catch(function () { return { count: 0 }; }),
-      API.get('/announcements').catch(function () { return []; })
+      soft(API.get('/me/requests'), []),
+      soft(API.get('/me/payslips'), []),
+      soft(API.get('/messages/unread-count'), { count: 0 }),
+      soft(API.get('/announcements'), [])
     ]).then(function (all) {
+      if (failed === 4) {
+        view.innerHTML = '';
+        var box = mEl('<div class="m-error">' + mEsc((lastError && lastError.offline)
+          ? 'You’re offline — updates can’t be checked right now.'
+          : (lastError && lastError.message) || 'Could not load updates') +
+          ' <button type="button" class="m-btn m-btn-sm">Try again</button></div>');
+        box.querySelector('button').onclick = function () { render(view); };
+        view.appendChild(box);
+        return;
+      }
       var requests = all[0] || [];
       var payslips = all[1] || [];
       var unread = Number((all[2] && (all[2].count != null ? all[2].count : all[2].unread)) || 0);
@@ -101,7 +117,10 @@
         });
       }
 
-      if (!count) {
+      if (failed) {
+        view.appendChild(mEl('<div class="m-hint">Some updates couldn’t be loaded' + ((lastError && lastError.offline) ? ' while offline' : '') + ' — this list may be incomplete.</div>'));
+      }
+      if (!count && !failed) {
         view.appendChild(mEl('<div class="m-empty"><b>You’re all caught up</b><br><span>New work and employee updates will appear here.</span></div>'));
       }
     }).catch(function (ex) {
