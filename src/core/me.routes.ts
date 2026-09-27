@@ -2,7 +2,9 @@
  *  record. Mounted at /api/me. Any logged-in user; endpoints 403 if the account
  *  isn't linked to an `employees` row. */
 import { Router, type Request } from 'express';
-import { queryOne, queryAll, run } from '../shared/db';
+import { queryOne, queryAll, run, getSetting } from '../shared/db';
+import { logEvent } from '../shared/activity';
+import { renderPayslipPdf } from '../modules/payroll/payslip-pdf';
 import { requireAuth } from '../shared/auth';
 import { parseBody, timeCorrectionSchema, approvalDecisionSchema } from '../shared/validation';
 import { notifyUser, notifyPermission } from '../shared/push';
@@ -40,20 +42,68 @@ router.get('/', (req, res) => {
   res.json({ employee: me(req.user!.id) ?? null });
 });
 
-// GET /api/me/payslips — this employee's HR Payroll records, newest first
+/** A payslip is final once HR marks it Paid (POST /hr/payroll/:id/mark-paid, hr.manage): that
+ *  lock is the only state regenerate/edit/delete all refuse, so its figures can't change after.
+ *  Mere existence (a 'draft' from generate-payslips) never counts. While locked, updated_at is
+ *  the moment it was marked paid (nothing else may touch the row). */
+const isFinalPayslip = (status: string) => status === 'paid';
+
+/** This employee's hr_payroll records (payslips carry only the employee's name). */
+function myPayslips(emp: Emp, id?: number): FormRecord[] {
+  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
+  if (!form) return [];
+  return queryAll<FormRecord>(
+    `SELECT id, number, period, status, data, created_at, updated_at
+     FROM form_records
+     WHERE form_def_id = ? AND json_extract(data, '$.employee_name') = ? ${id != null ? 'AND id = ?' : ''}
+     ORDER BY id DESC`,
+    form.id, emp.name, ...(id != null ? [id] : [])
+  );
+}
+
+// GET /api/me/payslips — this employee's HR Payroll records, newest first. Drafts stay visible as
+// previews; only finalized ones get `download_url`.
 router.get('/payslips', (req, res) => {
   const emp = me(req.user!.id);
   if (!needEmp(res, emp)) return;
-  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
-  if (!form) { res.json([]); return; }
-  const rows = queryAll<FormRecord>(
-    `SELECT id, number, period, status, data, created_at, updated_at
-     FROM form_records
-     WHERE form_def_id = ? AND json_extract(data, '$.employee_name') = ?
-     ORDER BY id DESC`,
-    form.id, emp.name
-  );
-  res.json(rows.map((r) => ({ ...r, data: parse(r.data) })));
+  res.json(myPayslips(emp).map((r) => {
+    const finalized = isFinalPayslip(r.status);
+    return {
+      ...r, data: parse(r.data), finalized,
+      finalized_at: finalized ? r.updated_at : null,
+      download_url: finalized ? `/me/payslips/${r.id}/pdf` : null,
+    };
+  }));
+});
+
+// GET /api/me/payslips/:id/pdf — download one of YOUR finalized payslips. Ownership and
+// finalization are re-checked here at download time; every successful download is logged.
+router.get('/payslips/:id/pdf', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  const rec = myPayslips(emp, Number(req.params.id))[0];
+  // Someone else's payslip answers exactly like a missing one — no existence leak.
+  if (!rec) { res.status(404).json({ error: 'Payslip not found' }); return; }
+  if (!isFinalPayslip(rec.status)) {
+    res.status(409).json({ error: 'This payslip is not finalized yet — it can be downloaded once HR finalizes payroll.' });
+    return;
+  }
+  const def = queryOne<{ fields: string }>("SELECT fields FROM form_definitions WHERE slug = 'hr_payroll'");
+  const labels: Record<string, string> = {};
+  const fields = parse(def?.fields) as unknown;
+  if (Array.isArray(fields)) for (const f of fields as Array<{ key: string; label?: string }>) if (f.label) labels[f.key] = f.label;
+  const pdf = renderPayslipPdf({
+    number: rec.number, data: parse(rec.data), finalizedAt: rec.updated_at ?? rec.created_at,
+    company: getSetting<{ name?: string; address?: string }>('company_profile') ?? null, labels,
+  });
+  logEvent(req, { entity: 'payroll', entityId: rec.id, action: 'payslip-download', summary: `Downloaded payslip ${rec.number}` });
+  const safe = String(rec.number).replace(/[^A-Za-z0-9-]+/g, '-');
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="Payslip-${safe}.pdf"`,
+    'Cache-Control': 'private, no-store',
+  });
+  res.send(pdf);
 });
 
 // GET /api/me/schedule — current + next cutoff's roster days with shift times

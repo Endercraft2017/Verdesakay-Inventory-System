@@ -76,17 +76,15 @@
         });
       }
 
-      var released = payslips.filter(function (r) {
-        var s = String(r.status || '').toLowerCase();
-        return s === 'finalized' || s === 'approved' || s === 'complete';
-      }).slice(0, 3);
+      // Only payslips the server marks finalized (HR marked them Paid) — never inferred from status text.
+      var released = payslips.filter(function (r) { return r.finalized === true; }).slice(0, 3);
       if (released.length) {
         section(view, 'Pay & documents');
         released.forEach(function (r) {
           count++;
           view.appendChild(openRow(
             'Payslip available',
-            r.period || (r.data && r.data.period) || r.number || 'Payroll record',
+            r.period || (r.data && r.data.payroll_period) || r.number || 'Payroll record',
             'Finalized',
             'payslips', null, 'ok'
           ));

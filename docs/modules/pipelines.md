@@ -235,7 +235,13 @@ access code can't be recovered — the reporter files a new report.
 2. **Computation** (`payroll`) — `hr-payroll-compute.ts` applies pay-per-hour-basis
    rules, OT cap, night differential, statutory deduction tables
    (`payroll-tables.ts`, `ph-statutory.ts`).
-3. **Payslip** (`hr`) — generated per employee; Other Deductions itemized.
+3. **Payslip** (`hr`) — generated per employee as a `draft`; Other Deductions itemized.
+   Employees see drafts on mobile as previews that may still change (no download).
+3a. **Finalize & release** (`hr` → `payroll` → `core/me`) — HR marks the payslip Paid (locks
+   it). Only then does the employee's list carry `finalized` + `download_url`, and
+   `GET /api/me/payslips/:id/pdf` render it (`payroll/payslip-pdf.ts`), re-checking ownership
+   and Paid at download time and logging each download. Branch: HR un-marks Paid to correct
+   it → download blocked again (409) until re-marked.
 4. **Ledger posting** (`accounting`) — `hr.routes.ts` calls
    `accounting-autopost.ts`'s `maybeAutoPostPayroll`.
 5. **Statutory filing** (`accounting`, under Tax & Compliance) — `payroll`'s

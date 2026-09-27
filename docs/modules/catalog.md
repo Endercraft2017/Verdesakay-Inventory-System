@@ -15,7 +15,9 @@ Backend paths are `src/...` unless noted; frontend paths are `public/js/modules/
 every module. Not gated by `requireModule()`, not licensed, never disabled.
 **Owned files:** `db.ts` (SQLite connection registry, multi-tenant `tenantStore`,
 schema/migrations), `types.ts`, `validation.ts`, `permissions.ts`, `auth.ts`
-(session/login middleware), `activity.ts` (audit log writer), `idempotency.ts`,
+(session/login middleware), `activity.ts` (audit log writer; `logEvent()` for events the
+mutation middleware can't see, e.g. a payslip download), `idempotency.ts`, `pdf-lite.ts`
+(dependency-free text PDF writer, Helvetica AFM metrics — used by `payroll/payslip-pdf.ts`),
 `csv.ts`, `csv-import.ts`, `mailer.ts` (BYO-SMTP transport), `secrets.ts` (AES-GCM),
 `push.ts` (task-reminder notifications), `qb.ts` (typed Kysely query builder used as a SQL
 compiler over the sync db helpers; `qb`/`all`/`first`/`exec`), `db-types.ts` (GENERATED Kysely
@@ -193,9 +195,16 @@ and `accounting` now depend one-directionally on `payroll`, not on each other.
 **Owned files:** `hr-payroll-compute.ts`, `hr-payroll-import.ts`,
 `employee-rate-history.ts`, `payroll-tables.ts`, `ph-2316.ts`, `ph-alphalist.ts`,
 `ph-contributions.ts`, `ph-final-pay.ts`, `ph-income-tax.ts`,
-`ph-payroll-report-data.ts`, `ph-statutory.ts`, `ph-vat-ewt.ts`.
-**Public interface:** pure computation functions (no routes of its own — its
-computations are exposed through `hr.routes.ts` and `accounting.routes.ts`).
+`ph-payroll-report-data.ts`, `ph-statutory.ts`, `ph-vat-ewt.ts`, `payslip-pdf.ts`
+(renders one finalized payslip as a PDF; captions from the live `hr_payroll` form).
+**Public interface:** pure computation/rendering functions (no routes of its own — exposed
+through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
+`GET /api/me/payslips/:id/pdf`).
+**Finalization rule:** a payslip is final only when HR marks it Paid
+(`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
+list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for
+those; the PDF route re-checks ownership (own `employee_name`, 404 otherwise) and Paid status
+(409) at download time and logs `payslip-download` to the activity log.
 **Dependencies:** `shared/` only.
 **Licensing note:** not a separately-sold SaaS module — still bundled under the
 existing `hr` entry in `shared/modules.ts`'s `MODULES` list. This is an internal

@@ -83,6 +83,27 @@ function buildMeta(req: Request): string | null {
   return json;
 }
 
+/** Record a named event the method-based middleware can't see — e.g. a GET that hands out a
+ *  sensitive file (payslip download). Never throws into the response path. */
+export function logEvent(
+  req: Request,
+  ev: { entity: string; entityId?: string | number | null; action: string; summary: string; statusCode?: number }
+): void {
+  try {
+    const path = (req.originalUrl || req.url || '').split('?')[0] ?? '';
+    run(
+      `INSERT INTO activity_log
+        (user_id, user_name, method, path, entity, entity_id, action, status_code, ip, summary, meta)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      req.user?.id ?? null, req.user?.full_name ?? null, req.method, path, ev.entity,
+      ev.entityId == null ? null : String(ev.entityId), ev.action, ev.statusCode ?? 200,
+      req.ip ?? req.socket?.remoteAddress ?? null, ev.summary
+    );
+  } catch {
+    /* the activity log must never break a request */
+  }
+}
+
 /** Record one finished request. Never throws into the response path. */
 export function recordActivity(req: Request, res: Response): void {
   try {

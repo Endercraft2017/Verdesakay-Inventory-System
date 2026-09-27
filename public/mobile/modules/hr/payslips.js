@@ -4,8 +4,12 @@
 (function () {
   var HIDE = {
     employee_name: 1, dept_position: 1, name: 1, department: 1, position: 1,
-    period: 1, payroll_period: 1, finalized: 1, finalized_at: 1, download_url: 1
+    period: 1, payroll_period: 1, finalized: 1, finalized_at: 1, download_url: 1,
+    // generate-payslips bookkeeping (which statutory deductions were applied), not pay lines
+    sss_applied: 1, philhealth_applied: 1, pagibig_applied: 1, withholding_tax_applied: 1
   };
+  // Counts, not money — shown as plain numbers, never with a peso sign.
+  function isCount(key) { return /^days_|_hours$|^hours_|_days$/.test(key); }
 
   function titleCase(value) {
     return String(value || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
@@ -114,7 +118,8 @@
         '<span>' + (finalized ? 'Finalized' + (record.finalized_at ? ' · ' + mEsc(dateText(record.finalized_at)) : '') : 'Preview · not finalized') + '</span></section>' +
       '<div class="m-payslip-lines">' + preferredRows(data).map(function (row) {
         var numeric = isFinite(Number(row.value)) && String(row.value).trim() !== '';
-        return '<div><span>' + mEsc(titleCase(row.key)) + '</span><b>' + mEsc(numeric ? amount(row.value) : String(row.value)) + '</b></div>';
+        var shown = !numeric ? String(row.value) : isCount(row.key) ? String(Number(row.value)) : amount(row.value);
+        return '<div><span>' + mEsc(titleCase(row.key)) + '</span><b>' + mEsc(shown) + '</b></div>';
       }).join('') + '</div>' +
       '<div id="m-payslip-ot-alert"></div>' +
       (downloadable
