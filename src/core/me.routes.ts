@@ -2,11 +2,13 @@
  *  record. Mounted at /api/me. Any logged-in user; endpoints 403 if the account
  *  isn't linked to an `employees` row. */
 import { Router, type Request } from 'express';
+import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run, getSetting } from '../shared/db';
 import { logEvent } from '../shared/activity';
 import { renderPayslipPdf } from '../modules/payroll/payslip-pdf';
 import { requireAuth } from '../shared/auth';
-import { parseBody, timeCorrectionSchema, approvalDecisionSchema } from '../shared/validation';
+import { parseBody, timeCorrectionSchema, approvalDecisionSchema, selfProfileSchema } from '../shared/validation';
+import { getProfile, updateProfile, profileHistory, PROFILE_FIELDS } from '../modules/hr/employee-profile';
 import { notifyUser, notifyPermission } from '../shared/push';
 import { myClockStatus } from '../modules/hr/clock';
 import { unrecordedOtMinutes, type AttendanceDay } from '../modules/payroll/hr-payroll-compute';
@@ -19,14 +21,19 @@ router.use(requireAuth);
 interface Emp {
   id: number; name: string; department_id: number | null; position: string | null; employee_no: string | null;
   default_shift_id: number | null; department_name: string | null;
+  /** Self-chosen display name (employee_profiles) — never replaces the legal `name`. */
+  preferred_name: string | null;
   leave_days_per_year: number; leave_days_used: number; leave_days_remaining: number;
 }
 
 function me(userId: number): Emp | undefined {
   return queryOne<Emp>(
     `SELECT e.id, e.name, e.department_id, e.position, e.employee_no, e.default_shift_id, d.name AS department_name,
-            e.leave_days_per_year, e.leave_days_used, (e.leave_days_per_year - e.leave_days_used) AS leave_days_remaining
-     FROM employees e LEFT JOIN departments d ON d.id = e.department_id WHERE e.user_id = ?`,
+            e.leave_days_per_year, e.leave_days_used, (e.leave_days_per_year - e.leave_days_used) AS leave_days_remaining,
+            ep.preferred_name
+     FROM employees e LEFT JOIN departments d ON d.id = e.department_id
+     LEFT JOIN employee_profiles ep ON ep.employee_id = e.id
+     WHERE e.user_id = ?`,
     userId
   );
 }
@@ -40,6 +47,51 @@ const parse = (d: unknown) => { try { return JSON.parse(String(d)); } catch { re
 // GET /api/me — the linked employee (or null)
 router.get('/', (req, res) => {
   res.json({ employee: me(req.user!.id) ?? null });
+});
+
+/* ─── Profile & contact details (self-service) ────────────────────────────────── */
+
+// GET /api/me/profile — editable personal details + the read-only official record
+router.get('/profile', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  const official = queryOne<{ status: string; start_date: string | null }>('SELECT status, start_date FROM employees WHERE id = ?', emp.id);
+  res.json({
+    ...getProfile(emp.id),
+    official: {
+      name: emp.name, employee_no: emp.employee_no, position: emp.position,
+      department: emp.department_name, status: official?.status ?? null, start_date: official?.start_date ?? null,
+    },
+  });
+});
+
+// PUT /api/me/profile — { current_password, preferred_name?, mobile_phone?, … } (partial).
+// Re-authenticates with the password; unknown keys (legal name, position, pay…) are a 400.
+// Contact changes clear HR verification and ping HR to re-verify.
+router.put('/profile', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  const { current_password, ...input } = parseBody(selfProfileSchema, req.body);
+  const user = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', req.user!.id);
+  // 400, not 401: the mobile API client treats 401 as "session expired" and signs the user out.
+  if (!user || !bcrypt.compareSync(current_password, user.password_hash)) {
+    res.status(400).json({ error: 'Current password is incorrect' }); return;
+  }
+  const values = Object.fromEntries(PROFILE_FIELDS.filter((k) => k in input).map((k) => [k, input[k] ?? null]));
+  const result = updateProfile(emp.id, req.user!.id, values);
+  if (result.changed.some((k) => k !== 'preferred_name')) {
+    void notifyPermission('hr.manage', {
+      title: 'Contact details updated', body: `${emp.name} — please verify`, url: '#/employees', tag: 'profile-' + emp.id,
+    });
+  }
+  res.json({ ...result, profile: getProfile(emp.id) });
+});
+
+// GET /api/me/profile/history — your own recent profile changes
+router.get('/profile/history', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  res.json(profileHistory(emp.id));
 });
 
 /** A payslip is final once HR marks it Paid (POST /hr/payroll/:id/mark-paid, hr.manage): that
@@ -492,9 +544,10 @@ function relDays(dateStr: string | null | undefined): string {
 router.get('/today', (req, res) => {
   const hour = new Date().getHours();
   const partOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
-  const firstName = (req.user!.full_name || req.user!.username || '').trim().split(/\s+/)[0];
   const stack: StackItem[] = [];
   const emp = me(req.user!.id);
+  // The employee's self-chosen preferred name wins; otherwise the account name's first word.
+  const firstName = emp?.preferred_name || (req.user!.full_name || req.user!.username || '').trim().split(/\s+/)[0];
 
   let clock: null | { linked: boolean; clocked_in: boolean; since: string | null; hours_today: number;
     shift: { name: string | null; start_time: string; end_time: string } | null } = null;

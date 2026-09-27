@@ -649,6 +649,39 @@ export const updateBugReportSchema = z.object({
   status: z.enum(['open', 'resolved']),
 });
 
+// ---- Employee self-service profile (see src/modules/hr/employee-profile.ts) ----
+/** Blank → null; otherwise a Philippine mobile number (09xxxxxxxxx / +639xxxxxxxxx / 639…),
+ *  normalized to +639xxxxxxxxx, or any other international number written with a leading +. */
+const phoneOpt = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  z.string().trim().max(24).transform((s, ctx) => {
+    const digits = s.replace(/[\s().-]/g, '');
+    let m: RegExpExecArray | null;
+    if ((m = /^(?:\+?63|0)(9\d{9})$/.exec(digits))) return '+63' + m[1];
+    if (/^\+[1-9]\d{7,14}$/.test(digits)) return digits;
+    ctx.addIssue({ code: 'custom', message: 'Enter a mobile number like 0917 123 4567 or +63 917 123 4567' });
+    return z.NEVER;
+  }).optional().nullable()
+);
+const blankToNull = (max: number) => z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  trimmed.max(max).optional().nullable()
+);
+export const selfProfileSchema = z.object({
+  // Re-authentication: floor phones get shared, so a contact/emergency change needs the password.
+  current_password: z.string().min(1, 'Enter your current password to save changes').max(200),
+  preferred_name: blankToNull(60),
+  mobile_phone: phoneOpt,
+  personal_email: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+    z.string().trim().toLowerCase().email('Enter a valid email').max(160).optional().nullable()
+  ),
+  home_address: blankToNull(500),
+  emergency_contact_name: blankToNull(120),
+  emergency_contact_relation: blankToNull(60),
+  emergency_contact_phone: phoneOpt,
+}).strict(); // unknown keys (e.g. name, position, daily_rate) are rejected, not silently ignored
+
 // ---- Confidential (anonymous) reports (see src/core/confidential-reports.ts) ----
 export const REPORT_STATUSES = ['new', 'triaged', 'investigating', 'resolved', 'closed'] as const;
 export const REPORT_CATEGORIES = [

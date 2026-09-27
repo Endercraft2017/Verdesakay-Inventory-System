@@ -1120,6 +1120,36 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_anonymous_report_messages ON anonymous_report_messages(report_id, id);
 
+    -- Employee self-service profile (src/modules/hr/employee-profile.ts): preferred name and
+    -- personal contact details the employee edits themselves, kept apart from the HR-owned
+    -- employees row (legal name, position, pay…). verified_at is cleared whenever a contact
+    -- field changes and set again by HR (hr.manage). One history row per changed field.
+    CREATE TABLE IF NOT EXISTS employee_profiles (
+      employee_id                INTEGER PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+      preferred_name             TEXT,
+      mobile_phone               TEXT,
+      personal_email             TEXT,
+      home_address               TEXT,
+      emergency_contact_name     TEXT,
+      emergency_contact_relation TEXT,
+      emergency_contact_phone    TEXT,
+      updated_at                 TEXT,
+      updated_by                 INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      verified_at                TEXT,
+      verified_by                INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS employee_profile_changes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      field       TEXT NOT NULL,
+      old_value   TEXT,
+      new_value   TEXT,
+      changed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      source      TEXT NOT NULL DEFAULT 'self',   -- 'self' | 'hr_verify' | 'info_change' (approved request)
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_employee_profile_changes ON employee_profile_changes(employee_id, id);
+
     -- In-app bug reports: any signed-in user can file one (title + steps to reproduce +
     -- up to 5 screenshots); users.manage reviews/resolves them. See
     -- src/routes/bug-reports.routes.ts.

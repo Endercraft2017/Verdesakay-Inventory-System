@@ -179,7 +179,17 @@ SCHEMA_VERSION 46), `kiosk-devices.ts` (approved time-in kiosk PCs + the `kiosk_
 setting; locked by default when internet-facing, SCHEMA_VERSION 47), `field.ts`, `hr-daily-report.ts`,
 `hr-employee-numbering.ts`, `punch-photos.ts`, routes: `hr.routes.ts` (also owns the
 `asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
-doc_template, SCHEMA_VERSION 43), `clock.routes.ts`, `field.routes.ts`.
+doc_template, SCHEMA_VERSION 43), `clock.routes.ts`, `field.routes.ts`,
+`employee-profile.ts` + `employee-profile.routes.ts` (self-service profile, below).
+**Self-service profile:** `employee_profiles` / `employee_profile_changes` (createSchema, no
+version bump) hold the preferred name and personal contact/emergency details the employee edits
+themselves via `GET/PUT /api/me/profile` (`core/me.routes.ts`) — re-authenticated with the
+current password (400 on mismatch, never 401), strict schema (legal name, gov IDs, position,
+department and pay keys are rejected), PH mobile numbers normalized to +63, one history row per
+changed field. A contact change clears `verified_at` and pings `hr.manage`; HR re-verifies via
+`/api/hr/employee-profiles` (`GET /` unverified worklist + `GET /:id` history: hr.view;
+`POST /:id/verify`: hr.manage). The preferred name feeds the mobile greeting and Profile header
+but never replaces `employees.name`. Tests: `tests/me-profile.test.ts`.
 **Dependencies:** `modules/payroll` (pay computation + statutory tables),
 `modules/accounting` (`accounting-autopost.ts`, to post payroll to the ledger),
 `platform/` (photo-retention settings).

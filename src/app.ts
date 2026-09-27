@@ -21,6 +21,7 @@ import partsSlipsRoutes from './modules/manufacturing/parts-slips.routes';
 import productionIssuesRoutes from './modules/manufacturing/production-issues.routes';
 import attachmentsRoutes from './core/attachments.routes';
 import bugReportsRoutes from './core/bug-reports.routes';
+import employeeProfileRoutes from './modules/hr/employee-profile.routes';
 import { reporterRouter as anonymousReportRoutes, staffRouter as confidentialReportRoutes, isAnonymousReportPath } from './core/confidential-reports.routes';
 import deliveriesRoutes from './modules/inventory/deliveries.routes';
 import releaseSlipsRoutes from './modules/inventory/release-slips.routes';
@@ -202,6 +203,7 @@ export function createApp() {
   app.use('/api/ai', requireModule('ai'), aiRoutes);
   app.use('/api/hr/clock', requireModule('hr'), clockRoutes);
   app.use('/api/hr/field', requireModule('hr'), fieldRoutes);
+  app.use('/api/hr/employee-profiles', requireModule('hr'), employeeProfileRoutes);
   app.use('/api/hr', requireModule('hr'), hrRoutes);
   app.use('/api/me', meRoutes);
   app.use('/api/announcements', announcementsRoutes);

@@ -2,7 +2,10 @@
 MApp.route('settings', function (view) {
   var authMe = MApp.getMe() || {};
   var employee = authMe.employee || {};
-  var profile = { nickname: '', employee: employee };
+  // preferredName comes from the account (GET /me → employee.preferred_name); it's only a
+  // display name and never replaces the legal employee name.
+  var profile = { preferredName: employee.preferred_name || '', employee: employee };
+  var NICK_KEY = 'vds_profile_nickname'; // legacy device-only nickname, offered once for carry-over
 
   function esc(v) { return mEsc(v == null || v === '' ? 'Not available' : String(v)); }
   function initials(name) {
@@ -36,7 +39,7 @@ MApp.route('settings', function (view) {
   function identity() {
     var e = profile.employee || {};
     var legalName = e.name || authMe.full_name || authMe.username || 'Employee';
-    var displayName = profile.nickname || legalName;
+    var displayName = profile.preferredName || legalName;
     var position = e.position || authMe.role || 'Employee';
     var dept = e.department_name || authMe.department_name || '';
     return '<article class="profile-identity">' +
@@ -62,7 +65,7 @@ MApp.route('settings', function (view) {
     var page = mount(
       titleBlock('Profile', 'Personal records and preferences') + identity() +
       '<div class="profile-menu">' +
-      row('◉', 'Personal details', 'Nickname and approved contact details', 'personal') +
+      row('◉', 'Personal details', 'Preferred name, contact details and official record', 'personal') +
       row('▤', 'Pay & documents', 'Payslips and certificates', 'payslips') +
       row('✓', 'Requests', 'Approvals and information changes', 'requests') +
       row('◐', 'Appearance & accessibility', 'Theme, language and display', 'appearance') +
@@ -74,31 +77,76 @@ MApp.route('settings', function (view) {
   function record(label, value) {
     return '<div class="profile-record"><span>' + mEsc(label) + '</span><b>' + esc(value) + '</b></div>';
   }
+  function field(label, key, value, attrs) {
+    return '<label class="m-field"><span class="m-label">' + mEsc(label) + '</span>' +
+      '<input class="m-input" data-pf="' + key + '" value="' + mEsc(value || '') + '" ' + (attrs || '') + ' /></label>';
+  }
   function renderPersonal() {
-    var e = profile.employee || {};
     var page = mount(
-      titleBlock('Personal details', 'Your display preferences and official records', true) +
-      '<section class="profile-section"><h2>Display preference</h2>' +
-      '<label class="m-field"><span class="m-label">Nickname</span>' +
-      '<input class="m-input" data-nickname maxlength="40" value="' + mEsc(profile.nickname) + '" placeholder="How the app addresses you" /></label>' +
-      '<p class="profile-note">Nickname is saved on this device only and never replaces your legal employee name.</p>' +
-      '<button class="m-btn" type="button" data-save-nickname>Save nickname</button></section>' +
+      titleBlock('Personal details', 'Your preferred name, contact details and official record', true) +
+      '<div data-personal><div class="m-hint">Loading your details…</div></div>');
+    var host = page.querySelector('[data-personal]');
+    API.get('/me/profile').then(function (p) { paintPersonal(host, p); }).catch(function (e) {
+      host.innerHTML = '';
+      var box = mEl('<div class="m-error">' + mEsc(e.offline ? 'You’re offline — your details can’t be loaded right now.' : (e.message || 'Could not load your details')) +
+        ' <button class="m-btn m-btn-sm" type="button">Try again</button></div>');
+      box.querySelector('button').onclick = renderPersonal;
+      host.appendChild(box);
+    });
+  }
+  function paintPersonal(host, p) {
+    var o = p.official || {};
+    // One-time carry-over of the old device-only nickname: pre-filled, never saved silently.
+    var localNick = '';
+    try { localNick = localStorage.getItem(NICK_KEY) || ''; } catch (ignore) {}
+    var verified = p.verified_at
+      ? '<span class="profile-verify ok">Verified by HR' + (p.verified_by_name ? ' · ' + mEsc(p.verified_by_name) : '') + '</span>'
+      : p.needs_verification ? '<span class="profile-verify wait">Waiting for HR to verify</span>' : '';
+    host.innerHTML =
+      '<form class="profile-section" data-profile-form novalidate>' +
+        '<div class="profile-section-head"><div><h2>Contact & preferences</h2><p>You can change these yourself</p></div>' + verified + '</div>' +
+        field('Preferred name', 'preferred_name', p.preferred_name || localNick, 'maxlength="60" placeholder="How the app greets you" autocomplete="nickname"') +
+        (localNick && !p.preferred_name ? '<p class="profile-note">Filled in from the nickname saved on this phone — save to keep it on your account.</p>' : '') +
+        field('Mobile number', 'mobile_phone', p.mobile_phone, 'inputmode="tel" autocomplete="tel" placeholder="0917 123 4567"') +
+        field('Personal email', 'personal_email', p.personal_email, 'type="email" inputmode="email" autocomplete="email"') +
+        '<label class="m-field"><span class="m-label">Home address</span><textarea class="m-input" data-pf="home_address" rows="2" maxlength="500" autocomplete="street-address">' + mEsc(p.home_address || '') + '</textarea></label>' +
+        '<h3 class="profile-subhead">Emergency contact</h3>' +
+        field('Name', 'emergency_contact_name', p.emergency_contact_name, 'maxlength="120"') +
+        field('Relationship', 'emergency_contact_relation', p.emergency_contact_relation, 'maxlength="60" placeholder="e.g. Spouse, Parent"') +
+        field('Phone', 'emergency_contact_phone', p.emergency_contact_phone, 'inputmode="tel" placeholder="0917 123 4567"') +
+        '<label class="m-field"><span class="m-label">Current password *</span><input class="m-input" type="password" data-pw-confirm autocomplete="current-password" /></label>' +
+        '<p class="profile-note">Your password confirms it’s you. Changed contact details go to HR to verify; your preferred name never replaces your legal name.</p>' +
+        '<button class="m-v2-primary profile-full-button" type="submit">Save changes</button>' +
+      '</form>' +
       '<section class="profile-section"><div class="profile-section-head"><div><h2>Official employee record</h2><p>HR-controlled information</p></div><span class="profile-lock">Read only</span></div>' +
-      record('Legal name', e.name || authMe.full_name) +
-      record('Employee ID', e.employee_no) + record('Position', e.position || authMe.role) +
-      record('Department', e.department_name || authMe.department_name) +
-      '<p class="profile-note">Names, birth details, salary, position, department and other official fields require approval before changes are applied.</p>' +
-      '<button class="m-btn m-btn-secondary" type="button" data-request-change>Request an information change</button></section>' +
-      '<aside class="profile-info">Direct contact-detail editing is not enabled by the current employee API. Use a request so HR can verify and approve the change.</aside>');
-    page.querySelector('[data-save-nickname]').onclick = function () {
-      var value = page.querySelector('[data-nickname]').value.trim();
-      profile.nickname = value;
-      try { localStorage.setItem('vds_profile_nickname', value); } catch (ignore) {}
-      mToast('Nickname saved on this device');
+        record('Legal name', o.name) + record('Employee ID', o.employee_no) + record('Position', o.position) +
+        record('Department', o.department) + record('Employment status', o.status) +
+        '<p class="profile-note">Your legal name, government ID numbers, position, department and other official fields change only after HR approves an information-change request.</p>' +
+        '<button class="m-v2-secondary profile-full-button" type="button" data-request-change>Request an information change</button></section>';
+    var form = host.querySelector('[data-profile-form]');
+    form.onsubmit = function (event) {
+      event.preventDefault();
+      var pw = form.querySelector('[data-pw-confirm]');
+      if (!pw.value) { mToast('Enter your current password to save', 'err'); pw.focus(); return; }
+      if (navigator.onLine === false) { mToast('You’re offline — connect to save your details', 'err'); return; }
+      var body = { current_password: pw.value };
+      Array.prototype.forEach.call(form.querySelectorAll('[data-pf]'), function (input) { body[input.getAttribute('data-pf')] = input.value.trim(); });
+      var button = form.querySelector('button[type=submit]');
+      button.disabled = true; button.textContent = 'Saving…';
+      API.put('/me/profile', body).then(function (res) {
+        try { localStorage.removeItem(NICK_KEY); } catch (ignore) {}
+        profile.preferredName = res.profile.preferred_name || '';
+        mToast(!res.changed.length ? 'No changes to save'
+          : res.changed.some(function (k) { return k !== 'preferred_name'; }) ? 'Saved — HR will verify your contact details' : 'Saved');
+        paintPersonal(host, Object.assign({}, res.profile, { official: p.official }));
+      }).catch(function (e) {
+        mToast(e.message || 'Could not save', 'err');
+        button.disabled = false; button.textContent = 'Save changes';
+        if (/password/i.test(e.message || '')) { pw.value = ''; pw.focus(); }
+      });
     };
-    page.querySelector('[data-request-change]').onclick = function () {
-      mToast('Choose the closest request type and describe the information to change');
-      MApp.go('requests');
+    host.querySelector('[data-request-change]').onclick = function () {
+      MApp.go('requests', { type: 'information_change' });
     };
   }
   function renderAppearance() {
@@ -179,10 +227,10 @@ MApp.route('settings', function (view) {
     };
   }
 
-  try { profile.nickname = localStorage.getItem('vds_profile_nickname') || ''; } catch (ignore) {}
   renderHome();
   API.get('/me').then(function (data) {
     profile.employee = data && data.employee ? data.employee : (data || profile.employee);
+    profile.preferredName = (profile.employee && profile.employee.preferred_name) || '';
     renderHome();
   }).catch(function () { /* auth identity remains available */ });
 });

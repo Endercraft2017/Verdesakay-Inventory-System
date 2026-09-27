@@ -314,6 +314,32 @@ export interface EmployeeDocuments {
   created_at: Generated<string>;
 }
 
+export interface EmployeeProfileChanges {
+  id: Generated<number>;
+  employee_id: number;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  changed_by: number | null;
+  source: Generated<string>;
+  created_at: Generated<string>;
+}
+
+export interface EmployeeProfiles {
+  employee_id: Generated<number>;
+  preferred_name: string | null;
+  mobile_phone: string | null;
+  personal_email: string | null;
+  home_address: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_relation: string | null;
+  emergency_contact_phone: string | null;
+  updated_at: string | null;
+  updated_by: number | null;
+  verified_at: string | null;
+  verified_by: number | null;
+}
+
 export interface EmployeeRateHistory {
   id: Generated<number>;
   employee_id: number;
@@ -1157,6 +1183,8 @@ export interface DB {
   doc_templates: DocTemplates;
   doc_variables: DocVariables;
   employee_documents: EmployeeDocuments;
+  employee_profile_changes: EmployeeProfileChanges;
+  employee_profiles: EmployeeProfiles;
   employee_rate_history: EmployeeRateHistory;
   employees: Employees;
   field_punches: FieldPunches;

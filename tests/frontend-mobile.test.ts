@@ -288,8 +288,13 @@ describe('mobile bootstrap', () => {
     const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/core/settings.js'), 'utf8');
     expect(source).toContain("view.setAttribute('data-figma-node', nodeId || '46:953')");
     expect(source).toContain("API.get('/me')");
-    expect(source).toContain("localStorage.setItem('vds_profile_nickname'");
-    expect(source).toContain('Nickname is saved on this device only');
+    // Preferred name + contact details are saved to the account (re-authenticated), never by
+    // rewriting the legal/account name; the old device-only nickname is only offered once.
+    expect(source).toContain("API.get('/me/profile')");
+    expect(source).toContain("API.put('/me/profile', body)");
+    expect(source).toContain('current_password: pw.value');
+    expect(source).not.toContain("localStorage.setItem('vds_profile_nickname'");
+    expect(source).toContain("MApp.go('requests', { type: 'information_change' })");
     expect(source).toContain('HR-controlled information');
     expect(source).toContain("MApp.go('payslips')");
     expect(source).toContain("MApp.go('requests')");
