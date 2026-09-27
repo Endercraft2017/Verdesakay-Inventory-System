@@ -237,4 +237,20 @@ describe('mobile bootstrap', () => {
     expect(source).toContain('Payroll is still being finalized');
   });
 
+
+  it('maps Profile & Settings to Figma and preserves employee-safe controls', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/core/settings.js'), 'utf8');
+    expect(source).toContain("view.setAttribute('data-figma-node', nodeId || '46:953')");
+    expect(source).toContain("API.get('/me')");
+    expect(source).toContain("localStorage.setItem('vds_profile_nickname'");
+    expect(source).toContain('Nickname is saved on this device only');
+    expect(source).toContain('HR-controlled information');
+    expect(source).toContain("MApp.go('payslips')");
+    expect(source).toContain("MApp.go('requests')");
+    expect(source).toContain("MApp.go('report-problem')");
+    expect(source).toContain("API.post('/auth/change-password'");
+    expect(source).toContain("API.post('/auth/logout')");
+    expect(source).not.toContain("API.put('/auth/profile'");
+  });
+
 });
