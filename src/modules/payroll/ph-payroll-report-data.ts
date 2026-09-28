@@ -7,6 +7,7 @@
 import { queryOne, queryAll, getSetting } from '../../shared/db';
 import type { FormDefinition } from '../../shared/types';
 import type { PayslipYearRow, Bir2316Options } from './ph-2316';
+import { payslipOwnerResolver } from './payslip-owner';
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -36,8 +37,9 @@ function payslipsInYear(year: string): RawRecord[] {
 /** Generated payslips grouped by employee name, for a calendar year. */
 export function yearPayslipRowsByEmployee(year: string): Map<string, PayslipYearRow[]> {
   const out = new Map<string, PayslipYearRow[]>();
+  const owner = payslipOwnerResolver(); // renamed employees stay one person (payslip-owner.ts)
   for (const { data } of payslipsInYear(year)) {
-    const name = String(data.employee_name ?? '').trim();
+    const name = owner.nameOf(data);
     if (!name) continue;
     const list = out.get(name) ?? [];
     list.push(data as PayslipYearRow);
@@ -51,6 +53,7 @@ export function payslipTotalsForMonth(month: string): Map<string, { comp: number
   const id = payrollFormId();
   const byName = new Map<string, { comp: number; basic: number }>();
   if (id == null) return byName;
+  const owner = payslipOwnerResolver();
   for (const r of queryAll<{ data: string; created_at: string }>(
     'SELECT data, created_at FROM form_records WHERE form_def_id = ?', id
   )) {
@@ -58,7 +61,7 @@ export function payslipTotalsForMonth(month: string): Map<string, { comp: number
     try { d = JSON.parse(r.data); } catch { continue; }
     const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
     if (String(payDate).slice(0, 7) !== month) continue;
-    const name = String(d.employee_name ?? '').trim();
+    const name = owner.nameOf(d);
     if (!name) continue;
     const cur = byName.get(name) ?? { comp: 0, basic: 0 };
     cur.comp = round2(cur.comp + (Number(d.total_earnings) || 0));
@@ -74,11 +77,12 @@ export function monthlyWithholdingReport(year: string) {
     month: i + 1, employee_count: 0, gross_compensation: 0, non_taxable: 0,
     taxable_compensation: 0, tax_withheld: 0, _names: new Set<string>(),
   }));
+  const owner = payslipOwnerResolver();
   for (const { data: d, pay_date } of payslipsInYear(year)) {
     const mi = Number(pay_date.slice(5, 7)) - 1;
     if (mi < 0 || mi > 11) continue;
     const m = months[mi]!;
-    const name = String(d.employee_name ?? '').trim();
+    const name = owner.nameOf(d);
     if (name) m._names.add(name);
     const gross = Number(d.total_earnings) || 0;
     const stat = (Number(d.sss) || 0) + (Number(d.philhealth) || 0) + (Number(d.pagibig) || 0);

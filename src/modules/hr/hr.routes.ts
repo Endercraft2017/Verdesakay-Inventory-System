@@ -39,6 +39,7 @@ import { statutoryDeductions, taxableCompensation, withholdingTax, RWT_2026 } fr
 import type { PayslipYearRow } from '../payroll/ph-2316';
 import { computeFinalPay, type FinalPayInput } from '../payroll/ph-final-pay';
 import { yearPayslipRowsByEmployee, companyProfile } from '../payroll/ph-payroll-report-data';
+import { payslipOwnerResolver } from '../payroll/payslip-owner';
 import { enforceQuota } from '../../platform/quota';
 import { slotPunchIdsForDates, type CorrectionSlot } from './clock';
 import { photoIdsForPunches } from './punch-photos';
@@ -306,12 +307,13 @@ router.get('/thirteenth-month', requirePermission('hr.view'), (req, res) => {
     form.id
   );
   const byEmp = new Map<string, { basic_total: number; payslip_count: number }>();
+  const owner = payslipOwnerResolver(); // a renamed employee's payslips stay one row
   for (const r of records) {
     let d: Record<string, unknown>;
     try { d = JSON.parse(r.data); } catch { continue; }
     const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
     if (String(payDate).slice(0, 4) !== year) continue;
-    const name = String(d.employee_name ?? '').trim();
+    const name = owner.nameOf(d);
     if (!name) continue;
     const cur = byEmp.get(name) ?? { basic_total: 0, payslip_count: 0 };
     cur.basic_total += Number(d.basic_salary) || 0;
@@ -452,8 +454,8 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
 // PUT /api/hr/employees/:id
 router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
   const id = Number(req.params.id);
-  const existing = queryOne<{ daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null; start_date: string | null }>(
-    'SELECT daily_rate, rate_type, monthly_rate, start_date FROM employees WHERE id = ?', id
+  const existing = queryOne<{ name: string; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null; start_date: string | null }>(
+    'SELECT name, daily_rate, rate_type, monthly_rate, start_date FROM employees WHERE id = ?', id
   );
   if (!existing) {
     res.status(404).json({ error: 'Employee not found' }); return;
@@ -501,6 +503,15 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
     input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null,
     input.clock_anywhere === undefined ? null : (input.clock_anywhere ? 1 : 0), id
   );
+  // Payslips carry the name as generated; logging the former name lets payroll reports and the
+  // employee's own payslip list keep treating them as one person (payroll/payslip-owner.ts).
+  if (existing.name !== input.name) {
+    run(
+      `INSERT INTO employee_profile_changes (employee_id, field, old_value, new_value, changed_by, source)
+       VALUES (?, 'name', ?, ?, ?, 'hr_edit')`,
+      id, existing.name, input.name, req.user!.id
+    );
+  }
   res.json({ ok: true });
 });
 
@@ -1820,14 +1831,18 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
   // response, not just something HR happens to notice if they open a specific payslip's detail
   // view or the Daily Time grid for that one employee.
   let possibleHalfDayEmployees = 0;
+  // Matches an employee's existing payslip for this cutoff by stamped employee_id or by any
+  // current/former name, so regenerating after a rename updates it instead of duplicating it.
+  const owner = payslipOwnerResolver();
+  const periodSlips = queryAll<FormRecord>(
+    `SELECT * FROM form_records WHERE form_def_id = ? AND period = ?`,
+    form.id, payrollPeriod
+  );
   db.exec('BEGIN');
   try {
     for (const emp of roster) {
-      const existing = queryAll<FormRecord>(
-        `SELECT * FROM form_records WHERE form_def_id = ? AND period = ?`,
-        form.id, payrollPeriod
-      ).find((r) => {
-        try { return (JSON.parse(r.data as string).employee_name ?? '') === emp.name; }
+      const existing = periodSlips.find((r) => {
+        try { return owner.idOf(JSON.parse(r.data as string)) === emp.employee_id; }
         catch { return false; }
       });
       // A payslip marked Paid is locked — skip it entirely (don't even read its attendance)
@@ -1930,7 +1945,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
       const data = {
         ...zeros,
         ...prevManual,
-        employee_name: emp.name, dept_position: deptPosition,
+        employee_name: emp.name, employee_id: emp.employee_id, dept_position: deptPosition,
         payroll_period: payrollPeriod, pay_date: input.pay_date || (prevManual.pay_date as string) || '',
         daily_rate: currentDailyRate,
         days_worked: computed.days_worked,
@@ -2059,7 +2074,9 @@ router.get('/payroll/:recordId/detail', requirePermission('hr.manage'), (req, re
   if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
   const data = JSON.parse(rec.data as string) as Record<string, unknown>;
   const employeeName = String(data.employee_name || '');
-  const emp = queryOne<Employee>('SELECT * FROM employees WHERE name = ?', employeeName);
+  // By stamped employee_id or current/former name — survives renames (payroll/payslip-owner.ts).
+  const ownerId = payslipOwnerResolver().idOf(data);
+  const emp = ownerId != null ? queryOne<Employee>('SELECT * FROM employees WHERE id = ?', ownerId) : undefined;
   if (!emp) {
     res.status(404).json({ error: `No employee record named "${employeeName}" — it may have been renamed since this payslip was generated.` });
     return;
@@ -2137,8 +2154,8 @@ function resolvePayrollDeductionContext(
             COALESCE(deduct_sss, 1) AS deduct_sss, COALESCE(deduct_philhealth, 1) AS deduct_philhealth,
             COALESCE(deduct_pagibig, 1) AS deduct_pagibig, COALESCE(deduct_withholding_tax, 1) AS deduct_withholding_tax,
             withholding_tax_override, sss_override, philhealth_override, pagibig_override
-     FROM employees WHERE name = ?`,
-    employeeName
+     FROM employees WHERE id = ?`,
+    payslipOwnerResolver().idOf(data) ?? -1
   );
   if (!emp) {
     res.status(404).json({ error: `No employee record named "${employeeName}" — it may have been renamed since this payslip was generated.` });
@@ -2252,8 +2269,8 @@ router.post('/payroll/:recordId/email', requirePermission('hr.manage'), async (r
     const data = JSON.parse(rec.data as string) as Record<string, unknown>;
     const employeeName = String(data.employee_name || '');
     const target = queryOne<{ email: string | null }>(
-      `SELECT u.email FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.name = ?`,
-      employeeName
+      `SELECT u.email FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.id = ?`,
+      payslipOwnerResolver().idOf(data) ?? -1
     );
     if (!target || !target.email) {
       res.status(400).json({

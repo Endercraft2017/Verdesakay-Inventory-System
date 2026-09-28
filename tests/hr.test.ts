@@ -1388,14 +1388,24 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Detail 404 Cutoff' }).set(hdr());
     const recId = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Detail 404 Employee').id;
 
-    // Renaming the employee breaks the free-text employee_name link the payroll record relies on.
+    // A rename no longer breaks the link: the payslip carries employee_id and the former name is
+    // logged (src/modules/payroll/payslip-owner.ts).
     await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
       .send({ employee_no: 'TEST-DETAIL-404', name: 'Renamed Employee', daily_rate: 800 });
+    expect((await ctx.api.get(`/api/hr/payroll/${recId}/detail`).set(hdr())).status).toBe(200);
+    await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-DETAIL-404', name: 'Detail 404 Employee', daily_rate: 800 }); // restore
+
+    // A payslip whose name matches no current/former employee (and has no employee_id — a hand
+    // edit through Data Forms replaces the whole data object) still 404s.
+    const orig = records.body.find((r: { id: number }) => r.id === recId);
+    const edited = { ...orig.data, employee_name: 'Nobody By This Name' };
+    delete edited.employee_id;
+    await ctx.api.put(`/api/form-records/${recId}`).set(hdr()).send({ data: edited });
     const noEmp = await ctx.api.get(`/api/hr/payroll/${recId}/detail`).set(hdr());
     expect(noEmp.status).toBe(404);
     expect(noEmp.body.error).toMatch(/no employee record/i);
-    await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
-      .send({ employee_no: 'TEST-DETAIL-404', name: 'Detail 404 Employee', daily_rate: 800 }); // restore
+    await ctx.api.put(`/api/form-records/${recId}`).set(hdr()).send({ data: orig.data }); // restore
 
     // Renaming the cutoff breaks the period-label link.
     await ctx.api.put(`/api/hr/periods/${period.body.id}`).set(hdr()).send({ label: 'Renamed Cutoff', start_date: '2026-08-06', end_date: '2026-08-06' });

@@ -101,8 +101,8 @@ router.get('/profile/history', (req, res) => {
  *  the moment it was marked paid (nothing else may touch the row). */
 const isFinalPayslip = (status: string) => status === 'paid';
 
-/** This employee's hr_payroll records. Payslips carry only the employee's name as it was when
- *  generated, so legal names replaced by an approved information change still match. */
+/** This employee's hr_payroll records: stamped with their employee_id, or (older payslips) carrying
+ *  their current or any former name — so a rename never hides earlier payslips. */
 function myPayslips(emp: Emp, id?: number): FormRecord[] {
   const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
   if (!form) return [];
@@ -110,10 +110,13 @@ function myPayslips(emp: Emp, id?: number): FormRecord[] {
   return queryAll<FormRecord>(
     `SELECT id, number, period, status, data, created_at, updated_at
      FROM form_records
-     WHERE form_def_id = ? AND json_extract(data, '$.employee_name') IN (${names.map(() => '?').join(',')})
+     WHERE form_def_id = ?
+       AND (json_extract(data, '$.employee_id') = ?
+            OR (json_extract(data, '$.employee_id') IS NULL
+                AND json_extract(data, '$.employee_name') IN (${names.map(() => '?').join(',')})))
        ${id != null ? 'AND id = ?' : ''}
      ORDER BY id DESC`,
-    form.id, ...names, ...(id != null ? [id] : [])
+    form.id, emp.id, ...names, ...(id != null ? [id] : [])
   );
 }
 

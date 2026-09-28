@@ -92,12 +92,12 @@ export function applyInfoChange(data: Record<string, unknown>, deciderId: number
   return { applied: true, column: spec.column, previous };
 }
 
-/** Every legal name this employee has had via approved changes (payslips carry the name as
- *  it was when generated, so a renamed employee still sees their older payslips). */
+/** Every former legal name — from approved information changes or HR edits (payslips carry
+ *  the name as it was when generated, so a renamed employee still sees older payslips). */
 export function previousNames(employeeId: number): string[] {
   return queryAll<{ old_value: string }>(
     `SELECT DISTINCT old_value FROM employee_profile_changes
-     WHERE employee_id = ? AND field = 'name' AND source = 'info_change' AND old_value IS NOT NULL`,
+     WHERE employee_id = ? AND field = 'name' AND old_value IS NOT NULL`,
     employeeId
   ).map((r) => r.old_value);
 }

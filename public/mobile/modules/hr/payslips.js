@@ -4,7 +4,7 @@
 (function () {
   var HIDE = {
     employee_name: 1, dept_position: 1, name: 1, department: 1, position: 1,
-    period: 1, payroll_period: 1, finalized: 1, finalized_at: 1, download_url: 1,
+    period: 1, payroll_period: 1, finalized: 1, finalized_at: 1, download_url: 1, employee_id: 1,
     // generate-payslips bookkeeping (which statutory deductions were applied), not pay lines
     sss_applied: 1, philhealth_applied: 1, pagibig_applied: 1, withholding_tax_applied: 1
   };

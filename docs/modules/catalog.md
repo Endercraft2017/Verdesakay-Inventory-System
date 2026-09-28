@@ -218,7 +218,13 @@ and `accounting` now depend one-directionally on `payroll`, not on each other.
 `employee-rate-history.ts`, `payroll-tables.ts`, `ph-2316.ts`, `ph-alphalist.ts`,
 `ph-contributions.ts`, `ph-final-pay.ts`, `ph-income-tax.ts`,
 `ph-payroll-report-data.ts`, `ph-statutory.ts`, `ph-vat-ewt.ts`, `payslip-pdf.ts`
-(renders one finalized payslip as a PDF; captions from the live `hr_payroll` form).
+(renders one finalized payslip as a PDF; captions from the live `hr_payroll` form),
+`payslip-owner.ts` (maps a payslip to its employee by stamped `employee_id`, else current or
+former name from `employee_profile_changes` field `name` — read-only use of hr tables, no hr
+code import. Every aggregate — 2316, alphalist, 1601-C, agency schedules, 13th month — and
+generate-payslips' "existing payslip" check go through it, so a renamed employee stays one
+person and regenerating a cutoff never duplicates their payslip. Generation now stamps
+`employee_id`; HR renames (`PUT /hr/employees/:id`) are logged with source `hr_edit`).
 **Public interface:** pure computation/rendering functions (no routes of its own — exposed
 through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
 `GET /api/me/payslips/:id/pdf`).

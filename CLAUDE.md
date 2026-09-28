@@ -1,6 +1,17 @@
 # CLAUDE.md
 
-Read and follow `claude_instruction.md` for the repository-wide module architecture and reuse workflow.
+Follow the module architecture and reuse workflow in the global `~/.claude/CLAUDE.md`. The module
+catalog is `docs/modules/catalog.md` and the pipeline map is `docs/modules/pipelines.md`; read the
+relevant records before changing code and update them after.
+
+## Stack and commands
+
+- Node + Express + TypeScript (`tsx`), SQLite via `node:sqlite`, vanilla JS frontends
+  (`public/js/` desktop, `public/mobile/` PWA). Tests: Vitest + supertest + jsdom.
+- `npm run typecheck` · `npm test` (full suite, ~8 min) · `npx vitest run tests/<file>` ·
+  `npm run db:types` after any schema change.
+- New tables can go in `createSchema()` (always re-run, `IF NOT EXISTS`); column changes need a
+  `migrate()` step plus a `SCHEMA_VERSION` bump.
 
 ## Mobile Figma implementation
 
