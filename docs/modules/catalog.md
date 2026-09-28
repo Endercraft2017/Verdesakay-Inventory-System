@@ -101,7 +101,8 @@ dates only (never times); the follow-up access code is stored as SHA-256 only; n
 (`CR-00001`) comes from the table, not `settings` (whose `updated_at` would timestamp it).
 **Owned files:** `core/confidential-reports.ts` (service), `core/confidential-reports.routes.ts`,
 mobile `core/report-problem.js` (anonymous form, receipt, check/reply) and
-`core/confidential-reports.js` (case-handler queue).
+`core/confidential-reports.js` (case-handler queue); desktop `public/js/modules/core/confidential-reports.js`
+(HR → Anonymous Reports tab, shown only with `reports.confidential`).
 **Public interface:** reporter — `/api/anonymous-reports` `POST /ticket` (signed in; single-use,
 unlinkable, 10/day in-memory cap), `POST /` (no auth read), `POST /lookup`, `POST /followup`
 (number + access code). Handlers — `/api/confidential-reports` (`reports.confidential`, HR +
@@ -110,8 +111,7 @@ admin by default, not HR-grantable): list, detail, `POST /:id/status`, `POST /:i
 follow-up (number + category only). `app.ts` exempts `/api/anonymous-reports*` from the activity
 log and idempotency store (`isAnonymousReportPath`); handler routes are audited normally.
 In-memory rate limits only (15-min window).
-**Known limits:** no attachments (metadata stripping not built); no desktop handler screen yet
-(mobile route `#/confidential-reports`).
+**Known limits:** no attachments (metadata stripping not built).
 **Tests:** `tests/confidential-reports.test.ts`, anonymous transport checks in
 `tests/frontend-mobile.test.ts`.
 **Status:** working.
@@ -188,7 +188,8 @@ current password (400 on mismatch, never 401), strict schema (legal name, gov ID
 department and pay keys are rejected), PH mobile numbers normalized to +63, one history row per
 changed field. A contact change clears `verified_at` and pings `hr.manage`; HR re-verifies via
 `/api/hr/employee-profiles` (`GET /` unverified worklist + `GET /:id` history: hr.view;
-`POST /:id/verify`: hr.manage). The preferred name feeds the mobile greeting and Profile header
+`POST /:id/verify`: hr.manage; desktop worklist HR → Employees → Contact Verification,
+`public/js/modules/hr/hr-contact-verification.js`). The preferred name feeds the mobile greeting and Profile header
 but never replaces `employees.name`. Tests: `tests/me-profile.test.ts`.
 **Information-change requests:** `info-change.ts` owns the `information_change` request form
 (seeded in `db.ts` `seedHrRequestForms`, listed in `core/me.routes.ts` `REQUEST_SLUGS`). Filing

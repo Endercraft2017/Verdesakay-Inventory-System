@@ -157,10 +157,17 @@ App.register('hr', async (view) => {
     opts = opts || {};
     const data = record.data || {};
     const canDecide = record.status === 'pending';
+    const infoChange = formDef.slug === 'information_change';
     const m = UI.modal({
       title: `${formDef.name} — ${record.number}`,
       bodyHTML: `
         <div>${fieldRowsHTML(formDef, data) || '<p class="muted">No details recorded.</p>'}</div>
+        ${infoChange ? `<div style="display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid var(--border-strong)">
+            <span class="muted" style="font-size:12.5px">On record now</span>
+            <span style="font-weight:600;text-align:right">${UI.esc(data.current_value || '—')}</span></div>
+          <p class="muted" style="margin-top:12px">${canDecide
+            ? 'Approving writes the correct value to the employee record (HR managers only).'
+            : data.applied === true ? 'Applied to the employee record.' : UI.esc(data.applied_note || '')}</p>` : ''}
         ${canDecide ? '' : `<p class="muted" style="margin-top:12px">Status: ${UI.esc(record.status)}</p>`}`,
       headActionHTML: canDecide
         ? `<button type="button" class="btn danger small" id="hr-req-reject">Reject</button>
@@ -170,10 +177,11 @@ App.register('hr', async (view) => {
       onOpen: (ov) => {
         const decide = async (decision, overrideBalance) => {
           try {
-            await API.post(`/me/approvals/requests/${record.id}/decide`, {
+            const res = await API.post(`/me/approvals/requests/${record.id}/decide`, {
               decision, override_balance: overrideBalance || undefined,
             });
-            UI.toast(`Request ${decision}`, 'success');
+            UI.toast(res && res.applied_note ? `Request ${decision} — ${res.applied_note}`
+              : res && res.applied ? 'Approved — employee record updated' : `Request ${decision}`, 'success');
             m.close();
             if (opts.onDecided) opts.onDecided();
           } catch (e) {

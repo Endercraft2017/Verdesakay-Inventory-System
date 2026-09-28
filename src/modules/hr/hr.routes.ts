@@ -1246,6 +1246,7 @@ const PENDING_REQUEST_SLUGS = [
   'leave_request', 'overtime_request', 'undertime_request', 'halfday_request', 'offset_form',
   'lunch_offset_form', 'holiday_work_request', 'travel_order', 'coe_request',
   'reimbursement_request', 'loan_application', 'training_request', 'incident_report',
+  'information_change',
 ];
 
 // GET /api/hr/pending-requests — org-wide count of pending HR requests (leave, OT, undertime,
