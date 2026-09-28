@@ -542,6 +542,15 @@ export interface JobOrderComponents {
   qty_picked: Generated<number>;
 }
 
+export interface JobOrderEvents {
+  id: Generated<number>;
+  job_order_id: number;
+  action: string;
+  reason: string | null;
+  actor_id: number | null;
+  created_at: Generated<string>;
+}
+
 export interface JobOrderUnits {
   id: Generated<number>;
   job_order_id: number;
@@ -1200,6 +1209,7 @@ export interface DB {
   inventory_stock: InventoryStock;
   inventory_transactions: InventoryTransactions;
   job_order_components: JobOrderComponents;
+  job_order_events: JobOrderEvents;
   job_order_units: JobOrderUnits;
   job_orders: JobOrders;
   journal_entries: JournalEntries;

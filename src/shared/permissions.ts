@@ -23,7 +23,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'announce',
   'qc.configure',
   'delivery.run', 'delivery.manage',
-  'production.approve', 'production.pause', 'production.repairs', 'production.record', 'production.inspect_qc', 'production.inspect_qa',
+  'production.approve', 'production.pause', 'production.manage', 'production.repairs', 'production.record', 'production.inspect_qc', 'production.inspect_qa',
   'production.receive',
   'orders.release',
 ];
@@ -31,7 +31,7 @@ export const ALL_PERMISSIONS: Permission[] = [
 /** Canonical role list — the single source of truth for iterating all roles. */
 export const ROLES: Role[] = [
   'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-  'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+  'parts_clerk', 'production_lead', 'production_manager', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
   'releasing_clerk',
 ];
 
@@ -40,7 +40,7 @@ export const ROLES: Role[] = [
     so HR can onboard floor staff but can never mint an admin, another HR user, or accounting. */
 export const HR_ASSIGNABLE_ROLES: Role[] = [
   'warehouse', 'releasing', 'csr', 'marketing',
-  'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+  'parts_clerk', 'production_lead', 'production_manager', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
   'releasing_clerk',
 ];
 
@@ -113,6 +113,13 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
   ],
   production_lead: [
     'inventory.view', 'inventory.mobile', 'production.record',
+    'messages.view', 'messages.send',
+  ],
+  // Lead capabilities plus controlled line decisions — pause / resume / close early, each
+  // with a required reason kept in job_order_events. Deliberately NOT inventory.adjust: no
+  // parts release, cancel, delete or stock adjustment (see job-orders.routes.ts gates).
+  production_manager: [
+    'inventory.view', 'inventory.mobile', 'production.record', 'production.pause', 'production.manage',
     'messages.view', 'messages.send',
   ],
   // QC (first pass, technical/performance) and QA (final pass, appearance) are separate

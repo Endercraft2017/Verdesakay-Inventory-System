@@ -134,10 +134,13 @@ raised by the sales-order shortfall flow.
    `needs_photo` if the photo is missing. `/progress`'s bulk `done_delta` refuses to run
    on a serialized job order for this reason. Either path consumes components by BOM
    ratio and moves the job order to `in_progress`.
-   - **Pause / resume** — `POST /:id/pause {reason?}` / `/resume`. Allowed with
-     `inventory.adjust`, or `production.pause` for a line lead trusted to stop the line,
-     e.g. to switch to a higher-priority job order. Records `paused_by/_at` and
-     `pause_reason` until resume.
+   - **Pause / resume / close early** — `POST /:id/pause|resume|close {reason}`. Pause and
+     resume: `inventory.adjust`, `production.pause` (a lead trusted to stop the line) or
+     `production.manage` (Production Manager). Close early (returns unused components):
+     `inventory.adjust` or `production.manage`. A reason is required unless the caller holds
+     the broad `inventory.adjust` override (400 otherwise). `paused_by/_at` + `pause_reason`
+     hold the current hold; every action is appended to `job_order_events` (actor, reason,
+     time) — `GET /:id/events`. A manager still cannot release, cancel or delete.
    - **Issue reports** (`/api/production-issues`, `production-issues.routes.ts`) — anyone
      on the floor (`production.record`, `inspect_qc`/`inspect_qa`, `inventory.adjust`,
      `production.approve`) files an issue against the whole job order or one unit

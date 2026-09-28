@@ -441,7 +441,7 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
             type: 'string',
             enum: [
               'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-              'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+              'parts_clerk', 'production_lead', 'production_manager', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
               'releasing_clerk',
             ],
             description: 'Role determines default permissions.',
@@ -467,7 +467,7 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
             type: 'string',
             enum: [
               'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-              'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+              'parts_clerk', 'production_lead', 'production_manager', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
               'releasing_clerk',
             ],
           },

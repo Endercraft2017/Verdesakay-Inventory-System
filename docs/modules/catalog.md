@@ -153,7 +153,9 @@ batches/teams/scheduling.
 **Warehouse release interface:** `POST /job-orders/warehouse-accept`, `POST /job-orders/prepare`
 (bulk), `GET /job-orders/pick-list?ids=[&format=html]`, `POST /job-orders/:id/release`
 (issues the `PRS-#####` parts release slip, deducts stock). **Floor:** `POST /job-orders/:id/units`
-is multipart and requires the photo; pause/resume accept `production.pause`; issue reports
+is multipart and requires the photo; pause/resume accept `production.pause`; the
+`production_manager` role (`production.manage`) adds pause/resume/close-early with a required
+reason, logged append-only in `job_order_events` (`GET /api/job-orders/:id/events`); issue reports
 live at `/api/production-issues`. Uses `core/attachments.routes.ts` (`imageUpload`,
 `saveAttachment`) for photos sent together with the record they belong to.
 **Status:** working. Open gaps from the 2026-09-27 walkthrough:

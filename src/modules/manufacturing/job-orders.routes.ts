@@ -52,7 +52,23 @@ const receiveGate = requireAnyPermission(['inventory.adjust', 'production.receiv
 // Deliberately NOT satisfied by inventory.adjust: approval is the production manager's
 // sign-off, separate from the warehouse that releases the parts. Admin holds every permission.
 const approveGate = requirePermission('production.approve');
-const pauseGate = requireAnyPermission(['inventory.adjust', 'production.pause']);
+const pauseGate = requireAnyPermission(['inventory.adjust', 'production.pause', 'production.manage']);
+// Close early returns unused components but never releases or cancels — so a Production
+// Manager (production.manage) may do it without the warehouse's broad inventory.adjust.
+const closeEarlyGate = requireAnyPermission(['inventory.adjust', 'production.manage']);
+
+/** Line decisions made through a narrow production permission (not the broad inventory.adjust
+ *  override) must give a reason — the handoff's "pause/resume/close-early require reasons". */
+function reasonFor(req: import('express').Request, action: string): { reason: string | null } | { error: string } {
+  const { reason } = parseBody(pauseJobOrderSchema, req.body ?? {});
+  const r = reason?.trim() || null;
+  if (!r && !req.user!.permissions.includes('inventory.adjust')) return { error: `Give a reason to ${action} this job order` };
+  return { reason: r };
+}
+/** Append-only audit trail of pause / resume / close-early (job_order_events). */
+function logLineEvent(jobOrderId: number, action: 'pause' | 'resume' | 'close_early', reason: string | null, userId: number): void {
+  run('INSERT INTO job_order_events (job_order_id, action, reason, actor_id) VALUES (?, ?, ?, ?)', jobOrderId, action, reason, userId);
+}
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -458,6 +474,16 @@ router.get('/production-receipts/:receiptId', readGate, (req, res) => {
 });
 
 // GET /api/job-orders/:id
+// GET /api/job-orders/:id/events — pause / resume / close-early history, newest first
+router.get('/:id/events', readGate, (req, res) => {
+  res.json(queryAll<{ id: number; action: string; reason: string | null; created_at: string; actor_name: string | null }>(
+    `SELECT e.id, e.action, e.reason, e.created_at, u.full_name AS actor_name
+     FROM job_order_events e LEFT JOIN users u ON u.id = e.actor_id
+     WHERE e.job_order_id = ? ORDER BY e.id DESC`,
+    Number(req.params.id)
+  ));
+});
+
 router.get('/:id', readGate, (req, res) => {
   const jo = loadJobOrder(Number(req.params.id));
   if (!jo) {
@@ -1306,12 +1332,14 @@ router.post('/:id/pause', pauseGate, (req, res) => {
     res.status(409).json({ error: `Cannot pause a job order that is ${jo.status}` });
     return;
   }
-  const { reason } = parseBody(pauseJobOrderSchema, req.body ?? {});
+  const why = reasonFor(req, 'pause');
+  if ('error' in why) { res.status(400).json({ error: why.error }); return; }
   run(
     `UPDATE job_orders SET status = 'paused', paused_by = ?, paused_at = datetime('now'), pause_reason = ?,
        updated_at = datetime('now') WHERE id = ?`,
-    req.user!.id, reason ?? null, id
+    req.user!.id, why.reason, id
   );
+  logLineEvent(id, 'pause', why.reason, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
@@ -1323,6 +1351,9 @@ router.post('/:id/resume', pauseGate, (req, res) => {
     res.status(409).json({ error: 'Only a paused job order can be resumed' });
     return;
   }
+  const why = reasonFor(req, 'resume');
+  if ('error' in why) { res.status(400).json({ error: why.error }); return; }
+  logLineEvent(id, 'resume', why.reason, req.user!.id);
   run(
     `UPDATE job_orders SET status = 'in_progress', paused_by = NULL, paused_at = NULL, pause_reason = NULL,
        updated_at = datetime('now') WHERE id = ?`,
@@ -1359,7 +1390,7 @@ router.post('/:id/cancel', writeGate, (req, res) => {
 });
 
 // POST /api/job-orders/:id/close — force-complete early, returning unused components
-router.post('/:id/close', writeGate, (req, res) => {
+router.post('/:id/close', closeEarlyGate, (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1367,8 +1398,11 @@ router.post('/:id/close', writeGate, (req, res) => {
     res.status(409).json({ error: `Cannot close a job order that is ${jo.status}` });
     return;
   }
+  const why = reasonFor(req, 'close');
+  if ('error' in why) { res.status(400).json({ error: why.error }); return; }
   db.exec('BEGIN');
   try {
+    logLineEvent(id, 'close_early', why.reason, req.user!.id);
     resolveDanglingUnits(id, `${jo.number} closed early`);
     returnUnused(id, jo.number, jo.source_location_id, req.user!.id);
     maybeCloseBatches(id);

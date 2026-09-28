@@ -158,22 +158,29 @@
       view.appendChild(prog);
     }
     // production.pause: a line lead trusted to hold the line (e.g. for a higher-priority job order).
-    var canPause = canAdjust || MApp.can('production.pause');
-    if (!canAdjust && canPause && (jo.status === 'released' || jo.status === 'in_progress')) {
+    // production.manage: a Production Manager — pause/resume plus close early, without the
+    // warehouse's broad inventory.adjust. Narrow accounts must give a reason (server-enforced).
+    var canManage = canAdjust || MApp.can('production.manage');
+    var canPause = canManage || MApp.can('production.pause');
+    var running = jo.status === 'released' || jo.status === 'in_progress';
+    if (!canManage && canPause && running) {
       var actsP = mEl('<div class="m-actions"></div>');
       addBtn(actsP, 'Pause', function () { pauseJo(view, jo); }, true);
       view.appendChild(actsP);
     }
     if (canPause && jo.status === 'paused') {
       var actsR = mEl('<div class="m-actions"></div>');
-      addBtn(actsR, 'Resume', function () { act(view, jo.id, 'resume'); });
+      addBtn(actsR, 'Resume', function () {
+        var why = askReason('Why resume this job order?');
+        if (why !== undefined) act(view, jo.id, 'resume', { reason: why });
+      });
+      if (canManage) addBtn(actsR, 'Close out early', function () { closeJo(view, jo); }, true);
       view.appendChild(actsR);
     }
 
-    // ---- Rare/admin actions, tucked behind a toggle so they don't compete with the
-    // actual production work above. Pause/Close stay inventory.adjust-only — not part
-    // of what a narrow production_lead/qc_inspector account does. ----
-    if (canAdjust && (jo.status === 'released' || jo.status === 'in_progress')) {
+    // ---- Rare line decisions, tucked behind a toggle so they don't compete with the
+    // actual production work above: warehouse (inventory.adjust) or Production Manager. ----
+    if (canManage && running) {
       view.appendChild(moreActions(view, jo));
     }
 
@@ -228,7 +235,7 @@
     var toggle = mEl('<button type="button" class="m-jo-more-toggle">⋯ More actions</button>');
     var body = mEl('<div class="m-actions" hidden></div>');
     addBtn(body, 'Pause', function () { pauseJo(view, jo); }, true);
-    addBtn(body, 'Close out early', function () { act(view, jo.id, 'close'); }, true);
+    addBtn(body, 'Close out early', function () { closeJo(view, jo); }, true);
     toggle.onclick = function () {
       body.hidden = !body.hidden;
       toggle.textContent = body.hidden ? '⋯ More actions' : '⋯ Hide';
@@ -367,10 +374,25 @@
     };
   }
 
+  /** Ask for a reason — required unless the account holds the broad inventory.adjust override
+      (the server enforces the same rule). Returns undefined when the user cancels. */
+  function askReason(question) {
+    var required = !MApp.can('inventory.adjust');
+    for (;;) {
+      var r = window.prompt(question + (required ? '' : ' (optional)'), '');
+      if (r === null) return undefined;
+      r = r.trim();
+      if (r || !required) return r || null;
+      mToast('A reason is required', 'err');
+    }
+  }
   function pauseJo(view, jo) {
-    var reason = window.prompt('Why pause this job order? (optional)', '');
-    if (reason === null) return;
-    act(view, jo.id, 'pause', { reason: reason.trim() || null });
+    var why = askReason('Why pause this job order?');
+    if (why !== undefined) act(view, jo.id, 'pause', { reason: why });
+  }
+  function closeJo(view, jo) {
+    var why = askReason('Why close this job order early? Unused components go back to stock.');
+    if (why !== undefined) act(view, jo.id, 'close', { reason: why });
   }
 
   // Warehouse steps that take one or more job orders (POST /job-orders/<path>).

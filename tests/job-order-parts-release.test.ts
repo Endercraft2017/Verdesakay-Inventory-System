@@ -166,8 +166,10 @@ describe('pause / resume', () => {
     const lead = await createEmployee(ctx.api, token, { role: 'production_lead' });
     expect((await ctx.api.post(`/api/job-orders/${mo}/pause`).set(bearer(lead.token))).status).toBe(403);
     await ctx.api.put(`/api/users/${lead.id}/permissions`).set(H()).send({ overrides: { 'production.pause': true } });
-    expect((await ctx.api.post(`/api/job-orders/${mo}/pause`).set(bearer(lead.token))).status).toBe(200);
-    expect((await ctx.api.post(`/api/job-orders/${mo}/resume`).set(bearer(lead.token))).status).toBe(200);
+    // A narrow permission must say why (the broad inventory.adjust override keeps it optional).
+    expect((await ctx.api.post(`/api/job-orders/${mo}/pause`).set(bearer(lead.token))).status).toBe(400);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/pause`).set(bearer(lead.token)).send({ reason: 'Line 2 needs this crew' })).status).toBe(200);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/resume`).set(bearer(lead.token)).send({ reason: 'Rush job done' })).status).toBe(200);
   });
 });
 

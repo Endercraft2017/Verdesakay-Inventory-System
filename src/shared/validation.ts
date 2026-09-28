@@ -57,7 +57,7 @@ export const changePasswordSchema = z.object({
 // ---- Users / departments ----
 const roleEnum = z.enum([
   'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-  'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
+  'parts_clerk', 'production_lead', 'production_manager', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
   'releasing_clerk',
 ]);
 

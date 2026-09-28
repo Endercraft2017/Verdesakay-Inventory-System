@@ -1119,6 +1119,17 @@ function createSchema(): void {
       created_on TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_anonymous_report_messages ON anonymous_report_messages(report_id, id);
+    -- Job-order line decisions (pause / resume / close early) — append-only audit history with
+    -- actor and reason; job_orders.pause_* only hold the CURRENT hold. createSchema, no bump.
+    CREATE TABLE IF NOT EXISTS job_order_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      action       TEXT NOT NULL CHECK (action IN ('pause','resume','close_early')),
+      reason       TEXT,
+      actor_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_order_events ON job_order_events(job_order_id, id);
 
     -- Employee self-service profile (src/modules/hr/employee-profile.ts): preferred name and
     -- personal contact details the employee edits themselves, kept apart from the HR-owned

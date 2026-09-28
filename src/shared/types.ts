@@ -13,7 +13,7 @@ export type Role =
   // get an account scoped to exactly their own task instead of sharing inventory.adjust.
   // QC and QA are deliberately separate roles/people, matching the pipeline's own
   // first-pass-QC-then-final-pass-QA distinction (docs/modules/pipelines.md).
-  | 'parts_clerk' | 'production_lead' | 'qc_inspector' | 'qa_inspector' | 'receiving_clerk'
+  | 'parts_clerk' | 'production_lead' | 'production_manager' | 'qc_inspector' | 'qa_inspector' | 'receiving_clerk'
   // Same narrowing, orders module: a mobile-only account that just scans/enters goods out
   // against an approved sale order, without the broad inventory.adjust that also lets it
   // adjust arbitrary stock.
@@ -33,6 +33,8 @@ export type Permission =
   | 'audit.view'
   // Case handlers for the anonymous reporting channel (src/core/confidential-reports.ts).
   | 'reports.confidential'
+  // Production Manager's controlled actions: pause/resume/close-early with a required reason.
+  | 'production.manage'
   | 'mail.send'
   | 'announce'
   | 'qc.configure'
