@@ -85,3 +85,23 @@ describe('production_manager role', () => {
     expect(events.body[0]).toMatchObject({ action: 'pause', reason: null });
   });
 });
+
+describe('scrap reason (mobile scrap screen, Figma 66:462)', () => {
+  it('keeps the reason on each scrapped unit of a serialized job order', async () => {
+    const product = await mkItem('SR Product');
+    const part = await mkItem('SR Part', 100);
+    await ctx.api.put(`/api/finished-products/${product}`).set(H()).send({ components: [{ component_item_id: part, quantity: 1 }] });
+    const id = (await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 5, qc_stages: 2 })).body.id as number;
+    await ctx.api.post(`/api/job-orders/${id}/approve`).set(H());
+    await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [id] });
+    await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id }] });
+    await ctx.api.post(`/api/job-orders/${id}/release`).set(H());
+    await ctx.api.post(`/api/job-orders/${id}/accept`).set(bearer(lead.token)).send({});
+    const r = await ctx.api.post(`/api/job-orders/${id}/progress`).set(bearer(lead.token)).send({ scrapped_delta: 2, reason: 'Frame damage during final assembly' });
+    expect(r.status).toBe(200);
+    const units = (await ctx.api.get(`/api/job-orders/${id}/units`).set(H())).body as Array<{ status: string; remarks: string }>;
+    const scrapped = units.filter((u) => u.status === 'scrapped');
+    expect(scrapped).toHaveLength(2);
+    expect(scrapped.every((u) => u.remarks === 'Scrapped on the line — Frame damage during final assembly')).toBe(true);
+  });
+});

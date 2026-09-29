@@ -5,7 +5,7 @@
      device reconnects, even if no tab is open (Android; iOS flushes on open).
 
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
-var CACHE_VERSION = 'vds-m-v44';
+var CACHE_VERSION = 'vds-m-v45';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -23,6 +23,15 @@ var SHELL = [
   '/mobile/icons/v2/open-chevron.svg',
   '/mobile/icons/v2/alert.svg',
   '/mobile/icons/v2/short.svg',
+  '/mobile/icons/v2/role-production-lead.svg',
+  '/mobile/icons/v2/role-production-manager.svg',
+  '/mobile/icons/v2/act-resume.svg',
+  '/mobile/icons/v2/act-pause.svg',
+  '/mobile/icons/v2/act-close.svg',
+  '/mobile/icons/v2/act-history.svg',
+  '/mobile/icons/v2/scan.svg',
+  '/mobile/icons/v2/camera.svg',
+  '/mobile/icons/v2/check-done.svg',
   '/js/api.js',
   '/mobile/vendor/qrcode.js',
   '/mobile/vendor/zxing.js',

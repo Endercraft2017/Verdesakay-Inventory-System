@@ -292,4 +292,8 @@ pages, light + dark) and `public/mobile/lib/role-ui.js` (chip/title, hero, tabs,
 line lists, notices, acknowledgement check, success, actions). First role on it: warehouse
 kit release, `modules/manufacturing/kit-release.js` (Figma 62:14–62:372). Every step is its own
 URL so the header back arrow walks the flow; `app.js` clears `#m-view` data-* tags per route.
+Second: Production Lead + Manager, `modules/manufacturing/job-orders.js` (Figma 66:14–66:650) —
+role accents (`.rk-accent-lead` blue, `.rk-accent-manager` purple) also tint the Quick Orbit and
+active dock tab via `html[data-role-accent]`, cleared per route. `lib/queue.js` background
+flushes now swallow storage errors (no IndexedDB / blocked site data) instead of throwing.
 **Status:** working.

@@ -1114,7 +1114,7 @@ router.post('/:id/progress', recordGate, (req, res) => {
     res.status(409).json({ error: ACCEPT_FIRST, needs_acceptance: true });
     return;
   }
-  const { done_delta, scrapped_delta, batch_label } = parseBody(jobOrderProgressSchema, req.body);
+  const { done_delta, scrapped_delta, batch_label, reason } = parseBody(jobOrderProgressSchema, req.body);
   if (jo.qc_stages > 0 && done_delta > 0) {
     res.status(400).json({
       error: 'Serialized job orders record finished units individually (with their own identifier + photo) via "Add unit", not a bulk count here.',
@@ -1155,11 +1155,12 @@ router.post('/:id/progress', recordGate, (req, res) => {
       for (let i = 0; i < scrapped_delta; i++) {
         run(
           `INSERT INTO job_order_units (job_order_id, product_item_id, status, stage, location_id, batch_id, remarks)
-           VALUES (?, ?, 'scrapped', 0, ?, ?, 'Scrapped on the line')`,
+           VALUES (?, ?, 'scrapped', 0, ?, ?, ?)`,
           id,
           jo.product_item_id,
           outputLoc,
-          batchId
+          batchId,
+          reason ? `Scrapped on the line — ${reason}` : 'Scrapped on the line'
         );
       }
       run(

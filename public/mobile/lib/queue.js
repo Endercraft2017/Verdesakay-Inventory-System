@@ -136,9 +136,12 @@
   }
 
   // Auto-flush: on reconnect, on a slow timer while online, and once now.
-  window.addEventListener('online', function () { mQueue.flush(); });
-  setInterval(function () { if (navigator.onLine) mQueue.flush(); }, 25000);
-  if (navigator.onLine) setTimeout(function () { mQueue.flush(); }, 1500);
+  // Background flushes: never let a storage failure (no IndexedDB, blocked site data) surface
+  // as an unhandled rejection — the queue screen reports problems when it's opened.
+  function autoFlush() { mQueue.flush().catch(function () {}); }
+  window.addEventListener('online', autoFlush);
+  setInterval(function () { if (navigator.onLine) autoFlush(); }, 25000);
+  if (navigator.onLine) setTimeout(autoFlush, 1500);
 
   // The service worker tells us when it drained the queue in the background.
   if ('serviceWorker' in navigator) {

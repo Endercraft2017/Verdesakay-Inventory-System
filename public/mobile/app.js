@@ -150,6 +150,7 @@ window.MApp = (function () {
     Array.prototype.slice.call(v.attributes).forEach(function (a) {
       if (a.name.indexOf('data-') === 0) v.removeAttribute(a.name);
     });
+    document.documentElement.removeAttribute('data-role-accent'); // set again by role screens (role-ui.js)
     try {
       fn(v, parsed.params);
     } catch (e) {

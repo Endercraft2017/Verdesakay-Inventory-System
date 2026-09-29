@@ -120,6 +120,16 @@ raised by the sales-order shortfall flow.
      a shortfall (from availability or `prepare`) shows Release blocked with nothing deducted;
      "Report shortage" files a tracked `production_issues` row (category `Parts shortage`),
      not a loose message. Online-only; Quick Orbit "Scan job order" opens it by JO number.
+   - **Mobile (production, Figma 66:*)** — `#/job-orders`: the Production Lead board (To accept /
+     Active / Paused) → Accept parts kit (count acknowledgement) → Active production → Record
+     production (how many) → Unit details, saved **one unit at a time** (identifier + photo per
+     `POST /:id/units`). **Branch — connection lost:** Connection interrupted lists what the
+     server saved vs. what is still on the phone; retry sends only unsaved rows. **Branch — kit
+     problem:** a tracked `production_issues` row (Warehouse + Manager see it; recording stays
+     locked until the kit is accepted). Scrap asks for a reason, kept on each scrapped unit's
+     remarks (`/progress {reason}`). A Production Manager lands on Production control
+     (paused / overdue / open-issue exceptions) → Manager actions → pause/resume/close early,
+     each with a reason, and the audit history (`GET /:id/events`).
    - **Parts kit accepted** (`manufacturing`) — the production lead (`production_lead`
      role / `production.record`, or `inventory.adjust`) counts the kit against the
      Components list and signs for it: `POST /:id/accept` stamps `accepted_by` /

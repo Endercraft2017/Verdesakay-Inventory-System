@@ -375,6 +375,8 @@ export const jobOrderProgressSchema = z
     // Serialized job orders only: give this progress entry a batch/lot label. A
     // non-serialized job order always batches each progress entry automatically.
     batch_label: trimmed.max(80).optional().nullable(),
+    // Why the units were scrapped (mobile scrap screen) — kept on each scrapped unit's remarks.
+    reason: trimmed.max(300).optional().nullable(),
   })
   .refine((d) => d.done_delta + d.scrapped_delta > 0, 'Enter a finished or scrapped quantity');
 

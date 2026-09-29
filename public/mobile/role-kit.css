@@ -210,3 +210,123 @@
 @keyframes rk-shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .rk-skel { animation: none; } }
 @media (max-width: 370px) { .rk-pill { min-width: 0; } .rk-actions { flex-wrap: wrap; } .rk-actions .rk-btn { flex-basis: 100%; } }
+
+/* Role accents - each role page re-tints the kit (Figma: Production Lead blue 66:14-66:462,
+   Production Manager purple 66:515-66:650). Set by RoleUI.page via .rk-accent-<name>. */
+.rk-accent-lead {
+  --rk-green: #315e8a; --rk-green-text: #315e8a; --rk-qty: #315e8a;
+  --rk-hero: #173f58; --rk-hero-label: #c9ddeb; --rk-hero-note: #d6e4ec;
+  --rk-chip-bg: #e5edf7; --rk-chip-text: #315e8a;
+  --rk-tint: #e4ecf7; --rk-soft: #e7eef7;
+  --rk-pill-ok-bg: #e4ecf7; --rk-pill-ok: #315e8a;
+  --rk-btn2-bg: #edf2f6; --rk-btn2-text: #315e8a;
+}
+.rk-accent-manager {
+  --rk-green: #6d4a91; --rk-green-text: #6d4a91; --rk-qty: #6d4a91;
+  --rk-hero: #35243f; --rk-hero-label: #d9c9e8; --rk-hero-note: #e6daf0;
+  --rk-chip-bg: #eee7f7; --rk-chip-text: #6d4a91;
+  --rk-tint: #eee7f7; --rk-soft: #f0edf4;
+  --rk-pill-ok-bg: #eee7f7; --rk-pill-ok: #6d4a91;
+  --rk-btn2-bg: #efeef4; --rk-btn2-text: #6d4a91;
+}
+:root[data-theme="dark"] .rk-accent-lead {
+  --rk-green: #6fa5d8; --rk-green-text: #9cc4ea; --rk-qty: #9cc4ea; --rk-hero: #10283a;
+  --rk-chip-bg: #1d3246; --rk-chip-text: #a8cbee; --rk-tint: #182838; --rk-soft: #172431;
+  --rk-pill-ok-bg: #1d3246; --rk-pill-ok: #a8cbee; --rk-btn2-bg: #1b2a38; --rk-btn2-text: #b7d3ef;
+}
+:root[data-theme="dark"] .rk-accent-manager {
+  --rk-green: #a986cf; --rk-green-text: #c8b0e3; --rk-qty: #c8b0e3; --rk-hero: #24182c;
+  --rk-chip-bg: #2e2240; --rk-chip-text: #d1bdea; --rk-tint: #261d33; --rk-soft: #221b2c;
+  --rk-pill-ok-bg: #2e2240; --rk-pill-ok: #d1bdea; --rk-btn2-bg: #2a2234; --rk-btn2-text: #d7c6ec;
+}
+/* Job header / pill tones used across roles */
+.rk-jobhead.ok { background: var(--rk-success-bg); }
+.rk-jobhead.ok .rk-no { color: #287149; }
+.rk-pill.ok { background: #e5f1e8; color: #287149; }
+.rk-pill.purple { background: #eee7f7; color: #6d4a91; }
+.rk-pill.danger { background: var(--rk-danger-bg); color: var(--rk-danger-qty); }
+:root[data-theme="dark"] .rk-pill.ok { background: #214a33; color: #8fe0b3; }
+:root[data-theme="dark"] .rk-pill.purple { background: #2e2240; color: #d1bdea; }
+:root[data-theme="dark"] .rk-jobhead.ok .rk-no { color: #8fe0b3; }
+.rk-btn.danger { background: #b4472a; color: #fff; }
+:root[data-theme="dark"] .rk-btn.danger { background: #d0603f; color: #fff; }
+
+/* Big number hero (units left / next stage) */
+.rk-count { border-radius: 22px; background: var(--rk-hero); color: #fff; padding: 22px 18px 18px; display: grid; grid-template-columns: auto 1fr; gap: 10px 22px; align-items: center; }
+.rk-count b { font-size: 26px; font-weight: 700; }
+.rk-count span { font-size: 12px; }
+.rk-count small { grid-column: 1 / -1; font-size: 11px; color: var(--rk-hero-label); }
+
+/* Stepper (units to record now) */
+.rk-stepper { background: var(--rk-tint); border: 1px solid var(--rk-line); border-radius: 22px; padding: 16px 17px 18px; text-align: center; }
+.rk-stepper small { display: block; text-align: left; font-size: 10px; font-weight: 600; color: var(--rk-label); text-transform: uppercase; letter-spacing: .03em; }
+.rk-stepper .row { display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; margin: 16px 0 10px; }
+.rk-stepper .row button { width: 48px; height: 48px; border-radius: 16px; border: 0; font-size: 22px; font-weight: 700; cursor: pointer; }
+.rk-stepper .row button:first-child { background: var(--rk-card); color: var(--rk-green); }
+.rk-stepper .row button:last-child { background: var(--rk-green); color: #fff; }
+.rk-stepper .row input { width: 100%; border: 0; background: transparent; text-align: center; font: inherit; font-size: 30px; font-weight: 700; color: var(--rk-strong); }
+.rk-stepper p { margin: 0; font-size: 10px; color: var(--rk-meta); }
+
+/* Unit capture (unit details) */
+.rk-steps { background: var(--rk-soft); border: 1px solid var(--rk-line); border-radius: 22px; padding: 15px; display: flex; gap: 14px; flex-wrap: wrap;
+  font-size: 11px; font-weight: 600; color: var(--rk-green-text); }
+.rk-steps .done::after { content: " complete"; } .rk-steps .cur::after { content: " current"; }
+.rk-steps span:not(.done):not(.cur) { opacity: .7; }
+.rk-unit { padding: 11px 15px 14px; }
+.rk-unit.done { background: var(--rk-success-bg); display: grid; grid-template-columns: 1fr 20px; gap: 6px 10px; }
+.rk-unit.done small { color: #427058; } .rk-unit.done b { font-size: 13px; font-weight: 600; color: var(--rk-strong); word-break: break-all; }
+.rk-unit.done em { grid-column: 1 / -1; font-style: normal; font-size: 10px; font-weight: 500; color: #287149; }
+.rk-unit small { display: block; font-size: 10px; font-weight: 600; color: var(--rk-label); text-transform: uppercase; letter-spacing: .03em; }
+.rk-unit label { display: block; margin-top: 14px; font-size: 9px; font-weight: 600; color: var(--rk-label); text-transform: uppercase; letter-spacing: .03em; }
+.rk-unit .idrow { display: grid; grid-template-columns: 1fr 48px; gap: 8px; margin-top: 8px; }
+.rk-unit .idrow input { height: 46px; border-radius: 16px; border: 1px solid #c9d5cd; background: #f8faf9; padding: 0 13px; font: inherit; font-size: 13px; color: var(--rk-strong); box-sizing: border-box; min-width: 0; }
+:root[data-theme="dark"] .rk-unit .idrow input { border-color: var(--rk-line); background: var(--rk-soft); }
+.rk-unit .idrow button { height: 46px; border-radius: 16px; border: 0; background: var(--rk-green); display: grid; place-items: center; cursor: pointer; }
+.rk-unit .idrow button img { width: 22px; height: 22px; }
+.rk-photo { appearance: none; width: 100%; margin-top: 14px; min-height: 52px; border-radius: 18px; border: 0; background: var(--rk-soft);
+  display: flex; align-items: center; gap: 14px; padding: 0 16px; font: inherit; font-size: 12px; font-weight: 600; color: var(--rk-green-text); cursor: pointer; }
+.rk-photo img { width: 22px; height: 22px; }
+.rk-photo.has { background: var(--rk-success-bg); color: #287149; }
+:root[data-theme="dark"] .rk-photo img, :root[data-theme="dark"] .rk-unit.done img { filter: brightness(1.8); }
+.rk-input { width: 100%; box-sizing: border-box; margin-top: 8px; border: 0; background: transparent; font: inherit; font-size: 13px; font-weight: 500; color: var(--rk-value); outline: none; padding: 0; }
+
+/* Status lists (saved / still to send) */
+.rk-status { padding: 12px 15px 16px; }
+.rk-status small { display: block; font-size: 9px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--rk-label); margin-bottom: 8px; }
+.rk-status.saved { background: var(--rk-success-bg); } .rk-status.saved small { color: #427058; }
+.rk-status div { font-size: 11px; color: var(--rk-text); line-height: 1.6; display: flex; justify-content: space-between; gap: 10px; }
+.rk-status .warn { margin-top: 10px; font-size: 10px; font-weight: 600; color: var(--rk-danger-qty); }
+
+/* Manager action rows */
+.rk-acts { padding: 12px 11px; display: flex; flex-direction: column; gap: 8px; }
+.rk-act { appearance: none; border: 0; border-radius: 16px; min-height: 42px; padding: 6px 12px; display: grid; grid-template-columns: 20px 1fr 16px;
+  gap: 2px 12px; align-items: center; text-align: left; font: inherit; cursor: pointer; }
+.rk-act img:first-child { grid-row: 1 / 3; width: 20px; height: 20px; }
+.rk-act b { font-size: 12px; font-weight: 600; } .rk-act span { grid-column: 2; font-size: 9px; color: #69756e; }
+.rk-act .go { grid-column: 3; grid-row: 1 / 3; width: 16px; height: 16px; }
+.rk-act.resume { background: #e7f2e9; color: #287149; } .rk-act.pause { background: #fff4e5; color: #9a5a1b; }
+.rk-act.close { background: #fbe9e2; color: #a5482b; } .rk-act.history { background: #eef2f5; color: #536675; }
+:root[data-theme="dark"] .rk-act.resume { background: #1d3a29; color: #8fe0b3; } :root[data-theme="dark"] .rk-act.pause { background: #3a2b18; color: #efc987; }
+:root[data-theme="dark"] .rk-act.close { background: #3d2119; color: #f6b59f; } :root[data-theme="dark"] .rk-act.history { background: #1f2a33; color: #b9c9d6; }
+:root[data-theme="dark"] .rk-act span { color: #9fb0a5; } :root[data-theme="dark"] .rk-act img { filter: brightness(1.8); }
+.rk-events { padding: 4px 15px; }
+.rk-events div { padding: 10px 0; border-bottom: 1px solid var(--rk-divider); font-size: 12px; }
+.rk-events div:last-child { border-bottom: 0; }
+.rk-events b { text-transform: capitalize; } .rk-events span { display: block; margin-top: 3px; font-size: 10px; color: var(--rk-meta); }
+
+/* Shell tint on role screens (Figma: Quick Orbit + active Work tab take the role colour). */
+:root[data-role-accent="lead"] .v2-orbit-handle { background: #315e8a; }
+:root[data-role-accent="lead"] .m-tab.on { color: #315e8a; }
+:root[data-role-accent="lead"] .m-tab.on svg { background: rgba(224, 234, 246, .94); }
+:root[data-role-accent="manager"] .v2-orbit-handle { background: #6d4a91; }
+:root[data-role-accent="manager"] .m-tab.on { color: #6d4a91; }
+:root[data-role-accent="manager"] .m-tab.on svg { background: rgba(238, 231, 247, .94); }
+:root[data-theme="dark"][data-role-accent="lead"] .v2-orbit-handle { background: #4f86ba; }
+:root[data-theme="dark"][data-role-accent="lead"] .m-tab.on { color: #9cc4ea; }
+:root[data-theme="dark"][data-role-accent="lead"] .m-tab.on svg { background: #1d3246; }
+:root[data-theme="dark"][data-role-accent="manager"] .v2-orbit-handle { background: #8a66b3; }
+:root[data-theme="dark"][data-role-accent="manager"] .m-tab.on { color: #c8b0e3; }
+:root[data-theme="dark"][data-role-accent="manager"] .m-tab.on svg { background: #2e2240; }
+
+/* Narrow phones: stack the hero note under the big number instead of squeezing it. */
+@media (max-width: 380px) { .rk-hero { grid-template-columns: 1fr; } .rk-hero span { text-align: left; padding-bottom: 0; } }

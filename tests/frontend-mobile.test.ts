@@ -326,6 +326,115 @@ describe('mobile bootstrap', () => {
     });
   });
 
+  describe('production lead and manager (Figma 66:*)', () => {
+    const LEAD = { id: 11, username: 'lead', full_name: 'Miguel Santos', role: 'production_lead', employee: true, modules: null,
+      permissions: ['inventory.view', 'inventory.mobile', 'production.record', 'messages.view', 'messages.send'] };
+    const MGR = { id: 12, username: 'pm', full_name: 'Pia Manager', role: 'production_manager', employee: true, modules: null,
+      permissions: ['inventory.view', 'inventory.mobile', 'production.record', 'production.pause', 'production.manage', 'messages.view', 'messages.send'] };
+    const BASE = { id: 184, number: 'JO-2026-184', product_name: 'K4 Electric Bike', qty_ordered: 12, qty_done: 0, qty_scrapped: 0,
+      qc_stages: 2, status: 'released', released_at: '2026-09-28 01:42:00', released_by_name: 'Ana Alvarez', accepted_at: null,
+      units_summary: {}, components: [{ component_name: 'Controller 60 V', qty_planned: 12 }] };
+    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+
+    it('gates Accept job order on the kit count, then accepts', async () => {
+      const posts: Array<{ url: string; body: string }> = [];
+      const win = await bootAs(LEAD, (url: string, init: { method?: string; body?: string }) => {
+        if (init && init.method === 'POST') { posts.push({ url, body: String(init.body) }); return { ok: true, job_order: { ...BASE, accepted_at: 'x' } }; }
+        if (url === '/api/job-orders/184') return posts.length ? { ...BASE, accepted_at: '2026-09-28 02:03:00', accepted_by_name: 'Miguel Santos', status: 'released' } : BASE;
+        if (url === '/api/job-orders/184/units') return [];
+        return undefined;
+      });
+      win.location.hash = '#/job-orders?id=184';
+      await wait();
+      const doc = win.document;
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:79');
+      const accept = doc.getElementById('jo-accept') as HTMLButtonElement;
+      expect(accept.disabled).toBe(true);
+      const chk = doc.getElementById('jo-counted') as HTMLInputElement;
+      chk.checked = true; chk.dispatchEvent(new win.Event('change'));
+      accept.click();
+      await wait(120);
+      expect(posts.map((p) => p.url)).toEqual(['/api/job-orders/184/accept']);
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:185');
+    });
+
+    it('saves units one at a time and never re-sends a saved unit after the connection drops', async () => {
+      const uploads: string[] = [];
+      let failNext = false;
+      const ACCEPTED = { ...BASE, accepted_at: '2026-09-28 02:03:00', status: 'in_progress' };
+      const win = await bootAs(LEAD, (url: string, init: { method?: string; body?: FormData }) => {
+        if (init && init.method === 'POST' && url === '/api/job-orders/184/units') {
+          if (failNext) { failNext = false; return undefined; } // network failure
+          uploads.push(String(init.body && (init.body as FormData).get('identifier')));
+          return { ok: true, id: uploads.length };
+        }
+        if (url === '/api/job-orders/184') return ACCEPTED;
+        return undefined;
+      });
+      // Photo picker stub: the real one opens the camera.
+      win.mPhoto = { pickFile: () => Promise.resolve(new win.File(['x'], 'unit.jpg', { type: 'image/jpeg' })) };
+      win.location.hash = '#/job-orders?id=184&step=count';
+      await wait();
+      const doc = win.document;
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:240');
+      (doc.querySelector('.rk-stepper input') as HTMLInputElement).value = '2';
+      (doc.getElementById('jo-continue') as HTMLButtonElement).click();
+      await wait();
+      async function fill(id: string) {
+        (doc.querySelector('[data-photo]') as HTMLButtonElement).click();
+        await wait();
+        const ident = doc.getElementById('jo-ident') as HTMLInputElement;
+        ident.value = id; ident.dispatchEvent(new win.Event('input'));
+      }
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:294');
+      await fill('K4-01');
+      (doc.getElementById('jo-save') as HTMLButtonElement).click();
+      await wait();
+      expect(uploads).toEqual(['K4-01']);
+      await fill('K4-02');
+      failNext = true;
+      (doc.getElementById('jo-save') as HTMLButtonElement).click();
+      await wait(80);
+      const view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('66:356');
+      expect(view.textContent).toContain('Recorded 1 of 2');
+      expect(view.textContent).toContain('K4-01');
+      (doc.getElementById('jo-retry') as HTMLButtonElement).click();
+      await wait(120);
+      expect(uploads).toEqual(['K4-01', 'K4-02']); // unit 1 not sent twice
+    });
+
+    it('lands a Production Manager on exceptions and needs the review tick + reason to close early', async () => {
+      const posts: string[] = [];
+      const PAUSED = { ...BASE, status: 'paused', accepted_at: 'x', qty_done: 7, qty_ordered: 20, paused_at: '2026-09-28 00:00:00', open_issues: 0 };
+      const win = await bootAs(MGR, (url: string, init: { method?: string }) => {
+        if (init && init.method === 'POST') { posts.push(url); return { ok: true }; }
+        if (url === '/api/job-orders') return [PAUSED];
+        if (url === '/api/job-orders/184') return PAUSED;
+        return undefined;
+      });
+      win.location.hash = '#/job-orders';
+      await wait();
+      const doc = win.document;
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:515');
+      expect(doc.getElementById('m-view').textContent).toContain('1 exception');
+      win.location.hash = '#/job-orders?id=184&step=close';
+      await wait();
+      expect(doc.getElementById('m-view').textContent).toContain('13 units will not be produced');
+      const close = doc.getElementById('jo-close') as HTMLButtonElement;
+      expect(close.disabled).toBe(true);
+      const chk = doc.getElementById('jo-reviewed') as HTMLInputElement;
+      chk.checked = true; chk.dispatchEvent(new win.Event('change'));
+      close.click(); // no reason yet
+      await wait();
+      expect(posts).toEqual([]);
+      (doc.querySelector('[data-reason]') as HTMLInputElement).value = 'Customer reduced the quantity';
+      close.click();
+      await wait();
+      expect(posts).toEqual(['/api/job-orders/184/close']);
+    });
+  });
+
   it('clears the previous screen’s data-* tags when routing (no leaked role titles)', async () => {
     const win = await bootAs({ id: 3, username: 'x', full_name: 'X', role: 'csr', employee: true, modules: null, permissions: ['messages.view'] });
     const view = win.document.getElementById('m-view');
@@ -423,8 +532,13 @@ describe('mobile bootstrap', () => {
     expect(files.warehouse).toContain("'/production/repairs/' + r.id + '/accept'");
     expect(files.warehouse).toContain("'/production/repairs/' + r.id + '/reject'");
     expect(files.hub).toContain("data-role-screen', 'production-manager'");
-    expect(files.production).toContain("data-role-screen', 'production-manager'");
-    expect(files.production).toContain("API.post('/job-orders/'");
+    // Production Lead + Manager: every Figma frame mapped, live endpoints kept.
+    for (const node of ['66:14', '66:79', '66:133', '66:185', '66:240', '66:294', '66:356', '66:408', '66:462', '66:515', '66:580', '66:650']) {
+      expect(files.production).toContain("'" + node + "'");
+    }
+    for (const call of ["'/accept'", "'/units'", "'/progress'", "'/close'", "'/events'", "API.post('/production-issues'"]) {
+      expect(files.production).toContain(call);
+    }
     expect(files.quality).toContain("data-role-screen', qualityRole");
     expect(files.quality).toContain("qualityRole === 'qa'");
     expect(files.quality).toContain("API.get('/qc/checklists");
