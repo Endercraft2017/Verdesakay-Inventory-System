@@ -1,0 +1,212 @@
+/* Role kit — shared visual language of the V2 role screens (Figma pages 62:* Warehouseman,
+   66:* Production, 69:* QC, 72:* QA, 74:* RTS, 78:* Releasing, 83:* Parts). Values are taken
+   from the Figma design context; every colour is a token so dark mode follows the V2 theme.
+   Markup comes from public/mobile/lib/role-ui.js. Loaded after mobile-v2.css. */
+:root {
+  --rk-page: #f7f9f7;
+  --rk-card: #ffffff;
+  --rk-line: #dfe8e1;
+  --rk-divider: #dde6e0;
+  --rk-tint: #e4f0e7;            /* job header card */
+  --rk-soft: #eef4ef;            /* next-steps / secondary surfaces */
+  --rk-chip-bg: #e2f0e6;
+  --rk-chip-text: #24573b;
+  --rk-title: #13271b;
+  --rk-sub: #627168;
+  --rk-text: #263a2e;
+  --rk-strong: #20362a;
+  --rk-meta: #68766d;
+  --rk-label: #718078;
+  --rk-value: #23392b;
+  --rk-green: #1b6b46;
+  --rk-green-text: #176b45;
+  --rk-qty: #315c45;
+  --rk-hero: #153f2d;
+  --rk-hero-label: #b9dec6;
+  --rk-hero-note: #f5d8b2;
+  --rk-pill-ok-bg: #e0f1e6;
+  --rk-pill-ok: #176b45;
+  --rk-pill-warn-bg: #f9e2be;
+  --rk-pill-warn: #a85b1d;
+  --rk-pill-muted-bg: rgba(255, 255, 255, .7);
+  --rk-pill-muted: #3a684e;
+  --rk-warn-bg: #fff6e8;
+  --rk-warn-card: #fff7ea;
+  --rk-warn-text: #755329;
+  --rk-danger-bg: #fbebdd;
+  --rk-danger-title: #7b351f;
+  --rk-danger-text: #80533f;
+  --rk-danger-qty: #b4472a;
+  --rk-btn2-bg: #edf4ef;
+  --rk-btn2-text: #28523b;
+  --rk-success-bg: #dcefe2;
+}
+:root[data-theme="dark"] {
+  --rk-page: var(--v2-bg);
+  --rk-card: var(--v2-surface);
+  --rk-line: var(--v2-line);
+  --rk-divider: #2b3d32;
+  --rk-tint: #1f3327;
+  --rk-soft: #1c2b22;
+  --rk-chip-bg: #22402f;
+  --rk-chip-text: #a9dcbc;
+  --rk-title: var(--v2-text);
+  --rk-sub: var(--v2-muted);
+  --rk-text: #dce9e0;
+  --rk-strong: #edf7f0;
+  --rk-meta: #9fb0a5;
+  --rk-label: #93a69a;
+  --rk-value: #e3efe7;
+  --rk-green: #3ba875;
+  --rk-green-text: #6fd19f;
+  --rk-qty: #8fd3ad;
+  --rk-hero: #10301f;
+  --rk-pill-ok-bg: #214a33;
+  --rk-pill-ok: #8fe0b3;
+  --rk-pill-warn-bg: #4a3316;
+  --rk-pill-warn: #f2be7a;
+  --rk-pill-muted-bg: rgba(255, 255, 255, .08);
+  --rk-pill-muted: #b8d9c4;
+  --rk-warn-bg: #3a2b18;
+  --rk-warn-card: #2f2616;
+  --rk-warn-text: #efc987;
+  --rk-danger-bg: #3d2119;
+  --rk-danger-title: #f6b59f;
+  --rk-danger-text: #e3ab98;
+  --rk-danger-qty: #f08a6c;
+  --rk-btn2-bg: #223128;
+  --rk-btn2-text: #bfe3cd;
+  --rk-success-bg: #1d3a29;
+}
+
+.rk-page { padding: 14px 0 132px; max-width: 560px; margin: 0 auto; color: var(--rk-text); }
+.rk-page > * + * { margin-top: 14px; }
+.rk-head { padding: 0 6px; }
+.rk-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 9px; border-radius: 14px;
+  background: var(--rk-chip-bg); color: var(--rk-chip-text); font-size: 9px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+.rk-chip img { width: 16px; height: 16px; }
+:root[data-theme="dark"] .rk-chip img, :root[data-theme="dark"] .rk-ico-tint { filter: brightness(1.9) saturate(.8); }
+.rk-head h1 { margin: 12px 0 4px; font-size: 24px; font-weight: 700; line-height: 1.2; color: var(--rk-title); letter-spacing: -.01em; }
+.rk-head p { margin: 0; font-size: 12px; color: var(--rk-sub); }
+.rk-back { appearance: none; border: 0; background: none; color: var(--rk-green-text); font: inherit; font-size: 12px; font-weight: 600; padding: 0 0 8px; cursor: pointer; }
+
+/* Dark summary hero ("ACTION NEEDED / 3 kits ready") */
+.rk-hero { border-radius: 22px; background: var(--rk-hero); color: #fff; padding: 13px 17px 16px; min-height: 92px;
+  display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 4px 12px; border: 1px solid var(--rk-line); }
+.rk-hero small { grid-column: 1 / -1; font-size: 10px; font-weight: 600; color: var(--rk-hero-label); letter-spacing: .03em; text-transform: uppercase; }
+.rk-hero b { font-size: 22px; font-weight: 700; }
+.rk-hero span { font-size: 11px; font-weight: 500; color: var(--rk-hero-note); text-align: right; padding-bottom: 4px; }
+
+/* Tabs with counts ("Ready 3  Blocked 1  Released") */
+.rk-tabs { display: flex; gap: 20px; padding: 2px 6px 0; border-bottom: 1px solid var(--rk-divider); overflow-x: auto; scrollbar-width: none; }
+.rk-tabs button { appearance: none; background: none; border: 0; padding: 6px 0 12px; font: inherit; font-size: 12px; font-weight: 600;
+  color: var(--rk-meta); white-space: nowrap; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.rk-tabs button b { margin-left: 5px; font-weight: 700; }
+.rk-tabs button.on { color: var(--rk-strong); border-bottom-color: var(--rk-green); }
+
+/* Cards */
+.rk-card { background: var(--rk-card); border: 1px solid var(--rk-line); border-radius: 22px; }
+.rk-list { display: flex; flex-direction: column; gap: 12px; }
+.rk-job { appearance: none; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; padding: 12px 15px 14px;
+  display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; }
+.rk-job.warn { background: var(--rk-warn-card); }
+.rk-job .rk-no { font-size: 14px; font-weight: 700; color: var(--rk-strong); }
+.rk-job .rk-name { grid-column: 1 / 2; font-size: 13px; font-weight: 600; color: var(--rk-text); }
+.rk-job .rk-meta { grid-column: 1 / 2; font-size: 10px; color: var(--rk-meta); }
+.rk-job .rk-go { grid-column: 2; grid-row: 2 / 4; justify-self: end; align-self: end; width: 16px; height: 16px; }
+.rk-pill { justify-self: end; min-width: 94px; height: 24px; line-height: 24px; padding: 0 10px; border-radius: 12px; font-size: 9px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .02em; background: var(--rk-pill-ok-bg); color: var(--rk-pill-ok); box-sizing: border-box; }
+.rk-pill.warn { background: var(--rk-pill-warn-bg); color: var(--rk-pill-warn); }
+.rk-pill.muted { background: var(--rk-pill-muted-bg); color: var(--rk-pill-muted); }
+
+/* Job header (tinted) */
+.rk-jobhead { background: var(--rk-tint); border: 1px solid var(--rk-line); border-radius: 22px; padding: 14px 17px 16px;
+  display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; }
+.rk-jobhead .rk-no { font-size: 12px; font-weight: 700; color: var(--rk-qty); }
+.rk-jobhead .rk-name { grid-column: 1 / -1; font-size: 18px; font-weight: 700; color: var(--rk-strong); }
+.rk-jobhead .rk-meta { grid-column: 1 / -1; font-size: 11px; color: var(--rk-meta); }
+.rk-jobhead .rk-pill { min-width: 84px; }
+
+/* Label / value field */
+.rk-field { padding: 8px 15px 12px; }
+.rk-field small { display: block; font-size: 9px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--rk-label); }
+.rk-field b { display: block; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--rk-value); white-space: pre-line; }
+.rk-field.tint { background: var(--rk-tint); }
+.rk-field textarea, .rk-field select, .rk-field input { width: 100%; box-sizing: border-box; margin-top: 8px; border: 0; background: transparent;
+  font: inherit; font-size: 13px; color: var(--rk-value); resize: vertical; padding: 0; outline: none; }
+.rk-field:focus-within { border-color: var(--rk-green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rk-green) 14%, transparent); }
+
+.rk-section { margin: 18px 6px 0; font-size: 15px; font-weight: 600; color: var(--rk-strong); }
+
+/* Line list (component rows) */
+.rk-lines { padding: 0 13px; }
+.rk-line { display: grid; grid-template-columns: 1fr auto 18px; align-items: center; gap: 10px; min-height: 40px; padding: 4px 2px;
+  border-bottom: 1px solid var(--rk-divider); font-size: 12px; font-weight: 500; color: var(--rk-text); }
+.rk-line:last-child { border-bottom: 0; }
+.rk-line em { font-style: normal; font-size: 11px; font-weight: 600; color: var(--rk-qty); text-align: right; }
+.rk-line.short em { color: var(--rk-danger-qty); }
+.rk-line img { width: 18px; height: 18px; }
+.rk-lines .rk-foot { padding: 12px 2px 14px; font-size: 10px; font-weight: 600; color: var(--rk-meta); }
+
+/* Notices */
+.rk-note { border-radius: 22px; border: 1px solid var(--rk-line); padding: 16px 13px; font-size: 11px; font-weight: 500; line-height: 1.45; }
+.rk-note.warn { background: var(--rk-warn-bg); color: var(--rk-warn-text); }
+.rk-note.danger { background: var(--rk-danger-bg); color: var(--rk-danger-title); display: flex; gap: 10px; align-items: center; }
+.rk-note.danger img { width: 22px; height: 22px; flex: 0 0 auto; }
+.rk-note.info { background: var(--rk-soft); color: var(--rk-text); }
+.rk-note.info h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--rk-strong); }
+.rk-note.info ol, .rk-note.info ul { margin: 0; padding-left: 18px; font-weight: 400; color: var(--rk-meta); }
+.rk-alert { border-radius: 22px; border: 1px solid var(--rk-line); background: var(--rk-danger-bg); padding: 16px 17px 20px;
+  display: grid; grid-template-columns: 28px 1fr; gap: 6px 14px; align-items: start; }
+.rk-alert img { width: 28px; height: 28px; grid-row: 1 / 3; margin-top: 2px; }
+.rk-alert b { font-size: 16px; font-weight: 700; color: var(--rk-danger-title); }
+.rk-alert span { font-size: 11px; color: var(--rk-danger-text); }
+
+/* Confirm checkbox card */
+.rk-check { display: flex; gap: 14px; align-items: center; padding: 16px; background: var(--rk-soft); border: 1px solid var(--rk-line);
+  border-radius: 22px; font-size: 12px; font-weight: 600; color: var(--rk-strong); cursor: pointer; }
+.rk-check input { appearance: none; flex: 0 0 32px; width: 32px; height: 32px; margin: 0; border-radius: 10px; border: 2px solid var(--rk-green);
+  background: var(--rk-card); display: grid; place-items: center; cursor: pointer; }
+.rk-check input:checked { background: var(--rk-green); }
+.rk-check input:checked::after { content: ""; width: 12px; height: 6px; border: solid #fff; border-width: 0 0 2.5px 2.5px; transform: translateY(-2px) rotate(-45deg); }
+.rk-check input:focus-visible { outline: 3px solid color-mix(in srgb, var(--rk-green) 40%, transparent); outline-offset: 2px; }
+
+/* Success hero */
+.rk-success { display: grid; grid-template-columns: 54px 1fr; gap: 4px 18px; align-items: center; padding: 20px 17px 24px;
+  border-radius: 22px; border: 1px solid var(--rk-line); background: var(--rk-success-bg); }
+.rk-success i { grid-row: 1 / 4; width: 54px; height: 54px; border-radius: 50%; background: var(--rk-hero); display: grid; place-items: center; }
+.rk-success i::after { content: ""; width: 16px; height: 8px; border: solid #fff; border-width: 0 0 2.5px 2.5px; transform: translateY(-2px) rotate(-45deg); }
+.rk-success b, .rk-success span { grid-column: 2; }
+.rk-success b { font-size: 16px; font-weight: 700; color: var(--rk-strong); }
+.rk-success span { font-size: 11px; color: var(--rk-meta); }
+.rk-tag { display: inline-block; margin-top: 10px; padding: 5px 14px; border-radius: 12px; background: var(--rk-warn-bg); color: var(--rk-warn-text);
+  font-size: 9px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+
+/* Buttons */
+.rk-actions { display: flex; gap: 10px; }
+.rk-btn { appearance: none; min-height: 46px; border-radius: 23px; border: 0; padding: 0 16px; font: inherit; font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; cursor: pointer; flex: 1 1 0; }
+.rk-btn.primary { background: var(--rk-green); color: #fff; }
+.rk-btn.secondary { background: var(--rk-btn2-bg); color: var(--rk-btn2-text); }
+.rk-btn img { width: 22px; height: 22px; filter: brightness(0) invert(1); }
+.rk-btn:disabled { opacity: .5; cursor: not-allowed; }
+.rk-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--rk-green) 40%, transparent); outline-offset: 2px; }
+:root[data-theme="dark"] .rk-btn.primary { color: #07140d; }
+:root[data-theme="dark"] .rk-btn.primary img { filter: brightness(0); }
+
+/* Scanner shortcut frame */
+.rk-scanframe { position: relative; height: 310px; border-radius: 22px; background: var(--rk-hero); overflow: hidden; cursor: pointer; }
+.rk-scanframe i { position: absolute; width: 46px; height: 3px; border-radius: 2px; background: #9be0b8; }
+.rk-scanframe i:nth-child(1) { left: 37px; top: 43px; } .rk-scanframe i:nth-child(2) { right: 37px; top: 43px; }
+.rk-scanframe i:nth-child(3) { left: 37px; bottom: 63px; } .rk-scanframe i:nth-child(4) { right: 37px; bottom: 63px; }
+.rk-scanframe hr { position: absolute; left: 54px; right: 54px; top: 50%; margin: 0; border: 0; height: 2px; background: #6fd19f; }
+.rk-scanframe p { position: absolute; left: 44px; right: 20px; bottom: 26px; margin: 0; font-size: 11px; color: #dff3e7; }
+
+.rk-empty { padding: 28px 18px; text-align: center; font-size: 12px; color: var(--rk-meta); }
+.rk-error { padding: 16px; border-radius: 22px; background: var(--rk-danger-bg); color: var(--rk-danger-title); font-size: 12px; }
+.rk-error button { margin-left: 8px; }
+.rk-skel { height: 96px; border-radius: 22px; background: linear-gradient(90deg, var(--rk-soft), var(--rk-card), var(--rk-soft)); background-size: 200% 100%;
+  animation: rk-shimmer 1.2s linear infinite; border: 1px solid var(--rk-line); }
+@keyframes rk-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .rk-skel { animation: none; } }
+@media (max-width: 370px) { .rk-pill { min-width: 0; } .rk-actions { flex-wrap: wrap; } .rk-actions .rk-btn { flex-basis: 100%; } }

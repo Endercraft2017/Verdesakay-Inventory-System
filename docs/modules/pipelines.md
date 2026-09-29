@@ -113,6 +113,13 @@ raised by the sales-order shortfall flow.
       `released`. The slip is kept in the app (paperless): `GET /parts-slips`,
       `/parts-slips/:id`, `/parts-slips/:id/print` (printable HTML). Photos of the kit
       are attachments of kind `parts_release` on the slip.
+   - **Mobile (warehouse, Figma 62:*)** — `#/kit-release` walks the same three server steps as
+     one guided flow: queue (Ready / Blocked by availability / Released awaiting acceptance) →
+     verify kit (`GET /:id/availability`) → confirm with a "picked and counted" acknowledgement
+     (runs accept → prepare → release in order) → released handoff. **Branch — short stock:**
+     a shortfall (from availability or `prepare`) shows Release blocked with nothing deducted;
+     "Report shortage" files a tracked `production_issues` row (category `Parts shortage`),
+     not a loose message. Online-only; Quick Orbit "Scan job order" opens it by JO number.
    - **Parts kit accepted** (`manufacturing`) — the production lead (`production_lead`
      role / `production.record`, or `inventory.adjust`) counts the kit against the
      Components list and signs for it: `POST /:id/accept` stamps `accepted_by` /

@@ -287,4 +287,9 @@ gates nothing backend-side beyond serving `/m`) covering the entire `/m` employe
 Its views live under `public/mobile/modules/<owning-module>/` mirroring the same
 module names as the backend, since a mobile screen belongs to whichever business
 module it serves (e.g. `public/mobile/modules/hr/clock.js`).
+V2 role screens share one kit: `public/mobile/role-kit.css` (tokens from the Figma role
+pages, light + dark) and `public/mobile/lib/role-ui.js` (chip/title, hero, tabs, job cards,
+line lists, notices, acknowledgement check, success, actions). First role on it: warehouse
+kit release, `modules/manufacturing/kit-release.js` (Figma 62:14–62:372). Every step is its own
+URL so the header back arrow walks the flow; `app.js` clears `#m-view` data-* tags per route.
 **Status:** working.

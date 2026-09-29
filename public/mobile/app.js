@@ -72,7 +72,7 @@ window.MApp = (function () {
     batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work',
     allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
     'my-log': 'work', item: 'work', scan: 'work', deliveries: 'work', so: 'work',
-    production: 'work', 'job-orders': 'work', qc: 'work', repairs: 'work', record: 'work', receiving: 'work',
+    production: 'work', 'job-orders': 'work', 'kit-release': 'work', qc: 'work', repairs: 'work', record: 'work', receiving: 'work',
     inbox: 'inbox', directory: 'inbox',
     settings: 'profile', queue: 'profile',
     clock: 'clock', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home', notifications: 'home',
@@ -145,6 +145,11 @@ window.MApp = (function () {
     var v = viewEl();
     v.innerHTML = '';
     v.scrollTop = 0;
+    // Screens tag #m-view (data-figma-node, data-role-screen/-title/-subtitle); the element is
+    // reused across routes, so clear every tag or the last screen's role title leaks onward.
+    Array.prototype.slice.call(v.attributes).forEach(function (a) {
+      if (a.name.indexOf('data-') === 0) v.removeAttribute(a.name);
+    });
     try {
       fn(v, parsed.params);
     } catch (e) {

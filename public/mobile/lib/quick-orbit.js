@@ -19,6 +19,7 @@
     qc: { label: 'Inspect unit', route: 'qc', icon: icon('<path d="m5 12 4 4L19 6"/><circle cx="12" cy="12" r="9"/>') },
     repairs: { label: 'Parts requests', route: 'repairs', icon: icon('<path d="m14 7 3-3 3 3-3 3"/><path d="M17 7 7 17M5 15l4 4"/>') },
     receiving: { label: 'Record RTS', route: 'receiving', icon: icon('<path d="M4 8h16v12H4zM8 4h8v4M8 13h8"/>') },
+    kitscan: { label: 'Scan job order', route: 'kit-release', params: { scan: '1' }, icon: icon('<path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"/><path d="M8 9h8v6H8z"/>') },
     release: { label: 'Release order', route: 'so', icon: icon('<path d="M3 6h13v11H3zM16 10h3l2 3v4h-5M7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM18 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>') }
   };
 
@@ -29,6 +30,8 @@
     if (MApp.can('production.record')) return ACTIONS.jobs;
     if (MApp.can('production.receive')) return ACTIONS.receiving;
     if (MApp.can('orders.release')) return ACTIONS.release;
+    // Warehouse: Figma 62:372 — the job-order scan shortcut into kit release.
+    if (MApp.can('inventory.adjust')) return ACTIONS.kitscan;
     if (MApp.can('inventory.mobile')) return ACTIONS.scan;
     return null;
   }

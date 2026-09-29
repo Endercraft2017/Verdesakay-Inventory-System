@@ -13,7 +13,7 @@ const PUBLIC = path.join(ROOT, 'public');
 const EXPECTED_ROUTES = [
   'home', 'work', 'production', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
   'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
-  'batch', 'job-orders', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
+  'batch', 'job-orders', 'kit-release', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
   'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks',
   'announcements', 'notifications', 'confidential-reports', 'time-fix', 'approvals', 'allocate', 'deliveries',
 ];
@@ -91,10 +91,13 @@ describe('mobile bootstrap', () => {
     const win = dom.window as unknown as Record<string, any>;
     win.matchMedia = win.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
     win.fetch = (url: string, init: unknown) => {
-      const body = respond ? respond(String(url), init) : undefined;
-      if (body === undefined) return Promise.reject(new Error('no network in test'));
+      const out = respond ? respond(String(url), init) : undefined;
+      if (out === undefined) return Promise.reject(new Error('no network in test'));
+      // { __status, body } fakes an HTTP error response; anything else is a 200 JSON body.
+      const status = out && typeof out === 'object' && '__status' in (out as object) ? (out as { __status: number }).__status : 200;
+      const body = status === 200 ? out : (out as { body: unknown }).body;
       return Promise.resolve({
-        ok: true, status: 200,
+        ok: status < 400, status,
         headers: { get: (h: string) => (h.toLowerCase() === 'content-type' ? 'application/json' : null) },
         json: () => Promise.resolve(body),
       });
@@ -229,6 +232,108 @@ describe('mobile bootstrap', () => {
     expect(anon).not.toMatch(/mSubmit|\/messages|\/bug-reports/);
     expect(anon).toContain("API.post('/anonymous-reports/ticket')"); // only the ticket is authenticated
     expect(anon).not.toMatch(/type="file"/); // no attachments on this channel
+  });
+
+  describe('warehouse kit release (Figma 62:*)', () => {
+    const WH = { id: 9, username: 'wh', full_name: 'Ana Alvarez', role: 'warehouse', employee: true, modules: null,
+      permissions: ['inventory.view', 'inventory.adjust', 'inventory.mobile', 'messages.view', 'messages.send'] };
+    const JO = { id: 184, number: 'JO-2026-184', product_name: 'K4 Electric Bike', qty_ordered: 12, status: 'draft',
+      approved_at: '2026-09-28 08:00:00', warehouse_accepted_at: null, prepared_at: null, team_name: 'Line 2',
+      source_location_name: 'Main Parts', due_date: null };
+    const LINES = [{ component_item_id: 1, component_name: 'Controller 60 V', need: 12, have: 30, short: 0, picked: 0 }];
+
+    it('queues approved kits as Ready or Blocked from availability', async () => {
+      const win = await bootAs(WH, (url: string) => {
+        if (url === '/api/job-orders?stage=awaiting_release') return [JO, { ...JO, id: 179, number: 'JO-2026-179', product_name: 'Z10 Electric Bike' }];
+        if (url === '/api/job-orders?status=released') return [];
+        if (url === '/api/job-orders/184/availability') return { lines: LINES, shortfalls: [] };
+        if (url === '/api/job-orders/179/availability') return { lines: [], shortfalls: [{ component_name: 'Bolt M8', need: 40, have: 25, short: 15 }] };
+        return undefined;
+      });
+      win.location.hash = '#/kit-release';
+      await new Promise((r) => setTimeout(r, 40));
+      const view = win.document.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('62:14');
+      expect(view.textContent).toContain('1 kit ready');
+      expect(view.textContent).toContain('1 blocked by shortage');
+      expect(view.textContent).toContain('JO-2026-184');
+      expect(view.textContent).not.toContain('JO-2026-179'); // on the Blocked tab, not Ready
+      (view.querySelector('[data-tab="blocked"]') as HTMLButtonElement).click();
+      expect(view.textContent).toContain('JO-2026-179');
+      expect(view.textContent).toContain('1 part short');
+    });
+
+    it('needs the kit acknowledgement, then accepts → picks → releases in order', async () => {
+      const posts: string[] = [];
+      let released = false;
+      const RELEASED = { ...JO, status: 'released', released_at: '2026-09-28 01:42:00', released_by_name: 'Ana Alvarez', parts_slip_number: 'PRS-00007' };
+      const win = await bootAs(WH, (url: string, init: { method?: string }) => {
+        if (init && init.method === 'POST') {
+          posts.push(url);
+          if (url.endsWith('/release')) { released = true; return { ok: true, job_order: RELEASED, slip: { id: 1, number: 'PRS-00007' } }; }
+          return { ok: true };
+        }
+        if (url === '/api/job-orders/184') return released ? RELEASED : JO;
+        if (url === '/api/job-orders/184/availability') return { lines: LINES, shortfalls: [], source_location_name: 'Main Parts' };
+        return undefined;
+      });
+      win.location.hash = '#/kit-release?id=184';
+      await new Promise((r) => setTimeout(r, 40));
+      const doc = win.document;
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('62:79');
+      (doc.getElementById('kr-go') as HTMLButtonElement).click();
+      await new Promise((r) => setTimeout(r, 40)); // each step is its own URL (?step=confirm) and reloads the job order
+      const confirm = doc.getElementById('kr-confirm') as HTMLButtonElement;
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('62:150');
+      expect(confirm.disabled).toBe(true);
+      const ack = doc.getElementById('kr-ack') as HTMLInputElement;
+      ack.checked = true;
+      ack.dispatchEvent(new win.Event('change'));
+      expect(confirm.disabled).toBe(false);
+      confirm.click();
+      await new Promise((r) => setTimeout(r, 250)); // POSTs → new step URL → reload
+      expect(posts).toEqual(['/api/job-orders/warehouse-accept', '/api/job-orders/prepare', '/api/job-orders/184/release']);
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('62:317');
+      expect(doc.getElementById('m-view').textContent).toContain('PRS-00007');
+    });
+
+    it('lands on Release blocked when the server finds a shortfall, and never calls release', async () => {
+      const posts: string[] = [];
+      const win = await bootAs(WH, (url: string, init: { method?: string }) => {
+        if (init && init.method === 'POST') {
+          posts.push(url);
+          if (url.endsWith('/prepare')) return { __status: 400, body: { error: 'Not enough stock to pick', shortfalls: [{ component_name: 'Bolt M8', picking: 40, available: 25 }] } };
+          return { ok: true };
+        }
+        if (url === '/api/job-orders/184') return { ...JO, warehouse_accepted_at: '2026-09-28 08:10:00' };
+        if (url === '/api/job-orders/184/availability') return { lines: LINES, shortfalls: [] };
+        return undefined;
+      });
+      win.location.hash = '#/kit-release?id=184';
+      await new Promise((r) => setTimeout(r, 40));
+      const doc = win.document;
+      (doc.getElementById('kr-go') as HTMLButtonElement).click();
+      await new Promise((r) => setTimeout(r, 40));
+      const ack = doc.getElementById('kr-ack') as HTMLInputElement;
+      ack.checked = true; ack.dispatchEvent(new win.Event('change'));
+      (doc.getElementById('kr-confirm') as HTMLButtonElement).click();
+      await new Promise((r) => setTimeout(r, 250)); // POSTs → new step URL → reload
+      expect(posts).toEqual(['/api/job-orders/prepare']); // already accepted; no release attempted
+      const view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('62:205');
+      expect(view.textContent).toContain('Need 40 · Have 25');
+      expect(view.textContent).toContain('No stock was deducted.');
+    });
+  });
+
+  it('clears the previous screen’s data-* tags when routing (no leaked role titles)', async () => {
+    const win = await bootAs({ id: 3, username: 'x', full_name: 'X', role: 'csr', employee: true, modules: null, permissions: ['messages.view'] });
+    const view = win.document.getElementById('m-view');
+    view.setAttribute('data-role-screen', 'production-manager');
+    view.setAttribute('data-role-title', 'Job orders');
+    win.MApp.render();
+    expect(view.hasAttribute('data-role-screen')).toBe(false);
+    expect(view.hasAttribute('data-role-title')).toBe(false);
   });
 
   it('keeps the anonymous submit off the auth header at runtime', async () => {

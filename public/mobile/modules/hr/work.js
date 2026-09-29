@@ -8,6 +8,8 @@
       count: function () { return API.get('/orders?type=sale').then(function (rows) {
         return (rows || []).filter(function (x) { return ['approved', 'released'].indexOf(String(x.status).toLowerCase()) !== -1; }).length;
       }); } },
+    { label: 'Kit releases', sub: 'Pick and release job-order kits', route: 'kit-release', permission: 'inventory.adjust',
+      count: function () { return API.get('/job-orders?stage=awaiting_release').then(function (rows) { return (rows || []).length; }); } },
     { label: 'Cycle count', sub: 'Spot-check a stock location', route: 'cycle-count', permission: 'inventory.adjust' },
     { label: 'Allocate units', sub: 'Assign passed units to orders', route: 'allocate', permission: 'inventory.adjust' },
     { label: 'Parts requests', sub: 'Issue parts for repair or rework', route: 'repairs', permission: 'production.repairs',

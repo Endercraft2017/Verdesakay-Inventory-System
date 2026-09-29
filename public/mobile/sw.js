@@ -5,7 +5,7 @@
      device reconnects, even if no tab is open (Android; iOS flushes on open).
 
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
-var CACHE_VERSION = 'vds-m-v42';
+var CACHE_VERSION = 'vds-m-v44';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -16,12 +16,20 @@ var SHELL = [
   '/mobile/icons/icon-512.png',
   '/mobile/mobile.css',
   '/mobile/mobile-v2.css',
+  '/mobile/role-kit.css',
+  '/mobile/icons/v2/role-warehouse.svg',
+  '/mobile/icons/v2/check-ok.svg',
+  '/mobile/icons/v2/release-box.svg',
+  '/mobile/icons/v2/open-chevron.svg',
+  '/mobile/icons/v2/alert.svg',
+  '/mobile/icons/v2/short.svg',
   '/js/api.js',
   '/mobile/vendor/qrcode.js',
   '/mobile/vendor/zxing.js',
   '/mobile/app.js',
   '/mobile/lib/dom.js',
   '/mobile/lib/quick-orbit.js',
+  '/mobile/lib/role-ui.js',
   '/mobile/lib/locations.js',
   '/mobile/lib/users.js',
   '/mobile/lib/stats.js',
@@ -49,6 +57,7 @@ var SHELL = [
   '/mobile/modules/inventory/orders-fulfil.js',
   '/mobile/modules/inventory/batch-move.js',
   '/mobile/modules/manufacturing/job-orders.js',
+  '/mobile/modules/manufacturing/kit-release.js',
   '/mobile/modules/manufacturing/qc.js',
   '/mobile/modules/manufacturing/repairs.js',
   '/mobile/modules/manufacturing/record.js',

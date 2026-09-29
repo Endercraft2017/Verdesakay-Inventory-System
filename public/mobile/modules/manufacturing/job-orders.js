@@ -408,10 +408,12 @@
     host.appendChild(b);
   }
 
-  MApp.route('job-orders', function (view) {
+  MApp.route('job-orders', function (view, params) {
     view.setAttribute('data-role-screen', 'production-manager');
     view.setAttribute('data-role-title', 'Job orders');
     view.setAttribute('data-role-subtitle', 'Accept released work and record units or batches');
-    board(view);
+    // #/job-orders?id=<id> opens one job order directly (e.g. from Kit released → Open job order).
+    if (params && params.id) open1(view, Number(params.id));
+    else board(view);
   });
 })();
