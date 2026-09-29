@@ -976,6 +976,13 @@ export interface QcRecords {
   created_at: Generated<string>;
 }
 
+export interface QcRepairDetails {
+  qc_record_id: Generated<number>;
+  category: string | null;
+  station: string | null;
+  priority: string | null;
+}
+
 export interface ReleaseSlipItems {
   id: Generated<number>;
   slip_id: number;
@@ -1243,6 +1250,7 @@ export interface DB {
   qbo_links: QboLinks;
   qc_checklists: QcChecklists;
   qc_records: QcRecords;
+  qc_repair_details: QcRepairDetails;
   release_slip_items: ReleaseSlipItems;
   release_slips: ReleaseSlips;
   repair_part_requests: RepairPartRequests;

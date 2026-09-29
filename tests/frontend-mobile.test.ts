@@ -435,6 +435,147 @@ describe('mobile bootstrap', () => {
     });
   });
 
+  describe('QC and QA inspection (Figma 69:*, 72:*)', () => {
+    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const QC = { id: 21, username: 'qc1', full_name: 'Ramon Cruz', role: 'qc_inspector', employee: true, modules: null,
+      permissions: ['inventory.view', 'inventory.mobile', 'production.inspect_qc', 'messages.view', 'messages.send'] };
+    const QA = { ...QC, id: 22, username: 'qa1', full_name: 'Lea Santos', role: 'qa_inspector',
+      permissions: ['inventory.view', 'inventory.mobile', 'production.inspect_qa', 'messages.view', 'messages.send'] };
+    const UNIT = { id: 501, identifier: 'EB-2409-018', status: 'pending', stage: 0, created_at: '2026-09-29 01:00:00', updated_at: '2026-09-29 01:00:00',
+      job_order_id: 184, job_order_number: 'JO-2026-184', product_name: 'K4 Electric Bike', qc_stages: 2, priority: 0,
+      team_name: 'Line 2', batch_number: null, batch_identifier: null, last_fail: null as unknown, last_pass: null as unknown, open_part_requests: 0 };
+    const REWORK = { ...UNIT, id: 502, identifier: 'EB-2409-011', status: 'rework',
+      last_fail: { remarks: 'Loose rear fender bolt', checklist: [{ label: 'Frame and fasteners', ok: false, status: 'issue' }],
+        repair_station: 'Mechanical', repair_category: 'Mechanical · fasteners', repair_priority: 'Normal', created_at: '2026-09-29 00:30:00' } };
+    const JO = { id: 184, number: 'JO-2026-184', product_item_id: 7, qc_stages: 2,
+      qc_checklist_qc: { id: 3, name: 'E-bike technical', items: [
+        { label: 'Frame and fasteners', required: true, group: 'Safety and mechanical' },
+        { label: 'Battery voltage', required: false, group: 'Electrical and function', measure: 'V' },
+      ] }, qc_checklist_qa: null };
+
+    function fake(posts: { url: string; body: any }[], queue: Record<string, unknown> = { role: 'qc', units: [UNIT, REWORK], completed: [] }) {
+      return (url: string, init: { method?: string; body?: string }) => {
+        if (init && init.method === 'POST') { posts.push({ url, body: JSON.parse(String(init.body || '{}')) }); return { ok: true, inspected: 1 }; }
+        if (url.startsWith('/api/qc/queue')) return queue;
+        if (url === '/api/job-orders/184') return JO;
+        return undefined;
+      };
+    }
+
+    it('shows the QC queue with Ready and Reinspect lists from /qc/queue', async () => {
+      const win = await bootAs(QC, fake([]));
+      win.location.hash = '#/qc?role=qc';
+      await wait();
+      const view = win.document.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('69:16');
+      expect(win.document.documentElement.getAttribute('data-role-accent')).toBe('qc');
+      expect(view.textContent).toContain('1 unit');
+      expect(view.textContent).toContain('EB-2409-018');
+      expect(view.textContent).not.toContain('EB-2409-011');
+      (view.querySelector('[data-tab="re"]') as HTMLButtonElement).click();
+      expect(view.textContent).toContain('EB-2409-011');
+      expect(view.textContent).toContain('Reinspection after repair');
+    });
+
+    it('walks grouped steps, blocks N/A on a required check, and posts Pass/Issue/N/A with readings', async () => {
+      const posts: { url: string; body: any }[] = [];
+      const win = await bootAs(QC, fake(posts));
+      const doc = win.document;
+      win.location.hash = '#/qc?role=qc&unit=501';
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('69:104');
+      (doc.getElementById('qc-start') as HTMLButtonElement).click();
+      await wait();
+      let view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('69:145');
+      expect(view.textContent).toContain('Step 1 of 2');
+      (view.querySelector('[data-i="0"]') as HTMLButtonElement).click();
+      expect((view.querySelector('[data-set="na"]') as HTMLButtonElement).disabled).toBe(true);
+      (view.querySelector('[data-set="pass"]') as HTMLButtonElement).click();
+      (doc.getElementById('qc-next') as HTMLButtonElement).click();
+      await wait();
+      view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('69:197');
+      (doc.getElementById('qc-next') as HTMLButtonElement).click(); // no reading yet
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('69:197');
+      const reading = view.querySelector('[data-m="0"]') as HTMLInputElement;
+      reading.value = '67.4'; reading.dispatchEvent(new win.Event('input'));
+      (view.querySelector('[data-mset="0"][data-v="pass"]') as HTMLButtonElement).click();
+      (doc.getElementById('qc-next') as HTMLButtonElement).click();
+      await wait();
+      view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('69:247');
+      expect(view.textContent).toContain('2 passed');
+      (view.querySelector('[data-d="pass"]') as HTMLButtonElement).click();
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('69:286');
+      expect(doc.getElementById('m-view').textContent).toContain('Ready for QA');
+      (doc.getElementById('qc-confirm') as HTMLButtonElement).click();
+      await wait(80);
+      expect(posts).toHaveLength(1);
+      expect(posts[0]!.url).toBe('/api/job-orders/184/units/inspect');
+      expect(posts[0]!.body).toMatchObject({ unit_ids: [501], result: 'pass', checklist: [
+        { label: 'Frame and fasteners', ok: true, status: 'pass' },
+        { label: 'Battery voltage', ok: true, status: 'pass', value: '67.4' },
+      ] });
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('69:436');
+      expect(doc.getElementById('m-view').textContent).toContain('Passed to QA');
+    });
+
+    it('keeps Pass unavailable while an issue is open and sends a repair only with its evidence photo', async () => {
+      const posts: { url: string; body: any }[] = [];
+      const win = await bootAs(QC, fake(posts));
+      const doc = win.document;
+      win.location.hash = '#/qc?role=qc&unit=501&step=check&g=0';
+      await wait();
+      let view = doc.getElementById('m-view');
+      (view.querySelector('[data-i="0"]') as HTMLButtonElement).click();
+      (view.querySelector('[data-set="issue"]') as HTMLButtonElement).click();
+      expect(view.textContent).toContain('Issue detected');
+      win.location.hash = '#/qc?role=qc&unit=501&step=review';
+      await wait();
+      view = doc.getElementById('m-view');
+      expect((view.querySelector('[data-d="pass"]') as HTMLButtonElement).disabled).toBe(true);
+      const rem = view.querySelector('[data-remarks]') as HTMLTextAreaElement;
+      rem.value = 'Loose rear fender bolt'; rem.dispatchEvent(new win.Event('input'));
+      (view.querySelector('[data-d="repair"]') as HTMLButtonElement).click();
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('69:323');
+      (doc.getElementById('qc-go') as HTMLButtonElement).click(); // no photo yet → evidence screen, nothing sent
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('69:364');
+      expect(posts).toEqual([]);
+    });
+
+    it('opens the QA desk in amber from the Work hub with QC-passed units and a hold outcome', async () => {
+      const passed = { ...UNIT, stage: 1, last_pass: { created_at: '2026-09-29 01:30:00', inspector_name: 'Ramon Cruz', stage: 1, items: 8 } };
+      const win = await bootAs(QA, fake([], { role: 'qa', units: [passed], completed: [] }));
+      win.location.hash = '#/qc?role=qa';
+      await wait();
+      const doc = win.document;
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('72:16');
+      expect(doc.documentElement.getAttribute('data-role-accent')).toBe('qa');
+      expect(doc.getElementById('m-view').textContent).toContain('QC passed');
+      win.location.hash = '#/qc?role=qa&unit=501';
+      await wait();
+      expect(doc.getElementById('m-view').textContent).toContain('Ramon Cruz');
+      win.location.hash = '#/qc?role=qa&unit=501&step=fail';
+      await wait();
+      const view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('72:396');
+      expect(view.textContent).toContain('Hold for QA Manager review');
+      expect((doc.getElementById('qc-confirm') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('refuses the QA desk to a QC-only inspector', async () => {
+      const win = await bootAs(QC, fake([]));
+      win.location.hash = '#/qc?role=qa';
+      await wait();
+      expect(win.document.getElementById('m-view').textContent).toContain('don’t have the QA inspection permission');
+    });
+  });
+
   it('clears the previous screen’s data-* tags when routing (no leaked role titles)', async () => {
     const win = await bootAs({ id: 3, username: 'x', full_name: 'X', role: 'csr', employee: true, modules: null, permissions: ['messages.view'] });
     const view = win.document.getElementById('m-view');
@@ -539,9 +680,14 @@ describe('mobile bootstrap', () => {
     for (const call of ["'/accept'", "'/units'", "'/progress'", "'/close'", "'/events'", "API.post('/production-issues'"]) {
       expect(files.production).toContain(call);
     }
-    expect(files.quality).toContain("data-role-screen', qualityRole");
-    expect(files.quality).toContain("qualityRole === 'qa'");
-    expect(files.quality).toContain("API.get('/qc/checklists");
+    // QC + QA: one inspection engine, every Figma frame mapped, live endpoints kept.
+    for (const node of ['69:16', '69:68', '69:104', '69:145', '69:197', '69:247', '69:286', '69:323', '69:364', '69:397', '69:436', '69:478',
+      '72:16', '72:68', '72:104', '72:145', '72:197', '72:246', '72:285', '72:322', '72:363', '72:396', '72:435', '72:477']) {
+      expect(files.quality).toContain("'" + node + "'");
+    }
+    for (const call of ["API.get('/qc/queue?role='", "'/units/inspect'", "mPhoto.attachBlob('qc_unit'", "'/production/units/' + u.id + '/repairs'", "API.get('/qc/checklists')"]) {
+      expect(files.quality).toContain(call);
+    }
     expect(files.rts).toContain("data-role-screen', 'rts'");
     expect(files.rts).toContain("'/job-orders/' + id + '/products-in'");
     expect(files.releasing).toContain("data-role-screen', 'releasing'");

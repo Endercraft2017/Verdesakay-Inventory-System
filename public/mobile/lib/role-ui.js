@@ -7,6 +7,9 @@
     warehouse: { label: 'Warehouseman', icon: '/mobile/icons/v2/role-warehouse.svg' },
     lead: { label: 'Production lead', icon: '/mobile/icons/v2/role-production-lead.svg', accent: 'lead' },
     manager: { label: 'Production manager', icon: '/mobile/icons/v2/role-production-manager.svg', accent: 'manager' },
+    // QC / QA chips use text glyphs in Figma (69:21 ✓, 72:251 ◆), not icon assets.
+    qc: { label: 'QC personnel', glyph: '✓', accent: 'qc' },
+    qa: { label: 'QA personnel', glyph: '◆', accent: 'qa' },
   };
   var e = function (s) { return mEsc(s == null ? '' : String(s)); };
 
@@ -19,7 +22,7 @@
       view.innerHTML = '<section class="rk-page' + (role.accent ? ' rk-accent-' + role.accent : '') + '">' +
         '<header class="rk-head">' +
           (opts.back ? '<button class="rk-back" type="button">‹ ' + e(opts.backLabel || 'Back') + '</button><br>' : '') +
-          '<span class="rk-chip">' + (role.icon ? '<img src="' + role.icon + '" alt="">' : '') + e(opts.label || role.label) + '</span>' +
+          '<span class="rk-chip">' + (role.icon ? '<img src="' + role.icon + '" alt="">' : role.glyph ? '<span class="glyph" aria-hidden="true">' + role.glyph + '</span>' : '') + e(opts.label || role.label) + '</span>' +
           '<h1>' + e(opts.title) + '</h1>' + (opts.subtitle ? '<p>' + e(opts.subtitle) + '</p>' : '') +
         '</header><div class="rk-body"></div></section>';
       if (opts.back) view.querySelector('.rk-back').onclick = opts.back;

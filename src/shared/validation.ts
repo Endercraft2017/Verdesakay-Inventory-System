@@ -450,6 +450,10 @@ const checklistResultSchema = z.object({
   label: trimmed.min(1).max(200),
   ok: boolish,
   note: trimmed.max(500).optional().nullable(),
+  // Mobile V2 inspection (Figma 69:* / 72:*): Pass / Issue / Not applicable per item, and the
+  // reading for a measurement item (e.g. battery voltage). A required item counts only as 'pass'.
+  status: z.enum(['pass', 'issue', 'na']).optional(),
+  value: trimmed.max(60).optional().nullable(),
 });
 
 export const inspectUnitsSchema = z
@@ -462,6 +466,13 @@ export const inspectUnitsSchema = z
     // Required on a fail: what to do with the unit. 'repair' sends it to rework;
     // the others are terminal (the unit counts as scrapped).
     disposition: z.enum(['scrap', 'dispose', 'recycle', 'repair']).optional(),
+    // With disposition 'repair': the structured repair / rectification order (the remarks
+    // carry the instruction). Kept per QC record in qc_repair_details.
+    repair: z.object({
+      category: trimmed.max(120).optional().nullable(),
+      station: trimmed.max(120).optional().nullable(),
+      priority: trimmed.max(40).optional().nullable(),
+    }).optional(),
   })
   .refine((v) => v.result !== 'fail' || !!v.disposition, {
     message: 'Pick what to do with the failed unit (scrap / dispose / recycle / repair)',
@@ -546,6 +557,11 @@ export const qcChecklistSchema = z.object({
       z.object({
         label: trimmed.min(1, 'Each check needs a label').max(200),
         required: boolish.default(false),
+        // Optional: the step this check belongs to (mobile shows one step per group, in order)
+        // and, for a measurement, its unit (e.g. 'V') — the inspector records a reading.
+        group: trimmed.max(80).optional().nullable(),
+        measure: trimmed.max(20).optional().nullable(),
+        hint: trimmed.max(160).optional().nullable(),
       })
     )
     .max(60, 'Keep the checklist under 60 items'),

@@ -22,9 +22,9 @@
       count: function () { return API.get('/job-orders').then(function (rows) {
         return (rows || []).filter(function (x) { return x.status === 'released' || x.status === 'in_progress'; }).length;
       }); } },
-    { label: 'QC technical inspection', sub: 'Inspect units waiting for QC', route: 'qc', permission: 'production.inspect_qc',
+    { label: 'QC technical inspection', sub: 'Inspect units waiting for QC', route: 'qc', params: { role: 'qc' }, permission: 'production.inspect_qc',
       count: actionableInspection },
-    { label: 'QA appearance inspection', sub: 'Inspect units waiting for QA', route: 'qc', permission: 'production.inspect_qa',
+    { label: 'QA appearance inspection', sub: 'Inspect units waiting for QA', route: 'qc', params: { role: 'qa' }, permission: 'production.inspect_qa',
       count: actionableInspection },
     { label: 'Deliveries', sub: 'Field drops and proof of delivery', route: 'deliveries', any: ['delivery.run', 'delivery.manage'],
       count: function () { return API.get('/deliveries?mine=1').then(function (rows) {
@@ -59,7 +59,7 @@
       '<small>' + mEsc(op.sub) + '</small></span><em data-count>OPEN</em>' +
       '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>'
     );
-    row.onclick = function () { MApp.go(op.route); };
+    row.onclick = function () { MApp.go(op.route, op.params); };
     if (op.count) op.count().then(function (n) {
       var e = row.querySelector('[data-count]');
       if (e) e.textContent = n ? n + ' WAITING' : 'CLEAR';

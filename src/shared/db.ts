@@ -1119,6 +1119,16 @@ function createSchema(): void {
       created_on TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_anonymous_report_messages ON anonymous_report_messages(report_id, id);
+    -- Structured repair / rectification order behind a QC or QA 'repair' result (mobile V2,
+    -- Figma 69:323 / 72:322): defect category, responsible station, priority. The instruction
+    -- is the record's remarks. One row per qc_records row. createSchema, no version bump.
+    CREATE TABLE IF NOT EXISTS qc_repair_details (
+      qc_record_id INTEGER PRIMARY KEY REFERENCES qc_records(id) ON DELETE CASCADE,
+      category     TEXT,
+      station      TEXT,
+      priority     TEXT
+    );
+
     -- Job-order line decisions (pause / resume / close early) — append-only audit history with
     -- actor and reason; job_orders.pause_* only hold the CURRENT hold. createSchema, no bump.
     CREATE TABLE IF NOT EXISTS job_order_events (

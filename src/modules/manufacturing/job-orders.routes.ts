@@ -1458,10 +1458,12 @@ router.get('/:id/qc', readGate, (req, res) => {
     return;
   }
   const rows = queryAll<{ checklist: string | null }>(
-    `SELECT q.*, u.full_name AS inspector_name, un.identifier AS unit_identifier
+    `SELECT q.*, u.full_name AS inspector_name, un.identifier AS unit_identifier,
+            rd.category AS repair_category, rd.station AS repair_station, rd.priority AS repair_priority
      FROM qc_records q
      LEFT JOIN users u ON u.id = q.inspector_id
      LEFT JOIN job_order_units un ON un.id = q.unit_id
+     LEFT JOIN qc_repair_details rd ON rd.qc_record_id = q.id
      WHERE q.job_order_id = ?
      ORDER BY q.id DESC`,
     id
@@ -1483,7 +1485,7 @@ router.post('/:id/units/inspect', inspectDoorGate, (req, res) => {
     res.status(404).json({ error: 'Job order not found' });
     return;
   }
-  const { unit_ids, result, remarks, identifier, checklist, disposition } = parseBody(inspectUnitsSchema, req.body);
+  const { unit_ids, result, remarks, identifier, checklist, disposition, repair } = parseBody(inspectUnitsSchema, req.body);
   const units = queryAll<JobOrderUnit>(
     `SELECT * FROM job_order_units WHERE job_order_id = ? AND id IN (${unit_ids.map(() => '?').join(',')})`,
     id,
@@ -1550,7 +1552,8 @@ router.post('/:id/units/inspect', inspectDoorGate, (req, res) => {
     ];
     const required = [...new Map(activeItems.filter((it) => it.required).map((it) => [it.label, it])).values()];
     if (required.length) {
-      const ticked = new Map((checklist ?? []).map((c) => [c.label, c.ok]));
+      // With a per-item status (mobile V2) only 'pass' satisfies a required check — not N/A.
+      const ticked = new Map((checklist ?? []).map((c) => [c.label, c.status ? c.status === 'pass' : c.ok]));
       const missing = required.filter((it) => ticked.get(it.label) !== true).map((it) => it.label);
       if (missing.length) {
         res.status(400).json({ error: `Complete the required QC/QA checks before passing: ${missing.join(', ')}` });
@@ -1564,7 +1567,7 @@ router.post('/:id/units/inspect', inspectDoorGate, (req, res) => {
   try {
     for (const u of units) {
       const stage = u.stage + 1;
-      run(
+      const rec = run(
         `INSERT INTO qc_records (job_order_id, unit_id, stage, result, disposition, remarks, checklist, inspector_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         id,
@@ -1576,6 +1579,10 @@ router.post('/:id/units/inspect', inspectDoorGate, (req, res) => {
         checklistJson,
         req.user!.id
       );
+      if (result === 'fail' && disposition === 'repair' && repair && (repair.category || repair.station || repair.priority)) {
+        run('INSERT INTO qc_repair_details (qc_record_id, category, station, priority) VALUES (?, ?, ?, ?)',
+          Number(rec.lastInsertRowid), repair.category ?? null, repair.station ?? null, repair.priority ?? null);
+      }
       if (result === 'fail' && disposition === 'repair') {
         // Send it back for repair — not scrapped, keeps its stage so it re-does the
         // inspection it failed once the parts are sorted.

@@ -158,6 +158,13 @@ is multipart and requires the photo; pause/resume accept `production.pause`; the
 reason, logged append-only in `job_order_events` (`GET /api/job-orders/:id/events`); issue reports
 live at `/api/production-issues`. Uses `core/attachments.routes.ts` (`imageUpload`,
 `saveAttachment`) for photos sent together with the record they belong to.
+**Inspection interface (mobile V2):** `GET /api/qc/queue?role=qc|qa` — the caller's own pass
+across open job orders (same stage rules as `/units/inspect`), rework units with their last
+failure + open parts requests, and the caller's results today. `/units/inspect` checklist items
+take `status` (`pass|issue|na`; only `pass` satisfies a required check) and `value`; a repair
+result takes `repair {category, station, priority}`, stored in `qc_repair_details` (createSchema,
+no version bump). Checklist items take `group`, `measure`, `hint`.
+Tests: `tests/qc-inspection-v2.test.ts`.
 **Status:** working. Open gaps from the 2026-09-27 walkthrough:
 `docs/PRODUCTION-WALKTHROUGH-GAPS.md`.
 
@@ -296,4 +303,9 @@ Second: Production Lead + Manager, `modules/manufacturing/job-orders.js` (Figma 
 role accents (`.rk-accent-lead` blue, `.rk-accent-manager` purple) also tint the Quick Orbit and
 active dock tab via `html[data-role-accent]`, cleared per route. `lib/queue.js` background
 flushes now swallow storage errors (no IndexedDB / blocked site data) instead of throwing.
+Third: QC (teal) + QA (amber) inspection, `modules/manufacturing/qc.js` (Figma 69:16–69:478,
+72:16–72:477) — one engine, two desks (`#/qc?role=qc|qa`; the Work hub opens the right one).
+Checklist items are recorded Pass / Issue / N/A with readings and remarks, grouped into steps
+by the item's `group`; a draft stays on the phone (localStorage) until the result is recorded.
+Kept from the old screen: parts requests, checklist assignment (`qc.configure`), bulk pass.
 **Status:** working.

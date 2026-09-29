@@ -180,6 +180,17 @@ raised by the sales-order shortfall flow.
    inspect permission covers raising that request (`POST
    /production/units/:unitId/repairs`), since it's the inspector who discovers the
    unit needs a part, regardless of which pass they're on.
+   - **Mobile (QC / QA, Figma 69:* / 72:*)** — `#/qc?role=qc|qa`, fed by `GET /api/qc/queue`:
+     queue (Ready / Reinspect or Recheck / Completed today) → identify (scan or serial search;
+     only units on the inspector's own pass open) → verify (QA also sees the QC record) →
+     checklist steps (Pass / Issue / N/A, readings, remarks; N/A can't satisfy a required check;
+     draft kept on the phone) → review → one disposition: **Pass** to QA or RTS (may queue
+     offline, shown as queued, never as recorded); **Return for repair / rectification** —
+     category, instruction, station, priority + a required photo (`qc_unit` attachment), online
+     only; **Fail / reject** (scrap, dispose, recycle) with reason, photo and a review tick.
+     QA's **Hold for QA Manager review** is recorded as a repair routed to "QA Manager review",
+     so the unit stays out of RTS and returns on the Recheck list. A returned unit shows the
+     original issue and failed items for reinspection; waiting parts requests block the start.
 5. **Repair parts handoff** (`manufacturing` → `inventory`) — a side branch off
    stage 4: the warehouse parts clerk (`parts_clerk` role, or `production.repairs`)
    accepts or rejects the request (`POST /production/repairs/:id/accept|reject`);

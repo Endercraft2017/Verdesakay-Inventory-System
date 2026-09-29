@@ -381,6 +381,10 @@ export interface JobOrder {
 export interface QcChecklistItem {
   label: string;
   required: boolean;
+  /** Mobile V2: the checklist step this item belongs to, a measurement unit, and a one-line hint. */
+  group?: string | null;
+  measure?: string | null;
+  hint?: string | null;
 }
 
 /** A named, reusable QC/QA checklist, belonging to one stage as a whole (stage: 1 = QC /
