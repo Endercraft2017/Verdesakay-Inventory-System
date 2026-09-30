@@ -173,8 +173,8 @@ because every route defaults to the `online` class until it is reviewed.
 |---|---|
 | **0. Spikes** | ✅ Electron + `node:sqlite` sessions on Windows; ✅ changeset capture/invert/apply rebase; ✅ `datetime('now')` override; ✅ node-range ID allocation (§9). Still open: LAN discovery; LAN HTTPS for `/m` |
 | **1. Command foundation** ✅ built 2026-09-30 (§10) | `src/sync/`: command log, HLC, ULID, `DEPLOY_MODE`, per-route `syncClass()` (undeclared routes refused on a node), allocation plan (node-partitioned IDs via renumber-after-insert + provisional/replayed document numbers), SQL request clock + `now()`, side-effect suppression on nodes (email/push/broadcast), cloud effect stream, replay through the real routes, changeset rebase, node-local tables, unattributed commands. CLAUDE.md rule reworded (D4). No behavior change for DBs without a sync role. **Moved:** sensitive-field encryption and the Node 24 test run → phase 3 (need the DPAPI spike / the Electron dependency); site-number block leasing → phase 3 (needs a host); converting handlers' `new Date()` to `now()` → per route as it is classed (phases 2, 4) |
-| **2. Inventory pilot** | Stock adjust/transfer/receipt routes classed. All stock writes already go through `applyStockChange` / `transferStock`. Negative-stock flagging (D1). Home site on `locations`, main site on the tenant |
-| **3. Desktop app + site host** | Installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
+| **2. Inventory** ✅ built 2026-09-30 (§11) | Every inventory-module route classed (items, stock, locations, suppliers, customers). D1: a stock-out beyond recorded stock is accepted inside a synced command and opens a `stock_discrepancies` row (list + resolve API); direct cloud requests keep refusing it. Rebase applies changesets with foreign-key actions off. **Moved:** home sites → phase 3 (they only matter once site hosts decide claims); orders / deliveries / release slips → phase 4 (sales-release pipeline) |
+| **3. Desktop app + site host** | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
 | **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock → production run → sales order release → purchasing receipt → HR requests and records → anonymous reports → payroll → accounting/tax |
 | **5. Host election + failover** | Voting nodes, election, lease, terms, fencing (§4) |
 | **6. Hardening** | Conflict inbox with resolve actions, version shims, compaction of old commands/effects, sync health dashboard |
@@ -437,8 +437,8 @@ snapshot imported as tenant `plant-a`, node 7) in one process and syncs them in-
 | Authority | `sync/authority.ts` | `flushEffects`, `acceptCommand` (idempotent), `pullFor`, `snapshotForNode` |
 | Rebase | `sync/rebase.ts` | undo pending → apply effects → verdicts (one transaction, strict: any conflict ⇒ `SyncDivergenceError`, nothing applied) → re-run pending; a failed re-run is undone and marked `conflict` |
 
-**Routes classed so far:** `POST /api/inventory/:id/adjust` (`physical`) — the pilot vehicle.
-Until phase 2 it still refuses a stock-out beyond recorded stock (D1's accept-and-flag is phase 2).
+**Routes classed in phase 1:** `POST /api/inventory/:id/adjust` (`physical`) — the pilot vehicle.
+(Phase 2 classed the rest of inventory and added D1's accept-and-flag, §11.)
 
 **Known limits (tracked for later phases):**
 - A node's writes outside a request (background jobs) are not captured. Nodes should run none that
@@ -453,4 +453,35 @@ Until phase 2 it still refuses a stock-out beyond recorded stock (D1's accept-an
   loopback.
 - Anonymous-report numbers are `MAX(id) + 1` (`core/confidential-reports.ts`). This must move to
   `nextSequence()` before that route is classed (phase 4), because node-range ids would make them jump.
+
+## 11. Phase 2 as built (2026-09-30)
+
+Tests: `tests/sync-inventory.test.ts` (with `tests/sync-helpers.ts`, a cloud + node pair).
+
+| Route | Class | Offline behaviour |
+|---|---|---|
+| `POST /api/inventory/:id/adjust`, `/damage`, `/transfer` | `physical` | Works. Beyond recorded stock (D1): accepted, location goes below zero, `stock_discrepancies` row opened (`discrepancy_id` in the adjust response) |
+| `POST /api/inventory`, `/api/locations`, `/api/suppliers`, `/api/customers` | `merge` | Works. New rows keep the node-range ids; later offline commands may refer to them |
+| edits, deletes, CSV imports, item form config, reorder-PO, set default location, resolve a discrepancy | `claim` | Refused ("needs a connection to the site host") until phase 3 |
+| item photo upload / delete | `online` | Refused before the file is written (blob lane is phase 3) |
+
+**D1 as built.** `overdrawAllowed()` (`modules/inventory/inventory-stock.ts`) is true only inside
+a synced command (`inSyncedCommand()`): the node's optimistic run, its rebase, and the
+authority's replay. A person using the cloud directly still gets "Not enough stock". The
+discrepancy is opened by `applyStockChange` whenever a synced stock-out leaves a location below
+zero, so the authority's replay decides the final flag. A node that had enough stock locally still
+gets flagged after sync if the cloud's balance went short. `GET /api/inventory/discrepancies`
+lists them (`inventory.view`); `POST …/:id/resolve {note}` closes one (`inventory.adjust`, moves no
+stock: correct the count with a normal adjustment first). No screen yet: it becomes part of the
+phase-3 conflict inbox.
+
+**Bug found and fixed.** Undoing a command whose rows are linked by `ON DELETE SET NULL` /
+`CASCADE` (a discrepancy → its stock transaction) re-fired the action and made the undo conflict.
+A changeset already contains every cascaded row change, so `sync/rebase.ts` now applies changesets
+with foreign-key enforcement off, around the synchronous transaction. The regression test is in
+`tests/sync-primitives.test.ts`.
+
+**Known limit.** A duplicate SKU made offline is `merge`, and is rejected (409) at sync if the cloud
+already has that SKU; the node's copy is undone. That is correct, but the person only learns of it
+through the command's `rejected` state until the phase-3 badges exist.
 

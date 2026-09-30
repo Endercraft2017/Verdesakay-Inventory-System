@@ -38,9 +38,10 @@ export interface AttendanceDay {
   // Memo (equipment failure, sent home early, etc. — not a real holiday, no premium either
   // way) — always a per-record override, never sourced from the Company Holidays calendar.
   holiday?: 'regular' | 'special_non_working' | 'special_working' | 'cancelled_paid' | 'cancelled_unpaid' | null;
-  // Whether this work_date falls on this employee's rest day — resolved by the caller from
-  // employees.rest_days (if set) else PayrollPolicy.default_rest_days. Never stored; purely a
-  // function of the date, so the caller recomputes it each time rather than persisting it.
+  // Whether this work_date falls on this employee's rest day — resolved by the caller (per-day
+  // override, then an approved Change of Rest Day form, then employees.rest_days else
+  // PayrollPolicy.default_rest_days — see src/modules/hr/rest-day.ts). Never stored; the caller
+  // recomputes it each time rather than persisting it.
   isRestDay?: boolean;
   // HR's explicit allow/deny decision on a day under PayrollPolicy.min_work_minutes — see
   // attendance_records.min_hours_decision. null/omitted behaves exactly like 'allow' (pays for
@@ -373,6 +374,12 @@ export function computeAttendanceForEmployee(
       : day.linkedForm ? [day.linkedForm] : [];
     const hasForm = (s: string) => forms.some((f) => f.slug === s);
     const formData = (s: string): Record<string, unknown> | undefined => forms.find((f) => f.slug === s)?.data;
+    // Whether this day's rest-day status earns its premium (the +30%, and the rest-day part of a
+    // holiday-on-rest-day or OT multiplier). policy.require_rest_day_form on: only with a linked
+    // Rest Day Work Request (the caller passes rest-day forms only once approved); otherwise a
+    // worked rest day pays like an ordinary working day. Off (default): automatic, as before.
+    // An UNWORKED rest day is still just a day off either way — see day.isRestDay below.
+    const restDayPremium = !!day.isRestDay && (!policy.require_rest_day_form || hasForm('rest_day_work_request'));
     // A linked Overtime Request can carry an explicit approved_hours — set by whoever approved
     // it, e.g. "policy caps OT at 2h/day, but the boss okayed 4h today" — which RAISES
     // policy.max_ot_hours for THIS day only (never lowers it, and never introduces a cap where
@@ -531,7 +538,7 @@ export function computeAttendanceForEmployee(
         }
         dayPremium = premium;
       }
-    } else if (day.holiday === 'regular' || day.holiday === 'special_non_working' || day.isRestDay) {
+    } else if (day.holiday === 'regular' || day.holiday === 'special_non_working' || restDayPremium) {
       // Same premium-only convention as the holiday_work_request branch above (the day's base
       // 100% is already counted via days_worked/basic_salary), but driven by HR directly marking
       // the day (per-record override, or the Company Holidays calendar) instead of an employee
@@ -546,7 +553,7 @@ export function computeAttendanceForEmployee(
       // rate), while Special Non-Working + rest day is a flat 150% (multiplier 1.5, not +30% of
       // the already-130% special rate) — subtracting 1.0 (the day's base 100%, already counted
       // via days_worked/basic_salary above) leaves just the premium this field stores.
-      const premiumPct = dayRateMultiplier(day.holiday, day.isRestDay) - 1.0;
+      const premiumPct = dayRateMultiplier(day.holiday, restDayPremium) - 1.0;
       // policy.holiday_adjacency_requirement gates both holiday branches below (never the plain
       // rest-day branch — a rest day isn't a holiday, so it's not subject to this at all).
       const eligible = day.holidayEligible !== false;
@@ -568,7 +575,7 @@ export function computeAttendanceForEmployee(
           out.special_holiday_30 += premium;
           dayPremium = premium;
         }
-      } else if (day.isRestDay) {
+      } else if (restDayPremium) {
         out.rest_day_ot += dailyRate * premiumPct;
         dayPremium = dailyRate * premiumPct;
       }
@@ -704,7 +711,7 @@ export function computeAttendanceForEmployee(
         if (otBlocked > 0) {
           otHours = otBlocked / 60;
           out.ot_hours += otHours;
-          const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
+          const dayMult = dayRateMultiplier(day.holiday, restDayPremium);
           const pay = exemptOt ? 0 : otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
           otPay = pay;
           out.overtime_pay += pay;
@@ -894,7 +901,7 @@ export function computeAttendanceForEmployee(
           // (multiplier 1.0, same result as before this existed), and every holiday/rest-day
           // combination scales consistently with whatever OT% the company has configured,
           // instead of a second hardcoded rate.
-          const dayMult = dayRateMultiplier(day.holiday, day.isRestDay);
+          const dayMult = dayRateMultiplier(day.holiday, restDayPremium);
           const pay = exemptOt ? 0 : otHours * hourlyRate * dayMult * (policy.ot_rate_percent / 100);
           otPay = pay;
           out.overtime_pay += pay;

@@ -57,6 +57,36 @@ describe('changeset invert', () => {
   });
 });
 
+describe('changesets and foreign-key actions', () => {
+  // Why src/sync/rebase.ts applies changesets with foreign keys off: the session already
+  // recorded the rows an ON DELETE SET NULL / CASCADE changed, so letting the action fire again
+  // while undoing edits a row the changeset is about to touch — and the apply aborts.
+  const fkDb = () => {
+    const d = new DatabaseSync(':memory:');
+    d.exec(`PRAGMA foreign_keys = ON;
+      CREATE TABLE tx (id INTEGER PRIMARY KEY, change INTEGER);
+      CREATE TABLE flag (id INTEGER PRIMARY KEY, tx_id INTEGER REFERENCES tx(id) ON DELETE SET NULL);`);
+    return d;
+  };
+  const cmd = 'INSERT INTO tx VALUES (1, -5); INSERT INTO flag VALUES (1, 1);';
+
+  it('undoing with FK actions on conflicts', () => {
+    const d = fkDb();
+    const undo = invertChangeset(capture(d, cmd));
+    expect(d.applyChangeset(undo)).toBe(false);
+  });
+
+  it('undoing with FK actions off restores the prior state exactly', () => {
+    const d = fkDb();
+    const undo = invertChangeset(capture(d, cmd));
+    d.exec('PRAGMA foreign_keys = OFF');
+    expect(d.applyChangeset(undo)).toBe(true);
+    d.exec('PRAGMA foreign_keys = ON');
+    expect(d.prepare('SELECT (SELECT COUNT(*) FROM tx) + (SELECT COUNT(*) FROM flag) AS n').get()).toEqual({ n: 0 });
+    expect(d.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  });
+});
+
 describe('changeset filter', () => {
   it('drops whole tables and keeps the rest applicable', () => {
     const d = db();

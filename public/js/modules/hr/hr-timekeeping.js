@@ -239,7 +239,8 @@ function punchLogModal() {
       </div>
       <p class="muted" style="font-size:12px;margin:6px 0 10px">Phone punches keep the location the phone reported:
         the office it was within, or its distance from the nearest office. <b>Outside office</b> punches come from staff
-        allowed to time in anywhere. A phone can fake its GPS, so look into anything that doesn't fit.</p>
+        allowed to time in anywhere. A phone can fake its GPS, so look into anything that doesn't fit.
+        <b>Device</b> flags a punch made on a borrowed phone, or on a phone another employee usually signs in on.</p>
       <div id="pl-list"><p class="muted">Loading…</p></div>`,
     cancelText: 'Close',
     onOpen: (ov) => {
@@ -258,15 +259,22 @@ function punchLogModal() {
               : 'Location recorded';
             return `${place} · ±${Math.round(r.accuracy_m || 0)} m · ${map}`;
           };
+          // src/modules/hr/clock.ts PunchDevice — recorded for review, never blocked.
+          const device = (r) => r.device_flag === 'borrowed'
+            ? `<span class="badge-pill low">Borrowed phone</span>${r.device_user_name ? ` <span class="muted">usually ${UI.esc(r.device_user_name)}</span>` : ''}`
+            : r.device_flag === 'other_user'
+              ? `<span class="badge-pill low">Another's phone</span>${r.device_user_name ? ` <span class="muted">usually ${UI.esc(r.device_user_name)}</span>` : ''}`
+              : '';
           list.innerHTML = rows.length ? `
             <table class="line-table">
-              <thead><tr><th>Time</th><th>Employee</th><th>In/Out</th><th>Source</th><th>Where</th></tr></thead>
+              <thead><tr><th>Time</th><th>Employee</th><th>In/Out</th><th>Source</th><th>Where</th><th>Device</th></tr></thead>
               <tbody>${rows.map((r) => `<tr>
                 <td>${UI.esc((r.ts || '').slice(0, 16))}</td>
                 <td>${UI.esc(r.name)}${r.employee_no ? ` <span class="muted">${UI.esc(r.employee_no)}</span>` : ''}</td>
                 <td>${r.kind === 'in' ? 'IN' : 'OUT'}</td>
                 <td>${UI.esc(SOURCE[r.source] || r.source)}</td>
                 <td>${where(r)}</td>
+                <td>${device(r)}</td>
               </tr>`).join('')}</tbody>
             </table>
             ${rows.length >= 1000 ? '<p class="muted" style="font-size:12px">Showing the latest 1000 — narrow the dates to see more.</p>' : ''}`
@@ -436,6 +444,13 @@ async function policySettingsModal() {
       <p class="muted" style="font-size:12px;margin:2px 0 0">On (default): a clock-out past the shift's end only pays
         OT when that day is linked to an approved Overtime Request. Off: any clock-out past the shift's end
         auto-pays OT — no form needed.</p>
+      <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" data-p="require_rest_day_form" style="width:auto" /> Require an approved Rest Day Work Request for the rest-day premium
+      </label></div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">Off (default): working a rest day pays the +30%
+        automatically. On: the premium (and the rest-day OT rate) is paid only when that day is linked to an
+        approved Rest Day Work Request; without one it pays as an ordinary working day. An approved Change of
+        Rest Day moves the rest day itself, either way.</p>
       <hr style="margin:16px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
       <strong>Hours & Minimum Time</strong>
       <div class="field-row" style="margin-top:8px">
@@ -583,6 +598,7 @@ async function policySettingsModal() {
         p('ot_unit').value = policy.ot_unit;
         p('ot_rate_percent').value = policy.ot_rate_percent;
         p('require_ot_form').checked = policy.require_ot_form !== false;
+        p('require_rest_day_form').checked = !!policy.require_rest_day_form;
         p('monthly_rate_divisor').value = policy.monthly_rate_divisor;
         p('pay_frequency').value = policy.pay_frequency || 'semi_monthly';
         p('auto_statutory').checked = policy.auto_statutory !== false;
@@ -670,6 +686,7 @@ async function policySettingsModal() {
           ot_unit: p('ot_unit').value,
           ot_rate_percent: Number(p('ot_rate_percent').value) || 0,
           require_ot_form: p('require_ot_form').checked,
+          require_rest_day_form: p('require_rest_day_form').checked,
           monthly_rate_divisor: Number(p('monthly_rate_divisor').value) || 26,
           max_ot_hours: p('max_ot_hours').value === '' ? null : Number(p('max_ot_hours').value),
           pay_frequency: p('pay_frequency').value,
@@ -1228,7 +1245,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   const searchInput = view.querySelector('#tk-roster-search');
   const rosterView = { groupBy: 'department', sortBy: 'name', sortDir: 'asc', search: '' };
 
-  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', resigned: 'Resigned', terminated: 'Terminated' };
+  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', suspended: 'Suspended', resigned: 'Resigned', terminated: 'Terminated' };
   const SORTERS = {
     name: (r) => (r.name || '').toLowerCase(),
     department: (r) => (r.department_name || '').toLowerCase(),
@@ -1570,7 +1587,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
 
   async function dailyGridModal(rosterRow) {
     const employeeId = rosterRow.employee_id;
-    const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form', 'lunch_offset_form', 'reported_absence'];
+    const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form', 'lunch_offset_form', 'reported_absence', 'rest_day_work_request', 'rest_day_change'];
     const [days, shifts, policy, holidayForms] = await Promise.all([
       API.get(`/hr/periods/${periodId}/attendance?employee_id=${employeeId}`),
       API.get('/hr/shifts').catch(() => []),
@@ -1589,6 +1606,10 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       d._formIds = ids.filter((n) => Number.isInteger(n) && n > 0);
       d._links = [];
     });
+    // Every form linked when the grid opened — lets restDaySwapFor tell "HR just unlinked this
+    // Change of Rest Day" (ignore the server's swap until Save) from a swap whose form is linked
+    // on a day in some other cutoff (keep it).
+    const loadedFormIds = new Set(days.flatMap((d) => d._formIds));
 
     // "Make a new form" — the fields that actually drive payroll for each request type; the
     // record is created approved and linked to this day in one step (POST /form-records).
@@ -1627,6 +1648,14 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       // linked (hr-payroll-compute.ts never checks this slug).
       { slug: 'reported_absence', label: 'Reported', dateKey: 'work_date', fields: [
         { key: 'reason', label: 'What was reported', type: 'text', required: true },
+      ] },
+      // Authorizes working this rest day — pays the rest-day premium when Policy Settings
+      // requires the form (require_rest_day_form); otherwise it's the paper trail.
+      { slug: 'rest_day_work_request', label: 'Rest Day Work', dateKey: 'work_date', fields: [] },
+      // Moves the rest day: this date becomes a working day, new_rest_day the rest day
+      // (src/modules/hr/rest-day.ts). Filed on the rest day being worked.
+      { slug: 'rest_day_change', label: 'Change of Rest Day', dateKey: 'original_rest_day', fields: [
+        { key: 'new_rest_day', label: 'New rest day', type: 'date', required: true },
       ] },
     ];
 
@@ -1677,6 +1706,38 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       <option value="" ${!selected ? 'selected' : ''}>Default</option>
       <option value="yes" ${selected === 'yes' ? 'selected' : ''}>Rest day</option>
       <option value="no" ${selected === 'no' ? 'selected' : ''}>Working day</option>`;
+
+    // Rest-day forms only count once approved (same rule as payroll — src/modules/hr/rest-day.ts).
+    const REST_DAY_FORM_SLUGS = ['rest_day_work_request', 'rest_day_change'];
+    const isApprovedLink = (l) => l.status === 'approved';
+    // Mirror of restDaySwapsFor: an approved Change of Rest Day linked on ANY day of this grid
+    // (saved or not) moves the rest day for both of its dates. A swap the server found through a
+    // day outside this grid (rest_day_swap) still applies unless HR unlinked its form here.
+    function restDaySwapFor(d) {
+      let local = null;
+      days.forEach((dd) => (dd._links || []).forEach((l) => {
+        if (l.slug !== 'rest_day_change' || !isApprovedLink(l) || !l.data) return;
+        if (l.data.original_rest_day === d.work_date) local = 'no';
+        if (l.data.new_rest_day === d.work_date) local = 'yes';
+      }));
+      if (local) return local;
+      if (!d.rest_day_swap) return null;
+      const linkedNow = days.some((dd) => (dd._formIds || []).includes(d.rest_day_swap_form_id));
+      return loadedFormIds.has(d.rest_day_swap_form_id) && !linkedNow ? null : d.rest_day_swap;
+    }
+    // Per-day override, then an approved Change of Rest Day, then the weekly pattern.
+    function isRestDayFor(d) {
+      if (d.rest_day === 'yes') return true;
+      if (d.rest_day === 'no') return false;
+      const swap = restDaySwapFor(d);
+      return swap ? swap === 'yes' : empRestDays.includes(weekdayOf(d.work_date));
+    }
+    // Worked a rest day that Policy Settings says needs an approved Rest Day Work Request to earn
+    // its premium, and none is linked — same one-click nudge as Possible Half Day?.
+    function restDayFormMissing(d) {
+      return !!policy.require_rest_day_form && isRestDayFor(d) && !!(d.time_in || d.time_out)
+        && !(d._links || []).some((l) => l.slug === 'rest_day_work_request' && isApprovedLink(l));
+    }
 
     // Manual "credit this as a half day anyway" call (attendance_records.half_day_override) —
     // for a day HR knows was a half day but that neither has a linked Half Day request nor
@@ -1826,6 +1887,24 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           el.innerHTML = halfDayFlagHtml(days[i], i);
           el.querySelectorAll('[data-halfday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.halfdayFlag)));
         }
+        function restDayFlagHtml(d, i) {
+          if (!restDayFormMissing(d)) return '';
+          return `<div style="margin-top:3px">
+              <button type="button" class="badge-pill status-cancelled" data-restday-flag="${i}"
+                style="cursor:pointer;border:none;font:inherit"
+                title="Policy Settings requires an approved Rest Day Work Request for the rest-day premium — without one this day pays as an ordinary working day. Click to link or file it.">
+                Needs Rest Day form
+              </button>
+            </div>`;
+        }
+        // Refreshed on time-field commit, like renderHalfDayFlag — whether the day was worked can
+        // change without a full renderRows.
+        function renderRestDayFlag(i) {
+          const el = body.querySelector(`[data-restday-flag-cell="${i}"]`);
+          if (!el) return;
+          el.innerHTML = restDayFlagHtml(days[i], i);
+          el.querySelectorAll('[data-restday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.restdayFlag)));
+        }
         const TIME_KEYS = ['time_in', 'lunch_out', 'lunch_in', 'time_out'];
         // Small camera badge, shown only when the kiosk actually captured a photo for that
         // slot (see the `photos` object GET /periods/:id/attendance now attaches to each day —
@@ -1867,6 +1946,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             inp.value = fmtTimeDisplay(v24);
             renderMinFlag(row);
             renderHalfDayFlag(row);
+            renderRestDayFlag(row);
             renderIncompleteRow(row);
           };
           const finalizeAndCycle = () => {
@@ -1964,9 +2044,10 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             // Effective holiday: override (if not '' and not 'none') else the calendar's entry.
             const effHoliday = d.holiday_type ? (d.holiday_type === 'none' ? null : d.holiday_type) : holidayByDate[d.work_date];
             // Per-date override wins, else the weekly rest-day pattern for this weekday.
-            const isRestDay = d.rest_day === 'yes' ? true
-              : d.rest_day === 'no' ? false
-              : empRestDays.includes(weekdayOf(d.work_date));
+            const isRestDay = isRestDayFor(d);
+            // Shown only when an approved Change of Rest Day (not HR's dropdown) decided the day.
+            const swap = restDaySwapFor(d);
+            const movedRestDay = !d.rest_day && !!swap && (swap === 'yes') !== empRestDays.includes(weekdayOf(d.work_date));
             const isCancellation = effHoliday === 'cancelled_paid' || effHoliday === 'cancelled_unpaid';
             const noWork = effHoliday ? null : noWorkFor(d.work_date); // holiday/override always takes precedence
             // Explicit "Half Day" identifier — the linked-form badge in the last column already
@@ -1982,10 +2063,14 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
               ? `<span class="badge-pill ${isCancellation ? 'status-cancelled' : 'status-completed'}" title="${isCancellation ? 'Not worked — credited as a paid/unpaid day per the selection, no premium' : 'Pays the DOLE premium automatically'}">${UI.esc(HOLIDAY_LABELS[effHoliday] || effHoliday)}</span>`
               : noWork
                 ? `<span class="badge-pill ${noWork === 'paid' ? 'status-completed' : 'status-cancelled'}" title="Company-wide No Work Memo — ${noWork === 'paid' ? 'credited as a paid day' : 'unpaid, same as an absence but documented'}">No Work (${noWork === 'paid' ? 'Paid' : 'Unpaid'})</span>`
-                : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : halfDayTag);
+                : isRestDay
+                  ? `<span class="badge-pill status-confirmed" title="${movedRestDay ? 'Moved here by an approved Change of Rest Day. ' : ''}${policy.require_rest_day_form ? 'Pays +30% if worked, with an approved Rest Day Work Request linked' : 'Pays +30% automatically if worked'}">Rest Day${movedRestDay ? ' (moved)' : ''}</span>`
+                  : movedRestDay
+                    ? `<span class="badge-pill muted" title="Usual rest day, moved away by an approved Change of Rest Day — judged as an ordinary working day">Rest Day Moved</span>${halfDayTag ? ` ${halfDayTag}` : ''}`
+                    : halfDayTag;
             return `
             <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
-              <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}<div data-min-flag="${i}">${minFlagHtml(d, i)}</div><div data-halfday-flag-cell="${i}">${halfDayFlagHtml(d, i)}</div></td>
+              <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}<div data-min-flag="${i}">${minFlagHtml(d, i)}</div><div data-halfday-flag-cell="${i}">${halfDayFlagHtml(d, i)}</div><div data-restday-flag-cell="${i}">${restDayFlagHtml(d, i)}</div></td>
               <td><select data-k="shift_id">${shiftOptions(d.shift_id)}</select></td>
               <td><div class="tk-time-cell"><input data-k="time_in" type="text" inputmode="numeric" autocomplete="off" placeholder="--:-- --" value="${UI.esc(fmtTimeDisplay(d.time_in))}" />${photoBtnHtml(d.photos && d.photos.time_in)}</div></td>
               <td><div class="tk-time-cell"><input data-k="lunch_out" type="text" inputmode="numeric" autocomplete="off" placeholder="--:-- --" value="${UI.esc(fmtTimeDisplay(d.lunch_out))}" title="Start of the unpaid lunch break — for the record only; payroll still deducts the fixed lunch minutes" />${photoBtnHtml(d.photos && d.photos.lunch_out)}</div></td>
@@ -1996,8 +2081,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
               <td><select data-k="rest_day" title="Override this one day/employee — leave at Default to inherit the weekly rest-day pattern. Use for a rest day that moves week to week.">${restDayOptions(d.rest_day)}</select></td>
               <td><input data-k="notes" value="${UI.esc(d.notes || '')}" placeholder="optional" /></td>
               <td>
-                ${(d._links || []).map((l, li) => `<span class="badge-pill" data-unlink="${i}" data-unlink-idx="${li}" title="Click to unlink" style="cursor:pointer;margin:1px 2px 1px 0;display:inline-block">${UI.esc(l.label)} ✕</span>`).join('')}
-                <button type="button" class="icon-btn" data-link="${i}" title="Link or create an OT/Half Day/Leave/Undertime/Offset/Reported form — a day can have more than one">${UI.icon('plus', 14)}</button>
+                ${(d._links || []).map((l, li) => `<span class="badge-pill" data-unlink="${i}" data-unlink-idx="${li}" title="Click to unlink" style="cursor:pointer;margin:1px 2px 1px 0;display:inline-block">${UI.esc(l.label)}${REST_DAY_FORM_SLUGS.includes(l.slug) && !isApprovedLink(l) ? ` · ${UI.esc(l.status || 'pending')}` : ''} ✕</span>`).join('')}
+                <button type="button" class="icon-btn" data-link="${i}" title="Link or create an OT/Half Day/Leave/Undertime/Offset/Reported/Rest Day form — a day can have more than one">${UI.icon('plus', 14)}</button>
               </td>
             </tr>`;
           }).join('');
@@ -2020,6 +2105,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             renderMinFlag(Number(b.dataset.minDeny));
           });
           body.querySelectorAll('[data-halfday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.halfdayFlag)));
+          body.querySelectorAll('[data-restday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.restdayFlag)));
           body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.link)));
           body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = () => {
             const i = Number(b.dataset.unlink);
@@ -2065,7 +2151,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                       <span>${UI.esc(o.form.name)} — ${UI.esc(o.record.number)}</span>
                       <span class="muted">${UI.esc(o.record.status)}</span>
                     </button>`).join('')}</div>`
-                : `<p class="muted" style="font-size:12.5px;margin:2px 0">No unlinked OT/Half Day/Leave/Undertime/Offset/Reported records for ${UI.esc(rosterRow.name)}.</p>`}
+                : `<p class="muted" style="font-size:12.5px;margin:2px 0">No unlinked OT/Half Day/Leave/Undertime/Offset/Reported/Rest Day records for ${UI.esc(rosterRow.name)}.</p>`}
               <hr style="margin:14px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
               <div style="font-weight:600;margin-bottom:2px">Make a new form</div>
               <p class="muted" style="font-size:12px;margin:2px 0 8px">Created approved for ${UI.esc(rosterRow.name)} on ${day.work_date} and linked to this day.</p>
@@ -2081,7 +2167,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
               ov2.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
                 const o = options[Number(b.dataset.pick)];
                 day._formIds.push(o.record.id);
-                day._links.push({ id: o.record.id, label: `${o.form.name} ${o.record.number}`, slug: o.form.slug, session: (o.record.data && o.record.data.session) || null });
+                day._links.push({ id: o.record.id, label: `${o.form.name} ${o.record.number}`, slug: o.form.slug, session: (o.record.data && o.record.data.session) || null, status: o.record.status, data: o.record.data || {} });
                 m2.close();
                 renderRows();
               });
@@ -2103,7 +2189,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                   if (f.type === 'select') {
                     return `<div>${lbl}<select data-mf="${f.key}"><option value="">—</option>${f.options.map((o) => `<option value="${UI.esc(o)}">${UI.esc(o)}</option>`).join('')}</select></div>`;
                   }
-                  const inputType = f.type === 'number' ? 'number' : f.type === 'time' ? 'time' : 'text';
+                  const inputType = f.type === 'number' ? 'number' : f.type === 'time' ? 'time' : f.type === 'date' ? 'date' : 'text';
                   return `<div>${lbl}<input type="${inputType}" data-mf="${f.key}" ${f.type === 'number' ? 'min="0" step="0.5"' : ''} /></div>`;
                 }).join('');
               };
@@ -2129,11 +2215,14 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 // Leave: the payroll engine treats a leave day as paid only when with_pay==='Yes'
                 // — infer it from the leave type so a leave made here computes correctly.
                 if (t.slug === 'leave_request') data.with_pay = data.leave_type === 'Unpaid Leave' ? 'No' : 'Yes';
+                if (t.slug === 'rest_day_change' && data.new_rest_day === data.original_rest_day) {
+                  errEl.textContent = 'The new rest day must be a different date.'; return;
+                }
                 createBtn.disabled = true;
                 try {
                   const res = await API.post('/form-records', { form_def_id: def.id, data, status: 'approved' });
                   day._formIds.push(res.id);
-                  day._links.push({ id: res.id, label: `${def.name} ${res.number || ''}`.trim(), slug: def.slug, session: data.session || null });
+                  day._links.push({ id: res.id, label: `${def.name} ${res.number || ''}`.trim(), slug: def.slug, session: data.session || null, status: 'approved', data });
                   UI.toast(`${def.name} ${res.number || ''} created & linked`);
                   m2.close();
                   renderRows();
@@ -2154,8 +2243,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           for (const id of d._formIds) {
             try {
               const r = await API.get('/form-records/' + id);
-              d._links.push({ id, label: `${r.form_name || 'Form'} ${r.number || ''}`.trim(), slug: r.form_slug || null, session: (r.data && r.data.session) || null });
-            } catch { d._links.push({ id, label: 'Linked', slug: null, session: null }); }
+              d._links.push({ id, label: `${r.form_name || 'Form'} ${r.number || ''}`.trim(), slug: r.form_slug || null, session: (r.data && r.data.session) || null, status: r.status, data: r.data || {} });
+            } catch { d._links.push({ id, label: 'Linked', slug: null, session: null, status: null, data: null }); }
           }
         })).then(renderRows);
         renderRows();

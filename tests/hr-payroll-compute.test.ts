@@ -1771,3 +1771,49 @@ describe('computeAttendanceForEmployee — lunch-break lateness (PayrollPolicy.c
     expect(r.late_deduction).toBeCloseTo((20 / 60) * 100, 6);
   });
 });
+
+describe('computeAttendanceForEmployee — require_rest_day_form (Rest Day Work Request)', () => {
+  const WORKED_REST_DAY = { time_in: '08:00', time_out: '17:00', isRestDay: true } as const;
+  const RDW = { slug: 'rest_day_work_request', data: {} };
+
+  it('off (default): a worked rest day still earns the +30% with no form', () => {
+    const r = computeAttendanceForEmployee([day({ ...WORKED_REST_DAY })], DAILY_RATE, POLICY);
+    expect(r.rest_day_ot).toBeCloseTo(DAILY_RATE * 0.3, 6);
+  });
+
+  it('on, no form linked: pays as an ordinary working day — no premium, day still worked', () => {
+    const policy = { ...POLICY, require_rest_day_form: true };
+    const r = computeAttendanceForEmployee([day({ ...WORKED_REST_DAY })], DAILY_RATE, policy);
+    expect(r.rest_day_ot).toBe(0);
+    expect(r.days_worked).toBe(1);
+  });
+
+  it('on, form linked: the +30% is paid', () => {
+    const policy = { ...POLICY, require_rest_day_form: true };
+    const r = computeAttendanceForEmployee([day({ ...WORKED_REST_DAY, linkedForms: [RDW] })], DAILY_RATE, policy);
+    expect(r.rest_day_ot).toBeCloseTo(DAILY_RATE * 0.3, 6);
+  });
+
+  it('on, no form, Regular Holiday on a rest day: only the holiday rate (+100%), not the 260% combo', () => {
+    const policy = { ...POLICY, require_rest_day_form: true };
+    const r = computeAttendanceForEmployee(
+      [day({ ...WORKED_REST_DAY, holiday: 'regular' })], DAILY_RATE, policy
+    );
+    expect(r.holiday_pay).toBeCloseTo(DAILY_RATE * 1.0, 6);
+  });
+
+  it('on, no form: OT on the rest day is paid at the ordinary-day rate', () => {
+    const policy = { ...POLICY, require_rest_day_form: true, require_ot_form: false, ot_unit: 'hour' as const };
+    const r = computeAttendanceForEmployee(
+      [day({ time_in: '08:00', time_out: '19:00', isRestDay: true })], DAILY_RATE, policy
+    );
+    expect(r.overtime_pay).toBeCloseTo(2 * 100 * 1.25, 6); // 2h x hourly 100 x 125%, no x1.3
+  });
+
+  it('an unworked rest day is still just a day off, form or not', () => {
+    const policy = { ...POLICY, require_rest_day_form: true };
+    const r = computeAttendanceForEmployee([day({ isRestDay: true })], DAILY_RATE, policy);
+    expect(r.days_absent).toBe(0);
+    expect(r.days[0]?.status).toBe('rest_day_off');
+  });
+});

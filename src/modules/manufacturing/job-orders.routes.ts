@@ -30,6 +30,7 @@ import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory/in
 import { postJobOrderMovement, jobOrderWipBalance } from '../accounting/accounting-autopost';
 import { createDraftPurchaseOrders } from '../inventory/orders.routes';
 import { checklistForProduct } from './qc.routes';
+import { locationError, unitBlockers } from './rts';
 import type { JobOrder, JobOrderComponent, JobOrderUnit, InventoryItem, ProductionReceipt } from '../../shared/types';
 
 const router = Router();
@@ -1675,8 +1676,10 @@ router.post('/:id/products-in', receiveGate, (req, res) => {
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
   const input = parseBody(productsInSchema, req.body);
-  if (!queryOne('SELECT id FROM locations WHERE id = ?', input.location_id)) {
-    res.status(400).json({ error: 'That location does not exist' });
+  // Ready-to-sell storage only (rts.ts): a missing or transit (truck) location is refused.
+  const locErr = locationError(input.location_id);
+  if (locErr) {
+    res.status(400).json({ error: locErr, location_error: true });
     return;
   }
 
@@ -1693,8 +1696,14 @@ router.post('/:id/products-in', receiveGate, (req, res) => {
       return;
     }
     const notPassed = units.filter((u) => u.status !== 'passed');
-    if (notPassed.length) {
-      res.status(409).json({ error: 'Only units that passed final QC and are awaiting receipt can be received' });
+    // Duplicate / hold protection (rts.ts): already in finished goods, a serial that's already
+    // in stock on another record, or an open product-data mismatch — nothing posts.
+    const blockers = unitBlockers(unitIds);
+    if (notPassed.length || blockers.length) {
+      res.status(409).json({
+        error: notPassed.length ? 'Only units that passed final QC and are awaiting receipt can be received' : blockers[0]!.message,
+        blockers,
+      });
       return;
     }
   }

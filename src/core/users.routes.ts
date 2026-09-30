@@ -2,7 +2,9 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run } from '../shared/db';
-import { requireAuth, requirePermission, requireAnyPermission } from '../shared/auth';
+import {
+  requireAuth, requirePermission, requireAnyPermission, endUserSessions, endSessionBySid, listUserSessions,
+} from '../shared/auth';
 import { enforceQuota } from '../platform/quota';
 import {
   parseBody,
@@ -129,7 +131,7 @@ router.put('/:id', requirePermission('users.manage'), (req, res) => {
     id
   );
 
-  if (active === 0) run('DELETE FROM sessions WHERE user_id = ?', id);
+  if (active === 0) endUserSessions(id, 'deactivated');
   res.json({ ok: true });
 });
 
@@ -144,7 +146,37 @@ router.post('/:id/reset-password', requirePermission('users.manage'), (req, res)
   }
   const hash = bcrypt.hashSync(new_password, 10);
   run('UPDATE users SET password_hash = ? WHERE id = ?', hash, id);
-  run('DELETE FROM sessions WHERE user_id = ?', id);
+  endUserSessions(id, 'password');
+  res.json({ ok: true });
+});
+
+// GET /api/users/:id/sessions — where this account is / was signed in (live + history).
+router.get('/:id/sessions', requirePermission('users.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM users WHERE id = ?', id)) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  res.json(listUserSessions(id, { currentToken: req.token, includeEnded: true }));
+});
+
+// POST /api/users/:id/sessions/revoke-all — sign this account out on every device.
+router.post('/:id/sessions/revoke-all', requirePermission('users.manage'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM users WHERE id = ?', id)) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  // An admin ending their own sessions here keeps the one they're using.
+  res.json({ ok: true, ended: endUserSessions(id, 'revoked', id === req.user!.id ? req.token : undefined) });
+});
+
+// POST /api/users/:id/sessions/:sid/revoke — sign this account out of one device.
+router.post('/:id/sessions/:sid/revoke', requirePermission('users.manage'), (req, res) => {
+  if (!endSessionBySid(Number(req.params.id), String(req.params.sid), 'revoked')) {
+    res.status(404).json({ error: 'Session not found or already ended' });
+    return;
+  }
   res.json({ ok: true });
 });
 

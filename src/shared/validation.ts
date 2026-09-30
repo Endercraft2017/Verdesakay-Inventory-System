@@ -47,6 +47,8 @@ const intCoerce = z.coerce.number().int();
 export const loginSchema = z.object({
   username: trimmed.min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
+  /** Borrowed-phone sign-in: a short, idle-limited session with no push (src/shared/auth.ts). */
+  shared: z.boolean().optional(),
 });
 
 export const changePasswordSchema = z.object({
@@ -598,6 +600,13 @@ export const damageStockSchema = z.object({
   location_id: optionalId, // defaults server-side to the default location
 });
 
+/** Close a stock discrepancy (an offline stock-out accepted beyond recorded stock, D1 in
+    docs/OFFLINE-FIRST.md): what the supervisor found / did. See
+    POST /api/inventory/discrepancies/:id/resolve. */
+export const resolveDiscrepancySchema = z.object({
+  note: z.string().trim().min(1, 'Say what was found or done (e.g. counted, adjusted to 12)').max(500),
+});
+
 /** Draft purchase orders for items at/under their reorder level. `item_ids` restricts to
     a chosen set (else every low-stock item); `multiplier` sets the top-up target as a
     multiple of each item's reorder level (default 2×). See POST /api/inventory/reorder-po. */
@@ -721,6 +730,9 @@ export const anonymousReportSchema = z.object({
 export const anonymousLookupSchema = z.object({
   number: trimmed.min(1, 'Enter the report number').max(20),
   access_code: trimmed.min(10, 'Enter the access code').max(40),
+});
+export const anonymousPhotoSchema = anonymousLookupSchema.extend({
+  photo_id: z.coerce.number().int().positive('Choose a photo'),
 });
 export const anonymousFollowupSchema = anonymousLookupSchema.extend({
   body: trimmed.min(1, 'Write a message').max(3000),
@@ -1137,7 +1149,7 @@ export const docVariableSchema = z.object({
 
 // ---- HR: Employees / Time Keeping ----
 
-const employeeStatusEnum = z.enum(['probationary', 'regular', 'resigned', 'terminated']);
+const employeeStatusEnum = z.enum(['probationary', 'regular', 'suspended', 'resigned', 'terminated']);
 const optionalIdText = trimmed.max(40).optional().nullable();
 // A fixed peso amount replacing a computed statutory deduction (SSS/PhilHealth/Pag-IBIG/
 // withholding tax) for one employee. '' / null / omitted -> null (use the normal computed
@@ -1146,6 +1158,23 @@ const optionalOverrideAmount = (label: string) => z.preprocess(
   (v) => (v === '' || v === undefined || v === null ? null : v),
   numCoerce.min(0, `${label} override cannot be negative`).nullable()
 ).optional();
+
+/** Civil status values on the employee record (PSA categories; "Divorced" covers foreign and
+ *  Shari'a divorces recognized in the Philippines). */
+export const CIVIL_STATUSES = ['Single', 'Married', 'Widowed', 'Legally separated', 'Annulled', 'Divorced'] as const;
+
+/** Why a birth date can't be right, or null: YYYY-MM-DD, a real calendar date, 1900 or later,
+ *  and at least 15 years ago (the minimum working age). */
+export function birthDateError(v: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'Use a YYYY-MM-DD date';
+  const d = new Date(v + 'T00:00:00Z');
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v) return 'That date doesn’t exist';
+  if (v < '1900-01-01') return 'Birth date is too far in the past';
+  const latest = new Date();
+  latest.setUTCFullYear(latest.getUTCFullYear() - 15);
+  if (v > latest.toISOString().slice(0, 10)) return 'Birth date must be at least 15 years ago';
+  return null;
+}
 
 export const employeeSchema = z.object({
   employee_no: trimmed.min(1, 'Employee number is required').max(40),
@@ -1170,6 +1199,18 @@ export const employeeSchema = z.object({
   philhealth_no: optionalIdText,
   pagibig_no: optionalIdText,
   tin_no: optionalIdText,
+  // Omitted ⇒ unchanged on update (CSV import and older clients don't send them); '' ⇒ cleared.
+  birth_date: z.preprocess(
+    (v) => (v === '' ? null : v),
+    trimmed.nullable().superRefine((v, ctx) => {
+      const err = v == null ? null : birthDateError(v);
+      if (err) ctx.addIssue({ code: 'custom', message: err });
+    })
+  ).optional(),
+  civil_status: z.preprocess(
+    (v) => (v === '' ? null : v),
+    z.enum(CIVIL_STATUSES, { message: `Civil status must be one of: ${CIVIL_STATUSES.join(', ')}` }).nullable()
+  ).optional(),
   leave_days_per_year: numCoerce.min(0).max(366).default(5),
   leave_days_used: numCoerce.min(0).default(0),
   rest_days: z.array(z.number().int().min(0).max(6)).max(7).nullable().optional(),
@@ -1364,6 +1405,8 @@ export const payrollPolicySchema = z.object({
   // 'none' (default) preserves the pre-2026-09 behavior — holiday pay is never withheld for an
   // adjacent-day absence unless HR explicitly opts in.
   holiday_adjacency_requirement: z.enum(['none', 'before', 'after', 'both']).default('none'),
+  // false (default) keeps the rest-day premium automatic — same opt-in-by-default convention.
+  require_rest_day_form: boolish.default(false),
 });
 
 // POST /api/hr/payroll/:recordId/preview-deductions, PUT .../deductions — which of the four

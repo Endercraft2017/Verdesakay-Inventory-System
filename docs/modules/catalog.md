@@ -16,8 +16,17 @@ Backend paths are `src/...` unless noted; frontend paths are `public/js/modules/
 every module. Not gated by `requireModule()`, not licensed, never disabled.
 **Owned files:** `db.ts` (SQLite connection registry, multi-tenant `tenantStore`,
 schema/migrations), `types.ts`, `validation.ts`, `permissions.ts`, `auth.ts`
-(session/login middleware), `activity.ts` (audit log writer; `logEvent()` for events the
-mutation middleware can't see, e.g. a payslip download), `idempotency.ts`, `pdf-lite.ts`
+(session/login middleware; SCHEMA_VERSION 55: every session records device ID / IP / user
+agent at sign-in and last-seen, is addressed outside auth.ts only by its public `sid`, and is
+ENDED on sign-out rather than deleted — `ended_at`/`end_reason`, swept after
+`SESSION_HISTORY_DAYS` = 90 by `cleanupSessions()`; `shared` = borrowed-phone session, 4 h max
+and 30 min idle; `endUserSessions` / `endSessionBySid` / `listUserSessions` /
+`deviceUsualUserId`), `device.ts` (`X-Device-Id` — a random per-browser ID from
+`public/js/api.js`, not a fingerprint — plus client IP and a readable user-agent label),
+`activity.ts` (audit log writer, now with `device_id` + `device` label per row; `logEvent()` for events the
+mutation middleware can't see, e.g. a payslip download; a route may set
+`res.locals.activity = { action, summary, snapshot }` to make its middleware row readable and
+keep a copy of rows a DELETE erases), `idempotency.ts`, `pdf-lite.ts`
 (dependency-free text PDF writer, Helvetica AFM metrics — used by `payroll/payslip-pdf.ts`),
 `csv.ts`, `csv-import.ts`, `mailer.ts` (BYO-SMTP transport), `secrets.ts` (AES-GCM),
 `push.ts` (task-reminder notifications), `qb.ts` (typed Kysely query builder used as a SQL
@@ -77,8 +86,10 @@ HTTP transport, blob lane, sensitive-field encryption (phases 3–5).
 renumber-after-insert + write guard), `sequences.ts`, `clock.ts`, `capture.ts`
 (`syncRequestMiddleware`, `syncClass`), `commands.ts` (command log, lock), `replay.ts` (loopback
 replay as actor), `authority.ts` (effects, `acceptCommand`, `pullFor`, `snapshotForNode`),
-`rebase.ts` (`applyConfirmed`), `changeset.ts` (invert/filter), `ids-util.ts` (ULID, HLC).
-Seam in `src/shared/sync-context.ts` (context store, `now()`, `sideEffectsSuppressed`, `syncHooks`).
+`rebase.ts` (`applyConfirmed`; applies changesets with foreign-key actions off), `changeset.ts`
+(invert/filter), `ids-util.ts` (ULID, HLC).
+Seam in `src/shared/sync-context.ts` (context store, `now()`, `inSyncedCommand`,
+`sideEffectsSuppressed`, `syncHooks`).
 **Owned data:** node-local `sync_node` (role, node number, seq, HLC, last authority seq,
 provisional counter), `sync_id_counters`, `sync_commands`, `sync_effects` — created only by
 `enableSync()`, never replicated.
@@ -91,15 +102,17 @@ per mutating route (undeclared ⇒ refused on a node, 503); `now()` for business
 mailer/push/ws via `sideEffectsSuppressed`). Wired in `src/app.ts` (install, replay tenant,
 middleware) and `server.ts` (task-reminder pushes only when `DEPLOY_MODE=cloud`). `sync/` never
 imports a business module.
-**Connections:** `modules/inventory` — `POST /api/inventory/:id/adjust` is classed `physical` (the
-pilot route); phase 2 classes the rest of inventory.
+**Connections:** `modules/inventory` — all its item/stock/location/supplier/customer routes are
+classed (phase 2); `applyStockChange` reads `inSyncedCommand()` to accept and flag offline
+overdraws (D1).
 **Tests:** `tests/sync-primitives.test.ts` (invert/filter, HLC, ULID, write-target parser, clock
 override), `tests/sync.test.ts` (cloud + node tenants end to end: guard, command capture, node-range
 ids, merge of concurrent offline/cloud stock changes to identical rows, preserved device time,
 rebase before push, cloud rows reaching the node, rejection of a since-disabled actor's work,
 idempotent accept, divergence refusal, provisional numbers, push sent once by the cloud,
-unattributed commands).
-**Status:** partial. Decisions D1–D4 taken 2026-09-30; phase 1 built 2026-09-30. Still open
+unattributed commands), `tests/sync-inventory.test.ts` (phase 2: D1 overdraw + flags, merge / claim /
+online per route), helper `tests/sync-helpers.ts`.
+**Status:** partial. Decisions D1–D4 taken 2026-09-30; phases 1–2 built 2026-09-30. Still open
 spikes: LAN discovery, LAN HTTPS for `/m`, DPAPI-keyed field encryption.
 
 ## desktop/ — installable Windows app (planned)
@@ -141,6 +154,17 @@ employee form's **Access** button. `GET /users/permissions/catalog` reports what
 may change (`grantable`, `assignableRoles`); `GET /users/:id/access` returns one account's
 role + overrides; `PUT /users/:id/permissions` lets an HR-only caller edit staff-role
 accounts and only `HR_GRANTABLE_PERMISSIONS` keys (the union of the staff roles' defaults).
+**Sessions & devices:** `POST /api/auth/login` takes `shared: true` (borrowed phone / shared
+computer); `GET /auth/me` reports `session.shared`. `GET /api/auth/sessions` (`?history=1`),
+`POST /auth/sessions/:sid/revoke`, `POST /auth/sessions/revoke-others` — the caller's own;
+`GET /api/users/:id/sessions`, `POST /users/:id/sessions/:sid/revoke`,
+`POST /users/:id/sessions/revoke-all` — `users.manage`. Logout also drops the user's push
+subscription registered from that device (`push_subscriptions.device_id`); `POST /push/subscribe`
+is refused (403) on a borrowed-phone session; `GET /push/status?endpoint=` says whether this
+browser's subscription is the caller's. `GET /api/activity` filters by `ip` / `device_id`.
+UI: `public/js/lib/session-list.js` (My Account "Where you're signed in"; Admin → Accounts →
+Edit → "Sign-ins & devices"), activity log Device column + "All from this device / IP", mobile
+Account & security. Tests: `tests/sessions-devices.test.ts`.
 **Dependencies:** `shared/` only. **Known wart:** `modules/ai/ai-tools.ts` imports
 `visibilityClause` out of `core/forms.routes.ts` — a routes file used as a library.
 Pre-existing; not fixed by this reorg.
@@ -150,25 +174,49 @@ Pre-existing; not fixed by this reorg.
 
 **Responsibility:** an identity-free reporting channel for workplace, safety, misconduct and
 operations concerns — separate from identified reports (Messages) and software bug reports.
-**Owned data:** `anonymous_reports`, `anonymous_report_messages`, `anonymous_report_tickets`
-(created in `createSchema()`, no SCHEMA_VERSION bump). No reporter column of any kind;
-dates only (never times); the follow-up access code is stored as SHA-256 only; numbering
-(`CR-00001`) comes from the table, not `settings` (whose `updated_at` would timestamp it).
+**Owned data:** `anonymous_reports`, `anonymous_report_messages`, `anonymous_report_tickets`,
+`anonymous_report_attachments`, `anonymous_report_handler_seen` (highest photo id a handler has
+loaded, per report — no date) (all created in `createSchema()`, no SCHEMA_VERSION bump). No
+reporter column of any kind; dates only (never times); the follow-up access code is stored as
+SHA-256 only; numbering (`CR-00001`) comes from the table, not `settings` (whose `updated_at`
+would timestamp it). Photos are BLOBs in the DB (no original filename, no UPLOAD_DIR file whose
+name or mtime could date the submission), `message_id` NULL = sent with the report.
 **Owned files:** `core/confidential-reports.ts` (service), `core/confidential-reports.routes.ts`,
 mobile `core/report-problem.js` (anonymous form, receipt, check/reply) and
 `core/confidential-reports.js` (case-handler queue); desktop `public/js/modules/core/confidential-reports.js`
 (HR → Anonymous Reports tab, shown only with `reports.confidential`).
 **Public interface:** reporter — `/api/anonymous-reports` `POST /ticket` (signed in; single-use,
 unlinkable, 10/day in-memory cap), `POST /` (no auth read), `POST /lookup`, `POST /followup`
-(number + access code). Handlers — `/api/confidential-reports` (`reports.confidential`, HR +
-admin by default, not HR-grantable): list, detail, `POST /:id/status`, `POST /:id/reply`.
+(number + access code). `POST /` and `/followup` also take multipart `photos` (≤4 per post,
+≤6 MB each, ≤12 per report). The reporter gets photo ids (+ `removable`) in `/lookup`, fetches
+one with `POST /photo` and deletes one with `POST /photo/remove` — number + code always in the
+POST body, never an image URL; removal only while no handler has loaded that photo (opening
+the case detail marks all its photos seen) and the report isn't closed. Handlers —
+`/api/confidential-reports` (`reports.confidential`, HR + admin by default, not HR-grantable):
+list (`photo_count`), detail (`attachments` on the report and per message),
+`GET /:id/attachments/:attId`, `POST /:id/status`, `POST /:id/reply`.
+**Photo privacy (two layers):** the phone redraws every picked photo into a fresh JPEG
+(`ImageCompress.reencode`, `public/js/lib/image-compress.js`; picker `mPhoto.picker` in
+`public/mobile/lib/photo.js`), then the server strips again with
+`shared/image-metadata.ts` (`stripImageMetadata`: JPEG/PNG/WebP allow-list walk — drops EXIF/GPS,
+XMP, IPTC, ICC, comments, text chunks and anything after end-of-image; keeps only JPEG
+orientation; rejects anything it can't parse, before the ticket is used). Originals are held in
+memory only (multer memoryStorage). A picked PDF is never sent: `public/js/lib/pdf-pages.js`
+(`PdfPages.toJpegs`) draws each page into a fresh JPEG with vendored pdf.js
+(`public/js/vendor/pdfjs`, 6.3.289 legacy build, loaded on first PDF pick; scripting off; see its
+`VERSION`), one photo slot per page — the server only ever receives JPEGs.
 **Connections:** `shared/push` notifyPermission('reports.confidential') on new report / reporter
 follow-up (number + category only). `app.ts` exempts `/api/anonymous-reports*` from the activity
 log and idempotency store (`isAnonymousReportPath`); handler routes are audited normally.
 In-memory rate limits only (15-min window).
-**Known limits:** no attachments (metadata stripping not built).
-**Tests:** `tests/confidential-reports.test.ts`, anonymous transport checks in
-`tests/frontend-mobile.test.ts`.
+**Known limits:** photos and PDFs only (Word/other documents aren't accepted); a PDF arrives as
+page images (no selectable text), at most as many pages as there are free photo slots, and
+CJK-only PDFs may render with fallback glyphs (cmaps not vendored); what a photo or page
+*shows* (names, faces, badges, screens, reflections) isn't removed — the UI warns. HEIC/GIF are
+only accepted after the phone re-encodes them to JPEG. Photo BLOBs don't count toward the tenant `storage_mb` quota (which measures
+UPLOAD_DIR; deliberately not enforced so a plan limit can't block a report).
+**Tests:** `tests/confidential-reports.test.ts`, `tests/image-metadata.test.ts` (fixtures in
+`tests/image-fixtures.ts`), anonymous transport checks in `tests/frontend-mobile.test.ts`.
 **Status:** working.
 
 ## modules/inventory
@@ -187,8 +235,14 @@ kind `release` (ref = slip id).
 **Public interface:** stock-mutation functions in `inventory-stock.ts` (called
 directly by `manufacturing/`, `purchasing/`, and `modules/ai/ai-tools.ts`).
 **Dependencies:** `shared/`; `sync/` (`syncClass`) for offline-capable routes.
-**Offline (sync/):** `POST /api/inventory/:id/adjust` is classed `physical` (phase-1 pilot); every
-other inventory route is still refused on an installed node until phase 2 classes it.
+**Offline (sync/, phase 2):** every route in `inventory.routes.ts`, `locations.routes.ts`,
+`suppliers.routes.ts`, `customers.routes.ts` declares a sync class: stock adjust / damage /
+transfer `physical`; creating items, locations, suppliers, customers `merge`; edits, deletes,
+imports, settings, reorder-PO, discrepancy resolve `claim`; item photos `online`. Orders,
+deliveries and release slips are not classed yet (phase 4), so they are refused on a node.
+**Owned data (offline):** `stock_discrepancies` — opened by `applyStockChange` when a synced
+stock-out takes a location below zero (decision D1); `GET /api/inventory/discrepancies`,
+`POST /api/inventory/discrepancies/:id/resolve`. `overdrawAllowed()` in `inventory-stock.ts`.
 **Status:** working.
 
 ## modules/manufacturing
@@ -245,7 +299,9 @@ SCHEMA_VERSION 46), `kiosk-devices.ts` (approved time-in kiosk PCs + the `kiosk_
 setting; locked by default when internet-facing, SCHEMA_VERSION 47), `field.ts`, `hr-daily-report.ts`,
 `hr-employee-numbering.ts`, `punch-photos.ts`, routes: `hr.routes.ts` (also owns the
 `asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
-doc_template, SCHEMA_VERSION 43), `clock.routes.ts`, `field.routes.ts`,
+doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with still-out /
+people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
+Company Assets, tests `tests/hr-assets.test.ts`), `clock.routes.ts`, `field.routes.ts`,
 `employee-profile.ts` + `employee-profile.routes.ts` (self-service profile, below).
 **Self-service profile:** `employee_profiles` / `employee_profile_changes` (createSchema, no
 version bump) hold the preferred name and personal contact/emergency details the employee edits
@@ -264,11 +320,36 @@ goes through the universal `POST /api/form-records`, which for this slug always 
 (`prepareInfoChange`, 400 on unknown field / bad gov-ID format / no-op). Only `hr.manage` sees
 and decides it in `/api/me/approvals` (department heads and the generic `PUT /form-records`
 are refused); approval runs `applyInfoChange` and the status update in one transaction —
-legal name → `employees.name` (409 on a duplicate name), SSS/PhilHealth/Pag-IBIG/TIN → their
-columns, each logged to `employee_profile_changes` (source `info_change`); birth date, civil
-status and "other" are approved without writing (`applied_note` tells HR to update by hand).
+legal name → `employees.name` (409 on a duplicate name), SSS/PhilHealth/Pag-IBIG/TIN, birth
+date and civil status → their columns (`employees.birth_date` / `civil_status`, SCHEMA_VERSION
+52; values checked by `birthDateError` / `CIVIL_STATUSES` in `shared/validation.ts`), each
+logged to `employee_profile_changes` (source `info_change`); only "Other official record" is
+approved without writing (`applied_note` tells HR to update by hand). HR can also set birth
+date / civil status on the Edit Employee form (`PUT /api/hr/employees/:id`; omitted ⇒
+unchanged, '' ⇒ cleared; changes logged with source `hr_edit`).
 `GET /api/me/payslips` also matches legal names replaced this way (`previousNames`).
 Tests: `tests/info-change.test.ts`.
+**Rest-day forms:** `rest-day.ts` owns rest-day resolution for payroll
+(`attendanceDaysForEmployee`), the Daily Time grid (`GET /periods/:id/attendance` adds
+`rest_day_swap` / `rest_day_swap_form_id`) and the Daily Report: per-day grid override, then an
+APPROVED linked **Change of Rest Day** (`rest_day_change`: `original_rest_day` → working day,
+`new_rest_day` → rest day, searched across all of the employee's attendance days), then the
+weekly pattern. **Rest Day Work Request** (`rest_day_work_request`) authorizes working a rest
+day; with `PayrollPolicy.require_rest_day_form` on (default off) the rest-day premium needs an
+approved one linked. Both forms are seeded in `seedHrRequestForms`, self-fileable (`REQUEST_SLUGS`),
+count only once approved, and are linkable/creatable from the grid's Linked Form column
+(`public/js/modules/hr/hr-timekeeping.js`, which also shows "Rest Day (moved)" / "Rest Day Moved"
+tags and a "Needs Rest Day form" nudge). Tests: `tests/rest-day-forms.test.ts`.
+**Employee status `suspended`** (SCHEMA_VERSION 53, table rebuilt to widen the CHECK): still
+employed — stays on rosters, payroll and the HR lists — but `clock.ts`'s `punchBlockedReason`
+refuses kiosk, phone and field punches, and production team pickers exclude them. HR lifts it by
+setting probationary/regular. Not tied to the Notice of Disciplinary Action form (manual).
+Tests: `tests/clock.test.ts`, `tests/employee-suspended-migration.test.ts`.
+**Punch device flag** (SCHEMA_VERSION 55): a phone punch stores `time_punches.device_id` and,
+for review only (never blocked), `device_flag` — `borrowed` (borrowed-phone sign-in) or
+`other_user` (a device another account usually signs in on, per `shared/auth.ts`
+`deviceUsualUserId`) — with `device_user_id` = that usual account. Shown in the Punch Log
+(`GET /api/hr/clock/punches`). Tests: `tests/sessions-devices.test.ts`.
 **Dependencies:** `modules/payroll` (pay computation + statutory tables),
 `modules/accounting` (`accounting-autopost.ts`, to post payroll to the ledger),
 `platform/` (photo-retention settings).
@@ -292,6 +373,10 @@ code import. Every aggregate — 2316, alphalist, 1601-C, agency schedules, 13th
 generate-payslips' "existing payslip" check go through it, so a renamed employee stays one
 person and regenerating a cutoff never duplicates their payslip. Generation now stamps
 `employee_id`; HR renames (`PUT /hr/employees/:id`) are logged with source `hr_edit`).
+The BIR 2316 prints the employee's Date of Birth (`employees.birth_date` → `birth_date_mdy`,
+MM/DD/YYYY, added by `GET /accounting/bir-2316/:employeeId`; template row seeded, and patched
+into existing templates at SCHEMA_VERSION 54). The alphalist has no birth-date column in BIR's
+Schedule 1 layout, so it's unchanged.
 **Public interface:** pure computation/rendering functions (no routes of its own — exposed
 through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
 `GET /api/me/payslips/:id/pdf`).
@@ -365,4 +450,14 @@ Third: QC (teal) + QA (amber) inspection, `modules/manufacturing/qc.js` (Figma 6
 Checklist items are recorded Pass / Issue / N/A with readings and remarks, grouped into steps
 by the item's `group`; a draft stays on the phone (localStorage) until the result is recorded.
 Kept from the old screen: parts requests, checklist assignment (`qc.configure`), bulk pass.
+**Shared-phone safety:** `lib/queue.js` stamps each queued op with the account that queued it
+and only lists/sends/discards the signed-in account's ops (the service worker's replay checks the
+same, against the account stored with its token); another account's ops wait for that person.
+`app.js` `MApp.signOut()` is the one sign-out path — flushes, warns about unsent actions,
+`mPush.release()`s this browser's subscription if it is the user's, `POST /auth/logout`. Every
+non-device `vds_*` localStorage key (cached profile, recents, all drafts incl. the anonymous-report
+draft) belongs to `vds_m_owner`; a different person signing in clears them first, and a
+borrowed-phone sign-out clears them too. Borrowed-phone sign-in ("I'm using someone else's
+phone") keeps token + profile in sessionStorage, shows `#m-shared-banner`, and keeps push off.
+Tests: `tests/mobile-shared-phone.test.ts`.
 **Status:** working.

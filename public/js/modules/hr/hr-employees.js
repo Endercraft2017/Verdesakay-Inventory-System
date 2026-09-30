@@ -13,8 +13,9 @@ App.register('hr-employees', async (view) => {
   const state = { q: '', department_id: '', status: '' };
   let depts = [];
 
-  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', resigned: 'Resigned', terminated: 'Terminated' };
-  const STATUS_CLASS = { probationary: 'status-confirmed', regular: 'status-completed', resigned: 'muted', terminated: 'status-cancelled' };
+  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', suspended: 'Suspended', resigned: 'Resigned', terminated: 'Terminated' };
+  // Suspended: still employed, but blocked from clocking in until HR sets them back.
+  const STATUS_CLASS = { probationary: 'status-confirmed', regular: 'status-completed', suspended: 'status-cancelled', resigned: 'muted', terminated: 'status-cancelled' };
   const ASSET_STATUS_LABELS = { issued: 'Issued', returned: 'Returned', lost: 'Lost', damaged: 'Damaged' };
   const ASSET_STATUS_CLASS = { issued: 'status-confirmed', returned: 'status-completed', lost: 'status-cancelled', damaged: 'status-cancelled' };
   const PLACEHOLDER_PHOTO = UI.PLACEHOLDER_PHOTO;
@@ -415,6 +416,14 @@ App.register('hr-employees', async (view) => {
               <div><label>Status</label><select data-f="status">${statusOpts}</select></div>
               <div><label>Start date</label><input data-f="start_date" type="date" value="${UI.esc(editing ? (existing.start_date || '') : '')}" /></div>
             </div>
+            <div class="field-row" style="margin-top:8px">
+              <div><label>Birth date</label><input data-f="birth_date" type="date" value="${UI.esc(editing ? (existing.birth_date || '') : '')}" /></div>
+              <div><label>Civil status</label><select data-f="civil_status">
+                <option value="">—</option>
+                ${/* Same list as CIVIL_STATUSES in src/shared/validation.ts */ ['Single', 'Married', 'Widowed', 'Legally separated', 'Annulled', 'Divorced']
+                  .map((s) => `<option${editing && existing.civil_status === s ? ' selected' : ''}>${s}</option>`).join('')}
+              </select></div>
+            </div>
             <div class="field-row" style="margin-top:10px">
               <div><label>Linked user account</label>
                 <div style="display:flex;gap:6px">
@@ -766,6 +775,8 @@ App.register('hr-employees', async (view) => {
             monthly_rate: rateTypeVal === 'monthly' ? rateAmountVal : null,
             status: ov.querySelector('[data-f="status"]').value,
             start_date: ov.querySelector('[data-f="start_date"]').value,
+            birth_date: ov.querySelector('[data-f="birth_date"]').value,
+            civil_status: ov.querySelector('[data-f="civil_status"]').value,
             sss_no: ov.querySelector('[data-f="sss_no"]').value.trim(),
             philhealth_no: ov.querySelector('[data-f="philhealth_no"]').value.trim(),
             pagibig_no: ov.querySelector('[data-f="pagibig_no"]').value.trim(),
@@ -959,37 +970,8 @@ App.register('hr-employees', async (view) => {
     });
   }
 
-  function returnAssetModal(issuanceId, itemId, after) {
-    UI.modal({
-      title: 'Mark asset returned',
-      bodyHTML: `
-        <div class="field-row">
-          <div><label>Return date</label><input data-f="date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
-          <div><label>Status</label><select data-f="status">
-            <option value="returned">Returned</option>
-            <option value="lost">Lost</option>
-            <option value="damaged">Damaged</option>
-          </select></div>
-        </div>
-        <div style="margin-top:8px"><label>Condition</label><input data-f="cond" placeholder="Good, worn, scratched…" /></div>
-        <div style="margin-top:8px"><label>Notes</label><textarea data-f="notes" rows="2"></textarea></div>`,
-      confirmText: 'Save',
-      onConfirm: async (ov, showErr) => {
-        const returnDate = ov.querySelector('[data-f="date"]').value;
-        if (!returnDate) { showErr('Return date is required'); return false; }
-        try {
-          await API.post(`/hr/assets/${issuanceId}/items/${itemId}/return`, {
-            returned_date: returnDate,
-            status: ov.querySelector('[data-f="status"]').value,
-            condition_on_return: ov.querySelector('[data-f="cond"]').value.trim() || null,
-            return_notes: ov.querySelector('[data-f="notes"]').value.trim() || null,
-          });
-          UI.toast('Asset updated');
-          if (after) after();
-        } catch (e) { showErr(e.message); return false; }
-      },
-    });
-  }
+  // Shared with the company-wide register (hr-assets.js).
+  const returnAssetModal = (issuanceId, itemId, after) => HRAssets.returnModal(issuanceId, itemId, after);
 
   /* Default body used only if the editable "Asset Issuance Form" document template (Documents >
      Templates) is somehow missing — normal installs always have the seeded one. */

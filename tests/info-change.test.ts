@@ -139,13 +139,69 @@ describe('information_change request type', () => {
     expect(queryOne<{ name: string }>('SELECT name FROM employees WHERE id = ?', emp.empId)!.name).toBe(emp.name);
   });
 
-  it('approves fields not stored on the record without writing anything, and says so', async () => {
+  it('applies an approved civil status and birth date to the employee record', async () => {
     const emp = await linkedEmployee();
     const hr = await linkedEmployee({ role: 'hr' });
-    const r = await file(emp.token, { field: 'Civil status', requested_value: 'Married', reason: 'Married last month' });
+    const cs = await file(emp.token, { field: 'Civil status', requested_value: '  legally   SEPARATED ', reason: 'Court decree issued' });
+    expect(cs.status).toBe(201);
+    expect(JSON.parse(queryOne<{ data: string }>('SELECT data FROM form_records WHERE id = ?', cs.body.id)!.data))
+      .toMatchObject({ requested_value: 'Legally separated', current_value: null });
+    expect(await decide(hr.token, cs.body.id, 'approved')).toMatchObject({ body: { applied: true, applied_note: null } });
+
+    const bd = await file(emp.token, { field: 'Birth date', requested_value: '1990-02-28', reason: 'Per PSA birth certificate' });
+    expect((await decide(hr.token, bd.body.id, 'approved')).body.applied).toBe(true);
+
+    expect(queryOne('SELECT birth_date, civil_status FROM employees WHERE id = ?', emp.empId))
+      .toEqual({ birth_date: '1990-02-28', civil_status: 'Legally separated' });
+    const hist = queryAll<{ field: string; old_value: string | null; new_value: string }>(
+      "SELECT field, old_value, new_value FROM employee_profile_changes WHERE employee_id = ? AND source = 'info_change' ORDER BY id", emp.empId
+    );
+    expect(hist).toEqual([
+      { field: 'civil_status', old_value: null, new_value: 'Legally separated' },
+      { field: 'birth_date', old_value: null, new_value: '1990-02-28' },
+    ]);
+    // A second request now snapshots the stored value, and "no change" is refused.
+    expect((await file(emp.token, { field: 'Civil status', requested_value: 'Legally separated', reason: 'Same again' })).status).toBe(400);
+  });
+
+  it('validates civil status and birth date values', async () => {
+    const emp = await linkedEmployee();
+    const bad = [
+      { field: 'Civil status', requested_value: 'Complicated', reason: 'It is complicated' },
+      { field: 'Birth date', requested_value: '1990-02-30', reason: 'Per PSA certificate' },
+      { field: 'Birth date', requested_value: '28/02/1990', reason: 'Per PSA certificate' },
+      { field: 'Birth date', requested_value: new Date().toISOString().slice(0, 10), reason: 'Per PSA certificate' },
+    ];
+    for (const data of bad) expect((await file(emp.token, data)).status).toBe(400);
+  });
+
+  it('still leaves "Other official record" for HR to action by hand, and says so', async () => {
+    const emp = await linkedEmployee();
+    const hr = await linkedEmployee({ role: 'hr' });
+    const r = await file(emp.token, { field: 'Other official record', requested_value: 'Blood type O+', reason: 'Company ID shows A+' });
     const ok = await decide(hr.token, r.body.id, 'approved');
     expect(ok.body).toMatchObject({ applied: false });
     expect(ok.body.applied_note).toMatch(/by hand/);
+  });
+
+  it('HR can set birth date / civil status on the employee form; omitting them leaves them unchanged', async () => {
+    const emp = await linkedEmployee();
+    const current = queryOne<Record<string, unknown>>('SELECT employee_no, name, user_id FROM employees WHERE id = ?', emp.empId)!;
+    const put = (extra: Record<string, unknown>) => ctx.api.put(`/api/hr/employees/${emp.empId}`).set(A())
+      .send({ employee_no: current.employee_no, name: current.name, user_id: current.user_id, daily_rate: 500, sss_no: '1111111111', ...extra });
+    expect((await put({ birth_date: '1985-06-15', civil_status: 'Married' })).status).toBe(200);
+    expect((await put({})).status).toBe(200); // e.g. an older client — must not wipe them
+    expect(queryOne('SELECT birth_date, civil_status FROM employees WHERE id = ?', emp.empId))
+      .toEqual({ birth_date: '1985-06-15', civil_status: 'Married' });
+    expect((await put({ civil_status: 'Engaged' })).status).toBe(400);
+    expect((await put({ birth_date: '2099-01-01' })).status).toBe(400);
+    expect((await put({ birth_date: '', civil_status: '' })).status).toBe(200); // cleared on purpose
+    expect(queryOne('SELECT birth_date, civil_status FROM employees WHERE id = ?', emp.empId))
+      .toEqual({ birth_date: null, civil_status: null });
+    const hist = queryAll<{ field: string }>(
+      "SELECT field FROM employee_profile_changes WHERE employee_id = ? AND source = 'hr_edit' ORDER BY id", emp.empId
+    ).map((h) => h.field);
+    expect(hist).toEqual(['birth_date', 'civil_status', 'birth_date', 'civil_status']);
   });
 
   it('a rejection changes nothing, and the filer can still cancel a pending one', async () => {

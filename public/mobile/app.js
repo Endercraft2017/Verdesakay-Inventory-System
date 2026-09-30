@@ -162,6 +162,8 @@ window.MApp = (function () {
   function showLogin() {
     me = null;
     API.clearToken();
+    if (window.mQueue) mQueue.clearToken();
+    paintSharedBanner();
     if (window.ChatWS) ChatWS.disconnect();
     appScreen().classList.add('hidden');
     loginScreen().classList.remove('hidden');
@@ -185,17 +187,84 @@ window.MApp = (function () {
       '<p>This account has no mobile features. Ask an administrator for the ' +
       '<b>inventory.mobile</b> permission, or ask HR to link your account to your employee record.</p>' +
       '<button class="m-btn m-btn-secondary" id="m-blocked-out">Sign out</button></div>';
-    document.getElementById('m-blocked-out').onclick = function () {
-      API.post('/auth/logout').catch(function () {}).finally(showLogin);
-    };
+    document.getElementById('m-blocked-out').onclick = signOut;
   }
 
   var ME_KEY = 'vds_m_me';
 
+  /* ---------- one person's data on a shared phone ----------
+     Device-level keys survive; every other vds_* key is one person's (cached profile, recent
+     items, drafts — including the anonymous-report draft). OWNER_KEY records whose they are, so
+     the next different person to sign in here gets them cleared before seeing anything. */
+  var DEVICE_KEYS = { vds_theme: 1, vds_device_id: 1, vds_kiosk_token: 1, vds_token: 1, vds_m_seg: 1, vds_m_orbit_v2: 1 };
+  var OWNER_KEY = 'vds_m_owner';
+
+  function clearUserData() {
+    try {
+      var drop = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('vds_') === 0 && !DEVICE_KEYS[k]) drop.push(k);
+      }
+      drop.forEach(function (k) { localStorage.removeItem(k); });
+    } catch (e) { /* storage blocked */ }
+    try { sessionStorage.removeItem(ME_KEY); } catch (e) { /* ignore */ }
+  }
+
+  /** Sign out of this phone: send (or knowingly leave) this person's queued actions, stop their
+      notifications here, end the session, and — on a borrowed phone — leave none of their data. */
+  function signOut() {
+    var q = window.mQueue;
+    var shared = API.isSharedSession();
+    var flushed = q && navigator.onLine ? q.flush().catch(function () {}) : Promise.resolve();
+    return flushed
+      .then(function () { return q ? q.count() : 0; })
+      .catch(function () { return 0; })
+      .then(function (n) {
+        if (n && !window.confirm(
+          n + (n === 1 ? ' of your actions hasn’t' : ' of your actions haven’t') + ' been sent yet. ' +
+          (shared
+            ? 'This is a borrowed phone — they only send if you sign in on it again. Sign out anyway?'
+            : 'They stay on this phone and send the next time you sign in here. Sign out anyway?'))) return false;
+        var push = window.mPush && mPush.release ? mPush.release().catch(function () {}) : Promise.resolve();
+        return push
+          .then(function () { return API.post('/auth/logout').catch(function () {}); })
+          .then(function () {
+            if (shared) clearUserData();
+            try { localStorage.removeItem(ME_KEY); sessionStorage.removeItem(ME_KEY); } catch (e) { /* ignore */ }
+            if (q) q.clearToken();
+            API.clearToken();
+            if (window.ChatWS) ChatWS.disconnect();
+            location.hash = '';
+            location.reload();
+            return true;
+          });
+      });
+  }
+
+  function paintSharedBanner() {
+    var el = document.getElementById('m-shared-banner');
+    if (!el) return;
+    var on = !!me && API.isSharedSession();
+    el.classList.toggle('hidden', !on);
+    var out = el.querySelector('[data-shared-out]');
+    if (out) out.onclick = signOut;
+  }
+
   function enterApp(user) {
     me = user;
-    try { localStorage.setItem(ME_KEY, JSON.stringify(user)); } catch (e) { /* ignore */ }
-    if (window.mQueue) mQueue.setToken(API.getToken());
+    var cached = cachedMe();
+    var prevOwner = null;
+    try { prevOwner = localStorage.getItem(OWNER_KEY); } catch (e) { /* ignore */ }
+    if (prevOwner == null && cached) prevOwner = String(cached.id);
+    if (prevOwner !== String(user.id)) clearUserData(); // someone else's leftovers
+    try {
+      localStorage.setItem(OWNER_KEY, String(user.id));
+      // A borrowed-phone sign-in keeps its profile cache with its token, in sessionStorage.
+      (API.isSharedSession() ? sessionStorage : localStorage).setItem(ME_KEY, JSON.stringify(user));
+    } catch (e) { /* ignore */ }
+    if (window.mQueue) mQueue.setToken(API.getToken(), user);
+    paintSharedBanner();
     if (!hasAccess()) { showBlocked(); return; }
     loginScreen().classList.add('hidden');
     appScreen().classList.remove('hidden');
@@ -219,7 +288,7 @@ window.MApp = (function () {
   }
 
   function cachedMe() {
-    try { return JSON.parse(localStorage.getItem(ME_KEY) || 'null'); } catch (e) { return null; }
+    try { return JSON.parse(sessionStorage.getItem(ME_KEY) || localStorage.getItem(ME_KEY) || 'null'); } catch (e) { return null; }
   }
 
   /* ---------- badges ---------- */
@@ -282,11 +351,19 @@ window.MApp = (function () {
       err.classList.add('hidden');
       var btn = e.target.querySelector('button');
       btn.disabled = true;
-      API.post('/auth/login', {
+      var sharedBox = document.getElementById('m-shared');
+      var shared = !!(sharedBox && sharedBox.checked);
+      var body = {
         username: document.getElementById('m-username').value.trim(),
         password: document.getElementById('m-password').value,
-      })
-        .then(function (res) { API.setToken(res.token); enterApp(res.user); })
+      };
+      if (shared) body.shared = true;
+      API.post('/auth/login', body)
+        .then(function (res) {
+          API.setToken(res.token, { shared: shared });
+          if (sharedBox) sharedBox.checked = false;
+          enterApp(res.user);
+        })
         .catch(function (ex) {
           err.textContent = ex.message || 'Sign in failed';
           err.classList.remove('hidden');
@@ -330,6 +407,7 @@ window.MApp = (function () {
     getMe: getMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse,
     hasProductionAccess: hasProductionAccess, canApprove: canApprove,
     seg: seg, setTitle: setTitle, render: render, refreshInboxBadge: refreshInboxBadge,
+    signOut: signOut, isSharedSession: function () { return API.isSharedSession(); },
     routes: function () { return Object.keys(routes); },
   };
 })();

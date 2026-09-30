@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { db, queryOne, queryAll, run } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
+import { syncClass } from '../../sync';
 import { parseBody, createLocationSchema, updateLocationSchema } from '../../shared/validation';
 import type { LocationRow } from '../../shared/types';
 
@@ -61,7 +62,7 @@ router.get('/:id', requirePermission('inventory.view'), (req, res) => {
 });
 
 // POST /api/locations
-router.post('/', requirePermission('inventory.create'), (req, res) => {
+router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req, res) => {
   const input = parseBody(createLocationSchema, req.body);
   const isFirst = (queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM locations')?.n ?? 0) === 0;
   const info = run(
@@ -78,7 +79,7 @@ router.post('/', requirePermission('inventory.create'), (req, res) => {
 });
 
 // PUT /api/locations/:id
-router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
+router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<LocationRow>('SELECT * FROM locations WHERE id = ?', id);
   if (!existing) {
@@ -99,7 +100,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
 });
 
 // POST /api/locations/:id/default — make this the default location
-router.post('/:id/default', requirePermission('inventory.edit'), (req, res) => {
+router.post('/:id/default', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM locations WHERE id = ?', id)) {
     res.status(404).json({ error: 'Location not found' });
@@ -110,7 +111,7 @@ router.post('/:id/default', requirePermission('inventory.edit'), (req, res) => {
 });
 
 // DELETE /api/locations/:id
-router.delete('/:id', requirePermission('inventory.delete'), (req, res) => {
+router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const loc = queryOne<LocationRow>('SELECT * FROM locations WHERE id = ?', id);
   if (!loc) {

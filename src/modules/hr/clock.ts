@@ -39,6 +39,22 @@ export function currentKioskCode(): { code: string; window: number; seconds_left
 }
 
 /** True if `code` matches the current or a recent window. */
+/** Why an employee with this status may not punch (office or field clock), or null if they may.
+    Separated employees are inactive; a suspended one is still employed but off the clock until
+    HR lifts the suspension. `who` picks the phrasing: the kiosk names "that employee", the
+    phone speaks to the employee themselves. */
+export function punchBlockedReason(status: string, who: 'kiosk' | 'self'): string | null {
+  if (status === 'resigned' || status === 'terminated') {
+    return who === 'self' ? 'Your employee record is inactive.' : 'That employee record is inactive.';
+  }
+  if (status === 'suspended') {
+    return who === 'self'
+      ? 'You are suspended and cannot clock in. Contact HR.'
+      : 'That employee is suspended and cannot clock in.';
+  }
+  return null;
+}
+
 export function isValidKioskCode(code: string): boolean {
   if (typeof code !== 'string' || code.length !== 10) return false;
   const got = Buffer.from(code);
@@ -199,6 +215,16 @@ export class AlreadyClockedOutError extends Error {
   }
 }
 
+/** Which device a phone punch came from (src/shared/device.ts). `flag` marks a punch HR may
+ *  want to look at: 'borrowed' = signed in with the borrowed-phone option; 'other_user' = the
+ *  device is one another account usually signs in on. Recorded, never blocked — a forgotten
+ *  phone is a legitimate reason. `usual_user_id` is that device's usual account, if known. */
+export interface PunchDevice {
+  device_id: string | null;
+  flag: 'borrowed' | 'other_user' | null;
+  usual_user_id: number | null;
+}
+
 /** Record a punch for an employee. Caller has already validated the kiosk code
  *  and resolved the employee. De-dupes a repeat within 45s. Once the day's final
  *  ('afternoon_out') punch has happened, refuses to start a new in/out cycle -- e.g. an
@@ -208,7 +234,8 @@ export function recordPunch(
   employee: { id: number; name: string },
   source: 'phone' | 'kiosk' | 'remote',
   userId: number | null,
-  geo: PunchGeo | null = null
+  geo: PunchGeo | null = null,
+  device: PunchDevice | null = null
 ): PunchResult {
   const { date } = localParts();
   const prior = queryAll<PunchRow>(
@@ -238,10 +265,12 @@ export function recordPunch(
   const context = prior.length ? prior : manualBracketsAsPunches(employee.id, date);
   const { kind, segment } = classify(context, firstPunchOutAfter(employee.id, date));
   const info = run(
-    `INSERT INTO time_punches (employee_id, user_id, work_date, kind, segment, source, lat, lng, accuracy_m, distance_m, geo_site)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO time_punches (employee_id, user_id, work_date, kind, segment, source, lat, lng, accuracy_m, distance_m, geo_site,
+                               device_id, device_flag, device_user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     employee.id, userId, date, kind, segment, source,
-    geo?.lat ?? null, geo?.lng ?? null, geo?.accuracy_m ?? null, geo?.distance_m ?? null, geo?.site ?? null
+    geo?.lat ?? null, geo?.lng ?? null, geo?.accuracy_m ?? null, geo?.distance_m ?? null, geo?.site ?? null,
+    device?.device_id ?? null, device?.flag ?? null, device?.usual_user_id ?? null
   );
   const row = queryOne<PunchRow>('SELECT * FROM time_punches WHERE id = ?', Number(info.lastInsertRowid))!;
   applyPunchToAttendance(employee.id, date);

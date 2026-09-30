@@ -34,6 +34,11 @@
       <input id="login-username" name="username" autocomplete="username" required autofocus />
       <label for="login-password">Password</label>
       <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+      <label for="login-shared" style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-weight:400;cursor:pointer">
+        <input id="login-shared" type="checkbox" style="width:auto;margin:2px 0 0" />
+        <span>This is a shared or borrowed computer
+          <span class="muted" style="display:block;font-size:12px">Signs you out after 30 minutes idle or when you close the tab.</span></span>
+      </label>
       <button class="btn" type="submit" style="width:100%;justify-content:center;margin-top:20px;">Sign in</button>
       <button type="button" id="forgot-link" class="btn-link" style="display:block;margin:12px auto 0;background:none;border:none;color:var(--accent,#2b7fff);cursor:pointer;font-size:13px">Forgot password?</button>
     </form>
@@ -124,6 +129,7 @@
   <script src="/js/lib/production-steps.js"></script>
   <script src="/js/lib/chat-ws.js"></script>
   <script src="/js/lib/access-editor.js"></script>
+  <script src="/js/lib/session-list.js"></script>
   <script src="/js/vendor/xlsx-style.min.js"></script>
   <script src="/js/hr-payroll-export.js"></script>
   <script src="/js/doc-formula.js"></script>
@@ -176,6 +182,7 @@
   <script src="/js/modules/hr/hr-kiosk.js"></script>
   <script src="/js/modules/hr/hr-daily-report.js"></script>
   <script src="/js/modules/hr/hr-contact-verification.js"></script>
+  <script src="/js/modules/hr/hr-assets.js"></script>
   <script src="/js/modules/core/confidential-reports.js"></script>
   <script src="/js/modules/core/announcements.js"></script>
   <script src="/js/tools.js"></script>

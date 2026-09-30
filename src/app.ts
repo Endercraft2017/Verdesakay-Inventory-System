@@ -19,6 +19,7 @@ import qcRoutes from './modules/manufacturing/qc.routes';
 import productionRoutes from './modules/manufacturing/production.routes';
 import partsSlipsRoutes from './modules/manufacturing/parts-slips.routes';
 import productionIssuesRoutes from './modules/manufacturing/production-issues.routes';
+import rtsRoutes from './modules/manufacturing/rts.routes';
 import attachmentsRoutes from './core/attachments.routes';
 import bugReportsRoutes from './core/bug-reports.routes';
 import employeeProfileRoutes from './modules/hr/employee-profile.routes';
@@ -197,6 +198,7 @@ export function createApp() {
   app.use('/api/production', requireModule('manufacturing'), productionRoutes);
   app.use('/api/parts-slips', requireModule('manufacturing'), partsSlipsRoutes);
   app.use('/api/production-issues', requireModule('manufacturing'), productionIssuesRoutes);
+  app.use('/api/rts', requireModule('manufacturing'), rtsRoutes);
   app.use('/api/attachments', attachmentsRoutes);
   app.use('/api/bug-reports', bugReportsRoutes);
   app.use('/api/deliveries', requireModule('inventory'), deliveriesRoutes);

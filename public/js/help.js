@@ -325,6 +325,9 @@
           <li><b>Generate ID</b> — prints an ID card from the template.</li>
           <li>You can't delete someone with attendance history — set them to
               resigned / terminated instead.</li>
+          <li><b>Suspended</b> — still employed and still on rosters and payroll, but they
+              can't clock in (kiosk, phone, or field) and drop off production team pickers
+              until you set them back to probationary or regular.</li>
         </ul>`,
     },
     {

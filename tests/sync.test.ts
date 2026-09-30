@@ -82,10 +82,12 @@ describe('a DB without a sync role', () => {
 
 describe('the node', () => {
   it('refuses writes from routes with no sync class (they would never sync)', async () => {
-    const r = await ctx.api.post('/api/inventory').set(nodeHdr()).send({ name: 'Offline new item', quantity: 1 });
+    // Notes are not classed yet: the write is refused at the database, nothing is stored.
+    const r = await ctx.api.post('/api/notes').set(nodeHdr()).send({ body: 'Offline note' });
     expect(r.status).toBe(503);
     expect(r.body.error).toMatch(/internet/i);
-    expect(nodeDb().prepare("SELECT COUNT(*) AS n FROM inventory_items WHERE name = 'Offline new item'").get()).toEqual({ n: 0 });
+    expect(nodeDb().prepare("SELECT COUNT(*) AS n FROM notes WHERE body = 'Offline note'").get()).toEqual({ n: 0 });
+    expect(sync.pendingCommands(NODE)).toHaveLength(0);
   });
 
   it('records a classed action as a command, applies it at once, and gives new rows node-7 ids', async () => {

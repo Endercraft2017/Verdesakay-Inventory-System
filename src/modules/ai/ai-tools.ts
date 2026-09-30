@@ -6,6 +6,7 @@
  * Tools are filtered to those the calling user actually holds before being sent to the LLM.
  */
 import { db, queryOne, queryAll, run, getSetting, setSetting } from '../../shared/db';
+import { endUserSessions } from '../../shared/auth';
 import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory/inventory-stock';
 import { parseBody, createUserSchema, updateUserSchema, createItemSchema, updateItemSchema } from '../../shared/validation';
 import { visibilityClause } from '../../core/forms.routes';
@@ -1009,7 +1010,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
         if (input.active !== undefined) { cols.push('active = ?'); vals.push(active); }
         if (!cols.length) return { success: false, error: 'Nothing to update.' };
         run(`UPDATE users SET ${cols.join(', ')} WHERE id = ?`, ...vals, a.id);
-        if (active === 0) run('DELETE FROM sessions WHERE user_id = ?', a.id);
+        if (active === 0) endUserSessions(Number(a.id), 'deactivated');
         return { success: true, data: { updated: true } };
       }
 

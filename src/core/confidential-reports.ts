@@ -13,16 +13,24 @@
  *    logged, so the ticket can't be traced back to who asked for it.
  *  - The reporter follows up with the report number + a one-time access code shown once at
  *    submission; only the code's SHA-256 is stored.
+ *  - Photos (with the report or a follow-up) arrive already metadata-stripped by the route
+ *    (shared/image-metadata.ts) and are kept as BLOBs with no filename and a date-only stamp,
+ *    never as files whose name or file-system times could date the submission.
  */
 import crypto from 'node:crypto';
 import { queryOne, queryAll, run, db } from '../shared/db';
 import type { REPORT_STATUSES } from '../shared/validation';
+import type { ScrubbedImage } from '../shared/image-metadata';
 
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
 const TICKET_TTL_MIN = 120;
 /** Per signed-in user, per day. Kept in memory only (a DB counter would link users to tickets). */
 export const TICKETS_PER_DAY = 10;
+/** Photos per submission / follow-up, and across a whole report. */
+export const PHOTOS_PER_POST = 4;
+export const PHOTOS_PER_REPORT = 12;
+export const PHOTO_MAX_BYTES = 6 * 1024 * 1024;
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
 const today = () => new Date().toISOString().slice(0, 10);
@@ -71,7 +79,17 @@ export type SubmitResult =
   | { ok: true; number: string; access_code: string }
   | { ok: false; status: number; error: string };
 
-export function submitReport(input: NewReport): SubmitResult {
+function savePhotos(reportId: number, messageId: number | null, photos: ScrubbedImage[], day: string): void {
+  for (const p of photos) {
+    run(
+      `INSERT INTO anonymous_report_attachments (report_id, message_id, mime_type, size_bytes, data, created_on)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      reportId, messageId, p.mime, p.data.length, p.data, day
+    );
+  }
+}
+
+export function submitReport(input: NewReport, photos: ScrubbedImage[] = []): SubmitResult {
   db.exec('BEGIN');
   try {
     // Consume the ticket first, in the same transaction, so a ticket can never file twice.
@@ -89,13 +107,14 @@ export function submitReport(input: NewReport): SubmitResult {
     const number = `CR-${String((last?.n ?? 0) + 1).padStart(5, '0')}`;
     const accessCode = newAccessCode();
     const day = today();
-    run(
+    const info = run(
       `INSERT INTO anonymous_reports
          (number, category, subject, description, incident_date, location, status, access_hash, created_on, updated_on)
        VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)`,
       number, input.category, input.subject || null, input.description,
       input.incident_date || null, input.location || null, sha256(normalizeCode(accessCode)), day, day
     );
+    savePhotos(Number(info.lastInsertRowid), null, photos, day);
     db.exec('COMMIT');
     return { ok: true, number, access_code: accessCode };
   } catch (e) {
@@ -110,6 +129,14 @@ interface ReportRow {
   access_hash: string; created_on: string; updated_on: string;
 }
 interface MessageRow { id: number; author: 'reporter' | 'handler'; body: string; created_on: string; handler_name?: string | null }
+interface AttachmentRow { id: number; message_id: number | null; mime_type: string; size_bytes: number }
+
+function attachmentsFor(reportId: number): AttachmentRow[] {
+  return queryAll<AttachmentRow>(
+    'SELECT id, message_id, mime_type, size_bytes FROM anonymous_report_attachments WHERE report_id = ? ORDER BY id',
+    reportId
+  );
+}
 
 /** Resolve number + access code to the report, or null. Constant-time hash comparison. */
 export function findByCode(number: string, accessCode: string): ReportRow | null {
@@ -133,28 +160,83 @@ function messagesFor(reportId: number, forHandler: boolean): MessageRow[] {
   );
 }
 
-/** What the reporter may see about their own report. */
+/** Highest photo id a case handler has loaded for this report (0 = none yet). */
+function handlerSeenUpTo(reportId: number): number {
+  return queryOne<{ last_photo_id: number }>('SELECT last_photo_id FROM anonymous_report_handler_seen WHERE report_id = ?', reportId)?.last_photo_id ?? 0;
+}
+
+/** What the reporter may see about their own report. Photos are listed by id only — the reporter
+ *  fetches one with POST /photo (number + code in the body, never on an image URL, where it could
+ *  end up in logs or history). `removable` until a case handler has loaded it, and never once
+ *  the report is closed. */
 export function reporterView(r: ReportRow) {
+  const photos = attachmentsFor(r.id);
+  const seen = handlerSeenUpTo(r.id);
+  const list = (messageId: number | null) => photos.filter((p) => p.message_id === messageId)
+    .map((p) => ({ id: p.id, removable: r.status !== 'closed' && p.id > seen }));
+  const own = list(null);
   return {
     number: r.number, category: r.category, subject: r.subject, status: r.status,
-    created_on: r.created_on, updated_on: r.updated_on, messages: messagesFor(r.id, false),
+    created_on: r.created_on, updated_on: r.updated_on, photo_count: own.length, photos: own,
+    photos_remaining: Math.max(0, PHOTOS_PER_REPORT - photos.length),
+    messages: messagesFor(r.id, false).map((m) => {
+      const mine = list(m.id);
+      return { ...m, photo_count: mine.length, photos: mine };
+    }),
   };
 }
 
-export function addReporterMessage(r: ReportRow, body: string): void {
+/** One of the report's own photos, for the reporter. */
+export function reporterPhoto(r: ReportRow, photoId: number) {
+  return getAttachment(r.id, photoId);
+}
+
+/** Remove a photo the reporter sent, while no case handler has loaded it. */
+export function removeReporterPhoto(r: ReportRow, photoId: number): void {
+  const fail = (msg: string, status: number): never => { throw Object.assign(new Error(msg), { status }); };
+  if (r.status === 'closed') fail('This report is closed.', 409);
+  db.exec('BEGIN');
+  try {
+    const p = queryOne<{ id: number }>('SELECT id FROM anonymous_report_attachments WHERE id = ? AND report_id = ?', photoId, r.id);
+    if (!p) fail('Photo not found.', 404);
+    // Re-read inside the transaction, so a handler opening the case now can't race the removal.
+    if (photoId <= handlerSeenUpTo(r.id)) fail('The case handler has already seen this photo, so it can’t be removed.', 409);
+    run('DELETE FROM anonymous_report_attachments WHERE id = ?', photoId);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+export function addReporterMessage(r: ReportRow, body: string, photos: ScrubbedImage[] = []): void {
   if (r.status === 'closed') throw Object.assign(new Error('This report is closed.'), { status: 409 });
+  const have = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM anonymous_report_attachments WHERE report_id = ?', r.id)!.n;
+  if (have + photos.length > PHOTOS_PER_REPORT) {
+    const left = Math.max(0, PHOTOS_PER_REPORT - have);
+    throw Object.assign(new Error(left ? `You can add ${left} more photo${left === 1 ? '' : 's'} to this report.` : 'This report already has the most photos it can hold.'), { status: 400 });
+  }
   const day = today();
-  run("INSERT INTO anonymous_report_messages (report_id, author, body, created_on) VALUES (?, 'reporter', ?, ?)", r.id, body, day);
-  run('UPDATE anonymous_reports SET updated_on = ? WHERE id = ?', day, r.id);
+  db.exec('BEGIN');
+  try {
+    const info = run("INSERT INTO anonymous_report_messages (report_id, author, body, created_on) VALUES (?, 'reporter', ?, ?)", r.id, body, day);
+    savePhotos(r.id, Number(info.lastInsertRowid), photos, day);
+    run('UPDATE anonymous_reports SET updated_on = ? WHERE id = ?', day, r.id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 // ─── Handler (staff) side ────────────────────────────────────────────────────
 
 export function listReports(status?: string) {
-  const rows = queryAll<ReportRow & { message_count: number; reporter_replies: number }>(
+  const rows = queryAll<ReportRow & { message_count: number; reporter_replies: number; photo_count: number }>(
     `SELECT r.id, r.number, r.category, r.subject, r.incident_date, r.location, r.status, r.created_on, r.updated_on,
             (SELECT COUNT(*) FROM anonymous_report_messages m WHERE m.report_id = r.id) AS message_count,
-            (SELECT COUNT(*) FROM anonymous_report_messages m WHERE m.report_id = r.id AND m.author = 'reporter') AS reporter_replies
+            (SELECT COUNT(*) FROM anonymous_report_messages m WHERE m.report_id = r.id AND m.author = 'reporter') AS reporter_replies,
+            (SELECT COUNT(*) FROM anonymous_report_attachments a WHERE a.report_id = r.id) AS photo_count
      FROM anonymous_reports r
      ${status ? 'WHERE r.status = ?' : ''}
      ORDER BY CASE r.status WHEN 'new' THEN 0 WHEN 'triaged' THEN 1 WHEN 'investigating' THEN 2 ELSE 3 END, r.id DESC
@@ -164,11 +246,33 @@ export function listReports(status?: string) {
   return rows;
 }
 
+/** Case detail for a handler. Opening it marks every photo in it as seen, which ends the
+ *  reporter's ability to remove them (removeReporterPhoto). */
 export function getReport(id: number) {
   const r = queryOne<ReportRow>('SELECT * FROM anonymous_reports WHERE id = ?', id);
   if (!r) return null;
   const { access_hash: _omit, ...rest } = r;
-  return { ...rest, messages: messagesFor(r.id, true) };
+  const attachments = attachmentsFor(r.id);
+  if (attachments.length) {
+    run(
+      `INSERT INTO anonymous_report_handler_seen (report_id, last_photo_id) VALUES (?, ?)
+       ON CONFLICT(report_id) DO UPDATE SET last_photo_id = MAX(last_photo_id, excluded.last_photo_id)`,
+      r.id, attachments[attachments.length - 1]!.id
+    );
+  }
+  const photos = attachments.map((a) => ({ ...a, url: `/confidential-reports/${r.id}/attachments/${a.id}` }));
+  const of = (messageId: number | null) => photos.filter((p) => p.message_id === messageId);
+  return {
+    ...rest, attachments: of(null),
+    messages: messagesFor(r.id, true).map((m) => ({ ...m, attachments: of(m.id) })),
+  };
+}
+
+export function getAttachment(reportId: number, attachmentId: number) {
+  return queryOne<{ id: number; mime_type: string; data: Uint8Array }>(
+    'SELECT id, mime_type, data FROM anonymous_report_attachments WHERE id = ? AND report_id = ?',
+    attachmentId, reportId
+  ) ?? null;
 }
 
 export function setStatus(id: number, status: ReportStatus): boolean {

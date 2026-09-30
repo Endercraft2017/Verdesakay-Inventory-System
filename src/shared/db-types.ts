@@ -42,6 +42,8 @@ export interface ActivityLog {
   ip: string | null;
   summary: string | null;
   meta: string | null;
+  device_id: string | null;
+  device: string | null;
 }
 
 export interface AiMessages {
@@ -61,6 +63,21 @@ export interface Announcements {
   expires_at: string | null;
   created_by: number | null;
   created_at: Generated<string>;
+}
+
+export interface AnonymousReportAttachments {
+  id: Generated<number>;
+  report_id: number;
+  message_id: number | null;
+  mime_type: string;
+  size_bytes: number;
+  data: Uint8Array;
+  created_on: string;
+}
+
+export interface AnonymousReportHandlerSeen {
+  report_id: Generated<number>;
+  last_photo_id: number;
 }
 
 export interface AnonymousReportMessages {
@@ -385,6 +402,8 @@ export interface Employees {
   leave_days_used: Generated<number>;
   user_id: number | null;
   clock_anywhere: Generated<number>;
+  birth_date: string | null;
+  civil_status: string | null;
 }
 
 export interface FieldPunches {
@@ -940,6 +959,7 @@ export interface PushSubscriptions {
   auth: string;
   user_agent: string | null;
   created_at: Generated<string>;
+  device_id: string | null;
 }
 
 export interface QboLinks {
@@ -1033,6 +1053,16 @@ export interface Sessions {
   user_id: number;
   created_at: Generated<string>;
   expires_at: string;
+  sid: string | null;
+  device_id: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  last_seen_at: string | null;
+  last_ip: string | null;
+  shared: Generated<number>;
+  idle_minutes: number | null;
+  ended_at: string | null;
+  end_reason: string | null;
 }
 
 export interface Settings {
@@ -1047,6 +1077,22 @@ export interface Shifts {
   start_time: string;
   end_time: string;
   is_default: Generated<number>;
+}
+
+export interface StockDiscrepancies {
+  id: Generated<number>;
+  item_id: number;
+  location_id: number | null;
+  transaction_id: number | null;
+  change: number;
+  location_balance_after: number;
+  reason: string | null;
+  created_by: number | null;
+  created_at: Generated<string>;
+  status: Generated<string>;
+  resolution_note: string | null;
+  resolved_by: number | null;
+  resolved_at: string | null;
 }
 
 export interface Suppliers {
@@ -1101,6 +1147,20 @@ export interface TimeCorrections {
   created_at: Generated<string>;
 }
 
+export interface TimePunchHolds {
+  id: Generated<number>;
+  employee_id: number;
+  user_id: number | null;
+  scanned_at: string;
+  scanned_ms: number;
+  source: string;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  distance_m: number | null;
+  geo_site: string | null;
+}
+
 export interface TimePunches {
   id: Generated<number>;
   employee_id: number;
@@ -1116,6 +1176,9 @@ export interface TimePunches {
   accuracy_m: number | null;
   distance_m: number | null;
   geo_site: string | null;
+  device_id: string | null;
+  device_flag: string | null;
+  device_user_id: number | null;
 }
 
 export interface Users {
@@ -1179,6 +1242,8 @@ export interface DB {
   activity_log: ActivityLog;
   ai_messages: AiMessages;
   announcements: Announcements;
+  anonymous_report_attachments: AnonymousReportAttachments;
+  anonymous_report_handler_seen: AnonymousReportHandlerSeen;
   anonymous_report_messages: AnonymousReportMessages;
   anonymous_report_tickets: AnonymousReportTickets;
   anonymous_reports: AnonymousReports;
@@ -1257,10 +1322,12 @@ export interface DB {
   sessions: Sessions;
   settings: Settings;
   shifts: Shifts;
+  stock_discrepancies: StockDiscrepancies;
   suppliers: Suppliers;
   tasks: Tasks;
   tax_codes: TaxCodes;
   time_corrections: TimeCorrections;
+  time_punch_holds: TimePunchHolds;
   time_punches: TimePunches;
   users: Users;
   vendor_bill_items: VendorBillItems;

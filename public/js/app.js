@@ -387,9 +387,13 @@ const App = (() => {
       }));
   }
 
-  async function login(username, password) {
-    const data = await API.post('/auth/login', { username, password });
-    API.setToken(data.token);
+  // shared = borrowed/shared computer: a short session whose token lives in sessionStorage
+  // (ends with the tab) — see src/shared/auth.ts.
+  async function login(username, password, shared) {
+    const body = { username, password };
+    if (shared) body.shared = true;
+    const data = await API.post('/auth/login', body);
+    API.setToken(data.token, { shared: !!shared });
     me = data.user;
     await showApp();
   }
@@ -446,8 +450,10 @@ const App = (() => {
       errEl.classList.add('hidden');
       const u = document.getElementById('login-username').value.trim();
       const p = document.getElementById('login-password').value;
+      const sharedBox = document.getElementById('login-shared');
       try {
-        await login(u, p);
+        await login(u, p, !!(sharedBox && sharedBox.checked));
+        if (sharedBox) sharedBox.checked = false;
       } catch (err) {
         errEl.textContent = err.message;
         errEl.classList.remove('hidden');

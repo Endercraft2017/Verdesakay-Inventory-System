@@ -25,9 +25,10 @@
  *                            applyPunchToAttendance in clock.ts — so this is only needed to
  *                            catch punches that predate the roster row existing at all.
  */
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, deviceUsualUserId } from '../../shared/auth';
+import { deviceIdOf } from '../../shared/device';
 import {
   parseBody, phonePunchSchema, kioskPunchSchema, kioskCorrectSchema, clockGeofenceSchema, kioskDeviceSchema, kioskLockSchema,
   punchLogQuerySchema,
@@ -39,7 +40,7 @@ import {
 } from './kiosk-devices';
 import {
   currentKioskCode, isValidKioskCode, recordPunch, correctPunch, myClockStatus, recordedBrackets,
-  importPunchesForPeriod, ROTATE_SECONDS,
+  importPunchesForPeriod, ROTATE_SECONDS, punchBlockedReason, type PunchDevice,
 } from './clock';
 import { punchPhotoRoutes } from './punch-photos';
 
@@ -63,8 +64,10 @@ router.get('/punches', requirePermission('hr.view'), (req, res) => {
   if (source) { where.push('p.source = ?'); params.push(source); }
   res.json(queryAll(
     `SELECT p.id, p.ts, p.work_date, p.kind, p.segment, p.source, p.lat, p.lng, p.accuracy_m, p.distance_m, p.geo_site,
+            p.device_flag, du.full_name AS device_user_name,
             e.name, e.employee_no
      FROM time_punches p JOIN employees e ON e.id = p.employee_id
+     LEFT JOIN users du ON du.id = p.device_user_id
      WHERE ${where.join(' AND ')} ORDER BY p.ts DESC, p.id DESC LIMIT 1000`,
     ...params
   ));
@@ -134,8 +137,9 @@ router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, (r
     res.status(404).json({ error: `No employee with number "${employee_no}".` });
     return;
   }
-  if (emp.status === 'resigned' || emp.status === 'terminated') {
-    res.status(403).json({ error: 'That employee record is inactive.' });
+  const blockedKiosk = punchBlockedReason(emp.status, 'kiosk');
+  if (blockedKiosk) {
+    res.status(403).json({ error: blockedKiosk });
     return;
   }
   res.json(recordPunch(emp, 'kiosk', null));
@@ -155,8 +159,9 @@ router.post('/correct', requirePermission('hr.view'), requireKioskDevice, (req, 
     res.status(404).json({ error: `No employee with number "${employee_no}".` });
     return;
   }
-  if (emp.status === 'resigned' || emp.status === 'terminated') {
-    res.status(403).json({ error: 'That employee record is inactive.' });
+  const blockedKiosk = punchBlockedReason(emp.status, 'kiosk');
+  if (blockedKiosk) {
+    res.status(403).json({ error: blockedKiosk });
     return;
   }
   res.json(correctPunch(emp, slot, 'kiosk'));
@@ -178,8 +183,9 @@ router.post('/punch', (req, res) => {
     res.status(403).json({ error: 'Your account is not linked to an employee record. Ask HR to link it.' });
     return;
   }
-  if (emp.status === 'resigned' || emp.status === 'terminated') {
-    res.status(403).json({ error: 'Your employee record is inactive.' });
+  const blockedSelf = punchBlockedReason(emp.status, 'self');
+  if (blockedSelf) {
+    res.status(403).json({ error: blockedSelf });
     return;
   }
   if (code === undefined && !emp.clock_anywhere) {
@@ -197,8 +203,17 @@ router.post('/punch', (req, res) => {
     if (e instanceof GeofenceError) { res.status(e.status).json({ error: e.message }); return; }
     throw e;
   }
-  res.json(recordPunch(emp, code === undefined ? 'remote' : 'phone', req.user!.id, geo));
+  res.json(recordPunch(emp, code === undefined ? 'remote' : 'phone', req.user!.id, geo, punchDevice(req)));
 });
+
+/** Flag a phone punch made on a borrowed phone, or on a device another account usually uses. */
+function punchDevice(req: Request): PunchDevice {
+  const deviceId = deviceIdOf(req) ?? req.authSession?.device_id ?? null;
+  const usual = deviceUsualUserId(deviceId);
+  if (req.authSession?.shared) return { device_id: deviceId, flag: 'borrowed', usual_user_id: usual };
+  if (usual !== null && usual !== req.user!.id) return { device_id: deviceId, flag: 'other_user', usual_user_id: usual };
+  return { device_id: deviceId, flag: null, usual_user_id: null };
+}
 
 router.get('/my-status', (req, res) => {
   const emp = linkedEmployee(req.user!.id);

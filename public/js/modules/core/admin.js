@@ -123,10 +123,14 @@ App.register('admin', async (view, filter) => {
         <hr style="margin:12px 0;border:none;border-top:1px solid var(--border)">
         <button type="button" class="btn secondary" id="edit-perm-btn" style="width:100%">
           ${UI.icon('key')} Customize permissions
+        </button>
+        <button type="button" class="btn secondary" id="edit-sessions-btn" style="width:100%;margin-top:8px">
+          ${UI.icon('history')} Sign-ins &amp; devices
         </button>`,
       confirmText: 'Save',
       onOpen: (overlay) => {
         overlay.querySelector('#edit-perm-btn').onclick = () => openPermEditor(u);
+        overlay.querySelector('#edit-sessions-btn').onclick = () => openSessions(u);
       },
       onConfirm: async (overlay) => {
         const get = (f) => overlay.querySelector(`[data-f="${f}"]`).value;
@@ -147,6 +151,22 @@ App.register('admin', async (view, filter) => {
         const idx = allUsers.findIndex((x) => x.id === u.id);
         if (idx >= 0) allUsers[idx] = { ...allUsers[idx], permission_overrides: overridesJson };
       },
+    });
+  }
+
+  // Where this account is / was signed in; sign it out of one device or all of them.
+  function openSessions(u) {
+    const m = UI.modal({
+      title: 'Sign-ins & devices — ' + u.full_name,
+      bodyHTML: '<div id="us-sessions"></div>',
+      cancelText: 'Close',
+    });
+    const el = (m && m.overlay ? m.overlay : document).querySelector('#us-sessions');
+    SessionList.render(el, {
+      load: () => API.get(`/users/${u.id}/sessions`),
+      revoke: (sid) => API.post(`/users/${u.id}/sessions/${encodeURIComponent(sid)}/revoke`),
+      revokeAll: () => API.post(`/users/${u.id}/sessions/revoke-all`),
+      revokeAllLabel: 'Sign out of all devices',
     });
   }
 

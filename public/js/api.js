@@ -1,15 +1,56 @@
-/* Lightweight API client with token handling. */
+/* Lightweight API client with token handling.
+
+   Every request carries X-Device-Id: a random ID this browser/app generates once and keeps
+   (vds_device_id). It is not a fingerprint — it names the device so the server can show where
+   an account is signed in (src/shared/device.ts). It survives sign-out on purpose. Anonymous
+   reports never get it.
+
+   A borrowed-phone sign-in keeps its token in sessionStorage instead of localStorage, so it
+   ends when the app/tab is closed; setToken(t, { shared: true }). */
 const API = (() => {
   const TOKEN_KEY = 'vds_token';
+  const DEVICE_KEY = 'vds_device_id';
 
-  function getToken() { return localStorage.getItem(TOKEN_KEY); }
-  function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
-  function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+  function getToken() {
+    try { return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
+  }
+  function setToken(t, opts) {
+    clearToken();
+    try { ((opts && opts.shared) ? sessionStorage : localStorage).setItem(TOKEN_KEY, t); } catch (e) { /* storage blocked */ }
+  }
+  function clearToken() {
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+  }
+  /** True when the current token is a borrowed-phone (sessionStorage) one. */
+  function isSharedSession() {
+    try { return !!sessionStorage.getItem(TOKEN_KEY); } catch (e) { return false; }
+  }
+
+  let memDeviceId = null;
+  function newId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+  }
+  /** This browser's device ID, created on first use. */
+  function deviceId() {
+    try {
+      let id = localStorage.getItem(DEVICE_KEY);
+      if (!id) { id = newId(); localStorage.setItem(DEVICE_KEY, id); }
+      return id;
+    } catch (e) {
+      return memDeviceId || (memDeviceId = newId()); // storage blocked: stable for this page only
+    }
+  }
 
   async function request(method, path, body, isForm, opts) {
     const headers = {};
     const token = getToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
+    if (!/^\/anonymous-reports/.test(path)) headers['X-Device-Id'] = deviceId();
     // Opt-in idempotency: a caller (e.g. the mobile offline queue) passes a stable
     // key so a retried request is de-duplicated server-side instead of re-applied.
     if (opts && opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
@@ -37,7 +78,9 @@ const API = (() => {
       throw err;
     }
 
-    if (res.status === 401) {
+    // A 401 from the sign-in endpoints means wrong credentials, not an expired session —
+    // fall through so the server's own message ("Invalid username or password") is shown.
+    if (res.status === 401 && !/^\/auth\/(login|forgot-password|reset-password)\b/.test(path)) {
       clearToken();
       if (window.App) window.App.showLogin();
       throw new Error('Session expired. Please sign in again.');
@@ -59,9 +102,9 @@ const API = (() => {
   /** Fetch a binary endpoint with auth and return an object URL (caller revokes it). */
   async function blobUrl(path) {
     const token = getToken();
-    const res = await fetch('/api' + path, {
-      headers: token ? { Authorization: 'Bearer ' + token } : {},
-    });
+    const headers = { 'X-Device-Id': deviceId() };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const res = await fetch('/api' + path, { headers });
     if (res.status === 401) {
       clearToken();
       if (window.App) window.App.showLogin();
@@ -82,7 +125,7 @@ const API = (() => {
   }
 
   return {
-    getToken, setToken, clearToken,
+    getToken, setToken, clearToken, isSharedSession, deviceId,
     get: (p) => request('GET', p),
     post: (p, b, opts) => request('POST', p, b, false, opts),
     put: (p, b, opts) => request('PUT', p, b, false, opts),

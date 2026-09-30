@@ -2,7 +2,12 @@
    mPhoto.capture(itemId)          → camera/picker → POST /inventory/:id/image
    mPhoto.attach(kind, refId, cap) → camera/picker → POST /attachments  → {id,url}
    mPhoto.thumbs(kind, refId, {editable}) → a DOM strip of attachment thumbnails
-   mPhoto.view(url)                → fullscreen viewer */
+   mPhoto.view(url)                → fullscreen viewer (/api-relative path or blob: URL)
+   mPhoto.picker({max, prepare, accept}) → local multi-photo picker (nothing uploaded); .files(), .clear()
+                                     prepare(file, index, room) → Promise<File | File[]> runs on each
+                                     pick (e.g. ImageCompress.reencode; a PDF → several page photos),
+                                     `room` = slots left; a rejection skips that pick.
+                                     accept defaults to 'image/*' */
 (function () {
   function pickFile() {
     return new Promise(function (resolve, reject) {
@@ -49,10 +54,12 @@
       .catch(function (e) { mToast(e.message || 'Upload failed', 'err'); throw e; });
   }
 
+  /** `url` is /api-relative (fetched with the signed-in token), or an already-loaded blob: URL. */
   function view(url) {
     var root = document.getElementById('m-overlay-root') || document.body;
     var ov = mEl('<div class="m-photo-view"><img alt="" /></div>');
-    API.blobUrl(url).then(function (u) { ov.querySelector('img').src = u; }).catch(function () {});
+    if (/^blob:/.test(url)) ov.querySelector('img').src = url;
+    else API.blobUrl(url).then(function (u) { ov.querySelector('img').src = u; }).catch(function () {});
     ov.onclick = function () { ov.remove(); };
     root.appendChild(ov);
   }
@@ -97,5 +104,62 @@
     return strip;
   }
 
-  window.mPhoto = { capture: capture, attach: attach, attachBlob: attachBlob, thumbs: thumbs, view: view, pickFile: pickFile };
+  /** Pick photos to send later with a form — kept in memory only, shown as removable thumbnails.
+      `initial` re-shows files picked earlier (e.g. coming back from a review screen). */
+  function picker(opts) {
+    opts = opts || {};
+    var max = opts.max || 4;
+    var files = (opts.initial || []).slice(0, max);
+    var strip = mEl('<div class="m-thumbs m-photo-picker"></div>');
+
+    function render() {
+      strip.innerHTML = '';
+      files.forEach(function (f, i) {
+        var url = URL.createObjectURL(f);
+        var cell = mEl('<div class="m-thumb"><img alt="Photo ' + (i + 1) + '" /></div>');
+        var img = cell.querySelector('img');
+        img.onload = function () { URL.revokeObjectURL(url); };
+        img.src = url;
+        var x = mEl('<button class="m-thumb-x" type="button" aria-label="Remove photo ' + (i + 1) + '">×</button>');
+        x.onclick = function () { files.splice(i, 1); render(); if (opts.onChange) opts.onChange(files); };
+        cell.appendChild(x);
+        strip.appendChild(cell);
+      });
+      if (files.length >= max) return;
+      var add = mEl('<button class="m-thumb m-thumb-add" type="button">＋<span>Photo</span></button>');
+      add.onclick = function () {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = opts.accept || 'image/*';
+        input.multiple = true;
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.onchange = function () {
+          var picked = Array.prototype.slice.call(input.files || [], 0, max - files.length);
+          input.remove();
+          if ((input.files || []).length > picked.length) mToast('Up to ' + max + ' photos', 'err');
+          add.disabled = true;
+          add.querySelector('span').textContent = 'Preparing…';
+          picked.reduce(function (p, f) {
+            return p.then(function () {
+              var room = max - files.length;
+              if (room <= 0) return;
+              var prep = opts.prepare ? opts.prepare(f, files.length, room) : Promise.resolve(f);
+              return prep.then(function (out) {
+                files = files.concat(out).slice(0, max);
+              }, function (e) { mToast(e.message || 'Photo skipped', 'err'); });
+            });
+          }, Promise.resolve()).then(function () { render(); if (opts.onChange) opts.onChange(files); });
+        };
+        input.click();
+      };
+      strip.appendChild(add);
+    }
+    render();
+    strip.files = function () { return files.slice(); };
+    strip.clear = function () { files = []; render(); };
+    return strip;
+  }
+
+  window.mPhoto = { capture: capture, attach: attach, attachBlob: attachBlob, thumbs: thumbs, view: view, pickFile: pickFile, picker: picker };
 })();

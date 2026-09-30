@@ -1,4 +1,4 @@
-/* My Account: profile (with editable name) + change own password. */
+/* My Account: profile (with editable name) + change own password + where you're signed in. */
 App.register('account', async (view) => {
   const me = App.getMe();
   view.innerHTML = `
@@ -37,6 +37,11 @@ App.register('account', async (view) => {
           <button class="btn" id="pw-save" style="margin-top:16px">Update password</button>
         </div>
       </div>
+    </div>
+
+    <div class="panel" style="max-width:760px;margin-top:18px">
+      <div class="panel-head"><h3>Where you're signed in</h3></div>
+      <div class="panel-body" id="acc-sessions"></div>
     </div>
 
     ${App.hasPermission('messages.view') ? `
@@ -80,6 +85,13 @@ App.register('account', async (view) => {
         </div>`;
     })();
   }
+
+  // Sessions: live ones (sign out any but this one) + recent history.
+  SessionList.render(view.querySelector('#acc-sessions'), {
+    load: () => API.get('/auth/sessions?history=1'),
+    revoke: (id) => API.post('/auth/sessions/' + encodeURIComponent(id) + '/revoke'),
+    revokeAll: () => API.post('/auth/sessions/revoke-others'),
+  });
 
   // Change password.
   const err = view.querySelector('#pw-err');

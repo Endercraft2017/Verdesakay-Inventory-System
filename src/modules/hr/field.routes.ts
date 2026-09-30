@@ -8,7 +8,7 @@ import { Router } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
 import { parseBody, kioskPunchSchema } from '../../shared/validation';
-import { isValidKioskCode } from './clock';
+import { isValidKioskCode, punchBlockedReason } from './clock';
 import { recordFieldPunch } from './field';
 import { punchPhotoRoutes } from './punch-photos';
 import { requireKioskDevice } from './kiosk-devices';
@@ -45,8 +45,9 @@ router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, (r
     res.status(404).json({ error: `No employee with number "${employee_no}".` });
     return;
   }
-  if (emp.status === 'resigned' || emp.status === 'terminated') {
-    res.status(403).json({ error: 'That employee record is inactive.' });
+  const blocked = punchBlockedReason(emp.status, 'kiosk');
+  if (blocked) {
+    res.status(403).json({ error: blocked });
     return;
   }
   res.json(recordFieldPunch(emp, 'kiosk'));

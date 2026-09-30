@@ -4,12 +4,24 @@
 
    mSubmit(path, body, {label}) -> Promise<{ok:true,response} | {queued:true}>
    mQueue.count() / .all() / .retry(key) / .discard(key) / .flush() / .onChange(cb)
+   mQueue.setToken(token, user) / .clearToken() / .foreignCount()
+
+   Every queued op is stamped with the account that made it (user_id), and is only ever
+   replayed under that same account — here and in the service worker (sw.js replayQueue).
+   On a shared phone, one person's unsent action must never be sent as the next person.
+   count()/all() cover the signed-in user's ops (plus pre-stamp legacy ops); foreignCount()
+   is how many belong to someone else on this phone — they wait for that person.
 */
 (function () {
   var DB_NAME = 'vds_mobile';
   var STORE = 'ops';
-  var META = 'meta'; // { k, v } — holds the bearer token so the service worker can replay
+  var META = 'meta'; // { k, v, user_id } — the bearer token + its account, for the service worker
   var dbP = null;
+  var currentUser = null; // { id, name } of the signed-in account, set by setToken
+
+  /** Whether an op may be sent by the signed-in account. Legacy ops (queued before ops were
+      stamped) have no user_id and keep the old behaviour. */
+  function mine(op) { return op.user_id == null || (!!currentUser && op.user_id === currentUser.id); }
 
   function db() {
     if (dbP) return dbP;
@@ -58,29 +70,53 @@
   }
 
   var mQueue = {
-    /** Mirror the bearer token into IndexedDB so the service worker can replay. */
-    setToken: function (t) {
-      return tx('readwrite', function (s) { s.put({ k: 'token', v: t }); }, META).catch(function () {});
+    /** Mirror the bearer token (and whose it is) into IndexedDB so the service worker can replay. */
+    setToken: function (t, user) {
+      currentUser = user && user.id != null ? { id: user.id, name: user.full_name || user.name || '' } : null;
+      emit(); // counts depend on who is signed in
+      if (navigator.onLine) setTimeout(function () { mQueue.flush().catch(function () {}); }, 0);
+      return tx('readwrite', function (s) {
+        s.put({
+          k: 'token', v: t, user_id: currentUser ? currentUser.id : null,
+          device_id: window.API && API.deviceId ? API.deviceId() : null, // sw.js has no localStorage
+        });
+      }, META).catch(function () {});
+    },
+    /** Forget the token on sign-out — nothing replays in the background until the next sign-in. */
+    clearToken: function () {
+      currentUser = null;
+      return tx('readwrite', function (s) { s.delete('token'); }, META).catch(function () {});
     },
     enqueue: function (op) {
       op.created = op.created || Date.now();
       op.attempts = 0;
+      if (currentUser) { op.user_id = currentUser.id; op.user_name = currentUser.name; }
       return tx('readwrite', function (s) { s.put(op); }).then(function () {
         emit();
         requestBackgroundSync();
         return op.key;
       });
     },
-    all: function () {
+    _every: function () {
       return tx('readonly', function (s) { return s.getAll(); }).then(function (rows) {
         return (rows || []).sort(function (a, b) { return a.created - b.created; });
       });
     },
-    count: function () { return tx('readonly', function (s) { return s.count(); }); },
+    /** The signed-in account's queued ops, oldest first. */
+    all: function () { return mQueue._every().then(function (rows) { return rows.filter(mine); }); },
+    count: function () { return mQueue.all().then(function (rows) { return rows.length; }); },
+    /** Queued ops on this phone that belong to another account. */
+    foreignCount: function () {
+      return mQueue._every().then(function (rows) { return rows.filter(function (o) { return !mine(o); }).length; });
+    },
     _remove: function (key) { return tx('readwrite', function (s) { s.delete(key); }).then(emit); },
     _put: function (op) { return tx('readwrite', function (s) { s.put(op); }).then(emit); },
 
-    discard: function (key) { return mQueue._remove(key); },
+    discard: function (key) {
+      return mQueue.all().then(function (rows) {
+        if (rows.some(function (o) { return o.key === key; })) return mQueue._remove(key);
+      });
+    },
 
     retry: function (key) {
       return mQueue.all().then(function (rows) {
@@ -110,6 +146,7 @@
 
   /** @returns true if we should stop the flush (still offline). */
   function sendOne(op) {
+    if (!mine(op)) return Promise.resolve(false); // someone else's — wait for them
     return API.post(op.path, op.body, { idempotencyKey: op.key })
       .then(function () { return mQueue._remove(op.key).then(function () { return false; }); })
       .catch(function (err) {

@@ -233,18 +233,29 @@ releases any reserved components back to available stock).
 (`#/anonymous-report`).
 
 1. **Draft** (mobile, device only) — category, optional title, details, date, location; kept
-   in localStorage until sent. No attachments. Offline → nothing is sent or queued.
+   in localStorage until sent. Up to 4 photos, each redrawn on the phone into a fresh JPEG
+   (metadata + filename gone) and held in memory only (never in the draft). A PDF becomes one
+   page photo per free slot (drawn on the phone; the PDF file is never sent; pages past the
+   free slots are dropped with a notice). Offline → nothing is sent or queued.
 2. **Ticket** (`core/confidential-reports`) — signed-in `POST /ticket`; the row stores only a
    hash + expiry, the request isn't logged, so the ticket can't be traced to the employee.
-3. **Submit** — `POST /api/anonymous-reports` with the ticket and no auth header; ticket
-   consumed in the same transaction; returns `CR-#####` + a one-time access code (shown once).
-   Handlers get a push with number + category only.
+3. **Submit** — `POST /api/anonymous-reports` with the ticket and no auth header (multipart when
+   photos are attached). Photos are metadata-stripped server-side (`shared/image-metadata.ts`)
+   BEFORE the ticket is touched; then the ticket is consumed and report + photos stored in one
+   transaction; returns `CR-#####` + a one-time access code (shown once). Handlers get a push
+   with number + category (+ photo count) only.
 4. **Triage / investigate** (`reports.confidential`) — status new → triaged → investigating;
-   replies are shown to the reporter as "Case handler".
-5. **Reporter follow-up** — `POST /lookup` / `POST /followup` with number + code.
+   handlers view photos inline — opening the case marks its photos seen by a handler; replies
+   are shown to the reporter as "Case handler".
+5. **Reporter follow-up** — `POST /lookup` / `POST /followup` with number + code; a follow-up
+   may carry photos (same stripping). The reporter sees their own photos (`POST /photo`, code in
+   the body) and may remove one (`POST /photo/remove`) until a handler has seen it.
 
-**Branches:** missing/expired/reused ticket → 403, nothing stored; wrong code → 404 (constant-time
-compare); ticket cap reached → 429; follow-up on a closed report → 409.
+**Branches:** missing/expired/reused ticket → 403, nothing stored; a photo that isn't a
+well-formed JPEG/PNG/WebP → 400, nothing stored, ticket still valid; >4 photos in a post or
+>6 MB → 400; follow-up past 12 photos per report → 400; removing a photo a handler has already
+seen, or on a closed report → 409; wrong code → 404 (constant-time compare); ticket cap reached
+→ 429; follow-up on a closed report → 409.
 **Terminal states:** resolved or closed (closed also blocks further reporter messages). A lost
 access code can't be recovered — the reporter files a new report.
 
@@ -266,9 +277,57 @@ birth date, civil status, other official record.
    employee record in the same transaction as the decision and logs it; reject changes nothing.
 3. **Notify** — the filer gets a push; the Request Center shows the decision and note.
 
-**Branches:** duplicate legal name → 409, stays pending; field not stored on the record →
-approved with an "update by hand" note; the filer may cancel while pending; a second decision → 400.
+**Branches:** duplicate legal name → 409, stays pending; invalid birth date (bad/impossible date,
+under 15) or civil status outside the fixed list → 400 at filing; "Other official record" (not
+stored on the record) → approved with an "update by hand" note; the filer may cancel while
+pending; a second decision → 400.
 **Terminal states:** approved (applied or noted for manual update), rejected, cancelled.
+
+## Account session (sign in → use → sign out)
+
+**Trigger:** someone signs in on the desktop (`/`) or mobile (`/m`) app — on their own device,
+or with "I'm using someone else's phone" / "shared or borrowed computer" ticked.
+1. **Sign in** (`core/auth.routes` → `shared/auth.createSession`) — password check; the session
+   records device ID (`X-Device-Id`, `shared/device.ts`), IP and user agent; the activity log
+   gets a `login` row with the same device. Borrowed ⇒ `shared` session (4 h max, 30 min idle),
+   token kept in sessionStorage. Mobile: if the phone's local data belongs to someone else
+   (`vds_m_owner`), it is cleared before anything renders.
+2. **Use** (`shared/auth.requireAuth`) — every request refreshes last-seen/last-IP (≤ 1/min);
+   mutations are logged with IP + device; offline mobile writes queue under this account only
+   (`lib/queue.js`). A phone punch is flagged if the phone is borrowed or usually someone
+   else's (`hr/clock.ts`, `device_flag`).
+3. **End** — one of: sign out (`POST /auth/logout`; mobile `MApp.signOut` first sends or warns
+   about this person's queued actions and releases their push subscription on this device;
+   borrowed ⇒ their local data is cleared), revoked from another of their devices
+   (`/auth/sessions/...`) or by an admin (`/users/:id/sessions/...`), password change/reset
+   (others end), account disabled, idle timeout (borrowed only), or expiry (12 h / 4 h).
+
+**Branches:** borrowed vs own device (session length, push refused, data cleanup);
+unsent queued actions at sign-out (send now if online, else confirm — they stay on the phone and
+send only when that same person signs in there again); another account's queued actions on the
+phone (listed as a count, never sent or discardable by the current person).
+**Terminal states:** ended with `end_reason` logout / revoked / password / deactivated / idle /
+expired; the row stays as sign-in history for 90 days (`cleanupSessions`), then is deleted.
+
+## Company asset issuance (issue → hold → return)
+
+**Trigger:** HR hands company property (laptop, tool, uniform, ID…) to an employee.
+All stages are `modules/hr` (`hr.routes.ts`); every mutation lands in the Activity log with a
+readable summary (`asset-issue`, `asset-returned|lost|damaged`, `asset-issuance-delete`).
+1. **Issue** (`hr.manage`) — employee record → Assets issued → Issue asset →
+   `POST /api/hr/employees/:id/assets` creates a numbered Asset Issuance Form (AI-00001) with one
+   line per item, all `issued`; the signable form prints from the "Asset Issuance Form" template.
+2. **Hold** — the item shows on the employee's record and in HR → Employees → Company Assets
+   (`GET /api/hr/assets`, default "still out"). Resigned/terminated holders are flagged and
+   counted ("Held by people who left") — the clearance worklist.
+3. **Check in** (`hr.manage`) — per line, from either screen:
+   `POST /api/hr/assets/:id/items/:itemId/return` with returned / lost / damaged.
+
+**Branches:** lines on one form return independently; a check-in can be re-saved (the log keeps
+the previous details); a form entered in error can be deleted (rows are erased, the log keeps a
+snapshot). Not linked to Inventory stock — issuing moves no stock.
+**Terminal states:** each line returned, lost or damaged; or the whole form deleted.
+**Not built:** lost/damaged → salary deduction or final-pay charge is manual.
 
 ## Payroll run
 
@@ -281,10 +340,18 @@ approved with an "update by hand" note; the filer may cancel while pending; a se
    when the location lock is on (`clock-geofence.ts`). Branches: no/imprecise location or
    outside every office radius → refused; employee marked "can time in outside the office"
    → may punch without the QR from anywhere (`source = remote`), location required and
-   stored. Lands in `time_punches` with its location.
+   stored. Employee status `suspended` (or resigned/terminated) → every punch refused
+   (`punchBlockedReason`). Lands in `time_punches` with its location. A phone punch from a
+   borrowed-phone sign-in, or from a phone another account usually uses, is recorded with a
+   `device_flag` for HR to review in the Punch Log — never refused (a forgotten phone is a real
+   reason; see "Account session" above).
 1. **Attendance reconciliation** (`hr`) — punches/kiosk data reconciled into
    `attendance_records` (lunch bracket, offsets, corrections all applied before
-   this point).
+   this point). HR links request forms per day on the Daily Time grid. Rest-day branch
+   (`hr/rest-day.ts`): an approved **Change of Rest Day** moves the rest day (its original
+   date → working day, its new date → rest day); a worked rest day earns its premium only with
+   an approved **Rest Day Work Request** when Policy Settings requires it, otherwise it pays
+   as an ordinary day. A pending rest-day form changes nothing until approved.
 2. **Computation** (`payroll`) — `hr-payroll-compute.ts` applies pay-per-hour-basis
    rules, OT cap, night differential, statutory deduction tables
    (`payroll-tables.ts`, `ph-statutory.ts`).
@@ -308,10 +375,10 @@ place — corrections go through a new adjustment, not a rewrite of history).
 
 ## Offline operation & sync (record → site → cloud) — partial
 
-Design: `docs/OFFLINE-FIRST.md` (§10 = built). **Built (phase 1, 2026-09-30):** stages 1, 3 and 4
-between a node and the cloud, run in-process (`syncOnce` in `src/sync/index.ts`); one classed route
-(`POST /api/inventory/:id/adjust`). **Not built:** stage 2 (site host), the HTTP transport, UI
-badges, conflict inbox. This pipeline wraps the
+Design: `docs/OFFLINE-FIRST.md` (§10–11 = built). **Built (phases 1–2, 2026-09-30):** stages 1, 3
+and 4 between a node and the cloud, run in-process (`syncOnce` in `src/sync/index.ts`); every
+inventory-module route classed. **Not built:** stage 2 (site host), the HTTP transport, UI badges,
+conflict inbox. This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).
@@ -345,7 +412,8 @@ secrets stay put, sensitive fields travel encrypted); files as SHA-256
 blobs pushed before their command.
 **Branches:** no site host reachable → stays `local`, retried; validation / permission failure at
 replay → `rejected`, shown to the actor; `physical` command breaking an invariant (stock below
-zero, unit already sold) → accepted and flagged into the conflict inbox; actor's permission
+zero, unit already sold) → accepted and flagged into the conflict inbox (built for stock:
+`stock_discrepancies`, decision D1); actor's permission
 revoked before the node learned of it → accepted and flagged; replay result differs from the
 optimistic run → badge + inbox; duplicate delivery → dropped by idempotency key; command from an
 app version outside the supported window → conflict inbox for re-entry.

@@ -59,7 +59,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 50; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 55; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -167,6 +167,26 @@ export const SCHEMA_VERSION = 50; // 20: employees.late_exempt; 21: attendance_r
 // production; issuing one IS the release, when stock is deducted), job_orders.paused_by/_at +
 // pause_reason, and production_issues (issue reports per job order or per unit, editable while
 // open). No backfill: drafts in the queue go through accept + prepare; released ones are past it.
+// 51: time_punch_holds -- a phone punch is now two steps (scan the QR, then take a selfie); the
+// scan parks a hold stamped with the server's time, and the selfie turns it into the real
+// time_punches row AT that scan time, so the extra step never makes anyone late
+// (src/modules/hr/clock.routes.ts POST /punch/scan + /punch/selfie).
+// 52: employees.birth_date (YYYY-MM-DD) / civil_status -- now on the record, so an approved
+// information-change request for either is applied directly (src/modules/hr/info-change.ts)
+// instead of leaving HR to update it by hand. No backfill: both start NULL.
+// 53: employees.status gains 'suspended' -- still employed (stays on rosters and payroll) but
+// barred from clocking in and from production staffing. SQLite can't alter a CHECK in place, so
+// the table is rebuilt from its own stored CREATE statement with just that constraint widened.
+// 54: the insert-only "BIR 2316" template gains a Date of Birth row (employees.birth_date, v52),
+// added by surgical string insert after the TIN row -- same approach as the v16 payroll-slip patch.
+// 55: session + device tracking (src/shared/auth.ts, src/shared/device.ts). sessions gain sid
+// (public id; the token never leaves the server's hands again), device_id / ip / user_agent at
+// sign-in, last_seen_at / last_ip, shared + idle_minutes (borrowed-phone sign-in), and
+// ended_at / end_reason -- a sign-out now ENDS the row instead of deleting it, so the account's
+// sign-in history survives (swept after SESSION_HISTORY_DAYS). activity_log gains device_id +
+// device (label); push_subscriptions gains device_id (dropped on sign-out from that device);
+// time_punches gains device_id / device_flag / device_user_id (punch from a borrowed phone or
+// from a device another employee usually uses).
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -769,6 +789,27 @@ function createSchema(): void {
       UNIQUE(item_id, location_id)
     );
 
+    -- A location's stock went below zero because an offline stock-out (a sync command,
+    -- docs/OFFLINE-FIRST.md decision D1) was accepted beyond recorded stock: the goods
+    -- physically left, so the records were behind. Each row is a count-or-correct task for a
+    -- supervisor; resolving it records what was done and moves no stock by itself.
+    CREATE TABLE IF NOT EXISTS stock_discrepancies (
+      id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id                INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id            INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      transaction_id         INTEGER REFERENCES inventory_transactions(id) ON DELETE SET NULL,
+      change                 INTEGER NOT NULL,
+      location_balance_after INTEGER NOT NULL,
+      reason                 TEXT,
+      created_by             INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at             TEXT NOT NULL DEFAULT (datetime('now')),
+      status                 TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+      resolution_note        TEXT,
+      resolved_by            INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at            TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_discrepancies_status ON stock_discrepancies(status, item_id);
+
     CREATE TABLE IF NOT EXISTS activity_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -907,7 +948,7 @@ function createSchema(): void {
       position      TEXT,
       daily_rate    REAL NOT NULL DEFAULT 0,
       status        TEXT NOT NULL DEFAULT 'probationary'
-                      CHECK (status IN ('probationary','regular','resigned','terminated')),
+                      CHECK (status IN ('probationary','regular','suspended','resigned','terminated')),
       start_date    TEXT,
       sss_no        TEXT,
       philhealth_no TEXT,
@@ -1126,6 +1167,27 @@ function createSchema(): void {
       created_on TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_anonymous_report_messages ON anonymous_report_messages(report_id, id);
+    -- Photos on an anonymous report (message_id NULL = sent with the report itself). Stored as
+    -- BLOBs, not files under UPLOAD_DIR, so there's no filename and no file-system timestamp to
+    -- date the submission; bytes are metadata-stripped on the way in (shared/image-metadata.ts).
+    -- No original filename column on purpose (phone names like IMG_20260928_143012 carry a time).
+    CREATE TABLE IF NOT EXISTS anonymous_report_attachments (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id  INTEGER NOT NULL REFERENCES anonymous_reports(id) ON DELETE CASCADE,
+      message_id INTEGER REFERENCES anonymous_report_messages(id) ON DELETE CASCADE,
+      mime_type  TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      data       BLOB NOT NULL,
+      created_on TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_anonymous_report_attachments ON anonymous_report_attachments(report_id, id);
+    -- Highest photo id a case handler has loaded, per report. The reporter may remove a photo
+    -- only while its id is above this (i.e. no handler has seen it yet). No date/time kept.
+    CREATE TABLE IF NOT EXISTS anonymous_report_handler_seen (
+      report_id     INTEGER PRIMARY KEY REFERENCES anonymous_reports(id) ON DELETE CASCADE,
+      last_photo_id INTEGER NOT NULL
+    );
+
     -- Structured repair / rectification order behind a QC or QA 'repair' result (mobile V2,
     -- Figma 69:323 / 72:322): defect category, responsible station, priority. The instruction
     -- is the record's remarks. One row per qc_records row. createSchema, no version bump.
@@ -1723,7 +1785,7 @@ function migrate(): void {
         position      TEXT,
         daily_rate    REAL NOT NULL DEFAULT 0,
         status        TEXT NOT NULL DEFAULT 'probationary'
-                        CHECK (status IN ('probationary','regular','resigned','terminated')),
+                        CHECK (status IN ('probationary','regular','suspended','resigned','terminated')),
         start_date    TEXT,
         sss_no        TEXT,
         philhealth_no TEXT,
@@ -2437,6 +2499,115 @@ function migrate(): void {
     CREATE INDEX IF NOT EXISTS idx_production_issues_jo ON production_issues(job_order_id);
     CREATE INDEX IF NOT EXISTS idx_production_issues_unit ON production_issues(unit_id);
   `);
+
+  // (SCHEMA_VERSION 51) Phone punch holds: the QR scan (step 1) waits here for the selfie
+  // (step 2), which records the punch at scanned_at. Short-lived; used or expired rows are deleted.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS time_punch_holds (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      scanned_at  TEXT NOT NULL,     -- office-local 'YYYY-MM-DD HH:MM:SS' -- becomes the punch's ts
+      scanned_ms  INTEGER NOT NULL,  -- epoch ms of the same moment, for expiry
+      source      TEXT NOT NULL,     -- 'phone' (QR) | 'remote' (clock_anywhere, no QR)
+      lat         REAL,
+      lng         REAL,
+      accuracy_m  REAL,
+      distance_m  REAL,
+      geo_site    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_punch_holds_emp ON time_punch_holds(employee_id);
+  `);
+
+  // (SCHEMA_VERSION 52) Birth date + civil status on the employee record.
+  const empPersonalCols = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
+  if (!empPersonalCols.some((c) => c.name === 'birth_date')) db.exec('ALTER TABLE employees ADD COLUMN birth_date TEXT');
+  if (!empPersonalCols.some((c) => c.name === 'civil_status')) db.exec('ALTER TABLE employees ADD COLUMN civil_status TEXT');
+
+  // (SCHEMA_VERSION 53) 'suspended' employee status. Rebuilt from the table's own stored CREATE
+  // statement (every column added by ALTER over the years is already in it) with only the status
+  // CHECK widened, so no column list is repeated here to drift. Indexes are re-created from
+  // their stored SQL; employees has no triggers or views. Foreign keys OFF for the same reason as
+  // the older employees rebuild above.
+  const empTableSql = (db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='employees'"
+  ).get() as { sql: string } | undefined)?.sql ?? '';
+  // No status CHECK at all (a very old hand-shaped table) already accepts 'suspended' — no rebuild.
+  const statusCheck = /CHECK\s*\(\s*status\s+IN\s*\(([^)]*)\)\s*\)/;
+  if (statusCheck.test(empTableSql) && !empTableSql.includes("'suspended'")) {
+    const createNew = empTableSql
+      .replace(/^CREATE TABLE\s+"?employees"?\s*\(/, 'CREATE TABLE employees_new (')
+      .replace(statusCheck, (_m, list: string) => `CHECK (status IN (${list.replace("'regular'", "'regular','suspended'")}))`);
+    if (!createNew.startsWith('CREATE TABLE employees_new (') || !createNew.includes("'suspended'")) {
+      throw new Error('Cannot add the suspended employee status: unexpected employees table definition.');
+    }
+    const indexSql = (db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='employees' AND sql IS NOT NULL"
+    ).all() as { sql: string }[]).map((r) => r.sql);
+    db.exec('PRAGMA foreign_keys = OFF;');
+    try {
+      db.exec('BEGIN;');
+      db.exec(createNew);
+      db.exec('INSERT INTO employees_new SELECT * FROM employees;');
+      db.exec('DROP TABLE employees;');
+      db.exec('ALTER TABLE employees_new RENAME TO employees;');
+      for (const sql of indexSql) db.exec(sql);
+      db.exec('COMMIT;');
+    } catch (e) {
+      db.exec('ROLLBACK;');
+      throw e;
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON;');
+    }
+  }
+
+  // (SCHEMA_VERSION 54) Date of Birth row on the insert-only "BIR 2316" template. Inserted after
+  // the untouched default TIN row only; a template edited so that row is gone is left alone.
+  // (A fresh install has no template yet here — seed() inserts the new body.)
+  const tpl2316 = db.prepare("SELECT id, body FROM doc_templates WHERE name = 'BIR 2316'").get() as
+    { id: number; body: string } | undefined;
+  const tinRow = '<span class="v">{{employee.tin_no}}</span></div>';
+  if (tpl2316 && !tpl2316.body.includes('employee.birth_date') && tpl2316.body.includes(tinRow)) {
+    db.prepare("UPDATE doc_templates SET body = ?, updated_at = datetime('now') WHERE id = ?").run(
+      tpl2316.body.replace(tinRow, tinRow +
+        '\n  <div class="row"><span class="l">Date of Birth (MM/DD/YYYY)</span><span class="v">{{employee.birth_date_mdy}}</span></div>'),
+      tpl2316.id
+    );
+  }
+
+  // (SCHEMA_VERSION 55) Session + device tracking. Existing sessions get a random sid and stay
+  // valid; their device/IP columns stay NULL until they sign in again.
+  const sessCols = db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[];
+  const addSessCol = (name: string, ddl: string) => {
+    if (!sessCols.some((c) => c.name === name)) db.exec(`ALTER TABLE sessions ADD COLUMN ${name} ${ddl}`);
+  };
+  addSessCol('sid', 'TEXT');
+  addSessCol('device_id', 'TEXT');
+  addSessCol('ip', 'TEXT');
+  addSessCol('user_agent', 'TEXT');
+  addSessCol('last_seen_at', 'TEXT');
+  addSessCol('last_ip', 'TEXT');
+  addSessCol('shared', 'INTEGER NOT NULL DEFAULT 0');
+  addSessCol('idle_minutes', 'INTEGER');
+  addSessCol('ended_at', 'TEXT');
+  addSessCol('end_reason', 'TEXT');
+  db.exec("UPDATE sessions SET sid = lower(hex(randomblob(8))) WHERE sid IS NULL");
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_sid ON sessions(sid)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(device_id)');
+
+  const actCols = db.prepare('PRAGMA table_info(activity_log)').all() as { name: string }[];
+  if (!actCols.some((c) => c.name === 'device_id')) db.exec('ALTER TABLE activity_log ADD COLUMN device_id TEXT');
+  if (!actCols.some((c) => c.name === 'device')) db.exec('ALTER TABLE activity_log ADD COLUMN device TEXT');
+
+  const pushCols = db.prepare('PRAGMA table_info(push_subscriptions)').all() as { name: string }[];
+  if (!pushCols.some((c) => c.name === 'device_id')) db.exec('ALTER TABLE push_subscriptions ADD COLUMN device_id TEXT');
+
+  const punchDevCols = db.prepare('PRAGMA table_info(time_punches)').all() as { name: string }[];
+  if (!punchDevCols.some((c) => c.name === 'device_id')) db.exec('ALTER TABLE time_punches ADD COLUMN device_id TEXT');
+  if (!punchDevCols.some((c) => c.name === 'device_flag')) db.exec('ALTER TABLE time_punches ADD COLUMN device_flag TEXT');
+  if (!punchDevCols.some((c) => c.name === 'device_user_id')) {
+    db.exec('ALTER TABLE time_punches ADD COLUMN device_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
@@ -2828,6 +2999,30 @@ function seedHrRequestForms(): void {
       ],
     },
     {
+      // Authorizes working a rest day. With PayrollPolicy.require_rest_day_form on, the rest-day
+      // premium is paid only when an APPROVED one is linked to that day (hr-payroll-compute.ts);
+      // off, it is the paper trail. See src/modules/hr/rest-day.ts.
+      name: 'Rest Day Work Request', slug: 'rest_day_work_request', prefix: 'RDW', icon: 'calendar',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Rest Day to Work'),
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
+      // Moves a rest day. Once APPROVED and linked to either date on the Daily Time grid,
+      // original_rest_day counts as a working day and new_rest_day as the rest day, for payroll
+      // and the grid alike (restDaySwapsFor in src/modules/hr/rest-day.ts). HR's per-day Rest Day
+      // dropdown still overrides it.
+      name: 'Change of Rest Day', slug: 'rest_day_change', prefix: 'RDC', icon: 'calendar',
+      fields: [
+        { ...employeeField },
+        dateField('original_rest_day', 'Rest Day Being Worked'),
+        dateField('new_rest_day', 'New Rest Day'),
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
       // Correction to an authoritative HR field (legal name, gov IDs, …) — applied only when an
       // hr.manage approver approves it (src/modules/hr/info-change.ts). Options must match
       // INFO_CHANGE_FIELDS there (pinned by tests/info-change.test.ts). Keys avoid position/
@@ -3129,6 +3324,7 @@ function bir2316TemplateBody(): string {
   <div class="part">Part I &mdash; Employee</div>
   <div class="row"><span class="l">Name</span><span class="v">{{employee.name}}</span></div>
   <div class="row"><span class="l">TIN</span><span class="v">{{employee.tin_no}}</span></div>
+  <div class="row"><span class="l">Date of Birth (MM/DD/YYYY)</span><span class="v">{{employee.birth_date_mdy}}</span></div>
   <div class="row"><span class="l">Employee No.</span><span class="v">{{employee.employee_no}}</span></div>
   <div class="row"><span class="l">Position / Department</span><span class="v">{{employee.position}} / {{employee.department}}</span></div>
   <div class="row"><span class="l">SSS / PhilHealth / Pag-IBIG</span><span class="v">{{employee.sss_no}} / {{employee.philhealth_no}} / {{employee.pagibig_no}}</span></div>
@@ -3396,11 +3592,26 @@ function orderTemplateBody(title: string): string {
     housekeeping timer; admins can still prune earlier by hand via DELETE /api/activity. */
 export const ACTIVITY_LOG_RETENTION_DAYS = 31;
 
+/** How long an ended or expired session row is kept as sign-in history (account "Where
+    you're signed in" / admin view). Live sessions are never swept. */
+export const SESSION_HISTORY_DAYS = 90;
+
 export function cleanupSessions(): void {
   // Runs on a timer, outside any request — sweep every open tenant connection.
   for (const slug of registry.keys()) {
     withTenant(slug, () => {
-      db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+      // Expired-but-never-ended rows are stamped so history shows how they finished.
+      db.prepare(
+        "UPDATE sessions SET ended_at = expires_at, end_reason = 'expired' WHERE ended_at IS NULL AND expires_at < datetime('now')"
+      ).run();
+      db.prepare(
+        `UPDATE sessions SET ended_at = datetime('now'), end_reason = 'idle'
+         WHERE ended_at IS NULL AND idle_minutes IS NOT NULL
+           AND COALESCE(last_seen_at, created_at) < datetime('now', '-' || idle_minutes || ' minutes')`
+      ).run();
+      db.prepare(
+        `DELETE FROM sessions WHERE ended_at IS NOT NULL AND ended_at < datetime('now', '-${SESSION_HISTORY_DAYS} days')`
+      ).run();
       // Idempotency keys are only useful for as long as a client might still be retrying;
       // a week is far more than enough for a flaky-LAN offline queue.
       db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();

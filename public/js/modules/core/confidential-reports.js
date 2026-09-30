@@ -37,11 +37,12 @@ App.register('confidential-reports', async (view) => {
     if (state.status === 'open') rows = rows.filter((r) => r.status !== 'resolved' && r.status !== 'closed');
     if (!rows.length) { body.innerHTML = UI.emptyState({ icon: 'inbox', title: 'No reports here' }); return; }
     body.innerHTML = `<table>
-      <thead><tr><th>Report</th><th>Category</th><th>Title</th><th>Status</th><th>Filed</th><th>Updated</th><th class="right">Messages</th><th></th></tr></thead>
+      <thead><tr><th>Report</th><th>Category</th><th>Title</th><th>Status</th><th>Filed</th><th>Updated</th><th class="right">Messages</th><th class="right">Photos</th><th></th></tr></thead>
       <tbody>${rows.map((r) => `<tr>
         <td>${UI.esc(r.number)}</td><td>${UI.esc(r.category)}</td><td>${UI.esc(r.subject || '—')}</td>
         <td>${badge(r.status)}</td><td>${UI.esc(r.created_on)}</td><td>${UI.esc(r.updated_on)}</td>
         <td class="right">${r.message_count}${r.reporter_replies ? ` <span class="muted">(${r.reporter_replies} from reporter)</span>` : ''}</td>
+        <td class="right">${r.photo_count || '—'}</td>
         <td class="right"><button type="button" class="btn secondary small" data-open="${r.id}">Open</button></td>
       </tr>`).join('')}</tbody>
     </table>`;
@@ -52,11 +53,19 @@ App.register('confidential-reports', async (view) => {
     let r;
     try { r = await API.get(`/confidential-reports/${id}`); }
     catch (e) { UI.toast(e.message, 'error'); return; }
+    // Photo thumbnails (metadata stripped on upload); filled from blob URLs once the modal opens.
+    const photoStrip = (list) => (list && list.length
+      ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${list.map((a) => `
+          <button type="button" class="cr-photo" data-url="${UI.esc(a.url)}" title="Open photo"
+            style="width:84px;height:84px;padding:0;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden;background:var(--surface-2);cursor:pointer">
+            <img alt="Report photo" style="width:100%;height:100%;object-fit:cover;display:block" /></button>`).join('')}</div>`
+      : '');
     const thread = r.messages.length
       ? r.messages.map((m) => `
           <div style="padding:10px 12px;border:1px solid var(--border-strong);border-radius:10px;margin-bottom:8px;${m.author === 'reporter' ? 'background:var(--surface-2)' : ''}">
             <div class="muted" style="font-size:12px;margin-bottom:4px">${m.author === 'reporter' ? 'Reporter' : UI.esc(m.handler_name || 'Case handler')} · ${UI.esc(m.created_on)}</div>
             <div style="white-space:pre-wrap">${UI.esc(m.body)}</div>
+            ${photoStrip(m.attachments)}
           </div>`).join('')
       : '<p class="muted">No messages yet. The reporter sees replies when they check with their access code.</p>';
     const m = UI.modal({
@@ -69,7 +78,7 @@ App.register('confidential-reports', async (view) => {
           <span>Incident: <b>${UI.esc([r.incident_date, r.location].filter(Boolean).join(' · ') || 'not given')}</b></span>
           <span>Filed ${UI.esc(r.created_on)} · updated ${UI.esc(r.updated_on)}</span>
         </div>
-        <div style="white-space:pre-wrap;padding:12px;border:1px solid var(--border-strong);border-radius:10px;margin-bottom:16px">${UI.esc(r.description)}</div>
+        <div style="white-space:pre-wrap;padding:12px;border:1px solid var(--border-strong);border-radius:10px;margin-bottom:16px">${UI.esc(r.description)}${photoStrip(r.attachments)}</div>
         <label>Status</label>
         <div style="display:flex;gap:8px;margin-bottom:16px">
           <select id="cr-case-status">${STATUSES.map((s) => `<option value="${s}"${s === r.status ? ' selected' : ''}>${s}</option>`).join('')}</select>
@@ -81,6 +90,12 @@ App.register('confidential-reports', async (view) => {
         <textarea id="cr-reply" style="min-height:80px" maxlength="3000" placeholder="The reporter sees this as “Case handler”"></textarea>`,
       headActionHTML: '<button type="button" class="btn small" id="cr-send">Send reply</button>',
       onOpen: (ov) => {
+        ov.querySelectorAll('.cr-photo').forEach((b) => {
+          API.blobUrl(b.dataset.url).then((u) => {
+            b.querySelector('img').src = u;
+            b.onclick = () => window.open(u, '_blank', 'noopener');
+          }).catch(() => { b.title = 'Photo could not be loaded'; });
+        });
         ov.querySelector('#cr-save-status').onclick = async (e) => {
           e.target.disabled = true;
           try {

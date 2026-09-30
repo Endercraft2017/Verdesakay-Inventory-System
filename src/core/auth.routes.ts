@@ -1,9 +1,13 @@
-/** Authentication routes: login, logout, current user, self password change, password reset. */
+/** Authentication routes: login, logout, current user, self password change, password reset,
+ *  and the caller's own sessions ("Where you're signed in" — list / end one / end the others). */
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run, newToken } from '../shared/db';
-import { createSession, destroySession, requireAuth } from '../shared/auth';
+import {
+  createSession, destroySession, requireAuth, endUserSessions, endSessionBySid, listUserSessions,
+} from '../shared/auth';
+import { deviceIdOf } from '../shared/device';
 import { resolvePermissions } from '../shared/permissions';
 import { enabledModules } from '../shared/modules';
 import {
@@ -20,7 +24,7 @@ const RESET_TTL_MIN = 60;
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
-  const { username, password } = parseBody(loginSchema, req.body);
+  const { username, password, shared } = parseBody(loginSchema, req.body);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE username = ?', username.toLowerCase());
 
   if (!user || user.active !== 1 || !bcrypt.compareSync(password, user.password_hash)) {
@@ -28,7 +32,7 @@ router.post('/login', (req, res) => {
     return;
   }
 
-  const token = createSession(user.id);
+  const token = createSession(user.id, { req, shared: !!shared });
   const dept = user.department_id
     ? queryOne<{ name: string }>('SELECT name FROM departments WHERE id = ?', user.department_id)
     : null;
@@ -52,12 +56,42 @@ router.post('/login', (req, res) => {
       permissions: resolvePermissions(user.role, overrides),
       modules: [...enabledModules()], // feature areas enabled for this workspace
     },
+    session: { shared: !!shared },
   });
 });
 
 // POST /api/auth/logout
+// Also drops this user's push subscription registered from this device, so their
+// notifications stop arriving on a phone they've signed out of (e.g. a coworker's).
 router.post('/logout', requireAuth, (req, res) => {
   if (req.token) destroySession(req.token);
+  const deviceId = deviceIdOf(req);
+  if (deviceId) run('DELETE FROM push_subscriptions WHERE user_id = ? AND device_id = ?', req.user!.id, deviceId);
+  res.json({ ok: true });
+});
+
+// GET /api/auth/sessions — the caller's live sessions; ?history=1 adds ended/expired ones
+// (kept SESSION_HISTORY_DAYS). Tokens are never returned — `id` is the public sid.
+router.get('/sessions', requireAuth, (req, res) => {
+  res.json(listUserSessions(req.user!.id, { currentToken: req.token, includeEnded: req.query.history === '1' }));
+});
+
+// POST /api/auth/sessions/revoke-others — sign out everywhere except here.
+router.post('/sessions/revoke-others', requireAuth, (req, res) => {
+  res.json({ ok: true, ended: endUserSessions(req.user!.id, 'revoked', req.token) });
+});
+
+// POST /api/auth/sessions/:sid/revoke — sign out one of your own sessions (not this one — use logout).
+router.post('/sessions/:sid/revoke', requireAuth, (req, res) => {
+  const sid = String(req.params.sid);
+  if (sid === req.authSession?.sid) {
+    res.status(400).json({ error: 'That is this session — use Sign out instead.' });
+    return;
+  }
+  if (!endSessionBySid(req.user!.id, sid, 'revoked')) {
+    res.status(404).json({ error: 'Session not found or already ended' });
+    return;
+  }
   res.json({ ok: true });
 });
 
@@ -73,7 +107,10 @@ router.get('/me', requireAuth, (req, res) => {
   // registered head of at least one department.
   const headsDept = queryOne('SELECT 1 AS x FROM departments WHERE head_user_id = ?', req.user!.id);
   const canApprove = req.user!.permissions.includes('hr.manage') || !!headsDept;
-  res.json({ user: { ...req.user, employee: emp ?? null, can_approve: canApprove, modules: [...enabledModules()] } });
+  res.json({
+    user: { ...req.user, employee: emp ?? null, can_approve: canApprove, modules: [...enabledModules()] },
+    session: { shared: !!req.authSession?.shared },
+  });
 });
 
 // POST /api/auth/change-password
@@ -86,8 +123,8 @@ router.post('/change-password', requireAuth, (req, res) => {
   }
   const hash = bcrypt.hashSync(new_password, 10);
   run('UPDATE users SET password_hash = ? WHERE id = ?', hash, req.user!.id);
-  // Keep the current session, drop the rest.
-  run('DELETE FROM sessions WHERE user_id = ? AND token != ?', req.user!.id, req.token!);
+  // Keep the current session, end the rest.
+  endUserSessions(req.user!.id, 'password', req.token);
   res.json({ ok: true });
 });
 
@@ -143,7 +180,7 @@ router.post('/reset-password', (req, res) => {
   }
   run('UPDATE users SET password_hash = ? WHERE id = ?', bcrypt.hashSync(new_password, 10), row.user_id);
   run('UPDATE password_resets SET used = 1 WHERE token_hash = ?', sha256(token));
-  run('DELETE FROM sessions WHERE user_id = ?', row.user_id); // force re-login everywhere
+  endUserSessions(row.user_id, 'password'); // force re-login everywhere
   res.json({ ok: true });
 });
 

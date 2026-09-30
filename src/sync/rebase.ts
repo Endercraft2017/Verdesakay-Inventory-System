@@ -51,6 +51,22 @@ export interface RebaseSummary {
   conflicts: number;
 }
 
+/**
+ * Run `fn` (synchronous: nothing else can touch the connection meanwhile) with foreign-key
+ * enforcement off. A changeset already contains every row its source changed — including rows
+ * changed by ON DELETE CASCADE / SET NULL — so applying it must not fire those actions again:
+ * they would edit rows the changeset is about to change and make it conflict (or double-apply).
+ * The pragma is a no-op inside a transaction, so this wraps the whole BEGIN…COMMIT.
+ */
+function withForeignKeysOff<T>(conn: DatabaseSync, fn: () => T): T {
+  conn.exec('PRAGMA foreign_keys = OFF');
+  try {
+    return fn();
+  } finally {
+    conn.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
 function applyStrict(conn: DatabaseSync, changes: Uint8Array, what: string): void {
   if (!changes.length) return;
   // Default conflict handling is ABORT: applyChangeset returns false and changes nothing.
@@ -65,35 +81,37 @@ export async function applyConfirmed(slug: string, pull: PullResult): Promise<Re
     const verdicts = new Map(pull.results.map((r) => [r.id, r]));
     const summary: RebaseSummary = { undone: 0, applied: 0, confirmed: 0, rejected: 0, rerun: 0, conflicts: 0 };
 
-    conn.exec('BEGIN');
-    try {
-      for (const c of [...pending].reverse()) {
-        if (c.local_changeset?.length) {
-          applyStrict(conn, invertChangeset(c.local_changeset), `undoing command ${c.id}`);
-          summary.undone++;
+    withForeignKeysOff(conn, () => {
+      conn.exec('BEGIN');
+      try {
+        for (const c of [...pending].reverse()) {
+          if (c.local_changeset?.length) {
+            applyStrict(conn, invertChangeset(c.local_changeset), `undoing command ${c.id}`);
+            summary.undone++;
+          }
         }
+        for (const e of pull.effects) {
+          applyStrict(conn, e.changeset, `effect #${e.authority_seq}`);
+          summary.applied++;
+        }
+        conn.prepare('UPDATE sync_node SET last_authority_seq = MAX(last_authority_seq, ?) WHERE k = 1').run(pull.upTo);
+        const setVerdict = conn.prepare(
+          `UPDATE sync_commands SET state = ?, authority_seq = ?, response_status = ?, error = ?, local_changeset = NULL,
+                  updated_at = datetime('now') WHERE id = ? AND state = 'local'`,
+        );
+        for (const c of pending) {
+          const v = verdicts.get(c.id);
+          if (!v || (v.state !== 'confirmed' && v.state !== 'rejected')) continue;
+          setVerdict.run(v.state, v.authority_seq, v.response_status, v.error, c.id);
+          if (v.state === 'confirmed') summary.confirmed++;
+          else summary.rejected++;
+        }
+        conn.exec('COMMIT');
+      } catch (e) {
+        conn.exec('ROLLBACK');
+        throw e;
       }
-      for (const e of pull.effects) {
-        applyStrict(conn, e.changeset, `effect #${e.authority_seq}`);
-        summary.applied++;
-      }
-      conn.prepare('UPDATE sync_node SET last_authority_seq = MAX(last_authority_seq, ?) WHERE k = 1').run(pull.upTo);
-      const setVerdict = conn.prepare(
-        `UPDATE sync_commands SET state = ?, authority_seq = ?, response_status = ?, error = ?, local_changeset = NULL,
-                updated_at = datetime('now') WHERE id = ? AND state = 'local'`,
-      );
-      for (const c of pending) {
-        const v = verdicts.get(c.id);
-        if (!v || (v.state !== 'confirmed' && v.state !== 'rejected')) continue;
-        setVerdict.run(v.state, v.authority_seq, v.response_status, v.error, c.id);
-        if (v.state === 'confirmed') summary.confirmed++;
-        else summary.rejected++;
-      }
-      conn.exec('COMMIT');
-    } catch (e) {
-      conn.exec('ROLLBACK');
-      throw e;
-    }
+    });
 
     // Re-run what the authority hasn't decided yet, on top of the new confirmed state.
     for (const c of pending) {
@@ -115,7 +133,8 @@ export async function applyConfirmed(slug: string, pull: PullResult): Promise<Re
         // A command that no longer applies keeps nothing: undo any partial write, so this
         // copy stays exactly "confirmed state + pending commands".
         if (!ok && changes.length) {
-          applyStrict(conn, invertChangeset(changes), `undoing failed re-run of ${c.id}`);
+          const undo = invertChangeset(changes);
+          withForeignKeysOff(conn, () => applyStrict(conn, undo, `undoing failed re-run of ${c.id}`));
           changes = null;
         }
         conn.prepare(

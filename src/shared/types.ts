@@ -128,9 +128,30 @@ export interface AuthUser {
 
 export interface SessionRow {
   token: string;
+  /** Public id — the only way a session is referred to outside src/shared/auth.ts. */
+  sid: string;
   user_id: number;
   created_at: string;
   expires_at: string;
+  device_id: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  last_seen_at: string | null;
+  last_ip: string | null;
+  /** 1 = borrowed-phone sign-in (short, idle-limited, no push). */
+  shared: number;
+  idle_minutes: number | null;
+  ended_at: string | null;
+  end_reason: string | null;
+}
+
+/** The session behind the current request (req.authSession, set by requireAuth). */
+export interface AuthSession {
+  sid: string;
+  shared: boolean;
+  device_id: string | null;
+  last_seen_at: string | null;
+  last_ip: string | null;
 }
 
 export interface Supplier {
@@ -774,6 +795,10 @@ export interface ActivityLogRow {
   action: string | null;
   status_code: number | null;
   ip: string | null;
+  /** The browser/app's random device ID (X-Device-Id — see src/shared/device.ts). */
+  device_id: string | null;
+  /** Readable label from the User-Agent, e.g. "Chrome on Android". */
+  device: string | null;
   summary: string | null;
   /** Redacted JSON snapshot of the request body (string in the row). */
   meta: string | null;
@@ -1132,7 +1157,9 @@ export interface DocTemplate {
   updated_at: string;
 }
 
-export type EmployeeStatus = 'probationary' | 'regular' | 'resigned' | 'terminated';
+/** 'suspended': still employed (rosters, payroll) but barred from clocking in and production
+    staffing until HR sets them back to probationary/regular. */
+export type EmployeeStatus = 'probationary' | 'regular' | 'suspended' | 'resigned' | 'terminated';
 
 export interface Employee {
   id: number;
@@ -1149,6 +1176,8 @@ export interface Employee {
   philhealth_no: string | null;
   pagibig_no: string | null;
   tin_no: string | null;
+  birth_date: string | null; // YYYY-MM-DD
+  civil_status: string | null; // one of CIVIL_STATUSES (validation.ts)
   photo: string | null; // data: URI
   created_at: string;
   department_name?: string | null;
@@ -1329,6 +1358,11 @@ export interface PayrollPolicy {
       period-independent DB lookup, so it can't live in the DB-free compute engine itself) and
       AttendanceDay.holidayEligible in hr-payroll-compute.ts. */
   holiday_adjacency_requirement: 'none' | 'before' | 'after' | 'both';
+  /** When true, a worked rest day earns its rest-day premium (the +30%, and the rest-day part
+      of a holiday-on-rest-day or OT rate) only when an APPROVED Rest Day Work Request is linked
+      to that day — otherwise it pays as an ordinary working day. False/absent (default,
+      preserves the older behavior): the premium is automatic. See src/modules/hr/rest-day.ts. */
+  require_rest_day_form?: boolean;
 }
 
 export interface EmployeeDocument {
@@ -1534,6 +1568,7 @@ declare global {
     interface Request {
       user?: AuthUser;
       token?: string;
+      authSession?: AuthSession;
     }
   }
 }

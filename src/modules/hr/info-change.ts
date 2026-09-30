@@ -7,13 +7,16 @@
  *  Contact details and the preferred name are NOT here: the employee edits those directly
  *  (employee-profile.ts). */
 import { queryOne, queryAll, run } from '../../shared/db';
+import { CIVIL_STATUSES, birthDateError } from '../../shared/validation';
 
 export const INFO_CHANGE_SLUG = 'information_change';
+
+type InfoColumn = 'name' | 'sss_no' | 'philhealth_no' | 'pagibig_no' | 'tin_no' | 'birth_date' | 'civil_status';
 
 interface InfoField {
   label: string;
   /** employees column written on approval; null = recorded for HR to action by hand. */
-  column: 'name' | 'sss_no' | 'philhealth_no' | 'pagibig_no' | 'tin_no' | null;
+  column: InfoColumn | null;
   /** Normalize a requested value, or return an error message. */
   check?: (v: string) => string | { error: string };
 }
@@ -33,18 +36,28 @@ export const INFO_CHANGE_FIELDS: Record<string, InfoField> = {
   'PhilHealth number': { label: 'PhilHealth number', column: 'philhealth_no', check: digits(12, 12, 'PhilHealth number') },
   'Pag-IBIG number': { label: 'Pag-IBIG number', column: 'pagibig_no', check: digits(12, 12, 'Pag-IBIG number') },
   'TIN': { label: 'TIN', column: 'tin_no', check: digits(9, 12, 'TIN') },
-  'Birth date': { label: 'Birth date', column: null, check: (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? v.trim() : { error: 'Use a YYYY-MM-DD date' }) },
-  'Civil status': { label: 'Civil status', column: null },
+  'Birth date': {
+    label: 'Birth date', column: 'birth_date',
+    check: (v) => { const err = birthDateError(v.trim()); return err ? { error: err } : v.trim(); },
+  },
+  'Civil status': {
+    label: 'Civil status', column: 'civil_status',
+    // Case-insensitive, stored as the canonical label.
+    check: (v) => CIVIL_STATUSES.find((s) => s.toLowerCase() === v.trim().replace(/\s+/g, ' ').toLowerCase())
+      ?? { error: `Civil status must be one of: ${CIVIL_STATUSES.join(', ')}` },
+  },
   'Other official record': { label: 'Other official record', column: null },
 };
 
-type Emp = { id: number; name: string; sss_no: string | null; philhealth_no: string | null; pagibig_no: string | null; tin_no: string | null };
+type Emp = { id: number; name: string } & Record<Exclude<InfoColumn, 'name'>, string | null>;
 
 /** Validate + normalize a self-filed request. The server, not the client, decides who it's for
  *  and what the current value is. Throws a 400-shaped error on bad input. */
 export function prepareInfoChange(userId: number, data: Record<string, unknown>): Record<string, string | number | null> {
   const fail = (msg: string, status = 400) => { throw Object.assign(new Error(msg), { status }); };
-  const emp = queryOne<Emp>('SELECT id, name, sss_no, philhealth_no, pagibig_no, tin_no FROM employees WHERE user_id = ?', userId);
+  const emp = queryOne<Emp>(
+    'SELECT id, name, sss_no, philhealth_no, pagibig_no, tin_no, birth_date, civil_status FROM employees WHERE user_id = ?', userId
+  );
   if (!emp) fail('Your account is not linked to an employee record. Ask HR to link it.', 403);
   const e = emp!;
   const fieldName = String(data.field ?? '');

@@ -170,14 +170,22 @@
     };
   }
 
-  /* Identity-free transport for the anonymous channel. Deliberately NOT API.post: that adds
-     the bearer token (and the offline queue would persist it with an idempotency key). Only
-     the ticket request is authenticated; the server keeps no link between ticket and user. */
-  function anonPost(path, body) {
-    return fetch('/api/anonymous-reports' + path, {
-      method: 'POST', credentials: 'omit', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-    }).catch(function () {
+  /* Identity-free transport for the anonymous channel. Deliberately NOT API.post/API.upload:
+     those add the bearer token (and the offline queue would persist it with an idempotency
+     key). Only the ticket request is authenticated; the server keeps no link between ticket
+     and user. With photos it sends multipart, each already re-encoded by scrubPhoto(). */
+  function anonPost(path, body, photos) {
+    var init = { method: 'POST', credentials: 'omit', cache: 'no-store' };
+    if (photos && photos.length) {
+      var fd = new FormData();
+      Object.keys(body).forEach(function (k) { if (body[k] != null) fd.append(k, body[k]); });
+      photos.forEach(function (f, i) { fd.append('photos', f, 'photo-' + (i + 1) + '.jpg'); });
+      init.body = fd;
+    } else {
+      init.headers = { 'Content-Type': 'application/json' };
+      init.body = JSON.stringify(body);
+    }
+    return fetch('/api/anonymous-reports' + path, init).catch(function () {
       var e = new Error('You’re offline. Nothing was sent — your draft is still on this device.'); e.offline = true; throw e;
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) {
@@ -186,6 +194,45 @@
       });
     });
   }
+
+  /* One of your own report photos as an object URL — same identity-free transport, with the
+     number + code in the POST body rather than on an image URL (history, logs). */
+  function anonPhotoUrl(c, photoId) {
+    return fetch('/api/anonymous-reports/photo', {
+      method: 'POST', credentials: 'omit', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number: c.number, access_code: c.access_code, photo_id: photoId })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('Photo could not be loaded');
+      return res.blob();
+    }).then(function (blob) { return URL.createObjectURL(blob); });
+  }
+
+  /* Redraw a picked photo into a fresh JPEG on the phone, so its location/device/time
+     metadata and original filename never leave it. A PDF is drawn page by page into fresh
+     JPEGs the same way (PdfPages) — one photo slot per page; the PDF file itself is never
+     sent. The server strips again (defense in depth). */
+  var ANON_MAX_PHOTOS = 4;
+  var ANON_ACCEPT = 'image/*,application/pdf';
+  var anonPhotos = []; // in memory only — never in the localStorage draft
+  function scrubPhoto(file, i, room) {
+    var name = function (k) { return 'photo-' + (i + k + 1) + '.jpg'; };
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')) {
+      if (!window.PdfPages) return Promise.reject(new Error('PDFs can’t be prepared on this device.'));
+      return PdfPages.toJpegs(file, { maxPages: room || 1, maxDim: 2048, quality: 0.85, name: name }).then(function (r) {
+        if (r.totalPages > r.files.length) {
+          mToast('Only the first ' + r.files.length + ' of ' + r.totalPages + ' pages fit — photos of the rest can go in a follow-up.', 'err');
+        }
+        return r.files;
+      });
+    }
+    if (!window.ImageCompress || !ImageCompress.reencode) return Promise.reject(new Error('Photos can’t be prepared on this device.'));
+    return ImageCompress.reencode(file, { maxDim: 2048, quality: 0.85, name: name(0) });
+  }
+  var PHOTO_NOTE = 'Location, device and time details are removed on this phone before sending, and again on the server. ' +
+    'A PDF is sent as a photo of each page (one photo per page), without its file details. ' +
+    'What the picture or page shows is not removed — check for names, faces, name tags, screens, reflections or a spot only you use.';
+  function photoCountText(n) { return n + ' photo' + (n === 1 ? '' : 's'); }
 
   function anonymous(view) {
     MApp.setTitle('Anonymous report');
@@ -199,10 +246,15 @@
         '<label class="is-tall"><span>Report details *</span><textarea data-anon="details" rows="5" maxlength="5000" placeholder="Describe the concern (at least 10 characters)">' + mEsc(draft.details || '') + '</textarea></label>' +
         '<div class="m-report-context-grid"><label><span>Incident date</span><input data-anon="date" type="date" value="' + mEsc(draft.date || '') + '"></label>' +
         '<label><span>Location</span><input data-anon="location" maxlength="160" value="' + mEsc(draft.location || '') + '" placeholder="Optional"></label></div>' +
-        '<aside class="m-report-backend-block"><b>No attachments on this channel</b><span>Photos and files carry hidden details (device, place, time) that can identify you. Describe the evidence instead; the case handler can ask for more through your follow-up code.</span></aside>' +
+        '<div class="m-report-files m-anon-photos"><span>Photos or PDF pages (optional, up to ' + ANON_MAX_PHOTOS + ')</span><div data-anon-photos></div>' +
+          '<small>' + mEsc(PHOTO_NOTE) + ' Photos aren’t kept in the saved draft.</small></div>' +
         '<button class="m-v2-primary" type="submit">Review anonymous report</button></form>' +
       '<button class="m-report-row" id="m-anon-check" type="button"><span><b>Check a report I filed</b><small>Use the report number and access code</small></span><i aria-hidden="true">›</i></button>';
     var form = host.querySelector('form');
+    form.querySelector('[data-anon-photos]').appendChild(mPhoto.picker({
+      max: ANON_MAX_PHOTOS, initial: anonPhotos, prepare: scrubPhoto, accept: ANON_ACCEPT,
+      onChange: function (files) { anonPhotos = files.slice(); }
+    }));
     function state() {
       var s = {};
       Array.prototype.forEach.call(form.querySelectorAll('[data-anon]'), function (field) { s[field.getAttribute('data-anon')] = String(field.value || '').trim(); });
@@ -227,9 +279,19 @@
         (data.subject ? '<div><span>Title</span><b>' + mEsc(data.subject) + '</b></div>' : '') +
         '<div><span>Details</span><b>' + mEsc(data.details) + '</b></div>' +
         '<div><span>Incident context</span><b>' + mEsc([data.date, data.location].filter(Boolean).join(' · ') || 'Not provided') + '</b></div>' +
+        '<div><span>Photos</span><b>' + (anonPhotos.length ? photoCountText(anonPhotos.length) + ' · hidden details removed' : 'None') + '</b></div>' +
       '</section>' +
+      (anonPhotos.length ? '<div class="m-thumbs" id="m-anon-review-photos"></div>' : '') +
       '<aside class="m-report-anon-notice"><b>You’ll get a report number and a one-time access code</b><span>Save both — they are the only way to see replies. The code is shown once and can’t be recovered.</span></aside>' +
       '<button class="m-v2-primary" id="m-anon-send" type="button">Send anonymously</button>';
+    var reviewPhotos = host.querySelector('#m-anon-review-photos');
+    anonPhotos.forEach(function (f, i) {
+      var url = URL.createObjectURL(f);
+      var cell = mEl('<div class="m-thumb"><img alt="Photo ' + (i + 1) + '" /></div>');
+      cell.querySelector('img').onload = function () { URL.revokeObjectURL(url); };
+      cell.querySelector('img').src = url;
+      reviewPhotos.appendChild(cell);
+    });
     var button = host.querySelector('#m-anon-send');
     button.onclick = function () {
       if (navigator.onLine === false) { mToast('You’re offline. Nothing was sent — your draft is still on this device.', 'err'); return; }
@@ -239,9 +301,10 @@
         return anonPost('', {
           ticket: t.ticket, category: data.category, subject: data.subject || null, description: data.details,
           incident_date: data.date || null, location: data.location || null
-        });
+        }, anonPhotos);
       }).then(function (res) {
         clearDraft(ANON_DRAFT_KEY);
+        anonPhotos = [];
         anonymousReceipt(view, res);
       }).catch(function (error) {
         mToast(error.offline ? 'You’re offline. Nothing was sent — your draft is still on this device.' : (error.message || 'Could not send the report'), 'err');
@@ -283,25 +346,67 @@
     function creds() {
       return { number: form.querySelector('[data-k="number"]').value.trim(), access_code: form.querySelector('[data-k="code"]').value.trim() };
     }
+    var photoUrls = []; // object URLs for this screen's thumbnails, revoked on each re-render
     function show(report) {
       var c = creds();
+      photoUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+      photoUrls = [];
+      var allOwn = (report.photos || []).slice();
+      report.messages.forEach(function (m) { allOwn = allOwn.concat(m.photos || []); });
+      var anyRemovable = allOwn.some(function (p) { return p.removable; });
       out.innerHTML =
         '<section class="m-report-review"><div><span>' + mEsc(report.number) + ' · ' + mEsc(report.category) + '</span><b>' + mEsc(report.subject || 'Anonymous report') + '</b></div>' +
         '<div><span>Status</span><b class="m-anon-status ' + mEsc(report.status) + '">' + mEsc(report.status) + '</b></div>' +
-        '<div><span>Filed · last update</span><b>' + mEsc(report.created_on) + ' · ' + mEsc(report.updated_on) + '</b></div></section>' +
+        '<div><span>Filed · last update</span><b>' + mEsc(report.created_on) + ' · ' + mEsc(report.updated_on) + '</b></div>' +
+        (report.photo_count ? '<div><span>Photos sent with the report</span><b>' + photoCountText(report.photo_count) + '</b></div>' : '') + '</section>' +
+        (report.photo_count ? '<div class="m-thumbs" data-anon-own="report"></div>' : '') +
+        (anyRemovable ? '<p class="m-hint">You can remove a photo until the case handler opens it.</p>' : '') +
         '<div class="m-anon-thread">' + (report.messages.length ? report.messages.map(function (m) {
-          return '<div class="m-anon-msg ' + mEsc(m.author) + '"><small>' + (m.author === 'handler' ? 'Case handler' : 'You') + ' · ' + mEsc(m.created_on) + '</small><p>' + mEsc(m.body) + '</p></div>';
+          return '<div class="m-anon-msg ' + mEsc(m.author) + '"><small>' + (m.author === 'handler' ? 'Case handler' : 'You') + ' · ' + mEsc(m.created_on) +
+            (m.photo_count ? ' · ' + photoCountText(m.photo_count) : '') + '</small><p>' + mEsc(m.body) + '</p>' +
+            (m.photo_count ? '<div class="m-thumbs" data-anon-own="' + m.id + '"></div>' : '') + '</div>';
         }).join('') : '<div class="m-empty">No replies yet.</div>') + '</div>' +
         (report.status === 'closed' ? '<div class="m-hint">This report is closed.</div>'
           : '<form class="m-report-form" id="m-anon-reply" novalidate><label class="is-tall"><span>Add information</span><textarea rows="3" maxlength="3000" placeholder="Answer a question or add details"></textarea></label>' +
+            (report.photos_remaining ? '<div class="m-report-files m-anon-photos"><span>Photos or PDF pages (optional)</span><div data-anon-photos></div><small>' + mEsc(PHOTO_NOTE) + '</small></div>' : '') +
             '<button class="m-v2-primary" type="submit">Send</button></form>');
+      // Your own photos: fetched with number + code in the POST body (never an image URL).
+      function fillOwn(key, list) {
+        var strip = out.querySelector('[data-anon-own="' + key + '"]');
+        if (!strip) return;
+        (list || []).forEach(function (p, i) {
+          var cell = mEl('<div class="m-thumb"><button class="m-anon-photo-open" type="button" aria-label="Open photo ' + (i + 1) + '"><img alt="" /></button></div>');
+          anonPhotoUrl(c, p.id).then(function (u) {
+            photoUrls.push(u);
+            cell.querySelector('img').src = u;
+            cell.querySelector('button').onclick = function () { mPhoto.view(u); };
+          }).catch(function () { cell.title = 'Photo could not be loaded'; });
+          if (p.removable) {
+            var x = mEl('<button class="m-thumb-x" type="button" aria-label="Remove photo ' + (i + 1) + '">×</button>');
+            x.onclick = function () {
+              if (!window.confirm('Remove this photo from your report? This can’t be undone.')) return;
+              x.disabled = true;
+              anonPost('/photo/remove', { number: c.number, access_code: c.access_code, photo_id: p.id })
+                .then(function (updated) { mToast('Photo removed'); show(updated); })
+                .catch(function (error) { mToast(error.message, 'err'); x.disabled = false; });
+            };
+            cell.appendChild(x);
+          }
+          strip.appendChild(cell);
+        });
+      }
+      fillOwn('report', report.photos);
+      report.messages.forEach(function (m) { fillOwn(m.id, m.photos); });
       var reply = out.querySelector('#m-anon-reply');
+      var replyPhotos = reply && reply.querySelector('[data-anon-photos]')
+        ? reply.querySelector('[data-anon-photos]').appendChild(mPhoto.picker({ max: Math.min(ANON_MAX_PHOTOS, report.photos_remaining), prepare: scrubPhoto, accept: ANON_ACCEPT }))
+        : null;
       if (reply) reply.onsubmit = function (event) {
         event.preventDefault();
         var text = reply.querySelector('textarea').value.trim();
         if (!text) { mToast('Write a message', 'err'); return; }
-        var b = reply.querySelector('button'); b.disabled = true;
-        anonPost('/followup', { number: c.number, access_code: c.access_code, body: text })
+        var b = reply.querySelector('button[type="submit"]'); b.disabled = true;
+        anonPost('/followup', { number: c.number, access_code: c.access_code, body: text }, replyPhotos ? replyPhotos.files() : [])
           .then(show)
           .catch(function (error) { mToast(error.message, 'err'); b.disabled = false; });
       };

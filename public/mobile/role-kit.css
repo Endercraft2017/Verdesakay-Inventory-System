@@ -480,3 +480,25 @@
 .rk-rehead > span:not(.rk-pill) { grid-column: 1 / -1; font-size: 12px; font-weight: 500; color: var(--rk-title); } .rk-rehead small { grid-column: 1 / -1; font-size: 10px; color: var(--rk-meta); }
 :root[data-theme="dark"] .rk-rehead { background: #2e2240; } :root[data-theme="dark"] .rk-rehead b { color: #d1bdea; }
 :root[data-theme="dark"] .rk-rehead .rk-pill { background: #3a2c50; color: #d1bdea; }
+
+/* ── RTS clerk (Figma 74:*) — green desk; navy marks the posting step (74:234 / 74:316) ── */
+.rk-segs button.warn { background: #fdebd6; color: #b15a14; }
+.rk-segs button.warn.on { box-shadow: inset 0 0 0 1.5px rgba(177, 90, 20, .4); }
+:root[data-theme="dark"] .rk-segs button.warn { background: #3a2a1a; color: #f0bf8c; }
+.rk-unitcard small.warn { color: #b15a14; } :root[data-theme="dark"] .rk-unitcard small.warn { color: #f0bf8c; }
+.rk-hero.navy { background: #173f5a; } .rk-hero.navy small { color: #b8d4e8; } .rk-hero.navy span { grid-column: 1 / -1; text-align: left; color: #d6e6f2; }
+.rk-btn.navy { background: #173f5a; color: #fff; }
+:root[data-theme="dark"] .rk-hero.navy { background: #1d4a69; } :root[data-theme="dark"] .rk-btn.navy { background: #2a638b; }
+.rk-block { border: 1px solid var(--rk-line); border-radius: 22px; background: #ffe3d9; padding: 16px 17px 18px; display: grid; gap: 8px; }
+.rk-block .t { font-size: 17px; font-weight: 700; color: #c72e1a; }
+.rk-block b { font-size: 13px; font-weight: 700; color: var(--rk-title); word-break: break-all; }
+.rk-block span { font-size: 11px; color: var(--rk-meta); }
+.rk-block.warn { background: #fff0d6; } .rk-block.warn .t { color: #c25c12; }
+.rk-block.ok { background: #e3f5e8; } .rk-block.ok .t { color: #14803d; }
+:root[data-theme="dark"] .rk-block { background: #3d211b; } :root[data-theme="dark"] .rk-block .t { color: #ff9f8a; }
+:root[data-theme="dark"] .rk-block.warn { background: #3a2a1a; } :root[data-theme="dark"] .rk-block.warn .t { color: #f0bf8c; }
+:root[data-theme="dark"] .rk-block.ok { background: #1f3a2a; } :root[data-theme="dark"] .rk-block.ok .t { color: #8fd8aa; }
+.rk-block b.lg { font-size: 14px; }
+.rk-pickrow { appearance: none; width: 100%; text-align: left; font: inherit; }
+.rk-search { display: flex; gap: 8px; align-items: center; }
+.rk-search input { flex: 1; min-width: 0; }

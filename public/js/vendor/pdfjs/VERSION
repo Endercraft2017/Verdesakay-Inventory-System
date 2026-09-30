@@ -1,0 +1,12 @@
+pdfjs-dist 6.3.289 (Apache-2.0, see LICENSE) — https://github.com/mozilla/pdf.js
+npm integrity sha512-ZHjSVpDa3D6izMq8/04lvkhkATUmL9px6ChPaXc1k6nU2Mrhlg1/7F0bdUqCwUjw3NsPTfPZsMDUU6ZIcRaeQw==
+
+Copied from the package (unchanged):
+  legacy/build/pdf.min.mjs, legacy/build/pdf.worker.min.mjs   (legacy = wider browser support)
+  standard_fonts/*                                               (PDFs that don't embed their fonts)
+  wasm/jbig2.wasm, openjpeg.wasm, qcms_bg.wasm + LICENSE_*        (scanned-document image decoders)
+Deliberately NOT copied: wasm/quickjs-eval.* (in-PDF JavaScript — scripting stays off),
+the *_nowasm_fallback.js decoders, cmaps/ (CJK-only PDFs), web/ (the viewer UI).
+
+Loaded on demand by public/js/lib/pdf-pages.js. To upgrade: `npm pack pdfjs-dist@<ver>` into a
+temp dir and copy the same files; check page.render()'s parameters haven't changed.

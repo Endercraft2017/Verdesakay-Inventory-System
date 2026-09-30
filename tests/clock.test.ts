@@ -104,6 +104,23 @@ describe('time clock', () => {
     expect(ok.body.source).toBe('kiosk');
   });
 
+  it('a suspended employee cannot punch (phone or kiosk) until set back to regular', async () => {
+    const e = await linkedEmployee({ status: 'suspended' });
+    const h = { Authorization: `Bearer ${e.accountToken}` };
+    const phone = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+    expect(phone.status).toBe(403);
+    expect(phone.body.error).toMatch(/suspended/i);
+    const kiosk = await ctx.api.post('/api/hr/clock/kiosk-punch').set(A())
+      .send({ code: code(), employee_no: e.employee_no });
+    expect(kiosk.status).toBe(403);
+    expect(kiosk.body.error).toMatch(/suspended/i);
+    expect(queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM time_punches WHERE employee_id = ?', e.employeeId)!.n).toBe(0);
+
+    run("UPDATE employees SET status = 'regular' WHERE id = ?", e.employeeId);
+    const after = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+    expect(after.status).toBe(200);
+  });
+
   it('recent feed lists punches newest-first with id filtering', async () => {
     const e = await linkedEmployee();
     await ctx.api.post('/api/hr/clock/punch')

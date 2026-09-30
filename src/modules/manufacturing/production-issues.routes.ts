@@ -18,9 +18,11 @@ const router = Router();
 router.use(requireAuth);
 
 const readGate = requireAnyPermission(['inventory.view']);
-// Anyone working the job order can report: line lead, QC/QA inspectors, the warehouse, managers.
+// Anyone working the job order can report: line lead, QC/QA inspectors, the RTS clerk (a
+// product-data mismatch, which holds the unit out of stock — see rts.ts), the warehouse, managers.
 const reportGate = requireAnyPermission([
   'inventory.adjust', 'production.record', 'production.inspect_qc', 'production.inspect_qa', 'production.approve',
+  'production.receive',
 ]);
 
 /** Managers may edit / resolve anyone's report; others only their own. */

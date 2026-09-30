@@ -50,6 +50,15 @@ export function now(): Date {
   return clock ? new Date(clock.replace(' ', 'T') + 'Z') : new Date();
 }
 
+/** True while a synced command runs (a node's optimistic run or rebase re-run, or the
+ *  authority's replay). A `physical` route uses it to accept a stock-out beyond recorded stock
+ *  and flag it instead of refusing it (docs/OFFLINE-FIRST.md decision D1); a direct request
+ *  to the cloud keeps the normal checks. */
+export function inSyncedCommand(): boolean {
+  const mode = syncStore.getStore()?.mode;
+  return mode === 'record' || mode === 'rebase' || mode === 'replay';
+}
+
 /** True while a node runs a command optimistically or re-runs it during rebase: emails, push
  *  notifications and live broadcasts must not fire there — the authority fires them once. */
 export function sideEffectsSuppressed(kind: string): boolean {

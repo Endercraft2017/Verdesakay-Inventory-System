@@ -17,6 +17,7 @@ import {
   formConfigSchema,
   importInventorySchema,
   reorderPoSchema,
+  resolveDiscrepancySchema,
 } from '../../shared/validation';
 import { createDraftPurchaseOrders } from './orders.routes';
 import {
@@ -26,6 +27,7 @@ import {
   stockBreakdown,
   getDefaultLocationId,
   findOrCreateDamageTwin,
+  overdrawAllowed,
 } from './inventory-stock';
 import { notifyLowStockCrossed } from '../../shared/push';
 import { enforceQuota } from '../../platform/quota';
@@ -149,7 +151,7 @@ router.get('/form-config', (_req, res) => {
 });
 
 // PUT /api/inventory/form-config — save the customization (admin only).
-router.put('/form-config', requirePermission('inventory.configure'), (req, res) => {
+router.put('/form-config', requirePermission('inventory.configure'), syncClass('claim'), (req, res) => {
   const config = parseBody(formConfigSchema, req.body);
   setSetting(FORM_CONFIG_KEY, config);
   res.json({ ok: true });
@@ -196,7 +198,7 @@ router.get('/product-groups', (_req, res) => {
 // With no item_ids it sweeps every low-stock item (damage twins + finished products excluded
 // — a low finished product is produced, not bought). Order qty tops each item up to
 // `min_quantity * multiplier` (default 2×), always at least 1.
-router.post('/reorder-po', requirePermission('orders.create'), (req, res) => {
+router.post('/reorder-po', requirePermission('orders.create'), syncClass('claim'), (req, res) => {
   const { item_ids, multiplier } = parseBody(reorderPoSchema, req.body);
   const mult = multiplier ?? 2;
 
@@ -370,7 +372,7 @@ router.get('/export', requirePermission('inventory.view'), (_req, res) => {
 // Body: { csv: string, dry_run?: boolean }. Upsert key is `sku`; rows without a SKU
 // (or with an unknown SKU) are created. Returns a per-row report; a bad row is
 // skipped with an error, it doesn't abort the batch. `dry_run` validates + rolls back.
-router.post('/import', requirePermission('inventory.create'), (req, res) => {
+router.post('/import', requirePermission('inventory.create'), syncClass('claim'), (req, res) => {
   const { csv, dry_run } = parseBody(importInventorySchema, req.body);
   const table = parseCsvTable(csv);
   if (table.headers.length === 0) {
@@ -499,6 +501,52 @@ router.post('/import', requirePermission('inventory.create'), (req, res) => {
   });
 });
 
+
+// ---- Stock discrepancies (docs/OFFLINE-FIRST.md decision D1) ----
+// An offline stock-out is accepted even when the records say the stock isn't there (the goods
+// physically left); the location then goes below zero and a discrepancy is opened for a
+// supervisor to count or correct. Registered before '/:id' so the path isn't read as an id.
+
+// GET /api/inventory/discrepancies?status=open|resolved|all (default open), newest first
+router.get('/discrepancies', requirePermission('inventory.view'), (req, res) => {
+  const status = req.query.status === 'all' ? 'all' : req.query.status === 'resolved' ? 'resolved' : 'open';
+  const rows = queryAll(
+    `SELECT d.*, i.name AS item_name, i.sku, i.unit, l.name AS location_name,
+            cu.full_name AS created_by_name, ru.full_name AS resolved_by_name,
+            COALESCE(s.quantity, 0) AS location_quantity_now
+       FROM stock_discrepancies d
+       JOIN inventory_items i ON i.id = d.item_id
+       LEFT JOIN locations l ON l.id = d.location_id
+       LEFT JOIN inventory_stock s ON s.item_id = d.item_id AND s.location_id = d.location_id
+       LEFT JOIN users cu ON cu.id = d.created_by
+       LEFT JOIN users ru ON ru.id = d.resolved_by
+      WHERE ? = 'all' OR d.status = ?
+      ORDER BY d.created_at DESC, d.id DESC
+      LIMIT 500`,
+    status, status
+  );
+  res.json(rows);
+});
+
+// POST /api/inventory/discrepancies/:id/resolve — record what was found/done. Moves no stock:
+// correct the count with a normal adjustment first. A decision, so `claim` offline.
+router.post('/discrepancies/:id/resolve', requirePermission('inventory.adjust'), syncClass('claim'), (req, res) => {
+  const id = Number(req.params.id);
+  const { note } = parseBody(resolveDiscrepancySchema, req.body);
+  const info = run(
+    `UPDATE stock_discrepancies
+        SET status = 'resolved', resolution_note = ?, resolved_by = ?, resolved_at = datetime('now')
+      WHERE id = ? AND status = 'open'`,
+    note, req.user!.id, id
+  );
+  if (info.changes === 0) {
+    const exists = queryOne('SELECT id FROM stock_discrepancies WHERE id = ?', id);
+    res.status(exists ? 409 : 404).json({ error: exists ? 'Already resolved' : 'Discrepancy not found' });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 // GET /api/inventory/:id/stock — this item's quantity at every location (for adjust/transfer UI)
 router.get('/:id/stock', requirePermission('inventory.view'), (req, res) => {
   const id = Number(req.params.id);
@@ -556,7 +604,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/inventory — create item
-router.post('/', requirePermission('inventory.create'), (req, res) => {
+router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req, res) => {
   enforceQuota('inventory_items');
   const input = parseBody(createItemSchema, req.body);
   if (input.sku) {
@@ -619,7 +667,7 @@ router.post('/', requirePermission('inventory.create'), (req, res) => {
 });
 
 // PUT /api/inventory/:id — update details (not quantity; use /adjust)
-router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
+router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
   if (!item) {
@@ -659,8 +707,8 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
 });
 
 // POST /api/inventory/:id/adjust — stock in / out at one location, recorded as a transaction
-// Offline-capable (docs/OFFLINE-FIRST.md §7.1): a stock movement records something that physically
-// happened. Phase-1 pilot route; the rest of inventory is classed in phase 2.
+// Offline sync class (docs/OFFLINE-FIRST.md §7.1): a stock movement records something that
+// physically happened, so it is `physical` — see overdrawAllowed() below.
 router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
@@ -676,7 +724,9 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
     return;
   }
   const atLoc = stockAt(id, locId);
-  if (atLoc + change < 0) {
+  // Offline (D1): the goods left even if the records say they weren't there — accepted and
+  // flagged as a stock discrepancy by applyStockChange instead of refused.
+  if (atLoc + change < 0 && !overdrawAllowed()) {
     res.status(400).json({ error: `Not enough stock at ${loc.name}. Only ${atLoc} available.` });
     return;
   }
@@ -693,14 +743,17 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
     throw e;
   }
   notifyLowStockCrossed(item, item.quantity, result.total);
-  res.json({ ok: true, quantity: result.total, location_quantity: result.locationQty });
+  res.json({
+    ok: true, quantity: result.total, location_quantity: result.locationQty,
+    ...(result.discrepancyId ? { discrepancy_id: result.discrepancyId } : {}),
+  });
 });
 
 // POST /api/inventory/:id/damage — move damaged units out of an item into its
 // "damage twin": a copy row with category 'Damage', created on first use and topped
 // up afterwards. The twin is linked back via attributes.damaged_of. Grand total of
 // units is preserved (leaves the source, enters the twin).
-router.post('/:id/damage', requirePermission('inventory.adjust'), (req, res) => {
+router.post('/:id/damage', requirePermission('inventory.adjust'), syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const source = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
   if (!source) {
@@ -719,7 +772,7 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), (req, res) => 
     return;
   }
   const atLoc = stockAt(id, locId);
-  if (quantity > atLoc) {
+  if (quantity > atLoc && !overdrawAllowed()) { // offline: accepted + flagged (D1)
     res.status(400).json({ error: `Not enough stock at ${loc.name}. Only ${atLoc} available.` });
     return;
   }
@@ -756,7 +809,7 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), (req, res) => 
 });
 
 // POST /api/inventory/:id/transfer — move stock from one location to another
-router.post('/:id/transfer', requirePermission('inventory.adjust'), (req, res) => {
+router.post('/:id/transfer', requirePermission('inventory.adjust'), syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });
@@ -774,7 +827,7 @@ router.post('/:id/transfer', requirePermission('inventory.adjust'), (req, res) =
     return;
   }
   const available = stockAt(id, from_location_id);
-  if (amount > available) {
+  if (amount > available && !overdrawAllowed()) { // offline: accepted + flagged (D1)
     res.status(400).json({ error: `Only ${available} available at ${from.name} to transfer.` });
     return;
   }
@@ -795,7 +848,7 @@ router.post('/:id/transfer', requirePermission('inventory.adjust'), (req, res) =
 });
 
 // DELETE /api/inventory/:id
-router.delete('/:id', requirePermission('inventory.delete'), (req, res) => {
+router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem & { quantity: number }>(
     'SELECT image_path, quantity FROM inventory_items WHERE id = ?', id);
@@ -838,7 +891,9 @@ router.get('/:id/image', (req, res) => {
 });
 
 // POST /api/inventory/:id/image — upload / replace the item's photo
-router.post('/:id/image', requirePermission('inventory.edit'), imageUpload.single('image'), (req, res) => {
+// Photos are files, which don't sync until the blob lane (OFFLINE-FIRST phase 3): `online`, and
+// checked before multer writes anything to disk.
+router.post('/:id/image', requirePermission('inventory.edit'), syncClass('online'), imageUpload.single('image'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT image_path FROM inventory_items WHERE id = ?', id);
   if (!item) {
@@ -866,7 +921,7 @@ router.post('/:id/image', requirePermission('inventory.edit'), imageUpload.singl
 });
 
 // DELETE /api/inventory/:id/image — remove the item's photo
-router.delete('/:id/image', requirePermission('inventory.edit'), (req, res) => {
+router.delete('/:id/image', requirePermission('inventory.edit'), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT image_path FROM inventory_items WHERE id = ?', id);
   if (!item) {

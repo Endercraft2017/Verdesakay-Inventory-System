@@ -34,6 +34,7 @@
         var row = mEl('<button class="m-report-row" type="button"><span><b>' + mEsc(r.number) + ' · ' + mEsc(r.subject || r.category) + '</b>' +
           '<small>' + mEsc(r.category) + ' · ' + mEsc(r.status) + ' · updated ' + mEsc(r.updated_on) +
           (r.reporter_replies ? ' · ' + r.reporter_replies + ' reporter message' + (r.reporter_replies === 1 ? '' : 's') : '') +
+          (r.photo_count ? ' · ' + r.photo_count + ' photo' + (r.photo_count === 1 ? '' : 's') : '') +
           '</small></span><i aria-hidden="true">›</i></button>');
         row.onclick = function () { MApp.go('confidential-reports', { id: r.id }); };
         out.appendChild(row);
@@ -62,15 +63,30 @@
           '<div><span>Filed · updated</span><b>' + mEsc(r.created_on) + ' · ' + mEsc(r.updated_on) + '</b></div>' +
         '</section>' +
         '<p class="m-cr-detail">' + mEsc(r.description) + '</p>' +
+        (r.attachments && r.attachments.length ? '<div class="m-thumbs" data-cr-photos="report"></div>' : '') +
         '<form class="m-report-form" id="m-cr-status" novalidate><label><span>Status</span><select>' +
           STATUSES.map(function (s) { return '<option value="' + s + '"' + (s === r.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
         '</select></label><button class="m-v2-secondary" type="submit">Update status</button></form>' +
         '<div class="m-anon-thread">' + (r.messages.length ? r.messages.map(function (m) {
           return '<div class="m-anon-msg ' + mEsc(m.author) + '"><small>' + (m.author === 'handler' ? mEsc(m.handler_name || 'Case handler') : 'Reporter') +
-            ' · ' + mEsc(m.created_on) + '</small><p>' + mEsc(m.body) + '</p></div>';
+            ' · ' + mEsc(m.created_on) + '</small><p>' + mEsc(m.body) + '</p>' +
+            (m.attachments && m.attachments.length ? '<div class="m-thumbs" data-cr-photos="' + m.id + '"></div>' : '') + '</div>';
         }).join('') : '<div class="m-empty">No messages yet. The reporter sees replies when they check with their access code.</div>') + '</div>' +
         '<form class="m-report-form" id="m-cr-reply" novalidate><label class="is-tall"><span>Reply to reporter</span><textarea rows="3" maxlength="3000" placeholder="The reporter sees this as “Case handler”"></textarea></label>' +
         '<button class="m-v2-primary" type="submit">Send reply</button></form>';
+      // Photos (metadata already stripped server-side) — fetched with the handler's token.
+      function fillPhotos(key, list) {
+        var strip = host.querySelector('[data-cr-photos="' + key + '"]');
+        if (!strip) return;
+        list.forEach(function (a, i) {
+          var cell = mEl('<button class="m-thumb" type="button" aria-label="Open photo ' + (i + 1) + '"><img alt="" /></button>');
+          API.blobUrl(a.url).then(function (u) { cell.querySelector('img').src = u; }).catch(function () {});
+          cell.onclick = function () { mPhoto.view(a.url); };
+          strip.appendChild(cell);
+        });
+      }
+      fillPhotos('report', r.attachments || []);
+      r.messages.forEach(function (m) { fillPhotos(m.id, m.attachments || []); });
       var st = host.querySelector('#m-cr-status');
       st.onsubmit = function (event) {
         event.preventDefault();

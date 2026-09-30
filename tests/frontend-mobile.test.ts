@@ -231,7 +231,26 @@ describe('mobile bootstrap', () => {
     expect(anon).not.toMatch(/API\.(post|upload)\('\/anonymous-reports'\s*,/);
     expect(anon).not.toMatch(/mSubmit|\/messages|\/bug-reports/);
     expect(anon).toContain("API.post('/anonymous-reports/ticket')"); // only the ticket is authenticated
-    expect(anon).not.toMatch(/type="file"/); // no attachments on this channel
+    // Photos: re-encoded on the phone (drops EXIF/GPS/device/time + the original filename)
+    // before they reach the same identity-free transport; never the raw picked file.
+    expect(anon).toContain('ImageCompress.reencode(file');
+    expect(anon).toMatch(/prepare: scrubPhoto/);
+    expect(anon).toContain("fd.append('photos', f, 'photo-' + (i + 1) + '.jpg')");
+    expect(anon).not.toMatch(/localStorage[^\n]*anonPhotos|saveDraft\([^)]*anonPhotos/); // photos never persisted
+    const lib = fs.readFileSync(path.join(ROOT, 'public/js/lib/image-compress.js'), 'utf8');
+    const reencode = lib.slice(lib.indexOf('function reencode('), lib.indexOf('function loadImage('));
+    expect(reencode).toContain('lastModified: 0');
+    expect(reencode).not.toMatch(/return file;|resolve\(file\)/); // fails closed, never the original
+    // PDFs: only page photos drawn by PdfPages are sent, never the PDF file itself.
+    expect(anon).toContain('PdfPages.toJpegs(file');
+    const pdfLib = fs.readFileSync(path.join(ROOT, 'public/js/lib/pdf-pages.js'), 'utf8');
+    expect(pdfLib).toContain('enableScripting: false');
+    expect(pdfLib).toContain("lastModified: 0");
+    // The reporter's own photos come back over the same identity-free transport, code in the body.
+    const own = anon.slice(anon.indexOf('function anonPhotoUrl('), anon.indexOf('function scrubPhoto('));
+    expect(own).toContain("credentials: 'omit'");
+    expect(own).toContain("fetch('/api/anonymous-reports/photo'");
+    expect(own).not.toMatch(/API\.|Authorization|\?number=|access_code=/);
   });
 
   describe('warehouse kit release (Figma 62:*)', () => {
@@ -655,7 +674,11 @@ describe('mobile bootstrap', () => {
     expect(source).toContain("MApp.go('requests')");
     expect(source).toContain("MApp.go('report-problem')");
     expect(source).toContain("API.post('/auth/change-password'");
-    expect(source).toContain("API.post('/auth/logout')");
+    // Sign-out goes through MApp.signOut (app.js), which flushes/warns about queued actions,
+    // releases push, and clears a borrowed phone's data before POST /auth/logout.
+    expect(source).toContain('MApp.signOut()');
+    expect(source).toContain("API.get('/auth/sessions')");
+    expect(fs.readFileSync(path.join(ROOT, 'public/mobile/app.js'), 'utf8')).toContain("API.post('/auth/logout')");
     expect(source).not.toContain("API.put('/auth/profile'");
   });
 
@@ -688,8 +711,13 @@ describe('mobile bootstrap', () => {
     for (const call of ["API.get('/qc/queue?role='", "'/units/inspect'", "mPhoto.attachBlob('qc_unit'", "'/production/units/' + u.id + '/repairs'", "API.get('/qc/checklists')"]) {
       expect(files.quality).toContain(call);
     }
-    expect(files.rts).toContain("data-role-screen', 'rts'");
-    expect(files.rts).toContain("'/job-orders/' + id + '/products-in'");
+    // RTS clerk: role-kit page (R.page draws the role header), every Figma frame mapped, live
+    // posting kept (one idempotent products-in per job order).
+    expect(files.rts).toContain("R.page(view, { role: 'rts'");
+    for (const node of ['74:16', '74:68', '74:104', '74:145', '74:186', '74:234', '74:280', '74:316', '74:356', '74:399', '74:442', '74:483']) {
+      expect(files.rts).toContain("'" + node + "'");
+    }
+    expect(files.rts).toContain("'/job-orders/' + jo + '/products-in'");
     expect(files.releasing).toContain("data-role-screen', 'releasing'");
     expect(files.releasing).toContain("'/orders/' + order.id + '/release'");
   });

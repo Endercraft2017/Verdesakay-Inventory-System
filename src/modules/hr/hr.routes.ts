@@ -30,6 +30,7 @@ import {
 import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord, Shift, PayrollPolicy, EmployeeNumberPolicy, AssetIssuance, AssetIssuanceItem } from '../../shared/types';
 import { computeAttendanceMultiRate, computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../payroll/hr-payroll-compute';
 import { classifyDailyStatus } from './hr-daily-report';
+import { restDaySwapsFor, resolveRestDay, REST_DAY_FORM_SLUGS } from './rest-day';
 import { suggestEmployeeNumber } from './hr-employee-numbering';
 import { toCsv } from '../../shared/csv';
 import { resolveImport, importLoop } from '../../shared/csv-import';
@@ -430,8 +431,8 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
       (employee_no, name, department_id, position, user_id, daily_rate, rate_type, monthly_rate, status, start_date,
        sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, default_shift_id, late_exempt,
        ot_exempt, deduct_sss, deduct_philhealth, deduct_pagibig, deduct_withholding_tax, withholding_tax_override,
-       sss_override, philhealth_override, pagibig_override, photo, clock_anywhere)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       sss_override, philhealth_override, pagibig_override, photo, clock_anywhere, birth_date, civil_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, dailyRate,
     input.rate_type, input.rate_type === 'monthly' ? input.monthly_rate : null,
     input.status, input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
@@ -441,7 +442,7 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
     input.deduct_pagibig === false ? 0 : 1, input.deduct_withholding_tax === false ? 0 : 1,
     input.withholding_tax_override ?? null,
     input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null,
-    input.clock_anywhere ? 1 : 0
+    input.clock_anywhere ? 1 : 0, input.birth_date ?? null, input.civil_status ?? null
   );
   seedInitialRate(
     Number(info.lastInsertRowid), input.start_date ?? null,
@@ -454,8 +455,11 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
 // PUT /api/hr/employees/:id
 router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
   const id = Number(req.params.id);
-  const existing = queryOne<{ name: string; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null; start_date: string | null }>(
-    'SELECT name, daily_rate, rate_type, monthly_rate, start_date FROM employees WHERE id = ?', id
+  const existing = queryOne<{
+    name: string; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null; start_date: string | null;
+    birth_date: string | null; civil_status: string | null;
+  }>(
+    'SELECT name, daily_rate, rate_type, monthly_rate, start_date, birth_date, civil_status FROM employees WHERE id = ?', id
   );
   if (!existing) {
     res.status(404).json({ error: 'Employee not found' }); return;
@@ -490,7 +494,9 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
        leave_days_per_year = ?, leave_days_used = ?, rest_days = ?, default_shift_id = ?, late_exempt = ?,
        ot_exempt = ?, deduct_sss = ?, deduct_philhealth = ?, deduct_pagibig = ?, deduct_withholding_tax = ?, withholding_tax_override = ?,
        sss_override = ?, philhealth_override = ?, pagibig_override = ?, photo = ?,
-       clock_anywhere = COALESCE(?, clock_anywhere)
+       clock_anywhere = COALESCE(?, clock_anywhere),
+       birth_date = CASE WHEN ? THEN ? ELSE birth_date END,
+       civil_status = CASE WHEN ? THEN ? ELSE civil_status END
      WHERE id = ?`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, dailyRate, input.rate_type,
     input.rate_type === 'monthly' ? input.monthly_rate : null, input.status,
@@ -501,15 +507,23 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
     input.deduct_pagibig === false ? 0 : 1, input.deduct_withholding_tax === false ? 0 : 1,
     input.withholding_tax_override ?? null,
     input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null,
-    input.clock_anywhere === undefined ? null : (input.clock_anywhere ? 1 : 0), id
+    input.clock_anywhere === undefined ? null : (input.clock_anywhere ? 1 : 0),
+    input.birth_date === undefined ? 0 : 1, input.birth_date ?? null,
+    input.civil_status === undefined ? 0 : 1, input.civil_status ?? null, id
   );
   // Payslips carry the name as generated; logging the former name lets payroll reports and the
   // employee's own payslip list keep treating them as one person (payroll/payslip-owner.ts).
-  if (existing.name !== input.name) {
+  // Birth date / civil status are logged the same way, next to approved information changes.
+  type Logged = ['name' | 'birth_date' | 'civil_status', string | null, string | null];
+  const logged: Logged[] = [['name', existing.name, input.name]];
+  if (input.birth_date !== undefined) logged.push(['birth_date', existing.birth_date, input.birth_date]);
+  if (input.civil_status !== undefined) logged.push(['civil_status', existing.civil_status, input.civil_status]);
+  for (const [field, before, after] of logged) {
+    if ((before ?? null) === (after ?? null)) continue;
     run(
       `INSERT INTO employee_profile_changes (employee_id, field, old_value, new_value, changed_by, source)
-       VALUES (?, 'name', ?, ?, ?, 'hr_edit')`,
-      id, existing.name, input.name, req.user!.id
+       VALUES (?, ?, ?, ?, ?, 'hr_edit')`,
+      id, field, before, after, req.user!.id
     );
   }
   res.json({ ok: true });
@@ -603,6 +617,89 @@ router.delete('/employees/:id/documents/:docId', requirePermission('hr.manage'),
 // ─── Employee assets (company property issued/returned — standalone register, not linked
 // to Inventory stock; see SCHEMA_VERSION 43 in db.ts) ───────────────────────
 
+const ASSET_STATUSES = ['issued', 'returned', 'lost', 'damaged'] as const;
+const SEPARATED_STATUSES = ['resigned', 'terminated'];
+
+/** "Laptop (SN-1) ×2" — one asset line as it reads in the activity log. */
+function assetLineLabel(it: { asset_name: string; asset_tag?: string | null; quantity?: number }): string {
+  const qty = it.quantity ?? 1;
+  return `${it.asset_name}${it.asset_tag ? ` (${it.asset_tag})` : ''}${qty > 1 ? ` ×${qty}` : ''}`;
+}
+
+// GET /api/hr/assets — company-wide register: one row per asset line across every employee.
+// Default view is what's still out (status=issued); ?status=all|returned|lost|damaged, ?q= (asset,
+// tag, category, employee, form number), ?separated=1 (only people who have left — the
+// clearance worklist), ?format=csv.
+router.get('/assets', requirePermission('hr.view'), (req, res) => {
+  const statusParam = String(req.query.status ?? 'issued');
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (statusParam !== 'all') {
+    if (!(ASSET_STATUSES as readonly string[]).includes(statusParam)) {
+      res.status(400).json({ error: 'Unknown status' }); return;
+    }
+    where.push('it.status = ?'); params.push(statusParam);
+  }
+  const q = String(req.query.q ?? '').trim();
+  if (q) {
+    where.push(`(it.asset_name LIKE ? OR it.asset_tag LIKE ? OR it.category LIKE ? OR e.name LIKE ?
+                 OR e.employee_no LIKE ? OR ai.number LIKE ?)`);
+    params.push(...Array(6).fill(`%${q}%`));
+  }
+  const separatedIn = `(${SEPARATED_STATUSES.map(() => '?').join(',')})`;
+  if (req.query.separated === '1') {
+    where.push(`e.status IN ${separatedIn}`);
+    params.push(...SEPARATED_STATUSES);
+  }
+  const rows = queryAll<AssetIssuanceItem & {
+    issuance_number: string; issued_date: string; issued_by_name: string | null;
+    employee_id: number; employee_name: string; employee_no: string | null;
+    employee_status: string; department_name: string | null;
+  }>(
+    `SELECT it.*, ai.number AS issuance_number, ai.issued_date, u.full_name AS issued_by_name,
+            e.id AS employee_id, e.name AS employee_name, e.employee_no, e.status AS employee_status,
+            d.name AS department_name
+     FROM asset_issuance_items it
+     JOIN asset_issuances ai ON ai.id = it.issuance_id
+     JOIN employees e ON e.id = ai.employee_id
+     LEFT JOIN departments d ON d.id = e.department_id
+     LEFT JOIN users u ON u.id = ai.issued_by
+     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+     ORDER BY ai.issued_date DESC, ai.id DESC, it.sort, it.id`,
+    ...params
+  );
+
+  if (req.query.format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="assets-${statusParam}-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(toCsv(
+      ['Form No.', 'Issued Date', 'Employee No.', 'Employee Name', 'Employee Status', 'Department', 'Asset',
+        'Category', 'Tag / Serial', 'Qty', 'Condition on Issue', 'Status', 'Returned Date', 'Condition on Return', 'Return Notes'],
+      rows.map((r) => ({
+        'Form No.': r.issuance_number, 'Issued Date': r.issued_date, 'Employee No.': r.employee_no || '',
+        'Employee Name': r.employee_name, 'Employee Status': r.employee_status, Department: r.department_name || '',
+        Asset: r.asset_name, Category: r.category || '', 'Tag / Serial': r.asset_tag || '', Qty: r.quantity,
+        'Condition on Issue': r.condition_on_issue || '', Status: r.status, 'Returned Date': r.returned_date || '',
+        'Condition on Return': r.condition_on_return || '', 'Return Notes': r.return_notes || '',
+      }))
+    ));
+    return;
+  }
+
+  // Headline counts are company-wide (filters ignored) so the tiles stay stable while searching.
+  const counts: Record<string, number> = Object.fromEntries(ASSET_STATUSES.map((s) => [s, 0]));
+  for (const c of queryAll<{ status: string; n: number }>(
+    'SELECT status, COUNT(*) AS n FROM asset_issuance_items GROUP BY status'
+  )) counts[c.status] = c.n;
+  const heldBySeparated = queryOne<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM asset_issuance_items it
+     JOIN asset_issuances ai ON ai.id = it.issuance_id JOIN employees e ON e.id = ai.employee_id
+     WHERE it.status = 'issued' AND e.status IN ${separatedIn}`,
+    ...SEPARATED_STATUSES
+  )?.n ?? 0;
+  res.json({ rows, counts, held_by_separated: heldBySeparated });
+});
+
 // GET /api/hr/employees/:id/assets — this employee's issuance history, items included.
 router.get('/employees/:id/assets', requirePermission('hr.view'), (req, res) => {
   const employeeId = Number(req.params.id);
@@ -633,7 +730,8 @@ router.get('/employees/:id/assets', requirePermission('hr.view'), (req, res) => 
 // POST /api/hr/employees/:id/assets — issue one or more assets on a new Asset Issuance Form.
 router.post('/employees/:id/assets', requirePermission('hr.manage'), (req, res) => {
   const employeeId = Number(req.params.id);
-  if (!queryOne('SELECT id FROM employees WHERE id = ?', employeeId)) {
+  const employee = queryOne<{ name: string }>('SELECT name FROM employees WHERE id = ?', employeeId);
+  if (!employee) {
     res.status(404).json({ error: 'Employee not found' }); return;
   }
   const input = parseBody(createAssetIssuanceSchema, req.body);
@@ -653,6 +751,10 @@ router.post('/employees/:id/assets', requirePermission('hr.manage'), (req, res) 
       );
     });
     db.exec('COMMIT');
+    res.locals.activity = {
+      action: 'asset-issue',
+      summary: `Issued ${number} to ${employee.name}: ${input.items.map(assetLineLabel).join(', ')}`,
+    };
     res.status(201).json({ id: issuanceId, number });
   } catch (e) {
     db.exec('ROLLBACK');
@@ -691,14 +793,39 @@ router.post('/assets/:id/items/:itemId/return', requirePermission('hr.manage'), 
     `UPDATE asset_issuance_items SET status = ?, returned_date = ?, condition_on_return = ?, return_notes = ? WHERE id = ?`,
     input.status, input.returned_date, input.condition_on_return ?? null, input.return_notes ?? null, item.id
   );
+  const owner = queryOne<{ number: string; employee_name: string }>(
+    'SELECT ai.number, e.name AS employee_name FROM asset_issuances ai JOIN employees e ON e.id = ai.employee_id WHERE ai.id = ?',
+    item.issuance_id
+  );
+  const verb = { returned: 'Returned', lost: 'Marked lost', damaged: 'Marked damaged' }[input.status];
+  res.locals.activity = {
+    action: `asset-${input.status}`,
+    summary: `${verb}: ${assetLineLabel(item)} on ${owner?.number ?? 'form'} (${owner?.employee_name ?? 'employee'})` +
+      (item.status !== 'issued' ? ` — was ${item.status}` : ''),
+    // A re-save overwrites the earlier return details — keep them here.
+    snapshot: item.status !== 'issued'
+      ? { previous: { status: item.status, returned_date: item.returned_date, condition_on_return: item.condition_on_return, return_notes: item.return_notes } }
+      : undefined,
+  };
   res.json({ ok: true });
 });
 
 // DELETE /api/hr/assets/:id — remove an issuance record entirely (e.g. entered in error).
 router.delete('/assets/:id', requirePermission('hr.manage'), (req, res) => {
-  const issuance = queryOne<{ id: number }>('SELECT id FROM asset_issuances WHERE id = ?', Number(req.params.id));
+  const issuance = queryOne<AssetIssuance & { employee_name: string }>(
+    'SELECT ai.*, e.name AS employee_name FROM asset_issuances ai JOIN employees e ON e.id = ai.employee_id WHERE ai.id = ?',
+    Number(req.params.id)
+  );
   if (!issuance) { res.status(404).json({ error: 'Asset issuance not found' }); return; }
+  const items = queryAll<AssetIssuanceItem>('SELECT * FROM asset_issuance_items WHERE issuance_id = ? ORDER BY sort, id', issuance.id);
   run('DELETE FROM asset_issuances WHERE id = ?', issuance.id);
+  // The rows are gone after this — the activity log keeps the only copy of what the form held.
+  res.locals.activity = {
+    action: 'asset-issuance-delete',
+    summary: `Deleted ${issuance.number} (${issuance.employee_name}): ` +
+      (items.map((it) => `${assetLineLabel(it)} [${it.status}]`).join(', ') || 'no items'),
+    snapshot: { issuance: { ...issuance, items } },
+  };
   res.json({ ok: true });
 });
 
@@ -770,6 +897,7 @@ const DEFAULT_POLICY: PayrollPolicy = {
   hours_basis: 'fixed', hours_basis_unit: '30min',
   whole_day_min_minutes: 0, max_ot_hours: null,
   special_holiday_premium_mode: 'flat', holiday_adjacency_requirement: 'none',
+  require_rest_day_form: false,
 };
 
 /** "YYYY-MM-DD" -> weekday index (0=Sun..6=Sat). Builds the Date from the parsed y/m/d as
@@ -1046,6 +1174,10 @@ router.get('/periods/:id/attendance', requirePermission('hr.view'), (req, res) =
   const allPunchIds = [...slotMap.values()].flatMap((v) => Object.values(v)).filter((id): id is number => id != null);
   const photoIds = photoIdsForPunches('attendance', allPunchIds);
   const SLOT_KEY: Record<CorrectionSlot, string> = { in: 'time_in', lunchOut: 'lunch_out', lunchIn: 'lunch_in', out: 'time_out' };
+  // rest_day_swap: what an approved, linked Change of Rest Day form makes of this date ('yes' |
+  // 'no' | null, with the form's id in rest_day_swap_form_id), so the grid's Rest Day tag
+  // matches payroll (see rest-day.ts).
+  const swaps = restDaySwapsFor(employeeId);
   res.json(rows.map((r) => {
     const slots = slotMap.get(r.work_date);
     const photos: Record<string, string | null> = { time_in: null, lunch_out: null, lunch_in: null, time_out: null };
@@ -1055,7 +1187,8 @@ router.get('/periods/:id/attendance', requirePermission('hr.view'), (req, res) =
         if (photoId != null) photos[SLOT_KEY[slot]] = `/hr/clock/photo/${photoId}`;
       }
     }
-    return { ...r, photos };
+    const swap = swaps.get(r.work_date);
+    return { ...r, photos, rest_day_swap: swap?.rest_day ?? null, rest_day_swap_form_id: swap?.form_id ?? null };
   }));
 });
 
@@ -1205,7 +1338,7 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
     const reported = linkedSlugs.includes('reported_absence');
 
     const restDays: number[] = emp.rest_days ? JSON.parse(emp.rest_days) : policy.default_rest_days;
-    const isRestDay = ar?.rest_day === 'yes' ? true : ar?.rest_day === 'no' ? false : restDays.includes(weekdayOf(date));
+    const isRestDay = resolveRestDay(ar?.rest_day, restDaySwapsFor(emp.id).get(date), restDays.includes(weekdayOf(date)));
     const holiday = (ar?.holiday_type && ar.holiday_type !== 'none' ? ar.holiday_type : holidayFor(date)) as AttendanceDay['holiday'];
     const noWork = noWorkFor(date);
 
@@ -1246,7 +1379,7 @@ const PENDING_REQUEST_SLUGS = [
   'leave_request', 'overtime_request', 'undertime_request', 'halfday_request', 'offset_form',
   'lunch_offset_form', 'holiday_work_request', 'travel_order', 'coe_request',
   'reimbursement_request', 'loan_application', 'training_request', 'incident_report',
-  'information_change',
+  'information_change', 'rest_day_work_request', 'rest_day_change',
 ];
 
 // GET /api/hr/pending-requests — org-wide count of pending HR requests (leave, OT, undertime,
@@ -1644,15 +1777,18 @@ function attendanceDaysForEmployee(
   ];
   const formById = new Map<number, { slug: string; data: Record<string, unknown> }>();
   if (allFormIds.length) {
-    queryAll<{ id: number; data: string; slug: string }>(
-      `SELECT fr.id, fr.data, fd.slug FROM form_records fr
+    queryAll<{ id: number; data: string; slug: string; status: string }>(
+      `SELECT fr.id, fr.data, fd.slug, fr.status FROM form_records fr
        JOIN form_definitions fd ON fd.id = fr.form_def_id
        WHERE fr.id IN (${allFormIds.map(() => '?').join(',')})`,
       ...allFormIds
     ).forEach((f) => {
+      // Rest-day forms count only once approved; a pending one linked early changes nothing.
+      if (REST_DAY_FORM_SLUGS.includes(f.slug) && f.status !== 'approved') return;
       try { formById.set(f.id, { slug: f.slug, data: JSON.parse(f.data || '{}') }); } catch { /* skip unparseable */ }
     });
   }
+  const restDaySwaps = restDaySwapsFor(employeeId);
   // Per-record override (attendance_records.holiday_type / .rest_day) beats the calendar /
   // weekly pattern; holiday 'none' means "not a holiday for this person" even if the calendar
   // says so, and rest_day 'yes'/'no' force a single date on/off regardless of its weekday
@@ -1673,9 +1809,7 @@ function attendanceDaysForEmployee(
     linkedForms,
     noWork: noWorkFor(r.work_date),
     holiday,
-    isRestDay: r.rest_day === 'yes' ? true
-      : r.rest_day === 'no' ? false
-      : empRestDays.includes(weekdayOf(r.work_date)),
+    isRestDay: resolveRestDay(r.rest_day, restDaySwaps.get(r.work_date), empRestDays.includes(weekdayOf(r.work_date))),
     minHoursDecision: r.min_hours_decision as AttendanceDay['minHoursDecision'],
     // Only Regular/Special Non-Working Holiday pay is ever subject to this — a plain rest day
     // isn't a holiday at all, so it's not gated by holiday_adjacency_requirement.

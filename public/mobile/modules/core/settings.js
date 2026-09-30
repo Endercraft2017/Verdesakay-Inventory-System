@@ -181,12 +181,13 @@ MApp.route('settings', function (view) {
     var button = page.querySelector('[data-notif]');
     var hint = page.querySelector('[data-notif-hint]');
     function paint(state) {
-      var labels = { on: 'On', off: 'Off', denied: 'Blocked', unsupported: 'N/A', 'no-sw': 'Off' };
+      var labels = { on: 'On', off: 'Off', denied: 'Blocked', unsupported: 'N/A', 'no-sw': 'Off', shared: 'Off' };
       button.textContent = labels[state] || 'Off';
       button.setAttribute('aria-pressed', state === 'on');
-      button.disabled = state === 'unsupported' || state === 'denied';
+      button.disabled = state === 'unsupported' || state === 'denied' || state === 'shared';
       hint.textContent = state === 'denied' ? 'Blocked in browser settings' :
         state === 'unsupported' ? 'Not supported on this device' :
+        state === 'shared' ? 'Off while you’re signed in on a borrowed phone' :
         state === 'on' ? 'Alerts for messages and important activity' : 'Alerts are off';
       button.dataset.state = state;
     }
@@ -208,6 +209,7 @@ MApp.route('settings', function (view) {
       '<label class="m-field"><span class="m-label">Current password</span><input type="password" class="m-input" data-cur autocomplete="current-password" /></label>' +
       '<label class="m-field"><span class="m-label">New password</span><input type="password" class="m-input" data-new autocomplete="new-password" /></label>' +
       '<button class="m-btn" type="submit">Update password</button></form></section>' +
+      '<section class="profile-section"><h2>Where you’re signed in</h2><div data-sessions><div class="m-hint">Loading…</div></div></section>' +
       '<section class="profile-section"><h2>Other access</h2><a class="m-btn m-btn-secondary profile-full-button" href="/?view=desktop">Switch to the desktop system</a>' +
       '<button class="m-btn m-btn-danger profile-full-button" type="button" data-out>Sign out</button></section>');
     page.querySelector('[data-pw]').onsubmit = function (event) {
@@ -222,9 +224,45 @@ MApp.route('settings', function (view) {
         .catch(function (e) { mToast(e.message || 'Failed', 'err'); })
         .finally(function () { button.disabled = false; });
     };
-    page.querySelector('[data-out]').onclick = function () {
-      API.post('/auth/logout').catch(function () {}).finally(function () { MApp.go('home'); location.reload(); });
-    };
+    page.querySelector('[data-out]').onclick = function () { MApp.signOut(); };
+    loadSessions(page.querySelector('[data-sessions]'));
+  }
+  // Server times are UTC "YYYY-MM-DD HH:MM:SS".
+  function when(ts) {
+    if (!ts) return '—';
+    var d = new Date(ts.replace(' ', 'T') + 'Z');
+    return isNaN(d.getTime()) ? ts : d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  function loadSessions(box) {
+    API.get('/auth/sessions').then(function (list) {
+      var others = list.filter(function (x) { return !x.current; });
+      box.innerHTML = list.map(function (x) {
+        return '<div class="m-session-row"><div><b>' + mEsc(x.device) +
+          (x.current ? '<span class="m-session-tag">This phone</span>' : '') +
+          (x.shared ? '<span class="m-session-tag">Borrowed</span>' : '') + '</b>' +
+          '<small>Signed in ' + mEsc(when(x.created_at)) + ' · last active ' + mEsc(when(x.last_seen_at)) +
+          (x.last_ip || x.ip ? ' · IP ' + mEsc(x.last_ip || x.ip) : '') + '</small></div>' +
+          (x.current ? '' : '<button class="m-btn m-btn-sm m-btn-secondary" type="button" data-end="' + mEsc(x.id) + '">Sign out</button>') +
+          '</div>';
+      }).join('') +
+        (others.length ? '<button class="m-btn m-btn-secondary profile-full-button" type="button" data-end-others>Sign out everywhere else</button>' : '');
+      Array.prototype.forEach.call(box.querySelectorAll('[data-end]'), function (b) {
+        b.onclick = function () {
+          b.disabled = true;
+          API.post('/auth/sessions/' + encodeURIComponent(b.dataset.end) + '/revoke')
+            .then(function () { mToast('Signed out of that device'); loadSessions(box); })
+            .catch(function (e) { b.disabled = false; mToast(e.message || 'Failed', 'err'); });
+        };
+      });
+      var all = box.querySelector('[data-end-others]');
+      if (all) all.onclick = function () {
+        if (!window.confirm('Sign out of every other phone and computer?')) return;
+        all.disabled = true;
+        API.post('/auth/sessions/revoke-others')
+          .then(function (r) { mToast('Signed out of ' + r.ended + ' other session' + (r.ended === 1 ? '' : 's')); loadSessions(box); })
+          .catch(function (e) { all.disabled = false; mToast(e.message || 'Failed', 'err'); });
+      };
+    }).catch(function (e) { box.innerHTML = '<div class="m-hint">' + mEsc(e.message || 'Could not load sessions') + '</div>'; });
   }
 
   renderHome();

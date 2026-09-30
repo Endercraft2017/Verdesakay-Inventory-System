@@ -1,11 +1,13 @@
 /**
  * Application activity log. A single middleware (wired in app.ts) records every
  * *mutating* API request — who, when, which endpoint / record, the result, and a
- * redacted snapshot of the request body — into the `activity_log` table.
+ * redacted snapshot of the request body — into the `activity_log` table, with the caller's IP
+ * and device (random device ID + a readable label; see device.ts).
  * Read it back via GET /api/activity (admin-only, `audit.view`).
  */
 import type { Request, Response } from 'express';
 import { run } from './db';
+import { deviceIdOf, userAgentOf, deviceLabel, clientIpOf } from './device';
 
 const SKIP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const REDACT_KEY = /pass|password|token|secret|hash|otp|\bpin\b/i;
@@ -29,6 +31,7 @@ function deriveEntity(p: string): string {
 function deriveAction(method: string, p: string): string {
   if (p === '/api/auth/login') return 'login';
   if (p === '/api/auth/logout') return 'logout';
+  if (/\/sessions\/(?:[^/]+\/)?revoke(?:-others|-all)?$/.test(p)) return 'session-revoke';
   if (/\/adjust$/.test(p)) return 'stock-adjust';
   if (/\/image$/.test(p)) return method === 'DELETE' ? 'image-remove' : 'image-set';
   if (/\/permissions$/.test(p)) return 'permissions-change';
@@ -67,9 +70,18 @@ function redact(value: unknown, depth = 0): unknown {
   return value;
 }
 
+/** What a route may put on `res.locals.activity` to replace the generic "delete hr #3" row with
+ *  something readable. `snapshot` lands in meta — use it for records a DELETE is about to erase. */
+export interface ActivityOverride {
+  action?: string;
+  summary?: string;
+  snapshot?: unknown;
+}
+
 /** Redacted JSON snapshot of what the request carried (body / query / file). */
-function buildMeta(req: Request): string | null {
+function buildMeta(req: Request, snapshot?: unknown): string | null {
   const payload: Record<string, unknown> = {};
+  if (snapshot !== undefined) payload.snapshot = redact(snapshot);
   const body = req.body as unknown;
   if (body && typeof body === 'object' && Object.keys(body as object).length) {
     payload.body = redact(body);
@@ -93,11 +105,11 @@ export function logEvent(
     const path = (req.originalUrl || req.url || '').split('?')[0] ?? '';
     run(
       `INSERT INTO activity_log
-        (user_id, user_name, method, path, entity, entity_id, action, status_code, ip, summary, meta)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        (user_id, user_name, method, path, entity, entity_id, action, status_code, ip, device_id, device, summary, meta)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       req.user?.id ?? null, req.user?.full_name ?? null, req.method, path, ev.entity,
       ev.entityId == null ? null : String(ev.entityId), ev.action, ev.statusCode ?? 200,
-      req.ip ?? req.socket?.remoteAddress ?? null, ev.summary
+      clientIpOf(req), deviceIdOf(req), deviceLabel(userAgentOf(req)), ev.summary
     );
   } catch {
     /* the activity log must never break a request */
@@ -113,7 +125,8 @@ export function recordActivity(req: Request, res: Response): void {
     if (path === '/api/health') return;
 
     const entity = deriveEntity(path);
-    const action = deriveAction(req.method, path);
+    const override = res.locals?.activity as ActivityOverride | undefined;
+    const action = override?.action ?? deriveAction(req.method, path);
     // Prefer an id in the path; for creates, fall back to the id in the JSON response.
     const created = res.locals?.createdId;
     const entityId =
@@ -130,14 +143,18 @@ export function recordActivity(req: Request, res: Response): void {
     if (!userName && path === '/api/auth/login' && typeof bodyUser === 'string') userName = bodyUser;
 
     const summary =
-      action === 'login'
-        ? (ok ? 'Signed in' : 'Failed sign-in')
+      override?.summary && ok
+        ? override.summary
+        : action === 'login'
+        ? (ok
+          ? ((req.body as { shared?: unknown } | undefined)?.shared === true ? 'Signed in on a borrowed device' : 'Signed in')
+          : 'Failed sign-in')
         : `${action} ${entity}${entityId ? ` #${entityId}` : ''}${ok ? '' : ` — failed (${res.statusCode})`}`;
 
     run(
       `INSERT INTO activity_log
-        (user_id, user_name, method, path, entity, entity_id, action, status_code, ip, summary, meta)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, user_name, method, path, entity, entity_id, action, status_code, ip, device_id, device, summary, meta)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       user?.id ?? null,
       userName,
       req.method,
@@ -146,9 +163,11 @@ export function recordActivity(req: Request, res: Response): void {
       entityId,
       action,
       res.statusCode,
-      req.ip ?? req.socket?.remoteAddress ?? null,
+      clientIpOf(req),
+      deviceIdOf(req),
+      deviceLabel(userAgentOf(req)),
       summary,
-      buildMeta(req)
+      buildMeta(req, ok ? override?.snapshot : undefined)
     );
   } catch {
     /* the activity log must never break a request */

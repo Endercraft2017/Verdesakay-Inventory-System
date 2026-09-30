@@ -16,7 +16,7 @@ function clampInt(v: unknown, def: number, min: number, max: number): number {
 
 // GET /api/activity — filtered, paginated feed (newest first)
 router.get('/', (req, res) => {
-  const { user_id, entity, action, from, to, q } = req.query;
+  const { user_id, entity, action, from, to, q, ip, device_id } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
 
@@ -25,10 +25,12 @@ router.get('/', (req, res) => {
   if (typeof action === 'string' && action.trim()) { where.push('action = ?'); params.push(action.trim()); }
   if (typeof from === 'string' && from.trim()) { where.push('created_at >= ?'); params.push(from.trim()); }
   if (typeof to === 'string' && to.trim()) { where.push('created_at <= ?'); params.push(to.trim()); }
+  if (typeof ip === 'string' && ip.trim()) { where.push('ip = ?'); params.push(ip.trim()); }
+  if (typeof device_id === 'string' && device_id.trim()) { where.push('device_id = ?'); params.push(device_id.trim()); }
   if (typeof q === 'string' && q.trim()) {
-    where.push('(summary LIKE ? OR path LIKE ? OR user_name LIKE ?)');
+    where.push('(summary LIKE ? OR path LIKE ? OR user_name LIKE ? OR ip LIKE ? OR device LIKE ?)');
     const like = `%${q.trim()}%`;
-    params.push(like, like, like);
+    params.push(like, like, like, like, like);
   }
   const whereSql = where.length ? ' WHERE ' + where.join(' AND ') : '';
   const limit = clampInt(req.query.limit, 100, 1, 500);

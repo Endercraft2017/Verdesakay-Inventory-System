@@ -135,7 +135,10 @@ router.get('/bir-2316/:employeeId', (req, res) => {
   if (!emp) { res.status(404).json({ error: 'Employee not found' }); return; }
   const rows = yearPayslipRowsByEmployee(year).get(emp.name) ?? [];
   const figures = compute2316(rows, effectiveTables(`${year}-12-31`).rwt, year, optsFromQuery(req.query as Record<string, unknown>));
-  res.json({ year, company: companyProfile(), employee: emp, figures });
+  // BIR prints dates MM/DD/YYYY; blank when HR hasn't recorded one (employees.birth_date, v52).
+  const bd = typeof emp.birth_date === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(emp.birth_date) : null;
+  const employee = { ...emp, birth_date_mdy: bd ? `${bd[2]}/${bd[3]}/${bd[1]}` : '' };
+  res.json({ year, company: companyProfile(), employee, figures });
 });
 
 // GET /api/accounting/bir-alphalist?year= — 1604-C Alphalist Schedule 1, BIR column order.

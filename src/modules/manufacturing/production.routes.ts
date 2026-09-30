@@ -251,7 +251,7 @@ router.get('/employees', readGate, (_req, res) => {
   res.json(queryAll(
     `SELECT e.id, e.name, e.employee_no, e.position, d.name AS department_name
      FROM employees e LEFT JOIN departments d ON d.id = e.department_id
-     WHERE e.status NOT IN ('resigned', 'terminated')
+     WHERE e.status NOT IN ('suspended', 'resigned', 'terminated')
      ORDER BY d.name COLLATE NOCASE, e.name COLLATE NOCASE`
   ));
 });

@@ -5,7 +5,7 @@ App.register('activity', async (view) => {
     return;
   }
 
-  const state = { user_id: '', entity: '', action: '', from: '', to: '', q: '', offset: 0, limit: 100 };
+  const state = { user_id: '', entity: '', action: '', from: '', to: '', q: '', ip: '', device_id: '', offset: 0, limit: 100 };
   let last = { rows: [], total: 0 };
 
   view.innerHTML = `
@@ -20,6 +20,7 @@ App.register('activity', async (view) => {
       <label class="inline-date">To <input type="date" id="al-to" /></label>
       <button class="btn secondary" id="al-prune">Prune…</button>
     </div>
+    <div id="al-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px"></div>
     <div class="panel"><div id="al-table"></div></div>
     <div class="pager" id="al-pager"></div>`;
 
@@ -45,9 +46,12 @@ App.register('activity', async (view) => {
     if (state.action) p.set('action', state.action);
     if (state.from) p.set('from', state.from);
     if (state.to) p.set('to', state.to + ' 23:59:59');
+    if (state.ip) p.set('ip', state.ip);
+    if (state.device_id) p.set('device_id', state.device_id);
     p.set('limit', state.limit);
     p.set('offset', state.offset);
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
+    renderChips();
     last = await API.get('/activity?' + p.toString());
     render();
   }
@@ -63,7 +67,7 @@ App.register('activity', async (view) => {
       <table>
         <thead><tr>
           <th>When</th><th>User</th><th>Action</th><th>Module</th>
-          <th>Record</th><th class="right">Result</th><th>IP</th>
+          <th>Record</th><th class="right">Result</th><th>IP</th><th>Device</th>
         </tr></thead>
         <tbody>${rows.map((r, i) => `
           <tr class="clickable" data-row="${i}">
@@ -74,12 +78,26 @@ App.register('activity', async (view) => {
             <td class="mono">${r.entity_id ? '#' + UI.esc(r.entity_id) : '—'}</td>
             <td class="right"><span class="badge-pill ${r.status_code >= 400 ? 'low' : 'ok'}">${r.status_code ?? '—'}</span></td>
             <td class="mono muted">${UI.esc(r.ip || '—')}</td>
+            <td class="muted">${UI.esc(r.device || '—')}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;
     tableEl.querySelectorAll('tr[data-row]').forEach((tr) =>
       tr.onclick = () => detailModal(rows[Number(tr.dataset.row)]));
     renderPager(total);
+  }
+
+  // Active "same device" / "same IP" filters, set from the detail modal.
+  function renderChips() {
+    const el = view.querySelector('#al-chips');
+    const chips = [];
+    if (state.device_id) chips.push(['device_id', 'Device ' + state.device_id.slice(0, 8)]);
+    if (state.ip) chips.push(['ip', 'IP ' + state.ip]);
+    el.innerHTML = chips.map(([k, label]) =>
+      `<button class="btn secondary small" data-clear="${k}" title="Clear filter">${UI.esc(label)} ✕</button>`).join('');
+    el.querySelectorAll('[data-clear]').forEach((b) => b.onclick = () => {
+      state[b.dataset.clear] = ''; state.offset = 0; load();
+    });
   }
 
   function renderPager(total) {
@@ -112,10 +130,24 @@ App.register('activity', async (view) => {
           <div><span class="muted">Module</span><div>${UI.esc(r.entity || '—')}</div></div>
           <div><span class="muted">Result</span><div>${r.status_code ?? '—'}</div></div>
           <div><span class="muted">IP</span><div class="mono">${UI.esc(r.ip || '—')}</div></div>
+          <div><span class="muted">Device</span><div>${UI.esc(r.device || '—')}</div></div>
+          <div><span class="muted">Device ID</span><div class="mono" style="word-break:break-all">${UI.esc(r.device_id || '—')}</div></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          ${r.device_id ? '<button class="btn secondary small" data-same="device_id">All from this device</button>' : ''}
+          ${r.ip ? '<button class="btn secondary small" data-same="ip">All from this IP</button>' : ''}
         </div>
         <p class="mono muted" style="margin:12px 0 0;word-break:break-all">${UI.esc(r.method)} ${UI.esc(r.path)}</p>
         ${metaBlock}`,
       cancelText: 'Close',
+      onOpen: (overlay) => {
+        overlay.querySelectorAll('[data-same]').forEach((b) => b.onclick = () => {
+          state[b.dataset.same] = r[b.dataset.same];
+          state.offset = 0;
+          overlay.remove();
+          load();
+        });
+      },
     });
   }
 

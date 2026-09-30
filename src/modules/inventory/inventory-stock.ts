@@ -6,9 +6,12 @@
  *
  * Callers own the surrounding transaction (these functions issue no BEGIN/COMMIT)
  * and must pre-validate the location exists and that the result won't go negative
- * (so the caller can name the location in the error message).
+ * (so the caller can name the location in the error message) — except while a synced
+ * command runs, where a stock-out beyond recorded stock is accepted and flagged instead
+ * (docs/OFFLINE-FIRST.md decision D1; see `stock_discrepancies`).
  */
 import { queryOne, queryAll, run } from '../../shared/db';
+import { inSyncedCommand } from '../../shared/sync-context';
 
 export function getDefaultLocationId(): number {
   const row =
@@ -64,8 +67,15 @@ interface ChangeOpts {
   unitCost?: number | null;
 }
 
-/** Apply a stock delta at one location + log it. Returns the new figures. */
-export function applyStockChange(opts: ChangeOpts): { locationQty: number; total: number } {
+/** Whether a stock-out may exceed the recorded stock at its location: only inside a synced
+ *  command (an offline `physical` action or its replay), never for a direct request. */
+export function overdrawAllowed(): boolean {
+  return inSyncedCommand();
+}
+
+/** Apply a stock delta at one location + log it. Returns the new figures, plus the
+ *  `stock_discrepancies` row when a synced stock-out took the location below zero. */
+export function applyStockChange(opts: ChangeOpts): { locationQty: number; total: number; discrepancyId?: number } {
   const { itemId, locationId, change, reason, userId, touchTotal = true, unitCost } = opts;
   const locationQty = stockAt(itemId, locationId) + change;
 
@@ -102,7 +112,7 @@ export function applyStockChange(opts: ChangeOpts): { locationQty: number; total
   const total =
     queryOne<{ quantity: number }>('SELECT quantity FROM inventory_items WHERE id = ?', itemId)?.quantity ?? 0;
 
-  run(
+  const tx = run(
     `INSERT INTO inventory_transactions
        (item_id, user_id, change, balance_after, reason, location_id, location_balance_after)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -114,6 +124,17 @@ export function applyStockChange(opts: ChangeOpts): { locationQty: number; total
     locationId,
     locationQty
   );
+  // D1: the goods left even though the records said they weren't there — flag it for a
+  // supervisor to count or correct. On the authority this reflects its own (final) balance.
+  if (change < 0 && locationQty < 0 && inSyncedCommand()) {
+    const d = run(
+      `INSERT INTO stock_discrepancies
+         (item_id, location_id, transaction_id, change, location_balance_after, reason, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      itemId, locationId, Number(tx.lastInsertRowid), change, locationQty, reason, userId
+    );
+    return { locationQty, total, discrepancyId: Number(d.lastInsertRowid) };
+  }
   return { locationQty, total };
 }
 

@@ -1,5 +1,11 @@
 /* Web-push subscription management for the mobile app.
-   mPush.isSupported() / status() / enable() / disable() / test() */
+   mPush.isSupported() / status() / enable() / disable() / release() / test()
+
+   A browser has ONE push subscription, but on a shared phone the server may have it registered
+   to whoever last turned notifications on there. status() therefore asks the server whether
+   this subscription is the signed-in person's; release() (called on sign-out) drops it when it
+   is, so their notifications stop arriving on a phone they've left. On a borrowed-phone
+   sign-in notifications stay off ('shared'). */
 (function () {
   function urlB64ToUint8(base64) {
     var pad = '='.repeat((4 - (base64.length % 4)) % 4);
@@ -19,13 +25,20 @@
   var mPush = {
     isSupported: isSupported,
 
-    /** 'unsupported' | 'no-sw' | 'denied' | 'off' | 'on' */
+    /** 'unsupported' | 'no-sw' | 'denied' | 'shared' | 'off' | 'on' */
     status: function () {
+      if (window.API && API.isSharedSession && API.isSharedSession()) return Promise.resolve('shared');
       if (!isSupported()) return Promise.resolve('unsupported');
       if (Notification.permission === 'denied') return Promise.resolve('denied');
       return reg().then(function (r) {
         if (!r || !r.pushManager) return 'no-sw';
-        return r.pushManager.getSubscription().then(function (s) { return s ? 'on' : 'off'; });
+        return r.pushManager.getSubscription().then(function (s) {
+          if (!s) return 'off';
+          // Subscribed in this browser — but is it registered to the person signed in now?
+          return API.get('/push/status?endpoint=' + encodeURIComponent(s.endpoint))
+            .then(function (st) { return st && st.this_device === false ? 'off' : 'on'; })
+            .catch(function () { return 'on'; });
+        });
       });
     },
 
@@ -58,6 +71,24 @@
             .then(function () { return 'off'; });
         });
       });
+    },
+
+    /** On sign-out: unsubscribe this browser if its subscription is the signed-in person's
+        (a coworker's own subscription on their phone is left alone). */
+    release: function () {
+      if (!isSupported()) return Promise.resolve();
+      return reg().then(function (r) {
+        if (!r || !r.pushManager) return;
+        return r.pushManager.getSubscription().then(function (sub) {
+          if (!sub) return;
+          return API.get('/push/status?endpoint=' + encodeURIComponent(sub.endpoint)).then(function (st) {
+            if (!st || !st.this_device) return;
+            return API.post('/push/unsubscribe', { endpoint: sub.endpoint })
+              .catch(function () {})
+              .then(function () { return sub.unsubscribe(); });
+          });
+        });
+      }).catch(function () {});
     },
 
     test: function () { return API.post('/push/test'); },

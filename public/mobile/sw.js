@@ -5,7 +5,7 @@
      device reconnects, even if no tab is open (Android; iOS flushes on open).
 
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
-var CACHE_VERSION = 'vds-m-v46';
+var CACHE_VERSION = 'vds-m-v49';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -33,6 +33,8 @@ var SHELL = [
   '/mobile/icons/v2/camera.svg',
   '/mobile/icons/v2/check-done.svg',
   '/js/api.js',
+  '/js/lib/image-compress.js',
+  '/js/lib/pdf-pages.js', // pdf.js itself (/js/vendor/pdfjs) loads on first PDF pick, not precached
   '/mobile/vendor/qrcode.js',
   '/mobile/vendor/zxing.js',
   '/mobile/app.js',
@@ -242,19 +244,22 @@ async function replayQueue() {
   var ops = await idbAll(db, 'ops');
   var tokenRow = await idbGet(db, 'meta', 'token');
   var token = tokenRow && tokenRow.v;
+  var tokenUser = tokenRow ? tokenRow.user_id : null;
   var stillPending = false;
+  if (!token) return; // signed out — nothing replays until someone signs in (queue.js)
+
+  var headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+  if (tokenRow.device_id) headers['X-Device-Id'] = tokenRow.device_id;
 
   for (var i = 0; i < ops.length; i++) {
     var op = ops[i];
     if (op.error) continue; // needs the user's attention — leave it
+    // Only ever replay an op as the account that queued it (legacy unstamped ops excepted).
+    if (op.user_id != null && op.user_id !== tokenUser) continue;
     try {
       var res = await fetch('/api' + op.path, {
         method: op.method || 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': op.key,
-          Authorization: token ? 'Bearer ' + token : '',
-        },
+        headers: Object.assign({ 'Idempotency-Key': op.key }, headers),
         body: JSON.stringify(op.body),
       });
       if (res.ok) {

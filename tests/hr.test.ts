@@ -1026,7 +1026,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
 
   it('BIR 2316: year-end figures per employee from the generated payslips', async () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-2316', name: '2316 Employee', daily_rate: 1000, tin_no: '123-456-789-000' });
+      .send({ employee_no: 'TEST-2316', name: '2316 Employee', daily_rate: 1000, tin_no: '123-456-789-000', birth_date: '1991-03-07' });
 
     // work_date deliberately NOT a Sat/Sun (2026-06-14 is a Sunday) — this test is about BIR
     // 2316 aggregation, not rest-day pay, and shouldn't accidentally exercise that feature.
@@ -1046,6 +1046,29 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(one.status).toBe(200);
     expect(one.body.employee.name).toBe('2316 Employee');
     expect(one.body.employee.tin_no).toBe('123-456-789-000');
+    expect(one.body.employee.birth_date_mdy).toBe('03/07/1991'); // BIR date format
+    // The seeded template prints it (fresh installs via seed, existing ones via the v54 patch).
+    const tplList = await ctx.api.get('/api/templates').set(hdr());
+    const tplMeta = tplList.body.find((t: { name: string }) => t.name === 'BIR 2316');
+    const tpl = await ctx.api.get('/api/templates/' + tplMeta.id).set(hdr());
+    expect(tpl.body.body).toContain('{{employee.birth_date_mdy}}');
+
+    // v54 upgrade: an older copy (no DOB row) gains exactly one row; re-running is a no-op; a
+    // template edited so the default TIN row is gone is left alone.
+    const { run: dbRun, queryOne: dbOne, forceMigrate } = await import('../src/shared/db');
+    const dobRow = /\n\s*<div class="row"><span class="l">Date of Birth \(MM\/DD\/YYYY\)<\/span><span class="v">\{\{employee\.birth_date_mdy\}\}<\/span><\/div>/;
+    const oldBody = String(tpl.body.body).replace(dobRow, '');
+    expect(oldBody).not.toContain('birth_date');
+    dbRun('UPDATE doc_templates SET body = ? WHERE id = ?', oldBody, tplMeta.id);
+    forceMigrate('default');
+    forceMigrate('default');
+    const patched = dbOne<{ body: string }>('SELECT body FROM doc_templates WHERE id = ?', tplMeta.id)!.body;
+    expect(patched.match(/employee\.birth_date_mdy/g)).toHaveLength(1);
+    const custom = '<p>{{employee.name}} — custom layout</p>';
+    dbRun('UPDATE doc_templates SET body = ? WHERE id = ?', custom, tplMeta.id);
+    forceMigrate('default');
+    expect(dbOne<{ body: string }>('SELECT body FROM doc_templates WHERE id = ?', tplMeta.id)!.body).toBe(custom);
+    dbRun('UPDATE doc_templates SET body = ? WHERE id = ?', patched, tplMeta.id);
     const f = one.body.figures;
     expect(f.payslip_count).toBe(2);
     expect(f.basic_salary).toBe(2000);                       // 1000/day * 1 day * 2

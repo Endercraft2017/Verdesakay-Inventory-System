@@ -16,8 +16,8 @@ reachable by `hr.manage`. Mounted at `/api/users`.
 |---|---|---|---|---|---|
 | `GET /` | 🔑 any user | — | `SELECT u.id, username, full_name, role, department_id, active, permission_overrides, d.name AS department_name FROM users u LEFT JOIN departments d ...` | Full row list if caller has `users.manage`; otherwise filtered to `active===1` rows projected to `{id, username, full_name, department_name}` only | — |
 | `POST /` | 👑 `requirePermission('users.manage')` | `createUserSchema` | Checks `SELECT id FROM users WHERE username = ?`; `bcrypt.hashSync(password, 10)`; `INSERT INTO users (username, full_name, password_hash, role, department_id)` | `201 {id}` | `409 {error:'Username already taken'}` |
-| `PUT /:id` | 👑 | `updateUserSchema` | `SELECT * FROM users WHERE id = ?`; merges supplied fields over existing row; last-admin guard (see below); `UPDATE users SET full_name, role, department_id, active`; if deactivated, `DELETE FROM sessions WHERE user_id = ?` | `200 {ok: true}` | `404 {error:'User not found'}`; `400 {error:'Cannot remove the last active administrator'}` |
-| `POST /:id/reset-password` | 👑 | `resetPasswordSchema` | `SELECT id FROM users WHERE id = ?`; `bcrypt.hashSync`; `UPDATE users SET password_hash`; `DELETE FROM sessions WHERE user_id = ?` (force re-login) | `200 {ok: true}` | `404 {error:'User not found'}` |
+| `PUT /:id` | 👑 | `updateUserSchema` | `SELECT * FROM users WHERE id = ?`; merges supplied fields over existing row; last-admin guard (see below); `UPDATE users SET full_name, role, department_id, active`; if deactivated, `endUserSessions(id, 'deactivated')` | `200 {ok: true}` | `404 {error:'User not found'}`; `400 {error:'Cannot remove the last active administrator'}` |
+| `POST /:id/reset-password` | 👑 | `resetPasswordSchema` | `SELECT id FROM users WHERE id = ?`; `bcrypt.hashSync`; `UPDATE users SET password_hash`; `endUserSessions(id, 'password')` (force re-login) | `200 {ok: true}` | `404 {error:'User not found'}` |
 | `GET /permissions/catalog` | 👑 | — | Returns `{ permissions: ALL_PERMISSIONS, roleDefaults: allRoleDefaults() }` — the canonical permission-key list and per-role default map, straight from `src/shared/permissions.ts`. Added 2026-08-25 so `admin.js`'s Customize Permissions editor can stop hand-copying this data (it had drifted, missing `hr.view`/`hr.manage`). | `200 {permissions, roleDefaults}` | — |
 | `PUT /:id/permissions` | 👑 | `permissionOverridesSchema` | `SELECT id FROM users WHERE id = ?`; strips `overrides` down to keys present in `ALL_PERMISSIONS`; `UPDATE users SET permission_overrides = ?` (JSON) | `200 {ok: true}` | `404 {error:'User not found'}` |
 
@@ -73,7 +73,9 @@ reachable by `hr.manage`. Mounted at `/api/users`.
   counts *other* active admins (`id != ?`) — it does not block a no-op update to an already-inactive
   or already-non-admin user.
 - Deactivating a user (`active` → 0) immediately kills all of that user's sessions
-  (`DELETE FROM sessions WHERE user_id = ?`), forcing a hard logout. Password reset does the same.
+  (`endUserSessions(id, 'deactivated')` — ended, kept as history), forcing a hard logout. Password reset does the same.
+- `GET /:id/sessions`, `POST /:id/sessions/:sid/revoke`, `POST /:id/sessions/revoke-all` (`users.manage`) — an account's
+  sign-ins (live + 90-day history, device / IP) and remote sign-out; revoke-all keeps the caller's own current session.
 - `PUT /:id/permissions` filters the incoming `overrides` object down to only real permission keys
   from `ALL_PERMISSIONS` before storing — an attacker (or buggy client) supplying an unknown key
   is silently dropped, not rejected.

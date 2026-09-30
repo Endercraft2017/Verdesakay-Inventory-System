@@ -371,7 +371,7 @@ export function executeAnalyticsTool(name: string, args: unknown, user: AuthUser
 
       case 'leave_ot_summary': {
         const { from, to } = range(a);
-        const where = ['fr.created_at BETWEEN ? AND ?', "fd.slug IN ('leave_request','overtime_request','halfday_request','offset_form','lunch_offset_form','holiday_work_request')"];
+        const where = ['fr.created_at BETWEEN ? AND ?', "fd.slug IN ('leave_request','overtime_request','halfday_request','offset_form','lunch_offset_form','holiday_work_request','rest_day_work_request','rest_day_change')"];
         const params: unknown[] = [from, `${to} 23:59:59`];
         if (a.employee_id) { where.push('ar.employee_id = ?'); params.push(Number(a.employee_id)); }
         const rows = queryAll(

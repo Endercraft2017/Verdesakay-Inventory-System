@@ -10,6 +10,8 @@
     // QC / QA chips use text glyphs in Figma (69:21 ✓, 72:251 ◆), not icon assets.
     qc: { label: 'QC personnel', glyph: '✓', accent: 'qc' },
     qa: { label: 'QA personnel', glyph: '◆', accent: 'qa' },
+    // RTS shares the warehouse green (no accent); its chip mark is a bar (74:21).
+    rts: { label: 'RTS clerk', glyph: '▬' },
   };
   var e = function (s) { return mEsc(s == null ? '' : String(s)); };
 
