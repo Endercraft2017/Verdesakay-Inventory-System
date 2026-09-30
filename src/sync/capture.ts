@@ -24,7 +24,7 @@ import {
   APP_VERSION, getCommand, insertCommand, lockSync, parsePlan, stampLocal, type SyncClass,
 } from './commands';
 import { ulid } from './ids-util';
-import { isNodeLocalTable, syncConfigOf, type SyncConfig } from './node';
+import { isReplicated, syncConfigOf, type SyncConfig } from './node';
 import { flushEffects } from './authority';
 import { rememberReplayContext, replayRequestOf, setReplayActor } from './replay';
 
@@ -35,7 +35,6 @@ function deviceIdOf(req: Request): string | null {
   const raw = req.get('x-device-id');
   return raw && DEVICE_ID_RE.test(raw) ? raw : null;
 }
-const replicated = (table: string) => !isNodeLocalTable(table);
 
 export function syncRequestMiddleware(req: Request, res: Response, next: NextFunction): void {
   const conn = activeDb();
@@ -115,7 +114,7 @@ async function recordCommand(
     if (done) return;
     done = true;
     try {
-      const changes = filterChangeset(session.changeset(), replicated);
+      const changes = filterChangeset(session.changeset(), isReplicated);
       session.close();
       // Nothing changed ⇒ nothing to sync (a validation error, a no-op).
       if (!changes.length) return;

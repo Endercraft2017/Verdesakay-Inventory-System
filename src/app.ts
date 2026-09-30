@@ -54,7 +54,7 @@ import { tenantStore, getDb, DEFAULT_TENANT } from './shared/db';
 import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost } from './platform/platform';
 import { requireModule, moduleEnabled } from './shared/modules';
 import { BEHIND_PROXY } from './shared/hosting';
-import { installSync, replayTenantOf, syncRequestMiddleware } from './sync';
+import { installSync, replayTenantOf, syncRequestMiddleware, syncRoutes } from './sync';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -173,6 +173,9 @@ export function createApp() {
   app.use('/api/auth', authRoutes);
   // Before the bare-'/api' routers below: their blanket requireAuth would otherwise 401 it.
   app.use('/api/anonymous-reports', anonymousReportRoutes);
+  // Installed PCs enrol and sync here (node-token auth; src/sync/transport.ts). Before the
+  // bare-'/api' routers, whose blanket requireAuth would 401 a node token.
+  app.use('/api/sync', syncRoutes);
   app.use('/api/confidential-reports', confidentialReportRoutes);
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
   app.use('/api/tenant', tenantRoutes); // current workspace plan / status / usage

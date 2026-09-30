@@ -45,4 +45,6 @@ export { enableSync, syncConfigOf, isNodeLocalTable, NODE_RANGE } from './node';
 export { acceptCommand, pullFor, snapshotForNode, flushEffects } from './authority';
 export { applyConfirmed, pendingCommands, lastAuthoritySeq, SyncDivergenceError } from './rebase';
 export { SyncBlockedError } from './ids';
+export { default as syncRoutes, buildNodeSnapshot } from './transport';
+export { enrolNode, adoptSnapshot, syncWithCloud, startSyncLoop, remoteOf, SyncOfflineError } from './client';
 export type { SyncClass, SyncCommand, CommandResult } from './commands';

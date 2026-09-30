@@ -13,7 +13,7 @@ import { filterChangeset } from './changeset';
 import {
   getCommand, insertCommand, lockSync, type CommandResult, type SyncCommand,
 } from './commands';
-import { drainRecorder, isNodeLocalTable, syncConfigOf } from './node';
+import { drainRecorder, isReplicated, syncConfigOf } from './node';
 import { dispatchCommand } from './replay';
 
 /** Move what the cloud recorder captured since the last flush into `sync_effects`. Returns the
@@ -23,7 +23,7 @@ export function flushEffects(conn: DatabaseSync, commandId: string | null): numb
   if (conn.isTransaction) return null;
   const raw = drainRecorder(conn);
   if (!raw) return null;
-  const changes = filterChangeset(raw, (t) => !isNodeLocalTable(t));
+  const changes = filterChangeset(raw, isReplicated);
   if (!changes.length) return null;
   const row = conn
     .prepare('INSERT INTO sync_effects (command_id, changeset) VALUES (?, ?) RETURNING authority_seq')

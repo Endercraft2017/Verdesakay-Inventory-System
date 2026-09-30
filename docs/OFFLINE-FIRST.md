@@ -14,6 +14,7 @@ work can be placed module-by-module and pipeline-by-pipeline. Business decisions
 | D2 | **Nothing is cloud-only.** Every screen works offline, and every installed PC holds a full copy | §7.5 |
 | D3 | A site needs **at least 1** installed PC. Failover behavior follows how many it has | §7.6 |
 | D4 | The CLAUDE.md stock/stage rule is **reworded** to let the site host confirm (applied when phase 1 starts) | §7.4 |
+| D5 | Phones trust the site host through a **company certificate installed once per phone** (a per-tenant local CA), so the LAN works with no internet at all | §5 |
 
 Catalog entries: `sync/` and `desktop/` in `docs/modules/catalog.md`. Pipelines: "Offline
 operation & sync" and "Site host failover" in `docs/modules/pipelines.md`.
@@ -159,8 +160,11 @@ Modules take part only by giving each mutating route a sync class (§7.1).
   stream. The platform console (`/_platform`) is the SaaS operator's, not the company's, and
   stays cloud-only.
 - **Updates:** auto-update, never newer than the cloud (§7.10).
-- **Serving the LAN:** the site host serves the desktop UI and `/m` over LAN HTTPS 🔬 (camera
-  and service workers need a secure context).
+- **Serving the LAN:** the site host serves the desktop UI and `/m` over LAN HTTPS (camera and
+  service workers need a secure context). ✅ **decided (D5):** each tenant gets its own local
+  certificate authority. The host's certificate is issued by it, and each phone installs the CA
+  certificate once (a guided page on the host; iPhones also need "full trust" switched on). New
+  or reset phones repeat the step. No internet is ever needed.
 - **Install checks:** Windows disk encryption (BitLocker/Device Encryption) **required**, the
   clock synced, and a non-admin Windows account for daily use (§7.5, §7.7).
 
@@ -174,7 +178,7 @@ because every route defaults to the `online` class until it is reviewed.
 | **0. Spikes** | ✅ Electron + `node:sqlite` sessions on Windows; ✅ changeset capture/invert/apply rebase; ✅ `datetime('now')` override; ✅ node-range ID allocation (§9). Still open: LAN discovery; LAN HTTPS for `/m` |
 | **1. Command foundation** ✅ built 2026-09-30 (§10) | `src/sync/`: command log, HLC, ULID, `DEPLOY_MODE`, per-route `syncClass()` (undeclared routes refused on a node), allocation plan (node-partitioned IDs via renumber-after-insert + provisional/replayed document numbers), SQL request clock + `now()`, side-effect suppression on nodes (email/push/broadcast), cloud effect stream, replay through the real routes, changeset rebase, node-local tables, unattributed commands. CLAUDE.md rule reworded (D4). No behavior change for DBs without a sync role. **Moved:** sensitive-field encryption and the Node 24 test run → phase 3 (need the DPAPI spike / the Electron dependency); site-number block leasing → phase 3 (needs a host); converting handlers' `new Date()` to `now()` → per route as it is classed (phases 2, 4) |
 | **2. Inventory** ✅ built 2026-09-30 (§11) | Every inventory-module route classed (items, stock, locations, suppliers, customers). D1: a stock-out beyond recorded stock is accepted inside a synced command and opens a `stock_discrepancies` row (list + resolve API); direct cloud requests keep refusing it. Rebase applies changesets with foreign-key actions off. **Moved:** home sites → phase 3 (they only matter once site hosts decide claims); orders / deliveries / release slips → phase 4 (sales-release pipeline) |
-| **3. Desktop app + site host** | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
+| **3. Desktop app + site host** (sub-phases 3a–3f below) | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
 | **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock → production run → sales order release → purchasing receipt → HR requests and records → anonymous reports → payroll → accounting/tax |
 | **5. Host election + failover** | Voting nodes, election, lease, terms, fencing (§4) |
 | **6. Hardening** | Conflict inbox with resolve actions, version shims, compaction of old commands/effects, sync health dashboard |
@@ -485,3 +489,47 @@ with foreign-key enforcement off, around the synchronous transaction. The regres
 already has that SKU; the node's copy is undone. That is correct, but the person only learns of it
 through the command's `rejected` state until the phase-3 badges exist.
 
+## 12. Phase 3 plan (2026-09-30)
+
+| Sub-phase | Scope |
+|---|---|
+| **3a. Transport + enrolment** ✅ built 2026-09-30 (§13) | Cloud endpoints under `/api/sync` (enrol a PC, filtered snapshot, push commands, pull effects) authenticated by a per-node token. A node client that enrols and syncs over HTTP, a background sync loop when `DEPLOY_MODE=node`, and `npm run sync:enrol`. Secrets never leave the cloud, per row and in the snapshot |
+| **3b. Badges + needs-attention inbox** | `GET /api/sync/status` on a node. Saved on this device / Synced / Needs attention on desktop and mobile. An inbox for rejected commands and stock discrepancies |
+| **3c. Site host** | One fixed host per site accepts LAN nodes' commands as the site authority and relays them to the cloud. Home sites on locations, main site on the tenant, `claim` via the host, site number blocks, GET-write check on nodes |
+| **3d. Desktop app + LAN HTTPS** | Electron shell (+ `npm run test:node24`), per-tenant local CA (D5), phone certificate install page, phones on the host |
+| **3e. Blob lane** | Content-addressed files; multipart routes (photos) become commands |
+| **3f. Field encryption** | DPAPI-keyed encryption of sensitive fields on nodes (spike first) |
+
+## 13. Phase 3a as built (2026-09-30)
+
+Code: `src/sync/transport.ts` (cloud endpoints), `src/sync/client.ts` (PC side),
+`scripts/sync-enrol.ts` (`npm run sync:enrol`), loop started in `server.ts` when
+`DEPLOY_MODE=node`. Tests: `tests/sync-transport.test.ts` (real HTTP listener).
+
+**Enrolling a PC.** On the PC, `SYNC_ENROL_PASSWORD=… npm run sync:enrol -- --cloud <workspace URL>
+--user <admin> --name "<PC name>"`, then start it with `DEPLOY_MODE=node`. It signs in as an admin
+with `users.manage`, registers the PC (`POST /api/sync/nodes` → node number + token, shown once),
+downloads the workspace into `DB_PATH`, and adopts it (node role + `sync_remote`). **The first
+enrolment switches the cloud workspace into sync mode.** Node numbers are never reused.
+
+**What a PC never receives.** The snapshot is the workspace as of the latest effect, with the
+node-local tables emptied (sessions, idempotency keys, push subscriptions, anonymous-report tickets,
+activity log, sync bookkeeping, the AI search index) and the secret `settings` rows deleted
+(`_secret_key`, `mail_smtp_pass`, `qbo_tokens`, `ai_api_key`). It is then `VACUUM`ed with
+`secure_delete` on, so the removed rows aren't left in free pages. The test checks the file's raw
+bytes. After enrolment the same secrets are filtered **per row** out of every changeset
+(`isReplicated()` + row-level `filterChangeset`), so a later change to them never streams out.
+
+**Transport.** `POST /api/sync/commands` (batches of 100) and `GET /api/sync/pull?since=N`
+(changesets base64 in JSON), both authenticated by `X-Sync-Node-Token`. A PC may submit only its
+own commands (or unattributed ones); a forged node number is rejected with 403. Revoking a PC
+(`POST /api/sync/nodes/:no/revoke`) stops its token at once.
+
+**Offline.** An unreachable cloud raises `SyncOfflineError`: work stays pending and usable
+locally, and the next round sends it. The loop logs only changes of state (connected / offline).
+A divergence stops the loop. The PC must then be re-enrolled; the re-sync tool is phase 6.
+
+**Trust model (known).** The cloud replays a command as the actor the PC names. An enrolled PC is
+therefore trusted to vouch for who signed in on it, like a time-clock kiosk. The controls are
+revoking the PC, the actor having to be active with the permission at replay, and the audit rows.
+Per-user signing of commands can be added later if needed.

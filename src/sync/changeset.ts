@@ -120,9 +120,38 @@ export function invertChangeset(buf: Uint8Array): Uint8Array {
   return serialize(blocks);
 }
 
-/** Only the changes to tables `keep` accepts (an empty result is a zero-length changeset). */
-export function filterChangeset(buf: Uint8Array, keep: (table: string) => boolean): Uint8Array {
-  return serialize(parse(buf).filter((blk) => keep(blk.name)));
+/** A value's JS form (for primary keys): int → number, real → number, text → string,
+ *  blob → Uint8Array, null → null; undefined for "not present". */
+function decodeValue(v: Value): unknown {
+  const b = v.bytes;
+  switch (v.type) {
+    case 1: return Number(Buffer.from(b.subarray(1, 9)).readBigInt64BE(0));
+    case 2: return Buffer.from(b.subarray(1, 9)).readDoubleBE(0);
+    case 3:
+    case 4: {
+      const [n, q] = readVarint(b, 1);
+      const body = b.subarray(q, q + n);
+      return v.type === 3 ? Buffer.from(body).toString('utf8') : body;
+    }
+    case 5: return null;
+    default: return undefined;
+  }
+}
+
+/** Only the changes `keep` accepts: asked once per table with no key (false drops the whole
+ *  table), then per row with that row's primary-key values in key order — so a replicated
+ *  table can still hold rows that never leave this copy (e.g. secret `settings`). An empty
+ *  result is a zero-length changeset. */
+export function filterChangeset(buf: Uint8Array, keep: (table: string, pk?: unknown[]) => boolean): Uint8Array {
+  const blocks = parse(buf).filter((blk) => keep(blk.name));
+  for (const blk of blocks) {
+    blk.changes = blk.changes.filter((c) => {
+      const rec = c.values[0]!; // INSERT: new row, DELETE / UPDATE: old row — both carry the key
+      const pk = rec.filter((_v, i) => blk.pk[i]).map(decodeValue);
+      return keep(blk.name, pk);
+    });
+  }
+  return serialize(blocks);
 }
 
 /** Tables a changeset touches, with how many rows each. */

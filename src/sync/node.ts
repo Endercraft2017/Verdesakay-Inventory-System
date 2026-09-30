@@ -36,6 +36,19 @@ export function isNodeLocalTable(table: string): boolean {
   );
 }
 
+/** `settings` rows that are credentials, not data: the key that unlocks stored secrets
+ *  (shared/secrets.ts) and the secrets themselves. Nodes never need them — outside calls
+ *  (email, QuickBooks, AI) run only on the cloud — so they never leave it (§7.5). */
+export const SECRET_SETTINGS = new Set(['_secret_key', 'mail_smtp_pass', 'qbo_tokens', 'ai_api_key']);
+
+/** Whether a changed row replicates: its table isn't node-local and it isn't a secret setting.
+ *  Called per table (no `pk`) and per row by `filterChangeset`. */
+export function isReplicated(table: string, pk?: unknown[]): boolean {
+  if (isNodeLocalTable(table)) return false;
+  if (table === 'settings' && pk && SECRET_SETTINGS.has(String(pk[0]))) return false;
+  return true;
+}
+
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS sync_node (
     k                  INTEGER PRIMARY KEY CHECK (k = 1),
@@ -79,6 +92,23 @@ const SCHEMA = `
     updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_sync_commands_state ON sync_commands(state, node_seq);
+  -- Cloud side: the installed PCs enrolled against this workspace. Node numbers are never
+  -- reused (a revoked PC's rows keep their ids). Only the token's SHA-256 is stored.
+  CREATE TABLE IF NOT EXISTS sync_nodes (
+    node_no      INTEGER PRIMARY KEY,
+    name         TEXT NOT NULL,
+    token_hash   TEXT NOT NULL UNIQUE,
+    enrolled_by  INTEGER,
+    enrolled_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen_at TEXT,
+    revoked_at   TEXT
+  );
+  -- Node side: where this copy syncs to, and its credential there.
+  CREATE TABLE IF NOT EXISTS sync_remote (
+    k          INTEGER PRIMARY KEY CHECK (k = 1),
+    cloud_url  TEXT NOT NULL,
+    node_token TEXT NOT NULL
+  );
   -- Confirmed effects, in authority order (the authority's outgoing stream).
   CREATE TABLE IF NOT EXISTS sync_effects (
     authority_seq INTEGER PRIMARY KEY AUTOINCREMENT,

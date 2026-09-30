@@ -16,7 +16,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { getDb } from '../shared/db';
 import { filterChangeset, invertChangeset } from './changeset';
 import { localCommands, lockSync, toWire, type SyncCommand } from './commands';
-import { isNodeLocalTable, syncConfigOf } from './node';
+import { isReplicated, syncConfigOf } from './node';
 import type { PullResult } from './authority';
 import { dispatchCommand } from './replay';
 
@@ -127,7 +127,7 @@ export async function applyConfirmed(slug: string, pull: PullResult): Promise<Re
             ? String((r.body as { error: unknown }).error) : `HTTP ${status}`;
         }
       } finally {
-        let changes: Uint8Array | null = filterChangeset(session.changeset(), (t) => !isNodeLocalTable(t));
+        let changes: Uint8Array | null = filterChangeset(session.changeset(), isReplicated);
         session.close();
         const ok = status > 0 && status < 400;
         // A command that no longer applies keeps nothing: undo any partial write, so this

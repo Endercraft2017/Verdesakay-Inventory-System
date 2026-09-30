@@ -87,16 +87,21 @@ renumber-after-insert + write guard), `sequences.ts`, `clock.ts`, `capture.ts`
 (`syncRequestMiddleware`, `syncClass`), `commands.ts` (command log, lock), `replay.ts` (loopback
 replay as actor), `authority.ts` (effects, `acceptCommand`, `pullFor`, `snapshotForNode`),
 `rebase.ts` (`applyConfirmed`; applies changesets with foreign-key actions off), `changeset.ts`
-(invert/filter), `ids-util.ts` (ULID, HLC).
+(invert, table + row filter), `ids-util.ts` (ULID, HLC), `transport.ts` (cloud endpoints
+`/api/sync/*`, stripped snapshot), `client.ts` (enrol, adopt, `syncWithCloud`, `startSyncLoop`);
+CLI `scripts/sync-enrol.ts` (`npm run sync:enrol`).
 Seam in `src/shared/sync-context.ts` (context store, `now()`, `inSyncedCommand`,
 `sideEffectsSuppressed`, `syncHooks`).
 **Owned data:** node-local `sync_node` (role, node number, seq, HLC, last authority seq,
-provisional counter), `sync_id_counters`, `sync_commands`, `sync_effects` — created only by
-`enableSync()`, never replicated.
+provisional counter), `sync_id_counters`, `sync_commands`, `sync_effects`, `sync_nodes` (cloud:
+enrolled PCs, token hashes), `sync_remote` (PC: cloud URL + token) — created only by
+`enableSync()`, never replicated. Secret `settings` rows (`SECRET_SETTINGS`) never leave the cloud.
 **Public interface:** `syncClass('merge' | 'physical' | 'claim' | 'online', { unattributed? })`
 per mutating route (undeclared ⇒ refused on a node, 503); `now()` for business times;
 `enableSync(conn, { role, nodeNo })`; `acceptCommand` / `pullFor` / `applyConfirmed` /
-`pendingCommands` / `snapshotForNode` / `syncOnce` (in-process until the phase-3 transport).
+`pendingCommands` / `snapshotForNode` / `syncOnce` (in-process); HTTP: `POST /api/sync/nodes`,
+`GET /api/sync/nodes`, `POST /api/sync/nodes/:no/revoke` (admin, `users.manage`),
+`GET /api/sync/snapshot`, `POST /api/sync/commands`, `GET /api/sync/pull` (node token).
 **Dependencies:** `shared/` (db Proxy via `syncHooks.prepare`, `nextSequence` via
 `syncHooks.nextSequence`, `requireAuth` via `syncHooks.replayUser`, `authUserById`, device,
 mailer/push/ws via `sideEffectsSuppressed`). Wired in `src/app.ts` (install, replay tenant,
@@ -111,8 +116,9 @@ ids, merge of concurrent offline/cloud stock changes to identical rows, preserve
 rebase before push, cloud rows reaching the node, rejection of a since-disabled actor's work,
 idempotent accept, divergence refusal, provisional numbers, push sent once by the cloud,
 unattributed commands), `tests/sync-inventory.test.ts` (phase 2: D1 overdraw + flags, merge / claim /
-online per route), helper `tests/sync-helpers.ts`.
-**Status:** partial. Decisions D1–D4 taken 2026-09-30; phases 1–2 built 2026-09-30. Still open
+online per route), helper `tests/sync-helpers.ts`, `tests/sync-transport.test.ts` (phase 3a over a real
+listener: enrolment, stripped snapshot, both-way sync, row-level secret filter, node auth, offline).
+**Status:** partial. Decisions D1–D5 taken 2026-09-30; phases 1, 2 and 3a built 2026-09-30. Still open
 spikes: LAN discovery, LAN HTTPS for `/m`, DPAPI-keyed field encryption.
 
 ## desktop/ — installable Windows app (planned)

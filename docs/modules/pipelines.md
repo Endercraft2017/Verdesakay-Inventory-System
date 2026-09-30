@@ -376,9 +376,9 @@ place — corrections go through a new adjustment, not a rewrite of history).
 ## Offline operation & sync (record → site → cloud) — partial
 
 Design: `docs/OFFLINE-FIRST.md` (§10–11 = built). **Built (phases 1–2, 2026-09-30):** stages 1, 3
-and 4 between a node and the cloud, run in-process (`syncOnce` in `src/sync/index.ts`); every
-inventory-module route classed. **Not built:** stage 2 (site host), the HTTP transport, UI badges,
-conflict inbox. This pipeline wraps the
+and 4 between a node and the cloud — over HTTP (`syncWithCloud` / `startSyncLoop`, phase 3a) and
+in-process for tests (`syncOnce`); every inventory-module route classed. **Not built:** stage 2
+(site host), UI badges, conflict inbox. This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).
@@ -440,3 +440,23 @@ period.
 recording `merge` / `physical` commands and blocks `claim`s until it rejoins.
 **Terminal states:** one host serving under the latest term; or no majority / no eligible node
 (every node keeps recording `local` commands until a host appears).
+
+## Installed PC enrolment (enrol → snapshot → sync) — partial
+
+Design: `docs/OFFLINE-FIRST.md` §13. **Trigger:** someone sets up a PC to work offline.
+1. **Enrol** (`sync/transport.ts`, cloud) — an admin with `users.manage` signs in from the PC
+   (`npm run sync:enrol`); `POST /api/sync/nodes` issues the next node number and a node token
+   (stored hashed). The first enrolment switches the workspace to sync mode (cloud role).
+2. **Snapshot** (cloud) — `GET /api/sync/snapshot`: the workspace as of the latest effect with every
+   credential removed (node-local tables emptied, secret settings deleted, VACUUMed).
+3. **Adopt** (`sync/client.ts`, PC) — the copy becomes the PC's database with the node role and its
+   cloud link (`sync_remote`); users sign in to it with their normal passwords.
+4. **Sync** (PC ↔ cloud) — with `DEPLOY_MODE=node` the server runs `startSyncLoop`: the "Offline
+   operation & sync" pipeline above, every 15 s while reachable.
+
+**Branches:** not an admin → 403, nothing switched on; target is itself an installed PC → 409; the
+database file already exists → refused (enrol into a fresh file); cloud unreachable during a sync
+round → the PC keeps working locally and retries.
+**Terminal states:** enrolled and syncing; revoked (`POST /api/sync/nodes/:no/revoke` — its token
+stops working at once; its rows keep their ids); diverged (sync loop stops — re-enrol).
+**Not built:** an installer / setup screen (phase 3d), site hosts (3c).

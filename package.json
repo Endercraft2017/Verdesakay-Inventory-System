@@ -24,7 +24,8 @@
     "backup": "tsx scripts/backup.ts now",
     "backup:list": "tsx scripts/backup.ts list",
     "backup:restore": "tsx scripts/backup.ts restore",
-    "backup:offsite": "tsx scripts/offsite.ts"
+    "backup:offsite": "tsx scripts/offsite.ts",
+    "sync:enrol": "tsx scripts/sync-enrol.ts"
   },
   "engines": {
     "node": ">=22.13"
