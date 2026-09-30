@@ -53,6 +53,7 @@ import { tenantStore, getDb, DEFAULT_TENANT } from './shared/db';
 import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost } from './platform/platform';
 import { requireModule, moduleEnabled } from './shared/modules';
 import { BEHIND_PROXY } from './shared/hosting';
+import { installSync, replayTenantOf, syncRequestMiddleware } from './sync';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -62,6 +63,9 @@ export { BEHIND_PROXY };
 
 export function createApp() {
   const app = express();
+  // Offline-first sync hooks (docs/OFFLINE-FIRST.md). Inert for any tenant DB without a sync
+  // role, i.e. every tenant until enrolment exists.
+  installSync(app);
   // Behind a proxy, req.ip / req.protocol must come from X-Forwarded-*, or the login rate
   // limiter would bucket every user under the proxy's single IP.
   if (BEHIND_PROXY) app.set('trust proxy', 1);
@@ -91,7 +95,8 @@ export function createApp() {
   // logger's activity write, the idempotency store, and every route. The `default` tenant
   // resolves with no catalog row, so single-tenant / self-hosted installs are unaffected.
   app.use((req, res, next) => {
-    const slug = resolveTenantSlug(
+    // An internal sync replay names its tenant (authenticated by a per-process secret).
+    const slug = replayTenantOf(req) ?? resolveTenantSlug(
       req.headers.host,
       req.get('x-tenant'),
       typeof req.query.tenant === 'string' ? req.query.tenant : undefined
@@ -119,6 +124,9 @@ export function createApp() {
     }
     tenantStore.run({ db: getDb(slug), slug }, () => next());
   });
+
+  // Sync: replay context, the node write guard, and the cloud's effect stream (src/sync/capture.ts).
+  app.use(syncRequestMiddleware);
 
   // Throttle login attempts to slow brute-force guessing.
   const loginLimiter = rateLimit({
@@ -324,16 +332,17 @@ export function createApp() {
   });
 
   // Central error handler: validation errors -> 400, anything with a numeric status is
-  // honored, everything else -> 500.
+  // honored, everything else -> 500. A 5xx's message is hidden unless the error marks itself
+  // `expose` (http-errors convention), e.g. sync's "needs an internet connection" 503.
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (res.headersSent) return next(err);
     const status =
       err && typeof err === 'object' && 'status' in err && typeof err.status === 'number'
         ? err.status
         : 500;
-    if (status >= 500) console.error('Unhandled error:', err);
-    const message =
-      status < 500 && err instanceof Error ? err.message : 'Internal server error';
+    const expose = err instanceof Error && (status < 500 || (err as { expose?: boolean }).expose === true);
+    if (status >= 500 && !expose) console.error('Unhandled error:', err);
+    const message = expose ? (err as Error).message : 'Internal server error';
     res.status(status).json({ error: message });
   });
 

@@ -6,6 +6,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer';
 import { db, queryOne, queryAll, run, getSetting, setSetting, uploadDir } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
+import { syncClass } from '../../sync';
 import {
   parseBody,
   createItemSchema,
@@ -658,7 +659,9 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
 });
 
 // POST /api/inventory/:id/adjust — stock in / out at one location, recorded as a transaction
-router.post('/:id/adjust', requirePermission('inventory.adjust'), (req, res) => {
+// Offline-capable (docs/OFFLINE-FIRST.md §7.1): a stock movement records something that physically
+// happened. Phase-1 pilot route; the rest of inventory is classed in phase 2.
+router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
   if (!item) {

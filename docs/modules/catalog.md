@@ -4,7 +4,8 @@ Written against the target structure of the `restructure/module-architecture` re
 (see `docs/modules/pipelines.md` for how these modules connect end-to-end, and
 `~/.claude/CLAUDE.md`'s "Module architecture and reuse workflow" for the rules this
 catalog exists to satisfy). Status `working` means implemented with tests, in this
-project, today — nothing here is aspirational.
+project, today. Entries marked `planned` are recorded designs with no code yet (currently only
+`desktop/`, see `docs/OFFLINE-FIRST.md`).
 
 Backend paths are `src/...` unless noted; frontend paths are `public/js/modules/...`
 (desktop) and `public/mobile/modules/...` (mobile), both `working`.
@@ -59,6 +60,60 @@ workspace DB as a tenant; console route `POST /_platform/api/tenants/import`).
 **Dependencies:** `shared/` only, downward. One reverse pull: `modules/hr/punch-photos.ts`
 reads `platform/platform.ts` for per-tenant photo-retention settings.
 **Status:** working.
+
+## sync/ — offline-first replication (partial)
+
+Design: `docs/OFFLINE-FIRST.md` (§10 = what is built). Infrastructure, not a business module: it
+carries other modules' changes between copies of a tenant's data but owns no business rules.
+**Responsibility:** record every write on an installed node as an immutable **command** (API call +
+actor, device, occurred_at, HLC, allocation plan), run it optimistically, have the authority
+**replay it through the same route handler** as its actor, stream the authority's changes as
+SQLite changesets (**confirmed effects**) in `authority_seq` order, and rebase the node's pending
+work on top. Also node-partitioned row ids, provisional/replayed document numbers, the SQL request
+clock, suppression of side effects on nodes, the node write guard. Planned: site-host election,
+HTTP transport, blob lane, sensitive-field encryption (phases 3–5).
+**Owned files:** `src/sync/` — `index.ts` (`installSync`, `syncOnce`, `DEPLOY_MODE`, re-exports),
+`node.ts` (roles, node-local tables, cloud change recorder), `ids.ts` (statement wrapper:
+renumber-after-insert + write guard), `sequences.ts`, `clock.ts`, `capture.ts`
+(`syncRequestMiddleware`, `syncClass`), `commands.ts` (command log, lock), `replay.ts` (loopback
+replay as actor), `authority.ts` (effects, `acceptCommand`, `pullFor`, `snapshotForNode`),
+`rebase.ts` (`applyConfirmed`), `changeset.ts` (invert/filter), `ids-util.ts` (ULID, HLC).
+Seam in `src/shared/sync-context.ts` (context store, `now()`, `sideEffectsSuppressed`, `syncHooks`).
+**Owned data:** node-local `sync_node` (role, node number, seq, HLC, last authority seq,
+provisional counter), `sync_id_counters`, `sync_commands`, `sync_effects` — created only by
+`enableSync()`, never replicated.
+**Public interface:** `syncClass('merge' | 'physical' | 'claim' | 'online', { unattributed? })`
+per mutating route (undeclared ⇒ refused on a node, 503); `now()` for business times;
+`enableSync(conn, { role, nodeNo })`; `acceptCommand` / `pullFor` / `applyConfirmed` /
+`pendingCommands` / `snapshotForNode` / `syncOnce` (in-process until the phase-3 transport).
+**Dependencies:** `shared/` (db Proxy via `syncHooks.prepare`, `nextSequence` via
+`syncHooks.nextSequence`, `requireAuth` via `syncHooks.replayUser`, `authUserById`, device,
+mailer/push/ws via `sideEffectsSuppressed`). Wired in `src/app.ts` (install, replay tenant,
+middleware) and `server.ts` (task-reminder pushes only when `DEPLOY_MODE=cloud`). `sync/` never
+imports a business module.
+**Connections:** `modules/inventory` — `POST /api/inventory/:id/adjust` is classed `physical` (the
+pilot route); phase 2 classes the rest of inventory.
+**Tests:** `tests/sync-primitives.test.ts` (invert/filter, HLC, ULID, write-target parser, clock
+override), `tests/sync.test.ts` (cloud + node tenants end to end: guard, command capture, node-range
+ids, merge of concurrent offline/cloud stock changes to identical rows, preserved device time,
+rebase before push, cloud rows reaching the node, rejection of a since-disabled actor's work,
+idempotent accept, divergence refusal, provisional numbers, push sent once by the cloud,
+unattributed commands).
+**Status:** partial. Decisions D1–D4 taken 2026-09-30; phase 1 built 2026-09-30. Still open
+spikes: LAN discovery, LAN HTTPS for `/m`, DPAPI-keyed field encryption.
+
+## desktop/ — installable Windows app (planned)
+
+Design: `docs/OFFLINE-FIRST.md` §5. Packaging, not a business module.
+**Responsibility:** ship the existing server + `public/` UI as a Windows installer running in
+`DEPLOY_MODE=node`: tenant enrolment, local SQLite replica, auto-update, serving the LAN
+(desktop UI + `/m`) when elected site host.
+**Owned data:** node identity + enrolment credentials (local only).
+**Dependencies:** `sync/`, `shared/`. Shell choice (Electron vs Node sidecar) pending the
+phase-0 packaging spike.
+**Expected tests:** packaged app boots offline from a snapshot; enrolment; update with pending
+unsynced events preserved.
+**Status:** planned.
 
 ## core/ — ungated baseline
 
@@ -131,7 +186,9 @@ mobile `so` view (`public/mobile/modules/inventory/so.js`).
 kind `release` (ref = slip id).
 **Public interface:** stock-mutation functions in `inventory-stock.ts` (called
 directly by `manufacturing/`, `purchasing/`, and `modules/ai/ai-tools.ts`).
-**Dependencies:** `shared/`.
+**Dependencies:** `shared/`; `sync/` (`syncClass`) for offline-capable routes.
+**Offline (sync/):** `POST /api/inventory/:id/adjust` is classed `physical` (phase-1 pilot); every
+other inventory route is still refused on an installed node until phase 2 classes it.
 **Status:** working.
 
 ## modules/manufacturing

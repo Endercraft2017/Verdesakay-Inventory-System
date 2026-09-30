@@ -12,6 +12,7 @@ import webpush from 'web-push';
 import { getSetting, setSetting, queryAll, run } from './db';
 import { resolvePermissions } from './permissions';
 import type { Permission, Role } from './types';
+import { sideEffectsSuppressed } from './sync-context';
 
 const VAPID_KEY = 'vapid_keys';
 const SUBJECT_KEY = 'push_subject';
@@ -53,6 +54,7 @@ export const __sentPush: Array<{ userId: number; payload: PushPayload; endpoint:
 
 /** Send `payload` to every registered device of `userId`. Never throws. */
 export async function notifyUser(userId: number, payload: PushPayload): Promise<void> {
+  if (sideEffectsSuppressed('push')) return; // the authority notifies once, on replay
   const subs = queryAll<SubRow>(
     'SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?',
     userId

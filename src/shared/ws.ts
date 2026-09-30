@@ -17,6 +17,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { userFromToken } from './auth';
 import { resolveTenantSlug } from '../platform/platform';
 import { tenantStore, getDb } from './db';
+import { sideEffectsSuppressed } from './sync-context';
 
 export interface ChatEvent {
   type: string;
@@ -51,6 +52,7 @@ function unregister(slug: string, userId: number, ws: WebSocket): void {
 /** Push `event` to every open socket for each of `userIds` in tenant `slug`. Called by
  *  routes after a DB mutation commits (message send/edit/unsend/react/read). */
 export function broadcast(slug: string, userIds: number[], event: ChatEvent): void {
+  if (sideEffectsSuppressed('broadcast')) return; // the authority broadcasts once, on replay
   const tenant = connections.get(slug);
   if (!tenant) return;
   const payload = JSON.stringify(event);

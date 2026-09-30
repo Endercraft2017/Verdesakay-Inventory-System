@@ -12,6 +12,10 @@ relevant records before changing code and update them after.
   `npm run db:types` after any schema change.
 - New tables can go in `createSchema()` (always re-run, `IF NOT EXISTS`); column changes need a
   `migrate()` step plus a `SCHEMA_VERSION` bump.
+- Offline-first sync (`src/sync/`, design `docs/OFFLINE-FIRST.md`): a mutating route only works on an
+  installed node once it declares `syncClass('merge' | 'physical' | 'claim' | 'online')` next to its
+  permission check; undeclared routes are refused there (503). Use `now()` from
+  `src/shared/sync-context.ts`, not `new Date()`, for business times in a classed route.
 
 ## Mobile Figma implementation
 
@@ -40,7 +44,10 @@ Use exact node IDs from the handoff. Retrieve each node's screenshot and design 
 - UI visibility never replaces backend permission enforcement.
 - Never show an offline-queued stock/stage action as server-confirmed.
 - Keep private phone numbers and unnecessary personal data out of operational screens.
-- Final stock and stage transitions are online-only, atomic, auditable, and idempotent.
+- Final stock and stage transitions are accepted only by the current authority (the cloud, or the
+  site's elected host for that site's records), and are atomic, auditable, and idempotent. A
+  device's optimistic local result is never shown as final. (Reworded 2026-09-30, decision D4 in
+  `docs/OFFLINE-FIRST.md`.)
 
 ## Current V2 foundation
 

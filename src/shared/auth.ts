@@ -6,6 +6,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { db, newToken } from './db';
 import type { AuthUser, Role } from './types';
 import { resolvePermissions } from './permissions';
+import { syncHooks } from './sync-context';
 
 const SESSION_HOURS = 12;
 
@@ -31,6 +32,23 @@ export function createSession(userId: number): string {
 
 export function destroySession(token: string): void {
   db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+}
+
+/** An active user by id, built exactly as a session user is (current role + overrides), or
+ *  null if missing / disabled. Used when a synced command is replayed as its actor. */
+export function authUserById(id: number): AuthUser | null {
+  const row = db
+    .prepare(
+      `SELECT u.id, u.username, u.full_name, u.role, u.department_id, u.active,
+              u.permission_overrides, d.name AS department_name
+       FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.id = ?`
+    )
+    .get(id) as (Omit<AuthUser, 'permissions'> & { permission_overrides: string }) | undefined;
+  if (!row || row.active !== 1) return null;
+  let overrides: Record<string, boolean> = {};
+  try { overrides = JSON.parse(row.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
+  const { permission_overrides: _po, ...rest } = row;
+  return { ...rest, permissions: resolvePermissions(row.role, overrides) };
 }
 
 /** Resolve a bearer token to the current user, or null if invalid/expired/disabled. */
@@ -61,6 +79,13 @@ export function getToken(req: Request): string | null {
 
 /** Require a logged-in user; attaches req.user and req.token. */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  // An internal sync replay (src/sync/replay.ts) runs as the command's actor, not a session.
+  const replayUser = syncHooks.replayUser?.(req);
+  if (replayUser) {
+    req.user = replayUser;
+    next();
+    return;
+  }
   const token = getToken(req);
   const user = userFromToken(token);
   if (!user) {

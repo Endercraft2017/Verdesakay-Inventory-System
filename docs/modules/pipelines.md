@@ -305,3 +305,70 @@ approved with an "update by hand" note; the filer may cancel while pending; a se
 
 **Terminal states:** posted + filed (a period, once posted, is not recomputed in
 place — corrections go through a new adjustment, not a rewrite of history).
+
+## Offline operation & sync (record → site → cloud) — partial
+
+Design: `docs/OFFLINE-FIRST.md` (§10 = built). **Built (phase 1, 2026-09-30):** stages 1, 3 and 4
+between a node and the cloud, run in-process (`syncOnce` in `src/sync/index.ts`); one classed route
+(`POST /api/inventory/:id/adjust`). **Not built:** stage 2 (site host), the HTTP transport, UI
+badges, conflict inbox. This pipeline wraps the
+business pipelines above: every stage in them whose route is classed `merge` / `physical` /
+`claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
+SaaS billing) need internet; nothing is cloud-only (decision D2).
+**Trigger:** any write on an installed desktop node, or on a phone using a site host over the
+LAN (e.g. a stock withdrawal, a punch, a QC result).
+1. **Record** (owning module's route, via `sync/`) — the API call becomes a command (actor,
+   device, `occurred_at`, HLC, sync class, allocation plan of node-partitioned IDs / provisional
+   numbers); the route handler runs optimistically on the node with side effects held in the
+   outbox and discarded. Badge: "Saved on this device". `claim` without the record's home
+   authority reachable → refused here ("needs site connection"); `online` without internet →
+   refused ("needs internet"). A route with no class at all is refused on a node (503, "needs an
+   internet connection") — its writes would never sync. *(Built: `sync/capture.ts`; `claim` is
+   always refused until phase 3 adds site hosts.)*
+2. **Site confirm** (`sync/` on the site host) — the host replays the command through the same
+   handler against the site's data (same allocation plan, command clock, permission re-check),
+   issues final numbers from its leased block, and fans the resulting changeset out to every
+   node on the LAN; nodes rebase. LAN side effects (live screen updates) fire here. Badge:
+   "Confirmed on site".
+3. **Cloud confirm** (`sync/` on the cloud) — the host forwards commands (anonymous-channel ones
+   stripped of actor/device/node/time and delayed into a later batch); the cloud replays them against every site's combined data, assigns the final
+   `authority_seq`, keeps site-issued IDs/numbers, and returns effects from other sites. Badge:
+   "Synced". *(Built: `sync/authority.ts` `acceptCommand` / `pullFor`, `sync/rebase.ts`
+   `applyConfirmed` — undo pending, apply effects, record verdicts, re-run pending.)*
+4. **Side effects** (cloud only) — outbox: email, web push, QuickBooks push, AI — exactly
+   once, where the command became final. (Accounting auto-post is a DB write inside the handler,
+   so it travels as part of the confirmed effect, not the outbox.)
+
+**Data carried:** command (API call + metadata) up; confirmed effects (SQLite changesets) down,
+to every node (full replica; only node-local tables such as session tokens and integration
+secrets stay put, sensitive fields travel encrypted); files as SHA-256
+blobs pushed before their command.
+**Branches:** no site host reachable → stays `local`, retried; validation / permission failure at
+replay → `rejected`, shown to the actor; `physical` command breaking an invariant (stock below
+zero, unit already sold) → accepted and flagged into the conflict inbox; actor's permission
+revoked before the node learned of it → accepted and flagged; replay result differs from the
+optimistic run → badge + inbox; duplicate delivery → dropped by idempotency key; command from an
+app version outside the supported window → conflict inbox for re-entry.
+**Terminal states:** `cloud_confirmed`; `rejected`; flagged/conflict resolved by a supervisor
+(which records a correcting command — history is never rewritten).
+
+## Site host failover — planned
+
+Design: `docs/OFFLINE-FIRST.md` §4. **Nothing here is implemented.**
+**Trigger:** a node starts, or followers miss the current site host's heartbeats for a lease
+period.
+1. **Discover** (`sync/`) — nodes announce ID, tenant, site, version, `authority_seq` reached
+   and configured priority on the LAN.
+2. **Elect** (`sync/`) — a candidate needs votes from a majority of the site's configured
+   voting nodes; voters prefer the most caught-up node (then newest version, priority, node ID);
+   a new term starts. A site has at least 1 PC (decision D3). 1-PC site: that PC always hosts;
+   2-PC site: only the configured primary; 3+: majority election.
+3. **Serve** (`sync/` + `desktop/`) — the host renews its lease, accepts events under its term,
+   serves the LAN UI and `/m`.
+4. **Step down** — a returning former host sees a higher term and becomes a follower, handing its
+   unconfirmed events to the new host.
+
+**Branches:** tie → node ID; LAN split → only the majority side can elect; the minority keeps
+recording `merge` / `physical` commands and blocks `claim`s until it rejoins.
+**Terminal states:** one host serving under the latest term; or no majority / no eligible node
+(every node keeps recording `local` commands until a host appears).

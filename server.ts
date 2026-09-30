@@ -17,6 +17,7 @@ import { cleanupPlatformSessions } from './src/platform/platform-users';
 import { attachWebSocket } from './src/shared/ws';
 import { runDailyBackups } from './src/platform/backups';
 import { pushOffsite } from './src/platform/offsite';
+import { DEPLOY_MODE } from './src/sync';
 
 // Attendance, payroll dates and the kiosk rules use the server's local time (see
 // src/modules/hr/clock.ts localParts and SQLite 'localtime'). On-site that is the office clock;
@@ -32,7 +33,8 @@ init();
 const housekeeping = () => { cleanupSessions(); cleanupPlatformSessions(); };
 housekeeping(); // sweep stale sessions / old audit-log rows once at boot, then hourly
 setInterval(housekeeping, 60 * 60 * 1000).unref(); // hourly
-setInterval(() => { void sendDueTaskReminders(); }, 60 * 1000).unref(); // task reminders
+// Push reminders are an outside side effect: only the cloud sends them (OFFLINE-FIRST §7.8).
+if (DEPLOY_MODE === 'cloud') setInterval(() => { void sendDueTaskReminders(); }, 60 * 1000).unref();
 // Daily DB snapshots: at boot, then an hourly check that takes today's once the date rolls
 // over (a no-op for any DB that already has one). Never let a backup error crash the server.
 const dailyBackup = () => {

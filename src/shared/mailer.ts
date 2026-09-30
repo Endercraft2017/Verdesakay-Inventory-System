@@ -9,6 +9,7 @@ import nodemailer from 'nodemailer';
 import { getSetting, setSetting, run, queryAll } from './db';
 import { encryptSecret, decryptSecret } from './secrets';
 import type { MailSettings, MailLogRow } from './types';
+import { sideEffectsSuppressed } from './sync-context';
 
 const KEY = 'mail_settings';
 const PASS_KEY = 'mail_smtp_pass';
@@ -70,6 +71,8 @@ export async function sendMail(
   args: SendArgs,
   actorId?: number | null
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
+  // A node's optimistic run never emails: the authority sends it once, on replay.
+  if (sideEffectsSuppressed('email')) return { ok: false, error: 'Deferred until the action syncs.' };
   const s = getMailSettings();
   const from = s.from_name ? `"${s.from_name.replace(/"/g, '')}" <${s.from_email}>` : s.from_email;
 

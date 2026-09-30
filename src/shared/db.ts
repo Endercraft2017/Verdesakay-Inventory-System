@@ -18,6 +18,7 @@ import bcrypt from 'bcryptjs';
 import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from '../modules/payroll/ph-statutory';
 import { DEFAULT_COA } from '../modules/accounting/ledger';
 import { preMigrationSnapshot } from './backup';
+import { syncHooks } from './sync-context';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
@@ -226,7 +227,13 @@ export function withTenant<T>(slug: string, fn: () => T): T {
     the tenant. Only `.prepare()` / `.exec()` are ever used on it. */
 export const db: DatabaseSync = new Proxy({} as DatabaseSync, {
   get(_target, prop) {
-    const real = activeDb() as unknown as Record<string | symbol, unknown>;
+    const conn = activeDb();
+    // src/sync/ wraps statements (ID allocation, node write guard); a no-op unless installed.
+    if (prop === 'prepare' && syncHooks.prepare) {
+      const hook = syncHooks.prepare;
+      return (sql: string) => hook(conn, sql, conn.prepare(sql));
+    }
+    const real = conn as unknown as Record<string | symbol, unknown>;
     const value = real[prop];
     return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(real) : value;
   },
@@ -2459,6 +2466,8 @@ export function setSetting(key: string, value: unknown): void {
  * records, and HR employees — so the counter logic can't drift out of sync between them.
  */
 export function nextSequence(key: string, prefix: string, pad = 5): string {
+  const synced = syncHooks.nextSequence?.(key, prefix, pad); // provisional / replayed numbers
+  if (synced !== undefined) return synced;
   const next = (getSetting<number>(key) || 0) + 1;
   setSetting(key, next);
   return `${prefix}-${String(next).padStart(pad, '0')}`;
