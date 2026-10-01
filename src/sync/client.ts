@@ -17,6 +17,7 @@ import { applyConfirmed, lastAuthoritySeq, pendingCommands, SyncDivergenceError,
 import type { CommandResult } from './commands';
 import type { PullResult } from './authority';
 import { blobPath, blobsOf, filePath, registerFile } from './files';
+import { openForPc, sealForPc } from '../desktop/pc-secret';
 
 export interface RemoteConfig {
   /** The authority this copy syncs with: the cloud, or its site host. */
@@ -45,13 +46,15 @@ export function linkStatusOf(slug: string): LinkStatus {
 }
 
 export function remoteOf(conn: DatabaseSync): RemoteConfig | null {
+  let r: { cloud_url: string; node_token: string; tenant: string | null } | undefined;
   try {
-    const r = conn.prepare('SELECT cloud_url, node_token, tenant FROM sync_remote WHERE k = 1').get() as
-      { cloud_url: string; node_token: string; tenant: string | null } | undefined;
-    return r ? { cloudUrl: r.cloud_url, nodeToken: r.node_token, tenant: r.tenant } : null;
+    r = conn.prepare('SELECT cloud_url, node_token, tenant FROM sync_remote WHERE k = 1').get() as typeof r;
   } catch {
     return null; // sync tables not created on this DB
   }
+  // The token is sealed with the PC's DPAPI-held secret when the desktop app runs it (§19);
+  // opening it without that secret fails loudly rather than looking "not enrolled".
+  return r ? { cloudUrl: r.cloud_url, nodeToken: openForPc(r.node_token), tenant: r.tenant } : null;
 }
 
 const trimUrl = (u: string) => u.replace(/\/+$/, '');
@@ -151,7 +154,7 @@ export function adoptSnapshot(conn: DatabaseSync, id: {
   conn.prepare(
     `INSERT INTO sync_remote (k, cloud_url, node_token, tenant) VALUES (1, ?, ?, ?)
      ON CONFLICT(k) DO UPDATE SET cloud_url = excluded.cloud_url, node_token = excluded.node_token, tenant = excluded.tenant`,
-  ).run(trimUrl(id.cloudUrl), id.nodeToken, id.tenant ?? null);
+  ).run(trimUrl(id.cloudUrl), sealForPc(id.nodeToken), id.tenant ?? null);
 }
 
 export interface CloudRound {

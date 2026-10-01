@@ -151,7 +151,8 @@ server, the site host's LAN HTTPS (per-site certificate authority, D5) and the p
 **Owned files:** `electron/main.cjs` (shell: child server on Electron's Node via tsx, setup IPC, cert
 trust for localhost, start-with-Windows IPC), `electron/autostart.cjs`, `electron/preload.cjs`
 (`desktopSetup`, `desktopApp`), `electron/setup.html`; `src/desktop/lan-tls.ts`
-(`ensureLanTls`, `lanAddresses`), `src/desktop/phone-setup.ts` (`phoneSetupHandler`), `src/desktop/desktop.routes.ts`
+(`ensureLanTls`, `lanAddresses`), `src/desktop/phone-setup.ts` (`phoneSetupHandler`), `src/desktop/pc-secret.ts` (`sealForPc` /
+`openForPc` / `keyPassphrase`, phase 3f), `electron/disk.cjs` (BitLocker check), `src/desktop/desktop.routes.ts`
 (`/api/desktop/installer[/info]`, admin; WIP — unpublished until `DESKTOP_INSTALLER_DIR` holds an .exe);
 `.github/workflows/desktop-release.yml` (draft GitHub Release on a `desktop-v*` tag); `server.ts`
 `startInstalledPc()`; scripts `scripts/desktop.mjs` (`npm run desktop`, `desktop:smoke`),
@@ -159,12 +160,12 @@ trust for localhost, start-with-Windows IPC), `electron/autostart.cjs`, `electro
 `scripts/desktop-trust.ps1`; electron-builder config in `package.json` → `build`
 (`npm run desktop:build` → `dist-desktop/`).
 **Owned data:** per PC, in `%APPDATA%\Verdesakay\workspace`: the database, `desktop.json` (role),
-`tls/` (a host's site CA + server cert; private keys stay on the PC), `host-ca.crt` (a site PC's pinned
-host certificate), logs.
+`tls/` (a host's site CA + server cert; private keys stay on the PC, encrypted), `host-ca.crt` (a site
+PC's pinned host certificate), `pc-secret.bin` (DPAPI-encrypted PC secret, phase 3f), logs.
 **Dependencies:** `sync/` (enrolment, sync loop, `syncConfigOf`), `shared/`; packages `electron`,
 `electron-builder` (dev), `node-forge`.
 **Tests:** `tests/desktop-lan-tls.test.ts` (CA + server cert, re-issue on address change, a real TLS
-handshake trusting only the site CA, phone-setup page), `tests/desktop-autostart.test.ts`, `tests/desktop-installer.test.ts`. Smoke: `npm run desktop:smoke` and the
+handshake trusting only the site CA, phone-setup page), `tests/desktop-autostart.test.ts`, `tests/desktop-installer.test.ts`, `tests/desktop-pc-secret.test.ts`. Smoke: `npm run desktop:smoke` and the
 packaged `Verdesakay.exe --smoke` (manual / CI).
 **Status:** partial. Built 2026-10-01, with an "Open when Windows starts" toggle (Sync page; on by
 default for a site host). To-do list in design doc §17: real code-signing certificate (D7), app icon,

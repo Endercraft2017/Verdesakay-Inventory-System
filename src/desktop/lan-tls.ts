@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import forge from 'node-forge';
+import { keyPassphrase } from './pc-secret';
 
 export interface LanTls {
   key: string;
@@ -40,8 +41,26 @@ function serial(): string {
   return '01' + crypto.randomBytes(15).toString('hex'); // positive, unique
 }
 
-function writePrivate(file: string, data: string): void {
-  fs.writeFileSync(file, data, { mode: 0o600 });
+/** Write a private key — encrypted (PKCS#8, AES-256) when this PC has its DPAPI-held secret
+ *  (§19), so a copied tls folder is useless elsewhere. */
+function writePrivate(file: string, pem: string): void {
+  const passphrase = keyPassphrase();
+  const out = passphrase
+    ? crypto.createPrivateKey(pem).export({ type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc', passphrase }).toString()
+    : pem;
+  fs.writeFileSync(file, out, { mode: 0o600 });
+}
+
+/** Read a private key as plain PKCS#1 PEM (in memory only). A key still stored in the clear is
+ *  re-written encrypted once this PC has a secret. */
+function readPrivate(file: string): string {
+  const raw = fs.readFileSync(file, 'utf8');
+  const passphrase = keyPassphrase();
+  const encrypted = raw.includes('ENCRYPTED');
+  const key = crypto.createPrivateKey(encrypted ? { key: raw, passphrase: passphrase ?? '' } : raw);
+  const pem = key.export({ type: 'pkcs1', format: 'pem' }).toString();
+  if (!encrypted && passphrase) writePrivate(file, pem);
+  return pem;
 }
 
 /** IPv4 addresses of this machine on the LAN. */
@@ -78,7 +97,7 @@ function createAuthority(dir: string, org: string): void {
 
 function issueServerCert(dir: string, names: string[], ips: string[]): void {
   const caCert = forge.pki.certificateFromPem(fs.readFileSync(path.join(dir, 'ca.crt'), 'utf8'));
-  const caKey = forge.pki.privateKeyFromPem(fs.readFileSync(path.join(dir, 'ca.key'), 'utf8'));
+  const caKey = forge.pki.privateKeyFromPem(readPrivate(path.join(dir, 'ca.key')));
   const kp = newKeyPair();
   const cert = forge.pki.createCertificate();
   cert.publicKey = kp.publicKey;
@@ -133,7 +152,7 @@ export function ensureLanTls(dir: string, opts: { org?: string; ips?: string[]; 
   if (!serverCertCurrent(dir, names, ips)) issueServerCert(dir, names, ips);
   const caCert = fs.readFileSync(path.join(dir, 'ca.crt'), 'utf8');
   return {
-    key: fs.readFileSync(path.join(dir, 'server.key'), 'utf8'),
+    key: readPrivate(path.join(dir, 'server.key')),
     cert: fs.readFileSync(path.join(dir, 'server.crt'), 'utf8'),
     caCert,
     caFingerprint: new crypto.X509Certificate(caCert).fingerprint256,

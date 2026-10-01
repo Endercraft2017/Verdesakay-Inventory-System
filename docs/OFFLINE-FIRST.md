@@ -17,6 +17,7 @@ work can be placed module-by-module and pipeline-by-pipeline. Business decisions
 | D5 | Phones trust the site host through a **company certificate installed once per phone** (a per-tenant local CA), so the LAN works with no internet at all | §5 |
 | D6 | The cloud keeps a site host's decision on its own site's records by **re-running it with clash-checks relaxed and flagged** (option B — like D1), not by copying the host's result; permissions and other checks still apply | §15–16 |
 | D7 | The desktop installer ships **per-user (no admin prompt), signed with a free self-signed company certificate** that each of the company's PCs trusts once; installed by copying, not downloading. **⚠ TODO before installing at customers:** get a real code-signing certificate (or publish through the Microsoft Store) — otherwise Windows shows "unknown publisher" / SmartScreen warnings on their PCs. See §17 | §17 |
+| D8 | **Cloud-only = credentials and online-only features**, nothing else (2026-10-01, D2 reaffirmed): secrets, and AI / email / QuickBooks / web-push settings and tables, never reach an installed PC. All business data — payroll, government IDs, bank details, confidential reports included — does, protected by app permissions, disk encryption and the PC's DPAPI-protected credentials (§7.5, §19) | §7.5 |
 
 Catalog entries: `sync/` and `desktop/` in `docs/modules/catalog.md`. Pipelines: "Offline
 operation & sync" and "Site host failover" in `docs/modules/pipelines.md`.
@@ -501,7 +502,7 @@ through the command's `rejected` state until the phase-3 badges exist.
 | **3c-ii. Site decisions** ✅ built 2026-10-01 (§16) | Home sites (`location_sites`) + main site (`sync_main_host`); `claim` decided on the site's host, or a LAN PC with a fresh link to it; the cloud keeps a site's decision on its own records by re-running it with marked clash-checks relaxed and flagged (D6). **Moved:** site number blocks → phase 4 (no offline-capable route issues document numbers yet); GET-write check → phase 6 |
 | **3d. Desktop app + LAN HTTPS** ✅ built 2026-10-01 (§17) | Electron shell (+ `npm run test:node24`), per-tenant local CA (D5), phone certificate install page, phones on the host |
 | **3e. Blob lane** ✅ built 2026-10-01 (§18) | Content-addressed files; multipart routes (photos) become commands |
-| **3f. Field encryption** | DPAPI-keyed encryption of sensitive fields on nodes (spike first) |
+| **3f. PC credentials + disk check** ✅ built 2026-10-01 (§19) | The PC's own credentials sealed with a DPAPI-held secret; setup warns unless disk encryption is confirmed. Field-level encryption of business data: not built (D8, §19) |
 
 ## 13. Phase 3a as built (2026-09-30)
 
@@ -736,7 +737,7 @@ minimized.
 - [ ] **Auto-update** (needs the release feed above; until then, run a newer installer over the old
       one: data is kept).
 - [ ] **Mobile sync UI**: design dependency (Figma), §14.
-- [x] Photos offline (3e, §18). - [ ] Field encryption (3f).
+- [x] Photos offline (3e, §18). - [x] PC credentials sealed with DPAPI + disk-encryption check (3f, §19).
 
 ## 18. Phase 3e as built (2026-10-01): files offline
 
@@ -769,3 +770,34 @@ propagated: other copies keep an orphan file, which is harmless.
 data, so decided offline at the main site; they were `online` before). Release / delivery / QC evidence
 photos join as their pipelines go offline in phase 4. Photos stored *inside* the database (anonymous-report
 photos) already travel with the row.
+
+## 19. Phase 3f as built (2026-10-01): an installed PC's credentials at rest
+
+**What changed from the plan.** §7.5 planned field-level encryption of sensitive *business data* on PCs.
+On 2026-10-01 the user narrowed what must be kept off PCs to **credentials and online-only features**
+(decision D8; those are cloud-only, §7.5 / phase 3e commit). The business data itself stays on PCs (D2).
+Field-level encryption of it would have to be done on the cloud as well, because sync compares exact
+values between copies, and it would touch every HR / payroll / report feature. It is **not built**. The
+protections for that data are app permissions, disk encryption (checked at setup) and the measures below.
+
+**The PC's own secret** (`src/desktop/pc-secret.ts`, `electron/main.cjs`). The desktop shell creates a
+random secret once, stores it **only DPAPI-encrypted** for the Windows user (`safeStorage` →
+`pc-secret.bin`), and hands it to the server process as `VDS_PC_SECRET`. With it:
+- the sync token in `sync_remote` is sealed (AES-256-GCM, `pc1:…`);
+- a site host's certificate private keys are written as encrypted PKCS#8 (keys written earlier are
+  re-encrypted on the next start).
+
+A copied database or `tls/` folder is useless on another PC or Windows account. Opening a sealed token
+without the secret fails loudly ("start it from the Verdesakay desktop app"); it is not mistaken for "not
+enrolled". Without the shell (a developer running the server), values stay as before. **Consequence:**
+re-installing Windows or switching the Windows user loses the secret, so that PC must be enrolled again.
+
+**Disk-encryption check** (`electron/disk.cjs`). The setup screen asks Windows for the BitLocker /
+Device Encryption state of the drive holding the data (no admin rights needed). Unless it is confirmed
+**on**, the screen explains the risk and asks the person to tick "I understand" before continuing. This
+includes "couldn't confirm", which is what Windows Home without active Device Encryption reports (as on the
+dev PC).
+
+Tests: `tests/desktop-pc-secret.test.ts` (seal/open, wrong or missing secret, sealed sync token, encrypted
+TLS keys with a real handshake, upgrade of earlier plain keys, the BitLocker mapping). Smoke: the shell
+with real DPAPI (`pc-secret.bin` holds only ciphertext).

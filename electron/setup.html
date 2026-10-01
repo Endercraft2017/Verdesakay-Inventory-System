@@ -20,6 +20,8 @@
   .fp { font-family:ui-monospace,Consolas,monospace; font-size:12px; word-break:break-all; background:var(--bg); padding:8px; border-radius:6px; }
   pre { white-space:pre-wrap; font-size:12px; max-height:180px; overflow:auto; background:var(--bg); padding:8px; border-radius:6px; }
   .error { color:var(--danger); font-weight:600; }
+  .warn { border:1px solid var(--danger); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .warn .ack { font-weight:400; display:flex; gap:8px; align-items:center; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -27,6 +29,12 @@
 <p>Once set up, this PC keeps working when the internet is down and syncs when it's back.</p>
 
 <form id="form">
+  <div id="disk-warn" class="warn hidden">
+    <strong id="disk-title">This PC's disk is not encrypted.</strong> This PC will keep a copy of the company's data — payroll and
+    personal records included. Turn on <b>Device encryption</b> or <b>BitLocker</b> in Windows Settings →
+    Privacy &amp; security first, so the data is safe if the PC is lost or stolen.
+    <label class="ack"><input type="checkbox" id="disk-ack"> I understand — set it up anyway</label>
+  </div>
   <label for="cloud">Your workspace address</label>
   <input id="cloud" type="url" required placeholder="https://yourcompany.app.afkcube.com">
 
@@ -71,10 +79,21 @@
   });
   $('host').oninput = () => { hostCert = null; $('host-check').classList.add('hidden'); };
   window.desktopSetup.onLog((line) => { $('log').textContent += line; $('log').scrollTop = 1e9; });
+  let diskOff = false;
+  window.desktopSetup.diskEncryption().then((d) => {
+    diskOff = d.state !== 'on'; // only a confirmed "on" skips the warning
+    if (d.state === 'unknown') $('disk-title').textContent = "Windows could not confirm this PC's disk is encrypted.";
+    $('disk-warn').classList.toggle('hidden', !diskOff);
+  }).catch(() => {});
 
   $('form').onsubmit = async (e) => {
     e.preventDefault();
     $('err').classList.add('hidden');
+    if (diskOff && !$('disk-ack').checked) {
+      $('err').textContent = 'Turn on disk encryption first, or tick "I understand" to continue.';
+      $('err').classList.remove('hidden');
+      return;
+    }
     $('go').disabled = true;
     try {
       if (role() === 'pc' && !hostCert) {

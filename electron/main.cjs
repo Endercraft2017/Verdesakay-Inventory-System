@@ -11,7 +11,7 @@
 
    Data lives in the per-user app-data folder (no admin rights anywhere — decision D7).
    `--smoke` starts the server on a scratch folder, checks it answers, and exits (CI / packaging). */
-const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, safeStorage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -19,6 +19,7 @@ const https = require('node:https');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { AUTOSTART_ARG, loginItemOptions, defaultAutostart } = require('./autostart.cjs');
+const { bitlockerQuery, describeBitLocker } = require('./disk.cjs');
 
 const APP_ROOT = path.join(__dirname, '..');
 const SMOKE = process.argv.includes('--smoke');
@@ -34,6 +35,7 @@ const PATHS = {
 };
 const CONFIG_FILE = path.join(DATA, 'desktop.json');
 const HOST_CA_FILE = path.join(DATA, 'host-ca.crt'); // a site PC: its host's pinned site certificate
+const PC_SECRET_FILE = path.join(DATA, 'pc-secret.bin'); // DPAPI-encrypted (safeStorage), §19
 const PORT = 3000;
 
 fs.mkdirSync(path.join(DATA, 'logs'), { recursive: true });
@@ -42,9 +44,22 @@ const readConfig = () => { try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 
 let server = null;
 let win = null;
 
+/** This PC's own secret (§19): random, kept on disk only encrypted by Windows DPAPI for this
+ *  Windows user (Electron safeStorage), handed to the server process in memory. It seals the
+ *  PC's sync credential and its site certificate keys at rest. */
+function pcSecret() {
+  if (!safeStorage.isEncryptionAvailable()) return null; // no DPAPI: credentials stay as before
+  if (fs.existsSync(PC_SECRET_FILE)) return safeStorage.decryptString(fs.readFileSync(PC_SECRET_FILE));
+  const s = crypto.randomBytes(32).toString('base64');
+  fs.writeFileSync(PC_SECRET_FILE, safeStorage.encryptString(s));
+  return s;
+}
+
 /** Run a TypeScript entry of the app on Electron's own Node. */
 function runNode(script, args, extraEnv) {
   const env = { ...process.env, ...PATHS, ELECTRON_RUN_AS_NODE: '1', ...extraEnv };
+  const secret = pcSecret();
+  if (secret) env.VDS_PC_SECRET = secret;
   if (fs.existsSync(HOST_CA_FILE)) env.NODE_EXTRA_CA_CERTS = HOST_CA_FILE;
   return spawn(process.execPath, ['--import', 'tsx', path.join(APP_ROOT, script), ...args], {
     cwd: APP_ROOT, env, windowsHide: true,
@@ -144,6 +159,18 @@ function openWindow(url) {
 }
 
 /* ---------- first-start setup ---------- */
+
+ipcMain.handle('disk-encryption', async () => {
+  const drive = path.parse(DATA).root.slice(0, 2); // e.g. "C:"
+  const out = await new Promise((resolve) => {
+    let text = '';
+    const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', bitlockerQuery(drive)], { windowsHide: true });
+    ps.stdout.on('data', (d) => (text += d));
+    ps.on('error', () => resolve(''));
+    ps.on('exit', () => resolve(text));
+  });
+  return { drive, state: describeBitLocker(out) };
+});
 
 ipcMain.handle('host-certificate', async (_e, hostAddress) => {
   const host = String(hostAddress).trim().replace(/^https?:\/\//, '').replace(/[:/].*$/, '');

@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('desktopApp', {
 });
 
 contextBridge.exposeInMainWorld('desktopSetup', {
+  diskEncryption: () => ipcRenderer.invoke('disk-encryption'),
   hostCertificate: (hostAddress) => ipcRenderer.invoke('host-certificate', hostAddress),
   enrol: (form) => ipcRenderer.invoke('enrol', form),
   onLog: (cb) => ipcRenderer.on('enrol-log', (_e, line) => cb(line)),
