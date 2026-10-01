@@ -58,10 +58,16 @@ router.get('/status', requireAuth, (req, res) => {
   res.json({
     mode: 'node',
     node_no: cfg.nodeNo,
+    is_host: cfg.isHost === true,
+    // A site host: how many PCs on its LAN it serves. A LAN PC: whether its host reaches the cloud.
+    ...(cfg.isHost ? { lan_pcs: count(conn, 'SELECT COUNT(*) AS n FROM sync_nodes WHERE revoked_at IS NULL') } : {}),
+    ...(link.upstream ? { upstream_online: link.upstream.online } : {}),
     online: link.online,
     last_sync_at: link.lastSyncAt,
     last_error: link.lastError,
     pending_total: count(conn, "SELECT COUNT(*) AS n FROM sync_commands WHERE state = 'local'"),
+    // Accepted by the site host, not yet by the cloud (LAN PCs only).
+    on_site: count(conn, `SELECT COUNT(*) AS n FROM sync_commands WHERE state = 'host_confirmed' AND unattributed = 0${mine}`, ...p),
     pending: count(conn, `SELECT COUNT(*) AS n FROM sync_commands WHERE state = 'local' AND unattributed = 0${mine}`, ...p),
     attention: count(conn, `SELECT COUNT(*) AS n FROM sync_commands WHERE ${ATTENTION} AND unattributed = 0${mine}`, ...p),
     discrepancies_open: openDiscrepancies(conn, req),

@@ -6,7 +6,9 @@
  * - A node recording a command gets a PROVISIONAL number (`SO-P7-0001`): it can't know the
  *   next real number while other PCs and the cloud are issuing them too. The number enters
  *   the command's allocation plan.
- * - Re-running that command during rebase reuses the same provisional number.
+ * - Re-running that command during rebase — or a site host replaying it for its LAN —
+ *   reuses the same provisional number: only the cloud issues real numbers (until site
+ *   number blocks, phase 3c-ii).
  * - The authority replaying it issues the real next number (provisional numbers are never
  *   kept); a non-provisional planned number (a site host's leased block, phase 3) is kept and
  *   the counter moved past it.
@@ -39,9 +41,9 @@ export function syncedSequence(key: string, prefix: string, _pad: number): strin
   const planned = seqs[ctx.cursor.seq++];
   if (!planned || planned.key !== key) {
     if (planned) ctx.planMisses = (ctx.planMisses ?? 0) + 1;
-    return ctx.mode === 'rebase' ? provisional(conn, cfg.nodeNo, prefix) : undefined;
+    return ctx.mode === 'rebase' || cfg.role === 'node' ? provisional(conn, cfg.nodeNo, prefix) : undefined;
   }
-  if (ctx.mode === 'rebase') return planned.value;
+  if (ctx.mode === 'rebase' || cfg.role === 'node') return planned.value; // a host keeps it provisional
   // replay on the authority
   if (planned.provisional) return undefined; // issue the real next number
   const n = Number(/-(\d+)$/.exec(planned.value)?.[1] ?? NaN);

@@ -10,7 +10,10 @@ import type { PlanEntry } from '../shared/sync-context';
 import { formatHlc, parseHlc, tickHlc } from './ids-util';
 
 export type SyncClass = 'merge' | 'physical' | 'claim' | 'online';
-export type CommandState = 'local' | 'received' | 'confirmed' | 'rejected' | 'conflict';
+/** local: not yet decided · received: in an authority's inbox · host_confirmed: accepted by the
+ *  site host, not yet by the cloud · confirmed / rejected: the cloud's verdict · conflict: a
+ *  pending command that no longer applied when re-run. */
+export type CommandState = 'local' | 'received' | 'host_confirmed' | 'confirmed' | 'rejected' | 'conflict';
 
 /** What travels from a node to the authority (the local changeset never does). */
 export interface SyncCommand {
@@ -90,9 +93,11 @@ export function getCommand(conn: DatabaseSync, id: string): CommandRow | undefin
   return conn.prepare('SELECT * FROM sync_commands WHERE id = ?').get(id) as CommandRow | undefined;
 }
 
-/** A node's commands not yet decided by the authority, oldest first. */
+/** Commands still waiting for the cloud, in the order they took effect here (insertion order:
+ *  on a site host that interleaves its own commands with those it accepted from LAN PCs,
+ *  whose node_seq values come from different counters). */
 export function localCommands(conn: DatabaseSync): CommandRow[] {
-  return conn.prepare("SELECT * FROM sync_commands WHERE state = 'local' ORDER BY node_seq").all() as unknown as CommandRow[];
+  return conn.prepare("SELECT * FROM sync_commands WHERE state = 'local' ORDER BY rowid").all() as unknown as CommandRow[];
 }
 
 export function toWire(row: CommandRow): SyncCommand {

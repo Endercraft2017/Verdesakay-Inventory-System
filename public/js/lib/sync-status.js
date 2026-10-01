@@ -3,7 +3,8 @@
    Shows where this PC's work stands, in the top bar:
      ● Synced                         everything confirmed by the cloud
      ◐ Syncing · 3 waiting            connected, some actions not confirmed yet
-     ○ Offline · 3 saved on this PC   the cloud can't be reached; work continues locally
+     ○ Offline · 3 saved on this PC   the cloud (or the site host) can't be reached
+     ◐ On site · 2 not in the cloud   a LAN PC: the site host accepted them; the cloud hasn't yet
      + "· 2 need attention"           actions the cloud rejected / open stock discrepancies
    Clicking it opens the Sync page (#/sync). Every action an API call reports as saved only on
    this PC (X-Sync-State: local → 'vds:sync-local') also gets a toast saying it isn't final yet.
@@ -32,6 +33,7 @@ const SyncStatus = (() => {
   function describe(s) {
     if (!s || s.mode !== 'node') return null;
     const waiting = s.pending_total || 0;
+    const onSite = s.on_site || 0;
     const attention = (s.attention || 0) + (s.discrepancies_open || 0);
     let text;
     let tone;
@@ -40,6 +42,9 @@ const SyncStatus = (() => {
       tone = 'offline';
     } else if (waiting) {
       text = `Syncing · ${waiting} waiting`;
+      tone = 'syncing';
+    } else if (onSite) {
+      text = `On site · ${onSite} not in the cloud yet`;
       tone = 'syncing';
     } else if (s.online === null) {
       text = 'Connecting…';

@@ -35,6 +35,9 @@ export interface SyncContext {
   planMisses?: number;
   /** Side effects a node skipped during an optimistic run (for tests / diagnostics). */
   skippedEffects?: string[];
+  /** Set when a site host replays a LAN PC's command: the host isn't the final authority,
+   *  so emails / pushes / broadcasts wait for the cloud's replay. */
+  suppressEffects?: boolean;
 }
 
 export const syncStore = new AsyncLocalStorage<SyncContext>();
@@ -63,7 +66,7 @@ export function inSyncedCommand(): boolean {
  *  notifications and live broadcasts must not fire there — the authority fires them once. */
 export function sideEffectsSuppressed(kind: string): boolean {
   const ctx = syncStore.getStore();
-  if (!ctx || (ctx.mode !== 'record' && ctx.mode !== 'rebase')) return false;
+  if (!ctx || (ctx.mode !== 'record' && ctx.mode !== 'rebase' && !ctx.suppressEffects)) return false;
   (ctx.skippedEffects ??= []).push(kind);
   return true;
 }

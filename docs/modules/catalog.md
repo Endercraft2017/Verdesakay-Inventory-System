@@ -89,7 +89,8 @@ replay as actor), `authority.ts` (effects, `acceptCommand`, `pullFor`, `snapshot
 `rebase.ts` (`applyConfirmed`; applies changesets with foreign-key actions off), `changeset.ts`
 (invert, table + row filter), `ids-util.ts` (ULID, HLC), `transport.ts` (cloud endpoints
 `/api/sync/*`, stripped snapshot), `client.ts` (enrol, adopt, `syncWithCloud`, `startSyncLoop`,
-connection state), `status.ts` (`/api/sync/status`, `/activity`, `/now`); CLI
+connection state, host/LAN enrolment, members refresh), `status.ts` (`/api/sync/status`, `/activity`,
+`/now`); CLI
 `scripts/sync-enrol.ts` (`npm run sync:enrol`). Frontend (desktop): `public/js/lib/sync-status.js`
 (top-bar pill + "not final" toast, fed by the `X-Sync-State` hook in `public/js/api.js`),
 `public/js/modules/core/sync.js` (route `sync`: PC status/inbox, or Installed PCs on the cloud).
@@ -107,7 +108,10 @@ per mutating route (undeclared ⇒ refused on a node, 503); `now()` for business
 `GET /api/sync/snapshot`, `POST /api/sync/commands`, `GET /api/sync/pull` (node token);
 `GET /api/sync/status`, `GET /api/sync/activity?view=pending|attention`,
 `POST /api/sync/activity/:id/dismiss`, `POST /api/sync/now` (signed-in user). Responses of recorded
-actions carry `X-Sync-State: local` + `X-Sync-Command`.
+actions carry `X-Sync-State: local` + `X-Sync-Command`. Site hosts (phase 3c-i): a node with
+`isHost` serves the same `/api/sync/*` endpoints to its LAN PCs (`isAuthority`); plus
+`GET /api/sync/whoami` (public) and `GET /api/sync/members` (cloud, host token); enrolment takes
+`is_host` / `host_node_no`; `/pull?ids=` returns verdicts on unattributed commands by id.
 **Dependencies:** `shared/` (db Proxy via `syncHooks.prepare`, `nextSequence` via
 `syncHooks.nextSequence`, `requireAuth` via `syncHooks.replayUser`, `authUserById`, device,
 mailer/push/ws via `sideEffectsSuppressed`). Wired in `src/app.ts` (install, replay tenant,
@@ -124,9 +128,11 @@ idempotent accept, divergence refusal, provisional numbers, push sent once by th
 unattributed commands), `tests/sync-inventory.test.ts` (phase 2: D1 overdraw + flags, merge / claim /
 online per route), helper `tests/sync-helpers.ts`, `tests/sync-transport.test.ts` (phase 3a over a real
 listener: enrolment, stripped snapshot, both-way sync, row-level secret filter, node auth, offline,
-Sync now), `tests/sync-status.test.ts` + `tests/frontend-sync-status.test.ts` (phase 3b).
-**Status:** partial. Decisions D1–D5 taken 2026-09-30; phases 1, 2, 3a built 2026-09-30, 3b
-(desktop) 2026-10-01. Mobile sync UI waits on a Figma design (see design doc §14). Still open
+Sync now), `tests/sync-status.test.ts` + `tests/frontend-sync-status.test.ts` (phase 3b),
+`tests/sync-site.test.ts` (phase 3c-i: cloud + host + LAN PC over HTTP).
+**Status:** partial. Decisions D1–D5 taken 2026-09-30; phases 1, 2, 3a built 2026-09-30; 3b
+(desktop) and 3c-i (site host relay) 2026-10-01. Mobile sync UI waits on a Figma design (design doc
+§14); site decisions / claims via the host (3c-ii) need the design in §15 first. Still open
 spikes: LAN discovery, LAN HTTPS for `/m`, DPAPI-keyed field encryption.
 
 ## desktop/ — installable Windows app (planned)

@@ -495,7 +495,8 @@ through the command's `rejected` state until the phase-3 badges exist.
 |---|---|
 | **3a. Transport + enrolment** ✅ built 2026-09-30 (§13) | Cloud endpoints under `/api/sync` (enrol a PC, filtered snapshot, push commands, pull effects) authenticated by a per-node token. A node client that enrols and syncs over HTTP, a background sync loop when `DEPLOY_MODE=node`, and `npm run sync:enrol`. Secrets never leave the cloud, per row and in the snapshot |
 | **3b. Badges + needs-attention inbox** ✅ desktop built 2026-10-01 (§14) | `GET /api/sync/status` on a node. Saved on this device / Synced / Needs attention on desktop and mobile. An inbox for rejected commands and stock discrepancies |
-| **3c. Site host** | One fixed host per site accepts LAN nodes' commands as the site authority and relays them to the cloud. Home sites on locations, main site on the tenant, `claim` via the host, site number blocks, GET-write check on nodes |
+| **3c-i. Site host relay** ✅ built 2026-10-01 (§15) | One fixed host per site: LAN PCs enrol through it and sync with it; it accepts their commands in one site order ("confirmed on site"), relays them to the cloud, follows the cloud's corrections, and streams everything to its LAN |
+| **3c-ii. Site decisions** | Home sites on locations, main site on the tenant, `claim` via the host with the cloud deferring to it for that site's records (D4), site number blocks, GET-write check on nodes — design in §15 first |
 | **3d. Desktop app + LAN HTTPS** | Electron shell (+ `npm run test:node24`), per-tenant local CA (D5), phone certificate install page, phones on the host |
 | **3e. Blob lane** | Content-addressed files; multipart routes (photos) become commands |
 | **3f. Field encryption** | DPAPI-keyed encryption of sensitive fields on nodes (spike first) |
@@ -570,3 +571,66 @@ Tests: `tests/sync-status.test.ts` (marking, status, per-person scope, attention
 discrepancy count), `tests/frontend-sync-status.test.ts` (api.js event → toast, pill wording,
 hidden on the cloud, labels), `tests/sync-transport.test.ts` (Sync now online / unreachable, live
 connection state).
+
+## 15. Phase 3c-i as built (2026-10-01): the site host relays for its LAN
+
+Code: `src/sync/node.ts` (`isHost`, `isAuthority`), `authority.ts` (cloud *or* host),
+`rebase.ts` (`host_confirmed`), `transport.ts` (`/whoami`, `/members`, host/LAN enrolment),
+`client.ts` (`registerNode`, `downloadSnapshot`, `hostNodeNo`, members refresh), `status.ts`,
+`scripts/sync-enrol.ts` (`--as-host`, `--host URL`). Tests: `tests/sync-site.test.ts` — cloud, host
+and LAN PC on one real HTTP server.
+
+**Roles.** A node may be its site's **host** (`sync_node.is_host`). Towards the cloud it is an
+ordinary node. Towards the PCs on its LAN it is an **authority**, running the same endpoints and code
+as the cloud (`isAuthority`). A LAN PC's `sync_remote` points at the host, not the cloud.
+
+**Enrolment.** The host: `npm run sync:enrol -- … --as-host`. A LAN PC: `… --host <host URL>`. It
+asks the host who it is (`GET /api/sync/whoami`), registers at the cloud as that host's PC
+(`host_node_no`), then downloads its starting copy **from the host**. The host lets it in once it
+has refreshed its list of LAN PCs from the cloud (`GET /api/sync/members`, each round; the script
+waits up to 5 minutes). Token hashes travel; tokens never do. After that the host authenticates
+its LAN PCs with no internet.
+
+**How the site stays consistent.** The host records *every* change to its database (the same
+continuous recorder the cloud has; checked that sessions also capture changes applied from a
+changeset). That stream — the host's own work, the LAN commands it accepts, and the whole rebase
+when it syncs with the cloud — is what LAN PCs pull, so they mirror the host exactly.
+- A LAN PC's command accepted by the host becomes one of the host's own pending commands (kept with
+  its changes, in **site order** = insertion order, since PCs' sequence counters differ). The LAN PC
+  gets the verdict `host_confirmed`; it stops re-running it, and the pill says "On site · N not in the
+  cloud yet".
+- The host forwards its own and its LAN PCs' commands to the cloud. The cloud lets a host submit
+  its LAN PCs' commands, and returns verdicts for all of them. When the cloud rejects one the host
+  had accepted, the host's rebase undoes it, and that undo reaches the LAN PC through the same stream.
+  The test covers a clerk disabled on the cloud while their offline work waited.
+- A host's replay never sends email, push or live broadcasts (`suppressEffects`); only the cloud's
+  does. It also never issues real document numbers: a LAN PC's provisional number stays provisional
+  until the cloud.
+- The pull response from a host says whether the host can reach the cloud (`upstream`). The LAN PC's
+  status shows it.
+
+**Bug fixed on the way.** Unattributed (anonymous-channel) commands carry no node number, so their
+verdicts could never be returned. The PC would have re-run them at every rebase and duplicated them.
+A PC now asks for those verdicts by command id (`/pull?ids=`), which reveals nothing it doesn't
+already know.
+
+**What 3c-i does *not* do yet.**
+- The cloud still re-checks everything and has the final word. Host acceptance means "confirmed on
+  site", which matters for the LAN while the internet is down, but it isn't final.
+- `claim`s are still refused on every PC, the host included.
+- There is no host failover (phase 5). With the host down, LAN PCs keep recording locally and sync
+  when it returns.
+- Phones still use the cloud (3d).
+
+**3c-ii design questions (to settle before building).** D4 makes the host final *for its site's
+records*. That needs:
+1. **Home sites.** Which site owns each location, and through it each SO/JO/receipt. Company-wide
+   records belong to the main site.
+2. **Cloud deference.** When the host forwards a `claim` it accepted on a record its site owns, the
+   cloud must keep the host's decision even if its own re-check would now fail. For example, the
+   host approved an order against stock that another branch took in the meantime. The cloud then
+   applies it and flags the clash (like a stock discrepancy) instead of rejecting it. The open part
+   is *how*. One option is to apply the host's recorded effect with conflict handling. The other is
+   to replay with business checks relaxed for that command, the way D1 relaxes stock checks.
+3. **Number blocks** leased from the cloud to each site, so a host issues final numbers offline.
+4. **A guard for GET requests that write** on nodes (§10 known limit).

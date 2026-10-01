@@ -47,10 +47,13 @@ export async function syncOnce(nodeSlug: string, cloudSlug: string, nodeNo: numb
 
 export { syncClass, syncRequestMiddleware } from './capture';
 export { replayTenantOf } from './replay';
-export { enableSync, syncConfigOf, isNodeLocalTable, NODE_RANGE } from './node';
+export { enableSync, syncConfigOf, isAuthority, isNodeLocalTable, NODE_RANGE } from './node';
 export { acceptCommand, pullFor, snapshotForNode, flushEffects } from './authority';
 export { applyConfirmed, pendingCommands, lastAuthoritySeq, SyncDivergenceError } from './rebase';
 export { SyncBlockedError } from './ids';
 export { buildNodeSnapshot } from './transport';
-export { enrolNode, adoptSnapshot, syncWithCloud, startSyncLoop, remoteOf, linkStatusOf, SyncOfflineError } from './client';
+export {
+  enrolNode, registerNode, downloadSnapshot, hostNodeNo, adoptSnapshot, syncWithCloud, startSyncLoop, remoteOf,
+  linkStatusOf, SyncOfflineError,
+} from './client';
 export type { SyncClass, SyncCommand, CommandResult } from './commands';

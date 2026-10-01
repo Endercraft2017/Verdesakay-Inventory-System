@@ -11,13 +11,19 @@
  *
  * Steps 1–3 are one transaction. Any conflict there means this copy has diverged from the
  * authority (it should be impossible) — the whole pull is refused rather than half-applied.
+ *
+ * With a site host (phase 3c) the authority may answer `host_confirmed`: the host accepted the
+ * command and its effect is in the host's stream, so it is done here too (not re-run); the
+ * cloud's final `confirmed` / `rejected` arrives later and only updates its state — if the cloud
+ * rejects it, the host's own undo reaches this PC through the same stream. A host running this
+ * against the cloud then flushes, so its LAN PCs receive the whole rebase as effects.
  */
 import type { DatabaseSync } from 'node:sqlite';
 import { getDb } from '../shared/db';
 import { filterChangeset, invertChangeset } from './changeset';
 import { localCommands, lockSync, toWire, type SyncCommand } from './commands';
-import { isReplicated, syncConfigOf } from './node';
-import type { PullResult } from './authority';
+import { isAuthority, isReplicated, syncConfigOf } from './node';
+import { flushEffects, type PullResult } from './authority';
 import { dispatchCommand } from './replay';
 
 export class SyncDivergenceError extends Error {
@@ -45,6 +51,8 @@ export function lastAuthoritySeq(slug: string): number {
 export interface RebaseSummary {
   undone: number;
   applied: number;
+  /** Accepted by the site host (not yet by the cloud). */
+  onSite: number;
   confirmed: number;
   rejected: number;
   rerun: number;
@@ -79,7 +87,7 @@ export async function applyConfirmed(slug: string, pull: PullResult): Promise<Re
   try {
     const pending = localCommands(conn);
     const verdicts = new Map(pull.results.map((r) => [r.id, r]));
-    const summary: RebaseSummary = { undone: 0, applied: 0, confirmed: 0, rejected: 0, rerun: 0, conflicts: 0 };
+    const summary: RebaseSummary = { undone: 0, applied: 0, onSite: 0, confirmed: 0, rejected: 0, rerun: 0, conflicts: 0 };
 
     withForeignKeysOff(conn, () => {
       conn.exec('BEGIN');
@@ -97,13 +105,15 @@ export async function applyConfirmed(slug: string, pull: PullResult): Promise<Re
         conn.prepare('UPDATE sync_node SET last_authority_seq = MAX(last_authority_seq, ?) WHERE k = 1').run(pull.upTo);
         const setVerdict = conn.prepare(
           `UPDATE sync_commands SET state = ?, authority_seq = ?, response_status = ?, error = ?, local_changeset = NULL,
-                  updated_at = datetime('now') WHERE id = ? AND state = 'local'`,
+                  updated_at = datetime('now') WHERE id = ? AND state IN ('local', 'host_confirmed')`,
         );
-        for (const c of pending) {
-          const v = verdicts.get(c.id);
-          if (!v || (v.state !== 'confirmed' && v.state !== 'rejected')) continue;
-          setVerdict.run(v.state, v.authority_seq, v.response_status, v.error, c.id);
-          if (v.state === 'confirmed') summary.confirmed++;
+        const decided = new Set(['host_confirmed', 'confirmed', 'rejected']);
+        for (const v of pull.results) {
+          if (!decided.has(v.state)) continue;
+          const changed = setVerdict.run(v.state, v.authority_seq, v.response_status, v.error, v.id).changes;
+          if (!changed) continue;
+          if (v.state === 'host_confirmed') summary.onSite++;
+          else if (v.state === 'confirmed') summary.confirmed++;
           else summary.rejected++;
         }
         conn.exec('COMMIT');
@@ -145,6 +155,8 @@ export async function applyConfirmed(slug: string, pull: PullResult): Promise<Re
       if (status && status < 400) summary.rerun++;
       else summary.conflicts++;
     }
+    // A site host streams what this rebase did to its LAN PCs.
+    if (isAuthority(syncConfigOf(conn))) flushEffects(conn, null);
     return summary;
   } finally {
     release();

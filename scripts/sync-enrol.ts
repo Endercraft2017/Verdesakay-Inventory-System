@@ -3,16 +3,21 @@
  * (docs/OFFLINE-FIRST.md §12, phase 3a).
  *
  *   SYNC_ENROL_PASSWORD=… npm run sync:enrol -- --cloud https://acme.app.afkcube.com \
- *       --user admin --name "Warehouse desk"
+ *       --user admin --name "Warehouse desk" [--as-host | --host https://192.168.1.20:3000]
+ *
+ *   --as-host   this PC becomes its site's host: the authority for the PCs on its LAN
+ *   --host URL  this PC is on a site's LAN: it syncs with that host (whose server must be running)
+ *   (neither)   a single-PC site: it syncs with the cloud directly
  *
  * Downloads the workspace (credentials stripped) into DB_PATH (default db/data.db), which must
- * not exist yet, and makes it this PC's copy. Then start the server with DEPLOY_MODE=node and it
- * syncs in the background. The admin account needs `users.manage`; the password comes from
- * SYNC_ENROL_PASSWORD (or --password) so it isn't left in shell history.
+ * not exist yet, and makes it this PC's copy — a LAN PC gets it from its host. Then start the
+ * server with DEPLOY_MODE=node and it syncs in the background. The admin account needs
+ * `users.manage`; the password comes from SYNC_ENROL_PASSWORD (or --password) so it isn't left
+ * in shell history.
  */
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { adoptSnapshot, enrolNode } from '../src/sync/client';
+import { adoptSnapshot, downloadSnapshot, hostNodeNo, registerNode } from '../src/sync/client';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -28,16 +33,26 @@ async function main(): Promise<void> {
     console.error('Usage: SYNC_ENROL_PASSWORD=… npm run sync:enrol -- --cloud <https://workspace-url> --user <admin> --name "<PC name>"');
     process.exit(2);
   }
+  const asHost = process.argv.includes('--as-host');
+  const hostUrl = arg('host');
+  if (asHost && hostUrl) {
+    console.error('Use either --as-host or --host, not both.');
+    process.exit(2);
+  }
   const file = process.env.DB_PATH || path.join(import.meta.dirname, '..', 'db', 'data.db');
-  console.log(`Enrolling "${name}" against ${cloudUrl} into ${file} …`);
-  const id = await enrolNode({ cloudUrl, username, password, name, file });
+  const role = asHost ? 'site host' : hostUrl ? `PC of the site host at ${hostUrl}` : 'PC';
+  console.log(`Enrolling "${name}" as a ${role} against ${cloudUrl} into ${file} …`);
+  const hostNo = hostUrl ? await hostNodeNo(hostUrl) : null;
+  const id = await registerNode({ cloudUrl, username, password, name, asHost, hostNodeNo: hostNo });
+  if (hostUrl) console.log('Waiting for the site host to learn about this PC (its next sync with the cloud) …');
+  await downloadSnapshot({ fromUrl: hostUrl ?? cloudUrl, nodeToken: id.nodeToken, file, waitMs: hostUrl ? 5 * 60_000 : 0 });
   const conn = new DatabaseSync(file);
   try {
-    adoptSnapshot(conn, { ...id, cloudUrl });
+    adoptSnapshot(conn, { ...id, cloudUrl: hostUrl ?? cloudUrl, isHost: asHost });
   } finally {
     conn.close();
   }
-  console.log(`Done: this PC is node ${id.nodeNo}. Start it with DEPLOY_MODE=node.`);
+  console.log(`Done: this PC is node ${id.nodeNo}${asHost ? ' (site host)' : ''}. Start it with DEPLOY_MODE=node.`);
 }
 
 main().catch((e: unknown) => {

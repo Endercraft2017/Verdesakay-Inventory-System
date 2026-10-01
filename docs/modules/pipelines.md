@@ -378,8 +378,9 @@ place — corrections go through a new adjustment, not a rewrite of history).
 Design: `docs/OFFLINE-FIRST.md` (§10–11 = built). **Built (phases 1–2, 2026-09-30):** stages 1, 3
 and 4 between a node and the cloud — over HTTP (`syncWithCloud` / `startSyncLoop`, phase 3a) and
 in-process for tests (`syncOnce`); every inventory-module route classed; desktop badges + the
-needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`). **Not built:**
-stage 2 (site host), mobile sync UI. This pipeline wraps the
+needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`); stage 2 as a relay
+(phase 3c-i: LAN PCs sync with their site host, which forwards to the cloud). **Not built:** the
+host's decisions being final for its site's records (3c-ii), mobile sync UI. This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).
@@ -393,7 +394,9 @@ LAN (e.g. a stock withdrawal, a punch, a QC result).
    refused ("needs internet"). A route with no class at all is refused on a node (503, "needs an
    internet connection") — its writes would never sync. *(Built: `sync/capture.ts`; `claim` is
    always refused until phase 3 adds site hosts.)*
-2. **Site confirm** (`sync/` on the site host) — the host replays the command through the same
+2. **Site confirm** (`sync/` on the site host; *built as a relay in phase 3c-i: "confirmed on site",
+   the cloud still has the final word; final numbers from leased blocks are 3c-ii*) — the host
+   replays the command through the same
    handler against the site's data (same allocation plan, command clock, permission re-check),
    issues final numbers from its leased block, and fans the resulting changeset out to every
    node on the LAN; nodes rebase. LAN side effects (live screen updates) fire here. Badge:
@@ -448,6 +451,10 @@ Design: `docs/OFFLINE-FIRST.md` §13. **Trigger:** someone sets up a PC to work 
 1. **Enrol** (`sync/transport.ts`, cloud) — an admin with `users.manage` signs in from the PC
    (`npm run sync:enrol`); `POST /api/sync/nodes` issues the next node number and a node token
    (stored hashed). The first enrolment switches the workspace to sync mode (cloud role).
+   - **Branch — site host** (`--as-host`): registered `is_host`; it serves its LAN from then on.
+   - **Branch — LAN PC** (`--host <URL>`): the script asks the host its node number
+     (`/api/sync/whoami`) and registers as its PC (`host_node_no`); the host learns about it on its
+     next cloud round (`/api/sync/members`), then hands out the snapshot (step 2 runs on the host).
 2. **Snapshot** (cloud) — `GET /api/sync/snapshot`: the workspace as of the latest effect with every
    credential removed (node-local tables emptied, secret settings deleted, VACUUMed).
 3. **Adopt** (`sync/client.ts`, PC) — the copy becomes the PC's database with the node role and its

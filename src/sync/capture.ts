@@ -24,7 +24,7 @@ import {
   APP_VERSION, getCommand, insertCommand, lockSync, parsePlan, stampLocal, type SyncClass,
 } from './commands';
 import { ulid } from './ids-util';
-import { isReplicated, syncConfigOf, type SyncConfig } from './node';
+import { isAuthority, isReplicated, syncConfigOf, type SyncConfig } from './node';
 import { flushEffects } from './authority';
 import { rememberReplayContext, replayRequestOf, setReplayActor } from './replay';
 
@@ -55,6 +55,8 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
       plan: parsePlan(cmd.allocation_plan),
       cursor: { id: 0, seq: 0 },
       unattributed: cmd.unattributed === 1,
+      // A site host's replay isn't final: outside effects wait for the cloud's (§7.8).
+      suppressEffects: cfg.role === 'node',
     };
     setReplayActor(req, cmd.actor_user_id != null ? authUserById(cmd.actor_user_id) ?? undefined : undefined);
     rememberReplayContext(replay.mode, cmd.id, ctx);
@@ -63,11 +65,12 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
   }
 
   if (!MUTATING.has(req.method)) return next();
+  // An authority (the cloud, a site host) streams what each request changed to its PCs.
+  if (isAuthority(cfg)) res.once('finish', () => flushEffects(conn, null));
   if (cfg.role === 'node') {
     syncStore.run({ mode: 'guard', plan: [], cursor: { id: 0, seq: 0 } }, next);
     return;
   }
-  res.once('finish', () => flushEffects(conn, null));
   next();
 }
 

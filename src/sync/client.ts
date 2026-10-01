@@ -1,8 +1,12 @@
 /**
- * An installed PC's side of the sync transport (docs/OFFLINE-FIRST.md §12, phase 3a):
- * enrol against the cloud, start from its stripped snapshot, then sync over HTTP —
- * push pending commands, pull confirmed effects, rebase. `startSyncLoop` runs that in the
- * background when `DEPLOY_MODE=node`; losing the connection just means the next round waits.
+ * An installed PC's side of the sync transport (docs/OFFLINE-FIRST.md §12–13, §15): enrol,
+ * start from a stripped snapshot, then sync over HTTP with its authority — push pending
+ * commands, pull effects, rebase. `startSyncLoop` runs that in the background when
+ * `DEPLOY_MODE=node`; losing the connection just means the next round waits.
+ *
+ * A PC's authority is the cloud, or — for a PC on a site's LAN (phase 3c) — its site host. A
+ * site host is itself an ordinary PC towards the cloud; after each round with the cloud it also
+ * refreshes the list of its LAN PCs, so it can let them in while the internet is down.
  */
 import fs from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
@@ -13,19 +17,24 @@ import type { CommandResult } from './commands';
 import type { PullResult } from './authority';
 
 export interface RemoteConfig {
+  /** The authority this copy syncs with: the cloud, or its site host. */
   cloudUrl: string;
   nodeToken: string;
+  /** Sent as X-Tenant (honoured only outside production — tests, local multi-tenant setups). */
+  tenant: string | null;
 }
 
-/** The cloud could not be reached (no internet, DNS, timeout) — not an error in itself. */
+/** The authority could not be reached (no internet, DNS, timeout) — not an error in itself. */
 export class SyncOfflineError extends Error {}
 
-/** How this PC's link to the cloud last looked (for the status pill). In memory: after a
- *  restart it is unknown (`online: null`) until the first round. */
+/** How this PC's link last looked (for the status pill). In memory: after a restart it is
+ *  unknown (`online: null`) until the first round. `upstream` is reported by a site host:
+ *  whether it can reach the cloud. */
 export interface LinkStatus {
   online: boolean | null;
   lastSyncAt: string | null;
   lastError: string | null;
+  upstream?: { online: boolean | null; last_sync_at: string | null };
 }
 const links = new Map<string, LinkStatus>();
 
@@ -35,15 +44,16 @@ export function linkStatusOf(slug: string): LinkStatus {
 
 export function remoteOf(conn: DatabaseSync): RemoteConfig | null {
   try {
-    const r = conn.prepare('SELECT cloud_url, node_token FROM sync_remote WHERE k = 1').get() as
-      { cloud_url: string; node_token: string } | undefined;
-    return r ? { cloudUrl: r.cloud_url, nodeToken: r.node_token } : null;
+    const r = conn.prepare('SELECT cloud_url, node_token, tenant FROM sync_remote WHERE k = 1').get() as
+      { cloud_url: string; node_token: string; tenant: string | null } | undefined;
+    return r ? { cloudUrl: r.cloud_url, nodeToken: r.node_token, tenant: r.tenant } : null;
   } catch {
     return null; // sync tables not created on this DB
   }
 }
 
 const trimUrl = (u: string) => u.replace(/\/+$/, '');
+const tenantHeader = (tenant?: string | null): Record<string, string> => (tenant ? { 'x-tenant': tenant } : {});
 
 async function call(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
   try {
@@ -59,38 +69,84 @@ async function jsonOrThrow<T>(res: Response, what: string): Promise<T> {
   return body;
 }
 
-/**
- * Enrol this PC: sign in to the cloud as an admin, register the PC, and download the workspace
- * to `file` (which must not exist yet). Returns the node identity to adopt the copy with.
- */
-export async function enrolNode(opts: {
-  cloudUrl: string; username: string; password: string; name: string; file: string;
-}): Promise<{ nodeNo: number; nodeToken: string }> {
-  if (fs.existsSync(opts.file)) throw new Error(`${opts.file} already exists — enrol into a fresh database file.`);
+export interface Registration {
+  nodeNo: number;
+  nodeToken: string;
+}
+
+/** Register a PC with the cloud as an admin. `asHost` makes it its site's host; `hostNodeNo`
+ *  makes it a LAN PC of that host. */
+export async function registerNode(opts: {
+  cloudUrl: string; username: string; password: string; name: string;
+  asHost?: boolean; hostNodeNo?: number | null; cloudTenant?: string | null;
+}): Promise<Registration> {
   const base = trimUrl(opts.cloudUrl);
+  const t = tenantHeader(opts.cloudTenant);
   const login = await jsonOrThrow<{ token: string }>(
     await call(`${base}/api/auth/login`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST', headers: { 'content-type': 'application/json', ...t },
       body: JSON.stringify({ username: opts.username, password: opts.password }),
     }), 'Sign-in');
   const node = await jsonOrThrow<{ node_no: number; node_token: string }>(
     await call(`${base}/api/sync/nodes`, {
-      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${login.token}` },
-      body: JSON.stringify({ name: opts.name }),
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${login.token}`, ...t },
+      body: JSON.stringify({ name: opts.name, is_host: !!opts.asHost, host_node_no: opts.hostNodeNo ?? null }),
     }), 'Enrolment');
-  const snap = await call(`${base}/api/sync/snapshot`, {
-    headers: { 'x-sync-node-token': node.node_token }, timeoutMs: 10 * 60_000,
-  });
-  if (!snap.ok) throw new Error(`Downloading the workspace failed (${snap.status}).`);
-  fs.writeFileSync(opts.file, Buffer.from(await snap.arrayBuffer()));
   return { nodeNo: node.node_no, nodeToken: node.node_token };
 }
 
-/** Make a downloaded snapshot this PC's working copy: node role + where/how it syncs. */
-export function adoptSnapshot(conn: DatabaseSync, id: { nodeNo: number; cloudUrl: string; nodeToken: string }): void {
-  enableSync(conn, { role: 'node', nodeNo: id.nodeNo });
-  conn.prepare('INSERT INTO sync_remote (k, cloud_url, node_token) VALUES (1, ?, ?) ON CONFLICT(k) DO UPDATE SET cloud_url = excluded.cloud_url, node_token = excluded.node_token')
-    .run(trimUrl(id.cloudUrl), id.nodeToken);
+/** Which node a site host is (public `GET /api/sync/whoami` on the host). */
+export async function hostNodeNo(hostUrl: string, tenant?: string | null): Promise<number> {
+  const me = await jsonOrThrow<{ node_no: number; is_host: boolean }>(
+    await call(`${trimUrl(hostUrl)}/api/sync/whoami`, { headers: tenantHeader(tenant) }), 'Finding the site host');
+  if (!me.is_host) throw new Error(`${hostUrl} is not a site host.`);
+  return me.node_no;
+}
+
+/** Download a starting copy from an authority into `file` (which must not exist yet). A site
+ *  host only knows a new LAN PC after its next round with the cloud, so a 401 is retried until
+ *  `waitMs` has passed. */
+export async function downloadSnapshot(opts: {
+  fromUrl: string; nodeToken: string; file: string; tenant?: string | null; waitMs?: number;
+}): Promise<void> {
+  if (fs.existsSync(opts.file)) throw new Error(`${opts.file} already exists — enrol into a fresh database file.`);
+  const until = Date.now() + (opts.waitMs ?? 0);
+  for (;;) {
+    const snap = await call(`${trimUrl(opts.fromUrl)}/api/sync/snapshot`, {
+      headers: { 'x-sync-node-token': opts.nodeToken, ...tenantHeader(opts.tenant) }, timeoutMs: 10 * 60_000,
+    });
+    if (snap.ok) {
+      fs.writeFileSync(opts.file, Buffer.from(await snap.arrayBuffer()));
+      return;
+    }
+    if (snap.status !== 401 || Date.now() >= until) throw new Error(`Downloading the workspace failed (${snap.status}).`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+
+/**
+ * Enrol this PC against the cloud directly (a single-PC site, or a site host): register,
+ * download the workspace to `file`. Returns the identity to adopt the copy with.
+ */
+export async function enrolNode(opts: {
+  cloudUrl: string; username: string; password: string; name: string; file: string; asHost?: boolean;
+}): Promise<Registration> {
+  if (fs.existsSync(opts.file)) throw new Error(`${opts.file} already exists — enrol into a fresh database file.`);
+  const reg = await registerNode(opts);
+  await downloadSnapshot({ fromUrl: opts.cloudUrl, nodeToken: reg.nodeToken, file: opts.file });
+  return reg;
+}
+
+/** Make a downloaded snapshot this PC's working copy: node role (host or not) + the authority
+ *  it syncs with and its credential there. */
+export function adoptSnapshot(conn: DatabaseSync, id: {
+  nodeNo: number; cloudUrl: string; nodeToken: string; isHost?: boolean; tenant?: string | null;
+}): void {
+  enableSync(conn, { role: 'node', nodeNo: id.nodeNo, ...(id.isHost ? { isHost: true as const } : {}) });
+  conn.prepare(
+    `INSERT INTO sync_remote (k, cloud_url, node_token, tenant) VALUES (1, ?, ?, ?)
+     ON CONFLICT(k) DO UPDATE SET cloud_url = excluded.cloud_url, node_token = excluded.node_token, tenant = excluded.tenant`,
+  ).run(trimUrl(id.cloudUrl), id.nodeToken, id.tenant ?? null);
 }
 
 export interface CloudRound {
@@ -98,29 +154,31 @@ export interface CloudRound {
   rebase: RebaseSummary;
 }
 
-/** One sync round with the cloud over HTTP. Throws SyncOfflineError when unreachable. */
+/** One sync round with this PC's authority over HTTP. Throws SyncOfflineError when unreachable. */
 export async function syncWithCloud(slug: string): Promise<CloudRound> {
   const prev = linkStatusOf(slug);
   try {
-    const round = await cloudRound(slug);
-    links.set(slug, { online: true, lastSyncAt: new Date().toISOString(), lastError: null });
+    const { round, upstream } = await cloudRound(slug);
+    links.set(slug, { online: true, lastSyncAt: new Date().toISOString(), lastError: null, ...(upstream ? { upstream } : {}) });
     return round;
   } catch (e) {
     links.set(slug, {
       online: e instanceof SyncOfflineError ? false : prev.online,
       lastSyncAt: prev.lastSyncAt,
       lastError: (e as Error).message,
+      ...(prev.upstream ? { upstream: prev.upstream } : {}),
     });
     throw e;
   }
 }
 
-async function cloudRound(slug: string): Promise<CloudRound> {
+async function cloudRound(slug: string): Promise<{ round: CloudRound; upstream?: LinkStatus['upstream'] }> {
   const conn = getDb(slug);
-  if (syncConfigOf(conn)?.role !== 'node') throw new Error(`"${slug}" is not an installed copy.`);
+  const cfg = syncConfigOf(conn);
+  if (cfg?.role !== 'node') throw new Error(`"${slug}" is not an installed copy.`);
   const remote = remoteOf(conn);
-  if (!remote) throw new Error(`"${slug}" has no cloud to sync with (not enrolled).`);
-  const headers = { 'content-type': 'application/json', 'x-sync-node-token': remote.nodeToken };
+  if (!remote) throw new Error(`"${slug}" has nothing to sync with (not enrolled).`);
+  const headers = { 'content-type': 'application/json', 'x-sync-node-token': remote.nodeToken, ...tenantHeader(remote.tenant) };
 
   const pushed: CommandResult[] = [];
   const pending = pendingCommands(slug);
@@ -132,16 +190,33 @@ async function cloudRound(slug: string): Promise<CloudRound> {
     pushed.push(...r.results);
   }
 
-  const raw = await jsonOrThrow<{ upTo: number; results: PullResult['results']; effects: Array<{ authority_seq: number; command_id: string | null; changeset: string }> }>(
-    await call(`${remote.cloudUrl}/api/sync/pull?since=${lastAuthoritySeq(slug)}`, { headers, timeoutMs: 5 * 60_000 }),
-    'Receiving changes');
+  // Unattributed commands carry no node number: ask for their verdicts by id.
+  const anonIds = pending.filter((c) => c.unattributed === 1).map((c) => c.id);
+  const q = `since=${lastAuthoritySeq(slug)}${anonIds.length ? `&ids=${anonIds.join(',')}` : ''}`;
+  const raw = await jsonOrThrow<{
+    upTo: number; results: PullResult['results']; upstream?: LinkStatus['upstream'];
+    effects: Array<{ authority_seq: number; command_id: string | null; changeset: string }>;
+  }>(await call(`${remote.cloudUrl}/api/sync/pull?${q}`, { headers, timeoutMs: 5 * 60_000 }), 'Receiving changes');
   const pull: PullResult = {
     upTo: raw.upTo,
     results: raw.results,
     effects: raw.effects.map((e) => ({ ...e, changeset: new Uint8Array(Buffer.from(e.changeset, 'base64')) })),
   };
   const rebase = await applyConfirmed(slug, pull);
-  return { pushed, rebase };
+
+  // A site host keeps its list of LAN PCs current, to let them in while the cloud is away.
+  if (cfg.isHost) await refreshMembers(conn, remote, headers);
+  return { round: { pushed, rebase }, upstream: raw.upstream };
+}
+
+async function refreshMembers(conn: DatabaseSync, remote: RemoteConfig, headers: Record<string, string>): Promise<void> {
+  const members = await jsonOrThrow<Array<{ node_no: number; name: string; token_hash: string; revoked_at: string | null }>>(
+    await call(`${remote.cloudUrl}/api/sync/members`, { headers }), 'Listing the site\'s PCs');
+  const upsert = conn.prepare(
+    `INSERT INTO sync_nodes (node_no, name, token_hash, revoked_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(node_no) DO UPDATE SET name = excluded.name, token_hash = excluded.token_hash, revoked_at = excluded.revoked_at`,
+  );
+  for (const m of members) upsert.run(m.node_no, m.name, m.token_hash, m.revoked_at);
 }
 
 /**
@@ -156,7 +231,7 @@ export function startSyncLoop(slug: string, intervalMs = Number(process.env.SYNC
     running = true;
     try {
       const r = await syncWithCloud(slug);
-      if (online !== true) console.log('[sync] connected to the cloud');
+      if (online !== true) console.log('[sync] connected');
       online = true;
       if (r.pushed.length || r.rebase.applied) {
         console.log(`[sync] sent ${r.pushed.length}, received ${r.rebase.applied} change batch(es)`);
