@@ -13,6 +13,9 @@ import { queryOne, queryAll, run, uploadDir } from '../shared/db';
 import { requireAuth } from '../shared/auth';
 import { enforceQuota } from '../platform/quota';
 import type { Permission } from '../shared/types';
+import { syncClass } from '../sync';
+import { syncUpload } from '../sync/files';
+import { sideEffectsSuppressed } from '../shared/sync-context';
 
 const router = Router();
 router.use(requireAuth);
@@ -104,7 +107,8 @@ router.get('/:id/image', (req, res) => {
 });
 
 // POST /api/attachments — { kind, ref_id, caption? } + an `image` file
-router.post('/', imageUpload.single('image'), (req, res) => {
+// A photo is a fact: taken offline, it travels with its command (src/sync/files.ts).
+router.post('/', syncClass('physical'), syncUpload(imageUpload.single('image')), (req, res) => {
   const kind = String(req.body?.kind || '');
   const refId = Number(req.body?.ref_id);
   const caption = typeof req.body?.caption === 'string' ? req.body.caption.trim().slice(0, 300) : null;
@@ -144,12 +148,13 @@ export function saveAttachment(kind: string, refId: number, filename: string, ca
 }
 
 // DELETE /api/attachments/:id
-router.delete('/:id', (req, res) => {
+router.delete('/:id', syncClass('claim'), (req, res) => {
   const row = queryOne<Row>('SELECT kind, image_path FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
   if (!allows(req, WRITE_PERMS[row.kind] ?? ['inventory.adjust'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   run('DELETE FROM attachments WHERE id = ?', Number(req.params.id));
-  unlink(row.image_path);
+  // An installed PC keeps the file until the cloud confirms: a refused delete brings the row back.
+  if (!sideEffectsSuppressed('unlink')) unlink(row.image_path);
   res.json({ ok: true });
 });
 

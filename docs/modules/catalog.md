@@ -184,6 +184,9 @@ personal notes/tasks, announcements, activity log, analytics, push-reminder rout
 `form-builder.routes.ts`, `messages.routes.ts`, `personal.routes.ts`,
 `templates.routes.ts`, `me.routes.ts`, `announcements.routes.ts`, `activity.routes.ts`,
 `analytics.routes.ts`, `push.routes.ts`.
+**Offline (sync/, phase 4c):** `POST /api/attachments` is `physical`, and the photo travels with the
+command via `syncUpload`. Deleting one is a company-wide `claim`; an installed PC keeps the file until
+the cloud confirms. The other core routes are not classed yet.
 **Public interface:** standard REST routes mounted with no `requireModule()` gate.
 `messages.routes.ts` also calls `shared/ws.ts`'s `broadcast()` after each mutation for
 live chat updates — VOIP/calling is explicitly out of scope for this feature (deferred as
@@ -283,8 +286,11 @@ directly by `manufacturing/`, `purchasing/`, and `modules/ai/ai-tools.ts`).
 `suppliers.routes.ts`, `customers.routes.ts` declares a sync class: stock adjust / damage /
 transfer `physical`; creating items, locations, suppliers, customers `merge`; edits, deletes,
 imports, settings, reorder-PO, discrepancy resolve, item photos `claim` (photos travel with the
-command via `syncUpload`, phase 3e). Orders,
-deliveries and release slips are not classed yet (phase 4), so they are refused on a node. Claims
+command via `syncUpload`, phase 3e). Orders, deliveries and release slips (phase 4c, §22):
+release, release slip, delivery status and proof of delivery are `physical`; new orders and deliveries are `merge`;
+approval/status, edits, deletes, accept-release, unreserve and the shortfall actions are `claim` at the order's
+stock-location site. The availability gate, the release and slip status checks, and a proof of delivery over a
+cancellation are D6 clash-checks; the slip's stock-out beyond stock is D1. Claims
 run offline at the owning site: a location's edit/delete → its site; discrepancy resolve → its
 location's site (a marked clash-check: already resolved elsewhere → kept + flagged); the rest →
 the main site.

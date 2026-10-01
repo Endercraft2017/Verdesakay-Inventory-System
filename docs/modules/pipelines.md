@@ -7,6 +7,12 @@ find its pipeline and stage here before deciding where the code goes.
 
 ## Sales order fulfillment
 
+**Offline (phase 4c, docs/OFFLINE-FIRST.md §22):** the whole run, from intake to proof of delivery, works at a
+site with the internet down. Decisions are made at the site of the order's stock location (else the main
+site), and SO, RS and DEL numbers come from the site host's leased blocks. Release, the release slip (with
+photos) and the proof of delivery are physical facts. An approval, release, slip or proof of delivery the
+cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is accepted and flagged (D1).
+
 **Trigger:** a sale order is created (`modules/inventory`, `orders.routes.ts`).
 
 1. **Intake** (`inventory`) — order created in `open` status.
@@ -390,7 +396,10 @@ in-process for tests (`syncOnce`); every inventory-module route classed; desktop
 needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`); stage 2 as a relay
 (phase 3c-i: LAN PCs sync with their site host, which forwards to the cloud); site decisions
 (phase 3c-ii: `claim`s decided at the owning site; the cloud keeps them, flagging clashes — D6).
-**Not built:** mobile sync UI, site number blocks (phase 4). This pipeline wraps the
+Pipelines offline so far (phase 4): time clock (4a), production run with site number blocks (4b),
+sales order fulfillment (4c).
+**Not built:** mobile sync UI; the remaining pipelines (purchasing receipts, HR, reports, payroll,
+accounting — phase 4d+). This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).

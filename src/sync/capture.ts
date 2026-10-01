@@ -114,7 +114,8 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
 export interface SyncClassOptions {
   /** Anonymous channel: the command carries no actor, device, node, time or planned ids. */
   unattributed?: boolean;
-  /** `claim` only: whose decision the record is (§16). Default: company-wide (the main site). */
+  /** Whose record it is (§16). `claim`: who may decide it (default: company-wide, the main site).
+   *  `physical`: on the cloud, the site's action on its own record runs with clash-checks relaxed (D6). */
   home?: (req: Request) => Home;
 }
 
@@ -145,8 +146,8 @@ export function syncClass(cls: SyncClass, opts: SyncClassOptions = {}): RequestH
     if (!cfg) return next();
     const ctx = syncContext();
     if (cfg.role === 'cloud') {
-      // Re-running a site's decision on a record that site owns: it stands (D6).
-      if (cls === 'claim' && ctx?.mode === 'replay' && ctx.decidingSite != null
+      // Re-running a site's decision (or physical action) on a record that site owns: it stands (D6).
+      if ((cls === 'claim' || (cls === 'physical' && opts.home)) && ctx?.mode === 'replay' && ctx.decidingSite != null
           && deciderOf(opts.home ? opts.home(req) : 'company') === ctx.decidingSite) {
         ctx.siteFinal = true;
       }

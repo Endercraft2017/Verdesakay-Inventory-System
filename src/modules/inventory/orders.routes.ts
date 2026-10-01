@@ -1,6 +1,6 @@
 /** Job & Sale Orders: stored records with line items, auto numbers, server-computed
     totals. One router serves both types (?type=sale|job). */
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
@@ -12,6 +12,8 @@ import { maybeAutoPostSale, maybeFulfillSale, unpostSource } from '../accounting
 import { getDefaultLocationId } from './inventory-stock';
 import { createDraftJobOrder } from '../manufacturing/job-orders.routes';
 import type { Order, OrderItem, OrderType } from '../../shared/types';
+import { recordSiteClash, syncClass } from '../../sync';
+import { siteDecisionStands } from '../../shared/sync-context';
 
 const router = Router();
 router.use(requireAuth);
@@ -23,6 +25,22 @@ const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 // inventory.adjust the 'releasing'/'warehouse'/'admin'/'admin_staff' roles use for this
 // same action (those roles already satisfy this via inventory.adjust, unaffected).
 const releaseGate = requireAnyPermission(['inventory.adjust', 'orders.release']);
+
+/** An order's decisions belong to the site of its stock location; one without one (every purchase
+ *  order, a sale order with no location) is company-wide: the main site's (docs/OFFLINE-FIRST.md §16). */
+const orderSite = {
+  home: (req: Request) => ({
+    location: queryOne<{ location_id: number | null }>('SELECT location_id FROM orders WHERE id = ?', Number(req.params.id))?.location_id ?? null,
+  }),
+};
+
+/** Clash-check (D6) for the availability gate: the site approved its own order with enough stock
+ *  in its view; if the cloud's stock is short by now, the approval stands and is flagged. */
+function shortageStands(req: Request, number: string, shortLines: number): boolean {
+  if (!siteDecisionStands()) return false;
+  recordSiteClash(req, `Sale order ${number} was approved at the site, but the cloud's stock is now short on ${shortLines} line(s).`);
+  return true;
+}
 
 /** Best-effort background push after a save when the tenant has QuickBooks auto-push on.
     Never blocks the response; failures are logged only. */
@@ -378,7 +396,7 @@ export function releaseTeardown(orderId: number): void {
 
 // POST /api/orders/:id/accept-release — the warehouse takes on an approved sale order for
 // releasing. Picking (/release) is refused until this is done.
-router.post('/:id/accept-release', releaseGate, (req, res) => {
+router.post('/:id/accept-release', releaseGate, syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -400,17 +418,29 @@ router.post('/:id/accept-release', releaseGate, (req, res) => {
 // the numbered record of what physically left (lines + unit serials, who collected it). Issuing
 // it confirms the order, which is when stock goes out (maybeFulfillSale). Photos of the
 // outgoing goods are attached afterwards as `attachments` kind 'release' on the slip id.
-router.post('/:id/release-slip', releaseGate, (req, res) => {
+router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
-  if (queryOne('SELECT id FROM release_slips WHERE order_id = ?', id)) {
+  const existing = queryOne<{ id: number; number: string }>('SELECT id, number FROM release_slips WHERE order_id = ?', id);
+  // Clash-checks (D6), replaying a site's slip for its own order: the goods left the site.
+  const stands = siteDecisionStands();
+  if (existing) {
+    if (stands) {
+      // Issued on the cloud and at the site: the goods left once — the first slip is kept.
+      recordSiteClash(req, `Sale order ${order.number} got a release slip on the cloud and at the site; ${existing.number} was kept.`);
+      res.status(201).json({ ok: true, clash: true, id: existing.id, order: orderWithLines(id) });
+      return;
+    }
     res.status(409).json({ error: 'A release slip was already issued for this order.' });
     return;
   }
   if (String(order.status || '').toLowerCase() !== 'released') {
-    res.status(409).json({ error: 'Release every line of the order before issuing the release slip.' });
-    return;
+    if (!stands) {
+      res.status(409).json({ error: 'Release every line of the order before issuing the release slip.' });
+      return;
+    }
+    recordSiteClash(req, `Sale order ${order.number} was ${order.status} on the cloud when the site's release slip arrived; the goods had left, so the slip stands.`);
   }
   const input = parseBody(releaseSlipSchema, req.body);
   const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
@@ -453,21 +483,27 @@ router.post('/:id/release-slip', releaseGate, (req, res) => {
 // POST /api/orders/:id/release — a warehouse releaser scans / enters goods out against an
 // approved sale order. Records only — reserves the serialized units + bumps each bulk
 // line's released_qty; stock is drawn down later when the order is confirmed/completed.
-router.post('/:id/release', releaseGate, (req, res) => {
+router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
+  // Clash-checks (D6): replaying a site's release of its own order, a check that fails only
+  // because the cloud changed the order or its units meanwhile is flagged instead — the goods
+  // were scanned out at the site.
+  const stands = siteDecisionStands();
+  const clashes: string[] = [];
+  const refused = (status: number, error: string): boolean => {
+    if (stands) { clashes.push(error); return false; }
+    res.status(status).json({ error });
+    return true;
+  };
   if (order.status === 'open') {
-    res.status(409).json({ error: 'Approve the sale order before releasing goods.' });
-    return;
-  }
-  if (!RELEASE_STATES.has(String(order.status || '').toLowerCase())) {
-    res.status(409).json({ error: `Cannot release goods against an order that is ${order.status}.` });
-    return;
+    if (refused(409, 'Approve the sale order before releasing goods.')) return;
+  } else if (!RELEASE_STATES.has(String(order.status || '').toLowerCase())) {
+    if (refused(409, `Cannot release goods against an order that is ${order.status}.`)) return;
   }
   if (!order.warehouse_accepted_at) {
-    res.status(409).json({ error: 'The warehouse must accept this order for releasing first.' });
-    return;
+    if (refused(409, 'The warehouse must accept this order for releasing first.')) return;
   }
   const input = parseBody(releaseOrderSchema, req.body);
   const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', id);
@@ -477,7 +513,8 @@ router.post('/:id/release', releaseGate, (req, res) => {
   const unitIds = new Set<number>(input.unit_ids ?? []);
   for (const code of input.codes ?? []) {
     const u = queryOne<{ id: number }>(
-      "SELECT id FROM job_order_units WHERE identifier = ? AND status = 'in_stock' ORDER BY id DESC LIMIT 1",
+      `SELECT id FROM job_order_units WHERE identifier = ? AND status IN (${stands ? "'in_stock', 'reserved'" : "'in_stock'"})
+       ORDER BY status = 'in_stock' DESC, id DESC LIMIT 1`,
       code.trim()
     );
     if (!u) { res.status(400).json({ error: `No in-stock unit with label "${code.trim()}".` }); return; }
@@ -496,8 +533,12 @@ router.post('/:id/release', releaseGate, (req, res) => {
   const addPerItem = new Map<number, number>();
   for (const u of units) {
     if (u.status !== 'in_stock') {
-      res.status(409).json({ error: `Unit ${u.identifier || '#' + u.id} is ${u.status}, not available to release.` });
-      return;
+      const error = `Unit ${u.identifier || '#' + u.id} is ${u.status}, not available to release.`;
+      // Reserved for another order on the cloud meanwhile: the site holds and scanned it.
+      if (u.status !== 'reserved' || refused(409, error)) {
+        if (!res.headersSent) res.status(409).json({ error });
+        return;
+      }
     }
     if (u.product_item_id == null || !lineByItem.has(u.product_item_id)) {
       res.status(400).json({ error: `Unit ${u.identifier || '#' + u.id} is not for a product on this order.` });
@@ -507,8 +548,7 @@ router.post('/:id/release', releaseGate, (req, res) => {
     const already = lineCoverage(id, line).units + lineCoverage(id, line).bulk;
     const pending = addPerItem.get(u.product_item_id) ?? 0;
     if (already + pending + 1 > line.quantity) {
-      res.status(400).json({ error: `That exceeds the ${line.quantity} ordered of ${line.name}.` });
-      return;
+      if (refused(400, `That exceeds the ${line.quantity} ordered of ${line.name}.`)) return;
     }
     addPerItem.set(u.product_item_id, pending + 1);
   }
@@ -519,8 +559,7 @@ router.post('/:id/release', releaseGate, (req, res) => {
     if (!line) { res.status(400).json({ error: `Item #${b.item_id} is not on this order.` }); return; }
     const cov = lineCoverage(id, line);
     if (cov.units + cov.bulk + b.quantity > line.quantity + 1e-9) {
-      res.status(400).json({ error: `That exceeds the ${line.quantity} ordered of ${line.name}.` });
-      return;
+      if (refused(400, `That exceeds the ${line.quantity} ordered of ${line.name}.`)) return;
     }
   }
 
@@ -553,6 +592,7 @@ router.post('/:id/release', releaseGate, (req, res) => {
     db.exec('ROLLBACK');
     throw e;
   }
+  for (const c of clashes) recordSiteClash(req, `Release on ${order.number} at the site stands: ${c}`);
   res.json({
     ok: true,
     reserved: units.length,
@@ -562,7 +602,7 @@ router.post('/:id/release', releaseGate, (req, res) => {
 });
 
 // POST /api/orders/:id/release/unreserve — undo a release (units back to stock, bulk down)
-router.post('/:id/release/unreserve', releaseGate, (req, res) => {
+router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -610,7 +650,7 @@ router.get('/:id/availability', (req, res) => {
 // POST /api/orders/:id/produce-shortfall — for each finished-product line that's short,
 // raise a draft job order (linked to this sale order) for the missing quantity. Reports
 // per line whether the components are on hand to actually build it.
-router.post('/:id/produce-shortfall', requirePermission('inventory.adjust'), (req, res) => {
+router.post('/:id/produce-shortfall', requirePermission('inventory.adjust'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -647,7 +687,7 @@ router.post('/:id/produce-shortfall', requirePermission('inventory.adjust'), (re
 // POST /api/orders/:id/purchase-shortfall — draft purchase order(s) for what has to be
 // bought: short lines that aren't made here, plus the short BOM components of finished-
 // product lines. Grouped by each item's preferred supplier.
-router.post('/:id/purchase-shortfall', requirePermission('orders.create'), (req, res) => {
+router.post('/:id/purchase-shortfall', requirePermission('orders.create'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -675,7 +715,7 @@ router.post('/:id/purchase-shortfall', requirePermission('orders.create'), (req,
 });
 
 // POST /api/orders — create with auto number + computed totals
-router.post('/', requirePermission('orders.create'), (req, res) => {
+router.post('/', requirePermission('orders.create'), syncClass('merge'), (req, res) => {
   const input = parseBody(createOrderSchema, req.body);
   const { lines, subtotal, tax_amount, total } = computeTotals(input.items, input.tax_percent);
 
@@ -739,7 +779,7 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
 // POST /api/orders/:id/status — advance a sale order's status only (no line-item body).
 // Same availability gate as PUT, and the same auto-post / fulfil / teardown side effects.
 // Used by the delivery-completed "mark the order completed?" prompt.
-router.post('/:id/status', requirePermission('orders.edit'), (req, res) => {
+router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -755,7 +795,7 @@ router.post('/:id/status', requirePermission('orders.edit'), (req, res) => {
   try {
     if (goingFirm && !force) {
       const av = orderAvailability(id);
-      if (!av.ok) {
+      if (!av.ok && !shortageStands(req, order.number, av.short_lines)) {
         db.exec('ROLLBACK');
         res.status(409).json({
           error: `${av.short_lines} line(s) don't have enough stock. Produce or purchase the shortfall, or confirm as a backorder.`,
@@ -781,7 +821,7 @@ router.post('/:id/status', requirePermission('orders.edit'), (req, res) => {
 });
 
 // PUT /api/orders/:id — replace header + items, recompute totals (type/number unchanged)
-router.put('/:id', requirePermission('orders.edit'), (req, res) => {
+router.put('/:id', requirePermission('orders.edit'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order) {
@@ -843,7 +883,7 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
       && !['released', 'confirmed', 'completed'].includes(cur);
     if (goingFirm && !input.force) {
       const av = orderAvailability(id);
-      if (!av.ok) {
+      if (!av.ok && !shortageStands(req, order.number, av.short_lines)) {
         db.exec('ROLLBACK');
         res.status(409).json({
           error: `${av.short_lines} line(s) don't have enough stock. Trim the order, produce the shortfall, or approve as a backorder.`,
@@ -872,7 +912,7 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
 });
 
 // DELETE /api/orders/:id (cascades items)
-router.delete('/:id', requirePermission('orders.delete'), (req, res) => {
+router.delete('/:id', requirePermission('orders.delete'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   // If this sale was posted to the ledger / drew down stock, reverse both before the row
   // (and its cascaded line items) go away; then return any reserved units to stock.

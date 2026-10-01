@@ -12,9 +12,21 @@ import {
 } from '../../shared/validation';
 import { notifyUser } from '../../shared/push';
 import type { Delivery, OrderItem } from '../../shared/types';
+import { recordSiteClash, syncClass } from '../../sync';
+import { siteDecisionStands } from '../../shared/sync-context';
 
 const router = Router();
 router.use(requireAuth);
+
+/** A delivery belongs to the site of its sale order's stock location; one without is the main
+ *  site's (docs/OFFLINE-FIRST.md §16). */
+const deliverySite = {
+  home: (req: Request) => ({
+    location: queryOne<{ location_id: number | null }>(
+      'SELECT o.location_id FROM deliveries d JOIN orders o ON o.id = d.order_id WHERE d.id = ?', Number(req.params.id)
+    )?.location_id ?? null,
+  }),
+};
 
 const canManage = (req: Request) => req.user!.permissions.includes('delivery.manage');
 const canRun = (req: Request) =>
@@ -76,7 +88,7 @@ router.get('/:id', requirePermission('delivery.run'), (req, res) => {
 });
 
 // POST /api/deliveries — create (delivery.manage)
-router.post('/', requirePermission('delivery.manage'), (req, res) => {
+router.post('/', requirePermission('delivery.manage'), syncClass('merge'), (req, res) => {
   const input = parseBody(createDeliverySchema, req.body);
   let customer = input.customer_name ?? null;
   const address = input.address ?? null;
@@ -109,7 +121,7 @@ router.post('/', requirePermission('delivery.manage'), (req, res) => {
 });
 
 // PUT /api/deliveries/:id — edit header / reassign (delivery.manage)
-router.put('/:id', requirePermission('delivery.manage'), (req, res) => {
+router.put('/:id', requirePermission('delivery.manage'), syncClass('claim', deliverySite), (req, res) => {
   const d = load(Number(req.params.id));
   if (!d) { res.status(404).json({ error: 'Delivery not found' }); return; }
   const input = parseBody(updateDeliverySchema, req.body);
@@ -142,7 +154,7 @@ router.put('/:id', requirePermission('delivery.manage'), (req, res) => {
 });
 
 // POST /api/deliveries/:id/status — { status: 'out_for_delivery' | 'cancelled' }
-router.post('/:id/status', requirePermission('delivery.run'), (req, res) => {
+router.post('/:id/status', requirePermission('delivery.run'), syncClass('physical', deliverySite), (req, res) => {
   const d = load(Number(req.params.id));
   if (!d) { res.status(404).json({ error: 'Delivery not found' }); return; }
   if (!mayTouch(req, d)) { res.status(403).json({ error: 'Not your delivery' }); return; }
@@ -151,6 +163,12 @@ router.post('/:id/status', requirePermission('delivery.run'), (req, res) => {
     res.status(403).json({ error: 'Only a delivery manager can cancel' }); return;
   }
   if (d.status === 'delivered' || d.status === 'cancelled') {
+    // Clash-check (D6): finished on the cloud meanwhile — the cloud's outcome is kept, flagged.
+    if (siteDecisionStands()) {
+      recordSiteClash(req, `Delivery ${d.number} was marked ${status} at the site after it was ${d.status} on the cloud; ${d.status} was kept.`);
+      res.json({ ok: true, clash: true, status: d.status });
+      return;
+    }
     res.status(409).json({ error: `This delivery is already ${d.status}` }); return;
   }
   run("UPDATE deliveries SET status = ?, updated_at = datetime('now') WHERE id = ?", status, d.id);
@@ -158,12 +176,19 @@ router.post('/:id/status', requirePermission('delivery.run'), (req, res) => {
 });
 
 // POST /api/deliveries/:id/complete — the proof of delivery
-router.post('/:id/complete', requirePermission('delivery.run'), (req, res) => {
+router.post('/:id/complete', requirePermission('delivery.run'), syncClass('physical', deliverySite), (req, res) => {
   const d = load(Number(req.params.id));
   if (!d) { res.status(404).json({ error: 'Delivery not found' }); return; }
   if (!mayTouch(req, d)) { res.status(403).json({ error: 'Not your delivery' }); return; }
   if (d.status === 'delivered' || d.status === 'cancelled') {
-    res.status(409).json({ error: `This delivery is already ${d.status}` }); return;
+    // Clash-check (D6): the driver's proof of delivery stands over a cancellation made on the
+    // cloud meanwhile; delivered on both sides keeps the first proof. Both are flagged.
+    if (!siteDecisionStands()) {
+      res.status(409).json({ error: `This delivery is already ${d.status}` }); return;
+    }
+    recordSiteClash(req, `Delivery ${d.number} was ${d.status} on the cloud when the site's proof of delivery arrived`
+      + (d.status === 'delivered' ? '; the first proof was kept.' : '; the proof stands.'));
+    if (d.status === 'delivered') { res.json({ ok: true, clash: true, status: d.status, order: null }); return; }
   }
   const input = parseBody(deliveryCompleteSchema, req.body);
   if (input.signature_attachment_id != null
@@ -205,7 +230,7 @@ router.post('/:id/complete', requirePermission('delivery.run'), (req, res) => {
 });
 
 // DELETE /api/deliveries/:id — remove a not-yet-started delivery (delivery.manage)
-router.delete('/:id', requirePermission('delivery.manage'), (req, res) => {
+router.delete('/:id', requirePermission('delivery.manage'), syncClass('claim', deliverySite), (req, res) => {
   const d = load(Number(req.params.id));
   if (!d) { res.status(404).json({ error: 'Delivery not found' }); return; }
   if (d.status !== 'pending') { res.status(409).json({ error: 'Only a pending delivery can be deleted' }); return; }

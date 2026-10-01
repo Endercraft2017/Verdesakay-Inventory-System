@@ -182,7 +182,7 @@ because every route defaults to the `online` class until it is reviewed.
 | **1. Command foundation** ✅ built 2026-09-30 (§10) | `src/sync/`: command log, HLC, ULID, `DEPLOY_MODE`, per-route `syncClass()` (undeclared routes refused on a node), allocation plan (node-partitioned IDs via renumber-after-insert + provisional/replayed document numbers), SQL request clock + `now()`, side-effect suppression on nodes (email/push/broadcast), cloud effect stream, replay through the real routes, changeset rebase, node-local tables, unattributed commands. CLAUDE.md rule reworded (D4). No behavior change for DBs without a sync role. **Moved:** sensitive-field encryption and the Node 24 test run → phase 3 (need the DPAPI spike / the Electron dependency); site-number block leasing → phase 3 (needs a host); converting handlers' `new Date()` to `now()` → per route as it is classed (phases 2, 4) |
 | **2. Inventory** ✅ built 2026-09-30 (§11) | Every inventory-module route classed (items, stock, locations, suppliers, customers). D1: a stock-out beyond recorded stock is accepted inside a synced command and opens a `stock_discrepancies` row (list + resolve API); direct cloud requests keep refusing it. Rebase applies changesets with foreign-key actions off. **Moved:** home sites → phase 3 (they only matter once site hosts decide claims); orders / deliveries / release slips → phase 4 (sales-release pipeline) |
 | **3. Desktop app + site host** (sub-phases 3a–3f below) | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
-| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock → production run → sales order release → purchasing receipt → HR requests and records → anonymous reports → payroll → accounting/tax |
+| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt → HR requests and records → anonymous reports → payroll → accounting/tax |
 | **5. Host election + failover** | Voting nodes, election, lease, terms, fencing (§4) |
 | **6. Hardening** | Conflict inbox with resolve actions, version shims, compaction of old commands/effects, sync health dashboard |
 
@@ -884,3 +884,44 @@ QC and products-in. It reaches the cloud identically, photos included. The first
 exposed that a kit **picked** at the site was re-refused on the cloud when stock had been taken elsewhere
 meanwhile, which also made the release fail. Marking the pick's stock check as a D6 clash-check fixed it. The
 release then lands, the cloud's stock goes to −2, and a discrepancy is opened.
+
+## 22. Phase 4c as built (2026-10-02): sales-order release offline
+
+### Classes (`modules/inventory`: `orders.routes.ts`, `deliveries.routes.ts`; `core/attachments.routes.ts`)
+
+| Class | Routes |
+|---|---|
+| `physical` | release (goods scanned/entered out), release slip (stock leaves), delivery status, proof of delivery, any photo attachment (travels via `syncUpload`) |
+| `merge` | new order (sale or purchase), new delivery |
+| `claim` (an order's decisions → the site of its stock location, else the main site; a delivery's → its order's) | approve / status, edit, delete, warehouse accept-release, unreserve, produce shortfall, purchase shortfall; delivery edit / delete; deleting a photo (company-wide) |
+
+A `physical` route may now name a `home` too. On the cloud, replaying a site's physical action on
+a record that site owns sets `siteFinal`, the same way a claim does. Its marked clash-checks are then
+relaxed and flagged, while permissions and validation still apply. Deleting a photo keeps the file on an
+installed PC (`sideEffectsSuppressed('unlink')`), so a refused delete can bring the row back.
+
+### Checks relaxed under sync
+- **D1:** a release slip's stock-out beyond recorded stock. `maybeFulfillSale` → `applyStockChange` never
+  refused it; inside a synced command the negative location balance now opens a discrepancy.
+- **D6 clash-checks** (kept + flagged in Site decision clashes):
+  - the **availability gate** on approve/confirm (status or edit): the site saw enough stock;
+  - **release** against an order the cloud re-opened, cancelled or un-accepted meanwhile, a unit the
+    cloud reserved for another order (the site scanned it, so it moves here), or a line already
+    covered;
+  - **release slip** for an order the cloud moved out of `released`. A slip issued on both sides keeps
+    the first one;
+  - **delivery**: a proof of delivery stands over a cloud cancellation (delivered on both sides keeps
+    the first proof). A status change after the cloud finished the delivery keeps the cloud's.
+- Unchanged: a unit already **sold** on another slip is still refused (the conflict inbox), as are
+  units or items that are not on the order.
+
+QuickBooks auto-push stays cloud-side: the QBO connection is a cloud-only setting, so it fires once,
+when the cloud replays.
+
+**What the tests showed** (`tests/sync-sales.test.ts`). A whole sale ran on the host with the internet
+down: SO, RS and DEL numbers came from its blocks, through approval, release, the slip with a photo
+and the proof of delivery. It reached the cloud identically and passed to the LAN PC. A slip and photo
+taken on a LAN desk PC got its real RS number at the host and reached the cloud. An approval the cloud
+would now refuse stood, flagged. The release that followed took the cloud's stock to −3 with a
+discrepancy. A proof of delivery stood over a cloud cancellation, flagged. **Not covered by a test
+yet:** the serialized-unit clash (a unit reserved for another order).
