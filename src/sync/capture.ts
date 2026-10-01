@@ -108,6 +108,14 @@ async function recordCommand(
     cursor: { id: 0, seq: 0 },
     unattributed: !!opts.unattributed,
   };
+  const anon = !!opts.unattributed;
+  const day = occurred.toISOString().slice(0, 10);
+  // A ULID embeds its creation time; an anonymous one is dated to midnight only.
+  const commandId = anon ? ulid(Date.parse(day)) : ulid(occurred.getTime());
+  // Tell the client this result is only on this PC so far (OFFLINE-FIRST §2.4): it must not be
+  // shown as final. The id lets the UI follow it to "Synced" / "Needs attention".
+  res.setHeader('X-Sync-State', 'local');
+  res.setHeader('X-Sync-Command', commandId);
   const session = conn.createSession();
   let done = false;
   const finish = () => {
@@ -118,12 +126,9 @@ async function recordCommand(
       session.close();
       // Nothing changed ⇒ nothing to sync (a validation error, a no-op).
       if (!changes.length) return;
-      const anon = !!opts.unattributed;
       const stamp = anon ? { node_seq: null, hlc: null } : stampLocal(conn, cfg.nodeNo);
-      const day = occurred.toISOString().slice(0, 10);
       insertCommand(conn, {
-        // A ULID embeds its creation time; an anonymous one is dated to midnight only.
-        id: anon ? ulid(Date.parse(day)) : ulid(occurred.getTime()),
+        id: commandId,
         node_no: anon ? null : cfg.nodeNo,
         node_seq: stamp.node_seq,
         hlc: stamp.hlc,

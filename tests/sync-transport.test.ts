@@ -130,6 +130,17 @@ describe('syncing over HTTP', () => {
     const r = await sync.syncWithCloud(NODE);
     expect(r).toMatchObject({ pushed: [], rebase: { applied: 0, undone: 0 } });
   });
+
+  it('"Sync now" runs a round, and the status pill sees the connection', async () => {
+    await ctx.api.post(`/api/inventory/${itemId}/adjust`).set(nodeHdr()).send({ change: 1, reason: 'Sync now' });
+    const r = await ctx.api.post('/api/sync/now').set(nodeHdr());
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, sent: 1 });
+    const s = await ctx.api.get('/api/sync/status').set(nodeHdr());
+    expect(s.body).toMatchObject({ mode: 'node', online: true, pending_total: 0, last_error: null });
+    expect(Date.parse(s.body.last_sync_at)).toBeGreaterThan(Date.now() - 60_000);
+    expect(qty(cloudDb(), itemId)).toBe(19);
+  });
 });
 
 describe('node authentication', () => {
@@ -155,7 +166,7 @@ describe('node authentication', () => {
     const r = await ctx.api.post('/api/sync/commands').set('X-Sync-Node-Token', remote.nodeToken).send({ commands: [forged] });
     expect(r.status).toBe(200);
     expect(r.body.results).toMatchObject([{ state: 'rejected', response_status: 403 }]);
-    expect(qty(cloudDb(), itemId)).toBe(18);
+    expect(qty(cloudDb(), itemId)).toBe(19);
   });
 });
 
@@ -165,12 +176,18 @@ describe('when the cloud is unreachable', () => {
     await ctx.api.post(`/api/inventory/${itemId}/adjust`).set(nodeHdr()).send({ change: -1, reason: 'While offline' });
     nodeDb().prepare('UPDATE sync_remote SET cloud_url = ?').run('http://127.0.0.1:1'); // nothing listens there
     await expect(sync.syncWithCloud(NODE)).rejects.toBeInstanceOf(sync.SyncOfflineError);
+    const st = await ctx.api.get('/api/sync/status').set(nodeHdr());
+    expect(st.body).toMatchObject({ online: false, pending_total: 1 });
+    expect(st.body.last_error).toMatch(/Cannot reach/);
+    const now = await ctx.api.post('/api/sync/now').set(nodeHdr());
+    expect(now.status).toBe(503);
+    expect(now.body.error).toMatch(/safe on this PC/);
     expect(sync.pendingCommands(NODE)).toHaveLength(1);
-    expect(qty(nodeDb(), itemId)).toBe(17); // still usable locally
+    expect(qty(nodeDb(), itemId)).toBe(18); // still usable locally
 
     nodeDb().prepare('UPDATE sync_remote SET cloud_url = ?').run(remote.cloudUrl);
     await sync.syncWithCloud(NODE);
     expect(sync.pendingCommands(NODE)).toHaveLength(0);
-    expect(qty(cloudDb(), itemId)).toBe(17);
+    expect(qty(cloudDb(), itemId)).toBe(18);
   });
 });

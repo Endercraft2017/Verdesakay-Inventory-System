@@ -88,8 +88,11 @@ renumber-after-insert + write guard), `sequences.ts`, `clock.ts`, `capture.ts`
 replay as actor), `authority.ts` (effects, `acceptCommand`, `pullFor`, `snapshotForNode`),
 `rebase.ts` (`applyConfirmed`; applies changesets with foreign-key actions off), `changeset.ts`
 (invert, table + row filter), `ids-util.ts` (ULID, HLC), `transport.ts` (cloud endpoints
-`/api/sync/*`, stripped snapshot), `client.ts` (enrol, adopt, `syncWithCloud`, `startSyncLoop`);
-CLI `scripts/sync-enrol.ts` (`npm run sync:enrol`).
+`/api/sync/*`, stripped snapshot), `client.ts` (enrol, adopt, `syncWithCloud`, `startSyncLoop`,
+connection state), `status.ts` (`/api/sync/status`, `/activity`, `/now`); CLI
+`scripts/sync-enrol.ts` (`npm run sync:enrol`). Frontend (desktop): `public/js/lib/sync-status.js`
+(top-bar pill + "not final" toast, fed by the `X-Sync-State` hook in `public/js/api.js`),
+`public/js/modules/core/sync.js` (route `sync`: PC status/inbox, or Installed PCs on the cloud).
 Seam in `src/shared/sync-context.ts` (context store, `now()`, `inSyncedCommand`,
 `sideEffectsSuppressed`, `syncHooks`).
 **Owned data:** node-local `sync_node` (role, node number, seq, HLC, last authority seq,
@@ -101,7 +104,10 @@ per mutating route (undeclared ⇒ refused on a node, 503); `now()` for business
 `enableSync(conn, { role, nodeNo })`; `acceptCommand` / `pullFor` / `applyConfirmed` /
 `pendingCommands` / `snapshotForNode` / `syncOnce` (in-process); HTTP: `POST /api/sync/nodes`,
 `GET /api/sync/nodes`, `POST /api/sync/nodes/:no/revoke` (admin, `users.manage`),
-`GET /api/sync/snapshot`, `POST /api/sync/commands`, `GET /api/sync/pull` (node token).
+`GET /api/sync/snapshot`, `POST /api/sync/commands`, `GET /api/sync/pull` (node token);
+`GET /api/sync/status`, `GET /api/sync/activity?view=pending|attention`,
+`POST /api/sync/activity/:id/dismiss`, `POST /api/sync/now` (signed-in user). Responses of recorded
+actions carry `X-Sync-State: local` + `X-Sync-Command`.
 **Dependencies:** `shared/` (db Proxy via `syncHooks.prepare`, `nextSequence` via
 `syncHooks.nextSequence`, `requireAuth` via `syncHooks.replayUser`, `authUserById`, device,
 mailer/push/ws via `sideEffectsSuppressed`). Wired in `src/app.ts` (install, replay tenant,
@@ -117,8 +123,10 @@ rebase before push, cloud rows reaching the node, rejection of a since-disabled 
 idempotent accept, divergence refusal, provisional numbers, push sent once by the cloud,
 unattributed commands), `tests/sync-inventory.test.ts` (phase 2: D1 overdraw + flags, merge / claim /
 online per route), helper `tests/sync-helpers.ts`, `tests/sync-transport.test.ts` (phase 3a over a real
-listener: enrolment, stripped snapshot, both-way sync, row-level secret filter, node auth, offline).
-**Status:** partial. Decisions D1–D5 taken 2026-09-30; phases 1, 2 and 3a built 2026-09-30. Still open
+listener: enrolment, stripped snapshot, both-way sync, row-level secret filter, node auth, offline,
+Sync now), `tests/sync-status.test.ts` + `tests/frontend-sync-status.test.ts` (phase 3b).
+**Status:** partial. Decisions D1–D5 taken 2026-09-30; phases 1, 2, 3a built 2026-09-30, 3b
+(desktop) 2026-10-01. Mobile sync UI waits on a Figma design (see design doc §14). Still open
 spikes: LAN discovery, LAN HTTPS for `/m`, DPAPI-keyed field encryption.
 
 ## desktop/ — installable Windows app (planned)
@@ -249,6 +257,8 @@ deliveries and release slips are not classed yet (phase 4), so they are refused 
 **Owned data (offline):** `stock_discrepancies` — opened by `applyStockChange` when a synced
 stock-out takes a location below zero (decision D1); `GET /api/inventory/discrepancies`,
 `POST /api/inventory/discrepancies/:id/resolve`. `overdrawAllowed()` in `inventory-stock.ts`.
+UI: Inventory → Stock Movements → Discrepancies (`public/js/modules/inventory/stock-discrepancies.js`,
+route `stock-discrepancies`).
 **Status:** working.
 
 ## modules/manufacturing

@@ -18,7 +18,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'confidential-reports', 'announcements', 'sop'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'confidential-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies'];
 
 const NAV = [
   {
@@ -49,6 +49,8 @@ const NAV = [
         id: 'movements', label: 'Stock Movements',
         tree: [
           { label: 'All Movements', icon: 'adjust', route: 'inventory-movements' },
+          // Offline stock-outs that went below recorded stock (docs/OFFLINE-FIRST.md D1).
+          { label: 'Discrepancies', icon: 'alert', route: 'stock-discrepancies' },
         ],
       },
       {
@@ -305,6 +307,13 @@ const NAV = [
         id: 'activity', label: 'Activity', requiredPermission: 'audit.view',
         tree: [
           { label: 'Activity Log', icon: 'history', route: 'activity' },
+        ],
+      },
+      {
+        id: 'installed-pcs', label: 'Installed PCs',
+        tree: [
+          // Offline-capable PCs enrolled against this workspace (docs/OFFLINE-FIRST.md §13).
+          { label: 'Installed PCs', icon: 'building', route: 'sync' },
         ],
       },
       {

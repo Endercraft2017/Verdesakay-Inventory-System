@@ -12,6 +12,12 @@ import { replayUserOf, setReplayApp } from './replay';
 import { acceptCommand, pullFor } from './authority';
 import { applyConfirmed, lastAuthoritySeq, pendingCommands, type RebaseSummary } from './rebase';
 import type { CommandResult } from './commands';
+import { Router } from 'express';
+import transportRoutes from './transport';
+import statusRoutes from './status';
+
+/** Everything under /api/sync: the PC ↔ cloud transport and the status / inbox endpoints. */
+export const syncRoutes = Router().use(transportRoutes).use(statusRoutes);
 
 export function installSync(app: Express): void {
   syncHooks.prepare = wrapPrepared;
@@ -45,6 +51,6 @@ export { enableSync, syncConfigOf, isNodeLocalTable, NODE_RANGE } from './node';
 export { acceptCommand, pullFor, snapshotForNode, flushEffects } from './authority';
 export { applyConfirmed, pendingCommands, lastAuthoritySeq, SyncDivergenceError } from './rebase';
 export { SyncBlockedError } from './ids';
-export { default as syncRoutes, buildNodeSnapshot } from './transport';
-export { enrolNode, adoptSnapshot, syncWithCloud, startSyncLoop, remoteOf, SyncOfflineError } from './client';
+export { buildNodeSnapshot } from './transport';
+export { enrolNode, adoptSnapshot, syncWithCloud, startSyncLoop, remoteOf, linkStatusOf, SyncOfflineError } from './client';
 export type { SyncClass, SyncCommand, CommandResult } from './commands';

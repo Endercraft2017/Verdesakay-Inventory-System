@@ -20,6 +20,19 @@ export interface RemoteConfig {
 /** The cloud could not be reached (no internet, DNS, timeout) — not an error in itself. */
 export class SyncOfflineError extends Error {}
 
+/** How this PC's link to the cloud last looked (for the status pill). In memory: after a
+ *  restart it is unknown (`online: null`) until the first round. */
+export interface LinkStatus {
+  online: boolean | null;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+const links = new Map<string, LinkStatus>();
+
+export function linkStatusOf(slug: string): LinkStatus {
+  return links.get(slug) ?? { online: null, lastSyncAt: null, lastError: null };
+}
+
 export function remoteOf(conn: DatabaseSync): RemoteConfig | null {
   try {
     const r = conn.prepare('SELECT cloud_url, node_token FROM sync_remote WHERE k = 1').get() as
@@ -87,6 +100,22 @@ export interface CloudRound {
 
 /** One sync round with the cloud over HTTP. Throws SyncOfflineError when unreachable. */
 export async function syncWithCloud(slug: string): Promise<CloudRound> {
+  const prev = linkStatusOf(slug);
+  try {
+    const round = await cloudRound(slug);
+    links.set(slug, { online: true, lastSyncAt: new Date().toISOString(), lastError: null });
+    return round;
+  } catch (e) {
+    links.set(slug, {
+      online: e instanceof SyncOfflineError ? false : prev.online,
+      lastSyncAt: prev.lastSyncAt,
+      lastError: (e as Error).message,
+    });
+    throw e;
+  }
+}
+
+async function cloudRound(slug: string): Promise<CloudRound> {
   const conn = getDb(slug);
   if (syncConfigOf(conn)?.role !== 'node') throw new Error(`"${slug}" is not an installed copy.`);
   const remote = remoteOf(conn);

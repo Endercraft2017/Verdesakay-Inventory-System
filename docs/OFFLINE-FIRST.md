@@ -494,7 +494,7 @@ through the command's `rejected` state until the phase-3 badges exist.
 | Sub-phase | Scope |
 |---|---|
 | **3a. Transport + enrolment** ✅ built 2026-09-30 (§13) | Cloud endpoints under `/api/sync` (enrol a PC, filtered snapshot, push commands, pull effects) authenticated by a per-node token. A node client that enrols and syncs over HTTP, a background sync loop when `DEPLOY_MODE=node`, and `npm run sync:enrol`. Secrets never leave the cloud, per row and in the snapshot |
-| **3b. Badges + needs-attention inbox** | `GET /api/sync/status` on a node. Saved on this device / Synced / Needs attention on desktop and mobile. An inbox for rejected commands and stock discrepancies |
+| **3b. Badges + needs-attention inbox** ✅ desktop built 2026-10-01 (§14) | `GET /api/sync/status` on a node. Saved on this device / Synced / Needs attention on desktop and mobile. An inbox for rejected commands and stock discrepancies |
 | **3c. Site host** | One fixed host per site accepts LAN nodes' commands as the site authority and relays them to the cloud. Home sites on locations, main site on the tenant, `claim` via the host, site number blocks, GET-write check on nodes |
 | **3d. Desktop app + LAN HTTPS** | Electron shell (+ `npm run test:node24`), per-tenant local CA (D5), phone certificate install page, phones on the host |
 | **3e. Blob lane** | Content-addressed files; multipart routes (photos) become commands |
@@ -533,3 +533,40 @@ A divergence stops the loop. The PC must then be re-enrolled; the re-sync tool i
 therefore trusted to vouch for who signed in on it, like a time-clock kiosk. The controls are
 revoking the PC, the actor having to be active with the permission at replay, and the audit rows.
 Per-user signing of commands can be added later if needed.
+
+## 14. Phase 3b as built (2026-10-01)
+
+**Marking.** Every response from an action recorded on a PC carries `X-Sync-State: local` and
+`X-Sync-Command: <id>` (`sync/capture.ts`). The desktop API client (`public/js/api.js`) turns that
+into a `vds:sync-local` event. `public/js/lib/sync-status.js` then shows a toast — "Saved on this
+PC — it is not final until it syncs with the cloud" — on top of whatever the page itself says. So
+the CLAUDE.md rule "a device's optimistic local result is never shown as final" holds for every
+screen without each page having to know about sync.
+
+**Status pill** (top bar, installed PCs only): Synced / Syncing · N waiting / Connecting… /
+Offline · N saved on this PC, plus "· N need attention" (rejected actions + open stock
+discrepancies). It polls `GET /api/sync/status` every 15 s and on every local save. On the cloud and
+on normal installs the endpoint reports mode `cloud` / `off`, the pill stays hidden and polling stops.
+
+**Sync page** (`#/sync`, `public/js/modules/core/sync.js`). On a PC: the connection and last sync,
+a **Sync now** button (`POST /api/sync/now`), **Needs attention** (actions the cloud rejected,
+with its reason, plus a link to open stock discrepancies) and **Waiting to sync**, each with
+readable labels ("Stock out 3 — Truck 2"). People see their own actions; `users.manage` sees
+everyone's on that PC; anonymous-channel actions are never listed. Dismissing hides a rejected
+action once dealt with (`POST /api/sync/activity/:id/dismiss`, own only unless `users.manage`). On
+the cloud (Admin → Installed PCs, `users.manage`): the enrolled PCs with last seen / revoke, and the
+enrol command.
+
+**Stock Discrepancies page** (Inventory → Stock Movements → Discrepancies,
+`public/js/modules/inventory/stock-discrepancies.js`): open / resolved / all, with item, location,
+amount, balance then and now, reason, who and when; **Resolve** asks what was found or done. On a
+PC, resolving is refused until site hosts exist (`claim`).
+
+**Not built here:** the mobile app. Phones reach a PC only once the site host exists (3c/3d), and
+the project's mobile rules need a Figma design for the new states first. **Design dependency:**
+mobile sync pill, "saved on this phone/PC" toast and inbox screens in the V2 Figma file.
+
+Tests: `tests/sync-status.test.ts` (marking, status, per-person scope, attention + dismiss,
+discrepancy count), `tests/frontend-sync-status.test.ts` (api.js event → toast, pill wording,
+hidden on the cloud, labels), `tests/sync-transport.test.ts` (Sync now online / unreachable, live
+connection state).

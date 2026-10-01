@@ -60,6 +60,7 @@ const App = (() => {
   function showLogin() {
     me = null;
     if (window.ChatWS) ChatWS.disconnect();
+    if (window.SyncStatus) SyncStatus.stop();
     appScreen().classList.add('hidden');
     loginScreen().classList.remove('hidden');
     document.getElementById('login-password').value = '';
@@ -83,6 +84,8 @@ const App = (() => {
     showWorkspaceBanner();
 
     refreshUnread();
+    // Installed PCs only: the sync status pill (lib/sync-status.js hides itself elsewhere).
+    if (window.SyncStatus) SyncStatus.start();
     if (App._unreadTimer) clearInterval(App._unreadTimer);
     // Live push (ChatWS) keeps the badge current when connected; this poll is the
     // fallback for whenever it isn't (reconnecting, blocked by a proxy, ...).

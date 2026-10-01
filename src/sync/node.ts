@@ -118,6 +118,20 @@ const SCHEMA = `
   );
 `;
 
+/** Columns added to sync tables after they first shipped (CREATE TABLE IF NOT EXISTS doesn't add
+ *  columns to an existing table). Applied whenever a sync DB is opened or enabled. */
+const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
+  ['sync_commands', 'dismissed_at', 'ALTER TABLE sync_commands ADD COLUMN dismissed_at TEXT'],
+];
+
+function ensureSyncSchema(conn: DatabaseSync): void {
+  conn.exec(SCHEMA);
+  for (const [table, column, ddl] of ADDED_COLUMNS) {
+    const cols = conn.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === column)) conn.exec(ddl);
+  }
+}
+
 const configs = new WeakMap<DatabaseSync, SyncConfig | null>();
 
 /** The cloud's continuous change recorder: one SQLite session per cloud DB, drained into
@@ -149,6 +163,7 @@ export function syncConfigOf(conn: DatabaseSync): SyncConfig | null {
     ? (conn.prepare('SELECT role, node_no FROM sync_node WHERE k = 1').get() as { role: SyncRole; node_no: number } | undefined)
     : undefined;
   const cfg = row ? { role: row.role, nodeNo: row.node_no } : null;
+  if (cfg) ensureSyncSchema(conn);
   configs.set(conn, cfg);
   if (cfg) installClockOverride(conn);
   if (cfg?.role === 'cloud') startRecorder(conn);
@@ -162,7 +177,7 @@ export function enableSync(conn: DatabaseSync, cfg: SyncConfig): SyncConfig {
   if (cfg.role === 'node' && !(Number.isInteger(cfg.nodeNo) && cfg.nodeNo >= 1 && cfg.nodeNo <= MAX_NODE_NO)) {
     throw new Error(`A node number must be 1–${MAX_NODE_NO}.`);
   }
-  conn.exec(SCHEMA);
+  ensureSyncSchema(conn);
   const prev = conn.prepare('SELECT role, node_no FROM sync_node WHERE k = 1').get() as { role: SyncRole; node_no: number } | undefined;
   if (!prev || prev.role !== cfg.role || prev.node_no !== cfg.nodeNo) {
     conn.exec('BEGIN');

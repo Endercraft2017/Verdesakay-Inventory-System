@@ -377,8 +377,9 @@ place — corrections go through a new adjustment, not a rewrite of history).
 
 Design: `docs/OFFLINE-FIRST.md` (§10–11 = built). **Built (phases 1–2, 2026-09-30):** stages 1, 3
 and 4 between a node and the cloud — over HTTP (`syncWithCloud` / `startSyncLoop`, phase 3a) and
-in-process for tests (`syncOnce`); every inventory-module route classed. **Not built:** stage 2
-(site host), UI badges, conflict inbox. This pipeline wraps the
+in-process for tests (`syncOnce`); every inventory-module route classed; desktop badges + the
+needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`). **Not built:**
+stage 2 (site host), mobile sync UI. This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).

@@ -90,6 +90,14 @@ const API = (() => {
     const ct = res.headers.get('content-type') || '';
     if (ct.includes('application/json')) data = await res.json();
 
+    // On an installed PC an action is first saved only on that PC (docs/OFFLINE-FIRST.md §2.4):
+    // say so app-wide — lib/sync-status.js tells the person it isn't final until it syncs.
+    if (res.ok && res.headers.get('X-Sync-State') === 'local') {
+      window.dispatchEvent(new CustomEvent('vds:sync-local', {
+        detail: { commandId: res.headers.get('X-Sync-Command'), method, path },
+      }));
+    }
+
     if (!res.ok) {
       const err = new Error((data && data.error) || ('Request failed (' + res.status + ')'));
       err.status = res.status;

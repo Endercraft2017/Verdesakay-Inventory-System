@@ -216,6 +216,19 @@ a { color: var(--accent); }
 .primary-item.active .ic { color: var(--accent); }
 
 .topnav-user { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+/* Sync status pill — installed PCs only (lib/sync-status.js, docs/OFFLINE-FIRST.md §2.4). */
+.sync-pill {
+  display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; flex-shrink: 0;
+  padding: 4px 12px; border-radius: 999px; border: 1px solid transparent;
+  font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.sync-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.sync-pill.synced { background: var(--success-weak); color: var(--success); }
+.sync-pill.syncing { background: var(--accent-weak); color: var(--accent); }
+.sync-pill.offline { background: var(--warn-weak); color: var(--warn); }
+.sync-pill.attention { background: var(--danger-weak); color: var(--danger); }
+.sync-summary { display: grid; gap: 8px; justify-items: start; }
+.small { font-size: 12px; }
 .topnav-user .who { text-align: right; line-height: 1.25; }
 .topnav-user .name { font-weight: 600; font-size: 13px; }
 .topnav-user .role { color: var(--text-faint); font-size: 11px; text-transform: capitalize; }
@@ -968,6 +981,7 @@ textarea { resize: vertical; min-height: 84px; }
 }
 .toast.success { border-left-color: var(--success); }
 .toast.error { border-left-color: var(--danger); }
+.toast.local { border-left-color: var(--warn); } /* saved on this PC, not synced yet */
 @keyframes slidein { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .form-error {
