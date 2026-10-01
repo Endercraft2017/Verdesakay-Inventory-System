@@ -31,6 +31,7 @@ import { flushEffects } from './authority';
 import { rememberReplayContext, replayRequestOf, setReplayActor } from './replay';
 import { deciderOf, siteOfNode, siteOfThisPc, type Home } from './sites';
 import { linkStatusOf } from './client';
+import { commandBody, indexFiles } from './files';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const DEVICE_ID_RE = /^[A-Za-z0-9-]{8,64}$/; // same rule as the X-Device-Id the clients send
@@ -54,6 +55,7 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
     }
     const ctx: SyncContext = {
       mode: replay.mode,
+      commandId: cmd.id,
       // Unattributed commands carry no time; they take the authority's (OFFLINE-FIRST §7.5).
       clock: cmd.occurred_at ? sqliteTime(new Date(cmd.occurred_at)) : undefined,
       plan: parsePlan(cmd.allocation_plan),
@@ -73,8 +75,14 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
   }
 
   if (!MUTATING.has(req.method)) return next();
-  // An authority (the cloud, a site host) streams what each request changed to its PCs.
-  if (isAuthority(cfg)) res.once('finish', () => flushEffects(conn, null));
+  // An authority (the cloud, a site host) streams what each request changed to its PCs — and
+  // lists any file it uploaded straight away, so the file follows its row without delay (§18).
+  if (isAuthority(cfg)) {
+    res.once('finish', () => {
+      flushEffects(conn, null);
+      if (req.file || (req.files && Object.keys(req.files).length)) indexFiles(conn, tenantSlug(), true);
+    });
+  }
   if (cfg.role === 'node') {
     syncStore.run({ mode: 'guard', plan: [], cursor: { id: 0, seq: 0 } }, next);
     return;
@@ -156,6 +164,7 @@ async function recordCommand(
   const day = occurred.toISOString().slice(0, 10);
   // A ULID embeds its creation time; an anonymous one is dated to midnight only.
   const commandId = anon ? ulid(Date.parse(day)) : ulid(occurred.getTime());
+  ctx.commandId = commandId;
   // Tell the client this result is only on this PC so far (OFFLINE-FIRST §2.4): it must not be
   // shown as final. The id lets the UI follow it to "Synced" / "Needs attention".
   res.setHeader('X-Sync-State', 'local');
@@ -182,7 +191,7 @@ async function recordCommand(
         device_id: anon ? null : deviceIdOf(req),
         method: req.method,
         path: req.originalUrl,
-        body: JSON.stringify(req.body ?? {}),
+        body: commandBody(req), // with uploads: fields + file references (§18)
         sync_class: cls,
         allocation_plan: anon ? '[]' : JSON.stringify(ctx.plan),
         app_version: APP_VERSION,

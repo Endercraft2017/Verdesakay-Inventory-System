@@ -7,6 +7,7 @@ import multer from 'multer';
 import { db, queryOne, queryAll, run, getSetting, setSetting, uploadDir } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
 import { recordSiteClash, syncClass } from '../../sync';
+import { syncUpload } from '../../sync/files';
 import { siteDecisionStands } from '../../shared/sync-context';
 import {
   parseBody,
@@ -905,9 +906,9 @@ router.get('/:id/image', (req, res) => {
 });
 
 // POST /api/inventory/:id/image — upload / replace the item's photo
-// Photos are files, which don't sync until the blob lane (OFFLINE-FIRST phase 3): `online`, and
-// checked before multer writes anything to disk.
-router.post('/:id/image', requirePermission('inventory.edit'), syncClass('online'), imageUpload.single('image'), (req, res) => {
+// An item photo is an edit of company-wide master data: decided offline only at the main site
+// (docs/OFFLINE-FIRST.md §16). syncUpload lets the photo travel with the command (§18).
+router.post('/:id/image', requirePermission('inventory.edit'), syncClass('claim'), syncUpload(imageUpload.single('image')), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT image_path FROM inventory_items WHERE id = ?', id);
   if (!item) {
@@ -935,7 +936,7 @@ router.post('/:id/image', requirePermission('inventory.edit'), syncClass('online
 });
 
 // DELETE /api/inventory/:id/image — remove the item's photo
-router.delete('/:id/image', requirePermission('inventory.edit'), syncClass('online'), (req, res) => {
+router.delete('/:id/image', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT image_path FROM inventory_items WHERE id = ?', id);
   if (!item) {

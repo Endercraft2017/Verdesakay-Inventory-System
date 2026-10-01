@@ -33,8 +33,9 @@ import { activeDb, tenantStore } from '../shared/db';
 import { requireAuth, requirePermission } from '../shared/auth';
 import { acceptCommand, pullFor, snapshotForNode } from './authority';
 import { linkStatusOf } from './client';
-import { enableSync, isAuthority, isNodeLocalTable, SECRET_SETTINGS, syncConfigOf } from './node';
+import { enableSync, isAuthority, isCloudOnlySetting, isNodeLocalTable, syncConfigOf } from './node';
 import type { CommandResult, SyncCommand } from './commands';
+import { fileRoutes } from './files';
 
 const router = Router();
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
@@ -67,6 +68,9 @@ function nodesSpokenFor(conn: import('node:sqlite').DatabaseSync, nodeNo: number
   const members = conn.prepare('SELECT node_no FROM sync_nodes WHERE host_node_no = ?').all(nodeNo) as Array<{ node_no: number }>;
   return [nodeNo, ...members.map((m) => m.node_no)];
 }
+
+// Files: blobs a PC's commands carry, and the authority's list of uploaded files (§18).
+router.use(fileRoutes(nodeAuth));
 
 // ---- enrolment (admin) ----
 
@@ -170,7 +174,9 @@ export function buildNodeSnapshot(slug: string, file: string): void {
     d.exec(`DELETE FROM sync_effects WHERE authority_seq < (SELECT MAX(authority_seq) FROM sync_effects);
             UPDATE sync_effects SET changeset = x'', command_id = NULL`);
     const del = d.prepare('DELETE FROM settings WHERE key = ?');
-    for (const k of SECRET_SETTINGS) del.run(k);
+    for (const { key } of d.prepare('SELECT key FROM settings').all() as Array<{ key: string }>) {
+      if (isCloudOnlySetting(key)) del.run(key); // secrets + AI / email / QuickBooks settings
+    }
     d.exec('VACUUM');
   } finally {
     d.close();

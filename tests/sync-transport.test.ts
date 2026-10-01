@@ -42,6 +42,11 @@ beforeAll(async () => {
   dbmod.withTenant('default', () => {
     dbmod.setSetting('mail_smtp_pass', 'v1:SMTP-SECRET-MARKER');
     dbmod.setSetting('_secret_key', 'MASTER-KEY-MARKER');
+    // Online-only features' settings never reach a PC either (AI, email, QuickBooks, web push).
+    dbmod.setSetting('ai_config', { provider: 'AI-CONFIG-MARKER' });
+    dbmod.setSetting('mail_settings', { host: 'MAIL-HOST-MARKER' });
+    dbmod.setSetting('qbo_config', { realm_id: 'QBO-REALM-MARKER' });
+    dbmod.setSetting('vapid_keys', { privateKey: 'VAPID-PRIVATE-MARKER' });
     dbmod.setSetting('company_name_test', 'Acme Plant');
   });
   const r = await ctx.api.post('/api/inventory').set(cloudHdr()).send({ name: 'Transport item', quantity: 20 });
@@ -86,6 +91,7 @@ describe('enrolment', () => {
     const bytes = fs.readFileSync(snapshotFile).toString('latin1');
     expect(bytes).not.toContain('SMTP-SECRET-MARKER');
     expect(bytes).not.toContain('MASTER-KEY-MARKER');
+    for (const m of ['AI-CONFIG-MARKER', 'MAIL-HOST-MARKER', 'QBO-REALM-MARKER', 'VAPID-PRIVATE-MARKER']) expect(bytes).not.toContain(m);
     expect(bytes).toContain('Acme Plant'); // ordinary settings do travel
     const n = nodeDb();
     const count = (t: string) => (n.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get() as { c: number }).c;

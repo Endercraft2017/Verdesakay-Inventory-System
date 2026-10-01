@@ -500,7 +500,7 @@ through the command's `rejected` state until the phase-3 badges exist.
 | **3c-i. Site host relay** ✅ built 2026-10-01 (§15) | One fixed host per site: LAN PCs enrol through it and sync with it; it accepts their commands in one site order ("confirmed on site"), relays them to the cloud, follows the cloud's corrections, and streams everything to its LAN |
 | **3c-ii. Site decisions** ✅ built 2026-10-01 (§16) | Home sites (`location_sites`) + main site (`sync_main_host`); `claim` decided on the site's host, or a LAN PC with a fresh link to it; the cloud keeps a site's decision on its own records by re-running it with marked clash-checks relaxed and flagged (D6). **Moved:** site number blocks → phase 4 (no offline-capable route issues document numbers yet); GET-write check → phase 6 |
 | **3d. Desktop app + LAN HTTPS** ✅ built 2026-10-01 (§17) | Electron shell (+ `npm run test:node24`), per-tenant local CA (D5), phone certificate install page, phones on the host |
-| **3e. Blob lane** | Content-addressed files; multipart routes (photos) become commands |
+| **3e. Blob lane** ✅ built 2026-10-01 (§18) | Content-addressed files; multipart routes (photos) become commands |
 | **3f. Field encryption** | DPAPI-keyed encryption of sensitive fields on nodes (spike first) |
 
 ## 13. Phase 3a as built (2026-09-30)
@@ -736,4 +736,36 @@ minimized.
 - [ ] **Auto-update** (needs the release feed above; until then, run a newer installer over the old
       one: data is kept).
 - [ ] **Mobile sync UI**: design dependency (Figma), §14.
-- [ ] Photos offline (3e), field encryption (3f).
+- [x] Photos offline (3e, §18). - [ ] Field encryption (3f).
+
+## 18. Phase 3e as built (2026-10-01): files offline
+
+Code: `src/sync/files.ts`; wired into `capture.ts` (command body), `replay.ts` (multipart replay),
+`authority.ts` / `capture.ts` (immediate indexing), `transport.ts` (routes), `client.ts` (push blobs,
+pull files). Node-local tables: `sync_files`, `sync_blobs`, `sync_node.last_file_seq`. Tests:
+`tests/sync-files.test.ts` (site trio).
+
+**Lane 1: a command carries its uploads.** A route opts in by wrapping its multer middleware in
+`syncUpload()`. Inside a command:
+- each uploaded file is copied into the copy's content-addressed blob store (`<uploads>/.sync-blobs/<sha256>`);
+- the file is renamed after the command (`<prefix>-<commandId>-<n><ext>`), so the row stores the same
+  name on every copy;
+- the body records `{ __multipart: 1, fields, files: [{ field, name, type, hash }] }`.
+
+Before pushing commands, a PC sends their blobs (`PUT /api/sync/blobs/:hash`, checked against the hash;
+remembered in `sync_blobs`). The authority's replay rebuilds the multipart request from its own blob
+store. A host passes its LAN PCs' blobs on to the cloud the same way. Outside a command, `syncUpload` is
+plain multer: a direct upload to the cloud is unchanged.
+
+**Lane 2: files made anywhere reach every copy.** An authority keeps a numbered list of the files in its
+uploads folder (`sync_files`). The list comes from rescanning the folder (top level plus `kiosk-punches/`),
+at most every 5 s, and immediately when a request or replayed command uploaded something. Every feature's
+files are therefore covered, including ones from before sync existed, without changing their routes. After
+each round a PC fetches what it lacks (`GET /api/sync/files?since=N`, `GET /api/sync/files/:seq`; paths are
+confined to the uploads folder). A host lists what it fetched, for its LAN PCs. Deleted files are not
+propagated: other copies keep an orphan file, which is harmless.
+
+**Routes using lane 1 so far:** item photo upload and delete. They are now `claim` (company-wide master
+data, so decided offline at the main site; they were `online` before). Release / delivery / QC evidence
+photos join as their pipelines go offline in phase 4. Photos stored *inside* the database (anonymous-report
+photos) already travel with the row.

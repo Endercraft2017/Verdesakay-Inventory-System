@@ -412,7 +412,7 @@ LAN (e.g. a stock withdrawal, a punch, a QC result).
    once, where the command became final. (Accounting auto-post is a DB write inside the handler,
    so it travels as part of the confirmed effect, not the outbox.)
 
-**Data carried:** command (API call + metadata) up; confirmed effects (SQLite changesets) down,
+**Data carried:** command (API call + metadata; uploads as SHA-256 blobs sent first — built, phase 3e) up; confirmed effects (SQLite changesets) down,
 to every node (full replica; only node-local tables such as session tokens and integration
 secrets stay put, sensitive fields travel encrypted); files as SHA-256
 blobs pushed before their command.

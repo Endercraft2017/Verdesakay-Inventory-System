@@ -21,6 +21,7 @@ import {
 } from './commands';
 import { drainRecorder, isAuthority, isReplicated, syncConfigOf, type SyncConfig } from './node';
 import { dispatchCommand } from './replay';
+import { indexFiles, parseMultipart } from './files';
 
 /** Move what the recorder captured since the last flush into `sync_effects`. Returns the new
  *  effect's sequence number, or null when nothing replicated changed (or a transaction is open —
@@ -75,6 +76,7 @@ export async function acceptCommand(slug: string, cmd: SyncCommand): Promise<Com
     flushEffects(conn, null); // anything before this command is not its effect
     const r = await dispatchCommand(slug, cmd, 'replay');
     const seq = flushEffects(conn, cmd.id);
+    if (parseMultipart(cmd.body)) indexFiles(conn, slug, true); // its uploads, for this authority's PCs
     const ok = r.status < 400;
     const error = ok ? null
       : (r.body && typeof r.body === 'object' && 'error' in r.body ? String((r.body as { error: unknown }).error) : `HTTP ${r.status}`);

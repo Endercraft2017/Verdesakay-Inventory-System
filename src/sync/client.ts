@@ -10,11 +10,13 @@
  */
 import fs from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
+import path from 'node:path';
 import { getDb } from '../shared/db';
 import { enableSync, syncConfigOf } from './node';
 import { applyConfirmed, lastAuthoritySeq, pendingCommands, SyncDivergenceError, type RebaseSummary } from './rebase';
 import type { CommandResult } from './commands';
 import type { PullResult } from './authority';
+import { blobPath, blobsOf, filePath, registerFile } from './files';
 
 export interface RemoteConfig {
   /** The authority this copy syncs with: the cloud, or its site host. */
@@ -185,6 +187,7 @@ async function cloudRound(slug: string): Promise<{ round: CloudRound; upstream?:
 
   const pushed: CommandResult[] = [];
   const pending = pendingCommands(slug);
+  await pushBlobs(conn, slug, remote, blobsOf(pending)); // a command's uploads go before it
   for (let i = 0; i < pending.length; i += 100) {
     const r = await jsonOrThrow<{ results: CommandResult[] }>(
       await call(`${remote.cloudUrl}/api/sync/commands`, {
@@ -207,9 +210,51 @@ async function cloudRound(slug: string): Promise<{ round: CloudRound; upstream?:
   };
   const rebase = await applyConfirmed(slug, pull);
 
+  // Uploaded files made elsewhere (on the cloud, other PCs) — fetch the ones this copy lacks.
+  await pullFiles(conn, slug, remote, cfg.isHost === true);
   // A site host keeps its list of LAN PCs current, to let them in while the cloud is away.
   if (cfg.isHost) await refreshMembers(conn, remote, headers);
   return { round: { pushed, rebase }, upstream: raw.upstream };
+}
+
+async function pushBlobs(conn: DatabaseSync, slug: string, remote: RemoteConfig, hashes: string[]): Promise<void> {
+  const sent = conn.prepare('SELECT 1 FROM sync_blobs WHERE hash = ? AND pushed_at IS NOT NULL');
+  const mark = conn.prepare(
+    `INSERT INTO sync_blobs (hash, size, pushed_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(hash) DO UPDATE SET pushed_at = excluded.pushed_at`,
+  );
+  for (const hash of hashes) {
+    if (sent.get(hash)) continue;
+    const bytes = fs.readFileSync(blobPath(slug, hash));
+    await jsonOrThrow(await call(`${remote.cloudUrl}/api/sync/blobs/${hash}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/octet-stream', 'x-sync-node-token': remote.nodeToken, ...tenantHeader(remote.tenant) },
+      body: bytes, timeoutMs: 5 * 60_000,
+    }), 'Sending a file');
+    mark.run(hash, bytes.length);
+  }
+}
+
+async function pullFiles(conn: DatabaseSync, slug: string, remote: RemoteConfig, isHost: boolean): Promise<void> {
+  const headers = { 'x-sync-node-token': remote.nodeToken, ...tenantHeader(remote.tenant) };
+  for (;;) {
+    const since = (conn.prepare('SELECT last_file_seq AS s FROM sync_node WHERE k = 1').get() as { s: number }).s;
+    const list = await jsonOrThrow<Array<{ seq: number; name: string; size: number }>>(
+      await call(`${remote.cloudUrl}/api/sync/files?since=${since}`, { headers }), 'Listing files');
+    if (!list.length) return;
+    for (const f of list) {
+      const target = filePath(slug, f.name);
+      if (target && !fs.existsSync(target)) {
+        const res = await call(`${remote.cloudUrl}/api/sync/files/${f.seq}`, { headers, timeoutMs: 5 * 60_000 });
+        if (res.ok) {
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          fs.writeFileSync(target, Buffer.from(await res.arrayBuffer()));
+        } // a file deleted on the authority meanwhile is simply skipped
+      }
+      if (isHost && target && fs.existsSync(target)) registerFile(conn, f.name, f.size); // pass it on to the LAN
+      conn.prepare('UPDATE sync_node SET last_file_seq = ? WHERE k = 1').run(f.seq);
+    }
+  }
 }
 
 async function refreshMembers(conn: DatabaseSync, remote: RemoteConfig, headers: Record<string, string>): Promise<void> {

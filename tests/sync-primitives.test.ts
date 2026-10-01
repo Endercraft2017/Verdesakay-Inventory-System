@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { invertChangeset, filterChangeset, changesetTables } from '../src/sync/changeset';
 import { formatHlc, parseHlc, receiveHlc, tickHlc, ulid } from '../src/sync/ids-util';
 import { writeTarget } from '../src/sync/ids';
+import { isCloudOnlySetting, isReplicated } from '../src/sync/node';
 import { installClockOverride } from '../src/sync/clock';
 import { syncStore } from '../src/shared/sync-context';
 
@@ -131,6 +132,21 @@ describe('ulid', () => {
     expect(a).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(a < b).toBe(true);
     expect(ulid(1_000).slice(0, 10)).toBe(a.slice(0, 10));
+  });
+});
+
+describe('what never leaves the cloud', () => {
+  it('tables and settings of online-only features, and every credential', () => {
+    for (const t of ['password_resets', 'qbo_links', 'mail_log', 'ai_messages', 'sessions', 'push_subscriptions', 'sync_nodes']) {
+      expect(isReplicated(t)).toBe(false);
+    }
+    for (const k of ['_secret_key', 'vapid_keys', 'ai_api_key', 'ai_config', 'mail_settings', 'mail_smtp_pass', 'qbo_tokens', 'qbo_config']) {
+      expect(isCloudOnlySetting(k)).toBe(true);
+      expect(isReplicated('settings', [k])).toBe(false);
+    }
+    // What an installed PC does need still travels.
+    for (const k of ['company_profile', 'clock_hmac_key', 'payroll_policy', 'sync_main_host']) expect(isReplicated('settings', [k])).toBe(true);
+    for (const t of ['users', 'inventory_items', 'kiosk_devices']) expect(isReplicated(t)).toBe(true);
   });
 });
 

@@ -2,7 +2,7 @@
  * Offline-first sync, phase 2 (docs/OFFLINE-FIRST.md): inventory works on an installed node.
  * Stock movements are `physical` — accepted beyond recorded stock and flagged as a stock
  * discrepancy (decision D1); new master records are `merge`; edits, deletes and settings are
- * `claim` (refused on a node until site hosts exist); photos are `online`.
+ * `claim` (refused on a PC that belongs to no site); item photos are `claim` too (phase 3e).
  */
 import fs from 'node:fs';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -183,7 +183,7 @@ describe('what stays refused on a node', () => {
     expect(P.nodeDb().prepare('SELECT name FROM inventory_items WHERE id = ?').get(id)).not.toEqual({ name: 'Renamed offline' });
   });
 
-  it('photos need the internet (online) — and nothing is written to disk', async () => {
+  it('photos are a site decision: refused on a PC that belongs to no site — before anything is written to disk', async () => {
     const id = await cloudItem(0);
     await P.round();
     const dir = P.dbmod.uploadDir(P.nodeSlug);
@@ -191,7 +191,7 @@ describe('what stays refused on a node', () => {
     const r = await api().post(`/api/inventory/${id}/image`).set(P.nodeHdr())
       .attach('image', Buffer.from([0xff, 0xd8, 0xff, 0xd9]), { filename: 'x.jpg', contentType: 'image/jpeg' });
     expect(r.status).toBe(503);
-    expect(r.body.sync).toBe('online');
+    expect(r.body.sync).toBe('claim');
     expect(fs.readdirSync(dir).length).toBe(before);
   });
 });

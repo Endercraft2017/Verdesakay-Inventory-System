@@ -15,6 +15,7 @@ import type { AddressInfo } from 'node:net';
 import type { Express, Request } from 'express';
 import type { AuthUser } from '../shared/types';
 import type { SyncContext } from '../shared/sync-context';
+import { multipartForm, parseMultipart } from './files';
 
 const SECRET = crypto.randomBytes(32).toString('hex');
 const H_SECRET = 'x-sync-replay';
@@ -100,8 +101,10 @@ export async function dispatchCommand(
   mode: ReplayMode,
 ): Promise<ReplayResponse> {
   const base = await internalBase();
+  const multipart = parseMultipart(cmd.body);
   const headers: Record<string, string> = {
-    'content-type': 'application/json',
+    // A command with uploads is replayed as the multipart request it was (fetch sets the boundary).
+    ...(multipart ? {} : { 'content-type': 'application/json' }),
     [H_SECRET]: SECRET,
     [H_TENANT]: slug,
     [H_COMMAND]: cmd.id,
@@ -111,7 +114,8 @@ export async function dispatchCommand(
   const res = await fetch(base + cmd.path, {
     method: cmd.method,
     headers,
-    body: cmd.method === 'GET' || cmd.method === 'HEAD' ? undefined : cmd.body,
+    body: cmd.method === 'GET' || cmd.method === 'HEAD' ? undefined
+      : multipart ? multipartForm(slug, multipart) : cmd.body,
   });
   const text = await res.text();
   let body: unknown = text;

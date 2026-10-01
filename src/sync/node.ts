@@ -29,10 +29,16 @@ export function isAuthority(cfg: SyncConfig | null): boolean {
 export const NODE_RANGE = 2 ** 37;
 export const MAX_NODE_NO = 65535;
 
+/** Tables of online-only features — they hold credentials or what only the cloud can use, and an
+ *  installed PC never needs them (user direction 2026-10-01, OFFLINE-FIRST §7.5): password-reset
+ *  tokens (sent by email), QuickBooks links, the email log, AI assistant conversations. */
+const CLOUD_ONLY_TABLES = new Set(['password_resets', 'qbo_links', 'mail_log', 'ai_messages']);
+
 /** Tables that never replicate: sync bookkeeping, per-device state, credentials, derived
- *  indexes (OFFLINE-FIRST §7.5 "node-local tables"). */
+ *  indexes, online-only features (OFFLINE-FIRST §7.5 "node-local tables"). */
 export function isNodeLocalTable(table: string): boolean {
   return (
+    CLOUD_ONLY_TABLES.has(table) ||
     table.startsWith('sync_') ||
     table.startsWith('sqlite_') ||
     table.startsWith('doc_chunks') || // AI search FTS5 index + its shadow tables, rebuilt per node
@@ -45,15 +51,22 @@ export function isNodeLocalTable(table: string): boolean {
 }
 
 /** `settings` rows that are credentials, not data: the key that unlocks stored secrets
- *  (shared/secrets.ts) and the secrets themselves. Nodes never need them — outside calls
- *  (email, QuickBooks, AI) run only on the cloud — so they never leave it (§7.5). */
-export const SECRET_SETTINGS = new Set(['_secret_key', 'mail_smtp_pass', 'qbo_tokens', 'ai_api_key']);
+ *  (shared/secrets.ts), the secrets themselves, and the web-push private key. */
+export const SECRET_SETTINGS = new Set(['_secret_key', 'mail_smtp_pass', 'qbo_tokens', 'ai_api_key', 'vapid_keys']);
+/** Settings of online-only features (AI, email, QuickBooks): an installed PC can't use them —
+ *  those calls run only on the cloud (§7.8) — so they never leave it either. */
+export const CLOUD_ONLY_SETTING_PREFIXES = ['ai_', 'mail_', 'qbo_'];
 
-/** Whether a changed row replicates: its table isn't node-local and it isn't a secret setting.
- *  Called per table (no `pk`) and per row by `filterChangeset`. */
+/** Whether a `settings` row stays on the cloud (a secret, or an online-only feature's). */
+export function isCloudOnlySetting(key: string): boolean {
+  return SECRET_SETTINGS.has(key) || CLOUD_ONLY_SETTING_PREFIXES.some((p) => key.startsWith(p));
+}
+
+/** Whether a changed row replicates: its table isn't node-local and it isn't a cloud-only
+ *  setting. Called per table (no `pk`) and per row by `filterChangeset`. */
 export function isReplicated(table: string, pk?: unknown[]): boolean {
   if (isNodeLocalTable(table)) return false;
-  if (table === 'settings' && pk && SECRET_SETTINGS.has(String(pk[0]))) return false;
+  if (table === 'settings' && pk && isCloudOnlySetting(String(pk[0]))) return false;
   return true;
 }
 
@@ -68,6 +81,7 @@ const SCHEMA = `
     provisional_seq    INTEGER NOT NULL DEFAULT 0,
     is_host            INTEGER NOT NULL DEFAULT 0,
     host_node_no       INTEGER,                  -- a LAN PC: its site host's node number
+    last_file_seq      INTEGER NOT NULL DEFAULT 0, -- files fetched from the authority up to here
     enabled_at         TEXT NOT NULL DEFAULT (datetime('now'))
   );
   -- Next row id to hand out per replicated table, within this DB's node range.
@@ -126,6 +140,19 @@ const SCHEMA = `
     node_token TEXT NOT NULL,
     tenant     TEXT
   );
+  -- Files (phase 3e, §18). An authority lists every uploaded file it holds, in order, so its PCs
+  -- can fetch the ones they lack; a PC remembers which files a command carries were already sent.
+  CREATE TABLE IF NOT EXISTS sync_files (
+    seq      INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT NOT NULL UNIQUE,
+    size     INTEGER NOT NULL,
+    added_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS sync_blobs (
+    hash      TEXT PRIMARY KEY,
+    size      INTEGER NOT NULL,
+    pushed_at TEXT
+  );
   -- Confirmed effects, in authority order (the authority's outgoing stream).
   CREATE TABLE IF NOT EXISTS sync_effects (
     authority_seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,6 +171,7 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ['sync_nodes', 'host_node_no', 'ALTER TABLE sync_nodes ADD COLUMN host_node_no INTEGER'],
   ['sync_remote', 'tenant', 'ALTER TABLE sync_remote ADD COLUMN tenant TEXT'],
   ['sync_node', 'host_node_no', 'ALTER TABLE sync_node ADD COLUMN host_node_no INTEGER'],
+  ['sync_node', 'last_file_seq', 'ALTER TABLE sync_node ADD COLUMN last_file_seq INTEGER NOT NULL DEFAULT 0'],
 ];
 
 /** `sync_commands` created before the `host_confirmed` state existed has a CHECK that rejects

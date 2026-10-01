@@ -24,6 +24,8 @@ export interface SyncContext {
    * guard   — a mutating request on a node with no sync class: replicated writes are refused
    */
   mode: 'record' | 'rebase' | 'replay' | 'guard';
+  /** The command being recorded / replayed (uploaded files are named after it, §18). */
+  commandId?: string;
   /** SQLite-format UTC time ('YYYY-MM-DD HH:MM:SS.SSS') that 'now' means for this command. */
   clock?: string;
   plan: PlanEntry[];

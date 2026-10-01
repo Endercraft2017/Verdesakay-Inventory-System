@@ -90,7 +90,8 @@ replay as actor), `authority.ts` (effects, `acceptCommand`, `pullFor`, `snapshot
 (invert, table + row filter), `ids-util.ts` (ULID, HLC), `transport.ts` (cloud endpoints
 `/api/sync/*`, stripped snapshot), `client.ts` (enrol, adopt, `syncWithCloud`, `startSyncLoop`,
 connection state, host/LAN enrolment, members refresh), `status.ts` (`/api/sync/status`, `/activity`,
-`/now`), `sites.ts` (home sites, site decisions, `/api/sync/sites`, `/api/sync/clashes`); CLI
+`/now`), `sites.ts` (home sites, site decisions, `/api/sync/sites`, `/api/sync/clashes`), `files.ts`
+(uploads offline: `syncUpload`, blob store, file list, `/api/sync/blobs`, `/api/sync/files`); CLI
 `scripts/sync-enrol.ts` (`npm run sync:enrol`). Frontend (desktop): `public/js/lib/sync-status.js`
 (top-bar pill + "not final" toast, fed by the `X-Sync-State` hook in `public/js/api.js`),
 `public/js/modules/core/sync.js` (route `sync`: PC status/inbox, or Installed PCs on the cloud).
@@ -134,9 +135,10 @@ online per route), helper `tests/sync-helpers.ts`, `tests/sync-transport.test.ts
 listener: enrolment, stripped snapshot, both-way sync, row-level secret filter, node auth, offline,
 Sync now), `tests/sync-status.test.ts` + `tests/frontend-sync-status.test.ts` (phase 3b),
 `tests/sync-site.test.ts` (phase 3c-i: cloud + host + LAN PC over HTTP),
-`tests/sync-site-decisions.test.ts` (phase 3c-ii, helper `setupSiteTrio`).
+`tests/sync-site-decisions.test.ts` (phase 3c-ii, helper `setupSiteTrio`), `tests/sync-files.test.ts`
+(phase 3e).
 **Status:** partial. Decisions D1–D5 taken 2026-09-30; phases 1, 2, 3a built 2026-09-30; 3b
-(desktop), 3c-i (site host relay) and 3c-ii (site decisions, D6) 2026-10-01. Mobile sync UI waits on
+(desktop), 3c-i (site host relay), 3c-ii (site decisions, D6) and 3e (files) 2026-10-01. Mobile sync UI waits on
 a Figma design (design doc §14). Still open
 spikes: LAN discovery, LAN HTTPS for `/m`, DPAPI-keyed field encryption.
 
@@ -278,7 +280,8 @@ directly by `manufacturing/`, `purchasing/`, and `modules/ai/ai-tools.ts`).
 **Offline (sync/, phases 2, 3c-ii):** every route in `inventory.routes.ts`, `locations.routes.ts`,
 `suppliers.routes.ts`, `customers.routes.ts` declares a sync class: stock adjust / damage /
 transfer `physical`; creating items, locations, suppliers, customers `merge`; edits, deletes,
-imports, settings, reorder-PO, discrepancy resolve `claim`; item photos `online`. Orders,
+imports, settings, reorder-PO, discrepancy resolve, item photos `claim` (photos travel with the
+command via `syncUpload`, phase 3e). Orders,
 deliveries and release slips are not classed yet (phase 4), so they are refused on a node. Claims
 run offline at the owning site: a location's edit/delete → its site; discrepancy resolve → its
 location's site (a marked clash-check: already resolved elsewhere → kept + flagged); the rest →
