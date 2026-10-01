@@ -675,6 +675,11 @@ export interface LinkPreviews {
   failed: Generated<number>;
 }
 
+export interface LocationSites {
+  location_id: Generated<number>;
+  host_node_no: number;
+}
+
 export interface Locations {
   id: Generated<number>;
   name: string;
@@ -1079,6 +1084,19 @@ export interface Shifts {
   is_default: Generated<number>;
 }
 
+export interface SiteDecisionClashes {
+  id: Generated<number>;
+  host_node_no: number | null;
+  route: string;
+  summary: string;
+  actor_user_id: number | null;
+  created_at: Generated<string>;
+  status: Generated<string>;
+  resolution_note: string | null;
+  resolved_by: number | null;
+  resolved_at: string | null;
+}
+
 export interface StockDiscrepancies {
   id: Generated<number>;
   item_id: number;
@@ -1288,6 +1306,7 @@ export interface DB {
   journal_lines: JournalLines;
   kiosk_devices: KioskDevices;
   link_previews: LinkPreviews;
+  location_sites: LocationSites;
   locations: Locations;
   mail_log: MailLog;
   message_attachments: MessageAttachments;
@@ -1322,6 +1341,7 @@ export interface DB {
   sessions: Sessions;
   settings: Settings;
   shifts: Shifts;
+  site_decision_clashes: SiteDecisionClashes;
   stock_discrepancies: StockDiscrepancies;
   suppliers: Suppliers;
   tasks: Tasks;

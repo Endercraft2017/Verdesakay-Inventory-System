@@ -573,8 +573,15 @@
               needed, then <b>Dismiss</b> it. <b>Sync now</b> tries straight away (it also runs every
               15 seconds on its own).</li>
           <li>On an installed PC today only <b>inventory</b> works offline (stock in/out, damage,
-              transfers, and new items, locations, suppliers and customers). Edits, deletes and other
-              modules say they need the site host or the internet.</li>
+              transfers, and new items, locations, suppliers and customers).</li>
+          <li><b>Edits, deletes and approvals</b> work offline only at the <b>site the record belongs
+              to</b> &mdash; on its host PC, or a PC that can reach that host. Company-wide records
+              (items, suppliers&hellip;) belong to the <b>main site</b>. Otherwise you'll see "needs an
+              internet connection" or "belongs to another site".</li>
+          <li><b>Admins</b>: Admin &rarr; Installed PCs &rarr; <b>Sites</b> sets the main site and which
+              site each location belongs to. If the cloud would have refused a site's offline decision by
+              the time it synced, the decision is kept and listed under <b>Site decision clashes</b> to
+              check.</li>
           <li><b>Admins</b>: Admin &rarr; Installed PCs lists the PCs set up against this workspace.
               <b>Revoke</b> a lost or retired one &mdash; it stops syncing at once.</li>
         </ul>`,

@@ -67,6 +67,7 @@ const SCHEMA = `
     last_authority_seq INTEGER NOT NULL DEFAULT 0,
     provisional_seq    INTEGER NOT NULL DEFAULT 0,
     is_host            INTEGER NOT NULL DEFAULT 0,
+    host_node_no       INTEGER,                  -- a LAN PC: its site host's node number
     enabled_at         TEXT NOT NULL DEFAULT (datetime('now'))
   );
   -- Next row id to hand out per replicated table, within this DB's node range.
@@ -142,6 +143,7 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ['sync_nodes', 'is_host', 'ALTER TABLE sync_nodes ADD COLUMN is_host INTEGER NOT NULL DEFAULT 0'],
   ['sync_nodes', 'host_node_no', 'ALTER TABLE sync_nodes ADD COLUMN host_node_no INTEGER'],
   ['sync_remote', 'tenant', 'ALTER TABLE sync_remote ADD COLUMN tenant TEXT'],
+  ['sync_node', 'host_node_no', 'ALTER TABLE sync_node ADD COLUMN host_node_no INTEGER'],
 ];
 
 /** `sync_commands` created before the `host_confirmed` state existed has a CHECK that rejects

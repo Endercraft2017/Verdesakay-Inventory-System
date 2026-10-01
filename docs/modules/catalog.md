@@ -90,7 +90,7 @@ replay as actor), `authority.ts` (effects, `acceptCommand`, `pullFor`, `snapshot
 (invert, table + row filter), `ids-util.ts` (ULID, HLC), `transport.ts` (cloud endpoints
 `/api/sync/*`, stripped snapshot), `client.ts` (enrol, adopt, `syncWithCloud`, `startSyncLoop`,
 connection state, host/LAN enrolment, members refresh), `status.ts` (`/api/sync/status`, `/activity`,
-`/now`); CLI
+`/now`), `sites.ts` (home sites, site decisions, `/api/sync/sites`, `/api/sync/clashes`); CLI
 `scripts/sync-enrol.ts` (`npm run sync:enrol`). Frontend (desktop): `public/js/lib/sync-status.js`
 (top-bar pill + "not final" toast, fed by the `X-Sync-State` hook in `public/js/api.js`),
 `public/js/modules/core/sync.js` (route `sync`: PC status/inbox, or Installed PCs on the cloud).
@@ -111,7 +111,11 @@ per mutating route (undeclared ⇒ refused on a node, 503); `now()` for business
 actions carry `X-Sync-State: local` + `X-Sync-Command`. Site hosts (phase 3c-i): a node with
 `isHost` serves the same `/api/sync/*` endpoints to its LAN PCs (`isAuthority`); plus
 `GET /api/sync/whoami` (public) and `GET /api/sync/members` (cloud, host token); enrolment takes
-`is_host` / `host_node_no`; `/pull?ids=` returns verdicts on unattributed commands by id.
+`is_host` / `host_node_no`; `/pull?ids=` returns verdicts on unattributed commands by id. Site
+decisions (3c-ii): `syncClass('claim', { home })`, `siteDecisionStands()` + `recordSiteClash()` for a
+route's clash-checks; `GET|PUT /api/sync/sites`, `GET /api/sync/clashes`,
+`POST /api/sync/clashes/:id/resolve` (admin). Replicated tables it owns: `location_sites`,
+`site_decision_clashes` (in `createSchema`).
 **Dependencies:** `shared/` (db Proxy via `syncHooks.prepare`, `nextSequence` via
 `syncHooks.nextSequence`, `requireAuth` via `syncHooks.replayUser`, `authUserById`, device,
 mailer/push/ws via `sideEffectsSuppressed`). Wired in `src/app.ts` (install, replay tenant,
@@ -129,10 +133,11 @@ unattributed commands), `tests/sync-inventory.test.ts` (phase 2: D1 overdraw + f
 online per route), helper `tests/sync-helpers.ts`, `tests/sync-transport.test.ts` (phase 3a over a real
 listener: enrolment, stripped snapshot, both-way sync, row-level secret filter, node auth, offline,
 Sync now), `tests/sync-status.test.ts` + `tests/frontend-sync-status.test.ts` (phase 3b),
-`tests/sync-site.test.ts` (phase 3c-i: cloud + host + LAN PC over HTTP).
+`tests/sync-site.test.ts` (phase 3c-i: cloud + host + LAN PC over HTTP),
+`tests/sync-site-decisions.test.ts` (phase 3c-ii, helper `setupSiteTrio`).
 **Status:** partial. Decisions D1–D5 taken 2026-09-30; phases 1, 2, 3a built 2026-09-30; 3b
-(desktop) and 3c-i (site host relay) 2026-10-01. Mobile sync UI waits on a Figma design (design doc
-§14); site decisions / claims via the host (3c-ii) need the design in §15 first. Still open
+(desktop), 3c-i (site host relay) and 3c-ii (site decisions, D6) 2026-10-01. Mobile sync UI waits on
+a Figma design (design doc §14). Still open
 spikes: LAN discovery, LAN HTTPS for `/m`, DPAPI-keyed field encryption.
 
 ## desktop/ — installable Windows app (planned)
@@ -255,11 +260,14 @@ kind `release` (ref = slip id).
 **Public interface:** stock-mutation functions in `inventory-stock.ts` (called
 directly by `manufacturing/`, `purchasing/`, and `modules/ai/ai-tools.ts`).
 **Dependencies:** `shared/`; `sync/` (`syncClass`) for offline-capable routes.
-**Offline (sync/, phase 2):** every route in `inventory.routes.ts`, `locations.routes.ts`,
+**Offline (sync/, phases 2, 3c-ii):** every route in `inventory.routes.ts`, `locations.routes.ts`,
 `suppliers.routes.ts`, `customers.routes.ts` declares a sync class: stock adjust / damage /
 transfer `physical`; creating items, locations, suppliers, customers `merge`; edits, deletes,
 imports, settings, reorder-PO, discrepancy resolve `claim`; item photos `online`. Orders,
-deliveries and release slips are not classed yet (phase 4), so they are refused on a node.
+deliveries and release slips are not classed yet (phase 4), so they are refused on a node. Claims
+run offline at the owning site: a location's edit/delete → its site; discrepancy resolve → its
+location's site (a marked clash-check: already resolved elsewhere → kept + flagged); the rest →
+the main site.
 **Owned data (offline):** `stock_discrepancies` — opened by `applyStockChange` when a synced
 stock-out takes a location below zero (decision D1); `GET /api/inventory/discrepancies`,
 `POST /api/inventory/discrepancies/:id/resolve`. `overdrawAllowed()` in `inventory-stock.ts`.

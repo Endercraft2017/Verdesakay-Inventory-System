@@ -15,9 +15,10 @@ import type { CommandResult } from './commands';
 import { Router } from 'express';
 import transportRoutes from './transport';
 import statusRoutes from './status';
+import siteRoutes from './sites';
 
 /** Everything under /api/sync: the PC ↔ cloud transport and the status / inbox endpoints. */
-export const syncRoutes = Router().use(transportRoutes).use(statusRoutes);
+export const syncRoutes = Router().use(transportRoutes).use(statusRoutes).use(siteRoutes);
 
 export function installSync(app: Express): void {
   syncHooks.prepare = wrapPrepared;
@@ -52,6 +53,7 @@ export { acceptCommand, pullFor, snapshotForNode, flushEffects } from './authori
 export { applyConfirmed, pendingCommands, lastAuthoritySeq, SyncDivergenceError } from './rebase';
 export { SyncBlockedError } from './ids';
 export { buildNodeSnapshot } from './transport';
+export { deciderOf, mainHost, recordSiteClash, MAIN_HOST_SETTING, type Home } from './sites';
 export {
   enrolNode, registerNode, downloadSnapshot, hostNodeNo, adoptSnapshot, syncWithCloud, startSyncLoop, remoteOf,
   linkStatusOf, SyncOfflineError,

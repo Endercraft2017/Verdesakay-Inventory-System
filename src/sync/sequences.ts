@@ -41,9 +41,17 @@ export function syncedSequence(key: string, prefix: string, _pad: number): strin
   const planned = seqs[ctx.cursor.seq++];
   if (!planned || planned.key !== key) {
     if (planned) ctx.planMisses = (ctx.planMisses ?? 0) + 1;
-    return ctx.mode === 'rebase' || cfg.role === 'node' ? provisional(conn, cfg.nodeNo, prefix) : undefined;
+    if (ctx.mode === 'rebase' || cfg.role === 'node') {
+      const value = provisional(conn, cfg.nodeNo, prefix);
+      ctx.effective?.push({ t: 'seq', key, value, provisional: true });
+      return value;
+    }
+    return undefined;
   }
-  if (ctx.mode === 'rebase' || cfg.role === 'node') return planned.value; // a host keeps it provisional
+  if (ctx.mode === 'rebase' || cfg.role === 'node') { // a host keeps it provisional
+    ctx.effective?.push(planned);
+    return planned.value;
+  }
   // replay on the authority
   if (planned.provisional) return undefined; // issue the real next number
   const n = Number(/-(\d+)$/.exec(planned.value)?.[1] ?? NaN);

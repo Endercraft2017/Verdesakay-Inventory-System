@@ -15,6 +15,7 @@ work can be placed module-by-module and pipeline-by-pipeline. Business decisions
 | D3 | A site needs **at least 1** installed PC. Failover behavior follows how many it has | §7.6 |
 | D4 | The CLAUDE.md stock/stage rule is **reworded** to let the site host confirm (applied when phase 1 starts) | §7.4 |
 | D5 | Phones trust the site host through a **company certificate installed once per phone** (a per-tenant local CA), so the LAN works with no internet at all | §5 |
+| D6 | The cloud keeps a site host's decision on its own site's records by **re-running it with clash-checks relaxed and flagged** (option B — like D1), not by copying the host's result; permissions and other checks still apply | §15–16 |
 
 Catalog entries: `sync/` and `desktop/` in `docs/modules/catalog.md`. Pipelines: "Offline
 operation & sync" and "Site host failover" in `docs/modules/pipelines.md`.
@@ -496,7 +497,7 @@ through the command's `rejected` state until the phase-3 badges exist.
 | **3a. Transport + enrolment** ✅ built 2026-09-30 (§13) | Cloud endpoints under `/api/sync` (enrol a PC, filtered snapshot, push commands, pull effects) authenticated by a per-node token. A node client that enrols and syncs over HTTP, a background sync loop when `DEPLOY_MODE=node`, and `npm run sync:enrol`. Secrets never leave the cloud, per row and in the snapshot |
 | **3b. Badges + needs-attention inbox** ✅ desktop built 2026-10-01 (§14) | `GET /api/sync/status` on a node. Saved on this device / Synced / Needs attention on desktop and mobile. An inbox for rejected commands and stock discrepancies |
 | **3c-i. Site host relay** ✅ built 2026-10-01 (§15) | One fixed host per site: LAN PCs enrol through it and sync with it; it accepts their commands in one site order ("confirmed on site"), relays them to the cloud, follows the cloud's corrections, and streams everything to its LAN |
-| **3c-ii. Site decisions** | Home sites on locations, main site on the tenant, `claim` via the host with the cloud deferring to it for that site's records (D4), site number blocks, GET-write check on nodes — design in §15 first |
+| **3c-ii. Site decisions** ✅ built 2026-10-01 (§16) | Home sites (`location_sites`) + main site (`sync_main_host`); `claim` decided on the site's host, or a LAN PC with a fresh link to it; the cloud keeps a site's decision on its own records by re-running it with marked clash-checks relaxed and flagged (D6). **Moved:** site number blocks → phase 4 (no offline-capable route issues document numbers yet); GET-write check → phase 6 |
 | **3d. Desktop app + LAN HTTPS** | Electron shell (+ `npm run test:node24`), per-tenant local CA (D5), phone certificate install page, phones on the host |
 | **3e. Blob lane** | Content-addressed files; multipart routes (photos) become commands |
 | **3f. Field encryption** | DPAPI-keyed encryption of sensitive fields on nodes (spike first) |
@@ -634,3 +635,37 @@ records*. That needs:
    to replay with business checks relaxed for that command, the way D1 relaxes stock checks.
 3. **Number blocks** leased from the cloud to each site, so a host issues final numbers offline.
 4. **A guard for GET requests that write** on nodes (§10 known limit).
+
+## 16. Phase 3c-ii as built (2026-10-01): site decisions
+
+Code: `src/sync/sites.ts` (homes, `deciderOf`, `siteOfThisPc`, `siteOfNode`, `recordSiteClash`,
+`/api/sync/sites`, `/api/sync/clashes`), `capture.ts` (`claim` rules; `siteFinal` on the cloud's
+replay), `shared/sync-context.ts` (`siteDecisionStands()`). Tables (replicated, `createSchema`):
+`location_sites`, `site_decision_clashes`. UI: Admin → Installed PCs → **Sites** and **Site
+decision clashes**. Tests: `tests/sync-site-decisions.test.ts` (with `setupSiteTrio` in
+`tests/sync-helpers.ts`).
+
+**Homes.** A location belongs to the site host it is assigned to. Everything that isn't a
+location's record (items, suppliers, customers, settings, imports) is company-wide and belongs to
+the **main site**. With no main site set, company-wide decisions need the internet. A route
+declares its home with `syncClass('claim', { home: req => … })`; the default is company-wide. So
+far: a location's edit/delete belongs to that location's site, and a discrepancy's resolution to
+its location's site.
+
+**Who may decide offline.** The site host may decide its own records. A LAN PC may too, but only if
+it reached its host within the last 2 minutes; the host then replays it and its verdict is the
+site's. A PC syncing with the cloud directly belongs to no site and decides nothing offline. **A
+single-PC site should therefore enrol its PC as a host** (D3: one PC = always the host); the Sites
+panel's setup text says so. Records of another site are refused ("belongs to another site").
+
+**The cloud keeps it (D6, option B).** When the cloud replays a `claim` from a site on a record that
+site owns, `siteDecisionStands()` is true for that run. A route lets *its marked clash-checks* pass and
+records a `site_decision_clashes` row instead of refusing. Permissions, validation and every unmarked
+check still apply. Marked so far: resolving a stock discrepancy that was already resolved elsewhere
+(the first resolution is kept; the site's note goes into the clash). Phase 4 marks the clash-checks of
+each approval-type route as its module goes offline: for example a sales-order approval whose stock was
+taken by another branch.
+
+**Also:** a site host now forwards to the cloud the row ids and numbers *it actually allocated* when
+replaying a LAN PC's command (`effective` plan), so the cloud reproduces the host's rows instead of the
+PC's guesses.

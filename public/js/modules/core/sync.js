@@ -83,14 +83,23 @@ App.register('sync', async (view) => {
         straight away.</p></div>`;
       return;
     }
-    const pcs = await API.get('/sync/nodes');
+    const [pcs, sites, clashes] = await Promise.all([
+      API.get('/sync/nodes'),
+      API.get('/sync/sites'),
+      API.get('/sync/clashes'),
+    ]);
     const origin = location.origin;
+    const hostName = (no) => (sites.hosts.find((h) => h.node_no === no) || { name: '#' + no }).name;
+    const role = (p) => p.is_host ? 'Site host' : p.host_node_no ? 'PC of ' + hostName(p.host_node_no) : 'PC';
+    const hostOptions = (selected) => ['<option value="">— cloud only —</option>']
+      .concat(sites.hosts.map((h) => `<option value="${h.node_no}" ${h.node_no === selected ? 'selected' : ''}>${UI.esc(h.name)}</option>`))
+      .join('');
     view.innerHTML = `
       ${head('Installed PCs')}
       <div class="panel"><p class="muted">${UI.esc(intro)}</p>
-        ${pcs.length ? `<table><thead><tr><th>#</th><th>PC</th><th>Enrolled</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+        ${pcs.length ? `<table><thead><tr><th>#</th><th>PC</th><th>Role</th><th>Enrolled</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
           <tbody>${pcs.map((p) => `<tr>
-            <td>${p.node_no}</td><td><strong>${UI.esc(p.name)}</strong></td>
+            <td>${p.node_no}</td><td><strong>${UI.esc(p.name)}</strong></td><td>${UI.esc(role(p))}</td>
             <td>${UI.fmtDate(p.enrolled_at)}</td>
             <td>${p.last_seen_at ? UI.fmtDate(p.last_seen_at) : 'never'}</td>
             <td>${p.revoked_at ? '<span class="badge-pill low">revoked</span>' : '<span class="badge-pill ok">active</span>'}</td>
@@ -98,13 +107,60 @@ App.register('sync', async (view) => {
           </tr>`).join('')}</tbody></table>`
           : UI.emptyState({ icon: 'building', title: 'No installed PCs yet' })}
       </div>
+      ${sites.hosts.length ? `<div class="panel">
+        <h3>Sites</h3>
+        <p class="muted small">While the internet is down, a site's host decides its own records — edits, deletes and
+          approvals on its locations. The <strong>main site</strong> also decides company-wide records (items,
+          suppliers, settings). Anything belonging to no site waits for the internet.</p>
+        <label>Main site</label>
+        <select id="site-main">${hostOptions(sites.main_host)}</select>
+        <table><thead><tr><th>Location</th><th>Type</th><th>Belongs to site</th></tr></thead>
+          <tbody>${sites.locations.map((l) => `<tr>
+            <td><strong>${UI.esc(l.name)}</strong></td><td style="text-transform:capitalize">${UI.esc(l.type)}</td>
+            <td><select data-loc="${l.id}">${hostOptions(l.host_node_no)}</select></td>
+          </tr>`).join('')}</tbody></table>
+        <button class="btn" id="site-save">Save sites</button>
+      </div>` : ''}
+      ${clashes.length ? `<div class="panel">
+        <h3>Site decision clashes</h3>
+        <p class="muted small">A site decided one of its own records while offline, and by the time it synced the
+          cloud's own check would have refused it. The site's decision was kept; check whether anything needs fixing.</p>
+        <table><thead><tr><th>What</th><th>Site</th><th>By / when</th><th></th></tr></thead>
+          <tbody>${clashes.map((c) => `<tr>
+            <td>${UI.esc(c.summary)}<div class="muted small">${UI.esc(c.route)}</div></td>
+            <td>${c.host_node_no ? UI.esc(hostName(c.host_node_no)) : '—'}</td>
+            <td>${UI.esc(c.actor_name || '—')}<div class="muted small">${UI.fmtDate(c.created_at)}</div></td>
+            <td class="actions"><button class="btn secondary small" data-clash="${c.id}">Resolve</button></td>
+          </tr>`).join('')}</tbody></table>
+      </div>` : ''}
       <div class="panel">
         <h3>Set up a PC to work offline</h3>
         <p class="muted small">On the PC (with this app's files), as an admin of this workspace:</p>
-        <pre class="code-block">SYNC_ENROL_PASSWORD=your-password npm run sync:enrol -- --cloud ${UI.esc(origin)} --user your-username --name "PC name"</pre>
+        <pre class="code-block">SYNC_ENROL_PASSWORD=your-password npm run sync:enrol -- --cloud ${UI.esc(origin)} --user your-username --name "PC name" --as-host</pre>
+        <p class="muted small">Use <code>--as-host</code> for the PC that stays on all day (one per site — also a site with a
+          single PC). For every other PC at that site, use <code>--host https://&lt;host PC's address&gt;:3000</code> instead.</p>
         <p class="muted small">Then start it with <code>DEPLOY_MODE=node</code>. A setup screen replaces this step once the
           desktop installer exists.</p>
       </div>`;
+    const save = view.querySelector('#site-save');
+    if (save) save.onclick = async () => {
+      const val = (sel) => (sel.value ? Number(sel.value) : null);
+      await API.put('/sync/sites', {
+        main_host: val(view.querySelector('#site-main')),
+        locations: [...view.querySelectorAll('[data-loc]')].map((sel) => ({ location_id: Number(sel.dataset.loc), host_node_no: val(sel) })),
+      });
+      UI.toast('Sites saved');
+    };
+    view.querySelectorAll('[data-clash]').forEach((b) => b.onclick = () => UI.modal({
+      title: 'Resolve clash',
+      bodyHTML: '<label>What was checked / done</label><textarea id="clash-note" rows="3"></textarea>',
+      confirmText: 'Resolve',
+      onConfirm: async (overlay) => {
+        await API.post('/sync/clashes/' + b.dataset.clash + '/resolve', { note: overlay.querySelector('#clash-note').value });
+        UI.toast('Clash resolved');
+        App.navigate('sync');
+      },
+    }));
     view.querySelectorAll('[data-revoke]').forEach((b) => b.onclick = async () => {
       if (!(await UI.confirmDialog('Revoke this PC? It stops syncing at once; anything it has not sent yet stays on it.', 'Revoke'))) return;
       await API.post('/sync/nodes/' + b.dataset.revoke + '/revoke');

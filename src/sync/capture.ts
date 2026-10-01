@@ -15,7 +15,9 @@
  */
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { DatabaseSync } from 'node:sqlite';
-import { activeDb } from '../shared/db';
+import { activeDb, tenantStore } from '../shared/db';
+
+const tenantSlug = () => tenantStore.getStore()?.slug ?? 'default';
 import { authUserById } from '../shared/auth';
 import { syncContext, syncStore, type SyncContext } from '../shared/sync-context';
 import { filterChangeset } from './changeset';
@@ -27,6 +29,8 @@ import { ulid } from './ids-util';
 import { isAuthority, isReplicated, syncConfigOf, type SyncConfig } from './node';
 import { flushEffects } from './authority';
 import { rememberReplayContext, replayRequestOf, setReplayActor } from './replay';
+import { deciderOf, siteOfNode, siteOfThisPc, type Home } from './sites';
+import { linkStatusOf } from './client';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const DEVICE_ID_RE = /^[A-Za-z0-9-]{8,64}$/; // same rule as the X-Device-Id the clients send
@@ -57,6 +61,10 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
       unattributed: cmd.unattributed === 1,
       // A site host's replay isn't final: outside effects wait for the cloud's (§7.8).
       suppressEffects: cfg.role === 'node',
+      // The cloud: which site (if any) this command was decided at (D6).
+      decidingSite: cfg.role === 'cloud' ? siteOfNode(conn, cmd.node_no) : null,
+      // A site host records what it actually allocated, for the cloud to reproduce.
+      ...(cfg.role === 'node' && cmd.unattributed !== 1 ? { effective: [] } : {}),
     };
     setReplayActor(req, cmd.actor_user_id != null ? authUserById(cmd.actor_user_id) ?? undefined : undefined);
     rememberReplayContext(replay.mode, cmd.id, ctx);
@@ -77,22 +85,55 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
 export interface SyncClassOptions {
   /** Anonymous channel: the command carries no actor, device, node, time or planned ids. */
   unattributed?: boolean;
+  /** `claim` only: whose decision the record is (§16). Default: company-wide (the main site). */
+  home?: (req: Request) => Home;
+}
+
+/** A LAN PC may decide its site's records only while it can reach its host: a round within
+ *  this long counts as "connected". */
+const HOST_FRESH_MS = 2 * 60_000;
+
+function claimRefusal(conn: DatabaseSync, cfg: SyncConfig, req: Request, opts: SyncClassOptions): string | null {
+  const site = siteOfThisPc(conn, cfg);
+  const decider = deciderOf(opts.home ? opts.home(req) : 'company');
+  if (decider == null || site == null || decider !== site) {
+    return decider == null || site == null
+      ? 'This needs an internet connection.'
+      : 'This belongs to another site. It needs an internet connection.';
+  }
+  if (!cfg.isHost) {
+    const link = linkStatusOf(tenantSlug());
+    const fresh = link.online === true && !!link.lastSyncAt && Date.now() - Date.parse(link.lastSyncAt) < HOST_FRESH_MS;
+    if (!fresh) return 'This needs a connection to the site host.';
+  }
+  return null;
 }
 
 export function syncClass(cls: SyncClass, opts: SyncClassOptions = {}): RequestHandler {
   return (req, res, next) => {
     const conn = activeDb();
     const cfg = syncConfigOf(conn);
-    if (!cfg || cfg.role === 'cloud') return next();
-    const mode = syncContext()?.mode;
-    if (mode === 'replay' || mode === 'rebase') return next(); // the orchestrator captures
+    if (!cfg) return next();
+    const ctx = syncContext();
+    if (cfg.role === 'cloud') {
+      // Re-running a site's decision on a record that site owns: it stands (D6).
+      if (cls === 'claim' && ctx?.mode === 'replay' && ctx.decidingSite != null
+          && deciderOf(opts.home ? opts.home(req) : 'company') === ctx.decidingSite) {
+        ctx.siteFinal = true;
+      }
+      return next();
+    }
+    if (ctx?.mode === 'replay' || ctx?.mode === 'rebase') return next(); // the orchestrator captures
     if (cls === 'online') {
       res.status(503).json({ error: 'This needs an internet connection.', sync: 'online' });
       return;
     }
     if (cls === 'claim') {
-      res.status(503).json({ error: 'This needs a connection to the site host.', sync: 'claim' });
-      return;
+      const refusal = claimRefusal(conn, cfg, req, opts);
+      if (refusal) {
+        res.status(503).json({ error: refusal, sync: 'claim' });
+        return;
+      }
     }
     recordCommand(conn, cfg, cls, opts, req, res, next).catch(next);
   };

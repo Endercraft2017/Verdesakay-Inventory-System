@@ -94,11 +94,15 @@ function chooseId(conn: DatabaseSync, cfg: SyncConfig, table: string, tmp: numbe
   const ctx = syncContext();
   if (ctx && (ctx.mode === 'rebase' || ctx.mode === 'replay') && !ctx.unattributed) {
     const planned = nextPlanned(ctx, table);
-    if (planned !== undefined && (planned === tmp || !taken(conn, table, planned))) return planned;
+    if (planned !== undefined && (planned === tmp || !taken(conn, table, planned))) {
+      ctx.effective?.push({ t: 'id', table, id: planned });
+      return planned;
+    }
     if (planned !== undefined) ctx.planMisses = (ctx.planMisses ?? 0) + 1;
   }
   const id = allocateId(conn, cfg, table, tmp);
   if (ctx?.mode === 'record' && !ctx.unattributed) ctx.plan.push({ t: 'id', table, id });
+  ctx?.effective?.push({ t: 'id', table, id });
   return id;
 }
 

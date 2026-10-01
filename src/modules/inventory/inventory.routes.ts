@@ -6,7 +6,8 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer';
 import { db, queryOne, queryAll, run, getSetting, setSetting, uploadDir } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
-import { syncClass } from '../../sync';
+import { recordSiteClash, syncClass } from '../../sync';
+import { siteDecisionStands } from '../../shared/sync-context';
 import {
   parseBody,
   createItemSchema,
@@ -529,8 +530,14 @@ router.get('/discrepancies', requirePermission('inventory.view'), (req, res) => 
 });
 
 // POST /api/inventory/discrepancies/:id/resolve — record what was found/done. Moves no stock:
-// correct the count with a normal adjustment first. A decision, so `claim` offline.
-router.post('/discrepancies/:id/resolve', requirePermission('inventory.adjust'), syncClass('claim'), (req, res) => {
+// correct the count with a normal adjustment first. A decision, so `claim` offline — made by
+// the site the discrepancy's location belongs to (docs/OFFLINE-FIRST.md §16).
+const discrepancySite = {
+  home: (req: Request) => ({
+    location: queryOne<{ location_id: number | null }>('SELECT location_id FROM stock_discrepancies WHERE id = ?', Number(req.params.id))?.location_id ?? null,
+  }),
+};
+router.post('/discrepancies/:id/resolve', requirePermission('inventory.adjust'), syncClass('claim', discrepancySite), (req, res) => {
   const id = Number(req.params.id);
   const { note } = parseBody(resolveDiscrepancySchema, req.body);
   const info = run(
@@ -541,6 +548,13 @@ router.post('/discrepancies/:id/resolve', requirePermission('inventory.adjust'),
   );
   if (info.changes === 0) {
     const exists = queryOne('SELECT id FROM stock_discrepancies WHERE id = ?', id);
+    // Clash-check (D6): resolved elsewhere meanwhile. A site's resolution of its own discrepancy
+    // stands — the first resolution is kept, and the clash is flagged for an admin.
+    if (exists && siteDecisionStands()) {
+      recordSiteClash(req, `Stock discrepancy #${id} was resolved on the cloud and at the site; the first resolution was kept. Site's note: ${note}`);
+      res.json({ ok: true, clash: true });
+      return;
+    }
     res.status(exists ? 409 : 404).json({ error: exists ? 'Already resolved' : 'Discrepancy not found' });
     return;
   }

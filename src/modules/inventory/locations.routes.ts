@@ -1,6 +1,6 @@
 /** Locations registry — warehouses / branches / stores / trucks that hold stock.
     Per-location quantities live in `inventory_stock` (see src/inventory-stock.ts). */
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { db, queryOne, queryAll, run } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
 import { syncClass } from '../../sync';
@@ -79,7 +79,10 @@ router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req
 });
 
 // PUT /api/locations/:id
-router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
+// A location's own records are decided by its home site offline (docs/OFFLINE-FIRST.md §16).
+const ownSite = { home: (req: Request) => ({ location: Number(req.params.id) }) };
+
+router.put('/:id', requirePermission('inventory.edit'), syncClass('claim', ownSite), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<LocationRow>('SELECT * FROM locations WHERE id = ?', id);
   if (!existing) {
@@ -111,7 +114,7 @@ router.post('/:id/default', requirePermission('inventory.edit'), syncClass('clai
 });
 
 // DELETE /api/locations/:id
-router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim'), (req, res) => {
+router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim', ownSite), (req, res) => {
   const id = Number(req.params.id);
   const loc = queryOne<LocationRow>('SELECT * FROM locations WHERE id = ?', id);
   if (!loc) {

@@ -88,6 +88,10 @@ export async function acceptCommand(slug: string, cmd: SyncCommand): Promise<Com
       `UPDATE sync_commands SET state = ?, authority_seq = ?, response_status = ?, error = ?, plan_misses = ?,
               local_changeset = ?, updated_at = datetime('now') WHERE id = ?`,
     ).run(state, seq, r.status, error, r.ctx?.planMisses ?? 0, changes, cmd.id);
+    // A host forwards what it actually allocated, so the cloud reproduces the host's rows.
+    if (host && ok && r.ctx?.effective) {
+      conn.prepare('UPDATE sync_commands SET allocation_plan = ? WHERE id = ?').run(JSON.stringify(r.ctx.effective), cmd.id);
+    }
     return resultOf(conn, cmd.id, host);
   } finally {
     release();

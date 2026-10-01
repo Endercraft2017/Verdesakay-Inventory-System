@@ -379,8 +379,9 @@ Design: `docs/OFFLINE-FIRST.md` (§10–11 = built). **Built (phases 1–2, 2026
 and 4 between a node and the cloud — over HTTP (`syncWithCloud` / `startSyncLoop`, phase 3a) and
 in-process for tests (`syncOnce`); every inventory-module route classed; desktop badges + the
 needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`); stage 2 as a relay
-(phase 3c-i: LAN PCs sync with their site host, which forwards to the cloud). **Not built:** the
-host's decisions being final for its site's records (3c-ii), mobile sync UI. This pipeline wraps the
+(phase 3c-i: LAN PCs sync with their site host, which forwards to the cloud); site decisions
+(phase 3c-ii: `claim`s decided at the owning site; the cloud keeps them, flagging clashes — D6).
+**Not built:** mobile sync UI, site number blocks (phase 4). This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).
@@ -394,8 +395,9 @@ LAN (e.g. a stock withdrawal, a punch, a QC result).
    refused ("needs internet"). A route with no class at all is refused on a node (503, "needs an
    internet connection") — its writes would never sync. *(Built: `sync/capture.ts`; `claim` is
    always refused until phase 3 adds site hosts.)*
-2. **Site confirm** (`sync/` on the site host; *built as a relay in phase 3c-i: "confirmed on site",
-   the cloud still has the final word; final numbers from leased blocks are 3c-ii*) — the host
+2. **Site confirm** (`sync/` on the site host; *built in phases 3c-i/ii: "confirmed on site"; for
+   a `claim` on a record the site owns the site's decision is kept by the cloud (D6); final numbers
+   from leased blocks come in phase 4*) — the host
    replays the command through the same
    handler against the site's data (same allocation plan, command clock, permission re-check),
    issues final numbers from its leased block, and fans the resulting changeset out to every
@@ -414,7 +416,8 @@ LAN (e.g. a stock withdrawal, a punch, a QC result).
 to every node (full replica; only node-local tables such as session tokens and integration
 secrets stay put, sensitive fields travel encrypted); files as SHA-256
 blobs pushed before their command.
-**Branches:** no site host reachable → stays `local`, retried; validation / permission failure at
+**Branches:** a `claim` on a record another site owns (or with no main site set) → refused offline;
+a LAN PC's `claim` with no recent contact with its host → refused; no site host reachable → stays `local`, retried; validation / permission failure at
 replay → `rejected`, shown to the actor; `physical` command breaking an invariant (stock below
 zero, unit already sold) → accepted and flagged into the conflict inbox (built for stock:
 `stock_discrepancies`, decision D1); actor's permission

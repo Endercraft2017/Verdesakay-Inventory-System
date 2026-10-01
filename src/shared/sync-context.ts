@@ -38,6 +38,13 @@ export interface SyncContext {
   /** Set when a site host replays a LAN PC's command: the host isn't the final authority,
    *  so emails / pushes / broadcasts wait for the cloud's replay. */
   suppressEffects?: boolean;
+  /** Cloud replay of a command made at a site: that site's host node number. */
+  decidingSite?: number | null;
+  /** Cloud replay of a `claim` on a record the deciding site owns: its decision stands (D6). */
+  siteFinal?: boolean;
+  /** Where a site host replays a LAN PC's command it records what it actually allocated, so the
+   *  cloud's replay reproduces the host's ids and numbers rather than the PC's guesses. */
+  effective?: PlanEntry[];
 }
 
 export const syncStore = new AsyncLocalStorage<SyncContext>();
@@ -60,6 +67,14 @@ export function now(): Date {
 export function inSyncedCommand(): boolean {
   const mode = syncStore.getStore()?.mode;
   return mode === 'record' || mode === 'rebase' || mode === 'replay';
+}
+
+/** True when the cloud is replaying a site host's decision on a record that site owns
+ *  (decision D6): a route lets a check fail that only fails because data changed elsewhere
+ *  meanwhile — and flags it (src/sync/sites.ts recordSiteClash) — instead of refusing. Only
+ *  checks a route explicitly marks this way; permissions and validation always apply. */
+export function siteDecisionStands(): boolean {
+  return syncStore.getStore()?.siteFinal === true;
 }
 
 /** True while a node runs a command optimistically or re-runs it during rebase: emails, push

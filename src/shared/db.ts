@@ -810,6 +810,29 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_stock_discrepancies_status ON stock_discrepancies(status, item_id);
 
+    -- Offline sync home sites (docs/OFFLINE-FIRST.md §16): which site host decides a location's
+    -- records while the internet is down. A location with no row — and company-wide records —
+    -- belong to the main site (setting 'sync_main_host'); with none set, only the cloud decides.
+    CREATE TABLE IF NOT EXISTS location_sites (
+      location_id  INTEGER PRIMARY KEY REFERENCES locations(id) ON DELETE CASCADE,
+      host_node_no INTEGER NOT NULL
+    );
+    -- A site host's decision on its own site's records that the cloud kept although its own
+    -- check would now fail, because data changed elsewhere meanwhile (decision D6). A task for an
+    -- admin to look at; resolving it changes nothing by itself.
+    CREATE TABLE IF NOT EXISTS site_decision_clashes (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      host_node_no  INTEGER,
+      route         TEXT NOT NULL,
+      summary       TEXT NOT NULL,
+      actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+      resolution_note TEXT,
+      resolved_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at   TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS activity_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),

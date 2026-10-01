@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   await downloadSnapshot({ fromUrl: hostUrl ?? cloudUrl, nodeToken: id.nodeToken, file, waitMs: hostUrl ? 5 * 60_000 : 0 });
   const conn = new DatabaseSync(file);
   try {
-    adoptSnapshot(conn, { ...id, cloudUrl: hostUrl ?? cloudUrl, isHost: asHost });
+    adoptSnapshot(conn, { ...id, cloudUrl: hostUrl ?? cloudUrl, isHost: asHost, hostNodeNo: hostNo });
   } finally {
     conn.close();
   }

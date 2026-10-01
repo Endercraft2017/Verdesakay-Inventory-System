@@ -141,8 +141,11 @@ export async function enrolNode(opts: {
  *  it syncs with and its credential there. */
 export function adoptSnapshot(conn: DatabaseSync, id: {
   nodeNo: number; cloudUrl: string; nodeToken: string; isHost?: boolean; tenant?: string | null;
+  /** A LAN PC: its site host's node number (decides which records it may decide offline). */
+  hostNodeNo?: number | null;
 }): void {
   enableSync(conn, { role: 'node', nodeNo: id.nodeNo, ...(id.isHost ? { isHost: true as const } : {}) });
+  conn.prepare('UPDATE sync_node SET host_node_no = ? WHERE k = 1').run(id.hostNodeNo ?? null);
   conn.prepare(
     `INSERT INTO sync_remote (k, cloud_url, node_token, tenant) VALUES (1, ?, ?, ?)
      ON CONFLICT(k) DO UPDATE SET cloud_url = excluded.cloud_url, node_token = excluded.node_token, tenant = excluded.tenant`,
