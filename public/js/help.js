@@ -119,6 +119,23 @@
         you can <b>Transfer</b> between them.</p>`,
     },
     {
+      id: 'stock-discrepancies', title: 'Stock discrepancies', group: 'Inventory',
+      routes: ['stock-discrepancies'], html: `
+        <p>When someone working <b>offline</b> on an installed PC takes out more than the records
+        show, the stock-out is still recorded &mdash; the goods really left &mdash; and the location
+        goes below zero. Each such case opens a <b>discrepancy</b> here.</p>
+        <ul>
+          <li><b>Count</b> the location, and correct the quantity with a normal stock adjustment if
+              it's off.</li>
+          <li>Then <b>Resolve</b> the discrepancy with a note of what you found or did. Resolving
+              moves no stock by itself.</li>
+          <li><b>Now</b> shows the location's current balance; <b>Left after</b> shows it right after
+              the offline stock-out.</li>
+          <li>Someone using the website directly still gets "Not enough stock" &mdash; only offline
+              work can go below zero.</li>
+        </ul>`,
+    },
+    {
       id: 'finished-products', title: 'Product Setup & BOM', group: 'Manufacturing',
       routes: ['finished-products'], html: `
         <p>A <b>finished product</b> is something you build rather than buy. Its
@@ -538,6 +555,29 @@
         from where. Filter by user, module, action, or date. Admin-only.</p>
         <p>Use it to answer "who changed this?" and as evidence for audits. Entries are
         kept for about a month, then trimmed automatically; "Prune…" clears them sooner.</p>`,
+    },
+    {
+      id: 'offline-pcs', title: 'Working offline (installed PCs)', group: 'Admin',
+      routes: ['sync'], html: `
+        <p>An <b>installed PC</b> keeps its own copy of the workspace, so the warehouse keeps working
+        when the internet is down. What you do there is saved on that PC at once and sent to the
+        cloud when it can be reached.</p>
+        <ul>
+          <li><b>Not final until it syncs.</b> After each save on an installed PC you'll see
+              "Saved on this PC &mdash; it is not final until it syncs". The cloud re-checks it and may
+              reject it (for example, a SKU someone else already used).</li>
+          <li>The <b>pill in the top bar</b> shows where things stand: <i>Synced</i>, <i>Syncing &middot; N
+              waiting</i>, <i>Offline &middot; N saved on this PC</i>, and <i>N need attention</i>. Click it
+              for the Sync page.</li>
+          <li><b>Needs attention</b> lists what the cloud rejected and why. Fix it on the website if
+              needed, then <b>Dismiss</b> it. <b>Sync now</b> tries straight away (it also runs every
+              15 seconds on its own).</li>
+          <li>On an installed PC today only <b>inventory</b> works offline (stock in/out, damage,
+              transfers, and new items, locations, suppliers and customers). Edits, deletes and other
+              modules say they need the site host or the internet.</li>
+          <li><b>Admins</b>: Admin &rarr; Installed PCs lists the PCs set up against this workspace.
+              <b>Revoke</b> a lost or retired one &mdash; it stops syncing at once.</li>
+        </ul>`,
     },
     {
       id: 'admin', title: 'Accounts, roles & permissions', group: 'Admin',

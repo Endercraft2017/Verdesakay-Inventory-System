@@ -113,7 +113,11 @@ describe('ai-analytics: attendance reports', () => {
 
     // A leave form covering one more day so it isn't counted as an absence.
     const fd = db.run("INSERT INTO form_definitions (name, slug) VALUES ('Leave Request', 'leave_request')").lastInsertRowid;
-    const fr = db.run("INSERT INTO form_records (form_def_id, number, data) VALUES (?, 'LR-1', '{}')", fd).lastInsertRowid;
+    // Dated inside the period it excuses: left to default to "today", leave_ot_summary's
+    // fixed August–September range stopped finding it on 2026-10-01.
+    const fr = db.run(
+      "INSERT INTO form_records (form_def_id, number, data, created_at) VALUES (?, 'LR-1', '{}', '2026-08-07 08:00:00')", fd,
+    ).lastInsertRowid;
     day('2026-08-08', null, Number(fr)); // excused
   });
 
