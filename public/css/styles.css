@@ -229,6 +229,8 @@ a { color: var(--accent); }
 .sync-pill.attention { background: var(--danger-weak); color: var(--danger); }
 .sync-summary { display: grid; gap: 8px; justify-items: start; }
 .small { font-size: 12px; }
+.check-row { display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; }
+.check-row input { width: auto; margin: 0; }
 .topnav-user .who { text-align: right; line-height: 1.25; }
 .topnav-user .name { font-weight: 600; font-size: 13px; }
 .topnav-user .role { color: var(--text-faint); font-size: 11px; text-transform: capitalize; }

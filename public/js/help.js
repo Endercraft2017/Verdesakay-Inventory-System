@@ -582,6 +582,9 @@
               site each location belongs to. If the cloud would have refused a site's offline decision by
               the time it synced, the decision is kept and listed under <b>Site decision clashes</b> to
               check.</li>
+          <li><b>Phones at a site</b>: open <b>http://&lt;main PC's address&gt;:3001</b> on the office Wi-Fi
+              and follow the steps once (install the site certificate). Then the app at
+              https://&lt;main PC's address&gt;:3000/m works even when the internet is down.</li>
           <li><b>Admins</b>: Admin &rarr; Installed PCs lists the PCs set up against this workspace.
               <b>Revoke</b> a lost or retired one &mdash; it stops syncing at once.</li>
         </ul>`,

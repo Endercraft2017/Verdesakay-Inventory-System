@@ -43,6 +43,8 @@ App.register('sync', async (view) => {
           ${s.online === false && s.last_error ? '<br>' + UI.esc(s.last_error) : ''}</div>
         <p class="muted small">What you do on this PC is saved here at once and sent to the cloud when it can be
           reached. It is <strong>not final</strong> until it syncs: the cloud re-checks it and may reject it.</p>
+        ${window.desktopApp ? `<label class="check-row"><input type="checkbox" id="sync-autostart">
+          Open when Windows starts${s.is_host ? ' <span class="muted small">(keep on: other PCs and phones at this site use this PC)</span>' : ''}</label>` : ''}
       </div>
       <div class="panel">
         <h3>Needs attention</h3>
@@ -54,6 +56,17 @@ App.register('sync', async (view) => {
         <h3>Waiting to sync</h3>
         ${pending.length ? table(pending, false) : UI.emptyState({ icon: 'check', title: 'Everything is synced' })}
       </div>`;
+
+    // Desktop app only: start with Windows (electron/autostart.cjs).
+    const auto = view.querySelector('#sync-autostart');
+    if (auto) {
+      auto.checked = await window.desktopApp.getAutostart();
+      auto.onchange = async () => {
+        const on = await window.desktopApp.setAutostart(auto.checked);
+        auto.checked = on;
+        UI.toast(on ? 'Verdesakay will open when Windows starts.' : 'Verdesakay will no longer open when Windows starts.');
+      };
+    }
 
     view.querySelector('#sync-now').onclick = async (e) => {
       e.target.disabled = true;

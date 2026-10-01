@@ -16,6 +16,7 @@ work can be placed module-by-module and pipeline-by-pipeline. Business decisions
 | D4 | The CLAUDE.md stock/stage rule is **reworded** to let the site host confirm (applied when phase 1 starts) | §7.4 |
 | D5 | Phones trust the site host through a **company certificate installed once per phone** (a per-tenant local CA), so the LAN works with no internet at all | §5 |
 | D6 | The cloud keeps a site host's decision on its own site's records by **re-running it with clash-checks relaxed and flagged** (option B — like D1), not by copying the host's result; permissions and other checks still apply | §15–16 |
+| D7 | The desktop installer ships **per-user (no admin prompt), signed with a free self-signed company certificate** that each of the company's PCs trusts once; installed by copying, not downloading. **⚠ TODO before installing at customers:** get a real code-signing certificate (or publish through the Microsoft Store) — otherwise Windows shows "unknown publisher" / SmartScreen warnings on their PCs. See §17 | §17 |
 
 Catalog entries: `sync/` and `desktop/` in `docs/modules/catalog.md`. Pipelines: "Offline
 operation & sync" and "Site host failover" in `docs/modules/pipelines.md`.
@@ -498,7 +499,7 @@ through the command's `rejected` state until the phase-3 badges exist.
 | **3b. Badges + needs-attention inbox** ✅ desktop built 2026-10-01 (§14) | `GET /api/sync/status` on a node. Saved on this device / Synced / Needs attention on desktop and mobile. An inbox for rejected commands and stock discrepancies |
 | **3c-i. Site host relay** ✅ built 2026-10-01 (§15) | One fixed host per site: LAN PCs enrol through it and sync with it; it accepts their commands in one site order ("confirmed on site"), relays them to the cloud, follows the cloud's corrections, and streams everything to its LAN |
 | **3c-ii. Site decisions** ✅ built 2026-10-01 (§16) | Home sites (`location_sites`) + main site (`sync_main_host`); `claim` decided on the site's host, or a LAN PC with a fresh link to it; the cloud keeps a site's decision on its own records by re-running it with marked clash-checks relaxed and flagged (D6). **Moved:** site number blocks → phase 4 (no offline-capable route issues document numbers yet); GET-write check → phase 6 |
-| **3d. Desktop app + LAN HTTPS** | Electron shell (+ `npm run test:node24`), per-tenant local CA (D5), phone certificate install page, phones on the host |
+| **3d. Desktop app + LAN HTTPS** ✅ built 2026-10-01 (§17) | Electron shell (+ `npm run test:node24`), per-tenant local CA (D5), phone certificate install page, phones on the host |
 | **3e. Blob lane** | Content-addressed files; multipart routes (photos) become commands |
 | **3f. Field encryption** | DPAPI-keyed encryption of sensitive fields on nodes (spike first) |
 
@@ -669,3 +670,65 @@ taken by another branch.
 **Also:** a site host now forwards to the cloud the row ids and numbers *it actually allocated* when
 replaying a LAN PC's command (`effective` plan), so the cloud reproduces the host's rows instead of the
 PC's guesses.
+
+## 17. Phase 3d as built (2026-10-01): the installable app
+
+**Shell** (`electron/`): `main.cjs` starts the real server, `server.ts`, as a child on Electron's
+own Node: `ELECTRON_RUN_AS_NODE`, TypeScript through tsx, `DEPLOY_MODE=node`. It shows the server in
+a window. Data lives in the per-user app-data folder (`%APPDATA%\Verdesakay\workspace`: database,
+uploads, backups, `tls/`, logs). No admin rights are needed anywhere (D7).
+- **First start** opens `setup.html`, which runs `scripts/sync-enrol.ts`:
+  - **"The site's main PC"** enrols with `--as-host`. This is also the choice for a single-PC site.
+  - **"Another PC at a site"** first downloads the main PC's site certificate over plain HTTP and shows
+    its fingerprint. Once the person confirms it matches, the certificate is pinned
+    (`host-ca.crt` → `NODE_EXTRA_CA_CERTS`), and the PC enrols with `--host https://<main PC>:3000`.
+- `--smoke` boots the server on a scratch folder and exits once it answers. That was verified on the
+  source tree *and* on the packaged `Verdesakay.exe`.
+
+**How an installed PC serves** (`server.ts`, `DEPLOY_MODE=node`):
+- **A site host** serves HTTPS on `0.0.0.0:3000` with its site certificate, for its LAN PCs and phones.
+  It also serves plain HTTP on `:3001` for the **phone-setup page** (`src/desktop/phone-setup.ts`:
+  Android / iPhone steps, the certificate, its fingerprint). Everything else on `:3001` redirects to
+  HTTPS. Its own window trusts its certificate, on localhost only.
+- **Any other installed PC** serves only itself, over HTTP on `127.0.0.1:3000`, which browsers treat as
+  a secure origin.
+
+**Site certificate (D5)** (`src/desktop/lan-tls.ts`, node-forge): each host creates its own certificate
+authority once (10 years; its key never leaves that PC). It issues the server certificate for
+`localhost`, its hostname, `127.0.0.1` and its LAN IPv4 addresses, valid 397 days (iPhones refuse more
+than 825). The certificate is re-issued at start when the addresses change or it is within 30 days of
+expiry. Phones keep trusting the authority, not the certificate.
+**Change from the plan:** this is one authority **per site host**, not per tenant. A host must issue
+certificates for its own (DHCP) addresses with no internet, so the authority lives on it. A phone
+that works at two sites installs both sites' certificates.
+
+**Installer:** `npm run desktop:build` (electron-builder → `dist-desktop/Verdesakay Setup <version>.exe`,
+about 121 MB; one-click NSIS, per user, `asar` off so the child process can read the app's files).
+`npm run desktop:cert` makes the free self-signed signing certificate; `scripts/desktop-trust.ps1`
+makes a PC trust it. The build signs when `CSC_LINK` / `CSC_KEY_PASSWORD` are set. **⚠ D7 TODO:** a
+real code-signing certificate (or the Microsoft Store) before installing at customers. The first build
+is unsigned.
+
+**Node 24:** `npm run test:node24` runs the whole test suite on the desktop app's runtime.
+
+**Dev note:** editors built on Electron (VS Code) set `ELECTRON_RUN_AS_NODE` in their terminals, which
+makes `electron` start as plain Node. `npm run desktop` removes it.
+
+**Open when Windows starts** (`electron/autostart.cjs`): a checkbox on the Sync page, shown only
+inside the desktop app (`window.desktopApp` from `preload.cjs`). It uses Windows' per-user startup
+list, so no admin rights are needed. It is **on by default for the site's main PC** (its LAN depends
+on it running) and off for other PCs. A start by Windows passes `--autostart` and opens the window
+minimized.
+
+### Desktop to-do (before rollout to customers)
+- [ ] **Real code-signing certificate** (or Microsoft Store), D7. Until then, Windows warns
+      "unknown publisher" on PCs that haven't trusted the company certificate.
+- [ ] **App icon**: the build uses Electron's default icon (`build.win.icon` in `package.json`, plus
+      the window icon in `electron/main.cjs`).
+- [ ] **Downloadable installer**: GitHub Release (a private repo means only collaborators can
+      download it) built by a GitHub Actions workflow on a version tag; later a "Download the app"
+      button in Admin → Installed PCs.
+- [ ] **Auto-update** (needs the release feed above; until then, run a newer installer over the old
+      one: data is kept).
+- [ ] **Mobile sync UI**: design dependency (Figma), §14.
+- [ ] Photos offline (3e), field encryption (3f).

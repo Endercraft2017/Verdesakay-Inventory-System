@@ -140,18 +140,31 @@ Sync now), `tests/sync-status.test.ts` + `tests/frontend-sync-status.test.ts` (p
 a Figma design (design doc §14). Still open
 spikes: LAN discovery, LAN HTTPS for `/m`, DPAPI-keyed field encryption.
 
-## desktop/ — installable Windows app (planned)
+## desktop/ — installable Windows app (partial)
 
-Design: `docs/OFFLINE-FIRST.md` §5. Packaging, not a business module.
-**Responsibility:** ship the existing server + `public/` UI as a Windows installer running in
-`DEPLOY_MODE=node`: tenant enrolment, local SQLite replica, auto-update, serving the LAN
-(desktop UI + `/m`) when elected site host.
-**Owned data:** node identity + enrolment credentials (local only).
-**Dependencies:** `sync/`, `shared/`. Shell choice (Electron vs Node sidecar) pending the
-phase-0 packaging spike.
-**Expected tests:** packaged app boots offline from a snapshot; enrolment; update with pending
-unsynced events preserved.
-**Status:** planned.
+Design: `docs/OFFLINE-FIRST.md` §5, §17 (phase 3d). Packaging, not a business module.
+**Responsibility:** ship the existing server + `public/` UI as a per-user Windows app running in
+`DEPLOY_MODE=node`: first-start setup (enrol as site host or as a site's PC), a window onto the local
+server, the site host's LAN HTTPS (per-site certificate authority, D5) and the phone-setup page.
+**Owned files:** `electron/main.cjs` (shell: child server on Electron's Node via tsx, setup IPC, cert
+trust for localhost, start-with-Windows IPC), `electron/autostart.cjs`, `electron/preload.cjs`
+(`desktopSetup`, `desktopApp`), `electron/setup.html`; `src/desktop/lan-tls.ts`
+(`ensureLanTls`, `lanAddresses`), `src/desktop/phone-setup.ts` (`phoneSetupHandler`); `server.ts`
+`startInstalledPc()`; scripts `scripts/desktop.mjs` (`npm run desktop`, `desktop:smoke`),
+`scripts/test-node24.mjs` (`npm run test:node24`), `scripts/desktop-cert.ps1` (`desktop:cert`),
+`scripts/desktop-trust.ps1`; electron-builder config in `package.json` → `build`
+(`npm run desktop:build` → `dist-desktop/`).
+**Owned data:** per PC, in `%APPDATA%\Verdesakay\workspace`: the database, `desktop.json` (role),
+`tls/` (a host's site CA + server cert; private keys stay on the PC), `host-ca.crt` (a site PC's pinned
+host certificate), logs.
+**Dependencies:** `sync/` (enrolment, sync loop, `syncConfigOf`), `shared/`; packages `electron`,
+`electron-builder` (dev), `node-forge`.
+**Tests:** `tests/desktop-lan-tls.test.ts` (CA + server cert, re-issue on address change, a real TLS
+handshake trusting only the site CA, phone-setup page), `tests/desktop-autostart.test.ts`. Smoke: `npm run desktop:smoke` and the
+packaged `Verdesakay.exe --smoke` (manual / CI).
+**Status:** partial. Built 2026-10-01, with an "Open when Windows starts" toggle (Sync page; on by
+default for a site host). To-do list in design doc §17: real code-signing certificate (D7), app icon,
+downloadable installer (GitHub Release), auto-update, mobile sync UI.
 
 ## core/ — ungated baseline
 

@@ -452,7 +452,7 @@ recording `merge` / `physical` commands and blocks `claim`s until it rejoins.
 
 Design: `docs/OFFLINE-FIRST.md` §13. **Trigger:** someone sets up a PC to work offline.
 1. **Enrol** (`sync/transport.ts`, cloud) — an admin with `users.manage` signs in from the PC
-   (`npm run sync:enrol`); `POST /api/sync/nodes` issues the next node number and a node token
+   (the desktop app's setup screen, `electron/setup.html`, or `npm run sync:enrol`); `POST /api/sync/nodes` issues the next node number and a node token
    (stored hashed). The first enrolment switches the workspace to sync mode (cloud role).
    - **Branch — site host** (`--as-host`): registered `is_host`; it serves its LAN from then on.
    - **Branch — LAN PC** (`--host <URL>`): the script asks the host its node number
@@ -470,4 +470,5 @@ database file already exists → refused (enrol into a fresh file); cloud unreac
 round → the PC keeps working locally and retries.
 **Terminal states:** enrolled and syncing; revoked (`POST /api/sync/nodes/:no/revoke` — its token
 stops working at once; its rows keep their ids); diverged (sync loop stops — re-enrol).
-**Not built:** an installer / setup screen (phase 3d), site hosts (3c).
+**Phone setup (site host):** a phone opens `http://<host>:3001`, installs the site certificate
+once, then uses `https://<host>:3000/m` on the office Wi-Fi (D5).

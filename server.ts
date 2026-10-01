@@ -10,14 +10,16 @@ import path from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
 import { spawnSync } from 'node:child_process';
-import { init, cleanupSessions } from './src/shared/db';
+import { init, cleanupSessions, getDb, DB_PATH } from './src/shared/db';
 import { createApp, BEHIND_PROXY } from './src/app';
 import { sendDueTaskReminders } from './src/shared/push';
 import { cleanupPlatformSessions } from './src/platform/platform-users';
 import { attachWebSocket } from './src/shared/ws';
 import { runDailyBackups } from './src/platform/backups';
 import { pushOffsite } from './src/platform/offsite';
-import { DEPLOY_MODE, startSyncLoop } from './src/sync';
+import { DEPLOY_MODE, startSyncLoop, syncConfigOf } from './src/sync';
+import { ensureLanTls, lanAddresses } from './src/desktop/lan-tls';
+import { phoneSetupHandler } from './src/desktop/phone-setup';
 
 // Attendance, payroll dates and the kiosk rules use the server's local time (see
 // src/modules/hr/clock.ts localParts and SQLite 'localtime'). On-site that is the office clock;
@@ -114,23 +116,52 @@ function banner(scheme: string): void {
   console.log('');
 }
 
-// Behind a TLS-terminating proxy (e.g. Railway) the proxy owns HTTPS and forwards plain
-// HTTP to PORT — serving our own self-signed cert there would break every request.
-const creds = BEHIND_PROXY ? null : loadOrCreateCert();
-
-if (creds) {
-  const httpsServer = https.createServer(creds, app).listen(PORT, '0.0.0.0', () => banner('https'));
-  attachWebSocket(httpsServer);
-
-  // Redirect any plain-HTTP request to the HTTPS origin on the canonical port.
-  http
-    .createServer((req, res) => {
-      const host = (req.headers.host || `localhost:${HTTP_PORT}`).replace(/:\d+$/, '');
-      res.writeHead(301, { Location: `https://${host}:${PORT}${req.url || '/'}` });
-      res.end();
-    })
+// An installed PC (DEPLOY_MODE=node, docs/OFFLINE-FIRST.md §17). A site host serves its LAN —
+// phones included — over HTTPS with its own site certificate (D5), and the phone-setup page on
+// plain HTTP; any other installed PC serves only itself, on this machine.
+function startInstalledPc(): void {
+  const isHost = syncConfigOf(getDb())?.isHost === true;
+  if (!isHost) {
+    const local = http.createServer(app).listen(PORT, '127.0.0.1', () => {
+      console.log(`\nVerdesakay (installed PC) is running for this PC only: http://localhost:${PORT}\n`);
+    });
+    attachWebSocket(local);
+    return;
+  }
+  const tls = ensureLanTls(process.env.LAN_TLS_DIR || path.join(path.dirname(DB_PATH), 'tls'));
+  const lan = https.createServer({ key: tls.key, cert: tls.cert }, app).listen(PORT, '0.0.0.0', () => {
+    console.log(`\nVerdesakay site host is running: https://localhost:${PORT}`);
+    for (const ip of lanAddresses()) {
+      console.log(`   Office devices: https://${ip}:${PORT}   ·   set up a phone: http://${ip}:${HTTP_PORT}`);
+    }
+    console.log('');
+  });
+  attachWebSocket(lan);
+  http.createServer(phoneSetupHandler({ caCert: tls.caCert, fingerprint: tls.caFingerprint, httpsPort: PORT }))
     .listen(HTTP_PORT, '0.0.0.0');
+}
+
+if (DEPLOY_MODE === 'node') {
+  startInstalledPc();
 } else {
-  const httpServer = http.createServer(app).listen(PORT, '0.0.0.0', () => banner('http'));
-  attachWebSocket(httpServer);
+  // Behind a TLS-terminating proxy (e.g. Railway) the proxy owns HTTPS and forwards plain
+  // HTTP to PORT — serving our own self-signed cert there would break every request.
+  const creds = BEHIND_PROXY ? null : loadOrCreateCert();
+
+  if (creds) {
+    const httpsServer = https.createServer(creds, app).listen(PORT, '0.0.0.0', () => banner('https'));
+    attachWebSocket(httpsServer);
+
+    // Redirect any plain-HTTP request to the HTTPS origin on the canonical port.
+    http
+      .createServer((req, res) => {
+        const host = (req.headers.host || `localhost:${HTTP_PORT}`).replace(/:\d+$/, '');
+        res.writeHead(301, { Location: `https://${host}:${PORT}${req.url || '/'}` });
+        res.end();
+      })
+      .listen(HTTP_PORT, '0.0.0.0');
+  } else {
+    const httpServer = http.createServer(app).listen(PORT, '0.0.0.0', () => banner('http'));
+    attachWebSocket(httpServer);
+  }
 }
