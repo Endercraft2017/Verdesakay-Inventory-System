@@ -13,6 +13,7 @@ import {
   resolveProductionIssueSchema,
 } from '../../shared/validation';
 import type { ProductionIssue } from '../../shared/types';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -71,7 +72,7 @@ router.get('/:id', readGate, (req, res) => {
 });
 
 // POST /api/production-issues — { job_order_id, unit_id?, category, severity?, description }
-router.post('/', reportGate, (req, res) => {
+router.post('/', reportGate, syncClass('merge'), (req, res) => {
   const input = parseBody(createProductionIssueSchema, req.body);
   if (!queryOne('SELECT id FROM job_orders WHERE id = ?', input.job_order_id)) {
     res.status(404).json({ error: 'Job order not found' });
@@ -89,7 +90,7 @@ router.post('/', reportGate, (req, res) => {
 });
 
 // PUT /api/production-issues/:id — edit an open report (reporter or a manager)
-router.put('/:id', reportGate, (req, res) => {
+router.put('/:id', reportGate, syncClass('claim'), (req, res) => {
   const issue = loadIssue(Number(req.params.id));
   if (!issue) { res.status(404).json({ error: 'Issue not found' }); return; }
   if (!canManage(req, issue)) { res.status(403).json({ error: 'Only the reporter or a manager can edit this report' }); return; }
@@ -108,7 +109,7 @@ router.put('/:id', reportGate, (req, res) => {
 });
 
 // POST /api/production-issues/:id/resolve — { resolution? }
-router.post('/:id/resolve', reportGate, (req, res) => {
+router.post('/:id/resolve', reportGate, syncClass('claim'), (req, res) => {
   const issue = loadIssue(Number(req.params.id));
   if (!issue) { res.status(404).json({ error: 'Issue not found' }); return; }
   if (!canManage(req, issue)) { res.status(403).json({ error: 'Only the reporter or a manager can resolve this report' }); return; }
@@ -123,7 +124,7 @@ router.post('/:id/resolve', reportGate, (req, res) => {
 });
 
 // POST /api/production-issues/:id/reopen
-router.post('/:id/reopen', reportGate, (req, res) => {
+router.post('/:id/reopen', reportGate, syncClass('claim'), (req, res) => {
   const issue = loadIssue(Number(req.params.id));
   if (!issue) { res.status(404).json({ error: 'Issue not found' }); return; }
   if (!canManage(req, issue)) { res.status(403).json({ error: 'Only the reporter or a manager can re-open this report' }); return; }

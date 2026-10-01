@@ -263,14 +263,18 @@ describe('document numbers', () => {
       .toBe(`SO-${String(before + 1).padStart(5, '0')}`);
   });
 
-  it('the cloud keeps a planned non-provisional number and moves its counter past it', () => {
-    const replay = {
-      mode: 'replay' as const,
+  it('the cloud keeps a real number only if it leased it to the deciding site (§21)', () => {
+    dbmod.getDb('default').prepare("INSERT INTO sync_seq_leases (host_node_no, key, first, last) VALUES (3, 'order_seq_job', 500, 549)").run();
+    const replay = (site: number | null) => ({
+      mode: 'replay' as const, decidingSite: site,
       plan: [{ t: 'seq' as const, key: 'order_seq_job', value: 'JO-00500', provisional: false }],
       cursor: { id: 0, seq: 0 },
-    };
-    expect(run('default', replay, () => dbmod.nextSequence('order_seq_job', 'JO'))).toBe('JO-00500');
-    expect(dbmod.withTenant('default', () => dbmod.nextSequence('order_seq_job', 'JO'))).toBe('JO-00501');
+    });
+    expect(run('default', replay(3), () => dbmod.nextSequence('order_seq_job', 'JO'))).toBe('JO-00500');
+    // Another site, or none, can't claim a number from host 3's block: the cloud issues its own.
+    const other = run('default', replay(9), () => dbmod.nextSequence('order_seq_job', 'JO'));
+    expect(other).not.toBe('JO-00500');
+    expect(other).toMatch(/^JO-\d{5}$/);
   });
 });
 

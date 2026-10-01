@@ -845,3 +845,42 @@ Tests: `tests/sync-clock.test.ts` (site trio):
 - a borrowed-phone punch keeps its flag through host and cloud;
 - a desk punch photo reaches host and cloud under the same name, and a website punch photo reaches the
   PCs.
+
+## 21. Phase 4b as built (2026-10-01): site number blocks + production offline
+
+### Site number blocks (`src/sync/numberblocks.ts`, `sequences.ts`)
+The cloud remembers every number series in use (`sync_seq_keys`, noted whenever `nextSequence` runs
+on it). A site host asks for blocks on each round (`POST /api/sync/sequence-blocks`, host token only):
+- for every series in use, the first time;
+- afterwards, for series it needed and ran low on (fewer than 10 left).
+
+The cloud leases 50 at a time per series, moves its own counter past the block, and records the lease
+(`sync_seq_leases`). The host issues **real numbers** from its blocks (`sync_seq_blocks`) for its own work
+and when it replays a LAN PC's command (the PC's provisional number becomes real there). With a block
+used up it issues provisional ones, or keeps the PC's, and asks for more. The cloud keeps a host-issued
+number only if it lies in a block it leased to *that* site (`decidingSite`). Otherwise it issues its own
+and counts a plan miss. Numbers are unique but not in date order across sites; a retired host leaves gaps.
+
+### Production (`modules/manufacturing`)
+
+| Class | Routes |
+|---|---|
+| `physical` | job order release (parts out), kit accept, progress, units (photo travels via `syncUpload`), unit QC/QA inspection, products-in, batch inspection |
+| `merge` | new job order, new batch, report a repair, report a production issue, RTS check (a dry run) |
+| `claim` (a job order's decisions → the site of its source location, else the main site) | edit, schedule, components, approve / unapprove, purchase shortfall, pause / resume / cancel / close / delete, unit identifier; company-wide: warehouse accept, kit preparation (pick), BOM, checklists, teams, capacity, labels, unit allocation, repair accept / reject / cancel, issue edits |
+
+**Checks relaxed under sync:**
+- **D1**, parts release short on stock: accepted inside a synced command, with the location going below
+  zero and a discrepancy opened.
+- **D6 clash-checks** (kept + flagged in Site decision clashes):
+  - picking a kit the cloud now has too little stock for;
+  - approving a job order the cloud approved meanwhile.
+
+Production cost postings use the action's own date (`today()` on `now()`).
+
+**What the tests showed.** `tests/sync-production.test.ts` runs a whole production run on the host with the
+internet down: real MO number from its block, approval, warehouse steps, release, kit, units with photos,
+QC and products-in. It reaches the cloud identically, photos included. The first version of the D1 test also
+exposed that a kit **picked** at the site was re-refused on the cloud when stock had been taken elsewhere
+meanwhile, which also made the release fail. Marking the pick's stock check as a D6 clash-check fixed it. The
+release then lands, the cloud's stock goes to −2, and a discrepancy is opened.

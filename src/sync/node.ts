@@ -154,6 +154,26 @@ const SCHEMA = `
     size      INTEGER NOT NULL,
     pushed_at TEXT
   );
+  -- Site number blocks (§21). Cloud: the blocks it leased each host, and every series in use.
+  -- Host: its blocks, and the series it needed.
+  CREATE TABLE IF NOT EXISTS sync_seq_leases (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    host_node_no INTEGER NOT NULL,
+    key          TEXT NOT NULL,
+    first        INTEGER NOT NULL,
+    last         INTEGER NOT NULL,
+    leased_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS sync_seq_keys (key TEXT PRIMARY KEY);
+  CREATE TABLE IF NOT EXISTS sync_seq_blocks (
+    key  TEXT NOT NULL,
+    next INTEGER NOT NULL,
+    last INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS sync_seq_wanted (
+    key       TEXT PRIMARY KEY,
+    wanted_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
   -- Confirmed effects, in authority order (the authority's outgoing stream).
   CREATE TABLE IF NOT EXISTS sync_effects (
     authority_seq INTEGER PRIMARY KEY AUTOINCREMENT,

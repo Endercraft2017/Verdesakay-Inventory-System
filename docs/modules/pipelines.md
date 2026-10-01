@@ -69,6 +69,11 @@ match) — a known, deliberate shortcut for warehouse speed, not a bug.
 
 ## Production / manufacturing run
 
+**Offline (phase 4b, docs/OFFLINE-FIRST.md §21):** the whole run works at a site with the internet
+down — floor events are `physical`, decisions are made at the job order's site (its source location,
+else the main site), numbers come from the site host's leased blocks; a release short on stock is
+accepted and flagged (D1); a pick or approval the cloud would now refuse stands, flagged (D6).
+
 **Trigger:** a job order is created (`manufacturing`) — manually, or as a draft
 raised by the sales-order shortfall flow.
 

@@ -8,6 +8,7 @@ import { applyStockChange, transferStock, getDefaultLocationId } from '../invent
 import { explode, rollupCost, whereUsed } from './bom-explode';
 import { dbBomResolvers } from './bom-resolvers';
 import type { BomComponent, InventoryItem, JobOrderUnit } from '../../shared/types';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -135,7 +136,7 @@ router.get('/:id/where-used', requirePermission('inventory.view'), (req, res) =>
 });
 
 // PUT /api/finished-products/:id — mark as a finished product + replace its BOM
-router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
+router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT id FROM inventory_items WHERE id = ?', id);
   if (!item) {
@@ -215,7 +216,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
 // inventory.edit — deciding which checklist enforces a stage is a QC decision, not a BOM
 // edit — so it works from the QC/QA inspection queue's side panel when a unit shows up
 // with no checklist (production-qc.js), without requiring BOM-edit rights.
-router.patch('/:id/checklist', requirePermission('qc.configure'), (req, res) => {
+router.patch('/:id/checklist', requirePermission('qc.configure'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });
@@ -263,7 +264,7 @@ router.get('/:id/units', requirePermission('inventory.view'), (req, res) => {
 
 // POST /api/finished-products/:id/units/allocate — sell or relocate in-stock units.
 // Only units that have passed QA/QC (status = 'in_stock') can be allocated.
-router.post('/:id/units/allocate', requirePermission('inventory.adjust'), (req, res) => {
+router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
   if (!item) { res.status(404).json({ error: 'Item not found' }); return; }
@@ -349,7 +350,7 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), (req, 
 });
 
 // DELETE /api/finished-products/:id — unflag + drop the BOM (the item itself stays)
-router.delete('/:id', requirePermission('inventory.edit'), (req, res) => {
+router.delete('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });

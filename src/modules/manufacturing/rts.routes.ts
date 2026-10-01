@@ -6,6 +6,7 @@ import { queryAll, queryOne } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { parseBody } from '../../shared/validation';
 import { locationError, unitBlockers, openHolds } from './rts';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -76,7 +77,7 @@ const checkSchema = z.object({
 
 /* POST /api/rts/check — the final duplicate / hold / location check before posting (74:234).
    Writes nothing; products-in re-runs the same checks atomically when the clerk confirms. */
-router.post('/check', receiveGate, (req, res) => {
+router.post('/check', receiveGate, syncClass('merge'), (req, res) => {
   const input = parseBody(checkSchema, req.body);
   res.json({
     blockers: unitBlockers(input.unit_ids),

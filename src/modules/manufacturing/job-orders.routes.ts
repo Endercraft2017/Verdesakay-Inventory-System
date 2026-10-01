@@ -26,18 +26,28 @@ import {
 import { imageUpload, saveAttachment, unlink } from '../../core/attachments.routes';
 import { enforceQuota } from '../../platform/quota';
 import { pickListHtml } from './parts-slip-print';
-import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory/inventory-stock';
+import { applyStockChange, stockAt, getDefaultLocationId, overdrawAllowed } from '../inventory/inventory-stock';
 import { postJobOrderMovement, jobOrderWipBalance } from '../accounting/accounting-autopost';
 import { createDraftPurchaseOrders } from '../inventory/orders.routes';
 import { checklistForProduct } from './qc.routes';
 import { locationError, unitBlockers } from './rts';
 import type { JobOrder, JobOrderComponent, JobOrderUnit, InventoryItem, ProductionReceipt } from '../../shared/types';
+import { recordSiteClash, syncClass } from '../../sync';
+import { syncUpload } from '../../sync/files';
+import { now, siteDecisionStands } from '../../shared/sync-context';
 
 const router = Router();
 router.use(requireAuth);
 
 const readGate = requirePermission('inventory.view');
 const writeGate = requirePermission('inventory.adjust');
+/** A job order's decisions belong to the site of its source (parts) location; one without one is
+ *  company-wide (the main site) — docs/OFFLINE-FIRST.md §16. */
+const joSite = {
+  home: (req: Request) => ({
+    location: queryOne<{ source_location_id: number | null }>('SELECT source_location_id FROM job_orders WHERE id = ?', Number(req.params.id))?.source_location_id ?? null,
+  }),
+};
 // Narrow alternatives to writeGate for the actions a dedicated shop-floor role
 // (production_lead / qc_inspector / qa_inspector / receiving_clerk — see
 // shared/permissions.ts) performs without needing full inventory.adjust. inventory.adjust
@@ -71,7 +81,8 @@ function logLineEvent(jobOrderId: number, action: 'pause' | 'resume' | 'close_ea
   run('INSERT INTO job_order_events (job_order_id, action, reason, actor_id) VALUES (?, ?, ?, ?)', jobOrderId, action, reason, userId);
 }
 
-const today = (): string => new Date().toISOString().slice(0, 10);
+// The action's own date under sync (an offline production record keeps its day) — §20.
+const today = (): string => now().toISOString().slice(0, 10);
 const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /** Standard-cost value of a job order's components: `released` = Σ qty_planned × unit_cost
@@ -543,7 +554,7 @@ export function createDraftJobOrder(opts: {
 }
 
 // POST /api/job-orders — create a draft; snapshots the product's BOM
-router.post('/', writeGate, (req, res) => {
+router.post('/', writeGate, syncClass('merge'), (req, res) => {
   const input = parseBody(createJobOrderSchema, req.body);
   const product = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', input.product_item_id);
   if (!product) {
@@ -585,7 +596,7 @@ router.post('/', writeGate, (req, res) => {
 });
 
 // PUT /api/job-orders/:id — edit a draft (recomputes planned qty if qty_ordered changed)
-router.put('/:id', writeGate, (req, res) => {
+router.put('/:id', writeGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) {
@@ -643,7 +654,7 @@ router.put('/:id', writeGate, (req, res) => {
 
 // PUT /api/job-orders/:id/schedule — reassign the team / re-plan an open job order
 // (team, planned start, due date, priority, work centre — allowed after release too).
-router.put('/:id/schedule', writeGate, (req, res) => {
+router.put('/:id/schedule', writeGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -674,7 +685,7 @@ router.put('/:id/schedule', writeGate, (req, res) => {
 // component lines that aren't on the product's BOM (draft only). A line already on the
 // job order is updated; a new one is inserted (qty_per_unit defaults to the planned
 // quantity spread over the ordered quantity).
-router.put('/:id/components', writeGate, (req, res) => {
+router.put('/:id/components', writeGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) {
@@ -809,7 +820,7 @@ function warehouseStepError(jo: JobOrder | null, needAccepted: boolean): { statu
 
 // POST /api/job-orders/warehouse-accept — the warehouse takes on one or more approved drafts
 // for preparing. All-or-nothing; already-accepted ones are left as they are.
-router.post('/warehouse-accept', writeGate, (req, res) => {
+router.post('/warehouse-accept', writeGate, syncClass('claim'), (req, res) => {
   const { job_order_ids } = parseBody(jobOrderIdsSchema, req.body);
   const ids = [...new Set(job_order_ids)];
   for (const id of ids) {
@@ -831,7 +842,7 @@ router.post('/warehouse-accept', writeGate, (req, res) => {
 // full. A job order whose every line is fully picked is marked prepared (ready to release);
 // a partial pick is saved but leaves it preparing. Picks are checked against on-hand stock
 // minus what other unreleased kits already set aside. All-or-nothing.
-router.post('/prepare', writeGate, (req, res) => {
+router.post('/prepare', writeGate, syncClass('claim'), (req, res) => {
   const { job_orders } = parseBody(prepareJobOrdersSchema, req.body);
   const ids = job_orders.map((j) => j.id);
   if (new Set(ids).size !== ids.length) { res.status(400).json({ error: 'The same job order is listed twice' }); return; }
@@ -877,11 +888,13 @@ router.post('/prepare', writeGate, (req, res) => {
     const available = stockAt(d.itemId, d.loc) - pickedElsewhere(d.itemId, d.loc, ids);
     if (d.qty > available) short.push({ component_item_id: d.itemId, component_name: d.name, picking: d.qty, available: Math.max(0, available) });
   }
-  if (short.length) {
-    res.status(400).json({
-      error: 'Not enough stock to pick — ' + short.map((s) => `${s.component_name}: picking ${s.picking}, available ${s.available}`).join('; '),
-      shortfalls: short,
-    });
+  const shortText = short.map((s) => `${s.component_name}: picking ${s.picking}, available ${s.available}`).join('; ');
+  // Clash-check (D6): the site picked when its records said the stock was there; by the time the
+  // cloud re-runs it, stock may have been taken elsewhere. The site's pick stands — flagged.
+  if (short.length && siteDecisionStands()) {
+    recordSiteClash(req, `Parts were picked at the site, but by the time it synced the cloud had less stock — ${shortText}.`);
+  } else if (short.length) {
+    res.status(400).json({ error: 'Not enough stock to pick — ' + shortText, shortfalls: short });
     return;
   }
 
@@ -940,7 +953,7 @@ router.get('/:id/availability', readGate, (req, res) => {
 // POST /api/job-orders/:id/approve — the production manager signs off the draft (quantity,
 // locations, components) so the warehouse may release its parts. Short stock doesn't block
 // approval (purchasing can fill the gap before release); the response lists it as a warning.
-router.post('/:id/approve', approveGate, (req, res) => {
+router.post('/:id/approve', approveGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -949,6 +962,13 @@ router.post('/:id/approve', approveGate, (req, res) => {
     return;
   }
   if (jo.approved_at) {
+    // Clash-check (D6): approved elsewhere meanwhile — the site's approval stands (the first
+    // approval is kept), flagged for an admin.
+    if (siteDecisionStands()) {
+      recordSiteClash(req, `Job order ${jo.number} was approved on the cloud and at the site; the first approval was kept.`);
+      res.json({ ok: true, clash: true, job_order: loadJobOrder(id), shortfalls: jobOrderComponentShortfalls(id) });
+      return;
+    }
     res.status(409).json({ error: `Already approved by ${jo.approved_by_name ?? 'a manager'}` });
     return;
   }
@@ -961,7 +981,7 @@ router.post('/:id/approve', approveGate, (req, res) => {
 });
 
 // POST /api/job-orders/:id/unapprove — withdraw the approval of a not-yet-released draft.
-router.post('/:id/unapprove', approveGate, (req, res) => {
+router.post('/:id/unapprove', approveGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT status, approved_at FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -977,7 +997,7 @@ router.post('/:id/unapprove', approveGate, (req, res) => {
 
 // POST /api/job-orders/:id/purchase-shortfall — draft purchase order(s) for the components
 // this job order can't cover from its source location, grouped by supplier.
-router.post('/:id/purchase-shortfall', writeGate, (req, res) => {
+router.post('/:id/purchase-shortfall', writeGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT number FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -996,7 +1016,7 @@ router.post('/:id/purchase-shortfall', writeGate, (req, res) => {
 // lines. Issuing it IS the release — planned components leave the source location here.
 // Needs approval → warehouse acceptance → a fully picked kit. Photos of the kit attach
 // afterwards as `attachments` kind 'parts_release' on the slip id.
-router.post('/:id/release', writeGate, (req, res) => {
+router.post('/:id/release', writeGate, syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) {
@@ -1021,7 +1041,9 @@ router.post('/:id/release', writeGate, (req, res) => {
   }
   const input = parseBody(releaseJobOrderSchema, req.body ?? {});
   const shortfalls = jobOrderComponentShortfalls(id);
-  if (shortfalls.length) {
+  // Offline (D1): the kit physically left the warehouse — accepted, and any location that goes
+  // below zero is flagged as a stock discrepancy by applyStockChange.
+  if (shortfalls.length && !overdrawAllowed()) {
     res.status(400).json({
       error: `Not enough stock at ${jo.source_location_name ?? 'the source location'} — `
         + shortfalls.map((s) => `${s.component_name}: need ${s.need}, have ${s.have}`).join('; '),
@@ -1072,7 +1094,7 @@ router.post('/:id/release', writeGate, (req, res) => {
 // POST /api/job-orders/:id/accept — the production lead signs for the parts kit the
 // warehouse released. Records who/when (+ optional handover notes); no stock movement —
 // the parts already left the source location at /release. Unlocks recording output.
-router.post('/:id/accept', recordGate, (req, res) => {
+router.post('/:id/accept', recordGate, syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) {
@@ -1100,7 +1122,7 @@ router.post('/:id/accept', recordGate, (req, res) => {
 });
 
 // POST /api/job-orders/:id/progress — record finished / scrapped units
-router.post('/:id/progress', recordGate, (req, res) => {
+router.post('/:id/progress', recordGate, syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) {
@@ -1209,7 +1231,7 @@ router.post('/:id/progress', recordGate, (req, res) => {
 // call with the same label adds to that job order's open batch of it). A non-serialized
 // (qc_stages = 0) job order has no individual unit to attach either to, so it still
 // records output as a batch quantity via /progress, unchanged.
-router.post('/:id/units', recordGate, imageUpload.single('image'), (req, res) => {
+router.post('/:id/units', recordGate, syncClass('physical'), syncUpload(imageUpload.single('image')), (req, res) => {
   // The photo arrives with the unit (multipart field `image`), so a unit can't reach QC
   // without one. Any refusal below deletes the uploaded file again.
   const file = req.file;
@@ -1326,7 +1348,7 @@ function maybeCloseBatches(joId: number): void {
 // POST /api/job-orders/:id/pause  &  /resume — no stock movement
 // (inventory.adjust, or production.pause for a line lead trusted to hold the line — e.g. to
 // switch to a higher-priority job order). The reason and who paused are kept until resume.
-router.post('/:id/pause', pauseGate, (req, res) => {
+router.post('/:id/pause', pauseGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1345,7 +1367,7 @@ router.post('/:id/pause', pauseGate, (req, res) => {
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
-router.post('/:id/resume', pauseGate, (req, res) => {
+router.post('/:id/resume', pauseGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1365,7 +1387,7 @@ router.post('/:id/resume', pauseGate, (req, res) => {
 });
 
 // POST /api/job-orders/:id/cancel — return unconsumed components, close it out
-router.post('/:id/cancel', writeGate, (req, res) => {
+router.post('/:id/cancel', writeGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1392,7 +1414,7 @@ router.post('/:id/cancel', writeGate, (req, res) => {
 });
 
 // POST /api/job-orders/:id/close — force-complete early, returning unused components
-router.post('/:id/close', closeEarlyGate, (req, res) => {
+router.post('/:id/close', closeEarlyGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1422,7 +1444,7 @@ router.post('/:id/close', closeEarlyGate, (req, res) => {
 });
 
 // DELETE /api/job-orders/:id — only a never-released draft
-router.delete('/:id', writeGate, (req, res) => {
+router.delete('/:id', writeGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT status FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1479,7 +1501,7 @@ router.get('/:id/qc', readGate, (req, res) => {
 });
 
 // POST /api/job-orders/:id/units/inspect — pass/fail one or more pending units
-router.post('/:id/units/inspect', inspectDoorGate, (req, res) => {
+router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) {
@@ -1671,7 +1693,7 @@ router.get('/:id/receivable', readGate, (req, res) => {
 
 // POST /api/job-orders/:id/products-in — "Products In": receive produced output into stock
 // at a chosen location (the Purchasing Goods Receipt pattern mirrored for production).
-router.post('/:id/products-in', receiveGate, (req, res) => {
+router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1789,7 +1811,7 @@ router.post('/:id/products-in', receiveGate, (req, res) => {
 });
 
 // PUT /api/job-orders/:id/units/:unitId/identifier — set / clear a unit's identifier
-router.put('/:id/units/:unitId/identifier', recordGate, (req, res) => {
+router.put('/:id/units/:unitId/identifier', recordGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const unitId = Number(req.params.unitId);
   const unit = queryOne<JobOrderUnit>(

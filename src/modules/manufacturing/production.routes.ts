@@ -42,6 +42,7 @@ import { checklistForProduct } from './qc.routes';
 import type {
   JobOrder, JobOrderUnit, ProductionBatch, ProductionTeam, ProductionTeamMember, RepairPartRequest,
 } from '../../shared/types';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -112,7 +113,7 @@ router.get('/units/:unitId/repairs', readGate, (req, res) => {
 });
 
 // POST /api/production/units/:unitId/repairs — production raises a parts request
-router.post('/units/:unitId/repairs', inspectGate, (req, res) => {
+router.post('/units/:unitId/repairs', inspectGate, syncClass('merge'), (req, res) => {
   const unitId = Number(req.params.unitId);
   const unit = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ?', unitId);
   if (!unit) { res.status(404).json({ error: 'Unit not found' }); return; }
@@ -146,7 +147,7 @@ router.post('/units/:unitId/repairs', inspectGate, (req, res) => {
 });
 
 // POST /api/production/repairs/:id/accept — warehouse issues the part (stock moves now)
-router.post('/repairs/:id/accept', repairsGate, (req, res) => {
+router.post('/repairs/:id/accept', repairsGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
@@ -210,7 +211,7 @@ router.post('/repairs/:id/accept', repairsGate, (req, res) => {
 });
 
 // POST /api/production/repairs/:id/reject — warehouse declines (no stock movement)
-router.post('/repairs/:id/reject', repairsGate, (req, res) => {
+router.post('/repairs/:id/reject', repairsGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const r = queryOne<RepairPartRequest>('SELECT status FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
@@ -280,7 +281,7 @@ router.get('/teams/:id', readGate, (req, res) => {
 });
 
 // POST /api/production/teams
-router.post('/teams', writeGate, (req, res) => {
+router.post('/teams', writeGate, syncClass('claim'), (req, res) => {
   const input = parseBody(productionTeamSchema, req.body);
   const info = run(
     'INSERT INTO production_teams (name, notes, is_active) VALUES (?, ?, ?)',
@@ -290,7 +291,7 @@ router.post('/teams', writeGate, (req, res) => {
 });
 
 // PUT /api/production/teams/:id
-router.put('/teams/:id', writeGate, (req, res) => {
+router.put('/teams/:id', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const team = queryOne<ProductionTeam>('SELECT * FROM production_teams WHERE id = ?', id);
   if (!team) { res.status(404).json({ error: 'Team not found' }); return; }
@@ -306,7 +307,7 @@ router.put('/teams/:id', writeGate, (req, res) => {
 });
 
 // DELETE /api/production/teams/:id — blocked while a job order still points at it
-router.delete('/teams/:id', writeGate, (req, res) => {
+router.delete('/teams/:id', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM production_teams WHERE id = ?', id)) {
     res.status(404).json({ error: 'Team not found' });
@@ -322,7 +323,7 @@ router.delete('/teams/:id', writeGate, (req, res) => {
 });
 
 // POST /api/production/teams/:id/members  { employee_id, role? }
-router.post('/teams/:id/members', writeGate, (req, res) => {
+router.post('/teams/:id/members', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM production_teams WHERE id = ?', id)) {
     res.status(404).json({ error: 'Team not found' });
@@ -345,7 +346,7 @@ router.post('/teams/:id/members', writeGate, (req, res) => {
 });
 
 // DELETE /api/production/teams/:id/members/:employeeId
-router.delete('/teams/:id/members/:employeeId', writeGate, (req, res) => {
+router.delete('/teams/:id/members/:employeeId', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const info = run(
     'DELETE FROM production_team_members WHERE team_id = ? AND employee_id = ?',
@@ -359,7 +360,7 @@ router.delete('/teams/:id/members/:employeeId', writeGate, (req, res) => {
 router.get('/capacity', readGate, (_req, res) => {
   res.json({ daily_capacity: Number(getSetting<number>(CAPACITY_KEY)) || 0 });
 });
-router.put('/capacity', writeGate, (req, res) => {
+router.put('/capacity', writeGate, syncClass('claim'), (req, res) => {
   const { daily_capacity } = parseBody(productionCapacitySchema, req.body);
   setSetting(CAPACITY_KEY, daily_capacity);
   res.json({ daily_capacity });
@@ -417,7 +418,7 @@ router.get('/batches/:id', readGate, (req, res) => {
 });
 
 // POST /api/production/batches — create one by hand (grouping / relabelling)
-router.post('/batches', writeGate, (req, res) => {
+router.post('/batches', writeGate, syncClass('merge'), (req, res) => {
   const input = parseBody(createBatchSchema, req.body);
   if (input.job_order_id && !queryOne('SELECT id FROM job_orders WHERE id = ?', input.job_order_id)) {
     res.status(400).json({ error: 'Job order not found' });
@@ -444,7 +445,7 @@ router.post('/batches', writeGate, (req, res) => {
 });
 
 // PUT /api/production/batches/:id — relabel / re-note / change status
-router.put('/batches/:id', writeGate, (req, res) => {
+router.put('/batches/:id', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const batch = queryOne<ProductionBatch>('SELECT * FROM production_batches WHERE id = ?', id);
   if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
@@ -465,7 +466,7 @@ router.put('/batches/:id', writeGate, (req, res) => {
 // a quality record (this batch's `status` open<->closed here means "signed off", not
 // "received") — independent of Products In, which is what actually posts the batch's stock
 // (see job-orders.routes.ts POST /:id/products-in).
-router.post('/batches/:id/inspect', inspectGate, (req, res) => {
+router.post('/batches/:id/inspect', inspectGate, syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const batch = queryOne<ProductionBatch>('SELECT * FROM production_batches WHERE id = ?', id);
   if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
@@ -553,7 +554,7 @@ router.get('/label-templates', readGate, (_req, res) => {
 });
 
 // PUT /api/production/label-templates — save one or both; '' / null resets to default
-router.put('/label-templates', writeGate, (req, res) => {
+router.put('/label-templates', writeGate, syncClass('claim'), (req, res) => {
   const body = (req.body ?? {}) as { unit?: unknown; batch?: unknown };
   if (body.unit !== undefined) {
     const v = typeof body.unit === 'string' ? body.unit.trim() : '';
@@ -668,7 +669,7 @@ router.get('/record', readGate, (req, res) => {
 });
 
 // POST /api/production/repairs/:id/cancel — pull a request back before the warehouse acts
-router.post('/repairs/:id/cancel', inspectGate, (req, res) => {
+router.post('/repairs/:id/cancel', inspectGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const r = queryOne<RepairPartRequest>('SELECT status FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }

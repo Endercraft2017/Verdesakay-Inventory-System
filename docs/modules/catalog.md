@@ -91,7 +91,8 @@ replay as actor), `authority.ts` (effects, `acceptCommand`, `pullFor`, `snapshot
 `/api/sync/*`, stripped snapshot), `client.ts` (enrol, adopt, `syncWithCloud`, `startSyncLoop`,
 connection state, host/LAN enrolment, members refresh), `status.ts` (`/api/sync/status`, `/activity`,
 `/now`), `sites.ts` (home sites, site decisions, `/api/sync/sites`, `/api/sync/clashes`), `files.ts`
-(uploads offline: `syncUpload`, blob store, file list, `/api/sync/blobs`, `/api/sync/files`); CLI
+(uploads offline: `syncUpload`, blob store, file list, `/api/sync/blobs`, `/api/sync/files`),
+`numberblocks.ts` (site number blocks: `/api/sync/sequence-blocks`, leases, host blocks); CLI
 `scripts/sync-enrol.ts` (`npm run sync:enrol`). Frontend (desktop): `public/js/lib/sync-status.js`
 (top-bar pill + "not final" toast, fed by the `X-Sync-State` hook in `public/js/api.js`),
 `public/js/modules/core/sync.js` (route `sync`: PC status/inbox, or Installed PCs on the cloud).
@@ -325,6 +326,12 @@ take `status` (`pass|issue|na`; only `pass` satisfies a required check) and `val
 result takes `repair {category, station, priority}`, stored in `qc_repair_details` (createSchema,
 no version bump). Checklist items take `group`, `measure`, `hint`.
 Tests: `tests/qc-inspection-v2.test.ts`.
+**Offline (sync/, phase 4b):** every mutating route is classed — floor events (release, kit accept,
+progress, units + photo, QC/QA inspection, products-in, batch inspection) `physical`; new job orders /
+batches / repair and issue reports `merge`; decisions `claim` (a job order's → its source-location
+site, else the main site). Release short on stock is accepted + flagged (D1); kit pick short on the
+cloud and double approval are D6 clash-checks. Numbers (MO, BATCH, PRS, PI, RPR) come from the
+site host's number blocks offline.
 **Status:** working. Open gaps from the 2026-09-27 walkthrough:
 `docs/PRODUCTION-WALKTHROUGH-GAPS.md`.
 

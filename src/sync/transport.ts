@@ -36,6 +36,7 @@ import { linkStatusOf } from './client';
 import { enableSync, isAuthority, isCloudOnlySetting, isNodeLocalTable, syncConfigOf } from './node';
 import type { CommandResult, SyncCommand } from './commands';
 import { fileRoutes } from './files';
+import { numberBlockRoutes } from './numberblocks';
 
 const router = Router();
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
@@ -71,6 +72,8 @@ function nodesSpokenFor(conn: import('node:sqlite').DatabaseSync, nodeNo: number
 
 // Files: blobs a PC's commands carry, and the authority's list of uploaded files (§18).
 router.use(fileRoutes(nodeAuth));
+// Document-number blocks leased to site hosts (§21).
+router.use(numberBlockRoutes(nodeAuth));
 
 // ---- enrolment (admin) ----
 

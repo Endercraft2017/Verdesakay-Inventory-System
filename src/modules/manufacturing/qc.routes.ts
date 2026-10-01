@@ -10,6 +10,7 @@ import { db, queryOne, queryAll, run } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { parseBody, qcChecklistSchema } from '../../shared/validation';
 import type { QcChecklist, QcChecklistItem } from '../../shared/types';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -68,7 +69,7 @@ router.get('/checklists/:id', (req, res) => {
 });
 
 // POST /api/qc/checklists — qc.configure
-router.post('/checklists', requirePermission('qc.configure'), (req, res) => {
+router.post('/checklists', requirePermission('qc.configure'), syncClass('claim'), (req, res) => {
   const input = parseBody(qcChecklistSchema, req.body);
   db.exec('BEGIN');
   try {
@@ -88,7 +89,7 @@ router.post('/checklists', requirePermission('qc.configure'), (req, res) => {
 });
 
 // PUT /api/qc/checklists/:id — qc.configure
-router.put('/checklists/:id', requirePermission('qc.configure'), (req, res) => {
+router.put('/checklists/:id', requirePermission('qc.configure'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM qc_checklists WHERE id = ?', id)) {
     res.status(404).json({ error: 'Checklist not found' }); return;
@@ -110,7 +111,7 @@ router.put('/checklists/:id', requirePermission('qc.configure'), (req, res) => {
 });
 
 // DELETE /api/qc/checklists/:id — qc.configure (products lose the link via ON DELETE SET NULL)
-router.delete('/checklists/:id', requirePermission('qc.configure'), (req, res) => {
+router.delete('/checklists/:id', requirePermission('qc.configure'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM qc_checklists WHERE id = ?', Number(req.params.id));
   if (!info.changes) { res.status(404).json({ error: 'Checklist not found' }); return; }
   res.json({ ok: true });

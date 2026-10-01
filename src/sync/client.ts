@@ -18,6 +18,7 @@ import type { CommandResult } from './commands';
 import type { PullResult } from './authority';
 import { blobPath, blobsOf, filePath, registerFile } from './files';
 import { openForPc, sealForPc } from '../desktop/pc-secret';
+import { seriesToRefill, storeBlocks } from './numberblocks';
 
 export interface RemoteConfig {
   /** The authority this copy syncs with: the cloud, or its site host. */
@@ -216,7 +217,10 @@ async function cloudRound(slug: string): Promise<{ round: CloudRound; upstream?:
   // Uploaded files made elsewhere (on the cloud, other PCs) — fetch the ones this copy lacks.
   await pullFiles(conn, slug, remote, cfg.isHost === true);
   // A site host keeps its list of LAN PCs current, to let them in while the cloud is away.
-  if (cfg.isHost) await refreshMembers(conn, remote, headers);
+  if (cfg.isHost) {
+    await refreshMembers(conn, remote, headers);
+    await refillNumberBlocks(conn, remote, headers);
+  }
   return { round: { pushed, rebase }, upstream: raw.upstream };
 }
 
@@ -258,6 +262,18 @@ async function pullFiles(conn: DatabaseSync, slug: string, remote: RemoteConfig,
       conn.prepare('UPDATE sync_node SET last_file_seq = ? WHERE k = 1').run(f.seq);
     }
   }
+}
+
+/** A site host keeps a block of real document numbers for each series it uses (§21); the first
+ *  time, it asks for every series the cloud has in use. */
+async function refillNumberBlocks(conn: DatabaseSync, remote: RemoteConfig, headers: Record<string, string>): Promise<void> {
+  const hasAny = conn.prepare('SELECT 1 FROM sync_seq_blocks LIMIT 1').get();
+  const keys = hasAny ? seriesToRefill(conn) : ['*', ...seriesToRefill(conn)];
+  if (!keys.length) return;
+  const blocks = await jsonOrThrow<Array<{ key: string; first: number; last: number }>>(
+    await call(`${remote.cloudUrl}/api/sync/sequence-blocks`, { method: 'POST', headers, body: JSON.stringify({ keys }) }),
+    'Reserving document numbers');
+  storeBlocks(conn, blocks);
 }
 
 async function refreshMembers(conn: DatabaseSync, remote: RemoteConfig, headers: Record<string, string>): Promise<void> {
