@@ -725,9 +725,14 @@ minimized.
       "unknown publisher" on PCs that haven't trusted the company certificate.
 - [ ] **App icon**: the build uses Electron's default icon (`build.win.icon` in `package.json`, plus
       the window icon in `electron/main.cjs`).
-- [ ] **Downloadable installer**: GitHub Release (a private repo means only collaborators can
-      download it) built by a GitHub Actions workflow on a version tag; later a "Download the app"
-      button in Admin → Installed PCs.
+- [~] **Downloadable installer.** Two parts:
+      - Built: `.github/workflows/desktop-release.yml` builds on a `desktop-v*` tag (or by hand) and
+        attaches the installer to a **draft** GitHub Release. A private repo means only collaborators can
+        download it, and nothing is published until someone publishes the draft.
+      - Built as **work in progress**: Admin → Installed PCs → "Download the desktop app"
+        (`GET /api/desktop/installer[/info]`, admin-only, `src/desktop/desktop.routes.ts`). It shows
+        "coming soon" until an installer is placed in `DESKTOP_INSTALLER_DIR` on the server.
+      - Not done: publishing. Per the user, nothing is uploaded until the app is finished.
 - [ ] **Auto-update** (needs the release feed above; until then, run a newer installer over the old
       one: data is kept).
 - [ ] **Mobile sync UI**: design dependency (Figma), §14.

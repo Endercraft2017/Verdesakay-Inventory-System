@@ -55,6 +55,7 @@ import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost } from './
 import { requireModule, moduleEnabled } from './shared/modules';
 import { BEHIND_PROXY } from './shared/hosting';
 import { installSync, replayTenantOf, syncRequestMiddleware, syncRoutes } from './sync';
+import desktopRoutes from './desktop/desktop.routes';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -176,6 +177,8 @@ export function createApp() {
   // Installed PCs enrol and sync here (node-token auth; src/sync/transport.ts). Before the
   // bare-'/api' routers, whose blanket requireAuth would 401 a node token.
   app.use('/api/sync', syncRoutes);
+  // The desktop app's installer download (work in progress: nothing published yet).
+  app.use('/api/desktop', desktopRoutes);
   app.use('/api/confidential-reports', confidentialReportRoutes);
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
   app.use('/api/tenant', tenantRoutes); // current workspace plan / status / usage

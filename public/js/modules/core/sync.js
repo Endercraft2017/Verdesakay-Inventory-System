@@ -96,10 +96,11 @@ App.register('sync', async (view) => {
         straight away.</p></div>`;
       return;
     }
-    const [pcs, sites, clashes] = await Promise.all([
+    const [pcs, sites, clashes, installer] = await Promise.all([
       API.get('/sync/nodes'),
       API.get('/sync/sites'),
       API.get('/sync/clashes'),
+      API.get('/desktop/installer/info').catch(() => ({ available: false })),
     ]);
     const origin = location.origin;
     const hostName = (no) => (sites.hosts.find((h) => h.node_no === no) || { name: '#' + no }).name;
@@ -147,6 +148,16 @@ App.register('sync', async (view) => {
           </tr>`).join('')}</tbody></table>
       </div>` : ''}
       <div class="panel">
+        <h3>Download the desktop app</h3>
+        ${installer.available
+          ? `<p class="muted small">${UI.esc(installer.file)} · ${UI.fmtBytes(installer.size)} · built ${UI.fmtDate(installer.built_at)}.
+              Copy it to the PC and run it — it installs for that Windows user, no admin rights needed.</p>
+             <button class="btn" id="dl-installer">Download the app</button>`
+          : `<p class="muted small"><span class="badge-pill">Work in progress</span> The installer will be available here once the
+              desktop app is finished.</p>
+             <button class="btn" disabled>Download the app (coming soon)</button>`}
+      </div>
+      <div class="panel">
         <h3>Set up a PC to work offline</h3>
         <p class="muted small">On the PC (with this app's files), as an admin of this workspace:</p>
         <pre class="code-block">SYNC_ENROL_PASSWORD=your-password npm run sync:enrol -- --cloud ${UI.esc(origin)} --user your-username --name "PC name" --as-host</pre>
@@ -155,6 +166,8 @@ App.register('sync', async (view) => {
         <p class="muted small">Then start it with <code>DEPLOY_MODE=node</code>. A setup screen replaces this step once the
           desktop installer exists.</p>
       </div>`;
+    const dl = view.querySelector('#dl-installer');
+    if (dl) dl.onclick = () => API.download('/desktop/installer', installer.file);
     const save = view.querySelector('#site-save');
     if (save) save.onclick = async () => {
       const val = (sel) => (sel.value ? Number(sel.value) : null);
