@@ -12,6 +12,7 @@ import { isValidKioskCode, punchBlockedReason } from './clock';
 import { recordFieldPunch } from './field';
 import { punchPhotoRoutes } from './punch-photos';
 import { requireKioskDevice } from './kiosk-devices';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -31,7 +32,7 @@ router.get('/recent', requirePermission('hr.view'), (req, res) => {
   res.json(rows);
 });
 
-router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, (req, res) => {
+router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, syncClass('physical'), (req, res) => {
   const { code, employee_no } = parseBody(kioskPunchSchema, req.body);
   if (!isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code is not current. Use the code on the screen.' });

@@ -34,6 +34,24 @@ import { linkStatusOf } from './client';
 import { commandBody, indexFiles } from './files';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** Request headers a replay must send again — and nothing else: a kiosk punch is re-checked
+ *  against the same approved kiosk on the authority (§20). */
+export const REPLAYED_HEADERS = ['x-kiosk-token'];
+
+/** What a command remembers about its request besides method / path / body (§20). */
+function requestContext(req: Request): string | null {
+  const headers: Record<string, string> = {};
+  for (const h of REPLAYED_HEADERS) {
+    const v = req.get(h);
+    if (v) headers[h] = v;
+  }
+  const ctx: { headers?: Record<string, string>; session?: { shared: boolean } } = {};
+  if (Object.keys(headers).length) ctx.headers = headers;
+  // A borrowed-phone sign-in marks a phone punch "borrowed"; the replay must know it too.
+  if (req.authSession) ctx.session = { shared: !!req.authSession.shared };
+  return Object.keys(ctx).length ? JSON.stringify(ctx) : null;
+}
 const DEVICE_ID_RE = /^[A-Za-z0-9-]{8,64}$/; // same rule as the X-Device-Id the clients send
 
 function deviceIdOf(req: Request): string | null {
@@ -69,6 +87,9 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
       ...(cfg.role === 'node' && cmd.unattributed !== 1 ? { effective: [] } : {}),
     };
     setReplayActor(req, cmd.actor_user_id != null ? authUserById(cmd.actor_user_id) ?? undefined : undefined);
+    // The original sign-in's nature (a borrowed phone) as the route saw it (§20).
+    const session = (() => { try { return (JSON.parse(cmd.context ?? 'null') ?? {}).session; } catch { return null; } })();
+    if (session) req.authSession = { sid: 'sync-replay', shared: !!session.shared, device_id: cmd.device_id, last_seen_at: null, last_ip: null };
     rememberReplayContext(replay.mode, cmd.id, ctx);
     syncStore.run(ctx, next);
     return;
@@ -196,6 +217,7 @@ async function recordCommand(
         allocation_plan: anon ? '[]' : JSON.stringify(ctx.plan),
         app_version: APP_VERSION,
         unattributed: anon ? 1 : 0,
+        context: anon ? null : requestContext(req),
       }, { state: 'local', local_changeset: changes, response_status: res.statusCode });
     } catch (e) {
       console.error('[sync] failed to record a command:', e);

@@ -43,6 +43,7 @@ import {
   importPunchesForPeriod, ROTATE_SECONDS, punchBlockedReason, type PunchDevice,
 } from './clock';
 import { punchPhotoRoutes } from './punch-photos';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -86,17 +87,17 @@ router.get('/kiosk-devices', requirePermission('hr.view'), (req, res) => {
   });
 });
 
-router.post('/kiosk-devices', requirePermission('hr.manage'), (req, res) => {
+router.post('/kiosk-devices', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const { name } = parseBody(kioskDeviceSchema, req.body);
   res.status(201).json(approveKioskDevice(name, req.user!.id));
 });
 
-router.delete('/kiosk-devices/:id', requirePermission('hr.manage'), (req, res) => {
+router.delete('/kiosk-devices/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   if (!revokeKioskDevice(Number(req.params.id))) { res.status(404).json({ error: 'Kiosk device not found' }); return; }
   res.json({ ok: true });
 });
 
-router.put('/kiosk-lock', requirePermission('hr.manage'), (req, res) => {
+router.put('/kiosk-lock', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const { enabled } = parseBody(kioskLockSchema, req.body);
   setKioskLock(enabled);
   res.json({ lock_active: kioskLockActive(), lock_setting: kioskLockSetting() });
@@ -123,7 +124,7 @@ router.get('/recent', requirePermission('hr.view'), (req, res) => {
   res.json(rows.map(({ employee_id, work_date, ...r }) => ({ ...r, recorded: recordedBrackets(employee_id, work_date) })));
 });
 
-router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, (req, res) => {
+router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, syncClass('physical'), (req, res) => {
   const { code, employee_no } = parseBody(kioskPunchSchema, req.body);
   if (!isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code is not current. Use the code on the screen.' });
@@ -145,7 +146,7 @@ router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, (r
   res.json(recordPunch(emp, 'kiosk', null));
 });
 
-router.post('/correct', requirePermission('hr.view'), requireKioskDevice, (req, res) => {
+router.post('/correct', requirePermission('hr.view'), requireKioskDevice, syncClass('physical'), (req, res) => {
   const { code, employee_no, slot } = parseBody(kioskCorrectSchema, req.body);
   if (!isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code is not current. Use the code on the screen.' });
@@ -176,7 +177,7 @@ router.use('/photo', punchPhotoRoutes('attendance', (punchId) =>
 // Phone punch. With the kiosk QR (`code`), or — only for employees exempt from the office
 // location lock (clock_anywhere) — without it, from wherever they are. The location rules are
 // in clock-geofence.ts's checkPunchLocation.
-router.post('/punch', (req, res) => {
+router.post('/punch', syncClass('physical'), (req, res) => {
   const { code, location } = parseBody(phonePunchSchema, req.body);
   const emp = linkedEmployee(req.user!.id);
   if (!emp) {
@@ -237,13 +238,13 @@ router.get('/geofence', requirePermission('hr.view'), (_req, res) => {
   res.json(getGeofence());
 });
 
-router.put('/geofence', requirePermission('hr.manage'), (req, res) => {
+router.put('/geofence', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   res.json(setGeofence(parseBody(clockGeofenceSchema, req.body)));
 });
 
 // --- HR reconciliation ---
 
-router.post('/import/:periodId', requirePermission('hr.manage'), (req, res) => {
+router.post('/import/:periodId', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.periodId);
   if (!queryOne('SELECT id FROM attendance_periods WHERE id = ?', periodId)) {
     res.status(404).json({ error: 'Cutoff period not found' });

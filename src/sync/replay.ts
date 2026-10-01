@@ -97,7 +97,7 @@ export interface ReplayResponse {
 
 export async function dispatchCommand(
   slug: string,
-  cmd: { id: string; method: string; path: string; body: string; device_id: string | null },
+  cmd: { id: string; method: string; path: string; body: string; device_id: string | null; context?: string | null },
   mode: ReplayMode,
 ): Promise<ReplayResponse> {
   const base = await internalBase();
@@ -111,6 +111,11 @@ export async function dispatchCommand(
     [H_MODE]: mode,
   };
   if (cmd.device_id) headers['x-device-id'] = cmd.device_id; // the audit row keeps the real device
+  // Allow-listed headers the original request carried (a kiosk's approval token, §20).
+  try {
+    const saved = (JSON.parse(cmd.context ?? 'null') ?? {}).headers as Record<string, string> | undefined;
+    for (const [k, v] of Object.entries(saved ?? {})) if (k === 'x-kiosk-token' && typeof v === 'string') headers[k] = v;
+  } catch { /* no context */ }
   const res = await fetch(base + cmd.path, {
     method: cmd.method,
     headers,

@@ -115,7 +115,8 @@ const SCHEMA = `
     plan_misses      INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    dismissed_at     TEXT
+    dismissed_at     TEXT,
+    context          TEXT                        -- allow-listed request facts a replay needs (§20)
   );
   CREATE INDEX IF NOT EXISTS idx_sync_commands_state ON sync_commands(state, node_seq);
   -- The PCs this authority accepts: on the cloud, every enrolled PC (a host's LAN PCs carry
@@ -172,6 +173,7 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ['sync_remote', 'tenant', 'ALTER TABLE sync_remote ADD COLUMN tenant TEXT'],
   ['sync_node', 'host_node_no', 'ALTER TABLE sync_node ADD COLUMN host_node_no INTEGER'],
   ['sync_node', 'last_file_seq', 'ALTER TABLE sync_node ADD COLUMN last_file_seq INTEGER NOT NULL DEFAULT 0'],
+  ['sync_commands', 'context', 'ALTER TABLE sync_commands ADD COLUMN context TEXT'],
 ];
 
 /** `sync_commands` created before the `host_confirmed` state existed has a CHECK that rejects

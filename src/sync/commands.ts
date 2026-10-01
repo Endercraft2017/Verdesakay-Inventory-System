@@ -32,6 +32,8 @@ export interface SyncCommand {
   allocation_plan: string;
   app_version: string;
   unattributed: number;
+  /** Request facts a replay must reproduce (§20): `{ headers?: { 'x-kiosk-token' }, session?: { shared } }`. */
+  context?: string | null;
 }
 
 export interface CommandRow extends SyncCommand {
@@ -63,7 +65,7 @@ export const APP_VERSION: string = (() => {
 
 const COMMAND_COLUMNS = [
   'id', 'node_no', 'node_seq', 'hlc', 'occurred_at', 'occurred_date', 'actor_user_id', 'device_id',
-  'method', 'path', 'body', 'sync_class', 'allocation_plan', 'app_version', 'unattributed',
+  'method', 'path', 'body', 'sync_class', 'allocation_plan', 'app_version', 'unattributed', 'context',
 ] as const;
 
 /** Next node_seq + HLC for a command made on this DB. */
@@ -82,7 +84,7 @@ export function insertCommand(
 ): void {
   const cols = [...COMMAND_COLUMNS, 'state', 'local_changeset', 'response_status'];
   conn.prepare(`INSERT INTO sync_commands (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(
-    ...COMMAND_COLUMNS.map((c) => cmd[c]),
+    ...COMMAND_COLUMNS.map((c) => cmd[c] ?? null),
     extra.state,
     extra.local_changeset ?? null,
     extra.response_status ?? null,

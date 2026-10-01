@@ -801,3 +801,47 @@ dev PC).
 Tests: `tests/desktop-pc-secret.test.ts` (seal/open, wrong or missing secret, sealed sync token, encrypted
 TLS keys with a real handshake, upgrade of earlier plain keys, the BitLocker mapping). Smoke: the shell
 with real DPAPI (`pc-secret.bin` holds only ciphertext).
+
+## 20. Phase 4a as built (2026-10-01): the time clock offline
+
+**Classes.**
+
+| Route | Class | Offline behaviour |
+|---|---|---|
+| `POST /api/hr/clock/kiosk-punch`, `/correct`, `POST /api/hr/clock/punch` (phone), `POST /api/hr/field/kiosk-punch`, punch photos (`POST …/photo/:punchId`) | `physical` | Always work offline: a punch records something that happened |
+| kiosk approval / revoke, kiosk lock, office location lock, punch import | `claim` | Company-wide: decided offline at the main site |
+
+**A punch keeps its own time.** All time logic in `clock.ts` uses `now()`: the QR code's window, the
+local date and time, the 45-second repeat guard, and the hours so far. That is the real time, or the
+time the punch happened while it is recorded or replayed. A punch made at 07:58 with the internet down
+is stored as 07:58 on every copy, and its kiosk code is checked against the window it was scanned in,
+not the window it synced in. The SQL side (`datetime('now','localtime')`) was already on the
+command's clock (§10).
+
+**Request context** (`sync_commands.context`, the new optional `context` field of a command). This is an
+allow-listed set of request facts a replay must reproduce, and nothing more:
+- the kiosk's approval token (`X-Kiosk-Token`). A punch from a locked kiosk is re-checked against the
+  same approved kiosk on the authority. A kiosk revoked on the cloud meanwhile has its offline punch
+  rejected and undone everywhere;
+- whether the sign-in was a borrowed phone (`session.shared`). A phone punch keeps its `borrowed`
+  flag on the cloud.
+
+Not carried: whether a phone is "usually someone else's". The authority judges that from its own sign-in
+history, which for phones that only ever used a site host is empty.
+
+**Punch photos** travel with their command (`syncUpload`). In a command they are named after it
+(`p-attendance-<punch>-<command>.jpg`), so every copy agrees. Photos added on the website reach the PCs
+through the file lane (§18), `kiosk-punches/` included.
+
+**Per-copy bookkeeping is never written on a PC.** `kiosk_devices.last_seen_at` was stamped whenever a
+kiosk's token was checked, including on plain page loads. On an installed PC that is a write outside any
+command, which the guard refuses for actions; on a page load it would silently make the row drift. PCs now
+skip it (`isInstalledCopy()` in `src/sync`); the cloud stamps it when it replays the kiosk's punches. This is
+the first concrete case of the §10 "page loads that write" limit. The general check is still phase 6.
+
+Tests: `tests/sync-clock.test.ts` (site trio):
+- a punch backdated 2 h keeps its minute, and its code is validated for that window;
+- a locked kiosk is re-checked on the cloud, and a kiosk revoked meanwhile is rejected and undone;
+- a borrowed-phone punch keeps its flag through host and cloud;
+- a desk punch photo reaches host and cloud under the same name, and a website punch photo reaches the
+  PCs.

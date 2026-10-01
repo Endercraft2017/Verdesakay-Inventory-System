@@ -6,6 +6,8 @@
  */
 import type { Express } from 'express';
 import { syncHooks } from '../shared/sync-context';
+import { activeDb } from '../shared/db';
+import { syncConfigOf as configOf } from './node';
 import { wrapPrepared } from './ids';
 import { syncedSequence } from './sequences';
 import { replayUserOf, setReplayApp } from './replay';
@@ -49,6 +51,13 @@ export async function syncOnce(nodeSlug: string, cloudSlug: string, nodeNo: numb
 export { syncClass, syncRequestMiddleware } from './capture';
 export { replayTenantOf } from './replay';
 export { enableSync, syncConfigOf, isAuthority, isNodeLocalTable, NODE_RANGE } from './node';
+
+/** True on an installed PC's copy (DEPLOY_MODE=node data). Per-copy bookkeeping — "last seen"
+ *  stamps and the like — must not be written there outside a command: the row would drift from
+ *  the cloud's and break the next sync of it (docs/OFFLINE-FIRST.md §10, §20). */
+export function isInstalledCopy(): boolean {
+  return configOf(activeDb())?.role === 'node';
+}
 export { acceptCommand, pullFor, snapshotForNode, flushEffects } from './authority';
 export { applyConfirmed, pendingCommands, lastAuthoritySeq, SyncDivergenceError } from './rebase';
 export { SyncBlockedError } from './ids';

@@ -345,6 +345,10 @@ snapshot). Not linked to Inventory stock — issuing moves no stock.
    borrowed-phone sign-in, or from a phone another account usually uses, is recorded with a
    `device_flag` for HR to review in the Punch Log — never refused (a forgotten phone is a real
    reason; see "Account session" above).
+   - **Offline (phase 4a, docs/OFFLINE-FIRST.md §20):** punches, corrections and punch photos are
+     `physical` — they work on an installed PC / its site host with the internet down and keep the
+     minute they happened; the kiosk code is checked for that minute, a locked kiosk is re-checked
+     on the cloud, a borrowed phone stays flagged, photos travel with the punch.
 1. **Attendance reconciliation** (`hr`) — punches/kiosk data reconciled into
    `attendance_records` (lunch bracket, offsets, corrections all applied before
    this point). HR links request forms per day on the Daily Time grid. Rest-day branch

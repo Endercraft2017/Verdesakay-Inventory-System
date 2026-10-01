@@ -402,6 +402,10 @@ for review only (never blocked), `device_flag` — `borrowed` (borrowed-phone si
 **Dependencies:** `modules/payroll` (pay computation + statutory tables),
 `modules/accounting` (`accounting-autopost.ts`, to post payroll to the ledger),
 `platform/` (photo-retention settings).
+**Offline (sync/, phase 4a):** time-clock punches, corrections, field kiosk punches and punch
+photos are `physical`; kiosk approval / lock, location lock and punch import are `claim` (main
+site). `clock.ts` runs on `now()` (the punch's own time under sync); `kiosk-devices.ts` never
+stamps `last_seen_at` on an installed PC. Other HR routes are not classed yet (refused offline).
 **Status:** working.
 
 ## modules/payroll

@@ -8,6 +8,7 @@
  */
 import crypto from 'node:crypto';
 import { getSetting, setSetting, queryOne, queryAll, run } from '../../shared/db';
+import { now } from '../../shared/sync-context';
 import type { PunchGeo } from './clock-geofence';
 
 export const ROTATE_SECONDS = 60;
@@ -23,8 +24,11 @@ function hmacKey(): string {
   return k;
 }
 
+// `now()` is the real time, or — while a synced punch is recorded or replayed — the time the punch
+// happened (docs/OFFLINE-FIRST.md §20): an offline punch keeps its time, and its kiosk code is
+// checked against the window it was scanned in.
 function windowNow(): number {
-  return Math.floor(Date.now() / 1000 / ROTATE_SECONDS);
+  return Math.floor(now().getTime() / 1000 / ROTATE_SECONDS);
 }
 
 function codeFor(win: number): string {
@@ -34,7 +38,7 @@ function codeFor(win: number): string {
 /** The code the kiosk should be showing right now, plus how long it's good for. */
 export function currentKioskCode(): { code: string; window: number; seconds_left: number } {
   const win = windowNow();
-  const elapsed = Math.floor(Date.now() / 1000) % ROTATE_SECONDS;
+  const elapsed = Math.floor(now().getTime() / 1000) % ROTATE_SECONDS;
   return { code: codeFor(win), window: win, seconds_left: ROTATE_SECONDS - elapsed };
 }
 
@@ -78,7 +82,7 @@ function policy(): ClockPolicy {
 }
 
 function localParts(): { date: string; hm: string; hour: number } {
-  const d = new Date(); // the server runs on-site, so this is office-local time
+  const d = now(); // office-local time (the server runs on-site / TZ is the office's)
   const p = (n: number) => String(n).padStart(2, '0');
   return {
     date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
@@ -201,7 +205,7 @@ function hoursToday(punches: PunchRow[]): number {
     if (p.kind === 'in') openAt = t;
     else if (openAt != null) { total += t - openAt; openAt = null; }
   }
-  if (openAt != null) total += Date.now() - openAt;
+  if (openAt != null) total += now().getTime() - openAt;
   return Math.round((total / 3_600_000) * 100) / 100;
 }
 
@@ -246,7 +250,7 @@ export function recordPunch(
 
   const last = prior[prior.length - 1];
   if (last) {
-    const gap = Date.now() - new Date(last.ts.replace(' ', 'T')).getTime();
+    const gap = now().getTime() - new Date(last.ts.replace(' ', 'T')).getTime();
     if (gap >= 0 && gap < 45_000) {
       return {
         ok: true, duplicate: true, id: last.id, employee_id: employee.id, employee_name: employee.name,

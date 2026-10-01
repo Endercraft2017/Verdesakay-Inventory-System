@@ -21,6 +21,9 @@ import { queryOne, queryAll, run, uploadDir, tenantStore, DEFAULT_TENANT } from 
 import { getTenant } from '../../platform/platform';
 import { requirePermission } from '../../shared/auth';
 import { PUNCH_PHOTOS_SUBDIR } from '../../shared/backup';
+import { syncClass } from '../../sync';
+import { syncUpload } from '../../sync/files';
+import { syncContext } from '../../shared/sync-context';
 
 function currentSlug(): string {
   return tenantStore.getStore()?.slug ?? DEFAULT_TENANT;
@@ -109,7 +112,11 @@ export function savePunchPhoto(
   sourcePath: string,
   fileSize: number
 ): { id: number } {
-  const fileName = `p-${punchKind}-${punchId}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.jpg`;
+  // In a synced command the name comes from the command, so every copy stores the same one (§18).
+  const cmd = syncContext()?.commandId?.toLowerCase();
+  const fileName = cmd
+    ? `p-${punchKind}-${punchId}-${cmd}.jpg`
+    : `p-${punchKind}-${punchId}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.jpg`;
   fs.renameSync(sourcePath, path.join(photoDir(), fileName));
 
   const existing = queryOne<PhotoRow>(
@@ -181,7 +188,9 @@ export function punchPhotoRoutes(
 ): Router {
   const router = Router();
 
-  router.post('/:punchId', requirePermission('hr.view'), uploadTmp.single('photo'), (req, res) => {
+  // A punch photo records something that happened at the kiosk: `physical`, and the photo
+  // travels with the command (docs/OFFLINE-FIRST.md §18, §20).
+  router.post('/:punchId', requirePermission('hr.view'), syncClass('physical'), syncUpload(uploadTmp.single('photo')), (req, res) => {
     const punchId = Number(req.params.punchId);
     const punch = Number.isInteger(punchId) ? lookupPunch(punchId) : undefined;
     if (!punch) {
