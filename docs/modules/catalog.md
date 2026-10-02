@@ -403,7 +403,9 @@ holders without `inventory.adjust` (reason required), plus the line-decision his
 applied by `POST /job-orders/:id/products-in` before any write (409 `{blockers}` for a unit already
 in finished goods, a serial already in stock on another unit of the same product, a unit not yet
 passed, or an open `Product-data mismatch` production issue; 400 `{location_error}` for a missing
-or truck location). `rts.routes.ts` at `/api/rts`: `GET /queue` (passed units across job orders
+or truck location, or one without room for the posting under its capacity — `location_capacities`,
+createSchema, set per location on `POST|PUT /api/locations {capacity}` and returned by `GET /api/locations`;
+room = capacity − the sum of stock there). `rts.routes.ts` at `/api/rts`: `GET /queue` (passed units across job orders
 with final-pass record and hold, receivable batches, the caller's postings today),
 `POST /check` (same rules, no writes), `GET /lookup?q=&status=ready|allocated|hold`
 (`inventory.view`). `production.receive` may file production issues (the mismatch report).

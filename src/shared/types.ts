@@ -267,6 +267,8 @@ export interface LocationRow {
   /** Joined in by GET /api/locations. */
   total_units?: number;
   item_count?: number;
+  /** Room in units of stock (location_capacities), null = no limit. */
+  capacity?: number | null;
 }
 
 export interface InventoryStockRow {

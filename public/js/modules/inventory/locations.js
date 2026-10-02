@@ -38,7 +38,7 @@ App.register('locations', async (view) => {
       <table>
         <thead><tr>
           <th>Location</th><th>Type</th><th>Address</th>
-          <th class="right">Units</th><th class="right">Items</th><th></th>
+          <th class="right">Units</th><th class="right">Capacity</th><th class="right">Items</th><th></th>
         </tr></thead>
         <tbody>${all.map((l) => `
           <tr class="clickable" data-open="${l.id}">
@@ -46,6 +46,7 @@ App.register('locations', async (view) => {
             <td style="text-transform:capitalize">${UI.esc(l.type)}</td>
             <td>${UI.esc(l.address || '—')}</td>
             <td class="right">${l.total_units || 0}</td>
+            <td class="right">${l.capacity ? `<span class="${(l.total_units || 0) >= l.capacity ? 'danger' : 'muted'}">${l.capacity}${(l.total_units || 0) >= l.capacity ? ' · full' : ''}</span>` : '<span class="muted">—</span>'}</td>
             <td class="right">${l.item_count || 0}</td>
             <td class="actions">
               ${canWrite ? `
@@ -84,6 +85,8 @@ App.register('locations', async (view) => {
           <select data-f="type">${typeOpts}</select></div>
         <div class="form-field inline"><label class="check-opt">
           <input type="checkbox" data-f="is_default" ${l && l.is_default ? 'checked' : ''} /> Default location</label></div>
+        <div class="form-field"><div class="field-label"><label>Capacity (units)</label></div>
+          <input data-f="capacity" type="number" min="1" step="1" placeholder="No limit" value="${l && l.capacity ? l.capacity : ''}" /></div>
         <div class="form-field span2"><div class="field-label"><label>Address</label></div>
           <input data-f="address" value="${UI.esc(l && l.address || '')}" /></div>
         <div class="form-field span2"><div class="field-label"><label>Notes</label></div>
@@ -96,6 +99,8 @@ App.register('locations', async (view) => {
           name: g('name').value.trim(), type: g('type').value,
           address: g('address').value.trim(), notes: g('notes').value.trim(),
           is_default: g('is_default').checked,
+          // Ready-to-sell posting refuses what wouldn't fit; empty = no limit.
+          capacity: g('capacity').value.trim() ? Number(g('capacity').value) : null,
         };
         if (!body.name) { showErr('Name is required'); return false; }
         if (l) await API.put('/locations/' + l.id, body);

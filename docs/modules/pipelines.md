@@ -280,7 +280,9 @@ raised by the sales-order shortfall flow.
      job order, online-only with an idempotency key. **Branch — duplicate:** a unit already in
      finished goods or a serial already in stock is refused (409, existing receipt shown), zero
      stock change; the clerk removes it from the group. **Branch — location:** a truck/transit or
-     missing location is refused (400); the clerk picks another storage location. **Branch —
+     missing location, or one without room under its capacity (location_capacities), is refused
+     (400); the clerk picks another storage location — the picker shows each location's room and
+     greys out a full one. **Branch —
      mismatch:** a `Product-data mismatch` production issue holds the unit (Issues tab; posting
      409s) until QA / inventory control resolve it. Read-only finished-goods lookup by serial,
      SKU, receipt or location (`GET /api/rts/lookup`).

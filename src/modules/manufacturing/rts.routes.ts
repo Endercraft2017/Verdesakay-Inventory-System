@@ -81,7 +81,7 @@ router.post('/check', receiveGate, syncClass('merge'), (req, res) => {
   const input = parseBody(checkSchema, req.body);
   res.json({
     blockers: unitBlockers(input.unit_ids),
-    location_error: input.location_id ? locationError(input.location_id) : null,
+    location_error: input.location_id ? locationError(input.location_id, input.unit_ids.length) : null,
   });
 });
 

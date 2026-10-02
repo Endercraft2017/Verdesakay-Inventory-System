@@ -13,9 +13,18 @@ router.use(requireAuth);
 const LIST_SQL = `
   SELECT l.*,
          (SELECT COALESCE(SUM(s.quantity), 0) FROM inventory_stock s WHERE s.location_id = l.id) AS total_units,
-         (SELECT COUNT(*) FROM inventory_stock s WHERE s.location_id = l.id AND s.quantity <> 0) AS item_count
+         (SELECT COUNT(*) FROM inventory_stock s WHERE s.location_id = l.id AND s.quantity <> 0) AS item_count,
+         (SELECT c.max_units FROM location_capacities c WHERE c.location_id = l.id) AS capacity
   FROM locations l
 `;
+
+/** Set (a positive number) or clear (null) a location's capacity; undefined leaves it. */
+function setCapacity(id: number, capacity: number | null | undefined): void {
+  if (capacity === undefined) return;
+  if (capacity === null) run('DELETE FROM location_capacities WHERE location_id = ?', id);
+  else run(`INSERT INTO location_capacities (location_id, max_units) VALUES (?, ?)
+            ON CONFLICT(location_id) DO UPDATE SET max_units = excluded.max_units, updated_at = datetime('now')`, id, capacity);
+}
 
 /** Make exactly one location the default (clears the flag on all others). */
 function setSoleDefault(id: number): void {
@@ -74,6 +83,7 @@ router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req
     (isFirst || input.is_default) ? 1 : 0
   );
   const id = Number(info.lastInsertRowid);
+  setCapacity(id, input.capacity);
   if (isFirst || input.is_default) setSoleDefault(id);
   res.status(201).json({ id });
 });
@@ -98,6 +108,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim', ownSi
     input.notes !== undefined ? input.notes : existing.notes,
     id
   );
+  setCapacity(id, input.capacity);
   if (input.is_default) setSoleDefault(id);
   res.json({ ok: true });
 });

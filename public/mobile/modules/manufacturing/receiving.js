@@ -220,10 +220,15 @@
       '<div class="rk-checks" data-opts></div>' +
       R.note('info', '<h3>Location integrity</h3>Do not record a temporary or production-floor location as ready-to-sell storage.') +
       R.actions([{ id: 'rts-use', label: 'Use selected location', kind: 'primary' }, { id: 'rts-cancel', label: 'Cancel', kind: 'secondary' }]);
+    // A location with a capacity shows its room; one without room for this posting can't be picked.
+    var need = draft.ids.length || 1;
+    var room = function (l) { return l.capacity ? Math.max(0, l.capacity - (l.total_units || 0)) : null; };
     function paint() {
       body.querySelector('[data-opts]').innerHTML = opts.length ? opts.map(function (l) {
-        return '<div class="rk-check-row"><button type="button" data-l="' + l.id + '"><span class="rk-state ' + (l.id === sel ? 'pass' : '') + '" aria-hidden="true">' + (l.id === sel ? '✓' : '○') + '</span>' +
-          '<b>' + mEsc(l.name) + '</b><small>' + mEsc(cap(l.type) + (l.is_default ? ' · default' : '') + (u.output_location_id === l.id ? ' · job order output' : '')) + '</small></button></div>';
+        var r = room(l), full = r !== null && r < need;
+        return '<div class="rk-check-row"><button type="button"' + (full ? ' disabled' : ' data-l="' + l.id + '"') + '><span class="rk-state ' + (full ? 'issue' : l.id === sel ? 'pass' : '') + '" aria-hidden="true">' + (full ? '!' : l.id === sel ? '✓' : '○') + '</span>' +
+          '<b>' + mEsc(l.name) + '</b><small>' + mEsc(cap(l.type) + (l.is_default ? ' · default' : '') + (u.output_location_id === l.id ? ' · job order output' : '') +
+            (r === null ? '' : full ? ' · full (room for ' + r + ')' : ' · room for ' + r)) + '</small></button></div>';
       }).join('') : '<div class="rk-empty">No storage locations set up. Ask an admin to add one.</div>';
       Array.prototype.forEach.call(body.querySelectorAll('[data-l]'), function (b) { b.onclick = function () { sel = Number(b.dataset.l); paint(); }; });
     }

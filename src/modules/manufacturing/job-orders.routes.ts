@@ -1803,8 +1803,9 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
   const input = parseBody(productsInSchema, req.body);
-  // Ready-to-sell storage only (rts.ts): a missing or transit (truck) location is refused.
-  const locErr = locationError(input.location_id);
+  // Ready-to-sell storage only (rts.ts): a missing or transit (truck) location, or one without
+  // room for what is coming in, is refused.
+  const locErr = locationError(input.location_id, (input.unit_ids ?? []).length || input.quantity || 0);
   if (locErr) {
     res.status(400).json({ error: locErr, location_error: true });
     return;

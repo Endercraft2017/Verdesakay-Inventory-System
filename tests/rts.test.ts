@@ -75,6 +75,25 @@ describe('RTS desk', () => {
     expect(await stock()).toBe(before);
   });
 
+  it('refuses a location without room under its capacity, until the capacity allows it', async () => {
+    const bay = (await ctx.api.post('/api/locations').set(H()).send({ name: 'FG-B01', type: 'warehouse', capacity: 2 })).body.id;
+    const filler = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Crate RTS', quantity: 0 })).body.id;
+    await ctx.api.post(`/api/inventory/${filler}/adjust`).set(H()).send({ change: 1, location_id: bay, reason: 'stock' });
+    expect((await ctx.api.get(`/api/locations/${bay}`).set(H())).body).toMatchObject({ capacity: 2, total_units: 1 });
+    const before = await stock();
+    const chk = await ctx.api.post('/api/rts/check').set(bearer(clerk.token)).send({ unit_ids: [units[1], units[2]], location_id: bay });
+    expect(chk.body.location_error).toMatch(/room for only 1 more \(capacity 2, 1 in use\)/);
+    const r = await ctx.api.post(`/api/job-orders/${jo}/products-in`).set(bearer(clerk.token)).send({ location_id: bay, unit_ids: [units[1], units[2]] });
+    expect(r.status).toBe(400);
+    expect(r.body.location_error).toBe(true);
+    expect(await stock()).toBe(before);
+    // One fits; clearing the capacity lifts the limit.
+    expect((await ctx.api.post('/api/rts/check').set(bearer(clerk.token)).send({ unit_ids: [units[1]], location_id: bay })).body.location_error).toBeNull();
+    await ctx.api.put(`/api/locations/${bay}`).set(H()).send({ capacity: null });
+    expect((await ctx.api.get(`/api/locations/${bay}`).set(H())).body.capacity).toBeNull();
+    expect((await ctx.api.post('/api/rts/check').set(bearer(clerk.token)).send({ unit_ids: [units[1], units[2]], location_id: bay })).body.location_error).toBeNull();
+  });
+
   it('posts once, then blocks a second posting and a duplicate serial with the existing record', async () => {
     const ok = await ctx.api.post(`/api/job-orders/${jo}/products-in`).set(bearer(clerk.token)).send({ location_id: warehouse, unit_ids: [units[0]] });
     expect(ok.status).toBe(201);

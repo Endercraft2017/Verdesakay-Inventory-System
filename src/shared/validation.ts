@@ -236,6 +236,8 @@ export const createLocationSchema = z.object({
   address: trimmed.max(500).optional().nullable(),
   notes: optionalText,
   is_default: boolish.optional(),
+  // Room in units of stock; null / empty clears it (no limit).
+  capacity: z.preprocess((v) => (v === '' ? null : v), z.coerce.number().int().positive('Capacity must be a positive whole number').max(10_000_000).nullable()).optional(),
 });
 export const updateLocationSchema = createLocationSchema.partial().extend({
   name: trimmed.min(1, 'Location name is required').max(120).optional(),

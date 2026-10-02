@@ -1,7 +1,8 @@
 /** Ready-to-sell (RTS) recording rules, shared by POST /job-orders/:id/products-in (desktop
  *  Products In + mobile RTS desk) and the RTS pre-check (/api/rts/check): a finished unit posts
  *  to stock once — never twice, and never under a serial that is already in finished goods —
- *  only into a storage location, and not while a product-data mismatch report holds it. Every
+ *  only into a storage location with room for it (location_capacities, when set), and not while a
+ *  product-data mismatch report holds it. Every
  *  refusal happens before any write, so a blocked post makes zero stock change. */
 import { queryOne, queryAll } from '../../shared/db';
 
@@ -34,12 +35,27 @@ export interface UnitBlocker {
   issue_id?: number;
 }
 
-/** Null when `locationId` can receive ready-to-sell stock, else why not. */
-export function locationError(locationId: number): string | null {
+/** Null when `locationId` can receive `incoming` units of ready-to-sell stock, else why not:
+ *  missing, not storage (a truck), or without room for them under its capacity. */
+export function locationError(locationId: number, incoming = 0): string | null {
   const loc = queryOne<{ name: string; type: string }>('SELECT name, type FROM locations WHERE id = ?', locationId);
   if (!loc) return 'That location does not exist';
   if (!STORAGE_TYPES.has(loc.type)) return `${loc.name} is a ${loc.type} location — ready-to-sell stock needs a storage location`;
+  const room = locationRoom(locationId);
+  if (room && incoming > room.free) {
+    return room.free > 0
+      ? `${loc.name} has room for only ${room.free} more (capacity ${room.capacity}, ${room.used} in use) — ${incoming} won't fit`
+      : `${loc.name} is full (capacity ${room.capacity}, ${room.used} in use)`;
+  }
   return null;
+}
+
+/** A location's capacity, what it holds now and the room left — null when it has no capacity set. */
+export function locationRoom(locationId: number): { capacity: number; used: number; free: number } | null {
+  const cap = queryOne<{ max_units: number }>('SELECT max_units FROM location_capacities WHERE location_id = ?', locationId);
+  if (!cap) return null;
+  const used = queryOne<{ n: number }>('SELECT COALESCE(SUM(quantity), 0) AS n FROM inventory_stock WHERE location_id = ?', locationId)!.n;
+  return { capacity: cap.max_units, used, free: Math.max(0, cap.max_units - used) };
 }
 
 function existingFor(unitId: number): ExistingRecord | undefined {

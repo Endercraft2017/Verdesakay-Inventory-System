@@ -984,6 +984,20 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       };
     }
 
+    it('shows each location\'s room and won\'t let a full one be picked', async () => {
+      const base = fake([]);
+      const win = await bootAs(RTS, (url: string, init: any) => url === '/api/locations'
+        ? [...LOCS, { id: 4, name: 'FG-B01', type: 'warehouse', is_default: 0, capacity: 10, total_units: 10 },
+          { id: 5, name: 'FG-C02', type: 'warehouse', is_default: 0, capacity: 10, total_units: 4 }] : base(url, init));
+      win.location.hash = '#/receiving?unit=601&step=location';
+      await wait(80);
+      const view = win.document.getElementById('m-view');
+      expect(view.textContent).toContain('FG-B01Warehouse · full (room for 0)');
+      expect(view.textContent).toContain('FG-C02Warehouse · room for 6');
+      expect(view.querySelector('[data-l="4"]')).toBeNull();
+      expect(view.querySelector('[data-l="5"]')).not.toBeNull();
+    });
+
     it('lists ready units and keeps a mismatch-held unit under Issues', async () => {
       const win = await bootAs(RTS, fake([]));
       win.location.hash = '#/receiving';

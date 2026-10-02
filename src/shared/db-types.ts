@@ -680,6 +680,12 @@ export interface LinkPreviews {
   failed: Generated<number>;
 }
 
+export interface LocationCapacities {
+  location_id: Generated<number>;
+  max_units: number;
+  updated_at: Generated<string>;
+}
+
 export interface LocationSites {
   location_id: Generated<number>;
   host_node_no: number;
@@ -1416,6 +1422,7 @@ export interface DB {
   journal_lines: JournalLines;
   kiosk_devices: KioskDevices;
   link_previews: LinkPreviews;
+  location_capacities: LocationCapacities;
   location_sites: LocationSites;
   locations: Locations;
   mail_log: MailLog;

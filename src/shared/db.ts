@@ -1353,6 +1353,13 @@ function createSchema(): void {
       qc_record_id  INTEGER NOT NULL REFERENCES qc_records(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_qc_evidence_record ON qc_evidence(qc_record_id);
+    -- Optional room per location, in units of stock (the sum of inventory_stock there). Ready-to-sell
+    -- posting (manufacturing/rts.ts) refuses what wouldn't fit. No row = no limit. createSchema.
+    CREATE TABLE IF NOT EXISTS location_capacities (
+      location_id INTEGER PRIMARY KEY REFERENCES locations(id) ON DELETE CASCADE,
+      max_units   REAL NOT NULL,
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
 
     -- Job-order line decisions (pause / resume / close early) — append-only audit history with
     -- actor and reason; job_orders.pause_* only hold the CURRENT hold. createSchema, no bump.
