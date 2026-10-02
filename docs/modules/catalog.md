@@ -406,6 +406,15 @@ requester or `production.approve` / `inventory.adjust`, never the proposer). Acc
 before any write, a non-storage source (truck), a pending revision, a picked quantity other
 than requested, or a scanned label that isn't the requested SKU. Tables `repair_revisions`,
 `repair_request_events` (createSchema, no bump). Tests: `tests/repair-parts-v2.test.ts`.
+**Stock holds (`stock-holds.ts`):** one answer for stock set aside but not yet issued — draft
+job-order kit picks (`kitPickedAt`) and `repair_part_holds` (createSchema): an open request holds
+its quantity at the first approved source with enough free stock when raised or when its revision
+is approved, and drops it on issue, reject or cancel. `freeFor` (stock − kit picks − other holds)
+gates repair issue (409 `blocked: 'held'`) and the shortage flag; kit picking (`/job-orders/prepare`)
+and the sale-order availability gate count the holds too. Adjustments and transfers are not blocked.
+Pushes to the requester: part issued, rejected, short (also every `inventory.adjust` holder) and a
+revision to approve (opens `#/repairs?id=&step=decide`, the one step open to the requester / a
+supervisor); the proposing clerk hears the decision.
 **Offline (sync/, phase 4b):** every mutating route is classed — floor events (release, kit accept,
 progress, units + photo, QC/QA inspection, products-in, batch inspection) `physical`; new job orders /
 batches / repair and issue reports `merge`; decisions `claim` (a job order's → its source-location

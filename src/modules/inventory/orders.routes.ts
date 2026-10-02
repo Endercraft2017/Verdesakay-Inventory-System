@@ -11,6 +11,7 @@ import { getQboStatus, pushOrder } from '../quickbooks/quickbooks';
 import { maybeAutoPostSale, maybeFulfillSale, unpostSource } from '../accounting/accounting-autopost';
 import { getDefaultLocationId } from './inventory-stock';
 import { createDraftJobOrder } from '../manufacturing/job-orders.routes';
+import { repairHeld } from '../manufacturing/stock-holds';
 import type { Order, OrderItem, OrderType } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
 import { siteDecisionStands } from '../../shared/sync-context';
@@ -295,11 +296,13 @@ export function orderAvailability(orderId: number): {
     const othersCommitted = others?.committed ?? 0;
 
     const on_hand = inv.quantity;
-    const committed_elsewhere = Math.max(0, reservedAll - coveredUnits) + othersReleased + othersCommitted;
+    // Parts held for open repair requests are spoken for too (manufacturing/stock-holds.ts).
+    const repairHeldAll = repairHeld(oi.item_id, null);
+    const committed_elsewhere = Math.max(0, reservedAll - coveredUnits) + othersReleased + othersCommitted + repairHeldAll;
     // Free = on hand, minus every reserved unit, minus what other orders have pulled, minus
     // their un-pulled promises. This order's own reserved units + bulk pulls are still in
     // `free` (not subtracted), so `available` adds only its reserved units back explicitly.
-    const free = Math.max(0, on_hand - reservedAll - othersReleased - othersCommitted);
+    const free = Math.max(0, on_hand - reservedAll - othersReleased - othersCommitted - repairHeldAll);
     const covered_here = coveredUnits + (oi.released_qty || 0);
     const available = free + coveredUnits;
     const shortfall = Math.max(0, oi.quantity - available);

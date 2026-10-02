@@ -7,7 +7,10 @@
  *    - kind 'replace' — a fitted part is swapped; the removed one is booked into its
  *                       damage twin (unless return_to_damage = 0).
  *  Nothing moves until the warehouse ACCEPTS the request — that is when the replacement
- *  is issued from storage and the removed part lands in the damage record. A rework unit
+ *  is issued from storage and the removed part lands in the damage record. Until then the
+ *  request HOLDS its quantity at one approved source (stock-holds.ts), so kit picking, other
+ *  requests and the sale-order gate can't take it. The requester is pushed when the part is
+ *  issued, rejected, short or needs a revision approved. A rework unit
  *  can only be re-inspected once none of its requests are still `requested`
  *  (see job-orders.routes.ts /units/inspect).
  *
@@ -42,6 +45,8 @@ import {
   findOrCreateDamageTwin,
 } from '../inventory/inventory-stock';
 import { checklistForProduct } from './qc.routes';
+import { REPAIR_SOURCE_TYPES, freeFor, holdOf, placeRepairHold, releaseRepairHold } from './stock-holds';
+import { notifyPermission, notifyUser } from '../../shared/push';
 import type {
   JobOrder, JobOrderUnit, ProductionBatch, ProductionTeam, ProductionTeamMember, RepairPartRequest,
 } from '../../shared/types';
@@ -146,6 +151,8 @@ router.post('/units/:unitId/repairs', inspectGate, syncClass('merge'), (req, res
     req.user!.id,
     input.notes ?? null
   );
+  // Set the part aside at an approved source now; none with enough free stock = a shortage.
+  placeRepairHold(Number(info.lastInsertRowid));
   res.status(201).json(loadRequest(Number(info.lastInsertRowid)));
 });
 
@@ -197,6 +204,12 @@ router.post('/repairs/:id/accept', repairsGate, syncClass('claim'), (req, res) =
     res.status(400).json({ error: `Only ${have} of ${r.component_name} at ${loc.name} — need ${r.quantity}.` });
     return;
   }
+  // Stock held for other repair requests or picked for kits isn't this request's to take.
+  const free = freeFor(r.component_item_id, fromLoc, id);
+  if (free < r.quantity) {
+    res.status(409).json({ error: `Only ${Math.max(0, free)} of ${r.component_name} at ${loc.name} is free — the rest is held for other repair requests or kits.`, blocked: 'held' });
+    return;
+  }
   const who = unit ? unitLabel(unit) : `unit #${r.unit_id}`;
 
   db.exec('BEGIN');
@@ -228,10 +241,14 @@ router.post('/repairs/:id/accept', repairsGate, syncClass('claim'), (req, res) =
       warehouse_remarks ?? null,
       id
     );
+    releaseRepairHold(id);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
+  }
+  if (r.requested_by && r.requested_by !== req.user!.id) {
+    void notifyUser(r.requested_by, { title: `Part issued — ${r.number}`, body: `${r.quantity} × ${r.component_name} for ${who}`, url: '#/notifications', tag: `rpr-${id}` });
   }
   res.json(loadRequest(id));
 });
@@ -239,13 +256,17 @@ router.post('/repairs/:id/accept', repairsGate, syncClass('claim'), (req, res) =
 // POST /api/production/repairs/:id/reject — warehouse declines (no stock movement)
 router.post('/repairs/:id/reject', repairsGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
-  const r = queryOne<RepairPartRequest>('SELECT status FROM repair_part_requests WHERE id = ?', id);
+  const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
   if (r.status !== 'requested') {
     res.status(409).json({ error: `Request is already ${r.status}` });
     return;
   }
   const { warehouse_remarks } = parseBody(repairRejectSchema, req.body);
+  releaseRepairHold(id);
+  if (r.requested_by && r.requested_by !== req.user!.id) {
+    void notifyUser(r.requested_by, { title: `Part request rejected — ${r.number}`, body: warehouse_remarks, url: '#/notifications', tag: `rpr-${id}` });
+  }
   run(
     `UPDATE repair_part_requests
      SET status = 'rejected', decided_by = ?, decided_at = datetime('now'),
@@ -257,9 +278,6 @@ router.post('/repairs/:id/reject', repairsGate, syncClass('claim'), (req, res) =
   );
   res.json(loadRequest(id));
 });
-
-/** Location types repair parts may be issued from (rts.ts uses the same storage set). */
-const REPAIR_SOURCE_TYPES = new Set(['warehouse', 'branch', 'store', 'other']);
 
 function repairEvent(requestId: number, kind: string, details: unknown, actorId: number): void {
   run('INSERT INTO repair_request_events (request_id, kind, details, actor_id) VALUES (?, ?, ?, ?)',
@@ -290,8 +308,12 @@ router.get('/repairs/:id/context', readGate, (req, res) => {
   );
   const sources = r.component_item_id == null ? [] : queryAll<{ id: number; name: string; type: string; is_default: number }>(
     'SELECT id, name, type, is_default FROM locations ORDER BY is_default DESC, name COLLATE NOCASE'
-  ).map((l) => ({ ...l, available: stockAt(r.component_item_id!, l.id), approved: REPAIR_SOURCE_TYPES.has(l.type) }))
-    .sort((a, b) => Number(b.approved) - Number(a.approved) || b.available - a.available);
+  ).map((l) => {
+    // free: what this request can take there — stock minus kit picks and other requests' holds.
+    const available = stockAt(r.component_item_id!, l.id);
+    return { ...l, available, free: Math.max(0, freeFor(r.component_item_id!, l.id, id)), approved: REPAIR_SOURCE_TYPES.has(l.type) };
+  }).sort((a, b) => Number(b.approved) - Number(a.approved) || b.free - a.free);
+  const hold = r.status === 'requested' ? holdOf(id) : null;
   const revision = queryOne<Record<string, unknown>>(
     `SELECT v.*, u.full_name AS proposed_by_name FROM repair_revisions v LEFT JOIN users u ON u.id = v.proposed_by
      WHERE v.request_id = ? ORDER BY v.id DESC LIMIT 1`, id
@@ -300,8 +322,8 @@ router.get('/repairs/:id/context', readGate, (req, res) => {
     `SELECT e.kind, e.details, e.created_at, u.full_name AS actor_name FROM repair_request_events e LEFT JOIN users u ON u.id = e.actor_id
      WHERE e.request_id = ? ORDER BY e.id`, id
   );
-  const shortage = r.status === 'requested' && !sources.some((x) => x.approved && x.available >= r.quantity);
-  res.json({ request: r, unit, inspection, item, duplicates, sources, revision, events, shortage });
+  const shortage = r.status === 'requested' && !sources.some((x) => x.approved && x.free >= r.quantity);
+  res.json({ request: r, unit, inspection, item, duplicates, sources, hold, revision, events, shortage });
 });
 
 /* GET /api/production/repair-history?q=&state=issued|rejected|blocked — read-only audit list
@@ -314,9 +336,9 @@ router.get('/repair-history', readGate, (req, res) => {
      ORDER BY r.id DESC LIMIT 500`
   );
   const approved = queryAll<{ id: number }>("SELECT id FROM locations WHERE type IN ('warehouse', 'branch', 'store', 'other')");
-  const stateOf = (r: { status: string; component_item_id: number | null; quantity: number }) =>
+  const stateOf = (r: { id: number; status: string; component_item_id: number | null; quantity: number }) =>
     r.status === 'accepted' ? 'issued' : r.status === 'rejected' ? 'rejected'
-      : r.status === 'requested' && (r.component_item_id == null || !approved.some((l) => stockAt(r.component_item_id!, l.id) >= r.quantity)) ? 'blocked'
+      : r.status === 'requested' && (r.component_item_id == null || !approved.some((l) => freeFor(r.component_item_id!, l.id, r.id) >= r.quantity)) ? 'blocked'
       : r.status;
   const all = rows.map((r) => ({ ...r, state: stateOf(r) }));
   const counts = { issued: 0, rejected: 0, blocked: 0 };
@@ -335,6 +357,11 @@ router.post('/repairs/:id/shortage', repairsGate, syncClass('merge'), (req, res)
   if (r.status !== 'requested') { res.status(409).json({ error: `Request is already ${r.status}` }); return; }
   const { note } = parseBody(repairShortageSchema, req.body);
   repairEvent(id, 'shortage', { note: note ?? null }, req.user!.id);
+  // The repair station waits on it; the warehouse supervisors arrange replenishment.
+  const sr = loadRequest(id)!;
+  const push = { title: `Repair part short — ${sr.number}`, body: `${sr.quantity} × ${sr.component_name} for ${sr.unit_identifier || 'unit #' + sr.unit_id}${note ? ' — ' + note : ''}`, url: '#/notifications', tag: `rpr-${id}` };
+  if (sr.requested_by && sr.requested_by !== req.user!.id) void notifyUser(sr.requested_by, push);
+  void notifyPermission('inventory.adjust', push);
   res.status(201).json({ ok: true });
 });
 
@@ -362,6 +389,10 @@ router.post('/repairs/:id/revision', repairsGate, syncClass('merge'), (req, res)
      VALUES (?, ?, ?, ?, ?, ?)`, id, itemId, item.name, input.quantity, input.reason, req.user!.id
   ).lastInsertRowid);
   repairEvent(id, 'revision_requested', { revision_id: rid, item: item.name, quantity: input.quantity, reason: input.reason }, req.user!.id);
+  if (r.requested_by && r.requested_by !== req.user!.id) {
+    void notifyUser(r.requested_by, { title: `Approve a revision — ${r.number}`, body: `${input.quantity} × ${item.name} instead of ${r.quantity} × ${r.component_name}: ${input.reason}`,
+      url: `#/repairs?id=${id}&step=decide`, tag: `rpr-${id}` });
+  }
   res.status(201).json({ id: rid });
 });
 
@@ -386,12 +417,17 @@ router.post('/repairs/:id/revision/decide', readGate, syncClass('claim'), (req, 
     if (approve) {
       run("UPDATE repair_part_requests SET component_item_id = ?, component_name = ?, quantity = ?, updated_at = datetime('now') WHERE id = ?",
         v.proposed_item_id, v.proposed_name, v.proposed_quantity, id);
+      placeRepairHold(id); // hold the revised part / quantity instead
     }
     repairEvent(id, approve ? 'revision_approved' : 'revision_rejected', { revision_id: v.id, note: note ?? null }, req.user!.id);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
+  }
+  if (v.proposed_by) {
+    void notifyUser(v.proposed_by, { title: `Revision ${approve ? 'approved' : 'rejected'} — ${r.number}`, body: note || (approve ? `Issue ${v.proposed_quantity} × ${v.proposed_name}` : 'Keep the original request'),
+      url: `#/repairs?id=${id}`, tag: `rpr-${id}` });
   }
   res.json(loadRequest(id));
 });
@@ -845,6 +881,7 @@ router.post('/repairs/:id/cancel', inspectGate, syncClass('claim'), (req, res) =
     "UPDATE repair_part_requests SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?",
     id
   );
+  releaseRepairHold(id);
   res.json(loadRequest(id));
 });
 

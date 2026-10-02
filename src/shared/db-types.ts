@@ -1103,6 +1103,14 @@ export interface ReleaseTokenOverrides {
   used_slip_id: number | null;
 }
 
+export interface RepairPartHolds {
+  request_id: Generated<number>;
+  item_id: number;
+  location_id: number;
+  quantity: number;
+  created_at: Generated<string>;
+}
+
 export interface RepairPartRequests {
   id: Generated<number>;
   number: string;
@@ -1439,6 +1447,7 @@ export interface DB {
   release_slip_items: ReleaseSlipItems;
   release_slips: ReleaseSlips;
   release_token_overrides: ReleaseTokenOverrides;
+  repair_part_holds: RepairPartHolds;
   repair_part_requests: RepairPartRequests;
   repair_request_events: RepairRequestEvents;
   repair_revisions: RepairRevisions;

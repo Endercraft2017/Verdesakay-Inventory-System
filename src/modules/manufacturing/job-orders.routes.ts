@@ -30,6 +30,7 @@ import { applyStockChange, stockAt, getDefaultLocationId, overdrawAllowed } from
 import { postJobOrderMovement, jobOrderWipBalance } from '../accounting/accounting-autopost';
 import { createDraftPurchaseOrders } from '../inventory/orders.routes';
 import { checklistForProduct } from './qc.routes';
+import { kitPickedAt, repairHeld } from './stock-holds';
 import { locationError, unitBlockers } from './rts';
 import type { JobOrder, JobOrderComponent, JobOrderUnit, InventoryItem, ProductionReceipt } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
@@ -796,17 +797,10 @@ function jobOrderComponentAvailability(joId: number): Array<{
   return out;
 }
 
-/** Quantity of `itemId` already picked at `locationId` for other not-yet-released job orders
- *  (their kits are set aside but haven't left stock yet), so two kits can't both claim it. */
+/** Quantity of `itemId` already set aside at `locationId`: picked for other not-yet-released job
+ *  orders' kits, or held for open repair-parts requests (stock-holds.ts) — so they can't both claim it. */
 function pickedElsewhere(itemId: number, locationId: number, excludeJoIds: number[]): number {
-  const defLoc = getDefaultLocationId();
-  const ex = excludeJoIds.length ? `AND j.id NOT IN (${excludeJoIds.map(() => '?').join(',')})` : '';
-  return queryOne<{ n: number }>(
-    `SELECT COALESCE(SUM(c.qty_picked), 0) AS n
-     FROM job_order_components c JOIN job_orders j ON j.id = c.job_order_id
-     WHERE j.status = 'draft' AND c.component_item_id = ? AND COALESCE(j.source_location_id, ?) = ? ${ex}`,
-    itemId, defLoc, locationId, ...excludeJoIds
-  )?.n ?? 0;
+  return kitPickedAt(itemId, locationId, excludeJoIds) + repairHeld(itemId, locationId);
 }
 
 /** Why a job order can't enter the warehouse's hands (accept / prepare), or null if it can. */

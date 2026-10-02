@@ -794,6 +794,36 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       };
     }
 
+    it('shows stock held for other requests as not free', async () => {
+      const base = fake([]);
+      const win = await bootAs(PC, (url: string, init: any) => url === '/api/production/repairs/81/context'
+        ? { ...CTX, quantity: 1, sources: [{ ...CTX.sources[0], available: 6, free: 0 }, CTX.sources[1]], hold: null, shortage: true } : base(url, init));
+      win.location.hash = '#/repairs?id=81&step=source';
+      await wait();
+      expect(win.document.getElementById('m-view').textContent).toContain('Available 6 · 6 held for others · not enough free');
+      expect(win.document.querySelector('[data-l="2"]')).toBeNull();
+    });
+
+    it('lets the requester approve a revision from the push, and nobody else\'s screen', async () => {
+      const posts: { url: string; body: any }[] = [];
+      const QCU = { id: 21, username: 'qc1', full_name: 'Quinn QC', role: 'qc_inspector', employee: true, modules: null,
+        permissions: ['inventory.view', 'inventory.mobile', 'production.inspect_qc', 'messages.view', 'messages.send'] };
+      const base = fake(posts);
+      const win = await bootAs(QCU, (url: string, init: any) => url === '/api/production/repairs/81/context'
+        ? { ...CTX, revision: { id: 4, status: 'pending', proposed_name: 'Left signal assembly B', proposed_quantity: 1, proposed_by: 51,
+          proposed_by_name: 'Carlo Reyes', reason: 'Original SKU unavailable' } } : base(url, init));
+      const doc = win.document;
+      win.location.hash = '#/repairs?id=81';
+      await wait();
+      expect(doc.getElementById('m-view').textContent).toContain('permission'); // the clerk's screens stay closed
+      win.location.hash = '#/repairs?id=81&step=decide';
+      await wait();
+      expect(doc.getElementById('m-view').textContent).toContain('Proposed: Left signal assembly B · Qty 1');
+      (doc.getElementById('rp-yes') as HTMLButtonElement).click();
+      await wait();
+      expect(posts[0]).toMatchObject({ url: '/api/production/repairs/81/revision/decide', body: { approve: true } });
+    });
+
     it('splits the queue into Pending and Shortage', async () => {
       const win = await bootAs(PC, fake([]));
       win.location.hash = '#/repairs';

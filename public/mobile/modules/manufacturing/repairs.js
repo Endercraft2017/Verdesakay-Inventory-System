@@ -8,9 +8,13 @@
    different SKU or quantity — before any write), /reject, /shortage, /revision. A revision is
    approved by the requester or a supervisor, never by the clerk who proposed it. Issue and
    reject are online-only with an idempotency key: nothing is shown as issued that the server
-   hasn't confirmed. This screen can't release production kits or adjust stock.
+   hasn't confirmed. This screen can't release production kits or adjust stock. An open request
+   holds its part at one approved source (stock-holds.ts): "free" is what this request can take
+   at a location — stock minus kit picks and other requests' holds.
+   The requester (QC/QA) or a supervisor opens ?step=decide from the push to approve or reject a
+   revision (POST /repairs/:id/revision/decide) — the only step open to them here.
    URLs: #/repairs[?tab=short|done] · ?step=history · ?id=<requestId>[&step=context|source|pick|
-   review|confirm|done|reject|shortage|revision] */
+   review|confirm|done|reject|shortage|revision|decide] */
 (function () {
   var R = window.RoleUI;
   var S = {};   // per request: { loc, scanned, qty, key, result }
@@ -124,8 +128,10 @@
   /* ── Select stock source (83:158) ──────────────────────────────────────── */
   function source(view, c) {
     var r = c.request, s = st(r.id);
-    var ok = function (l) { return l.approved && l.available >= r.quantity; };
-    if (!s.loc) { var first = c.sources.filter(ok)[0]; s.loc = first ? first.id : null; }
+    var free = function (l) { return l.free != null ? l.free : l.available; };
+    var ok = function (l) { return l.approved && free(l) >= r.quantity; };
+    // Start at the location already holding this request's part.
+    if (!s.loc) { var held = c.hold && c.sources.filter(function (l) { return l.id === c.hold.location_id && ok(l); })[0]; var first = held || c.sources.filter(ok)[0]; s.loc = first ? first.id : null; }
     var body = page(view, '83:158', 'Select stock source', 'Choose an approved location with available stock');
     function paint() {
       var sel = c.sources.filter(function (l) { return l.id === s.loc; })[0];
@@ -133,11 +139,15 @@
         '<div class="rk-card rk-field"><small>' + mEsc(c.item ? c.item.sku || 'No SKU' : '') + '</small><b style="font-size:18px">' + mEsc(r.component_name) + '</b>' +
           '<span style="font-size:11px;color:var(--rk-meta)">Required: ' + r.quantity + ' unit' + (r.quantity === 1 ? '' : 's') + '</span></div>' +
         '<div class="rk-checks">' + c.sources.map(function (l) {
-          var state = !l.approved ? 'fail' : l.available >= r.quantity ? 'pass' : 'warn';
-          var sub = !l.approved ? 'Not an approved repair-parts source' : 'Available ' + l.available + (l.available >= r.quantity ? ' · Pickable' : ' · not enough');
+          var state = !l.approved ? 'fail' : free(l) >= r.quantity ? 'pass' : 'warn';
+          var setAside = l.available - free(l);
+          var sub = !l.approved ? 'Not an approved repair-parts source'
+            : 'Available ' + l.available + (setAside > 0 ? ' · ' + setAside + ' held for others' : '') +
+              (c.hold && c.hold.location_id === l.id ? ' · held for this request' : free(l) >= r.quantity ? ' · Pickable' : ' · not enough free');
           return row(state, l.name + (l.id === s.loc ? ' ✓' : ''), sub, ok(l) ? 'data-l="' + l.id + '"' : '');
         }).join('') + '</div>' +
-        R.note('info', '<h3>Reservation occurs next</h3>Selecting a source does not deduct stock until issue confirmation.') +
+        R.note('info', '<h3>Held, not deducted</h3>' + (c.hold ? 'This request holds ' + c.hold.quantity + ' at ' + mEsc(c.hold.location_name || 'its source') + ' so nothing else can take it. ' : '') +
+          'Stock is deducted only at issue confirmation.') +
         R.actions([{ id: 'rp-go', label: sel ? 'Use ' + sel.name : 'Pick a source', kind: 'primary' }, { id: 'rp-short', label: 'Report shortage', kind: 'secondary' }]);
       Array.prototype.forEach.call(body.querySelectorAll('[data-l]'), function (b) { b.onclick = function () { s.loc = Number(b.dataset.l); paint(); }; });
       body.querySelector('#rp-go').disabled = !sel;
@@ -192,7 +202,7 @@
       '<div class="rk-hero navy"><small>Repair-parts issue</small><b>1 item · Qty ' + r.quantity + '</b><span>' + mEsc(src.name + ' → ' + short(r.unit_identifier) + ' repair') + '</span></div>' +
       '<div class="rk-checks">' +
         row('pass', 'Request', r.number + ' · Active') +
-        row('pass', 'Stock', src.available + ' available → ' + (src.available - r.quantity) + ' remaining') +
+        row('pass', 'Stock', src.available + ' available → ' + (src.available - r.quantity) + ' remaining' + (c.hold && c.hold.location_id === src.id ? ' · was held for this request' : '')) +
         row('pass', 'Receiving context', (ins ? 'QC repair' + (ins.station ? ' · ' + ins.station + ' station' : '') : 'Repair') + (r.kind === 'replace' && r.return_to_damage ? ' · old part to damage' : '')) +
       '</div>' +
       R.note('info', '<h3>Atomic issue</h3>Stock deduction, request status and repair handoff are saved together.') +
@@ -286,7 +296,10 @@
     var approved = c.sources.filter(function (l) { return l.approved; });
     body.innerHTML =
       '<div class="rk-block"><span class="t">! No approved stock available</span><b class="lg">' + mEsc((c.item && c.item.sku || r.component_name) + ' · Required ' + r.quantity) + '</b>' +
-        '<span>' + mEsc(approved.length ? approved.map(function (l) { return l.name + ': ' + l.available + ' available'; }).join(' · ') : 'No approved source location') + '</span></div>' +
+        '<span>' + mEsc(approved.length ? approved.map(function (l) {
+          var f = l.free != null ? l.free : l.available;
+          return l.name + ': ' + f + ' free' + (l.available > f ? ' (' + (l.available - f) + ' held for others)' : '');
+        }).join(' · ') : 'No approved source location') + '</span></div>' +
       '<div class="rk-note warn"><h3>No stock change occurred</h3>The request remains open and blocked until stock arrives or it is formally revised.</div>' +
       R.field('Suggested action', 'Wait for replenishment or an approved request revision') +
       R.actions([{ id: 'rp-esc', label: 'Escalate shortage', kind: 'primary' }, { id: 'rp-back', label: 'Back', kind: 'secondary' }]) +
@@ -334,6 +347,40 @@
     };
   }
 
+  /* ── Approve or reject a revision (requester / supervisor; extends 83:452) ─ */
+  function decide(view, c) {
+    var r = c.request, v = c.revision, pend = v && v.status === 'pending';
+    var me = MApp.getMe() || {};
+    var body = page(view, '83:452', 'Approve revision', r.number + ' · ' + short(r.unit_identifier));
+    if (!pend) {
+      body.innerHTML = R.note('info', v ? 'This revision was ' + mEsc(v.status) + '.' : 'There is no revision waiting for a decision.') +
+        R.actions([{ id: 'rp-back', label: 'Back', kind: 'secondary' }]);
+      body.querySelector('#rp-back').onclick = function () { history.back(); };
+      return;
+    }
+    var mine = v.proposed_by === me.id;
+    body.innerHTML =
+      '<div class="rk-rev"><small>Requested</small><b>' + mEsc((c.item && c.item.sku || r.component_name) + ' · Qty ' + r.quantity) + '</b>' +
+        '<span>Proposed: ' + mEsc(v.proposed_name + ' · Qty ' + v.proposed_quantity) + '</span></div>' +
+      R.field('Reason from ' + (v.proposed_by_name || 'the parts clerk'), v.reason) +
+      (mine ? R.note('warn', 'You proposed this revision — someone else must decide it.')
+        : '<label class="rk-card rk-field"><small>Note (optional)</small><textarea rows="2" maxlength="500" data-note></textarea></label>') +
+      R.note('info', '<h3>Nothing moves</h3>Approving changes what the warehouse issues; the part is issued only when the parts clerk confirms it.') +
+      R.actions(mine ? [{ id: 'rp-back', label: 'Back', kind: 'secondary' }]
+        : [{ id: 'rp-yes', label: 'Approve revision', kind: 'primary' }, { id: 'rp-noo', label: 'Reject revision', kind: 'secondary' }]);
+    var back = body.querySelector('#rp-back'); if (back) back.onclick = function () { history.back(); };
+    var send = function (btn, approve) {
+      if (offline()) { mToast('You’re offline — the decision needs a connection.', 'err'); return; }
+      btn.disabled = true;
+      var note = body.querySelector('[data-note]');
+      API.post('/production/repairs/' + r.id + '/revision/decide', { approve: approve, note: note && note.value.trim() || null }, { idempotencyKey: key() })
+        .then(function () { mToast(approve ? 'Revision approved' : 'Revision rejected'); go({ id: r.id, step: 'decide', t: Date.now() }); })
+        .catch(fail(btn));
+    };
+    var yes = body.querySelector('#rp-yes'); if (yes) yes.onclick = function () { send(yes, true); };
+    var no = body.querySelector('#rp-noo'); if (no) no.onclick = function () { send(no, false); };
+  }
+
   /* ── Repair-parts history (83:488), read-only ──────────────────────────── */
   function hist(view) {
     var body = page(view, '83:488', 'Repair-parts history', 'Search requests, issues and rejection reasons');
@@ -366,7 +413,13 @@
 
   MApp.route('repairs', function (view, params) {
     params = params || {};
-    if (!can('inventory.adjust') && !can('production.repairs')) {
+    var clerk = can('inventory.adjust') || can('production.repairs');
+    var decider = can('production.inspect_qc') || can('production.inspect_qa') || can('production.approve');
+    if (params.id && params.step === 'decide' && (clerk || decider)) {
+      // The server checks it is the requester or a supervisor, never the proposer.
+      return withRequest(view, Number(params.id), function (c) { decide(view, c); });
+    }
+    if (!clerk) {
       view.innerHTML = '<div class="m-error">You don’t have permission to process parts requests.</div>';
       return;
     }

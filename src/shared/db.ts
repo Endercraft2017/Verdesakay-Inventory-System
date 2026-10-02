@@ -1336,6 +1336,16 @@ function createSchema(): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_repair_request_events ON repair_request_events(request_id, id);
+    -- Stock an open repair-parts request holds at one approved source until it is issued, rejected
+    -- or cancelled (modules/manufacturing/stock-holds.ts). None while the request is a shortage.
+    CREATE TABLE IF NOT EXISTS repair_part_holds (
+      request_id  INTEGER PRIMARY KEY REFERENCES repair_part_requests(id) ON DELETE CASCADE,
+      item_id     INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+      quantity    REAL NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_repair_part_holds_item ON repair_part_holds(item_id, location_id);
 
     -- Job-order line decisions (pause / resume / close early) — append-only audit history with
     -- actor and reason; job_orders.pause_* only hold the CURRENT hold. createSchema, no bump.

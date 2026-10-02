@@ -1,6 +1,7 @@
 /** Parts clerk repair-parts rules (mobile, Figma 83:*): request context, approved sources only,
  *  the exact-request rule (scanned SKU + picked quantity), live shortage, formal revisions that
- *  the proposing clerk can't approve, and the searchable history. Refusals move no stock. */
+ *  the proposing clerk can't approve, and the searchable history. Refusals move no stock. Open
+ *  requests hold their part at an approved source; the requester is pushed on every outcome. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, addSerializedUnits, type TestContext } from './helpers';
 
@@ -14,6 +15,7 @@ let part: number;
 let alt: number;
 let truck: number;
 let wh: number;
+let __sentPush: typeof import('../src/shared/push').__sentPush;
 const H = () => ({ Authorization: `Bearer ${token}` });
 const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
 const stockOf = async (item: number) => (await ctx.api.get(`/api/inventory/${item}`).set(H())).body.quantity as number;
@@ -39,6 +41,9 @@ beforeAll(async () => {
   await ctx.api.post(`/api/job-orders/${jo}/release`).set(H());
   await ctx.api.post(`/api/job-orders/${jo}/accept`).set(H()).send({});
   unit = (await addSerializedUnits(ctx.api, token, jo, 1, 'RP'))[0]!;
+  ({ __sentPush } = await import('../src/shared/push'));
+  await ctx.api.post('/api/push/subscribe').set(bearer(qc.token))
+    .send({ endpoint: 'https://push.example.com/sub/qc-rp', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
   await ctx.api.post(`/api/job-orders/${jo}/units/inspect`).set(H()).send({ unit_ids: [unit], result: 'fail', disposition: 'repair',
     remarks: 'Intermittent signal failure', repair: { category: 'Electrical · signal system', station: 'Wiring', priority: 'Urgent' } });
 });
@@ -97,5 +102,53 @@ describe('repair request context and issue rules', () => {
     const ok = await ctx.api.post(`/api/production/repairs/${id}/revision/decide`).set(bearer(qc.token)).send({ approve: true, note: 'OK' });
     expect(ok.status).toBe(200);
     expect(ok.body).toMatchObject({ component_item_id: alt, component_name: 'Left signal assembly B' });
+  });
+});
+
+describe('holding parts for open requests', () => {
+  it('holds the part at an approved source when raised, so another request or kit can\'t take it', async () => {
+    const bolt = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Brake caliper', sku: 'BRK-CAL-1', quantity: 0 })).body.id as number;
+    await ctx.api.post(`/api/inventory/${bolt}/adjust`).set(H()).send({ change: 3, location_id: wh, reason: 'stock' });
+    const a = await raise(2, bolt);
+    const ca = (await ctx.api.get(`/api/production/repairs/${a}/context`).set(bearer(clerk.token))).body;
+    expect(ca.hold).toMatchObject({ location_id: wh, quantity: 2 });
+    expect(ca.shortage).toBe(false);
+    const b = await raise(2, bolt);
+    const cb = (await ctx.api.get(`/api/production/repairs/${b}/context`).set(bearer(clerk.token))).body;
+    expect(cb.hold).toBeNull();
+    expect(cb.shortage).toBe(true);
+    expect(cb.sources.find((x: { id: number }) => x.id === wh)).toMatchObject({ available: 3, free: 1 });
+    const taken = await ctx.api.post(`/api/production/repairs/${b}/accept`).set(bearer(clerk.token)).send({ from_location_id: wh, picked_quantity: 2 });
+    expect(taken.status).toBe(409);
+    expect(taken.body.blocked).toBe('held');
+    // Rejecting the first request frees its hold.
+    await ctx.api.post(`/api/production/repairs/${a}/reject`).set(bearer(clerk.token)).send({ warehouse_remarks: 'Duplicate / invalid request' });
+    expect((await ctx.api.get(`/api/production/repairs/${b}/context`).set(bearer(clerk.token))).body.shortage).toBe(false);
+    __sentPush.length = 0;
+    const ok = await ctx.api.post(`/api/production/repairs/${b}/accept`).set(bearer(clerk.token)).send({ from_location_id: wh, picked_quantity: 2 });
+    expect(ok.status).toBe(200);
+    expect(__sentPush.some((p) => p.userId === qc.id && /^Part issued/.test(p.payload.title))).toBe(true);
+    expect((await ctx.api.get(`/api/production/repairs/${b}/context`).set(bearer(clerk.token))).body.hold).toBeNull();
+  });
+
+  it('counts held parts as spoken for in the sale-order availability gate', async () => {
+    const seat = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Seat', quantity: 0 })).body.id as number;
+    await ctx.api.post(`/api/inventory/${seat}/adjust`).set(H()).send({ change: 2, location_id: wh, reason: 'stock' });
+    await raise(2, seat);
+    const so = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', items: [{ name: 'Seat', item_id: seat, quantity: 1, unit_price: 5 }] })).body.id;
+    const av = (await ctx.api.get(`/api/orders/${so}/availability`).set(H())).body;
+    expect(av.lines[0]).toMatchObject({ on_hand: 2, available: 0, shortfall: 1 });
+  });
+
+  it('pushes the requester to approve a revision, and the shortage escalation', async () => {
+    const id = await raise(30);
+    __sentPush.length = 0;
+    await ctx.api.post(`/api/production/repairs/${id}/shortage`).set(bearer(clerk.token)).send({ note: 'Wait for replenishment' });
+    expect(__sentPush.some((p) => p.userId === qc.id && /^Repair part short/.test(p.payload.title))).toBe(true);
+    await ctx.api.post(`/api/production/repairs/${id}/revision`).set(bearer(clerk.token)).send({ quantity: 1, reason: 'Only one needed after inspection' });
+    const push = __sentPush.find((p) => p.userId === qc.id && /^Approve a revision/.test(p.payload.title));
+    expect(push?.payload.url).toBe(`#/repairs?id=${id}&step=decide`);
+    await ctx.api.post(`/api/production/repairs/${id}/revision/decide`).set(bearer(qc.token)).send({ approve: true });
+    expect((await ctx.api.get(`/api/production/repairs/${id}/context`).set(bearer(clerk.token))).body.hold).toMatchObject({ quantity: 1 });
   });
 });
