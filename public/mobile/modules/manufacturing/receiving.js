@@ -363,26 +363,26 @@
   function post(chosen, btn) {
     var byJo = {};
     chosen.forEach(function (x) { (byJo[x.job_order_id] = byJo[x.job_order_id] || []).push(x); });
-    var done = [], receipts = [];
+    var done = [], receipts = [], local = null;
     var chain = Promise.resolve();
     Object.keys(byJo).forEach(function (jo) {
       chain = chain.then(function () {
         draft.keys[jo] = draft.keys[jo] || key();
         var ids = byJo[jo].map(function (x) { return x.id; });
         return API.post('/job-orders/' + jo + '/products-in', { location_id: draft.location_id, unit_ids: ids }, { idempotencyKey: draft.keys[jo] })
-          .then(function (r) { receipts.push(r.number); done = done.concat(byJo[jo]); });
+          .then(function (r) { receipts.push(r.number); done = done.concat(byJo[jo]); local = local || API.syncLocal(r); });
       });
     });
-    chain.then(function () { finish(done, receipts, null); }).catch(function (err) {
-      if (done.length) { finish(done, receipts, err); return; }
+    chain.then(function () { finish(done, receipts, null, local); }).catch(function (err) {
+      if (done.length) { finish(done, receipts, err, local); return; }
       var data = err && err.data;
       if (data && data.blockers && data.blockers.length) { draft.blockers = data.blockers; go({ unit: draft.anchor, step: 'dup' }); return; }
       if (data && data.location_error) { draft.locErr = data.error; go({ unit: draft.anchor, step: 'location', err: 1 }); return; }
       fail(btn, 'Record as ready to sell')(err);
     });
   }
-  function finish(done, receipts, err) {
-    draft.result = { units: done.map(function (x) { return { id: x.id, identifier: label(x) }; }), receipts: receipts,
+  function finish(done, receipts, err, local) {
+    draft.result = { local: local || null, units: done.map(function (x) { return { id: x.id, identifier: label(x) }; }), receipts: receipts,
       location: locName(draft.location_id), at: new Date().toISOString(), error: err ? (err.message || 'Failed') : null,
       left: draft.ids.length - done.length };
     go({ step: 'done' });
@@ -395,14 +395,15 @@
     var body = page(view, '74:356', 'Ready-to-sell recorded', 'Finished-goods inventory is updated');
     var me = (MApp.getMe() || {}).full_name || 'You';
     body.innerHTML =
-      '<div class="rk-result"><i aria-hidden="true">✓</i><b>Ready to sell</b><span>' + mEsc(r.units.length > 1 ? r.units.length + ' units · ' + r.units[0].identifier + ' …' : r.units[0].identifier) + '</span>' +
-        '<span style="font-weight:400;color:var(--rk-meta)">' + mEsc(r.location) + '</span></div>' +
+      '<div class="rk-result' + (r.local ? ' queued' : '') + '"><i aria-hidden="true">' + (r.local ? '⏳' : '✓') + '</i><b>' + (r.local ? 'Ready to sell — on the site PC' : 'Ready to sell') + '</b><span>' + mEsc(r.units.length > 1 ? r.units.length + ' units · ' + r.units[0].identifier + ' …' : r.units[0].identifier) + '</span>' +
+        '<span style="font-weight:400;color:var(--rk-meta)">' + mEsc(r.location) + '</span></div><div data-syncw></div>' +
       (r.error ? R.note('warn', '<b>Recorded ' + r.units.length + ' of ' + (r.units.length + r.left) + '.</b> The rest were not posted: ' + mEsc(r.error)) : '') +
       R.field('Inventory transaction', r.receipts.join(', ')) +
       R.field('Recorded by', me + ' · ' + cap(clock(r.at))) +
       R.actions([{ id: 'rts-next', label: 'Record next unit', kind: 'primary' }, { id: 'rts-look', label: 'View stock record', kind: 'secondary' }]) +
       (window.mProductionPrint ? R.actions([{ id: 'rts-print', label: 'Print unit record' + (r.units.length > 1 ? 's' : ''), kind: 'secondary' }]) : '') +
       R.note('info', '<h3>Available downstream</h3>The unit can now appear in sales allocation and releasing workflows.');
+    body.querySelector('[data-syncw]').appendChild(R.syncWatch(r.local));
     body.querySelector('#rts-look').onclick = function () { go({ step: 'lookup', q: r.units[0].identifier }); };
     body.querySelector('#rts-next').onclick = function () {
       draft = null;
@@ -524,7 +525,7 @@
         btn.disabled = true; btn.textContent = 'Recording…';
         API.post('/job-orders/' + b.job_order_id + '/products-in', { location_id: loc, batch_id: b.id, quantity: qty,
           notes: body.querySelector('[data-note]').value.trim() || null }, { idempotencyKey: k }).then(function (r) {
-          draft = { result: { units: [{ id: null, identifier: b.number + ' · ' + qty + ' pcs' }], receipts: [r.number], location: locName(loc),
+          draft = { result: { local: API.syncLocal(r), units: [{ id: null, identifier: b.number + ' · ' + qty + ' pcs' }], receipts: [r.number], location: locName(loc),
             at: new Date().toISOString(), error: null, left: 0 } };
           go({ step: 'done' });
         }).catch(fail(btn, 'Record as ready to sell'));

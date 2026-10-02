@@ -6,6 +6,9 @@
  *   GET  /activity?view=attention actions the cloud rejected (or that no longer applied)
  *   POST /activity/:id/dismiss    hide a rejected action once it has been dealt with
  *   POST /now                     sync with the cloud right away
+ *   GET  /command/:id             where one action stands (local → host_confirmed → confirmed, or
+ *                                 rejected / conflict) — a screen that showed "saved on this PC"
+ *                                 follows its own action to final with it (mobile role desks)
  *
  * People see their own actions; users who can manage users see everyone's on this PC.
  * Anonymous-channel commands are never listed (they carry no actor by design) — they only
@@ -72,6 +75,19 @@ router.get('/status', requireAuth, (req, res) => {
     attention: count(conn, `SELECT COUNT(*) AS n FROM sync_commands WHERE ${ATTENTION} AND unattributed = 0${mine}`, ...p),
     discrepancies_open: openDiscrepancies(conn, req),
   });
+});
+
+router.get('/command/:id', requireAuth, (req, res) => {
+  const conn = activeDb();
+  if (syncConfigOf(conn)?.role !== 'node') {
+    // The cloud (or a normal install) decided it already: nothing on this copy waits.
+    res.json({ state: 'confirmed' });
+    return;
+  }
+  const row = conn.prepare('SELECT state, error, actor_user_id FROM sync_commands WHERE id = ?').get(String(req.params.id)) as
+    { state: string; error: string | null; actor_user_id: number | null } | undefined;
+  if (!row || (!seesAll(req) && row.actor_user_id !== req.user!.id)) { res.status(404).json({ error: 'Action not found' }); return; }
+  res.json({ state: row.state, error: row.error });
 });
 
 router.get('/activity', requireAuth, (req, res) => {

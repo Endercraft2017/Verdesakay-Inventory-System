@@ -40,6 +40,25 @@ describe('marking results that are only on this PC', () => {
   });
 });
 
+describe('GET /api/sync/command/:id', () => {
+  it('follows one action from saved on the PC to confirmed, for its own person only', async () => {
+    const n = await api().post(`/api/inventory/${itemId}/adjust`).set(clerkHdr()).send({ change: -1, reason: 'follow me' });
+    const id = n.headers['x-sync-command'] as string;
+    expect((await api().get(`/api/sync/command/${id}`).set(clerkHdr())).body).toMatchObject({ state: 'local' });
+    // Another person can't look at it (admin, users.manage, can).
+    const other = await api().post('/api/users').set(P.cloudHdr())
+      .send({ username: 'clerk-t', full_name: 'Clerk T', password: 'clerkpass1', role: 'warehouse' });
+    expect(other.status).toBe(201);
+    await P.round();
+    expect((await api().get(`/api/sync/command/${id}`).set(clerkHdr())).body.state).toBe('confirmed');
+    const t = (await api().post('/api/auth/login').set('X-Tenant', P.nodeSlug).send({ username: 'clerk-t', password: 'clerkpass1' })).body.token;
+    expect((await api().get(`/api/sync/command/${id}`).set({ Authorization: `Bearer ${t}`, 'X-Tenant': P.nodeSlug })).status).toBe(404);
+    expect((await api().get(`/api/sync/command/${id}`).set(P.nodeHdr())).body.state).toBe('confirmed');
+    // The cloud has nothing waiting: its answer is always final.
+    expect((await api().get(`/api/sync/command/${id}`).set(P.cloudHdr())).body).toEqual({ state: 'confirmed' });
+  });
+});
+
 describe('GET /api/sync/status', () => {
   it('reports the mode: cloud for the workspace, node for the PC', async () => {
     const c = await api().get('/api/sync/status').set(P.cloudHdr());

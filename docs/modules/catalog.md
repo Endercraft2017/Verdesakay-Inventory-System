@@ -652,6 +652,13 @@ Sixth: Parts clerk repair-parts requests, `modules/manufacturing/repairs.js` (Fi
 context → select an approved source → pick (scan must be the requested SKU, exact quantity) →
 review issue → confirm (tick) → issued; reject (reason + review tick), shortage escalation,
 revision proposal and a read-only history. Issue and reject are online-only with idempotency keys.
+**Not final on a site PC:** when the phone is served by an installed PC, a result that PC saved but
+the cloud hasn't confirmed (`X-Sync-State: local`) is tagged by `public/js/api.js`
+(`API.syncLocal(result)` → command id; `mSubmit` passes it as `local`). The QC/QA, RTS,
+Releasing and Parts result screens then read "… — on the site PC" and show `RoleUI.syncWatch`,
+which follows that one action through `GET /api/sync/command/:id` (own actions; `users.manage`
+sees all; the cloud always answers `confirmed`) to Confirmed or Needs attention. Any other phone
+screen gets a toast. Tests: `tests/sync-status.test.ts`, `tests/frontend-mobile.test.ts`.
 **Shared-phone safety:** `lib/queue.js` stamps each queued op with the account that queued it
 and only lists/sends/discards the signed-in account's ops (the service worker's replay checks the
 same, against the account stored with its token); another account's ops wait for that person.

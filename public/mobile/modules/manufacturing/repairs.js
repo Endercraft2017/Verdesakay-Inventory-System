@@ -233,7 +233,7 @@
       s.key = s.key || key();
       API.post('/production/repairs/' + r.id + '/accept', { from_location_id: s.loc, scanned_code: s.scanned || null, picked_quantity: s.qty },
         { idempotencyKey: s.key }).then(function (res) {
-        S[r.id] = { result: { at: new Date().toISOString(), source: src.name, req: res } };
+        S[r.id] = { result: { at: new Date().toISOString(), source: src.name, req: res, local: API.syncLocal(res) } };
         go({ id: r.id, step: 'done' });
       }).catch(function (err) {
         var d = err && err.data;
@@ -251,12 +251,13 @@
     var body = page(view, '83:332', 'Part issued', 'Stock and request records are updated');
     var me = (MApp.getMe() || {}).full_name || 'You';
     body.innerHTML =
-      '<div class="rk-result"><i aria-hidden="true">✓</i><b>Repair part issued</b><span>' + mEsc((c.item && c.item.sku ? c.item.sku : r.component_name) + ' · Qty ' + r.quantity) + '</span>' +
-        '<span style="font-weight:400;color:var(--rk-meta)">For ' + mEsc(r.unit_identifier || 'unit #' + r.unit_id) + '</span></div>' +
+      '<div class="rk-result' + (res.local ? ' queued' : '') + '"><i aria-hidden="true">' + (res.local ? '⏳' : '✓') + '</i><b>' + (res.local ? 'Repair part issued — on the site PC' : 'Repair part issued') + '</b><span>' + mEsc((c.item && c.item.sku ? c.item.sku : r.component_name) + ' · Qty ' + r.quantity) + '</span>' +
+        '<span style="font-weight:400;color:var(--rk-meta)">For ' + mEsc(r.unit_identifier || 'unit #' + r.unit_id) + '</span></div><div data-syncw></div>' +
       R.field('Inventory transaction', r.number + ' · issued from ' + res.source) +
       R.field('Issued by', me + ' · ' + clock(res.at)) +
       R.actions([{ id: 'rp-next', label: 'Next request', kind: 'primary' }, { id: 'rp-rec', label: 'View record', kind: 'secondary' }]) +
       R.note('info', '<h3>Repair notified</h3>The repair station can continue the tracked repair; the unit can be re-inspected once no request is open.');
+    body.querySelector('[data-syncw]').appendChild(R.syncWatch(res.local));
     body.querySelector('#rp-next').onclick = function () { go(); };
     body.querySelector('#rp-rec').onclick = function () { MApp.go('record', { unit: r.unit_id }); };
   }

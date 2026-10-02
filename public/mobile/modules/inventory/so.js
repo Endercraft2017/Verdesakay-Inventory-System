@@ -458,7 +458,7 @@
       }).then(function (r) {
         var failed = 0;
         return (s.sign ? mPhoto.attachBlob('release', r.id, s.sign, 'acknowledgement.png', 'Recipient acknowledgement').catch(function () { failed++; }) : Promise.resolve()).then(function () {
-          S[c.order.id] = { pkg: {}, photos: [], result: { slipId: r.id, failed: failed, backorder: r.backorder || null, at: new Date().toISOString() } };
+          S[c.order.id] = { pkg: {}, photos: [], result: { slipId: r.id, failed: failed, backorder: r.backorder || null, local: API.syncLocal(r), at: new Date().toISOString() } };
           go({ id: c.order.id, step: 'done' });
         });
       }).catch(function (err) {
@@ -479,15 +479,17 @@
     var body = page(view, '78:438', 'Release recorded', 'Warehouse-out and handoff are complete');
     var me = (MApp.getMe() || {}).full_name || 'You';
     body.innerHTML =
-      '<div class="rk-result"><i aria-hidden="true">✓</i><b>' + (c.units.length > 1 ? c.units.length + ' units released' : 'Unit released') + '</b>' +
+      '<div class="rk-result' + (r.local ? ' queued' : '') + '"><i aria-hidden="true">' + (r.local ? '⏳' : '✓') + '</i><b>' + (c.units.length > 1 ? c.units.length + ' units released' : 'Unit released') + (r.local ? ' — on the site PC' : '') + '</b>' +
         '<span>' + mEsc(c.units[0] ? c.units[0].identifier + (c.units.length > 1 ? ' …' : '') : c.lines.map(function (l) { return l.name; }).join(', ')) + '</span>' +
         '<span style="font-weight:400;color:var(--rk-meta)">' + mEsc(c.order.number + ' · ' + modeOf(c)) + '</span></div>' +
+      '<div data-syncw></div>' +
       (r.backorder ? R.note('warn', '<b>Backorder ' + mEsc(r.backorder.number) + '</b> was created for what didn’t leave.') : '') +
       (r.failed ? R.note('warn', 'The recipient’s acknowledgement failed to upload — add it from the slip on the desktop.') : '') +
       R.field('Warehouse-out transaction', c.slip.number) +
       R.field('Released by', me + ' · ' + clock(r.at)) +
       R.actions([{ id: 'rel-next', label: 'Open next release', kind: 'primary' }, { id: 'rel-rcpt', label: 'View receipt', kind: 'secondary' }]) +
       R.note('info', '<h3>Inventory updated</h3>The unit is no longer available for allocation or another release.');
+    body.querySelector('[data-syncw]').appendChild(R.syncWatch(r.local));
     body.querySelector('#rel-next').onclick = function () { go(); };
     body.querySelector('#rel-rcpt').onclick = function () { go({ id: c.order.id, step: 'receipt' }); };
   }

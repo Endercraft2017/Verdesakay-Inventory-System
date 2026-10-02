@@ -461,7 +461,7 @@
     mSubmit('/job-orders/' + u.job_order_id + '/units/inspect', payload, { label: desk.role.toUpperCase() + ' · ' + label(u) })
       .then(function (r) {
         var s = session(u.id);
-        s.result = { result: payload.result, disposition: payload.disposition || null, queued: !!(r && r.queued), at: new Date().toISOString(),
+        s.result = { result: payload.result, disposition: payload.disposition || null, queued: !!(r && r.queued), local: (r && r.local) || null, at: new Date().toISOString(),
           count: (payload.unit_ids || []).length, items: (payload.checklist || []).length,
           issues: (payload.checklist || []).filter(function (c) { return c.status === 'issue'; }).length };
         clearDraft(u.id);
@@ -583,16 +583,19 @@
       : r.disposition === 'hold' ? 'Held for review'
       : r.disposition === 'repair' ? (desk.role === 'qa' ? 'Sent to rectification' : 'Sent to repair')
       : 'Rejected · ' + r.disposition;
-    var tone = r.queued ? 'queued' : r.result === 'pass' ? '' : r.disposition === 'repair' || r.disposition === 'hold' ? 'warn' : 'bad';
+    // Saved only on an installed PC (X-Sync-State: local): not final until the cloud confirms.
+    if (r.local) title += ' — on the site PC';
+    var tone = r.queued || r.local ? 'queued' : r.result === 'pass' ? '' : r.disposition === 'repair' || r.disposition === 'hold' ? 'warn' : 'bad';
     var me = (MApp.getMe() || {}).full_name || 'You';
     body.innerHTML =
       '<div class="rk-result ' + tone + '"><i aria-hidden="true">' + (r.queued ? '⏳' : r.result === 'pass' ? '✓' : r.disposition === 'repair' ? '↻' : '!') + '</i><b>' + mEsc(title) + '</b>' +
-        '<span>' + mEsc(r.count > 1 ? r.count + ' units' : ident) + '</span></div>' +
+        '<span>' + mEsc(r.count > 1 ? r.count + ' units' : ident) + '</span></div><div data-syncw></div>' +
       (r.queued ? R.note('warn', 'You’re offline. This result is queued on the phone and is <b>not recorded yet</b> — it sends automatically when you’re back online.') : '') +
       R.field('Recorded by', me + ' · ' + clock(r.at)) +
       R.field(desk.role === 'qa' ? 'Final-quality record' : 'Checklist record', r.items + ' items · ' + (r.issues ? r.issues + ' open issue' + (r.issues === 1 ? '' : 's') : 'no open defects')) +
       R.actions([{ id: 'qc-next', label: 'Inspect next unit', kind: 'primary' }, { id: 'qc-rec', label: 'View record', kind: 'secondary' }]) +
       '<div data-left></div>';
+    body.querySelector('[data-syncw]').appendChild(R.syncWatch(r.local));
     body.querySelector('#qc-rec').onclick = function () { MApp.go('record', { unit: unitId }); };
     body.querySelector('#qc-next').onclick = function () {
       loadQueue(desk, true).then(function (q) {
@@ -745,8 +748,8 @@
           API.post('/job-orders/' + h.job_order_id + '/units/' + h.id + '/hold-decision', {
             outcome: out, remarks: why, disposition: d ? d.value : undefined,
             repair: st ? { category: 'QA hold', station: st.value, priority: 'Before release' } : undefined,
-          }, { idempotencyKey: 'hold-' + h.record_id }).then(function () {
-            mToast(out === 'pass' ? 'Passed' : out === 'rectify' ? 'Sent to rectification' : 'Failed');
+          }, { idempotencyKey: 'hold-' + h.record_id }).then(function (res) {
+            mToast((out === 'pass' ? 'Passed' : out === 'rectify' ? 'Sent to rectification' : 'Failed') + (API.syncLocal(res) ? ' — saved on the site PC, not final until it syncs' : ''));
             delete cache[desk.role];
             go(desk, { tab: 'hold' });
           }).catch(fail(btn, 'Record decision'));

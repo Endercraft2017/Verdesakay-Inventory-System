@@ -93,12 +93,15 @@ describe('mobile bootstrap', () => {
     win.fetch = (url: string, init: unknown) => {
       const out = respond ? respond(String(url), init) : undefined;
       if (out === undefined) return Promise.reject(new Error('no network in test'));
-      // { __status, body } fakes an HTTP error response; anything else is a 200 JSON body.
+      // { __status, body } fakes an HTTP error response; { __headers, body } a 200 with extra headers
+      // (e.g. X-Sync-State); anything else is a 200 JSON body.
       const status = out && typeof out === 'object' && '__status' in (out as object) ? (out as { __status: number }).__status : 200;
-      const body = status === 200 ? out : (out as { body: unknown }).body;
+      const extra = out && typeof out === 'object' && '__headers' in (out as object) ? (out as { __headers: Record<string, string> }).__headers : null;
+      const body = status === 200 && !extra ? out : (out as { body: unknown }).body;
       return Promise.resolve({
         ok: status < 400, status,
-        headers: { get: (h: string) => (h.toLowerCase() === 'content-type' ? 'application/json' : null) },
+        headers: { get: (h: string) => (h.toLowerCase() === 'content-type' ? 'application/json'
+          : extra ? (Object.entries(extra).find(([k]) => k.toLowerCase() === h.toLowerCase()) || [])[1] ?? null : null) },
         json: () => Promise.resolve(body),
       });
     };
@@ -941,6 +944,36 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect(posts[0]!.url).toBe('/api/production/repairs/81/accept');
       expect(posts[0]!.body).toEqual({ from_location_id: 2, scanned_code: 'SIG-L-60V-K4', picked_quantity: 1 });
       expect(posts[0]!.key).toMatch(/^rpr-/);
+    });
+
+    it('shows an issue only the site PC saved as not final, and follows it to confirmed', async () => {
+      let issued = false, polls = 0;
+      const win = await bootAs(PC, (url: string, init: any) => {
+        if (init && init.method === 'POST') { issued = true; return { __headers: { 'X-Sync-State': 'local', 'X-Sync-Command': '01SITE' }, body: { ...REQ, status: 'accepted' } }; }
+        if (url === '/api/production/repairs/81/context') return issued ? { ...CTX, request: { ...REQ, status: 'accepted' } } : CTX;
+        if (url === '/api/sync/command/01SITE') { polls++; return { state: 'local' }; }
+        return undefined;
+      });
+      const doc = win.document;
+      win.mScanner = { open: (o: { onResult: (c: string) => void }) => o.onResult('SIG-L-60V-K4') };
+      win.location.hash = '#/repairs?id=81&step=source';
+      await wait();
+      (doc.getElementById('rp-go') as HTMLButtonElement).click();
+      await wait();
+      (doc.querySelector('.rk-identify') as HTMLButtonElement).click();
+      (doc.getElementById('rp-go') as HTMLButtonElement).click();
+      await wait();
+      win.location.hash = '#/repairs?id=81&step=confirm';
+      await wait();
+      const ok = doc.getElementById('rp-ok') as HTMLInputElement;
+      ok.checked = true; ok.dispatchEvent(new win.Event('change'));
+      (doc.getElementById('rp-post') as HTMLButtonElement).click();
+      await wait(120);
+      const view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('83:332');
+      expect(view.textContent).toContain('Repair part issued — on the site PC');
+      expect(view.textContent).toContain('Saved on the site PC — not final yet');
+      expect(polls).toBeGreaterThan(0);
     });
 
     it('needs the review tick and a reason to reject', async () => {

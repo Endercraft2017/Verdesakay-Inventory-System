@@ -162,7 +162,7 @@
     opts = opts || {};
     var key = 'idem-' + uuid();
     return API.post(path, body, { idempotencyKey: key })
-      .then(function (response) { return { ok: true, response: response }; })
+      .then(function (response) { return { ok: true, response: response, local: API.syncLocal(response) }; })
       .catch(function (err) {
         if (err && err.offline) {
           return mQueue.enqueue({ key: key, method: 'POST', path: path, body: body, label: opts.label || path })
@@ -189,4 +189,11 @@
 
   window.mQueue = mQueue;
   window.mSubmit = mSubmit;
+
+  // Served by an installed site PC: an action it saved but the cloud hasn't confirmed is not final
+  // (docs/OFFLINE-FIRST.md §2.4). Role result screens follow it (RoleUI.syncWatch); everywhere
+  // else this toast says so.
+  window.addEventListener('vds:sync-local', function () {
+    if (window.mToast) mToast('Saved on the site PC — not final until it syncs with the cloud.');
+  });
 })();

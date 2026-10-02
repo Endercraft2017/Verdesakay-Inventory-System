@@ -98,6 +98,11 @@ const API = (() => {
       window.dispatchEvent(new CustomEvent('vds:sync-local', {
         detail: { commandId: res.headers.get('X-Sync-Command'), method, path },
       }));
+      // Tag the result itself (not serialized) so the screen that made it can show it as
+      // "saved on this PC, not final" and follow it: API.syncLocal(result) → command id.
+      if (data && typeof data === 'object') {
+        try { Object.defineProperty(data, '__syncCommand', { value: res.headers.get('X-Sync-Command') || 'local', enumerable: false }); } catch (e) { /* frozen */ }
+      }
     }
 
     if (!res.ok) {
@@ -142,6 +147,8 @@ const API = (() => {
     patch: (p, b, opts) => request('PATCH', p, b, false, opts),
     del: (p) => request('DELETE', p),
     upload: (p, formData) => request('POST', p, formData, true),
+    /** The installed-PC command id when `result` was only saved on that PC (not final yet), else null. */
+    syncLocal: (result) => (result && result.__syncCommand) || null,
     blobUrl, download,
   };
 })();

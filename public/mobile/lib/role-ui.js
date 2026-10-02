@@ -76,6 +76,34 @@
       }).join('') + (foot ? '<div class="rk-foot">' + e(foot) + '</div>' : '') + '</div>';
     },
     note: function (tone, html) { return '<div class="rk-note ' + tone + '">' + html + '</div>'; },
+    /** For a result an installed PC saved but the cloud hasn't confirmed (API.syncLocal): a
+     *  "not final yet" block that follows the action (GET /sync/command/:id) to Confirmed or
+     *  Needs attention while it is on screen. Returns an element; nothing when `command` is null. */
+    syncWatch: function (command) {
+      var box = document.createElement('div');
+      if (!command) return box;
+      box.className = 'rk-note warn';
+      box.setAttribute('data-sync', command);
+      function paint(state, error) {
+        if (state === 'confirmed') { box.className = 'rk-note info'; box.innerHTML = '<h3>Confirmed</h3>The cloud accepted this — it is final.'; return true; }
+        if (state === 'rejected' || state === 'conflict') {
+          box.className = 'rk-note warn'; box.innerHTML = '<h3>Needs attention</h3>The cloud did not accept this' + (error ? ': ' + e(error) : '.') + ' It is not final — check the Sync page on the PC.'; return true;
+        }
+        box.innerHTML = '<h3>Saved on the site PC — not final yet</h3>' + (state === 'host_confirmed'
+          ? 'The site host accepted it; the cloud hasn’t confirmed it yet.' : 'It becomes final when the site syncs with the cloud.') + ' This updates by itself.';
+        return false;
+      }
+      paint('local');
+      var tries = 0;
+      (function poll() {
+        if (!box.isConnected && tries > 0) return; // screen left
+        tries++;
+        API.get('/sync/command/' + encodeURIComponent(command)).then(function (r) {
+          if (!paint(r.state, r.error) && tries < 120) setTimeout(poll, 10000);
+        }).catch(function () { if (tries < 120) setTimeout(poll, 15000); });
+      })();
+      return box;
+    },
     alert: function (title, text) {
       return '<div class="rk-alert"><img src="/mobile/icons/v2/alert.svg" alt=""><b>' + e(title) + '</b><span>' + e(text) + '</span></div>';
     },
