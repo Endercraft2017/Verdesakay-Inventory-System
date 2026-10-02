@@ -1111,6 +1111,30 @@ export interface RepairPartRequests {
   decided_at: string | null;
 }
 
+export interface RepairRequestEvents {
+  id: Generated<number>;
+  request_id: number;
+  kind: string;
+  details: string | null;
+  actor_id: number | null;
+  created_at: Generated<string>;
+}
+
+export interface RepairRevisions {
+  id: Generated<number>;
+  request_id: number;
+  proposed_item_id: number | null;
+  proposed_name: string;
+  proposed_quantity: number;
+  reason: string;
+  status: Generated<string>;
+  proposed_by: number | null;
+  decided_by: number | null;
+  decision_note: string | null;
+  created_at: Generated<string>;
+  decided_at: string | null;
+}
+
 export interface Sessions {
   token: string;
   user_id: number;
@@ -1401,6 +1425,8 @@ export interface DB {
   release_slip_items: ReleaseSlipItems;
   release_slips: ReleaseSlips;
   repair_part_requests: RepairPartRequests;
+  repair_request_events: RepairRequestEvents;
+  repair_revisions: RepairRevisions;
   sessions: Sessions;
   settings: Settings;
   shifts: Shifts;

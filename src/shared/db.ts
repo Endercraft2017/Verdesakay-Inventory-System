@@ -1290,6 +1290,36 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_release_reports_order ON release_reports(order_id, status);
 
+    -- Repair-parts requests (mobile Parts clerk, Figma 83:*; production.routes.ts). createSchema,
+    -- no version bump. A formal revision of a request's part or quantity: proposed by the parts
+    -- clerk, approved by the requester or a supervisor (never the proposer). While one is pending
+    -- the request can't be issued.
+    CREATE TABLE IF NOT EXISTS repair_revisions (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id        INTEGER NOT NULL REFERENCES repair_part_requests(id) ON DELETE CASCADE,
+      proposed_item_id  INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      proposed_name     TEXT NOT NULL,
+      proposed_quantity INTEGER NOT NULL,
+      reason            TEXT NOT NULL,
+      status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+      proposed_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decision_note     TEXT,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_at        TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_repair_revisions_request ON repair_revisions(request_id, status);
+    -- Audit trail of a request beyond accept/reject: shortage escalations, revisions, notes.
+    CREATE TABLE IF NOT EXISTS repair_request_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES repair_part_requests(id) ON DELETE CASCADE,
+      kind       TEXT NOT NULL,
+      details    TEXT,
+      actor_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_repair_request_events ON repair_request_events(request_id, id);
+
     -- Job-order line decisions (pause / resume / close early) — append-only audit history with
     -- actor and reason; job_orders.pause_* only hold the CURRENT hold. createSchema, no bump.
     CREATE TABLE IF NOT EXISTS job_order_events (

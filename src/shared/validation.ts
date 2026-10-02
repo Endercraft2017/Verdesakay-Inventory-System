@@ -515,6 +515,26 @@ export const repairRequestSchema = z.object({
 export const repairAcceptSchema = z.object({
   from_location_id: optionalId,
   warehouse_remarks: trimmed.max(1000).optional().nullable(),
+  // Exact-request rule (mobile Parts clerk, 83:206): when given, the scanned label must be the
+  // requested item's SKU and the picked quantity must equal the requested quantity.
+  scanned_code: trimmed.max(120).optional().nullable(),
+  picked_quantity: z.coerce.number().int().positive().max(9999).optional(),
+});
+
+/** Parts clerk proposes a different part and/or quantity; someone else approves it. */
+export const repairRevisionSchema = z.object({
+  component_item_id: optionalId,
+  quantity: z.coerce.number().int().positive().max(9999),
+  reason: trimmed.min(1, 'Give the revision reason').max(1000),
+});
+
+export const repairRevisionDecisionSchema = z.object({
+  approve: z.boolean(),
+  note: trimmed.max(1000).optional().nullable(),
+});
+
+export const repairShortageSchema = z.object({
+  note: trimmed.max(1000).optional().nullable(),
 });
 
 export const repairRejectSchema = z.object({

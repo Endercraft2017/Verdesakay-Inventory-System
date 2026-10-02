@@ -25,6 +25,9 @@ import {
   repairRequestSchema,
   repairAcceptSchema,
   repairRejectSchema,
+  repairRevisionSchema,
+  repairRevisionDecisionSchema,
+  repairShortageSchema,
   createBatchSchema,
   updateBatchSchema,
   batchInspectSchema,
@@ -155,12 +158,35 @@ router.post('/repairs/:id/accept', repairsGate, syncClass('claim'), (req, res) =
     res.status(409).json({ error: `Request is already ${r.status}` });
     return;
   }
-  const { from_location_id, warehouse_remarks } = parseBody(repairAcceptSchema, req.body);
+  const { from_location_id, warehouse_remarks, scanned_code, picked_quantity } = parseBody(repairAcceptSchema, req.body);
   const unit = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ?', r.unit_id);
   const jo = r.job_order_id ? queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', r.job_order_id) : null;
   const fromLoc = from_location_id ?? jo?.source_location_id ?? getDefaultLocationId();
-  const loc = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', fromLoc);
+  const loc = queryOne<{ name: string; type: string }>('SELECT name, type FROM locations WHERE id = ?', fromLoc);
   if (!loc) { res.status(400).json({ error: 'Location not found' }); return; }
+  // Approved repair-parts sources only (a truck is transit, not storage).
+  if (!REPAIR_SOURCE_TYPES.has(loc.type)) {
+    res.status(400).json({ error: `${loc.name} is not an approved repair-parts source`, blocked: 'source' });
+    return;
+  }
+  if (queryOne("SELECT 1 FROM repair_revisions WHERE request_id = ? AND status = 'pending'", id)) {
+    res.status(409).json({ error: 'A revision of this request is waiting for approval — it can’t be issued yet.', blocked: 'revision' });
+    return;
+  }
+  // Exact-request rule: a different SKU or another quantity needs a formal revision.
+  if (picked_quantity != null && picked_quantity !== r.quantity) {
+    res.status(409).json({ error: `Picked ${picked_quantity} but ${r.quantity} were requested — revise the request to change the quantity.`, blocked: 'quantity' });
+    return;
+  }
+  if (scanned_code) {
+    const item = r.component_item_id != null
+      ? queryOne<{ sku: string | null }>('SELECT sku FROM inventory_items WHERE id = ?', r.component_item_id) : null;
+    const code = scanned_code.trim().toLowerCase();
+    if (!item || (String(item.sku ?? '').toLowerCase() !== code && String(r.component_item_id) !== code)) {
+      res.status(409).json({ error: `${scanned_code} is not the requested part (${item?.sku || r.component_name}).`, blocked: 'sku' });
+      return;
+    }
+  }
 
   if (r.component_item_id == null) {
     res.status(400).json({ error: 'The requested component no longer exists' });
@@ -229,6 +255,144 @@ router.post('/repairs/:id/reject', repairsGate, syncClass('claim'), (req, res) =
     warehouse_remarks,
     id
   );
+  res.json(loadRequest(id));
+});
+
+/** Location types repair parts may be issued from (rts.ts uses the same storage set). */
+const REPAIR_SOURCE_TYPES = new Set(['warehouse', 'branch', 'store', 'other']);
+
+function repairEvent(requestId: number, kind: string, details: unknown, actorId: number): void {
+  run('INSERT INTO repair_request_events (request_id, kind, details, actor_id) VALUES (?, ?, ?, ?)',
+    requestId, kind, details == null ? null : JSON.stringify(details), actorId);
+}
+
+/* GET /api/production/repairs/:id/context — what the parts clerk verifies before issuing
+   (Figma 83:68 to 83:452): the unit and its source inspection, duplicate open requests for the
+   same unit and part, stock at every location (approved sources first), a pending revision
+   and the request's history. */
+router.get('/repairs/:id/context', readGate, (req, res) => {
+  const id = Number(req.params.id);
+  const r = loadRequest(id);
+  if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
+  const unit = queryOne<{ id: number; identifier: string | null; status: string; product_name: string }>(
+    'SELECT u.id, u.identifier, u.status, j.product_name FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id WHERE u.id = ?', r.unit_id
+  );
+  const inspection = queryOne<Record<string, unknown>>(
+    `SELECT q.id, q.stage, q.remarks, q.created_at, us.full_name AS inspector_name, rd.category, rd.station, rd.priority
+     FROM qc_records q LEFT JOIN users us ON us.id = q.inspector_id LEFT JOIN qc_repair_details rd ON rd.qc_record_id = q.id
+     WHERE q.unit_id = ? AND q.result = 'fail' ORDER BY q.id DESC LIMIT 1`, r.unit_id
+  ) ?? null;
+  const item = r.component_item_id != null
+    ? queryOne<{ id: number; name: string; sku: string | null }>('SELECT id, name, sku FROM inventory_items WHERE id = ?', r.component_item_id) ?? null : null;
+  const duplicates = queryAll<{ id: number; number: string }>(
+    `SELECT id, number FROM repair_part_requests WHERE unit_id = ? AND component_item_id IS ? AND status = 'requested' AND id != ?`,
+    r.unit_id, r.component_item_id, id
+  );
+  const sources = r.component_item_id == null ? [] : queryAll<{ id: number; name: string; type: string; is_default: number }>(
+    'SELECT id, name, type, is_default FROM locations ORDER BY is_default DESC, name COLLATE NOCASE'
+  ).map((l) => ({ ...l, available: stockAt(r.component_item_id!, l.id), approved: REPAIR_SOURCE_TYPES.has(l.type) }))
+    .sort((a, b) => Number(b.approved) - Number(a.approved) || b.available - a.available);
+  const revision = queryOne<Record<string, unknown>>(
+    `SELECT v.*, u.full_name AS proposed_by_name FROM repair_revisions v LEFT JOIN users u ON u.id = v.proposed_by
+     WHERE v.request_id = ? ORDER BY v.id DESC LIMIT 1`, id
+  ) ?? null;
+  const events = queryAll(
+    `SELECT e.kind, e.details, e.created_at, u.full_name AS actor_name FROM repair_request_events e LEFT JOIN users u ON u.id = e.actor_id
+     WHERE e.request_id = ? ORDER BY e.id`, id
+  );
+  const shortage = r.status === 'requested' && !sources.some((x) => x.approved && x.available >= r.quantity);
+  res.json({ request: r, unit, inspection, item, duplicates, sources, revision, events, shortage });
+});
+
+/* GET /api/production/repair-history?q=&state=issued|rejected|blocked — read-only audit list
+   (83:488) with counts. "blocked" = still requested with no approved source holding enough. */
+router.get('/repair-history', readGate, (req, res) => {
+  const q = String(req.query.q ?? '').trim().toLowerCase();
+  const want = String(req.query.state ?? '');
+  const rows = queryAll<RepairPartRequest & { sku: string | null; quantity: number; component_item_id: number | null }>(
+    `${REQUEST_SELECT.replace('FROM repair_part_requests r', ', ci.sku AS sku FROM repair_part_requests r LEFT JOIN inventory_items ci ON ci.id = r.component_item_id')}
+     ORDER BY r.id DESC LIMIT 500`
+  );
+  const approved = queryAll<{ id: number }>("SELECT id FROM locations WHERE type IN ('warehouse', 'branch', 'store', 'other')");
+  const stateOf = (r: { status: string; component_item_id: number | null; quantity: number }) =>
+    r.status === 'accepted' ? 'issued' : r.status === 'rejected' ? 'rejected'
+      : r.status === 'requested' && (r.component_item_id == null || !approved.some((l) => stockAt(r.component_item_id!, l.id) >= r.quantity)) ? 'blocked'
+      : r.status;
+  const all = rows.map((r) => ({ ...r, state: stateOf(r) }));
+  const counts = { issued: 0, rejected: 0, blocked: 0 };
+  all.forEach((r) => { if (r.state in counts) counts[r.state as keyof typeof counts]++; });
+  const out = all.filter((r) => (!want || r.state === want) && (!q || [r.number, r.unit_identifier, r.job_order_number, r.sku, r.component_name]
+    .some((v) => v != null && String(v).toLowerCase().includes(q))));
+  res.json({ counts, rows: out.slice(0, 100) });
+});
+
+/* POST /api/production/repairs/:id/shortage — escalate "no approved stock" (83:416). Records
+   only; the request stays open and blocked until stock arrives or it is revised. */
+router.post('/repairs/:id/shortage', repairsGate, syncClass('merge'), (req, res) => {
+  const id = Number(req.params.id);
+  const r = queryOne<{ status: string }>('SELECT status FROM repair_part_requests WHERE id = ?', id);
+  if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
+  if (r.status !== 'requested') { res.status(409).json({ error: `Request is already ${r.status}` }); return; }
+  const { note } = parseBody(repairShortageSchema, req.body);
+  repairEvent(id, 'shortage', { note: note ?? null }, req.user!.id);
+  res.status(201).json({ ok: true });
+});
+
+/* POST /api/production/repairs/:id/revision — the parts clerk proposes another part or quantity
+   (83:452). The clerk can't approve their own proposal. */
+router.post('/repairs/:id/revision', repairsGate, syncClass('merge'), (req, res) => {
+  const id = Number(req.params.id);
+  const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
+  if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
+  if (r.status !== 'requested') { res.status(409).json({ error: `Request is already ${r.status}` }); return; }
+  if (queryOne("SELECT 1 FROM repair_revisions WHERE request_id = ? AND status = 'pending'", id)) {
+    res.status(409).json({ error: 'A revision is already waiting for approval.' });
+    return;
+  }
+  const input = parseBody(repairRevisionSchema, req.body);
+  const itemId = input.component_item_id ?? r.component_item_id;
+  const item = itemId != null ? queryOne<{ name: string }>('SELECT name FROM inventory_items WHERE id = ?', itemId) : null;
+  if (!item) { res.status(400).json({ error: 'That component item does not exist' }); return; }
+  if (itemId === r.component_item_id && input.quantity === r.quantity) {
+    res.status(400).json({ error: 'The revision changes nothing — pick another part or quantity.' });
+    return;
+  }
+  const rid = Number(run(
+    `INSERT INTO repair_revisions (request_id, proposed_item_id, proposed_name, proposed_quantity, reason, proposed_by)
+     VALUES (?, ?, ?, ?, ?, ?)`, id, itemId, item.name, input.quantity, input.reason, req.user!.id
+  ).lastInsertRowid);
+  repairEvent(id, 'revision_requested', { revision_id: rid, item: item.name, quantity: input.quantity, reason: input.reason }, req.user!.id);
+  res.status(201).json({ id: rid });
+});
+
+/* POST /api/production/repairs/:id/revision/decide — the requester or a supervisor
+   (production.approve / inventory.adjust) approves or rejects; never the proposer. */
+router.post('/repairs/:id/revision/decide', readGate, syncClass('claim'), (req, res) => {
+  const id = Number(req.params.id);
+  const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
+  const v = queryOne<{ id: number; proposed_item_id: number | null; proposed_name: string; proposed_quantity: number; proposed_by: number | null }>(
+    "SELECT * FROM repair_revisions WHERE request_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", id
+  );
+  if (!r || !v) { res.status(404).json({ error: 'No pending revision for this request' }); return; }
+  const perms = req.user!.permissions;
+  const mayDecide = r.requested_by === req.user!.id || perms.includes('production.approve') || perms.includes('inventory.adjust');
+  if (!mayDecide) { res.status(403).json({ error: 'Only the requester or a supervisor can decide a revision.' }); return; }
+  if (v.proposed_by === req.user!.id) { res.status(403).json({ error: 'You proposed this revision — someone else must approve it.' }); return; }
+  const { approve, note } = parseBody(repairRevisionDecisionSchema, req.body);
+  db.exec('BEGIN');
+  try {
+    run("UPDATE repair_revisions SET status = ?, decided_by = ?, decision_note = ?, decided_at = datetime('now') WHERE id = ?",
+      approve ? 'approved' : 'rejected', req.user!.id, note ?? null, v.id);
+    if (approve) {
+      run("UPDATE repair_part_requests SET component_item_id = ?, component_name = ?, quantity = ?, updated_at = datetime('now') WHERE id = ?",
+        v.proposed_item_id, v.proposed_name, v.proposed_quantity, id);
+    }
+    repairEvent(id, approve ? 'revision_approved' : 'revision_rejected', { revision_id: v.id, note: note ?? null }, req.user!.id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
   res.json(loadRequest(id));
 });
 
