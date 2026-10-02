@@ -57,6 +57,12 @@ slip stays on record and shows the order as cancelled).
 
 ## Purchase-to-pay
 
+**Offline (phase 4d, docs/OFFLINE-FIRST.md §23):** the purchase order, the goods receipt at the
+site's warehouse (stock in), bill entry and approval all work with the internet down. Receipts are
+physical facts owned by the receiving location's site. Bills are decided at the main site. PR,
+GRN and BILL numbers come from the site host's blocks. A receipt against a PO line the cloud
+removed meanwhile, or an approval whose match fails only on the cloud, stands, flagged (D6).
+
 **Trigger:** a purchase order is created (`purchasing`), either manually or as a
 draft raised by the sales-order shortfall flow above, or via
 `POST /inventory/reorder-po` (low-stock reorder).
@@ -408,9 +414,9 @@ needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`);
 (phase 3c-i: LAN PCs sync with their site host, which forwards to the cloud); site decisions
 (phase 3c-ii: `claim`s decided at the owning site; the cloud keeps them, flagging clashes — D6).
 Pipelines offline so far (phase 4): time clock (4a), production run with site number blocks (4b),
-sales order fulfillment (4c).
-**Not built:** mobile sync UI; the remaining pipelines (purchasing receipts, HR, reports, payroll,
-accounting — phase 4d+). This pipeline wraps the
+sales order fulfillment (4c), purchase-to-pay (4d).
+**Not built:** mobile sync UI; the remaining pipelines (HR, reports, payroll, accounting —
+phase 4e+). This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).

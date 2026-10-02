@@ -356,6 +356,11 @@ site host's number blocks offline.
 **Owned files:** `purchasing-match.ts`, routes: `purchasing.routes.ts`.
 **Dependencies:** `modules/inventory` (declared as a hard dependency in
 `shared/modules.ts`'s `MODULE_DEPS`), `modules/accounting` (autopost).
+**Offline (sync/, phase 4d, docs/OFFLINE-FIRST.md §23):** goods receipt `physical` (home: the
+receiving location's site); bill entry `merge`; receipt reversal `claim` at the receipt location's
+site; bill edit / approve / dispute / delete and tolerance `claim` company-wide (the main site).
+D6 clash-checks: a receipt line whose PO line the cloud removed (kept, unlinked); an approval
+whose 3-way match fails only on the cloud; a bill approved on both sides (first kept).
 **Status:** working.
 
 ## modules/hr
