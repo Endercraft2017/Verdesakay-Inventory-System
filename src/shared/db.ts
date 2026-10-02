@@ -1221,6 +1221,68 @@ function createSchema(): void {
       priority     TEXT
     );
 
+    -- Sale-order warehouse-out rules (mobile Releasing, Figma 78:*; modules/inventory/release-auth.ts).
+    -- createSchema, no version bump.
+    -- Who may receive an order's goods: issued by Sales, presented as a token at handoff. Only the
+    -- last 4 of the recipient's ID reference is stored. A new one revokes the previous.
+    CREATE TABLE IF NOT EXISTS release_authorizations (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id        INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      mode            TEXT NOT NULL CHECK (mode IN ('pickup', 'delivery')),
+      recipient_name  TEXT NOT NULL,
+      id_last4        TEXT,
+      token           TEXT NOT NULL,
+      valid_until     TEXT NOT NULL,
+      handoff_area    TEXT,
+      partial_allowed INTEGER NOT NULL DEFAULT 0,
+      notes           TEXT,
+      issued_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      issued_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      revoked_at      TEXT,
+      revoked_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      revoke_reason   TEXT,
+      used_slip_id    INTEGER REFERENCES release_slips(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_authorizations_order ON release_authorizations(order_id, id);
+    -- What must leave with each unit of a finished product (charger, keys, documents…).
+    CREATE TABLE IF NOT EXISTS product_package_items (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id  INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      label    TEXT NOT NULL,
+      required INTEGER NOT NULL DEFAULT 1,
+      sort     INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_package_items ON product_package_items(item_id, sort);
+    -- The handoff facts of a release slip: authorization used, recipient, confirmed package
+    -- (JSON [{item_id,label,ok}]), seal tag, recipient acknowledgement, a partial release's backorder.
+    CREATE TABLE IF NOT EXISTS release_slip_details (
+      slip_id            INTEGER PRIMARY KEY REFERENCES release_slips(id) ON DELETE CASCADE,
+      authorization_id   INTEGER REFERENCES release_authorizations(id) ON DELETE SET NULL,
+      mode               TEXT,
+      recipient_name     TEXT,
+      handoff_area       TEXT,
+      seal_tag           TEXT,
+      package            TEXT,
+      acknowledged       INTEGER NOT NULL DEFAULT 0,
+      backorder_order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL
+    );
+    -- Problems the releaser raises for Sales (wrong unit, missing package item, identity, a
+    -- partial-release request). Records only; Sales resolves them on the sale order.
+    CREATE TABLE IF NOT EXISTS release_reports (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id        INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      kind            TEXT NOT NULL CHECK (kind IN ('authorization', 'identity', 'unit_mismatch', 'package_missing', 'partial_request', 'other')),
+      description     TEXT NOT NULL,
+      unit_identifier TEXT,
+      status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+      resolution      TEXT,
+      reported_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_reports_order ON release_reports(order_id, status);
+
     -- Job-order line decisions (pause / resume / close early) — append-only audit history with
     -- actor and reason; job_orders.pause_* only hold the CURRENT hold. createSchema, no bump.
     CREATE TABLE IF NOT EXISTS job_order_events (

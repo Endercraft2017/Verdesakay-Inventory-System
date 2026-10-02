@@ -879,6 +879,14 @@ export interface PettyCashFunds {
   created_at: Generated<string>;
 }
 
+export interface ProductPackageItems {
+  id: Generated<number>;
+  item_id: number;
+  label: string;
+  required: Generated<number>;
+  sort: Generated<number>;
+}
+
 export interface ProductionBatches {
   id: Generated<number>;
   number: string;
@@ -1006,6 +1014,51 @@ export interface QcRepairDetails {
   category: string | null;
   station: string | null;
   priority: string | null;
+}
+
+export interface ReleaseAuthorizations {
+  id: Generated<number>;
+  order_id: number;
+  mode: string;
+  recipient_name: string;
+  id_last4: string | null;
+  token: string;
+  valid_until: string;
+  handoff_area: string | null;
+  partial_allowed: Generated<number>;
+  notes: string | null;
+  issued_by: number | null;
+  issued_at: Generated<string>;
+  revoked_at: string | null;
+  revoked_by: number | null;
+  revoke_reason: string | null;
+  used_slip_id: number | null;
+}
+
+export interface ReleaseReports {
+  id: Generated<number>;
+  order_id: number;
+  kind: string;
+  description: string;
+  unit_identifier: string | null;
+  status: Generated<string>;
+  resolution: string | null;
+  reported_by: number | null;
+  created_at: Generated<string>;
+  resolved_by: number | null;
+  resolved_at: string | null;
+}
+
+export interface ReleaseSlipDetails {
+  slip_id: Generated<number>;
+  authorization_id: number | null;
+  mode: string | null;
+  recipient_name: string | null;
+  handoff_area: string | null;
+  seal_tag: string | null;
+  package: string | null;
+  acknowledged: Generated<number>;
+  backorder_order_id: number | null;
 }
 
 export interface ReleaseSlipItems {
@@ -1323,6 +1376,7 @@ export interface DB {
   payroll_tables: PayrollTables;
   petty_cash_entries: PettyCashEntries;
   petty_cash_funds: PettyCashFunds;
+  product_package_items: ProductPackageItems;
   production_batches: ProductionBatches;
   production_issues: ProductionIssues;
   production_receipt_items: ProductionReceiptItems;
@@ -1335,6 +1389,9 @@ export interface DB {
   qc_checklists: QcChecklists;
   qc_records: QcRecords;
   qc_repair_details: QcRepairDetails;
+  release_authorizations: ReleaseAuthorizations;
+  release_reports: ReleaseReports;
+  release_slip_details: ReleaseSlipDetails;
   release_slip_items: ReleaseSlipItems;
   release_slips: ReleaseSlips;
   repair_part_requests: RepairPartRequests;

@@ -821,6 +821,51 @@ export const releaseSlipSchema = z.object({
   collected_by: trimmed.min(1, 'Enter who collected the goods').max(160),
   vehicle_plate: optionalText,
   notes: optionalText,
+  // Warehouse-out rules (modules/inventory/release-auth.ts): the token the recipient presents,
+  // each package item confirmed, the seal / tag, the handoff area and the recipient's acknowledgement.
+  authorization_token: trimmed.max(40).optional().nullable(),
+  package: z.array(z.object({
+    item_id: z.coerce.number().int().positive(),
+    label: trimmed.min(1).max(120),
+    ok: z.boolean(),
+  })).max(300).optional(),
+  seal_tag: trimmed.max(80).optional().nullable(),
+  handoff_area: trimmed.max(80).optional().nullable(),
+  acknowledged: z.boolean().optional(),
+});
+
+/** Sales issues who may receive an order's goods (release-auth.ts). */
+export const releaseAuthorizationSchema = z.object({
+  mode: z.enum(['pickup', 'delivery']),
+  recipient_name: trimmed.min(1, 'Enter the approved recipient').max(120),
+  // Only the last 4 characters are kept — never the full ID number.
+  id_reference: trimmed.max(40).optional().nullable(),
+  valid_hours: z.coerce.number().min(1).max(24 * 14).default(24),
+  handoff_area: trimmed.max(80).optional().nullable(),
+  partial_allowed: z.boolean().optional(),
+  notes: optionalText,
+});
+
+export const revokeReleaseAuthorizationSchema = z.object({
+  reason: trimmed.min(1, 'Give a reason').max(300),
+});
+
+export const releaseReportSchema = z.object({
+  kind: z.enum(['authorization', 'identity', 'unit_mismatch', 'package_missing', 'partial_request', 'other']),
+  description: trimmed.min(1, 'Describe the problem').max(1500),
+  unit_identifier: trimmed.max(120).optional().nullable(),
+});
+
+export const resolveReleaseReportSchema = z.object({
+  resolution: trimmed.max(1000).optional().nullable(),
+});
+
+/** A finished product's package checklist (what leaves with each unit). */
+export const packageItemsSchema = z.object({
+  items: z.array(z.object({
+    label: trimmed.min(1).max(120),
+    required: z.boolean().default(true),
+  })).max(40),
 });
 
 // ---- Purchasing: goods receipts + vendor bills (3-way match) ----

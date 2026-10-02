@@ -14,6 +14,7 @@ import { createDraftJobOrder } from '../manufacturing/job-orders.routes';
 import type { Order, OrderItem, OrderType } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
 import { siteDecisionStands } from '../../shared/sync-context';
+import { currentAuthorization, slipError, splitUnreleased } from './release-auth';
 
 const router = Router();
 router.use(requireAuth);
@@ -435,19 +436,42 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
     res.status(409).json({ error: 'A release slip was already issued for this order.' });
     return;
   }
+  // A partial release needs Sales' authorization (release-auth.ts): the order is split at the slip.
+  const { auth, state: authState } = currentAuthorization(id);
+  let partial = false;
   if (String(order.status || '').toLowerCase() !== 'released') {
     if (!stands) {
-      res.status(409).json({ error: 'Release every line of the order before issuing the release slip.' });
-      return;
+      if (!(auth && authState === 'valid' && auth.partial_allowed)) {
+        res.status(409).json({ error: 'Release every line of the order before issuing the release slip.', blocked: 'incomplete' });
+        return;
+      }
+      partial = true;
+    } else {
+      recordSiteClash(req, `Sale order ${order.number} was ${order.status} on the cloud when the site's release slip arrived; the goods had left, so the slip stands.`);
     }
-    recordSiteClash(req, `Sale order ${order.number} was ${order.status} on the cloud when the site's release slip arrived; the goods had left, so the slip stands.`);
   }
   const input = parseBody(releaseSlipSchema, req.body);
-  const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
+  // Warehouse-out rules (release-auth.ts): the recipient's token and every required package item,
+  // checked before any write — a refusal moves no stock.
+  const rule = slipError(id, input);
+  if (rule) {
+    if (!stands) { res.status(409).json({ error: rule.error, blocked: rule.code, missing: rule.missing }); return; }
+    recordSiteClash(req, `Sale order ${order.number}: the site's release slip stands although — ${rule.error}`);
+  }
+  if (partial && !queryOne<{ n: number }>(
+    `SELECT (SELECT COUNT(*) FROM job_order_units WHERE order_id = ? AND status IN ('reserved', 'sold'))
+          + (SELECT COALESCE(SUM(released_qty), 0) FROM order_items WHERE order_id = ?) AS n`, id, id
+  )!.n) {
+    res.status(409).json({ error: 'Nothing on this order has been allocated yet — scan or enter what is leaving first.', blocked: 'incomplete' });
+    return;
+  }
 
   let slipId: number;
+  let backorder: { id: number; number: string } | null = null;
   db.exec('BEGIN');
   try {
+    if (partial) backorder = splitUnreleased(id, auth!.issued_by ?? req.user!.id);
+    const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
     const number = nextSequence('release_slip_number', 'RS');
     slipId = Number(run(
       'INSERT INTO release_slips (number, order_id, released_by, collected_by, vehicle_plate, notes) VALUES (?, ?, ?, ?, ?, ?)',
@@ -467,6 +491,14 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
         serials.length ? serials.join(', ') : null
       );
     }
+    run(
+      `INSERT INTO release_slip_details (slip_id, authorization_id, mode, recipient_name, handoff_area, seal_tag, package, acknowledged, backorder_order_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      slipId, auth && authState === 'valid' ? auth.id : null, auth?.mode ?? null, input.collected_by,
+      input.handoff_area ?? auth?.handoff_area ?? null, input.seal_tag ?? null,
+      input.package?.length ? JSON.stringify(input.package) : null, input.acknowledged ? 1 : 0, backorder?.id ?? null
+    );
+    if (auth && authState === 'valid') run('UPDATE release_authorizations SET used_slip_id = ? WHERE id = ?', slipId, auth.id);
     run("UPDATE orders SET status = 'confirmed', updated_at = datetime('now') WHERE id = ?", id);
     db.exec('COMMIT');
   } catch (e) {
@@ -477,7 +509,7 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
   maybeAutoPostSale(id, req.user!.id);
   maybeFulfillSale(id, req.user!.id);
   maybeAutoPush(id);
-  res.status(201).json({ ok: true, id: slipId, order: orderWithLines(id) });
+  res.status(201).json({ ok: true, id: slipId, order: orderWithLines(id), backorder });
 });
 
 // POST /api/orders/:id/release — a warehouse releaser scans / enters goods out against an

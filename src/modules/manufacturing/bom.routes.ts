@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { db, queryOne, queryAll, run } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
-import { parseBody, saveBomSchema, assignChecklistSchema, allocateUnitsSchema } from '../../shared/validation';
+import { parseBody, saveBomSchema, assignChecklistSchema, allocateUnitsSchema, packageItemsSchema } from '../../shared/validation';
 import { applyStockChange, transferStock, getDefaultLocationId } from '../inventory/inventory-stock';
 import { explode, rollupCost, whereUsed } from './bom-explode';
 import { dbBomResolvers } from './bom-resolvers';
@@ -236,6 +236,36 @@ router.patch('/:id/checklist', requirePermission('qc.configure'), syncClass('cla
 // GET /api/finished-products/:id/units — this product's physical units.
 // `?status=` filters (default `in_stock` — the QC-passed units eligible for label
 // printing / sale). Pass `?status=all` for everything.
+// GET/PUT /api/finished-products/:id/package — what must leave with each unit of this product
+// (charger, keys, documents...). The releaser confirms every required item on the release slip
+// (modules/inventory/release-auth.ts); a missing one blocks warehouse-out.
+router.get('/:id/package', requirePermission('inventory.view'), (req, res) => {
+  const id = Number(req.params.id);
+  res.json(queryAll<{ id: number; label: string; required: number }>(
+    'SELECT id, label, required FROM product_package_items WHERE item_id = ? ORDER BY sort, id', id
+  ).map((r) => ({ ...r, required: !!r.required })));
+});
+
+router.put('/:id/package', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
+    res.status(404).json({ error: 'Item not found' });
+    return;
+  }
+  const { items } = parseBody(packageItemsSchema, req.body);
+  db.exec('BEGIN');
+  try {
+    run('DELETE FROM product_package_items WHERE item_id = ?', id);
+    items.forEach((it, i) => run('INSERT INTO product_package_items (item_id, label, required, sort) VALUES (?, ?, ?, ?)',
+      id, it.label, it.required ? 1 : 0, i));
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  res.json({ ok: true, items: items.length });
+});
+
 router.get('/:id/units', requirePermission('inventory.view'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
