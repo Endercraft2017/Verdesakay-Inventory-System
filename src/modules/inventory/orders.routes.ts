@@ -16,7 +16,7 @@ import type { Order, OrderItem, OrderType } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
 import { siteDecisionStands } from '../../shared/sync-context';
 import { currentAuthorization, latestOverride, slipError, splitUnreleased } from './release-auth';
-import { isMobileClient } from '../../shared/device';
+import { isAppClient } from '../../shared/device';
 
 const router = Router();
 router.use(requireAuth);
@@ -424,7 +424,7 @@ router.post('/:id/accept-release', releaseGate, syncClass('claim', orderSite), (
 // it confirms the order, which is when stock goes out (maybeFulfillSale). Photos of the
 // outgoing goods are `attachments` kind 'release' on the slip id: attached afterwards (desktop),
 // or uploaded first as kind 'release_proof' on the order and passed as `evidence_ids`, which the
-// slip takes over — the phone app must do the latter, with at least one photo.
+// slip takes over — both apps (phone and desktop) must do the latter, with at least one photo.
 router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
@@ -464,12 +464,12 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
     if (!stands) { res.status(409).json({ error: rule.error, blocked: rule.code, missing: rule.missing }); return; }
     recordSiteClash(req, `Sale order ${order.number}: the site's release slip stands although — ${rule.error}`);
   }
-  // Handoff photos already uploaded for this order (kind 'release_proof'); the phone app needs one.
+  // Handoff photos already uploaded for this order (kind 'release_proof'); either app needs one.
   const evidence = (input.evidence_ids ?? []).length ? queryAll<{ id: number }>(
     `SELECT id FROM attachments WHERE kind = 'release_proof' AND ref_id = ? AND id IN (${input.evidence_ids!.map(() => '?').join(',')})`,
     id, ...input.evidence_ids!
   ).map((a) => a.id) : [];
-  if (!stands && isMobileClient(req) && !evidence.length) {
+  if (!stands && isAppClient(req) && !evidence.length) {
     res.status(409).json({ error: 'Add at least one handoff photo before the warehouse-out.', blocked: 'evidence' });
     return;
   }

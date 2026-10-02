@@ -21,11 +21,19 @@ export function deviceIdOf(req: Request): string | null {
   return raw && DEVICE_ID_RE.test(raw) ? raw : null;
 }
 
-/** True when the request came from the phone app (/m sends `X-Client: mobile`, public/js/api.js).
- *  For rules only the phone app is held to — evidence photos on QC/QA results and on the release
- *  handoff. A self-declared header: it identifies the app, it doesn't authenticate it. */
+/** True when the request came from the phone app (/m sends `X-Client: mobile`, public/js/api.js). */
 export function isMobileClient(req: Request): boolean {
   return (req.get('x-client') || '').toLowerCase() === 'mobile';
+}
+
+/** True when the request came from one of the apps people use — the phone app (`X-Client: mobile`)
+ *  or the desktop (`X-Client: desktop`); public/js/api.js sends it on every call. Rules held to
+ *  every person, not to scripted API callers or a synced replay (which carries no such header):
+ *  evidence photos on failing / held QC-QA results and on the warehouse-out. A self-declared
+ *  header: it identifies the app, it doesn't authenticate it. */
+export function isAppClient(req: Request): boolean {
+  const c = (req.get('x-client') || '').toLowerCase();
+  return c === 'mobile' || c === 'desktop';
 }
 
 /** Client IP (the proxy's X-Forwarded-For when BEHIND_PROXY — see app.ts `trust proxy`). */

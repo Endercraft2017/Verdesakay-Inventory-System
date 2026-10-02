@@ -182,11 +182,13 @@ describe('phone app evidence', () => {
     expect(photos.map((p: { id: number }) => p.id)).toEqual([up.body.id]);
   });
 
-  it('keeps the desktop slip free of that rule', async () => {
+  it('holds the desktop app to the same rule; a scripted API call is not', async () => {
     const { product, codes } = await productWithUnits('EW', 1);
     const so = await approvedOrder(product, 1);
     await ctx.api.post(`/api/orders/${so}/release`).set(bearer(releaser.token)).send({ codes: [codes[0]!] });
-    expect((await slip(so)).status).toBe(201);
+    const desk = await ctx.api.post(`/api/orders/${so}/release-slip`).set({ ...bearer(releaser.token), 'X-Client': 'desktop' }).send({ collected_by: 'Jordan D.' });
+    expect(desk.body.blocked).toBe('evidence');
+    expect((await slip(so)).status).toBe(201); // no app header: an integration / test client
   });
 });
 

@@ -472,7 +472,7 @@ export const inspectUnitsSchema = z
     // 'hold' (final / QA pass only): held for review; decided later via /units/:unitId/hold-decision.
     disposition: z.enum(['scrap', 'dispose', 'recycle', 'repair', 'hold']).optional(),
     // Evidence photos already uploaded as `attachments` kind 'qc_unit' on the unit(s); the phone app
-    // must send at least one per unit with a failing result (shared/device.ts isMobileClient).
+    // and the desktop must send at least one per unit with a failing result (shared/device.ts isAppClient).
     evidence_ids: z.array(z.coerce.number().int().positive()).max(60).optional(),
     // With disposition 'repair': the structured repair / rectification order (the remarks
     // carry the instruction). Kept per QC record in qc_repair_details.
@@ -871,7 +871,7 @@ export const releaseSlipSchema = z.object({
   handoff_area: trimmed.max(80).optional().nullable(),
   acknowledged: z.boolean().optional(),
   // Handoff photos uploaded first as `attachments` kind 'release_proof' on the order; the slip
-  // takes them over. The phone app must send at least one (isMobileClient).
+  // takes them over. The phone and desktop apps must send at least one (isAppClient).
   evidence_ids: z.array(z.coerce.number().int().positive()).max(20).optional(),
 });
 

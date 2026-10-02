@@ -24,7 +24,7 @@ import {
   pauseJobOrderSchema,
   holdDecisionSchema,
 } from '../../shared/validation';
-import { isMobileClient } from '../../shared/device';
+import { isAppClient } from '../../shared/device';
 import { notifyAnyPermission, notifyUser } from '../../shared/push';
 import { imageUpload, saveAttachment, unlink } from '../../core/attachments.routes';
 import { enforceQuota } from '../../platform/quota';
@@ -1594,7 +1594,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
     res.status(400).json({ error: 'Only the final (QA) pass can hold a unit for review.' });
     return;
   }
-  // Evidence (phone app only): every failing / held unit needs a photo of its own, uploaded by
+  // Evidence (phone and desktop apps): every failing / held unit needs a photo of its own, uploaded by
   // this inspector and not already behind an earlier result.
   const evidence = new Map<number, number[]>();
   if (result === 'fail' && (evidence_ids ?? []).length) {
@@ -1603,7 +1603,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
          AND id NOT IN (SELECT attachment_id FROM qc_evidence)`, req.user!.id, ...evidence_ids!
     )) evidence.set(a.ref_id, [...(evidence.get(a.ref_id) ?? []), a.id]);
   }
-  if (result === 'fail' && isMobileClient(req) && units.some((u) => !evidence.has(u.id))) {
+  if (result === 'fail' && isAppClient(req) && units.some((u) => !evidence.has(u.id))) {
     res.status(409).json({ error: 'Attach at least one evidence photo of the unit before recording this result.', blocked: 'evidence' });
     return;
   }

@@ -8,7 +8,8 @@
         the recipient's token, with a reason (POST /release-slips/orders/:id/override).
      3. Release Slips — the printable record of everything that left.
    Backend: /api/release-slips (queue + slips), /api/orders/:id/accept-release | release |
-   release-slip, photos = /api/attachments kind 'release'. filter.tab = 'queue' | 'slips' */
+   release-slip, photos = /api/attachments kind 'release_proof' on the order first, taken over by the
+   slip as kind 'release' (both apps must send one — the server refuses the slip without). filter.tab = 'queue' | 'slips' */
 App.register('releasing', async (view, filter) => {
   const canRelease = App.hasPermission('inventory.adjust') || App.hasPermission('orders.release');
   const tab = filter && filter.tab === 'slips' ? 'slips' : 'queue';
@@ -272,21 +273,24 @@ App.register('releasing', async (view, filter) => {
         if (missing.length) { showErr('Confirm every required package item: ' + missing.map((p) => p.label).join(', ')); return false; }
         if (!photos.length) { showErr('Add at least one photo of the goods going out'); return false; }
         if (overriding) await API.post('/release-slips/orders/' + order.id + '/override', { approve: true, reason: val('override_reason') });
+        // Photos first, on the order (each once across retries): the slip takes them over, and the
+        // server refuses a warehouse-out without one. If an upload fails nothing has moved.
+        for (const f of photos) {
+          if (f._attId) continue;
+          const fd = new FormData();
+          fd.append('kind', 'release_proof');
+          fd.append('ref_id', String(order.id));
+          fd.append('caption', 'Goods going out');
+          fd.append('image', f);
+          try { f._attId = (await API.upload('/attachments', fd)).id; }
+          catch (e) { showErr('A photo failed to upload — nothing was released. ' + e.message); return false; }
+        }
         const r = await API.post('/orders/' + order.id + '/release-slip', {
           collected_by: val('collected_by'), vehicle_plate: val('vehicle_plate') || null, notes: val('notes') || null,
           authorization_token: overriding ? null : (val('authorization_token').toUpperCase() || null), seal_tag: val('seal_tag') || null, package: pkg,
+          evidence_ids: photos.map((f) => f._attId),
         });
-        let failed = 0;
-        for (const f of photos) {
-          const fd = new FormData();
-          fd.append('kind', 'release');
-          fd.append('ref_id', String(r.id));
-          fd.append('image', f);
-          try { await API.upload('/attachments', fd); } catch (e) { failed += 1; }
-        }
-        UI.toast(failed ? `Slip issued — ${failed} photo(s) failed to upload; add them from the slip`
-          : r.backorder ? `Release slip issued — the rest is on backorder ${r.backorder.number}` : 'Release slip issued — stock deducted',
-          failed ? 'error' : undefined);
+        UI.toast(r.backorder ? `Release slip issued — the rest is on backorder ${r.backorder.number}` : 'Release slip issued — stock deducted');
         if (onDone) onDone();
         slipView(r.id);
       },

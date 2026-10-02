@@ -172,6 +172,8 @@ async function inspectModal(jobOrderId, onDone) {
         <div style="margin-bottom:8px"><label>Remarks</label><input id="qi-remarks" ${allowed ? '' : 'disabled'} placeholder="Notes / reason if failing" /></div>
         <div><label>On fail</label>
           <select id="qi-disp" ${allowed ? '' : 'disabled'}>${DISPOSITIONS.map((d) => `<option value="${d}">${d[0].toUpperCase() + d.slice(1)}</option>`).join('')}</select></div>
+        <div style="margin-top:8px"><label>Evidence photo(s) — required to fail</label>
+          <input type="file" id="qi-photos" accept="image/*" multiple ${allowed ? '' : 'disabled'} /></div>
       </div>
       ${allowed ? `
         <div style="display:flex;gap:8px;margin-top:10px">
@@ -188,6 +190,8 @@ async function inspectModal(jobOrderId, onDone) {
       const remarks = (el.querySelector('#qi-remarks').value || '').trim() || undefined;
       const disposition = result === 'fail' ? (el.querySelector('#qi-disp') || {}).value : undefined;
       if (result === 'fail' && !remarks) { UI.toast('Add a remark when failing units', 'error'); return; }
+      const photos = [...((el.querySelector('#qi-photos') || {}).files || [])];
+      if (result === 'fail' && !photos.length) { UI.toast('Add at least one evidence photo to fail units', 'error'); return; }
 
       let checklist;
       const boxes = [...el.querySelectorAll('.qi-chk-item')];
@@ -199,7 +203,16 @@ async function inspectModal(jobOrderId, onDone) {
           if (missing.length) { UI.toast('Tick the required checks first: ' + missing.join(', '), 'error'); return; }
         }
       }
-      API.post('/job-orders/' + jobOrderId + '/units/inspect', { unit_ids: unitIds, result, identifier, remarks, checklist, disposition })
+      // Evidence first (the server refuses a failing result without a photo of each unit): every
+      // chosen photo is attached to every failed unit, so each result has its own.
+      const uploads = result === 'fail' ? unitIds.flatMap((uid) => photos.map((f) => () => {
+        const fd = new FormData();
+        fd.append('kind', 'qc_unit'); fd.append('ref_id', String(uid)); fd.append('caption', 'QC/QA evidence'); fd.append('image', f);
+        return API.upload('/attachments', fd).then((a) => a.id);
+      })) : [];
+      uploads.reduce((p, up) => p.then((ids) => up().then((id) => ids.concat(id))), Promise.resolve([]))
+        .then((evidence_ids) => API.post('/job-orders/' + jobOrderId + '/units/inspect',
+          { unit_ids: unitIds, result, identifier, remarks, checklist, disposition, evidence_ids: result === 'fail' ? evidence_ids : undefined }))
         .then(async (r) => {
           jo = r.job_order; await refresh();
           activeUnitId = null; checkedIds.clear();

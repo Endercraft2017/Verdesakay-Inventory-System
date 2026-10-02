@@ -56,8 +56,8 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
      supervisor overrides directly). Approved: the slip goes without the token, once, and records
      who approved it and why. Declined: the token stays required. Never covers a missing,
      expired, used or revoked authorization.
-   - **Branch — phone evidence:** a warehouse-out from the phone app without a handoff photo →
-     409 `blocked: 'evidence'`, zero stock change (desktop slips are not held to this).
+   - **Branch — evidence:** a warehouse-out from the phone or desktop app without a handoff photo
+     → 409 `blocked: 'evidence'`, zero stock change. Both apps upload the photos first.
    - **Branch — package:** every required package item of the products on the order must be
      confirmed on the slip, else 409 with the missing items, zero stock change.
    - **Branch — partial release:** an incomplete order releases only under an authorization
@@ -232,7 +232,7 @@ raised by the sales-order shortfall flow.
      category, instruction, station, priority + a required photo (`qc_unit` attachment), online
      only; **Fail / reject** (scrap, dispose, recycle) with reason, photo and a review tick.
      A returned unit shows the original issue and failed items for reinspection; waiting parts
-     requests block the start. A failing / held result from the phone needs an evidence photo of
+     requests block the start. A failing / held result from the phone or desktop needs an evidence photo of
      that unit (uploaded first, sent as `evidence_ids`), else 409 and nothing is recorded.
    - **Branch — QA hold for review** (final pass only): the unit goes to `hold` — out of RTS, and
      the job order can't complete. Every QA inspector and `production.qa_review` holder is

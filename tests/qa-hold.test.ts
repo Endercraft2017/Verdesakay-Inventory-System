@@ -68,8 +68,12 @@ describe('phone evidence', () => {
     expect((await unit(u)).status).toBe('rework');
   });
 
-  it('keeps the desktop free of the photo rule, and passes need no photo', async () => {
-    expect((await inspect(bearer(qc.token), { unit_ids: [units[1]], result: 'pass' })).status).toBe(200);
+  it('holds the desktop app to the same rule; passes and scripted API calls need no photo', async () => {
+    const desk = { ...bearer(qc.token), 'X-Client': 'desktop' };
+    const r = await inspect(desk, { unit_ids: [units[1]], result: 'fail', disposition: 'scrap', remarks: 'Bent frame' });
+    expect(r.status).toBe(409);
+    expect(r.body.blocked).toBe('evidence');
+    expect((await inspect(desk, { unit_ids: [units[1]], result: 'pass' })).status).toBe(200);
     expect((await inspect(phone(qc.token), { unit_ids: [units[2], units[3], units[4]], result: 'pass' })).status).toBe(200);
   });
 });

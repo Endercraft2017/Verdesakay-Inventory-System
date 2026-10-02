@@ -51,8 +51,8 @@ const API = (() => {
     const token = getToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
     if (!/^\/anonymous-reports/.test(path)) headers['X-Device-Id'] = deviceId();
-    // The phone app (/m) says so: the server holds it to the app's evidence rules (src/shared/device.ts).
-    if (/^\/m(\/|$)/.test(location.pathname)) headers['X-Client'] = 'mobile';
+    // Which app this is (src/shared/device.ts): both are held to the evidence-photo rules.
+    headers['X-Client'] = /^\/m(\/|$)/.test(location.pathname) ? 'mobile' : 'desktop';
     // Opt-in idempotency: a caller (e.g. the mobile offline queue) passes a stable
     // key so a retried request is de-duplicated server-side instead of re-applied.
     if (opts && opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;

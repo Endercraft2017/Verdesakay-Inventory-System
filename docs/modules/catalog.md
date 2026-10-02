@@ -328,8 +328,9 @@ confirmed package JSON, seal tag, acknowledgement, a partial release's backorder
 before any write: a missing / wrong / expired / used / revoked authorization or token (every
 order needs one unless the company turns the `release_authorization_required` setting off — on
 by default; an order that has one always enforces it), any unconfirmed required package item, an
-incomplete order without partial authority, or — from the phone app (`X-Client: mobile`,
-`shared/device.ts isMobileClient`) — no handoff photo (`evidence_ids`: `attachments` kind
+incomplete order without partial authority, or — from either app (`X-Client: mobile|desktop`,
+sent by `public/js/api.js`; `shared/device.ts isAppClient`; scripted callers and synced replays
+carry no such header) — no handoff photo (`evidence_ids`: `attachments` kind
 `release_proof` on the order, taken over by the slip as kind `release`). **Token override:**
 `release_token_overrides` — the releaser asks (`POST /orders/:id/override-request`, merge; pushes
 every `inventory.adjust` holder), a supervisor (`inventory.adjust`) approves or declines with a
@@ -405,7 +406,8 @@ inspector or a new grantable `production.qa_review` (Production Manager by defau
 `inventory.adjust`. Holding pushes every QA inspector / `qa_review` holder; the decision pushes the
 inspector who held it. Evidence: a failing / held result carries `evidence_ids` (`qc_unit` photos
 of that unit by that inspector, each backing one record — `qc_evidence`, createSchema); from the
-phone app (`X-Client: mobile`) one per unit is required (409 `blocked: 'evidence'`). Desktop job
+phone or desktop app (`isAppClient`) one per unit is required (409 `blocked: 'evidence'`); the desktop
+QC form uploads the chosen photo(s) to each failed unit first (`production-qc.js`). Desktop job
 order: held units with Decide…, and Pause / Resume / Close early for `production.pause|manage`
 holders without `inventory.adjust` (reason required), plus the line-decision history
 (`GET /:id/events`). Tests: `tests/qa-hold.test.ts`.
