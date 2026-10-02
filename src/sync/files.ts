@@ -86,7 +86,9 @@ export function syncUpload(multerMw: RequestHandler): RequestHandler {
         files.push({ field: f.fieldname, name: f.originalname, type: f.mimetype, hash: storeBlob(slug, bytes) });
         if (f.path) {
           // Named after the command: the same name on the PC and on the authority's replay.
-          const prefix = path.basename(f.filename).split('-')[0] || 'file';
+          // (A multer name that starts with a timestamp differs per run, so it can't be the prefix.)
+          const head = path.basename(f.filename).split('-')[0] ?? '';
+          const prefix = head && !/^\d+$/.test(head) ? head : 'file';
           const name = `${prefix}-${ctx.commandId!.toLowerCase()}-${i}${path.extname(f.filename)}`;
           const target = path.join(path.dirname(f.path), name);
           if (target !== f.path) {

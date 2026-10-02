@@ -8,6 +8,9 @@ import { queryOne, queryAll, run, uploadDir } from '../shared/db';
 import { enforceQuota } from '../platform/quota';
 import { requireAuth, requirePermission } from '../shared/auth';
 import type { AuthUser, FormRow } from '../shared/types';
+import { syncClass } from '../sync';
+import { syncUpload } from '../sync/files';
+import { sideEffectsSuppressed } from '../shared/sync-context';
 
 const router = Router();
 router.use(requireAuth);
@@ -49,7 +52,7 @@ router.get('/', requirePermission('forms.view'), (req, res) => {
 });
 
 // POST /api/forms — upload a form/document
-router.post('/', requirePermission('forms.upload'), upload.single('file'), (req, res) => {
+router.post('/', requirePermission('forms.upload'), syncClass('merge'), syncUpload(upload.single('file')), (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'A file is required' });
     return;
@@ -104,7 +107,7 @@ router.get('/:id/download', requirePermission('forms.view'), (req, res) => {
 });
 
 // DELETE /api/forms/:id — uploader or admin
-router.delete('/:id', (req, res) => {
+router.delete('/:id', syncClass('claim'), (req, res) => {
   const form = queryOne<FormRow>('SELECT * FROM forms WHERE id = ?', Number(req.params.id));
   if (!form) {
     res.status(404).json({ error: 'Form not found' });
@@ -115,7 +118,8 @@ router.delete('/:id', (req, res) => {
     return;
   }
   run('DELETE FROM forms WHERE id = ?', form.id);
-  fs.promises.unlink(path.join(uploadDir(), form.stored_name)).catch(() => {});
+  // An installed PC keeps the file until the cloud confirms: a refused delete brings the row back.
+  if (!sideEffectsSuppressed('unlink')) fs.promises.unlink(path.join(uploadDir(), form.stored_name)).catch(() => {});
   res.json({ ok: true });
 });
 

@@ -184,6 +184,11 @@ personal notes/tasks, announcements, activity log, analytics, push-reminder rout
 `form-builder.routes.ts`, `messages.routes.ts`, `personal.routes.ts`,
 `templates.routes.ts`, `me.routes.ts`, `announcements.routes.ts`, `activity.routes.ts`,
 `analytics.routes.ts`, `push.routes.ts`.
+**Offline (sync/, phase 4e, §24):** self-service (`me.routes.ts`: file a time fix, cancel your own
+request or fix, contact profile, which re-checks the password on the PC and redacts it from the command) and
+filing form records are `merge`; approval decisions, the form designer, record edits / deletes and global
+variables are `claim`s at the main site (decided or withdrawn on the cloud meanwhile → the first outcome is
+kept, flagged; a leave approval past the cloud's balance stands, flagged). The forms library: upload `merge`, delete `claim`.
 **Offline (sync/, phase 4c):** `POST /api/attachments` is `physical`, and the photo travels with the
 command via `syncUpload`. Deleting one is a company-wide `claim`; an installed PC keeps the file until
 the cloud confirms. The other core routes are not classed yet.
@@ -432,7 +437,11 @@ for review only (never blocked), `device_flag` — `borrowed` (borrowed-phone si
 **Offline (sync/, phase 4a):** time-clock punches, corrections, field kiosk punches and punch
 photos are `physical`; kiosk approval / lock, location lock and punch import are `claim` (main
 site). `clock.ts` runs on `now()` (the punch's own time under sync); `kiosk-devices.ts` never
-stamps `last_seen_at` on an installed PC. Other HR routes are not classed yet (refused offline).
+stamps `last_seen_at` on an installed PC.
+**Offline (phase 4e, docs/OFFLINE-FIRST.md §24):** employee records, 201 documents (upload `merge`, travels
+with the command), shifts, number policy, import and profile verification are `claim`s at the main
+site; issuing and returning company property is `physical`. Payroll routes are not classed yet (the
+payroll phase), so they are refused offline.
 **Status:** working.
 
 ## modules/payroll

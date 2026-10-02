@@ -17,6 +17,7 @@ import { runFormActions } from './form-actions';
 import { REQUEST_SLUGS } from './me.routes';
 import { INFO_CHANGE_SLUG, prepareInfoChange } from '../modules/hr/info-change';
 import type { FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../shared/types';
+import { syncClass } from '../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -88,7 +89,7 @@ router.get('/form-definitions/:id', (req, res) => {
 });
 
 // POST /api/form-definitions — create (forms.manage.<scope>)
-router.post('/form-definitions', (req, res) => {
+router.post('/form-definitions', syncClass('claim'), (req, res) => {
   const input = parseBody(formDefinitionSchema, req.body);
   if (!canManageScope(req, res, input.scope)) return;
   const info = run(
@@ -108,7 +109,7 @@ router.post('/form-definitions', (req, res) => {
 
 // PUT /api/form-definitions/:id — update (forms.manage.<scope> for its current scope, and for
 // the new scope too if the request is moving it into a different section)
-router.put('/form-definitions/:id', (req, res) => {
+router.put('/form-definitions/:id', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<FormDefinition>('SELECT scope FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
@@ -134,7 +135,7 @@ router.put('/form-definitions/:id', (req, res) => {
 // PUT /api/form-definitions/:id/template — link/unlink the doc_template used to print this
 // form's records (forms.manage.<scope> for the form's own scope). Separate from the full-form
 // update above since this only needs the id, not a resend of every field.
-router.put('/form-definitions/:id/template', (req, res) => {
+router.put('/form-definitions/:id/template', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<FormDefinition>('SELECT scope FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
@@ -153,7 +154,7 @@ router.put('/form-definitions/:id/template', (req, res) => {
 // just users with the broader "edit any document template" permission — deliberately separate
 // from `/api/templates` (templates.routes.ts), which stays templates.edit-gated for the
 // Sale/Job/Purchase Order and other hand-authored templates unrelated to any one form.
-router.put('/form-definitions/:id/template-body', (req, res) => {
+router.put('/form-definitions/:id/template-body', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<FormDefinition>('SELECT template_id, scope FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
@@ -178,7 +179,7 @@ router.put('/form-definitions/:id/template-body', (req, res) => {
 });
 
 // DELETE /api/form-definitions/:id — delete + cascades records (forms.manage.<scope> for its scope)
-router.delete('/form-definitions/:id', (req, res) => {
+router.delete('/form-definitions/:id', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<FormDefinition>('SELECT scope FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
@@ -302,7 +303,7 @@ router.get('/form-records/:id', (req, res) => {
 // list GET /me/request-types exposes) — the mobile self-service flow. Path (b) always forces
 // status to 'pending' server-side, ignoring whatever the client sent, so a self-filer can't
 // create an already-'approved'/'completed' record and skip the real approval workflow.
-router.post('/form-records', (req, res) => {
+router.post('/form-records', syncClass('merge'), (req, res) => {
   const input = parseBody(createFormRecordSchema, req.body);
   const form = queryOne<FormDefinition>(
     'SELECT * FROM form_definitions WHERE id = ?',
@@ -362,7 +363,7 @@ router.post('/form-records', (req, res) => {
 // PUT /api/form-records/:id — update data / status (forms.manage.<scope> for the record's
 // form — the desktop Data Forms edit flow; mobile self-filers never PUT here, they only POST
 // to create and use the separate, ownership-checked POST /me/requests/:id/cancel to withdraw).
-router.put('/form-records/:id', (req, res) => {
+router.put('/form-records/:id', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<FormRecord & { slug: string; scope: FormScope | null }>(
     `SELECT fr.*, fd.slug, fd.scope AS scope FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
@@ -410,7 +411,7 @@ router.put('/form-records/:id', (req, res) => {
 });
 
 // DELETE /api/form-records/:id (forms.manage.<scope> for the record's form — same gate as PUT)
-router.delete('/form-records/:id', (req, res) => {
+router.delete('/form-records/:id', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<{ id: number; status: string; slug: string; scope: FormScope | null }>(
     `SELECT fr.id, fr.status, fd.slug, fd.scope AS scope FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
@@ -435,7 +436,7 @@ router.get('/global-variables', (_req, res) => {
 
 // PUT /api/global-variables/:key — upsert (any forms.manage.* — genuinely global/shared, not
 // owned by one section)
-router.put('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), (req, res) => {
+router.put('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), syncClass('claim'), (req, res) => {
   const key = String(req.params.key ?? '').trim();
   if (!/^[a-z0-9_]+$/.test(key)) {
     res.status(400).json({ error: 'Key must be lowercase letters, numbers, or underscores' });
@@ -457,7 +458,7 @@ router.put('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), (re
 });
 
 // DELETE /api/global-variables/:key (any forms.manage.*)
-router.delete('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), (req, res) => {
+router.delete('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM global_variables WHERE key = ?', req.params.key);
   if (info.changes === 0) { res.status(404).json({ error: 'Variable not found' }); return; }
   res.json({ ok: true });

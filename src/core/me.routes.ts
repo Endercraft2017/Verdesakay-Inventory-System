@@ -15,6 +15,8 @@ import { myClockStatus } from '../modules/hr/clock';
 import { unrecordedOtMinutes, type AttendanceDay } from '../modules/payroll/hr-payroll-compute';
 import { currentPolicy } from '../modules/hr/hr.routes';
 import type { FormDefinition, FormRecord, TimeCorrection } from '../shared/types';
+import { recordSiteClash, syncClass } from '../sync';
+import { now, reRunOfRecordedCommand, siteDecisionStands } from '../shared/sync-context';
 
 const router = Router();
 router.use(requireAuth);
@@ -69,13 +71,16 @@ router.get('/profile', (req, res) => {
 // PUT /api/me/profile — { current_password, preferred_name?, mobile_phone?, … } (partial).
 // Re-authenticates with the password; unknown keys (legal name, position, pay…) are a 400.
 // Contact changes clear HR verification and ping HR to re-verify.
-router.put('/profile', (req, res) => {
+router.put('/profile', syncClass('merge', { redact: ['current_password'] }), (req, res) => {
   const emp = me(req.user!.id);
   if (!needEmp(res, emp)) return;
-  const { current_password, ...input } = parseBody(selfProfileSchema, req.body);
+  // Offline, the change is recorded without the password (redacted): it is checked where the
+  // change is made, and not again when the command is re-run on the host or the cloud.
+  const reRun = reRunOfRecordedCommand();
+  const { current_password, ...input } = parseBody(selfProfileSchema, reRun ? { ...req.body, current_password: '-' } : req.body);
   const user = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', req.user!.id);
   // 400, not 401: the mobile API client treats 401 as "session expired" and signs the user out.
-  if (!user || !bcrypt.compareSync(current_password, user.password_hash)) {
+  if (!user || (!reRun && !bcrypt.compareSync(current_password, user.password_hash))) {
     res.status(400).json({ error: 'Current password is incorrect' }); return;
   }
   const values = Object.fromEntries(PROFILE_FIELDS.filter((k) => k in input).map((k) => [k, input[k] ?? null]));
@@ -227,7 +232,7 @@ router.get('/requests', (req, res) => {
 });
 
 // POST /api/me/requests/:id/cancel — withdraw your own still-pending request
-router.post('/requests/:id/cancel', (req, res) => {
+router.post('/requests/:id/cancel', syncClass('merge'), (req, res) => {
   const rec = queryOne<{ id: number; status: string; created_by: number | null; slug: string }>(
     `SELECT fr.id, fr.status, fr.created_by, fd.slug
      FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
@@ -259,7 +264,7 @@ router.get('/time-corrections', (req, res) => {
 });
 
 // POST /api/me/time-corrections — file a fix; pings the approvers
-router.post('/time-corrections', (req, res) => {
+router.post('/time-corrections', syncClass('merge'), (req, res) => {
   const emp = me(req.user!.id);
   if (!needEmp(res, emp)) return;
   const input = parseBody(timeCorrectionSchema, req.body);
@@ -285,7 +290,7 @@ router.post('/time-corrections', (req, res) => {
 });
 
 // POST /api/me/time-corrections/:id/cancel — withdraw your own pending fix
-router.post('/time-corrections/:id/cancel', (req, res) => {
+router.post('/time-corrections/:id/cancel', syncClass('merge'), (req, res) => {
   const emp = me(req.user!.id);
   if (!needEmp(res, emp)) return;
   const tc = queryOne<{ id: number; status: string }>(
@@ -347,7 +352,7 @@ router.get('/approvals', (req, res) => {
 });
 
 // POST /api/me/approvals/requests/:id/decide — { decision: 'approved'|'rejected', note?, override_balance? }
-router.post('/approvals/requests/:id/decide', (req, res) => {
+router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const rec = queryOne<{
     id: number; status: string; created_by: number | null; data: string; slug: string; form_name: string;
@@ -368,7 +373,15 @@ router.post('/approvals/requests/:id/decide', (req, res) => {
   if (infoChange && !req.user!.permissions.includes('hr.manage')) {
     res.status(403).json({ error: 'Only HR can decide information-change requests' }); return;
   }
-  if (rec.status !== 'pending') { res.status(400).json({ error: 'This request is no longer pending' }); return; }
+  if (rec.status !== 'pending') {
+    // Clash-check (D6): decided or withdrawn on the cloud meanwhile — the first outcome is kept.
+    if (siteDecisionStands()) {
+      recordSiteClash(req, `${rec.form_name} #${id} was already ${rec.status} on the cloud when the main site's decision arrived; ${rec.status} was kept.`);
+      res.json({ ok: true, clash: true, status: rec.status });
+      return;
+    }
+    res.status(400).json({ error: 'This request is no longer pending' }); return;
+  }
 
   const { decision, note, override_balance } = parseBody(approvalDecisionSchema, req.body);
   const data = parse(rec.data);
@@ -381,13 +394,14 @@ router.post('/approvals/requests/:id/decide', (req, res) => {
     try {
       const still = queryOne<{ status: string }>('SELECT status FROM form_records WHERE id = ?', id);
       if (still?.status !== 'pending') { db.exec('ROLLBACK'); res.status(400).json({ error: 'This request is no longer pending' }); return; }
+      // (A clash with the cloud was caught above, before the transaction.)
       if (decision === 'approved') {
         applied = applyInfoChange(data, req.user!.id);
         data.applied = applied.applied;
         if (applied.note) data.applied_note = applied.note;
       }
       data.decided_by = req.user!.full_name;
-      data.decided_at = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      data.decided_at = now().toISOString().slice(0, 16).replace('T', ' ');
       if (note) data.decision_note = note;
       run("UPDATE form_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?", decision, JSON.stringify(data), id);
       db.exec('COMMIT');
@@ -415,15 +429,20 @@ router.post('/approvals/requests/:id/decide', (req, res) => {
     if (days > 0) {
       const remaining = (rec.leave_days_per_year ?? 5) - (rec.leave_days_used ?? 0);
       if (remaining - days < 0 && !override_balance) {
-        res.status(400).json({ error: `Requested ${days} day(s), only ${remaining} remaining. Approve anyway to override.` });
-        return;
+        // Clash-check (D6): the main site saw enough leave left; the cloud approved other leave
+        // meanwhile. The approval stands and the balance goes below zero, flagged.
+        if (!siteDecisionStands()) {
+          res.status(400).json({ error: `Requested ${days} day(s), only ${remaining} remaining. Approve anyway to override.` });
+          return;
+        }
+        recordSiteClash(req, `Leave request #${id} was approved at the main site, but on the cloud only ${remaining} day(s) remained for ${days} requested; the balance is now below zero.`);
       }
       run('UPDATE employees SET leave_days_used = leave_days_used + ? WHERE id = ?', days, rec.employee_id);
     }
   }
 
   data.decided_by = req.user!.full_name;
-  data.decided_at = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  data.decided_at = now().toISOString().slice(0, 16).replace('T', ' ');
   if (note) data.decision_note = note;
   run("UPDATE form_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?", decision, JSON.stringify(data), id);
   if (rec.created_by) {
@@ -438,7 +457,7 @@ router.post('/approvals/requests/:id/decide', (req, res) => {
 });
 
 // POST /api/me/approvals/time-corrections/:id/decide — { decision, note? }
-router.post('/approvals/time-corrections/:id/decide', (req, res) => {
+router.post('/approvals/time-corrections/:id/decide', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const tc = queryOne<TimeCorrection & { department_id: number | null }>(
     `SELECT tc.*, e.department_id FROM time_corrections tc
@@ -448,7 +467,15 @@ router.post('/approvals/time-corrections/:id/decide', (req, res) => {
   if (!tc) { res.status(404).json({ error: 'Correction not found' }); return; }
   if (tc.user_id === req.user!.id) { res.status(403).json({ error: 'You can’t decide your own correction' }); return; }
   if (!mayDecide(req, tc.department_id ?? null)) { res.status(403).json({ error: 'Not an approver for this correction' }); return; }
-  if (tc.status !== 'pending') { res.status(400).json({ error: 'This correction is no longer pending' }); return; }
+  if (tc.status !== 'pending') {
+    // Clash-check (D6): decided or withdrawn on the cloud meanwhile — the first outcome is kept.
+    if (siteDecisionStands()) {
+      recordSiteClash(req, `Time fix #${id} (${tc.work_date}) was already ${tc.status} on the cloud when the main site's decision arrived; ${tc.status} was kept.`);
+      res.json({ ok: true, clash: true, status: tc.status, applied: false });
+      return;
+    }
+    res.status(400).json({ error: 'This correction is no longer pending' }); return;
+  }
 
   const { decision, note } = parseBody(approvalDecisionSchema, req.body);
   run(

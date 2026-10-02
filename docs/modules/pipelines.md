@@ -289,6 +289,11 @@ access code can't be recovered — the reporter files a new report.
 
 ## Employee information change
 
+**Offline (phase 4e, docs/OFFLINE-FIRST.md §24):** filing an information change, or any request, works
+at a PC or a phone on the site LAN with no internet. HR's decision is made at the main site. A
+request decided on the cloud meanwhile keeps the first outcome, flagged. Contact changes re-check
+the password on the PC; it is never stored in the synced command.
+
 **Trigger:** an employee opens Profile → Personal details on mobile.
 
 **Branch A — direct edit (no approval):** preferred name and personal contact / emergency
@@ -338,6 +343,9 @@ phone (listed as a count, never sent or discardable by the current person).
 expired; the row stays as sign-in history for 90 days (`cleanupSessions`), then is deleted.
 
 ## Company asset issuance (issue → hold → return)
+
+**Offline (phase 4e):** issuing and returning are `physical` (they work with no internet); deleting an
+issuance is a `claim` at the main site.
 
 **Trigger:** HR hands company property (laptop, tool, uniform, ID…) to an employee.
 All stages are `modules/hr` (`hr.routes.ts`); every mutation lands in the Activity log with a
@@ -414,9 +422,10 @@ needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`);
 (phase 3c-i: LAN PCs sync with their site host, which forwards to the cloud); site decisions
 (phase 3c-ii: `claim`s decided at the owning site; the cloud keeps them, flagging clashes — D6).
 Pipelines offline so far (phase 4): time clock (4a), production run with site number blocks (4b),
-sales order fulfillment (4c), purchase-to-pay (4d).
-**Not built:** mobile sync UI; the remaining pipelines (HR, reports, payroll, accounting —
-phase 4e+). This pipeline wraps the
+sales order fulfillment (4c), purchase-to-pay (4d), HR requests, approvals
+and records (4e).
+**Not built:** mobile sync UI; the remaining pipelines (anonymous reports, payroll, accounting —
+phase 4f+). This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).

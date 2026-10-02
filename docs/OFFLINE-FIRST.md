@@ -182,7 +182,7 @@ because every route defaults to the `online` class until it is reviewed.
 | **1. Command foundation** ✅ built 2026-09-30 (§10) | `src/sync/`: command log, HLC, ULID, `DEPLOY_MODE`, per-route `syncClass()` (undeclared routes refused on a node), allocation plan (node-partitioned IDs via renumber-after-insert + provisional/replayed document numbers), SQL request clock + `now()`, side-effect suppression on nodes (email/push/broadcast), cloud effect stream, replay through the real routes, changeset rebase, node-local tables, unattributed commands. CLAUDE.md rule reworded (D4). No behavior change for DBs without a sync role. **Moved:** sensitive-field encryption and the Node 24 test run → phase 3 (need the DPAPI spike / the Electron dependency); site-number block leasing → phase 3 (needs a host); converting handlers' `new Date()` to `now()` → per route as it is classed (phases 2, 4) |
 | **2. Inventory** ✅ built 2026-09-30 (§11) | Every inventory-module route classed (items, stock, locations, suppliers, customers). D1: a stock-out beyond recorded stock is accepted inside a synced command and opens a `stock_discrepancies` row (list + resolve API); direct cloud requests keep refusing it. Rebase applies changesets with foreign-key actions off. **Moved:** home sites → phase 3 (they only matter once site hosts decide claims); orders / deliveries / release slips → phase 4 (sales-release pipeline) |
 | **3. Desktop app + site host** (sub-phases 3a–3f below) | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
-| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records → anonymous reports → payroll → accounting/tax |
+| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records (4e ✅, §24) → anonymous reports → payroll → accounting/tax |
 | **5. Host election + failover** | Voting nodes, election, lease, terms, fencing (§4) |
 | **6. Hardening** | Conflict inbox with resolve actions, version shims, compaction of old commands/effects, sync health dashboard |
 
@@ -954,3 +954,48 @@ action's own date (`now()`).
   the cloud and the LAN PC identically.
 - A LAN desk PC's receipt got its real GRN number at the host.
 - The three clash cases each landed confirmed and flagged.
+
+## 24. Phase 4e as built (2026-10-02): HR requests and records offline
+
+### Classes
+
+| Class | Routes |
+|---|---|
+| `merge` (an employee's own) | file a request (`POST /api/form-records`: any form record, so staff records too), file a time fix, cancel your own request or time fix, update your own contact profile; upload a 201 document, upload a form to the forms library |
+| `physical` | issue company property to an employee, take it back |
+| `claim` (company-wide: the main site) | decide a request or time fix (`/api/me/approvals/*`); employees (create / edit / delete / import / number policy), profile verification, document delete, asset-issuance delete, shifts; the form designer (definitions, templates), form-record edit / delete, global variables; forms-library delete |
+
+Payroll routes (periods, attendance grid, payslips, deductions, payroll tables and policy, GL post,
+mark-paid, payslip email, the payroll CSV import) are not classed yet. They come in the payroll phase.
+
+**Department heads decide at the main site.** Approvals are company-wide records. A department head
+at another site can't decide while that site is offline; the decision waits for the connection.
+Giving each department a home site would lift this. That is a proposal, not built.
+
+### New sync pieces
+- **`syncClass(cls, { redact })`.** The named body fields are left out of the stored command.
+  `PUT /api/me/profile` re-checks the employee's password, and that check happens on the PC where the
+  change is made. It is skipped when the command is re-run on the host or the cloud
+  (`reRunOfRecordedCommand()`), so the password is never stored in `sync_commands` or sent anywhere.
+- **`commandFileName(prefix, ext)`.** A file a route writes itself (not an upload) is named after its
+  command, so the PC's file and the cloud's are the same file. It is used for the "file to 201" memo
+  that form actions write.
+- **Upload names.** `syncUpload` no longer takes a timestamp as the file-name prefix (HR documents and
+  the forms library name their uploads `<timestamp>-…`). Such files are named `file-<command>-<n>`.
+- Deleting a 201 document or a forms-library file keeps the file on an installed PC until the cloud
+  confirms (`sideEffectsSuppressed('unlink')`), the same as photos (§22).
+
+### Checks relaxed under sync (D6 clash-checks, kept + flagged)
+- A request or time fix that was decided or withdrawn on the cloud meanwhile keeps the cloud's outcome.
+  The main site's decision is dropped and the clash is flagged.
+- A paid leave approval the cloud's leave bank no longer covers (other leave was approved online
+  meanwhile) stands. The balance goes below zero.
+
+**What the tests showed** (`tests/sync-hr.test.ts`):
+- With the site offline, an employee at a LAN desk PC filed a leave request (its provisional
+  `LV-P<pc>-…` became a real number at the host), a time fix and a contact change. A wrong password was
+  still refused on the PC.
+- HR approved both at the main site and added a new hire with a 201 document.
+- Everything reached the cloud identically, the document file included. No stored command anywhere
+  contains the password.
+- Both clash cases landed confirmed and flagged.

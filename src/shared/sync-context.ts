@@ -47,6 +47,8 @@ export interface SyncContext {
   /** Where a site host replays a LAN PC's command it records what it actually allocated, so the
    *  cloud's replay reproduces the host's ids and numbers rather than the PC's guesses. */
   effective?: PlanEntry[];
+  /** Files a route wrote itself during this command (commandFileName). */
+  fileSeq?: number;
 }
 
 export const syncStore = new AsyncLocalStorage<SyncContext>();
@@ -69,6 +71,24 @@ export function now(): Date {
 export function inSyncedCommand(): boolean {
   const mode = syncStore.getStore()?.mode;
   return mode === 'record' || mode === 'rebase' || mode === 'replay';
+}
+
+/** True while a recorded command is re-run (the authority's replay, or a node's rebase): the
+ *  request was authenticated where it was first made. A route that re-checks a secret the
+ *  command does not carry (a `redact`ed password) relies on that check instead. */
+export function reRunOfRecordedCommand(): boolean {
+  const mode = syncStore.getStore()?.mode;
+  return mode === 'replay' || mode === 'rebase';
+}
+
+/** A name for a file a route writes itself (not an upload), the same wherever the command runs,
+ *  so the authority's copy and the PC's agree: `<prefix>-<command id>-w<n><ext>`. Null outside a
+ *  synced command; the caller then uses its usual unique name. */
+export function commandFileName(prefix: string, ext: string): string | null {
+  const ctx = syncStore.getStore();
+  if (!ctx?.commandId || !inSyncedCommand()) return null;
+  ctx.fileSeq = (ctx.fileSeq ?? 0) + 1;
+  return `${prefix}-${ctx.commandId.toLowerCase()}-w${ctx.fileSeq}${ext}`;
 }
 
 /** True when the cloud is replaying a site host's decision on a record that site owns

@@ -117,6 +117,9 @@ export interface SyncClassOptions {
   /** Whose record it is (§16). `claim`: who may decide it (default: company-wide, the main site).
    *  `physical`: on the cloud, the site's action on its own record runs with clash-checks relaxed (D6). */
   home?: (req: Request) => Home;
+  /** Body fields never stored in the command (a password the route re-checks): the route checks
+   *  them where the command is recorded and skips that check on a re-run (reRunOfRecordedCommand). */
+  redact?: string[];
 }
 
 /** A LAN PC may decide its site's records only while it can reach its host: a round within
@@ -137,6 +140,15 @@ function claimRefusal(conn: DatabaseSync, cfg: SyncConfig, req: Request, opts: S
     if (!fresh) return 'This needs a connection to the site host.';
   }
   return null;
+}
+
+/** A recorded body with the named fields removed (top level, or the fields of a multipart body). */
+function redactBody(body: string, keys: string[] | undefined): string {
+  if (!keys?.length) return body;
+  const parsed = JSON.parse(body) as Record<string, unknown>;
+  const target = (parsed.__multipart ? parsed.fields : parsed) as Record<string, unknown> | undefined;
+  if (target && typeof target === 'object') for (const k of keys) delete target[k];
+  return JSON.stringify(parsed);
 }
 
 export function syncClass(cls: SyncClass, opts: SyncClassOptions = {}): RequestHandler {
@@ -213,7 +225,7 @@ async function recordCommand(
         device_id: anon ? null : deviceIdOf(req),
         method: req.method,
         path: req.originalUrl,
-        body: commandBody(req), // with uploads: fields + file references (§18)
+        body: redactBody(commandBody(req), opts.redact), // with uploads: fields + file references (§18)
         sync_class: cls,
         allocation_plan: anon ? '[]' : JSON.stringify(ctx.plan),
         app_version: APP_VERSION,

@@ -48,6 +48,9 @@ import { sendMail } from '../../shared/mailer';
 import { ledgerEnabled, maybeAutoPostPayroll } from '../accounting/accounting-autopost';
 import { noWorkFormIds as noWorkFormIdsWithAction } from '../../core/form-actions';
 import { notifyUser } from '../../shared/push';
+import { syncClass } from '../../sync';
+import { syncUpload } from '../../sync/files';
+import { now, sideEffectsSuppressed } from '../../shared/sync-context';
 
 // Reuses the browser's own payslip HTML renderer instead of duplicating it server-side —
 // hr-payroll-print.js is pure string logic (no DOM/window access) and already resolves its
@@ -121,7 +124,7 @@ router.get('/employee-number-policy', requirePermission('hr.view'), (_req, res) 
 });
 
 // PUT /api/hr/employee-number-policy
-router.put('/employee-number-policy', requirePermission('hr.manage'), (req, res) => {
+router.put('/employee-number-policy', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(employeeNumberPolicySchema, req.body);
   setSetting('employee_no_policy', input);
   res.json(input);
@@ -188,7 +191,7 @@ router.get('/employees/export', requirePermission('hr.view'), (_req, res) => {
 // POST /api/hr/employees/import — create/update the 201-file master from CSV.
 // Upsert key: employee_no. `department` matched by name. Never touches the linked
 // login account or photo. Payroll history is unaffected (this is master data only).
-router.post('/employees/import', requirePermission('hr.manage'), (req, res) => {
+router.post('/employees/import', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const { csv, dry_run } = parseBody(csvImportSchema, req.body);
   let resolved;
   try {
@@ -418,7 +421,7 @@ function checkLinkedUser(userId: number | null, excludeEmployeeId?: number): str
 }
 
 // POST /api/hr/employees
-router.post('/employees', requirePermission('hr.manage'), (req, res) => {
+router.post('/employees', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(employeeSchema, req.body);
   if (queryOne('SELECT id FROM employees WHERE employee_no = ?', input.employee_no)) {
     res.status(409).json({ error: `Employee number "${input.employee_no}" is already in use` }); return;
@@ -453,7 +456,7 @@ router.post('/employees', requirePermission('hr.manage'), (req, res) => {
 });
 
 // PUT /api/hr/employees/:id
-router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
+router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<{
     name: string; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null; start_date: string | null;
@@ -474,7 +477,7 @@ router.put('/employees/:id', requirePermission('hr.manage'), (req, res) => {
 
   const dailyRate = effectiveDailyRate(input);
   if (round2(dailyRate) !== round2(existing.daily_rate)) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = now().toISOString().slice(0, 10);
     const effectiveFrom = input.rate_effective_date || today;
     if (effectiveFrom > today) {
       res.status(400).json({ error: 'Rate changes can be backdated or effective today — scheduling one for a future date isn\'t supported yet' });
@@ -539,7 +542,7 @@ router.get('/employees/:id/rate-history', requirePermission('hr.manage'), (req, 
 });
 
 // DELETE /api/hr/employees/:id
-router.delete('/employees/:id', requirePermission('hr.manage'), (req, res) => {
+router.delete('/employees/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM employees WHERE id = ?', id)) {
     res.status(404).json({ error: 'Employee not found' });
@@ -572,7 +575,7 @@ router.get('/employees/:id/documents', requirePermission('hr.view'), (req, res) 
 });
 
 // POST /api/hr/employees/:id/documents — upload a 201 file document
-router.post('/employees/:id/documents', requirePermission('hr.manage'), uploadDoc.single('file'), (req, res) => {
+router.post('/employees/:id/documents', requirePermission('hr.manage'), syncClass('merge'), syncUpload(uploadDoc.single('file')), (req, res) => {
   const employeeId = Number(req.params.id);
   if (!queryOne('SELECT id FROM employees WHERE id = ?', employeeId)) {
     res.status(404).json({ error: 'Employee not found' }); return;
@@ -603,14 +606,15 @@ router.get('/employees/:id/documents/:docId/download', requirePermission('hr.vie
 });
 
 // DELETE /api/hr/employees/:id/documents/:docId
-router.delete('/employees/:id/documents/:docId', requirePermission('hr.manage'), (req, res) => {
+router.delete('/employees/:id/documents/:docId', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const doc = queryOne<EmployeeDocument>(
     'SELECT * FROM employee_documents WHERE id = ? AND employee_id = ?',
     Number(req.params.docId), Number(req.params.id)
   );
   if (!doc) { res.status(404).json({ error: 'Document not found' }); return; }
   run('DELETE FROM employee_documents WHERE id = ?', doc.id);
-  fs.promises.unlink(path.join(uploadDir(), doc.stored_name)).catch(() => {});
+  // An installed PC keeps the file until the cloud confirms: a refused delete brings the row back.
+  if (!sideEffectsSuppressed('unlink')) fs.promises.unlink(path.join(uploadDir(), doc.stored_name)).catch(() => {});
   res.json({ ok: true });
 });
 
@@ -728,7 +732,7 @@ router.get('/employees/:id/assets', requirePermission('hr.view'), (req, res) => 
 });
 
 // POST /api/hr/employees/:id/assets — issue one or more assets on a new Asset Issuance Form.
-router.post('/employees/:id/assets', requirePermission('hr.manage'), (req, res) => {
+router.post('/employees/:id/assets', requirePermission('hr.manage'), syncClass('physical'), (req, res) => {
   const employeeId = Number(req.params.id);
   const employee = queryOne<{ name: string }>('SELECT name FROM employees WHERE id = ?', employeeId);
   if (!employee) {
@@ -782,7 +786,7 @@ router.get('/assets/:id', requirePermission('hr.view'), (req, res) => {
 });
 
 // POST /api/hr/assets/:id/items/:itemId/return — check in one line (returned / lost / damaged).
-router.post('/assets/:id/items/:itemId/return', requirePermission('hr.manage'), (req, res) => {
+router.post('/assets/:id/items/:itemId/return', requirePermission('hr.manage'), syncClass('physical'), (req, res) => {
   const item = queryOne<AssetIssuanceItem>(
     'SELECT * FROM asset_issuance_items WHERE id = ? AND issuance_id = ?',
     Number(req.params.itemId), Number(req.params.id)
@@ -811,7 +815,7 @@ router.post('/assets/:id/items/:itemId/return', requirePermission('hr.manage'), 
 });
 
 // DELETE /api/hr/assets/:id — remove an issuance record entirely (e.g. entered in error).
-router.delete('/assets/:id', requirePermission('hr.manage'), (req, res) => {
+router.delete('/assets/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const issuance = queryOne<AssetIssuance & { employee_name: string }>(
     'SELECT ai.*, e.name AS employee_name FROM asset_issuances ai JOIN employees e ON e.id = ai.employee_id WHERE ai.id = ?',
     Number(req.params.id)
@@ -853,7 +857,7 @@ router.get('/linked-form-record-ids', requirePermission('hr.view'), (_req, res) 
 });
 
 // POST /api/hr/shifts
-router.post('/shifts', requirePermission('hr.manage'), (req, res) => {
+router.post('/shifts', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(shiftSchema, req.body);
   if (input.is_default) run('UPDATE shifts SET is_default = 0');
   const info = run(
@@ -864,7 +868,7 @@ router.post('/shifts', requirePermission('hr.manage'), (req, res) => {
 });
 
 // PUT /api/hr/shifts/:id
-router.put('/shifts/:id', requirePermission('hr.manage'), (req, res) => {
+router.put('/shifts/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM shifts WHERE id = ?', id)) { res.status(404).json({ error: 'Shift not found' }); return; }
   const input = parseBody(shiftSchema, req.body);
@@ -878,7 +882,7 @@ router.put('/shifts/:id', requirePermission('hr.manage'), (req, res) => {
 
 // DELETE /api/hr/shifts/:id — attendance rows / employees.default_shift_id referencing it are
 // gracefully un-linked (ON DELETE SET NULL), not blocked.
-router.delete('/shifts/:id', requirePermission('hr.manage'), (req, res) => {
+router.delete('/shifts/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM shifts WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) { res.status(404).json({ error: 'Shift not found' }); return; }
   res.json({ ok: true });

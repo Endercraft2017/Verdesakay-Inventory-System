@@ -18,6 +18,7 @@ import { sendMail, mailReady } from '../shared/mailer';
 import { companyProfile } from '../modules/payroll/ph-payroll-report-data';
 import { resolvePermissions } from '../shared/permissions';
 import type { FormAction, FormDefinition, FieldDef, Role } from '../shared/types';
+import { commandFileName, now } from '../shared/sync-context';
 
 export type ActionTrigger = 'create' | 'approved';
 
@@ -116,7 +117,7 @@ export function runFormActions(args: RunArgs): { warnings: string[] } {
   const tplCtx: Record<string, unknown> = {
     ...args.data,
     number: args.recordNumber,
-    today: new Date().toISOString().slice(0, 10),
+    today: now().toISOString().slice(0, 10),
   };
 
   for (const action of due) {
@@ -140,7 +141,8 @@ export function runFormActions(args: RunArgs): { warnings: string[] } {
           if (!employee) { warnings.push('File to 201: no employee on this record'); logRun(args.recordId, action.type, 'skipped', 'no employee'); break; }
           const html = renderTemplateHtml(args.formDef.template_id, tplCtx);
           if (!html) { warnings.push('File to 201: this form has no printable template'); logRun(args.recordId, action.type, 'skipped', 'no template'); break; }
-          const stored = `mm-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.html`;
+          // Offline, named after the command: the PC's file and the cloud's are the same file.
+          const stored = commandFileName('mm', '.html') ?? `mm-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.html`;
           fs.writeFileSync(path.join(uploadDir(), stored), html, 'utf8');
           const title = `${args.formDef.name} ${args.recordNumber}`;
           const info = run(
