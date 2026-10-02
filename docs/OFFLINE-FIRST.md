@@ -183,8 +183,9 @@ because every route defaults to the `online` class until it is reviewed.
 | **2. Inventory** ✅ built 2026-09-30 (§11) | Every inventory-module route classed (items, stock, locations, suppliers, customers). D1: a stock-out beyond recorded stock is accepted inside a synced command and opens a `stock_discrepancies` row (list + resolve API); direct cloud requests keep refusing it. Rebase applies changesets with foreign-key actions off. **Moved:** home sites → phase 3 (they only matter once site hosts decide claims); orders / deliveries / release slips → phase 4 (sales-release pipeline) |
 | **3. Desktop app + site host** (sub-phases 3a–3f below) | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
 | **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records (4e ✅, §24) → anonymous reports (4f ✅, §25) → payroll (4g ✅, §26) → accounting/tax (4h ✅, §27) |
-| **5. Host election + failover** | Voting nodes, election, lease, terms, fencing (§4) |
+| **5. Host election + failover** | **5a ✅ built 2026-10-02 (§30):** sites keep their number across hosts, terms with the cloud as referee, every site PC mirrors its host (commands it holds, the site's PCs, the cloud's address, the site's certificate authority), an admin's take-over, a returning host steps down, PCs find and follow a new host, full re-sync. **5b:** automatic election for sites with 3+ voting PCs — lease, heartbeat, votes (§4) |
 | **6. Hardening** | Conflict inbox with resolve actions, version shims, compaction of old commands/effects, sync health dashboard |
+| **7. Android app** (planned, §29) | An installable APK of the phone app: works with no connection at all (cached work lists + its own command queue), finds the site host on the LAN by itself, trusts the site's certificate without the per-phone install, and follows the host through a failover |
 
 ## 7. Concerns and resolutions
 
@@ -1158,3 +1159,132 @@ that list still names a real, unclassed route. It sees all 262 mutating routes.
 - `tests/sync.test.ts`'s write-guard check now uses a throwaway unclassed route, since no real one is left.
 
 **Phase 4 is complete:** every route is either classed or listed with its reason.
+
+## 29. Phase 7 (planned, added 2026-10-02): an installable Android app
+
+**Why.** Floor roles work on phones: QC and QA inspectors, the production line, warehouse releasing and
+receiving. Today a phone works offline only partly:
+- **It needs a connection to load anything.** That means the site host on the LAN, or the internet.
+  With the site host on Wi-Fi a phone already works through an internet outage (§15).
+- **It can queue writes.** A failed write waits in IndexedDB and is replayed later with an idempotency
+  key (`public/mobile/lib/queue.js`).
+- **It can't open screens it hasn't loaded.** With no Wi-Fi at all (a dead spot on the floor, a yard, a
+  delivery truck) the inspector can't open the next unit's checklist. That delays the work this phase is
+  meant to avoid.
+
+**Proposal: wrap the existing `/m` app as an APK (Capacitor), not a rewrite.** The app stays the same
+vanilla HTML/CSS/JS, and the APK adds what a browser tab can't do:
+1. **Offline work lists.** The app keeps a local copy of what the signed-in person needs next, for
+   example the QC / QA queue with each unit's checklist, the parts kit to release, or the deliveries
+   assigned to them. Those screens open with no connection.
+2. **Its own command queue.** Actions are recorded like a PC's commands (§2.1), with the same sync
+   classes, an idempotency key, the action's own time, and photos as blobs. They are sent to the site
+   host or the cloud, whichever it reaches first. Like today, a queued action is never shown as final
+   (CLAUDE.md).
+3. **Finds the host by itself.** It discovers the site host on the LAN (the same announcements PCs use,
+   phase 5). It follows a failover to the new host with its queue and session intact. A browser tab
+   can't do that: its storage is tied to the host's address.
+4. **Trusts the site certificate without the manual install.** The APK can pin the site's CA when it is
+   enrolled, which replaces D5's install-the-certificate step on each phone.
+5. **Better camera and scanner access, and background sync** when the phone comes back in range.
+
+**Not proposed:** a full replica on each phone, the way PCs have one (D2). Phones get lost, shared and
+stolen, so they hold only what the signed-in person is working on, and that is cleared when they sign out.
+
+**Decisions needed before building it:**
+- **Distribution:** Google Play (private / managed app), or a sideloaded APK from the company's own site?
+- **Who gets offline work lists:** QC/QA first, then line, releasing, receiving and delivery?
+- **Shared phones:** the cache is per person and cleared at sign-out; is that acceptable for a phone that
+  is handed over between shifts?
+- **iPhone:** the same approach can build an iOS app; is it needed, or Android only?
+- **Lost phone:** remote sign-out plus wiping the cache on its next connection; is anything stronger
+  needed (device PIN required, a timeout)?
+
+**Depends on:** phase 5, so the phone can follow the host. Today the PWA keeps working with the site host's
+fixed address, or the cloud.
+
+## 30. Phase 5a as built (2026-10-02): taking over a lost site host
+
+### A site keeps its number; its host can change
+A site is numbered after its first host. That number stays the site's, and it is what location homes,
+the main site, number-block leases and clash records store. Which PC hosts the site can change. Each
+change starts a new **term**, and the cloud is the referee (`sync_sites`: each site's host and term):
+- **Claiming.** A PC claims a site by sending `POST /api/sync/site/host` a higher term.
+- **Stepping down.** A host that hears of a higher term from the cloud steps down.
+- **Two claims at once.** If two PCs claim at once, the first to reach the cloud wins and the other steps
+  down. Anything both decided meanwhile is replayed, and checks that clash are flagged (D6).
+
+### Every site PC can take over, because it mirrors its host
+On each pull the host gives each of its PCs, besides effects:
+- **The site log** (`sync_site_log`): every command the host holds that the cloud hasn't confirmed,
+  its own and other PCs'. Whoever takes over forwards them, so work recorded through a dead host isn't lost.
+- **The site's PCs**, with their token hashes and LAN addresses, so a new host lets them in with no internet.
+- **The cloud's address**, which a site PC never needed before.
+- **The site's certificate authority** (`GET /api/sync/site/ca`). Every PC of the site keeps a copy,
+  encrypted with its own PC secret (§19). A new host's HTTPS certificate is then issued by the same
+  authority, so other PCs and phones trust it with nothing to set up again. This changes D5 as built
+  (§17): the authority was per host and is now **per site**.
+- **The term and the stream epoch** (below).
+
+### Taking over (an admin's decision, for now)
+On a site PC, **Sync → Site → Take over as site host** (admin, `POST /api/sync/site/take-over`). The
+dialog asks the admin to confirm the host is really off. The PC then:
+1. puts the mirrored commands in its own queue;
+2. starts term + 1 and a new stream;
+3. switches to talking to the cloud;
+4. restarts in host mode (HTTPS on the LAN; exit code 75, and `electron/main.cjs` restarts it).
+
+Offline, it serves the site at once. When it next reaches the cloud it claims the site, sends everything
+it holds, and **re-syncs** (below).
+
+**Finding the new host.** A site PC whose host misses 3 rounds in a row asks the site's other PCs, at
+their LAN addresses, who hosts the site now (`GET /api/sync/whoami`, which reports site, term and
+epoch). It follows the newest one: it sends again what the old host had accepted (the new host
+recognises what it already holds), then re-syncs from it.
+
+**The old host coming back.** It hears from the cloud that another PC holds the site under a higher
+term. It sends what it still holds to the cloud (as a site PC it may), gives up its unused number
+blocks (gaps), then follows the new host and re-syncs from it.
+
+### Full re-sync (also phase 6's "re-sync this PC")
+A copy that followed the old host contains effects of commands the cloud hasn't seen, so an incremental
+rebase can't continue from it. `resyncFromSnapshot` handles that:
+1. after everything the PC could send has gone and the verdicts are recorded, it downloads a fresh copy
+   from its authority;
+2. inside one transaction, with foreign keys off, it replaces every replicated table with that copy;
+   node-local tables (sign-ins, sync bookkeeping, credentials) are kept;
+3. it re-runs what is still pending on top.
+
+A host that re-syncs starts a new **stream epoch**, and its PCs re-sync when they see the change. The
+same step is used:
+- when a copy is found to have **diverged** (`SyncDivergenceError`): the sync loop now repairs it at the
+  next round instead of stopping;
+- on request: **Sync → Site → Re-sync this PC** (admin, `POST /api/sync/site/resync`).
+
+### Number blocks
+Leased to the **site** (the cloud checks the caller hosts the site now), so a new host keeps using the
+site's numbers. A host that steps down gives up its unused block.
+
+**What the tests showed** (`tests/sync-failover.test.ts`, a host and two desk PCs):
+1. With no internet, the host recorded −3 and accepted desk 1's −2. Both desk PCs mirrored those two
+   commands.
+2. The host died. Desk 1 took over (refused until the admin confirmed) and recorded −1 as the new host.
+3. Desk 2 missed its host for 3 rounds, found desk 1 hosting under term 2, switched to it and recorded −4.
+4. Back online, desk 1 claimed the site, and all four commands, **the dead host's own −3 included**,
+   reached the cloud once (90). Desk 2 re-synced onto desk 1's new stream.
+5. The old host came back, stepped down, re-synced from desk 1 (90), and worked as an ordinary PC
+   (−5 → 85 on the cloud). The cloud's records show desk 1 hosting site 1 under term 2.
+6. A desk PC with a damaged copy and unsent work re-synced: the damage was gone and its unsent work
+   went through.
+
+### Limits / not built yet (phase 5b and later)
+- **No automatic election.** Taking over is an admin's decision. Automatic election for sites with 3+
+  voting PCs (heartbeats, majority vote, lease) is phase 5b. For 2-PC sites D3 already says the
+  secondary doesn't take over by itself.
+- **Phones keep the old host's address.** After a takeover they need the new host's address; the
+  Android app (§29) is planned to follow the host automatically.
+- **Duplicate decisions are possible while offline.** If the old host was alive but cut off (not dead),
+  both sides decide claims until they reach the cloud. The cloud keeps both and flags clashes, which is
+  why the dialog insists the host is off.
+- **Desktop UI tests.** The Sync page's site panel is exercised through its API only, not rendered in a
+  test.

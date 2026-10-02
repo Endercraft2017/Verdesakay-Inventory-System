@@ -1,9 +1,12 @@
 /**
  * HTTPS for a site host's LAN (docs/OFFLINE-FIRST.md §5, decision D5). Phones need a trusted
- * HTTPS origin for the camera and the service worker, with no internet. So each site host has
- * its own small **certificate authority**: created once on that PC (its private key never leaves
- * it), installed once on each phone (the host's phone-setup page), and used to issue the host's
- * server certificate for its current LAN addresses. When the addresses change (DHCP) or the
+ * HTTPS origin for the camera and the service worker, with no internet. So each site has its own
+ * small **certificate authority**: created once on the site's first host, installed once on each
+ * phone (the host's phone-setup page), and used to issue the host's server certificate for its
+ * current LAN addresses. The site's other PCs get a copy of the authority from the host (phase 5,
+ * §30), so whichever PC takes over as host issues its certificate from the same authority and
+ * nothing that trusts the site has to be set up again. Its key never leaves the site's PCs and is
+ * kept encrypted on each. When the addresses change (DHCP) or the
  * certificate nears expiry, a new one is issued at the next start — phones keep trusting it,
  * because they trust the authority, not the certificate.
  *
@@ -157,4 +160,27 @@ export function ensureLanTls(dir: string, opts: { org?: string; ips?: string[]; 
     caCert,
     caFingerprint: new crypto.X509Certificate(caCert).fingerprint256,
   };
+}
+
+/** The site's certificate authority, to hand to another PC of the same site (phase 5, §30), or
+ *  null when this PC has none. The key is returned in the clear: send it only over the site's
+ *  own HTTPS to an enrolled PC of the site. */
+export function exportSiteAuthority(dir: string): { cert: string; key: string } | null {
+  const crt = path.join(dir, 'ca.crt');
+  const key = path.join(dir, 'ca.key');
+  if (!fs.existsSync(crt) || !fs.existsSync(key)) return null;
+  return { cert: fs.readFileSync(crt, 'utf8'), key: readPrivate(key) };
+}
+
+/** Keep the site's certificate authority on this PC (encrypted like its own keys). Any server
+ *  certificate from another authority is dropped, so the next start issues one from the site's. */
+export function importSiteAuthority(dir: string, ca: { cert: string; key: string }): void {
+  new crypto.X509Certificate(ca.cert); // throws on garbage
+  crypto.createPrivateKey(ca.key);
+  fs.mkdirSync(dir, { recursive: true });
+  const current = path.join(dir, 'ca.crt');
+  if (fs.existsSync(current) && fs.readFileSync(current, 'utf8').trim() === ca.cert.trim()) return;
+  writePrivate(path.join(dir, 'ca.key'), ca.key);
+  fs.writeFileSync(current, ca.cert);
+  for (const f of ['server.key', 'server.crt']) fs.rmSync(path.join(dir, f), { force: true });
 }

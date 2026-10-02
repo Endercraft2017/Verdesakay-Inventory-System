@@ -60,7 +60,11 @@ function runNode(script, args, extraEnv) {
   const env = { ...process.env, ...PATHS, ELECTRON_RUN_AS_NODE: '1', ...extraEnv };
   const secret = pcSecret();
   if (secret) env.VDS_PC_SECRET = secret;
+  // Trust the site's certificate authority when talking to the site host: pinned at enrolment
+  // (a site PC), or the site's own copy (any PC of the site keeps one, §30 — e.g. a former host).
+  const siteCa = path.join(PATHS.LAN_TLS_DIR, 'ca.crt');
   if (fs.existsSync(HOST_CA_FILE)) env.NODE_EXTRA_CA_CERTS = HOST_CA_FILE;
+  else if (fs.existsSync(siteCa)) env.NODE_EXTRA_CA_CERTS = siteCa;
   return spawn(process.execPath, ['--import', 'tsx', path.join(APP_ROOT, script), ...args], {
     cwd: APP_ROOT, env, windowsHide: true,
   });
@@ -90,11 +94,26 @@ function waitForHealth(url, ms) {
   });
 }
 
+/** Exit code of a server that changed role (took over as site host, or stepped down — §30). */
+const ROLE_CHANGE_EXIT = 75;
+const ROLE_FILE = path.join(DATA, 'desktop-role.json');
+
 async function startServer(isHost) {
   server = runNode('server.ts', [], { DEPLOY_MODE: 'node', PORT: String(PORT) });
   logTo(server, 'server.log');
   server.on('exit', (code) => {
     server = null;
+    if (code === ROLE_CHANGE_EXIT && !app.isQuitting) {
+      // Restart in the new role: HTTPS for the site's LAN as host, this PC only otherwise.
+      let next = !isHost;
+      try { next = JSON.parse(fs.readFileSync(ROLE_FILE, 'utf8')).isHost === true; } catch { /* keep the flip */ }
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ ...(readConfig() || {}), isHost: next }));
+      startServer(next).then((url) => { if (win) win.loadURL(url); }).catch((e) => {
+        require('electron').dialog.showErrorBox('Verdesakay stopped', String(e && e.message || e));
+        app.quit();
+      });
+      return;
+    }
     if (!app.isQuitting && !SMOKE) {
       require('electron').dialog.showErrorBox('Verdesakay stopped', `The app stopped (code ${code}). See ${path.join(DATA, 'logs', 'server.log')}.`);
       app.quit();

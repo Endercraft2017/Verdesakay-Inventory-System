@@ -43,23 +43,42 @@ export function deciderOf(home: Home): number | null {
   return mainHost();
 }
 
-/** The site this PC belongs to: a host is its own site; a LAN PC belongs to its host; a PC
- *  syncing with the cloud directly belongs to no site (it can decide nothing offline). */
+/**
+ * Sites are numbered after the PC that was their first host (phase 5, §30): `host_node_no` on a
+ * site's PCs — and everywhere a record names its site (location homes, the main site, number
+ * blocks, clashes) — is that **site number**, which stays the same when another PC takes over as
+ * host. The site's first host has no `host_node_no`: its site number is its own.
+ */
+
+/** The site this PC belongs to, or null for a PC that syncs with the cloud directly (it can
+ *  decide nothing offline). */
 export function siteOfThisPc(conn: DatabaseSync, cfg: SyncConfig): number | null {
   if (cfg.role !== 'node') return null;
-  if (cfg.isHost) return cfg.nodeNo;
   const row = conn.prepare('SELECT host_node_no FROM sync_node WHERE k = 1').get() as { host_node_no: number | null } | undefined;
-  return row?.host_node_no ?? null;
+  return row?.host_node_no ?? (cfg.isHost ? cfg.nodeNo : null);
 }
 
-/** On the cloud: the site a PC's commands come from (its own number for a host, its host's
- *  for a LAN PC, null for a PC that syncs with the cloud directly). */
+/** On the cloud: the site a PC's commands come from, or null for a PC that syncs with the cloud
+ *  directly. */
 export function siteOfNode(conn: DatabaseSync, nodeNo: number | null): number | null {
   if (nodeNo == null) return null;
   const row = conn.prepare('SELECT is_host, host_node_no FROM sync_nodes WHERE node_no = ?').get(nodeNo) as
     { is_host: number; host_node_no: number | null } | undefined;
   if (!row) return null;
-  return row.is_host ? nodeNo : row.host_node_no;
+  return row.host_node_no ?? (row.is_host ? nodeNo : null);
+}
+
+/** On the cloud: every PC of a site (its first host and the PCs enrolled to it), revoked ones too. */
+export function siteMembers(conn: DatabaseSync, site: number): number[] {
+  return (conn.prepare('SELECT node_no FROM sync_nodes WHERE node_no = ? OR host_node_no = ? ORDER BY node_no').all(site, site) as
+    Array<{ node_no: number }>).map((r) => r.node_no);
+}
+
+/** On the cloud: a site's current host and term. */
+export function siteHostOf(conn: DatabaseSync, site: number): { host: number; term: number } {
+  const row = conn.prepare('SELECT host_node_no, term FROM sync_sites WHERE site_no = ?').get(site) as
+    { host_node_no: number; term: number } | undefined;
+  return row ? { host: row.host_node_no, term: row.term } : { host: site, term: 1 };
 }
 
 /** Record that the cloud kept a site's decision despite a clash (call only when
@@ -71,6 +90,17 @@ export function recordSiteClash(req: Request, summary: string): void {
   );
 }
 
+/** On the cloud: the sites with an active host — `node_no` is the **site number** (what location
+ *  homes and the main site store), `name` the current host's, `host_node_no` the PC hosting it now. */
+export function activeSites(conn: DatabaseSync): Array<{ node_no: number; name: string; host_node_no: number; term: number }> {
+  const rows = conn.prepare('SELECT node_no, name, host_node_no FROM sync_nodes WHERE is_host = 1 AND revoked_at IS NULL ORDER BY node_no').all() as
+    Array<{ node_no: number; name: string; host_node_no: number | null }>;
+  return rows.map((r) => {
+    const site = r.host_node_no ?? r.node_no;
+    return { node_no: site, name: r.name, host_node_no: r.node_no, term: siteHostOf(conn, site).term };
+  }).sort((a, b) => a.node_no - b.node_no);
+}
+
 // ---- admin endpoints ----
 
 const router = Router();
@@ -79,9 +109,7 @@ const admin = [requireAuth, requirePermission('users.manage')];
 router.get('/sites', ...admin, (_req, res) => {
   const conn = activeDb();
   const cloud = syncConfigOf(conn)?.role === 'cloud';
-  const hosts = cloud
-    ? conn.prepare('SELECT node_no, name FROM sync_nodes WHERE is_host = 1 AND revoked_at IS NULL ORDER BY node_no').all()
-    : [];
+  const hosts = cloud ? activeSites(conn) : [];
   res.json({
     hosts,
     main_host: mainHost(),
@@ -98,7 +126,7 @@ router.put('/sites', ...admin, (req, res) => {
     res.status(409).json({ error: 'Sites are set up on the cloud workspace.' });
     return;
   }
-  const hosts = new Set((conn.prepare('SELECT node_no FROM sync_nodes WHERE is_host = 1 AND revoked_at IS NULL').all() as Array<{ node_no: number }>).map((h) => h.node_no));
+  const hosts = new Set(activeSites(conn).map((h) => h.node_no));
   const check = (n: unknown) => n == null || hosts.has(Number(n));
   const main = req.body?.main_host;
   const homes = Array.isArray(req.body?.locations) ? req.body.locations as Array<{ location_id: number; host_node_no: number | null }> : null;

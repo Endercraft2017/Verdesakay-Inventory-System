@@ -174,6 +174,22 @@ const SCHEMA = `
     key       TEXT PRIMARY KEY,
     wanted_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  -- Failover (phase 5, §30). A site PC's mirror of the commands its host holds but the cloud
+  -- hasn't confirmed yet (its own and other PCs'): if the host is lost, whoever takes over
+  -- forwards them, so work recorded through the old host isn't lost with it.
+  CREATE TABLE IF NOT EXISTS sync_site_log (
+    id         TEXT PRIMARY KEY,                 -- the command's id
+    host_rowid INTEGER NOT NULL,                 -- its position in the host's log
+    cmd        TEXT NOT NULL                     -- the command, as sent over the wire (JSON)
+  );
+  -- Cloud: each site's current host and term (a site is numbered after its first host). A site
+  -- with no row has term 1 and the host it was enrolled with.
+  CREATE TABLE IF NOT EXISTS sync_sites (
+    site_no      INTEGER PRIMARY KEY,
+    host_node_no INTEGER NOT NULL,
+    term         INTEGER NOT NULL,
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
   -- Confirmed effects, in authority order (the authority's outgoing stream).
   CREATE TABLE IF NOT EXISTS sync_effects (
     authority_seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -196,6 +212,25 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ['sync_commands', 'context', 'ALTER TABLE sync_commands ADD COLUMN context TEXT'],
   // Local only (never sent): an anonymous-channel command is held until then (§25).
   ['sync_commands', 'release_after', 'ALTER TABLE sync_commands ADD COLUMN release_after TEXT'],
+  // Failover (phase 5, §30). A PC: its site's current term; its own stream's epoch (a host) and
+  // the epoch of the host stream it follows; a full re-sync owed at the next round; the cloud's
+  // address (a site PC learns it from its host, to take over); its own LAN address; how many
+  // rounds in a row its host didn't answer.
+  ['sync_node', 'site_term', 'ALTER TABLE sync_node ADD COLUMN site_term INTEGER NOT NULL DEFAULT 1'],
+  ['sync_node', 'stream_epoch', 'ALTER TABLE sync_node ADD COLUMN stream_epoch TEXT'],
+  ['sync_node', 'host_epoch', 'ALTER TABLE sync_node ADD COLUMN host_epoch TEXT'],
+  ['sync_node', 'resync_pending', 'ALTER TABLE sync_node ADD COLUMN resync_pending INTEGER NOT NULL DEFAULT 0'],
+  ['sync_node', 'cloud_url', 'ALTER TABLE sync_node ADD COLUMN cloud_url TEXT'],
+  ['sync_node', 'cloud_tenant', 'ALTER TABLE sync_node ADD COLUMN cloud_tenant TEXT'],
+  ['sync_node', 'lan_url', 'ALTER TABLE sync_node ADD COLUMN lan_url TEXT'],
+  ['sync_node', 'lan_tenant', 'ALTER TABLE sync_node ADD COLUMN lan_tenant TEXT'],
+  ['sync_node', 'host_misses', 'ALTER TABLE sync_node ADD COLUMN host_misses INTEGER NOT NULL DEFAULT 0'],
+  ['sync_node', 'site_log_rowid', 'ALTER TABLE sync_node ADD COLUMN site_log_rowid INTEGER NOT NULL DEFAULT 0'],
+  // An authority: where each PC can be reached on its LAN (reported by the PC), and whether it
+  // votes in host elections (a laptop that comes and goes is set not to).
+  ['sync_nodes', 'lan_url', 'ALTER TABLE sync_nodes ADD COLUMN lan_url TEXT'],
+  ['sync_nodes', 'lan_tenant', 'ALTER TABLE sync_nodes ADD COLUMN lan_tenant TEXT'],
+  ['sync_nodes', 'voting', 'ALTER TABLE sync_nodes ADD COLUMN voting INTEGER NOT NULL DEFAULT 1'],
 ];
 
 /** `sync_commands` created before the `host_confirmed` state existed has a CHECK that rejects

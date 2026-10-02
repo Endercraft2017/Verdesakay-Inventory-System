@@ -17,6 +17,7 @@ import { Router, type Request, type Response } from 'express';
 import type { DatabaseSync } from 'node:sqlite';
 import { activeDb, getSetting, setSetting } from '../shared/db';
 import { syncConfigOf } from './node';
+import { siteHostOf, siteOfNode } from './sites';
 
 export const BLOCK_SIZE = 50;
 /** A host asks for a new block of a series when fewer than this many numbers are left. */
@@ -82,12 +83,15 @@ export function numberBlockRoutes(nodeAuth: (req: Request, res: Response, next: 
       res.status(404).json({ error: 'Only the cloud leases document numbers.' });
       return;
     }
-    const host = res.locals.syncNodeNo as number;
-    const isHost = conn.prepare('SELECT is_host FROM sync_nodes WHERE node_no = ?').get(host) as { is_host: number } | undefined;
-    if (!isHost?.is_host) {
+    const caller = res.locals.syncNodeNo as number;
+    const isHost = conn.prepare('SELECT is_host FROM sync_nodes WHERE node_no = ?').get(caller) as { is_host: number } | undefined;
+    const site = siteOfNode(conn, caller);
+    if (!isHost?.is_host || site == null || siteHostOf(conn, site).host !== caller) {
       res.status(403).json({ error: 'Only a site host is leased document numbers.' });
       return;
     }
+    // Leased to the site, not the PC: a PC that takes over as host keeps using the site's numbers.
+    const host = site;
     let keys = Array.isArray(req.body?.keys) ? (req.body.keys as unknown[]).map(String) : [];
     if (keys.includes('*')) {
       keys = [...new Set([...keys.filter((k) => k !== '*'),

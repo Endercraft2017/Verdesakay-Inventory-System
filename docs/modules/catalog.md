@@ -92,7 +92,9 @@ replay as actor), `authority.ts` (effects, `acceptCommand`, `pullFor`, `snapshot
 connection state, host/LAN enrolment, members refresh), `status.ts` (`/api/sync/status`, `/activity`,
 `/now`), `sites.ts` (home sites, site decisions, `/api/sync/sites`, `/api/sync/clashes`), `files.ts`
 (uploads offline: `syncUpload`, blob store, file list, `/api/sync/blobs`, `/api/sync/files`),
-`numberblocks.ts` (site number blocks: `/api/sync/sequence-blocks`, leases, host blocks); CLI
+`numberblocks.ts` (site number blocks: `/api/sync/sequence-blocks`, leases to the site), `failover.ts`
+(phase 5a, §30: site terms with the cloud as referee, the site log mirror, take over / step down /
+follow a new host, full re-sync `resyncFromSnapshot`, `/api/sync/site*`); CLI
 `scripts/sync-enrol.ts` (`npm run sync:enrol`). Frontend (desktop): `public/js/lib/sync-status.js`
 (top-bar pill + "not final" toast, fed by the `X-Sync-State` hook in `public/js/api.js`),
 `public/js/modules/core/sync.js` (route `sync`: PC status/inbox, or Installed PCs on the cloud).
@@ -171,6 +173,18 @@ packaged `Verdesakay.exe --smoke` (manual / CI).
 **Status:** partial. Built 2026-10-01, with an "Open when Windows starts" toggle (Sync page; on by
 default for a site host). To-do list in design doc §17: real code-signing certificate (D7), app icon,
 downloadable installer (GitHub Release), auto-update, mobile sync UI.
+
+## android/ — installable Android app (planned)
+
+**Responsibility (planned, docs/OFFLINE-FIRST.md §29):** an APK of the existing `/m` phone app (Capacitor
+wrapper, same vanilla code) for floor roles: QC/QA, line, releasing, receiving and delivery. It adds:
+- offline work lists for the signed-in person;
+- its own command queue with sync classes;
+- LAN discovery of the site host, following a failover;
+- the site certificate pinned at enrolment.
+
+**Not:** a full replica (D2 is for PCs only). **Dependencies:** `sync/` (commands, discovery, phase 5).
+**Status:** planned. Open decisions in §29: distribution, roles, shared phones, iOS, lost phones.
 
 ## core/ — ungated baseline
 

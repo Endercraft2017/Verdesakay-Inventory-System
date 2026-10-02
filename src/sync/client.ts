@@ -19,6 +19,11 @@ import type { PullResult } from './authority';
 import { blobPath, blobsOf, filePath, registerFile } from './files';
 import { openForPc, sealForPc } from '../desktop/pc-secret';
 import { seriesToRefill, storeBlocks } from './numberblocks';
+import {
+  HOST_MISSES_BEFORE_PROBE, absorbHostSite, cloudSiteInfo, findSiteHost, lanHeaders, nodeState, recordVerdicts,
+  resyncFromSnapshot, stepDown, switchHost, type HostSiteInfo, type SiteLog,
+} from './failover';
+import { importSiteAuthority } from '../desktop/lan-tls';
 
 export interface RemoteConfig {
   /** The authority this copy syncs with: the cloud, or its site host. */
@@ -171,6 +176,7 @@ export async function syncWithCloud(slug: string): Promise<CloudRound> {
     links.set(slug, { online: true, lastSyncAt: new Date().toISOString(), lastError: null, ...(upstream ? { upstream } : {}) });
     return round;
   } catch (e) {
+    if (!(e instanceof SyncDivergenceError)) await missedHost(slug).catch(() => {});
     links.set(slug, {
       online: e instanceof SyncOfflineError ? false : prev.online,
       lastSyncAt: prev.lastSyncAt,
@@ -187,30 +193,51 @@ async function cloudRound(slug: string): Promise<{ round: CloudRound; upstream?:
   if (cfg?.role !== 'node') throw new Error(`"${slug}" is not an installed copy.`);
   const remote = remoteOf(conn);
   if (!remote) throw new Error(`"${slug}" has nothing to sync with (not enrolled).`);
-  const headers = { 'content-type': 'application/json', 'x-sync-node-token': remote.nodeToken, ...tenantHeader(remote.tenant) };
+  const headers = {
+    'content-type': 'application/json', 'x-sync-node-token': remote.nodeToken, ...tenantHeader(remote.tenant), ...lanHeaders(conn),
+  };
+  const st = nodeState(conn);
 
-  const pushed: CommandResult[] = [];
+  // A PC that took over as host claims its site at the cloud first; refused, another PC holds it
+  // under a newer term: it passes on what it holds and steps down (§30).
+  if (st.resync_pending && cfg.isHost) {
+    const claim = await call(`${remote.cloudUrl}/api/sync/site/host`, {
+      method: 'POST', headers, body: JSON.stringify({ term: st.site_term }),
+    });
+    if (claim.status === 409) {
+      const holder = (await claim.json()) as Parameters<typeof stepDown>[2];
+      const sent = await pushCommands(conn, slug, remote, headers);
+      recordVerdicts(conn, sent);
+      stepDown(conn, cfg, holder);
+      return { round: { pushed: sent, rebase: emptySummary() } };
+    }
+    await jsonOrThrow(claim, 'Claiming the site');
+  }
+
   const pending = pendingCommands(slug);
-  // Anonymous-channel commands still being held stay here for a later round (§25).
-  const held = new Set((conn.prepare(
-    "SELECT id FROM sync_commands WHERE state = 'local' AND unattributed = 1 AND release_after > ?"
-  ).all(new Date().toISOString()) as Array<{ id: string }>).map((r) => r.id));
-  const due = held.size ? pending.filter((c) => !held.has(c.id)) : pending;
-  await pushBlobs(conn, slug, remote, blobsOf(due)); // a command's uploads go before it
-  for (let i = 0; i < due.length; i += 100) {
-    const r = await jsonOrThrow<{ results: CommandResult[] }>(
-      await call(`${remote.cloudUrl}/api/sync/commands`, {
-        method: 'POST', headers, body: JSON.stringify({ commands: due.slice(i, i + 100) }), timeoutMs: 5 * 60_000,
-      }), 'Sending changes');
-    pushed.push(...r.results);
+  // A command's uploads go before it; held anonymous-channel commands wait (§25).
+  const pushed = await pushCommands(conn, slug, remote, headers);
+
+  // Owed a full re-sync (it took over, follows a new host, or its host started a new stream):
+  // everything it could send has gone; now take a fresh copy and re-run what is still pending.
+  if (st.resync_pending) {
+    recordVerdicts(conn, pushed);
+    const counts = await resyncFromSnapshot(slug);
+    await pullFiles(conn, slug, remote, cfg.isHost === true);
+    if (cfg.isHost) {
+      await refreshMembers(conn, remote, headers);
+      await refillNumberBlocks(conn, remote, headers);
+    }
+    return { round: { pushed, rebase: { ...emptySummary(), rerun: counts.rerun, conflicts: counts.conflicts } } };
   }
 
   // Unattributed commands carry no node number: ask for their verdicts by id.
   const anonIds = pending.filter((c) => c.unattributed === 1).map((c) => c.id);
-  const q = `since=${lastAuthoritySeq(slug)}${anonIds.length ? `&ids=${anonIds.join(',')}` : ''}`;
+  const q = `since=${lastAuthoritySeq(slug)}&log_since=${st.site_log_rowid}${anonIds.length ? `&ids=${anonIds.join(',')}` : ''}`;
   const raw = await jsonOrThrow<{
     upTo: number; results: PullResult['results']; upstream?: LinkStatus['upstream'];
     effects: Array<{ authority_seq: number; command_id: string | null; changeset: string }>;
+    site?: (HostSiteInfo | NonNullable<ReturnType<typeof cloudSiteInfo>>) | null; site_log?: SiteLog;
   }>(await call(`${remote.cloudUrl}/api/sync/pull?${q}`, { headers, timeoutMs: 5 * 60_000 }), 'Receiving changes');
   const pull: PullResult = {
     upTo: raw.upTo,
@@ -218,6 +245,21 @@ async function cloudRound(slug: string): Promise<{ round: CloudRound; upstream?:
     effects: raw.effects.map((e) => ({ ...e, changeset: new Uint8Array(Buffer.from(e.changeset, 'base64')) })),
   };
   const rebase = await applyConfirmed(slug, pull);
+  conn.prepare('UPDATE sync_node SET host_misses = 0 WHERE k = 1').run();
+
+  // The site (§30). From its host, a site PC learns the site's PCs, the cloud's address and the
+  // commands the host holds; from the cloud, a host learns whether it still hosts the site.
+  if (raw.site) {
+    if ('peers' in raw.site) {
+      absorbHostSite(conn, cfg, raw.site, raw.site_log);
+      await fetchSiteAuthority(remote, headers);
+    } else if (cfg.isHost && raw.site.host !== cfg.nodeNo && raw.site.term > st.site_term) {
+      stepDown(conn, cfg, raw.site); // this round's commands already went to the cloud
+      return { round: { pushed, rebase }, upstream: raw.upstream };
+    } else if (cfg.isHost && raw.site.term > st.site_term) {
+      conn.prepare('UPDATE sync_node SET site_term = ? WHERE k = 1').run(raw.site.term);
+    }
+  }
 
   // Uploaded files made elsewhere (on the cloud, other PCs) — fetch the ones this copy lacks.
   await pullFiles(conn, slug, remote, cfg.isHost === true);
@@ -282,18 +324,76 @@ async function refillNumberBlocks(conn: DatabaseSync, remote: RemoteConfig, head
 }
 
 async function refreshMembers(conn: DatabaseSync, remote: RemoteConfig, headers: Record<string, string>): Promise<void> {
-  const members = await jsonOrThrow<Array<{ node_no: number; name: string; token_hash: string; revoked_at: string | null }>>(
-    await call(`${remote.cloudUrl}/api/sync/members`, { headers }), 'Listing the site\'s PCs');
+  const members = await jsonOrThrow<Array<{
+    node_no: number; name: string; token_hash: string; revoked_at: string | null;
+    lan_url?: string | null; lan_tenant?: string | null; voting?: number;
+  }>>(await call(`${remote.cloudUrl}/api/sync/members`, { headers }), 'Listing the site\'s PCs');
+  const self = syncConfigOf(conn)?.nodeNo;
   const upsert = conn.prepare(
-    `INSERT INTO sync_nodes (node_no, name, token_hash, revoked_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT(node_no) DO UPDATE SET name = excluded.name, token_hash = excluded.token_hash, revoked_at = excluded.revoked_at`,
+    `INSERT INTO sync_nodes (node_no, name, token_hash, revoked_at, lan_url, lan_tenant, voting) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(node_no) DO UPDATE SET name = excluded.name, token_hash = excluded.token_hash, revoked_at = excluded.revoked_at,
+       lan_url = COALESCE(excluded.lan_url, sync_nodes.lan_url), lan_tenant = COALESCE(excluded.lan_tenant, sync_nodes.lan_tenant),
+       voting = excluded.voting`,
   );
-  for (const m of members) upsert.run(m.node_no, m.name, m.token_hash, m.revoked_at);
+  for (const m of members) {
+    if (m.node_no === self) continue;
+    upsert.run(m.node_no, m.name, m.token_hash, m.revoked_at, m.lan_url ?? null, m.lan_tenant ?? null, m.voting ?? 1);
+  }
+}
+
+/** Send this PC's pending commands (blobs first), returning the authority's verdicts. Held
+ *  anonymous-channel commands wait (§25). */
+async function pushCommands(conn: DatabaseSync, slug: string, remote: RemoteConfig, headers: Record<string, string>): Promise<CommandResult[]> {
+  const pending = pendingCommands(slug);
+  const held = new Set((conn.prepare(
+    "SELECT id FROM sync_commands WHERE state = 'local' AND unattributed = 1 AND release_after > ?"
+  ).all(new Date().toISOString()) as Array<{ id: string }>).map((r) => r.id));
+  const due = held.size ? pending.filter((c) => !held.has(c.id)) : pending;
+  await pushBlobs(conn, slug, remote, blobsOf(due));
+  const out: CommandResult[] = [];
+  for (let i = 0; i < due.length; i += 100) {
+    const r = await jsonOrThrow<{ results: CommandResult[] }>(
+      await call(`${remote.cloudUrl}/api/sync/commands`, {
+        method: 'POST', headers, body: JSON.stringify({ commands: due.slice(i, i + 100) }), timeoutMs: 5 * 60_000,
+      }), 'Sending changes');
+    out.push(...r.results);
+  }
+  return out;
+}
+
+function emptySummary(): RebaseSummary {
+  return { undone: 0, applied: 0, onSite: 0, confirmed: 0, rejected: 0, rerun: 0, conflicts: 0 };
+}
+
+/** A site PC that can't sync with its host for a few rounds in a row asks the site's other PCs
+ *  whether one of them hosts the site now, and follows it (§30). */
+async function missedHost(slug: string): Promise<void> {
+  const conn = getDb(slug);
+  const cfg = syncConfigOf(conn);
+  if (cfg?.role !== 'node' || cfg.isHost) return;
+  const st = nodeState(conn);
+  if (st.host_node_no == null) return; // syncs with the cloud directly: no site to fail over in
+  conn.prepare('UPDATE sync_node SET host_misses = host_misses + 1 WHERE k = 1').run();
+  if (st.host_misses + 1 < HOST_MISSES_BEFORE_PROBE) return;
+  const found = await findSiteHost(conn, cfg);
+  if (found) switchHost(conn, found);
+}
+
+/** Every PC of a site keeps the site's certificate authority, so whichever takes over issues its
+ *  HTTPS certificate from it (the installed app only: LAN_TLS_DIR). Best effort. */
+async function fetchSiteAuthority(remote: RemoteConfig, headers: Record<string, string>): Promise<void> {
+  const dir = process.env.LAN_TLS_DIR;
+  if (!dir || fs.existsSync(path.join(dir, 'ca.key'))) return;
+  try {
+    const r = await call(`${remote.cloudUrl}/api/sync/site/ca`, { headers });
+    if (r.ok) importSiteAuthority(dir, (await r.json()) as { cert: string; key: string });
+  } catch { /* next round */ }
 }
 
 /**
  * Background sync for an installed PC. Rounds never overlap; being offline is logged once per
- * change of state, not every round. A divergence stops the loop — the copy must be re-enrolled.
+ * change of state, not every round. A copy found to have diverged re-syncs itself at the next
+ * round.
  */
 export function startSyncLoop(slug: string, intervalMs = Number(process.env.SYNC_INTERVAL_MS) || 15_000): () => void {
   let running = false;
@@ -313,8 +413,10 @@ export function startSyncLoop(slug: string, intervalMs = Number(process.env.SYNC
         if (online !== false) console.log('[sync] offline — working locally; will retry');
         online = false;
       } else if (e instanceof SyncDivergenceError) {
-        console.error(`[sync] ${e.message} Sync stopped.`);
-        clearInterval(timer);
+        // Repair rather than stop: the next round sends what it can, then takes a fresh copy
+        // and re-runs what is still pending (failover.ts resyncFromSnapshot, §30).
+        console.error(`[sync] ${e.message} Re-syncing this PC from a fresh copy.`);
+        getDb(slug).prepare('UPDATE sync_node SET resync_pending = 1 WHERE k = 1').run();
       } else {
         console.error('[sync] round failed:', (e as Error).message);
       }

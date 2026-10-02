@@ -18,6 +18,7 @@ import { attachWebSocket } from './src/shared/ws';
 import { runDailyBackups } from './src/platform/backups';
 import { pushOffsite } from './src/platform/offsite';
 import { DEPLOY_MODE, startSyncLoop, syncConfigOf } from './src/sync';
+import { roleChange } from './src/sync/failover';
 import { ensureLanTls, lanAddresses } from './src/desktop/lan-tls';
 import { phoneSetupHandler } from './src/desktop/phone-setup';
 
@@ -119,8 +120,22 @@ function banner(scheme: string): void {
 // An installed PC (DEPLOY_MODE=node, docs/OFFLINE-FIRST.md §17). A site host serves its LAN —
 // phones included — over HTTPS with its own site certificate (D5), and the phone-setup page on
 // plain HTTP; any other installed PC serves only itself, on this machine.
+/** Exit code that asks the desktop app to restart the server: this PC changed role (it took over
+ *  as its site's host, or stepped down — docs/OFFLINE-FIRST.md §30). */
+export const ROLE_CHANGE_EXIT = 75;
+
 function startInstalledPc(): void {
-  const isHost = syncConfigOf(getDb())?.isHost === true;
+  const conn = getDb();
+  // Where the site's PCs can reach this one on the LAN — needed if it ever takes over as host.
+  const ip = lanAddresses()[0];
+  if (ip && syncConfigOf(conn)) conn.prepare('UPDATE sync_node SET lan_url = ? WHERE k = 1').run(`https://${ip}:${PORT}`);
+  roleChange.onChange = (isHost) => {
+    console.log(`[sync] this PC is now ${isHost ? 'the site host' : 'an ordinary PC of its site'}; restarting`);
+    // The desktop app reads this to restart the server in the new role (electron/main.cjs).
+    fs.writeFileSync(path.join(path.dirname(DB_PATH), 'desktop-role.json'), JSON.stringify({ isHost }));
+    setTimeout(() => process.exit(ROLE_CHANGE_EXIT), 500).unref(); // let the response go out first
+  };
+  const isHost = syncConfigOf(conn)?.isHost === true;
   if (!isHost) {
     const local = http.createServer(app).listen(PORT, '127.0.0.1', () => {
       console.log(`\nVerdesakay (installed PC) is running for this PC only: http://localhost:${PORT}\n`);

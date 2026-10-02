@@ -16,10 +16,12 @@ App.register('sync', async (view) => {
 
   async function renderNode(s) {
     const d = SyncStatus.describe(s);
-    const [attention, pending] = await Promise.all([
+    const [attention, pending, site] = await Promise.all([
       API.get('/sync/activity?view=attention'),
       API.get('/sync/activity?view=pending'),
+      API.get('/sync/site').catch(() => ({ installed: false })),
     ]);
+    const admin = App.hasPermission('users.manage');
     const showWho = App.hasPermission('users.manage');
     const row = (c, withDismiss) => `
       <tr>
@@ -55,7 +57,8 @@ App.register('sync', async (view) => {
       <div class="panel">
         <h3>Waiting to sync</h3>
         ${pending.length ? table(pending, false) : UI.emptyState({ icon: 'check', title: 'Everything is synced' })}
-      </div>`;
+      </div>
+      ${sitePanel(site)}`;
 
     // Desktop app only: start with Windows (electron/autostart.cjs).
     const auto = view.querySelector('#sync-autostart');
@@ -84,6 +87,54 @@ App.register('sync', async (view) => {
       await SyncStatus.refresh();
       App.navigate('sync');
     });
+    const resync = view.querySelector('#site-resync');
+    if (resync) resync.onclick = async () => {
+      if (!(await UI.confirmDialog('Re-sync this PC? What it has not sent yet goes first; then it takes a fresh copy of the '
+        + 'data from ' + (site.is_host ? 'the cloud' : 'the site host') + ' and re-applies its unsent work on top.', 'Re-sync'))) return;
+      await API.post('/sync/site/resync');
+      UI.toast('This PC re-syncs at its next sync.');
+      App.navigate('sync');
+    };
+    const takeOver = view.querySelector('#site-take-over');
+    if (takeOver) takeOver.onclick = () => UI.modal({
+      title: 'Take over as site host',
+      bodyHTML: `<p>Use this only when the site host PC is <strong>switched off, broken or gone</strong> and won't be back soon.</p>
+        <p class="muted small">This PC becomes the host: the site's other PCs and phones work through it, and it decides the
+          site's records while the internet is down. Nothing recorded through the old host is lost: this PC has a copy of
+          what it held and sends it to the cloud. If the old host is still running somewhere, the site would have two hosts
+          deciding at once until they reach the cloud, which keeps one and flags clashes. When the old host comes back it
+          becomes an ordinary PC of the site.</p>
+        <p class="muted small">Phones keep the old host's address: open the new host's address on them (or its phone-setup page).</p>
+        <label class="check-row"><input type="checkbox" id="take-over-sure"> The site host is switched off or unreachable</label>`,
+      confirmText: 'Take over',
+      onConfirm: async (overlay, showErr) => {
+        if (!overlay.querySelector('#take-over-sure').checked) { showErr('Confirm that the site host is off first.'); return false; }
+        await API.post('/sync/site/take-over', { confirm: true });
+        UI.toast('This PC is now the site host. It restarts in a moment.');
+      },
+    });
+  }
+
+  /** The site this PC belongs to (phase 5, docs/OFFLINE-FIRST.md §30): its role, the site's PCs,
+   *  and — for an admin — re-sync, and taking over when the site host is lost. */
+  function sitePanel(site) {
+    if (!site || !site.installed || site.site_no == null) return '';
+    const role = site.is_host ? 'This PC is the site host' : 'This PC works through the site host';
+    const peers = (site.peers || []).filter((p) => !p.revoked_at);
+    return `<div class="panel">
+      <h3>Site</h3>
+      <p>${UI.esc(role)} <span class="muted small">(site #${site.site_no}, term ${site.term})</span></p>
+      ${!site.is_host && site.host_misses >= 3 ? `<p class="muted small">The site host hasn't answered for a while. This PC
+        is asking the site's other PCs whether one of them hosts the site now.</p>` : ''}
+      ${site.resync_pending ? '<p class="muted small">This PC re-syncs from a fresh copy at its next sync.</p>' : ''}
+      ${peers.length ? `<table><thead><tr><th>PC</th><th>On the LAN at</th></tr></thead><tbody>${peers.map((p) => `<tr>
+        <td><strong>${UI.esc(p.name)}</strong> <span class="muted small">#${p.node_no}</span></td>
+        <td class="muted small">${UI.esc(p.lan_url || '—')}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${admin ? `<div class="btn-row">
+        <button class="btn secondary" id="site-resync">Re-sync this PC</button>
+        ${site.can_take_over ? '<button class="btn secondary danger" id="site-take-over">Take over as site host…</button>' : ''}
+      </div>` : ''}
+    </div>`;
   }
 
   async function renderCloud(s) {

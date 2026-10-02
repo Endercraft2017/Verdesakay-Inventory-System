@@ -516,26 +516,33 @@ app version outside the supported window → conflict inbox for re-entry.
 **Terminal states:** `cloud_confirmed`; `rejected`; flagged/conflict resolved by a supervisor
 (which records a correcting command — history is never rewritten).
 
-## Site host failover — planned
+## Site host failover — partial
 
-Design: `docs/OFFLINE-FIRST.md` §4. **Nothing here is implemented.**
-**Trigger:** a node starts, or followers miss the current site host's heartbeats for a lease
-period.
-1. **Discover** (`sync/`) — nodes announce ID, tenant, site, version, `authority_seq` reached
-   and configured priority on the LAN.
-2. **Elect** (`sync/`) — a candidate needs votes from a majority of the site's configured
-   voting nodes; voters prefer the most caught-up node (then newest version, priority, node ID);
-   a new term starts. A site has at least 1 PC (decision D3). 1-PC site: that PC always hosts;
-   2-PC site: only the configured primary; 3+: majority election.
-3. **Serve** (`sync/` + `desktop/`) — the host renews its lease, accepts events under its term,
-   serves the LAN UI and `/m`.
-4. **Step down** — a returning former host sees a higher term and becomes a follower, handing its
-   unconfirmed events to the new host.
+Design: `docs/OFFLINE-FIRST.md` §4; **built (phase 5a, §30):** take-over by an admin, step-down, PCs
+following a new host, full re-sync. **Not built (5b):** discovery broadcasts, heartbeats, automatic
+majority election.
+**Trigger:** the site host is lost (switched off, broken, gone) during an outage, or a site PC
+can't reach its host for 3 sync rounds.
+1. **Mirror** (`sync/`, every round): each site PC keeps from its host the commands the host holds
+   unconfirmed, the site's PCs with their credentials and LAN addresses, the cloud's address, the term and
+   the site's certificate authority.
+2. **Take over** (`sync/` + `desktop/`): an admin on a site PC confirms the host is off. The PC queues the
+   mirrored commands as its own, starts term + 1 and a new stream, and restarts as the host (HTTPS on the
+   LAN). 5b: an automatic majority election at 3+ voting PCs.
+3. **Follow** (`sync/`): the site's other PCs miss their host for 3 rounds, ask the site's PCs who hosts it
+   now (`/whoami`: site, term), switch, send again what the old host had accepted, and re-sync from the new
+   host.
+4. **Claim** (`sync/`, the cloud as referee): when the new host reaches the cloud it claims the site with
+   its term, sends every command it holds (the old host's too) and re-syncs from the cloud.
+5. **Step down** (`sync/`): a returning former host hears of the higher term from the cloud. It sends what
+   it still holds, gives up its unused number block, follows the new host and re-syncs from it.
 
-**Branches:** tie → node ID; LAN split → only the majority side can elect; the minority keeps
-recording `merge` / `physical` commands and blocks `claim`s until it rejoins.
-**Terminal states:** one host serving under the latest term; or no majority / no eligible node
-(every node keeps recording `local` commands until a host appears).
+**Branches:** two PCs take over at once → the first to claim at the cloud wins and the other steps down,
+with clashing decisions flagged (D6); the old host was only cut off, not dead → both decide until they
+reach the cloud, and clashes are flagged; a PC with a damaged copy → **Re-sync this PC**, or automatically
+on divergence.
+**Terminal states:** one host per site under the latest term, recorded at the cloud; every command recorded
+anywhere on the site reaches the cloud once.
 
 ## Installed PC enrolment (enrol → snapshot → sync) — partial
 

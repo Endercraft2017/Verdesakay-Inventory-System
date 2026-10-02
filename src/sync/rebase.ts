@@ -66,7 +66,7 @@ export interface RebaseSummary {
  * they would edit rows the changeset is about to change and make it conflict (or double-apply).
  * The pragma is a no-op inside a transaction, so this wraps the whole BEGIN…COMMIT.
  */
-function withForeignKeysOff<T>(conn: DatabaseSync, fn: () => T): T {
+export function withForeignKeysOff<T>(conn: DatabaseSync, fn: () => T): T {
   conn.exec('PRAGMA foreign_keys = OFF');
   try {
     return fn();
@@ -124,41 +124,53 @@ export async function applyConfirmed(slug: string, pull: PullResult): Promise<Re
     });
 
     // Re-run what the authority hasn't decided yet, on top of the new confirmed state.
-    for (const c of pending) {
-      if (verdicts.has(c.id)) continue;
-      const session = conn.createSession();
-      let status = 0;
-      let error: string | null = null;
-      try {
-        const r = await dispatchCommand(slug, c, 'rebase');
-        status = r.status;
-        if (status >= 400) {
-          error = r.body && typeof r.body === 'object' && 'error' in r.body
-            ? String((r.body as { error: unknown }).error) : `HTTP ${status}`;
-        }
-      } finally {
-        let changes: Uint8Array | null = filterChangeset(session.changeset(), isReplicated);
-        session.close();
-        const ok = status > 0 && status < 400;
-        // A command that no longer applies keeps nothing: undo any partial write, so this
-        // copy stays exactly "confirmed state + pending commands".
-        if (!ok && changes.length) {
-          const undo = invertChangeset(changes);
-          withForeignKeysOff(conn, () => applyStrict(conn, undo, `undoing failed re-run of ${c.id}`));
-          changes = null;
-        }
-        conn.prepare(
-          `UPDATE sync_commands SET state = ?, local_changeset = ?, response_status = ?, error = ?,
-                  updated_at = datetime('now') WHERE id = ?`,
-        ).run(ok ? 'local' : 'conflict', changes, status || null, error, c.id);
-      }
-      if (status && status < 400) summary.rerun++;
-      else summary.conflicts++;
-    }
+    const counts = await rerunCommands(slug, conn, pending.filter((c) => !verdicts.has(c.id)));
+    summary.rerun += counts.rerun;
+    summary.conflicts += counts.conflicts;
     // A site host streams what this rebase did to its LAN PCs.
     if (isAuthority(syncConfigOf(conn))) flushEffects(conn, null);
     return summary;
   } finally {
     release();
   }
+}
+
+/** Re-run commands through their routes on top of the current state, capturing fresh
+ *  changesets; one that no longer applies becomes a conflict and keeps nothing (step 4 of a
+ *  rebase, and the last step of a full re-sync — failover.ts). Call holding the sync lock. */
+export async function rerunCommands(
+  slug: string, conn: DatabaseSync, commands: Array<ReturnType<typeof localCommands>[number]>,
+): Promise<{ rerun: number; conflicts: number }> {
+  const counts = { rerun: 0, conflicts: 0 };
+  for (const c of commands) {
+    const session = conn.createSession();
+    let status = 0;
+    let error: string | null = null;
+    try {
+      const r = await dispatchCommand(slug, c, 'rebase');
+      status = r.status;
+      if (status >= 400) {
+        error = r.body && typeof r.body === 'object' && 'error' in r.body
+          ? String((r.body as { error: unknown }).error) : `HTTP ${status}`;
+      }
+    } finally {
+      let changes: Uint8Array | null = filterChangeset(session.changeset(), isReplicated);
+      session.close();
+      const ok = status > 0 && status < 400;
+      // A command that no longer applies keeps nothing: undo any partial write, so this
+      // copy stays exactly "confirmed state + pending commands".
+      if (!ok && changes.length) {
+        const undo = invertChangeset(changes);
+        withForeignKeysOff(conn, () => applyStrict(conn, undo, `undoing failed re-run of ${c.id}`));
+        changes = null;
+      }
+      conn.prepare(
+        `UPDATE sync_commands SET state = ?, local_changeset = ?, response_status = ?, error = ?,
+                updated_at = datetime('now') WHERE id = ?`,
+      ).run(ok ? 'local' : 'conflict', changes, status || null, error, c.id);
+    }
+    if (status && status < 400) counts.rerun++;
+    else counts.conflicts++;
+  }
+  return counts;
 }

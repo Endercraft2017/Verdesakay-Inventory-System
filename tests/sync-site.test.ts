@@ -82,7 +82,9 @@ describe('setting up a site', () => {
     expect(sync.syncConfigOf(hostDb())).toEqual({ role: 'node', nodeNo: hostNo, isHost: true });
     hostToken = await signIn(HOST);
     const who = await ctx.api.get('/api/sync/whoami').set('X-Tenant', HOST);
-    expect(who.body).toEqual({ role: 'node', node_no: hostNo, is_host: true });
+    // A host also names its site (numbered after it), its term and its stream's epoch (§30).
+    expect(who.body).toMatchObject({ role: 'node', node_no: hostNo, is_host: true, site_no: hostNo, term: 1 });
+    expect(who.body.epoch).toMatch(/^[0-9a-f]{16}$/);
   });
 
   it('enrols a LAN PC through the host: registered at the cloud, copied from the host', async () => {

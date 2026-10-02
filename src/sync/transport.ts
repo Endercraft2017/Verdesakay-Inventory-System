@@ -37,6 +37,8 @@ import { enableSync, isAuthority, isCloudOnlySetting, isNodeLocalTable, syncConf
 import type { CommandResult, SyncCommand } from './commands';
 import { fileRoutes } from './files';
 import { numberBlockRoutes } from './numberblocks';
+import { cloudSiteInfo, failoverRoutes, hostSiteInfo, nodeState, noteLanAddress, streamEpoch } from './failover';
+import { siteMembers, siteOfNode, siteOfThisPc } from './sites';
 
 const router = Router();
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
@@ -58,22 +60,30 @@ function nodeAuth(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   conn.prepare("UPDATE sync_nodes SET last_seen_at = datetime('now') WHERE node_no = ?").run(row.node_no);
+  noteLanAddress(conn, row.node_no, req); // where to find this PC on its LAN, for failover
   res.locals.syncNodeNo = row.node_no;
   next();
 }
 
-/** The caller plus — on the cloud, for a site host — its LAN PCs: the nodes whose commands
- *  the caller may submit and whose verdicts it receives. */
+/** The nodes whose commands the caller may submit and whose verdicts it receives: itself, plus
+ *  every PC of its site — the host forwards them, and after a failover so does whichever PC took
+ *  over, or a former host passing on what it still held (phase 5, §30). On a site host, the site's
+ *  PCs are the ones it knows. */
 function nodesSpokenFor(conn: import('node:sqlite').DatabaseSync, nodeNo: number): number[] {
-  if (syncConfigOf(conn)?.role !== 'cloud') return [nodeNo];
-  const members = conn.prepare('SELECT node_no FROM sync_nodes WHERE host_node_no = ?').all(nodeNo) as Array<{ node_no: number }>;
-  return [nodeNo, ...members.map((m) => m.node_no)];
+  if (syncConfigOf(conn)?.role !== 'cloud') {
+    const known = conn.prepare('SELECT node_no FROM sync_nodes').all() as Array<{ node_no: number }>;
+    return [...new Set([nodeNo, ...known.map((m) => m.node_no)])];
+  }
+  const site = siteOfNode(conn, nodeNo);
+  return site == null ? [nodeNo] : [...new Set([nodeNo, ...siteMembers(conn, site)])];
 }
 
 // Files: blobs a PC's commands carry, and the authority's list of uploaded files (§18).
 router.use(fileRoutes(nodeAuth));
 // Document-number blocks leased to site hosts (§21).
 router.use(numberBlockRoutes(nodeAuth));
+// Failover: a site's host and term, taking over, the site's certificate authority (§30).
+router.use(failoverRoutes(nodeAuth));
 
 // ---- enrolment (admin) ----
 
@@ -117,7 +127,14 @@ router.get('/whoami', (_req, res) => {
     res.status(404).json({ error: 'Not a sync authority.' });
     return;
   }
-  res.json({ role: cfg!.role, node_no: cfg!.nodeNo, is_host: cfg!.isHost === true });
+  const conn = activeDb();
+  // A host also says which site, under which term and stream epoch — how a site's PCs find
+  // the current host after a failover (§30).
+  const host = cfg!.role === 'node' && cfg!.isHost === true;
+  res.json({
+    role: cfg!.role, node_no: cfg!.nodeNo, is_host: cfg!.isHost === true,
+    ...(host ? { site_no: siteOfThisPc(conn, cfg!), term: nodeState(conn).site_term, epoch: streamEpoch(conn) } : {}),
+  });
 });
 
 router.get('/members', nodeAuth, (_req, res) => {
@@ -126,9 +143,14 @@ router.get('/members', nodeAuth, (_req, res) => {
     res.status(404).json({ error: 'Only the cloud knows the enrolled PCs.' });
     return;
   }
-  res.json(conn.prepare(
-    'SELECT node_no, name, token_hash, revoked_at FROM sync_nodes WHERE host_node_no = ? ORDER BY node_no',
-  ).all(res.locals.syncNodeNo as number));
+  // Every PC of the caller's site (with where to find it on the LAN), so its host can let them in
+  // while the internet is down — and pass them on to the PCs that might take over (§30).
+  const site = siteOfNode(conn, res.locals.syncNodeNo as number);
+  const nos = site == null ? [] : siteMembers(conn, site);
+  res.json(nos.length ? conn.prepare(
+    `SELECT node_no, name, token_hash, revoked_at, lan_url, lan_tenant, voting FROM sync_nodes
+      WHERE node_no IN (${nos.map(() => '?').join(', ')}) ORDER BY node_no`,
+  ).all(...nos) : []);
 });
 
 router.get('/nodes', requireAuth, requirePermission('users.manage'), (_req, res) => {
@@ -226,8 +248,15 @@ router.get('/pull', nodeAuth, (req, res) => {
   const pull = pullFor(slugOf(), nodesSpokenFor(conn, res.locals.syncNodeNo as number), since, ids);
   const cfg = syncConfigOf(conn);
   const link = cfg?.role === 'node' ? linkStatusOf(slugOf()) : null;
+  const caller = res.locals.syncNodeNo as number;
+  // Failover (§30): a host tells its PCs about the site and the commands it holds unconfirmed;
+  // the cloud tells a site's PC who hosts the site now.
+  const site = cfg?.role === 'node'
+    ? hostSiteInfo(conn, cfg, Math.max(0, Number(req.query.log_since) || 0))
+    : { site: cloudSiteInfo(conn, caller) };
   res.json({
     upTo: pull.upTo,
+    ...site,
     // From a site host: whether it can reach the cloud, so its LAN PCs can say so.
     ...(link ? { upstream: { online: link.online, last_sync_at: link.lastSyncAt } } : {}),
     results: pull.results,
