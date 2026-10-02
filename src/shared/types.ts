@@ -48,6 +48,7 @@ export type Permission =
   | 'production.record'     // line lead: record units/batches off the line
   | 'production.inspect_qc' // QC inspector: pass/fail a unit's first pass
   | 'production.inspect_qa' // QA inspector: pass/fail a unit's final pass
+  | 'production.qa_review'  // decide a unit QA put on hold (QA inspectors can too)
   | 'production.receive'    // Products In: receive passed output into stock
   // Same narrowing, orders module (orders.routes.ts requireAnyPermission(['inventory.adjust',
   // 'orders.release'])) — a releasing_clerk mobile account scoped to just scanning/entering
@@ -582,6 +583,8 @@ export type JobOrderUnitStatus =
    *  POST /job-orders/:id/products-in. Not sellable/reservable until it becomes 'in_stock'. */
   | 'passed'
   | 'in_stock' | 'failed' | 'scrapped' | 'sold' | 'rework'
+  /** Held by QA for review (final pass); decided by QA / production.qa_review — pass, rectify or fail. */
+  | 'hold'
   /** Earmarked for a sale order by a warehouse release; still physical on-hand stock
    *  until the order reaches a confirmed status and `maybeFulfillSale` draws it down. */
   | 'reserved';
@@ -758,7 +761,8 @@ export interface QcRecord {
   unit_id: number | null;
   /** 1 = QA, 2 = QC. */
   stage: number;
-  result: 'pass' | 'fail';
+  /** 'hold' = QA held the unit for review (no pass/fail yet). */
+  result: 'pass' | 'fail' | 'hold';
   remarks: string | null;
   /** JSON string in the row; parsed to QcChecklistResult[] in API responses. */
   checklist: string | QcChecklistResult[] | null;

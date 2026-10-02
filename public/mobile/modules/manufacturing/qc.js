@@ -9,7 +9,11 @@
    readings; a repair carries category / station / priority), evidence photos as qc_unit
    attachments. A pass may queue offline (shown as queued, never as recorded); repair,
    rectification and fail need their evidence photo uploaded, so they need a connection.
-   QA's "Hold for QA Manager review" is a repair routed to the QA manager — the unit stays
+   QA's "Hold for review" puts the unit on hold (status 'hold'); any QA inspector or a
+   production.qa_review holder decides it on the Hold tab (?step=hold&unit=): pass, rectify or
+   fail, with a reason (POST /job-orders/:id/units/:unitId/hold-decision). Evidence photos upload
+   first (qc_unit) and go with a failing / held result as evidence_ids — the server refuses one
+   from the phone without them. Formerly a hold was a repair routed to the QA manager — the unit stayed
    out of RTS and comes back on the Recheck list for the decision.
    Kept from the previous screen: parts requests on repair units, checklist assignment /
    editing (qc.configure), several-units bulk pass, the unit record.
@@ -78,7 +82,7 @@
 
   function deskFor(params) {
     if (params && (params.role === 'qa' || params.role === 'qc')) return DESKS[params.role];
-    return can('production.inspect_qa') && !can('production.inspect_qc') && !canAdjust() ? DESKS.qa : DESKS.qc;
+    return (can('production.inspect_qa') || can('production.qa_review')) && !can('production.inspect_qc') && !canAdjust() ? DESKS.qa : DESKS.qc;
   }
   function go(desk, extra) { MApp.go('qc', Object.assign({ role: desk.role }, extra || {})); }
   function page(view, desk, node, title, sub) { return R.page(view, { role: desk.role, node: node, title: title, subtitle: sub }); }
@@ -133,7 +137,7 @@
     if (!sess[unitId]) {
       var draft = null;
       try { draft = JSON.parse(localStorage.getItem(DRAFT + unitId) || 'null'); } catch (ignore) {}
-      sess[unitId] = { answers: (draft && draft.answers) || {}, remarks: (draft && draft.remarks) || '', photos: 0, repair: {}, reason: '', disposition: '' };
+      sess[unitId] = { answers: (draft && draft.answers) || {}, remarks: (draft && draft.remarks) || '', photos: 0, evidence: [], repair: {}, reason: '', disposition: '' };
     }
     return sess[unitId];
   }
@@ -174,7 +178,12 @@
   function queue(view, desk, tab, joFilter) {
     var body = page(view, desk, desk.nodes.queue, desk.queueTitle, desk.queueSub);
     body.innerHTML = R.skeleton(3);
-    loadQueue(desk, true).then(function (q) {
+    var decide = desk.role === 'qa' && canDecideHolds();
+    // Someone who only decides holds (production.qa_review) has no inspection queue of their own.
+    var inspects = desk.role !== 'qa' || canAdjust() || can('production.inspect_qa');
+    Promise.all([inspects ? loadQueue(desk, true) : Promise.resolve({ units: [], completed: [] }),
+      decide ? API.get('/qc/holds').catch(function () { return []; }) : Promise.resolve([])]).then(function (both) {
+      var q = both[0], holds = both[1] || [];
       var units = q.units.filter(function (u) { return !joFilter || u.job_order_id === Number(joFilter); });
       var ready = units.filter(function (u) { return u.status === 'pending'; });
       var re = units.filter(function (u) { return u.status === 'rework'; });
@@ -185,16 +194,25 @@
         '<div class="rk-segs" role="tablist">' +
           '<button type="button" data-tab="ready"' + (tab === 'ready' ? ' class="on"' : '') + '>Ready<b>' + ready.length + '</b></button>' +
           '<button type="button" data-tab="re" class="re' + (tab === 're' ? ' on' : '') + '">' + desk.reLabel + '<b>' + re.length + '</b></button>' +
+          (decide ? '<button type="button" data-tab="hold" class="warn' + (tab === 'hold' ? ' on' : '') + '">On hold<b>' + holds.length + '</b></button>' : '') +
           '<button type="button" data-tab="done"' + (tab === 'done' ? ' class="on"' : '') + '>Completed</button></div>' +
         '<div class="rk-list" data-list></div>' +
         (joFilter ? R.note('info', 'Showing one job order only. <button type="button" class="rk-back" data-all style="padding:0">Show all</button>') : '') +
         R.actions([{ id: 'qc-scan', label: 'Scan or select unit', kind: 'primary' }].concat(ready.length > 1 ? [{ id: 'qc-bulk', label: 'Pass several', kind: 'secondary' }] : []));
       function paint(which) {
         var host = body.querySelector('[data-list]');
+        if (which === 'hold') {
+          host.innerHTML = holds.length ? holds.map(function (h) {
+            return '<button type="button" class="rk-card rk-unitcard" data-hold="' + h.id + '"><b>' + mEsc(label(h)) + '</b>' +
+              '<span>' + mEsc(h.product_name + ' · ' + h.job_order_number) + '</span><small class="warn">' + mEsc('Held by ' + (h.held_by_name || '—') + ' · ' + ago(h.held_at) + ' ago') + '</small><i aria-hidden="true">›</i></button>';
+          }).join('') : '<div class="rk-empty">No units on hold.</div>';
+          Array.prototype.forEach.call(host.querySelectorAll('[data-hold]'), function (b) { b.onclick = function () { go(desk, { unit: b.dataset.hold, step: 'hold' }); }; });
+          return;
+        }
         if (which === 'done') {
           host.innerHTML = q.completed.length ? q.completed.map(function (r) {
             return '<div class="rk-card rk-unitcard" style="cursor:default"><b>' + mEsc(r.identifier || 'Unit #' + r.unit_id) + '</b>' +
-              '<span>' + mEsc(r.product_name + ' · ' + r.job_order_number) + '</span><small>' + (r.result === 'pass' ? 'Passed' : 'Failed · ' + mEsc(r.disposition || '')) +
+              '<span>' + mEsc(r.product_name + ' · ' + r.job_order_number) + '</span><small>' + (r.result === 'pass' ? 'Passed' : r.result === 'hold' ? 'Held for review' : 'Failed · ' + mEsc(r.disposition || '')) +
               ' · ' + mEsc(clock(r.created_at)) + '</small><i></i></div>';
           }).join('') : '<div class="rk-empty">Nothing recorded by you today.</div>';
           return;
@@ -438,6 +456,8 @@
   }
 
   function record(desk, u, payload, btn, btnText) {
+    // A failing / held result carries the evidence photos uploaded for it (the server needs one per unit).
+    if (payload.result === 'fail') payload.evidence_ids = session(u.id).evidence.slice();
     mSubmit('/job-orders/' + u.job_order_id + '/units/inspect', payload, { label: desk.role.toUpperCase() + ' · ' + label(u) })
       .then(function (r) {
         var s = session(u.id);
@@ -498,7 +518,8 @@
       mPhoto.pickFile().then(function (file) {
         mToast('Uploading photo…');
         return mPhoto.attachBlob('qc_unit', u.id, file, file.name || 'evidence.jpg', desk.role.toUpperCase() + ' evidence');
-      }).then(function () {
+      }).then(function (r) {
+        if (r && r.id) s.evidence.push(r.id);
         s.photos++;
         mToast('Photo attached');
         go(desk, { unit: u.id, step: then || 'fail' });
@@ -513,7 +534,7 @@
   function failView(view, desk, u) {
     var s = session(u.id);
     var body = page(view, desk, desk.nodes.fail, desk.failTitle, desk.failSub);
-    var outcomes = (desk.role === 'qa' ? [['hold', 'Hold for QA Manager review']] : []).concat([
+    var outcomes = (desk.role === 'qa' ? [['hold', 'Hold for review (QA decides)']] : []).concat([
       ['scrap', 'Reject — scrap'], ['dispose', 'Reject — dispose'], ['recycle', 'Reject — recycle']]);
     body.innerHTML =
       '<div class="rk-alert"><b style="grid-column:1/-1;font-size:16px;color:#c72e1a">! ' + mEsc(desk.failAlert) + '</b>' +
@@ -543,11 +564,9 @@
       if (offline()) { mToast('You’re offline — this result needs a connection.', 'err'); return; }
       btn.disabled = true; btn.textContent = 'Recording…';
       loadJo(u.job_order_id).then(function (jo) {
-        var hold = s.disposition === 'hold';
         record(desk, u, {
-          unit_ids: [u.id], result: 'fail', disposition: hold ? 'repair' : (s.disposition || 'scrap'), remarks: why,
+          unit_ids: [u.id], result: 'fail', disposition: s.disposition || 'scrap', remarks: why,
           checklist: checklistPayload(stepsFor(u, jo), s),
-          repair: hold ? { category: 'Hold for review', station: 'QA Manager review', priority: 'Before release' } : undefined,
         }, btn, desk.failConfirm);
       }).catch(fail(btn, desk.failConfirm));
     };
@@ -561,9 +580,10 @@
     var r = s.result;
     var ident = s.identLabel || ('Unit #' + unitId);
     var title = r.queued ? 'Queued — will sync' : r.result === 'pass' ? 'Passed to ' + (s.dest || 'next stage')
-      : r.disposition === 'repair' ? (s.disposition === 'hold' ? 'Held for manager review' : desk.role === 'qa' ? 'Sent to rectification' : 'Sent to repair')
+      : r.disposition === 'hold' ? 'Held for review'
+      : r.disposition === 'repair' ? (desk.role === 'qa' ? 'Sent to rectification' : 'Sent to repair')
       : 'Rejected · ' + r.disposition;
-    var tone = r.queued ? 'queued' : r.result === 'pass' ? '' : r.disposition === 'repair' ? 'warn' : 'bad';
+    var tone = r.queued ? 'queued' : r.result === 'pass' ? '' : r.disposition === 'repair' || r.disposition === 'hold' ? 'warn' : 'bad';
     var me = (MApp.getMe() || {}).full_name || 'You';
     body.innerHTML =
       '<div class="rk-result ' + tone + '"><i aria-hidden="true">' + (r.queued ? '⏳' : r.result === 'pass' ? '✓' : r.disposition === 'repair' ? '↻' : '!') + '</i><b>' + mEsc(title) + '</b>' +
@@ -686,13 +706,64 @@
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { checklistAssign(view, desk, u, jo); })); });
   }
 
+  function canDecideHolds() { return canAdjust() || can('production.inspect_qa') || can('production.qa_review'); }
+
+  /* ── Decide a held unit (extends 72:396) — online-only ──────────────────── */
+  function holdDecision(view, desk, unitId) {
+    var body = page(view, desk, desk.nodes.fail, 'Decide held unit', 'Pass, rectify or fail — with the reason');
+    body.innerHTML = R.skeleton(2);
+    API.get('/qc/holds').then(function (rows) {
+      var h = rows.filter(function (x) { return x.id === unitId; })[0];
+      if (!h) { body.innerHTML = R.note('info', 'This unit is no longer on hold.') + R.actions([{ id: 'qc-back', label: 'Back to queue', kind: 'secondary' }]); body.querySelector('#qc-back').onclick = function () { go(desk, { tab: 'hold' }); }; return; }
+      var out = 'pass';
+      function paint() {
+        body.innerHTML =
+          R.jobHead({ tone: 'warn', number: label(h), pill: { text: 'On hold', tone: 'warn' }, name: h.product_name, meta: h.job_order_number }) +
+          R.field('Held by ' + (h.held_by_name || '—') + ' · ' + clock(h.held_at), h.remarks || '—') +
+          (h.issues.length ? '<div class="rk-checks">' + h.issues.map(function (i) {
+            return '<div class="rk-check-row"><button type="button" disabled><span class="rk-state issue" aria-hidden="true">!</span><b>' + mEsc(i.label) + '</b><small>' + mEsc(i.note || 'Issue') + '</small></button></div>';
+          }).join('') + '</div>' : '') +
+          '<div data-photos></div>' +
+          '<div class="rk-disps">' + [['pass', '✓', 'Pass', 'Accept as is — goes on to RTS'], ['rectify', '↻', 'Rectify', 'Back for correction, then recheck'], ['fail', '!', 'Fail', 'Reject the unit']].map(function (o) {
+            return '<button type="button" class="rk-disp ' + (o[0] === 'fail' ? 'fail' : o[0] === 'rectify' ? 'repair' : 'pass') + (out === o[0] ? ' on' : '') + '" data-o="' + o[0] + '"><i>' + o[1] + '</i><b>' + o[2] + '</b><span>' + o[3] + '</span></button>';
+          }).join('') + '</div>' +
+          (out === 'fail' ? '<label class="rk-card rk-field"><small>Disposition</small><select data-disp><option value="scrap">Scrap</option><option value="dispose">Dispose</option><option value="recycle">Recycle</option></select></label>' : '') +
+          (out === 'rectify' ? '<label class="rk-card rk-field"><small>Route to</small><select data-station>' + desk.stations.map(function (x) { return '<option>' + mEsc(x) + '</option>'; }).join('') + '</select></label>' : '') +
+          '<label class="rk-card rk-field"><small>Decision reason *</small><textarea rows="3" maxlength="2000" data-why></textarea></label>' +
+          R.actions([{ id: 'qc-decide', label: out === 'pass' ? 'Pass unit' : out === 'rectify' ? 'Send to rectification' : 'Fail unit', kind: out === 'fail' ? 'danger' : 'primary' },
+            { id: 'qc-back', label: 'Back', kind: 'secondary' }]);
+        if (window.mPhoto && mPhoto.thumbs) body.querySelector('[data-photos]').appendChild(mPhoto.thumbs('qc_unit', h.id, {}));
+        Array.prototype.forEach.call(body.querySelectorAll('[data-o]'), function (b) { b.onclick = function () { var w = body.querySelector('[data-why]').value; out = b.dataset.o; paint(); body.querySelector('[data-why]').value = w; }; });
+        body.querySelector('#qc-back').onclick = function () { go(desk, { tab: 'hold' }); };
+        var btn = body.querySelector('#qc-decide');
+        btn.onclick = function () {
+          var why = body.querySelector('[data-why]').value.trim();
+          if (why.length < 3) { mToast('Give the reason for the decision', 'err'); return; }
+          if (offline()) { mToast('You’re offline — the decision needs a connection. Nothing was recorded.', 'err'); return; }
+          btn.disabled = true; btn.textContent = 'Recording…';
+          var d = body.querySelector('[data-disp]'), st = body.querySelector('[data-station]');
+          API.post('/job-orders/' + h.job_order_id + '/units/' + h.id + '/hold-decision', {
+            outcome: out, remarks: why, disposition: d ? d.value : undefined,
+            repair: st ? { category: 'QA hold', station: st.value, priority: 'Before release' } : undefined,
+          }, { idempotencyKey: 'hold-' + h.record_id }).then(function () {
+            mToast(out === 'pass' ? 'Passed' : out === 'rectify' ? 'Sent to rectification' : 'Failed');
+            delete cache[desk.role];
+            go(desk, { tab: 'hold' });
+          }).catch(fail(btn, 'Record decision'));
+        };
+      }
+      paint();
+    }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { holdDecision(view, desk, unitId); })); });
+  }
+
   MApp.route('qc', function (view, params) {
     params = params || {};
     var desk = deskFor(params);
-    var canDesk = canAdjust() || can(desk.role === 'qa' ? 'production.inspect_qa' : 'production.inspect_qc');
+    var canDesk = canAdjust() || can(desk.role === 'qa' ? 'production.inspect_qa' : 'production.inspect_qc') || (desk.role === 'qa' && can('production.qa_review'));
     if (!canDesk) { view.innerHTML = '<div class="m-error">You don’t have the ' + desk.role.toUpperCase() + ' inspection permission.</div>'; return; }
     var unitId = params.unit && Number(params.unit);
     var step = params.step;
+    if (unitId && step === 'hold' && desk.role === 'qa' && canDecideHolds()) return holdDecision(view, desk, unitId);
     if (step === 'identify') return identify(view, desk);
     if (step === 'bulk') return bulk(view, desk, params.jo);
     if (unitId && step === 'done') return done(view, desk, unitId);

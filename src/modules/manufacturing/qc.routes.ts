@@ -179,6 +179,30 @@ router.get('/records', requirePermission('inventory.view'), (req, res) => {
   });
 });
 
+/* GET /api/qc/holds — units QA held for review, oldest first, for whoever decides them (any QA
+   inspector, production.qa_review, inventory.adjust): the hold record (reason, who, when, the
+   checklist's issues) and how many evidence photos back it. Decided with
+   POST /job-orders/:id/units/:unitId/hold-decision. */
+router.get('/holds', requireAnyPermission(['inventory.adjust', 'production.inspect_qa', 'production.qa_review']), (_req, res) => {
+  const rows = queryAll<{ id: number; identifier: string | null; stage: number; job_order_id: number; job_order_number: string;
+    product_name: string; qc_stages: number; record_id: number; remarks: string | null; held_at: string; held_by_name: string | null;
+    checklist: string | null; evidence: number }>(
+    `SELECT u.id, u.identifier, u.stage, u.job_order_id, j.number AS job_order_number, j.product_name, j.qc_stages,
+            q.id AS record_id, q.remarks, q.created_at AS held_at, us.full_name AS held_by_name, q.checklist,
+            (SELECT COUNT(*) FROM qc_evidence e WHERE e.qc_record_id = q.id) AS evidence
+     FROM job_order_units u
+     JOIN job_orders j ON j.id = u.job_order_id
+     JOIN qc_records q ON q.id = (SELECT MAX(id) FROM qc_records WHERE unit_id = u.id AND result = 'hold')
+     LEFT JOIN users us ON us.id = q.inspector_id
+     WHERE u.status = 'hold' ORDER BY q.id`
+  );
+  res.json(rows.map((r) => {
+    let items: Array<{ label: string; status?: string; note?: string | null }> = [];
+    try { items = r.checklist ? JSON.parse(r.checklist) : []; } catch { items = []; }
+    return { ...r, checklist: undefined, issues: items.filter((i) => i.status === 'issue').map((i) => ({ label: i.label, note: i.note ?? null })) };
+  }));
+});
+
 /* GET /api/qc/queue?role=qc|qa — the inspector's unit queue across open job orders (mobile V2,
    Figma 69:16 / 72:16). Same pass rules as POST /job-orders/:id/units/inspect: the first pass is
    QC (production.inspect_qc), the final pass QA (production.inspect_qa), a single-stage job

@@ -387,6 +387,18 @@ take `status` (`pass|issue|na`; only `pass` satisfies a required check) and `val
 result takes `repair {category, station, priority}`, stored in `qc_repair_details` (createSchema,
 no version bump). Checklist items take `group`, `measure`, `hint`.
 Tests: `tests/qc-inspection-v2.test.ts`.
+**QA hold + evidence:** a final-pass `fail` with disposition `hold` puts the unit in status `hold`
+(`qc_records.result = 'hold'`; counts as unresolved — the job order can't complete, its batch can't
+close, cancel scraps it). `GET /api/qc/holds` lists held units; `POST /job-orders/:id/units/:unitId/
+hold-decision {outcome: pass|rectify|fail, remarks, disposition?, repair?}` decides one — any QA
+inspector or a new grantable `production.qa_review` (Production Manager by default), or
+`inventory.adjust`. Holding pushes every QA inspector / `qa_review` holder; the decision pushes the
+inspector who held it. Evidence: a failing / held result carries `evidence_ids` (`qc_unit` photos
+of that unit by that inspector, each backing one record — `qc_evidence`, createSchema); from the
+phone app (`X-Client: mobile`) one per unit is required (409 `blocked: 'evidence'`). Desktop job
+order: held units with Decide…, and Pause / Resume / Close early for `production.pause|manage`
+holders without `inventory.adjust` (reason required), plus the line-decision history
+(`GET /:id/events`). Tests: `tests/qa-hold.test.ts`.
 **RTS interface (mobile V2):** rules in `rts.ts` (`unitBlockers`, `locationError`, `openHolds`),
 applied by `POST /job-orders/:id/products-in` before any write (409 `{blockers}` for a unit already
 in finished goods, a serial already in stock on another unit of the same product, a unit not yet

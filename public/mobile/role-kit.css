@@ -442,6 +442,8 @@
 .rk-disp span { grid-column: 2; font-size: 10px; color: var(--rk-meta); }
 .rk-disp.pass { background: #e3f5e8; color: #14803d; } .rk-disp.repair { background: #ffedd1; color: #c75e0f; } .rk-disp.fail { background: #ffe3d9; color: #c72e1a; }
 .rk-disp:disabled { opacity: .5; cursor: not-allowed; }
+.rk-disps { display: grid; gap: 8px; margin: 10px 0; }
+.rk-disp.on { outline: 2px solid currentColor; outline-offset: -2px; }
 :root[data-theme="dark"] .rk-disp.pass { background: #1d3a29; color: #8fe0b3; } :root[data-theme="dark"] .rk-disp.repair { background: #3a2b18; color: #f0b660; }
 :root[data-theme="dark"] .rk-disp.fail { background: #3d2119; color: #f6a58f; }
 

@@ -231,9 +231,14 @@ raised by the sales-order shortfall flow.
      offline, shown as queued, never as recorded); **Return for repair / rectification** —
      category, instruction, station, priority + a required photo (`qc_unit` attachment), online
      only; **Fail / reject** (scrap, dispose, recycle) with reason, photo and a review tick.
-     QA's **Hold for QA Manager review** is recorded as a repair routed to "QA Manager review",
-     so the unit stays out of RTS and returns on the Recheck list. A returned unit shows the
-     original issue and failed items for reinspection; waiting parts requests block the start.
+     A returned unit shows the original issue and failed items for reinspection; waiting parts
+     requests block the start. A failing / held result from the phone needs an evidence photo of
+     that unit (uploaded first, sent as `evidence_ids`), else 409 and nothing is recorded.
+   - **Branch — QA hold for review** (final pass only): the unit goes to `hold` — out of RTS, and
+     the job order can't complete. Every QA inspector and `production.qa_review` holder is
+     pushed; one of them decides it on the Hold tab (or the desktop job order) with a reason:
+     **pass** (on to stage 6), **rectify** (rework, back to the Recheck list) or **fail**
+     (scrap / dispose / recycle). The inspector who held it hears the outcome.
 5. **Repair parts handoff** (`manufacturing` → `inventory`) — a side branch off
    stage 4: the warehouse parts clerk (`parts_clerk` role, or `production.repairs`)
    accepts or rejects the request (`POST /production/repairs/:id/accept|reject`);

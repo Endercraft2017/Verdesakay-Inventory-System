@@ -22,7 +22,10 @@ import {
   prepareJobOrdersSchema,
   releaseJobOrderSchema,
   pauseJobOrderSchema,
+  holdDecisionSchema,
 } from '../../shared/validation';
+import { isMobileClient } from '../../shared/device';
+import { notifyAnyPermission, notifyUser } from '../../shared/push';
 import { imageUpload, saveAttachment, unlink } from '../../core/attachments.routes';
 import { enforceQuota } from '../../platform/quota';
 import { pickListHtml } from './parts-slip-print';
@@ -68,6 +71,9 @@ const pauseGate = requireAnyPermission(['inventory.adjust', 'production.pause', 
 // Close early returns unused components but never releases or cancels — so a Production
 // Manager (production.manage) may do it without the warehouse's broad inventory.adjust.
 const closeEarlyGate = requireAnyPermission(['inventory.adjust', 'production.manage']);
+// A unit QA held for review is decided by any QA inspector or someone granted production.qa_review
+// (the Production Manager by default); inventory.adjust keeps its usual override.
+const holdGate = requireAnyPermission(['inventory.adjust', 'production.inspect_qa', 'production.qa_review']);
 
 /** Line decisions made through a narrow production permission (not the broad inventory.adjust
  *  override) must give a reason — the handoff's "pause/resume/close-early require reasons". */
@@ -240,11 +246,11 @@ function pendingCount(joId: number): number {
   )?.n ?? 0;
 }
 
-/** Units not yet finally accounted for: awaiting first inspection ('pending') or sent
- *  back for repair ('rework'). A job order can't auto-complete while any exist. */
+/** Units not yet finally accounted for: awaiting first inspection ('pending'), sent back for
+ *  repair ('rework') or held by QA for review ('hold'). A job order can't auto-complete while any exist. */
 function unresolvedCount(joId: number): number {
   return queryOne<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM job_order_units WHERE job_order_id = ? AND status IN ('pending', 'rework')",
+    "SELECT COUNT(*) AS n FROM job_order_units WHERE job_order_id = ? AND status IN ('pending', 'rework', 'hold')",
     joId
   )?.n ?? 0;
 }
@@ -332,7 +338,7 @@ router.get('/', readGate, (req, res) => {
   if (stage === 'preparing') where.push("j.status = 'draft' AND j.warehouse_accepted_at IS NOT NULL AND j.prepared_at IS NULL");
   if (stage === 'ready_to_release') where.push("j.status = 'draft' AND j.prepared_at IS NOT NULL");
   const rows = queryAll<JobOrder & {
-    remaining: number; units_pending: number; units_rework: number; units_passed: number;
+    remaining: number; units_pending: number; units_rework: number; units_hold: number; units_passed: number;
     batches_receivable: number; overdue: number;
     units_first_pass_open: number; units_final_pass_open: number;
   }>(
@@ -345,6 +351,8 @@ router.get('/', readGate, (req, res) => {
               WHERE u.job_order_id = j.id AND u.status = 'pending') AS units_pending,
             (SELECT COUNT(*) FROM job_order_units u
               WHERE u.job_order_id = j.id AND u.status = 'rework') AS units_rework,
+            (SELECT COUNT(*) FROM job_order_units u
+              WHERE u.job_order_id = j.id AND u.status = 'hold') AS units_hold,
             (SELECT COUNT(*) FROM job_order_units u
               WHERE u.job_order_id = j.id AND u.status = 'passed') AS units_passed,
             (SELECT COUNT(*) FROM production_batches pb
@@ -1316,7 +1324,7 @@ function resolveDanglingUnits(joId: number, reason: string): number {
        SET status = 'scrapped',
            remarks = TRIM(COALESCE(remarks || ' · ', '') || ?),
            updated_at = datetime('now')
-     WHERE job_order_id = ? AND status IN ('pending', 'rework')`,
+     WHERE job_order_id = ? AND status IN ('pending', 'rework', 'hold')`,
     reason,
     joId
   );
@@ -1333,7 +1341,7 @@ function maybeCloseBatches(joId: number): void {
        AND EXISTS (SELECT 1 FROM job_order_units u WHERE u.batch_id = production_batches.id)
        AND NOT EXISTS (
          SELECT 1 FROM job_order_units u
-         WHERE u.batch_id = production_batches.id AND u.status IN ('pending', 'rework')
+         WHERE u.batch_id = production_batches.id AND u.status IN ('pending', 'rework', 'hold')
        )`,
     joId
   );
@@ -1502,7 +1510,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
     res.status(404).json({ error: 'Job order not found' });
     return;
   }
-  const { unit_ids, result, remarks, identifier, checklist, disposition, repair } = parseBody(inspectUnitsSchema, req.body);
+  const { unit_ids, result, remarks, identifier, checklist, disposition, repair, evidence_ids } = parseBody(inspectUnitsSchema, req.body);
   const units = queryAll<JobOrderUnit>(
     `SELECT * FROM job_order_units WHERE job_order_id = ? AND id IN (${unit_ids.map(() => '?').join(',')})`,
     id,
@@ -1580,10 +1588,44 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   }
   const checklistJson = checklist && checklist.length ? JSON.stringify(checklist) : null;
 
+  // A hold is QA's: only on the final pass, and only for a failing result.
+  const hold = result === 'fail' && disposition === 'hold';
+  if (hold && units.some((u) => u.stage + 1 < stages)) {
+    res.status(400).json({ error: 'Only the final (QA) pass can hold a unit for review.' });
+    return;
+  }
+  // Evidence (phone app only): every failing / held unit needs a photo of its own, uploaded by
+  // this inspector and not already behind an earlier result.
+  const evidence = new Map<number, number[]>();
+  if (result === 'fail' && (evidence_ids ?? []).length) {
+    for (const a of queryAll<{ id: number; ref_id: number }>(
+      `SELECT id, ref_id FROM attachments WHERE kind = 'qc_unit' AND uploaded_by = ? AND id IN (${evidence_ids!.map(() => '?').join(',')})
+         AND id NOT IN (SELECT attachment_id FROM qc_evidence)`, req.user!.id, ...evidence_ids!
+    )) evidence.set(a.ref_id, [...(evidence.get(a.ref_id) ?? []), a.id]);
+  }
+  if (result === 'fail' && isMobileClient(req) && units.some((u) => !evidence.has(u.id))) {
+    res.status(409).json({ error: 'Attach at least one evidence photo of the unit before recording this result.', blocked: 'evidence' });
+    return;
+  }
+
+  const holdRecords: Array<{ unit: JobOrderUnit; recordId: number }> = [];
   db.exec('BEGIN');
   try {
     for (const u of units) {
       const stage = u.stage + 1;
+      if (hold) {
+        // Held for review: the unit keeps its stage (the decision completes this pass).
+        const rec = Number(run(
+          `INSERT INTO qc_records (job_order_id, unit_id, stage, result, disposition, remarks, checklist, inspector_id)
+           VALUES (?, ?, ?, 'hold', 'hold', ?, ?, ?)`,
+          id, u.id, stage, remarks ?? null, checklistJson, req.user!.id
+        ).lastInsertRowid);
+        for (const a of evidence.get(u.id) ?? []) run('INSERT INTO qc_evidence (attachment_id, qc_record_id) VALUES (?, ?)', a, rec);
+        run("UPDATE job_order_units SET status = 'hold', disposition = 'hold', remarks = ?, updated_at = datetime('now') WHERE id = ?",
+          remarks ?? u.remarks, u.id);
+        holdRecords.push({ unit: u, recordId: rec });
+        continue;
+      }
       const rec = run(
         `INSERT INTO qc_records (job_order_id, unit_id, stage, result, disposition, remarks, checklist, inspector_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1596,6 +1638,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
         checklistJson,
         req.user!.id
       );
+      for (const a of evidence.get(u.id) ?? []) run('INSERT INTO qc_evidence (attachment_id, qc_record_id) VALUES (?, ?)', a, Number(rec.lastInsertRowid));
       if (result === 'fail' && disposition === 'repair' && repair && (repair.category || repair.station || repair.priority)) {
         run('INSERT INTO qc_repair_details (qc_record_id, category, station, priority) VALUES (?, ?, ?, ?)',
           Number(rec.lastInsertRowid), repair.category ?? null, repair.station ?? null, repair.priority ?? null);
@@ -1656,6 +1699,74 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   // see POST /:id/products-in. settleJobOrderGl() no-ops on its own while this job order
   // still has receivable output (hasReceivable()).
   settleJobOrderGl(id, req.user!.id);
+  if (holdRecords.length) {
+    const what = holdRecords.length === 1 ? (holdRecords[0]!.unit.identifier || `unit #${holdRecords[0]!.unit.id}`) : `${holdRecords.length} units`;
+    void notifyAnyPermission(['production.inspect_qa', 'production.qa_review'], {
+      title: `QA hold — ${what}`, body: `${jo.number}: ${remarks || 'held for review'}`,
+      url: `#/qc?role=qa&tab=hold`, tag: `qa-hold-${id}`,
+    }, req.user!.id);
+  }
+  res.json({ ok: true, job_order: loadJobOrder(id) });
+});
+
+// POST /api/job-orders/:id/units/:unitId/hold-decision — release a unit QA held for review:
+// pass it (completes the final pass as-is), send it to rectification (rework, with the repair
+// order) or fail it (scrap / dispose / recycle). Decided by any QA inspector or a
+// production.qa_review holder, with a reason; the inspector who held it is pushed the outcome.
+router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'), (req, res) => {
+  const id = Number(req.params.id);
+  const jo = loadJobOrder(id);
+  if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
+  const u = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ? AND job_order_id = ?', Number(req.params.unitId), id);
+  if (!u) { res.status(404).json({ error: 'Unit not found on this job order' }); return; }
+  if (u.status !== 'hold') { res.status(409).json({ error: `This unit isn't on hold (it is ${u.status}).` }); return; }
+  const { outcome, disposition, remarks, repair } = parseBody(holdDecisionSchema, req.body);
+  const held = queryOne<{ id: number; inspector_id: number | null; checklist: string | null }>(
+    "SELECT id, inspector_id, checklist FROM qc_records WHERE unit_id = ? AND result = 'hold' ORDER BY id DESC LIMIT 1", u.id
+  );
+  const stage = u.stage + 1;
+  const note = `Hold decision: ${remarks}`;
+  db.exec('BEGIN');
+  try {
+    const rec = Number(run(
+      `INSERT INTO qc_records (job_order_id, unit_id, stage, result, disposition, remarks, checklist, inspector_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, u.id, stage, outcome === 'pass' ? 'pass' : 'fail',
+      outcome === 'pass' ? null : outcome === 'rectify' ? 'repair' : (disposition ?? 'scrap'),
+      note, held?.checklist ?? null, req.user!.id
+    ).lastInsertRowid);
+    if (outcome === 'pass') {
+      run(
+        "UPDATE job_order_units SET status = 'passed', stage = ?, disposition = NULL, remarks = ?, location_id = COALESCE(location_id, ?), updated_at = datetime('now') WHERE id = ?",
+        stage, note, jo.output_location_id ?? getDefaultLocationId(), u.id
+      );
+      run("UPDATE job_orders SET qty_done = qty_done + 1, updated_at = datetime('now') WHERE id = ?", id);
+    } else if (outcome === 'rectify') {
+      if (repair && (repair.category || repair.station || repair.priority)) {
+        run('INSERT INTO qc_repair_details (qc_record_id, category, station, priority) VALUES (?, ?, ?, ?)',
+          rec, repair.category ?? null, repair.station ?? null, repair.priority ?? null);
+      }
+      run("UPDATE job_order_units SET status = 'rework', disposition = 'repair', remarks = ?, updated_at = datetime('now') WHERE id = ?", note, u.id);
+    } else {
+      run("UPDATE job_order_units SET status = 'failed', disposition = ?, stage = ?, remarks = ?, updated_at = datetime('now') WHERE id = ?",
+        disposition ?? 'scrap', stage, note, u.id);
+      run("UPDATE job_orders SET qty_scrapped = qty_scrapped + 1, updated_at = datetime('now') WHERE id = ?", id);
+    }
+    maybeComplete(id, req.user!.id);
+    maybeCloseBatches(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  settleJobOrderGl(id, req.user!.id);
+  if (held?.inspector_id && held.inspector_id !== req.user!.id) {
+    void notifyUser(held.inspector_id, {
+      title: `QA hold decided — ${u.identifier || 'unit #' + u.id}`,
+      body: `${outcome === 'pass' ? 'Passed' : outcome === 'rectify' ? 'Sent to rectification' : 'Failed'}: ${remarks}`,
+      url: '#/qc?role=qa', tag: `qa-hold-${u.id}`,
+    });
+  }
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 

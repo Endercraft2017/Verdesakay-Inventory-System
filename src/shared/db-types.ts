@@ -1000,6 +1000,11 @@ export interface QcChecklists {
   updated_at: Generated<string>;
 }
 
+export interface QcEvidence {
+  attachment_id: Generated<number>;
+  qc_record_id: number;
+}
+
 export interface QcRecords {
   id: Generated<number>;
   job_order_id: number;
@@ -1439,6 +1444,7 @@ export interface DB {
   push_subscriptions: PushSubscriptions;
   qbo_links: QboLinks;
   qc_checklists: QcChecklists;
+  qc_evidence: QcEvidence;
   qc_records: QcRecords;
   qc_repair_details: QcRepairDetails;
   release_authorizations: ReleaseAuthorizations;

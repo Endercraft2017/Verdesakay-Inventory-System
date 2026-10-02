@@ -16,6 +16,13 @@ App.register('job-orders', async (view, filter) => {
   // Approval is its own permission (production.approve), not implied by inventory.adjust.
   const canApprove = App.hasPermission('production.approve');
   const canInspectHere = canWrite || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa');
+  // Line decisions without the warehouse's inventory.adjust: a Production Manager may pause /
+  // resume (production.pause or .manage) and close early (production.manage) — each with a reason
+  // the server requires (job-orders.routes.ts reasonFor). Cancel / delete / release stay canWrite.
+  const canPauseLine = canWrite || App.hasPermission('production.pause') || App.hasPermission('production.manage');
+  const canCloseEarly = canWrite || App.hasPermission('production.manage');
+  // A unit QA held for review: any QA inspector or a production.qa_review holder decides it.
+  const canDecideHold = canWrite || App.hasPermission('production.inspect_qa') || App.hasPermission('production.qa_review');
   const STATUS = ['', 'draft', 'released', 'in_progress', 'paused', 'completed', 'cancelled'];
   const state = { status: '' };
   let rows = [];
@@ -163,6 +170,7 @@ App.register('job-orders', async (view, filter) => {
     let qcLog = [];
     let repairs = [];
     let batches = [];
+    let events = [];
 
     const m = UI.modal({ title: `Job order ${jo.number}`, size: 'lg', cancelText: 'Close', bodyHTML: '<div id="jo-body"></div>' });
     const host = () => m.overlay ? m.overlay.querySelector('#jo-body') : document.querySelector('#jo-body');
@@ -174,6 +182,7 @@ App.register('job-orders', async (view, filter) => {
         try { repairs = await API.get('/production/repairs?job_order=' + id); } catch { repairs = []; }
       }
       try { batches = await API.get('/production/batches?job_order=' + id); } catch { batches = []; }
+      try { events = await API.get('/job-orders/' + id + '/events'); } catch { events = []; }
     }
 
     const act = async (path, body) => {
@@ -232,6 +241,7 @@ App.register('job-orders', async (view, filter) => {
       const sum = jo.units_summary || { pending: 0, passed: 0, in_stock: 0, failed: 0, scrapped: 0, rework: 0 };
       const qc = jo.qc_stages > 0;
       const rework = units.filter((u) => u.status === 'rework');
+      const held = units.filter((u) => u.status === 'hold');
       const FAULTS = ['assembler', 'production', 'supplier', 'wear', 'other'];
       const box = (inner) => `<div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:12px;background:var(--surface-2)">${inner}</div>`;
       const boxTitle = (t) => `<h4 style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${t}</h4>`;
@@ -250,6 +260,7 @@ App.register('job-orders', async (view, filter) => {
             <div><span class="muted">Inspection</span><div>${qc ? `${jo.qc_stages}-step` : 'none'}</div></div>
             ${qc ? `<div><span class="muted">Under inspection</span><div>${sum.pending}</div></div>` : ''}
             ${qc && sum.rework ? `<div><span class="muted">In repair</span><div>${sum.rework}</div></div>` : ''}
+            ${qc && sum.hold ? `<div><span class="muted">QA hold</span><div>${sum.hold}</div></div>` : ''}
             ${sum.passed ? `<div><span class="muted">Awaiting Products In</span><div>${sum.passed}</div></div>` : ''}
             <div><span class="muted">Pull from</span><div>${UI.esc(jo.source_location_name || '—')}</div></div>
             <div><span class="muted">Output to</span><div>${UI.esc(jo.output_location_name || '—')}</div></div>
@@ -260,6 +271,11 @@ App.register('job-orders', async (view, filter) => {
           </div>
           ${jo.accept_notes ? `<p class="muted" style="white-space:pre-wrap;margin:10px 0 0"><b>Handover note:</b> ${UI.esc(jo.accept_notes)}</p>` : ''}
           ${jo.notes ? `<p class="muted" style="white-space:pre-wrap;margin:10px 0 0">${UI.esc(jo.notes)}</p>` : ''}`)}
+        ${held.length ? box(`${boxTitle('Held by QA for review')}
+          <table><thead><tr><th>Unit</th><th>Reason</th><th></th></tr></thead><tbody>${held.map((u) => `
+            <tr><td>${UI.esc(u.identifier || '#' + u.id)}</td><td class="muted">${UI.esc(u.remarks || '—')}</td>
+              <td class="actions">${canDecideHold ? `<button type="button" class="btn small" data-hold="${u.id}">Decide…</button>` : ''}</td></tr>`).join('')}
+          </tbody></table>`) : ''}
 
         ${box(`
           ${boxTitle('Components')}
@@ -408,6 +424,15 @@ App.register('job-orders', async (view, filter) => {
           ${jo.approved_at ? `<button type="button" class="btn secondary" data-do="unapprove">Withdraw approval</button>`
                            : `<button type="button" class="btn" data-do="approve">Approve</button>`}
         </div>` : ''}
+        ${!canWrite && (canPauseLine || canCloseEarly) && (running || jo.status === 'paused') ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+          ${running && canPauseLine ? `<button type="button" class="btn secondary" data-do="pause">Pause</button>` : ''}
+          ${jo.status === 'paused' && canPauseLine ? `<button type="button" class="btn secondary" data-do="resume">Resume</button>` : ''}
+          ${canCloseEarly ? `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>` : ''}
+        </div>` : ''}
+        ${events.length ? `<details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Line decisions (${events.length})</summary>
+          <table style="margin-top:6px"><tbody>${events.map((e) => `<tr><td class="muted" style="white-space:nowrap">${UI.esc(UI.fmtDate ? UI.fmtDate(e.created_at) : e.created_at)}</td>
+            <td>${UI.esc(({ pause: 'Paused', resume: 'Resumed', close_early: 'Closed early' })[e.action] || e.action)}</td>
+            <td>${UI.esc(e.actor_name || '—')}</td><td class="muted">${UI.esc(e.reason || '')}</td></tr>`).join('')}</tbody></table></details>` : ''}
         ${canWrite ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           ${jo.status !== 'completed' && jo.status !== 'cancelled' ? `<button type="button" class="btn secondary" id="jo-resched">Team / schedule…</button>` : ''}
           ${isDraft ? `${jo.approved_at && !jo.warehouse_accepted_at ? `<button type="button" class="btn" data-do="_wh_accept">Accept (warehouse)</button>` : ''}
@@ -624,8 +649,45 @@ App.register('job-orders', async (view, filter) => {
         } catch (e) { UI.toast(e.message, 'error'); }
       });
       el.querySelectorAll('[data-batch]').forEach((tr) => tr.onclick = () => App.navigate('production-batches', { id: tr.dataset.batch }));
+      el.querySelectorAll('[data-hold]').forEach((b) => b.onclick = () => {
+        const u = held.find((x) => String(x.id) === b.dataset.hold);
+        UI.modal({
+          title: 'Decide held unit — ' + (u.identifier || '#' + u.id),
+          bodyHTML: `<p class="muted" style="margin-top:0">${UI.esc(u.remarks || 'Held for review')}</p>
+            <div><label>Decision</label><select data-f="outcome">
+              <option value="pass">Pass — accept as is (goes on to RTS)</option>
+              <option value="rectify">Rectify — back for correction, then recheck</option>
+              <option value="fail">Fail — reject the unit</option></select></div>
+            <div style="margin-top:8px" data-fail hidden><label>Disposition</label><select data-f="disposition">
+              <option value="scrap">Scrap</option><option value="dispose">Dispose</option><option value="recycle">Recycle</option></select></div>
+            <div style="margin-top:8px"><label>Reason <span class="req">*</span></label><textarea data-f="remarks" rows="3" maxlength="2000"></textarea></div>`,
+          confirmText: 'Record decision',
+          onOpen: (ov) => {
+            const o = ov.querySelector('[data-f="outcome"]');
+            o.onchange = () => { ov.querySelector('[data-fail]').hidden = o.value !== 'fail'; };
+          },
+          onConfirm: async (ov, showErr) => {
+            const v = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
+            if (v('remarks').length < 3) { showErr('Give the reason for the decision'); return false; }
+            await API.post(`/job-orders/${id}/units/${u.id}/hold-decision`, {
+              outcome: v('outcome'), remarks: v('remarks'), disposition: v('outcome') === 'fail' ? v('disposition') : undefined,
+            });
+            jo = await API.get('/job-orders/' + id);
+            await refreshUnits(); UI.toast('Decision recorded'); draw(); load();
+          },
+        });
+      });
       el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => {
         const d = b.dataset.do;
+        // Without inventory.adjust the server needs a reason for pause / resume / close early.
+        if (!canWrite && (d === 'pause' || d === 'resume' || d === 'close')) {
+          const what = d === 'close' ? 'close this job order early' : d;
+          const reason = window.prompt(`Why ${what}? (required)`, '');
+          if (reason === null) return;
+          if (!reason.trim()) { UI.toast('A reason is required', 'error'); return; }
+          act('/' + d, { reason: reason.trim() });
+          return;
+        }
         const bulk = (path, body) => API.post('/job-orders/' + path, body)
           .then(async () => { jo = await API.get('/job-orders/' + id); UI.toast('Done'); draw(); load(); })
           .catch((e) => UI.toast(e.message, 'error'));

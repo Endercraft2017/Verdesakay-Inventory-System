@@ -24,7 +24,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'qc.configure',
   'delivery.run', 'delivery.manage',
   'production.approve', 'production.pause', 'production.manage', 'production.repairs', 'production.record', 'production.inspect_qc', 'production.inspect_qa',
-  'production.receive',
+  'production.qa_review', 'production.receive',
   'orders.release',
 ];
 
@@ -119,7 +119,7 @@ const ROLE_DEFAULTS: Record<Role, Permission[]> = {
   // with a required reason kept in job_order_events. Deliberately NOT inventory.adjust: no
   // parts release, cancel, delete or stock adjustment (see job-orders.routes.ts gates).
   production_manager: [
-    'inventory.view', 'inventory.mobile', 'production.record', 'production.pause', 'production.manage',
+    'inventory.view', 'inventory.mobile', 'production.record', 'production.pause', 'production.manage', 'production.qa_review',
     'messages.view', 'messages.send',
   ],
   // QC (first pass, technical/performance) and QA (final pass, appearance) are separate

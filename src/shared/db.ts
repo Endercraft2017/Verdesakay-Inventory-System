@@ -1346,6 +1346,13 @@ function createSchema(): void {
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_repair_part_holds_item ON repair_part_holds(item_id, location_id);
+    -- Evidence photos (attachments kind 'qc_unit') behind a failing / held QC-QA result; each photo
+    -- backs one record only. createSchema, no version bump.
+    CREATE TABLE IF NOT EXISTS qc_evidence (
+      attachment_id INTEGER PRIMARY KEY REFERENCES attachments(id) ON DELETE CASCADE,
+      qc_record_id  INTEGER NOT NULL REFERENCES qc_records(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_qc_evidence_record ON qc_evidence(qc_record_id);
 
     -- Job-order line decisions (pause / resume / close early) — append-only audit history with
     -- actor and reason; job_orders.pause_* only hold the CURRENT hold. createSchema, no bump.

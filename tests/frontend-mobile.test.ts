@@ -472,10 +472,14 @@ describe('mobile bootstrap', () => {
         { label: 'Battery voltage', required: false, group: 'Electrical and function', measure: 'V' },
       ] }, qc_checklist_qa: null };
 
+    const HOLDS = [{ id: 503, identifier: 'EB-2409-020', stage: 1, job_order_id: 184, job_order_number: 'JO-2026-184', product_name: 'K4 Electric Bike',
+      qc_stages: 2, record_id: 77, remarks: 'Paint shade differs from sample', held_at: '2026-10-02 01:00:00', held_by_name: 'Lea Santos', evidence: 1,
+      issues: [{ label: 'Paint finish', note: 'Shade' }] }];
     function fake(posts: { url: string; body: any }[], queue: Record<string, unknown> = { role: 'qc', units: [UNIT, REWORK], completed: [] }) {
       return (url: string, init: { method?: string; body?: string }) => {
         if (init && init.method === 'POST') { posts.push({ url, body: JSON.parse(String(init.body || '{}')) }); return { ok: true, inspected: 1 }; }
         if (url.startsWith('/api/qc/queue')) return queue;
+        if (url === '/api/qc/holds') return HOLDS;
         if (url === '/api/job-orders/184') return JO;
         return undefined;
       };
@@ -583,8 +587,64 @@ describe('mobile bootstrap', () => {
       await wait();
       const view = doc.getElementById('m-view');
       expect(view.getAttribute('data-figma-node')).toBe('72:396');
-      expect(view.textContent).toContain('Hold for QA Manager review');
+      expect(view.textContent).toContain('Hold for review (QA decides)');
       expect((doc.getElementById('qc-confirm') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('records a hold as a hold, with the evidence photo uploaded for it', async () => {
+      const posts: { url: string; body: any }[] = [];
+      const passed = { ...UNIT, stage: 1 };
+      const win = await bootAs(QA, fake(posts, { role: 'qa', units: [passed], completed: [] }));
+      const doc = win.document;
+      win.mPhoto.pickFile = () => Promise.resolve(new win.Blob(['x'], { type: 'image/jpeg' }));
+      win.mPhoto.attachBlob = () => Promise.resolve({ id: 91 });
+      win.location.hash = '#/qc?role=qa&unit=501&step=evidence&then=fail';
+      await wait();
+      (doc.getElementById('qc-cap') as HTMLButtonElement).click();
+      await wait(80);
+      const view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('72:396');
+      (view.querySelector('[data-out]') as HTMLSelectElement).value = 'hold';
+      (view.querySelector('[data-reason]') as HTMLTextAreaElement).value = 'Paint shade differs from sample';
+      const chk = doc.getElementById('qc-reviewed') as HTMLInputElement;
+      chk.checked = true; chk.dispatchEvent(new win.Event('change'));
+      (doc.getElementById('qc-confirm') as HTMLButtonElement).click();
+      await wait(80);
+      expect(posts[0]).toMatchObject({ url: '/api/job-orders/184/units/inspect',
+        body: { unit_ids: [501], result: 'fail', disposition: 'hold', evidence_ids: [91] } });
+      expect(posts[0]!.body.repair).toBeUndefined();
+    });
+
+    it('lists held units for QA and records the decision with a reason', async () => {
+      const posts: { url: string; body: any }[] = [];
+      const win = await bootAs(QA, fake(posts, { role: 'qa', units: [], completed: [] }));
+      const doc = win.document;
+      win.location.hash = '#/qc?role=qa&tab=hold';
+      await wait();
+      const view = doc.getElementById('m-view');
+      expect(view.textContent).toContain('On hold1');
+      expect(view.textContent).toContain('Held by Lea Santos');
+      (view.querySelector('[data-hold="503"]') as HTMLButtonElement).click();
+      await wait();
+      expect(view.textContent).toContain('Paint shade differs from sample');
+      (view.querySelector('[data-o="rectify"]') as HTMLButtonElement).click();
+      (doc.getElementById('qc-decide') as HTMLButtonElement).click();
+      expect(posts).toEqual([]); // a reason is required
+      (view.querySelector('[data-why]') as HTMLTextAreaElement).value = 'Repaint the fender';
+      (doc.getElementById('qc-decide') as HTMLButtonElement).click();
+      await wait();
+      expect(posts[0]).toMatchObject({ url: '/api/job-orders/184/units/503/hold-decision', body: { outcome: 'rectify', remarks: 'Repaint the fender' } });
+    });
+
+    it('opens the hold list to a Production Manager who only decides holds', async () => {
+      const PM = { ...QC, id: 23, username: 'pm1', full_name: 'Paolo Manager', role: 'production_manager',
+        permissions: ['inventory.view', 'inventory.mobile', 'production.manage', 'production.qa_review', 'messages.view', 'messages.send'] };
+      const win = await bootAs(PM, fake([]));
+      win.location.hash = '#/qc?tab=hold';
+      await wait();
+      const view = win.document.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('72:16');
+      expect(view.textContent).toContain('EB-2409-020');
     });
 
     it('refuses the QA desk to a QC-only inspector', async () => {

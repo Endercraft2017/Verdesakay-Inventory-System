@@ -100,6 +100,21 @@ export async function notifyPermission(perm: Permission, payload: PushPayload): 
   await Promise.all(targets.map((u) => notifyUser(u.id, payload)));
 }
 
+/** Fan a payload out once to every active user holding any of `perms`. */
+export async function notifyAnyPermission(perms: Permission[], payload: PushPayload, exceptUserId?: number): Promise<void> {
+  const users = queryAll<{ id: number; role: Role; permission_overrides: string }>(
+    'SELECT id, role, permission_overrides FROM users WHERE active = 1'
+  );
+  const targets = users.filter((u) => {
+    if (u.id === exceptUserId) return false;
+    let ov: Record<string, boolean> = {};
+    try { ov = JSON.parse(u.permission_overrides || '{}') as Record<string, boolean>; } catch { /* none */ }
+    const has = resolvePermissions(u.role, ov);
+    return perms.some((p) => has.includes(p));
+  });
+  await Promise.all(targets.map((u) => notifyUser(u.id, payload)));
+}
+
 /** Fan a payload out to every active user (opt-in "notify everyone" for announcements). */
 export async function notifyAll(payload: PushPayload): Promise<void> {
   const users = queryAll<{ id: number }>('SELECT id FROM users WHERE active = 1');

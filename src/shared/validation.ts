@@ -467,7 +467,11 @@ export const inspectUnitsSchema = z
     checklist: z.array(checklistResultSchema).max(60).optional(),
     // Required on a fail: what to do with the unit. 'repair' sends it to rework;
     // the others are terminal (the unit counts as scrapped).
-    disposition: z.enum(['scrap', 'dispose', 'recycle', 'repair']).optional(),
+    // 'hold' (final / QA pass only): held for review; decided later via /units/:unitId/hold-decision.
+    disposition: z.enum(['scrap', 'dispose', 'recycle', 'repair', 'hold']).optional(),
+    // Evidence photos already uploaded as `attachments` kind 'qc_unit' on the unit(s); the phone app
+    // must send at least one per unit with a failing result (shared/device.ts isMobileClient).
+    evidence_ids: z.array(z.coerce.number().int().positive()).max(60).optional(),
     // With disposition 'repair': the structured repair / rectification order (the remarks
     // carry the instruction). Kept per QC record in qc_repair_details.
     repair: z.object({
@@ -477,9 +481,21 @@ export const inspectUnitsSchema = z
     }).optional(),
   })
   .refine((v) => v.result !== 'fail' || !!v.disposition, {
-    message: 'Pick what to do with the failed unit (scrap / dispose / recycle / repair)',
+    message: 'Pick what to do with the failed unit (scrap / dispose / recycle / repair / hold)',
     path: ['disposition'],
   });
+
+/** POST /job-orders/:id/units/:unitId/hold-decision — release a unit QA held for review. */
+export const holdDecisionSchema = z.object({
+  outcome: z.enum(['pass', 'rectify', 'fail']),
+  disposition: z.enum(['scrap', 'dispose', 'recycle']).optional(),
+  remarks: trimmed.min(3, 'Give the reason for the decision').max(2000),
+  repair: z.object({
+    category: trimmed.max(120).optional().nullable(),
+    station: trimmed.max(120).optional().nullable(),
+    priority: trimmed.max(40).optional().nullable(),
+  }).optional(),
+});
 
 /** POST /job-orders/:id/products-in — receive finished output into stock. Either
     serialized `unit_ids` (units at status 'passed'), or a non-serialized `batch_id` +

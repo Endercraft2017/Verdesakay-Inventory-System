@@ -17,7 +17,7 @@ window.AccessEditor = (() => {
     // inventory.adjust. See src/shared/permissions.ts ROLE_DEFAULTS.
     parts_clerk: 'Parts Clerk (accepts repair parts requests)',
     production_lead: 'Production Lead (records units off the line)',
-    production_manager: 'Production Manager (lead + pause / resume / close early)',
+    production_manager: 'Production Manager (lead + pause / resume / close early + QA holds)',
     qc_inspector: 'QC Inspector (first-pass inspection)',
     qa_inspector: 'QA Inspector (final-pass inspection)',
     receiving_clerk: 'Products In Clerk (receives passed units)',
@@ -54,6 +54,7 @@ window.AccessEditor = (() => {
       { key: 'production.record', label: 'Record production', desc: 'Add finished units/batches off the line' },
       { key: 'production.inspect_qc', label: 'Inspect units (QC, first pass)', desc: 'Pass/fail units and batches on the first inspection pass, request repair parts' },
       { key: 'production.inspect_qa', label: 'Inspect units (QA, final pass)', desc: 'Pass/fail units and batches on the final inspection pass, request repair parts' },
+      { key: 'production.qa_review', label: 'Decide QA holds', desc: 'Release a unit QA held for review: pass it, send it to rectification or fail it (QA inspectors can too)' },
       { key: 'production.receive', label: 'Products In', desc: 'Receive QC/QA-passed output into stock' },
     ] },
     { label: 'Orders', items: [
