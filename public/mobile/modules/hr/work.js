@@ -26,6 +26,9 @@
       count: actionableInspection },
     { label: 'QA appearance inspection', sub: 'Inspect units waiting for QA', route: 'qc', params: { role: 'qa' }, permission: 'production.inspect_qa',
       count: actionableInspection },
+    // Someone who decides QA holds without inspecting (production.qa_review, e.g. the Production Manager).
+    { label: 'QA holds', sub: 'Decide units QA held for review', route: 'qc', params: { role: 'qa', tab: 'hold' }, permission: 'production.qa_review',
+      count: function () { return API.get('/qc/holds').then(function (rows) { return (rows || []).length; }); } },
     { label: 'Deliveries', sub: 'Field drops and proof of delivery', route: 'deliveries', any: ['delivery.run', 'delivery.manage'],
       count: function () { return API.get('/deliveries?mine=1').then(function (rows) {
         return (rows || []).filter(function (x) { return x.status === 'pending' || x.status === 'out_for_delivery'; }).length;

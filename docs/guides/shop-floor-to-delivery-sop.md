@@ -45,10 +45,12 @@ Recording → Ready to Sell → Sold** (side branches: *In Rework*, *Failed / Sc
 | 1 | Release parts to production | Warehouseman | `warehouse` (or any account with broad stock rights) | Production → **Job Orders** → open the job order → **Release to production** |
 | 2 | Accept the job order (sign for the kit), then build and record finished units | Production team lead / manager | `production_lead` | Production → **Job Orders** → open the job order → **Accept job order**, then **Record production** |
 | 3 | QC inspection (first pass) | QC inspector | `qc_inspector` | Production → **QC / QA** |
-| 3b | Repair parts handoff | Warehouse parts clerk | `parts_clerk` | Production → **Repairs** (or Work → **Accept Parts Request**) |
-| 4 | QA inspection (final pass) | QA inspector | `qa_inspector` | Production → **QC / QA** |
-| 5 | Products In / RTS recording | Product clerk | `receiving_clerk` | Production → **Products In** (or Work → **Products In**) |
-| 6 | Release units to a sale order | Releasing clerk | `releasing_clerk` | Work → **Release SOs** |
+| 3b | Repair parts handoff | Warehouse parts clerk | `parts_clerk` | Work → **Parts requests** |
+| 4 | QA inspection (final pass) | QA inspector | `qa_inspector` | Work → **QA appearance inspection** |
+| 4h | Decide a unit QA held for review | Any QA inspector, or anyone granted **Decide QA holds** (Production Manager by default) | `qa_inspector` / `production.qa_review` | QA desk → **On hold** tab, or Work → **QA holds** |
+| 5 | Products In / RTS recording | Product clerk | `receiving_clerk` | Work → **RTS recording** |
+| 5→6 | Approve the sale order and issue its release authorization | Sales / CSR | an account with `orders.edit` | Desktop: Sales Orders → the order → key icon |
+| 6 | Release units to a sale order (warehouse-out) | Releasing clerk | `releasing_clerk` | Work → **Release orders** |
 | 7 | Deliver to the customer | Driver / delivery crew | an account with `delivery.run` | Work → **Deliveries** |
 
 Each narrow role sees **only its own tile**, and the server blocks it from doing any other
@@ -237,9 +239,9 @@ the other inspection pass."
      - **Repair (send to rework)**: the unit goes to **In Rework** and stays on the job
        order.
    - Untick any checklist items that failed.
-   - **📷 Photos (e.g. where the defect is): take at least one close-up of the defect.**
-     This is **strongly required by procedure**, even though the app doesn't block you
-     without it. The repair team and management rely on it.
+   - **📷 Evidence photo: required.** Take at least one close-up of the defect, of this
+     unit. **The app refuses the fail without it** — on the phone and on the desktop QC
+     form alike — and nothing is recorded.
    - Tap **Confirm fail**.
 
 Every pass and fail is stamped with **your name and the time**, and you can see it in
@@ -247,7 +249,7 @@ Every pass and fail is stamped with **your name and the time**, and you can see 
 
 ### Step 3b — Units in rework (repair loop)
 
-Units sent to repair appear under **Back from repair (N)** on the same screen.
+Units sent to repair appear under **Reinspect** on your desk.
 
 1. **Request the part(s)** the repair needs. Tap **Request part** on the unit:
    - **Kind**: *Replace a fitted part* or *Add a missing part*.
@@ -255,32 +257,43 @@ Units sent to repair appear under **Back from repair (N)** on the same screen.
    - **Qty** and **Fault**: *Assembler / Production / Supplier / Wear / Other*.
    - **Old part goes to the damage record**: ticked by default for replacements. Leave it
      ticked unless the old part is thrown away.
-   - **Note** (optional). Then tap **Send request**. This works offline: it queues and
-     sends when the signal returns.
-2. While any request is still waiting on the warehouse, **Pass is disabled** ("Waiting on
-   the warehouse for parts — can't re-inspect yet").
-3. After the warehouse accepts or rejects every request, and the unit is repaired,
+   - **Note** (optional). Then tap **Send request**.
+2. **The part is held for you** the moment you send the request: the system sets it aside
+   at a parts location that has it, so nobody else (another repair, a production kit, a
+   sale) can take it. If no location has enough, the request is a **shortage** and holds
+   nothing until stock arrives.
+3. **You are notified** (push and in **Notifications**) when the part is **issued**,
+   **rejected** (with the reason), **short**, or when the parts clerk proposes a
+   **revision** — another part or quantity. A revision waits for **your** approval: open the
+   notification, check the proposal, and tap **Approve revision** or **Reject revision**.
+   The parts clerk can't approve their own proposal.
+4. While any request is still waiting on the warehouse, **you can't re-inspect the unit**.
+5. After the warehouse issues or rejects every request, and the unit is repaired,
    **re-inspect** it: **Pass** (with the checklist) or **Fail** again, exactly as above.
 
 ---
 
-## Stage 3b (warehouse side) — Parts clerk: accept or reject parts requests
+## Stage 3b (warehouse side) — Parts clerk: issue or reject parts requests
 
-**Where:** **Production → Repairs**, or **Work → Accept Parts Request**.
+**Where:** Work → **Parts requests** (Pending / Shortage / Issued today).
 
-Each card shows the request number, *Replace* or *Add*, the part and quantity, the fault,
-the job order and unit (with serial), who asked, and their note.
+1. Open a request. Check the **context**: the unit, the inspection that sent it to repair,
+   and any **duplicate** open request for the same unit and part.
+2. **Select the stock source.** Only **approved parts locations** can be used — never a
+   truck. Each location shows what's **free**: stock there minus what is held for other
+   requests or picked for kits. The location holding this request's part comes first.
+3. **Pick and scan.** Scan the part label: it must be **exactly the requested part (SKU)**,
+   and the picked quantity **exactly the requested quantity**. A different part or quantity
+   is refused — use **Request revision** instead.
+4. **Review**, tick **I picked and verified the exact requested item**, and tap **Confirm
+   issue**. The part leaves stock now; for a *replace*, the removed part goes to the damage
+   record.
+5. **Shortage:** if no approved location has enough free stock, tap **Escalate shortage**.
+   The requester and the warehouse supervisors are notified. The request stays open.
+6. **Reject:** choose a reason and add details. No stock moves; the requester is notified.
 
-1. Pick the part physically.
-2. **Issue from**: choose the location you are taking it from.
-3. **Remarks**: for example *"handed over 3 pcs to Line 2"*.
-4. Tap **Accept & issue**. This deducts the part from that location. For a *replace*, the
-   removed part is booked into the damage record, not thrown back into good stock.
-5. Or tap **Reject**. **Remarks are required as the reason**, for example *"not in stock —
-   PO raised"*.
-6. Hand the part to the repair tech or production.
-
-Works offline: it queues and sends when you're back online.
+**Needs a signal.** Issuing and rejecting never queue offline — nothing is shown as issued
+until the server has done it.
 
 ---
 
@@ -289,19 +302,35 @@ Works offline: it queues and sends when you're back online.
 **Goal:** A final check of how the unit **looks and is finished**: paint, scratches, decals,
 fit and finish, packaging. This is the last quality gate before the unit can be sold.
 
-**Where:** **Production → QC / QA**. You only see units that have already **passed QC**.
+**Where:** Work → **QA appearance inspection**. You only see units that have already
+**passed QC**.
 
 The steps are the same screens as Stage 3:
 
-1. Open the job order, then **Pass** or **Fail** each unit, or pass a group by count if
-   every unit truly passed.
+1. Open the unit, then **Pass** or **Fail**, or pass a group by count if every unit truly
+   passed.
 2. **Pass**: tick the **QA checklist** (required items \*), add remarks and optional photos,
    then tap **Confirm pass**.
    - The unit becomes **Awaiting RTS Recording**. It has passed quality but **is still not
      in stock**. The product clerk puts it into stock in Stage 5.
-3. **Fail**: say what failed, **take close-up photos of the cosmetic defect**, and choose
-   scrap/dispose/recycle (final) or **repair** (goes back through the rework loop and parts
-   requests, then gets re-inspected).
+3. **Fail**: say what failed, **take a close-up photo of the defect (required)**, and choose:
+   - **Return for rectification** — back through the rework loop, then rechecked;
+   - **Reject** — scrap / dispose / recycle (final);
+   - **Hold for review** — when you are not sure: the unit goes **On hold**. It stays out of
+     stock and the job order can't complete. Every QA inspector and everyone who can decide
+     QA holds is notified.
+
+### Step 4h — Decide a held unit
+
+**Who:** any QA inspector, or anyone granted **Decide QA holds** (the Production Manager by
+default). **Where:** the QA desk's **On hold** tab, Work → **QA holds**, or the desktop job
+order (**Held by QA for review → Decide…**).
+
+1. Open the held unit. Read the reason, the checklist issues and the evidence photo.
+2. Choose **Pass** (accept as is — on to RTS), **Rectify** (choose where it goes for the
+   correction) or **Fail** (scrap / dispose / recycle).
+3. Give the **reason** (required) and record the decision. The inspector who held it is
+   notified. **Needs a signal.**
 
 ---
 
@@ -311,86 +340,97 @@ The steps are the same screens as Stage 3:
 into stock** at a real location. **Only from this moment is a unit "Ready to Sell."** This
 works the same way as the Goods Receipt in Purchasing.
 
-**Where:** **Production → Products In**, or **Work → Products In**. The list shows every job
-order with units or batches waiting.
+**Where:** Work → **RTS recording** (Ready / Issues / Recorded).
 
 ### Steps
 
-1. Tap the job order.
-2. **Received into**: this defaults to the job order's output location. **Change it if the
-   units are going somewhere else**, such as the finished-goods warehouse or a showroom.
-   This is how a transfer off the shop floor is recorded, in the same step.
-3. **Note** (optional): count differences or condition, for example *"1 carton dented"*.
-4. **Units**: all are ticked by default. Two ways to confirm:
-   - Tap **Scan to receive** and scan each unit's label or serial one after another. Each
-     match is ticked. A code that doesn't belong to this job order is rejected ("not on
-     this job order"). The scanner closes automatically when every unit is ticked.
-   - Or untick any unit that **is not physically in front of you**. Don't receive what you
-     can't see.
-   - Tap **View** on a unit to see its dossier and photo, so you can compare it with the
-     unit in hand.
-5. **Batches** (non-serialized output): enter the counted **Receive now** quantity. **Short
-   counts are allowed**. Enter what you actually counted, not what was recorded as built.
-6. **Print labels:** tap **Print selected** to print the **QR label** for each ticked unit.
-   **Stick a label on every unit.** The releasing clerk scans these labels in Stage 6. A
-   unit without a label is very hard to release.
-7. Tap **Receive selected**. The units become **Ready to Sell**, stock goes up at the chosen
-   location, and a receipt `PI-#####` is logged (desktop: Production → Products In →
-   Receipt History). Works offline: it queues and sends later.
+1. Scan or pick the unit. Check it against its record (product, serial, final QA sign-off).
+2. **Stock details:** choose the **location**. Only storage locations can take ready-to-sell
+   stock (not a truck), and a location with a **capacity** shows the room it has left — a
+   location without room for what you're posting is greyed out.
+3. **Group** other units of the same product going to the same location, if you like.
+4. **Review**, tick that you physically checked them, and **Confirm**. The units become
+   **Ready to Sell**, stock goes up at that location, and a receipt `PI-#####` is logged.
+5. **Print labels** from the result screen and **stick a QR label on every unit.** The
+   releasing clerk scans these labels in Stage 6.
 
 ### Rules
 
-- The app does not require a photo here. The unit's production photo is already on its
-  record. If a unit arrives damaged, **don't receive it**. Report it to the production lead
-  or QA (Report a problem — describe the damage).
+- **Never twice:** a unit already in stock, or a serial already in stock on another unit,
+  is refused — the app shows the existing receipt. Nothing moves.
+- **Location full:** a location with a capacity refuses what won't fit (the message says how
+  many still fit). Pick another location. Capacities are set on the desktop under
+  **Inventory → Locations**.
+- **Doesn't match its record?** Report a **product-data mismatch**: the unit goes under
+  **Issues** and can't be recorded until QA or inventory control resolve it.
+- **Needs a signal.** Recording never queues offline.
 - Passing QA does **not** put a unit in stock. Until this step, reports show it as
   built but **not on hand**.
 
 ---
 
-## Between Stage 5 and 6 — Sales: approve the sale order
+## Between Stage 5 and 6 — Sales: approve the order and authorize its release
 
 (Office/CSR step, desktop.) The releasing clerk only sees a sale order after sales moves it
 to **approved**. On approval the system checks availability. If there's a shortfall, sales
 chooses to trim the order, raise job orders or purchase orders for the gap, or approve it
 as a backorder. Approving **locks the order's line items**.
 
+**Release authorization — required for every sale order** (unless the company turns the
+policy off). On the sale order, tap the **key icon** and issue it:
+
+- **Pickup or delivery**, the **approved recipient's name**, and an **ID reference** (only
+  the last 4 characters are kept).
+- How long it is **valid**, the **handoff area**, and whether a **partial release** is
+  allowed.
+- The app shows a **release token** (e.g. `PICKUP-7F3Q`). **Give it to the recipient** —
+  the releasing clerk never sees it; the recipient presents it at handoff.
+- Issuing a new authorization revokes the previous one. You can also revoke it with a reason.
+
+Release reports from the warehouse (wrong unit, missing item, identity problem, partial
+request) **notify you** and appear on the same screen to resolve.
+
 ---
 
-## Stage 6 — Releasing clerk: release units to the sale order
+## Stage 6 — Releasing clerk: release units to the sale order (warehouse-out)
 
-**Goal:** Pull the exact physical units for a customer's order and tie each one to that
-order by scanning its QR label.
+**Goal:** Hand the exact units of a customer's order to the approved recipient, with proof.
+**Issuing the release slip is the moment stock leaves inventory.**
 
-**Where:** **Work → Release SOs**. The list shows sale orders that are **approved** or
-partly **released**.
+**Where:** Work → **Release orders** (Ready / Blocked / Completed). An order without a valid
+authorization, or with an open release report, is under **Blocked**.
 
 ### Steps
 
-1. Tap the sale order. You'll see the customer, the order number, and each line with
-   `released / ordered`.
-2. **Serialized units (with QR labels):**
-   - Tap **📷 Scan units to release**. The scanner stays open.
-   - Physically pull each unit, then **scan its QR label**. Each good scan counts up ("N
-     unit(s) scanned this session") and the line progress updates.
-   - The scan is **rejected** if the unit isn't **Ready to Sell** (not yet received in
-     Stage 5, or already reserved or sold), isn't a product on this order, or would go
-     over the ordered quantity. Read the red message and put that unit aside.
-   - When every line is covered, "**Order fully released**" appears and the scanner closes.
-3. **Non-serialized lines (no labels):** type the quantity on the line and tap
-   **Release**.
-4. The order status becomes **released**, and the screen shows "Fully released — hand off to
-   delivery." Stage the goods for the driver.
+1. **Verify release authority.** Check the mode (pickup / delivery), the approved recipient
+   and the masked ID reference. Accept the order to start.
+2. **Scan the units.** Scan each unit's QR label. Only Ready-to-Sell units of this order's
+   products are accepted; a unit allocated to **another order** is blocked (put it back).
+   Count out non-serialized lines by quantity.
+3. **Package.** Confirm every required item that must leave with the unit (charger, keys,
+   documents …) and note the seal / tag.
+4. **Handoff.** Ask the recipient for the **token** and tap **Verify**.
+   - **Recipient can't present the token?** Tap **Recipient can't present the token** and
+     give the reason. A **warehouse supervisor** is notified and approves (or declines) it
+     with a reason — or, if you are a supervisor, approve it yourself with a reason. It
+     replaces only the token: the recipient must still match the approved name and ID
+     reference, and the reason is printed on the release slip.
+5. **Proof.** Take **at least one photo** of the unit at handoff (required) and have the
+   recipient sign.
+6. **Review**, tick **Physical handoff is complete**, and **Confirm warehouse-out**. The
+   slip `RS-#####` is issued and stock leaves inventory.
+
+**Partial release:** if Sales allowed it, an incomplete order can go out with what is ready;
+the rest moves to a **new backorder sale order** automatically. Without that permission the
+app refuses — ask Sales with **Request partial release**.
 
 ### Rules
 
-- Scanning **reserves** the units for this customer. No other order can take them. **Stock
-  isn't deducted yet.** It leaves inventory when the sale order is **completed** after
-  delivery.
-- Scanning works offline: scans queue and send later. Re-check the line counts once you're
-  back online.
-- To un-release a wrong unit, ask a supervisor. It's done on desktop, where the unit goes
-  back to Ready to Sell.
+- **Needs a signal.** Warehouse-out never queues offline. If your phone is connected to the
+  site's PC during an internet outage, the result says **"on the site PC — not final yet"**
+  until the site syncs with the cloud; the screen updates itself.
+- A refusal (wrong unit, missing package item, bad token, no photo) **moves no stock**.
+- Report problems with **Report issue** — Sales is notified.
 
 ---
 
@@ -418,8 +458,8 @@ notification.
 3. Tap **Delivered**, or **Couldn't deliver**. For a failed delivery, a **note of at least a
    few words saying why is required**.
 4. After a successful drop, the app may offer **"Mark SO-xxxx completed."** Tap it if you
-   are allowed to. **This is the moment stock actually leaves inventory**, and the reserved
-   units become **Sold**. If you don't see the button, the office completes the order.
+   are allowed to; otherwise the office completes the order. (Stock already left at the
+   release slip in Stage 6.)
 
 **Needs a signal:** Recording the delivery does not queue offline ("Connect to record the
 delivery"). Stay on the screen and retry once you have a signal. Don't leave without
@@ -440,12 +480,12 @@ company has no proof if the customer disputes the delivery.
 | 2 Record unit | Production lead | **1 photo per finished unit** | Serial/motor tag (optional, or type it) | **Yes**: identifier + photo both required |
 | 2 Kit problem | Production lead | — (Report a problem is text-only: list the part + qty) | — | No (procedure) |
 | 3 QC pass | QC inspector | Test readings (optional) | Batch/lot ID (optional) | Required checklist items enforced |
-| 3 QC fail | QC inspector | **Close-up of the defect** | — | "What failed" required; photo by procedure |
-| 3b Parts request | QC/QA inspector | — | — | Component required |
-| 3b Accept / reject part | Parts clerk | — | — | Reason required to reject |
-| 4 QA pass / fail | QA inspector | **Close-up of any cosmetic defect** | Batch/lot ID (optional) | Same as QC |
-| 5 Products In | Product clerk | — (unit photo already on file) | **Scan each unit** to confirm it's physically there | Location required; **print and stick QR labels** |
-| 6 Release SO | Releasing clerk | — | **Scan every unit's QR label** | Yes: only Ready-to-Sell units on this order are accepted |
+| 3 QC fail | QC inspector | **Close-up of the defect** | — | **Yes**: reason + photo required (phone and desktop) |
+| 3b Parts request | QC/QA inspector | — | — | Component required; the part is held for you |
+| 3b Issue / reject part | Parts clerk | — | **Scan the exact requested part** | **Yes**: approved location, exact part and quantity; reason to reject |
+| 4 QA pass / fail / hold | QA inspector | **Close-up of any defect** | Batch/lot ID (optional) | Same as QC; a hold needs a reason and a decider |
+| 5 RTS recording | Product clerk | — (unit photo already on file) | **Scan each unit** | **Yes**: storage location with room; never twice |
+| 6 Release (warehouse-out) | Releasing clerk | **Handoff photo + recipient signature** | **Scan every unit's QR label** | **Yes**: authorization token (or supervisor override), package, photo |
 | 7 Deliver | Driver | **Photos of delivered goods** | — | Reason required on a failed drop; signature/photos/GPS by procedure |
 
 ---
@@ -469,11 +509,18 @@ company has no proof if the customer disputes the delivery.
 | Release refused: "Not enough stock at …" | A component is short. Release is all-or-nothing. | Tell the planner. Draft POs from desktop. |
 | "Every unit needs a photo" / "an identifier" | Required at recording. | Fill in every row. |
 | I can't see a unit in QC/QA | It's on the other inspector's pass. | Wait for QC (if you're QA), or ask the other inspector. |
-| Pass is greyed out on a rework unit | A parts request is still waiting on the warehouse. | Ask the parts clerk to accept or reject it. |
+| Pass is greyed out on a rework unit | A parts request is still waiting on the warehouse. | Ask the parts clerk to issue or reject it. |
+| "Attach at least one evidence photo…" | A fail or hold needs a photo of this unit. | Take the photo in the app, then record the result. |
+| Parts clerk: "only N … is free" | The rest is held for other repair requests or kits. | Use another approved location, or escalate the shortage. |
+| A unit is "On hold" | QA held it for review. | A QA inspector or the Production Manager decides it (Step 4h). |
+| RTS: location "is full" / "has room for only N" | The location's capacity is reached. | Pick another location (or ask to raise its capacity). |
+| Release blocked: "no release authorization" | Sales hasn't issued one (required for every order). | Ask Sales to issue it on the sale order. |
+| Recipient has no token | They lost or didn't get it. | **Recipient can't present the token** → a supervisor approves with a reason. |
+| "On the site PC — not final yet" | The internet is down; the site's PC saved it. | Nothing to do — it becomes final when the site syncs. |
 | Unit passed QA but isn't in stock / can't be released | It hasn't been through **Products In**. | Product clerk receives it (Stage 5). |
 | Release scan rejected | The unit isn't Ready to Sell, is on another order, or isn't on this order. | Check its record (scan → record). Set it aside. |
-| Sale order not in Release SOs | It isn't **approved** yet. | Ask sales/CSR. |
-| Stock didn't drop after release | By design. Stock drops when the SO is **completed**. | Complete the order after delivery. |
+| Sale order not in Release orders | It isn't **approved** yet. | Ask sales/CSR. |
+| Stock didn't drop after scanning | By design. Scanning only allocates; stock drops when the **release slip** is issued. | Finish the warehouse-out (Stage 6). |
 
 ## Related
 

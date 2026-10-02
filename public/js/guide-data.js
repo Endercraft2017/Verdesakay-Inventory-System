@@ -112,7 +112,19 @@ const GUIDE_PIPELINES = [
         body: `Select a unit or a batch, work the checklist, then <b>Pass</b> or <b>Fail</b>. The
           final pass queues the unit for Products In (below) — it isn't stock yet. A <b>fail</b>
           needs a <b>disposition</b>: <i>scrap / dispose / recycle</i> (terminal — counts as
-          scrapped) or <i>repair</i>.`,
+          scrapped) or <i>repair</i> — and an <b>evidence photo</b> of each failed unit (the app
+          refuses the fail without one, on the phone and here). On the final pass, QA can also
+          <b>hold</b> a unit for review.`,
+      },
+      {
+        title: 'Decide a QA hold (branch)',
+        role: 'Any QA inspector · production.qa_review (Production Manager by default)',
+        to: { route: 'job-orders', label: 'Job order → Held by QA for review → Decide…' },
+        body: `A held unit is <b>on hold</b>: out of stock, and its job order can't complete. Every
+          QA inspector and everyone who can decide QA holds is notified. Open it (phone: QA desk →
+          <b>On hold</b>, or Work → <b>QA holds</b>; desktop: the job order) and decide with a
+          reason: <b>pass</b> (on to Products In), <b>rectify</b> (back to rework) or <b>fail</b>.
+          The inspector who held it is notified.`,
       },
       {
         title: 'Findings & reports',
@@ -128,8 +140,12 @@ const GUIDE_PIPELINES = [
         to: { route: 'repairs', label: 'Production → Repairs & Parts Requests' },
         body: `A unit failed as <b>repair</b> goes to rework and holds the job order open. From the
           repair panel, raise <b>parts requests</b> — <i>add</i> a missing part or <i>replace</i> a
-          fitted one (the removed part is booked to its damage record). Nothing moves until the
-          warehouse <b>accepts</b> the request here. The unit can only be re-inspected once every
+          fitted one (the removed part is booked to its damage record). Raising a request
+          <b>holds the part</b> at an approved parts location, so kits, other requests and sales
+          can't take it; with no free stock anywhere it's a <b>shortage</b>. The parts clerk issues
+          it from an approved location, scanning the <b>exact part and quantity</b> — another part or
+          quantity needs a <b>revision</b> the requester approves. The requester is notified when
+          it's issued, rejected, short or revised. The unit can only be re-inspected once every
           request is settled — passing then rejoins the flow at Products In.`,
       },
       {
@@ -143,7 +159,9 @@ const GUIDE_PIPELINES = [
           batch's received quantity (short counts allowed), pick the <b>destination
           location</b>, and post. Picking a different location than the job order's default
           output is how a "warehouse transfer" away from the shop floor happens, in the same
-          step. <b>Receipt History</b> is the log of every past receipt.`,
+          step. Only storage locations count (not a truck), and a location with a <b>capacity</b>
+          (Inventory → Locations) refuses what won't fit. A unit is never received twice.
+          <b>Receipt History</b> is the log of every past receipt.`,
         tip: `A unit only becomes sellable/reservable once it's been received here — a QC pass
           alone isn't enough.`,
       },
@@ -228,6 +246,17 @@ const GUIDE_PIPELINES = [
           of stock — those rows carry a ⚠ badge.`,
       },
       {
+        title: 'Authorize the release',
+        role: 'CSR / manager · orders.edit',
+        to: { route: 'orders', filter: { type: 'sale' }, label: 'Sale order → key icon' },
+        body: `Every sale order needs a <b>release authorization</b> before the goods can leave
+          (unless the company turns the policy off on the same screen). Set pickup or delivery,
+          the approved recipient, an ID reference (only the last 4 characters are kept), how long
+          it's valid, the handoff area, and whether a <b>partial release</b> is allowed. Give the
+          <b>token</b> it shows to the recipient — the releaser never sees it. Release reports from
+          the warehouse notify you and are resolved here.`,
+      },
+      {
         title: 'Cover a shortfall (if the check fails)',
         role: 'CSR / manager · orders.edit',
         to: { route: 'orders', filter: { type: 'sale' }, label: 'Sale order → shortfall prompt' },
@@ -258,9 +287,14 @@ const GUIDE_PIPELINES = [
         title: 'Issue the release slip',
         role: 'Warehouse releaser · inventory.adjust / orders.release',
         to: { route: 'releasing', filter: { tab: 'slips' }, label: 'Release order → Issue release slip' },
-        body: `As the goods leave, press <b>Issue release slip</b>: enter who collected them, the
-          vehicle, and take at least one photo of what's going out. The slip (RS-xxxxx) lists every
-          line and unit serial. <b>This is when stock leaves inventory</b> — the order becomes
+        body: `As the goods leave, press <b>Issue release slip</b>: enter the <b>token</b> the
+          recipient presents, confirm every required package item, enter who collected them and
+          the vehicle, and add at least one photo of what's going out (required). If the recipient
+          can't present the token, a <b>warehouse supervisor</b> can release without it — with a
+          reason that prints on the slip (on the phone the releaser asks and supervisors are
+          notified). With Sales' permission an incomplete order can go out as a <b>partial
+          release</b>: the rest moves to a new backorder order. The slip (RS-xxxxx) lists every line
+          and unit serial. <b>This is when stock leaves inventory</b> — the order becomes
           <b>confirmed</b>, reserved units flip to <b>sold</b>, and (with the general ledger on) COGS
           is posted. Print it from <b>Release Slips</b> for signatures.`,
       },
@@ -629,21 +663,24 @@ const GUIDE_PIPELINES = [
         role: 'Inspector',
         to: { route: 'production-qc', label: 'Production → QC / QA' },
         body: `<i>scrap / dispose / recycle</i> = terminal (counts as scrapped). <b>repair</b> = the
-          unit goes to rework and the job order stays open.`,
+          unit goes to rework and the job order stays open. QA can also <b>hold</b> it for review.
+          Every fail needs an evidence photo of the unit.`,
       },
       {
         title: 'Raise parts requests',
         role: 'Production',
         to: { route: 'job-orders', label: 'Job order → Repair panel' },
         body: `<i>add</i> (a missing part) or <i>replace</i> (swap — the old part goes to its damage
-          record). Add a fault reason (assembler / production / supplier / wear / other).`,
+          record). Add a fault reason (assembler / production / supplier / wear / other). The part
+          is <b>held</b> for the request at once; you're notified as it moves.`,
       },
       {
-        title: 'Warehouse accepts',
-        role: 'Warehouse',
+        title: 'Parts clerk issues',
+        role: 'Parts clerk · production.repairs',
         to: { route: 'repairs', label: 'Production → Repairs & Parts Requests' },
-        body: `Accept issues the replacement from a chosen location with remarks; reject needs a
-          reason. This is the only point stock moves.`,
+        body: `Issue from an approved location, scanning the exact part and quantity; reject needs a
+          reason; a shortage can be escalated; another part or quantity needs a revision the
+          requester approves. Issuing is the only point stock moves.`,
       },
       {
         title: 'Re-inspect',
