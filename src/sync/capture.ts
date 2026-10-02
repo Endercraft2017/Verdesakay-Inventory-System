@@ -98,7 +98,16 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
     return;
   }
 
-  if (!MUTATING.has(req.method)) return next();
+  if (!MUTATING.has(req.method)) {
+    // A page load on a PC that changes data (marks something seen, fills in a default…) would
+    // change this copy alone, and it would drift from the others. It is recorded like any write
+    // (and replayed by the authority); one that changes nothing records nothing (§32).
+    if (cfg.role === 'node' && req.method === 'GET' && req.path.startsWith('/api/') && !req.path.startsWith('/api/sync')) {
+      recordCommand(conn, cfg, 'merge', { quiet: true }, req, res, next).catch(next);
+      return;
+    }
+    return next();
+  }
   // An authority (the cloud, a site host) streams what each request changed to its PCs — and
   // lists any file it uploaded straight away, so the file follows its row without delay (§18).
   if (isAuthority(cfg)) {
@@ -120,6 +129,9 @@ export interface SyncClassOptions {
   /** Whose record it is (§16). `claim`: who may decide it (default: company-wide, the main site).
    *  `physical`: on the cloud, the site's action on its own record runs with clash-checks relaxed (D6). */
   home?: (req: Request) => Home;
+  /** Internal: a page load recorded only because it changed data — no "not final" headers (it
+   *  isn't an action the person took). */
+  quiet?: boolean;
   /** Body fields never stored in the command (a password the route re-checks): the route checks
    *  them where the command is recorded and skips that check on a re-run (reRunOfRecordedCommand). */
   redact?: string[];
@@ -222,8 +234,10 @@ async function recordCommand(
   ctx.commandId = commandId;
   // Tell the client this result is only on this PC so far (OFFLINE-FIRST §2.4): it must not be
   // shown as final. The id lets the UI follow it to "Synced" / "Needs attention".
-  res.setHeader('X-Sync-State', 'local');
-  res.setHeader('X-Sync-Command', commandId);
+  if (!opts.quiet) {
+    res.setHeader('X-Sync-State', 'local');
+    res.setHeader('X-Sync-Command', commandId);
+  }
   const session = conn.createSession();
   let done = false;
   const finish = () => {

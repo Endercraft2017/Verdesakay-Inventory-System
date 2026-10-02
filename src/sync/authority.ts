@@ -22,6 +22,7 @@ import {
 import { drainRecorder, isAuthority, isReplicated, syncConfigOf, type SyncConfig } from './node';
 import { dispatchCommand } from './replay';
 import { indexFiles, parseMultipart } from './files';
+import { replayable } from './maintenance';
 
 /** Move what the recorder captured since the last flush into `sync_effects`. Returns the new
  *  effect's sequence number, or null when nothing replicated changed (or a transaction is open —
@@ -73,6 +74,13 @@ export async function acceptCommand(slug: string, cmd: SyncCommand): Promise<Com
     if (existing && existing.state !== 'received') return resultOf(conn, cmd.id, host);
     if (!existing) insertCommand(conn, cmd, { state: 'received' });
 
+    // Made with an app version this authority can no longer replay (§32): rejected, for re-entry.
+    if (!replayable(cmd.app_version)) {
+      conn.prepare(
+        `UPDATE sync_commands SET state = 'rejected', response_status = 409, error = ?, updated_at = datetime('now') WHERE id = ?`,
+      ).run(`Made with app version ${cmd.app_version}, which can no longer be replayed. Please enter it again.`, cmd.id);
+      return resultOf(conn, cmd.id, host);
+    }
     flushEffects(conn, null); // anything before this command is not its effect
     const r = await dispatchCommand(slug, cmd, 'replay');
     const seq = flushEffects(conn, cmd.id);

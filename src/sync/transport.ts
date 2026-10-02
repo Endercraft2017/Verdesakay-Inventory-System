@@ -37,6 +37,7 @@ import { enableSync, isAuthority, isCloudOnlySetting, isNodeLocalTable, syncConf
 import type { CommandResult, SyncCommand } from './commands';
 import { fileRoutes } from './files';
 import { numberBlockRoutes } from './numberblocks';
+import { compactEffects, compactedUpTo, notePc, versionRefusal } from './maintenance';
 import { cloudSiteInfo, failoverRoutes, hostSiteInfo, nodeState, noteLanAddress, streamEpoch } from './failover';
 import { siteMembers, siteOfNode, siteOfThisPc } from './sites';
 
@@ -61,6 +62,14 @@ function nodeAuth(req: Request, res: Response, next: NextFunction): void {
   }
   conn.prepare("UPDATE sync_nodes SET last_seen_at = datetime('now') WHERE node_no = ?").run(row.node_no);
   noteLanAddress(conn, row.node_no, req); // where to find this PC on its LAN, for failover
+  // A PC newer than this authority waits until the authority is updated (§32).
+  const version = req.get('x-sync-app-version');
+  const refusal = versionRefusal(version);
+  if (refusal) {
+    res.status(409).json({ error: refusal, code: 'version_ahead' });
+    return;
+  }
+  notePc(conn, row.node_no, { version });
   res.locals.syncNodeNo = row.node_no;
   next();
 }
@@ -160,8 +169,25 @@ router.get('/nodes', requireAuth, requirePermission('users.manage'), (_req, res)
     return;
   }
   res.json(conn.prepare(
-    'SELECT node_no, name, enrolled_at, last_seen_at, revoked_at, is_host, host_node_no FROM sync_nodes ORDER BY node_no',
+    `SELECT node_no, name, enrolled_at, last_seen_at, revoked_at, is_host, host_node_no, voting, app_version,
+            (SELECT COALESCE(MAX(authority_seq), 0) FROM sync_effects) - last_pull_seq AS behind
+       FROM sync_nodes ORDER BY node_no`,
   ).all());
+});
+
+// Whether a PC votes in its site's host elections (a laptop that comes and goes shouldn't, §31).
+router.put('/nodes/:no/voting', requireAuth, requirePermission('users.manage'), (req, res) => {
+  const conn = activeDb();
+  if (syncConfigOf(conn)?.role !== 'cloud') {
+    res.status(404).json({ error: 'No such PC' });
+    return;
+  }
+  const info = conn.prepare('UPDATE sync_nodes SET voting = ? WHERE node_no = ?').run(req.body?.voting === false ? 0 : 1, Number(req.params.no));
+  if (!info.changes) {
+    res.status(404).json({ error: 'No such enrolled PC' });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 router.post('/nodes/:no/revoke', requireAuth, requirePermission('users.manage'), (req, res) => {
@@ -241,8 +267,21 @@ router.post('/commands', nodeAuth, async (req, res, next) => {
   }
 });
 
+const lastCompacted = new WeakMap<object, number>();
+
 router.get('/pull', nodeAuth, (req, res) => {
   const since = Math.max(0, Number(req.query.since) || 0);
+  const dbNow = activeDb();
+  // Trim the stream now and then (§32); a PC behind the trimmed point takes a fresh copy.
+  if (Date.now() - (lastCompacted.get(dbNow) ?? 0) > 60 * 60_000) {
+    lastCompacted.set(dbNow, Date.now());
+    compactEffects(dbNow);
+  }
+  if (since < compactedUpTo(dbNow)) {
+    res.status(410).json({ error: 'This PC has been away too long to catch up change by change; it re-syncs from a fresh copy.', resync: true });
+    return;
+  }
+  notePc(dbNow, res.locals.syncNodeNo as number, { pulledUpTo: since });
   const ids = typeof req.query.ids === 'string' && req.query.ids ? req.query.ids.split(',').slice(0, 500) : [];
   const conn = activeDb();
   const pull = pullFor(slugOf(), nodesSpokenFor(conn, res.locals.syncNodeNo as number), since, ids);

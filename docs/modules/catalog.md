@@ -104,7 +104,10 @@ connection state, host/LAN enrolment, members refresh), `status.ts` (`/api/sync/
 (uploads offline: `syncUpload`, blob store, file list, `/api/sync/blobs`, `/api/sync/files`),
 `numberblocks.ts` (site number blocks: `/api/sync/sequence-blocks`, leases to the site), `failover.ts`
 (phase 5a, §30: site terms with the cloud as referee, the site log mirror, take over / step down /
-follow a new host, full re-sync `resyncFromSnapshot`, `/api/sync/site*`); CLI
+follow a new host, full re-sync `resyncFromSnapshot`, `/api/sync/site*`), `election.ts` + `site-election.ts`
+(phase 5b, §31: automatic host election at 3+ voting PCs — heartbeat, lease, one vote per term, majority,
+signed UDP on the LAN), `maintenance.ts` (phase 6, §32: version skew, replay window, effect-stream and
+command-log trimming); CLI
 `scripts/sync-enrol.ts` (`npm run sync:enrol`). Frontend (desktop): `public/js/lib/sync-status.js`
 (top-bar pill + "not final" toast, fed by the `X-Sync-State` hook in `public/js/api.js`),
 `public/js/modules/core/sync.js` (route `sync`: PC status/inbox, or Installed PCs on the cloud).

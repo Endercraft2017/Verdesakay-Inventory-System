@@ -226,6 +226,16 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ['sync_node', 'lan_tenant', 'ALTER TABLE sync_node ADD COLUMN lan_tenant TEXT'],
   ['sync_node', 'host_misses', 'ALTER TABLE sync_node ADD COLUMN host_misses INTEGER NOT NULL DEFAULT 0'],
   ['sync_node', 'site_log_rowid', 'ALTER TABLE sync_node ADD COLUMN site_log_rowid INTEGER NOT NULL DEFAULT 0'],
+  // Election (phase 5b, §31): the vote this PC cast in which term (kept, so a restart can't vote
+  // twice), and whether it votes at all (set by an admin on the cloud).
+  ['sync_node', 'voted_term', 'ALTER TABLE sync_node ADD COLUMN voted_term INTEGER'],
+  ['sync_node', 'voted_for', 'ALTER TABLE sync_node ADD COLUMN voted_for INTEGER'],
+  ['sync_node', 'voting', 'ALTER TABLE sync_node ADD COLUMN voting INTEGER NOT NULL DEFAULT 1'],
+  // Upkeep (phase 6, §32). An authority: which app version each PC runs and how far it has read
+  // the effect stream; and up to where it has trimmed that stream (older PCs must re-sync).
+  ['sync_nodes', 'app_version', 'ALTER TABLE sync_nodes ADD COLUMN app_version TEXT'],
+  ['sync_nodes', 'last_pull_seq', 'ALTER TABLE sync_nodes ADD COLUMN last_pull_seq INTEGER NOT NULL DEFAULT 0'],
+  ['sync_node', 'compacted_upto', 'ALTER TABLE sync_node ADD COLUMN compacted_upto INTEGER NOT NULL DEFAULT 0'],
   // An authority: where each PC can be reached on its LAN (reported by the PC), and whether it
   // votes in host elections (a laptop that comes and goes is set not to).
   ['sync_nodes', 'lan_url', 'ALTER TABLE sync_nodes ADD COLUMN lan_url TEXT'],

@@ -81,3 +81,31 @@ describe('everyday work at a desk PC with no internet', () => {
     expect(JSON.stringify(inbox.body)).toContain('Shipment is in bay 3');
   });
 });
+
+describe('a page load that changes data on a PC (§32)', () => {
+  it('is recorded like a write and reaches the cloud — opening a case marks its photos seen', async () => {
+    const { jpegWithMetadata } = await import('./image-fixtures');
+    const ticket = (await ok(api().post('/api/anonymous-reports/ticket').set(T.cloudHdr()))).body.ticket;
+    const filed = (await ok(api().post('/api/anonymous-reports').field('ticket', ticket).field('category', 'Safety risk')
+      .field('description', 'Wet floor near the loading dock.')
+      .attach('photos', jpegWithMetadata(), { filename: 'floor.jpg', contentType: 'image/jpeg' }), 201)).body;
+    const id = (T.cloudDb().prepare('SELECT id FROM anonymous_reports WHERE number = ?').get(filed.number) as { id: number }).id;
+    await T.hostRound();
+    T.cutOff('host');
+    const seen = (conn: import('node:sqlite').DatabaseSync) =>
+      conn.prepare('SELECT last_photo_id FROM anonymous_report_handler_seen WHERE report_id = ?').get(id);
+    // The handler opens the case at the site host: a GET that writes.
+    await ok(api().get(`/api/confidential-reports/${id}`).set(T.hostHdr()));
+    expect(seen(T.hostDb())).toBeTruthy();
+    const recorded = T.hostDb().prepare("SELECT method, path FROM sync_commands WHERE method = 'GET' AND state = 'local'").all();
+    expect(recorded).toEqual([{ method: 'GET', path: `/api/confidential-reports/${id}` }]);
+    // A page load that changes nothing records nothing.
+    await ok(api().get('/api/inventory').set(T.hostHdr()));
+    expect((T.hostDb().prepare("SELECT COUNT(*) AS n FROM sync_commands WHERE method = 'GET'").get() as { n: number }).n).toBe(1);
+    expect(seen(T.cloudDb())).toBeUndefined();
+    T.reconnect('host');
+    const r = await T.hostRound();
+    expect(r.pushed.filter((p) => p.state !== 'confirmed')).toEqual([]);
+    expect(seen(T.cloudDb())).toEqual(seen(T.hostDb()));
+  });
+});

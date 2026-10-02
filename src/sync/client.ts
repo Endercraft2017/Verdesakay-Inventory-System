@@ -24,6 +24,8 @@ import {
   resyncFromSnapshot, stepDown, switchHost, type HostSiteInfo, type SiteLog,
 } from './failover';
 import { importSiteAuthority } from '../desktop/lan-tls';
+import { compactCommands } from './maintenance';
+import { APP_VERSION } from './commands';
 
 export interface RemoteConfig {
   /** The authority this copy syncs with: the cloud, or its site host. */
@@ -74,10 +76,24 @@ async function call(url: string, init: RequestInit & { timeoutMs?: number } = {}
   }
 }
 
+/** This PC runs a newer app version than its authority: it waits, untouched, until that is updated. */
+export class SyncVersionError extends Error {}
+
 async function jsonOrThrow<T>(res: Response, what: string): Promise<T> {
-  const body = (await res.json().catch(() => ({}))) as T & { error?: string };
+  const body = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string };
+  if (res.status === 409 && body.code === 'version_ahead') throw new SyncVersionError(body.error ?? 'Waiting for an update.');
   if (!res.ok) throw new Error(`${what} failed (${res.status}): ${body.error ?? 'no details'}`);
   return body;
+}
+
+/** Pull; a 410 means this PC fell behind the authority's trimmed stream: re-sync next round (§32). */
+async function pullOrResync(conn: DatabaseSync, url: string, headers: Record<string, string>): Promise<Response> {
+  const res = await call(url, { headers, timeoutMs: 5 * 60_000 });
+  if (res.status === 410) {
+    conn.prepare('UPDATE sync_node SET resync_pending = 1 WHERE k = 1').run();
+    throw new Error('This PC fell behind; it re-syncs from a fresh copy at the next round.');
+  }
+  return res;
 }
 
 export interface Registration {
@@ -176,7 +192,7 @@ export async function syncWithCloud(slug: string): Promise<CloudRound> {
     links.set(slug, { online: true, lastSyncAt: new Date().toISOString(), lastError: null, ...(upstream ? { upstream } : {}) });
     return round;
   } catch (e) {
-    if (!(e instanceof SyncDivergenceError)) await missedHost(slug).catch(() => {});
+    if (e instanceof SyncOfflineError) await missedHost(slug).catch(() => {});
     links.set(slug, {
       online: e instanceof SyncOfflineError ? false : prev.online,
       lastSyncAt: prev.lastSyncAt,
@@ -195,7 +211,9 @@ async function cloudRound(slug: string): Promise<{ round: CloudRound; upstream?:
   if (!remote) throw new Error(`"${slug}" has nothing to sync with (not enrolled).`);
   const headers = {
     'content-type': 'application/json', 'x-sync-node-token': remote.nodeToken, ...tenantHeader(remote.tenant), ...lanHeaders(conn),
+    'x-sync-app-version': APP_VERSION,
   };
+  compactCommands(conn); // this PC's own decided commands, after a while (§32)
   const st = nodeState(conn);
 
   // A PC that took over as host claims its site at the cloud first; refused, another PC holds it
@@ -238,7 +256,7 @@ async function cloudRound(slug: string): Promise<{ round: CloudRound; upstream?:
     upTo: number; results: PullResult['results']; upstream?: LinkStatus['upstream'];
     effects: Array<{ authority_seq: number; command_id: string | null; changeset: string }>;
     site?: (HostSiteInfo | NonNullable<ReturnType<typeof cloudSiteInfo>>) | null; site_log?: SiteLog;
-  }>(await call(`${remote.cloudUrl}/api/sync/pull?${q}`, { headers, timeoutMs: 5 * 60_000 }), 'Receiving changes');
+  }>(await pullOrResync(conn, `${remote.cloudUrl}/api/sync/pull?${q}`, headers), 'Receiving changes');
   const pull: PullResult = {
     upTo: raw.upTo,
     results: raw.results,
@@ -336,7 +354,10 @@ async function refreshMembers(conn: DatabaseSync, remote: RemoteConfig, headers:
        voting = excluded.voting`,
   );
   for (const m of members) {
-    if (m.node_no === self) continue;
+    if (m.node_no === self) {
+      conn.prepare('UPDATE sync_node SET voting = ? WHERE k = 1').run(m.voting ?? 1); // whether this PC votes
+      continue;
+    }
     upsert.run(m.node_no, m.name, m.token_hash, m.revoked_at, m.lan_url ?? null, m.lan_tenant ?? null, m.voting ?? 1);
   }
 }
@@ -411,6 +432,9 @@ export function startSyncLoop(slug: string, intervalMs = Number(process.env.SYNC
     } catch (e) {
       if (e instanceof SyncOfflineError) {
         if (online !== false) console.log('[sync] offline — working locally; will retry');
+        online = false;
+      } else if (e instanceof SyncVersionError) {
+        if (online !== false) console.log(`[sync] ${e.message}`);
         online = false;
       } else if (e instanceof SyncDivergenceError) {
         // Repair rather than stop: the next round sends what it can, then takes a fresh copy

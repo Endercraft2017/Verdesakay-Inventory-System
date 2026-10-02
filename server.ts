@@ -19,6 +19,7 @@ import { runDailyBackups } from './src/platform/backups';
 import { pushOffsite } from './src/platform/offsite';
 import { DEPLOY_MODE, startSyncLoop, syncConfigOf } from './src/sync';
 import { roleChange } from './src/sync/failover';
+import { startSiteElection } from './src/sync/site-election';
 import { ensureLanTls, lanAddresses } from './src/desktop/lan-tls';
 import { phoneSetupHandler } from './src/desktop/phone-setup';
 
@@ -39,7 +40,11 @@ setInterval(housekeeping, 60 * 60 * 1000).unref(); // hourly
 // Push reminders are an outside side effect: only the cloud sends them (OFFLINE-FIRST §7.8).
 if (DEPLOY_MODE === 'cloud') setInterval(() => { void sendDueTaskReminders(); }, 60 * 1000).unref();
 // An installed PC syncs with its cloud in the background (docs/OFFLINE-FIRST.md §12).
-if (DEPLOY_MODE === 'node') startSyncLoop('default');
+if (DEPLOY_MODE === 'node') {
+  startSyncLoop('default');
+  // Sites with 3+ voting PCs elect a new host by themselves when theirs is lost (§31).
+  startSiteElection('default');
+}
 // Daily DB snapshots: at boot, then an hourly check that takes today's once the date rolls
 // over (a no-op for any DB that already has one). Never let a backup error crash the server.
 const dailyBackup = () => {

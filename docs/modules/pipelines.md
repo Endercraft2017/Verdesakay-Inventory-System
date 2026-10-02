@@ -531,11 +531,11 @@ app version outside the supported window → conflict inbox for re-entry.
 **Terminal states:** `cloud_confirmed`; `rejected`; flagged/conflict resolved by a supervisor
 (which records a correcting command — history is never rewritten).
 
-## Site host failover — partial
+## Site host failover
 
-Design: `docs/OFFLINE-FIRST.md` §4; **built (phase 5a, §30):** take-over by an admin, step-down, PCs
-following a new host, full re-sync. **Not built (5b):** discovery broadcasts, heartbeats, automatic
-majority election.
+Design: `docs/OFFLINE-FIRST.md` §4; built in phase 5a (§30: take-over by an admin, step-down, PCs
+following a new host, full re-sync) and 5b (§31: automatic election at 3+ voting PCs). Not yet tried on
+real office networks.
 **Trigger:** the site host is lost (switched off, broken, gone) during an outage, or a site PC
 can't reach its host for 3 sync rounds.
 1. **Mirror** (`sync/`, every round): each site PC keeps from its host the commands the host holds
@@ -543,7 +543,8 @@ can't reach its host for 3 sync rounds.
    the site's certificate authority.
 2. **Take over** (`sync/` + `desktop/`): an admin on a site PC confirms the host is off. The PC queues the
    mirrored commands as its own, starts term + 1 and a new stream, and restarts as the host (HTTPS on the
-   LAN). 5b: an automatic majority election at 3+ voting PCs.
+   LAN). At 3+ voting PCs this happens by itself (5b): no heartbeat for the lease → an election under the
+   next term → the PC with a majority of votes (never one behind the voters) takes over.
 3. **Follow** (`sync/`): the site's other PCs miss their host for 3 rounds, ask the site's PCs who hosts it
    now (`/whoami`: site, term), switch, send again what the old host had accepted, and re-sync from the new
    host.

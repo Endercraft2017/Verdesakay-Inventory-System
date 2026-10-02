@@ -149,7 +149,8 @@ export function hostSiteInfo(conn: DatabaseSync, cfg: SyncConfig, logSince: numb
   if (remote) {
     peers.push({
       node_no: cfg.nodeNo, name: 'Site host', token_hash: sha256(remote.nodeToken), revoked_at: null,
-      lan_url: st.lan_url, lan_tenant: st.lan_tenant, voting: 1,
+      lan_url: st.lan_url, lan_tenant: st.lan_tenant,
+      voting: (conn.prepare('SELECT voting FROM sync_node WHERE k = 1').get() as { voting: number }).voting,
     });
   }
   const rows = conn.prepare("SELECT rowid AS rowid_, * FROM sync_commands WHERE state = 'local' ORDER BY rowid").all() as
@@ -177,7 +178,10 @@ export function absorbHostSite(conn: DatabaseSync, cfg: SyncConfig, site: HostSi
        lan_url = excluded.lan_url, lan_tenant = excluded.lan_tenant, voting = excluded.voting`,
   );
   for (const p of site.peers) {
-    if (p.node_no === cfg.nodeNo) continue;
+    if (p.node_no === cfg.nodeNo) {
+      conn.prepare('UPDATE sync_node SET voting = ? WHERE k = 1').run(p.voting); // whether this PC votes
+      continue;
+    }
     upsert.run(p.node_no, p.name, p.token_hash, p.revoked_at, p.lan_url, p.lan_tenant, p.voting);
   }
   const fields: Partial<NodeState> = {};
@@ -223,7 +227,7 @@ export function cloudSiteInfo(conn: DatabaseSync, nodeNo: number):
  * credentials it mirrored, starts a new term and stream, and owes a full re-sync, which it does
  * when it next reaches the cloud (after claiming the site there).
  */
-export async function takeOverAsHost(slug: string): Promise<{ site: number; term: number }> {
+export async function takeOverAsHost(slug: string, opts: { term?: number } = {}): Promise<{ site: number; term: number }> {
   const conn = getDb(slug);
   const cfg = syncConfigOf(conn);
   if (cfg?.role !== 'node') throw Object.assign(new Error('Only an installed PC can take over as site host.'), { status: 409 });
@@ -231,6 +235,8 @@ export async function takeOverAsHost(slug: string): Promise<{ site: number; term
   const site = siteOfThisPc(conn, cfg);
   const st = nodeState(conn);
   if (site == null) throw Object.assign(new Error('This PC is not part of a site.'), { status: 409 });
+  // An election already moved this PC to the term it won; an admin's take-over starts the next one.
+  const term = opts.term ?? st.site_term + 1;
   if (!st.cloud_url) {
     throw Object.assign(new Error('This PC has not heard from its site host yet. Connect it to the host once first.'), { status: 409 });
   }
@@ -246,7 +252,7 @@ export async function takeOverAsHost(slug: string): Promise<{ site: number; term
       conn.prepare('DELETE FROM sync_site_log').run();
       conn.prepare('DELETE FROM sync_effects').run();
       setNode(conn, {
-        host_node_no: site, site_term: st.site_term + 1, stream_epoch: newEpoch(), host_epoch: null,
+        host_node_no: site, site_term: term, stream_epoch: newEpoch(), host_epoch: null,
         resync_pending: 1, host_misses: 0, site_log_rowid: 0,
       });
       // Its own credential works with the cloud too: it was issued there at enrolment.
@@ -262,7 +268,7 @@ export async function takeOverAsHost(slug: string): Promise<{ site: number; term
   enableSync(conn, { role: 'node', nodeNo: cfg.nodeNo, isHost: true });
   drainRecorder(conn); // the takeover itself is not an effect for the LAN
   roleChange.onChange?.(true);
-  return { site, term: st.site_term + 1 };
+  return { site, term };
 }
 
 /** Stop being the site's host: another PC holds it under a higher term. Called after this

@@ -183,8 +183,8 @@ because every route defaults to the `online` class until it is reviewed.
 | **2. Inventory** ✅ built 2026-09-30 (§11) | Every inventory-module route classed (items, stock, locations, suppliers, customers). D1: a stock-out beyond recorded stock is accepted inside a synced command and opens a `stock_discrepancies` row (list + resolve API); direct cloud requests keep refusing it. Rebase applies changesets with foreign-key actions off. **Moved:** home sites → phase 3 (they only matter once site hosts decide claims); orders / deliveries / release slips → phase 4 (sales-release pipeline) |
 | **3. Desktop app + site host** (sub-phases 3a–3f below) | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
 | **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records (4e ✅, §24) → anonymous reports (4f ✅, §25) → payroll (4g ✅, §26) → accounting/tax (4h ✅, §27) |
-| **5. Host election + failover** | **5a ✅ built 2026-10-02 (§30):** sites keep their number across hosts, terms with the cloud as referee, every site PC mirrors its host (commands it holds, the site's PCs, the cloud's address, the site's certificate authority), an admin's take-over, a returning host steps down, PCs find and follow a new host, full re-sync. **5b:** automatic election for sites with 3+ voting PCs — lease, heartbeat, votes (§4) |
-| **6. Hardening** | Conflict inbox with resolve actions, version shims, compaction of old commands/effects, sync health dashboard |
+| **5. Host election + failover** | **5a ✅ built 2026-10-02 (§30):** sites keep their number across hosts, terms with the cloud as referee, every site PC mirrors its host (commands it holds, the site's PCs, the cloud's address, the site's certificate authority), an admin's take-over, a returning host steps down, PCs find and follow a new host, full re-sync. **5b ✅ built 2026-10-02 (§31):** automatic election for sites with 3+ voting PCs — heartbeat, lease, one vote per term, majority, signed LAN messages |
+| **6. Hardening** | **Built 2026-10-02 (§32):** data-changing page loads recorded, version skew (newer PC waits, replay window), effect-stream and command-log trimming with re-sync for PCs that fell behind, per-PC health on Installed PCs, re-sync tool (§30), test-database safety net. **Open:** per-route replay shims for breaking request changes (none needed yet), resolve actions beyond dismiss |
 | **7. Android app** (planned, §29) | An installable APK of the phone app: works with no connection at all (cached work lists + its own command queue), finds the site host on the LAN by itself, trusts the site's certificate without the per-phone install, and follows the host through a failover |
 
 ## 7. Concerns and resolutions
@@ -1288,3 +1288,88 @@ site's numbers. A host that steps down gives up its unused block.
   why the dialog insists the host is off.
 - **Desktop UI tests.** The Sync page's site panel is exercised through its API only, not rendered in a
   test.
+
+## 31. Phase 5b as built (2026-10-02): automatic host election
+
+Sites with **3 or more voting PCs** now elect a new host by themselves when theirs is lost (D3). A
+1-PC site's PC always hosts. At a 2-PC site the secondary still never takes over by itself; an admin can
+(§30). The election (`src/sync/election.ts`, a small Raft-style state machine; `site-election.ts` wires
+it to a PC's copy, and the installed server starts it) works like this:
+- **Heartbeat and lease.** The host announces itself every 2 s. A PC that hears nothing for its lease
+  timeout (15–30 s, randomised so PCs rarely start at once) starts an election under the next term.
+- **One vote per term,** stored in `sync_node` so a restart can't vote twice. A PC votes only for a
+  candidate **at least as caught up** as itself (same host stream and at least as far in it, then app
+  version), so the winner never lacks work a voter has.
+- **Majority wins.** A candidate needs votes from more than half of the site's voting PCs, so a LAN
+  split can produce at most one host. The minority side keeps recording `merge` / `physical` work, and
+  its `claim`s wait. The winner takes over exactly as in §30, and the others follow it.
+- **Stepping down.** A host that hears a heartbeat under a newer term follows the sender. The cloud also
+  stays the referee for terms (§30).
+- **Who votes.** An admin can switch voting off per PC on the cloud's **Installed PCs** page (the "Votes"
+  column; `PUT /api/sync/nodes/:no/voting`), for example for a laptop that comes and goes. A non-voting
+  PC neither votes nor counts towards the majority.
+- **On the LAN** the messages are UDP (port 41234, or `SYNC_ELECTION_PORT`), broadcast and also unicast to
+  each known PC. Each message is **signed** with a key derived from the site's certificate authority,
+  which only the site's PCs hold, and carries its send time; forged or stale messages are dropped. A PC
+  starts taking part once it has the site's authority, which comes with its first round through the host.
+
+**What the tests showed:**
+- **State machine** (`tests/sync-election.test.ts`, fake clock, in-memory LAN):
+  - a healthy host is never challenged;
+  - when the host dies exactly one new host is elected and followed;
+  - the old host steps down when it returns;
+  - with 5 PCs split 2 / 3, only the 3 side elects;
+  - a 2-PC site and a 3-PC site with one non-voter never elect;
+  - a PC behind the others in the stream can't win;
+  - one vote per term;
+  - signed UDP drops a forged message.
+- **Real site copies** (`tests/sync-election-live.test.ts`): the host recorded work and died during an
+  outage. The two desk PCs elected one of themselves with no admin, and the other followed and kept
+  working. When the internet returned everything reached the cloud, which records the new host. The old
+  host, back on the LAN, stepped down by itself.
+
+**Not yet tried on real hardware:** UDP broadcast on an actual office network (some Wi-Fi isolates
+clients; the unicast to known PCs covers that if they can reach each other at all), Windows Firewall
+prompts for the port, and the server restart on a real takeover.
+
+## 32. Phase 6 as built (2026-10-02): hardening
+
+**Page loads that change data.** On an installed PC, a GET that writes replicated data (for example,
+opening a confidential case marks its photos seen) used to change that copy alone, so it drifted. Such a
+request is now recorded like a write (a `merge` command, replayed by the authority). It carries no
+"not final" marking, because it isn't an action the person took. A page load that changes nothing records
+nothing. `/api/sync/*` is excluded.
+
+**Version skew (§7.10)** (`src/sync/maintenance.ts`):
+- **A PC newer than its authority waits.** Every PC sends `X-Sync-App-Version`. A PC newer than the cloud
+  (or its site host) gets a 409 and waits without touching its data until that is updated. The status pill
+  says why.
+- **Replay window.** A command made with a different **major** version is rejected on replay with "made
+  with app version X … please enter it again". It lands in Needs attention, so nothing is lost silently.
+- **Not built yet:** per-route replay shims, for when a request's shape changes incompatibly. None has
+  so far.
+
+**Trimming:**
+- **Effect stream.** An authority keeps its effect stream until every active PC has read it, and for at
+  least `SYNC_KEEP_DAYS` (14) days. A PC not seen for `SYNC_STALE_PC_DAYS` (30) no longer holds it back.
+  Trimming runs at most hourly, during a pull. A PC asking for effects older than the trimmed point gets
+  a 410 and re-syncs from a fresh copy at its next round, sending its unsent work first.
+- **Command log.** A PC drops its own decided commands after the same period. Rejections still waiting
+  in Needs attention stay.
+
+**Health.** Installed PCs (cloud) shows each PC's app version and how many updates it is behind. "Votes"
+is next to it (§31).
+
+**Test-database safety net.** A test that loaded the database module before `setupApp()` wrote its rows
+into the real development database (`db/data.db`). That happened before (2026-09-22) and again here
+(`tests/sync-election-live.test.ts`, fixed). Now `tests/setup-safe-paths.ts` (Vitest `setupFiles`) points
+every database and upload path at a throwaway folder before any test file's imports.
+`tests/test-db-isolation.test.ts` proves a top-level import can't reach `db/`.
+
+**What the tests showed** (`tests/sync-maintenance.test.ts`, `tests/sync-core.test.ts`):
+- A PC claiming a newer version is told to wait.
+- A command from version 0.9.0 is rejected for re-entry and the copies agree.
+- The cloud's stream is trimmed after its PCs read it.
+- A desk PC that fell behind its host's trimmed stream re-synced with its unsent −2 kept.
+- A case opened offline at the host marks its photos seen on the cloud too, and an ordinary page load
+  records nothing.

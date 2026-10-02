@@ -162,12 +162,19 @@ App.register('sync', async (view) => {
     view.innerHTML = `
       ${head('Installed PCs')}
       <div class="panel"><p class="muted">${UI.esc(intro)}</p>
-        ${pcs.length ? `<table><thead><tr><th>#</th><th>PC</th><th>Role</th><th>Enrolled</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+        ${pcs.length ? `<table><thead><tr><th>#</th><th>PC</th><th>Role</th><th>Enrolled</th><th>Last seen</th><th>Health</th><th>Status</th>
+          <th title="At a site with 3 or more voting PCs, the PCs elect a new site host by themselves when theirs is lost.">Votes</th><th></th></tr></thead>
           <tbody>${pcs.map((p) => `<tr>
             <td>${p.node_no}</td><td><strong>${UI.esc(p.name)}</strong></td><td>${UI.esc(role(p))}</td>
             <td>${UI.fmtDate(p.enrolled_at)}</td>
             <td>${p.last_seen_at ? UI.fmtDate(p.last_seen_at) : 'never'}</td>
+            <td class="small">${p.app_version ? 'v' + UI.esc(p.app_version) : '—'}
+              ${p.revoked_at || !p.last_seen_at ? '' : p.behind > 0
+                ? `<div class="muted">${p.behind} update${p.behind === 1 ? '' : 's'} behind</div>`
+                : '<div class="muted">up to date</div>'}</td>
             <td>${p.revoked_at ? '<span class="badge-pill low">revoked</span>' : '<span class="badge-pill ok">active</span>'}</td>
+            <td>${p.revoked_at ? '' : `<input type="checkbox" data-voting="${p.node_no}" ${p.voting === 0 ? '' : 'checked'}
+              aria-label="${UI.esc(p.name)} votes in host elections">`}</td>
             <td class="actions">${p.revoked_at ? '' : `<button class="btn secondary small danger" data-revoke="${p.node_no}">Revoke</button>`}</td>
           </tr>`).join('')}</tbody></table>`
           : UI.emptyState({ icon: 'building', title: 'No installed PCs yet' })}
@@ -238,6 +245,10 @@ App.register('sync', async (view) => {
         App.navigate('sync');
       },
     }));
+    view.querySelectorAll('[data-voting]').forEach((box) => box.onchange = async () => {
+      await API.put('/sync/nodes/' + box.dataset.voting + '/voting', { voting: box.checked });
+      UI.toast(box.checked ? 'This PC votes in its site host elections.' : 'This PC no longer votes (e.g. a laptop that comes and goes).');
+    });
     view.querySelectorAll('[data-revoke]').forEach((b) => b.onclick = async () => {
       if (!(await UI.confirmDialog('Revoke this PC? It stops syncing at once; anything it has not sent yet stays on it.', 'Revoke'))) return;
       await API.post('/sync/nodes/' + b.dataset.revoke + '/revoke');
