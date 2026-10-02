@@ -332,6 +332,15 @@ take `status` (`pass|issue|na`; only `pass` satisfies a required check) and `val
 result takes `repair {category, station, priority}`, stored in `qc_repair_details` (createSchema,
 no version bump). Checklist items take `group`, `measure`, `hint`.
 Tests: `tests/qc-inspection-v2.test.ts`.
+**RTS interface (mobile V2):** rules in `rts.ts` (`unitBlockers`, `locationError`, `openHolds`),
+applied by `POST /job-orders/:id/products-in` before any write (409 `{blockers}` for a unit already
+in finished goods, a serial already in stock on another unit of the same product, a unit not yet
+passed, or an open `Product-data mismatch` production issue; 400 `{location_error}` for a missing
+or truck location). `rts.routes.ts` at `/api/rts`: `GET /queue` (passed units across job orders
+with final-pass record and hold, receivable batches, the caller's postings today),
+`POST /check` (same rules, no writes), `GET /lookup?q=&status=ready|allocated|hold`
+(`inventory.view`). `production.receive` may file production issues (the mismatch report).
+Tests: `tests/rts.test.ts`.
 **Offline (sync/, phase 4b):** every mutating route is classed — floor events (release, kit accept,
 progress, units + photo, QC/QA inspection, products-in, batch inspection) `physical`; new job orders /
 batches / repair and issue reports `merge`; decisions `claim` (a job order's → its source-location
@@ -516,6 +525,12 @@ Third: QC (teal) + QA (amber) inspection, `modules/manufacturing/qc.js` (Figma 6
 Checklist items are recorded Pass / Issue / N/A with readings and remarks, grouped into steps
 by the item's `group`; a draft stays on the phone (localStorage) until the result is recorded.
 Kept from the old screen: parts requests, checklist assignment (`qc.configure`), bulk pass.
+Fourth: RTS clerk ready-to-sell intake, `modules/manufacturing/receiving.js` (Figma 74:16–74:483,
+`#/receiving`) — queue (Ready / Issues / Recorded) → identify → verify → stock details → optional
+group (same SKU + location) → review → final duplicate check → confirm (physical-verification
+tick) → recorded; plus duplicate, location, mismatch-report and read-only lookup screens.
+Posting is online-only with an idempotency key (never queued); non-serialized batches keep a
+quantity screen; unit records still print from the result screen.
 **Shared-phone safety:** `lib/queue.js` stamps each queued op with the account that queued it
 and only lists/sends/discards the signed-in account's ops (the service worker's replay checks the
 same, against the account stored with its token); another account's ops wait for that person.

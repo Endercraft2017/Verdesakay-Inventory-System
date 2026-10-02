@@ -470,7 +470,7 @@
         if (mine !== seq) return;
         body.querySelector('[data-chips]').innerHTML =
           '<button type="button" data-s="ready"' + (status === 'ready' ? ' class="on"' : '') + '>Ready to sell<b>' + r.counts.ready + '</b></button>' +
-          '<button type="button" data-s="allocated" class="re' + (status === 'allocated' ? ' on' : '') + '">Allocated<b>' + r.counts.allocated + '</b></button>' +
+          '<button type="button" data-s="allocated" class="blue' + (status === 'allocated' ? ' on' : '') + '">Allocated<b>' + r.counts.allocated + '</b></button>' +
           '<button type="button" data-s="hold" class="warn' + (status === 'hold' ? ' on' : '') + '">On hold<b>' + r.counts.hold + '</b></button>';
         Array.prototype.forEach.call(body.querySelectorAll('[data-s]'), function (b) { b.onclick = function () { status = status === b.dataset.s ? '' : b.dataset.s; run(); }; });
         body.querySelector('[data-list]').innerHTML = r.units.length ? r.units.map(function (x) {
@@ -478,7 +478,7 @@
             : x.state === 'allocated' ? 'Allocated' + (x.order_number ? ' · ' + x.order_number : '') : 'On hold · mismatch reported';
           return '<button type="button" class="rk-card rk-unitcard" data-u="' + x.id + '"><b>' + mEsc(x.identifier || 'Unit #' + x.id) + '</b>' +
             '<span>' + mEsc([x.sku || x.product_name, x.location_name].filter(Boolean).join(' · ')) + '</span>' +
-            '<small' + (x.state === 'hold' ? ' class="warn"' : x.state === 'allocated' ? ' class="re"' : '') + '>' + mEsc(st) + '</small><i aria-hidden="true">›</i></button>';
+            '<small' + (x.state === 'hold' ? ' class="warn"' : x.state === 'allocated' ? ' class="blue"' : '') + '>' + mEsc(st) + '</small><i aria-hidden="true">›</i></button>';
         }).join('') : '<div class="rk-empty">No recorded units match.</div>';
         Array.prototype.forEach.call(body.querySelectorAll('[data-u]'), function (b) { b.onclick = function () { MApp.go('record', { unit: b.dataset.u }); }; });
       }).catch(function (err) { if (mine !== seq) return; var host = body.querySelector('[data-list]'); host.innerHTML = ''; host.appendChild(R.error(err, run)); });

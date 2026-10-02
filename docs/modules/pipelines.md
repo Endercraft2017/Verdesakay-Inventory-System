@@ -218,6 +218,17 @@ raised by the sales-order shortfall flow.
    /:id/products-in` desktop uses, plus a continuous QR-scan-to-receive mode and a
    unit dossier (`record.js`: photo, QR, printable label) reachable from either
    platform.
+   - **Mobile (RTS clerk, Figma 74:*)** — `#/receiving`, fed by `GET /api/rts/queue` (units
+     across job orders): identify → verify (final-pass record, SKU) → stock details (storage
+     location) → optional group of same-SKU units → review → final duplicate check (`POST
+     /api/rts/check`) → confirm with a physical-verification tick → `products-in`, one call per
+     job order, online-only with an idempotency key. **Branch — duplicate:** a unit already in
+     finished goods or a serial already in stock is refused (409, existing receipt shown), zero
+     stock change; the clerk removes it from the group. **Branch — location:** a truck/transit or
+     missing location is refused (400); the clerk picks another storage location. **Branch —
+     mismatch:** a `Product-data mismatch` production issue holds the unit (Issues tab; posting
+     409s) until QA / inventory control resolve it. Read-only finished-goods lookup by serial,
+     SKU, receipt or location (`GET /api/rts/lookup`).
 7. **Posting** (`accounting`) — job-order costs (labor/overhead/materials) post via
    `accounting-autopost.ts`.
 

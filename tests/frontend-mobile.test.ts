@@ -595,6 +595,102 @@ describe('mobile bootstrap', () => {
     });
   });
 
+  describe('RTS clerk ready-to-sell intake (Figma 74:*)', () => {
+    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const RTS = { id: 31, username: 'rts1', full_name: 'Carlo Reyes', role: 'receiving_clerk', employee: true, modules: null,
+      permissions: ['inventory.view', 'inventory.mobile', 'production.receive', 'messages.view', 'messages.send'] };
+    const U = { id: 601, identifier: 'K4-01', updated_at: '2026-10-02 01:00:00', job_order_id: 184, job_order_number: 'JO-2026-184',
+      product_name: 'K4 Electric Bike', product_item_id: 7, sku: 'EB-K4-60V-RED', priority: 0, output_location_id: 2,
+      output_location_name: 'FG-A03', order_number: null, batch_identifier: null,
+      final_pass: { created_at: '2026-10-02 00:42:00', inspector_name: 'Mara Cruz', stage: 2 }, hold: null as unknown };
+    const HELD = { ...U, id: 602, identifier: 'K4-02', hold: { id: 9, description: 'Color differs', created_at: '2026-10-02 00:50:00' } };
+    const LOCS = [{ id: 2, name: 'FG-A03', type: 'warehouse', is_default: 1 }, { id: 3, name: 'Truck 1', type: 'truck', is_default: 0 }];
+    function fake(posts: { url: string; body: any; key: string | undefined }[], over: Record<string, unknown> = {}) {
+      return (url: string, init: { method?: string; body?: string; headers?: Record<string, string> }) => {
+        if (init && init.method === 'POST') {
+          posts.push({ url, body: JSON.parse(String(init.body || '{}')), key: init.headers && init.headers['Idempotency-Key'] });
+          if (url in over) return over[url];
+          if (url === '/api/rts/check') return { blockers: [], location_error: null };
+          return { id: 1, number: 'PI-00042' };
+        }
+        if (url === '/api/rts/queue') return { units: [U, HELD], batches: [], recorded: [] };
+        if (url === '/api/locations') return LOCS;
+        return undefined;
+      };
+    }
+
+    it('lists ready units and keeps a mismatch-held unit under Issues', async () => {
+      const win = await bootAs(RTS, fake([]));
+      win.location.hash = '#/receiving';
+      await wait();
+      const view = win.document.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('74:16');
+      expect(view.textContent).toContain('1 unit');
+      expect(view.textContent).toContain('K4-01');
+      expect(view.textContent).not.toContain('K4-02');
+      (view.querySelector('[data-tab="issues"]') as HTMLButtonElement).click();
+      expect(view.textContent).toContain('K4-02');
+      win.location.hash = '#/receiving?unit=602&step=confirm'; // a held unit can't reach posting
+      await wait();
+      expect(view.getAttribute('data-figma-node')).toBe('74:104');
+      expect(view.textContent).toContain('Mismatch reported');
+      expect(win.document.getElementById('rts-post')).toBeNull();
+    });
+
+    it('checks, needs the physical-verification tick, and posts once with an idempotency key', async () => {
+      const posts: { url: string; body: any; key: string | undefined }[] = [];
+      const win = await bootAs(RTS, fake(posts));
+      const doc = win.document;
+      win.location.hash = '#/receiving?unit=601&step=stock';
+      await wait();
+      expect(doc.getElementById('m-view').textContent).toContain('FG-A03');
+      (doc.getElementById('rts-go') as HTMLButtonElement).click();
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('74:186');
+      (doc.getElementById('rts-one') as HTMLButtonElement).click();
+      await wait();
+      (doc.getElementById('rts-check') as HTMLButtonElement).click();
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('74:316');
+      const post = doc.getElementById('rts-post') as HTMLButtonElement;
+      expect(post.disabled).toBe(true);
+      const ok = doc.getElementById('rts-ok') as HTMLInputElement;
+      ok.checked = true; ok.dispatchEvent(new win.Event('change'));
+      post.click();
+      await wait(80);
+      const stock = posts.filter((p) => p.url.endsWith('/products-in'));
+      expect(stock).toHaveLength(1);
+      expect(stock[0]!.url).toBe('/api/job-orders/184/products-in');
+      expect(stock[0]!.body).toEqual({ location_id: 2, unit_ids: [601] });
+      expect(stock[0]!.key).toMatch(/^rts-/);
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('74:356');
+      expect(doc.getElementById('m-view').textContent).toContain('PI-00042');
+    });
+
+    it('shows the existing stock record when the server refuses a duplicate, and posts nothing offline', async () => {
+      const posts: { url: string; body: any; key: string | undefined }[] = [];
+      const dup = { __status: 409, body: { error: 'K4-01 is already recorded in finished goods', blockers: [{ unit_id: 601, identifier: 'K4-01', reason: 'recorded',
+        message: 'K4-01 is already recorded in finished goods', existing: { unit_id: 601, location_name: 'FG-A03', receipt_number: 'PI-00007', received_by_name: 'Carlo Reyes', received_at: '2026-10-02 00:51:00' } }] } };
+      const win = await bootAs(RTS, fake(posts, { '/api/job-orders/184/products-in': dup }));
+      const doc = win.document;
+      win.location.hash = '#/receiving?unit=601&step=confirm';
+      await wait();
+      const ok = doc.getElementById('rts-ok') as HTMLInputElement;
+      ok.checked = true; ok.dispatchEvent(new win.Event('change'));
+      Object.defineProperty(win.navigator, 'onLine', { value: false, configurable: true });
+      (doc.getElementById('rts-post') as HTMLButtonElement).click();
+      await wait();
+      expect(posts).toEqual([]); // offline: nothing sent, nothing queued
+      Object.defineProperty(win.navigator, 'onLine', { value: true, configurable: true });
+      (doc.getElementById('rts-post') as HTMLButtonElement).click();
+      await wait(80);
+      const view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('74:280');
+      expect(view.textContent).toContain('Duplicate serial blocked');
+      expect(view.textContent).toContain('PI-00007 · by Carlo Reyes');
+    });
+  });
+
   it('clears the previous screen’s data-* tags when routing (no leaked role titles)', async () => {
     const win = await bootAs({ id: 3, username: 'x', full_name: 'X', role: 'csr', employee: true, modules: null, permissions: ['messages.view'] });
     const view = win.document.getElementById('m-view');
