@@ -3,7 +3,10 @@
  *
  * VAPID keys are generated once and kept in the `settings` k/v store (per-tenant
  * for free). Devices register a PushSubscription via /api/push; `notifyUser`
- * fans a payload out to that user's subscriptions and prunes dead ones.
+ * first records the notification in the person's history (`notifications`, read via
+ * /api/notifications) and then fans the payload out to their subscriptions, pruning dead ones.
+ * A payload without a record of its own to open (no `url`) opens that very notification
+ * (`#/notifications?id=`); `link` is where the desktop opens it.
  *
  * Under NODE_ENV=test nothing hits the network — sends are recorded in
  * `__sentPush` so tests can assert intent.
@@ -45,6 +48,25 @@ export interface PushPayload {
   url?: string;
   /** Collapse key — a newer notification with the same tag replaces the old one. */
   tag?: string;
+  /** Desktop screen for the record (App.navigate(route, params)), kept with the history row. */
+  link?: { route: string; params?: Record<string, unknown> };
+  /** false: push only, no history row (chat messages have the inbox; test pushes). */
+  record?: boolean;
+}
+
+/** Keep one notification in the person's history; returns its id (null if it can't be saved). */
+function recordNotification(userId: number, payload: PushPayload): number | null {
+  try {
+    const id = Number(run(
+      'INSERT INTO notifications (user_id, title, body, url, link, tag) VALUES (?, ?, ?, ?, ?, ?)',
+      userId, payload.title, payload.body ?? null, payload.url ?? null, payload.link ? JSON.stringify(payload.link) : null, payload.tag ?? null
+    ).lastInsertRowid);
+    // Bounded history: older than 120 days goes.
+    run("DELETE FROM notifications WHERE user_id = ? AND created_at < datetime('now', '-120 days')", userId);
+    return id;
+  } catch {
+    return null; // a notification is never worth breaking a request
+  }
 }
 
 interface SubRow { id: number; endpoint: string; p256dh: string; auth: string }
@@ -55,6 +77,10 @@ export const __sentPush: Array<{ userId: number; payload: PushPayload; endpoint:
 /** Send `payload` to every registered device of `userId`. Never throws. */
 export async function notifyUser(userId: number, payload: PushPayload): Promise<void> {
   if (sideEffectsSuppressed('push')) return; // the authority notifies once, on replay
+  const nid = payload.record === false ? null : recordNotification(userId, payload);
+  if (!payload.url || payload.url === '#/notifications') {
+    payload = { ...payload, url: nid ? `#/notifications?id=${nid}` : '#/notifications' };
+  }
   const subs = queryAll<SubRow>(
     'SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?',
     userId

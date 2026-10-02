@@ -369,8 +369,9 @@ router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpl
   void notifyUser(recipient_id, {
     title: subject ? `Message: ${subject}` : `New message from ${req.user!.full_name}`,
     body: body.length > 140 ? body.slice(0, 137) + '…' : body,
-    url: '#/home',
+    url: '#/inbox',
     tag: 'msg',
+    record: false, // the inbox is the history for messages
   });
   res.status(201).json({ id: messageId, attachments: files.length });
 });

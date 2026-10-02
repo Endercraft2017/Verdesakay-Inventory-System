@@ -1353,6 +1353,21 @@ function createSchema(): void {
       qc_record_id  INTEGER NOT NULL REFERENCES qc_records(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_qc_evidence_record ON qc_evidence(qc_record_id);
+    -- Each person's notification history (shared/push.ts notifyUser; core/notifications.routes.ts):
+    -- written once, where the authority runs, whether or not the person has push set up. url = a
+    -- phone route to the record; link = JSON {route, params} for the desktop when it has a screen.
+    CREATE TABLE IF NOT EXISTS notifications (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title      TEXT NOT NULL,
+      body       TEXT,
+      url        TEXT,
+      link       TEXT,
+      tag        TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      read_at    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, id);
     -- Optional room per location, in units of stock (the sum of inventory_stock there). Ready-to-sell
     -- posting (manufacturing/rts.ts) refuses what wouldn't fit. No row = no limit. createSchema.
     CREATE TABLE IF NOT EXISTS location_capacities (

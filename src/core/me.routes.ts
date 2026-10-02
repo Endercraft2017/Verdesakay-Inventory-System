@@ -87,7 +87,8 @@ router.put('/profile', syncClass('merge', { redact: ['current_password'] }), (re
   const result = updateProfile(emp.id, req.user!.id, values);
   if (result.changed.some((k) => k !== 'preferred_name')) {
     void notifyPermission('hr.manage', {
-      title: 'Contact details updated', body: `${emp.name} — please verify`, url: '#/employees', tag: 'profile-' + emp.id,
+      // No phone screen for it: the push opens the notification itself; the desktop opens HR.
+      title: 'Contact details updated', body: `${emp.name} — please verify`, link: { route: 'hr-employees', params: { id: emp.id } }, tag: 'profile-' + emp.id,
     });
   }
   res.json({ ...result, profile: getProfile(emp.id) });

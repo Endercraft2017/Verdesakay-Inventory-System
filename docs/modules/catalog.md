@@ -43,6 +43,16 @@ route to call after a mutation. First (and so far only) consumer:
 **Public interface:** plain named function/class exports, imported directly — no HTTP
 surface of its own except where `core/` exposes one (e.g. `core/push.routes.ts` wraps
 `shared/push.ts`).
+**Notification history:** `shared/push.ts` `notifyUser` (and `notifyPermission` /
+`notifyAnyPermission` / `notifyAll`, which call it) first writes the person's `notifications` row
+(createSchema; only where the authority runs — never on a node's optimistic run — so a synced
+replay notifies once), then pushes. A payload carries `url` (phone route to the record) and
+optionally `link` ({route, params}, the desktop screen); with no phone screen the push opens the
+notification itself (`#/notifications?id=`). `record: false` skips the row (chat: the inbox is its
+history; test pushes). Rows older than 120 days are trimmed. `core/notifications.routes.ts` at
+`/api/notifications`: `GET /` (own rows + unread), `GET /unread-count`, `POST /:id/read`,
+`POST /read-all` (merge). UI: phone `#/notifications` leads with it; desktop rail bell (badge +
+panel opening `link`). Tests: `tests/notifications.test.ts`.
 **Dependencies:** none on business modules. **Known wart:** `shared/db.ts` imports
 `modules/payroll/ph-statutory.ts` (`SSS_2026`/`PHILHEALTH_2026`/etc.) and
 `modules/accounting/ledger.ts` (`DEFAULT_COA`) for first-run seed data — a real,

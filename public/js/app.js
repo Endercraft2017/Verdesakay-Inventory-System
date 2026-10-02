@@ -123,6 +123,47 @@ const App = (() => {
     appScreen().prepend(bar);
   }
 
+  /* Notification history (GET /api/notifications — release reports, parts, QA holds …): the
+     rail bell's badge counts unread; the panel lists them, opens the record (link.route) and
+     marks it read. */
+  async function refreshNotificationBadge() {
+    try {
+      const { count } = await API.get('/notifications/unread-count');
+      const b = document.getElementById('notif-badge');
+      if (b) { b.textContent = count; b.classList.toggle('hidden', !count); }
+    } catch { /* ignore */ }
+  }
+  async function openNotifications() {
+    let data;
+    try { data = await API.get('/notifications?limit=50'); } catch (e) { UI.toast(e.message, 'error'); return; }
+    const items = data.items || [];
+    const m = UI.modal({
+      title: 'Notifications',
+      size: 'lg',
+      cancelText: 'Close',
+      confirmText: data.unread ? 'Mark all read' : null,
+      bodyHTML: items.length ? `<table><tbody>${items.map((n) => `
+        <tr class="${n.link ? 'clickable' : ''}" data-n="${n.id}">
+          <td style="width:8px">${n.read_at ? '' : '<span class="badge-pill warn" title="Unread">new</span>'}</td>
+          <td><strong>${UI.esc(n.title)}</strong>${n.body ? `<div class="muted">${UI.esc(n.body)}</div>` : ''}</td>
+          <td class="muted" style="white-space:nowrap">${UI.esc(UI.fmtDate ? UI.fmtDate(n.created_at + 'Z') : n.created_at)}</td>
+        </tr>`).join('')}</tbody></table>`
+        : UI.emptyState({ icon: 'bell', title: 'No notifications', hint: 'Release reports, parts and QA holds that concern you appear here.' }),
+      onOpen: (ov) => {
+        ov.querySelectorAll('tr[data-n]').forEach((tr) => tr.onclick = async () => {
+          const n = items.find((x) => String(x.id) === tr.dataset.n);
+          if (!n.read_at) { try { await API.post('/notifications/' + n.id + '/read', {}); } catch { /* ignore */ } }
+          refreshNotificationBadge();
+          if (n.link && routes[n.link.route]) { m.close(); navigate(n.link.route, n.link.params || undefined); }
+        });
+      },
+      onConfirm: async () => {
+        await API.post('/notifications/read-all', {});
+        refreshNotificationBadge();
+      },
+    });
+  }
+
   async function refreshUnread() {
     try {
       const { count } = await API.get('/messages/unread-count');
@@ -132,6 +173,7 @@ const App = (() => {
         badge.classList.toggle('hidden', !count);
       }
     } catch { /* ignore */ }
+    refreshNotificationBadge();
     if (hasPermission('users.manage')) {
       try {
         const { count } = await API.get('/bug-reports/open-count');
@@ -481,6 +523,11 @@ const App = (() => {
     const railMsg = document.getElementById('rail-messages');
     railMsg.insertAdjacentHTML('afterbegin', UI.icon('messages'));
     railMsg.addEventListener('click', () => navigate('messages'));
+    const railNotif = document.getElementById('rail-notifications');
+    if (railNotif) {
+      railNotif.insertAdjacentHTML('afterbegin', UI.icon('bell'));
+      railNotif.addEventListener('click', openNotifications);
+    }
     const railAcct = document.getElementById('rail-account');
     railAcct.innerHTML = UI.icon('user'); // default profile image icon
     railAcct.addEventListener('click', () => navigate('account'));

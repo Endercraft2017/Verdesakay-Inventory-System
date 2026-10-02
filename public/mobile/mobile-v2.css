@@ -191,6 +191,9 @@ body { background: var(--v2-bg); color: var(--v2-text); }
 .v2-notification-row { width: 100%; margin-bottom: 10px; text-align: left; background: var(--v2-surface); }
 .v2-notification-row small { color: var(--v2-muted); font-size: 10px; text-transform: capitalize; }
 .v2-notification-row.ok small { color: var(--v2-green); }
+.v2-notification-row.unread b { font-weight: 800; }
+.v2-notification-row.unread small { color: var(--v2-green); font-weight: 700; }
+.v2-notification-focus { margin-bottom: 12px; }
 .v2-notification-row.err small { color: var(--v2-danger); }
 
 /* Home / Today — Figma node 46:519 */

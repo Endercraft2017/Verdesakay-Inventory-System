@@ -127,7 +127,11 @@ describe('holding parts for open requests', () => {
     __sentPush.length = 0;
     const ok = await ctx.api.post(`/api/production/repairs/${b}/accept`).set(bearer(clerk.token)).send({ from_location_id: wh, picked_quantity: 2 });
     expect(ok.status).toBe(200);
-    expect(__sentPush.some((p) => p.userId === qc.id && /^Part issued/.test(p.payload.title))).toBe(true);
+    // It opens the requester's own unit on their QC desk (a one-stage job order), the job order on the desktop.
+    const issuedPush = __sentPush.find((p) => p.userId === qc.id && /^Part issued/.test(p.payload.title));
+    expect(issuedPush?.payload.url).toBe(`#/qc?role=qc&unit=${unit}`);
+    const hist = (await ctx.api.get('/api/notifications').set(bearer(qc.token))).body.items;
+    expect(hist.find((n: { title: string }) => /^Part issued/.test(n.title)).link).toEqual({ route: 'job-orders', params: { id: jo } });
     expect((await ctx.api.get(`/api/production/repairs/${b}/context`).set(bearer(clerk.token))).body.hold).toBeNull();
   });
 

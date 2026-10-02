@@ -248,7 +248,7 @@ router.post('/repairs/:id/accept', repairsGate, syncClass('claim'), (req, res) =
     throw e;
   }
   if (r.requested_by && r.requested_by !== req.user!.id) {
-    void notifyUser(r.requested_by, { title: `Part issued — ${r.number}`, body: `${r.quantity} × ${r.component_name} for ${who}`, url: '#/notifications', tag: `rpr-${id}` });
+    void notifyUser(r.requested_by, { title: `Part issued — ${r.number}`, body: `${r.quantity} × ${r.component_name} for ${who}`, ...requesterLinks(r.unit_id), tag: `rpr-${id}` });
   }
   res.json(loadRequest(id));
 });
@@ -265,7 +265,7 @@ router.post('/repairs/:id/reject', repairsGate, syncClass('claim'), (req, res) =
   const { warehouse_remarks } = parseBody(repairRejectSchema, req.body);
   releaseRepairHold(id);
   if (r.requested_by && r.requested_by !== req.user!.id) {
-    void notifyUser(r.requested_by, { title: `Part request rejected — ${r.number}`, body: warehouse_remarks, url: '#/notifications', tag: `rpr-${id}` });
+    void notifyUser(r.requested_by, { title: `Part request rejected — ${r.number}`, body: warehouse_remarks, ...requesterLinks(r.unit_id), tag: `rpr-${id}` });
   }
   run(
     `UPDATE repair_part_requests
@@ -278,6 +278,16 @@ router.post('/repairs/:id/reject', repairsGate, syncClass('claim'), (req, res) =
   );
   res.json(loadRequest(id));
 });
+
+/** Where the requester (QC / QA) opens the unit a request is for, and its job order on the desktop. */
+function requesterLinks(unitId: number): { url: string; link?: { route: string; params: Record<string, unknown> } } {
+  const u = queryOne<{ stage: number; qc_stages: number; job_order_id: number }>(
+    'SELECT u.stage, j.qc_stages, u.job_order_id FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id WHERE u.id = ?', unitId
+  );
+  if (!u) return { url: '#/qc' };
+  const role = u.qc_stages > 1 && u.stage + 1 >= u.qc_stages ? 'qa' : 'qc';
+  return { url: `#/qc?role=${role}&unit=${unitId}`, link: { route: 'job-orders', params: { id: u.job_order_id } } };
+}
 
 function repairEvent(requestId: number, kind: string, details: unknown, actorId: number): void {
   run('INSERT INTO repair_request_events (request_id, kind, details, actor_id) VALUES (?, ?, ?, ?)',
@@ -359,9 +369,9 @@ router.post('/repairs/:id/shortage', repairsGate, syncClass('merge'), (req, res)
   repairEvent(id, 'shortage', { note: note ?? null }, req.user!.id);
   // The repair station waits on it; the warehouse supervisors arrange replenishment.
   const sr = loadRequest(id)!;
-  const push = { title: `Repair part short — ${sr.number}`, body: `${sr.quantity} × ${sr.component_name} for ${sr.unit_identifier || 'unit #' + sr.unit_id}${note ? ' — ' + note : ''}`, url: '#/notifications', tag: `rpr-${id}` };
-  if (sr.requested_by && sr.requested_by !== req.user!.id) void notifyUser(sr.requested_by, push);
-  void notifyPermission('inventory.adjust', push);
+  const push = { title: `Repair part short — ${sr.number}`, body: `${sr.quantity} × ${sr.component_name} for ${sr.unit_identifier || 'unit #' + sr.unit_id}${note ? ' — ' + note : ''}`, tag: `rpr-${id}` };
+  if (sr.requested_by && sr.requested_by !== req.user!.id) void notifyUser(sr.requested_by, { ...push, ...requesterLinks(sr.unit_id) });
+  void notifyPermission('inventory.adjust', { ...push, url: `#/repairs?id=${id}`, link: { route: 'repairs' } });
   res.status(201).json({ ok: true });
 });
 
@@ -391,7 +401,7 @@ router.post('/repairs/:id/revision', repairsGate, syncClass('merge'), (req, res)
   repairEvent(id, 'revision_requested', { revision_id: rid, item: item.name, quantity: input.quantity, reason: input.reason }, req.user!.id);
   if (r.requested_by && r.requested_by !== req.user!.id) {
     void notifyUser(r.requested_by, { title: `Approve a revision — ${r.number}`, body: `${input.quantity} × ${item.name} instead of ${r.quantity} × ${r.component_name}: ${input.reason}`,
-      url: `#/repairs?id=${id}&step=decide`, tag: `rpr-${id}` });
+      url: `#/repairs?id=${id}&step=decide`, link: r.job_order_id ? { route: 'job-orders', params: { id: r.job_order_id } } : undefined, tag: `rpr-${id}` });
   }
   res.status(201).json({ id: rid });
 });

@@ -56,11 +56,11 @@ Use exact node IDs from the handoff. Retrieve each node's screenshot and design 
 
 - `public/mobile/mobile-v2.css`: design tokens and V2 shell overrides.
 - `public/mobile/lib/quick-orbit.js`: movable, edge-snapping universal and role-aware actions.
-- `public/mobile/modules/core/notifications.js`: current employee activity adapter.
+- `public/mobile/modules/core/notifications.js`: notification history + employee activity.
 - `public/mobile/app.js`: stable navigation and route ownership.
 - `public/mobile/sw.js`: V2 shell precache. Bump the cache version for every shell asset change.
 
-The Notifications route currently composes existing employee-scoped APIs. Do not mistake it for a durable notification ledger. A future backend notification feed may replace its loader while preserving the route/UI contract.
+The Notifications route leads with the durable notification history (`GET /api/notifications`, written by `shared/push.ts` `notifyUser` for every notification, push or not), then the existing employee-scoped sources (requests, payslips, messages, notices). Give every new notification a `url` to its record (and a desktop `link` where one exists); a payload without a phone screen opens the notification itself.
 
 ## Required workflow
 

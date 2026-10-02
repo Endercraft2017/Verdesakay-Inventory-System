@@ -1703,7 +1703,8 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
     const what = holdRecords.length === 1 ? (holdRecords[0]!.unit.identifier || `unit #${holdRecords[0]!.unit.id}`) : `${holdRecords.length} units`;
     void notifyAnyPermission(['production.inspect_qa', 'production.qa_review'], {
       title: `QA hold — ${what}`, body: `${jo.number}: ${remarks || 'held for review'}`,
-      url: `#/qc?role=qa&tab=hold`, tag: `qa-hold-${id}`,
+      url: holdRecords.length === 1 ? `#/qc?role=qa&unit=${holdRecords[0]!.unit.id}&step=hold` : '#/qc?role=qa&tab=hold',
+      link: { route: 'job-orders', params: { id } }, tag: `qa-hold-${id}`,
     }, req.user!.id);
   }
   res.json({ ok: true, job_order: loadJobOrder(id) });
@@ -1764,7 +1765,7 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
     void notifyUser(held.inspector_id, {
       title: `QA hold decided — ${u.identifier || 'unit #' + u.id}`,
       body: `${outcome === 'pass' ? 'Passed' : outcome === 'rectify' ? 'Sent to rectification' : 'Failed'}: ${remarks}`,
-      url: '#/qc?role=qa', tag: `qa-hold-${u.id}`,
+      url: `#/record?unit=${u.id}`, link: { route: 'job-orders', params: { id } }, tag: `qa-hold-${u.id}`,
     });
   }
   res.json({ ok: true, job_order: loadJobOrder(id) });

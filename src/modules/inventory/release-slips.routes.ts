@@ -169,7 +169,7 @@ router.post('/orders/:id/override-request', releaseGate, syncClass('merge'), (re
   void notifyPermission('inventory.adjust', {
     title: `Release without token? ${order.number}`,
     body: `${req.user!.full_name || 'The releaser'}: ${auth.recipient_name} can't present the token — ${reason}`,
-    url: `#/so?id=${id}&step=override`, tag: `rel-override-${id}`,
+    url: `#/so?id=${id}&step=override`, link: { route: 'releasing' }, tag: `rel-override-${id}`,
   });
   res.status(201).json({ override: publicAuthorization(id).override });
 });
@@ -254,7 +254,8 @@ router.post('/orders/:id/reports', releaseGate, syncClass('merge'), (req, res) =
   ).lastInsertRowid);
   // Sales hears about it at once: whoever issued the order's authorization, and everyone who edits orders.
   const order = saleOrder(id)!;
-  const push = { title: `Release report — ${order.number}`, body: input.description.slice(0, 160), url: '#/notifications', tag: `rel-report-${rid}` };
+  const push = { title: `Release report — ${order.number}`, body: input.description.slice(0, 160),
+    link: { route: 'orders', params: { id } }, tag: `rel-report-${rid}` };
   const issuer = currentAuthorization(id).auth?.issued_by;
   if (issuer && issuer !== req.user!.id) void notifyUser(issuer, push);
   void notifyPermission('orders.edit', push);

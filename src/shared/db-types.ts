@@ -754,6 +754,18 @@ export interface Notes {
   updated_at: Generated<string>;
 }
 
+export interface Notifications {
+  id: Generated<number>;
+  user_id: number;
+  title: string;
+  body: string | null;
+  url: string | null;
+  link: string | null;
+  tag: string | null;
+  created_at: Generated<string>;
+  read_at: string | null;
+}
+
 export interface OrderItems {
   id: Generated<number>;
   order_id: number;
@@ -1430,6 +1442,7 @@ export interface DB {
   message_reactions: MessageReactions;
   messages: Messages;
   notes: Notes;
+  notifications: Notifications;
   order_items: OrderItems;
   orders: Orders;
   parts_release_slip_items: PartsReleaseSlipItems;

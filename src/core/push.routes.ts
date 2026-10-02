@@ -70,6 +70,7 @@ router.post('/test', async (req, res) => {
     body: 'Notifications are working. 🎉',
     url: '#/home',
     tag: 'push-test',
+    record: false,
   });
   res.json({ ok: true });
 });

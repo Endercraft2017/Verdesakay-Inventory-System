@@ -40,6 +40,7 @@ import analyticsRoutes from './core/analytics.routes';
 import accountingRoutes from './modules/accounting/accounting.routes';
 import mailRoutes from './modules/email/mail.routes';
 import pushRoutes from './core/push.routes';
+import notificationsRoutes from './core/notifications.routes';
 import clockRoutes from './modules/hr/clock.routes';
 import fieldRoutes from './modules/hr/field.routes';
 import meRoutes from './core/me.routes';
@@ -228,6 +229,7 @@ export function createApp() {
   app.use('/api/accounting', requireModule('accounting'), accountingRoutes);
   app.use('/api/mail', requireModule('email'), mailRoutes);
   app.use('/api/push', pushRoutes);
+  app.use('/api/notifications', notificationsRoutes);
 
   // Owner console — a separate mini-app under /_platform with its own operator auth
   // (src/platform-users.ts). Mounted only when PLATFORM_CONSOLE=true; the whole path 404s
