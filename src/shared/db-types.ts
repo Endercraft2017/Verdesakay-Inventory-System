@@ -65,6 +65,11 @@ export interface Announcements {
   created_at: Generated<string>;
 }
 
+export interface AnonymousReportAliases {
+  alias: string;
+  report_id: number;
+}
+
 export interface AnonymousReportAttachments {
   id: Generated<number>;
   report_id: number;
@@ -1313,6 +1318,7 @@ export interface DB {
   activity_log: ActivityLog;
   ai_messages: AiMessages;
   announcements: Announcements;
+  anonymous_report_aliases: AnonymousReportAliases;
   anonymous_report_attachments: AnonymousReportAttachments;
   anonymous_report_handler_seen: AnonymousReportHandlerSeen;
   anonymous_report_messages: AnonymousReportMessages;

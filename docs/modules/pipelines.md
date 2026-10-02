@@ -44,6 +44,23 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    the ledger on). One slip per order. Printable from Release Slips.
    - **Branch — manual confirm (legacy):** an SO confirmed from the order form without a
      slip still behaves as before (stock + COGS only when the ledger is on).
+   - **Release authorization** (Sales, before or during stages 3–5): who may receive the goods —
+     pickup/delivery, recipient (ID masked to last 4), a time-limited token given to the
+     recipient, handoff area, partial allowed. Issued/revoked from Sales Orders (key icon).
+     Required for every order only when the `release_authorization_required` policy is on;
+     always enforced for an order that has one.
+   - **Branch — authorization problem:** wrong / expired / used / revoked token → slip 409,
+     zero stock change; the order shows as Blocked on the mobile queue until Sales reissues.
+   - **Branch — package:** every required package item of the products on the order must be
+     confirmed on the slip, else 409 with the missing items, zero stock change.
+   - **Branch — partial release:** an incomplete order releases only under an authorization
+     that allows it; the order is split at the slip and the rest becomes a new approved
+     backorder SO (back to stage 3). Without it: 409, nothing moves; the releaser requests it.
+   - **Branch — release report:** the releaser flags a wrong unit, missing item, identity
+     problem or partial request (`release_reports`); Sales resolves it. Records only.
+   - **Mobile (Releasing, Figma 78:*)** — `#/so`: authority → scan/verify units → package →
+     handoff token → photo + signature proof → review → confirm warehouse-out (online-only,
+     idempotent); proof photos and the signature attach to the slip (`release`).
 6. **Delivery / fulfil** (`inventory`) — `POST /orders/:id/status` transitions
    delivery → fulfilled (mobile-triggered prompt supported); the delivery's proof of
    delivery (signature/GPS/photos) is captured at the customer.
@@ -286,6 +303,10 @@ seen, or on a closed report → 409; wrong code → 404 (constant-time compare);
 → 429; follow-up on a closed report → 409.
 **Terminal states:** resolved or closed (closed also blocks further reporter messages). A lost
 access code can't be recovered — the reporter files a new report.
+**Offline (phase 4f, docs/OFFLINE-FIRST.md §25):** steps 2–5 work at an installed PC, or a phone on the
+site LAN, with no internet. The ticket and the access code never leave that PC. The report is held for a
+random while, then sent with no identity and dated only. The reporter's provisional `CR-X…` number
+stays a permanent alias of the real `CR-#####` the cloud gives it.
 
 ## Employee information change
 
@@ -423,9 +444,8 @@ needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`);
 (phase 3c-ii: `claim`s decided at the owning site; the cloud keeps them, flagging clashes — D6).
 Pipelines offline so far (phase 4): time clock (4a), production run with site number blocks (4b),
 sales order fulfillment (4c), purchase-to-pay (4d), HR requests, approvals
-and records (4e).
-**Not built:** mobile sync UI; the remaining pipelines (anonymous reports, payroll, accounting —
-phase 4f+). This pipeline wraps the
+and records (4e), confidential reports (4f).
+**Not built:** mobile sync UI; the remaining pipelines (payroll, accounting — phase 4g+). This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).

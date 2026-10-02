@@ -595,6 +595,133 @@ describe('mobile bootstrap', () => {
     });
   });
 
+describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
+    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const REL = { id: 41, username: 'rel1', full_name: 'Ana Dela Cruz', role: 'releasing_clerk', employee: true, modules: null,
+      permissions: ['inventory.view', 'inventory.mobile', 'orders.view', 'orders.release', 'messages.view', 'messages.send'] };
+    const AUTH = { state: 'valid', required: false, id: 5, mode: 'pickup', recipient_name: 'Jordan D.', id_reference: '••4821',
+      token_hint: 'PICKUP-••••', valid_until: '2099-01-01 08:00:00', handoff_area: 'Release Bay 1', partial_allowed: false };
+    const UNIT = { id: 701, identifier: 'K4-01', status: 'reserved', product_item_id: 7, product_name: 'K4 Electric Bike', location_name: 'FG-A03', receipt_number: 'PI-00042' };
+    const CTX = { order: { id: 302, number: 'SO-00302', status: 'released', customer_name: 'ACME', warehouse_accepted_at: '2026-10-02 01:00:00', location_id: 2 },
+      lines: [{ id: 1, item_id: 7, name: 'K4 Electric Bike', sku: 'EB-K4', quantity: 1, released_qty: 0, units: 1, serialized: 1 }],
+      units: [UNIT], authorization: AUTH, package: [{ item_id: 7, item_name: 'K4 Electric Bike', label: 'Charger and cable', required: true }],
+      reports: [], delivery: null, slip: null };
+    function fake(posts: { url: string; body: any; key?: string }[], ctxOver: Record<string, unknown> = {}) {
+      return (url: string, init: { method?: string; body?: string; headers?: Record<string, string> }) => {
+        if (init && init.method === 'POST') {
+          posts.push({ url, body: JSON.parse(String(init.body || '{}')), key: init.headers && init.headers['Idempotency-Key'] });
+          return { ok: true, id: 88 };
+        }
+        if (url === '/api/release-slips/queue') return { to_accept: [], releasing: [
+          { id: 302, number: 'SO-00302', qty_ordered: 1, qty_released: 1, warehouse_accepted_at: 'x', authorization: AUTH, summary: { first_name: 'K4 Electric Bike', lines: 1 }, delivery: null, open_reports: 0 },
+          { id: 308, number: 'SO-00308', qty_ordered: 1, qty_released: 0, warehouse_accepted_at: 'x', authorization: { ...AUTH, state: 'revoked', revoke_reason: 'Customer hold' }, summary: { first_name: 'K1 Bike', lines: 1 }, delivery: null, open_reports: 0 },
+        ], completed: [], authorization_required: false };
+        if (url === '/api/release-slips/orders/302/context') return { ...CTX, ...ctxOver };
+        if (url.startsWith('/api/release-slips/orders/302/unit?code=K4-99')) return { state: 'other_order', unit: { ...UNIT, identifier: 'K4-99', order_number: 'SO-00310' } };
+        if (url.startsWith('/api/release-slips/orders/302/verify-token?token=PICKUP-7F3Q')) return { ok: true };
+        if (url.startsWith('/api/release-slips/orders/302/verify-token')) return { ok: false, error: 'The release token does not match this order.' };
+        return undefined;
+      };
+    }
+
+    it('splits the queue into Ready and Blocked by authorization state', async () => {
+      const win = await bootAs(REL, fake([]));
+      win.location.hash = '#/so';
+      await wait();
+      const view = win.document.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('78:16');
+      expect(win.document.documentElement.getAttribute('data-role-accent')).toBe('rel');
+      expect(view.textContent).toContain('SO-00302');
+      expect(view.textContent).not.toContain('SO-00308');
+      (view.querySelector('[data-tab="blocked"]') as HTMLButtonElement).click();
+      expect(view.textContent).toContain('Authorization revoked');
+    });
+
+    it('never shows the token, and continues only after the presented token verifies', async () => {
+      const win = await bootAs(REL, fake([]));
+      const doc = win.document;
+      win.location.hash = '#/so?id=302';
+      await wait();
+      const view = doc.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('78:68');
+      expect(view.textContent).toContain('Jordan D. · ID reference ••4821');
+      expect(view.textContent).toContain('PICKUP-••••');
+      win.location.hash = '#/so?id=302&step=handoff';
+      await wait();
+      (doc.getElementById('rel-go') as HTMLButtonElement).click();
+      await wait();
+      expect(view.getAttribute('data-figma-node')).toBe('78:240'); // blocked until verified
+      (view.querySelector('[data-token]') as HTMLInputElement).value = 'pickup-7f3q';
+      (view.querySelector('[data-verify]') as HTMLButtonElement).click();
+      await wait();
+      expect(view.textContent).toContain('PICKUP-7F3Q · Valid');
+      (doc.getElementById('rel-go') as HTMLButtonElement).click();
+      await wait();
+      expect(view.getAttribute('data-figma-node')).toBe('78:281');
+    });
+
+    it('needs every required package item before handoff', async () => {
+      const win = await bootAs(REL, fake([]));
+      const doc = win.document;
+      win.location.hash = '#/so?id=302&step=package';
+      await wait();
+      const go = doc.getElementById('rel-go') as HTMLButtonElement;
+      expect(go.disabled).toBe(true);
+      (doc.querySelector('[data-p="0"]') as HTMLButtonElement).click();
+      expect((doc.getElementById('rel-go') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('blocks a serial allocated to another order with no request sent', async () => {
+      const posts: { url: string; body: any }[] = [];
+      const win = await bootAs(REL, fake(posts));
+      win.location.hash = '#/so?id=302&step=unit&code=K4-99';
+      await wait(80);
+      const view = win.document.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('78:365');
+      expect(view.textContent).toContain('Serial is not allocated');
+      expect(view.textContent).toContain('Allocated to SO-00310, not this order.');
+      expect(posts).toEqual([]);
+    });
+
+    it('records warehouse-out online only, with the token, package and an idempotency key', async () => {
+      const posts: { url: string; body: any; key?: string }[] = [];
+      const win = await bootAs(REL, fake(posts));
+      const doc = win.document;
+      win.location.hash = '#/so?id=302&step=handoff';
+      await wait();
+      (doc.querySelector('[data-token]') as HTMLInputElement).value = 'PICKUP-7F3Q';
+      (doc.querySelector('[data-verify]') as HTMLButtonElement).click();
+      await wait();
+      win.location.hash = '#/so?id=302&step=package';
+      await wait();
+      (doc.querySelector('[data-p="0"]') as HTMLButtonElement).click();
+      // Proof: a photo is required before review / confirm.
+      win.mPhoto.pickFile = () => Promise.resolve(new win.Blob(['x'], { type: 'image/jpeg' }));
+      win.mPhoto.attachBlob = () => Promise.resolve({ id: 1 });
+      win.location.hash = '#/so?id=302&step=proof';
+      await wait();
+      (doc.querySelector('[data-cap]') as HTMLButtonElement).click();
+      await wait();
+      win.location.hash = '#/so?id=302&step=confirm';
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('78:401');
+      const ok = doc.getElementById('rel-ok') as HTMLInputElement;
+      ok.checked = true; ok.dispatchEvent(new win.Event('change'));
+      Object.defineProperty(win.navigator, 'onLine', { value: false, configurable: true });
+      (doc.getElementById('rel-post') as HTMLButtonElement).click();
+      await wait();
+      expect(posts).toEqual([]);
+      Object.defineProperty(win.navigator, 'onLine', { value: true, configurable: true });
+      (doc.getElementById('rel-post') as HTMLButtonElement).click();
+      await wait(80);
+      expect(posts).toHaveLength(1);
+      expect(posts[0]!.url).toBe('/api/orders/302/release-slip');
+      expect(posts[0]!.key).toMatch(/^rel-/);
+      expect(posts[0]!.body).toMatchObject({ collected_by: 'Jordan D.', authorization_token: 'PICKUP-7F3Q', handoff_area: 'Release Bay 1',
+        package: [{ item_id: 7, label: 'Charger and cable', ok: true }] });
+    });
+  });
+
   describe('RTS clerk ready-to-sell intake (Figma 74:*)', () => {
     const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
     const RTS = { id: 31, username: 'rts1', full_name: 'Carlo Reyes', role: 'receiving_clerk', employee: true, modules: null,
@@ -814,8 +941,13 @@ describe('mobile bootstrap', () => {
       expect(files.rts).toContain("'" + node + "'");
     }
     expect(files.rts).toContain("'/job-orders/' + jo + '/products-in'");
-    expect(files.releasing).toContain("data-role-screen', 'releasing'");
-    expect(files.releasing).toContain("'/orders/' + order.id + '/release'");
+    expect(files.releasing).toContain("role: 'releasing'");
+    for (const node of ['78:16', '78:68', '78:109', '78:147', '78:188', '78:240', '78:281', '78:317', '78:365', '78:401', '78:438', '78:481']) {
+      expect(files.releasing).toContain("'" + node + "'");
+    }
+    for (const call of ["'/orders/' + c.order.id + '/release'", "'/orders/' + c.order.id + '/release-slip'", "'/orders/' + c.order.id + '/accept-release'", "'/release-slips/orders/' + c.order.id + '/reports'"]) {
+      expect(files.releasing).toContain(call);
+    }
   });
 
 });

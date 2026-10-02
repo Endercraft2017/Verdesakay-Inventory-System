@@ -126,6 +126,9 @@ App.register('finished-products', async (view, filter) => {
       if (full && Number(full.std_labor_cost)) currentLabor = full.std_labor_cost;
       if (full && Number(full.std_overhead_cost)) currentOverhead = full.std_overhead_cost;
     }
+    // What must leave with each unit (release-auth.ts): one item per line, "*" = required.
+    const pkgItems = existing ? await API.get('/finished-products/' + existing.id + '/package').catch(() => []) : [];
+    const pkgText = pkgItems.map((p) => (p.required ? '* ' : '') + p.label).join('\n');
 
     const pickerHTML = existing
       ? `<p class="muted" style="margin-top:0">Product: <strong>${UI.esc(existing.name)}</strong></p>`
@@ -151,7 +154,11 @@ App.register('finished-products', async (view, filter) => {
       <div class="field-row" style="margin-top:12px">
         <div><label>QC checklist</label><select data-f="checklist-qc">${checklistOptions(1, currentChecklistQcId)}</select></div>
         <div><label>QA checklist</label><select data-f="checklist-qa">${checklistOptions(2, currentChecklistQaId)}</select></div>
-      </div>`;
+      </div>
+      <div class="form-field span2" style="margin-top:12px"><div class="field-label"><label>Release package checklist</label></div>
+        <textarea data-f="package" rows="4" placeholder="* Charger and cable&#10;* Keys (2)&#10;Sticker sheet">${UI.esc(pkgText)}</textarea>
+        <p class="muted" style="font-size:11px;margin:4px 0 0">One item per line that must leave with each unit. Start a line with * to make it required —
+          the warehouse confirms each one before warehouse-out.</p></div>`;
 
     const costHTML = `
       <div class="form-field span2" style="margin-top:16px"><div class="field-label"><label>Standard costs per unit (optional)</label></div>
@@ -287,6 +294,12 @@ App.register('finished-products', async (view, filter) => {
           std_labor_cost: laborRaw === '' ? null : Number(laborRaw),
           std_overhead_cost: overheadRaw === '' ? null : Number(overheadRaw),
         });
+        const pkgLines = ov.querySelector('[data-f="package"]').value.split('\n').map((l) => l.trim()).filter(Boolean);
+        if (pkgLines.length || pkgItems.length) {
+          await API.put('/finished-products/' + pid + '/package', {
+            items: pkgLines.map((l) => ({ label: l.replace(/^\*\s*/, '').slice(0, 120), required: l.startsWith('*') })),
+          });
+        }
         UI.toast(existing ? 'BOM saved' : 'Finished product created');
         load();
       },

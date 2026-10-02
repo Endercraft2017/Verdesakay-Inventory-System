@@ -75,7 +75,10 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
       mode: replay.mode,
       commandId: cmd.id,
       // Unattributed commands carry no time; they take the authority's (OFFLINE-FIRST §7.5).
-      clock: cmd.occurred_at ? sqliteTime(new Date(cmd.occurred_at)) : undefined,
+      // Unattributed commands carry no time, only their date: they run as at its midnight, so a
+      // date they record is the day they happened, not the day they arrived (§25).
+      clock: cmd.occurred_at ? sqliteTime(new Date(cmd.occurred_at))
+        : cmd.unattributed === 1 && cmd.occurred_date ? `${cmd.occurred_date} 00:00:00.000` : undefined,
       plan: parsePlan(cmd.allocation_plan),
       cursor: { id: 0, seq: 0 },
       unattributed: cmd.unattributed === 1,
@@ -140,6 +143,24 @@ function claimRefusal(conn: DatabaseSync, cfg: SyncConfig, req: Request, opts: S
     if (!fresh) return 'This needs a connection to the site host.';
   }
   return null;
+}
+
+/**
+ * An anonymous-channel command is held on the PC for a random while, then sent mixed into a later
+ * batch, so its arrival can't be lined up with punches or sign-ins around it (§7.5, §25). Each one
+ * is held at least as long as the one before, so a follow-up never overtakes its report.
+ * SYNC_ANON_DELAY_MIN_MIN / SYNC_ANON_DELAY_MAX_MIN (minutes) tune it; 0 / 0 sends at once.
+ */
+function holdAnonymous(conn: DatabaseSync, commandId: string): void {
+  const min = Math.max(0, Number(process.env.SYNC_ANON_DELAY_MIN_MIN ?? 10));
+  const max = Math.max(min, Number(process.env.SYNC_ANON_DELAY_MAX_MIN ?? 120));
+  const delayMs = (min + Math.random() * (max - min)) * 60_000;
+  const prev = (conn.prepare(
+    "SELECT MAX(release_after) AS t FROM sync_commands WHERE unattributed = 1 AND state = 'local'"
+  ).get() as { t: string | null }).t;
+  let until = new Date(Date.now() + delayMs).toISOString();
+  if (prev && prev > until) until = prev;
+  conn.prepare('UPDATE sync_commands SET release_after = ? WHERE id = ?').run(until, commandId);
 }
 
 /** A recorded body with the named fields removed (top level, or the fields of a multipart body). */
@@ -232,6 +253,7 @@ async function recordCommand(
         unattributed: anon ? 1 : 0,
         context: anon ? null : requestContext(req),
       }, { state: 'local', local_changeset: changes, response_status: res.statusCode });
+      if (anon) holdAnonymous(conn, commandId);
     } catch (e) {
       console.error('[sync] failed to record a command:', e);
     } finally {

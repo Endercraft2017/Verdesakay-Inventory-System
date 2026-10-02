@@ -506,3 +506,35 @@
 .rk-segs button.blue.on { box-shadow: inset 0 0 0 1.5px rgba(44, 93, 143, .4); }
 :root[data-theme="dark"] .rk-segs button.blue { background: #1d2c3d; color: #a9c8e8; }
 .rk-unitcard small.blue { color: #2c5d8f; } :root[data-theme="dark"] .rk-unitcard small.blue { color: #a9c8e8; }
+
+/* ── Releasing personnel (Figma 78:*) — royal blue; navy hero; dark navy for warehouse-out ── */
+.rk-accent-rel {
+  --rk-green: #2453a8; --rk-green-text: #2453a8; --rk-qty: #2453a8;
+  --rk-hero: #13306e; --rk-hero-label: #c3d3f2; --rk-hero-note: #dbe5f7;
+  --rk-chip-bg: #dfe8f8; --rk-chip-text: #24448a;
+  --rk-tint: #dde7f8; --rk-soft: #e6edf8;
+  --rk-pill-ok-bg: #e3ebf9; --rk-pill-ok: #24448a;
+  --rk-btn2-bg: #e7eef9; --rk-btn2-text: #24448a;
+}
+:root[data-theme="dark"] .rk-accent-rel {
+  --rk-green: #5b8de0; --rk-green-text: #a9c4f2; --rk-qty: #a9c4f2; --rk-hero: #112650;
+  --rk-chip-bg: #1b2c4c; --rk-chip-text: #b4cbf3; --rk-tint: #17243d; --rk-soft: #152034;
+  --rk-pill-ok-bg: #1b2c4c; --rk-pill-ok: #b4cbf3; --rk-btn2-bg: #18253b; --rk-btn2-text: #bcd0f3;
+}
+:root[data-role-accent="rel"] .v2-orbit-handle { background: #2453a8; }
+:root[data-role-accent="rel"] .m-tab.on { color: #2453a8; }
+:root[data-role-accent="rel"] .m-tab.on svg { background: rgba(223, 232, 248, .94); }
+:root[data-theme="dark"][data-role-accent="rel"] .v2-orbit-handle { background: #3f6fc4; }
+:root[data-theme="dark"][data-role-accent="rel"] .m-tab.on { color: #a9c4f2; }
+:root[data-theme="dark"][data-role-accent="rel"] .m-tab.on svg { background: #1b2c4c; }
+.rk-btn.ink { background: #102a54; color: #fff; } :root[data-theme="dark"] .rk-btn.ink { background: #2b4f8f; }
+.rk-sign { border: 1px solid var(--rk-line); border-radius: 22px; background: var(--rk-card); padding: 12px 14px; }
+.rk-sign small { display: block; font-size: 10px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--rk-label); margin-bottom: 6px; }
+.rk-sign .m-sign-cv { width: 100%; border-radius: 14px; background: #fff; border: 1px dashed var(--rk-line); touch-action: none; }
+.rk-camera.rel { background: var(--rk-hero); }
+.rk-thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+.rk-thumbs span { position: relative; width: 64px; height: 64px; border-radius: 12px; overflow: hidden; background: var(--rk-soft); }
+.rk-thumbs img { width: 100%; height: 100%; object-fit: cover; }
+.rk-thumbs button { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 13px; line-height: 1; }
+.rk-qtyrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.rk-qtyrow input { width: 76px; }

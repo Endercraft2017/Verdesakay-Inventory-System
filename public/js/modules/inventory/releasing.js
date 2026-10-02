@@ -172,19 +172,42 @@ App.register('releasing', async (view, filter) => {
   }
 
   /* ------------------------------------------------------ 3. issue the release slip --- */
-  function slipModal(order, onDone) {
+  async function slipModal(order, onDone) {
     const photos = []; // File[]
+    // Warehouse-out rules (release-auth.ts): the recipient's token when Sales issued an
+    // authorization, and every required package item. The server re-checks both.
+    let rc = { authorization: { state: 'none' }, package: [] };
+    try { rc = await API.get('/release-slips/orders/' + order.id + '/context'); } catch (e) { /* older server: plain slip */ }
+    const auth = rc.authorization || { state: 'none' };
+    const authBlock = auth.state === 'valid'
+      ? `<div class="panel" style="padding:10px 12px;margin-bottom:10px">
+           <div><b>${UI.esc(auth.mode === 'delivery' ? 'Delivery' : 'Customer pickup')}</b> · approved recipient
+             <b>${UI.esc(auth.recipient_name)}</b>${auth.id_reference ? ' · ID ' + UI.esc(auth.id_reference) : ''}</div>
+           <div style="margin-top:8px"><label>Release token the recipient presents <span class="req">*</span></label>
+             <input data-f="authorization_token" placeholder="${UI.esc(auth.token_hint)}" style="text-transform:uppercase" /></div>
+         </div>`
+      : auth.state !== 'none' || auth.required
+        ? `<div class="error" style="margin-bottom:10px">Release authorization ${UI.esc(auth.state === 'none' ? 'missing' : auth.state)} —
+             Sales must issue a valid one on the sale order before the goods can leave.</div>`
+        : '';
+    const pkgBlock = (rc.package || []).length ? `
+        <h4 style="${LABEL}">Package — confirm each item leaves with the goods</h4>
+        ${rc.package.map((p, i) => `<label style="display:flex;gap:8px;align-items:center;margin:4px 0">
+          <input type="checkbox" data-pkg="${i}" /> ${UI.esc(p.item_name)}: ${UI.esc(p.label)}${p.required ? ' <span class="req">*</span>' : ''}</label>`).join('')}
+        <div style="margin-top:8px"><label>Package seal / tag</label><input data-f="seal_tag" placeholder="Optional" /></div>` : '';
     UI.modal({
       title: 'Release slip — ' + order.number,
       bodyHTML: `
         <p class="muted" style="margin-top:0">Record who took the goods out. Issuing the slip confirms
           ${UI.esc(order.number)} and deducts the released stock.</p>
+        ${authBlock}
         <div><label>Collected by <span class="req">*</span></label>
-          <input data-f="collected_by" placeholder="Driver / customer representative" /></div>
+          <input data-f="collected_by" placeholder="Driver / customer representative" value="${auth.state === 'valid' ? UI.esc(auth.recipient_name) : ''}" /></div>
         <div class="field-row" style="margin-top:10px">
           <div><label>Vehicle / plate no.</label><input data-f="vehicle_plate" placeholder="Optional" /></div>
         </div>
         <div style="margin-top:10px"><label>Notes</label><input data-f="notes" placeholder="Optional" /></div>
+        ${pkgBlock}
         <h4 style="${LABEL}">Photos of the outgoing goods <span class="req">*</span></h4>
         <input type="file" id="rl-photo-in" accept="image/*" capture="environment" multiple hidden />
         <div id="rl-photos" style="display:flex;flex-wrap:wrap;gap:8px"></div>
@@ -206,11 +229,16 @@ App.register('releasing', async (view, filter) => {
         input.onchange = () => { photos.push(...input.files); input.value = ''; drawPhotos(); };
       },
       onConfirm: async (ov, showErr) => {
-        const val = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
+        const val = (k) => { const el = ov.querySelector(`[data-f="${k}"]`); return el ? el.value.trim() : ''; };
         if (!val('collected_by')) { showErr('Enter who collected the goods'); return false; }
+        if (auth.state === 'valid' && !val('authorization_token')) { showErr('Enter the release token the recipient presents'); return false; }
+        const pkg = (rc.package || []).map((p, i) => ({ item_id: p.item_id, label: p.label, ok: ov.querySelector(`[data-pkg="${i}"]`).checked }));
+        const missing = (rc.package || []).filter((p, i) => p.required && !pkg[i].ok);
+        if (missing.length) { showErr('Confirm every required package item: ' + missing.map((p) => p.label).join(', ')); return false; }
         if (!photos.length) { showErr('Add at least one photo of the goods going out'); return false; }
         const r = await API.post('/orders/' + order.id + '/release-slip', {
           collected_by: val('collected_by'), vehicle_plate: val('vehicle_plate') || null, notes: val('notes') || null,
+          authorization_token: val('authorization_token').toUpperCase() || null, seal_tag: val('seal_tag') || null, package: pkg,
         });
         let failed = 0;
         for (const f of photos) {

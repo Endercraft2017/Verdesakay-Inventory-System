@@ -1181,6 +1181,13 @@ function createSchema(): void {
       updated_on    TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_anonymous_reports_status ON anonymous_reports(status, id);
+    -- A report filed on an installed PC gets a provisional number there (derived from its sync
+    -- command, never from the PC); the cloud keeps it here as a permanent alias of the real one,
+    -- so the reporter's follow-ups keep working with either (docs/OFFLINE-FIRST.md §25).
+    CREATE TABLE IF NOT EXISTS anonymous_report_aliases (
+      alias     TEXT PRIMARY KEY,
+      report_id INTEGER NOT NULL REFERENCES anonymous_reports(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS anonymous_report_messages (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       report_id  INTEGER NOT NULL REFERENCES anonymous_reports(id) ON DELETE CASCADE,

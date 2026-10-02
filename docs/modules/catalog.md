@@ -233,6 +233,11 @@ reporter column of any kind; dates only (never times); the follow-up access code
 SHA-256 only; numbering (`CR-00001`) comes from the table, not `settings` (whose `updated_at`
 would timestamp it). Photos are BLOBs in the DB (no original filename, no UPLOAD_DIR file whose
 name or mtime could date the submission), `message_id` NULL = sent with the report.
+**Offline (phase 4f, docs/OFFLINE-FIRST.md §25):** submit / follow-up / photo removal are unattributed `merge`
+commands, held on the PC for a random while before they're sent. The ticket stays on the PC, the access
+code travels only as its hash, and photos travel only stripped. A PC numbers a report `CR-X…`
+(from its command id); the cloud gives the real `CR-#####` and keeps the provisional one in
+`anonymous_report_aliases` (lookups accept either). Handler reply `merge`, status `claim`.
 **Owned files:** `core/confidential-reports.ts` (service), `core/confidential-reports.routes.ts`,
 mobile `core/report-problem.js` (anonymous form, receipt, check/reply) and
 `core/confidential-reports.js` (case-handler queue); desktop `public/js/modules/core/confidential-reports.js`
@@ -284,6 +289,23 @@ mobile `so` view (`public/mobile/modules/inventory/so.js`).
 **Owned data (releasing):** `orders.warehouse_accepted_by/_at`, `release_slips`,
 `release_slip_items` (snapshot of lines + unit serials); photos are core `attachments`
 kind `release` (ref = slip id).
+**Warehouse-out rules (`release-auth.ts`, createSchema tables, no version bump):**
+`release_authorizations` (Sales, `orders.edit`: pickup/delivery, approved recipient, only the last 4
+of an ID reference, a `PICKUP-XXXX`/`DELIV-XXXX` token, validity, handoff area, partial allowed;
+a new one revokes the previous), `product_package_items` (per finished product, set in the BOM
+editor; `GET/PUT /finished-products/:id/package`), `release_slip_details` (token used, recipient,
+confirmed package JSON, seal tag, acknowledgement, a partial release's backorder), and
+`release_reports` (releaser → Sales). `POST /orders/:id/release-slip` refuses (409 `{blocked}`)
+before any write: a wrong / expired / used / revoked token for an order that has an
+authorization (every order when the `release_authorization_required` setting is on), any
+unconfirmed required package item, or an incomplete order without partial authority. With
+partial authority the order is split at the slip (`splitUnreleased`: released quantities stay,
+the rest becomes a new approved backorder SO). `release-slips.routes.ts` adds:
+`GET /orders/:id/context` | `/unit?code=` | `/verify-token?token=` (releasers; the token is never
+returned to them), `GET|POST /orders/:id/authorizations`, `POST .../authorizations/revoke`,
+`POST /orders/:id/reports`, `GET /reports/list`, `POST /reports/:rid/resolve`, `GET|PUT /policy`.
+Desktop: Sales Orders key icon (`release-authorization.js`), slip modal token + package fields
+(`releasing.js`), BOM editor package list. Tests: `tests/release-auth.test.ts`.
 **Public interface:** stock-mutation functions in `inventory-stock.ts` (called
 directly by `manufacturing/`, `purchasing/`, and `modules/ai/ai-tools.ts`).
 **Dependencies:** `shared/`; `sync/` (`syncClass`) for offline-capable routes.
@@ -545,6 +567,14 @@ group (same SKU + location) → review → final duplicate check → confirm (ph
 tick) → recorded; plus duplicate, location, mismatch-report and read-only lookup screens.
 Posting is online-only with an idempotency key (never queued); non-serialized batches keep a
 quantity screen; unit records still print from the result screen.
+Fifth: Releasing personnel warehouse-out, `modules/inventory/so.js` (Figma 78:16–78:481, `#/so`,
+blue `rel` accent) — queue (Ready / Blocked by authorization or open reports / Completed) → verify
+release authority → scan units (allocate via `/release`, bulk quantities) → verify unit (or
+release blocked for another order's / wrong / unknown serial) → package checklist + seal →
+handoff (recipient's token verified, never displayed) → proof (photo + signature) → review →
+confirm → recorded / receipt; incomplete allocation → partial release only with Sales'
+authority; reports to Sales. Allocation and warehouse-out are online-only with idempotency keys.
+`lib/signature.js` no longer clears a drawn signature on height-only resizes (keyboard/toolbar).
 **Shared-phone safety:** `lib/queue.js` stamps each queued op with the account that queued it
 and only lists/sends/discards the signed-in account's ops (the service worker's replay checks the
 same, against the account stored with its token); another account's ops wait for that person.

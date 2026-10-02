@@ -191,11 +191,16 @@ async function cloudRound(slug: string): Promise<{ round: CloudRound; upstream?:
 
   const pushed: CommandResult[] = [];
   const pending = pendingCommands(slug);
-  await pushBlobs(conn, slug, remote, blobsOf(pending)); // a command's uploads go before it
-  for (let i = 0; i < pending.length; i += 100) {
+  // Anonymous-channel commands still being held stay here for a later round (§25).
+  const held = new Set((conn.prepare(
+    "SELECT id FROM sync_commands WHERE state = 'local' AND unattributed = 1 AND release_after > ?"
+  ).all(new Date().toISOString()) as Array<{ id: string }>).map((r) => r.id));
+  const due = held.size ? pending.filter((c) => !held.has(c.id)) : pending;
+  await pushBlobs(conn, slug, remote, blobsOf(due)); // a command's uploads go before it
+  for (let i = 0; i < due.length; i += 100) {
     const r = await jsonOrThrow<{ results: CommandResult[] }>(
       await call(`${remote.cloudUrl}/api/sync/commands`, {
-        method: 'POST', headers, body: JSON.stringify({ commands: pending.slice(i, i + 100) }), timeoutMs: 5 * 60_000,
+        method: 'POST', headers, body: JSON.stringify({ commands: due.slice(i, i + 100) }), timeoutMs: 5 * 60_000,
       }), 'Sending changes');
     pushed.push(...r.results);
   }

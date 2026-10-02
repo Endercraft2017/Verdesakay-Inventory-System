@@ -27,6 +27,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { activeDb, tenantStore, uploadDir } from '../shared/db';
 import { syncContext } from '../shared/sync-context';
 import { isAuthority, syncConfigOf } from './node';
+import { keepRequestContext } from '../shared/request-context';
 
 const BLOB_DIR = '.sync-blobs';
 /** Subfolders of a tenant's uploads that hold its files (others there are other tenants'). */
@@ -74,8 +75,9 @@ function uploadedFiles(req: Request): UploadedFile[] {
  * command (a direct request to the cloud, a DB without sync) it is exactly the multer middleware.
  */
 export function syncUpload(multerMw: RequestHandler): RequestHandler {
+  const upload = keepRequestContext(multerMw);
   return (req, res, next) => {
-    multerMw(req, res, (err?: unknown) => {
+    upload(req, res, (err?: unknown) => {
       if (err) return next(err);
       const ctx = syncContext();
       if (!ctx?.commandId || (ctx.mode !== 'record' && ctx.mode !== 'replay' && ctx.mode !== 'rebase')) return next();
@@ -102,6 +104,18 @@ export function syncUpload(multerMw: RequestHandler): RequestHandler {
       next();
     });
   };
+}
+
+/**
+ * Files a route itself hands to the command it is recording, in place of the raw uploads: the
+ * anonymous channel passes its metadata-stripped photos, so the original bytes are never stored
+ * or sent (§25). Only while a command is being recorded; a re-run already carries its files.
+ */
+export function attachCommandFiles(req: Request, files: Array<{ field: string; name: string; type: string; bytes: Buffer }>): void {
+  const ctx = syncContext();
+  if (!ctx?.commandId || ctx.mode !== 'record') return;
+  const slug = slugOf();
+  (req as WithSyncFiles).syncFiles = files.map((f) => ({ field: f.field, name: f.name, type: f.type, hash: storeBlob(slug, f.bytes) }));
 }
 
 /** The body a command records: plain JSON, or — with uploads — fields plus file references. */

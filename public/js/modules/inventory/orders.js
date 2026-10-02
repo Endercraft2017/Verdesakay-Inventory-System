@@ -87,6 +87,8 @@ App.register('orders', async (view, filter) => {
                   : `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>`)
                 : ''}
               ${type === 'purchase' ? `<button class="icon-btn" title="Receiving & bills" data-purch="${o.id}">${UI.icon('inbox')}</button>` : ''}
+              ${type === 'sale' && ['approved', 'released'].includes(String(o.status).toLowerCase()) && App.hasPermission('orders.edit') && window.ReleaseAuth
+                ? `<button class="icon-btn" title="Release authorization (who may collect)" data-relauth="${o.id}" data-num="${UI.esc(o.number)}">${UI.icon('key')}</button>` : ''}
               ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
               <button class="icon-btn" title="Edit" data-edit="${o.id}">${UI.icon('edit')}</button>
@@ -108,6 +110,7 @@ App.register('orders', async (view, filter) => {
     tableEl.querySelectorAll('[data-produce]').forEach((b) => b.onclick = () => startProduction(b.dataset.produce));
     tableEl.querySelectorAll('[data-view-jo]').forEach((b) => b.onclick = () => App.navigate('job-orders', { id: b.dataset.viewJo }));
     tableEl.querySelectorAll('[data-purch]').forEach((b) => b.onclick = () => App.navigate('purchasing', { order: b.dataset.purch }));
+    tableEl.querySelectorAll('[data-relauth]').forEach((b) => b.onclick = () => window.ReleaseAuth.open(b.dataset.relauth, b.dataset.num));
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => del(b.dataset.del, list));
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;

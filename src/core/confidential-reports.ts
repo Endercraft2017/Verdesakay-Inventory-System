@@ -21,6 +21,7 @@ import crypto from 'node:crypto';
 import { queryOne, queryAll, run, db } from '../shared/db';
 import type { REPORT_STATUSES } from '../shared/validation';
 import type { ScrubbedImage } from '../shared/image-metadata';
+import { now } from '../shared/sync-context';
 
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
@@ -33,7 +34,8 @@ export const PHOTOS_PER_REPORT = 12;
 export const PHOTO_MAX_BYTES = 6 * 1024 * 1024;
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
-const today = () => new Date().toISOString().slice(0, 10);
+// The command's own date under sync (an offline report keeps the day it was filed).
+const today = () => now().toISOString().slice(0, 10);
 
 /** Human-typeable access code: 20 chars of Crockford base32 (100 bits), grouped 5-5-5-5. */
 function newAccessCode(): string {
@@ -76,8 +78,25 @@ export interface NewReport {
 }
 
 export type SubmitResult =
-  | { ok: true; number: string; access_code: string }
+  | { ok: true; number: string; access_code: string; access_hash: string }
   | { ok: false; status: number; error: string };
+
+/** How an offline (synced) submission is numbered and verified (docs/OFFLINE-FIRST.md §25). */
+export interface SubmitOptions {
+  /** A re-run of a submission recorded elsewhere: its ticket was used there, and only the access
+   *  code's hash travelled with it. */
+  recordedAccessHash?: string;
+  /** The submission's provisional number (reportAlias). */
+  alias?: string | null;
+  /** On an installed PC the alias *is* the number; on the cloud it is kept beside the real one. */
+  provisional?: boolean;
+}
+
+/** A report's provisional number, derived from its (anonymous) sync command: no PC, no time. */
+export function reportAlias(commandId: string): string {
+  return `CR-X${sha256(commandId).slice(0, 8).toUpperCase()}`;
+}
+export const accessHashOf = (accessCode: string) => sha256(normalizeCode(accessCode));
 
 function savePhotos(reportId: number, messageId: number | null, photos: ScrubbedImage[], day: string): void {
   for (const p of photos) {
@@ -89,11 +108,12 @@ function savePhotos(reportId: number, messageId: number | null, photos: Scrubbed
   }
 }
 
-export function submitReport(input: NewReport, photos: ScrubbedImage[] = []): SubmitResult {
+export function submitReport(input: NewReport, photos: ScrubbedImage[] = [], opts: SubmitOptions = {}): SubmitResult {
   db.exec('BEGIN');
   try {
     // Consume the ticket first, in the same transaction, so a ticket can never file twice.
-    const used = run(
+    // (A re-run's ticket was consumed where the report was filed; tickets never leave a PC.)
+    const used = opts.recordedAccessHash ? { changes: 1 } : run(
       "DELETE FROM anonymous_report_tickets WHERE token_hash = ? AND expires_at >= datetime('now')",
       sha256(input.ticket)
     );
@@ -102,21 +122,26 @@ export function submitReport(input: NewReport, photos: ScrubbedImage[] = []): Su
       return { ok: false, status: 403, error: 'This submission link has expired. Go back and start the report again.' };
     }
     // Numbered from this table, not nextSequence(): that writes settings.updated_at, which
-    // would record the exact time of the latest submission.
+    // would record the exact time of the latest submission. An installed PC's number is
+    // provisional; the cloud gives the real one and keeps the provisional as an alias.
     const last = queryOne<{ n: number }>('SELECT COALESCE(MAX(id), 0) AS n FROM anonymous_reports');
-    const number = `CR-${String((last?.n ?? 0) + 1).padStart(5, '0')}`;
-    const accessCode = newAccessCode();
+    const number = opts.provisional && opts.alias ? opts.alias : `CR-${String((last?.n ?? 0) + 1).padStart(5, '0')}`;
+    const accessCode = opts.recordedAccessHash ? '' : newAccessCode();
+    const accessHash = opts.recordedAccessHash ?? sha256(normalizeCode(accessCode));
     const day = today();
     const info = run(
       `INSERT INTO anonymous_reports
          (number, category, subject, description, incident_date, location, status, access_hash, created_on, updated_on)
        VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?)`,
       number, input.category, input.subject || null, input.description,
-      input.incident_date || null, input.location || null, sha256(normalizeCode(accessCode)), day, day
+      input.incident_date || null, input.location || null, accessHash, day, day
     );
     savePhotos(Number(info.lastInsertRowid), null, photos, day);
+    if (opts.alias && number !== opts.alias) {
+      run('INSERT INTO anonymous_report_aliases (alias, report_id) VALUES (?, ?)', opts.alias, Number(info.lastInsertRowid));
+    }
     db.exec('COMMIT');
-    return { ok: true, number, access_code: accessCode };
+    return { ok: true, number, access_code: accessCode, access_hash: accessHash };
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
@@ -140,8 +165,19 @@ function attachmentsFor(reportId: number): AttachmentRow[] {
 
 /** Resolve number + access code to the report, or null. Constant-time hash comparison. */
 export function findByCode(number: string, accessCode: string): ReportRow | null {
-  const row = queryOne<ReportRow>('SELECT * FROM anonymous_reports WHERE number = ?', number.trim().toUpperCase());
-  const given = Buffer.from(sha256(normalizeCode(accessCode)), 'hex');
+  return findByHash(number, accessHashOf(accessCode));
+}
+
+/** findByCode with the code's hash: a re-run of an offline follow-up carries only the hash. The
+ *  number may be the real one or the provisional alias it was filed under. */
+export function findByHash(number: string, accessHash: string): ReportRow | null {
+  const n = number.trim().toUpperCase();
+  const row = queryOne<ReportRow>(
+    `SELECT * FROM anonymous_reports
+     WHERE number = ? OR id = (SELECT report_id FROM anonymous_report_aliases WHERE alias = ?)`,
+    n, n
+  );
+  const given = Buffer.from(/^[0-9a-f]{64}$/.test(accessHash) ? accessHash : sha256('malformed'), 'hex');
   // Compare against a dummy when the number doesn't exist, so timing doesn't reveal valid numbers.
   const stored = Buffer.from(row?.access_hash ?? sha256('no-such-report'), 'hex');
   const match = crypto.timingSafeEqual(given, stored);

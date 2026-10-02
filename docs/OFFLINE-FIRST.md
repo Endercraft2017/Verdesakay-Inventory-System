@@ -182,7 +182,7 @@ because every route defaults to the `online` class until it is reviewed.
 | **1. Command foundation** ✅ built 2026-09-30 (§10) | `src/sync/`: command log, HLC, ULID, `DEPLOY_MODE`, per-route `syncClass()` (undeclared routes refused on a node), allocation plan (node-partitioned IDs via renumber-after-insert + provisional/replayed document numbers), SQL request clock + `now()`, side-effect suppression on nodes (email/push/broadcast), cloud effect stream, replay through the real routes, changeset rebase, node-local tables, unattributed commands. CLAUDE.md rule reworded (D4). No behavior change for DBs without a sync role. **Moved:** sensitive-field encryption and the Node 24 test run → phase 3 (need the DPAPI spike / the Electron dependency); site-number block leasing → phase 3 (needs a host); converting handlers' `new Date()` to `now()` → per route as it is classed (phases 2, 4) |
 | **2. Inventory** ✅ built 2026-09-30 (§11) | Every inventory-module route classed (items, stock, locations, suppliers, customers). D1: a stock-out beyond recorded stock is accepted inside a synced command and opens a `stock_discrepancies` row (list + resolve API); direct cloud requests keep refusing it. Rebase applies changesets with foreign-key actions off. **Moved:** home sites → phase 3 (they only matter once site hosts decide claims); orders / deliveries / release slips → phase 4 (sales-release pipeline) |
 | **3. Desktop app + site host** (sub-phases 3a–3f below) | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
-| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records (4e ✅, §24) → anonymous reports → payroll → accounting/tax |
+| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records (4e ✅, §24) → anonymous reports (4f ✅, §25) → payroll → accounting/tax |
 | **5. Host election + failover** | Voting nodes, election, lease, terms, fencing (§4) |
 | **6. Hardening** | Conflict inbox with resolve actions, version shims, compaction of old commands/effects, sync health dashboard |
 
@@ -314,8 +314,9 @@ idempotency store. Replicating the report's contents doesn't change that, but th
 must not add identity back. So anonymous-channel commands (`isAnonymousReportPath`) are
 **unattributed**:
 - no actor, device, node ID, node sequence, HLC or time. The date only is carried.
-- The row ID and report number are assigned by the **site host**, not from the submitting node's
-  ID range (which would reveal the PC).
+- The row ID and report number are assigned by the **cloud**, not from the submitting node's
+  ID range (which would reveal the PC). *(As built, §25: the cloud, not the site host, because a
+  host's number block would reveal the site.)*
 - The node forwards them **after a random delay, mixed into a later batch**, so arrival order
   can't be matched against clock punches or logins.
 - When the site host can't be reached, the reporter gets a provisional number that remains a
@@ -999,3 +1000,62 @@ Giving each department a home site would lift this. That is a proposal, not buil
 - Everything reached the cloud identically, the document file included. No stored command anywhere
   contains the password.
 - Both clash cases landed confirmed and flagged.
+
+## 25. Phase 4f as built (2026-10-02): confidential (anonymous) reports offline
+
+### Classes (`core/confidential-reports.routes.ts`)
+
+| Class | Routes |
+|---|---|
+| `merge`, **unattributed** | submit a report, follow up, remove your own photo |
+| `merge` / `claim` (company-wide) | handler reply / status change (staff, attributed as usual) |
+| (none: they write nothing replicated) | get a ticket (node-local table), look up a report, fetch a photo |
+
+### What an anonymous command carries, and what it doesn't
+- **No identity.** As §7.5 says, there is no user, device, PC number, node sequence, HLC or time,
+  only the date. Its ULID is dated to midnight. On every replay it runs as at its own day's
+  midnight (the replay clock), so `created_on` is the day it was filed, not the day it arrived.
+- **No ticket.** The ticket is checked and used on the PC (tickets never leave a PC) and is
+  `redact`ed from the command. A re-run skips the ticket check.
+- **No access code.** Only its SHA-256 travels (`access_hash` in the body). The code is `redact`ed
+  from follow-ups, and a re-run verifies with the hash (`findByHash`). No stored command anywhere
+  contains the code.
+- **Only stripped photos.** The route hands the command its metadata-stripped photos
+  (`attachCommandFiles`, named `photo-<n>.<ext>`). The original upload, its name and its metadata
+  are never stored in the blob store or sent.
+
+### Numbers: provisional on a PC, real on the cloud
+A report filed on an installed PC is numbered `CR-X<8 hex>` there. The suffix is derived from its
+command id, so a rebase reproduces it and nothing about the PC or the time shows. The cloud gives it
+the real `CR-#####` (still numbered from the table, never from `settings`) and keeps the provisional
+number in **`anonymous_report_aliases`**, so the reporter's number and code keep working for follow-ups
+everywhere, with either number.
+
+### Held before sending
+The PC holds an anonymous command for a random 10–120 minutes (`sync_commands.release_after`, local
+only; `SYNC_ANON_DELAY_MIN_MIN` / `SYNC_ANON_DELAY_MAX_MIN`) and then sends it with whatever else is
+going. Each one is held at least as long as the one before it, so a follow-up never overtakes its
+report. Held commands still count as pending, and rebase still re-runs them.
+
+### Limits
+Removing a photo **offline** works only for photos that have already synced. A photo added offline
+has a different id on the cloud, so the removal is refused there. The reporter can't see that in the
+conflict inbox, because anonymous commands are never listed.
+
+### Bug fixed on the way: uploads lost the workspace
+The bug existed before sync. multer's **memory** storage finishes inside the request stream's events,
+outside the request's async context, so the route then ran against the **default workspace**. A
+multipart anonymous report from any other workspace was refused (its ticket was looked up in the
+default workspace), and the HR payroll CSV import read and wrote the default workspace.
+`shared/request-context.ts` `keepRequestContext()` now re-enters the request's workspace and sync
+contexts after such a middleware. It wraps both memory uploads and `syncUpload`. Disk-storage uploads
+were not affected. Regression test: `tests/upload-tenant-context.test.ts`.
+
+**What the tests showed** (`tests/sync-anonymous.test.ts`):
+- A report with a photo, filed at a LAN desk PC while the site was offline, got `CR-X…` and could be
+  looked up there at once.
+- Its command had no identity, no ticket, no code, and no original file name.
+- It was held back on the next round. Once released, it reached the cloud as `CR-00001` with that
+  day's date and the stripped photo. Both numbers opened it.
+- A follow-up from the PC under the provisional number reached the case.
+- A handler at the main site replied and changed the status offline, and the reporter saw both.

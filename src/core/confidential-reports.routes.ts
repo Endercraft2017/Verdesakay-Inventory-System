@@ -29,10 +29,16 @@ import {
   confidentialStatusSchema, confidentialReplySchema, REPORT_CATEGORIES, REPORT_STATUSES,
 } from '../shared/validation';
 import {
-  issueTicket, submitReport, findByCode, reporterView, addReporterMessage, reporterPhoto, removeReporterPhoto,
+  issueTicket, submitReport, findByCode, findByHash, accessHashOf, reportAlias,
+  reporterView, addReporterMessage, reporterPhoto, removeReporterPhoto,
   listReports, getReport, getAttachment, setStatus, addHandlerMessage,
   PHOTOS_PER_POST, PHOTO_MAX_BYTES,
 } from './confidential-reports';
+import { isInstalledCopy, syncClass } from '../sync';
+import { attachCommandFiles } from '../sync/files';
+import { reRunOfRecordedCommand, syncContext } from '../shared/sync-context';
+import type { ScrubbedImage } from '../shared/image-metadata';
+import { keepRequestContext } from '../shared/request-context';
 
 /** Paths whose requests must leave no identity trail (activity log, idempotency store). */
 export function isAnonymousReportPath(p: string): boolean {
@@ -47,12 +53,41 @@ const limiter = (limit: number) => rateLimit({
 });
 
 // Memory only: the original bytes (with their metadata) never touch the disk.
-const photoUpload = multer({
+// (keepRequestContext: memory storage would otherwise lose the request's workspace.)
+const photoUpload = keepRequestContext(multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: PHOTO_MAX_BYTES, files: PHOTOS_PER_POST, fields: 20 },
-}).array('photos', PHOTOS_PER_POST);
+}).array('photos', PHOTOS_PER_POST));
 
 const scrubPhotos = (req: Request) => ((req.files as Express.Multer.File[] | undefined) || []).map((f) => stripImageMetadata(f.buffer));
+
+/*
+ * Offline (docs/OFFLINE-FIRST.md §25): reporter actions are `merge` commands with no identity
+ * (`unattributed`: no user, device, PC, node sequence or time — the date only), held on the PC
+ * for a random while before they're sent. What they carry is trimmed further:
+ *  - the ticket is checked and used on the PC and never stored in the command;
+ *  - the access code never leaves the PC: only its hash travels, and a re-run verifies with it;
+ *  - photos travel only as their metadata-stripped bytes, never as the original upload.
+ * A report filed on a PC is numbered provisionally there (reportAlias); the cloud gives it the
+ * real number and keeps the provisional one as an alias, so either works for follow-ups.
+ */
+const PLACEHOLDER = 'recorded-elsewhere';
+
+/** The access-code hash of this request: computed from the code, or carried by a re-run. */
+function requestAccessHash(req: Request, accessCode: string): string {
+  return reRunOfRecordedCommand() ? String((req.body as { access_hash?: unknown })?.access_hash ?? '') : accessHashOf(accessCode);
+}
+
+/** While recording offline: keep the code's hash and the scrubbed photos in the command. */
+function recordAnonymous(req: Request, accessHash: string, photos: ScrubbedImage[]): void {
+  if (!syncContext()?.commandId || reRunOfRecordedCommand()) return;
+  (req.body as Record<string, unknown>).access_hash = accessHash;
+  attachCommandFiles(req, photos.map((p, i) => ({ field: 'photos', name: `photo-${i + 1}.${p.ext}`, type: p.mime, bytes: p.data })));
+}
+
+/** The body as the schema expects it: a re-run lacks the redacted secret, so stand in for it. */
+const withPlaceholder = (req: Request, key: string) =>
+  reRunOfRecordedCommand() ? { ...(req.body as object), [key]: PLACEHOLDER } : req.body;
 
 export const reporterRouter = Router();
 
@@ -66,12 +101,19 @@ reporterRouter.post('/ticket', requireAuth, (req, res) => {
   res.json(t);
 });
 
-reporterRouter.post('/', limiter(10), photoUpload, (req, res) => {
+reporterRouter.post('/', limiter(10), syncClass('merge', { unattributed: true, redact: ['ticket'] }), photoUpload, (req, res) => {
   // Deliberately no requireAuth and no req.user: nothing about the caller is looked at.
-  const input = parseBody(anonymousReportSchema, req.body);
+  const input = parseBody(anonymousReportSchema, withPlaceholder(req, 'ticket'));
   const photos = scrubPhotos(req);
-  const result = submitReport(input, photos);
+  const commandId = syncContext()?.commandId;
+  const alias = commandId ? reportAlias(commandId) : null;
+  const recorded = reRunOfRecordedCommand();
+  const result = submitReport(input, photos, {
+    recordedAccessHash: recorded ? requestAccessHash(req, '') : undefined,
+    alias, provisional: alias != null && isInstalledCopy(),
+  });
   if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+  recordAnonymous(req, result.access_hash, photos);
   void notifyPermission('reports.confidential', {
     title: 'New confidential report',
     body: `${result.number} · ${input.category}${photos.length ? ` · ${photos.length} photo${photos.length === 1 ? '' : 's'}` : ''}`,
@@ -88,11 +130,14 @@ reporterRouter.post('/lookup', limiter(30), (req, res) => {
   res.json(reporterView(r));
 });
 
-reporterRouter.post('/followup', limiter(20), photoUpload, (req, res) => {
-  const { number, access_code, body } = parseBody(anonymousFollowupSchema, req.body);
-  const r = findByCode(number, access_code);
+reporterRouter.post('/followup', limiter(20), syncClass('merge', { unattributed: true, redact: ['access_code'] }), photoUpload, (req, res) => {
+  const { number, access_code, body } = parseBody(anonymousFollowupSchema, withPlaceholder(req, 'access_code'));
+  const hash = requestAccessHash(req, access_code);
+  const r = findByHash(number, hash);
   if (!r) { res.status(404).json({ error: 'No report matches that number and access code.' }); return; }
-  addReporterMessage(r, body, scrubPhotos(req));
+  const photos = scrubPhotos(req);
+  addReporterMessage(r, body, photos);
+  recordAnonymous(req, hash, photos);
   void notifyPermission('reports.confidential', {
     title: 'Confidential report follow-up', body: r.number, url: '#/confidential-reports', tag: 'cr-' + r.number,
   });
@@ -111,11 +156,13 @@ reporterRouter.post('/photo', limiter(60), (req, res) => {
   res.send(Buffer.from(p.data));
 });
 
-reporterRouter.post('/photo/remove', limiter(20), (req, res) => {
-  const { number, access_code, photo_id } = parseBody(anonymousPhotoSchema, req.body);
-  const r = findByCode(number, access_code);
+reporterRouter.post('/photo/remove', limiter(20), syncClass('merge', { unattributed: true, redact: ['access_code'] }), (req, res) => {
+  const { number, access_code, photo_id } = parseBody(anonymousPhotoSchema, withPlaceholder(req, 'access_code'));
+  const hash = requestAccessHash(req, access_code);
+  const r = findByHash(number, hash);
   if (!r) { res.status(404).json({ error: 'No report matches that number and access code.' }); return; }
   removeReporterPhoto(r, photo_id);
+  recordAnonymous(req, hash, []);
   res.json(reporterView(r));
 });
 
@@ -153,13 +200,13 @@ staffRouter.get('/:id/attachments/:attId', (req, res) => {
   res.send(Buffer.from(a.data));
 });
 
-staffRouter.post('/:id/status', (req, res) => {
+staffRouter.post('/:id/status', syncClass('claim'), (req, res) => {
   const { status } = parseBody(confidentialStatusSchema, req.body);
   if (!setStatus(Number(req.params.id), status)) { res.status(404).json({ error: 'Report not found' }); return; }
   res.json({ ok: true, status });
 });
 
-staffRouter.post('/:id/reply', (req, res) => {
+staffRouter.post('/:id/reply', syncClass('merge'), (req, res) => {
   const { body } = parseBody(confidentialReplySchema, req.body);
   if (!addHandlerMessage(Number(req.params.id), req.user!.id, body)) { res.status(404).json({ error: 'Report not found' }); return; }
   res.status(201).json(getReport(Number(req.params.id)));

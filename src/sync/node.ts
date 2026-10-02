@@ -194,6 +194,8 @@ const ADDED_COLUMNS: Array<[table: string, column: string, ddl: string]> = [
   ['sync_node', 'host_node_no', 'ALTER TABLE sync_node ADD COLUMN host_node_no INTEGER'],
   ['sync_node', 'last_file_seq', 'ALTER TABLE sync_node ADD COLUMN last_file_seq INTEGER NOT NULL DEFAULT 0'],
   ['sync_commands', 'context', 'ALTER TABLE sync_commands ADD COLUMN context TEXT'],
+  // Local only (never sent): an anonymous-channel command is held until then (§25).
+  ['sync_commands', 'release_after', 'ALTER TABLE sync_commands ADD COLUMN release_after TEXT'],
 ];
 
 /** `sync_commands` created before the `host_confirmed` state existed has a CHECK that rejects

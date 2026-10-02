@@ -18,6 +18,9 @@
       var ratio = window.devicePixelRatio || 1;
       var w = cv.clientWidth || 300;
       var h = 170;
+      // Resizing a canvas clears it: skip height-only resizes (the on-screen keyboard, the
+      // browser toolbar collapsing) so a signature already drawn isn't silently wiped.
+      if (cv.width === Math.round(w * ratio) && cv.height === Math.round(h * ratio)) return;
       cv.width = w * ratio;
       cv.height = h * ratio;
       cv.style.height = h + 'px';
