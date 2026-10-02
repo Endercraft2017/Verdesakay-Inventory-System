@@ -14,6 +14,8 @@
     rts: { label: 'RTS clerk', glyph: '▬' },
     // Releasing personnel: royal blue (78:21); chip mark is an exit arrow.
     releasing: { label: 'Releasing', glyph: '⇥', accent: 'rel' },
+    // Parts clerk: burnt orange (83:21); chip mark is a dot.
+    parts: { label: 'Parts clerk', glyph: '●', accent: 'parts' },
   };
   var e = function (s) { return mEsc(s == null ? '' : String(s)); };
 

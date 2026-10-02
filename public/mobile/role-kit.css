@@ -538,3 +538,28 @@
 .rk-thumbs button { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 13px; line-height: 1; }
 .rk-qtyrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
 .rk-qtyrow input { width: 76px; }
+
+/* ── Parts clerk (Figma 83:*) — burnt orange; navy marks the issue review ── */
+.rk-accent-parts {
+  --rk-green: #c2501a; --rk-green-text: #b34a17; --rk-qty: #b34a17;
+  --rk-hero: #6b2a0c; --rk-hero-label: #f3cdb3; --rk-hero-note: #fbe3d2;
+  --rk-chip-bg: #fde3cf; --rk-chip-text: #8a3a12;
+  --rk-tint: #fde6d3; --rk-soft: #fbeee3;
+  --rk-pill-ok-bg: #fde3cf; --rk-pill-ok: #8a3a12;
+  --rk-btn2-bg: #fbeadb; --rk-btn2-text: #8a3a12;
+}
+:root[data-theme="dark"] .rk-accent-parts {
+  --rk-green: #e07a42; --rk-green-text: #f2a879; --rk-qty: #f2a879; --rk-hero: #4a1d08;
+  --rk-chip-bg: #3d2416; --rk-chip-text: #f6bf9a; --rk-tint: #2f1f15; --rk-soft: #281b13;
+  --rk-pill-ok-bg: #3d2416; --rk-pill-ok: #f6bf9a; --rk-btn2-bg: #2e2017; --rk-btn2-text: #f6c4a2;
+}
+:root[data-role-accent="parts"] .v2-orbit-handle { background: #c2501a; }
+:root[data-role-accent="parts"] .m-tab.on { color: #c2501a; }
+:root[data-role-accent="parts"] .m-tab.on svg { background: rgba(253, 227, 207, .94); }
+:root[data-theme="dark"][data-role-accent="parts"] .v2-orbit-handle { background: #c86530; }
+:root[data-theme="dark"][data-role-accent="parts"] .m-tab.on { color: #f2a879; }
+:root[data-theme="dark"][data-role-accent="parts"] .m-tab.on svg { background: #3d2416; }
+.rk-rev { border: 1px solid var(--rk-line); border-radius: 22px; background: #ede3fa; padding: 14px 17px 16px; display: grid; gap: 6px; }
+.rk-rev small { font-size: 10px; color: var(--rk-meta); } .rk-rev b { font-size: 15px; color: var(--rk-title); } .rk-rev span { font-size: 12px; color: #6140a6; }
+:root[data-theme="dark"] .rk-rev { background: #2e2240; } :root[data-theme="dark"] .rk-rev span { color: #d1bdea; }
+.rk-state.fail { background: #ffe3d9; color: #c72e1a; } :root[data-theme="dark"] .rk-state.fail { background: #3d211b; color: #ff9f8a; }

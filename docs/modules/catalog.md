@@ -373,6 +373,16 @@ with final-pass record and hold, receivable batches, the caller's postings today
 `POST /check` (same rules, no writes), `GET /lookup?q=&status=ready|allocated|hold`
 (`inventory.view`). `production.receive` may file production issues (the mismatch report).
 Tests: `tests/rts.test.ts`.
+**Repair-parts interface (mobile Parts clerk, Figma 83:*):** `production.routes.ts` adds
+`GET /repairs/:id/context` (unit, source inspection with station/priority, duplicate open
+requests, stock per location with approved sources first, pending revision, events, live
+shortage), `GET /repair-history?q=&state=issued|rejected|blocked` (counts), `POST
+/repairs/:id/shortage` (merge; records an escalation), `POST /repairs/:id/revision` (merge; the
+clerk proposes another part / quantity) and `POST /repairs/:id/revision/decide` (claim; the
+requester or `production.approve` / `inventory.adjust`, never the proposer). Accept refuses,
+before any write, a non-storage source (truck), a pending revision, a picked quantity other
+than requested, or a scanned label that isn't the requested SKU. Tables `repair_revisions`,
+`repair_request_events` (createSchema, no bump). Tests: `tests/repair-parts-v2.test.ts`.
 **Offline (sync/, phase 4b):** every mutating route is classed — floor events (release, kit accept,
 progress, units + photo, QC/QA inspection, products-in, batch inspection) `physical`; new job orders /
 batches / repair and issue reports `merge`; decisions `claim` (a job order's → its source-location
@@ -590,6 +600,11 @@ handoff (recipient's token verified, never displayed) → proof (photo + signatu
 confirm → recorded / receipt; incomplete allocation → partial release only with Sales'
 authority; reports to Sales. Allocation and warehouse-out are online-only with idempotency keys.
 `lib/signature.js` no longer clears a drawn signature on height-only resizes (keyboard/toolbar).
+Sixth: Parts clerk repair-parts requests, `modules/manufacturing/repairs.js` (Figma 83:16–83:488,
+`#/repairs`, orange `parts` accent) — queue (Pending / Shortage / Issued today) → review → verify
+context → select an approved source → pick (scan must be the requested SKU, exact quantity) →
+review issue → confirm (tick) → issued; reject (reason + review tick), shortage escalation,
+revision proposal and a read-only history. Issue and reject are online-only with idempotency keys.
 **Shared-phone safety:** `lib/queue.js` stamps each queued op with the account that queued it
 and only lists/sends/discards the signed-in account's ops (the service worker's replay checks the
 same, against the account stored with its token); another account's ops wait for that person.

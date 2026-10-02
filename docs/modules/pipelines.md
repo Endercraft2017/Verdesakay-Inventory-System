@@ -231,6 +231,16 @@ raised by the sales-order shortfall flow.
    accepting is what actually issues the part from stock and (for a "replace") books
    the removed one into its damage twin. The unit can't be re-inspected while any of
    its requests are still `requested`.
+   - **Rules at issue:** only an approved storage source (not a truck); the scanned label must
+     be the requested SKU and the picked quantity exactly the requested one — else 409, no
+     stock change.
+   - **Branch — shortage:** no approved source holds enough → the request stays open and
+     blocked (computed live); the clerk can escalate it (`repair_request_events`).
+   - **Branch — revision:** another part or quantity needs a formal revision proposed by the
+     clerk and approved by the requester or a supervisor (never the proposer); issue is
+     refused while it is pending, and on approval the request takes the new part / quantity.
+   - **Mobile (Parts clerk, Figma 83:*)** — `#/repairs`: review → context → source → pick →
+     review issue → confirm (online-only, idempotent); reject, shortage, revision, history.
 6. **Products In / RTS recording** (`manufacturing` → `inventory`) — done by the
    receiving clerk (`receiving_clerk` role, or `production.receive`). Mirrors the
    Purchasing Goods Receipt pattern: passed units / signed-off batches post into

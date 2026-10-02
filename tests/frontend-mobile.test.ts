@@ -722,6 +722,107 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
     });
   });
 
+  describe('Parts clerk repair-parts requests (Figma 83:*)', () => {
+    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const PC = { id: 51, username: 'pc1', full_name: 'Carlo Reyes', role: 'parts_clerk', employee: true, modules: null,
+      permissions: ['inventory.view', 'inventory.mobile', 'production.repairs', 'messages.view', 'messages.send'] };
+    const REQ = { id: 81, number: 'RPR-00081', unit_id: 9, unit_identifier: 'K4-MTR-260924-0184-01', job_order_id: 184, job_order_number: 'JO-2026-184',
+      kind: 'replace', component_item_id: 12, component_name: 'Left signal assembly', quantity: 1, fault: 'production', return_to_damage: 1,
+      status: 'requested', requested_by: 21, decided_by: null, decided_at: null, notes: null };
+    const SHORT = { ...REQ, id: 87, number: 'RPR-00087', component_name: 'Warranty card pack' };
+    const CTX = { request: REQ, unit: { id: 9, identifier: REQ.unit_identifier, status: 'rework', product_name: 'K4' },
+      inspection: { id: 418, stage: 1, remarks: 'Intermittent signal failure confirmed by QC', station: 'Wiring', priority: 'Urgent' },
+      item: { id: 12, name: 'Left signal assembly', sku: 'SIG-L-60V-K4' }, duplicates: [],
+      sources: [{ id: 2, name: 'Parts Warehouse A-12', type: 'warehouse', is_default: 1, available: 6, approved: true },
+        { id: 7, name: 'Van 3', type: 'truck', is_default: 0, available: 2, approved: false }],
+      revision: null, events: [], shortage: false };
+    function fake(posts: { url: string; body: any; key?: string }[]) {
+      return (url: string, init: { method?: string; body?: string; headers?: Record<string, string> }) => {
+        if (init && init.method === 'POST') { posts.push({ url, body: JSON.parse(String(init.body || '{}')), key: init.headers && init.headers['Idempotency-Key'] }); return { ...REQ, status: 'accepted' }; }
+        if (url === '/api/production/repairs?status=requested') return [REQ, SHORT];
+        if (url === '/api/production/repair-history?state=blocked') return { counts: { issued: 0, rejected: 0, blocked: 1 }, rows: [SHORT] };
+        if (url === '/api/production/repair-history?state=issued') return { counts: { issued: 0, rejected: 0, blocked: 1 }, rows: [] };
+        if (url === '/api/production/repairs/81/context') return CTX;
+        return undefined;
+      };
+    }
+
+    it('splits the queue into Pending and Shortage', async () => {
+      const win = await bootAs(PC, fake([]));
+      win.location.hash = '#/repairs';
+      await wait();
+      const view = win.document.getElementById('m-view');
+      expect(view.getAttribute('data-figma-node')).toBe('83:16');
+      expect(win.document.documentElement.getAttribute('data-role-accent')).toBe('parts');
+      expect(view.textContent).toContain('RPR-00081');
+      expect(view.textContent).not.toContain('RPR-00087');
+      (view.querySelector('[data-tab="short"]') as HTMLButtonElement).click();
+      expect(view.textContent).toContain('RPR-00087');
+    });
+
+    it('marks a non-approved source as unpickable and blocks a different scanned SKU', async () => {
+      const win = await bootAs(PC, fake([]));
+      const doc = win.document;
+      win.location.hash = '#/repairs?id=81&step=source';
+      await wait();
+      expect(doc.getElementById('m-view').textContent).toContain('Not an approved repair-parts source');
+      expect(doc.querySelector('[data-l="7"]')).toBeNull();
+      expect(doc.getElementById('rp-go')!.textContent).toBe('Use Parts Warehouse A-12');
+      win.mScanner = { open: (o: { onResult: (c: string) => void }) => o.onResult('SIG-L-60V-K4B') };
+      win.location.hash = '#/repairs?id=81&step=pick';
+      await wait();
+      (doc.querySelector('.rk-identify') as HTMLButtonElement).click();
+      expect(doc.getElementById('m-view').textContent).toContain('Different part');
+      expect(doc.getElementById('rp-rev')!.textContent).toBe('Request revision');
+    });
+
+    it('issues online only, with the scanned SKU, exact quantity and an idempotency key', async () => {
+      const posts: { url: string; body: any; key?: string }[] = [];
+      const win = await bootAs(PC, fake(posts));
+      const doc = win.document;
+      win.mScanner = { open: (o: { onResult: (c: string) => void }) => o.onResult('SIG-L-60V-K4') };
+      win.location.hash = '#/repairs?id=81&step=source';
+      await wait();
+      (doc.getElementById('rp-go') as HTMLButtonElement).click();
+      await wait();
+      (doc.querySelector('.rk-identify') as HTMLButtonElement).click();
+      (doc.getElementById('rp-go') as HTMLButtonElement).click();
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('83:247');
+      win.location.hash = '#/repairs?id=81&step=confirm';
+      await wait();
+      const ok = doc.getElementById('rp-ok') as HTMLInputElement;
+      ok.checked = true; ok.dispatchEvent(new win.Event('change'));
+      Object.defineProperty(win.navigator, 'onLine', { value: false, configurable: true });
+      (doc.getElementById('rp-post') as HTMLButtonElement).click();
+      await wait();
+      expect(posts).toEqual([]);
+      Object.defineProperty(win.navigator, 'onLine', { value: true, configurable: true });
+      (doc.getElementById('rp-post') as HTMLButtonElement).click();
+      await wait(80);
+      expect(posts).toHaveLength(1);
+      expect(posts[0]!.url).toBe('/api/production/repairs/81/accept');
+      expect(posts[0]!.body).toEqual({ from_location_id: 2, scanned_code: 'SIG-L-60V-K4', picked_quantity: 1 });
+      expect(posts[0]!.key).toMatch(/^rpr-/);
+    });
+
+    it('needs the review tick and a reason to reject', async () => {
+      const posts: { url: string; body: any }[] = [];
+      const win = await bootAs(PC, fake(posts));
+      const doc = win.document;
+      win.location.hash = '#/repairs?id=81&step=reject';
+      await wait();
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('83:375');
+      expect((doc.getElementById('rp-post') as HTMLButtonElement).disabled).toBe(true);
+      const ok = doc.getElementById('rp-ok') as HTMLInputElement;
+      ok.checked = true; ok.dispatchEvent(new win.Event('change'));
+      (doc.querySelector('[data-det]') as HTMLTextAreaElement).value = 'Covered by RPR-00080';
+      (doc.getElementById('rp-post') as HTMLButtonElement).click();
+      await wait(80);
+      expect(posts[0]).toMatchObject({ url: '/api/production/repairs/81/reject', body: { warehouse_remarks: 'Duplicate / invalid request — Covered by RPR-00080' } });
+    });
+  });
+
   describe('RTS clerk ready-to-sell intake (Figma 74:*)', () => {
     const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
     const RTS = { id: 31, username: 'rts1', full_name: 'Carlo Reyes', role: 'receiving_clerk', employee: true, modules: null,
@@ -915,9 +1016,13 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       rts: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/receiving.js'), 'utf8'),
       releasing: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/inventory/so.js'), 'utf8'),
     };
-    expect(files.warehouse).toContain("data-role-screen', 'warehouseman'");
-    expect(files.warehouse).toContain("'/production/repairs/' + r.id + '/accept'");
-    expect(files.warehouse).toContain("'/production/repairs/' + r.id + '/reject'");
+    expect(files.warehouse).toContain("role: 'parts'");
+    for (const node of ['83:16', '83:68', '83:109', '83:158', '83:206', '83:247', '83:295', '83:332', '83:375', '83:416', '83:452', '83:488']) {
+      expect(files.warehouse).toContain("'" + node + "'");
+    }
+    for (const call of ["'/production/repairs/' + r.id + '/accept'", "'/production/repairs/' + r.id + '/reject'", "'/production/repairs/' + r.id + '/revision'", "'/production/repairs/' + r.id + '/shortage'"]) {
+      expect(files.warehouse).toContain(call);
+    }
     expect(files.hub).toContain("data-role-screen', 'production-manager'");
     // Production Lead + Manager: every Figma frame mapped, live endpoints kept.
     for (const node of ['66:14', '66:79', '66:133', '66:185', '66:240', '66:294', '66:356', '66:408', '66:462', '66:515', '66:580', '66:650']) {
