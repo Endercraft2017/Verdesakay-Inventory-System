@@ -10,6 +10,7 @@ import {
 } from './quickbooks';
 import { currentSlug } from '../../platform/quota';
 import type { Order, OrderItem } from '../../shared/types';
+import { syncClass } from '../../sync';
 
 const router = Router();
 
@@ -67,20 +68,21 @@ router.get('/connect', requirePermission('users.manage'), (_req, res) => {
 });
 
 // POST /api/quickbooks/disconnect
-router.post('/disconnect', requirePermission('users.manage'), (_req, res) => {
+// QuickBooks is reached from the cloud only (D8).
+router.post('/disconnect', requirePermission('users.manage'), syncClass('online'), (_req, res) => {
   disconnect();
   res.json({ ok: true });
 });
 
 // PUT /api/quickbooks/auto-push  { enabled: boolean }
-router.put('/auto-push', requirePermission('users.manage'), (req, res) => {
+router.put('/auto-push', requirePermission('users.manage'), syncClass('online'), (req, res) => {
   const { enabled } = parseBody(z.object({ enabled: z.boolean() }), req.body);
   setAutoPush(enabled);
   res.json({ ok: true, auto_push: enabled });
 });
 
 // POST /api/quickbooks/push/order/:id — push a single order (create or update in QBO)
-router.post('/push/order/:id', requirePermission('orders.edit'), async (req, res, next) => {
+router.post('/push/order/:id', requirePermission('orders.edit'), syncClass('online'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);

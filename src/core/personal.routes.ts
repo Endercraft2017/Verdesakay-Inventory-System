@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { requireAuth } from '../shared/auth';
 import { qb, all, first, exec, sql } from '../shared/qb';
 import { parseBody, noteSchema, taskSchema, updateTaskSchema, bookmarkSchema } from '../shared/validation';
+import { syncClass } from '../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -17,7 +18,7 @@ router.get('/notes', (req, res) => {
   ));
 });
 
-router.post('/notes', (req, res) => {
+router.post('/notes', syncClass('merge'), (req, res) => {
   const input = parseBody(noteSchema, req.body);
   const info = exec(
     qb.insertInto('notes').values({ user_id: req.user!.id, title: input.title ?? null, body: input.body })
@@ -25,7 +26,7 @@ router.post('/notes', (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
-router.put('/notes/:id', (req, res) => {
+router.put('/notes/:id', syncClass('merge'), (req, res) => {
   const input = parseBody(noteSchema, req.body);
   const info = exec(
     qb.updateTable('notes')
@@ -40,7 +41,7 @@ router.put('/notes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-router.delete('/notes/:id', (req, res) => {
+router.delete('/notes/:id', syncClass('merge'), (req, res) => {
   const info = exec(
     qb.deleteFrom('notes').where('id', '=', Number(req.params.id)).where('user_id', '=', req.user!.id)
   );
@@ -63,7 +64,7 @@ router.get('/tasks', (req, res) => {
   ));
 });
 
-router.post('/tasks', (req, res) => {
+router.post('/tasks', syncClass('merge'), (req, res) => {
   const input = parseBody(taskSchema, req.body);
   const info = exec(qb.insertInto('tasks').values({
     user_id: req.user!.id,
@@ -76,7 +77,7 @@ router.post('/tasks', (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
-router.put('/tasks/:id', (req, res) => {
+router.put('/tasks/:id', syncClass('merge'), (req, res) => {
   const id = Number(req.params.id);
   const task = first(qb.selectFrom('tasks').selectAll().where('id', '=', id).where('user_id', '=', req.user!.id));
   if (!task) {
@@ -103,7 +104,7 @@ router.put('/tasks/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-router.delete('/tasks/:id', (req, res) => {
+router.delete('/tasks/:id', syncClass('merge'), (req, res) => {
   const info = exec(
     qb.deleteFrom('tasks').where('id', '=', Number(req.params.id)).where('user_id', '=', req.user!.id)
   );
@@ -127,7 +128,7 @@ router.get('/bookmarks', (req, res) => {
   );
 });
 
-router.post('/bookmarks', (req, res) => {
+router.post('/bookmarks', syncClass('merge'), (req, res) => {
   const input = parseBody(bookmarkSchema, req.body);
   const info = exec(qb.insertInto('bookmarks').values({
     user_id: req.user!.id,
@@ -138,7 +139,7 @@ router.post('/bookmarks', (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
-router.delete('/bookmarks/:id', (req, res) => {
+router.delete('/bookmarks/:id', syncClass('merge'), (req, res) => {
   const info = exec(
     qb.deleteFrom('bookmarks').where('id', '=', Number(req.params.id)).where('user_id', '=', req.user!.id)
   );

@@ -82,8 +82,20 @@ describe('a DB without a sync role', () => {
 
 describe('the node', () => {
   it('refuses writes from routes with no sync class (they would never sync)', async () => {
-    // Notes are not classed yet: the write is refused at the database, nothing is stored.
-    const r = await ctx.api.post('/api/notes').set(nodeHdr()).send({ body: 'Offline note' });
+    // Every real route declares a class by now (phase 4), so a throwaway unclassed route on a
+    // mini app bound to the node DB stands in: the write is refused at the database, nothing stored.
+    const mini = express();
+    mini.use(express.json());
+    mini.use((req, _res, next) => dbmod.tenantStore.run({ db: nodeDb(), slug: NODE }, next));
+    mini.use(sync.syncRequestMiddleware);
+    mini.post('/unclassed-note', (req, res) => {
+      dbmod.run('INSERT INTO notes (user_id, body) VALUES (1, ?)', String(req.body.body));
+      res.status(201).json({ ok: true });
+    });
+    mini.use((err: Error & { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      res.status(err.status ?? 500).json({ error: err.message });
+    });
+    const r = await supertest(mini).post('/unclassed-note').send({ body: 'Offline note' });
     expect(r.status).toBe(503);
     expect(r.body.error).toMatch(/internet/i);
     expect(nodeDb().prepare("SELECT COUNT(*) AS n FROM notes WHERE body = 'Offline note'").get()).toEqual({ n: 0 });

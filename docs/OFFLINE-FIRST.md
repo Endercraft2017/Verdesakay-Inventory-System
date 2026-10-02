@@ -1120,3 +1120,41 @@ into it would defeat the close. The site's copy follows the cloud (the entry sta
   and account administration;
 - the online-only modules: AI, email, QuickBooks, the platform console, signup.
 The online-only modules stay that way (D8). The core leftovers are a small follow-up.
+
+## 28. Phase 4i as built (2026-10-02): the core leftovers, and a guard against drift
+
+### Classes
+
+| Class | Routes |
+|---|---|
+| `merge` | chat (send with files, edit, react, mark read, delete your own), personal notes / tasks / bookmarks, bug reports (with screenshots), your own display name |
+| `claim` (company-wide: the main site) | announcements, document templates and variables, departments, bug-report triage |
+| `online` | **credentials (D8):** user accounts and their access (create, edit, permissions, reset password, revoke sessions), change / forgot / reset password. **Online-only modules:** the AI assistant (chat, config, history, usage), email (settings, test, send), QuickBooks (disconnect, auto-push, push) |
+
+Some routes need no class because they write only node-local tables or nothing:
+- sign-in, sign-out and session revokes (sessions);
+- push subscribe / unsubscribe / test;
+- anonymous-report tickets, lookups and photo fetches;
+- pruning the activity log (this copy's own);
+- rebuilding the AI search index (per copy);
+- previewing deductions.
+
+The platform console and sign-up run only on the cloud.
+
+Chat's live delivery and pushes fire once, from the cloud (`sideEffectsSuppressed` in `shared/ws.ts` and
+`push.ts`). Deleting a chat message keeps its files on an installed PC until the cloud confirms.
+
+### The guard: `tests/sync-route-classes.test.ts`
+An installed PC refuses a write from a route with no sync class, so a new route that forgets one quietly
+stops working offline. The test scans every route file. Each POST / PUT / PATCH / DELETE must carry
+`syncClass(...)`, or appear in its `NO_CLASS_NEEDED` list with a reason. It also checks that every entry in
+that list still names a real, unclassed route. It sees all 262 mutating routes.
+
+**What the tests showed** (`tests/sync-core.test.ts`):
+- At a LAN desk PC with no internet, a chat message with a file, a note and a bug report with a screenshot
+  were saved. The main site posted an announcement and added a department.
+- Creating a user and changing a password were refused (503, "needs an internet connection").
+- Everything reached the cloud, the file included, and the colleague saw the message there.
+- `tests/sync.test.ts`'s write-guard check now uses a throwaway unclassed route, since no real one is left.
+
+**Phase 4 is complete:** every route is either classed or listed with its reason.

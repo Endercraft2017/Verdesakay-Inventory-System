@@ -450,8 +450,8 @@ Pipelines offline so far (phase 4): time clock (4a), production run with site nu
 sales order fulfillment (4c), purchase-to-pay (4d), HR requests, approvals
 and records (4e), confidential reports (4f), payroll (4g), accounting (4h); every business
 pipeline above now runs offline.
-**Not built:** mobile sync UI; classing the core leftovers (announcements, chat, personal notes /
-tasks, templates, bug reports, user administration). This pipeline wraps the
+Every mutating route is classed or listed with a reason (phase 4i; guard test
+`tests/sync-route-classes.test.ts`). **Not built:** mobile sync UI. This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).

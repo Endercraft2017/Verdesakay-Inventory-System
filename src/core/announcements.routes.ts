@@ -7,6 +7,7 @@ import { requireAuth, requirePermission } from '../shared/auth';
 import { parseBody, announcementSchema, updateAnnouncementSchema } from '../shared/validation';
 import { notifyAll } from '../shared/push';
 import type { Announcement } from '../shared/types';
+import { syncClass } from '../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -31,7 +32,7 @@ router.get('/all', requirePermission('announce'), (_req, res) => {
 });
 
 // POST /api/announcements — announce
-router.post('/', requirePermission('announce'), async (req, res) => {
+router.post('/', requirePermission('announce'), syncClass('claim'), async (req, res) => {
   const input = parseBody(announcementSchema, req.body);
   const info = run(
     `INSERT INTO announcements (title, body, pinned, expires_at, created_by)
@@ -50,7 +51,7 @@ router.post('/', requirePermission('announce'), async (req, res) => {
 });
 
 // PUT /api/announcements/:id — announce
-router.put('/:id', requirePermission('announce'), (req, res) => {
+router.put('/:id', requirePermission('announce'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM announcements WHERE id = ?', id)) {
     res.status(404).json({ error: 'Announcement not found' }); return;
@@ -64,7 +65,7 @@ router.put('/:id', requirePermission('announce'), (req, res) => {
 });
 
 // DELETE /api/announcements/:id — announce
-router.delete('/:id', requirePermission('announce'), (req, res) => {
+router.delete('/:id', requirePermission('announce'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM announcements WHERE id = ?', Number(req.params.id));
   if (!info.changes) { res.status(404).json({ error: 'Announcement not found' }); return; }
   res.json({ ok: true });

@@ -12,6 +12,9 @@ import { requireAuth, requirePermission } from '../shared/auth';
 import { parseBody, sendMessageSchema, editMessageSchema, reactSchema } from '../shared/validation';
 import { notifyUser } from '../shared/push';
 import { broadcast } from '../shared/ws';
+import { syncClass } from '../sync';
+import { syncUpload } from '../sync/files';
+import { sideEffectsSuppressed } from '../shared/sync-context';
 
 const router = Router();
 router.use(requireAuth);
@@ -287,7 +290,7 @@ router.get('/with/:userId', requirePermission('messages.view'), (req, res) => {
 
 // POST /api/messages/with/:userId/read — bulk-mark every unread message from that user
 // read (opening a thread reads the whole thing, not one message at a time).
-router.post('/with/:userId/read', requirePermission('messages.view'), (req, res) => {
+router.post('/with/:userId/read', requirePermission('messages.view'), syncClass('merge'), (req, res) => {
   const info = run(
     "UPDATE messages SET read_at = datetime('now') WHERE sender_id = ? AND recipient_id = ? AND read_at IS NULL",
     Number(req.params.userId),
@@ -298,7 +301,7 @@ router.post('/with/:userId/read', requirePermission('messages.view'), (req, res)
 
 // POST /api/messages — send a message, optionally with up to 10 files (field `files`)
 // and/or a `reply_to_id` quoting an earlier message in the same conversation.
-router.post('/', requirePermission('messages.send'), upload.array('files', MAX_FILES_PER_MESSAGE), (req, res) => {
+router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpload(upload.array('files', MAX_FILES_PER_MESSAGE)), (req, res) => {
   const files = (req.files as Express.Multer.File[]) || [];
   let parsed: { recipient_id: number; subject?: string | null; body: string; reply_to_id?: number };
   try {
@@ -373,7 +376,7 @@ router.post('/', requirePermission('messages.send'), upload.array('files', MAX_F
 });
 
 // PATCH /api/messages/:id — sender-only edit.
-router.patch('/:id', requirePermission('messages.send'), (req, res) => {
+router.patch('/:id', requirePermission('messages.send'), syncClass('merge'), (req, res) => {
   const { body } = parseBody(editMessageSchema, req.body);
   const id = Number(req.params.id);
   const msg = queryOne<{ sender_id: number; recipient_id: number; deleted_at: string | null }>(
@@ -400,7 +403,7 @@ router.patch('/:id', requirePermission('messages.send'), (req, res) => {
 
 // POST /api/messages/:id/react {emoji} — sender or recipient; re-sending the same emoji
 // toggles the reaction off, a different emoji replaces it (one reaction per user).
-router.post('/:id/react', requirePermission('messages.view'), (req, res) => {
+router.post('/:id/react', requirePermission('messages.view'), syncClass('merge'), (req, res) => {
   const { emoji } = parseBody(reactSchema, req.body);
   const uid = req.user!.id;
   const id = Number(req.params.id);
@@ -481,7 +484,7 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
 
 // POST /api/messages/:id/read — mark a single received message read (kept alongside the
 // bulk POST /with/:userId/read; used directly by the AI tools).
-router.post('/:id/read', requirePermission('messages.view'), (req, res) => {
+router.post('/:id/read', requirePermission('messages.view'), syncClass('merge'), (req, res) => {
   const info = run(
     "UPDATE messages SET read_at = datetime('now') WHERE id = ? AND recipient_id = ? AND read_at IS NULL",
     Number(req.params.id),
@@ -493,7 +496,7 @@ router.post('/:id/read', requirePermission('messages.view'), (req, res) => {
 // DELETE /api/messages/:id — sender-only "unsend": soft-deletes (clears body, removes
 // attachments/reactions) rather than dropping the row, so the recipient sees "Message was
 // removed" instead of the thread silently losing a message.
-router.delete('/:id', requirePermission('messages.send'), (req, res) => {
+router.delete('/:id', requirePermission('messages.send'), syncClass('merge'), (req, res) => {
   const uid = req.user!.id;
   const id = Number(req.params.id);
   const msg = queryOne<{ sender_id: number; recipient_id: number; deleted_at: string | null }>(
@@ -516,7 +519,8 @@ router.delete('/:id', requirePermission('messages.send'), (req, res) => {
   run("UPDATE messages SET body = '', subject = NULL, deleted_at = datetime('now'), deleted_by = ? WHERE id = ?", uid, id);
   run('DELETE FROM message_attachments WHERE message_id = ?', id);
   run('DELETE FROM message_reactions WHERE message_id = ?', id);
-  atts.forEach((a) => fs.promises.unlink(path.join(uploadDir(), a.stored_name)).catch(() => {}));
+  // An installed PC keeps the files until the cloud confirms: a refused delete brings the rows back.
+  if (!sideEffectsSuppressed('unlink')) atts.forEach((a) => fs.promises.unlink(path.join(uploadDir(), a.stored_name)).catch(() => {}));
   broadcast(currentSlug(), [msg.sender_id, msg.recipient_id], { type: 'message:deleted', data: { id } });
   res.json({ ok: true });
 });

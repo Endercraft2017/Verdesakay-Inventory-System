@@ -6,6 +6,7 @@ import { requireAuth, requirePermission } from '../shared/auth';
 import { parseBody, templateSchema, companyProfileSchema, docVariableSchema } from '../shared/validation';
 import type { DocTemplate, CompanyProfile, DocVariable } from '../shared/types';
 import { DATA_SOURCE_CATALOG } from './doc-catalog';
+import { syncClass } from '../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -21,7 +22,7 @@ router.get('/company', (_req, res) => {
 });
 
 // PUT /api/templates/company — save company profile
-router.put('/company', requirePermission('templates.company'), (req, res) => {
+router.put('/company', requirePermission('templates.company'), syncClass('claim'), (req, res) => {
   const input = parseBody(companyProfileSchema, req.body);
   const profile: CompanyProfile = {
     name: input.name ?? '', address: input.address ?? '', phone: input.phone ?? '',
@@ -53,7 +54,7 @@ router.get('/variables', (req, res) => {
 });
 
 // POST /api/templates/variables
-router.post('/variables', requirePermission('templates.edit'), (req, res) => {
+router.post('/variables', requirePermission('templates.edit'), syncClass('claim'), (req, res) => {
   const v = parseBody(docVariableSchema, req.body);
   const templateId = v.scope === 'template' ? (v.template_id ?? null) : null;
   const dupe = queryOne(
@@ -75,7 +76,7 @@ router.post('/variables', requirePermission('templates.edit'), (req, res) => {
 });
 
 // PUT /api/templates/variables/:id (key + scope are fixed)
-router.put('/variables/:id', requirePermission('templates.edit'), (req, res) => {
+router.put('/variables/:id', requirePermission('templates.edit'), syncClass('claim'), (req, res) => {
   const v = parseBody(docVariableSchema, req.body);
   const info = run(
     `UPDATE doc_variables SET category = ?, label = ?, source_type = ?, value = ?, field_path = ?,
@@ -89,7 +90,7 @@ router.put('/variables/:id', requirePermission('templates.edit'), (req, res) => 
 });
 
 // DELETE /api/templates/variables/:id
-router.delete('/variables/:id', requirePermission('templates.edit'), (req, res) => {
+router.delete('/variables/:id', requirePermission('templates.edit'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM doc_variables WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) { res.status(404).json({ error: 'Variable not found' }); return; }
   res.json({ ok: true });
@@ -121,7 +122,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/templates (admin)
-router.post('/', requirePermission('templates.edit'), (req, res) => {
+router.post('/', requirePermission('templates.edit'), syncClass('claim'), (req, res) => {
   const input = parseBody(templateSchema, req.body);
   const info = run(
     'INSERT INTO doc_templates (name, type, period, body, copies_per_record, records_per_page, tile_fill, repeat_count, tile_continuous, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -140,7 +141,7 @@ router.post('/', requirePermission('templates.edit'), (req, res) => {
 });
 
 // PUT /api/templates/:id (admin)
-router.put('/:id', requirePermission('templates.edit'), (req, res) => {
+router.put('/:id', requirePermission('templates.edit'), syncClass('claim'), (req, res) => {
   const input = parseBody(templateSchema, req.body);
   const info = run(
     "UPDATE doc_templates SET name = ?, type = ?, period = ?, body = ?, copies_per_record = ?, records_per_page = ?, tile_fill = ?, repeat_count = ?, tile_continuous = ?, updated_at = datetime('now') WHERE id = ?",
@@ -163,7 +164,7 @@ router.put('/:id', requirePermission('templates.edit'), (req, res) => {
 });
 
 // DELETE /api/templates/:id (admin)
-router.delete('/:id', requirePermission('templates.edit'), (req, res) => {
+router.delete('/:id', requirePermission('templates.edit'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM doc_templates WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) {
     res.status(404).json({ error: 'Template not found' });

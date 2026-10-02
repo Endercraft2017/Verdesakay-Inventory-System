@@ -12,6 +12,8 @@ import { requireAuth, requirePermission } from '../shared/auth';
 import { parseBody, createBugReportSchema, updateBugReportSchema } from '../shared/validation';
 import { enforceQuota } from '../platform/quota';
 import type { BugReport } from '../shared/types';
+import { syncClass } from '../sync';
+import { syncUpload } from '../sync/files';
 
 const router = Router();
 router.use(requireAuth);
@@ -100,7 +102,7 @@ router.get('/:id/screenshots/:attId', requirePermission('users.manage'), (req, r
 });
 
 // POST /api/bug-reports — file a report; any signed-in user; up to 5 screenshots (field `screenshots`)
-router.post('/', upload.array('screenshots', MAX_SCREENSHOTS), (req, res) => {
+router.post('/', syncClass('merge'), syncUpload(upload.array('screenshots', MAX_SCREENSHOTS)), (req, res) => {
   const files = (req.files as Express.Multer.File[]) || [];
   let parsed: { title: string; steps_to_reproduce: string; description?: string | null; page_context?: string | null };
   try {
@@ -141,7 +143,7 @@ router.post('/', upload.array('screenshots', MAX_SCREENSHOTS), (req, res) => {
 });
 
 // PUT /api/bug-reports/:id — mark open/resolved, admin only
-router.put('/:id', requirePermission('users.manage'), (req, res) => {
+router.put('/:id', requirePermission('users.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(updateBugReportSchema, req.body);
   const id = Number(req.params.id);
   const info =

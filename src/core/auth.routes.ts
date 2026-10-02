@@ -16,6 +16,7 @@ import {
 } from '../shared/validation';
 import { sendMail, mailReady } from '../shared/mailer';
 import type { UserRow } from '../shared/types';
+import { syncClass } from '../sync';
 
 const router = Router();
 
@@ -114,7 +115,7 @@ router.get('/me', requireAuth, (req, res) => {
 });
 
 // POST /api/auth/change-password
-router.post('/change-password', requireAuth, (req, res) => {
+router.post('/change-password', requireAuth, syncClass('online'), (req, res) => {
   const { current_password, new_password } = parseBody(changePasswordSchema, req.body);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', req.user!.id)!;
   if (!bcrypt.compareSync(current_password, user.password_hash)) {
@@ -131,7 +132,7 @@ router.post('/change-password', requireAuth, (req, res) => {
 // POST /api/auth/forgot-password — { identifier }  (username or email).
 // Always 200 (never reveal whether an account exists). Emails a one-hour reset link if
 // the account has an email and this workspace has email configured.
-router.post('/forgot-password', async (req, res, next) => {
+router.post('/forgot-password', syncClass('online'), async (req, res, next) => {
   try {
     const { identifier } = parseBody(forgotPasswordSchema, req.body);
     const id = identifier.toLowerCase();
@@ -168,7 +169,7 @@ router.post('/forgot-password', async (req, res, next) => {
 });
 
 // POST /api/auth/reset-password — { token, new_password }
-router.post('/reset-password', (req, res) => {
+router.post('/reset-password', syncClass('online'), (req, res) => {
   const { token, new_password } = parseBody(selfResetPasswordSchema, req.body);
   const row = queryOne<{ user_id: number }>(
     "SELECT user_id FROM password_resets WHERE token_hash = ? AND used = 0 AND expires_at > datetime('now')",
@@ -185,7 +186,7 @@ router.post('/reset-password', (req, res) => {
 });
 
 // PUT /api/auth/profile — update your own display name
-router.put('/profile', requireAuth, (req, res) => {
+router.put('/profile', requireAuth, syncClass('merge'), (req, res) => {
   const { full_name } = parseBody(updateProfileSchema, req.body);
   run('UPDATE users SET full_name = ? WHERE id = ?', full_name, req.user!.id);
   res.json({ ok: true, full_name });

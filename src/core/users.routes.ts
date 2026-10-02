@@ -19,6 +19,7 @@ import {
   ALL_PERMISSIONS, ROLES, allRoleDefaults, HR_ASSIGNABLE_ROLES, HR_GRANTABLE_PERMISSIONS,
 } from '../shared/permissions';
 import type { UserRow, Department, Role } from '../shared/types';
+import { syncClass } from '../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -66,7 +67,7 @@ router.get('/', (req, res) => {
 
 // POST /api/users — create an account. hr.manage (without users.manage) may also create one —
 // the employee form's "create account" shortcut — but only with a non-privileged role.
-router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), (req, res) => {
+router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), (req, res) => {
   const input = parseBody(createUserSchema, req.body);
   if (!req.user!.permissions.includes('users.manage') && !HR_ASSIGNABLE_ROLES.includes(input.role)) {
     res.status(403).json({ error: 'HR can only create accounts with a staff role' });
@@ -93,7 +94,7 @@ router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), (req, res)
 });
 
 // PUT /api/users/:id — update account details
-router.put('/:id', requirePermission('users.manage'), (req, res) => {
+router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', id);
   if (!user) {
@@ -136,7 +137,7 @@ router.put('/:id', requirePermission('users.manage'), (req, res) => {
 });
 
 // POST /api/users/:id/reset-password
-router.post('/:id/reset-password', requirePermission('users.manage'), (req, res) => {
+router.post('/:id/reset-password', requirePermission('users.manage'), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
   const { new_password } = parseBody(resetPasswordSchema, req.body);
   const user = queryOne('SELECT id FROM users WHERE id = ?', id);
@@ -161,7 +162,7 @@ router.get('/:id/sessions', requirePermission('users.manage'), (req, res) => {
 });
 
 // POST /api/users/:id/sessions/revoke-all — sign this account out on every device.
-router.post('/:id/sessions/revoke-all', requirePermission('users.manage'), (req, res) => {
+router.post('/:id/sessions/revoke-all', requirePermission('users.manage'), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM users WHERE id = ?', id)) {
     res.status(404).json({ error: 'User not found' });
@@ -172,7 +173,7 @@ router.post('/:id/sessions/revoke-all', requirePermission('users.manage'), (req,
 });
 
 // POST /api/users/:id/sessions/:sid/revoke — sign this account out of one device.
-router.post('/:id/sessions/:sid/revoke', requirePermission('users.manage'), (req, res) => {
+router.post('/:id/sessions/:sid/revoke', requirePermission('users.manage'), syncClass('online'), (req, res) => {
   if (!endSessionBySid(Number(req.params.id), String(req.params.sid), 'revoked')) {
     res.status(404).json({ error: 'Session not found or already ended' });
     return;
@@ -210,7 +211,7 @@ router.get('/:id/access', requireAnyPermission(['users.manage', 'hr.manage']), (
 
 // PUT /api/users/:id/permissions — save sparse permission overrides for a user. An HR-only
 // caller may only edit staff-role accounts, and only change HR_GRANTABLE_PERMISSIONS keys.
-router.put('/:id/permissions', requireAnyPermission(['users.manage', 'hr.manage']), (req, res) => {
+router.put('/:id/permissions', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
   const user = queryOne<{ id: number; role: Role; permission_overrides: string }>(
     'SELECT id, role, permission_overrides FROM users WHERE id = ?', id);
@@ -256,7 +257,7 @@ router.get('/departments/list', (_req, res) => {
 // POST /api/users/departments — users.manage (full admin) or hr.manage (HR builds out its own
 // department list without needing full account-management rights). Rename/delete stay
 // users.manage-only below since they touch existing users/items/forms company-wide.
-router.post('/departments', requireAnyPermission(['users.manage', 'hr.manage']), (req, res) => {
+router.post('/departments', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('claim'), (req, res) => {
   const { name } = parseBody(createDepartmentSchema, req.body);
   const exists = queryOne('SELECT id FROM departments WHERE name = ? COLLATE NOCASE', name);
   if (exists) {
@@ -283,7 +284,7 @@ router.get('/departments', requirePermission('users.manage'), (_req, res) => {
 });
 
 // PUT /api/users/departments/:id
-router.put('/departments/:id', requirePermission('users.manage'), (req, res) => {
+router.put('/departments/:id', requirePermission('users.manage'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const dept = queryOne('SELECT id FROM departments WHERE id = ?', id);
   if (!dept) {
@@ -312,7 +313,7 @@ router.put('/departments/:id', requirePermission('users.manage'), (req, res) => 
 // department; hr.manage-only callers can delete one only if nothing outside HR's own domain
 // (user accounts, inventory items, files) references it — employees are fine, since that's
 // HR's own domain and just unassigns them, same as a users.manage delete would.
-router.delete('/departments/:id', requireAnyPermission(['users.manage', 'hr.manage']), (req, res) => {
+router.delete('/departments/:id', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!req.user!.permissions.includes('users.manage')) {
     const usage = queryOne<{ user_count: number; item_count: number; form_count: number }>(

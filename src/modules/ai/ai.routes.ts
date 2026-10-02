@@ -26,6 +26,7 @@ import { getAiConfig, activeAiConfig, saveAiConfig, addTokenUsage, tokenCapReach
 import { enforceQuota, recordAiCall } from '../../platform/quota';
 import { parseBody, aiConfigSchema } from '../../shared/validation';
 import type { AuthUser } from '../../shared/types';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
@@ -73,7 +74,8 @@ router.get('/messages', (req, res) => {
 });
 
 // DELETE /api/ai/messages — clear the caller's saved conversation
-router.delete('/messages', (req, res) => {
+// The assistant, its key and its history are cloud-only (D8): on an installed PC these say so.
+router.delete('/messages', syncClass('online'), (req, res) => {
   run('DELETE FROM ai_messages WHERE user_id = ?', req.user!.id);
   res.json({ ok: true });
 });
@@ -102,13 +104,13 @@ router.get('/config', requirePermission('users.manage'), (_req, res) => {
 
 // PUT /api/ai/config — { model?, base_url?, api_key?, token_cap? } (api_key '' clears → env
 // fallback; token_cap 0 = unlimited)
-router.put('/config', requirePermission('users.manage'), (req, res) => {
+router.put('/config', requirePermission('users.manage'), syncClass('online'), (req, res) => {
   saveAiConfig(parseBody(aiConfigSchema, req.body));
   res.json(getAiConfig());
 });
 
 // POST /api/ai/reset-usage — zero the running token counter (doesn't touch the cap itself)
-router.post('/reset-usage', requirePermission('users.manage'), (_req, res) => {
+router.post('/reset-usage', requirePermission('users.manage'), syncClass('online'), (_req, res) => {
   resetTokenUsage();
   res.json(getAiConfig());
 });
@@ -220,7 +222,7 @@ async function callLlm(
 // Route
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.post('/chat', async (req, res, next) => {
+router.post('/chat', syncClass('online'), async (req, res, next) => {
   try {
     const parsed = chatSchema.safeParse(req.body);
     if (!parsed.success) {

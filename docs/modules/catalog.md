@@ -184,6 +184,11 @@ personal notes/tasks, announcements, activity log, analytics, push-reminder rout
 `form-builder.routes.ts`, `messages.routes.ts`, `personal.routes.ts`,
 `templates.routes.ts`, `me.routes.ts`, `announcements.routes.ts`, `activity.routes.ts`,
 `analytics.routes.ts`, `push.routes.ts`.
+**Offline (sync/, phase 4i, §28):** chat, personal notes / tasks / bookmarks and bug reports `merge` (files
+travel with the command); announcements, templates, departments and bug triage `claim`s at the main site; user
+accounts, access and passwords `online` (credentials, D8). Sign-in / sign-out / push / tickets / activity-log
+pruning write only node-local tables and need no class. `tests/sync-route-classes.test.ts` fails any new
+mutating route without a sync class.
 **Offline (sync/, phase 4e, §24):** self-service (`me.routes.ts`: file a time fix, cancel your own
 request or fix, contact profile, which re-checks the password on the PC and redacts it from the command) and
 filing form records are `merge`; approval decisions, the form designer, record edits / deletes and global
@@ -530,6 +535,8 @@ report/docx generation, FTS5 RAG over documents, HR-form proposals, sending mail
 markdown/docx rendering, used only by `ai-reporting.ts` today), routes: `ai.routes.ts`.
 **Dependencies:** `shared/`, `modules/inventory` (`ai-tools.ts` calls stock-mutation
 functions directly), `core/` (the `visibilityClause` wart noted above).
+**Offline (phase 4i):** `online`: the assistant, its key, history and usage stay on the cloud (D8); an
+installed PC says it needs the internet. The search-index rebuild is per copy (no class).
 **Status:** working.
 
 ## modules/email
@@ -537,6 +544,7 @@ functions directly), `core/` (the `visibilityClause` wart noted above).
 **Responsibility:** the BYO-SMTP outbound mail tool and its route surface.
 **Owned files:** routes: `mail.routes.ts` (the transport itself, `mailer.ts`, lives in
 `shared/` since `modules/ai` and `modules/quickbooks` also send mail through it).
+**Offline (phase 4i):** `online`: the mail server and its password are cloud-only (D8).
 **Status:** working.
 
 ## modules/quickbooks
@@ -544,6 +552,7 @@ functions directly), `core/` (the `visibilityClause` wart noted above).
 **Responsibility:** one-way push of orders to QuickBooks Online (per-tenant OAuth).
 **Owned files:** `quickbooks.ts`, routes: `quickbooks.routes.ts`.
 **Dependencies:** `shared/` (`mailer.ts`, `secrets.ts` for OAuth token storage).
+**Offline (phase 4i):** `online`: QuickBooks is reached from the cloud only (D8).
 **Status:** working.
 
 ## mobile (frontend-only surface)
