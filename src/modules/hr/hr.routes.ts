@@ -48,9 +48,9 @@ import { sendMail } from '../../shared/mailer';
 import { ledgerEnabled, maybeAutoPostPayroll } from '../accounting/accounting-autopost';
 import { noWorkFormIds as noWorkFormIdsWithAction } from '../../core/form-actions';
 import { notifyUser } from '../../shared/push';
-import { syncClass } from '../../sync';
+import { recordSiteClash, syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
-import { now, sideEffectsSuppressed } from '../../shared/sync-context';
+import { now, sideEffectsSuppressed, siteDecisionStands } from '../../shared/sync-context';
 
 // Reuses the browser's own payslip HTML renderer instead of duplicating it server-side —
 // hr-payroll-print.js is pure string logic (no DOM/window access) and already resolves its
@@ -283,14 +283,14 @@ router.get('/payroll-tables', requirePermission('hr.view'), (req, res) => {
 });
 
 // POST /api/hr/payroll-tables — add/replace a version { kind, effective_from, data, note? }
-router.post('/payroll-tables', requirePermission('hr.manage'), (req, res) => {
+router.post('/payroll-tables', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(payrollTableSchema, req.body);
   upsertPayrollTable(input.kind, input.effective_from, input.data, input.note ?? null, req.user!.id);
   res.status(201).json({ ok: true });
 });
 
 // DELETE /api/hr/payroll-tables/:id
-router.delete('/payroll-tables/:id', requirePermission('hr.manage'), (req, res) => {
+router.delete('/payroll-tables/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   if (!deletePayrollTable(Number(req.params.id))) {
     res.status(404).json({ error: 'Rate table version not found' });
     return;
@@ -977,7 +977,7 @@ router.get('/payroll-policy', requirePermission('hr.view'), (_req, res) => {
 });
 
 // PUT /api/hr/payroll-policy
-router.put('/payroll-policy', requirePermission('hr.manage'), (req, res) => {
+router.put('/payroll-policy', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(payrollPolicySchema, req.body);
   setSetting('payroll_policy', input);
   res.json(input);
@@ -1060,7 +1060,7 @@ router.get('/timekeeping/incomplete', requirePermission('hr.view'), (_req, res) 
 });
 
 // POST /api/hr/periods
-router.post('/periods', requirePermission('hr.manage'), (req, res) => {
+router.post('/periods', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(attendancePeriodSchema, req.body);
   const info = run(
     `INSERT INTO attendance_periods (label, start_date, end_date, created_by) VALUES (?, ?, ?, ?)`,
@@ -1070,7 +1070,7 @@ router.post('/periods', requirePermission('hr.manage'), (req, res) => {
 });
 
 // PUT /api/hr/periods/:id — update header; extend roster day-rows to cover a widened range
-router.put('/periods/:id', requirePermission('hr.manage'), (req, res) => {
+router.put('/periods/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM attendance_periods WHERE id = ?', id)) {
     res.status(404).json({ error: 'Cutoff not found' }); return;
@@ -1097,7 +1097,7 @@ router.put('/periods/:id', requirePermission('hr.manage'), (req, res) => {
 });
 
 // DELETE /api/hr/periods/:id (cascades attendance_records)
-router.delete('/periods/:id', requirePermission('hr.manage'), (req, res) => {
+router.delete('/periods/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM attendance_periods WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) { res.status(404).json({ error: 'Cutoff not found' }); return; }
   res.json({ ok: true });
@@ -1106,7 +1106,7 @@ router.delete('/periods/:id', requirePermission('hr.manage'), (req, res) => {
 // ─── Roster + daily attendance ──────────────────────────────────────────────
 
 // POST /api/hr/periods/:id/employees — add an employee to the cutoff roster
-router.post('/periods/:id/employees', requirePermission('hr.manage'), (req, res) => {
+router.post('/periods/:id/employees', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
@@ -1122,7 +1122,7 @@ router.post('/periods/:id/employees', requirePermission('hr.manage'), (req, res)
 // employee_ids list (checkbox multi-select) or a department/status/name filter ("Add All"),
 // resolved server-side so it always reflects the true matching set. Idempotent per employee
 // (ensureRosterDays uses INSERT OR IGNORE), so re-adding someone already on the roster is a no-op.
-router.post('/periods/:id/employees/bulk', requirePermission('hr.manage'), (req, res) => {
+router.post('/periods/:id/employees/bulk', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
@@ -1152,7 +1152,7 @@ router.post('/periods/:id/employees/bulk', requirePermission('hr.manage'), (req,
 });
 
 // DELETE /api/hr/periods/:id/employees/:employeeId — remove an employee from the roster
-router.delete('/periods/:id/employees/:employeeId', requirePermission('hr.manage'), (req, res) => {
+router.delete('/periods/:id/employees/:employeeId', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const info = run(
     'DELETE FROM attendance_records WHERE period_id = ? AND employee_id = ?',
     Number(req.params.id), Number(req.params.employeeId)
@@ -1534,7 +1534,7 @@ router.get('/cutoff-flags', requirePermission('hr.view'), (req, res) => {
 });
 
 // PUT /api/hr/periods/:id/attendance — replace one employee's daily rows for this cutoff
-router.put('/periods/:id/attendance', requirePermission('hr.manage'), (req, res) => {
+router.put('/periods/:id/attendance', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.id);
   if (!queryOne('SELECT id FROM attendance_periods WHERE id = ?', periodId)) {
     res.status(404).json({ error: 'Cutoff not found' }); return;
@@ -1912,7 +1912,7 @@ function computeEmployeeStatutory(
 }
 
 // POST /api/hr/periods/:id/generate-payslips
-router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (req, res) => {
+router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
@@ -2154,7 +2154,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), (r
 // aggregate journal entry (Payroll Journal). A deliberate, separate action from
 // generate-payslips itself (see src/accounting-autopost.ts's maybeAutoPostPayroll for why) —
 // safe to click again after a regenerate, which reverses the prior entry and posts fresh.
-router.post('/periods/:id/post-payroll-gl', requirePermission('hr.manage'), (req, res) => {
+router.post('/periods/:id/post-payroll-gl', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   if (!ledgerEnabled()) { res.status(400).json({ error: 'The General Ledger isn’t enabled — turn it on under Accounting → Books first.' }); return; }
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
@@ -2172,27 +2172,43 @@ router.post('/periods/:id/post-payroll-gl', requirePermission('hr.manage'), (req
 // POST /api/hr/payroll/:recordId/mark-paid — locks a generated payslip: generate-payslips
 // will skip it on future regenerates, and the generic /api/form-records PUT/DELETE routes
 // refuse to touch it (see form-builder.routes.ts) until it's unmarked.
-router.post('/payroll/:recordId/mark-paid', requirePermission('hr.manage'), (req, res) => {
+router.post('/payroll/:recordId/mark-paid', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const rec = queryOne<{ id: number; status: string; slug: string }>(
     `SELECT fr.id, fr.status, fd.slug FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     Number(req.params.recordId)
   );
   if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
-  if (rec.status === 'paid') { res.status(400).json({ error: 'Already marked paid' }); return; }
+  if (rec.status === 'paid') {
+    // Clash-check (D6): marked paid on the cloud too — the same outcome; kept, flagged.
+    if (siteDecisionStands()) {
+      recordSiteClash(req, `Payslip #${rec.id} was marked paid on the cloud and at the main site.`);
+      res.json({ ok: true, clash: true });
+      return;
+    }
+    res.status(400).json({ error: 'Already marked paid' }); return;
+  }
   run("UPDATE form_records SET status = 'paid', updated_at = datetime('now') WHERE id = ?", rec.id);
   res.json({ ok: true });
 });
 
 // POST /api/hr/payroll/:recordId/unmark-paid — unlocks it again for editing/regeneration.
-router.post('/payroll/:recordId/unmark-paid', requirePermission('hr.manage'), (req, res) => {
+router.post('/payroll/:recordId/unmark-paid', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const rec = queryOne<{ id: number; status: string; slug: string }>(
     `SELECT fr.id, fr.status, fd.slug FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     Number(req.params.recordId)
   );
   if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
-  if (rec.status !== 'paid') { res.status(400).json({ error: 'This payslip is not marked paid' }); return; }
+  if (rec.status !== 'paid') {
+    // Clash-check (D6): unmarked on the cloud too — the same outcome; kept, flagged.
+    if (siteDecisionStands()) {
+      recordSiteClash(req, `Payslip #${rec.id} was unmarked on the cloud and at the main site.`);
+      res.json({ ok: true, clash: true });
+      return;
+    }
+    res.status(400).json({ error: 'This payslip is not marked paid' }); return;
+  }
   run("UPDATE form_records SET status = 'draft', updated_at = datetime('now') WHERE id = ?", rec.id);
   res.json({ ok: true });
 });
@@ -2365,7 +2381,7 @@ router.post('/payroll/:recordId/preview-deductions', requirePermission('hr.manag
 // PUT /api/hr/payroll/:recordId/deductions — same recompute, persisted into the record. Locked
 // the same way the generic form-records PUT is (see form-builder.routes.ts) — a marked-Paid
 // payslip can't be touched until unmarked.
-router.put('/payroll/:recordId/deductions', requirePermission('hr.manage'), (req, res) => {
+router.put('/payroll/:recordId/deductions', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const ctx = resolvePayrollDeductionContext(Number(req.params.recordId), res);
   if (!ctx) return;
   if (ctx.rec.status === 'paid') {
@@ -2398,7 +2414,7 @@ router.put('/payroll/:recordId/deductions', requirePermission('hr.manage'), (req
 // Employees have no email of their own (that's exactly what the account-linking feature is
 // for) — this only works once HR has linked one under Employees, and only if that account has
 // an email address set.
-router.post('/payroll/:recordId/email', requirePermission('hr.manage'), async (req, res, next) => {
+router.post('/payroll/:recordId/email', requirePermission('hr.manage'), syncClass('online'), async (req, res, next) => {
   try {
     const rec = queryOne<FormRecord & { slug: string }>(
       `SELECT fr.*, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,

@@ -18,7 +18,7 @@ import { REQUEST_SLUGS } from './me.routes';
 import { INFO_CHANGE_SLUG, prepareInfoChange } from '../modules/hr/info-change';
 import type { FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../shared/types';
 import { syncClass } from '../sync';
-import { keepRequestContext } from '../shared/request-context';
+import { syncUpload } from '../sync/files';
 
 const router = Router();
 router.use(requireAuth);
@@ -191,7 +191,7 @@ router.delete('/form-definitions/:id', syncClass('claim'), (req, res) => {
 
 // POST /api/form-definitions/:id/import — bulk-create records from the payroll "Summary"
 // CSV export. body.period labels the payroll period (required); body.pay_date is optional.
-router.post('/form-definitions/:id/import', requirePermission('hr.manage'), keepRequestContext(csvUpload.single('file')), (req, res) => {
+router.post('/form-definitions/:id/import', requirePermission('hr.manage'), syncClass('claim'), syncUpload(csvUpload.single('file')), (req, res) => {
   const form = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', Number(req.params.id));
   if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
   if (form.slug !== 'hr_payroll') {

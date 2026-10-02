@@ -390,6 +390,10 @@ snapshot). Not linked to Inventory stock — issuing moves no stock.
 
 **Trigger:** a payroll period/cutoff is closed (`hr`, `hr.routes.ts`).
 
+**Offline (phase 4g, docs/OFFLINE-FIRST.md §26):** the whole run, from cutoff to marked paid, works at the
+main site with the internet down; payslip numbers come from the site host's blocks. Emailing payslips waits
+for the internet (it uses the company's mail server, which only the cloud has).
+
 0. **Punch capture** (`hr`, runs daily before any cutoff) — kiosk punches at an office PC
    (with the kiosk lock on — default when internet-facing — only PCs an HR manager approved;
    `kiosk-devices.ts`),
@@ -444,8 +448,8 @@ needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`);
 (phase 3c-ii: `claim`s decided at the owning site; the cloud keeps them, flagging clashes — D6).
 Pipelines offline so far (phase 4): time clock (4a), production run with site number blocks (4b),
 sales order fulfillment (4c), purchase-to-pay (4d), HR requests, approvals
-and records (4e), confidential reports (4f).
-**Not built:** mobile sync UI; the remaining pipelines (payroll, accounting — phase 4g+). This pipeline wraps the
+and records (4e), confidential reports (4f), payroll (4g).
+**Not built:** mobile sync UI; the remaining pipeline (accounting — phase 4h). This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).

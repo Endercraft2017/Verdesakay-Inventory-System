@@ -182,7 +182,7 @@ because every route defaults to the `online` class until it is reviewed.
 | **1. Command foundation** ✅ built 2026-09-30 (§10) | `src/sync/`: command log, HLC, ULID, `DEPLOY_MODE`, per-route `syncClass()` (undeclared routes refused on a node), allocation plan (node-partitioned IDs via renumber-after-insert + provisional/replayed document numbers), SQL request clock + `now()`, side-effect suppression on nodes (email/push/broadcast), cloud effect stream, replay through the real routes, changeset rebase, node-local tables, unattributed commands. CLAUDE.md rule reworded (D4). No behavior change for DBs without a sync role. **Moved:** sensitive-field encryption and the Node 24 test run → phase 3 (need the DPAPI spike / the Electron dependency); site-number block leasing → phase 3 (needs a host); converting handlers' `new Date()` to `now()` → per route as it is classed (phases 2, 4) |
 | **2. Inventory** ✅ built 2026-09-30 (§11) | Every inventory-module route classed (items, stock, locations, suppliers, customers). D1: a stock-out beyond recorded stock is accepted inside a synced command and opens a `stock_discrepancies` row (list + resolve API); direct cloud requests keep refusing it. Rebase applies changesets with foreign-key actions off. **Moved:** home sites → phase 3 (they only matter once site hosts decide claims); orders / deliveries / release slips → phase 4 (sales-release pipeline) |
 | **3. Desktop app + site host** (sub-phases 3a–3f below) | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
-| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records (4e ✅, §24) → anonymous reports (4f ✅, §25) → payroll → accounting/tax |
+| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records (4e ✅, §24) → anonymous reports (4f ✅, §25) → payroll (4g ✅, §26) → accounting/tax |
 | **5. Host election + failover** | Voting nodes, election, lease, terms, fencing (§4) |
 | **6. Hardening** | Conflict inbox with resolve actions, version shims, compaction of old commands/effects, sync health dashboard |
 
@@ -1059,3 +1059,26 @@ were not affected. Regression test: `tests/upload-tenant-context.test.ts`.
   day's date and the stripped photo. Both numbers opened it.
 - A follow-up from the PC under the provisional number reached the case.
 - A handler at the main site replied and changed the status offline, and the reporter saw both.
+
+## 26. Phase 4g as built (2026-10-02): payroll offline
+
+### Classes (`modules/hr/hr.routes.ts`, `core/form-builder.routes.ts`)
+
+| Class | Routes |
+|---|---|
+| `claim` (company-wide: the main site) | cutoffs (create / edit / delete), roster (add / bulk / remove), the attendance grid, generate payslips, deduction toggles, mark / unmark paid, post payroll to the GL, payroll tables, payroll policy, the payroll CSV import (the file travels with its command) |
+| `online` | email a payslip: it goes through the company's own mail server, which only the cloud has (D8) |
+| (none: writes nothing) | preview deductions, and the reads |
+
+Payroll is decided where HR works, at the main site, so a whole cutoff runs there with the internet
+down. Payslip numbers come from the host's blocks.
+
+**Checks relaxed under sync (D6):** marking a payslip paid that the cloud marked paid meanwhile, or
+unmarking one the cloud unmarked, reaches the same outcome. It is kept and flagged. A regenerate
+already skips payslips the cloud marked paid, so no clash-check is needed there. Editing a payslip
+the cloud marked paid stays refused (the conflict inbox), because a paid payslip is final.
+
+**What the tests showed** (`tests/sync-payroll.test.ts`): with the internet down, the main site created
+a cutoff, added an employee, entered two days of attendance, generated the payslip (a real number from
+its block), changed a deduction and marked it paid. Emailing it was refused with 503. Everything reached
+the cloud identically. A payslip marked paid on both sides stayed paid, flagged.

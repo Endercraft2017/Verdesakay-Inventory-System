@@ -462,8 +462,10 @@ site). `clock.ts` runs on `now()` (the punch's own time under sync); `kiosk-devi
 stamps `last_seen_at` on an installed PC.
 **Offline (phase 4e, docs/OFFLINE-FIRST.md §24):** employee records, 201 documents (upload `merge`, travels
 with the command), shifts, number policy, import and profile verification are `claim`s at the main
-site; issuing and returning company property is `physical`. Payroll routes are not classed yet (the
-payroll phase), so they are refused offline.
+site; issuing and returning company property is `physical`.
+**Offline (phase 4g, §26):** payroll (cutoffs, roster, attendance grid, generate payslips, deductions, mark /
+unmark paid, GL post, payroll tables and policy, the payroll CSV import) is `claim`s at the main site; emailing a
+payslip is `online`. Paid on both sides → kept, flagged (D6).
 **Status:** working.
 
 ## modules/payroll
