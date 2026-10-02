@@ -182,7 +182,7 @@ because every route defaults to the `online` class until it is reviewed.
 | **1. Command foundation** ✅ built 2026-09-30 (§10) | `src/sync/`: command log, HLC, ULID, `DEPLOY_MODE`, per-route `syncClass()` (undeclared routes refused on a node), allocation plan (node-partitioned IDs via renumber-after-insert + provisional/replayed document numbers), SQL request clock + `now()`, side-effect suppression on nodes (email/push/broadcast), cloud effect stream, replay through the real routes, changeset rebase, node-local tables, unattributed commands. CLAUDE.md rule reworded (D4). No behavior change for DBs without a sync role. **Moved:** sensitive-field encryption and the Node 24 test run → phase 3 (need the DPAPI spike / the Electron dependency); site-number block leasing → phase 3 (needs a host); converting handlers' `new Date()` to `now()` → per route as it is classed (phases 2, 4) |
 | **2. Inventory** ✅ built 2026-09-30 (§11) | Every inventory-module route classed (items, stock, locations, suppliers, customers). D1: a stock-out beyond recorded stock is accepted inside a synced command and opens a `stock_discrepancies` row (list + resolve API); direct cloud requests keep refusing it. Rebase applies changesets with foreign-key actions off. **Moved:** home sites → phase 3 (they only matter once site hosts decide claims); orders / deliveries / release slips → phase 4 (sales-release pipeline) |
 | **3. Desktop app + site host** (sub-phases 3a–3f below) | Home site on `locations` and main site on the tenant, installer, enrolment, full snapshot, sync protocol node ↔ host ↔ cloud (HTTP transport for phase 1's in-process `acceptCommand` / `pullFor` / `applyConfirmed`), badges, conflict inbox (first cut), one fixed host per site, `claim` via the host, site number blocks, blob lane + multipart commands, sensitive-field encryption, Node 24 test run |
-| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records (4e ✅, §24) → anonymous reports (4f ✅, §25) → payroll (4g ✅, §26) → accounting/tax |
+| **4. Remaining pipelines** | Class routes pipeline by pipeline: time clock (4a ✅) → production run (4b ✅) → sales order release (4c ✅, §22) → purchasing receipt (4d ✅, §23) → HR requests and records (4e ✅, §24) → anonymous reports (4f ✅, §25) → payroll (4g ✅, §26) → accounting/tax (4h ✅, §27) |
 | **5. Host election + failover** | Voting nodes, election, lease, terms, fencing (§4) |
 | **6. Hardening** | Conflict inbox with resolve actions, version shims, compaction of old commands/effects, sync health dashboard |
 
@@ -1082,3 +1082,41 @@ the cloud marked paid stays refused (the conflict inbox), because a paid payslip
 a cutoff, added an employee, entered two days of attendance, generated the payslip (a real number from
 its block), changed a deduction and marked it paid. Emailing it was refused with 503. Everything reached
 the cloud identically. A payslip marked paid on both sides stayed paid, flagged.
+
+## 27. Phase 4h as built (2026-10-02): accounting offline
+
+### Classes (`modules/accounting/accounting.routes.ts`)
+
+| Class | Routes |
+|---|---|
+| `physical` | a petty-cash entry: cash went into or out of the box |
+| `merge` | a draft journal entry (its JV number comes from the host's block) |
+| `claim` (company-wide: the main site) | everything else: GL setup, chart of accounts, accounting periods (create / close / reopen), posting rules, journal-entry edit / post / void / delete, customer payments and credit notes (record / void), tax codes, statutory-deduction switches, petty-cash funds, petty-cash entry delete |
+
+Tax filings (2316, 1601-C, alphalist, 2550M and so on) and every report are reads, so they work on any
+copy. Dates the routes stamp themselves (a reversal's entry date, a period's `closed_at`) use the
+action's own time (`now()`).
+
+**Checks relaxed under sync (D6)**, where the same outcome was reached on both sides, kept and flagged:
+- a journal entry posted on the cloud and at the main site;
+- a journal entry reversed on both (the first reversal is kept);
+- a period closed on both;
+- a payment or credit note voided on both.
+
+**Not relaxed: closed periods.** Posting (or voiding) into a period the cloud closed meanwhile stays
+refused and goes to the conflict inbox. A closed period is an accounting control; letting a site post
+into it would defeat the close. The site's copy follows the cloud (the entry stays a draft there too).
+
+**What the tests showed** (`tests/sync-accounting.test.ts`):
+- With the internet down, the main site entered and posted a journal entry with a real `JV-` number,
+  opened a petty-cash fund and paid from it, and closed a period. All of it reached the cloud identically,
+  and the trial balance balanced.
+- A post into a period the cloud closed meanwhile was rejected, and both copies kept the entry as a draft.
+- An entry posted on both sides stayed posted, flagged.
+
+**Phase 4 status:** with 4h, every business pipeline in the pipeline map runs offline. Still unclassed
+(so refused on an installed PC):
+- core leftovers: announcements, chat messages, personal notes / tasks, templates, bug reports, user
+  and account administration;
+- the online-only modules: AI, email, QuickBooks, the platform console, signup.
+The online-only modules stay that way (D8). The core leftovers are a small follow-up.

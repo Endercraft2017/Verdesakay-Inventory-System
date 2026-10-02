@@ -515,6 +515,10 @@ by `modules/hr`, `modules/manufacturing`, `modules/inventory` (orders), and
 `modules/purchasing`. This is a legitimate one-directional fan-in (four modules →
 accounting's public interface), not a circular dependency.
 **Dependencies:** `modules/payroll` (tax computation for filings).
+**Offline (sync/, phase 4h, docs/OFFLINE-FIRST.md §27):** the books are kept at the main site. A draft
+journal entry is `merge` (JV numbers from the host's block); a petty-cash entry is `physical`; everything
+else is a company-wide `claim`. Posting, reversing, closing or voiding what the cloud already did keeps the
+outcome, flagged (D6). Posting into a period the cloud closed stays refused (an accounting control).
 **Status:** working.
 
 ## modules/ai

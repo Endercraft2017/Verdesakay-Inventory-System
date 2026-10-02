@@ -448,8 +448,10 @@ needs-attention inbox (phase 3b: `X-Sync-State` marking, status pill, `#/sync`);
 (phase 3c-ii: `claim`s decided at the owning site; the cloud keeps them, flagging clashes — D6).
 Pipelines offline so far (phase 4): time clock (4a), production run with site number blocks (4b),
 sales order fulfillment (4c), purchase-to-pay (4d), HR requests, approvals
-and records (4e), confidential reports (4f), payroll (4g).
-**Not built:** mobile sync UI; the remaining pipeline (accounting — phase 4h). This pipeline wraps the
+and records (4e), confidential reports (4f), payroll (4g), accounting (4h); every business
+pipeline above now runs offline.
+**Not built:** mobile sync UI; classing the core leftovers (announcements, chat, personal notes /
+tasks, templates, bug reports, user administration). This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /
 `claim` runs through it. Only `online`-class stages (QuickBooks sync, sending email/SMS, AI,
 SaaS billing) need internet; nothing is cloud-only (decision D2).
