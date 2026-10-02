@@ -852,6 +852,20 @@ export const releaseSlipSchema = z.object({
   seal_tag: trimmed.max(80).optional().nullable(),
   handoff_area: trimmed.max(80).optional().nullable(),
   acknowledged: z.boolean().optional(),
+  // Handoff photos uploaded first as `attachments` kind 'release_proof' on the order; the slip
+  // takes them over. The phone app must send at least one (isMobileClient).
+  evidence_ids: z.array(z.coerce.number().int().positive()).max(20).optional(),
+});
+
+/** Releaser asks a supervisor to release without the token the recipient can't present. */
+export const releaseOverrideRequestSchema = z.object({
+  reason: trimmed.min(5, 'Say why the token can’t be presented').max(500),
+});
+
+/** A supervisor (inventory.adjust) approves or declines releasing without the token — with a reason. */
+export const releaseOverrideDecisionSchema = z.object({
+  approve: z.boolean().default(true),
+  reason: trimmed.min(5, 'Give the reason for the override').max(500),
 });
 
 /** Sales issues who may receive an order's goods (release-auth.ts). */

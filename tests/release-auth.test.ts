@@ -8,6 +8,8 @@ import { setupApp, cleanup, login, createEmployee, addSerializedUnits, type Test
 let ctx: TestContext;
 let token: string;
 let releaser: { id: number; token: string };
+let __sentPush: typeof import('../src/shared/push').__sentPush;
+const PNG = Buffer.from('fake-png-bytes');
 const H = () => ({ Authorization: `Bearer ${token}` });
 const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
 
@@ -15,7 +17,10 @@ beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
   releaser = await createEmployee(ctx.api, token, { role: 'releasing_clerk' });
+  ({ __sentPush } = await import('../src/shared/push'));
 });
+const subscribe = (t: string, tag: string) => ctx.api.post('/api/push/subscribe').set(bearer(t))
+  .send({ endpoint: 'https://push.example.com/sub/' + tag, keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
 afterAll(() => cleanup(ctx));
 
 const mkItem = async (body: Record<string, unknown>) => (await ctx.api.post('/api/inventory').set(H()).send(body)).body.id as number;
@@ -102,15 +107,85 @@ describe('release authorization', () => {
     expect(await onHand(product)).toBe(before);
   });
 
-  it('is required for every order once the policy is on', async () => {
+  it('is required for every order by default, until the company turns it off', async () => {
     const { product, codes } = await productWithUnits('RA3', 1);
     const so = await approvedOrder(product, 1);
     await ctx.api.post(`/api/orders/${so}/release`).set(bearer(releaser.token)).send({ codes: [codes[0]!] });
-    expect((await ctx.api.put('/api/release-slips/policy').set(H()).send({ authorization_required: true })).body.authorization_required).toBe(true);
+    expect((await ctx.api.get('/api/release-slips/policy').set(H())).body.authorization_required).toBe(true);
     const none = await slip(so);
     expect(none.status).toBe(409);
     expect(none.body.error).toMatch(/no release authorization/i);
     await ctx.api.put('/api/release-slips/policy').set(H()).send({ authorization_required: false });
+    expect((await slip(so)).status).toBe(201);
+  });
+
+  it('lets a supervisor approve releasing without the token, with a reason, once', async () => {
+    await ctx.api.put('/api/release-slips/policy').set(H()).send({ authorization_required: true });
+    const { product, codes } = await productWithUnits('OV', 1);
+    const so = await approvedOrder(product, 1);
+    await ctx.api.post(`/api/orders/${so}/release`).set(bearer(releaser.token)).send({ codes: [codes[0]!] });
+    // No valid authorization: nothing to override.
+    expect((await ctx.api.post(`/api/release-slips/orders/${so}/override-request`).set(bearer(releaser.token)).send({ reason: 'Lost the token' })).status).toBe(409);
+    await issue(so);
+    await subscribe(token, 'sup-ov');
+    __sentPush.length = 0;
+    const asked = await ctx.api.post(`/api/release-slips/orders/${so}/override-request`).set(bearer(releaser.token)).send({ reason: 'Recipient lost the token SMS' });
+    expect(asked.status).toBe(201);
+    expect(asked.body.override).toMatchObject({ status: 'requested', reason: 'Recipient lost the token SMS' });
+    expect(__sentPush.some((p) => /Release without token\? SO-/.test(p.payload.title))).toBe(true);
+    // The releaser can't approve it, and the slip still needs the token meanwhile.
+    expect((await ctx.api.post(`/api/release-slips/orders/${so}/override`).set(bearer(releaser.token)).send({ reason: 'self approve' })).status).toBe(403);
+    const before = await onHand(product);
+    expect((await slip(so)).body.blocked).toBe('authorization');
+    expect((await ctx.api.post(`/api/release-slips/orders/${so}/override`).set(H()).send({ reason: 'x' })).status).toBe(400);
+    const ok = await ctx.api.post(`/api/release-slips/orders/${so}/override`).set(H()).send({ reason: 'ID checked in person against the order' });
+    expect(ok.body.override).toMatchObject({ status: 'approved', decision_note: 'ID checked in person against the order' });
+    expect(await onHand(product)).toBe(before);
+    const res = await slip(so);
+    expect(res.status).toBe(201);
+    const sl = (await ctx.api.get(`/api/release-slips/${res.body.id}`).set(H())).body;
+    expect(sl).toMatchObject({ override_reason: 'ID checked in person against the order', override_by_name: expect.any(String) });
+  });
+
+  it('a declined override leaves the token required', async () => {
+    const { product, codes } = await productWithUnits('OD', 1);
+    const so = await approvedOrder(product, 1);
+    await ctx.api.post(`/api/orders/${so}/release`).set(bearer(releaser.token)).send({ codes: [codes[0]!] });
+    await issue(so);
+    expect((await ctx.api.post(`/api/release-slips/orders/${so}/override`).set(H()).send({ approve: false, reason: 'Nothing to decline yet' })).status).toBe(409);
+    await ctx.api.post(`/api/release-slips/orders/${so}/override-request`).set(bearer(releaser.token)).send({ reason: 'Token not received' });
+    const no = await ctx.api.post(`/api/release-slips/orders/${so}/override`).set(H()).send({ approve: false, reason: 'Ask Sales to resend it' });
+    expect(no.body.override.status).toBe('declined');
+    expect((await slip(so)).body.blocked).toBe('authorization');
+  });
+});
+
+describe('phone app evidence', () => {
+  it('refuses a warehouse-out from the phone without a handoff photo; the slip takes the photos over', async () => {
+    await ctx.api.put('/api/release-slips/policy').set(H()).send({ authorization_required: false });
+    const { product, codes } = await productWithUnits('EV', 1);
+    const so = await approvedOrder(product, 1);
+    await ctx.api.post(`/api/orders/${so}/release`).set(bearer(releaser.token)).send({ codes: [codes[0]!] });
+    const before = await onHand(product);
+    const phone = { ...bearer(releaser.token), 'X-Client': 'mobile' };
+    const bare = await ctx.api.post(`/api/orders/${so}/release-slip`).set(phone).send({ collected_by: 'Jordan D.' });
+    expect(bare.status).toBe(409);
+    expect(bare.body.blocked).toBe('evidence');
+    expect(await onHand(product)).toBe(before);
+    const up = await ctx.api.post('/api/attachments').set(phone).field('kind', 'release_proof').field('ref_id', String(so)).attach('image', PNG, 'handoff.png');
+    expect(up.status).toBe(201);
+    // A photo that isn't this order's doesn't count.
+    expect((await ctx.api.post(`/api/orders/${so}/release-slip`).set(phone).send({ collected_by: 'Jordan D.', evidence_ids: [up.body.id + 999] })).body.blocked).toBe('evidence');
+    const ok = await ctx.api.post(`/api/orders/${so}/release-slip`).set(phone).send({ collected_by: 'Jordan D.', evidence_ids: [up.body.id] });
+    expect(ok.status).toBe(201);
+    const photos = (await ctx.api.get(`/api/attachments?kind=release&ref_id=${ok.body.id}`).set(H())).body;
+    expect(photos.map((p: { id: number }) => p.id)).toEqual([up.body.id]);
+  });
+
+  it('keeps the desktop slip free of that rule', async () => {
+    const { product, codes } = await productWithUnits('EW', 1);
+    const so = await approvedOrder(product, 1);
+    await ctx.api.post(`/api/orders/${so}/release`).set(bearer(releaser.token)).send({ codes: [codes[0]!] });
     expect((await slip(so)).status).toBe(201);
   });
 });
@@ -161,6 +236,8 @@ describe('scan check and reports', () => {
     const { product, codes } = await productWithUnits('SC', 2);
     const a = await approvedOrder(product, 1);
     const b = await approvedOrder(product, 1);
+    await subscribe(token, 'sales-rep');
+    __sentPush.length = 0;
     await ctx.api.post(`/api/orders/${a}/release`).set(bearer(releaser.token)).send({ codes: [codes[0]!] });
     const chk = (order: number, code: string) => ctx.api.get(`/api/release-slips/orders/${order}/unit?code=${code}`).set(bearer(releaser.token));
     expect((await chk(a, codes[0]!)).body.state).toBe('allocated');
@@ -170,6 +247,8 @@ describe('scan check and reports', () => {
     const rep = await ctx.api.post(`/api/release-slips/orders/${b}/reports`).set(bearer(releaser.token))
       .send({ kind: 'unit_mismatch', description: `Scanned ${codes[0]} which is allocated to another order`, unit_identifier: codes[0] });
     expect(rep.status).toBe(201);
+    const bNo = (await ctx.api.get(`/api/orders/${b}`).set(H())).body.number;
+    expect(__sentPush.some((p) => p.payload.title === 'Release report — ' + bNo)).toBe(true);
     const q = await ctx.api.get('/api/release-slips/queue').set(bearer(releaser.token));
     const row = [...q.body.to_accept, ...q.body.releasing].find((r: { id: number }) => r.id === b);
     expect(row.open_reports).toBe(1);

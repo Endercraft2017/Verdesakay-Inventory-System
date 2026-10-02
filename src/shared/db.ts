@@ -1289,6 +1289,23 @@ function createSchema(): void {
       resolved_at     TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_release_reports_order ON release_reports(order_id, status);
+    -- Supervisor override of the release token (the recipient can't present it): requested by the
+    -- releaser or made directly by a supervisor (inventory.adjust), always with a reason. An
+    -- approved one stands in for the token on that authorization's slip, once.
+    CREATE TABLE IF NOT EXISTS release_token_overrides (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id         INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      authorization_id INTEGER NOT NULL REFERENCES release_authorizations(id) ON DELETE CASCADE,
+      status           TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'approved', 'declined', 'used')),
+      reason           TEXT NOT NULL,
+      requested_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      requested_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at       TEXT,
+      decision_note    TEXT,
+      used_slip_id     INTEGER REFERENCES release_slips(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_token_overrides ON release_token_overrides(authorization_id, id);
 
     -- Repair-parts requests (mobile Parts clerk, Figma 83:*; production.routes.ts). createSchema,
     -- no version bump. A formal revision of a request's part or quantity: proposed by the parts

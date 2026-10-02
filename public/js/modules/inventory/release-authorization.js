@@ -31,7 +31,9 @@
                  <b style="margin-left:6px">${UI.esc(MODES[cur.mode] || '')}</b> · ${UI.esc(cur.recipient_name)}${cur.id_reference ? ' · ID ' + UI.esc(cur.id_reference) : ''}</div>
                ${active ? `<div style="margin-top:8px;font-size:18px;letter-spacing:.06em"><b>${UI.esc(active.token)}</b>
                    <span class="muted" style="font-size:12px;letter-spacing:0"> — give this to the recipient · valid until ${UI.esc(UI.fmtDate ? UI.fmtDate(active.valid_until + 'Z') : active.valid_until)}</span></div>` : ''}
-               <div class="muted" style="margin-top:4px">${cur.handoff_area ? 'Handoff: ' + UI.esc(cur.handoff_area) + ' · ' : ''}Partial release ${cur.partial_allowed ? '<b>allowed</b>' : 'not allowed'}${cur.revoke_reason ? ' · revoked: ' + UI.esc(cur.revoke_reason) : ''}</div>`}
+               <div class="muted" style="margin-top:4px">${cur.handoff_area ? 'Handoff: ' + UI.esc(cur.handoff_area) + ' · ' : ''}Partial release ${cur.partial_allowed ? '<b>allowed</b>' : 'not allowed'}${cur.revoke_reason ? ' · revoked: ' + UI.esc(cur.revoke_reason) : ''}</div>
+               ${cur.override ? `<div class="muted" style="margin-top:4px">Token override ${UI.esc(cur.override.status)}${cur.override.decided_by_name ? ' by ' + UI.esc(cur.override.decided_by_name) : ''}:
+                   ${UI.esc(cur.override.decision_note || cur.override.reason)}</div>` : ''}`}
         </div>
         <h4 style="margin:14px 0 6px">${active ? 'Replace with a new authorization' : 'Issue an authorization'}</h4>
         <div class="field-row">
@@ -57,7 +59,7 @@
           : '<div class="muted">No open reports.</div>'}
         <label style="display:flex;gap:8px;align-items:center;margin-top:16px;border-top:1px solid var(--border);padding-top:10px">
           <input type="checkbox" id="ra-policy" ${policy.authorization_required ? 'checked' : ''} />
-          Company policy: require a release authorization for <b>every</b> sale order</label>`,
+          Company policy: require a release authorization for <b>every</b> sale order (on by default)</label>`,
       confirmText: null,
       cancelText: 'Close',
       onOpen: (ov) => {

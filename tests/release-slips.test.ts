@@ -13,6 +13,8 @@ const PNG = Buffer.from('fake-png-bytes');
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
+  // These tests cover the slip itself; release authorizations are tests/release-auth.test.ts.
+  await ctx.api.put('/api/release-slips/policy').set(H()).send({ authorization_required: false });
 });
 afterAll(() => cleanup(ctx));
 

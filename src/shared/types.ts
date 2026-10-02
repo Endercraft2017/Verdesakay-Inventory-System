@@ -448,6 +448,9 @@ export interface ReleaseSlip {
   customer_name?: string | null;
   released_by_name?: string | null;
   photo_count?: number;
+  /** Set when a supervisor's override stood in for the release token. */
+  override_reason?: string | null;
+  override_by_name?: string | null;
   items?: ReleaseSlipItem[];
 }
 /** A job order's parts release slip — the numbered record of the kit the warehouse handed

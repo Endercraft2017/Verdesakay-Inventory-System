@@ -8,10 +8,14 @@ import { queryOne, queryAll, run, setSetting } from '../../shared/db';
 import { requireAuth, requireAnyPermission, requirePermission } from '../../shared/auth';
 import {
   parseBody, releaseAuthorizationSchema, revokeReleaseAuthorizationSchema, releaseReportSchema, resolveReleaseReportSchema,
+  releaseOverrideRequestSchema, releaseOverrideDecisionSchema,
 } from '../../shared/validation';
+import { notifyPermission, notifyUser } from '../../shared/push';
 import type { ReleaseSlip, ReleaseSlipItem } from '../../shared/types';
 import { syncClass } from '../../sync';
-import { authorizationRequired, currentAuthorization, newToken, packageItemsFor, publicAuthorization, tokenError } from './release-auth';
+import {
+  authorizationRequired, currentAuthorization, latestOverride, newToken, packageItemsFor, publicAuthorization, tokenError,
+} from './release-auth';
 
 const router = Router();
 router.use(requireAuth);
@@ -20,6 +24,8 @@ router.use(requireAuth);
 const viewGate = requireAnyPermission(['inventory.adjust', 'orders.release', 'orders.view']);
 const releaseGate = requireAnyPermission(['inventory.adjust', 'orders.release']);
 const salesGate = requirePermission('orders.edit');
+// A warehouse supervisor: may release without the token the recipient can't present.
+const supervisorGate = requirePermission('inventory.adjust');
 /** An order's home for offline decisions: its location's site (as orders.routes.ts). */
 const orderSite = {
   home: (req: Request) => ({
@@ -147,6 +153,55 @@ router.get('/orders/:id/verify-token', releaseGate, (req, res) => {
   res.json(err ? { ok: false, error: err } : { ok: true });
 });
 
+/* Token override (release-auth.ts). The releaser asks from the counter; every supervisor is
+   pushed. A supervisor approves or declines it — or overrides directly — always with a reason.
+   It replaces only the token: the authorization must still be valid, and it is spent on one slip. */
+router.post('/orders/:id/override-request', releaseGate, syncClass('merge'), (req, res) => {
+  const id = Number(req.params.id);
+  const order = saleOrder(id);
+  if (!order) { res.status(404).json({ error: 'Sale order not found' }); return; }
+  const { auth, state } = currentAuthorization(id);
+  if (!auth || state !== 'valid') { res.status(409).json({ error: 'There is no valid release authorization to override — ask Sales to issue one.' }); return; }
+  const open = latestOverride(auth.id);
+  if (open && (open.status === 'requested' || open.status === 'approved')) { res.json({ override: publicAuthorization(id).override }); return; }
+  const { reason } = parseBody(releaseOverrideRequestSchema, req.body);
+  run('INSERT INTO release_token_overrides (order_id, authorization_id, reason, requested_by) VALUES (?, ?, ?, ?)', id, auth.id, reason, req.user!.id);
+  void notifyPermission('inventory.adjust', {
+    title: `Release without token? ${order.number}`,
+    body: `${req.user!.full_name || 'The releaser'}: ${auth.recipient_name} can't present the token — ${reason}`,
+    url: `#/so?id=${id}&step=override`, tag: `rel-override-${id}`,
+  });
+  res.status(201).json({ override: publicAuthorization(id).override });
+});
+
+router.post('/orders/:id/override', supervisorGate, syncClass('claim', orderSite), (req, res) => {
+  const id = Number(req.params.id);
+  const order = saleOrder(id);
+  if (!order) { res.status(404).json({ error: 'Sale order not found' }); return; }
+  const { auth, state } = currentAuthorization(id);
+  if (!auth || state !== 'valid') { res.status(409).json({ error: 'There is no valid release authorization to override — ask Sales to issue one.' }); return; }
+  const { approve, reason } = parseBody(releaseOverrideDecisionSchema, req.body);
+  const open = latestOverride(auth.id);
+  if (open?.status === 'approved' && approve) { res.json({ override: publicAuthorization(id).override }); return; }
+  if (open?.status === 'requested') {
+    run("UPDATE release_token_overrides SET status = ?, decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ?",
+      approve ? 'approved' : 'declined', req.user!.id, reason, open.id);
+    if (open.requested_by && open.requested_by !== req.user!.id) {
+      void notifyUser(open.requested_by, {
+        title: approve ? `Override approved — ${order.number}` : `Override declined — ${order.number}`,
+        body: `${req.user!.full_name || 'A supervisor'}: ${reason}`, url: `#/so?id=${id}&step=handoff`, tag: `rel-override-${id}`,
+      });
+    }
+  } else if (approve) {
+    run(`INSERT INTO release_token_overrides (order_id, authorization_id, status, reason, requested_by, decided_by, decided_at, decision_note)
+         VALUES (?, ?, 'approved', ?, ?, ?, datetime('now'), ?)`, id, auth.id, reason, req.user!.id, req.user!.id, reason);
+  } else {
+    res.status(409).json({ error: 'There is no override request to decline.' });
+    return;
+  }
+  res.json({ override: publicAuthorization(id).override });
+});
+
 /* Sales: list / issue / revoke an order's release authorizations (desktop sale order). */
 router.get('/orders/:id/authorizations', requireAnyPermission(['orders.view', 'orders.edit']), (req, res) => {
   const id = Number(req.params.id);
@@ -197,6 +252,12 @@ router.post('/orders/:id/reports', releaseGate, syncClass('merge'), (req, res) =
     'INSERT INTO release_reports (order_id, kind, description, unit_identifier, reported_by) VALUES (?, ?, ?, ?, ?)',
     id, input.kind, input.description, input.unit_identifier ?? null, req.user!.id
   ).lastInsertRowid);
+  // Sales hears about it at once: whoever issued the order's authorization, and everyone who edits orders.
+  const order = saleOrder(id)!;
+  const push = { title: `Release report — ${order.number}`, body: input.description.slice(0, 160), url: '#/notifications', tag: `rel-report-${rid}` };
+  const issuer = currentAuthorization(id).auth?.issued_by;
+  if (issuer && issuer !== req.user!.id) void notifyUser(issuer, push);
+  void notifyPermission('orders.edit', push);
   res.status(201).json({ id: rid });
 });
 
@@ -223,7 +284,7 @@ router.post('/reports/:rid/resolve', salesGate, syncClass('merge'), (req, res) =
   res.json({ ok: true });
 });
 
-/* Company policy: require a release authorization for every sale order (default off). */
+/* Company policy: require a release authorization for every sale order (on unless turned off). */
 router.get('/policy', viewGate, (_req, res) => { res.json({ authorization_required: authorizationRequired() }); });
 router.put('/policy', salesGate, syncClass('claim'), (req, res) => {
   setSetting('release_authorization_required', req.body?.authorization_required === true);
@@ -233,7 +294,9 @@ router.put('/policy', salesGate, syncClass('claim'), (req, res) => {
 const SLIP_SELECT = `
   SELECT rs.*, o.number AS order_number, o.customer_name, o.customer_contact, o.status AS order_status,
          u.full_name AS released_by_name,
-         (SELECT COUNT(*) FROM attachments a WHERE a.kind = 'release' AND a.ref_id = rs.id) AS photo_count
+         (SELECT COUNT(*) FROM attachments a WHERE a.kind = 'release' AND a.ref_id = rs.id) AS photo_count,
+         (SELECT t.decision_note FROM release_token_overrides t WHERE t.used_slip_id = rs.id) AS override_reason,
+         (SELECT su.full_name FROM release_token_overrides t JOIN users su ON su.id = t.decided_by WHERE t.used_slip_id = rs.id) AS override_by_name
   FROM release_slips rs
   JOIN orders o ON o.id = rs.order_id
   LEFT JOIN users u ON u.id = rs.released_by`;

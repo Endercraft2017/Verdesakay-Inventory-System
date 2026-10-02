@@ -718,7 +718,54 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect(posts[0]!.url).toBe('/api/orders/302/release-slip');
       expect(posts[0]!.key).toMatch(/^rel-/);
       expect(posts[0]!.body).toMatchObject({ collected_by: 'Jordan D.', authorization_token: 'PICKUP-7F3Q', handoff_area: 'Release Bay 1',
-        package: [{ item_id: 7, label: 'Charger and cable', ok: true }] });
+        package: [{ item_id: 7, label: 'Charger and cable', ok: true }], evidence_ids: [1] }); // photos uploaded first, on the order
+    });
+
+    it('asks a supervisor to release without the token, with a reason', async () => {
+      const posts: { url: string; body: any }[] = [];
+      const win = await bootAs(REL, fake(posts));
+      const doc = win.document;
+      win.location.hash = '#/so?id=302&step=handoff';
+      await wait();
+      (doc.querySelector('[data-notoken]') as HTMLButtonElement).click();
+      await wait();
+      const view = doc.getElementById('m-view');
+      expect(view.textContent).toContain('Release without token');
+      expect(doc.getElementById('rel-approve')).toBeNull(); // not a supervisor
+      (doc.getElementById('rel-ask') as HTMLButtonElement).click();
+      expect(posts).toEqual([]); // a reason is required
+      (view.querySelector('[data-reason]') as HTMLTextAreaElement).value = 'Recipient lost the token message';
+      (doc.getElementById('rel-ask') as HTMLButtonElement).click();
+      await wait();
+      expect(posts[0]).toMatchObject({ url: '/api/release-slips/orders/302/override-request', body: { reason: 'Recipient lost the token message' } });
+    });
+
+    it('takes an approved supervisor override in place of the token', async () => {
+      const win = await bootAs(REL, fake([], { authorization: { ...AUTH, override: { id: 3, status: 'approved', reason: 'Lost it',
+        decided_by_name: 'Sam Supervisor', decision_note: 'ID checked in person' } } }));
+      const doc = win.document;
+      win.location.hash = '#/so?id=302&step=handoff';
+      await wait();
+      const view = doc.getElementById('m-view');
+      expect(view.textContent).toContain('Supervisor override · Sam Supervisor');
+      expect(view.querySelector('[data-token]')).toBeNull();
+      (doc.getElementById('rel-go') as HTMLButtonElement).click();
+      await wait();
+      expect(view.getAttribute('data-figma-node')).toBe('78:281');
+    });
+
+    it('lets a supervisor approve a requested override on the phone', async () => {
+      const posts: { url: string; body: any }[] = [];
+      const SUP = { ...REL, id: 42, role: 'warehouse', permissions: [...REL.permissions, 'inventory.adjust'] };
+      const win = await bootAs(SUP, fake(posts, { authorization: { ...AUTH, override: { id: 3, status: 'requested', reason: 'Lost it', requested_by_name: 'Ana Dela Cruz' } } }));
+      const doc = win.document;
+      win.location.hash = '#/so?id=302&step=override';
+      await wait();
+      expect(doc.getElementById('m-view').textContent).toContain('Requested by Ana Dela Cruz');
+      (doc.querySelector('[data-reason]') as HTMLTextAreaElement).value = 'ID checked in person';
+      (doc.getElementById('rel-approve') as HTMLButtonElement).click();
+      await wait();
+      expect(posts[0]).toMatchObject({ url: '/api/release-slips/orders/302/override', body: { approve: true, reason: 'ID checked in person' } });
     });
   });
 

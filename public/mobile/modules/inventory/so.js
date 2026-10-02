@@ -10,8 +10,12 @@
    the server (modules/inventory/release-auth.ts): a refusal moves no stock. Warehouse-out and
    allocation are online-only — nothing here is queued, so nothing is shown as done that the
    server hasn't confirmed. The token is never shown to the releaser: the recipient presents it.
-   URLs: #/so[?tab=blocked|done] · ?id=<orderId>[&step=scan|unit|blocked|package|handoff|proof|
-   review|confirm|done|incomplete|report|receipt][&code=][&kind=] */
+   When they can't, a supervisor (inventory.adjust) approves releasing without it, with a reason —
+   asked from here (POST /release-slips/orders/:id/override-request, pushed to supervisors) or
+   decided here by a supervisor (/override). Handoff photos upload first as 'release_proof' on the
+   order and go with the slip as evidence_ids — the server refuses a phone warehouse-out without one.
+   URLs: #/so[?tab=blocked|done] · ?id=<orderId>[&step=scan|unit|blocked|package|handoff|override|
+   proof|review|confirm|done|incomplete|report|receipt][&code=][&kind=] */
 (function () {
   var R = window.RoleUI;
   var S = {};   // per order: { token, tokenOk, pkg:{key:true}, seal, area, recipient, plate, photos:[], sign, key, result }
@@ -46,6 +50,8 @@
     if (a.state === 'none' && a.required) return 'No release authorization';
     return null;
   }
+  /** A supervisor's approved override stands in for the recipient's token. */
+  function overrideOk(a) { return !!(a && a.state === 'valid' && a.override && a.override.status === 'approved'); }
   function modeOf(c) { return c.authorization && c.authorization.mode ? MODES[c.authorization.mode] : c.delivery ? 'Delivery' : 'Release'; }
 
   function withOrder(view, id, fn) {
@@ -81,7 +87,8 @@
         var meta = problem ? 'Blocked · ' + problem
           : !r.warehouse_accepted_at ? 'New · accept to start'
           : r.delivery ? 'Delivery ' + r.delivery.number + (r.delivery.scheduled_date ? ' · ' + r.delivery.scheduled_date : '')
-          : (r.qty_released >= r.qty_ordered ? 'Ready now' : r.qty_released + ' of ' + r.qty_ordered + ' allocated') + (a.state === 'valid' ? ' · token issued' : '');
+          : (r.qty_released >= r.qty_ordered ? 'Ready now' : r.qty_released + ' of ' + r.qty_ordered + ' allocated') +
+            (a.override && a.override.status === 'requested' ? ' · override requested' : overrideOk(a) ? ' · override approved' : a.state === 'valid' ? ' · token issued' : '');
         return '<button type="button" class="rk-card rk-unitcard" data-order="' + r.id + '"><b>' + mEsc(r.number) + '</b><span>' + mEsc(what) + '</span>' +
           '<small' + (problem ? ' class="warn"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
       }
@@ -270,10 +277,15 @@
       R.field('Release mode', modeOf(c)) +
       (hasAuth
         ? R.field('Approved recipient', a.recipient_name + (a.id_reference ? ' · ID reference ' + a.id_reference : '')) +
-          '<div class="rk-card rk-field"><small>Token verification</small>' + (s.tokenOk
-            ? '<b style="color:#14803d">' + mEsc(s.token) + ' · Valid</b>'
-            : '<div class="rk-search" style="margin-top:8px"><input class="rk-input" style="margin:0;text-transform:uppercase" data-token placeholder="Token the recipient presents" autocomplete="off">' +
-              '<button type="button" class="rk-back" data-verify style="padding:0">Verify</button></div>') + '</div>'
+          (overrideOk(a) && !s.tokenOk
+            ? '<div class="rk-card rk-field"><small>Token verification</small><b style="color:#14803d">Supervisor override · ' + mEsc(a.override.decided_by_name || 'approved') + '</b>' +
+              '<span>' + mEsc(a.override.decision_note || a.override.reason) + '</span></div>'
+            : '<div class="rk-card rk-field"><small>Token verification</small>' + (s.tokenOk
+              ? '<b style="color:#14803d">' + mEsc(s.token) + ' · Valid</b>'
+              : '<div class="rk-search" style="margin-top:8px"><input class="rk-input" style="margin:0;text-transform:uppercase" data-token placeholder="Token the recipient presents" autocomplete="off">' +
+                '<button type="button" class="rk-back" data-verify style="padding:0">Verify</button></div>' +
+                '<button type="button" class="rk-back" data-notoken style="padding:0;margin-top:10px">' +
+                  (a.override && a.override.status === 'requested' ? 'Override requested — check status' : 'Recipient can’t present the token') + '</button>') + '</div>')
         : '<label class="rk-card rk-field"><small>' + (c.authorization.mode === 'delivery' || c.delivery ? 'Driver / receiver' : 'Recipient name') + ' *</small><input class="rk-input" data-recipient maxlength="160" value="' + mEsc(s.recipient || '') + '"></label>') +
       (modeOf(c) === 'Delivery' ? '<label class="rk-card rk-field"><small>Vehicle / plate no.</small><input class="rk-input" data-plate maxlength="40" value="' + mEsc(s.plate || '') + '"></label>' : '') +
       '<label class="rk-card rk-field"><small>Handoff area</small><input class="rk-input" data-area maxlength="80" value="' + mEsc(s.area || (a.handoff_area || '')) + '" placeholder="e.g. Release Bay 1"></label>' +
@@ -294,13 +306,66 @@
         s.token = t; s.tokenOk = true; handoff(view, c);
       }).catch(fail(vb));
     };
+    var nt = body.querySelector('[data-notoken]');
+    if (nt) nt.onclick = function () { keep(); go({ id: c.order.id, step: 'override' }); };
     body.querySelector('#rel-no').onclick = function () { go({ id: c.order.id, step: 'report', kind: 'identity' }); };
     body.querySelector('#rel-go').onclick = function () {
       keep();
-      if (hasAuth && !s.tokenOk) { mToast('Verify the recipient’s token first', 'err'); return; }
+      if (hasAuth && !s.tokenOk && !overrideOk(a)) { mToast('Verify the recipient’s token first', 'err'); return; }
       if (!hasAuth && !s.recipient) { mToast('Enter who receives the goods', 'err'); return; }
       go({ id: c.order.id, step: 'proof' });
     };
+  }
+
+  /* ── Release without the token: supervisor override (extends 78:240) ────── */
+  function override(view, c) {
+    var a = c.authorization, ov = a.override, sup = can('inventory.adjust');
+    var status = ov ? ov.status : null;
+    var body = page(view, '78:240', 'Release without token', 'A supervisor approves it, with a reason');
+    var reasonBox = function (label, ph) {
+      return '<label class="rk-card rk-field"><small>' + mEsc(label) + ' *</small><textarea rows="3" maxlength="500" data-reason placeholder="' + mEsc(ph) + '"></textarea></label>';
+    };
+    var html = R.field('Approved recipient', a.recipient_name + (a.id_reference ? ' · ID reference ' + a.id_reference : ''));
+    var acts;
+    if (status === 'approved') {
+      html += '<div class="rk-block ok"><span class="t">✓ Override approved</span><b>' + mEsc(ov.decided_by_name || 'Supervisor') + '</b><span>' + mEsc(ov.decision_note || ov.reason) + '</span></div>';
+      acts = [{ id: 'rel-cont', label: 'Continue handoff', kind: 'primary' }];
+    } else if (status === 'requested' && !sup) {
+      html += '<div class="rk-block warn"><span class="t">! Waiting for a supervisor</span><b>' + mEsc(ov.requested_by_name || 'Requested') + '</b><span>' + mEsc(ov.reason) + '</span></div>' +
+        R.note('info', 'Supervisors were notified. Keep the goods staged — nothing has moved.');
+      acts = [{ id: 'rel-check', label: 'Check again', kind: 'primary' }, { id: 'rel-back', label: 'Back', kind: 'secondary' }];
+    } else if (status === 'requested') {
+      html += R.field('Requested by ' + (ov.requested_by_name || 'releaser'), ov.reason) + reasonBox('Your reason', 'e.g. ID checked in person against the order');
+      acts = [{ id: 'rel-approve', label: 'Approve override', kind: 'primary' }, { id: 'rel-decline', label: 'Decline', kind: 'secondary' }];
+    } else {
+      if (status === 'declined') html += R.note('warn', '<b>Declined by ' + mEsc(ov.decided_by_name || 'a supervisor') + '</b> — ' + mEsc(ov.decision_note || ''));
+      html += reasonBox('Why can’t the token be presented?', 'e.g. Recipient lost the token message');
+      acts = sup ? [{ id: 'rel-approve', label: 'Approve override', kind: 'primary' }, { id: 'rel-back', label: 'Back', kind: 'secondary' }]
+        : [{ id: 'rel-ask', label: 'Ask a supervisor', kind: 'primary' }, { id: 'rel-back', label: 'Back', kind: 'secondary' }];
+    }
+    body.innerHTML = html + R.note('info', '<h3>Only the token is waived</h3>The recipient still has to match the approved name' + (a.id_reference ? ' and masked ID reference' : '') + '. The reason is recorded on the release slip.') + R.actions(acts);
+    var on = function (id, fn) { var b = body.querySelector('#' + id); if (b) b.onclick = fn; };
+    var reason = function () { var t = body.querySelector('[data-reason]'); return t ? t.value.trim() : ''; };
+    var send = function (btn, path, payload, label, then) {
+      if (offline()) { mToast('You’re offline — the override needs a connection.', 'err'); return; }
+      btn.disabled = true; btn.textContent = 'Sending…';
+      API.post('/release-slips/orders/' + c.order.id + path, payload, { idempotencyKey: key() }).then(then).catch(fail(btn, label));
+    };
+    on('rel-cont', function () { go({ id: c.order.id, step: 'handoff' }); });
+    on('rel-back', function () { go({ id: c.order.id, step: 'handoff' }); });
+    on('rel-check', function () { go({ id: c.order.id, step: 'override', t: Date.now() }); });
+    on('rel-ask', function () {
+      if (reason().length < 5) { mToast('Say why the token can’t be presented', 'err'); return; }
+      send(this, '/override-request', { reason: reason() }, 'Ask a supervisor', function () { mToast('Supervisors notified'); go({ id: c.order.id, step: 'override', t: Date.now() }); });
+    });
+    on('rel-approve', function () {
+      if (reason().length < 5) { mToast('Give the reason for the override', 'err'); return; }
+      send(this, '/override', { approve: true, reason: reason() }, 'Approve override', function () { mToast('Override approved'); go({ id: c.order.id, step: 'handoff' }); });
+    });
+    on('rel-decline', function () {
+      if (reason().length < 5) { mToast('Give the reason for declining', 'err'); return; }
+      send(this, '/override', { approve: false, reason: reason() }, 'Decline', function () { mToast('Override declined'); go({ id: c.order.id, step: 'override', t: Date.now() }); });
+    });
   }
 
   /* ── Capture handoff proof (78:281) ────────────────────────────────────── */
@@ -343,7 +408,7 @@
     body.innerHTML =
       '<div class="rk-hero"><small>Warehouse-out review</small><b>' + p.got + ' unit' + (p.got === 1 ? '' : 's') + '</b><span>' + mEsc(modeOf(c) + (s.area ? ' · ' + s.area : '')) + '</span></div>' +
       '<div class="rk-checks">' +
-        row('Authorization', c.order.number + ' · ' + (a.state === 'valid' ? 'Valid' : 'Not required')) +
+        row('Authorization', c.order.number + ' · ' + (a.state !== 'valid' ? 'Not required' : s.tokenOk ? 'Token verified' : overrideOk(a) ? 'Supervisor override' : 'Valid')) +
         row('Unit and package', (c.units.length ? 'Serial' + (c.units.length === 1 ? '' : 's') : 'Quantities') + (pkgN ? ' and ' + pkgN + ' package item' + (pkgN === 1 ? '' : 's') : '') + ' verified') +
         row('Handoff evidence', s.photos.length + ' photo' + (s.photos.length === 1 ? '' : 's') + (s.sign ? ' and acknowledgement' : '') + ' attached') +
       '</div>' +
@@ -356,7 +421,7 @@
   /* ── Confirm physical release (78:401) — online-only, idempotent ───────── */
   function confirm(view, c, partial) {
     var s = st(c.order.id), a = c.authorization;
-    if (!s.photos.length || (a.state === 'valid' && !s.tokenOk)) { go({ id: c.order.id, step: !s.photos.length ? 'proof' : 'handoff' }); return; }
+    if (!s.photos.length || (a.state === 'valid' && !s.tokenOk && !overrideOk(a))) { go({ id: c.order.id, step: !s.photos.length ? 'proof' : 'handoff' }); return; }
     var body = page(view, '78:401', 'Confirm physical release', 'Final irreversible inventory action');
     var first = c.units[0];
     body.innerHTML =
@@ -379,13 +444,20 @@
         authorization_token: s.tokenOk ? s.token : null, seal_tag: s.seal || null, handoff_area: s.area || null, acknowledged: !!s.sign,
         package: c.package.map(function (p) { return { item_id: p.item_id, label: p.label, ok: !!s.pkg[p.item_id + '|' + p.label] }; }),
       };
-      API.post('/orders/' + c.order.id + '/release-slip', payload, { idempotencyKey: s.key }).then(function (r) {
-        var files = s.photos.map(function (f, i) { return { blob: f, name: f.name || 'handoff-' + (i + 1) + '.jpg', caption: 'Handoff proof' }; });
-        if (s.sign) files.push({ blob: s.sign, name: 'acknowledgement.png', caption: 'Recipient acknowledgement' });
+      // Photos first, on the order (each once, even across retries): the slip takes them over
+      // and the server refuses a phone warehouse-out without one. Nothing has moved if one fails.
+      var evidence = s.photos.reduce(function (pr, f, i) {
+        return pr.then(function () {
+          if (f._attId) return;
+          return mPhoto.attachBlob('release_proof', c.order.id, f, f.name || 'handoff-' + (i + 1) + '.jpg', 'Handoff proof').then(function (r) { f._attId = r.id; });
+        });
+      }, Promise.resolve());
+      evidence.then(function () {
+        payload.evidence_ids = s.photos.map(function (f) { return f._attId; });
+        return API.post('/orders/' + c.order.id + '/release-slip', payload, { idempotencyKey: s.key });
+      }).then(function (r) {
         var failed = 0;
-        return files.reduce(function (pr, f) {
-          return pr.then(function () { return mPhoto.attachBlob('release', r.id, f.blob, f.name, f.caption).catch(function () { failed++; }); });
-        }, Promise.resolve()).then(function () {
+        return (s.sign ? mPhoto.attachBlob('release', r.id, s.sign, 'acknowledgement.png', 'Recipient acknowledgement').catch(function () { failed++; }) : Promise.resolve()).then(function () {
           S[c.order.id] = { pkg: {}, photos: [], result: { slipId: r.id, failed: failed, backorder: r.backorder || null, at: new Date().toISOString() } };
           go({ id: c.order.id, step: 'done' });
         });
@@ -393,6 +465,7 @@
         var d = err && err.data;
         if (d && d.blocked === 'authorization') { s.tokenOk = false; mToast(d.error, 'err'); go({ id: c.order.id }); return; }
         if (d && d.blocked === 'package') { mToast(d.error, 'err'); go({ id: c.order.id, step: 'package' }); return; }
+        if (d && d.blocked === 'evidence') { mToast(d.error, 'err'); go({ id: c.order.id, step: 'proof' }); return; }
         if (d && d.blocked === 'incomplete') { go({ id: c.order.id, step: 'incomplete' }); return; }
         fail(btn, 'Confirm warehouse-out')(err);
       });
@@ -410,7 +483,7 @@
         '<span>' + mEsc(c.units[0] ? c.units[0].identifier + (c.units.length > 1 ? ' …' : '') : c.lines.map(function (l) { return l.name; }).join(', ')) + '</span>' +
         '<span style="font-weight:400;color:var(--rk-meta)">' + mEsc(c.order.number + ' · ' + modeOf(c)) + '</span></div>' +
       (r.backorder ? R.note('warn', '<b>Backorder ' + mEsc(r.backorder.number) + '</b> was created for what didn’t leave.') : '') +
-      (r.failed ? R.note('warn', r.failed + ' photo' + (r.failed === 1 ? '' : 's') + ' failed to upload — add them from the slip on the desktop.') : '') +
+      (r.failed ? R.note('warn', 'The recipient’s acknowledgement failed to upload — add it from the slip on the desktop.') : '') +
       R.field('Warehouse-out transaction', c.slip.number) +
       R.field('Released by', me + ' · ' + clock(r.at)) +
       R.actions([{ id: 'rel-next', label: 'Open next release', kind: 'primary' }, { id: 'rel-rcpt', label: 'View receipt', kind: 'secondary' }]) +
@@ -497,6 +570,7 @@
       else if (step === 'blocked') blockedView(view, c, params.code || '', { state: 'not_found' });
       else if (step === 'package') pkg(view, c);
       else if (step === 'handoff') handoff(view, c);
+      else if (step === 'override') override(view, c);
       else if (step === 'proof') proof(view, c);
       else if (step === 'review') review(view, c);
       else if (step === 'confirm') confirm(view, c, !!st(c.order.id).partial);

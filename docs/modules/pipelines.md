@@ -47,20 +47,29 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    - **Release authorization** (Sales, before or during stages 3–5): who may receive the goods —
      pickup/delivery, recipient (ID masked to last 4), a time-limited token given to the
      recipient, handoff area, partial allowed. Issued/revoked from Sales Orders (key icon).
-     Required for every order only when the `release_authorization_required` policy is on;
-     always enforced for an order that has one.
+     Required for every order unless the company turns the `release_authorization_required`
+     policy off (on by default); always enforced for an order that has one.
    - **Branch — authorization problem:** wrong / expired / used / revoked token → slip 409,
      zero stock change; the order shows as Blocked on the mobile queue until Sales reissues.
+   - **Branch — token override:** the recipient can't present the token → the releaser asks a
+     supervisor (push to `inventory.adjust`), who approves or declines with a reason (or a
+     supervisor overrides directly). Approved: the slip goes without the token, once, and records
+     who approved it and why. Declined: the token stays required. Never covers a missing,
+     expired, used or revoked authorization.
+   - **Branch — phone evidence:** a warehouse-out from the phone app without a handoff photo →
+     409 `blocked: 'evidence'`, zero stock change (desktop slips are not held to this).
    - **Branch — package:** every required package item of the products on the order must be
      confirmed on the slip, else 409 with the missing items, zero stock change.
    - **Branch — partial release:** an incomplete order releases only under an authorization
      that allows it; the order is split at the slip and the rest becomes a new approved
      backorder SO (back to stage 3). Without it: 409, nothing moves; the releaser requests it.
    - **Branch — release report:** the releaser flags a wrong unit, missing item, identity
-     problem or partial request (`release_reports`); Sales resolves it. Records only.
+     problem or partial request (`release_reports`); Sales is pushed and resolves it. Records only.
    - **Mobile (Releasing, Figma 78:*)** — `#/so`: authority → scan/verify units → package →
-     handoff token → photo + signature proof → review → confirm warehouse-out (online-only,
-     idempotent); proof photos and the signature attach to the slip (`release`).
+     handoff token (or supervisor override) → photo + signature proof → review → confirm
+     warehouse-out (online-only, idempotent); photos upload first on the order and the slip takes
+     them over; the signature attaches to the slip (`release`). Desktop Releasing can issue a
+     partial slip under the same authority.
 6. **Delivery / fulfil** (`inventory`) — `POST /orders/:id/status` transitions
    delivery → fulfilled (mobile-triggered prompt supported); the delivery's proof of
    delivery (signature/GPS/photos) is captured at the customer.

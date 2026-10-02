@@ -14,7 +14,8 @@ import { createDraftJobOrder } from '../manufacturing/job-orders.routes';
 import type { Order, OrderItem, OrderType } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
 import { siteDecisionStands } from '../../shared/sync-context';
-import { currentAuthorization, slipError, splitUnreleased } from './release-auth';
+import { currentAuthorization, latestOverride, slipError, splitUnreleased } from './release-auth';
+import { isMobileClient } from '../../shared/device';
 
 const router = Router();
 router.use(requireAuth);
@@ -418,7 +419,9 @@ router.post('/:id/accept-release', releaseGate, syncClass('claim', orderSite), (
 // POST /api/orders/:id/release-slip — issue the release slip for a fully released sale order:
 // the numbered record of what physically left (lines + unit serials, who collected it). Issuing
 // it confirms the order, which is when stock goes out (maybeFulfillSale). Photos of the
-// outgoing goods are attached afterwards as `attachments` kind 'release' on the slip id.
+// outgoing goods are `attachments` kind 'release' on the slip id: attached afterwards (desktop),
+// or uploaded first as kind 'release_proof' on the order and passed as `evidence_ids`, which the
+// slip takes over — the phone app must do the latter, with at least one photo.
 router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
@@ -458,6 +461,16 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
     if (!stands) { res.status(409).json({ error: rule.error, blocked: rule.code, missing: rule.missing }); return; }
     recordSiteClash(req, `Sale order ${order.number}: the site's release slip stands although — ${rule.error}`);
   }
+  // Handoff photos already uploaded for this order (kind 'release_proof'); the phone app needs one.
+  const evidence = (input.evidence_ids ?? []).length ? queryAll<{ id: number }>(
+    `SELECT id FROM attachments WHERE kind = 'release_proof' AND ref_id = ? AND id IN (${input.evidence_ids!.map(() => '?').join(',')})`,
+    id, ...input.evidence_ids!
+  ).map((a) => a.id) : [];
+  if (!stands && isMobileClient(req) && !evidence.length) {
+    res.status(409).json({ error: 'Add at least one handoff photo before the warehouse-out.', blocked: 'evidence' });
+    return;
+  }
+  const override = auth && authState === 'valid' ? latestOverride(auth.id) : null;
   if (partial && !queryOne<{ n: number }>(
     `SELECT (SELECT COUNT(*) FROM job_order_units WHERE order_id = ? AND status IN ('reserved', 'sold'))
           + (SELECT COALESCE(SUM(released_qty), 0) FROM order_items WHERE order_id = ?) AS n`, id, id
@@ -499,6 +512,13 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
       input.package?.length ? JSON.stringify(input.package) : null, input.acknowledged ? 1 : 0, backorder?.id ?? null
     );
     if (auth && authState === 'valid') run('UPDATE release_authorizations SET used_slip_id = ? WHERE id = ?', slipId, auth.id);
+    // A supervisor's override is spent on this slip only when it stood in for the token.
+    if (override?.status === 'approved' && rule === null && auth && input.authorization_token?.trim().toUpperCase() !== auth.token.toUpperCase()) {
+      run("UPDATE release_token_overrides SET status = 'used', used_slip_id = ? WHERE id = ?", slipId, override.id);
+    }
+    if (evidence.length) {
+      run(`UPDATE attachments SET kind = 'release', ref_id = ? WHERE id IN (${evidence.map(() => '?').join(',')})`, slipId, ...evidence);
+    }
     run("UPDATE orders SET status = 'confirmed', updated_at = datetime('now') WHERE id = ?", id);
     db.exec('COMMIT');
   } catch (e) {

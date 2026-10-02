@@ -62,6 +62,8 @@ beforeAll(async () => {
     bay = (await a.post('/api/locations').set(cloudHdr()).send({ name: 'Site warehouse', type: 'warehouse' })).body.id;
     widget = (await a.post('/api/inventory').set(cloudHdr()).send({ name: 'Widget', quantity: 0 })).body.id;
     await a.post(`/api/inventory/${widget}/adjust`).set(cloudHdr()).send({ change: 100, location_id: bay, reason: 'Opening stock' });
+    // Release authorizations are tests/release-auth.test.ts; this file is about sync.
+    await a.put('/api/release-slips/policy').set(cloudHdr()).send({ authorization_required: false });
   });
   // The site's warehouse is the host's.
   await ok(api().put('/api/sync/sites').set(T.cloudHdr()).send({ locations: [{ location_id: bay, host_node_no: T.hostNo }] }));

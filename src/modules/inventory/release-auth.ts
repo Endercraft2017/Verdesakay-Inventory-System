@@ -6,8 +6,11 @@
  *  - Release authorization (Sales, `orders.edit`): pickup or delivery, the approved recipient
  *    (name + the last 4 of an ID reference — never the full number), a time-limited token the
  *    recipient presents, the handoff area, and whether a partial release is allowed. Issuing a
- *    new one revokes the previous. Enforced for an order that has one, and for every order when
- *    the `release_authorization_required` setting is on.
+ *    new one revokes the previous. Required for every order unless the company turns the
+ *    `release_authorization_required` setting off; an order that has one always enforces it.
+ *  - Token override: when the recipient can't present the token, a supervisor (inventory.adjust)
+ *    approves releasing without it, with a reason — requested from the counter or made directly.
+ *    It replaces only the token: the authorization itself must still be valid.
  *  - Package checklist (per finished product): the items that must leave with each unit
  *    (charger, keys, documents…). Every required item is confirmed explicitly on the slip.
  *  - Partial release: only with an authorization that allows it. The order is split at the slip —
@@ -44,8 +47,26 @@ export function newToken(mode: 'pickup' | 'delivery'): string {
   return (mode === 'pickup' ? 'PICKUP-' : 'DELIV-') + s;
 }
 
+/** On unless the company turned it off (Releasing policy): every sale order needs Sales'
+ *  authorization before the warehouse-out. */
 export function authorizationRequired(): boolean {
-  return getSetting<boolean>('release_authorization_required') === true;
+  return getSetting<boolean>('release_authorization_required') !== false;
+}
+
+export interface TokenOverride {
+  id: number; order_id: number; authorization_id: number; status: 'requested' | 'approved' | 'declined' | 'used';
+  reason: string; requested_by: number | null; requested_at: string; decided_by: number | null; decided_at: string | null;
+  decision_note: string | null; used_slip_id: number | null;
+  requested_by_name?: string | null; decided_by_name?: string | null;
+}
+
+/** The latest supervisor override of an authorization's token (any status), with names. */
+export function latestOverride(authorizationId: number): TokenOverride | null {
+  return queryOne<TokenOverride>(
+    `SELECT o.*, rq.full_name AS requested_by_name, dc.full_name AS decided_by_name FROM release_token_overrides o
+     LEFT JOIN users rq ON rq.id = o.requested_by LEFT JOIN users dc ON dc.id = o.decided_by
+     WHERE o.authorization_id = ? ORDER BY o.id DESC LIMIT 1`, authorizationId
+  ) ?? null;
 }
 
 /** The order's latest authorization (revoked or not), with its state right now. */
@@ -64,7 +85,10 @@ export function currentAuthorization(orderId: number): { auth: ReleaseAuthorizat
 export function publicAuthorization(orderId: number) {
   const { auth, state } = currentAuthorization(orderId);
   if (!auth) return { state, required: authorizationRequired() };
+  const ov = latestOverride(auth.id);
   return {
+    override: ov ? { id: ov.id, status: ov.status, reason: ov.reason, requested_by_name: ov.requested_by_name ?? null,
+      decided_by_name: ov.decided_by_name ?? null, decision_note: ov.decision_note, decided_at: ov.decided_at } : null,
     state, required: authorizationRequired(),
     id: auth.id, mode: auth.mode, recipient_name: auth.recipient_name,
     id_reference: auth.id_last4 ? '••' + auth.id_last4 : null,
@@ -174,10 +198,12 @@ export function splitUnreleased(orderId: number, userId: number): { id: number; 
 /** Everything the slip must satisfy beyond "every line released" (checked by the route). */
 export function slipError(orderId: number, input: { authorization_token?: string | null; package?: { item_id: number; label: string; ok: boolean }[] }):
   { code: 'authorization' | 'package'; error: string; missing?: string[] } | null {
-  const { auth } = currentAuthorization(orderId);
+  const { auth, state } = currentAuthorization(orderId);
   if (auth || authorizationRequired()) {
     const err = tokenError(orderId, input.authorization_token);
-    if (err) return { code: 'authorization', error: err };
+    // A supervisor's approved override stands in for the token — never for a missing, revoked,
+    // expired or used authorization.
+    if (err && !(auth && state === 'valid' && latestOverride(auth.id)?.status === 'approved')) return { code: 'authorization', error: err };
   }
   const missing = missingPackageItems(orderId, input.package);
   if (missing.length) return { code: 'package', error: `Confirm every required package item: ${missing.join(', ')}`, missing };

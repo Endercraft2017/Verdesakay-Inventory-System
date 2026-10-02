@@ -2,7 +2,10 @@
      1. Release Queue — approved SOs waiting for the warehouse to accept them, then the
         accepted ones being picked (scan unit labels / enter quantities).
      2. Issue the release slip once every line is out — who collected it, the vehicle, and
-        photos of the goods. Issuing it confirms the SO, which is when stock goes out.
+        photos of the goods. Issuing it confirms the SO, which is when stock goes out. When Sales'
+        authorization allows a partial release, the slip can go for what is out now; the server
+        moves the rest to a new backorder SO. A supervisor (inventory.adjust) may release without
+        the recipient's token, with a reason (POST /release-slips/orders/:id/override).
      3. Release Slips — the printable record of everything that left.
    Backend: /api/release-slips (queue + slips), /api/orders/:id/accept-release | release |
    release-slip, photos = /api/attachments kind 'release'. filter.tab = 'queue' | 'slips' */
@@ -73,7 +76,9 @@ App.register('releasing', async (view, filter) => {
             <td class="muted">${UI.esc(o.warehouse_accepted_by_name || '—')}</td>
             <td class="muted">${UI.esc(o.expected_date || '—')}</td>
             <td class="right">${o.qty_released} / ${o.qty_ordered}</td>
-            <td>${done ? '<span class="badge-pill ok">Ready for slip</span>' : ''}</td>
+            <td>${done ? '<span class="badge-pill ok">Ready for slip</span>' : ''}
+              ${o.authorization && o.authorization.override && o.authorization.override.status === 'requested'
+                ? '<span class="badge-pill warn" title="' + UI.esc(o.authorization.override.reason) + '">Token override requested</span>' : ''}</td>
           </tr>`;
         }).join('')}
         </tbody>
@@ -86,9 +91,13 @@ App.register('releasing', async (view, filter) => {
   const covered = (l) => Math.max(Number(l.allocated_qty || 0) + Number(l.reserved_qty || 0), Number(l.released_qty || 0));
 
   async function openRelease(orderId) {
-    let order;
-    try { order = await API.get('/orders/' + orderId); }
-    catch (e) { UI.toast(e.message, 'error'); return; }
+    let order, rc = null;
+    try {
+      [order, rc] = await Promise.all([
+        API.get('/orders/' + orderId),
+        API.get('/release-slips/orders/' + orderId + '/context').catch(() => null),
+      ]);
+    } catch (e) { UI.toast(e.message, 'error'); return; }
 
     // No footer confirm button on purpose: UI.modal clicks it on Enter in any input, and a
     // barcode scanner sends Enter after every label — the slip button lives in the body.
@@ -113,6 +122,9 @@ App.register('releasing', async (view, filter) => {
     function draw() {
       const items = order.items || [];
       const fullyOut = String(order.status).toLowerCase() === 'released';
+      // Partial release: only with Sales' authorization that allows it, and once something is out.
+      const auth = (rc && rc.authorization) || {};
+      const partialOk = !fullyOut && auth.state === 'valid' && !!auth.partial_allowed && items.some((l) => l.item_id && covered(l) > 0);
       body.innerHTML = `
         <div class="kv">
           <div><span class="muted">Customer</span><div>${UI.esc(order.customer_name || 'Walk-in')}</div></div>
@@ -141,9 +153,11 @@ App.register('releasing', async (view, filter) => {
         <div style="display:flex;align-items:center;gap:10px;margin-top:16px">
           <span class="muted" style="font-size:12px">${fullyOut
             ? 'Every line is out. Issue the release slip as the goods leave — that is when stock is deducted.'
-            : 'Release every line to issue the release slip.'}</span>
+            : partialOk
+              ? 'Sales allowed a partial release: the slip covers what is out now, and the rest moves to a new backorder sale order.'
+              : 'Release every line to issue the release slip.'}</span>
           <div class="grow"></div>
-          <button class="btn" id="rl-slip" ${fullyOut ? '' : 'disabled'}>${UI.icon('sheet')} Issue release slip</button>
+          <button class="btn" id="rl-slip" ${fullyOut || partialOk ? '' : 'disabled'}>${UI.icon('sheet')} ${partialOk ? 'Issue partial release slip' : 'Issue release slip'}</button>
         </div>`;
 
       const scan = body.querySelector('#rl-scan');
@@ -166,25 +180,37 @@ App.register('releasing', async (view, filter) => {
         if (await post({ bulk: [{ item_id: l.item_id, quantity: q }] })) UI.toast(`${l.name} ×${q} released`);
         else b.disabled = false;
       });
-      body.querySelector('#rl-slip').onclick = () => slipModal(order, () => { m.close(); if (tab === 'queue') renderQueue(); });
+      body.querySelector('#rl-slip').onclick = () => slipModal(order, () => { m.close(); if (tab === 'queue') renderQueue(); }, partialOk);
     }
     draw();
   }
 
   /* ------------------------------------------------------ 3. issue the release slip --- */
-  async function slipModal(order, onDone) {
+  async function slipModal(order, onDone, partial) {
     const photos = []; // File[]
     // Warehouse-out rules (release-auth.ts): the recipient's token when Sales issued an
     // authorization, and every required package item. The server re-checks both.
     let rc = { authorization: { state: 'none' }, package: [] };
     try { rc = await API.get('/release-slips/orders/' + order.id + '/context'); } catch (e) { /* older server: plain slip */ }
     const auth = rc.authorization || { state: 'none' };
+    // A supervisor's approved override stands in for the token; a supervisor can make one here.
+    const tov = auth.override || null;
+    const ovOk = !!tov && tov.status === 'approved';
+    const canOverride = !ovOk && App.hasPermission('inventory.adjust');
     const authBlock = auth.state === 'valid'
       ? `<div class="panel" style="padding:10px 12px;margin-bottom:10px">
            <div><b>${UI.esc(auth.mode === 'delivery' ? 'Delivery' : 'Customer pickup')}</b> · approved recipient
              <b>${UI.esc(auth.recipient_name)}</b>${auth.id_reference ? ' · ID ' + UI.esc(auth.id_reference) : ''}</div>
-           <div style="margin-top:8px"><label>Release token the recipient presents <span class="req">*</span></label>
-             <input data-f="authorization_token" placeholder="${UI.esc(auth.token_hint)}" style="text-transform:uppercase" /></div>
+           ${ovOk
+             ? `<div style="margin-top:8px"><span class="badge-pill ok">Supervisor override</span> ${UI.esc(tov.decided_by_name || '')}:
+                  ${UI.esc(tov.decision_note || tov.reason)} — the token isn't needed.</div>`
+             : `<div style="margin-top:8px" data-token-row><label>Release token the recipient presents <span class="req">*</span></label>
+                  <input data-f="authorization_token" placeholder="${UI.esc(auth.token_hint)}" style="text-transform:uppercase" /></div>`}
+           ${tov && tov.status === 'requested' ? `<div class="muted" style="margin-top:6px">${UI.esc(tov.requested_by_name || 'The releaser')} asked to release without the token: ${UI.esc(tov.reason)}</div>` : ''}
+           ${canOverride ? `<label style="display:flex;gap:8px;align-items:center;margin-top:8px">
+               <input type="checkbox" data-ov /> Release without the token (supervisor override)</label>
+             <div data-ov-row hidden style="margin-top:6px"><label>Reason <span class="req">*</span></label>
+               <input data-f="override_reason" maxlength="500" placeholder="e.g. ID checked in person against the order" /></div>` : ''}
          </div>`
       : auth.state !== 'none' || auth.required
         ? `<div class="error" style="margin-bottom:10px">Release authorization ${UI.esc(auth.state === 'none' ? 'missing' : auth.state)} —
@@ -200,6 +226,7 @@ App.register('releasing', async (view, filter) => {
       bodyHTML: `
         <p class="muted" style="margin-top:0">Record who took the goods out. Issuing the slip confirms
           ${UI.esc(order.number)} and deducts the released stock.</p>
+        ${partial ? '<div class="panel" style="padding:10px 12px;margin-bottom:10px"><b>Partial release.</b> Only what is out now leaves; the rest of the order moves to a new backorder sale order.</div>' : ''}
         ${authBlock}
         <div><label>Collected by <span class="req">*</span></label>
           <input data-f="collected_by" placeholder="Driver / customer representative" value="${auth.state === 'valid' ? UI.esc(auth.recipient_name) : ''}" /></div>
@@ -225,20 +252,29 @@ App.register('releasing', async (view, filter) => {
             </div>`).join('');
           grid.querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { photos.splice(Number(b.dataset.rm), 1); drawPhotos(); });
         };
+        const ovBox = ov.querySelector('[data-ov]');
+        if (ovBox) ovBox.onchange = () => {
+          ov.querySelector('[data-ov-row]').hidden = !ovBox.checked;
+          const tr = ov.querySelector('[data-token-row]');
+          if (tr) tr.hidden = ovBox.checked;
+        };
         ov.querySelector('#rl-photo-add').onclick = () => input.click();
         input.onchange = () => { photos.push(...input.files); input.value = ''; drawPhotos(); };
       },
       onConfirm: async (ov, showErr) => {
         const val = (k) => { const el = ov.querySelector(`[data-f="${k}"]`); return el ? el.value.trim() : ''; };
         if (!val('collected_by')) { showErr('Enter who collected the goods'); return false; }
-        if (auth.state === 'valid' && !val('authorization_token')) { showErr('Enter the release token the recipient presents'); return false; }
+        const overriding = !!(ov.querySelector('[data-ov]') && ov.querySelector('[data-ov]').checked);
+        if (overriding && val('override_reason').length < 5) { showErr('Give the reason for releasing without the token'); return false; }
+        if (auth.state === 'valid' && !ovOk && !overriding && !val('authorization_token')) { showErr('Enter the release token the recipient presents'); return false; }
         const pkg = (rc.package || []).map((p, i) => ({ item_id: p.item_id, label: p.label, ok: ov.querySelector(`[data-pkg="${i}"]`).checked }));
         const missing = (rc.package || []).filter((p, i) => p.required && !pkg[i].ok);
         if (missing.length) { showErr('Confirm every required package item: ' + missing.map((p) => p.label).join(', ')); return false; }
         if (!photos.length) { showErr('Add at least one photo of the goods going out'); return false; }
+        if (overriding) await API.post('/release-slips/orders/' + order.id + '/override', { approve: true, reason: val('override_reason') });
         const r = await API.post('/orders/' + order.id + '/release-slip', {
           collected_by: val('collected_by'), vehicle_plate: val('vehicle_plate') || null, notes: val('notes') || null,
-          authorization_token: val('authorization_token').toUpperCase() || null, seal_tag: val('seal_tag') || null, package: pkg,
+          authorization_token: overriding ? null : (val('authorization_token').toUpperCase() || null), seal_tag: val('seal_tag') || null, package: pkg,
         });
         let failed = 0;
         for (const f of photos) {
@@ -248,7 +284,8 @@ App.register('releasing', async (view, filter) => {
           fd.append('image', f);
           try { await API.upload('/attachments', fd); } catch (e) { failed += 1; }
         }
-        UI.toast(failed ? `Slip issued — ${failed} photo(s) failed to upload; add them from the slip` : 'Release slip issued — stock deducted',
+        UI.toast(failed ? `Slip issued — ${failed} photo(s) failed to upload; add them from the slip`
+          : r.backorder ? `Release slip issued — the rest is on backorder ${r.backorder.number}` : 'Release slip issued — stock deducted',
           failed ? 'error' : undefined);
         if (onDone) onDone();
         slipView(r.id);
@@ -335,6 +372,7 @@ App.register('releasing', async (view, filter) => {
       </div>
       ${itemsTable}
       ${slip.notes ? `<p><strong>Notes:</strong> ${UI.esc(slip.notes)}</p>` : ''}
+      ${slip.override_reason ? `<p><strong>Released without token — supervisor override by ${UI.esc(slip.override_by_name || '')}:</strong> ${UI.esc(slip.override_reason)}</p>` : ''}
       ${urls.some(Boolean) ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 18px">${photoGrid('')}</div>` : ''}
       <div style="display:flex;justify-content:space-between;gap:40px;margin-top:40px">
         <div style="flex:1;border-top:1px solid #333;padding-top:4px">Released by: ${UI.esc(slip.released_by_name || '')}</div>
@@ -355,6 +393,7 @@ App.register('releasing', async (view, filter) => {
           <div><span class="muted">Vehicle</span><div>${UI.esc(slip.vehicle_plate || '—')}</div></div>
           <div><span class="muted">Released by</span><div>${UI.esc(slip.released_by_name || '—')}</div></div>
           <div><span class="muted">Released</span><div>${UI.esc(UI.fmtDate(slip.released_at))}</div></div>
+          ${slip.override_reason ? `<div><span class="muted">Token</span><div>Supervisor override by ${UI.esc(slip.override_by_name || '—')}: ${UI.esc(slip.override_reason)}</div></div>` : ''}
         </div>
         ${slip.notes ? `<p style="margin:12px 0 0"><span class="muted">Notes:</span> ${UI.esc(slip.notes)}</p>` : ''}
         <h4 style="${LABEL}">Goods released</h4>

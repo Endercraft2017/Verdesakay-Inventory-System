@@ -1089,6 +1089,20 @@ export interface ReleaseSlips {
   notes: string | null;
 }
 
+export interface ReleaseTokenOverrides {
+  id: Generated<number>;
+  order_id: number;
+  authorization_id: number;
+  status: Generated<string>;
+  reason: string;
+  requested_by: number | null;
+  requested_at: Generated<string>;
+  decided_by: number | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  used_slip_id: number | null;
+}
+
 export interface RepairPartRequests {
   id: Generated<number>;
   number: string;
@@ -1424,6 +1438,7 @@ export interface DB {
   release_slip_details: ReleaseSlipDetails;
   release_slip_items: ReleaseSlipItems;
   release_slips: ReleaseSlips;
+  release_token_overrides: ReleaseTokenOverrides;
   repair_part_requests: RepairPartRequests;
   repair_request_events: RepairRequestEvents;
   repair_revisions: RepairRevisions;

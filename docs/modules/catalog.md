@@ -301,16 +301,25 @@ a new one revokes the previous), `product_package_items` (per finished product, 
 editor; `GET/PUT /finished-products/:id/package`), `release_slip_details` (token used, recipient,
 confirmed package JSON, seal tag, acknowledgement, a partial release's backorder), and
 `release_reports` (releaser → Sales). `POST /orders/:id/release-slip` refuses (409 `{blocked}`)
-before any write: a wrong / expired / used / revoked token for an order that has an
-authorization (every order when the `release_authorization_required` setting is on), any
-unconfirmed required package item, or an incomplete order without partial authority. With
+before any write: a missing / wrong / expired / used / revoked authorization or token (every
+order needs one unless the company turns the `release_authorization_required` setting off — on
+by default; an order that has one always enforces it), any unconfirmed required package item, an
+incomplete order without partial authority, or — from the phone app (`X-Client: mobile`,
+`shared/device.ts isMobileClient`) — no handoff photo (`evidence_ids`: `attachments` kind
+`release_proof` on the order, taken over by the slip as kind `release`). **Token override:**
+`release_token_overrides` — the releaser asks (`POST /orders/:id/override-request`, merge; pushes
+every `inventory.adjust` holder), a supervisor (`inventory.adjust`) approves or declines with a
+reason, or overrides directly (`POST /orders/:id/override`, claim). An approved one stands in for
+the token on one slip of a valid authorization and its reason is on the slip. Release reports
+push the authorization's issuer and every `orders.edit` holder. With
 partial authority the order is split at the slip (`splitUnreleased`: released quantities stay,
 the rest becomes a new approved backorder SO). `release-slips.routes.ts` adds:
 `GET /orders/:id/context` | `/unit?code=` | `/verify-token?token=` (releasers; the token is never
 returned to them), `GET|POST /orders/:id/authorizations`, `POST .../authorizations/revoke`,
 `POST /orders/:id/reports`, `GET /reports/list`, `POST /reports/:rid/resolve`, `GET|PUT /policy`.
-Desktop: Sales Orders key icon (`release-authorization.js`), slip modal token + package fields
-(`releasing.js`), BOM editor package list. Tests: `tests/release-auth.test.ts`.
+Desktop: Sales Orders key icon (`release-authorization.js`, shows the override), slip modal token +
+package fields, supervisor override and partial release when Sales allowed it (`releasing.js`),
+BOM editor package list. Tests: `tests/release-auth.test.ts`.
 **Public interface:** stock-mutation functions in `inventory-stock.ts` (called
 directly by `manufacturing/`, `purchasing/`, and `modules/ai/ai-tools.ts`).
 **Dependencies:** `shared/`; `sync/` (`syncClass`) for offline-capable routes.
@@ -596,7 +605,8 @@ Fifth: Releasing personnel warehouse-out, `modules/inventory/so.js` (Figma 78:16
 blue `rel` accent) — queue (Ready / Blocked by authorization or open reports / Completed) → verify
 release authority → scan units (allocate via `/release`, bulk quantities) → verify unit (or
 release blocked for another order's / wrong / unknown serial) → package checklist + seal →
-handoff (recipient's token verified, never displayed) → proof (photo + signature) → review →
+handoff (recipient's token verified, never displayed — or a supervisor's override, asked for or
+approved on the `override` step) → proof (photo + signature; photos upload before the slip) → review →
 confirm → recorded / receipt; incomplete allocation → partial release only with Sales'
 authority; reports to Sales. Allocation and warehouse-out are online-only with idempotency keys.
 `lib/signature.js` no longer clears a drawn signature on height-only resizes (keyboard/toolbar).

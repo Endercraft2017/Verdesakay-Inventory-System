@@ -21,6 +21,13 @@ export function deviceIdOf(req: Request): string | null {
   return raw && DEVICE_ID_RE.test(raw) ? raw : null;
 }
 
+/** True when the request came from the phone app (/m sends `X-Client: mobile`, public/js/api.js).
+ *  For rules only the phone app is held to — evidence photos on QC/QA results and on the release
+ *  handoff. A self-declared header: it identifies the app, it doesn't authenticate it. */
+export function isMobileClient(req: Request): boolean {
+  return (req.get('x-client') || '').toLowerCase() === 'mobile';
+}
+
 /** Client IP (the proxy's X-Forwarded-For when BEHIND_PROXY — see app.ts `trust proxy`). */
 export function clientIpOf(req: Request): string | null {
   return req.ip ?? req.socket?.remoteAddress ?? null;
