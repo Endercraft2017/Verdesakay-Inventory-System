@@ -38,7 +38,7 @@ beforeAll(async () => {
   await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: jo }] });
   await ctx.api.post(`/api/job-orders/${jo}/release`).set(H());
   await ctx.api.post(`/api/job-orders/${jo}/accept`).set(H()).send({});
-  [unit] = await addSerializedUnits(ctx.api, token, jo, 1, 'RP');
+  unit = (await addSerializedUnits(ctx.api, token, jo, 1, 'RP'))[0]!;
   await ctx.api.post(`/api/job-orders/${jo}/units/inspect`).set(H()).send({ unit_ids: [unit], result: 'fail', disposition: 'repair',
     remarks: 'Intermittent signal failure', repair: { category: 'Electrical · signal system', station: 'Wiring', priority: 'Urgent' } });
 });
