@@ -119,6 +119,8 @@ input, select, button, textarea { font-family: inherit; }
   cursor: pointer;
 }
 .m-card .m-btn { margin-top: 20px; }
+/* Installed phone app: first-launch server address (mobile/native.js). */
+.m-connect-help { margin: 8px 0 0; font-size: 12px; line-height: 1.45; color: var(--m-muted, #5b6b60); }
 .m-btn:disabled { opacity: 0.6; }
 .m-btn-secondary { background: var(--m-surface-2); color: var(--m-text); }
 .m-btn-warn { background: var(--m-warn); }

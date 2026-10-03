@@ -48,9 +48,11 @@
   function open() {
     var token = window.API && API.getToken();
     if (!token) return; // not logged in yet
-    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    // The installed phone app talks to the server it was pointed at, not its own bundled pages.
+    var apiBase = window.API && API.base ? API.base() : '';
+    var origin = apiBase ? apiBase.replace(/^http/, 'ws') : (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host;
     try {
-      socket = new WebSocket(proto + '//' + location.host + '/ws?token=' + encodeURIComponent(token));
+      socket = new WebSocket(origin + '/ws?token=' + encodeURIComponent(token));
     } catch (e) {
       scheduleReconnect();
       return;

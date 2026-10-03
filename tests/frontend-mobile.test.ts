@@ -228,7 +228,8 @@ describe('mobile bootstrap', () => {
     // Anonymous path: identity-free transport — a bare fetch with no Authorization header or
     // cookies, never the token-adding API client / offline queue, never Messages or Bug Reports.
     const anon = source.slice(source.indexOf('function anonPost('), source.indexOf('function identifiedList('));
-    expect(anon).toContain("fetch('/api/anonymous-reports' + path");
+    // API.base() is only the server address the installed app saved (§29) — no token, no queue.
+    expect(anon).toContain("fetch(API.base() + '/api/anonymous-reports' + path");
     expect(anon).toContain("credentials: 'omit'");
     expect(anon).not.toMatch(/Authorization|getToken/);
     expect(anon).not.toMatch(/API\.(post|upload)\('\/anonymous-reports'\s*,/);
@@ -252,8 +253,8 @@ describe('mobile bootstrap', () => {
     // The reporter's own photos come back over the same identity-free transport, code in the body.
     const own = anon.slice(anon.indexOf('function anonPhotoUrl('), anon.indexOf('function scrubPhoto('));
     expect(own).toContain("credentials: 'omit'");
-    expect(own).toContain("fetch('/api/anonymous-reports/photo'");
-    expect(own).not.toMatch(/API\.|Authorization|\?number=|access_code=/);
+    expect(own).toContain("fetch(API.base() + '/api/anonymous-reports/photo'");
+    expect(own).not.toMatch(/API\.(?!base\(\))|Authorization|\?number=|access_code=/);
   });
 
   describe('warehouse kit release (Figma 62:*)', () => {

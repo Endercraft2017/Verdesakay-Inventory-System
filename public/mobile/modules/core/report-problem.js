@@ -185,7 +185,7 @@
       init.headers = { 'Content-Type': 'application/json' };
       init.body = JSON.stringify(body);
     }
-    return fetch('/api/anonymous-reports' + path, init).catch(function () {
+    return fetch(API.base() + '/api/anonymous-reports' + path, init).catch(function () {
       var e = new Error('You’re offline. Nothing was sent — your draft is still on this device.'); e.offline = true; throw e;
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) {
@@ -198,7 +198,7 @@
   /* One of your own report photos as an object URL — same identity-free transport, with the
      number + code in the POST body rather than on an image URL (history, logs). */
   function anonPhotoUrl(c, photoId) {
-    return fetch('/api/anonymous-reports/photo', {
+    return fetch(API.base() + '/api/anonymous-reports/photo', {
       method: 'POST', credentials: 'omit', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ number: c.number, access_code: c.access_code, photo_id: photoId })

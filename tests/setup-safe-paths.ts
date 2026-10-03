@@ -8,8 +8,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { afterAll } from 'vitest';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-test-guard-'));
+// Removed when the test file is done, so test runs don't fill the disk.
+afterAll(() => {
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* a file still open: left for the OS */ }
+});
 process.env.DB_PATH = path.join(dir, 'test.db');
 process.env.DATA_DIR = path.join(dir, 'data');
 process.env.UPLOAD_DIR = path.join(dir, 'uploads');

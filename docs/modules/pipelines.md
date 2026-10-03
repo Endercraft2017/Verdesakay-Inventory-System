@@ -375,6 +375,10 @@ pending; a second decision → 400.
 
 **Trigger:** someone signs in on the desktop (`/`) or mobile (`/m`) app — on their own device,
 or with "I'm using someone else's phone" / "shared or borrowed computer" ticked.
+0. **Connect (installed phone app only, docs/OFFLINE-FIRST.md §29)** — on first launch
+   `public/mobile/native.js` asks for the server address (cloud or site host), checks it answers
+   `GET /api/health`, and keeps it (`vds_api_base`); every later call goes there. Not reachable /
+   not a Verdesakay server ⇒ stays on the Connect screen. The browser `/m` skips this step.
 1. **Sign in** (`core/auth.routes` → `shared/auth.createSession`) — password check; the session
    records device ID (`X-Device-Id`, `shared/device.ts`), IP and user agent; the activity log
    gets a `login` row with the same device. Borrowed ⇒ `shared` session (4 h max, 30 min idle),

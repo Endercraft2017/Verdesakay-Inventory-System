@@ -304,6 +304,8 @@ window.MApp = (function () {
   }
 
   function boot() {
+    // The installed phone app first needs to know which server to use (mobile/native.js, §29).
+    if (window.VDS_NATIVE && window.VdsNative && !API.base()) { window.VdsNative.showConnect(boot); return; }
     document.getElementById('m-back').onclick = back;
     document.getElementById('m-notifications-top').onclick = function () { go('notifications'); };
 
@@ -386,7 +388,8 @@ window.MApp = (function () {
 
   window.App = { showLogin: showLogin };
 
-  if ('serviceWorker' in navigator) {
+  // The installed phone app serves its own bundled pages: no service worker there (§29).
+  if ('serviceWorker' in navigator && !window.VDS_NATIVE) {
     var hadController = !!navigator.serviceWorker.controller;
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('/mobile/sw.js', { scope: '/m' }).catch(function () {});

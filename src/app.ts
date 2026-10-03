@@ -64,6 +64,9 @@ const ROOT = path.join(import.meta.dirname, '..');
  *  and trusts the proxy's X-Forwarded-* headers. Re-exported for server.ts. */
 export { BEHIND_PROXY };
 
+/** Where the installed phone app's pages come from (Capacitor: Android, then iPhone). */
+const NATIVE_APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost']);
+
 export function createApp() {
   const app = express();
   // Offline-first sync hooks (docs/OFFLINE-FIRST.md). Inert for any tenant DB without a sync
@@ -77,6 +80,23 @@ export function createApp() {
   // a tailored policy can be added later if the app is exposed beyond the LAN.
   // HSTS is off so a device can be pointed back at plain HTTP without getting stuck.
   app.use(helmet({ contentSecurityPolicy: false, hsts: false }));
+  // The installed phone app (docs/OFFLINE-FIRST.md §29) serves its own pages from inside the app
+  // (https://localhost on Android, capacitor://localhost on iPhone) and calls this server's API
+  // cross-origin. Only those two origins, only /api, and no cookies: requests carry the bearer
+  // token, which another site has no way to get.
+  app.use('/api', (req, res, next) => {
+    const origin = req.get('origin');
+    if (!origin || !NATIVE_APP_ORIGINS.has(origin)) { next(); return; }
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Sync-State, X-Sync-Command, Content-Disposition');
+    if (req.method !== 'OPTIONS') { next(); return; }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE');
+    res.setHeader('Access-Control-Allow-Headers',
+      'Authorization, Content-Type, X-Device-Id, X-Client, Idempotency-Key, X-Kiosk-Token, X-Tenant');
+    res.setHeader('Access-Control-Max-Age', '600');
+    res.status(204).end();
+  });
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 

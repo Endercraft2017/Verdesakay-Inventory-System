@@ -46,13 +46,20 @@ const API = (() => {
     }
   }
 
+  /** Where the API lives: this page's own server, or — in the installed phone app, whose pages are
+      bundled inside it (docs/OFFLINE-FIRST.md §29) — the server the phone was pointed at. */
+  function base() {
+    if (!window.VDS_NATIVE) return '';
+    try { return (localStorage.getItem('vds_api_base') || '').replace(/\/+$/, ''); } catch (e) { return ''; }
+  }
+
   async function request(method, path, body, isForm, opts) {
     const headers = {};
     const token = getToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
     if (!/^\/anonymous-reports/.test(path)) headers['X-Device-Id'] = deviceId();
     // Which app this is (src/shared/device.ts): both are held to the evidence-photo rules.
-    headers['X-Client'] = /^\/m(\/|$)/.test(location.pathname) ? 'mobile' : 'desktop';
+    headers['X-Client'] = window.VDS_NATIVE || /^\/m(\/|$)/.test(location.pathname) ? 'mobile' : 'desktop';
     // Opt-in idempotency: a caller (e.g. the mobile offline queue) passes a stable
     // key so a retried request is de-duplicated server-side instead of re-applied.
     if (opts && opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
@@ -72,7 +79,7 @@ const API = (() => {
 
     let res;
     try {
-      res = await fetch('/api' + path, { method, headers, body: payload });
+      res = await fetch(base() + '/api' + path, { method, headers, body: payload });
     } catch (e) {
       // fetch only throws on a genuine network failure (offline, DNS, connection reset).
       const err = new Error('Network unavailable');
@@ -119,7 +126,7 @@ const API = (() => {
     const token = getToken();
     const headers = { 'X-Device-Id': deviceId() };
     if (token) headers.Authorization = 'Bearer ' + token;
-    const res = await fetch('/api' + path, { headers });
+    const res = await fetch(base() + '/api' + path, { headers });
     if (res.status === 401) {
       clearToken();
       if (window.App) window.App.showLogin();
@@ -140,7 +147,7 @@ const API = (() => {
   }
 
   return {
-    getToken, setToken, clearToken, isSharedSession, deviceId,
+    getToken, setToken, clearToken, isSharedSession, deviceId, base,
     get: (p) => request('GET', p),
     post: (p, b, opts) => request('POST', p, b, false, opts),
     put: (p, b, opts) => request('PUT', p, b, false, opts),

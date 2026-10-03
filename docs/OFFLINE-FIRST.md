@@ -1163,7 +1163,7 @@ that list still names a real, unclassed route. It sees all 262 mutating routes.
 
 **Phase 4 is complete:** every route is either classed or listed with its reason.
 
-## 29. Phase 7 (planned, added 2026-10-02): an installable Android app
+## 29. Phase 7 (added 2026-10-02; 7a built 2026-10-03): an installable Android app
 
 **Why.** Floor roles work on phones: QC and QA inspectors, the production line, warehouse releasing and
 receiving. Today a phone works offline only partly:
@@ -1210,6 +1210,71 @@ stolen, so they hold only what the signed-in person is working on, and that is c
 
 **Depends on:** phase 5, so the phone can follow the host. Today the PWA keeps working with the site host's
 fixed address, or the cloud.
+
+### Steps
+- **7a. The installable shell — built 2026-10-03.** Details below.
+- **7b. QC/QA offline work lists — planned.** Per signed-in person, kept in IndexedDB:
+  - the queue (`/qc/queue`), each unit's job order and checklist (`/job-orders/:id`, `/qc/checklists`) and
+    its record (`/finished-products/:id`);
+  - shown offline with a "last updated" time;
+  - inspections are queued through `mSubmit` and shown as queued, not as done;
+  - the copy is wiped at sign-out.
+- **7c. Finding and following the site host — planned.**
+- **7d. Planned:**
+  - certificate pinning against the site CA;
+  - the action's own time on queued actions;
+  - an in-app update check plus a release signing key;
+  - native push (web push doesn't reach an APK);
+  - the iPhone build.
+
+### 7a as built (2026-10-03)
+**Project.** `mobile-app/` is a Capacitor 8 project (`com.verdesakay.app`), and the `android/` project
+is committed.
+
+**Building it:**
+1. `npm install`, then `npm run apk` in `mobile-app/`.
+2. `build-web.mjs` copies `public/mobile` and `public/js` into `www/` and writes the start page from
+   `public/mobile/index.html`:
+   - `mobile/native.js` loads before `api.js`;
+   - the web-manifest link is removed.
+3. `cap sync android` bundles `www/` into the app.
+4. `build-apk.mjs` runs Gradle:
+   - it uses Android Studio's Java 21 when the default `java` is older;
+   - temp files go on the project's drive;
+   - set `GRADLE_USER_HOME` to move Gradle's download cache too.
+
+The output is `android/app/build/outputs/apk/debug/app-debug.apk`, about 6.6 MB. `node build-apk.mjs
+release` builds the release APK once a signing key exists (7d).
+
+**The pages ship inside the app**, served at `https://localhost`. That is why it opens with no network.
+- **First launch.** `native.js` sets `window.VDS_NATIVE` and shows **Connect to your company**:
+  - it asks for the server address: the cloud's, or a site host's LAN address;
+  - it keeps only the scheme, host and port (tenants are told apart by sub-domain);
+  - it checks the address answers `GET /api/health`;
+  - it saves it in localStorage `vds_api_base`.
+- **Calls.** `api.js` (requests, blobs), `chat-ws.js` (the WebSocket) and the anonymous-report form send
+  to that address. They do so only inside the app; in a browser they ignore it.
+- **No service worker** in the app, because the pages are already local.
+
+**Server side.**
+- `src/app.ts` answers cross-origin `/api` calls from the app's two origins only:
+  - `https://localhost` (Android) and `capacitor://localhost` (iPhone);
+  - no cookies, only the bearer token.
+  - It exposes `X-Sync-State`, `X-Sync-Command` and `Content-Disposition`.
+- Every other origin gets nothing.
+
+**Android settings.**
+- No cleartext HTTP; the user's installed CAs are trusted. That is D5's manual step until 7d's pinning.
+- No backup of app data.
+- Camera and location permissions.
+
+**Not yet:**
+- offline work lists (7b), so a screen still needs a connection to load, as in the browser;
+- following a failover (7c), so the saved address is fixed;
+- a release signing key and updates (7d);
+- the app icon (deferred with the desktop's).
+
+**Tests:** `native-app-cors.test.ts`, `native-app-shell.test.ts`.
 
 ## 30. Phase 5a as built (2026-10-02): taking over a lost site host
 

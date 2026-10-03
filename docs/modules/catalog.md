@@ -187,18 +187,35 @@ packaged `Verdesakay.exe --smoke` (manual / CI).
 default for a site host). To-do list in design doc §17: real code-signing certificate (D7), app icon,
 downloadable installer (GitHub Release), auto-update, mobile sync UI.
 
-## android/ — installable Android app (planned)
+## mobile-app/ — installable phone app (Android, iPhone later)
 
-**Responsibility (planned, docs/OFFLINE-FIRST.md §29):** an APK of the existing `/m` phone app (Capacitor
+**Responsibility (docs/OFFLINE-FIRST.md §29):** an APK of the existing `/m` phone app (Capacitor
 wrapper, same vanilla code) for floor roles: QC/QA, line, releasing, receiving and delivery. It adds:
 - offline work lists for the signed-in person;
 - its own command queue with sync classes;
 - LAN discovery of the site host, following a failover;
 - the site certificate pinned at enrolment.
 
+**Owned files:**
+- `mobile-app/`: `capacitor.config.json`; `build-web.mjs`, which bundles `public/mobile` and `public/js`
+  into `www/`; `build-apk.mjs`, which runs Gradle; and the `android/` project.
+- `public/mobile/native.js`: `window.VDS_NATIVE` and the Connect-to-your-company screen.
+
+**Public interface and connections:**
+- localStorage `vds_api_base` holds the server address. `API.base()` in `public/js/api.js` reads it, and
+  so do `chat-ws.js` and `report-problem.js`.
+- `src/app.ts` allows CORS on `/api` for `https://localhost` and `capacitor://localhost` only.
+- Server-side permission checks are unchanged.
+
 **Not:** a full replica (D2 is for PCs only). **Dependencies:** `sync/` (commands, discovery, phase 5).
-**Status:** planned. Decided (D9): sideloaded APK, QC/QA first, cache cleared at sign-out, an iPhone build
-too. Open: the iOS distribution route, icon artwork.
+**Status:** partial. 7a (the installable shell, debug APK) was built on 2026-10-03, tested in
+`native-app-cors.test.ts` and `native-app-shell.test.ts`. Planned:
+- 7b: QC/QA offline work lists;
+- 7c: following the site host;
+- 7d: pinning, updates, a signing key, native push, iPhone.
+
+Decided (D9): sideloaded APK, QC/QA first, cache cleared at sign-out, an iPhone build too. Open: the iOS
+distribution route, icon artwork.
 
 ## core/ — ungated baseline
 
