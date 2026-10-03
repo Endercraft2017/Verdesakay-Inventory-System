@@ -18,6 +18,7 @@ work can be placed module-by-module and pipeline-by-pipeline. Business decisions
 | D6 | The cloud keeps a site host's decision on its own site's records by **re-running it with clash-checks relaxed and flagged** (option B — like D1), not by copying the host's result; permissions and other checks still apply | §15–16 |
 | D7 | The desktop installer ships **per-user (no admin prompt), signed with a free self-signed company certificate** that each of the company's PCs trusts once; installed by copying, not downloading. **⚠ TODO before installing at customers:** get a real code-signing certificate (or publish through the Microsoft Store) — otherwise Windows shows "unknown publisher" / SmartScreen warnings on their PCs. See §17 | §17 |
 | D8 | **Cloud-only = credentials and online-only features**, nothing else (2026-10-01, D2 reaffirmed): secrets, and AI / email / QuickBooks / web-push settings and tables, never reach an installed PC. All business data — payroll, government IDs, bank details, confidential reports included — does, protected by app permissions, disk encryption and the PC's DPAPI-protected credentials (§7.5, §19) | §7.5 |
+| D9 | **Phone app (phase 7): a sideloaded APK** from the company's own site (no Google Play), QC/QA first, the cache cleared at sign-out, an iPhone build too; no PIN requirement for now. **Desktop: wait** on code-signing and auto-update until a field trial works (2026-10-03) | §29, §17 |
 
 Catalog entries: `sync/` and `desktop/` in `docs/modules/catalog.md`. Pipelines: "Offline
 operation & sync" and "Site host failover" in `docs/modules/pipelines.md`.
@@ -725,7 +726,9 @@ minimized.
 
 ### Desktop to-do (before rollout to customers)
 - [ ] **Real code-signing certificate** (or Microsoft Store), D7. Until then, Windows warns
-      "unknown publisher" on PCs that haven't trusted the company certificate.
+      "unknown publisher" on PCs that haven't trusted the company certificate. **Decided 2026-10-03:**
+      wait. The installer stays unpublished until a field trial on the company's own PCs works; then buy
+      a certificate and turn on auto-update from GitHub Releases.
 - [ ] **App icon**: the build uses Electron's default icon (`build.win.icon` in `package.json`, plus
       the window icon in `electron/main.cjs`).
 - [~] **Downloadable installer.** Two parts:
@@ -1191,14 +1194,19 @@ vanilla HTML/CSS/JS, and the APK adds what a browser tab can't do:
 **Not proposed:** a full replica on each phone, the way PCs have one (D2). Phones get lost, shared and
 stolen, so they hold only what the signed-in person is working on, and that is cleared when they sign out.
 
-**Decisions needed before building it:**
-- **Distribution:** Google Play (private / managed app), or a sideloaded APK from the company's own site?
-- **Who gets offline work lists:** QC/QA first, then line, releasing, receiving and delivery?
-- **Shared phones:** the cache is per person and cleared at sign-out; is that acceptable for a phone that
-  is handed over between shifts?
-- **iPhone:** the same approach can build an iOS app; is it needed, or Android only?
-- **Lost phone:** remote sign-out plus wiping the cache on its next connection; is anything stronger
-  needed (device PIN required, a timeout)?
+**Decided (2026-10-03, D9):**
+- **Distribution: sideloaded APK.** It is downloaded from the company's own site, with "install unknown apps"
+  allowed once. There is no Play account; the app updates itself. Android warns on install, and the setup
+  guide covers it.
+- **QC/QA first.** Offline work lists start with the QC and QA inspector desks, then line, releasing,
+  receiving and delivery.
+- **Shared phones: the cache is cleared at sign-out.** A phone keeps only the signed-in person's cached work
+  and wipes it at sign-out or on a remote sign-out.
+- **iPhone too.** The same wrapper also builds an iOS app. Distributing it needs an Apple Developer account
+  (US$99/yr), and outside the App Store that means Apple's business distribution options: still to choose.
+- **No phone PIN requirement for now.** It wasn't chosen, so a phone without a screen lock may run the app.
+
+**Still open:** the iOS distribution route, and app-icon artwork (shared with the desktop app).
 
 **Depends on:** phase 5, so the phone can follow the host. Today the PWA keeps working with the site host's
 fixed address, or the cloud.

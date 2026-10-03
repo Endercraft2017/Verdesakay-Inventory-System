@@ -197,7 +197,8 @@ wrapper, same vanilla code) for floor roles: QC/QA, line, releasing, receiving a
 - the site certificate pinned at enrolment.
 
 **Not:** a full replica (D2 is for PCs only). **Dependencies:** `sync/` (commands, discovery, phase 5).
-**Status:** planned. Open decisions in §29: distribution, roles, shared phones, iOS, lost phones.
+**Status:** planned. Decided (D9): sideloaded APK, QC/QA first, cache cleared at sign-out, an iPhone build
+too. Open: the iOS distribution route, icon artwork.
 
 ## core/ — ungated baseline
 
