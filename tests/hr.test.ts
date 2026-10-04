@@ -56,7 +56,7 @@ describe('hr', () => {
 
     const ot = bySlug('overtime_request');
     expect(ot).toBeDefined();
-    expect(ot.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'hours_estimate', 'reason', 'approved_hours']);
+    expect(ot.fields.map((f: { key: string }) => f.key)).toEqual(['employee_name', 'work_date', 'hours_estimate', 'reason', 'approved_hours', 'early_ot']);
 
     const ut = bySlug('undertime_request');
     expect(ut).toBeDefined();

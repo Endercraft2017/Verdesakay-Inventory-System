@@ -463,6 +463,10 @@ for the internet (it uses the company's mail server, which only the cloud has).
    date → working day, its new date → rest day); a worked rest day earns its premium only with
    an approved **Rest Day Work Request** when Policy Settings requires it, otherwise it pays
    as an ordinary day. A pending rest-day form changes nothing until approved.
+   Early OT branch (2026-10-04): on a day timed in 1 h+ before the shift start, the grid's
+   "Make a new form → Overtime" offers an **Early OT** tick; ticked, stage 2 pays that early time
+   as OT, sharing the day's OT cap with after-shift OT (early first). Not ticked / no form ⇒ the
+   early time is unpaid presence (flagged as unrecorded OT).
 2. **Computation** (`payroll`) — `hr-payroll-compute.ts` applies pay-per-hour-basis
    rules, OT cap, night differential, statutory deduction tables
    (`payroll-tables.ts`, `ph-statutory.ts`).

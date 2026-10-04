@@ -3109,6 +3109,10 @@ function seedHrRequestForms(): void {
         // at 2h/day but the boss okayed 4h today), this day's OT is capped at THIS number
         // instead. Doesn't lower the cap if set below policy.max_ot_hours — only ever raises it.
         { key: 'approved_hours', label: 'Approved OT Hours (overrides the daily OT cap for this day only — leave blank to use the policy max)', type: 'number', required: false, options: [], default: '' },
+        // Read by the compute engine: ticked, time before the shift start counts as OT too when
+        // the time-in was 1 h+ early (EARLY_OT_MIN_MINUTES), sharing the day's OT cap with
+        // after-shift OT. The Daily Time grid only offers it on such a day.
+        { key: 'early_ot', label: 'Early OT — count the time before the shift start (timed in 1 hour or more early)', type: 'checkbox', required: false, options: [], default: '' },
       ],
     },
     {
@@ -3271,16 +3275,15 @@ function seedHrRequestForms(): void {
       } catch { /* leave as-is if the stored fields are somehow unparseable */ }
     }
     // Same self-correcting touch-up for an install that already had overtime_request seeded
-    // before approved_hours (the per-day OT-cap override) existed.
+    // before approved_hours (the per-day OT-cap override) or early_ot (Early OT) existed.
     if (f.slug === 'overtime_request') {
       try {
         const fields = JSON.parse(existing.fields) as { key: string }[];
-        if (!fields.some((fl) => fl.key === 'approved_hours')) {
-          const approvedHours = (f.fields as { key: string }[]).find((fl) => fl.key === 'approved_hours');
-          if (approvedHours) {
-            fields.push(approvedHours);
-            db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
-          }
+        const missing = (f.fields as { key: string }[])
+          .filter((fl) => (fl.key === 'approved_hours' || fl.key === 'early_ot') && !fields.some((x) => x.key === fl.key));
+        if (missing.length) {
+          fields.push(...missing);
+          db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
         }
       } catch { /* leave as-is if the stored fields are somehow unparseable */ }
     }

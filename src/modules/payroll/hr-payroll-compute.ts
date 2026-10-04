@@ -244,6 +244,15 @@ function nextDayIfBefore(timeOutRel: number, timeInRel: number): number {
   return timeOutRel < timeInRel ? timeOutRel + DAY_MIN : timeOutRel;
 }
 
+/** Early OT — time before the shift start — needs a time-in at least this far ahead of it
+    (mirrored by the Daily Time grid's Overtime form, which only offers the Early OT tick then). */
+export const EARLY_OT_MIN_MINUTES = 60;
+
+/** The Overtime form's Early OT tick: true from the desktop checkbox, 'Yes' from the phone. */
+function earlyOtTicked(v: unknown): boolean {
+  return v === true || v === 'Yes' || v === 'true' || v === 1 || v === '1';
+}
+
 /** Raw minutes actually present on a day, lunch excluded when applicable — for
     PayrollPolicy.special_holiday_premium_mode: 'prorated', which needs this BEFORE the main
     per-day timeline below (shiftStart/shiftEnd/overnight normalization, effShiftStart, etc.) is
@@ -887,18 +896,32 @@ export function computeAttendanceForEmployee(
     // further down so it never covers time that wasn't actually paid for.
     let paidSpanEnd = Math.min(timeOutRel, effectiveEnd);
 
+    // Early OT: time before the (effective) shift start, paid only when the linked Overtime form
+    // has Early OT ticked and the time-in was at least EARLY_OT_MIN_MINUTES early — never
+    // automatic, even when the policy doesn't require an OT form. It takes the daily cap first;
+    // the after-shift OT below gets what's left (2 h cap, 1 h early → at most 1 h after).
+    let earlyBlocked = 0;
+    const earlyRaw = effShiftStart - timeInRel;
+    if (hasForm('overtime_request') && earlyOtTicked(formData('overtime_request')?.early_ot) && earlyRaw >= EARLY_OT_MIN_MINUTES) {
+      const earlyBlockedRaw = roundDownToUnit(earlyRaw, unitMinutesFor(policy.ot_unit));
+      earlyBlocked = dayMaxOtMin != null ? Math.min(earlyBlockedRaw, dayMaxOtMin) : earlyBlockedRaw;
+    }
+    // Where paid presence starts: the shift start, or earlier by any paid early OT (a late
+    // arrival starts it at the time-in). Unpaid early time doesn't count — see night diff below.
+    const paidSpanStart = Math.max(timeInRel, effShiftStart - earlyBlocked);
+
     if (hasForm('overtime_request') || (!policy.require_ot_form && timeOutRel > effectiveEnd)) {
-      const otRaw = timeOutRel - effectiveEnd;
-      if (otRaw > 0) {
+      const otRaw = Math.max(0, timeOutRel - effectiveEnd);
+      if (otRaw > 0 || earlyBlocked > 0) {
         const otBlockedRaw = roundDownToUnit(otRaw, unitMinutesFor(policy.ot_unit));
         // dayMaxOtMin (policy cap, or a linked Overtime Request's own approved_hours override —
-        // see above; null = no cap) caps how much of it is actually PAID — same as unauthorized
-        // OT, hours worked past the cap are simply uncompensated presence, not converted into
-        // undertime.
-        const otBlocked = dayMaxOtMin != null ? Math.min(otBlockedRaw, dayMaxOtMin) : otBlockedRaw;
-        paidSpanEnd = effectiveEnd + otBlocked;
-        if (otBlocked > 0) {
-          otHours = otBlocked / 60;
+        // see above; null = no cap) caps how much of it is actually PAID, early OT included —
+        // same as unauthorized OT, hours worked past the cap are simply uncompensated presence,
+        // not converted into undertime.
+        const otBlocked = dayMaxOtMin != null ? Math.min(otBlockedRaw, Math.max(0, dayMaxOtMin - earlyBlocked)) : otBlockedRaw;
+        if (otBlocked > 0) paidSpanEnd = effectiveEnd + otBlocked;
+        if (otBlocked + earlyBlocked > 0) {
+          otHours = (otBlocked + earlyBlocked) / 60;
           out.ot_hours += otHours;
           // OT pay scales with the day's own rate multiplier too — OT worked on a Regular
           // Holiday isn't paid at the same rate as OT on an ordinary day (DOLE: hourly rate x
@@ -934,11 +957,11 @@ export function computeAttendanceForEmployee(
     // Night differential over the entire PAID clocked span (regular + OT together, computed
     // once — not just the OT portion, which is all this used to cover: a straight night-shift
     // worker with no OT got zero night diff despite the law requiring it for every night hour
-    // actually worked). Runs from the real clock-in (timeInRel, not effShiftStart — an
-    // employee who arrived at night still worked those minutes regardless of being late for
-    // them) to paidSpanEnd (shrinks for undertime, extends for any paid OT, capped either way).
+    // actually worked). Runs from paidSpanStart (the real clock-in for a late arrival; for an
+    // early one, the shift start less any paid early OT — unpaid early time earns none) to
+    // paidSpanEnd (shrinks for undertime, extends for any paid OT, capped either way).
     if (policy.night_diff_enabled) {
-      const nightMin = nightMinutesRel(timeInRel, Math.max(0, paidSpanEnd - timeInRel), nightStart, nightEnd);
+      const nightMin = nightMinutesRel(paidSpanStart, Math.max(0, paidSpanEnd - paidSpanStart), nightStart, nightEnd);
       if (nightMin > 0) {
         nightDiffPay = (nightMin / 60) * hourlyRate * (policy.night_diff_percent / 100);
         out.night_diff_pay += nightDiffPay;
@@ -1033,16 +1056,24 @@ export function unrecordedOtMinutes(day: AttendanceDay, policy: PayrollPolicy): 
   const overnight = shiftEnd < shiftStart;
   if (overnight) shiftEnd += DAY_MIN;
   const relTo = (min: number) => (overnight && min < shiftStart ? min + DAY_MIN : min);
-  const timeOutRel = nextDayIfBefore(relTo(timeOut), relTo(timeIn));
+  const timeInRel = relTo(timeIn);
+  const timeOutRel = nextDayIfBefore(relTo(timeOut), timeInRel);
 
   let effectiveEnd = shiftEnd;
+  let effectiveStart = shiftStart;
   const offset = forms.find((f) => f.slug === 'offset_form');
   if (offset) {
     const offsetEndRaw = toMinutes(offset.data?.new_time_out as string | undefined);
+    const offsetStartRaw = toMinutes(offset.data?.new_time_in as string | undefined);
     if (offsetEndRaw != null) effectiveEnd = relTo(offsetEndRaw);
+    if (offsetStartRaw != null && offsetEndRaw != null) effectiveStart = relTo(offsetStartRaw);
   }
 
+  const unit = unitMinutesFor(policy.ot_unit);
   const otRaw = timeOutRel - effectiveEnd;
-  if (otRaw <= 0) return 0;
-  return roundDownToUnit(otRaw, unitMinutesFor(policy.ot_unit));
+  // Possible early OT too (time-in EARLY_OT_MIN_MINUTES+ before the start) — it's paid only via
+  // an Overtime form with Early OT ticked, so it's equally "worked but not yet filed".
+  const earlyRaw = effectiveStart - timeInRel;
+  return (otRaw > 0 ? roundDownToUnit(otRaw, unit) : 0)
+    + (earlyRaw >= EARLY_OT_MIN_MINUTES ? roundDownToUnit(earlyRaw, unit) : 0);
 }

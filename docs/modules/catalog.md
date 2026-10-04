@@ -603,6 +603,14 @@ only paid time (up to the shift end, plus paid OT) — unpaid time past the end 
 The punch side is `hr/clock.ts` `openShiftToClose` (see the Payroll run pipeline, stage 0).
 Night differential defaults to **on** (`DEFAULT_POLICY` / `payrollPolicySchema`, 2026-10-04); a
 company turns it off in Policy Settings, and a policy already saved keeps its own value.
+**Early OT rule (2026-10-04):** time before the shift start is OT only when the day's Overtime
+form has `early_ot` ticked and the time-in was ≥ `EARLY_OT_MIN_MINUTES` (60) early — never
+automatic, even with `require_ot_form` off. Rounded by `ot_unit`; early and after-shift OT share
+the day's cap, early first (2 h cap, 1 h early → ≤ 1 h after; `approved_hours` raises the cap).
+Night differential covers paid early OT only; unpaid early time earns none. `unrecordedOtMinutes`
+counts possible early OT too. The form field is seeded / touched up in `db.ts`; HR's Daily Time
+grid offers the tick only on a day timed in 1 h+ early (`hr-timekeeping.js`). Fixed-basis pay
+only — `per_hour` basis already pays all worked minutes past the normal span as OT.
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
 list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for

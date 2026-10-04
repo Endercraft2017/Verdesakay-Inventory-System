@@ -1759,23 +1759,43 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     // linked Offset form's shifted end isn't reflected here (rare combo, still correct at
     // generate time). Purely a hint shown when "Make a new form → Overtime" is picked, so HR
     // doesn't have to guess an "estimate" the engine ignores anyway.
-    function detectedOtText(d) {
+    // Early OT (time before the shift start) is only offered — and only paid — when the day's
+    // time-in is at least this far ahead of the shift start (EARLY_OT_MIN_MINUTES in
+    // hr-payroll-compute.ts).
+    const EARLY_OT_MIN_MINUTES = 60;
+    const toMinHM = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    /** Minutes this day's time-in came before its shift start (0 if not early / unknown). */
+    function earlyMinutesFor(d) {
+      const shift = shifts.find((s) => String(s.id) === String(d.shift_id));
+      if (!shift || !d.time_in) return 0;
+      return Math.max(0, toMinHM(shift.start_time) - toMinHM(d.time_in));
+    }
+    // Early OT and after-shift OT share the day's cap, early first — the payroll engine's rule:
+    // the cap is max_ot_hours, raised (never lowered) by the form's approved hours.
+    function detectedOtText(d, opts = {}) {
       if (!d.time_in || !d.time_out) return 'Enter the day’s Time Out first — OT is computed from it.';
       const shift = shifts.find((s) => String(s.id) === String(d.shift_id));
       if (!shift) return 'Assign a shift to this day — OT is measured against the shift’s end time.';
-      const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-      const start = toMin(shift.start_time);
-      let end = toMin(shift.end_time); if (end < start) end += 24 * 60;
-      let out = toMin(d.time_out); if (out < toMin(d.time_in)) out += 24 * 60;
+      const start = toMinHM(shift.start_time);
+      let end = toMinHM(shift.end_time); if (end < start) end += 24 * 60;
+      let out = toMinHM(d.time_out); if (out < toMinHM(d.time_in)) out += 24 * 60;
       const raw = out - end;
-      if (raw <= 0) return 'No time logged past the shift end — nothing to pay as OT.';
+      const earlyRaw = earlyMinutesFor(d);
       const unitMin = policy.ot_unit === 'hour' ? 60 : policy.ot_unit === '30min' ? 30 : 1;
-      let mins = Math.floor(raw / unitMin) * unitMin;
-      let capped = false;
-      if (policy.max_ot_hours != null && mins > policy.max_ot_hours * 60) { mins = policy.max_ot_hours * 60; capped = true; }
-      if (mins <= 0) return `${raw} min past the shift end — under one ${policy.ot_unit} block, so it rounds to 0 OT.`;
-      const h = mins % 60 ? (mins / 60).toFixed(2) : String(mins / 60);
-      return `≈ ${h} h will be paid as OT — computed from the logged Time Out${capped ? `, capped at ${policy.max_ot_hours} h` : ''}.`;
+      const approved = Number(opts.approvedHours) > 0 ? Number(opts.approvedHours) * 60 : 0;
+      const cap = policy.max_ot_hours != null ? Math.max(policy.max_ot_hours * 60, approved) : null;
+      const earlyRounded = opts.early && earlyRaw >= EARLY_OT_MIN_MINUTES ? Math.floor(earlyRaw / unitMin) * unitMin : 0;
+      const early = cap != null ? Math.min(earlyRounded, cap) : earlyRounded;
+      const lateRounded = raw > 0 ? Math.floor(raw / unitMin) * unitMin : 0;
+      const late = cap != null ? Math.min(lateRounded, cap - early) : lateRounded;
+      const capped = early + late < earlyRounded + lateRounded;
+      const hrs = (m) => (m % 60 ? (m / 60).toFixed(2) : String(m / 60));
+      if (early + late <= 0) {
+        if (raw <= 0) return 'No time logged past the shift end — nothing to pay as OT.';
+        return `${raw} min past the shift end — under one ${policy.ot_unit} block, so it rounds to 0 OT.`;
+      }
+      const parts = early > 0 ? ` (${hrs(early)} h early + ${hrs(late)} h after the shift)` : '';
+      return `≈ ${hrs(early + late)} h will be paid as OT${parts} — computed from the logged times${capped ? `, capped at ${hrs(cap)} h for the day` : ''}.`;
     }
 
     function possibleHalfDayFlagged(d) {
@@ -2181,8 +2201,17 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 errEl.textContent = '';
                 if (!t) { fieldsEl.innerHTML = ''; createBtn.disabled = true; return; }
                 createBtn.disabled = false;
+                // Overtime: offer Early OT only when this day's time-in is 1 h+ before the shift
+                // start; the hint below re-computes as the tick / approved hours change.
+                const earlyMin = t.detectOt ? earlyMinutesFor(day) : 0;
+                const earlyHtml = earlyMin >= EARLY_OT_MIN_MINUTES
+                  ? `<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;flex-basis:100%;font-weight:normal">
+                      <input type="checkbox" id="mf-early-ot" style="width:auto" />
+                      Early OT — count the ${earlyMin % 60 ? (earlyMin / 60).toFixed(2) : earlyMin / 60} h before the shift start (timed in ${UI.esc(day.time_in)})
+                    </label>`
+                  : '';
                 const hintHtml = t.detectOt
-                  ? `<p class="muted" style="font-size:12.5px;margin:2px 0;flex-basis:100%">${UI.esc(detectedOtText(day))}</p>`
+                  ? `<p class="muted" id="mf-ot-hint" style="font-size:12.5px;margin:2px 0;flex-basis:100%">${UI.esc(detectedOtText(day))}</p>${earlyHtml}`
                   : '';
                 fieldsEl.innerHTML = hintHtml + t.fields.map((f) => {
                   const lbl = `<label style="font-size:12px">${UI.esc(f.label)}${f.required ? ' *' : ''}</label>`;
@@ -2192,6 +2221,17 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                   const inputType = f.type === 'number' ? 'number' : f.type === 'time' ? 'time' : f.type === 'date' ? 'date' : 'text';
                   return `<div>${lbl}<input type="${inputType}" data-mf="${f.key}" ${f.type === 'number' ? 'min="0" step="0.5"' : ''} /></div>`;
                 }).join('');
+                if (t.detectOt) {
+                  const earlyBox = fieldsEl.querySelector('#mf-early-ot');
+                  const approvedInp = fieldsEl.querySelector('[data-mf="approved_hours"]');
+                  const refreshHint = () => {
+                    fieldsEl.querySelector('#mf-ot-hint').textContent = detectedOtText(day, {
+                      early: !!(earlyBox && earlyBox.checked), approvedHours: approvedInp ? approvedInp.value : '',
+                    });
+                  };
+                  if (earlyBox) earlyBox.onchange = refreshHint;
+                  if (approvedInp) approvedInp.oninput = refreshHint;
+                }
               };
 
               createBtn.onclick = async () => {
@@ -2212,6 +2252,9 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                   if (f.required && !v) { errEl.textContent = `${f.label} is required.`; return; }
                   if (v) data[f.key] = f.type === 'number' ? Number(v) : v;
                 }
+                // Early OT tick (only rendered on a day timed in 1 h+ early) — read by payroll.
+                const earlyBox = ov2.querySelector('#mf-early-ot');
+                if (t.slug === 'overtime_request') data.early_ot = !!(earlyBox && earlyBox.checked);
                 // Leave: the payroll engine treats a leave day as paid only when with_pay==='Yes'
                 // — infer it from the leave type so a leave made here computes correctly.
                 if (t.slug === 'leave_request') data.with_pay = data.leave_type === 'Unpaid Leave' ? 'No' : 'Yes';
