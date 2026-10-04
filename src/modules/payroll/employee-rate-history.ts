@@ -92,4 +92,24 @@ export function recordRateChange(
     );
   }
   insertRow(employeeId, effectiveFrom, next, note, userId);
+  if (next.daily_rate > 0) fillUnsetRate(employeeId, next);
+}
+
+/** A ₱0 rate means "not set yet" (employee created or imported without one), never a rate anyone
+    was actually paid at. So once a real rate is entered, the ₱0 rows that precede every real rate
+    take it too — otherwise every cutoff day before the (default: today) effective date would
+    still pay ₱0. Zero rows dated after an earlier real rate are left alone. Same repair as the
+    SCHEMA_VERSION 56 migration step in src/shared/db.ts, for one employee. */
+function fillUnsetRate(
+  employeeId: number,
+  rate: { rate_type: 'daily' | 'monthly'; daily_rate: number; monthly_rate: number | null }
+): void {
+  run(
+    `UPDATE employee_rate_history SET rate_type = ?, daily_rate = ?, monthly_rate = ?
+      WHERE employee_id = ? AND daily_rate = 0
+        AND NOT EXISTS (SELECT 1 FROM employee_rate_history p
+                         WHERE p.employee_id = employee_rate_history.employee_id
+                           AND p.daily_rate > 0 AND p.effective_from < employee_rate_history.effective_from)`,
+    rate.rate_type, rate.daily_rate, rate.monthly_rate, employeeId
+  );
 }

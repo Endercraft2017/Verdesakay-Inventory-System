@@ -2545,4 +2545,45 @@ describe('mid-cutoff rate changes (employee_rate_history)', () => {
     expect(detail.body.totals.days_worked).toBe(2);
     expect(detail.body.daily_rate).toBe(650);
   });
+
+  it('treats a ₱0 rate as "not set yet": the first real rate pays every earlier cutoff day too', async () => {
+    // Created without a rate (₱0) — the rate is filled in later, effective "today" by default.
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ZERORATE', name: 'Zero Rate Employee', daily_rate: 0, start_date: '2020-01-01' });
+    const period = await ctx.api.post('/api/hr/periods').set(hdr())
+      .send({ label: 'Zero Rate Cutoff', start_date: '2026-07-01', end_date: '2026-07-15' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-07-06', time_in: '08:00', time_out: '17:00', notes: '', shift_id: null, form_record_id: null }],
+    });
+
+    const set = await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-ZERORATE', name: 'Zero Rate Employee', daily_rate: 700, start_date: '2020-01-01', rate_effective_date: '2026-08-01' });
+    expect(set.status).toBe(200);
+
+    // No ₱0 row survives in the history — the seeded start-date row now carries the real rate.
+    const history = await ctx.api.get(`/api/hr/employees/${emp.body.id}/rate-history`).set(hdr());
+    expect(history.body.every((h: { daily_rate: number }) => h.daily_rate === 700)).toBe(true);
+
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
+      .send({ payroll_period: 'Zero Rate Cutoff' });
+    expect(gen.status).toBe(201);
+    const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Zero Rate Cutoff' }).set(hdr());
+    const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Zero Rate Employee');
+    expect(rec.data.daily_rate).toBe(700);
+    expect(rec.data.basic_salary).toBeCloseTo(700, 6);
+  });
+
+  it('a later raise after a ₱0 start still keeps the earlier real rate for earlier days', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-ZERORAISE', name: 'Zero Then Raise', daily_rate: 0, start_date: '2020-01-01' });
+    await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-ZERORAISE', name: 'Zero Then Raise', daily_rate: 600, start_date: '2020-01-01', rate_effective_date: '2026-05-01' });
+    await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
+      .send({ employee_no: 'TEST-ZERORAISE', name: 'Zero Then Raise', daily_rate: 650, start_date: '2020-01-01', rate_effective_date: '2026-06-01' });
+    const history = await ctx.api.get(`/api/hr/employees/${emp.body.id}/rate-history`).set(hdr());
+    const rates = history.body.map((h: { effective_from: string; daily_rate: number }) => [h.effective_from, h.daily_rate]);
+    expect(rates).toEqual([['2026-06-01', 650], ['2026-05-01', 600], ['2020-01-01', 600]]);
+  });
 });

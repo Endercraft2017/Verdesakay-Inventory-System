@@ -587,6 +587,13 @@ Schedule 1 layout, so it's unchanged.
 **Public interface:** pure computation/rendering functions (no routes of its own — exposed
 through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
 `GET /api/me/payslips/:id/pdf`).
+**Rate history rule:** generate-payslips pays each day at `effectiveDailyRateOn(employee, day)` —
+the latest `employee_rate_history` row on or before it. Rows are written by Edit Employee (the
+Pay tab's "Effective date", shown only while the rate is being changed, default today) and, since
+2026-10-04, by the employee CSV import (effective today, note "Employee import"). A ₱0 rate means
+"not set yet": entering the first real rate fills every ₱0 row ahead of it (`fillUnsetRate`), and
+the SCHEMA_VERSION 56 step repaired existing ones — before that, an employee created at ₱0 and
+given a rate later kept paying ₱0 for every day before the edit's effective date.
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
 list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for

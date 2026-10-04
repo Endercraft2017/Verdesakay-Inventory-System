@@ -244,6 +244,18 @@ router.post('/employees/import', requirePermission('hr.manage'), syncClass('clai
     const d = parsed.data;
     const existing = queryOne<Employee>('SELECT * FROM employees WHERE employee_no = ?', empNo);
     if (existing) {
+      // Payroll pays each day from employee_rate_history, so an imported rate change has to be
+      // logged there too (effective today, same default as the Edit Employee form) — otherwise an
+      // employee who already has history rows would keep being paid the old rate.
+      const importedDaily = effectiveDailyRate(d);
+      if (round2(importedDaily) !== round2(existing.daily_rate)) {
+        recordRateChange(
+          existing.id, now().toISOString().slice(0, 10),
+          { rate_type: d.rate_type, daily_rate: importedDaily, monthly_rate: d.rate_type === 'monthly' ? (d.monthly_rate ?? null) : null },
+          { rate_type: existing.rate_type, daily_rate: existing.daily_rate, monthly_rate: existing.monthly_rate ?? null, start_date: existing.start_date ?? null },
+          'Employee import', req.user!.id
+        );
+      }
       run(
         `UPDATE employees SET name = ?, department_id = ?, position = ?, daily_rate = ?, rate_type = ?,
            monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?

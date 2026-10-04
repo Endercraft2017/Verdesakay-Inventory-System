@@ -59,7 +59,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 55; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 56; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -187,6 +187,10 @@ export const SCHEMA_VERSION = 55; // 20: employees.late_exempt; 21: attendance_r
 // device (label); push_subscriptions gains device_id (dropped on sign-out from that device);
 // time_punches gains device_id / device_flag / device_user_id (punch from a borrowed phone or
 // from a device another employee usually uses).
+// 56: data repair, no columns -- employee_rate_history rows at ₱0 that precede every real rate
+// take the employee's first real rate. A ₱0 rate is "not set yet": an employee created without
+// a rate and given one later had every cutoff day before that edit's effective date (default:
+// today) still paying ₱0. See employee-rate-history.ts fillUnsetRate().
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -2785,6 +2789,32 @@ function migrate(): void {
   if (!punchDevCols.some((c) => c.name === 'device_flag')) db.exec('ALTER TABLE time_punches ADD COLUMN device_flag TEXT');
   if (!punchDevCols.some((c) => c.name === 'device_user_id')) {
     db.exec('ALTER TABLE time_punches ADD COLUMN device_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+
+  // (SCHEMA_VERSION 56) ₱0 rate-history rows ahead of an employee's first real rate take that
+  // rate — from their first non-zero history row, else (rate set by CSV import, which never
+  // logged history before) their current employees.daily_rate. Idempotent.
+  const unsetRate = db.prepare(
+    `SELECT DISTINCT h.employee_id FROM employee_rate_history h
+      WHERE h.daily_rate = 0
+        AND NOT EXISTS (SELECT 1 FROM employee_rate_history p
+                         WHERE p.employee_id = h.employee_id AND p.daily_rate > 0 AND p.effective_from < h.effective_from)`
+  ).all() as { employee_id: number }[];
+  for (const { employee_id } of unsetRate) {
+    const first = (db.prepare(
+      `SELECT rate_type, daily_rate, monthly_rate FROM employee_rate_history
+        WHERE employee_id = ? AND daily_rate > 0 ORDER BY effective_from LIMIT 1`
+    ).get(employee_id) ?? db.prepare(
+      'SELECT rate_type, daily_rate, monthly_rate FROM employees WHERE id = ? AND daily_rate > 0'
+    ).get(employee_id)) as { rate_type: string; daily_rate: number; monthly_rate: number | null } | undefined;
+    if (!first) continue;
+    db.prepare(
+      `UPDATE employee_rate_history SET rate_type = ?, daily_rate = ?, monthly_rate = ?
+        WHERE employee_id = ? AND daily_rate = 0
+          AND NOT EXISTS (SELECT 1 FROM employee_rate_history p
+                           WHERE p.employee_id = employee_rate_history.employee_id
+                             AND p.daily_rate > 0 AND p.effective_from < employee_rate_history.effective_from)`
+    ).run(first.rate_type, first.daily_rate, first.monthly_rate, employee_id);
   }
 }
 
