@@ -236,6 +236,14 @@ function lunchWindow(shiftStart: number, shiftEnd: number, lunchMinutes: number)
   return { start: shiftStart + half, end: shiftStart + half + lunchMinutes };
 }
 
+/** A time-out that lands before the time-in on the same timeline is the next morning — whatever
+    the shift. Overnight SHIFTS are already put on one timeline by their own relTo; this covers a
+    day-shift employee who stayed past midnight (e.g. a driver: 08:00 in, 06:00 out next day),
+    who would otherwise read as leaving 11 hours early. */
+function nextDayIfBefore(timeOutRel: number, timeInRel: number): number {
+  return timeOutRel < timeInRel ? timeOutRel + DAY_MIN : timeOutRel;
+}
+
 /** Raw minutes actually present on a day, lunch excluded when applicable — for
     PayrollPolicy.special_holiday_premium_mode: 'prorated', which needs this BEFORE the main
     per-day timeline below (shiftStart/shiftEnd/overnight normalization, effShiftStart, etc.) is
@@ -255,7 +263,7 @@ function rawPresentMinutes(
   const sEnd = overnight ? sEnd0 + DAY_MIN : sEnd0;
   const relTo = (min: number) => (overnight && min < sStart ? min + DAY_MIN : min);
   const tInRel = relTo(timeIn);
-  const tOutRel = relTo(timeOut);
+  const tOutRel = nextDayIfBefore(relTo(timeOut), tInRel);
   const raw = Math.max(0, tOutRel - tInRel);
   const lunch = lunchWindow(sStart, sEnd, lunchBreakMinutes);
   const lunchOverlap = countLunchAsWorked ? 0 : overlapMinutes(tInRel, tOutRel, lunch.start, lunch.end);
@@ -606,7 +614,7 @@ export function computeAttendanceForEmployee(
     // is treated as having happened after midnight, i.e. "later" on this timeline, not earlier.
     const relTo = (min: number) => (overnight && min < shiftStart ? min + DAY_MIN : min);
     const timeInRel = relTo(timeIn);
-    const timeOutRel = relTo(timeOut);
+    const timeOutRel = nextDayIfBefore(relTo(timeOut), timeInRel);
 
     // Minimum allowable time for the day (policy.min_work_minutes, 0 = off): flags a short day
     // (below_minimum, surfaced per-day for the Daily Time grid's allow/deny button and the
@@ -872,12 +880,12 @@ export function computeAttendanceForEmployee(
     // regardless of this setting, preserving the exact old behavior for that case: an
     // authorized-but-early day still books no undertime (mirrors the pre-existing rule that an
     // overtime_request-linked day is judged only for OT, never undertime, even if otRaw <= 0).
-    // How many minutes of this day are actually paid presence — starts at the whole clocked
-    // span; undertime below shrinks it to what was actually there before the expected end (OT
-    // doesn't shrink it — OT is additional presence on top, already within [timeInRel,
-    // timeOutRel]). Used only to scope the unified night-diff pass further down so it never
-    // covers time that wasn't actually paid for (e.g. the un-credited tail past an OT cap).
-    let paidSpanEnd = timeOutRel;
+    // How many minutes of this day are actually paid presence — the clocked span up to the
+    // expected end (an early time-out ends it sooner); paid OT below extends it past the end.
+    // Time past the end that isn't paid as OT (no Overtime form while one is required, or the
+    // tail past an OT cap) isn't paid presence. Used only to scope the unified night-diff pass
+    // further down so it never covers time that wasn't actually paid for.
+    let paidSpanEnd = Math.min(timeOutRel, effectiveEnd);
 
     if (hasForm('overtime_request') || (!policy.require_ot_form && timeOutRel > effectiveEnd)) {
       const otRaw = timeOutRel - effectiveEnd;
@@ -1025,7 +1033,7 @@ export function unrecordedOtMinutes(day: AttendanceDay, policy: PayrollPolicy): 
   const overnight = shiftEnd < shiftStart;
   if (overnight) shiftEnd += DAY_MIN;
   const relTo = (min: number) => (overnight && min < shiftStart ? min + DAY_MIN : min);
-  const timeOutRel = relTo(timeOut);
+  const timeOutRel = nextDayIfBefore(relTo(timeOut), relTo(timeIn));
 
   let effectiveEnd = shiftEnd;
   const offset = forms.find((f) => f.slug === 'offset_form');

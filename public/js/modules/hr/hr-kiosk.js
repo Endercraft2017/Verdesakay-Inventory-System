@@ -535,7 +535,10 @@ App.register('hr-kiosk', async (view) => {
       const r = correcting
         ? await API.post('/hr/clock/correct', { code: curCode, employee_no, slot: correcting.slot })
         : await API.post('/hr/clock/kiosk-punch', { code: curCode, employee_no });
-      msgEl.textContent = `${r.employee_name}: ${r.kind === 'in' ? 'IN' : 'OUT'} at ${r.at}`;
+      // A punch before today's time-in time can close yesterday's still-open shift (server-side
+      // openShiftToClose in src/modules/hr/clock.ts) — say so, it isn't today's time-in.
+      msgEl.textContent = `${r.employee_name}: ${r.kind === 'in' ? 'IN' : 'OUT'} at ${r.at}`
+        + (r.work_date && r.work_date !== todayStr() ? ` (closes the ${r.work_date} shift)` : '');
       msgEl.className = 'kiosk-msg ok';
       recordEvent('attendance', {
         name: r.employee_name, employee_no, ts: r.work_date + ' ' + r.at, kind: r.kind, segment: r.segment, id: r.id,

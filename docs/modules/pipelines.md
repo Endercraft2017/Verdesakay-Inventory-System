@@ -448,6 +448,14 @@ for the internet (it uses the company's mail server, which only the cloud has).
      `physical` — they work on an installed PC / its site host with the internet down and keep the
      minute they happened; the kiosk code is checked for that minute, a locked kiosk is re-checked
      on the cloud, a borrowed phone stays flagged, photos travel with the punch.
+   - **Next-day time-out (2026-10-04):** yesterday has a time-in but no time-out, today has no
+     punch yet, and the punch comes before the employee's time-in time today (today's shift
+     start; no shift → yesterday's own time-in time) ⇒ it is **yesterday's time-out**
+     (`clock.ts` `openShiftToClose`; e.g. a driver in at 08:00, out at 06:00 the next morning,
+     or an overnight 22:00–06:00 shift). At/after that time ⇒ today's time-in, as before. The
+     phone shows them still clocked in on yesterday's shift until then. Stage 2 reads a time-out
+     earlier than the time-in as the next morning for any shift, so those hours count as worked
+     (past the shift end = OT, paid only per the OT-form rule) instead of undertime.
 1. **Attendance reconciliation** (`hr`) — punches/kiosk data reconciled into
    `attendance_records` (lunch bracket, offsets, corrections all applied before
    this point). HR links request forms per day on the Daily Time grid. Rest-day branch

@@ -594,6 +594,13 @@ Pay tab's "Effective date", shown only while the rate is being changed, default 
 "not set yet": entering the first real rate fills every ₱0 row ahead of it (`fillUnsetRate`), and
 the SCHEMA_VERSION 56 step repaired existing ones — before that, an employee created at ₱0 and
 given a rate later kept paying ₱0 for every day before the edit's effective date.
+**Next-day time-out rule (2026-10-04):** a time-out earlier than the time-in is the next morning
+for any shift (`nextDayIfBefore` in `hr-payroll-compute.ts`, also in `rawPresentMinutes` and
+`unrecordedOtMinutes`) — before, only an overnight *shift* did that, so a day-shift driver in at
+08:00 and out at 06:00 the next day was docked ~11 h undertime. Hours past the shift end are OT
+(paid only per the OT-form rule, else flagged as unrecorded OT). Night differential now covers
+only paid time (up to the shift end, plus paid OT) — unpaid time past the end no longer earns it.
+The punch side is `hr/clock.ts` `openShiftToClose` (see the Payroll run pipeline, stage 0).
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
 list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for

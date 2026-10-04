@@ -202,9 +202,14 @@
           { label: 'Done', onClick: function () { load(view); } },
           { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } }
         ];
+        var d = new Date();
+        var localToday = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        // Before today's time-in time, a punch closes yesterday's still-open shift (server-side
+        // openShiftToClose in src/modules/hr/clock.ts) — the hours are that shift's, not today's.
+        var prevShift = r.work_date && r.work_date !== localToday;
         var lines = [
           (SEG_LABEL[r.segment] || r.segment) + ' · ' + r.at,
-          r.hours_today + ' h today' + (r.duplicate ? ' (already recorded)' : '')
+          r.hours_today + (prevShift ? ' h — closes your ' + r.work_date + ' shift' : ' h today') + (r.duplicate ? ' (already recorded)' : '')
         ];
         if (r.kind !== 'out') {
           mSuccess(view, { title: 'Clocked IN', lines: lines, actions: actions });

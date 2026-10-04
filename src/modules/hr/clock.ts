@@ -101,14 +101,10 @@ export interface PunchRow {
   source: string;
 }
 
-/** From what time ("HH:MM") a first punch of the day on `date` counts as a time-out rather than
- *  a time-in: the end of the shift the employee is working — that day's attendance_records shift
- *  if HR set one, else their own default shift, else the company default shift
- *  (shifts.is_default) — or, with no shift at all, clock_policy.first_punch_out_after. null for
- *  an overnight shift (end before start): there a wall-clock time can't tell an arrival from a
- *  departure, so the first punch is always an in. */
-function firstPunchOutAfter(employeeId: number, date: string): string | null {
-  const s = queryOne<{ start_time: string | null; end_time: string | null }>(
+/** The shift the employee works on `date`: that day's attendance_records shift if HR set one,
+ *  else their own default shift, else the company default shift (shifts.is_default). */
+function shiftOn(employeeId: number, date: string): { start_time: string | null; end_time: string | null } | undefined {
+  return queryOne<{ start_time: string | null; end_time: string | null }>(
     `SELECT s.start_time, s.end_time FROM shifts s
      WHERE s.id = COALESCE(
        (SELECT ar.shift_id FROM attendance_records ar
@@ -118,6 +114,48 @@ function firstPunchOutAfter(employeeId: number, date: string): string | null {
        (SELECT id FROM shifts WHERE is_default = 1 ORDER BY id LIMIT 1))`,
     employeeId, date, employeeId
   );
+}
+
+function previousDate(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Yesterday's shift, still open, that a punch now closes instead of starting today — e.g. a
+ *  driver who timed in at 08:00 and comes back at 06:00 the next morning: that's yesterday's
+ *  time-out. Applies when today has no punch (nor HR-typed time-in) yet, yesterday has a time-in
+ *  with no time-out after it, and it's still before the employee's time-in time today: today's
+ *  shift start (shiftOn), or with no shift at all, the time they timed in yesterday. At/after
+ *  that it's today's time-in, as before. Returns yesterday's date and its punches so far (or
+ *  HR's typed brackets standing in for them), else null. Caller has checked today is empty. */
+function openShiftToClose(employeeId: number, today: string, hm: string): { date: string; context: PunchRow[] } | null {
+  if (manualBracketsAsPunches(employeeId, today).length) return null;
+  const date = previousDate(today);
+  const punches = queryAll<PunchRow>(
+    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id', employeeId, date
+  );
+  const context = punches.length ? punches : manualBracketsAsPunches(employeeId, date);
+  const last = context[context.length - 1];
+  if (!last || last.kind !== 'in' || context.some((p) => p.segment === 'afternoon_out')) return null;
+  const typedOut = queryOne(
+    "SELECT 1 FROM attendance_records WHERE employee_id = ? AND work_date = ? AND time_out IS NOT NULL AND time_out <> ''",
+    employeeId, date
+  );
+  if (typedOut) return null;
+  const firstIn = context.find((p) => p.kind === 'in')!;
+  const timeInAt = shiftOn(employeeId, today)?.start_time?.slice(0, 5) || firstIn.ts.slice(11, 16);
+  return hm < timeInAt ? { date, context } : null;
+}
+
+/** From what time ("HH:MM") a first punch of the day on `date` counts as a time-out rather than
+ *  a time-in: the end of the shift the employee is working — that day's attendance_records shift
+ *  if HR set one, else their own default shift, else the company default shift
+ *  (shifts.is_default) — or, with no shift at all, clock_policy.first_punch_out_after. null for
+ *  an overnight shift (end before start): there a wall-clock time can't tell an arrival from a
+ *  departure, so the first punch is always an in. */
+function firstPunchOutAfter(employeeId: number, date: string): string | null {
+  const s = shiftOn(employeeId, date);
   if (!s?.start_time || !s.end_time) return policy().first_punch_out_after;
   if (s.end_time <= s.start_time) return null;
   return s.end_time.slice(0, 5);
@@ -241,23 +279,31 @@ export function recordPunch(
   geo: PunchGeo | null = null,
   device: PunchDevice | null = null
 ): PunchResult {
-  const { date } = localParts();
-  const prior = queryAll<PunchRow>(
-    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
-    employee.id,
-    date
+  const { date: today, hm } = localParts();
+  const dayPunches = (date: string) => queryAll<PunchRow>(
+    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id', employee.id, date
   );
 
-  const last = prior[prior.length - 1];
+  // The employee's latest punch on any date — so a double tap right after a punch that closed
+  // yesterday's shift (see openShiftToClose) is still caught as the same punch.
+  const last = queryOne<PunchRow>('SELECT * FROM time_punches WHERE employee_id = ? ORDER BY id DESC LIMIT 1', employee.id);
   if (last) {
     const gap = now().getTime() - new Date(last.ts.replace(' ', 'T')).getTime();
     if (gap >= 0 && gap < 45_000) {
       return {
         ok: true, duplicate: true, id: last.id, employee_id: employee.id, employee_name: employee.name,
         kind: last.kind as 'in' | 'out', segment: last.segment, at: last.ts.slice(11, 16),
-        work_date: date, hours_today: hoursToday(prior), source,
+        work_date: last.work_date, hours_today: hoursToday(dayPunches(last.work_date)), source,
       };
     }
+  }
+
+  let date = today;
+  let prior = dayPunches(today);
+  const closing = prior.length ? null : openShiftToClose(employee.id, today, hm);
+  if (closing) {
+    date = closing.date;
+    prior = dayPunches(date);
   }
 
   if (prior.some((p) => p.segment === 'afternoon_out')) {
@@ -266,8 +312,10 @@ export function recordPunch(
     );
   }
 
-  const context = prior.length ? prior : manualBracketsAsPunches(employee.id, date);
-  const { kind, segment } = classify(context, firstPunchOutAfter(employee.id, date));
+  const context = closing ? closing.context : prior.length ? prior : manualBracketsAsPunches(employee.id, date);
+  const { kind, segment } = closing
+    ? { kind: 'out' as const, segment: 'afternoon_out' }
+    : classify(context, firstPunchOutAfter(employee.id, date));
   const info = run(
     `INSERT INTO time_punches (employee_id, user_id, work_date, kind, segment, source, lat, lng, accuracy_m, distance_m, geo_site,
                                device_id, device_flag, device_user_id)
@@ -281,7 +329,7 @@ export function recordPunch(
   return {
     ok: true, id: row.id, employee_id: employee.id, employee_name: employee.name,
     kind, segment, at: row.ts.slice(11, 16), work_date: date,
-    hours_today: hoursToday([...prior, row]), source,
+    hours_today: hoursToday([...(closing ? closing.context : prior), row]), source,
     recorded: recordedBrackets(employee.id, date),
   };
 }
@@ -400,11 +448,18 @@ export function myClockStatus(employeeId: number): {
   work_date: string; punches: Array<{ at: string; kind: string; segment: string; source: string }>;
   clocked_in: boolean; since: string | null; hours_today: number;
 } {
-  const { date } = localParts();
-  const rows = queryAll<PunchRow>(
-    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
-    employeeId, date
+  const { date: today, hm } = localParts();
+  const dayPunches = (d: string) => queryAll<PunchRow>(
+    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id', employeeId, d
   );
+  let date = today;
+  let rows = dayPunches(today);
+  // Yesterday's shift still open and before today's time-in time → still clocked in on it; the
+  // next punch is its time-out (same rule recordPunch uses — see openShiftToClose).
+  if (!rows.length && openShiftToClose(employeeId, today, hm)) {
+    date = previousDate(today);
+    rows = dayPunches(date);
+  }
   // No punches yet but HR typed a time-in → already clocked in (same rule recordPunch uses).
   const last = rows[rows.length - 1] ?? manualBracketsAsPunches(employeeId, date).pop();
   return {
