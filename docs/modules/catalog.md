@@ -601,6 +601,8 @@ for any shift (`nextDayIfBefore` in `hr-payroll-compute.ts`, also in `rawPresent
 (paid only per the OT-form rule, else flagged as unrecorded OT). Night differential now covers
 only paid time (up to the shift end, plus paid OT) — unpaid time past the end no longer earns it.
 The punch side is `hr/clock.ts` `openShiftToClose` (see the Payroll run pipeline, stage 0).
+Night differential defaults to **on** (`DEFAULT_POLICY` / `payrollPolicySchema`, 2026-10-04); a
+company turns it off in Policy Settings, and a policy already saved keeps its own value.
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
 list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for

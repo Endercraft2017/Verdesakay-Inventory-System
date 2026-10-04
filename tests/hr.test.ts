@@ -601,6 +601,7 @@ describe('payroll policy', () => {
     expect(res.body.grace_minutes).toBe(10);
     expect(res.body.ot_rate_percent).toBe(125);
     expect(res.body.monthly_rate_divisor).toBe(26);
+    expect(res.body.night_diff_enabled).toBe(true); // on unless a company turns it off
   });
 
   it('admin can update the policy, reflected on GET', async () => {
