@@ -73,6 +73,14 @@ describe('late + undertime on a whole day', () => {
     expect(d.late_minutes).toBe(270); // 08:00-12:00 + 13:00-13:30, not 330
   });
 
+  it('grace is a threshold, not a later start: 6 min late with a 5 min grace is 6 minutes', () => {
+    const graced = { ...POLICY, grace_minutes: 5 };
+    expect(run(day({ time_in: '08:05' }), graced).days[0]!.late_minutes).toBe(0); // within grace
+    const late = run(day({ time_in: '08:06' }), graced);
+    expect(late.days[0]!.late_minutes).toBe(6);
+    expect(late.late_deduction).toBeCloseTo(6 * PER_MIN, 6);
+  });
+
   it('counts lunch when the policy pays it as worked time', () => {
     const d = run(day({ time_out: '11:00', linkedForms: unpaidUndertime }), { ...POLICY, count_lunch_as_worked: true }).days[0]!;
     expect(d.undertime_minutes).toBe(360);

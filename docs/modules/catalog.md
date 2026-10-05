@@ -657,6 +657,11 @@ steps + 5 min grace = 1 h; a 60-min minimum + 30-min steps: 18:30 = 1.5 h, 17:30
 before the daily cap and still gated by the OT form; grace-credited minutes past the time-out
 earn no night differential. The Daily Time grid's OT hint mirrors it (`hr-timekeeping.js`).
 The `per_hour` basis keeps its own `hours_basis_unit` rounding.
+**Late grace rule (2026-10-05, per the customer):** `grace_minutes` is a threshold, never a later
+start — late within it costs nothing; past it, the WHOLE lateness from the shift start counts,
+rounded up to `late_unit` (6 min late with a 5 min grace = 6 min; 125 min with a 10 min grace
+and hour blocks = 3 h). Same for lunch lateness, the HR Daily Report board and the AI
+assistant's lateness report. Before, only the minutes past the grace counted.
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
 list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for

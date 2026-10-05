@@ -427,6 +427,8 @@ async function policySettingsModal() {
         <div><label>Late deduction block</label>
           <select data-p="late_unit"><option value="minute">Per minute</option><option value="hour">Per hour</option></select></div>
       </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">Late within the grace period costs nothing; once past it,
+        the whole lateness counts from the shift start — 6 minutes late with a 5-minute grace is 6 minutes late.</p>
       <div class="field-row" style="margin-top:10px">
         <div><label>OT credit block</label>
           <select data-p="ot_unit"><option value="minute">Per minute</option><option value="30min">Per 30 minutes</option><option value="hour">Per hour</option></select></div>

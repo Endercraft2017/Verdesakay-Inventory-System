@@ -51,34 +51,34 @@ describe('computeAttendanceForEmployee — grace period boundary', () => {
     expect(r.days_worked).toBe(1);
   });
 
-  it('1 minute past grace rounds the *remainder past grace* up to a full hour block, not the raw lateness', () => {
+  it('1 minute past grace counts the whole 11 minutes, rounded up to a full hour block', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '08:11', time_out: '17:00' })], DAILY_RATE, POLICY);
-    // 11 min raw, 1 min past grace -> rounds up to 1 hour -> 1 * 100
+    // 11 min raw, past the 10 min grace -> all 11 count -> rounds up to 1 hour -> 1 * 100
     expect(r.late_deduction).toBe(100);
   });
 
-  it('70 min late, 10 min grace, 1-hour block -> 60 min past grace -> 1 hour deducted', () => {
+  it('70 min late, 10 min grace, 1-hour block -> all 70 count -> 2 hours deducted', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '09:10', time_out: '17:00' })], DAILY_RATE, POLICY);
-    expect(r.late_deduction).toBe(100);
-  });
-
-  it('125 min late, 10 min grace, 1-hour block -> 115 min past grace -> 2 hours deducted (not 3)', () => {
-    const r = computeAttendanceForEmployee([day({ time_in: '10:05', time_out: '17:00' })], DAILY_RATE, POLICY);
     expect(r.late_deduction).toBe(200);
   });
 
-  it('minute-unit rounding applies no blocking beyond the raw past-grace minutes', () => {
+  it('125 min late, 10 min grace, 1-hour block -> all 125 count -> 3 hours deducted', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '10:05', time_out: '17:00' })], DAILY_RATE, POLICY);
+    expect(r.late_deduction).toBe(300);
+  });
+
+  it('minute-unit: past grace, exactly the raw lateness is deducted — the grace is not a later start', () => {
     const policy = { ...POLICY, late_unit: 'minute' as const };
     const r = computeAttendanceForEmployee([day({ time_in: '08:17', time_out: '17:00' })], DAILY_RATE, policy);
-    // 17 min raw, 7 min past grace -> 7 min deducted
-    expect(r.late_deduction).toBeCloseTo((7 / 60) * 100, 6);
+    // 17 min raw, past the 10 min grace -> all 17 min deducted (6 late with a 5 grace is 6, not 1)
+    expect(r.late_deduction).toBeCloseTo((17 / 60) * 100, 6);
   });
 });
 
 describe('computeAttendanceForEmployee — exemptLate (e.g. the company president)', () => {
   it('an exempt employee has no late_deduction despite being late — the 5th (exemptLate) parameter', () => {
     const r = computeAttendanceForEmployee(
-      [day({ time_in: '09:10', time_out: '17:00' })], // 70 min late -> would normally deduct 1hr
+      [day({ time_in: '09:10', time_out: '17:00' })], // 70 min late -> would normally deduct 2hr
       DAILY_RATE, POLICY, true
     );
     expect(r.late_deduction).toBe(0);
@@ -86,13 +86,13 @@ describe('computeAttendanceForEmployee — exemptLate (e.g. the company presiden
 
   it('late_minutes is still reported per-day even when exempt — HR can see the pattern, it just costs nothing', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '09:10', time_out: '17:00' })], DAILY_RATE, POLICY, true);
-    expect(r.days[0]!.late_minutes).toBe(60);
+    expect(r.days[0]!.late_minutes).toBe(120);
     expect(r.days[0]!.late_pay).toBe(0);
   });
 
   it('exemptLate defaults to false when omitted — every existing non-exempt call site is unaffected', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '09:10', time_out: '17:00' })], DAILY_RATE, POLICY);
-    expect(r.late_deduction).toBe(100);
+    expect(r.late_deduction).toBe(200);
   });
 
   it('exemptLate only affects late — OT, undertime, and holiday/rest-day premiums still compute normally', () => {
@@ -910,12 +910,12 @@ describe('computeAttendanceForEmployee — per-day breakdown (days[]), for the r
 
   it('a late day\'s late_minutes/late_pay land on that exact day, summing to the aggregate late_deduction', () => {
     const r = computeAttendanceForEmployee(
-      [day({ work_date: '2026-08-01', time_in: '09:10', time_out: '17:00' })], // 70 min late -> 1hr block
+      [day({ work_date: '2026-08-01', time_in: '09:10', time_out: '17:00' })], // 70 min late -> 2hr blocks
       DAILY_RATE, POLICY
     );
     expect(r.days[0]!.status).toBe('worked');
-    expect(r.days[0]!.late_minutes).toBe(60);
-    expect(r.days[0]!.late_pay).toBeCloseTo(100, 6);
+    expect(r.days[0]!.late_minutes).toBe(120);
+    expect(r.days[0]!.late_pay).toBeCloseTo(200, 6);
     expect(r.days[0]!.late_pay).toBeCloseTo(r.late_deduction, 6);
   });
 
@@ -1691,9 +1691,9 @@ describe('computeAttendanceForEmployee — lunch-break lateness (PayrollPolicy.c
       [day({ time_in: '08:00', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:30' })],
       DAILY_RATE, policy
     );
-    // 30 min raw, 10 min grace -> 20 min past grace, minute-unit rounding -> 20 min deducted
-    expect(r.days[0]!.late_minutes).toBe(20);
-    expect(r.late_deduction).toBeCloseTo((20 / 60) * 100, 6);
+    // 30 min raw, past the 10 min grace -> all 30 min deducted (minute-unit rounding)
+    expect(r.days[0]!.late_minutes).toBe(30);
+    expect(r.late_deduction).toBeCloseTo((30 / 60) * 100, 6);
   });
 
   it('within grace (5 min late back) -> no deduction', () => {
@@ -1707,13 +1707,13 @@ describe('computeAttendanceForEmployee — lunch-break lateness (PayrollPolicy.c
 
   it('adds on top of ordinary arrival lateness the same day, both in late_minutes and late_deduction', () => {
     const policy = { ...POLICY, count_lunch_late_as_late: true, late_unit: 'minute' as const };
-    // 15 min late arrival (5 min past grace) + 30 min late back from lunch (20 min past grace)
+    // 15 min late arrival + 30 min late back from lunch — both past the 10 min grace, so all count
     const r = computeAttendanceForEmployee(
       [day({ time_in: '08:15', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:30' })],
       DAILY_RATE, policy
     );
-    expect(r.days[0]!.late_minutes).toBe(25);
-    expect(r.late_deduction).toBeCloseTo((25 / 60) * 100, 6);
+    expect(r.days[0]!.late_minutes).toBe(45);
+    expect(r.late_deduction).toBeCloseTo((45 / 60) * 100, 6);
   });
 
   it('exemptLate zeroes the lunch-late peso deduction too, but still reports the minutes', () => {
@@ -1722,7 +1722,7 @@ describe('computeAttendanceForEmployee — lunch-break lateness (PayrollPolicy.c
       [day({ time_in: '08:00', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:30' })],
       DAILY_RATE, policy, true
     );
-    expect(r.days[0]!.late_minutes).toBe(20);
+    expect(r.days[0]!.late_minutes).toBe(30);
     expect(r.late_deduction).toBe(0);
   });
 
@@ -1745,8 +1745,8 @@ describe('computeAttendanceForEmployee — lunch-break lateness (PayrollPolicy.c
       [day({ time_in: '08:00', time_out: '17:00', lunch_out: '13:00', lunch_in: '14:00' })],
       DAILY_RATE, policy
     );
-    // Back at 14:00 vs. structural end 13:00 -> 60 min raw, 10 min grace -> 50 min deducted
-    expect(r.days[0]!.late_minutes).toBe(50);
+    // Back at 14:00 vs. structural end 13:00 -> 60 min raw, past the 10 min grace -> all 60 count
+    expect(r.days[0]!.late_minutes).toBe(60);
   });
 
   it('an explicit new_lunch_in on the offset form overrides the default +lunch_break_minutes window', () => {
@@ -1768,7 +1768,7 @@ describe('computeAttendanceForEmployee — lunch-break lateness (PayrollPolicy.c
       [day({ time_in: '08:00', time_out: '17:00', lunch_out: '12:00', lunch_in: '13:30' })],
       DAILY_RATE, policy
     );
-    expect(r.late_deduction).toBeCloseTo((20 / 60) * 100, 6);
+    expect(r.late_deduction).toBeCloseTo((30 / 60) * 100, 6);
   });
 });
 

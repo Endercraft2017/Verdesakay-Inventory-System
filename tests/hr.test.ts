@@ -707,7 +707,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const records = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Compute Cutoff' }).set(hdr());
     const rec = records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Compute Test Employee');
     expect(rec.data.days_worked).toBe(2);
-    expect(rec.data.late_absences).toBeCloseTo(100, 6); // 1 hour * 100/hr
+    expect(rec.data.late_absences).toBeCloseTo(200, 6); // past grace, all of the lateness rounds up to 2 hours * 100/hr
     expect(rec.data.ot_hours).toBeCloseTo(1, 6);
     expect(rec.data.overtime_pay).toBeCloseTo(125, 6); // 1hr * 100 * 1.25
     expect(rec.data.ot_rate_hour).toBeCloseTo(125, 6); // auto-computed now: 100/hr * 125% — no more hand-typing it
@@ -1359,8 +1359,8 @@ describe('generate-payslips computes real numbers from attendance + linked forms
 
     const lateDay = detail.body.days.find((d: { work_date: string }) => d.work_date === '2026-08-01');
     expect(lateDay.status).toBe('worked');
-    expect(lateDay.late_minutes).toBe(60);
-    expect(lateDay.late_pay).toBeCloseTo(100, 6);
+    expect(lateDay.late_minutes).toBe(120);
+    expect(lateDay.late_pay).toBeCloseTo(200, 6);
     expect(lateDay.ot_hours).toBe(0);
 
     const otDay = detail.body.days.find((d: { work_date: string }) => d.work_date === '2026-08-02');

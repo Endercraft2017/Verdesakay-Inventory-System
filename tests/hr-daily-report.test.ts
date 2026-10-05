@@ -25,10 +25,10 @@ describe('classifyDailyStatus', () => {
     expect(r.status).toBe('present');
   });
 
-  it('one minute past grace -> late, with minutes past grace reported', () => {
+  it('one minute past grace -> late, with the whole lateness reported (same as payroll)', () => {
     const r = classifyDailyStatus(input({ time_in: '08:11' }));
     expect(r.status).toBe('late');
-    expect(r.late_minutes).toBe(1);
+    expect(r.late_minutes).toBe(11);
   });
 
   it('has a time_in but no shift resolvable -> present, never late (nothing to judge against)', () => {

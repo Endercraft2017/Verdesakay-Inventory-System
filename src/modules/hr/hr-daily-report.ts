@@ -82,7 +82,7 @@ export function classifyDailyStatus(input: DailyStatusInput): DailyStatusResult 
     // the full clock-relative lateness, which reads more naturally to a supervisor at a glance.
     if (timeIn != null && shiftStart != null) {
       lateRaw = timeIn - shiftStart;
-      if (lateRaw > input.grace_minutes) lateMinutes = lateRaw - input.grace_minutes;
+      if (lateRaw > input.grace_minutes) lateMinutes = lateRaw; // past grace: the whole lateness, as payroll
     }
     return lateMinutes > 0
       ? { status: 'late', late_minutes: lateMinutes, note: `Arrived ${input.time_in} — ${lateRaw}m late` }

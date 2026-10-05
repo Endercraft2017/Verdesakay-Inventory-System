@@ -290,7 +290,7 @@ export function executeAnalyticsTool(name: string, args: unknown, user: AuthUser
                   SUM(CASE WHEN ar.time_in IS NOT NULL AND ar.time_in <> '' THEN 1 ELSE 0 END) AS days_present,
                   SUM(CASE WHEN (ar.time_in IS NULL OR ar.time_in = '') AND ar.form_record_id IS NULL THEN 1 ELSE 0 END) AS days_absent,
                   SUM(CASE WHEN ${lateCond} THEN 1 ELSE 0 END) AS late_days,
-                  SUM(CASE WHEN ${lateCond} THEN (${mins('ar.time_in')} - ${mins(SHIFT_START)} - ${grace}) ELSE 0 END) AS total_late_minutes,
+                  SUM(CASE WHEN ${lateCond} THEN (${mins('ar.time_in')} - ${mins(SHIFT_START)}) ELSE 0 END) AS total_late_minutes,
                   SUM(CASE WHEN ar.form_record_id IS NOT NULL THEN 1 ELSE 0 END) AS days_with_form
            ${ATT_JOINS}
            WHERE ${where.join(' AND ')}

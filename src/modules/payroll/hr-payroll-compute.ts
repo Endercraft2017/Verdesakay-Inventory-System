@@ -699,7 +699,7 @@ export function computeAttendanceForEmployee(
       }
       const lunchLateRaw = lunchInRel - expectedBackRel;
       if (lunchLateRaw > policy.grace_minutes) {
-        lunchLateMin = roundUpToUnit(lunchLateRaw - policy.grace_minutes, unitMinutesFor(policy.late_unit));
+        lunchLateMin = roundUpToUnit(lunchLateRaw, unitMinutesFor(policy.late_unit));
         lunchLatePay = exemptLate ? 0 : (lunchLateMin / 60) * hourlyRate;
       }
     }
@@ -744,7 +744,7 @@ export function computeAttendanceForEmployee(
       // an employee already paid only for the hours they were actually present.
       const lateRaw = timeInRel - shiftStart;
       if (lateRaw > policy.grace_minutes) {
-        lateMin = roundUpToUnit(lateRaw - policy.grace_minutes, unitMinutesFor(policy.late_unit));
+        lateMin = roundUpToUnit(lateRaw, unitMinutesFor(policy.late_unit));
       }
 
       // Hours worked beyond the shift's own normal span — same authorization gate OT already
@@ -877,7 +877,7 @@ export function computeAttendanceForEmployee(
         // doesn't cost pay here since pay is already reduced to match actual hours present.
         const lateRaw = timeInRel - effShiftStart;
         if (lateRaw > policy.grace_minutes) {
-          lateMin = roundUpToUnit(lateRaw - policy.grace_minutes, unitMinutesFor(policy.late_unit));
+          lateMin = roundUpToUnit(lateRaw, unitMinutesFor(policy.late_unit));
         }
         if (policy.night_diff_enabled) {
           const nightMin = nightMinutesRel(timeInRel, timeOutRel - timeInRel, nightStart, nightEnd)
@@ -905,14 +905,13 @@ export function computeAttendanceForEmployee(
     out.days_worked += isHalfDay ? 0.5 : 1;
     if (isHalfDay) { out.days_half += 1; status = 'half_day'; }
 
-    // Late arrival: grace is a threshold, not a subtracted buffer while under it — but once
-    // exceeded, only the minutes *past* grace are rounded to a block (confirmed: 125 min late
-    // with a 10 min grace and a 1-hour block -> 115 min past grace -> rounds up to 2 hours, not
-    // 3 — rounding the full 125 raw minutes would over-penalize).
+    // Late arrival: grace is a threshold, never a later start — within it costs nothing; past
+    // it, the WHOLE lateness from the shift start counts, rounded up to late_unit (per the
+    // customer, 2026-10-05: 6 min late with a 5 min grace is 6 minutes, not 1; 125 min late
+    // with a 10 min grace and hour blocks is 3 hours). Lunch lateness follows the same rule.
     const lateRaw = timeInRel - effShiftStart - unpaidLunchIn(effShiftStart, timeInRel);
     if (lateRaw > policy.grace_minutes && !wholeDay) {
-      const pastGrace = lateRaw - policy.grace_minutes;
-      const lateBlocked = roundUpToUnit(pastGrace, unitMinutesFor(policy.late_unit));
+      const lateBlocked = roundUpToUnit(lateRaw, unitMinutesFor(policy.late_unit));
       lateMin = lateBlocked; // still reported even when exempt — HR can see the pattern, it just costs nothing
       latePay = exemptLate ? 0 : (lateBlocked / 60) * hourlyRate;
       out.late_deduction += latePay;
