@@ -629,6 +629,16 @@ Passed as `computeAttendanceForEmployee` / `computeAttendanceMultiRate`'s `alway
 by generate-payslips, the payslip detail (which also returns it for a note) and the
 timekeeping flags route; the Daily Time grid hides "Possible Half Day?" for these employees.
 Not yet read by the HR Daily Report board, which may still show such a day as a half day.
+**OT grace + "OT counts after" (2026-10-05):** Policy Settings `ot_grace_minutes` (0-59) and
+`ot_min_minutes` (0-480), both 0 = off (the plain round-down to `ot_unit`). One rule,
+`otCreditMinutes` in `hr-payroll-compute.ts`, used by after-shift OT, early OT and
+`unrecordedOtMinutes`: no OT until the minimum is reached, then whole `ot_unit` steps; short of
+the next step (the minimum or the next block) by no more than the grace counts as reaching it,
+one step at most, never in per-minute steps past the minimum. 17:56 on a 17:00 end with hour
+steps + 5 min grace = 1 h; a 60-min minimum + 30-min steps: 18:30 = 1.5 h, 17:30 = 0. Applied
+before the daily cap and still gated by the OT form; grace-credited minutes past the time-out
+earn no night differential. The Daily Time grid's OT hint mirrors it (`hr-timekeeping.js`).
+The `per_hour` basis keeps its own `hours_basis_unit` rounding.
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
 list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for

@@ -1254,6 +1254,13 @@ export interface PayrollPolicy {
   grace_minutes: number;
   late_unit: 'minute' | 'hour';
   ot_unit: 'minute' | '30min' | 'hour';
+  /** OT grace: short of the next OT step by no more than this many minutes counts as reaching
+      it — 17:56 on a 17:00 end with hour steps and 5 min grace is 1 h. 0/absent = off. See
+      otCreditMinutes in hr-payroll-compute.ts. */
+  ot_grace_minutes?: number;
+  /** Minimum OT before any counts; past it OT counts in ot_unit steps — 60 with 30-minute
+      steps: 18:30 on a 17:00 end is 1.5 h, 17:30 is 0. 0/absent = steps from the first minute. */
+  ot_min_minutes?: number;
   ot_rate_percent: number;
   /** When true (the default), OT only pays when the day is linked to an approved Overtime
       Request form — a raw late clock-out by itself isn't auto-paid. When false, any clock-out

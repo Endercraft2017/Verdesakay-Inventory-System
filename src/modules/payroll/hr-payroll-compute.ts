@@ -203,6 +203,25 @@ function roundDownToUnit(minutes: number, unitMinutes: number): number {
   return Math.floor(minutes / unitMinutes) * unitMinutes;
 }
 
+/** OT minutes credited for `rawMinutes` worked past the shift end (or before its start, for
+    early OT), before any daily cap: nothing until policy.ot_min_minutes is reached, then whole
+    policy.ot_unit steps from there (rounded down). Short of the next step — the minimum, or the
+    next whole block — by no more than policy.ot_grace_minutes counts as reaching it, one step at
+    most. Examples on a 17:00 end: hour steps + 5 min grace, out 17:56 → 60; a 60-min minimum
+    + 30-min steps, out 18:30 → 90 and out 17:30 → 0. Grace never adds minutes in per-minute
+    steps past the minimum (there is no step to reach). Both settings absent/0 = the plain
+    round-down to ot_unit this always did. */
+export function otCreditMinutes(rawMinutes: number, policy: PayrollPolicy): number {
+  if (rawMinutes <= 0) return 0;
+  const unit = unitMinutesFor(policy.ot_unit);
+  const minimum = Math.max(0, policy.ot_min_minutes ?? 0);
+  const grace = Math.max(0, policy.ot_grace_minutes ?? 0);
+  const credited = rawMinutes < minimum ? 0 : minimum + roundDownToUnit(rawMinutes - minimum, unit);
+  if (grace === 0 || (unit === 1 && rawMinutes >= minimum)) return credited;
+  const next = rawMinutes < minimum ? minimum : credited + unit;
+  return rawMinutes + grace >= next ? next : credited;
+}
+
 /** Overlap (in minutes) between the span [fromMin, toMin) — wall-clock minutes, `toMin` may
     exceed 1440 if the span crosses midnight — and the night-differential window [nightStart,
     nightEnd), which may itself wrap midnight (e.g. 22:00-06:00). Checks both the window's
@@ -922,7 +941,7 @@ export function computeAttendanceForEmployee(
     let earlyBlocked = 0;
     const earlyRaw = effShiftStart - timeInRel;
     if (hasForm('overtime_request') && earlyOtTicked(formData('overtime_request')?.early_ot) && earlyRaw >= EARLY_OT_MIN_MINUTES) {
-      const earlyBlockedRaw = roundDownToUnit(earlyRaw, unitMinutesFor(policy.ot_unit));
+      const earlyBlockedRaw = otCreditMinutes(earlyRaw, policy);
       earlyBlocked = dayMaxOtMin != null ? Math.min(earlyBlockedRaw, dayMaxOtMin) : earlyBlockedRaw;
     }
     // Where paid presence starts: the shift start, or earlier by any paid early OT (a late
@@ -932,13 +951,13 @@ export function computeAttendanceForEmployee(
     if (hasForm('overtime_request') || (!policy.require_ot_form && timeOutRel > effectiveEnd)) {
       const otRaw = Math.max(0, timeOutRel - effectiveEnd);
       if (otRaw > 0 || earlyBlocked > 0) {
-        const otBlockedRaw = roundDownToUnit(otRaw, unitMinutesFor(policy.ot_unit));
+        const otBlockedRaw = otCreditMinutes(otRaw, policy);
         // dayMaxOtMin (policy cap, or a linked Overtime Request's own approved_hours override —
         // see above; null = no cap) caps how much of it is actually PAID, early OT included —
         // same as unauthorized OT, hours worked past the cap are simply uncompensated presence,
         // not converted into undertime.
         const otBlocked = dayMaxOtMin != null ? Math.min(otBlockedRaw, Math.max(0, dayMaxOtMin - earlyBlocked)) : otBlockedRaw;
-        if (otBlocked > 0) paidSpanEnd = effectiveEnd + otBlocked;
+        if (otBlocked > 0) paidSpanEnd = Math.min(timeOutRel, effectiveEnd + otBlocked);
         if (otBlocked + earlyBlocked > 0) {
           otHours = (otBlocked + earlyBlocked) / 60;
           out.ot_hours += otHours;
@@ -1090,11 +1109,10 @@ export function unrecordedOtMinutes(day: AttendanceDay, policy: PayrollPolicy): 
     if (offsetStartRaw != null && offsetEndRaw != null) effectiveStart = relTo(offsetStartRaw);
   }
 
-  const unit = unitMinutesFor(policy.ot_unit);
   const otRaw = timeOutRel - effectiveEnd;
   // Possible early OT too (time-in EARLY_OT_MIN_MINUTES+ before the start) — it's paid only via
   // an Overtime form with Early OT ticked, so it's equally "worked but not yet filed".
   const earlyRaw = effectiveStart - timeInRel;
-  return (otRaw > 0 ? roundDownToUnit(otRaw, unit) : 0)
-    + (earlyRaw >= EARLY_OT_MIN_MINUTES ? roundDownToUnit(earlyRaw, unit) : 0);
+  return otCreditMinutes(otRaw, policy)
+    + (earlyRaw >= EARLY_OT_MIN_MINUTES ? otCreditMinutes(earlyRaw, policy) : 0);
 }

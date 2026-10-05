@@ -438,6 +438,15 @@ async function policySettingsModal() {
         daily rate used in payroll is monthly rate ÷ this number (e.g. 26 working days/month). Maximum OT caps how
         many OT hours are credited/paid per day — hours worked past it are simply unpaid presence, not converted
         into anything else. Leave blank for no cap.</p>
+      <div class="field-row" style="margin-top:10px">
+        <div><label>OT grace (minutes)</label><input data-p="ot_grace_minutes" type="number" min="0" max="59" placeholder="0 = off" /></div>
+        <div><label>OT counts after (minutes)</label><input data-p="ot_min_minutes" type="number" min="0" max="480" placeholder="0 = from the first block" /></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0"><strong>OT grace</strong>: a time-out this many minutes
+        or less short of the next OT block counts as reaching it — per-hour blocks with 5 minutes: out at 5:56 pm on
+        a 5:00 pm shift end is 1 hour of OT. <strong>OT counts after</strong>: no OT until this much is worked,
+        then it counts in OT credit blocks — 60 with per-30-minute blocks: out at 6:30 pm is 1.5 hours, 5:30 pm is
+        none. Leave both at 0 for plain blocks.</p>
       <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
         <input type="checkbox" data-p="require_ot_form" style="width:auto" /> Require a linked Overtime Request form for OT to be paid
       </label></div>
@@ -596,6 +605,8 @@ async function policySettingsModal() {
         p('grace_minutes').value = policy.grace_minutes;
         p('late_unit').value = policy.late_unit;
         p('ot_unit').value = policy.ot_unit;
+        p('ot_grace_minutes').value = policy.ot_grace_minutes ?? 0;
+        p('ot_min_minutes').value = policy.ot_min_minutes ?? 0;
         p('ot_rate_percent').value = policy.ot_rate_percent;
         p('require_ot_form').checked = policy.require_ot_form !== false;
         p('require_rest_day_form').checked = !!policy.require_rest_day_form;
@@ -684,6 +695,8 @@ async function policySettingsModal() {
           grace_minutes: Number(p('grace_minutes').value) || 0,
           late_unit: p('late_unit').value,
           ot_unit: p('ot_unit').value,
+          ot_grace_minutes: Number(p('ot_grace_minutes').value) || 0,
+          ot_min_minutes: Number(p('ot_min_minutes').value) || 0,
           ot_rate_percent: Number(p('ot_rate_percent').value) || 0,
           require_ot_form: p('require_ot_form').checked,
           require_rest_day_form: p('require_rest_day_form').checked,
@@ -1782,17 +1795,27 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       const raw = out - end;
       const earlyRaw = earlyMinutesFor(d);
       const unitMin = policy.ot_unit === 'hour' ? 60 : policy.ot_unit === '30min' ? 30 : 1;
+      // Mirrors otCreditMinutes in hr-payroll-compute.ts: nothing until ot_min_minutes, then
+      // whole blocks; within ot_grace_minutes of the next step counts as reaching it.
+      const otMin = Number(policy.ot_min_minutes) || 0, otGrace = Number(policy.ot_grace_minutes) || 0;
+      const credit = (m) => {
+        if (m <= 0) return 0;
+        const got = m < otMin ? 0 : otMin + Math.floor((m - otMin) / unitMin) * unitMin;
+        if (!otGrace || (unitMin === 1 && m >= otMin)) return got;
+        const next = m < otMin ? otMin : got + unitMin;
+        return m + otGrace >= next ? next : got;
+      };
       const approved = Number(opts.approvedHours) > 0 ? Number(opts.approvedHours) * 60 : 0;
       const cap = policy.max_ot_hours != null ? Math.max(policy.max_ot_hours * 60, approved) : null;
-      const earlyRounded = opts.early && earlyRaw >= EARLY_OT_MIN_MINUTES ? Math.floor(earlyRaw / unitMin) * unitMin : 0;
+      const earlyRounded = opts.early && earlyRaw >= EARLY_OT_MIN_MINUTES ? credit(earlyRaw) : 0;
       const early = cap != null ? Math.min(earlyRounded, cap) : earlyRounded;
-      const lateRounded = raw > 0 ? Math.floor(raw / unitMin) * unitMin : 0;
+      const lateRounded = credit(raw);
       const late = cap != null ? Math.min(lateRounded, cap - early) : lateRounded;
       const capped = early + late < earlyRounded + lateRounded;
       const hrs = (m) => (m % 60 ? (m / 60).toFixed(2) : String(m / 60));
       if (early + late <= 0) {
         if (raw <= 0) return 'No time logged past the shift end — nothing to pay as OT.';
-        return `${raw} min past the shift end — under one ${policy.ot_unit} block, so it rounds to 0 OT.`;
+        return `${raw} min past the shift end — not enough to count as OT under the OT rules (Policy Settings).`;
       }
       const parts = early > 0 ? ` (${hrs(early)} h early + ${hrs(late)} h after the shift)` : '';
       return `≈ ${hrs(early + late)} h will be paid as OT${parts} — computed from the logged times${capped ? `, capped at ${hrs(cap)} h for the day` : ''}.`;

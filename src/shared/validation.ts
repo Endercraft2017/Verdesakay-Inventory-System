@@ -1470,6 +1470,9 @@ export const payrollPolicySchema = z.object({
   grace_minutes: z.coerce.number().int().min(0).max(240).default(10),
   late_unit: z.enum(['minute', 'hour']).default('hour'),
   ot_unit: z.enum(['minute', '30min', 'hour']).default('hour'),
+  // 0 (default) = off for both — see PayrollPolicy.ot_grace_minutes / ot_min_minutes.
+  ot_grace_minutes: z.coerce.number().int().min(0).max(59).default(0),
+  ot_min_minutes: z.coerce.number().int().min(0).max(480).default(0),
   ot_rate_percent: z.coerce.number().min(0).max(1000).default(125),
   require_ot_form: boolish.default(true),
   night_diff_enabled: boolish.default(true),

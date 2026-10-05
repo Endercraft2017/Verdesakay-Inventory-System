@@ -907,6 +907,7 @@ router.delete('/shifts/:id', requirePermission('hr.manage'), syncClass('claim'),
 
 const DEFAULT_POLICY: PayrollPolicy = {
   grace_minutes: 10, late_unit: 'hour', ot_unit: 'hour', ot_rate_percent: 125, require_ot_form: true,
+  ot_grace_minutes: 0, ot_min_minutes: 0,
   // Night differential is on unless a company turns it off (Labor Code Art. 86 requires it).
   night_diff_enabled: true, night_diff_percent: 10, night_start: '22:00', night_end: '06:00',
   monthly_rate_divisor: 26, pay_frequency: 'semi_monthly', auto_statutory: true,
