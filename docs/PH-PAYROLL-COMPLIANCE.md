@@ -60,6 +60,45 @@ Computable by formula (rate × capped basic ÷ 2). No bracket table needed.
 
 Computable by formula.
 
+### What each contribution is computed on (contribution bases) — implemented 2026-10-05
+
+The three funds use **different pay figures**, and none of them is "daily rate × 26":
+
+| Fund | Base | Law / guideline | In the code |
+|---|---|---|---|
+| **SSS** | **Actual remuneration for the month** — basic pay earned, OT, holiday pay, night diff, premiums, COLA; absences/lates reduce it. For hourly/daily/weekly-paid employees the month runs to the end of the last payroll period **ending** in it, so a 16–30 Sep cutoff paid 5 Oct is September's. | RA 11199 §8(f) "compensation" + IRR definition of "monthly" | `sssCompensation()` = `total_earnings − late_absences`, summed over the month's cutoffs |
+| **Pag-IBIG** | **Basic salary + mandated COLA** actually received in the month (₱10,000 ceiling) | RA 9679 §3; HDMF Circular 460 (₱10k MFS, Feb 2024) | `pagIbigCompensation()` = SSS base − OT − night diff − special-holiday / rest-day premiums, summed over the month |
+| **PhilHealth** | **Fixed monthly basic salary** — *not* reduced by absences, tardiness, undertime or LWOP; excludes OT, allowances, 13th month. Daily-paid: DOLE estimated equivalent monthly rate = daily × 313 / 12 (6-day week), × 261 / 12 (5-day), × 365 / 12 (paid every day). | PhilHealth Circular 2020-0005 / 2018-0001; DOLE Handbook on Statutory Monetary Benefits | `philHealthMonthlyBasic()` — monthly rate, or `equivalentMonthlyRate(daily, restDaysPerWeek)` from the employee's (else policy default) rest days |
+
+**Across cutoffs** (`computeEmployeeStatutory`, `hr.routes.ts`): SSS and Pag-IBIG accrue — each
+cutoff deducts the contribution on the month-to-date total **less what the month's earlier cutoffs
+already deducted**, so the month's last deducting cutoff trues it up to the exact legal amount
+(employer share and EC the same way). If a fund's only scheduled cutoff comes **before** month end
+(e.g. Pag-IBIG on the 1st cutoff), the month's total isn't knowable yet, so the employee's
+full-month rate stands in (never less than actual so far) — schedule SSS / Pag-IBIG on the last
+cutoff for exact figures. PhilHealth's fixed amount is split across its scheduled cutoffs. Each
+payslip records what it computed on in a nested `statutory_basis` (`sss_compensation`, `sss_msc`,
+`pagibig_compensation`, `philhealth_monthly_basic`, `month_complete`).
+
+**Fixed basis by written agreement** (`employees.contribution_basis`, SCHEMA_VERSION 58): default
+`'actual'` (above). Accounting → Statutory Deductions → *Fixed basis* switches one employee to
+`'fixed'`: SSS / Pag-IBIG on their fixed monthly rate (`monthly_rate`, or `daily_rate ×
+monthly_rate_divisor`), split evenly across the fund's scheduled cutoffs, whatever the attendance;
+the agency schedule then remits on that same fixed figure. PhilHealth is unaffected (already fixed).
+Caveat: SSS assesses contributions on actual remuneration, so a month where actual pay exceeds the
+fixed rate (OT, holiday pay) leaves the employer liable for the shortfall — the agreement doesn't
+change what SSS can collect.
+
+**Agency schedules** (`contributionBasesForMonth`, `GET /accounting/contribution-schedule`): a
+payslip counts toward the month its cutoff ends in (pay date only when the period label matches
+no cutoff, e.g. CSV imports); SSS / Pag-IBIG on the summed bases above; PhilHealth on the month's
+recorded `philhealth_monthly_basic` (payslips generated before 2026-10-05 fall back to Σ basic).
+
+**Worked example** (₱750/day, 6-day week, Sept 2026): cutoffs earned 10,218.75 (late 1,510.94) and
+5,462.50 (late 168.75) → SSS compensation 14,001.56 → MSC 14,000 → **EE ₱700**, ER ₱1,400, EC ₱10.
+The old flat 750 × 26 = 19,500 estimate charged ₱975. PhilHealth: 750 × 313 / 12 = 19,562.50 →
+premium 978.13 → EE ₱489.07.
+
 ### Withholding tax on compensation (TRAIN)
 
 - **Unchanged since 1 Jan 2023** (TRAIN second phase); 2026 table = 2025 table.
@@ -136,9 +175,9 @@ Store the 5-row RWT table (per frequency) as versioned data keyed by effective d
 - `POST /hr/periods/:id/generate-payslips`: when `auto_statutory` is on, each slip's
   `sss` / `philhealth` / `pagibig` / **`withholding_tax`** come from
   `statutoryDeductions()` + `withholdingTax()` on the tables effective for the pay date.
-  Monthly comp basis = `monthly_rate` (monthly employees) or `daily_rate ×
-  monthly_rate_divisor`. The monthly contribution is divided by periods-per-month
-  (semi-monthly → ÷2, etc.). `total_deductions` and `net_pay` are then rolled up
+  ~~Monthly comp basis = `monthly_rate` or `daily_rate × monthly_rate_divisor`, divided by
+  periods-per-month~~ — **superseded 2026-10-05** by the per-fund contribution bases in §1
+  ("What each contribution is computed on"). `total_deductions` and `net_pay` are then rolled up
   (earnings − SSS − PhilHealth − Pag-IBIG − withholding − late − cash advance).
 - `auto_statutory` off → those four stay manual (carried over on re-generate, as before).
   `cash_advance` / `rest_day_ot` / `ot_rate_hour` are always manual + carried over.

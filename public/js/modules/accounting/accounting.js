@@ -203,8 +203,13 @@ async function statutoryDeductionsModal() {
       <div style="max-height:52vh;overflow:auto;border:1px solid var(--border);border-radius:8px">
         <table class="line-table"><thead><tr>
           <th>Employee</th>${COLS.map((c) => `<th class="right" style="width:96px">${c[1]}</th>`).join('')}
+          <th class="right" style="width:110px" title="SSS / Pag-IBIG on the employee's fixed monthly rate instead of the month's actual pay — only with the employee's written agreement">Fixed basis</th>
         </tr></thead><tbody id="sd-body"></tbody></table>
-      </div>`,
+      </div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0"><strong>Fixed basis</strong> — off (default): SSS and
+        Pag-IBIG follow the law, computed on what the employee actually earned that month. On: computed on the
+        employee's fixed monthly rate (monthly rate, or daily rate × the monthly rate divisor) every month,
+        whatever the attendance. Tick it only for an employee who has agreed to this in writing.</p>`,
     onOpen: (ov) => {
       const body = ov.querySelector('#sd-body');
       const q = ov.querySelector('#sd-q');
@@ -215,12 +220,16 @@ async function statutoryDeductionsModal() {
           .map((r) => `<tr data-id="${r.id}">
             <td>${UI.esc(r.name)}<div class="muted mono" style="font-size:11px">${UI.esc(r.employee_no || '')}${r.department_name ? ' · ' + UI.esc(r.department_name) : ''}</div></td>
             ${COLS.map((c) => `<td class="right"><input type="checkbox" data-f="${c[0]}" ${r[c[0]] ? 'checked' : ''} /></td>`).join('')}
+            <td class="right"><input type="checkbox" data-basis ${r.contribution_basis === 'fixed' ? 'checked' : ''} /></td>
           </tr>`).join('');
         body.querySelectorAll('tr[data-id]').forEach((tr) => {
           const r = rows.find((x) => x.id === Number(tr.dataset.id));
           tr.querySelectorAll('[data-f]').forEach((cb) => cb.onchange = () => {
             r[cb.dataset.f] = cb.checked; dirty.add(r.id);
           });
+          tr.querySelector('[data-basis]').onchange = (e) => {
+            r.contribution_basis = e.target.checked ? 'fixed' : 'actual'; dirty.add(r.id);
+          };
         });
       }
       q.oninput = draw;
@@ -241,6 +250,7 @@ async function statutoryDeductionsModal() {
           employee_id: id,
           deduct_sss: r.deduct_sss, deduct_philhealth: r.deduct_philhealth,
           deduct_pagibig: r.deduct_pagibig, deduct_withholding_tax: r.deduct_withholding_tax,
+          contribution_basis: r.contribution_basis === 'fixed' ? 'fixed' : 'actual',
         };
       });
       try {

@@ -36,7 +36,12 @@ import { toCsv } from '../../shared/csv';
 import { resolveImport, importLoop } from '../../shared/csv-import';
 import { listPayrollTables, effectiveTables, upsertPayrollTable, deletePayrollTable } from '../payroll/payroll-tables';
 import { listRateHistory, seedInitialRate, recordRateChange, effectiveDailyRateOn } from '../payroll/employee-rate-history';
-import { statutoryDeductions, taxableCompensation, withholdingTax, RWT_2026 } from '../payroll/ph-statutory';
+import {
+  taxableCompensation, withholdingTax, RWT_2026, sssContribution, philHealthContribution, pagIbigContribution,
+  sssCompensation, pagIbigCompensation, philHealthMonthlyBasic, contributionBasis, monthRemainder,
+  type PayslipEarnings,
+} from '../payroll/ph-statutory';
+import { earlierPayslipsInMonth, isLastCutoffOfMonth } from '../payroll/statutory-month';
 import type { PayslipYearRow } from '../payroll/ph-2316';
 import { computeFinalPay, type FinalPayInput } from '../payroll/ph-final-pay';
 import { yearPayslipRowsByEmployee, companyProfile } from '../payroll/ph-payroll-report-data';
@@ -1867,43 +1872,106 @@ function appliedFromRecordData(data: Record<string, unknown>): StatutoryApplied 
   };
 }
 
+/** Where this cutoff sits in its contribution month (payroll/statutory-month.ts). */
+interface StatutoryMonthContext {
+  /** This employee's payslips for the month's earlier cutoffs. */
+  earlier: Record<string, unknown>[];
+  /** This cutoff is the month's last — the month's actual pay is fully known. */
+  monthComplete: boolean;
+  /** The deduction-schedule slots after this cutoff's, this month. */
+  laterSlots: DeductionSlot[];
+}
+
+/** The figures each fund's contribution was computed on — persisted on the payslip (nested,
+    like employer_contributions, so the employee views never show it) for audit and for the
+    PhilHealth basis on the agency schedule. */
+export interface StatutoryBasis {
+  /** 'actual' (the law's default) or 'fixed' (employee's written agreement — employees.contribution_basis). */
+  basis: 'actual' | 'fixed';
+  sss_compensation: number; sss_msc: number; pagibig_compensation: number;
+  philhealth_monthly_basic: number; month_complete: boolean;
+}
+
 /** SSS/PhilHealth/Pag-IBIG/withholding-tax for one employee, one cutoff — shared by
  *  generate-payslips (auto_statutory branch) and the two payroll-detail deduction routes below,
  *  so a manual per-record toggle recomputes with the exact same rate-table math the real payslip
  *  was generated from, never a second implementation that could disagree. `applied` is the AND
  *  of the per-employee deduct_* flags (Accounting -> Statutory Deductions), this cutoff's slot in
  *  the deduction schedule, AND this one payslip's own override — any of the three being off
- *  zeroes that deduction. */
+ *  zeroes that deduction.
+ *
+ *  Bases follow each fund's own law (ph-statutory.ts "Contribution bases"): SSS on the month's
+ *  actual remuneration, Pag-IBIG on the month's actual basic pay — both summed over the month's
+ *  cutoffs, each cutoff deducting what the month-to-date total owes less what earlier cutoffs
+ *  already took, so the month's last deducting cutoff trues it up — and PhilHealth on the fixed
+ *  monthly basic salary (DOLE equivalent monthly rate for daily-paid), split across slots.
+ *
+ *  An employee on the FIXED contribution basis (employees.contribution_basis = 'fixed', set in
+ *  Accounting → Statutory Deductions once they've agreed in writing) has SSS / Pag-IBIG computed
+ *  on their fixed monthly rate instead — monthly_rate, or daily_rate × the policy's monthly rate
+ *  divisor — split evenly across the fund's scheduled cutoffs, whatever the month's attendance. */
 function computeEmployeeStatutory(
   emp: {
-    daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null;
+    daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null; rest_days: string | null;
+    contribution_basis: string | null;
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
     withholding_tax_override: number | null;
     sss_override: number | null; philhealth_override: number | null; pagibig_override: number | null;
   },
-  totalEarnings: number,
+  thisSlip: PayslipEarnings,
+  month: StatutoryMonthContext,
   applied: StatutoryApplied,
   policy: PayrollPolicy,
   statTables: ReturnType<typeof effectiveTables>,
   thisSlot: DeductionSlot,
   slotDivisor: (key: keyof DeductionSlot) => number
-): { sss: number; philhealth: number; pagibig: number; withholding_tax: number;
+): { sss: number; philhealth: number; pagibig: number; withholding_tax: number; statutory_basis: StatutoryBasis;
      employer_contributions: { sss_er: number; sss_ec: number; philhealth_er: number; pagibig_er: number } } {
-  const monthlyComp = emp.rate_type === 'monthly' && emp.monthly_rate
-    ? emp.monthly_rate
+  const restDays = (() => {
+    try { return emp.rest_days ? JSON.parse(emp.rest_days) as unknown : policy.default_rest_days; }
+    catch { return policy.default_rest_days; }
+  })();
+  const monthlyBasic = philHealthMonthlyBasic(emp, Array.isArray(restDays) ? restDays.length : 0);
+  const sumEarlier = (f: (s: Record<string, unknown>) => number): number =>
+    round2(month.earlier.reduce((t, s) => t + f(s), 0));
+  const earlierEr = (key: string): number => sumEarlier(
+    (s) => Number((s.employer_contributions as Record<string, unknown> | undefined)?.[key]) || 0
+  );
+  const fixedBasis = emp.contribution_basis === 'fixed';
+  const fixedMonthly = emp.rate_type === 'monthly' && emp.monthly_rate
+    ? round2(emp.monthly_rate)
     : round2(emp.daily_rate * policy.monthly_rate_divisor);
-  const ded = statutoryDeductions(monthlyComp, monthlyComp, statTables);
+  const basis = (key: 'sss' | 'pagibig', perCutoff: (s: PayslipEarnings) => number): number => fixedBasis
+    ? fixedMonthly
+    : contributionBasis(
+      round2(sumEarlier(perCutoff) + perCutoff(thisSlip)),
+      { monthComplete: month.monthComplete, laterCutoffDeducts: month.laterSlots.some((s) => s[key]), fullMonthEstimate: monthlyBasic }
+    );
+  // This cutoff's part of a monthly SSS / Pag-IBIG amount: fixed basis splits it evenly across
+  // the fund's scheduled cutoffs; actual basis takes what the month-to-date total still owes.
+  const portion = (key: 'sss' | 'pagibig', monthly: number, earlierTook: number): number => fixedBasis
+    ? round2(monthly / slotDivisor(key))
+    : monthRemainder(monthly, earlierTook);
+  const sssComp = basis('sss', sssCompensation);
+  const pagibigComp = basis('pagibig', pagIbigCompensation);
+  const sssDue = sssContribution(sssComp, statTables.sss);
+  const pagibigDue = pagIbigContribution(pagibigComp, statTables.pagibig);
+  const philhealthDue = philHealthContribution(monthlyBasic, statTables.philhealth);
   const sssOn = !!emp.deduct_sss && thisSlot.sss && applied.sss;
   const philhealthOn = !!emp.deduct_philhealth && thisSlot.philhealth && applied.philhealth;
   const pagibigOn = !!emp.deduct_pagibig && thisSlot.pagibig && applied.pagibig;
-  // A per-employee override stands in for the computed MONTHLY contribution (ded.*.employee),
-  // still split across this month's deduction slots exactly the same way — e.g. a semi-monthly
-  // schedule still halves an overridden SSS amount across both cutoffs, matching how the
-  // computed table amount already behaves. Never affects the employer-side share below, which
-  // stays whatever the table says regardless of any employee-side arrangement.
-  const sss = sssOn ? round2((emp.sss_override ?? ded.sss.employee) / slotDivisor('sss')) : 0;
-  const philhealth = philhealthOn ? round2((emp.philhealth_override ?? ded.philhealth.employee) / slotDivisor('philhealth')) : 0;
-  const pagibig = pagibigOn ? round2((emp.pagibig_override ?? ded.pagibig.employee) / slotDivisor('pagibig')) : 0;
+  // A per-employee override stands in for the computed MONTHLY contribution, split evenly
+  // across this month's deduction slots — e.g. a semi-monthly schedule still halves an
+  // overridden SSS amount across both cutoffs. Never affects the employer-side share below,
+  // which stays whatever the table says regardless of any employee-side arrangement.
+  const sss = !sssOn ? 0 : emp.sss_override != null
+    ? round2(emp.sss_override / slotDivisor('sss'))
+    : portion('sss', sssDue.employee, sumEarlier((s) => Number(s.sss) || 0));
+  const philhealth = philhealthOn ? round2((emp.philhealth_override ?? philhealthDue.employee) / slotDivisor('philhealth')) : 0;
+  const pagibig = !pagibigOn ? 0 : emp.pagibig_override != null
+    ? round2(emp.pagibig_override / slotDivisor('pagibig'))
+    : portion('pagibig', pagibigDue.employee, sumEarlier((s) => Number(s.pagibig) || 0));
+  const totalEarnings = Number(thisSlip.total_earnings) || 0;
   // Withholding tax's own taxable base depends on whichever of SSS/PhilHealth/Pag-IBIG actually
   // deducted this run — turning one of those off (or on) for this payslip changes the tax too,
   // not just that one line, which is exactly why this can't be a client-side-only toggle.
@@ -1918,11 +1986,16 @@ function computeEmployeeStatutory(
     : 0;
   return {
     sss, philhealth, pagibig, withholding_tax,
+    statutory_basis: {
+      basis: fixedBasis ? 'fixed' : 'actual',
+      sss_compensation: sssComp, sss_msc: sssDue.msc, pagibig_compensation: pagibigComp,
+      philhealth_monthly_basic: monthlyBasic, month_complete: month.monthComplete,
+    },
     employer_contributions: {
-      sss_er: sssOn ? round2(ded.sss.employer / slotDivisor('sss')) : 0,
-      sss_ec: sssOn ? round2(ded.sss.ec / slotDivisor('sss')) : 0,
-      philhealth_er: philhealthOn ? round2(ded.philhealth.employer / slotDivisor('philhealth')) : 0,
-      pagibig_er: pagibigOn ? round2(ded.pagibig.employer / slotDivisor('pagibig')) : 0,
+      sss_er: sssOn ? portion('sss', sssDue.employer, earlierEr('sss_er')) : 0,
+      sss_ec: sssOn ? portion('sss', sssDue.ec, earlierEr('sss_ec')) : 0,
+      philhealth_er: philhealthOn ? round2(philhealthDue.employer / slotDivisor('philhealth')) : 0,
+      pagibig_er: pagibigOn ? portion('pagibig', pagibigDue.employer, earlierEr('pagibig_er')) : 0,
     },
   };
 }
@@ -1944,7 +2017,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), sy
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
     withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
     pagibig_override: number | null; rest_days: string | null; late_exempt: number; ot_exempt: number;
-    always_whole_day: number;
+    always_whole_day: number; contribution_basis: string | null;
   }>(
     `SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.daily_rate,
             e.rate_type, e.monthly_rate, d.name AS department_name,
@@ -1954,7 +2027,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), sy
             COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax,
             e.withholding_tax_override, e.sss_override, e.philhealth_override, e.pagibig_override,
             e.rest_days, COALESCE(e.late_exempt, 0) AS late_exempt, COALESCE(e.ot_exempt, 0) AS ot_exempt,
-            COALESCE(e.always_whole_day, 0) AS always_whole_day
+            COALESCE(e.always_whole_day, 0) AS always_whole_day, e.contribution_basis
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -1995,6 +2068,12 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), sy
     `SELECT * FROM form_records WHERE form_def_id = ? AND period = ?`,
     form.id, payrollPeriod
   );
+  // SSS / Pag-IBIG accrue over the contribution month (payroll/statutory-month.ts): each
+  // employee's earlier payslips this month, whether this cutoff closes the month, and which
+  // later cutoffs of the month still deduct each fund.
+  const earlierInMonth = earlierPayslipsInMonth(period, owner);
+  const monthComplete = isLastCutoffOfMonth(period, policy.pay_frequency);
+  const laterSlots = schedule.slice(slotIndexFor(period, policy.pay_frequency) + 1);
   db.exec('BEGIN');
   try {
     for (const emp of roster) {
@@ -2087,11 +2166,18 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), sy
       // export, and the print slip — all of which only read a fixed set of top-level fields.
       let employerContributions = (prev.employer_contributions ?? { sss_er: 0, sss_ec: 0, philhealth_er: 0, pagibig_er: 0 }) as
         { sss_er: number; sss_ec: number; philhealth_er: number; pagibig_er: number };
+      let statutoryBasis = prev.statutory_basis as StatutoryBasis | undefined;
       if (policy.auto_statutory) {
-        const statutory = computeEmployeeStatutory(emp, totalEarnings, prevApplied, policy, statTables, thisSlot, slotDivisor);
+        const statutory = computeEmployeeStatutory(emp, {
+          total_earnings: totalEarnings, late_absences: round2(computed.late_deduction),
+          overtime_pay: round2(computed.overtime_pay), night_diff_pay: round2(computed.night_diff_pay),
+          special_holiday_30: round2(computed.special_holiday_30), rest_day_ot: round2(computed.rest_day_ot),
+        }, { earlier: earlierInMonth.get(emp.employee_id) ?? [], monthComplete, laterSlots },
+        prevApplied, policy, statTables, thisSlot, slotDivisor);
         sss = statutory.sss; philhealth = statutory.philhealth; pagibig = statutory.pagibig;
         withholding_tax = statutory.withholding_tax;
         employerContributions = statutory.employer_contributions;
+        statutoryBasis = statutory.statutory_basis;
       }
 
       const totalDeductions = policy.auto_statutory
@@ -2141,6 +2227,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), sy
         total_deductions: totalDeductions,
         net_pay: netPay,
         employer_contributions: employerContributions,
+        statutory_basis: statutoryBasis,
       };
 
       if (existing) {
@@ -2308,7 +2395,7 @@ function resolvePayrollDeductionContext(
   emp: { id: number; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null;
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
     withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
-    pagibig_override: number | null };
+    pagibig_override: number | null; rest_days: string | null; contribution_basis: string | null };
   period: AttendancePeriod;
 } | null {
   const rec = queryOne<FormRecord & { slug: string }>(
@@ -2322,9 +2409,9 @@ function resolvePayrollDeductionContext(
     id: number; daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null;
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
     withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
-    pagibig_override: number | null;
+    pagibig_override: number | null; rest_days: string | null; contribution_basis: string | null;
   }>(
-    `SELECT id, daily_rate, rate_type, monthly_rate,
+    `SELECT id, daily_rate, rate_type, monthly_rate, rest_days, contribution_basis,
             COALESCE(deduct_sss, 1) AS deduct_sss, COALESCE(deduct_philhealth, 1) AS deduct_philhealth,
             COALESCE(deduct_pagibig, 1) AS deduct_pagibig, COALESCE(deduct_withholding_tax, 1) AS deduct_withholding_tax,
             withholding_tax_override, sss_override, philhealth_override, pagibig_override
@@ -2351,7 +2438,7 @@ type OtherDeductionLine = { label: string; amount: number };
  *  keeps whatever is already stored on the record (not reset to none). */
 function recomputeDeductionsFor(
   data: Record<string, unknown>,
-  emp: Parameters<typeof computeEmployeeStatutory>[0],
+  emp: Parameters<typeof computeEmployeeStatutory>[0] & { id: number },
   applied: StatutoryApplied,
   period: AttendancePeriod,
   otherDeductions?: OtherDeductionLine[]
@@ -2363,7 +2450,12 @@ function recomputeDeductionsFor(
   const slotDivisor = (key: keyof DeductionSlot): number => Math.max(1, schedule.filter((s) => s[key]).length);
   const statTables = effectiveTables((data.pay_date as string) || period.end_date);
   const totalEarnings = Number(data.total_earnings) || 0;
-  const statutory = computeEmployeeStatutory(emp, totalEarnings, applied, policy, statTables, thisSlot, slotDivisor);
+  const month = {
+    earlier: earlierPayslipsInMonth(period).get(emp.id) ?? [],
+    monthComplete: isLastCutoffOfMonth(period, policy.pay_frequency),
+    laterSlots: schedule.slice(slotIndexFor(period, policy.pay_frequency) + 1),
+  };
+  const statutory = computeEmployeeStatutory(emp, data, month, applied, policy, statTables, thisSlot, slotDivisor);
   const cashAdvance = Number(data.cash_advance) || 0;
   const lateDeduction = Number(data.late_absences) || 0;
   const lines = otherDeductions ?? ((Array.isArray(data.other_deductions) ? data.other_deductions : []) as OtherDeductionLine[]);
@@ -2424,6 +2516,7 @@ router.put('/payroll/:recordId/deductions', requirePermission('hr.manage'), sync
     other_deductions: result.other_deductions, other_deductions_total: result.other_deductions_total,
     total_deductions: result.total_deductions, net_pay: result.net_pay,
     employer_contributions: result.employer_contributions,
+    statutory_basis: result.statutory_basis,
   };
   run(`UPDATE form_records SET data = ?, updated_at = datetime('now') WHERE id = ?`, JSON.stringify(newData), ctx.rec.id);
   res.json({ ok: true, ...result });

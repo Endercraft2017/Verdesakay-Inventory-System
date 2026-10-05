@@ -410,6 +410,7 @@ export interface Employees {
   birth_date: string | null;
   civil_status: string | null;
   always_whole_day: Generated<number>;
+  contribution_basis: Generated<string>;
 }
 
 export interface FieldPunches {

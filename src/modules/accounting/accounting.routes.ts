@@ -40,7 +40,7 @@ import { contributionSchedule, type Agency, type ContribEmployeeInput } from '..
 import { vat2550m, ewt0619e, EWT_ATCS, type EwtLine } from '../payroll/ph-vat-ewt';
 import { incomeTax1702, type IncomeTaxAdjustment } from '../payroll/ph-income-tax';
 import {
-  yearPayslipRowsByEmployee, monthlyWithholdingReport, payslipTotalsForMonth,
+  yearPayslipRowsByEmployee, monthlyWithholdingReport, contributionBasesForMonth,
   optsFromQuery, companyProfile,
 } from '../payroll/ph-payroll-report-data';
 
@@ -362,8 +362,8 @@ router.get('/contribution-schedule', (req, res) => {
 
   const flagCol = agency === 'sss' ? 'deduct_sss'
     : agency === 'philhealth' ? 'deduct_philhealth' : 'deduct_pagibig';
-  const employees: ContribEmployeeInput[] = [...payslipTotalsForMonth(month).entries()]
-    .map(([name, v]) => {
+  const employees: ContribEmployeeInput[] = [...contributionBasesForMonth(month).entries()]
+    .map(([name, v]): ContribEmployeeInput | null => {
       const e = queryOne<{ sss_no: string | null; philhealth_no: string | null; pagibig_no: string | null; flag: number }>(
         `SELECT sss_no, philhealth_no, pagibig_no, COALESCE(${flagCol}, 1) AS flag
          FROM employees WHERE name = ? COLLATE NOCASE`, name
@@ -373,7 +373,7 @@ router.get('/contribution-schedule', (req, res) => {
       if (e && !e.flag) return null;
       const id_number = agency === 'sss' ? e?.sss_no
         : agency === 'philhealth' ? e?.philhealth_no : e?.pagibig_no;
-      return { name, id_number: id_number ?? null, monthly_comp: v.comp, monthly_basic: v.basic };
+      return { name, id_number: id_number ?? null, monthly_comp: v.sss, monthly_basic: v.philhealth, monthly_pagibig: v.pagibig };
     })
     .filter((x): x is ContribEmployeeInput => x !== null);
 
@@ -403,8 +403,10 @@ router.get('/statutory-deductions', (_req, res) => {
     id: number; name: string; employee_no: string | null; status: string | null;
     department_name: string | null;
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+    contribution_basis: string | null;
   }>(`
     SELECT e.id, e.name, e.employee_no, e.status, d.name AS department_name,
+           COALESCE(e.contribution_basis, 'actual') AS contribution_basis,
            COALESCE(e.deduct_sss, 1) AS deduct_sss,
            COALESCE(e.deduct_philhealth, 1) AS deduct_philhealth,
            COALESCE(e.deduct_pagibig, 1) AS deduct_pagibig,
@@ -419,7 +421,9 @@ router.get('/statutory-deductions', (_req, res) => {
     })),
     note: 'An off switch zeroes that contribution on the employee\'s payslip the next time '
       + 'payslips are generated, and drops them from that fund\'s remittance schedule. The '
-      + 'company-wide master is HR → Time Keeping → Policy Settings → Auto-compute statutory.',
+      + 'company-wide master is HR → Time Keeping → Policy Settings → Auto-compute statutory. '
+      + 'SSS and Pag-IBIG are computed on the month\'s actual pay, as the law requires; tick "Fixed" '
+      + 'only for an employee who has agreed in writing to contributions on their fixed monthly rate.',
   });
 });
 
@@ -437,6 +441,7 @@ router.put('/statutory-deductions', requirePermission('accounting.manage'), sync
       for (const c of cols) {
         if (u[c] !== undefined) { sets.push(`${c} = ?`); vals.push(u[c] ? 1 : 0); }
       }
+      if (u.contribution_basis !== undefined) { sets.push('contribution_basis = ?'); vals.push(u.contribution_basis); }
       if (!sets.length) continue;
       const info = run(
         `UPDATE employees SET ${sets.join(', ')} WHERE id = ?`,

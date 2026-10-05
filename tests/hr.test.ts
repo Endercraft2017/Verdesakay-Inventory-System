@@ -865,10 +865,13 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const recs = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Stat Cutoff' }).set(hdr());
     const rec = recs.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Statutory Employee');
 
-    // monthly comp = 1000 * 26 = 26,000 -> MSC 26,000; semi-monthly split (/2)
-    expect(rec.data.sss).toBe(650);         // 26000*0.05 / 2
-    expect(rec.data.philhealth).toBe(325);  // 26000*0.05*0.5 / 2
-    expect(rec.data.pagibig).toBe(100);     // min(10000*0.02,200) / 2
+    // A 1st-half cutoff with a later cutoff still deducting: SSS / Pag-IBIG on what was actually
+    // earned so far (₱1,000 — the 2nd cutoff trues up the month), PhilHealth on the fixed monthly
+    // basic salary (no rest days here → 1000 × 365 / 12 = 30,416.67), split across both cutoffs.
+    expect(rec.data.sss).toBe(250);           // MSC floor 5,000 × 5%
+    expect(rec.data.philhealth).toBe(380.21); // 30416.67 × 5% / 2, halved across 2 cutoffs
+    expect(rec.data.pagibig).toBe(10);        // 1,000 ≤ 1,500 → 1% employee rate
+    expect(rec.data.statutory_basis).toMatchObject({ sss_compensation: 1000, sss_msc: 5000, philhealth_monthly_basic: 30416.67, month_complete: false });
     expect(rec.data.withholding_tax).toBeGreaterThanOrEqual(0);
     expect(rec.data.total_deductions).toBe(
       Math.round((rec.data.sss + rec.data.philhealth + rec.data.pagibig + rec.data.withholding_tax + rec.data.late_absences + 0) * 100) / 100
@@ -908,8 +911,10 @@ describe('generate-payslips computes real numbers from attendance + linked forms
 
     expect(rec.data.sss).toBe(0);
     expect(rec.data.withholding_tax).toBe(0);
-    expect(rec.data.philhealth).toBe(325);  // still deducted
-    expect(rec.data.pagibig).toBe(100);
+    // Still deducted. The previous test's policy reset restored the default Sat+Sun rest days,
+    // so PhilHealth's basic is the 5-day-week rate: 1000 × 261 / 12 = 21,750 → 543.75, halved.
+    expect(rec.data.philhealth).toBe(271.88);
+    expect(rec.data.pagibig).toBe(10);
     expect(rec.data.total_deductions).toBe(
       Math.round((0 + rec.data.philhealth + rec.data.pagibig + 0 + rec.data.late_absences + 0) * 100) / 100
     );
@@ -1076,7 +1081,9 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(f.thirteenth_month_and_other_benefits).toBe(166.67); // 2000 / 12
     expect(f.gross_compensation).toBe(2166.67);              // earnings 2000 + 13th month
     expect(f.sss_gsis_phic_pagibig_union).toBeGreaterThan(0);
-    expect(f.taxable_compensation_present).toBe(0);          // tiny sample: statutory > gross
+    // 2000 − statutory (2 × (SSS 250 + PhilHealth 271.88 [1000 × 261 / 12, default Sat+Sun rest
+    // days] + Pag-IBIG 10)) — 13th month is non-taxable
+    expect(f.taxable_compensation_present).toBe(936.24);
     expect(f.tax_due).toBe(0);                               // well under the 250k exemption
     expect(f.total_tax_withheld).toBe(f.tax_withheld_present);
 
@@ -1864,7 +1871,9 @@ describe('generate-payslips — per-cutoff statutory deduction schedule', () => 
       { sss: false, philhealth: true, pagibig: true, withholding_tax: true },
     ]);
     const rec = await genFor('2026-08-05', 'Ded Sched 1st Cutoff', '1st Cutoff Ded Employee');
-    expect(rec.data.sss).toBe(1300); // full monthly, not halved
+    // The month's only SSS cutoff comes before month end, so its actual total isn't known yet:
+    // the full-month rate stands in (1000 × 365 / 12 = 30,416.67 → MSC 30,500), full, not halved.
+    expect(rec.data.sss).toBe(1525);
     expect(rec.data.philhealth).toBe(0);
     expect(rec.data.pagibig).toBe(0);
     expect(rec.data.withholding_tax).toBe(0);
@@ -1877,8 +1886,8 @@ describe('generate-payslips — per-cutoff statutory deduction schedule', () => 
     ]);
     const rec = await genFor('2026-08-20', 'Ded Sched 2nd Cutoff', '2nd Cutoff Ded Employee');
     expect(rec.data.sss).toBe(0);
-    expect(rec.data.philhealth).toBe(650); // full monthly, not halved
-    expect(rec.data.pagibig).toBe(200);    // full monthly, not halved
+    expect(rec.data.philhealth).toBe(760.42); // full monthly (30,416.67 × 5% / 2), not halved
+    expect(rec.data.pagibig).toBe(10);        // month complete: on the ₱1,000 actually earned
     expect(rec.data.withholding_tax).toBeGreaterThanOrEqual(0); // gated on, computed normally (not divided — never was)
   });
 
@@ -1887,9 +1896,9 @@ describe('generate-payslips — per-cutoff statutory deduction schedule', () => 
       pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
     });
     const rec = await genFor('2026-08-05', 'Ded Sched Default', 'Default Ded Employee');
-    expect(rec.data.sss).toBe(650);
-    expect(rec.data.philhealth).toBe(325);
-    expect(rec.data.pagibig).toBe(100);
+    expect(rec.data.sss).toBe(250);        // month-to-date ₱1,000 → MSC floor; 2nd cutoff trues up
+    expect(rec.data.philhealth).toBe(380.21);
+    expect(rec.data.pagibig).toBe(10);
   });
 
   it('a schedule left over from a different pay_frequency (wrong length) safely falls back to even-split rather than misbehaving', async () => {
@@ -1901,9 +1910,101 @@ describe('generate-payslips — per-cutoff statutory deduction schedule', () => 
       { sss: false, philhealth: false, pagibig: false, withholding_tax: true },
     ]);
     const rec = await genFor('2026-08-05', 'Ded Sched Mismatch', 'Mismatch Ded Employee');
-    expect(rec.data.sss).toBe(650); // ignored the stale schedule, fell back to the even split
-    expect(rec.data.philhealth).toBe(325);
+    expect(rec.data.sss).toBe(250); // ignored the stale schedule, fell back to every-cutoff-deducts
+    expect(rec.data.philhealth).toBe(380.21);
+    expect(rec.data.pagibig).toBe(10);
+  });
+});
+
+// SSS / Pag-IBIG are computed on the month's ACTUAL pay (RA 11199 / RA 9679): the cutoffs ending
+// in the month are summed and the month's last deducting cutoff trues up what earlier ones took.
+// A ₱7,000 one-day "cutoff" in each half keeps the numbers readable.
+describe("generate-payslips — SSS / Pag-IBIG on the month's actual pay", () => {
+  it("2nd cutoff deducts the month total's contribution less what the 1st took; the schedule counts the month by cutoff end", async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
+    });
+    const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Month Accrual Shift', start_time: '08:00', end_time: '17:00', is_default: false });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-MONTHACC', name: 'Month Accrual Employee', daily_rate: 7000, sss_no: '34-1111111-1' });
+    const slipFor = async (label: string, workDate: string, payDate: string) => {
+      const period = await ctx.api.post('/api/hr/periods').set(hdr()).send({ label, start_date: workDate, end_date: workDate });
+      await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+      await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+        employee_id: emp.body.id,
+        days: [{ work_date: workDate, time_in: '08:00', time_out: '17:00', notes: '', shift_id: shift.body.id }],
+      });
+      const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: label, pay_date: payDate });
+      const recs = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: label }).set(hdr());
+      return recs.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Month Accrual Employee');
+    };
+
+    const first = await slipFor('Month Accrual 1st', '2026-11-10', '2026-11-20');
+    expect(first.data.sss).toBe(350);      // ₱7,000 so far → MSC 7,000 × 5%
+    expect(first.data.pagibig).toBe(140);  // 7,000 × 2%
+    expect(first.data.employer_contributions).toMatchObject({ sss_er: 700, sss_ec: 10, pagibig_er: 140 });
+
+    // Paid in December, but the cutoff ends in November — it is November's.
+    const second = await slipFor('Month Accrual 2nd', '2026-11-20', '2026-12-05');
+    expect(second.data.statutory_basis).toMatchObject({ sss_compensation: 14000, sss_msc: 14000, month_complete: true });
+    expect(second.data.sss).toBe(350);     // month 14,000 → 700, less the 350 already taken
+    expect(second.data.pagibig).toBe(60);  // month capped at 200, less 140
+    expect(second.data.employer_contributions).toMatchObject({ sss_er: 700, sss_ec: 0, pagibig_er: 60 });
+
+    const sched = await ctx.api.get('/api/accounting/contribution-schedule').query({ month: '2026-11', agency: 'sss' }).set(hdr());
+    const row = sched.body.rows.find((x: { name: string }) => x.name === 'Month Accrual Employee');
+    expect(row).toMatchObject({ basis: 14000, employee: 700, employer: 1400, ec: 10 });
+    const dec = await ctx.api.get('/api/accounting/contribution-schedule').query({ month: '2026-12', agency: 'sss' }).set(hdr());
+    expect(dec.body.rows.some((x: { name: string }) => x.name === 'Month Accrual Employee')).toBe(false);
+    const phic = await ctx.api.get('/api/accounting/contribution-schedule').query({ month: '2026-11', agency: 'philhealth' }).set(hdr());
+    // The fixed monthly basic (7000 × 365 / 12), not the two days attended.
+    expect(phic.body.rows.find((x: { name: string }) => x.name === 'Month Accrual Employee').basis).toBe(212916.67);
+  });
+});
+
+describe('generate-payslips — fixed contribution basis (written agreement)', () => {
+  it("an employee switched to 'fixed' pays SSS / Pag-IBIG on the fixed monthly rate, split evenly, whatever the attendance", async () => {
+    await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
+      pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], monthly_rate_divisor: 26,
+    });
+    const shift = await ctx.api.post('/api/hr/shifts').set(hdr())
+      .send({ name: 'Fixed Basis Shift', start_time: '08:00', end_time: '17:00', is_default: false });
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-FIXEDBASIS', name: 'Fixed Basis Employee', daily_rate: 750 });
+
+    // Default is the law's actual basis; Accounting switches this one employee to fixed.
+    const before = await ctx.api.get('/api/accounting/statutory-deductions').set(hdr());
+    expect(before.body.rows.find((r: { id: number }) => r.id === emp.body.id).contribution_basis).toBe('actual');
+    const put = await ctx.api.put('/api/accounting/statutory-deductions').set(hdr())
+      .send({ updates: [{ employee_id: emp.body.id, contribution_basis: 'fixed' }] });
+    expect(put.status).toBe(200);
+    const after = await ctx.api.get('/api/accounting/statutory-deductions').set(hdr());
+    expect(after.body.rows.find((r: { id: number }) => r.id === emp.body.id).contribution_basis).toBe('fixed');
+    expect((await ctx.api.put('/api/accounting/statutory-deductions').set(hdr())
+      .send({ updates: [{ employee_id: emp.body.id, contribution_basis: 'gross' }] })).status).toBe(400);
+
+    const period = await ctx.api.post('/api/hr/periods').set(hdr()).send({ label: 'Fixed Basis 1st', start_date: '2026-10-06', end_date: '2026-10-06' });
+    await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+    await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
+      employee_id: emp.body.id,
+      days: [{ work_date: '2026-10-06', time_in: '08:00', time_out: '17:00', notes: '', shift_id: shift.body.id }],
+    });
+    const gen = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: 'Fixed Basis 1st' });
+    const recs = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Fixed Basis 1st' }).set(hdr());
+    const rec = recs.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Fixed Basis Employee');
+
+    // 750 × 26 = 19,500 → MSC 19,500: EE 975 / ER 1,950 / EC 30 a month, halved across the two
+    // cutoffs — even though only ₱750 was earned this cutoff (actual basis would give 250).
+    expect(rec.data.statutory_basis).toMatchObject({ basis: 'fixed', sss_compensation: 19500, sss_msc: 19500 });
+    expect(rec.data.sss).toBe(487.5);
     expect(rec.data.pagibig).toBe(100);
+    expect(rec.data.employer_contributions).toMatchObject({ sss_er: 975, sss_ec: 15, pagibig_er: 100 });
+
+    // The remittance schedule uses the agreed fixed basis too.
+    const sched = await ctx.api.get('/api/accounting/contribution-schedule').query({ month: '2026-10', agency: 'sss' }).set(hdr());
+    expect(sched.body.rows.find((x: { name: string }) => x.name === 'Fixed Basis Employee'))
+      .toMatchObject({ basis: 19500, employee: 975, employer: 1950, ec: 30 });
   });
 });
 

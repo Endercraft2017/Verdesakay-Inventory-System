@@ -59,7 +59,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 57; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 58; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -193,6 +193,9 @@ export const SCHEMA_VERSION = 57; // 20: employees.late_exempt; 21: attendance_r
 // today) still paying ₱0. See employee-rate-history.ts fillUnsetRate().
 // 57: employees.always_whole_day -- any day with both a time-in and a time-out pays the full
 // daily basic: no half day, late, undertime or Undertime Day (hr-payroll-compute.ts).
+// 58: employees.contribution_basis ('actual' | 'fixed') -- SSS / Pag-IBIG on the month's actual
+// pay (the law's default) or, by written agreement, on the employee's fixed monthly rate
+// (computeEmployeeStatutory in hr.routes.ts; docs/PH-PAYROLL-COMPLIANCE.md §1).
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -2824,6 +2827,13 @@ function migrate(): void {
   const empWholeDayCols = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
   if (!empWholeDayCols.some((c) => c.name === 'always_whole_day')) {
     db.exec('ALTER TABLE employees ADD COLUMN always_whole_day INTEGER NOT NULL DEFAULT 0');
+  }
+
+  // (SCHEMA_VERSION 58) Which pay SSS / Pag-IBIG are computed on: 'actual' (default — the
+  // month's actual remuneration, RA 11199 / RA 9679) or 'fixed' (the employee's fixed monthly
+  // rate, chosen in Accounting → Statutory Deductions once the employee agrees in writing).
+  if (!empWholeDayCols.some((c) => c.name === 'contribution_basis')) {
+    db.exec("ALTER TABLE employees ADD COLUMN contribution_basis TEXT NOT NULL DEFAULT 'actual'");
   }
 }
 

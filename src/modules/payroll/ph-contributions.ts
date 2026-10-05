@@ -17,10 +17,13 @@ export interface ContribEmployeeInput {
   name: string;
   /** Agency ID number from the 201 file (SSS / PhilHealth / Pag-IBIG). */
   id_number: string | null;
-  /** Total compensation for the month (sum of the month's payslip `total_earnings`). */
+  /** SSS compensation for the month — actual remuneration (ph-payroll-report-data.ts
+      contributionBasesForMonth). */
   monthly_comp: number;
-  /** Basic salary for the month (sum of the month's payslip `basic_salary`). */
+  /** PhilHealth monthly basic salary — the fixed basic rate, not reduced by absences. */
   monthly_basic: number;
+  /** Pag-IBIG compensation for the month — actual basic pay. Falls back to `monthly_comp`. */
+  monthly_pagibig?: number;
 }
 
 export interface ContribRow {
@@ -80,9 +83,10 @@ export function contributionSchedule(
           employee: r.employee, employer: r.employer, total: r.total,
         };
       }
-      const r = pagIbigContribution(e.monthly_comp, tables.pagibig);
+      const pagibigComp = e.monthly_pagibig ?? e.monthly_comp;
+      const r = pagIbigContribution(pagibigComp, tables.pagibig);
       return {
-        name: e.name, id_number: e.id_number || '', basis: round2(e.monthly_comp),
+        name: e.name, id_number: e.id_number || '', basis: round2(pagibigComp),
         employee: r.employee, employer: r.employer, total: r.total,
       };
     })

@@ -470,6 +470,10 @@ for the internet (it uses the company's mail server, which only the cloud has).
 2. **Computation** (`payroll`) — `hr-payroll-compute.ts` applies pay-per-hour-basis
    rules, OT cap, night differential, statutory deduction tables
    (`payroll-tables.ts`, `ph-statutory.ts`).
+   Statutory branch (2026-10-05): SSS / Pag-IBIG are computed on the month's actual pay — the
+   cutoffs ending in the month, read from the employee's earlier payslips — and the month's last
+   deducting cutoff trues up what earlier cutoffs took; a fund scheduled only on an earlier cutoff
+   uses the full-month rate (month not over yet). PhilHealth uses the fixed monthly basic rate.
    Always-whole-day branch (2026-10-05): an employee with "Always paid a whole day" gets a
    full day for any day with both a time-in and a time-out — no half day, late or undertime.
 3. **Payslip** (`hr`) — generated per employee as a `draft`; Other Deductions itemized.
@@ -485,7 +489,8 @@ for the internet (it uses the company's mail server, which only the cloud has).
    `ph-2316.ts`/`ph-alphalist.ts`/`ph-contributions.ts`/`ph-vat-ewt.ts` compute the
    filings (2316, 1601-C/1604-C, Alphalist, 0619-E, 2550M, SSS/PhilHealth/Pag-IBIG
    schedules); 13th-month and final-pay stay under `hr`/`payroll`, not filed as
-   compliance forms.
+   compliance forms. Agency schedules count a payslip toward the month its cutoff ends in
+   (SSS IRR), not its pay date.
 
 **Terminal states:** posted + filed (a period, once posted, is not recomputed in
 place — corrections go through a new adjustment, not a rewrite of history).

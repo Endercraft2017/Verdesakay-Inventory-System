@@ -8,6 +8,7 @@ import { queryOne, queryAll, getSetting } from '../../shared/db';
 import type { FormDefinition } from '../../shared/types';
 import type { PayslipYearRow, Bir2316Options } from './ph-2316';
 import { payslipOwnerResolver } from './payslip-owner';
+import { sssCompensation, pagIbigCompensation } from './ph-statutory';
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -48,27 +49,60 @@ export function yearPayslipRowsByEmployee(year: string): Map<string, PayslipYear
   return out;
 }
 
-/** Per-employee month-total compensation + basic for one YYYY-MM (agency schedules). */
-export function payslipTotalsForMonth(month: string): Map<string, { comp: number; basic: number }> {
+/** Per-employee contribution bases for one contribution month YYYY-MM (agency schedules).
+ *  A payslip counts toward the month its cutoff ENDS in (SSS IRR — see statutory-month.ts), not
+ *  its pay date; a payslip whose period label matches no cutoff (e.g. CSV-imported) falls back
+ *  to its pay date. Bases per fund (ph-statutory.ts "Contribution bases"):
+ *    sss        Σ actual remuneration (earnings less late/undertime deductions)
+ *    pagibig    Σ actual basic pay (that, less OT / night diff / premiums)
+ *    philhealth the fixed monthly basic salary generation recorded on the month's last payslip
+ *               (`statutory_basis`); payslips generated before that existed fall back to Σ
+ *               basic_salary.
+ *  An employee on the fixed contribution basis (statutory_basis.basis 'fixed' on the month's last
+ *  payslip) is remitted on the fixed monthly figures that payslip recorded instead of the sums. */
+export function contributionBasesForMonth(
+  month: string
+): Map<string, { sss: number; pagibig: number; philhealth: number }> {
   const id = payrollFormId();
-  const byName = new Map<string, { comp: number; basic: number }>();
-  if (id == null) return byName;
+  const byName = new Map<string, {
+    sss: number; pagibig: number; philhealth: number; legacyBasic: number; phEnd: string;
+    fixed: { sss: number; pagibig: number } | null;
+  }>();
+  if (id == null) return new Map();
   const owner = payslipOwnerResolver();
-  for (const r of queryAll<{ data: string; created_at: string }>(
-    'SELECT data, created_at FROM form_records WHERE form_def_id = ?', id
+  for (const r of queryAll<{ data: string; created_at: string; end_date: string | null }>(
+    `SELECT fr.data, fr.created_at, ap.end_date
+       FROM form_records fr LEFT JOIN attendance_periods ap ON ap.label = fr.period
+      WHERE fr.form_def_id = ?`, id
   )) {
     let d: Record<string, unknown>;
     try { d = JSON.parse(r.data); } catch { continue; }
     const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
-    if (String(payDate).slice(0, 7) !== month) continue;
+    const cutoffEnd = r.end_date ?? String(payDate);
+    if (cutoffEnd.slice(0, 7) !== month) continue;
     const name = owner.nameOf(d);
     if (!name) continue;
-    const cur = byName.get(name) ?? { comp: 0, basic: 0 };
-    cur.comp = round2(cur.comp + (Number(d.total_earnings) || 0));
-    cur.basic = round2(cur.basic + (Number(d.basic_salary) || 0));
+    const cur = byName.get(name) ?? { sss: 0, pagibig: 0, philhealth: 0, legacyBasic: 0, phEnd: '', fixed: null };
+    cur.sss = round2(cur.sss + sssCompensation(d));
+    cur.pagibig = round2(cur.pagibig + pagIbigCompensation(d));
+    cur.legacyBasic = round2(cur.legacyBasic + (Number(d.basic_salary) || 0));
+    const basis = d.statutory_basis as Record<string, unknown> | undefined;
+    const mbs = Number(basis?.philhealth_monthly_basic);
+    if (mbs > 0 && cutoffEnd >= cur.phEnd) {
+      cur.philhealth = round2(mbs); cur.phEnd = cutoffEnd;
+      cur.fixed = basis?.basis === 'fixed'
+        ? { sss: Number(basis.sss_compensation) || 0, pagibig: Number(basis.pagibig_compensation) || 0 }
+        : null;
+    }
     byName.set(name, cur);
   }
-  return byName;
+  return new Map([...byName].map(([name, v]) => [
+    name, {
+      sss: v.fixed ? v.fixed.sss : v.sss,
+      pagibig: v.fixed ? v.fixed.pagibig : v.pagibig,
+      philhealth: v.phEnd ? v.philhealth : v.legacyBasic,
+    },
+  ]));
 }
 
 /** 12-month withholding aggregation across all employees — the 1601-C / 1604-C schedule. */

@@ -572,7 +572,8 @@ and `accounting` now depend one-directionally on `payroll`, not on each other.
 **Owned files:** `hr-payroll-compute.ts`, `hr-payroll-import.ts`,
 `employee-rate-history.ts`, `payroll-tables.ts`, `ph-2316.ts`, `ph-alphalist.ts`,
 `ph-contributions.ts`, `ph-final-pay.ts`, `ph-income-tax.ts`,
-`ph-payroll-report-data.ts`, `ph-statutory.ts`, `ph-vat-ewt.ts`, `payslip-pdf.ts`
+`ph-payroll-report-data.ts`, `ph-statutory.ts`, `ph-vat-ewt.ts`, `statutory-month.ts`
+(the contribution month a cutoff belongs to + each employee's earlier payslips in it), `payslip-pdf.ts`
 (renders one finalized payslip as a PDF; captions from the live `hr_payroll` form),
 `payslip-owner.ts` (maps a payslip to its employee by stamped `employee_id`, else current or
 former name from `employee_profile_changes` field `name` — read-only use of hr tables, no hr
@@ -587,6 +588,22 @@ Schedule 1 layout, so it's unchanged.
 **Public interface:** pure computation/rendering functions (no routes of its own — exposed
 through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
 `GET /api/me/payslips/:id/pdf`).
+**Contribution bases rule (2026-10-05, docs/PH-PAYROLL-COMPLIANCE.md §1):** each fund has its own
+base — SSS on the month's actual remuneration (RA 11199), Pag-IBIG on actual basic pay (RA 9679),
+both summed over the cutoffs *ending* in the month and trued up on the month's last deducting
+cutoff (each cutoff deducts month-to-date due less what earlier cutoffs took); PhilHealth on the
+fixed monthly basic (DOLE equivalent monthly rate: daily × (365 − 52 × rest days) / 12), never
+reduced by absences. Pure rules in `ph-statutory.ts` (`sssCompensation`, `pagIbigCompensation`,
+`philHealthMonthlyBasic`, `contributionBasis`, `monthRemainder`); month lookup in
+`statutory-month.ts`; applied by `hr.routes.ts` `computeEmployeeStatutory` (generate-payslips +
+the per-payslip deduction toggles), which stores the bases on the payslip as `statutory_basis`.
+The agency schedule (`contributionBasesForMonth`) groups by cutoff end month, not pay date.
+Per-employee opt-out: `employees.contribution_basis` ('actual' default | 'fixed', SCHEMA_VERSION 58),
+set by `accounting` in Statutory Deductions (`PUT /accounting/statutory-deductions`) for an employee
+who agreed in writing — SSS / Pag-IBIG then use the fixed monthly rate, split evenly; recorded on the
+payslip as `statutory_basis.basis` and honoured by the agency schedule.
+Tests: `tests/ph-contribution-bases.test.ts`, `tests/hr.test.ts` ("SSS / Pag-IBIG on the month's
+actual pay").
 **Rate history rule:** generate-payslips pays each day at `effectiveDailyRateOn(employee, day)` —
 the latest `employee_rate_history` row on or before it. Rows are written by Edit Employee (the
 Pay tab's "Effective date", shown only while the rate is being changed, default today) and, since

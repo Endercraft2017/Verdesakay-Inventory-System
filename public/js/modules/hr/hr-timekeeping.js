@@ -571,10 +571,13 @@ async function policySettingsModal() {
       </div>
       <div style="margin-top:14px">
         <label>Statutory deduction schedule</label>
-        <p class="muted" style="font-size:12px;margin:2px 0 6px">Most companies don't deduct everything every cutoff
-          — e.g. SSS only on the 1st cutoff, PhilHealth / Pag-IBIG / withholding tax only on the 2nd. Leave every box
-          checked to keep splitting each deduction evenly across every cutoff (the default). Whichever cutoff(s) a
-          deduction is checked for take the full monthly amount, split only across those.</p>
+        <p class="muted" style="font-size:12px;margin:2px 0 6px">Which cutoff(s) take each deduction. SSS and
+          Pag-IBIG follow the law's monthly basis — what the employee actually earned in the cutoffs ending that
+          month: an earlier cutoff takes the share of what's been earned so far, and the month's last checked cutoff
+          takes the rest. Check them on the <strong>last cutoff of the month</strong> for the exact legal amount; a
+          month whose only checked cutoff is an earlier one uses the employee's full-month rate instead, because the
+          month's pay isn't known yet. PhilHealth is on the fixed monthly basic rate (absences don't lower it), split
+          across its checked cutoffs.</p>
         <div id="tk-ded-schedule"></div>
       </div>
       <button type="button" class="btn" id="tk-policy-save" style="margin-top:14px">${UI.icon('sheet', 14)} Save Rules</button>

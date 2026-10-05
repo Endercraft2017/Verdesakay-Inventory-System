@@ -981,6 +981,7 @@ export const statutoryDeductionsSchema = z.object({
     deduct_philhealth: boolish.optional(),
     deduct_pagibig: boolish.optional(),
     deduct_withholding_tax: boolish.optional(),
+    contribution_basis: z.enum(['actual', 'fixed']).optional(),
   })).min(1).max(2000),
 });
 
