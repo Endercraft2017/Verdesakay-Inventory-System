@@ -2006,6 +2006,20 @@ describe('generate-payslips — fixed contribution basis (written agreement)', (
     expect(sched.body.rows.find((x: { name: string }) => x.name === 'Fixed Basis Employee'))
       .toMatchObject({ basis: 19500, employee: 975, employer: 1950, ec: 30 });
   });
+
+  it('HR → Employees can set it too; an update that leaves it out keeps it; defaults to actual', async () => {
+    const created = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-BASIS-HR', name: 'Basis HR Employee', daily_rate: 700 });
+    const read = async () => (await ctx.api.get('/api/hr/employees').set(hdr())).body
+      .find((e: { id: number }) => e.id === created.body.id);
+    expect((await read()).contribution_basis).toBe('actual');
+    const base = { employee_no: 'TEST-BASIS-HR', name: 'Basis HR Employee', daily_rate: 700 };
+    expect((await ctx.api.put(`/api/hr/employees/${created.body.id}`).set(hdr()).send({ ...base, contribution_basis: 'fixed' })).status).toBe(200);
+    expect((await read()).contribution_basis).toBe('fixed');
+    await ctx.api.put(`/api/hr/employees/${created.body.id}`).set(hdr()).send(base);
+    expect((await read()).contribution_basis).toBe('fixed');
+    expect((await ctx.api.put(`/api/hr/employees/${created.body.id}`).set(hdr()).send({ ...base, contribution_basis: 'gross' })).status).toBe(400);
+  });
 });
 
 describe('payroll detail — per-payslip statutory deduction toggles (preview + save)', () => {

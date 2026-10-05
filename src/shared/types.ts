@@ -1221,6 +1221,9 @@ export interface Employee {
   sss_override: number | null;
   philhealth_override: number | null;
   pagibig_override: number | null;
+  /** SSS / Pag-IBIG basis: 'actual' (month's actual pay, the law's default) or 'fixed' (fixed
+      monthly rate, by written agreement). See computeEmployeeStatutory in hr.routes.ts. */
+  contribution_basis: 'actual' | 'fixed';
 }
 
 /** Company-wide format for the RECOMMENDED employee number (settings key "employee_no_policy") —

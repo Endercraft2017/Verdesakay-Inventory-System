@@ -451,8 +451,9 @@ router.post('/employees', requirePermission('hr.manage'), syncClass('claim'), (r
       (employee_no, name, department_id, position, user_id, daily_rate, rate_type, monthly_rate, status, start_date,
        sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, default_shift_id, late_exempt,
        ot_exempt, deduct_sss, deduct_philhealth, deduct_pagibig, deduct_withholding_tax, withholding_tax_override,
-       sss_override, philhealth_override, pagibig_override, photo, clock_anywhere, birth_date, civil_status, always_whole_day)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       sss_override, philhealth_override, pagibig_override, photo, clock_anywhere, birth_date, civil_status, always_whole_day,
+       contribution_basis)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, dailyRate,
     input.rate_type, input.rate_type === 'monthly' ? input.monthly_rate : null,
     input.status, input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
@@ -462,7 +463,8 @@ router.post('/employees', requirePermission('hr.manage'), syncClass('claim'), (r
     input.deduct_pagibig === false ? 0 : 1, input.deduct_withholding_tax === false ? 0 : 1,
     input.withholding_tax_override ?? null,
     input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null,
-    input.clock_anywhere ? 1 : 0, input.birth_date ?? null, input.civil_status ?? null, input.always_whole_day ? 1 : 0
+    input.clock_anywhere ? 1 : 0, input.birth_date ?? null, input.civil_status ?? null, input.always_whole_day ? 1 : 0,
+    input.contribution_basis ?? 'actual'
   );
   seedInitialRate(
     Number(info.lastInsertRowid), input.start_date ?? null,
@@ -516,6 +518,7 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
        sss_override = ?, philhealth_override = ?, pagibig_override = ?, photo = ?,
        clock_anywhere = COALESCE(?, clock_anywhere),
        always_whole_day = COALESCE(?, always_whole_day),
+       contribution_basis = COALESCE(?, contribution_basis),
        birth_date = CASE WHEN ? THEN ? ELSE birth_date END,
        civil_status = CASE WHEN ? THEN ? ELSE civil_status END
      WHERE id = ?`,
@@ -530,6 +533,7 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
     input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null,
     input.clock_anywhere === undefined ? null : (input.clock_anywhere ? 1 : 0),
     input.always_whole_day === undefined ? null : (input.always_whole_day ? 1 : 0),
+    input.contribution_basis ?? null,
     input.birth_date === undefined ? 0 : 1, input.birth_date ?? null,
     input.civil_status === undefined ? 0 : 1, input.civil_status ?? null, id
   );

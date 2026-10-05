@@ -1339,6 +1339,9 @@ export const employeeSchema = z.object({
   sss_override: optionalOverrideAmount('SSS'),
   philhealth_override: optionalOverrideAmount('PhilHealth'),
   pagibig_override: optionalOverrideAmount('Pag-IBIG'),
+  // SSS / Pag-IBIG on the month's actual pay ('actual', the law's default) or on the fixed
+  // monthly rate ('fixed', by the employee's written agreement). Omitted on update = unchanged.
+  contribution_basis: z.enum(['actual', 'fixed']).optional(),
   photo: z.preprocess(
     (v) => (v === '' ? null : v),
     z.string().max(2_000_000).regex(/^data:image\//, 'Photo must be an image').optional().nullable()

@@ -529,6 +529,14 @@ App.register('hr-employees', async (view) => {
                 <input type="number" step="0.01" min="0" data-f="${d.key}_override" placeholder="Computed amount"
                   value="${existing && existing[d.key + '_override'] != null ? existing[d.key + '_override'] : ''}" />`).join('')}
             </div>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:14px;font-weight:normal">
+              <input type="checkbox" data-f="contribution_basis_fixed" style="width:auto" ${existing && existing.contribution_basis === 'fixed' ? 'checked' : ''} />
+              Fixed contribution basis (employee agreed in writing)
+            </label>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">Off (default): SSS and Pag-IBIG follow the law —
+              computed on what the employee actually earned that month. On: computed on the fixed monthly rate (monthly
+              rate, or daily rate &times; the monthly rate divisor) every month, whatever the attendance. PhilHealth is
+              always on the fixed monthly rate.</p>
           </div>
 
           <div data-formpanel="leave" class="form-panel hidden">
@@ -805,6 +813,7 @@ App.register('hr-employees', async (view) => {
             sss_override: ov.querySelector('[data-f="sss_override"]').value.trim() || null,
             philhealth_override: ov.querySelector('[data-f="philhealth_override"]').value.trim() || null,
             pagibig_override: ov.querySelector('[data-f="pagibig_override"]').value.trim() || null,
+            contribution_basis: ov.querySelector('[data-f="contribution_basis_fixed"]').checked ? 'fixed' : 'actual',
             photo: photoData,
           };
           if (editing) {

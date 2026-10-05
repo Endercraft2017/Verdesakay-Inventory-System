@@ -599,7 +599,8 @@ reduced by absences. Pure rules in `ph-statutory.ts` (`sssCompensation`, `pagIbi
 the per-payslip deduction toggles), which stores the bases on the payslip as `statutory_basis`.
 The agency schedule (`contributionBasesForMonth`) groups by cutoff end month, not pay date.
 Per-employee opt-out: `employees.contribution_basis` ('actual' default | 'fixed', SCHEMA_VERSION 58),
-set by `accounting` in Statutory Deductions (`PUT /accounting/statutory-deductions`) for an employee
+set from HR → Employees → Edit → Statutory Deductions (`PUT /hr/employees/:id`, omitted = unchanged)
+or in bulk by `accounting` in Statutory Deductions (`PUT /accounting/statutory-deductions`) for an employee
 who agreed in writing — SSS / Pag-IBIG then use the fixed monthly rate, split evenly; recorded on the
 payslip as `statutory_basis.basis` and honoured by the agency schedule.
 Tests: `tests/ph-contribution-bases.test.ts`, `tests/hr.test.ts` ("SSS / Pag-IBIG on the month's
