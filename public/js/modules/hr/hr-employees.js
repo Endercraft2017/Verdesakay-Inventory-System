@@ -494,6 +494,13 @@ App.register('hr-employees', async (view) => {
             <p class="muted" style="font-size:12px;margin:4px 0 0">For salaried staff never entitled to overtime (e.g.
               a supervisor). OT hours still show on the payslip detail for the record — this only zeroes the peso pay.</p>
             <label style="margin-top:14px;display:flex;align-items:center;gap:6px">
+              <input type="checkbox" data-f="always_whole_day" style="width:auto" ${existing && existing.always_whole_day ? 'checked' : ''} />
+              Always paid a whole day
+            </label>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">Any day with both a time in and a time out earns the
+              full daily rate, whatever the times — never a half day, and no late or undertime deduction. Overtime,
+              night differential and holiday pay still follow the usual rules; a day missing a punch is handled as usual.</p>
+            <label style="margin-top:14px;display:flex;align-items:center;gap:6px">
               <input type="checkbox" data-f="clock_anywhere" style="width:auto" ${existing && existing.clock_anywhere ? 'checked' : ''} />
               Can time in outside the office
             </label>
@@ -788,6 +795,7 @@ App.register('hr-employees', async (view) => {
               : null,
             late_exempt: ov.querySelector('[data-f="late_exempt"]').checked,
             ot_exempt: ov.querySelector('[data-f="ot_exempt"]').checked,
+            always_whole_day: ov.querySelector('[data-f="always_whole_day"]').checked,
             clock_anywhere: ov.querySelector('[data-f="clock_anywhere"]').checked,
             deduct_sss: ov.querySelector('[data-f="deduct_sss"]').checked,
             deduct_philhealth: ov.querySelector('[data-f="deduct_philhealth"]').checked,

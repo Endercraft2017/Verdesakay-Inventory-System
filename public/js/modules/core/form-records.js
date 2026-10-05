@@ -559,6 +559,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         <div id="pd-slip" style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff;color:#111">${slipHtml}</div>
         ${detail.late_exempt ? `<p class="muted" style="font-size:12px;margin:0 0 8px">This employee is exempt from late deductions —
           late minutes are still shown below for reference, but never subtracted from pay.</p>` : ''}
+        ${detail.always_whole_day ? `<p class="muted" style="font-size:12px;margin:0 0 8px">This employee is always paid a whole day —
+          any day with both a time in and a time out counts in full, with no half day, late or undertime.</p>` : ''}
         ${dedSection}
         <div class="line-items"><table class="line-table"><thead><tr>
           <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>Undertime</th><th>OT</th><th>Holiday/Rest-Day Premium</th><th>Night Diff</th>

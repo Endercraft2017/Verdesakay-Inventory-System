@@ -409,6 +409,7 @@ export interface Employees {
   clock_anywhere: Generated<number>;
   birth_date: string | null;
   civil_status: string | null;
+  always_whole_day: Generated<number>;
 }
 
 export interface FieldPunches {

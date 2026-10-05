@@ -1317,6 +1317,9 @@ export const employeeSchema = z.object({
   // Exempt from overtime pay entirely — real OT hours still show on the payslip detail, it
   // just never adds pay. See src/hr-payroll-compute.ts.
   ot_exempt: boolish.optional(),
+  // Always paid a whole day for any day with both a time-in and a time-out (no half day, late,
+  // undertime). Omitted on update ⇒ unchanged. See src/modules/payroll/hr-payroll-compute.ts.
+  always_whole_day: boolish.optional(),
   // May time in from anywhere (field staff) — exempt from the office location lock, and may
   // punch without the kiosk QR. Omitted on update ⇒ unchanged. See clock-geofence.ts.
   clock_anywhere: boolish.optional(),

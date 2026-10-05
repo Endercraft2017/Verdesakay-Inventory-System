@@ -1206,6 +1206,10 @@ export interface Employee {
   // late_exempt: ot_hours still computes and shows on the payslip detail, only overtime_pay
   // is zeroed. See hr-payroll-compute.ts.
   ot_exempt: boolean;
+  // Always paid a whole day: any day with both a time-in and a time-out earns the full daily
+  // basic, whatever the times — no half day, late, undertime or Undertime Day. OT, night
+  // differential and holiday/rest-day premiums still follow the normal rules.
+  always_whole_day: boolean;
   // A fixed withholding-tax peso amount for this employee, replacing the computed BIR formula
   // every cutoff (e.g. a negotiated/BIR-registered special rate). null = use the normal
   // computed amount. Only takes effect while deduct_withholding_tax is also on — see

@@ -619,6 +619,16 @@ not 360) unless `count_lunch_as_worked`. Each day reports `undertime_minutes`, s
 payslip detail's Undertime column. The half-day guess (`possible_half_day`, "Half Day (unlinked)"
 / the grid's "Possible Half Day?") applies only to a day with **no** form linked — a day with an
 unpaid Undertime Request (or OT/offset/leave) is what that form says, not flagged a half day.
+**Always-whole-day rule (2026-10-05):** `employees.always_whole_day` (SCHEMA_VERSION 57; HR →
+Employees → Edit → Rules, "Always paid a whole day") — any day with both a real time-in and
+time-out pays the full daily basic whatever the times: no half day (guessed, HR-marked or a
+filed Half Day request), late (incl. lunch lateness), undertime, Undertime Day, per-hour
+proration or below-minimum denial. OT, night differential and holiday/rest-day premiums keep
+their rules; a day missing a punch (absent, timed out only for lunch) is handled as usual.
+Passed as `computeAttendanceForEmployee` / `computeAttendanceMultiRate`'s `alwaysWholeDay`
+by generate-payslips, the payslip detail (which also returns it for a note) and the
+timekeeping flags route; the Daily Time grid hides "Possible Half Day?" for these employees.
+Not yet read by the HR Daily Report board, which may still show such a day as a half day.
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
 list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for

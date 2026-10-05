@@ -59,7 +59,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 56; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 57; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -191,6 +191,8 @@ export const SCHEMA_VERSION = 56; // 20: employees.late_exempt; 21: attendance_r
 // take the employee's first real rate. A ₱0 rate is "not set yet": an employee created without
 // a rate and given one later had every cutoff day before that edit's effective date (default:
 // today) still paying ₱0. See employee-rate-history.ts fillUnsetRate().
+// 57: employees.always_whole_day -- any day with both a time-in and a time-out pays the full
+// daily basic: no half day, late, undertime or Undertime Day (hr-payroll-compute.ts).
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -2815,6 +2817,13 @@ function migrate(): void {
                            WHERE p.employee_id = employee_rate_history.employee_id
                              AND p.daily_rate > 0 AND p.effective_from < employee_rate_history.effective_from)`
     ).run(first.rate_type, first.daily_rate, first.monthly_rate, employee_id);
+  }
+
+  // (SCHEMA_VERSION 57) Per-employee "always a whole day": a day with both a time-in and a
+  // time-out pays the full daily basic whatever the times. Default 0 (ordinary rules).
+  const empWholeDayCols = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
+  if (!empWholeDayCols.some((c) => c.name === 'always_whole_day')) {
+    db.exec('ALTER TABLE employees ADD COLUMN always_whole_day INTEGER NOT NULL DEFAULT 0');
   }
 }
 

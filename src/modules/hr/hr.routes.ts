@@ -446,8 +446,8 @@ router.post('/employees', requirePermission('hr.manage'), syncClass('claim'), (r
       (employee_no, name, department_id, position, user_id, daily_rate, rate_type, monthly_rate, status, start_date,
        sss_no, philhealth_no, pagibig_no, tin_no, leave_days_per_year, leave_days_used, rest_days, default_shift_id, late_exempt,
        ot_exempt, deduct_sss, deduct_philhealth, deduct_pagibig, deduct_withholding_tax, withholding_tax_override,
-       sss_override, philhealth_override, pagibig_override, photo, clock_anywhere, birth_date, civil_status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       sss_override, philhealth_override, pagibig_override, photo, clock_anywhere, birth_date, civil_status, always_whole_day)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, dailyRate,
     input.rate_type, input.rate_type === 'monthly' ? input.monthly_rate : null,
     input.status, input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
@@ -457,7 +457,7 @@ router.post('/employees', requirePermission('hr.manage'), syncClass('claim'), (r
     input.deduct_pagibig === false ? 0 : 1, input.deduct_withholding_tax === false ? 0 : 1,
     input.withholding_tax_override ?? null,
     input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null,
-    input.clock_anywhere ? 1 : 0, input.birth_date ?? null, input.civil_status ?? null
+    input.clock_anywhere ? 1 : 0, input.birth_date ?? null, input.civil_status ?? null, input.always_whole_day ? 1 : 0
   );
   seedInitialRate(
     Number(info.lastInsertRowid), input.start_date ?? null,
@@ -510,6 +510,7 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
        ot_exempt = ?, deduct_sss = ?, deduct_philhealth = ?, deduct_pagibig = ?, deduct_withholding_tax = ?, withholding_tax_override = ?,
        sss_override = ?, philhealth_override = ?, pagibig_override = ?, photo = ?,
        clock_anywhere = COALESCE(?, clock_anywhere),
+       always_whole_day = COALESCE(?, always_whole_day),
        birth_date = CASE WHEN ? THEN ? ELSE birth_date END,
        civil_status = CASE WHEN ? THEN ? ELSE civil_status END
      WHERE id = ?`,
@@ -523,6 +524,7 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
     input.withholding_tax_override ?? null,
     input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null,
     input.clock_anywhere === undefined ? null : (input.clock_anywhere ? 1 : 0),
+    input.always_whole_day === undefined ? null : (input.always_whole_day ? 1 : 0),
     input.birth_date === undefined ? 0 : 1, input.birth_date ?? null,
     input.civil_status === undefined ? 0 : 1, input.civil_status ?? null, id
   );
@@ -1016,7 +1018,7 @@ router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
   const roster = queryAll(
     `SELECT e.id AS employee_id, e.name, e.position, e.daily_rate, e.default_shift_id, e.rest_days,
-       e.department_id, d.name AS department_name, e.status, e.user_id,
+       e.department_id, d.name AS department_name, e.status, e.user_id, COALESCE(e.always_whole_day, 0) AS always_whole_day,
        COUNT(*) AS days_total,
        SUM(CASE WHEN ar.time_in IS NOT NULL AND ar.time_in != '' THEN 1 ELSE 0 END) AS days_logged,
        SUM(CASE WHEN
@@ -1482,10 +1484,10 @@ router.get('/cutoff-flags', requirePermission('hr.view'), (req, res) => {
   // filter, since anyone HR actually logged time for this cutoff is fair game to flag.
   const roster = queryAll<{
     employee_id: number; name: string; employee_no: string | null; department_name: string | null;
-    user_id: number | null; daily_rate: number; rest_days: string | null;
+    user_id: number | null; daily_rate: number; rest_days: string | null; always_whole_day: number;
   }>(
     `SELECT DISTINCT e.id AS employee_id, e.name, e.employee_no, d.name AS department_name,
-            e.user_id, e.daily_rate, e.rest_days
+            e.user_id, e.daily_rate, e.rest_days, COALESCE(e.always_whole_day, 0) AS always_whole_day
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -1518,7 +1520,7 @@ router.get('/cutoff-flags', requirePermission('hr.view'), (req, res) => {
       const attendanceDays = attendanceDaysForEmployee(period.id, emp.employee_id, emp.rest_days, policy, noWorkFor, holidayFor);
       // The daily rate is irrelevant to possible_half_day (it only affects pay amounts), so a
       // flat placeholder is fine here — this route only ever reads day.possible_half_day.
-      const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate || 0, policy, false);
+      const computed = computeAttendanceForEmployee(attendanceDays, emp.daily_rate || 0, policy, false, false, !!emp.always_whole_day);
       const possibleHalfDayDates = computed.days.filter((d) => d.possible_half_day).map((d) => d.work_date);
       const unrecordedOtDates = attendanceDays
         .filter((d) => unrecordedOtMinutes(d, policy) > 0)
@@ -1941,6 +1943,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), sy
     deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
     withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
     pagibig_override: number | null; rest_days: string | null; late_exempt: number; ot_exempt: number;
+    always_whole_day: number;
   }>(
     `SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.daily_rate,
             e.rate_type, e.monthly_rate, d.name AS department_name,
@@ -1949,7 +1952,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), sy
             COALESCE(e.deduct_pagibig, 1) AS deduct_pagibig,
             COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax,
             e.withholding_tax_override, e.sss_override, e.philhealth_override, e.pagibig_override,
-            e.rest_days, COALESCE(e.late_exempt, 0) AS late_exempt, COALESCE(e.ot_exempt, 0) AS ot_exempt
+            e.rest_days, COALESCE(e.late_exempt, 0) AS late_exempt, COALESCE(e.ot_exempt, 0) AS ot_exempt,
+            COALESCE(e.always_whole_day, 0) AS always_whole_day
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -2022,7 +2026,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), sy
       // every employee who's never had a logged rate change, exactly as before this existed.
       const { computed, basicSalary } = computeAttendanceMultiRate(
         attendanceDays, (workDate) => effectiveDailyRateOn(emp.employee_id, workDate, emp.daily_rate),
-        policy, !!emp.late_exempt, !!emp.ot_exempt
+        policy, !!emp.late_exempt, !!emp.ot_exempt, !!emp.always_whole_day
       );
       if (computed.days.some((d) => d.possible_half_day)) possibleHalfDayEmployees++;
       // The rate as of the cutoff's last day — what the "Daily Rate" line and the informational
@@ -2264,13 +2268,14 @@ router.get('/payroll/:recordId/detail', requirePermission('hr.manage'), (req, re
   const attendanceDays = attendanceDaysForEmployee(period.id, emp.id, restDaysJson, policy, noWorkFor, holidayFor);
   const { computed } = computeAttendanceMultiRate(
     attendanceDays, (workDate) => effectiveDailyRateOn(emp.id, workDate, emp.daily_rate),
-    policy, !!emp.late_exempt, !!emp.ot_exempt
+    policy, !!emp.late_exempt, !!emp.ot_exempt, !!emp.always_whole_day
   );
   res.json({
     employee_name: emp.name,
     period_label: period.label,
     daily_rate: effectiveDailyRateOn(emp.id, period.end_date, emp.daily_rate),
     late_exempt: !!emp.late_exempt,
+    always_whole_day: !!emp.always_whole_day,
     days: computed.days,
     totals: {
       days_worked: computed.days_worked,

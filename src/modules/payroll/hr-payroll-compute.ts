@@ -376,7 +376,13 @@ export function computeAttendanceForEmployee(
   // exemptLate above, for salaried staff never entitled to OT regardless of hours worked past
   // their shift. ot_hours still reports the real time worked either way; only overtime_pay is
   // zeroed, in both hours_basis modes.
-  exemptOt = false
+  exemptOt = false,
+  // Per-employee "always a whole day" (employees.always_whole_day): a day with both a real
+  // time-in and time-out pays the full daily basic whatever the times — no half day (guessed,
+  // HR-marked or filed), late, undertime, Undertime Day, per-hour proration or below-minimum
+  // denial. OT, night differential and holiday/rest-day premiums still follow the normal
+  // rules, and so does a day missing either punch.
+  alwaysWholeDay = false
 ): AttendanceComputation {
   const hourlyRate = dailyRate / 8;
   // Not { ...ZERO } for `days` specifically — a shallow spread would copy ZERO's own array
@@ -423,6 +429,7 @@ export function computeAttendanceForEmployee(
     // minutes present) — either beats being zeroed out entirely as a no-show.
     const abandonedAfterLunch = rawTimeOut == null && lunchOutMin != null && lunchInMin == null;
     const timeOut = abandonedAfterLunch ? lunchOutMin : rawTimeOut;
+    const wholeDay = alwaysWholeDay && timeIn != null && rawTimeOut != null;
     // Per-day mirror of whatever the aggregate below adds — pushed to out.days at every exit
     // point of this iteration (there are several `continue`s), so it always reflects exactly
     // what happened to this specific day, never a separately-derived guess.
@@ -436,7 +443,7 @@ export function computeAttendanceForEmployee(
     // HR's manual "credit this as a half day anyway" call — ignored whenever a real
     // halfday_request is linked (that always wins), same gate undocumentedHalfDay uses below.
     const halfDayOverrideSession: 'Morning (AM)' | 'Afternoon (PM)' | null =
-      !hasForm('halfday_request') && (day.halfDayOverride === 'am' || day.halfDayOverride === 'pm')
+      !wholeDay && !hasForm('halfday_request') && (day.halfDayOverride === 'am' || day.halfDayOverride === 'pm')
         ? (day.halfDayOverride === 'pm' ? 'Afternoon (PM)' : 'Morning (AM)')
         : null;
     const pushDay = () => out.days.push({
@@ -610,7 +617,7 @@ export function computeAttendanceForEmployee(
     const shiftStart = day.shift ? toMinutes(day.shift.start_time) : null;
     let shiftEnd = day.shift ? toMinutes(day.shift.end_time) : null;
     if (shiftStart == null || shiftEnd == null) {
-      if (hasForm('halfday_request') || halfDayOverrideSession) {
+      if (!wholeDay && (hasForm('halfday_request') || halfDayOverrideSession)) {
         out.days_worked += 0.5;
         out.days_half += 1;
         status = 'half_day';
@@ -638,7 +645,7 @@ export function computeAttendanceForEmployee(
     // not an absence, just excused/undetermined, distinct from a genuine no-show.
     const rawWorkedMinutes = Math.max(0, timeOutRel - timeInRel);
     belowMin = policy.min_work_minutes > 0 && rawWorkedMinutes < policy.min_work_minutes;
-    if (belowMin && day.minHoursDecision === 'deny') {
+    if (belowMin && day.minHoursDecision === 'deny' && !wholeDay) {
       status = 'below_minimum_denied';
       pushDay(); continue;
     }
@@ -653,7 +660,7 @@ export function computeAttendanceForEmployee(
     // unpenalized even there. Skipped entirely for an abandoned-after-lunch day (lunchInMin is
     // null by definition — nothing to judge a "return" against).
     let lunchLateMin = 0, lunchLatePay = 0;
-    if (policy.count_lunch_late_as_late && lunchOutMin != null && lunchInMin != null) {
+    if (!wholeDay && policy.count_lunch_late_as_late && lunchOutMin != null && lunchInMin != null) {
       const lunchOutRel = relTo(lunchOutMin);
       let lunchInRel = relTo(lunchInMin);
       if (lunchInRel < lunchOutRel) lunchInRel += DAY_MIN; // returned after midnight relative to leaving
@@ -687,12 +694,12 @@ export function computeAttendanceForEmployee(
     // Undertime Request is a whole day less the time left early, not a half day — so a "Half
     // Day (unlinked)" badge there would contradict its own pay. Skipped too when HR already
     // resolved the day via halfDayOverrideSession — they already made the call.
-    if (forms.length === 0 && !halfDayOverrideSession) {
+    if (forms.length === 0 && !halfDayOverrideSession && !wholeDay) {
       unlinkedHalfSession = unlinkedHalfDaySession(shiftStart, shiftEnd, policy.lunch_break_minutes, timeInRel, timeOutRel);
       possibleHalfDay = unlinkedHalfSession != null;
     }
 
-    if (policy.hours_basis === 'per_hour') {
+    if (policy.hours_basis === 'per_hour' && !wholeDay) {
       // Basic pay prorated directly from actual worked minutes (lunch excluded unless
       // count_lunch_as_worked), rounded DOWN to hours_basis_unit — e.g. clocking 08:00-14:00 on
       // an 08:00-17:00 shift (60-min lunch) pays exactly 5 hours, not a flat full/half day
@@ -779,7 +786,7 @@ export function computeAttendanceForEmployee(
     // halfDayOverrideSession (HR's manual call) takes priority over the auto-detected kind when
     // both would otherwise apply — an explicit HR decision beats a guess, even a correct one.
     const undocumentedHalfDay = forms.length === 0 && unlinkedHalfSession != null;
-    const isHalfDay = hasForm('halfday_request') || undocumentedHalfDay || !!halfDayOverrideSession;
+    const isHalfDay = !wholeDay && (hasForm('halfday_request') || undocumentedHalfDay || !!halfDayOverrideSession);
     const halfDaySession = halfDayOverrideSession
       ?? (undocumentedHalfDay
         ? unlinkedHalfSession ?? undefined
@@ -837,7 +844,7 @@ export function computeAttendanceForEmployee(
     // days_worked, paid proportionally for the hours actually present instead of the flat daily
     // rate (self-correcting, same reasoning as hours_basis: 'per_hour' above — no separate late/
     // undertime peso deduction layered on top of pay already reduced to match).
-    if (!isHalfDay && !authorizedPaid && policy.whole_day_min_minutes > 0) {
+    if (!isHalfDay && !authorizedPaid && !wholeDay && policy.whole_day_min_minutes > 0) {
       const lunch = lunchWindow(shiftStart, shiftEnd, policy.lunch_break_minutes);
       const lunchOverlap = policy.count_lunch_as_worked ? 0 : overlapMinutes(timeInRel, timeOutRel, lunch.start, lunch.end);
       const netWorkedMinutes = Math.max(0, rawWorkedMinutes - lunchOverlap);
@@ -884,7 +891,7 @@ export function computeAttendanceForEmployee(
     // with a 10 min grace and a 1-hour block -> 115 min past grace -> rounds up to 2 hours, not
     // 3 — rounding the full 125 raw minutes would over-penalize).
     const lateRaw = timeInRel - effShiftStart - unpaidLunchIn(effShiftStart, timeInRel);
-    if (lateRaw > policy.grace_minutes) {
+    if (lateRaw > policy.grace_minutes && !wholeDay) {
       const pastGrace = lateRaw - policy.grace_minutes;
       const lateBlocked = roundUpToUnit(pastGrace, unitMinutesFor(policy.late_unit));
       lateMin = lateBlocked; // still reported even when exempt — HR can see the pattern, it just costs nothing
@@ -958,7 +965,7 @@ export function computeAttendanceForEmployee(
       // outright, no make-up owed. That's different from an Offset form, which defers the
       // obligation (make up the time later) rather than waiving it — hence effectiveEnd is
       // still computed from Offset above, not this.
-      if (!authorizedPaid) {
+      if (!authorizedPaid && !wholeDay) {
         const shortRaw = effectiveEnd - timeOutRel - unpaidLunchIn(timeOutRel, effectiveEnd);
         const shortBlocked = roundUpToUnit(shortRaw, unitMinutesFor(policy.late_unit));
         undertimeMin = shortBlocked;
@@ -1028,7 +1035,8 @@ export function computeAttendanceMultiRate(
   rateForDate: (workDate: string) => number,
   policy: PayrollPolicy,
   exemptLate = false,
-  exemptOt = false
+  exemptOt = false,
+  alwaysWholeDay = false
 ): { computed: AttendanceComputation; basicSalary: number } {
   let merged: AttendanceComputation = { ...ZERO, days: [] };
   let basicSalary = 0;
@@ -1038,7 +1046,7 @@ export function computeAttendanceMultiRate(
     const run: AttendanceDay[] = [days[i]!];
     i++;
     while (i < days.length && rateForDate(days[i]!.work_date) === rate) { run.push(days[i]!); i++; }
-    const c = computeAttendanceForEmployee(run, rate, policy, exemptLate, exemptOt);
+    const c = computeAttendanceForEmployee(run, rate, policy, exemptLate, exemptOt, alwaysWholeDay);
     basicSalary += rate * c.days_worked;
     merged = mergeAttendanceComputations(merged, c);
   }

@@ -470,6 +470,8 @@ for the internet (it uses the company's mail server, which only the cloud has).
 2. **Computation** (`payroll`) — `hr-payroll-compute.ts` applies pay-per-hour-basis
    rules, OT cap, night differential, statutory deduction tables
    (`payroll-tables.ts`, `ph-statutory.ts`).
+   Always-whole-day branch (2026-10-05): an employee with "Always paid a whole day" gets a
+   full day for any day with both a time-in and a time-out — no half day, late or undertime.
 3. **Payslip** (`hr`) — generated per employee as a `draft`; Other Deductions itemized.
    Employees see drafts on mobile as previews that may still change (no download).
 3a. **Finalize & release** (`hr` → `payroll` → `core/me`) — HR marks the payslip Paid (locks

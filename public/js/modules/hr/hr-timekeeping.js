@@ -1801,6 +1801,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     function possibleHalfDayFlagged(d) {
       if ((d._links || []).length) return false; // a linked form (Half Day, Undertime…) already says what the day was
       if (d.half_day_override) return false; // HR already manually credited this day a half day
+      if (rosterRow.always_whole_day) return false; // always paid a whole day — never a half day
       const workedMin = workedMinutesFor(d);
       if (workedMin == null) return false;
       const shift = shifts.find((s) => String(s.id) === String(d.shift_id));
