@@ -1468,12 +1468,12 @@ describe('computeAttendanceForEmployee — undocumented half day (looks like a h
     expect(r.days_half).toBe(1);
   });
 
-  it('a day linked to some OTHER form (offset) is flagged but NOT reclassified — that form keeps its own handling', () => {
+  it('a day linked to some OTHER form (offset) is neither flagged nor reclassified — that form keeps its own handling', () => {
     const r = computeAttendanceForEmployee(
       [day({ time_in: '12:45', time_out: '17:04', linkedForm: { slug: 'offset_form', data: {} } })],
       DAILY_RATE, POLICY
     );
-    expect(r.days[0]!.possible_half_day).toBe(true);
+    expect(r.days[0]!.possible_half_day).toBe(false);
     expect(r.days[0]!.status).toBe('worked'); // still a whole day per the offset form's own rules
     expect(r.days_worked).toBe(1);
   });
@@ -1560,8 +1560,8 @@ describe('computeAttendanceForEmployee — multiple linked forms on one day (lin
       [day({ time_in: '12:45', time_out: '17:04', linkedForms: [{ slug: 'overtime_request', data: {} }] })],
       DAILY_RATE, POLICY
     );
-    expect(r.days[0]!.possible_half_day).toBe(true); // still flagged for HR
-    expect(r.days[0]!.status).toBe('worked');        // but paid as a whole day (its OT form governs)
+    expect(r.days[0]!.possible_half_day).toBe(false); // the linked form already documents the day
+    expect(r.days[0]!.status).toBe('worked');         // paid as a whole day (its OT form governs)
     expect(r.days_worked).toBe(1);
   });
 });

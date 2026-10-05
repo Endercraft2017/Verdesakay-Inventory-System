@@ -138,6 +138,10 @@ export interface DayBreakdown {
   late_pay: number;
   ot_hours: number;
   ot_pay: number;
+  // Minutes charged as undertime (left before the expected end, lunch excluded, after rounding)
+  // — the minutes behind undertime_pay. 0 when nothing was charged, including a day covered by
+  // a with_pay=Yes Undertime Request.
+  undertime_minutes: number;
   undertime_pay: number;
   undertime_day_pay: number; // this day's proportional pay, only nonzero when status === 'undertime'
   night_diff_pay: number;
@@ -147,9 +151,10 @@ export interface DayBreakdown {
   // so the Daily Time grid / detail view can flag it either way. Always false when the policy's
   // check is off (min_work_minutes: 0) or no shift is assigned (nothing to measure against).
   below_minimum: boolean;
-  // Whether this day's raw times resemble a half day (see unlinkedHalfDaySession) without a
-  // linked Half Day request — always false for a day linked to a Half Day request, manually
-  // overridden (see half_day_manual below), or with no shift assigned. Still set even when the
+  // Whether this day's raw times resemble a half day (see unlinkedHalfDaySession) with no form
+  // linked at all — always false for a day linked to any form (Half Day, Undertime, OT, leave,
+  // offset…: HR already documented the day), manually overridden (see half_day_manual below),
+  // or with no shift assigned. Still set even when the
   // day was auto-paid as a half day off this signal (an "undocumented half day": no linked form
   // at all — status is then 'half_day' too), so HR is still nudged to file the actual request
   // for the record.
@@ -422,7 +427,7 @@ export function computeAttendanceForEmployee(
     // point of this iteration (there are several `continue`s), so it always reflects exactly
     // what happened to this specific day, never a separately-derived guess.
     let lateMin = 0, latePay = 0, otHours = 0, otPay = 0, undertimePay = 0, dayPremium = 0;
-    let undertimeDayPay = 0, nightDiffPay = 0;
+    let undertimeDayPay = 0, nightDiffPay = 0, undertimeMin = 0;
     let status: DayBreakdown['status'] = 'worked';
     let belowMin = false;
     let possibleHalfDay = false;
@@ -438,8 +443,8 @@ export function computeAttendanceForEmployee(
       work_date: day.work_date, time_in: day.time_in, time_out: day.time_out,
       holiday: day.holiday ?? null, no_work: day.noWork ?? null, is_rest_day: !!day.isRestDay,
       status, late_minutes: lateMin, late_pay: latePay, ot_hours: otHours, ot_pay: otPay,
-      undertime_pay: undertimePay, undertime_day_pay: undertimeDayPay, night_diff_pay: nightDiffPay,
-      day_premium_pay: dayPremium, below_minimum: belowMin, possible_half_day: possibleHalfDay,
+      undertime_minutes: undertimeMin, undertime_pay: undertimePay, undertime_day_pay: undertimeDayPay,
+      night_diff_pay: nightDiffPay, day_premium_pay: dayPremium, below_minimum: belowMin, possible_half_day: possibleHalfDay,
       half_day_manual: halfDayManual,
     });
 
@@ -677,10 +682,12 @@ export function computeAttendanceForEmployee(
     // its times but isn't actually linked to one, regardless of hours_basis mode. In fixed mode
     // an unlinked half day (one with NO linked form at all) is now also paid as a half day
     // below — per-hour mode already self-corrects on pay, so there it stays flag-only. A day
-    // linked to some OTHER form (offset/OT/leave/undertime) keeps its own handling and is only
-    // flagged, never reclassified. Skipped entirely when HR already resolved the day via
-    // halfDayOverrideSession — nothing left to nudge HR to go file, they already made the call.
-    if (!hasForm('halfday_request') && !halfDayOverrideSession) {
+    // linked to ANY form (a Half Day request, or offset/OT/leave/undertime) is neither
+    // reclassified nor flagged: HR already documented what the day was — e.g. an unpaid
+    // Undertime Request is a whole day less the time left early, not a half day — so a "Half
+    // Day (unlinked)" badge there would contradict its own pay. Skipped too when HR already
+    // resolved the day via halfDayOverrideSession — they already made the call.
+    if (forms.length === 0 && !halfDayOverrideSession) {
       unlinkedHalfSession = unlinkedHalfDaySession(shiftStart, shiftEnd, policy.lunch_break_minutes, timeInRel, timeOutRel);
       possibleHalfDay = unlinkedHalfSession != null;
     }
@@ -783,6 +790,11 @@ export function computeAttendanceForEmployee(
     // shift + lunch — see halfDayWindow), not the full shift's start/end — previously a whole
     // day was compared against the full shift, so an afternoon half-day showed as hours "late"
     // and a morning half-day showed as "undertime" for correctly leaving at lunchtime.
+    // The shift's unpaid lunch gap, taken before the Half Day window below narrows shiftEnd —
+    // late arrival and undertime never charge minutes inside it (arriving 13:30 on an 08:00-17:00
+    // shift misses 4.5 working hours, not 5.5; leaving at 11:00 misses 5, not 6).
+    const unpaidLunch = policy.count_lunch_as_worked ? null : lunchWindow(shiftStart, shiftEnd, policy.lunch_break_minutes);
+    const unpaidLunchIn = (from: number, to: number) => (unpaidLunch ? overlapMinutes(from, to, unpaidLunch.start, unpaidLunch.end) : 0);
     let effShiftStart = shiftStart;
     if (isHalfDay) {
       const win = halfDayWindow(shiftStart, shiftEnd, policy.lunch_break_minutes, halfDaySession);
@@ -871,7 +883,7 @@ export function computeAttendanceForEmployee(
     // exceeded, only the minutes *past* grace are rounded to a block (confirmed: 125 min late
     // with a 10 min grace and a 1-hour block -> 115 min past grace -> rounds up to 2 hours, not
     // 3 — rounding the full 125 raw minutes would over-penalize).
-    const lateRaw = timeInRel - effShiftStart;
+    const lateRaw = timeInRel - effShiftStart - unpaidLunchIn(effShiftStart, timeInRel);
     if (lateRaw > policy.grace_minutes) {
       const pastGrace = lateRaw - policy.grace_minutes;
       const lateBlocked = roundUpToUnit(pastGrace, unitMinutesFor(policy.late_unit));
@@ -947,8 +959,9 @@ export function computeAttendanceForEmployee(
       // obligation (make up the time later) rather than waiving it — hence effectiveEnd is
       // still computed from Offset above, not this.
       if (!authorizedPaid) {
-        const shortRaw = effectiveEnd - timeOutRel;
+        const shortRaw = effectiveEnd - timeOutRel - unpaidLunchIn(timeOutRel, effectiveEnd);
         const shortBlocked = roundUpToUnit(shortRaw, unitMinutesFor(policy.late_unit));
+        undertimeMin = shortBlocked;
         undertimePay = -(shortBlocked / 60) * hourlyRate;
         out.undertime_pay += undertimePay;
       }

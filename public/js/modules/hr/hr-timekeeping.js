@@ -1799,7 +1799,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     }
 
     function possibleHalfDayFlagged(d) {
-      if ((d._links || []).some((l) => l.slug === 'halfday_request')) return false; // already correctly linked
+      if ((d._links || []).length) return false; // a linked form (Half Day, Undertime…) already says what the day was
       if (d.half_day_override) return false; // HR already manually credited this day a half day
       const workedMin = workedMinutesFor(d);
       if (workedMin == null) return false;

@@ -513,6 +513,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         <td>${UI.esc(d.time_out || '—')}</td>
         <td>${detailDayTag(d) || '<span class="muted">—</span>'}</td>
         <td>${d.late_minutes ? `${d.late_minutes} min<div class="muted" style="font-size:11px">${detail.late_exempt ? 'exempt' : UI.money(d.late_pay)}</div>` : '—'}</td>
+        <td>${d.undertime_minutes ? `${d.undertime_minutes} min<div class="muted" style="font-size:11px">${UI.money(-d.undertime_pay)}</div>` : '—'}</td>
         <td>${d.ot_hours ? `${d.ot_hours.toFixed(2)} hr<div class="muted" style="font-size:11px">${UI.money(d.ot_pay)}</div>` : '—'}</td>
         <td>${d.day_premium_pay ? UI.money(d.day_premium_pay) : '—'}</td>
         <td>${d.night_diff_pay ? UI.money(d.night_diff_pay) : '—'}</td>
@@ -560,8 +561,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
           late minutes are still shown below for reference, but never subtracted from pay.</p>` : ''}
         ${dedSection}
         <div class="line-items"><table class="line-table"><thead><tr>
-          <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>OT</th><th>Holiday/Rest-Day Premium</th><th>Night Diff</th>
-        </tr></thead><tbody>${rows || '<tr><td colspan="8" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
+          <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>Undertime</th><th>OT</th><th>Holiday/Rest-Day Premium</th><th>Night Diff</th>
+        </tr></thead><tbody>${rows || '<tr><td colspan="9" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
       cancelText: 'Close',
       onOpen: (ov) => {
         // Local working copy — the print button and any live edits below use this, never

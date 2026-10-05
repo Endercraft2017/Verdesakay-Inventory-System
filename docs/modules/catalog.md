@@ -611,6 +611,14 @@ Night differential covers paid early OT only; unpaid early time earns none. `unr
 counts possible early OT too. The form field is seeded / touched up in `db.ts`; HR's Daily Time
 grid offers the tick only on a day timed in 1 h+ early (`hr-timekeeping.js`). Fixed-basis pay
 only — `per_hour` basis already pays all worked minutes past the normal span as OT.
+**Late + undertime rule (2026-10-05):** on a whole day (fixed basis) late (time-in past the start)
+and undertime (time-out before the end) are both charged — together they leave exactly the
+working minutes present, so they never double-count. Neither charges the unpaid lunch gap
+(arriving 13:30 on 08:00-17:00 is 270 min late, not 330; leaving 11:00 is 300 min undertime,
+not 360) unless `count_lunch_as_worked`. Each day reports `undertime_minutes`, shown as the
+payslip detail's Undertime column. The half-day guess (`possible_half_day`, "Half Day (unlinked)"
+/ the grid's "Possible Half Day?") applies only to a day with **no** form linked — a day with an
+unpaid Undertime Request (or OT/offset/leave) is what that form says, not flagged a half day.
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
 list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for
