@@ -66,7 +66,10 @@ location list (RTS), the job-order list (line) and one job order (every producti
 categories (`inventory.view`), templates (document printers: templates / orders / purchasing /
 accounting / forms view; `/company` stays open), and an assistant report downloads only for whoever
 generated it (`ai-report-u<id>-…`, or `users.manage`). Tests: `tests/access-matrix.test.ts` (one
-desk-only role per desk against every area's read).
+desk-only role per desk against every area's read). `tests/route-permissions.test.ts` fails any route
+with no permission check unless it is listed with its reason (own data, checked inside, open by design).
+The phone shell refuses a screen the role doesn't permit (`public/mobile/app.js` ROUTE_NEEDS) before
+it renders — warehouse screens need inventory.adjust / .create / .view, the unit record a desk.
 **Dependencies:** none on business modules. **Known wart:** `shared/db.ts` imports
 `modules/payroll/ph-statutory.ts` (`SSS_2026`/`PHILHEALTH_2026`/etc.) and
 `modules/accounting/ledger.ts` (`DEFAULT_COA`) for first-run seed data — a real,

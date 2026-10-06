@@ -136,6 +136,22 @@ window.MApp = (function () {
     if (txt) txt.textContent = on ? 'Online' : 'Offline';
   }
 
+  /** Screens that need more than the phone app itself, checked here so a screen opened from a link or
+      a typed address says so up front instead of failing on its first save (the server enforces the
+      same). Routes not listed are for everyone, or check their own desk permission (qc, repairs,
+      receiving, so, job-orders, kit-release, scan …). tests/frontend-mobile.test.ts walks every route. */
+  var ROUTE_NEEDS = {
+    allocate: ['inventory.adjust'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.adjust'],
+    damage: ['inventory.adjust'], receive: ['inventory.adjust'], pick: ['inventory.adjust'],
+    'stock-move': ['inventory.adjust'], transfer: ['inventory.adjust'], 'assign-qr': ['inventory.adjust'],
+    'new-item': ['inventory.create'],
+    item: ['inventory.view'], location: ['inventory.view'], 'low-stock': ['inventory.view'],
+    // A unit's production record: the broad views, or any desk that handles the unit (src/shared/desk-access.ts).
+    record: ['inventory.view', 'production.view', 'production.record', 'production.pause', 'production.manage',
+      'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review',
+      'production.repairs', 'production.receive', 'orders.release'],
+  };
+
   function render() {
     if (!me) return;
     if (!hasAccess()) { showBlocked(); return; }
@@ -151,6 +167,11 @@ window.MApp = (function () {
       if (a.name.indexOf('data-') === 0) v.removeAttribute(a.name);
     });
     document.documentElement.removeAttribute('data-role-accent'); // set again by role screens (role-ui.js)
+    var needs = routes[parsed.name] && ROUTE_NEEDS[parsed.name];
+    if (needs && !needs.some(function (p) { return can(p); })) {
+      v.innerHTML = '<div class="m-error" data-no-permission>You don’t have permission for this screen. Ask an administrator if you need it.</div>';
+      return;
+    }
     try {
       fn(v, parsed.params);
     } catch (e) {

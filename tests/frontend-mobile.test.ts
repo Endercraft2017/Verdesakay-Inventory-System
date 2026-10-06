@@ -172,6 +172,23 @@ describe('mobile bootstrap', () => {
     expect(text).not.toContain('Products In');
   });
 
+  it('a screen the role does not permit says so up front, whatever link or address opened it', async () => {
+    const WAREHOUSE = ['allocate', 'batch', 'cycle-count', 'damage', 'receive', 'pick', 'stock-move', 'transfer',
+      'assign-qr', 'new-item', 'item', 'location', 'low-stock'];
+    const qc = await bootAs({ id: 4, username: 'qc8', full_name: 'QC Desk', role: 'qc_inspector', employee: true, modules: null,
+      permissions: ['mobile.access', 'inventory.mobile', 'production.inspect_qc', 'messages.view', 'messages.send'] });
+    const blocked = (win: Record<string, any>, route: string) => {
+      win.location.hash = '#/' + route;
+      win.MApp.render();
+      return !!win.document.querySelector('#m-view [data-no-permission]');
+    };
+    expect(WAREHOUSE.filter((r) => !blocked(qc, r))).toEqual([]);
+    expect(blocked(qc, 'record')).toBe(false); // a desk that handles the unit may open its record
+    const wh = await bootAs({ id: 5, username: 'wh8', full_name: 'Warehouse', role: 'warehouse', employee: true, modules: null,
+      permissions: ['mobile.access', 'inventory.mobile', 'inventory.view', 'inventory.create', 'inventory.adjust', 'messages.view', 'messages.send'] });
+    expect(WAREHOUSE.filter((r) => blocked(wh, r))).toEqual([]);
+  });
+
   it('a desk-only account counts its Work tiles from its own queue, never the job-order list', async () => {
     const asked: string[] = [];
     const win = await bootAs({
