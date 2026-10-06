@@ -269,6 +269,10 @@ An account = its role's bundle + its own sparse overrides (`users.permission_ove
 role changes everyone holding it on their next request. Every built-in role carries
 `mobile.access` (phone app) + messaging, and a new role starts with them, so new accounts can use
 `/m` straight away. `GET /auth/me` and login return `role_label`.
+The built-in floor roles (parts clerk, production lead / manager, QC / QA inspector, Products In
+clerk, releasing clerk) see only their own desk: no `inventory.view` / `production.view` in their
+seeds (2026-10-06); their screens' reads open to the desk permission (`shared/desk-access.ts`
+above), and anything broader is an admin's tick in Roles.
 `POST /api/users` accepts `users.manage` **or** `hr.manage`: HR's employee form
 (Linked user account → "+ Create new account") calls it directly; a caller without
 `users.manage` may only assign a *staff* role — one whose permissions are all in

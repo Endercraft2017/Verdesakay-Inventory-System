@@ -80,3 +80,14 @@ describe('roles are permission bundles', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe('floor roles see only their own desk (user decision 2026-10-06)', () => {
+  it('no built-in floor role carries the broad inventory or production view', async () => {
+    const { roleDefaults } = await import('../src/shared/permissions');
+    for (const r of ['parts_clerk', 'production_lead', 'production_manager', 'qc_inspector', 'qa_inspector', 'receiving_clerk', 'releasing_clerk']) {
+      expect(roleDefaults(r), r).not.toContain('inventory.view');
+      expect(roleDefaults(r), r).not.toContain('production.view');
+      expect(roleDefaults(r), r).toContain('mobile.access');
+    }
+  });
+});

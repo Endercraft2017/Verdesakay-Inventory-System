@@ -121,30 +121,32 @@ export const BUILTIN_ROLES: RoleSeed[] = [
       'templates.view',
       'announce',
     ] },
-  // ---- Narrow shop-floor roles (mobile-first): inventory.view (browse) + inventory.mobile (the
-  // phone's Work tools) + exactly the production.* permission the task needs. 'warehouse',
-  // 'admin_staff' and 'releasing' already pass every production.* requireAnyPermission check
-  // through inventory.adjust.
+  // ---- Narrow shop-floor roles (mobile-first): each sees only its own desk. inventory.mobile (the
+  // phone's Work tools) + exactly the permission the task needs, and the reads that desk needs open
+  // to that permission (shared/desk-access.ts). Deliberately no inventory.view / production.view:
+  // the item catalogue, suppliers, every job order and production issues only if an admin ticks
+  // them in Roles (user decision 2026-10-06). 'warehouse', 'admin_staff' and 'releasing' already
+  // pass every production.* requireAnyPermission check through inventory.adjust.
   { key: 'parts_clerk', label: 'Parts Clerk', description: 'Accepts or rejects repair parts requests.',
-    permissions: [...BASELINE, 'inventory.view', 'production.view', 'inventory.mobile', 'production.repairs'] },
+    permissions: [...BASELINE, 'inventory.mobile', 'production.repairs'] },
   { key: 'production_lead', label: 'Production Lead', description: 'Records finished units off the line.',
-    permissions: [...BASELINE, 'inventory.view', 'production.view', 'inventory.mobile', 'production.record'] },
+    permissions: [...BASELINE, 'inventory.mobile', 'production.record'] },
   // Lead capabilities plus controlled line decisions — pause / resume / close early, each with a
   // required reason kept in job_order_events. Deliberately NOT inventory.adjust: no parts release,
   // cancel, delete or stock adjustment (see job-orders.routes.ts gates).
   { key: 'production_manager', label: 'Production Manager', description: 'Lead + pause / resume / close early + QA hold decisions.',
-    permissions: [...BASELINE, 'inventory.view', 'production.view', 'inventory.mobile', 'production.record', 'production.pause', 'production.manage', 'production.qa_review'] },
+    permissions: [...BASELINE, 'inventory.mobile', 'production.record', 'production.pause', 'production.manage', 'production.qa_review'] },
   // QC (first pass) and QA (final pass) are separate people, matching the pipeline's own stage
   // split — job-orders.routes.ts POST /:id/units/inspect checks the specific pass being recorded.
   { key: 'qc_inspector', label: 'QC Inspector', description: 'First-pass (technical) inspection.',
-    permissions: [...BASELINE, 'inventory.view', 'production.view', 'inventory.mobile', 'production.inspect_qc'] },
+    permissions: [...BASELINE, 'inventory.mobile', 'production.inspect_qc'] },
   { key: 'qa_inspector', label: 'QA Inspector', description: 'Final-pass (appearance) inspection.',
-    permissions: [...BASELINE, 'inventory.view', 'production.view', 'inventory.mobile', 'production.inspect_qa'] },
+    permissions: [...BASELINE, 'inventory.mobile', 'production.inspect_qa'] },
   { key: 'receiving_clerk', label: 'Products In Clerk', description: 'Receives QC/QA-passed units into stock.',
-    permissions: [...BASELINE, 'inventory.view', 'production.view', 'inventory.mobile', 'production.receive'] },
+    permissions: [...BASELINE, 'inventory.mobile', 'production.receive'] },
   // Same narrowing, orders module — orders.routes.ts POST /:id/release[/unreserve].
   { key: 'releasing_clerk', label: 'Releasing Clerk', description: 'Scans approved sale orders out.',
-    permissions: [...BASELINE, 'inventory.view', 'production.view', 'inventory.mobile', 'orders.view', 'orders.release'] },
+    permissions: [...BASELINE, 'inventory.mobile', 'orders.view', 'orders.release'] },
 ];
 
 const SEED_BY_KEY = new Map(BUILTIN_ROLES.map((r) => [r.key, r]));

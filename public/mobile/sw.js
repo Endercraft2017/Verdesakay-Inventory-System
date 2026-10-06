@@ -5,7 +5,7 @@
      device reconnects, even if no tab is open (Android; iOS flushes on open).
 
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
-var CACHE_VERSION = 'vds-m-v64';
+var CACHE_VERSION = 'vds-m-v65';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
