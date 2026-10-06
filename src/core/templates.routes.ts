@@ -2,7 +2,7 @@
     Reading is open to any logged-in user; editing is admin-only. */
 import { Router } from 'express';
 import { queryOne, queryAll, run, getSetting, setSetting } from '../shared/db';
-import { requireAuth, requirePermission } from '../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../shared/auth';
 import { parseBody, templateSchema, companyProfileSchema, docVariableSchema } from '../shared/validation';
 import type { DocTemplate, CompanyProfile, DocVariable } from '../shared/types';
 import { DATA_SOURCE_CATALOG } from './doc-catalog';
@@ -10,6 +10,10 @@ import { syncClass } from '../sync';
 
 const router = Router();
 router.use(requireAuth);
+
+// Document templates are read by whoever prints documents from them: the template editors, orders,
+// purchasing, accounting and form records. The company header (/company) stays readable by all.
+const docRead = requireAnyPermission(['templates.view', 'orders.view', 'purchasing.view', 'accounting.view', 'forms.view']);
 
 const COMPANY_KEY = 'company_profile';
 const EMPTY_COMPANY: CompanyProfile = {
@@ -41,7 +45,7 @@ router.get('/variables/catalog', (_req, res) => {
 });
 
 // GET /api/templates/variables?template_id= — global vars + that template's local vars
-router.get('/variables', (req, res) => {
+router.get('/variables', docRead, (req, res) => {
   const tid = req.query.template_id ? Number(req.query.template_id) : 0;
   res.json(
     queryAll<DocVariable>(
@@ -97,7 +101,7 @@ router.delete('/variables/:id', requirePermission('templates.edit'), syncClass('
 });
 
 // GET /api/templates?type=&period=
-router.get('/', (req, res) => {
+router.get('/', docRead, (req, res) => {
   const { type, period } = req.query;
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -112,7 +116,7 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/templates/:id
-router.get('/:id', (req, res) => {
+router.get('/:id', docRead, (req, res) => {
   const tpl = queryOne<DocTemplate>('SELECT * FROM doc_templates WHERE id = ?', Number(req.params.id));
   if (!tpl) {
     res.status(404).json({ error: 'Template not found' });

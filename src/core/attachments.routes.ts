@@ -11,6 +11,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir } from '../shared/db';
 import { requireAuth } from '../shared/auth';
+import { LINE, UNIT_PHOTOS } from '../shared/desk-access';
 import { enforceQuota } from '../platform/quota';
 import type { Permission } from '../shared/types';
 import { syncClass } from '../sync';
@@ -25,7 +26,8 @@ const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'
 
 /** Which permission(s) a kind needs. `[]` = any authenticated user. */
 const READ_PERMS: Record<string, Permission[]> = {
-  qc_unit: ['inventory.view'],
+  // A unit's photos (build photo, QC/QA evidence): production screens and the desks handling it.
+  qc_unit: ['inventory.view', 'production.view', ...UNIT_PHOTOS],
   damage: ['inventory.view'],
   problem: [],
   delivery: ['delivery.run', 'delivery.manage'],
@@ -35,9 +37,9 @@ const READ_PERMS: Record<string, Permission[]> = {
   // Handoff photos taken before the slip exists (ref_id = orders.id); the slip takes them over as 'release'.
   release_proof: ['inventory.adjust', 'orders.release', 'orders.view'],
   // Photos of the parts kit on a job order's parts release slip (ref_id = parts_release_slips.id).
-  parts_release: ['inventory.view'],
+  parts_release: ['inventory.view', 'production.view', ...LINE],
   // Photos on a production issue report (ref_id = production_issues.id).
-  production_issue: ['inventory.view'],
+  production_issue: ['inventory.view', 'production.view'],
 };
 // Everyone on the production floor: the line lead photographs each unit off the line, and the
 // QC/QA inspectors photograph defects — none of them hold inventory.adjust.

@@ -76,7 +76,8 @@ describe('reporting: create_report_document tool', () => {
     const files = (r.data as { files: Array<{ name: string; url: string; format: string; bytes: number }> }).files;
     expect(files.map((f) => f.format).sort()).toEqual(['docx', 'html']);
     for (const f of files) {
-      expect(f.name).toMatch(/^ai-report-weekly-ops-\d+-[a-f0-9]+\.(html|docx)$/);
+      // The owner's id leads the name — only they can download it.
+      expect(f.name).toMatch(/^ai-report-u\d+-weekly-ops-\d+-[a-f0-9]+\.(html|docx)$/);
       expect(f.url).toBe(`/api/ai/reports/${f.name}`);
       expect(fs.existsSync(path.join(ctx.tmpDir, 'uploads', f.name))).toBe(true);
       expect(f.bytes).toBeGreaterThan(100);

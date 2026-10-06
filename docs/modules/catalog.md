@@ -55,6 +55,18 @@ history; test pushes). Rows older than 120 days are trimmed. `core/notifications
 `/api/notifications`: `GET /` (own rows + unread), `GET /unread-count`, `POST /:id/read`,
 `POST /read-all` (merge). UI: phone `#/notifications` leads with it; desktop rail bell (badge +
 panel opening `link`). Tests: `tests/notifications.test.ts`.
+**Desk-scoped reads (`shared/desk-access.ts`):** the one list of which shop-floor desks (LINE,
+INSPECT, PARTS, RTS, RELEASE) may read which shared data — user decision 2026-10-06, "a floor role
+sees only its own desk". The broad `inventory.view` / `production.view` still open everything; a
+desk permission adds only its task's reads: the item picker and scan lookup (inspectors, parts clerk;
+desk callers get id / name / SKU / unit / on hand only — `inventory.routes.ts pickerView`), the
+location list (RTS), the job-order list (line) and one job order (every production desk), repairs
+(inspectors, parts, line), the unit record (every desk), label templates (line, RTS), checklists
+(inspectors), unit photos. Every other read checks a permission too: item detail / stats /
+categories (`inventory.view`), templates (document printers: templates / orders / purchasing /
+accounting / forms view; `/company` stays open), and an assistant report downloads only for whoever
+generated it (`ai-report-u<id>-…`, or `users.manage`). Tests: `tests/access-matrix.test.ts` (one
+desk-only role per desk against every area's read).
 **Dependencies:** none on business modules. **Known wart:** `shared/db.ts` imports
 `modules/payroll/ph-statutory.ts` (`SSS_2026`/`PHILHEALTH_2026`/etc.) and
 `modules/accounting/ledger.ts` (`DEFAULT_COA`) for first-run seed data — a real,

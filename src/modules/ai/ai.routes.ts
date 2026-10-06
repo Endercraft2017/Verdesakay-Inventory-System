@@ -47,12 +47,19 @@ router.get('/reports/:name', (req, res) => {
     res.status(400).json({ error: 'Bad report name' });
     return;
   }
+  // Only the person who generated it (ai-report-u<id>-…), or an account manager. Older reports
+  // without an owner in their name are for account managers only.
+  const owner = /^ai-report-u(\d+)-/.exec(name);
+  if (!(owner && Number(owner[1]) === req.user!.id) && !req.user!.permissions.includes('users.manage')) {
+    res.status(404).json({ error: 'Report not found — it may have been cleared.' });
+    return;
+  }
   const file = path.join(uploadDir(), name);
   if (!fs.existsSync(file)) {
     res.status(404).json({ error: 'Report not found — it may have been cleared.' });
     return;
   }
-  const nice = name.replace(/^ai-report-/, '').replace(/-\d{10,}-[a-f0-9]+(\.\w+)$/, '$1');
+  const nice = name.replace(/^ai-report-(u\d+-)?/, '').replace(/-\d{10,}-[a-f0-9]+(\.\w+)$/, '$1');
   res.download(file, nice);
 });
 

@@ -87,7 +87,7 @@ router.post('/check', receiveGate, syncClass('merge'), (req, res) => {
 
 /* GET /api/rts/lookup?q=&status=ready|allocated|hold — read-only finished-goods lookup (74:483):
    recorded units by serial, SKU, receipt number or location, plus counts per state. */
-router.get('/lookup', requireAnyPermission(['inventory.view', 'production.view']), (req, res) => {
+router.get('/lookup', requireAnyPermission(['inventory.view', 'production.view', 'production.receive']), (req, res) => {
   const q = String(req.query.q ?? '').trim().toLowerCase();
   const status = String(req.query.status ?? '');
   const rows = queryAll<{ id: number; identifier: string | null; status: string; sku: string | null; product_name: string;

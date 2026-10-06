@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { db, queryOne, queryAll, run } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
+import { CHECKLISTS } from '../../shared/desk-access';
 import { parseBody, qcChecklistSchema } from '../../shared/validation';
 import type { QcChecklist, QcChecklistItem } from '../../shared/types';
 import { syncClass } from '../../sync';
@@ -53,7 +54,9 @@ export function checklistForProduct(
 }
 
 // GET /api/qc/checklists — all checklists (name + counts), for pickers / management
-router.get('/checklists', (_req, res) => {
+// Checklists: production screens, the inspectors who run them, and whoever configures them.
+const checklistRead = requireAnyPermission(['production.view', 'qc.configure', ...CHECKLISTS]);
+router.get('/checklists', checklistRead, (_req, res) => {
   const rows = queryAll<QcChecklist>('SELECT * FROM qc_checklists ORDER BY stage, is_default DESC, name COLLATE NOCASE');
   res.json(rows.map((r) => {
     const items = parseItems(r.items as string);
@@ -62,7 +65,7 @@ router.get('/checklists', (_req, res) => {
 });
 
 // GET /api/qc/checklists/:id — one checklist with its items
-router.get('/checklists/:id', (req, res) => {
+router.get('/checklists/:id', checklistRead, (req, res) => {
   const row = queryOne<QcChecklist>('SELECT * FROM qc_checklists WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Checklist not found' }); return; }
   res.json({ ...row, items: parseItems(row.items as string) });

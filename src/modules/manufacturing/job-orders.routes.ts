@@ -7,6 +7,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
+import { JOB_ORDER_DETAIL, JOB_ORDER_LIST, LINE } from '../../shared/desk-access';
 import {
   parseBody,
   createJobOrderSchema,
@@ -44,6 +45,11 @@ const router = Router();
 router.use(requireAuth);
 
 const readGate = requirePermission('production.view'); // the production screens' own permission (split from inventory.view)
+// Desk-scoped reads (shared/desk-access.ts): the line sees its job orders; every production desk
+// can open the one job order it is working on (its units, checklist, receivable output).
+const listGate = requireAnyPermission(['production.view', ...JOB_ORDER_LIST]);
+const detailGate = requireAnyPermission(['production.view', ...JOB_ORDER_DETAIL]);
+const eventsGate = requireAnyPermission(['production.view', ...LINE]);
 const writeGate = requirePermission('inventory.adjust');
 /** A job order's decisions belong to the site of its source (parts) location; one without one is
  *  company-wide (the main site) — docs/OFFLINE-FIRST.md §16. */
@@ -320,7 +326,7 @@ function maybeComplete(joId: number, userId: number): void {
 }
 
 // GET /api/job-orders — list, filterable by ?status= / ?order_id= / ?product_item_id= / ?team_id= / ?scheduled=1
-router.get('/', readGate, (req, res) => {
+router.get('/', listGate, (req, res) => {
   const { status, order_id, product_item_id, team_id, scheduled, stage } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
@@ -496,7 +502,7 @@ router.get('/production-receipts/:receiptId', readGate, (req, res) => {
 
 // GET /api/job-orders/:id
 // GET /api/job-orders/:id/events — pause / resume / close-early history, newest first
-router.get('/:id/events', readGate, (req, res) => {
+router.get('/:id/events', eventsGate, (req, res) => {
   res.json(queryAll<{ id: number; action: string; reason: string | null; created_at: string; actor_name: string | null }>(
     `SELECT e.id, e.action, e.reason, e.created_at, u.full_name AS actor_name
      FROM job_order_events e LEFT JOIN users u ON u.id = e.actor_id
@@ -505,7 +511,7 @@ router.get('/:id/events', readGate, (req, res) => {
   ));
 });
 
-router.get('/:id', readGate, (req, res) => {
+router.get('/:id', detailGate, (req, res) => {
   const jo = loadJobOrder(Number(req.params.id));
   if (!jo) {
     res.status(404).json({ error: 'Job order not found' });
@@ -1461,7 +1467,7 @@ router.delete('/:id', writeGate, syncClass('claim', joSite), (req, res) => {
 // ----- Phase C: per-unit tracking + QA/QC -----
 
 // GET /api/job-orders/:id/units — every unit this job order produced
-router.get('/:id/units', readGate, (req, res) => {
+router.get('/:id/units', detailGate, (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM job_orders WHERE id = ?', id)) {
     res.status(404).json({ error: 'Job order not found' });
@@ -1476,7 +1482,7 @@ router.get('/:id/units', readGate, (req, res) => {
 });
 
 // GET /api/job-orders/:id/qc — the inspection log
-router.get('/:id/qc', readGate, (req, res) => {
+router.get('/:id/qc', detailGate, (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM job_orders WHERE id = ?', id)) {
     res.status(404).json({ error: 'Job order not found' });
@@ -1774,7 +1780,7 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
 // GET /api/job-orders/:id/receivable — what's ready for Products In on this job order:
 // serialized units at status 'passed', and/or open non-serialized batches with an
 // unreceived quantity remaining.
-router.get('/:id/receivable', readGate, (req, res) => {
+router.get('/:id/receivable', detailGate, (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }

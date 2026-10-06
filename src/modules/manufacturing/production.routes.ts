@@ -23,6 +23,7 @@
 import { Router } from 'express';
 import { db, queryOne, queryAll, run, nextSequence, getSetting, setSetting } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
+import { LABEL_TEMPLATES, LINE, REPAIRS_READ, UNIT_RECORD } from '../../shared/desk-access';
 import {
   parseBody,
   repairRequestSchema,
@@ -56,6 +57,11 @@ const router = Router();
 router.use(requireAuth);
 
 const readGate = requirePermission('production.view');
+// Desk-scoped reads (shared/desk-access.ts): each floor desk reads only what its task needs.
+const repairsRead = requireAnyPermission(['production.view', ...REPAIRS_READ]);
+const lineRead = requireAnyPermission(['production.view', ...LINE]);
+const labelsRead = requireAnyPermission(['production.view', ...LABEL_TEMPLATES]);
+const recordRead = requireAnyPermission(['production.view', ...UNIT_RECORD]);
 const writeGate = requirePermission('inventory.adjust');
 // See job-orders.routes.ts for why these exist alongside writeGate: a dedicated
 // qc_inspector/parts_clerk account can act here without full inventory.adjust.
@@ -88,7 +94,7 @@ const unitLabel = (u: Pick<JobOrderUnit, 'id' | 'identifier'>): string =>
   u.identifier && u.identifier.trim() ? u.identifier.trim() : `unit #${u.id}`;
 
 // GET /api/production/repairs?status=&unit=&job_order= — the warehouse queue
-router.get('/repairs', readGate, (req, res) => {
+router.get('/repairs', repairsRead, (req, res) => {
   const { status, unit, job_order } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
@@ -104,14 +110,14 @@ router.get('/repairs', readGate, (req, res) => {
 });
 
 // GET /api/production/repairs/:id
-router.get('/repairs/:id', readGate, (req, res) => {
+router.get('/repairs/:id', repairsRead, (req, res) => {
   const r = loadRequest(Number(req.params.id));
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
   res.json(r);
 });
 
 // GET /api/production/units/:unitId/repairs — a unit's parts requests (for the repair panel)
-router.get('/units/:unitId/repairs', readGate, (req, res) => {
+router.get('/units/:unitId/repairs', repairsRead, (req, res) => {
   const unitId = Number(req.params.unitId);
   if (!queryOne('SELECT id FROM job_order_units WHERE id = ?', unitId)) {
     res.status(404).json({ error: 'Unit not found' });
@@ -298,7 +304,7 @@ function repairEvent(requestId: number, kind: string, details: unknown, actorId:
    (Figma 83:68 to 83:452): the unit and its source inspection, duplicate open requests for the
    same unit and part, stock at every location (approved sources first), a pending revision
    and the request's history. */
-router.get('/repairs/:id/context', readGate, (req, res) => {
+router.get('/repairs/:id/context', repairsRead, (req, res) => {
   const id = Number(req.params.id);
   const r = loadRequest(id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
@@ -338,7 +344,7 @@ router.get('/repairs/:id/context', readGate, (req, res) => {
 
 /* GET /api/production/repair-history?q=&state=issued|rejected|blocked — read-only audit list
    (83:488) with counts. "blocked" = still requested with no approved source holding enough. */
-router.get('/repair-history', readGate, (req, res) => {
+router.get('/repair-history', repairsRead, (req, res) => {
   const q = String(req.query.q ?? '').trim().toLowerCase();
   const want = String(req.query.state ?? '');
   const rows = queryAll<RepairPartRequest & { sku: string | null; quantity: number; component_item_id: number | null }>(
@@ -458,7 +464,7 @@ function teamMembers(teamId: number): ProductionTeamMember[] {
 // GET /api/production/employees — the roster to pick team members from. Deliberately its own
 // endpoint (rather than reusing /api/hr/employees) so anyone who can manage production teams
 // can staff them without also needing hr.view; only the fields the picker needs are exposed.
-router.get('/employees', readGate, (_req, res) => {
+router.get('/employees', lineRead, (_req, res) => {
   res.json(queryAll(
     `SELECT e.id, e.name, e.employee_no, e.position, d.name AS department_name
      FROM employees e LEFT JOIN departments d ON d.id = e.department_id
@@ -468,7 +474,7 @@ router.get('/employees', readGate, (_req, res) => {
 });
 
 // GET /api/production/teams — teams with member count + open job-order count
-router.get('/teams', readGate, (req, res) => {
+router.get('/teams', lineRead, (req, res) => {
   const activeOnly = req.query.active === '1' || req.query.active === 'true';
   const rows = queryAll<ProductionTeam>(
     `SELECT t.*,
@@ -483,7 +489,7 @@ router.get('/teams', readGate, (req, res) => {
 });
 
 // GET /api/production/teams/:id
-router.get('/teams/:id', readGate, (req, res) => {
+router.get('/teams/:id', lineRead, (req, res) => {
   const id = Number(req.params.id);
   const team = queryOne<ProductionTeam>('SELECT * FROM production_teams WHERE id = ?', id);
   if (!team) { res.status(404).json({ error: 'Team not found' }); return; }
@@ -567,7 +573,7 @@ router.delete('/teams/:id/members/:employeeId', writeGate, syncClass('claim'), (
 });
 
 // GET / PUT /api/production/capacity — advisory units/day for the schedule board
-router.get('/capacity', readGate, (_req, res) => {
+router.get('/capacity', lineRead, (_req, res) => {
   res.json({ daily_capacity: Number(getSetting<number>(CAPACITY_KEY)) || 0 });
 });
 router.put('/capacity', writeGate, syncClass('claim'), (req, res) => {
@@ -593,7 +599,7 @@ const loadBatch = (id: number): ProductionBatch | null =>
   queryOne<ProductionBatch>(`${BATCH_SELECT} WHERE b.id = ?`, id) ?? null;
 
 // GET /api/production/batches?job_order=&product=&status=
-router.get('/batches', readGate, (req, res) => {
+router.get('/batches', lineRead, (req, res) => {
   const { job_order, product, status } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
@@ -609,7 +615,7 @@ router.get('/batches', readGate, (req, res) => {
 });
 
 // GET /api/production/batches/:id — batch + its units + QC records
-router.get('/batches/:id', readGate, (req, res) => {
+router.get('/batches/:id', lineRead, (req, res) => {
   const id = Number(req.params.id);
   const batch = loadBatch(id);
   if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
@@ -754,7 +760,7 @@ export const DEFAULT_BATCH_LABEL = `<img class="lbl-qr" src="{{qr_src}}" alt="" 
 </div>`;
 
 // GET /api/production/label-templates — the editable unit + batch label bodies
-router.get('/label-templates', readGate, (_req, res) => {
+router.get('/label-templates', labelsRead, (_req, res) => {
   res.json({
     unit: getSetting<string>(UNIT_LABEL_KEY) || DEFAULT_UNIT_LABEL,
     batch: getSetting<string>(BATCH_LABEL_KEY) || DEFAULT_BATCH_LABEL,
@@ -796,7 +802,7 @@ function qcRows(col: 'unit_id' | 'batch_id', id: number) {
 }
 
 // GET /api/production/record?unit=<id>  |  ?batch=<id> — the full read-only history.
-router.get('/record', readGate, (req, res) => {
+router.get('/record', recordRead, (req, res) => {
   const unitId = req.query.unit ? Number(req.query.unit) : null;
   const batchId = req.query.batch ? Number(req.query.batch) : null;
   if (!unitId && !batchId) { res.status(400).json({ error: 'A unit or batch id is required' }); return; }

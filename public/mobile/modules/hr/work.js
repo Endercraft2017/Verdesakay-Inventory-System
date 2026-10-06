@@ -15,17 +15,15 @@
     { label: 'Parts requests', sub: 'Issue parts for repair or rework', route: 'repairs', permission: 'production.repairs',
       count: function () { return API.get('/production/repairs?status=requested').then(function (r) { return (r || []).length; }); } },
     { label: 'RTS recording', sub: 'Record QA-passed finished goods', route: 'receiving', permission: 'production.receive',
-      count: function () { return API.get('/job-orders').then(function (rows) {
-        return (rows || []).reduce(function (n, x) { return n + Number(x.units_passed || 0) + Number(x.batches_receivable || 0); }, 0);
-      }); } },
+      count: function () { return readyToReceive(); } },
     { label: 'Production job orders', sub: 'Accept kits and record active work', route: 'job-orders', permission: 'production.record',
       count: function () { return API.get('/job-orders').then(function (rows) {
         return (rows || []).filter(function (x) { return x.status === 'released' || x.status === 'in_progress'; }).length;
       }); } },
     { label: 'QC technical inspection', sub: 'Inspect units waiting for QC', route: 'qc', params: { role: 'qc' }, permission: 'production.inspect_qc',
-      count: actionableInspection },
+      count: function () { return actionableInspection('qc'); } },
     { label: 'QA appearance inspection', sub: 'Inspect units waiting for QA', route: 'qc', params: { role: 'qa' }, permission: 'production.inspect_qa',
-      count: actionableInspection },
+      count: function () { return actionableInspection('qa'); } },
     // Someone who decides QA holds without inspecting (production.qa_review, e.g. the Production Manager).
     { label: 'QA holds', sub: 'Decide units QA held for review', route: 'qc', params: { role: 'qa', tab: 'hold' }, permission: 'production.qa_review',
       count: function () { return API.get('/qc/holds').then(function (rows) { return (rows || []).length; }); } },
@@ -42,9 +40,13 @@
       }).length;
     });
   }
-  function actionableInspection() {
-    return API.get('/job-orders').then(function (rows) {
-      return (rows || []).reduce(function (n, x) { return n + Number(x.units_actionable || 0); }, 0);
+  // Counted from the desk's own queue: a floor desk can't list every job order (shared/desk-access.ts).
+  function actionableInspection(role) {
+    return API.get('/qc/queue?role=' + role).then(function (q) { return ((q && q.units) || []).length; });
+  }
+  function readyToReceive() {
+    return API.get('/rts/queue').then(function (q) {
+      return ((q && q.units) || []).filter(function (u) { return !u.hold; }).length + ((q && q.batches) || []).length;
     });
   }
   function allowed(op) {

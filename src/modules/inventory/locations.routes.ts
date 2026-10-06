@@ -2,7 +2,8 @@
     Per-location quantities live in `inventory_stock` (see src/inventory-stock.ts). */
 import { Router, type Request } from 'express';
 import { db, queryOne, queryAll, run } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
+import { LOCATION_PICKER } from '../../shared/desk-access';
 import { syncClass } from '../../sync';
 import { parseBody, createLocationSchema, updateLocationSchema } from '../../shared/validation';
 import type { LocationRow } from '../../shared/types';
@@ -40,7 +41,8 @@ function setSoleDefault(id: number): void {
 }
 
 // GET /api/locations
-router.get('/', requirePermission('inventory.view'), (req, res) => {
+// The list also opens to the RTS desk, which picks where ready-to-sell stock goes (shared/desk-access.ts).
+router.get('/', requireAnyPermission(['inventory.view', ...LOCATION_PICKER]), (req, res) => {
   const { q } = req.query;
   let sql = LIST_SQL;
   const params: unknown[] = [];

@@ -172,6 +172,24 @@ describe('mobile bootstrap', () => {
     expect(text).not.toContain('Products In');
   });
 
+  it('a desk-only account counts its Work tiles from its own queue, never the job-order list', async () => {
+    const asked: string[] = [];
+    const win = await bootAs({
+      id: 3, username: 'qc9', full_name: 'QC Only', role: 'desk_qc', employee: true, modules: null,
+      permissions: ['mobile.access', 'production.inspect_qc', 'messages.view', 'messages.send'],
+    }, (url: string) => {
+      asked.push(url);
+      if (url.startsWith('/api/qc/queue')) return { role: 'qc', units: [{ id: 1 }, { id: 2 }], completed: [] };
+      return undefined;
+    });
+    win.location.hash = '#/work';
+    win.MApp.render();
+    await new Promise((r) => setTimeout(r, 60));
+    expect(win.document.getElementById('m-view').textContent).toContain('QC technical inspection');
+    expect(asked).toContain('/api/qc/queue?role=qc');
+    expect(asked.some((u) => u.startsWith('/api/job-orders'))).toBe(false);
+  });
+
   /** Boot the time clock view with a fake server + GPS; returns the view and the punch bodies sent. */
   async function bootClock(status: Record<string, unknown>) {
     const win = await bootAs({

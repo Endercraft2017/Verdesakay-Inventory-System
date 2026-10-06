@@ -5,7 +5,8 @@ import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { db, queryOne, queryAll, run, getSetting, setSetting, uploadDir } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
+import { ITEM_PICKER, UNIT_RECORD } from '../../shared/desk-access';
 import { recordSiteClash, syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
 import { siteDecisionStands } from '../../shared/sync-context';
@@ -88,8 +89,18 @@ function withParsedAttributes<T extends { attributes: unknown }>(item: T): T {
   return { ...item, attributes };
 }
 
+// Reads need inventory.view. The item picker (a parts request / revision) and a scanned code also
+// open to the desks that make them (shared/desk-access.ts) — those callers get only what a picker
+// shows (id, name, SKU, unit, on hand), not costs, suppliers or notes.
+const viewGate = requirePermission('inventory.view');
+const pickerGate = requireAnyPermission(['inventory.view', ...ITEM_PICKER]);
+const lookupGate = requireAnyPermission(['inventory.view', ...ITEM_PICKER, ...UNIT_RECORD]);
+const pickerView = (req: Request, item: InventoryItem): object => req.user!.permissions.includes('inventory.view')
+  ? withParsedAttributes(item)
+  : { id: item.id, name: item.name, sku: item.sku, unit: item.unit, quantity: item.quantity };
+
 // GET /api/inventory — list with optional search / filters
-router.get('/', (req, res) => {
+router.get('/', pickerGate, (req, res) => {
   const { q, department_id, supplier_id, category, product_group, low } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
@@ -144,11 +155,11 @@ router.get('/', (req, res) => {
     ITEM_SELECT +
     (where.length ? ' WHERE ' + where.join(' AND ') : '') +
     ' ORDER BY i.name COLLATE NOCASE';
-  res.json(queryAll<InventoryItem>(sql, ...params).map(withParsedAttributes));
+  res.json(queryAll<InventoryItem>(sql, ...params).map((i) => pickerView(req, i)));
 });
 
 // GET /api/inventory/form-config — the saved Item-form customization (or null).
-router.get('/form-config', (_req, res) => {
+router.get('/form-config', viewGate, (_req, res) => {
   res.json(getSetting(FORM_CONFIG_KEY) ?? null);
 });
 
@@ -160,7 +171,7 @@ router.put('/form-config', requirePermission('inventory.configure'), syncClass('
 });
 
 // GET /api/inventory/stats — dashboard summary
-router.get('/stats', (_req, res) => {
+router.get('/stats', viewGate, (_req, res) => {
   const totals = queryOne(
     `SELECT COUNT(*) AS items,
             COALESCE(SUM(quantity), 0) AS total_units,
@@ -174,7 +185,7 @@ router.get('/stats', (_req, res) => {
 });
 
 // GET /api/inventory/categories — distinct non-empty categories (for filters)
-router.get('/categories', (_req, res) => {
+router.get('/categories', viewGate, (_req, res) => {
   const rows = queryAll<{ category: string }>(
     `SELECT DISTINCT category FROM inventory_items
      WHERE category IS NOT NULL AND TRIM(category) != '' AND category <> ?
@@ -186,7 +197,7 @@ router.get('/categories', (_req, res) => {
 
 // GET /api/inventory/product-groups — distinct non-empty product groups (for filters and the
 // item form's "existing group" suggestions)
-router.get('/product-groups', (_req, res) => {
+router.get('/product-groups', viewGate, (_req, res) => {
   const rows = queryAll<{ product_group: string }>(
     `SELECT DISTINCT product_group FROM inventory_items
      WHERE product_group IS NOT NULL AND TRIM(product_group) != ''
@@ -276,7 +287,7 @@ router.get('/movements', requirePermission('inventory.view'), (req, res) => {
 // GET /api/inventory/lookup?code=... — resolve a scanned/typed code (SKU or the
 // `barcode` attribute) to exactly one item. Used by the mobile scanner.
 // Declared before `/:id` so "lookup" isn't captured as an id.
-router.get('/lookup', requirePermission('inventory.view'), (req, res) => {
+router.get('/lookup', lookupGate, (req, res) => {
   const code = typeof req.query.code === 'string' ? req.query.code.trim() : '';
   if (!code) {
     res.status(400).json({ error: 'A code is required' });
@@ -288,7 +299,7 @@ router.get('/lookup', requirePermission('inventory.view'), (req, res) => {
     code
   );
   if (item) {
-    res.json(withParsedAttributes(item));
+    res.json(pickerView(req, item));
     return;
   }
 
@@ -305,7 +316,7 @@ router.get('/lookup', requirePermission('inventory.view'), (req, res) => {
     const prod = queryOne<InventoryItem>(ITEM_SELECT + ' WHERE i.id = ? LIMIT 1', unit.product_item_id);
     if (prod) {
       res.json({
-        ...withParsedAttributes(prod),
+        ...pickerView(req, prod),
         unit: { id: unit.id, identifier: unit.identifier, status: unit.status, job_order_number: unit.job_order_number },
       });
       return;
@@ -326,7 +337,7 @@ router.get('/lookup', requirePermission('inventory.view'), (req, res) => {
       ? queryOne<InventoryItem>(ITEM_SELECT + ' WHERE i.id = ? LIMIT 1', batch.product_item_id)
       : null;
     res.json({
-      ...(prod ? withParsedAttributes(prod) : {}),
+      ...(prod ? pickerView(req, prod) : {}),
       batch: {
         id: batch.id, number: batch.number, identifier: batch.identifier,
         status: batch.status, qty: batch.qty, job_order_number: batch.job_order_number,
@@ -593,7 +604,7 @@ router.get('/:id/where-used', requirePermission('inventory.view'), (req, res) =>
 });
 
 // GET /api/inventory/:id — single item with recent transactions + per-location breakdown
-router.get('/:id', (req, res) => {
+router.get('/:id', viewGate, (req, res) => {
   const item = queryOne<InventoryItem>(ITEM_SELECT + ' WHERE i.id = ?', Number(req.params.id));
   if (!item) {
     res.status(404).json({ error: 'Item not found' });
@@ -888,7 +899,7 @@ router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim'),
 });
 
 // GET /api/inventory/:id/image — stream the item's photo (auth via the shared client)
-router.get('/:id/image', (req, res) => {
+router.get('/:id/image', viewGate, (req, res) => {
   const item = queryOne<InventoryItem>(
     'SELECT image_path FROM inventory_items WHERE id = ?',
     Number(req.params.id)
