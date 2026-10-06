@@ -414,7 +414,9 @@ router.post('/repairs/:id/revision', repairsGate, syncClass('merge'), (req, res)
 
 /* POST /api/production/repairs/:id/revision/decide — the requester or a supervisor
    (production.approve / inventory.adjust) approves or rejects; never the proposer. */
-router.post('/repairs/:id/revision/decide', readGate, syncClass('claim'), (req, res) => {
+// The door is the repairs desk list (the requester is a QC / QA inspector); the handler then allows only
+// the requester or a supervisor, never the proposer.
+router.post('/repairs/:id/revision/decide', repairsRead, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
   const v = queryOne<{ id: number; proposed_item_id: number | null; proposed_name: string; proposed_quantity: number; proposed_by: number | null }>(
