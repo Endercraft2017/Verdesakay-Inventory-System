@@ -4,7 +4,7 @@
 App.register('purchasing', async (view, filter) => {
   const money = UI.money;
   const canReceive = App.hasPermission('inventory.adjust');
-  const canBill = App.hasPermission('orders.edit');
+  const canBill = App.hasPermission('purchasing.manage'); // vendor bills: purchasing's own permission
   let taxCodes = [];
   try { taxCodes = await API.get('/accounting/tax-codes?active=1'); } catch { /* needs accounting.view */ }
   const tab = filter && filter.tab === 'receipts' ? 'receipts' : 'bills';

@@ -24,7 +24,7 @@ async function renderList(view) {
     <div class="topbar">
       <h2>Time Keeping</h2>
       <div class="grow"></div>
-      <button class="btn secondary" id="tk-govforms">${UI.icon('sheet')} Payroll Worksheets ▾</button>
+      ${App.hasPermission('payroll.view') ? `<button class="btn secondary" id="tk-govforms">${UI.icon('sheet')} Payroll Worksheets ▾</button>` : ''}
       <button class="btn secondary" id="tk-holidays" style="margin-left:8px" title="The PH holiday calendar (Regular / Special Non-Working / Special Working) — pays every employee automatically unless overridden on that person's own Daily Time record">${UI.icon('calendar')} Holidays</button>
       <button class="btn secondary" id="tk-noWork" style="margin-left:8px" title="Company-wide suspensions and other no-work declarations (typhoon, equipment failure, etc.) — not a public holiday, see the Holidays button for those — applies to every employee automatically, no per-employee linking needed">${UI.icon('alert')} No Work / Suspension</button>
       <button class="btn secondary" id="tk-punchlog" style="margin-left:8px" title="Every raw time-clock punch — where each phone punch came from (office, distance, map), and remote punches by field staff">${UI.icon('sheet')} Punch Log</button>
@@ -35,7 +35,8 @@ async function renderList(view) {
 
   view.querySelector('#tk-punchlog').addEventListener('click', () => punchLogModal());
   view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
-  view.querySelector('#tk-govforms').addEventListener('click', () => govFormsModal());
+  const govBtn = view.querySelector('#tk-govforms'); // payroll.view only
+  if (govBtn) govBtn.addEventListener('click', () => govFormsModal());
   view.querySelector('#tk-holidays').addEventListener('click', () => companyHolidaysModal());
   view.querySelector('#tk-noWork').addEventListener('click', () => noWorkMemoModal());
 
@@ -603,7 +604,16 @@ async function policySettingsModal() {
     cancelText: 'Close',
     onOpen: (ov) => {
       const p = (k) => ov.querySelector(`[data-p="${k}"]`);
-      ov.querySelector('#tk-rate-tables').onclick = () => rateTablesModal();
+      // Shifts, office locations and kiosks are timekeeping (hr.manage); the payroll rules and
+      // statutory rate tables are pay (payroll.manage / payroll.view — payroll/pay-access.ts).
+      const rateTablesBtn = ov.querySelector('#tk-rate-tables');
+      if (App.hasPermission('payroll.view')) rateTablesBtn.onclick = () => rateTablesModal();
+      else rateTablesBtn.hidden = true;
+      if (!App.hasPermission('payroll.manage')) {
+        const save = ov.querySelector('#tk-policy-save');
+        save.disabled = true;
+        save.title = 'Saving payroll rules needs the Run payroll permission';
+      }
       ov.querySelector('#tk-geofence').onclick = () => geofenceModal();
       ov.querySelector('#tk-kiosks').onclick = () => kioskDevicesModal();
       if (policy) {
@@ -1190,8 +1200,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       <button class="btn secondary" id="tk-edit-period">${UI.icon('edit')} Edit Cutoff</button>
       <button class="btn secondary" id="tk-import-punches" style="margin-left:8px" title="Punches fill time-in/out live while someone's on this cutoff's roster — use this to backfill anyone who punched before being added">${UI.icon('calendar')} Import Punches</button>
       <button class="btn secondary" id="tk-export-csv" style="margin-left:8px" title="Download this cutoff's whole timekeeping roster as CSV">${UI.icon('download')} Export CSV</button>
-      <button class="btn secondary" id="tk-post-gl" style="margin-left:8px" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 15)} Post to GL</button>
-      <button class="btn" id="tk-generate" style="margin-left:8px">${UI.icon('sheet')} Generate Payslips</button>
+      ${App.hasPermission('payroll.manage') ? `<button class="btn secondary" id="tk-post-gl" style="margin-left:8px" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 15)} Post to GL</button>
+      <button class="btn" id="tk-generate" style="margin-left:8px">${UI.icon('sheet')} Generate Payslips</button>` : ''}
     </div>
     <div class="panel">
       <div class="tk-roster-filters">
@@ -1213,7 +1223,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             <option value="name">Name</option>
             <option value="department">Department</option>
             <option value="status">Status</option>
-            <option value="daily_rate">Daily Rate</option>
+            ${App.hasPermission('payroll.view') ? '<option value="daily_rate">Daily Rate</option>' : ''}
             <option value="days_logged">Days Logged</option>
           </select>
         </div>
@@ -1230,8 +1240,10 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     period = await API.get('/hr/periods/' + periodId);
     renderRoster();
   });
-  view.querySelector('#tk-generate').onclick = () => generateModal();
-  view.querySelector('#tk-post-gl').onclick = () => postGlModal();
+  const genBtn = view.querySelector('#tk-generate'); // payroll.manage only
+  if (genBtn) genBtn.onclick = () => generateModal();
+  const glBtn = view.querySelector('#tk-post-gl');
+  if (glBtn) glBtn.onclick = () => postGlModal();
   view.querySelector('#tk-import-punches').onclick = async (e) => {
     if (!App.hasPermission('hr.manage')) { UI.toast('Needs HR manage', 'error'); return; }
     const ok = await UI.confirmDialog(
@@ -1290,7 +1302,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         <td><strong>${UI.esc(r.name)}</strong></td>
         <td>${UI.esc(r.department_name || '—')}</td>
         <td>${UI.esc(STATUS_LABELS[r.status] || r.status || '—')}</td>
-        <td class="right">${UI.money(r.daily_rate)}</td>
+        ${App.hasPermission('payroll.view') ? `<td class="right">${UI.money(r.daily_rate)}</td>` : ''}
         <td class="right">${r.days_logged || 0} / ${r.days_total || 0}${r.days_incomplete
           ? ` <span class="tk-roster-incomplete" title="${r.days_incomplete} incomplete day(s) — only one of time in/out set">${UI.icon('alert', 13)} ${r.days_incomplete}</span>`
           : ''}</td>
@@ -1316,7 +1328,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           <col class="c-chk" /><col class="c-emp" /><col class="c-dept" />
           <col class="c-status" /><col class="c-rate" /><col class="c-days" /><col class="c-act" />
         </colgroup>
-        <thead><tr><th></th><th>Employee</th><th>Department</th><th>Status</th><th class="right">Daily Rate</th><th class="right">Days Logged</th><th></th></tr></thead>
+        <thead><tr><th></th><th>Employee</th><th>Department</th><th>Status</th>${App.hasPermission('payroll.view') ? '<th class="right">Daily Rate</th>' : ''}<th class="right">Days Logged</th><th></th></tr></thead>
         <tbody>${body}</tbody>
       </table>`;
   }

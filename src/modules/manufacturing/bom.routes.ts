@@ -2,7 +2,7 @@
     A finished product is an inventory_items row flagged is_finished_product = 1. */
 import { Router } from 'express';
 import { db, queryOne, queryAll, run } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { parseBody, saveBomSchema, assignChecklistSchema, allocateUnitsSchema, packageItemsSchema } from '../../shared/validation';
 import { applyStockChange, transferStock, getDefaultLocationId } from '../inventory/inventory-stock';
 import { explode, rollupCost, whereUsed } from './bom-explode';
@@ -11,6 +11,9 @@ import type { BomComponent, InventoryItem, JobOrderUnit } from '../../shared/typ
 import { syncClass } from '../../sync';
 
 const router = Router();
+/** The product catalog (list, one product, its units) is read by sales orders and the warehouse
+    as well as production; BOM explosion, cost, where-used and labels need production.view. */
+const catalogRead = requireAnyPermission(['inventory.view', 'production.view']);
 router.use(requireAuth);
 
 /** How many whole units are buildable from current component stock (0 if no BOM). */
@@ -38,7 +41,7 @@ const STD_COST_COLS = `
 `;
 
 // GET /api/finished-products — every item flagged as a finished product
-router.get('/', requirePermission('inventory.view'), (_req, res) => {
+router.get('/', catalogRead, (_req, res) => {
   const rows = queryAll<InventoryItem & { component_count: number; max_buildable: number }>(
     `SELECT i.*, cl_qa.name AS qc_checklist_qa_name, cl_qc.name AS qc_checklist_qc_name, ${STD_COST_COLS},
             (SELECT COUNT(*) FROM bom_components b WHERE b.product_item_id = i.id) AS component_count,
@@ -53,7 +56,7 @@ router.get('/', requirePermission('inventory.view'), (_req, res) => {
 });
 
 // GET /api/finished-products/:id — the product + its BOM + how many are buildable now
-router.get('/:id', requirePermission('inventory.view'), (req, res) => {
+router.get('/:id', catalogRead, (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>(
     `SELECT i.*, cl_qa.name AS qc_checklist_qa_name, cl_qc.name AS qc_checklist_qc_name, ${STD_COST_COLS}
@@ -94,7 +97,7 @@ router.get('/:id', requirePermission('inventory.view'), (req, res) => {
 
 // GET /api/finished-products/:id/explode?qty=N — recursively resolve the BOM down
 // to raw materials (sub-assemblies with their own BOM are expanded), aggregated.
-router.get('/:id/explode', requirePermission('inventory.view'), (req, res) => {
+router.get('/:id/explode', requirePermission('production.view'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });
@@ -106,7 +109,7 @@ router.get('/:id/explode', requirePermission('inventory.view'), (req, res) => {
 
 // GET /api/finished-products/:id/cost — fully-loaded standard material cost for one
 // unit, rolling sub-assembly costs up from their own components.
-router.get('/:id/cost', requirePermission('inventory.view'), (req, res) => {
+router.get('/:id/cost', requirePermission('production.view'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });
@@ -117,7 +120,7 @@ router.get('/:id/cost', requirePermission('inventory.view'), (req, res) => {
 
 // GET /api/finished-products/:id/where-used — products whose BOM consumes this item
 // (directly or through a sub-assembly).
-router.get('/:id/where-used', requirePermission('inventory.view'), (req, res) => {
+router.get('/:id/where-used', requirePermission('production.view'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });
@@ -239,7 +242,7 @@ router.patch('/:id/checklist', requirePermission('qc.configure'), syncClass('cla
 // GET/PUT /api/finished-products/:id/package — what must leave with each unit of this product
 // (charger, keys, documents...). The releaser confirms every required item on the release slip
 // (modules/inventory/release-auth.ts); a missing one blocks warehouse-out.
-router.get('/:id/package', requirePermission('inventory.view'), (req, res) => {
+router.get('/:id/package', requirePermission('production.view'), (req, res) => {
   const id = Number(req.params.id);
   res.json(queryAll<{ id: number; label: string; required: number }>(
     'SELECT id, label, required FROM product_package_items WHERE item_id = ? ORDER BY sort, id', id
@@ -266,7 +269,7 @@ router.put('/:id/package', requirePermission('inventory.edit'), syncClass('claim
   res.json({ ok: true, items: items.length });
 });
 
-router.get('/:id/units', requirePermission('inventory.view'), (req, res) => {
+router.get('/:id/units', catalogRead, (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });

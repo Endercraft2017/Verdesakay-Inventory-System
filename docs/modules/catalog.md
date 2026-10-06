@@ -15,7 +15,9 @@ Backend paths are `src/...` unless noted; frontend paths are `public/js/modules/
 **Responsibility:** technical concerns with no business meaning of their own, used by
 every module. Not gated by `requireModule()`, not licensed, never disabled.
 **Owned files:** `db.ts` (SQLite connection registry, multi-tenant `tenantStore`,
-schema/migrations), `types.ts`, `validation.ts`, `permissions.ts`, `auth.ts`
+schema/migrations), `types.ts`, `validation.ts`, `permissions.ts` (permission catalog + built-in
+role seeds, pure), `roles.ts` (the tenant's `roles` table — every account's permissions resolve
+through `userPermissions()` here), `auth.ts`
 (session/login middleware; SCHEMA_VERSION 55: every session records device ID / IP / user
 agent at sign-in and last-seen, is addressed outside auth.ts only by its public `sid`, and is
 ENDED on sign-out rather than deleted — `ended_at`/`end_reason`, swept after
@@ -246,16 +248,52 @@ the cloud confirms. The other core routes are not classed yet.
 `messages.routes.ts` also calls `shared/ws.ts`'s `broadcast()` after each mutation for
 live chat updates — VOIP/calling is explicitly out of scope for this feature (deferred as
 its own future project; needs WebRTC + a STUN/TURN server, unrelated infra).
+**Roles & access (status: working, 2026-10-05):** a role is a tenant-defined, named permission
+bundle in the `roles` table (`shared/roles.ts`; seeded once from `permissions.ts` `BUILTIN_ROLES`,
+then freely edited). `core/roles.routes.ts`: `GET /api/roles` (users.manage or hr.manage),
+`POST` / `PUT /:key` / `DELETE /:key` (users.manage, `online`). `admin` is fixed — always every
+permission, never renamed or deleted; a role still held by an account can't be deleted (409).
+An account = its role's bundle + its own sparse overrides (`users.permission_overrides`); editing a
+role changes everyone holding it on their next request. Every built-in role carries
+`mobile.access` (phone app) + messaging, and a new role starts with them, so new accounts can use
+`/m` straight away. `GET /auth/me` and login return `role_label`.
 `POST /api/users` accepts `users.manage` **or** `hr.manage`: HR's employee form
-(Linked user account → "+ Create new account") calls it directly, and a caller without
-`users.manage` is limited to the staff roles in `shared/permissions.ts`
-`HR_ASSIGNABLE_ROLES` (403 otherwise — never admin/admin_staff/hr/accounting).
-Per-account access (base role + permission overrides) is edited in one shared drawer,
-`public/js/lib/access-editor.js` (`AccessEditor.open`), used by Admin → Accounts and by the
-employee form's **Access** button. `GET /users/permissions/catalog` reports what the caller
-may change (`grantable`, `assignableRoles`); `GET /users/:id/access` returns one account's
-role + overrides; `PUT /users/:id/permissions` lets an HR-only caller edit staff-role
-accounts and only `HR_GRANTABLE_PERMISSIONS` keys (the union of the staff roles' defaults).
+(Linked user account → "+ Create new account") calls it directly; a caller without
+`users.manage` may only assign a *staff* role — one whose permissions are all in
+`permissions.ts` `STAFF_PERMISSIONS` (`isStaffRole`; applies to custom roles too) — 403 otherwise.
+UI: `public/js/lib/access-editor.js` — one permission picker (search, On/Changed filter,
+per-section All/None, "opens" hints built from `nav-config.js` `requiredPermission`) used by the
+role editor (`AccessEditor.editRole`, Admin → Accounts → **Roles** tab) and the per-account
+**Access** drawer (`AccessEditor.open`, Admin → Accounts and the employee form). `GET
+/users/permissions/catalog` returns `roles`, `staffPermissions`, and what the caller may change
+(`grantable`, `assignableRoles`); `GET /users/:id/access` returns one account's role + overrides;
+`PUT /users/:id/permissions` lets an HR-only caller edit staff-role accounts and only
+`STAFF_PERMISSIONS` keys. Desktop menus are gated by the permission each screen's GET checks
+(`nav-config.js`); a menu with no visible subtab is hidden.
+**Permission splits (2026-10-06, SCHEMA_VERSION 59–61):** three areas got their own permissions,
+each granted once by `migrate()` (`grantOnce`, flagged in settings so a later upgrade never re-adds
+what an admin removed) to every role / per-account grant that had the old one, and seeded the same
+way into the built-in roles — nobody loses access; trim it under Admin → Roles.
+- **Pay** (`payroll.view` / `payroll.manage`, `modules/payroll/pay-access.ts`): rates and pay
+  settings on the employee record (stripped from `GET /hr/employees`, the export and the cutoff
+  roster without payroll.view; kept as stored on saves without payroll.manage), payslips (the
+  `hr_payroll` form's records — `form-builder.routes.ts` `canAccessRecords`, instead of
+  forms.manage.hr), 13th month, final pay, rate tables, rate history / change, payroll-policy
+  save, generate / post-to-GL / mark paid / deductions / email. hr.view / hr.manage keep
+  employees, timekeeping, memos. The AI search index now files each form record under its
+  reader's permission (payslips payroll.view) instead of forms.view.
+- **Production screens** (`production.view`): every manufacturing read (job orders, production,
+  QC records, production issues); BOM explode / cost / where-used / package. The product catalog
+  (`GET /finished-products`, `/:id`, `/:id/units`), the finished-goods lookup and parts slips accept
+  inventory.view or production.view. The mobile Production tab ignores production.view (read-only).
+- **Purchasing** (`purchasing.view` / `purchasing.manage`, `modules/inventory/order-access.ts`):
+  purchase orders (per-type checks on `/api/orders` — the list is now gated, it used to be open
+  to every account), goods-receipt reads, vendor bills, tolerance, reorder / shortfall POs, the
+  QuickBooks push of a PO. Receiving still needs inventory.adjust. orders.* now means sale and job
+  orders. Job-order purchase-shortfall keeps its production gate (inventory.adjust).
+Tests: `tests/roles.test.ts`, `tests/permissions.test.ts`, `tests/users-hr-create.test.ts`,
+`tests/payroll-permission.test.ts`, `tests/production-view-permission.test.ts`,
+`tests/purchasing-permission.test.ts`.
 **Sessions & devices:** `POST /api/auth/login` takes `shared: true` (borrowed phone / shared
 computer); `GET /auth/me` reports `session.shared`. `GET /api/auth/sessions` (`?history=1`),
 `POST /auth/sessions/:sid/revoke`, `POST /auth/sessions/revoke-others` — the caller's own;
@@ -441,7 +479,7 @@ createSchema, set per location on `POST|PUT /api/locations {capacity}` and retur
 room = capacity − the sum of stock there). `rts.routes.ts` at `/api/rts`: `GET /queue` (passed units across job orders
 with final-pass record and hold, receivable batches, the caller's postings today),
 `POST /check` (same rules, no writes), `GET /lookup?q=&status=ready|allocated|hold`
-(`inventory.view`). `production.receive` may file production issues (the mismatch report).
+(`inventory.view` or `production.view`). `production.receive` may file production issues (the mismatch report).
 Tests: `tests/rts.test.ts`.
 **Repair-parts interface (mobile Parts clerk, Figma 83:*):** `production.routes.ts` adds
 `GET /repairs/:id/context` (unit, source inspection with station/priority, duplicate open

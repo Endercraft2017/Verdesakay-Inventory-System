@@ -18,6 +18,7 @@ import bcrypt from 'bcryptjs';
 import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from '../modules/payroll/ph-statutory';
 import { DEFAULT_COA } from '../modules/accounting/ledger';
 import { preMigrationSnapshot } from './backup';
+import { BUILTIN_ROLES, ADMIN_ROLE, roleDefaults } from './permissions';
 import { syncHooks } from './sync-context';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
@@ -59,7 +60,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 58; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 61; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -196,6 +197,12 @@ export const SCHEMA_VERSION = 58; // 20: employees.late_exempt; 21: attendance_r
 // 58: employees.contribution_basis ('actual' | 'fixed') -- SSS / Pag-IBIG on the month's actual
 // pay (the law's default) or, by written agreement, on the employee's fixed monthly rate
 // (computeEmployeeStatutory in hr.routes.ts; docs/PH-PAYROLL-COMPLIANCE.md §1).
+// 59: data, no columns -- pay split from HR records: every role / per-account grant holding
+//     hr.view (hr.manage) also gets payroll.view (payroll.manage), once, so no one loses access
+// 60: data, no columns -- production screens split from inventory.view: every role / per-account
+//     grant holding inventory.view also gets production.view, once
+// 61: data, no columns -- purchasing split from orders.*: orders.view grants purchasing.view and
+//     orders.create / orders.edit grant purchasing.manage, once
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -313,6 +320,19 @@ function createSchema(): void {
       active               INTEGER NOT NULL DEFAULT 1,
       permission_overrides TEXT NOT NULL DEFAULT '{}',
       created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- The workspace's roles: named permission bundles (src/shared/roles.ts). users.role holds a
+    -- key from here. Seeded once from permissions.ts BUILTIN_ROLES; 'admin' always resolves to
+    -- every permission whatever its row says.
+    CREATE TABLE IF NOT EXISTS roles (
+      key         TEXT PRIMARY KEY,
+      label       TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      permissions TEXT NOT NULL DEFAULT '[]',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     -- One-time password-reset tokens (hashed). See src/routes/auth.routes.ts.
@@ -2835,6 +2855,52 @@ function migrate(): void {
   if (!empWholeDayCols.some((c) => c.name === 'contribution_basis')) {
     db.exec("ALTER TABLE employees ADD COLUMN contribution_basis TEXT NOT NULL DEFAULT 'actual'");
   }
+
+  // (SCHEMA_VERSION 59) Pay became its own permissions (payroll.view / payroll.manage,
+  // modules/payroll/pay-access.ts). Whoever could see / manage HR before keeps seeing / running
+  // payroll: roles holding hr.view / hr.manage, and per-account grants of them. Once only (flag),
+  // so an admin who later takes pay away from a role doesn't get it handed back on an upgrade.
+  if (!getSetting<boolean>('migrated_payroll_permission_split')) {
+    // The AI search index stored every form record (payslips included) under forms.view; drop
+    // those chunks and mark it stale so the next search rebuilds them with modules/ai/rag.ts's
+    // per-form ACL (payroll.view for payslips).
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'doc_chunks'").get()) {
+      db.exec("DELETE FROM doc_chunks WHERE source_type = 'form_record'");
+    }
+    db.prepare("DELETE FROM settings WHERE key = 'rag_indexed_at'").run();
+  }
+  grantOnce('migrated_payroll_permission_split', [['hr.view', 'payroll.view'], ['hr.manage', 'payroll.manage']]);
+
+  // (SCHEMA_VERSION 60) The production screens got their own read permission (production.view);
+  // they used to share inventory.view. Same once-only grant as the pay split above.
+  grantOnce('migrated_production_view_split', [['inventory.view', 'production.view']]);
+
+  // (SCHEMA_VERSION 61) Purchase orders, goods receipts and vendor bills got their own pair
+  // (purchasing.view / purchasing.manage — inventory/order-access.ts); they used orders.*.
+  grantOnce('migrated_purchasing_split', [
+    ['orders.view', 'purchasing.view'], ['orders.create', 'purchasing.manage'], ['orders.edit', 'purchasing.manage'],
+  ]);
+}
+
+/** One-time permission split: every role and per-account grant holding `from` also gets `to`.
+    Flagged in settings so an admin who later removes `to` doesn't get it back on an upgrade. */
+function grantOnce(flag: string, pairs: Array<[string, string]>): void {
+  if (getSetting<boolean>(flag)) return;
+  for (const r of db.prepare('SELECT key, permissions FROM roles').all() as Array<{ key: string; permissions: string }>) {
+    let perms: string[] = [];
+    try { perms = JSON.parse(r.permissions); } catch { continue; }
+    const next = [...perms];
+    for (const [from, to] of pairs) if (perms.includes(from) && !next.includes(to)) next.push(to);
+    if (next.length !== perms.length) db.prepare('UPDATE roles SET permissions = ? WHERE key = ?').run(JSON.stringify(next), r.key);
+  }
+  for (const u of db.prepare("SELECT id, permission_overrides FROM users WHERE permission_overrides != '{}'").all() as Array<{ id: number; permission_overrides: string }>) {
+    let ov: Record<string, boolean> = {};
+    try { ov = JSON.parse(u.permission_overrides); } catch { continue; }
+    let changed = false;
+    for (const [from, to] of pairs) if (ov[from] === true && ov[to] === undefined) { ov[to] = true; changed = true; }
+    if (changed) db.prepare('UPDATE users SET permission_overrides = ? WHERE id = ?').run(JSON.stringify(ov), u.id);
+  }
+  setSetting(flag, true);
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
@@ -2871,7 +2937,24 @@ export function nextSequence(key: string, prefix: string, pad = 5): string {
   return `${prefix}-${String(next).padStart(pad, '0')}`;
 }
 
+/** Roles: the built-in bundles the first time (empty table), so a tenant can then edit or delete
+    them freely without seeing them come back. Always ensures the fixed 'admin' row, and a row for
+    any role key an existing account holds (so no account is left on a role nobody can see). */
+function seedRoles(): void {
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO roles (key, label, description, permissions, sort_order) VALUES (?, ?, ?, ?, ?)');
+  const count = (db.prepare('SELECT COUNT(*) AS c FROM roles').get() as { c: number }).c;
+  const seeds = count === 0 ? BUILTIN_ROLES : BUILTIN_ROLES.filter((r) => r.key === ADMIN_ROLE);
+  seeds.forEach((r) => insert.run(r.key, r.label, r.description, JSON.stringify(r.permissions), BUILTIN_ROLES.indexOf(r)));
+  const orphans = db.prepare(
+    'SELECT DISTINCT role FROM users WHERE role NOT IN (SELECT key FROM roles)').all() as Array<{ role: string }>;
+  for (const { role } of orphans) {
+    insert.run(role, role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), '', JSON.stringify(roleDefaults(role)), 100);
+  }
+}
+
 function seed(): void {
+  seedRoles();
   const deptCount = (db.prepare('SELECT COUNT(*) AS c FROM departments').get() as { c: number }).c;
   if (deptCount === 0) {
     const insertDept = db.prepare('INSERT INTO departments (name) VALUES (?)');

@@ -16,7 +16,7 @@ import { db, queryOne, queryAll, run, uploadDir } from '../shared/db';
 import { notifyUser } from '../shared/push';
 import { sendMail, mailReady } from '../shared/mailer';
 import { companyProfile } from '../modules/payroll/ph-payroll-report-data';
-import { resolvePermissions } from '../shared/permissions';
+import { userPermissions } from '../shared/roles';
 import type { FormAction, FormDefinition, FieldDef, Role } from '../shared/types';
 import { commandFileName, now } from '../shared/sync-context';
 
@@ -175,7 +175,7 @@ export function runFormActions(args: RunArgs): { warnings: string[] } {
               'SELECT id, role, permission_overrides FROM users WHERE active = 1')) {
               let ov: Record<string, boolean> = {};
               try { ov = u.permission_overrides ? JSON.parse(u.permission_overrides) : {}; } catch { ov = {}; }
-              if (resolvePermissions(u.role, ov).includes('hr.manage')) recipients.add(u.id);
+              if (userPermissions(u.role, ov).includes('hr.manage')) recipients.add(u.id);
             }
           }
           recipients.delete(args.actingUserId);

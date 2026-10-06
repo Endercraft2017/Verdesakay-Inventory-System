@@ -121,7 +121,7 @@ router.delete('/checklists/:id', requirePermission('qc.configure'), syncClass('c
 // batch-level), for the Production → QA/QC "Reports & Findings" screen. Filters:
 // result (pass|fail), disposition, job_order_id, from/to (created_at), q (job order
 // number / product name).
-router.get('/records', requirePermission('inventory.view'), (req, res) => {
+router.get('/records', requirePermission('production.view'), (req, res) => {
   const { result, disposition, job_order_id, from, to, q } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];

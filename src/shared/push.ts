@@ -13,7 +13,7 @@
  */
 import webpush from 'web-push';
 import { getSetting, setSetting, queryAll, run } from './db';
-import { resolvePermissions } from './permissions';
+import { userPermissions } from './roles';
 import type { Permission, Role } from './types';
 import { sideEffectsSuppressed } from './sync-context';
 
@@ -121,7 +121,7 @@ export async function notifyPermission(perm: Permission, payload: PushPayload): 
   const targets = users.filter((u) => {
     let ov: Record<string, boolean> = {};
     try { ov = JSON.parse(u.permission_overrides || '{}') as Record<string, boolean>; } catch { /* none */ }
-    return resolvePermissions(u.role, ov).includes(perm);
+    return userPermissions(u.role, ov).includes(perm);
   });
   await Promise.all(targets.map((u) => notifyUser(u.id, payload)));
 }
@@ -135,7 +135,7 @@ export async function notifyAnyPermission(perms: Permission[], payload: PushPayl
     if (u.id === exceptUserId) return false;
     let ov: Record<string, boolean> = {};
     try { ov = JSON.parse(u.permission_overrides || '{}') as Record<string, boolean>; } catch { /* none */ }
-    const has = resolvePermissions(u.role, ov);
+    const has = userPermissions(u.role, ov);
     return perms.some((p) => has.includes(p));
   });
   await Promise.all(targets.map((u) => notifyUser(u.id, payload)));

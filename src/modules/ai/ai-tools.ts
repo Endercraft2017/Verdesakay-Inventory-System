@@ -7,6 +7,8 @@
  */
 import { db, queryOne, queryAll, run, getSetting, setSetting } from '../../shared/db';
 import { endUserSessions } from '../../shared/auth';
+import { getRole } from '../../shared/roles';
+import { canOnOrder, visibleOrderTypes } from '../inventory/order-access';
 import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory/inventory-stock';
 import { parseBody, createUserSchema, updateUserSchema, createItemSchema, updateItemSchema } from '../../shared/validation';
 import { visibilityClause } from '../../core/forms.routes';
@@ -440,12 +442,7 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
           password: { type: 'string', description: 'Initial password (min 6 characters).' },
           role: {
             type: 'string',
-            enum: [
-              'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-              'parts_clerk', 'production_lead', 'production_manager', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
-              'releasing_clerk',
-            ],
-            description: 'Role determines default permissions.',
+            description: "Role key (a permission bundle the workspace defines under Admin → Roles), e.g. 'warehouse', 'hr', 'admin_staff'. Defaults to admin_staff.",
           },
           department_id: { type: 'number' },
         },
@@ -464,14 +461,7 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
         properties: {
           id: { type: 'number', description: 'User ID.' },
           full_name: { type: 'string' },
-          role: {
-            type: 'string',
-            enum: [
-              'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-              'parts_clerk', 'production_lead', 'production_manager', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
-              'releasing_clerk',
-            ],
-          },
+          role: { type: 'string', description: 'Role key — one the workspace defines under Admin → Roles.' },
           department_id: { type: 'number' },
           active: { type: 'boolean', description: 'Set false to deactivate the account.' },
         },
@@ -786,7 +776,10 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       case 'search_orders': {
         const where: string[] = [];
         const p: unknown[] = [];
+        const types = visibleOrderTypes(user); // purchase orders need purchasing.view (order-access.ts)
+        if (a.type && !types.includes(a.type as never)) return { success: false, error: 'Permission denied.' };
         if (a.type) { where.push('o.type = ?'); p.push(a.type); }
+        else { where.push(`o.type IN (${types.map(() => '?').join(', ')})`); p.push(...types); }
         if (a.query) {
           where.push('(o.number LIKE ? OR o.customer_name LIKE ?)');
           const like = `%${a.query}%`;
@@ -808,6 +801,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
           a.id,
         );
         if (!order) return { success: false, error: 'Order not found.' };
+        if (!canOnOrder(user, (order as { type: string }).type, 'view')) return { success: false, error: 'Permission denied.' };
         const items = queryAll('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort', a.id);
         return { success: true, data: { ...order, items } };
       }
@@ -816,6 +810,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
         const type = String(a.type ?? 'sale');
         if (type !== 'sale' && type !== 'job' && type !== 'purchase')
           return { success: false, error: "type must be 'sale', 'job', or 'purchase'." };
+        if (!canOnOrder(user, type, 'create')) return { success: false, error: 'Permission denied.' };
         const seqKey = `order_seq_${type}`;
         const next = ((getSetting<number>(seqKey) ?? 0) + 1);
         setSetting(seqKey, next);
@@ -850,8 +845,9 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'update_order': {
-        if (!queryOne('SELECT id FROM orders WHERE id = ?', a.id))
-          return { success: false, error: 'Order not found.' };
+        const existingOrder = queryOne<{ type: string }>('SELECT type FROM orders WHERE id = ?', a.id);
+        if (!existingOrder) return { success: false, error: 'Order not found.' };
+        if (!canOnOrder(user, existingOrder.type, 'edit')) return { success: false, error: 'Permission denied.' };
         const lineItems = (a.items as LineItem[]) ?? [];
         const subtotal = lineItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
         const taxPct = Number(a.tax_percent ?? 0);
@@ -883,8 +879,9 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'delete_order': {
-        const order = queryOne<{ number: string }>('SELECT number FROM orders WHERE id = ?', a.id);
+        const order = queryOne<{ number: string; type: string }>('SELECT number, type FROM orders WHERE id = ?', a.id);
         if (!order) return { success: false, error: 'Order not found.' };
+        if (!canOnOrder(user, order.type, 'delete')) return { success: false, error: 'Permission denied.' };
         run('DELETE FROM orders WHERE id = ?', a.id);
         return { success: true, data: { deleted: true, number: order.number } };
       }
@@ -973,6 +970,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
 
       case 'create_user': {
         const input = parseBody(createUserSchema, a);
+        if (!getRole(input.role)) return { success: false, error: `Unknown role "${input.role}".` };
         const exists = queryOne('SELECT id FROM users WHERE username = ?', input.username);
         if (exists) return { success: false, error: 'Username already taken.' };
         const { hashSync } = await import('bcryptjs');
@@ -988,6 +986,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
         const existing = queryOne<{ role: string; active: number }>('SELECT role, active FROM users WHERE id = ?', a.id);
         if (!existing) return { success: false, error: 'User not found.' };
         const input = parseBody(updateUserSchema, a);
+        if (input.role !== undefined && !getRole(input.role)) return { success: false, error: `Unknown role "${input.role}".` };
         const role = input.role ?? existing.role;
         const active = input.active !== undefined ? (input.active ? 1 : 0) : existing.active;
 

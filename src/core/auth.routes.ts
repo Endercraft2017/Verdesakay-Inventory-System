@@ -8,7 +8,7 @@ import {
   createSession, destroySession, requireAuth, endUserSessions, endSessionBySid, listUserSessions,
 } from '../shared/auth';
 import { deviceIdOf } from '../shared/device';
-import { resolvePermissions } from '../shared/permissions';
+import { userPermissions, getRole } from '../shared/roles';
 import { enabledModules } from '../shared/modules';
 import {
   parseBody, loginSchema, changePasswordSchema, updateProfileSchema,
@@ -52,9 +52,10 @@ router.post('/login', (req, res) => {
       username: user.username,
       full_name: user.full_name,
       role: user.role,
+      role_label: getRole(user.role)?.label ?? user.role,
       department_id: user.department_id,
       department_name: dept ? dept.name : null,
-      permissions: resolvePermissions(user.role, overrides),
+      permissions: userPermissions(user.role, overrides),
       modules: [...enabledModules()], // feature areas enabled for this workspace
     },
     session: { shared: !!shared },
@@ -109,7 +110,10 @@ router.get('/me', requireAuth, (req, res) => {
   const headsDept = queryOne('SELECT 1 AS x FROM departments WHERE head_user_id = ?', req.user!.id);
   const canApprove = req.user!.permissions.includes('hr.manage') || !!headsDept;
   res.json({
-    user: { ...req.user, employee: emp ?? null, can_approve: canApprove, modules: [...enabledModules()] },
+    user: {
+      ...req.user, role_label: getRole(req.user!.role)?.label ?? req.user!.role,
+      employee: emp ?? null, can_approve: canApprove, modules: [...enabledModules()],
+    },
     session: { shared: !!req.authSession?.shared },
   });
 });

@@ -43,7 +43,7 @@ import { now, siteDecisionStands } from '../../shared/sync-context';
 const router = Router();
 router.use(requireAuth);
 
-const readGate = requirePermission('inventory.view');
+const readGate = requirePermission('production.view'); // the production screens' own permission (split from inventory.view)
 const writeGate = requirePermission('inventory.adjust');
 /** A job order's decisions belong to the site of its source (parts) location; one without one is
  *  company-wide (the main site) — docs/OFFLINE-FIRST.md §16. */

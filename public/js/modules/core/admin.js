@@ -1,4 +1,5 @@
-/* Accounts (users.manage permission): manage users + departments. */
+/* Accounts (users.manage permission): accounts, roles (named permission bundles — see
+   src/shared/roles.ts) and departments. */
 App.register('admin', async (view, filter) => {
   if (!App.hasPermission('users.manage')) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
@@ -7,25 +8,46 @@ App.register('admin', async (view, filter) => {
 
   view.innerHTML = `
     <div class="topbar">
-      <h2>Accounts &amp; Departments</h2>
+      <h2>Accounts &amp; Roles</h2>
+      <div class="seg-switch" id="acct-tabs">
+        <button type="button" data-tab="accounts">Accounts</button>
+        <button type="button" data-tab="roles">Roles</button>
+      </div>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="user-search" placeholder="Search staff…" /></div>
+      <div class="search-box search" id="user-search-box">${UI.icon('search', 16)}<input id="user-search" placeholder="Search staff…" /></div>
       <button class="btn secondary" id="manage-depts">${UI.icon('building')} Departments</button>
       <button class="btn" id="add-user">${UI.icon('plus')} New account</button>
+      <button class="btn hidden" id="add-role">${UI.icon('plus')} New role</button>
     </div>
     <div class="panel"><div id="users-table"></div></div>`;
 
   const tableEl = view.querySelector('#users-table');
   let allUsers = [];
   let userQuery = '';
+  let tab = filter && filter.tab === 'roles' ? 'roles' : 'accounts';
+  let catalog = await AccessEditor.getCatalog(true);
+  const { roleLabel } = AccessEditor;
 
-  const { ROLE_LABELS } = AccessEditor;
-
+  // Role picker for the account modals, with a live line saying what the chosen role covers.
   function roleSelect(field, selected) {
     return `<select data-f="${field}">${
-      Object.entries(ROLE_LABELS).map(([v, l]) =>
-        `<option value="${v}" ${v === selected ? 'selected' : ''}>${UI.esc(l)}</option>`).join('')
+      catalog.roles.map((r) =>
+        `<option value="${UI.esc(r.key)}" ${r.key === selected ? 'selected' : ''}>${UI.esc(r.label)}</option>`).join('')
     }</select>`;
+  }
+  function wireRoleHint(overlay) {
+    const sel = overlay.querySelector('[data-f="role"]');
+    const hint = overlay.querySelector('[data-role-hint]');
+    const paint = () => {
+      const r = catalog.roles.find((x) => x.key === sel.value);
+      hint.textContent = r ? `${r.description ? r.description + ' — ' : ''}${AccessEditor.roleSummary(catalog, r.key)}` : '';
+    };
+    sel.addEventListener('change', paint);
+    paint();
+  }
+  const ROLE_HINT = '<p class="muted role-hint" data-role-hint></p>';
+  function overrideCount(u) {
+    try { return Object.keys(JSON.parse(u.permission_overrides || '{}')).length; } catch { return 0; }
   }
 
   function deptSelect(field, selected) {
@@ -38,7 +60,69 @@ App.register('admin', async (view, filter) => {
   async function load() {
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     allUsers = await API.get('/users');
-    renderUsers();
+    if (tab === 'roles') renderRoles(); else renderUsers();
+  }
+
+  function setTab(next) {
+    tab = next;
+    view.querySelectorAll('#acct-tabs [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    view.querySelector('#user-search-box').classList.toggle('hidden', tab !== 'accounts');
+    view.querySelector('#manage-depts').classList.toggle('hidden', tab !== 'accounts');
+    view.querySelector('#add-user').classList.toggle('hidden', tab !== 'accounts');
+    view.querySelector('#add-role').classList.toggle('hidden', tab !== 'roles');
+    if (tab === 'roles') renderRoles(); else renderUsers();
+  }
+
+  /* ---------- Roles: named permission bundles ---------- */
+  async function reloadRoles() {
+    catalog = await AccessEditor.getCatalog(true);
+    if (tab === 'roles') renderRoles(); else renderUsers();
+  }
+
+  function renderRoles() {
+    tableEl.innerHTML = `
+      <p class="muted" style="margin:0 0 12px">A role is a set of permissions. Everyone with the role gets them;
+        you can still add or remove single permissions for one person from their account's <b>Access</b>.</p>
+      <table>
+        <thead><tr><th>Role</th><th>Covers</th><th class="right">Accounts</th><th>HR can assign</th><th></th></tr></thead>
+        <tbody>${catalog.roles.map((r) => `
+          <tr class="clickable" data-role="${UI.esc(r.key)}">
+            <td><strong>${UI.esc(r.label)}</strong>${r.fixed ? ' <span class="badge-pill">Fixed</span>' : ''}
+              ${r.description ? `<div class="muted" style="font-size:12px">${UI.esc(r.description)}</div>` : ''}</td>
+            <td class="muted" style="font-size:12px;max-width:420px">${UI.esc(AccessEditor.roleSummary(catalog, r.key))}</td>
+            <td class="right">${r.user_count}</td>
+            <td>${r.staff ? '<span class="badge-pill ok">Yes</span>' : '<span class="muted">Admin only</span>'}</td>
+            <td class="actions">
+              ${r.fixed ? '' : `<button class="icon-btn" title="Edit" data-role-edit="${UI.esc(r.key)}">${UI.icon('edit')}</button>`}
+              <button class="icon-btn" title="Duplicate as a new role" data-role-copy="${UI.esc(r.key)}">${UI.icon('file')}</button>
+              ${r.fixed ? '' : `<button class="icon-btn danger" title="Delete" data-role-del="${UI.esc(r.key)}">${UI.icon('trash')}</button>`}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+    const byKey = (k) => catalog.roles.find((r) => r.key === k);
+    tableEl.querySelectorAll('tr[data-role]').forEach((tr) => tr.onclick = (e) => {
+      if (e.target.closest('.actions')) return;
+      const r = byKey(tr.dataset.role);
+      if (r.fixed) UI.toast('The Administrator role always has every permission');
+      else AccessEditor.editRole(r, { onSaved: reloadRoles });
+    });
+    tableEl.querySelectorAll('[data-role-edit]').forEach((b) => b.onclick = () =>
+      AccessEditor.editRole(byKey(b.dataset.roleEdit), { onSaved: reloadRoles }));
+    tableEl.querySelectorAll('[data-role-copy]').forEach((b) => b.onclick = () =>
+      AccessEditor.editRole(null, { copyFrom: byKey(b.dataset.roleCopy), onSaved: reloadRoles }));
+    tableEl.querySelectorAll('[data-role-del]').forEach((b) => b.onclick = () => deleteRole(byKey(b.dataset.roleDel)));
+  }
+
+  async function deleteRole(r) {
+    if (r.user_count) {
+      UI.toast(`${r.user_count} account${r.user_count === 1 ? ' has' : 's have'} this role — move them to another role first`, 'error');
+      return;
+    }
+    if (!(await UI.confirmDialog(`Delete the "${r.label}" role?`, 'Delete'))) return;
+    try { await API.del('/roles/' + encodeURIComponent(r.key)); } catch (e) { UI.toast(e.message, 'error'); return; }
+    UI.toast('Role deleted');
+    reloadRoles();
   }
 
   function renderUsers() {
@@ -56,7 +140,8 @@ App.register('admin', async (view, filter) => {
           <tr class="clickable" data-open="${u.id}">
             <td><strong>${UI.esc(u.full_name)}</strong></td>
             <td class="mono">@${UI.esc(u.username)}</td>
-            <td><span class="badge-pill role-${u.role}">${UI.esc(ROLE_LABELS[u.role] || u.role)}</span></td>
+            <td><span class="badge-pill role-${UI.esc(u.role)}">${UI.esc(roleLabel(u.role))}</span>${overrideCount(u)
+              ? ' <span class="muted" style="font-size:11.5px" data-tip="Has access added or removed just for this person">+ custom</span>' : ''}</td>
             <td>${UI.esc(u.department_name || '—')}</td>
             <td>${u.active ? '<span class="badge-pill ok">Active</span>' : '<span class="badge-pill low">Disabled</span>'}</td>
             <td class="actions">
@@ -74,6 +159,13 @@ App.register('admin', async (view, filter) => {
     });
   }
 
+  // Preselect Admin Staff when the workspace still has it, else the first non-admin role.
+  function defaultRoleKey() {
+    if (catalog.roles.some((r) => r.key === 'admin_staff')) return 'admin_staff';
+    const r = catalog.roles.find((x) => !x.fixed) || catalog.roles[0];
+    return r ? r.key : '';
+  }
+
   function addUser() {
     UI.modal({
       title: 'Create new account',
@@ -85,12 +177,14 @@ App.register('admin', async (view, filter) => {
         <div><label>Email <span class="muted">(for password resets)</span></label>
           <input data-f="email" type="email" placeholder="name@company.com" /></div>
         <div class="field-row">
-          <div><label>Role</label>${roleSelect('role', 'admin_staff')}</div>
+          <div><label>Role</label>${roleSelect('role', defaultRoleKey())}</div>
           <div><label>Department</label>${deptSelect('department_id', null)}</div>
         </div>
+        ${ROLE_HINT}
         <div><label>Temporary password *</label><input data-f="password" type="text" placeholder="min 6 characters" /></div>
         <p class="muted" style="font-size:12px">Share this with the employee; they can change it under My Account.</p>`,
       confirmText: 'Create account',
+      onOpen: wireRoleHint,
       onConfirm: async (overlay, showErr) => {
         const get = (f) => overlay.querySelector(`[data-f="${f}"]`).value;
         if (!get('full_name').trim() || !get('username').trim() || !get('password')) {
@@ -117,18 +211,20 @@ App.register('admin', async (view, filter) => {
           <div><label>Role</label>${roleSelect('role', u.role)}</div>
           <div><label>Department</label>${deptSelect('department_id', u.department_id)}</div>
         </div>
+        ${ROLE_HINT}
         <div><label>Status</label><select data-f="active">
           <option value="1" ${u.active ? 'selected' : ''}>Active</option>
           <option value="0" ${!u.active ? 'selected' : ''}>Disabled</option></select></div>
         <hr style="margin:12px 0;border:none;border-top:1px solid var(--border)">
         <button type="button" class="btn secondary" id="edit-perm-btn" style="width:100%">
-          ${UI.icon('key')} Customize permissions
+          ${UI.icon('key')} Access for this person${overrideCount(u) ? ` (${overrideCount(u)} custom)` : ''}
         </button>
         <button type="button" class="btn secondary" id="edit-sessions-btn" style="width:100%;margin-top:8px">
           ${UI.icon('history')} Sign-ins &amp; devices
         </button>`,
       confirmText: 'Save',
       onOpen: (overlay) => {
+        wireRoleHint(overlay);
         overlay.querySelector('#edit-perm-btn').onclick = () => openPermEditor(u);
         overlay.querySelector('#edit-sessions-btn').onclick = () => openSessions(u);
       },
@@ -150,6 +246,7 @@ App.register('admin', async (view, filter) => {
         // Refresh the user in allUsers to reflect new overrides.
         const idx = allUsers.findIndex((x) => x.id === u.id);
         if (idx >= 0) allUsers[idx] = { ...allUsers[idx], permission_overrides: overridesJson };
+        renderUsers();
       },
     });
   }
@@ -274,12 +371,18 @@ App.register('admin', async (view, filter) => {
   }
 
   view.querySelector('#add-user').addEventListener('click', addUser);
+  view.querySelector('#add-role').addEventListener('click', () => AccessEditor.editRole(null, { onSaved: reloadRoles }));
+  // Through the router, so the left tree's User Accounts / Roles highlight follows the tab.
+  view.querySelectorAll('#acct-tabs [data-tab]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.tab !== tab) App.navigate('admin', b.dataset.tab === 'roles' ? { tab: 'roles' } : undefined);
+  }));
   view.querySelector('#manage-depts').addEventListener('click', manageDepartments);
   view.querySelector('#user-search').addEventListener('input', (e) => {
     userQuery = e.target.value.trim();
     renderUsers();
   });
   await load();
+  setTab(tab);
 
   // Deep-link: the "Departments" tree leaf opens the manager directly.
   if (filter && filter.tab === 'departments') manageDepartments();

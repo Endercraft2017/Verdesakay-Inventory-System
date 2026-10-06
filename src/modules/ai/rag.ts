@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { db, run, queryAll, queryOne, getSetting, setSetting, uploadDir } from '../../shared/db';
 import type { AuthUser } from '../../shared/types';
+import { PAYROLL_FORM_SLUG } from '../payroll/pay-access';
 
 const STALE_MS = 5 * 60 * 1000;
 const KB_FILES = [
@@ -109,8 +110,8 @@ export function reindex(): number {
   });
 
   safe(() => {
-    for (const fr of queryAll<{ id: number; number: string; data: string; form_name: string }>(
-      'SELECT fr.id, fr.number, fr.data, fd.name AS form_name FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id'
+    for (const fr of queryAll<{ id: number; number: string; data: string; form_name: string; slug: string; scope: string | null }>(
+      'SELECT fr.id, fr.number, fr.data, fd.name AS form_name, fd.slug, fd.scope FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id'
     )) {
       let flat = '';
       try {
@@ -118,7 +119,10 @@ export function reindex(): number {
         flat = Object.entries(d).map(([k, v]) => `${k}: ${v}`).join('; ');
       } catch { /* not JSON */ }
       if (!flat.trim()) continue;
-      rows.push({ body: `${fr.form_name} ${fr.number}\n${flat}`, ref_label: `${fr.form_name} · ${fr.number}`, source_type: 'form_record', source_id: String(fr.id), acl: 'forms.view', dept_id: null });
+      // Same reader as the record itself: payslips payroll.view, a section's records its
+      // forms.manage.<scope> (General needs admin) — not forms.view, which nearly everyone holds.
+      const acl = fr.slug === PAYROLL_FORM_SLUG ? 'payroll.view' : fr.scope ? `forms.manage.${fr.scope}` : 'users.manage';
+      rows.push({ body: `${fr.form_name} ${fr.number}\n${flat}`, ref_label: `${fr.form_name} · ${fr.number}`, source_type: 'form_record', source_id: String(fr.id), acl, dept_id: null });
     }
   });
 

@@ -10,6 +10,12 @@ App.register('hr-employees', async (view) => {
     return;
   }
   const canManage = App.hasPermission('hr.manage');
+  // Pay is its own permission (src/modules/payroll/pay-access.ts): without payroll.view the server
+  // leaves the rates out, so the Rate column and the pay fields are hidden; without
+  // payroll.manage the server keeps the stored pay whatever this form sends.
+  const canSeePay = App.hasPermission('payroll.view');
+  const canChangePay = App.hasPermission('payroll.manage');
+  const PAY_HIDDEN_NOTE = '<p class="muted" style="font-size:12px;margin:0 0 12px">Pay is shown only to people with the payroll permission.</p>';
   const state = { q: '', department_id: '', status: '' };
   let depts = [];
 
@@ -217,7 +223,7 @@ App.register('hr-employees', async (view) => {
     }
     tableEl.innerHTML = `
       <table>
-        <thead><tr>${canManage ? '<th></th>' : ''}<th></th><th>Name</th><th>Employee No.</th><th>Department</th><th>Position</th><th class="right">Rate</th><th>Status</th><th></th></tr></thead>
+        <thead><tr>${canManage ? '<th></th>' : ''}<th></th><th>Name</th><th>Employee No.</th><th>Department</th><th>Position</th>${canSeePay ? '<th class="right">Rate</th>' : ''}<th>Status</th><th></th></tr></thead>
         <tbody>${list.map((e) => `
           <tr class="clickable" data-open="${e.id}">
             ${canManage ? `<td><input type="checkbox" class="emp-chk" data-emp="${e.id}" data-name="${UI.esc(e.name)}" /></td>` : ''}
@@ -226,9 +232,9 @@ App.register('hr-employees', async (view) => {
             <td class="mono muted">${UI.esc(e.employee_no || '—')}</td>
             <td>${UI.esc(e.department_name || '—')}</td>
             <td>${UI.esc(e.position || '—')}</td>
-            <td class="right">${e.rate_type === 'monthly'
+            ${canSeePay ? `<td class="right">${e.rate_type === 'monthly'
               ? `${money(e.monthly_rate)}<span class="muted">/mo</span>`
-              : `${money(e.daily_rate)}<span class="muted">/day</span>`}</td>
+              : `${money(e.daily_rate)}<span class="muted">/day</span>`}</td>` : ''}
             <td><span class="badge-pill ${STATUS_CLASS[e.status] || 'muted'}">${STATUS_LABELS[e.status] || e.status}</span></td>
             <td class="actions">
               <button class="icon-btn" title="Generate ID" data-id-card="${e.id}">${UI.icon('idcard')}</button>
@@ -508,6 +514,7 @@ App.register('hr-employees', async (view) => {
               skip the office location lock and get a "Clock in here" button on their phone that works without the
               office QR. Their location is still saved with every punch.</p>
 
+            <div class="${canSeePay ? '' : 'hidden'}">
             <label style="margin-top:24px;display:block;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted)">Statutory Deductions</label>
             <p class="muted" style="font-size:12px;margin:4px 0 12px">Also editable in bulk from Accounting &rarr;
               Statutory Deductions. Unchecking one zeroes that contribution on this employee's next generated
@@ -537,6 +544,7 @@ App.register('hr-employees', async (view) => {
               computed on what the employee actually earned that month. On: computed on the fixed monthly rate (monthly
               rate, or daily rate &times; the monthly rate divisor) every month, whatever the attendance. PhilHealth is
               always on the fixed monthly rate.</p>
+            </div>
           </div>
 
           <div data-formpanel="leave" class="form-panel hidden">

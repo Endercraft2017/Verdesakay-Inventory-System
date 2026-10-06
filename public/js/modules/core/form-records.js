@@ -124,9 +124,12 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // them — there's no separate view-only tier for this system (mirrors the server-side gate in
   // form-builder.routes.ts's canManageScope). Checked client-side too so a user without access
   // gets a clean message instead of a raw 403 from the records fetch below.
-  const canBrowse = formDef.scope
-    ? App.hasPermission('forms.manage.' + formDef.scope)
-    : ['hr', 'inventory', 'admin', 'accounting'].every((s) => App.hasPermission('forms.manage.' + s));
+  // Payslips are pay data: payroll.view instead of forms.manage.hr (server: canAccessRecords).
+  const canBrowse = formDef.slug === 'hr_payroll'
+    ? App.hasPermission('payroll.view')
+    : formDef.scope
+      ? App.hasPermission('forms.manage.' + formDef.scope)
+      : ['hr', 'inventory', 'admin', 'accounting'].every((s) => App.hasPermission('forms.manage.' + s));
   if (!canBrowse) {
     view.innerHTML = `<div class="topbar">
         <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} All Forms</button>
@@ -142,7 +145,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   }
 
   const isPayroll = formDef.slug === 'hr_payroll';
-  const canManagePayroll = isPayroll && App.hasPermission('hr.manage');
+  const canManagePayroll = isPayroll && App.hasPermission('payroll.manage');
   // Any other form with a linked print template gets the same "Print All"/"Print selected"
   // bulk actions payroll has always had — payroll keeps its own dedicated 2-up slip buttons.
   const canBulkPrint = !isPayroll && !!formDef.template_id;

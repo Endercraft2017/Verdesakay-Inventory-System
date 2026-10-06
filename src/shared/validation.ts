@@ -57,11 +57,25 @@ export const changePasswordSchema = z.object({
 });
 
 // ---- Users / departments ----
-const roleEnum = z.enum([
-  'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-  'parts_clerk', 'production_lead', 'production_manager', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
-  'releasing_clerk',
-]);
+// A key from the tenant's roles table — routes check it exists (src/shared/roles.ts getRole).
+const roleEnum = z.string().trim().min(1, 'Role is required').max(40);
+
+/** POST /api/roles. The key is derived from the label when omitted (roles.routes.ts). */
+export const createRoleSchema = z.object({
+  label: trimmed.min(1, 'Role name is required').max(60),
+  key: z.string().trim().toLowerCase()
+    .regex(/^[a-z][a-z0-9_]{1,39}$/, 'Role key must be 2-40 chars: lowercase letters, numbers, underscore')
+    .optional(),
+  description: trimmed.max(200).optional().default(''),
+  permissions: z.array(z.string()).max(200).default([]),
+});
+
+/** PUT /api/roles/:key — any subset; the key itself never changes (accounts hold it). */
+export const updateRoleSchema = z.object({
+  label: trimmed.min(1, 'Role name is required').max(60).optional(),
+  description: trimmed.max(200).optional(),
+  permissions: z.array(z.string()).max(200).optional(),
+});
 
 const emailOpt = z.union([z.literal(''), z.string().trim().toLowerCase().email('Enter a valid email')])
   .optional().nullable();

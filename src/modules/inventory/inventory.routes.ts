@@ -200,7 +200,7 @@ router.get('/product-groups', (_req, res) => {
 // With no item_ids it sweeps every low-stock item (damage twins + finished products excluded
 // — a low finished product is produced, not bought). Order qty tops each item up to
 // `min_quantity * multiplier` (default 2×), always at least 1.
-router.post('/reorder-po', requirePermission('orders.create'), syncClass('claim'), (req, res) => {
+router.post('/reorder-po', requirePermission('purchasing.manage'), syncClass('claim'), (req, res) => {
   const { item_ids, multiplier } = parseBody(reorderPoSchema, req.body);
   const mult = multiplier ?? 2;
 

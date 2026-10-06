@@ -35,8 +35,8 @@ const PERMISSION: Record<AnalyticsToolName, Permission> = {
   reorder_suggestions: 'inventory.view',
   dead_stock: 'inventory.view',
   stock_movement_summary: 'inventory.view',
-  job_order_report: 'inventory.view',
-  qc_report: 'inventory.view',
+  job_order_report: 'production.view',
+  qc_report: 'production.view',
   run_analytics_query: 'audit.view', // admin-only escape hatch
 };
 

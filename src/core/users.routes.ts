@@ -15,9 +15,8 @@ import {
   updateDepartmentSchema,
   permissionOverridesSchema,
 } from '../shared/validation';
-import {
-  ALL_PERMISSIONS, ROLES, allRoleDefaults, HR_ASSIGNABLE_ROLES, HR_GRANTABLE_PERMISSIONS,
-} from '../shared/permissions';
+import { ALL_PERMISSIONS, STAFF_PERMISSIONS } from '../shared/permissions';
+import { listRoles, getRole } from '../shared/roles';
 import type { UserRow, Department, Role } from '../shared/types';
 import { syncClass } from '../sync';
 
@@ -66,10 +65,16 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/users — create an account. hr.manage (without users.manage) may also create one —
-// the employee form's "create account" shortcut — but only with a non-privileged role.
+// the employee form's "create account" shortcut — but only with a staff-level role (one whose
+// permissions are all in STAFF_PERMISSIONS; see shared/roles.ts).
 router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), (req, res) => {
   const input = parseBody(createUserSchema, req.body);
-  if (!req.user!.permissions.includes('users.manage') && !HR_ASSIGNABLE_ROLES.includes(input.role)) {
+  const role = getRole(input.role);
+  if (!role) {
+    res.status(400).json({ error: `Unknown role "${input.role}"` });
+    return;
+  }
+  if (!req.user!.permissions.includes('users.manage') && !role.staff) {
     res.status(403).json({ error: 'HR can only create accounts with a staff role' });
     return;
   }
@@ -105,6 +110,10 @@ router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req,
   const full_name = input.full_name ?? user.full_name;
   const email = input.email !== undefined ? (input.email || null) : user.email;
   const role = input.role ?? user.role;
+  if (input.role !== undefined && input.role !== user.role && !getRole(input.role)) {
+    res.status(400).json({ error: `Unknown role "${input.role}"` });
+    return;
+  }
   const department_id = input.department_id !== undefined ? input.department_id : user.department_id;
   const active = input.active !== undefined ? (input.active ? 1 : 0) : user.active;
 
@@ -181,17 +190,20 @@ router.post('/:id/sessions/:sid/revoke', requirePermission('users.manage'), sync
   res.json({ ok: true });
 });
 
-// GET /api/users/permissions/catalog — canonical permission keys + per-role defaults, for the
-// Customize Permissions editor (avoids hand-duplicating src/permissions.ts on the frontend).
+// GET /api/users/permissions/catalog — canonical permission keys + the workspace's roles, for the
+// account/role editors (public/js/lib/access-editor.js) so the frontend never hand-copies them.
 // `grantable` / `assignableRoles` tell the editor what THIS caller may change: everything for
 // users.manage, the staff-level subset for an HR-only caller.
 router.get('/permissions/catalog', requireAnyPermission(['users.manage', 'hr.manage']), (req, res) => {
   const full = req.user!.permissions.includes('users.manage');
+  const roles = listRoles();
   res.json({
     permissions: ALL_PERMISSIONS,
-    roleDefaults: allRoleDefaults(),
-    grantable: full ? ALL_PERMISSIONS : HR_GRANTABLE_PERMISSIONS,
-    assignableRoles: full ? ROLES : HR_ASSIGNABLE_ROLES,
+    staffPermissions: STAFF_PERMISSIONS,
+    roles,
+    roleDefaults: Object.fromEntries(roles.map((r) => [r.key, r.permissions])),
+    grantable: full ? ALL_PERMISSIONS : STAFF_PERMISSIONS,
+    assignableRoles: roles.filter((r) => full || r.staff).map((r) => r.key),
   });
 });
 
@@ -210,7 +222,7 @@ router.get('/:id/access', requireAnyPermission(['users.manage', 'hr.manage']), (
 });
 
 // PUT /api/users/:id/permissions — save sparse permission overrides for a user. An HR-only
-// caller may only edit staff-role accounts, and only change HR_GRANTABLE_PERMISSIONS keys.
+// caller may only edit staff-role accounts, and only change STAFF_PERMISSIONS keys.
 router.put('/:id/permissions', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
   const user = queryOne<{ id: number; role: Role; permission_overrides: string }>(
@@ -227,13 +239,13 @@ router.put('/:id/permissions', requireAnyPermission(['users.manage', 'hr.manage'
     if (v !== undefined) clean[key] = v;
   }
   if (!req.user!.permissions.includes('users.manage')) {
-    if (!HR_ASSIGNABLE_ROLES.includes(user.role)) {
+    if (!getRole(user.role)?.staff) {
       res.status(403).json({ error: 'HR can only change access on staff-role accounts' });
       return;
     }
     let current: Record<string, boolean> = {};
     try { current = JSON.parse(user.permission_overrides || '{}'); } catch { /* treat as none */ }
-    const grantable = new Set<string>(HR_GRANTABLE_PERMISSIONS);
+    const grantable = new Set<string>(STAFF_PERMISSIONS);
     const blocked = ALL_PERMISSIONS.filter((k) => !grantable.has(k) && clean[k] !== current[k]);
     if (blocked.length) {
       res.status(403).json({ error: `HR can't change these permissions: ${blocked.join(', ')}` });

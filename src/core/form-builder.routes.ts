@@ -13,6 +13,7 @@ import {
   globalVariableSchema,
 } from '../shared/validation';
 import { parsePayrollSummaryCsv } from '../modules/payroll/hr-payroll-import';
+import { PAYROLL_FORM_SLUG } from '../modules/payroll/pay-access';
 import { runFormActions } from './form-actions';
 import { REQUEST_SLUGS } from './me.routes';
 import { INFO_CHANGE_SLUG, prepareInfoChange } from '../modules/hr/info-change';
@@ -64,6 +65,19 @@ function canManageScope(req: Request, res: Response, scope: FormScope | null): b
     : FORM_SCOPES.every((s) => req.user!.permissions.includes(`forms.manage.${s}` as Permission));
   if (!ok) res.status(403).json({ error: 'Forbidden: insufficient permissions' });
   return ok;
+}
+
+/** Read/write gate for one form's RECORDS. Payslips (the hr_payroll form) are pay data, so they
+    take payroll.view to read and payroll.manage to write instead of the HR section's
+    forms.manage.hr (modules/payroll/pay-access.ts); every other form uses canManageScope. Writes
+    the 403 itself and returns whether the caller may proceed. */
+function canAccessRecords(req: Request, res: Response, form: { scope: FormScope | null; slug: string }, write: boolean): boolean {
+  if (form.slug === PAYROLL_FORM_SLUG) {
+    const ok = req.user!.permissions.includes(write ? 'payroll.manage' : 'payroll.view');
+    if (!ok) res.status(403).json({ error: 'Forbidden: payslips need the payroll permission' });
+    return ok;
+  }
+  return canManageScope(req, res, form.scope);
 }
 
 // ─── Form Definitions ────────────────────────────────────────────────────────
@@ -191,7 +205,7 @@ router.delete('/form-definitions/:id', syncClass('claim'), (req, res) => {
 
 // POST /api/form-definitions/:id/import — bulk-create records from the payroll "Summary"
 // CSV export. body.period labels the payroll period (required); body.pay_date is optional.
-router.post('/form-definitions/:id/import', requirePermission('hr.manage'), syncClass('claim'), syncUpload(csvUpload.single('file')), (req, res) => {
+router.post('/form-definitions/:id/import', requirePermission('payroll.manage'), syncClass('claim'), syncUpload(csvUpload.single('file')), (req, res) => {
   const form = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', Number(req.params.id));
   if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
   if (form.slug !== 'hr_payroll') {
@@ -253,9 +267,9 @@ router.get('/form-definitions/:id/periods', (req, res) => {
 // are visible through the separate, self-scoped GET /me/requests instead.
 router.get('/form-definitions/:id/records', (req, res) => {
   const formId = Number(req.params.id);
-  const form = queryOne<{ scope: FormScope | null }>('SELECT scope FROM form_definitions WHERE id = ?', formId);
+  const form = queryOne<{ scope: FormScope | null; slug: string }>('SELECT scope, slug FROM form_definitions WHERE id = ?', formId);
   if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
-  if (!canManageScope(req, res, form.scope)) return;
+  if (!canAccessRecords(req, res, form, false)) return;
   const { q, status, period } = req.query;
   const where: string[] = ['fr.form_def_id = ?'];
   const params: unknown[] = [formId];
@@ -294,7 +308,7 @@ router.get('/form-records/:id', (req, res) => {
     Number(req.params.id)
   );
   if (!row) { res.status(404).json({ error: 'Record not found' }); return; }
-  if (!canManageScope(req, res, row.scope)) return;
+  if (!canAccessRecords(req, res, { scope: row.scope, slug: row.form_slug }, false)) return;
   res.json({ ...row, data: parseData(row.data as string) });
 });
 
@@ -312,9 +326,11 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
   );
   if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
 
-  const canManage = form.scope
-    ? req.user!.permissions.includes(`forms.manage.${form.scope}` as Permission)
-    : FORM_SCOPES.every((s) => req.user!.permissions.includes(`forms.manage.${s}` as Permission));
+  const canManage = form.slug === PAYROLL_FORM_SLUG
+    ? req.user!.permissions.includes('payroll.manage')
+    : form.scope
+      ? req.user!.permissions.includes(`forms.manage.${form.scope}` as Permission)
+      : FORM_SCOPES.every((s) => req.user!.permissions.includes(`forms.manage.${s}` as Permission));
   // An information-change request is always the caller's own, always starts pending, and its
   // identity/current value are set server-side (never trusted from the client) — even for HR
   // staff who could otherwise create any record in their section.
@@ -371,7 +387,7 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
     id
   );
   if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
-  if (!canManageScope(req, res, existing.scope)) return;
+  if (!canAccessRecords(req, res, existing, true)) return;
   const input = parseBody(updateFormRecordSchema, req.body);
   // A payslip marked Paid (src/routes/hr.routes.ts's mark-paid) is locked against the generic
   // edit path — unmark it first. Also block setting status to 'paid' through here directly;
@@ -419,7 +435,7 @@ router.delete('/form-records/:id', syncClass('claim'), (req, res) => {
     id
   );
   if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
-  if (!canManageScope(req, res, existing.scope)) return;
+  if (!canAccessRecords(req, res, existing, true)) return;
   if (existing.slug === 'hr_payroll' && existing.status === 'paid') {
     res.status(423).json({ error: 'This payslip is marked Paid — unmark it first to delete.' }); return;
   }

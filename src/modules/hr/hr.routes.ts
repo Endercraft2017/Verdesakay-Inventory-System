@@ -46,6 +46,7 @@ import type { PayslipYearRow } from '../payroll/ph-2316';
 import { computeFinalPay, type FinalPayInput } from '../payroll/ph-final-pay';
 import { yearPayslipRowsByEmployee, companyProfile } from '../payroll/ph-payroll-report-data';
 import { payslipOwnerResolver } from '../payroll/payslip-owner';
+import { redactPay, canChangePay, PAY_FIELDS } from '../payroll/pay-access';
 import { enforceQuota } from '../../platform/quota';
 import { slotPunchIdsForDates, type CorrectionSlot } from './clock';
 import { photoIdsForPunches } from './punch-photos';
@@ -176,11 +177,11 @@ router.get('/employees', requirePermission('hr.view'), (req, res) => {
   for (const r of rows) {
     r.rest_days = r.rest_days ? (() => { try { return JSON.parse(r.rest_days as unknown as string); } catch { return null; } })() : null;
   }
-  res.json(rows);
+  res.json(redactPay(rows, req.user)); // rates only for payroll.view (payroll/pay-access.ts)
 });
 
 // GET /api/hr/employees/export — 201-file master data as CSV (round-trips with import)
-router.get('/employees/export', requirePermission('hr.view'), (_req, res) => {
+router.get('/employees/export', requirePermission('hr.view'), (req, res) => {
   const rows = queryAll<Record<string, unknown>>(
     `SELECT e.employee_no, e.name, d.name AS department, e.position, e.rate_type,
             e.daily_rate, e.monthly_rate, e.status, e.start_date,
@@ -190,7 +191,10 @@ router.get('/employees/export', requirePermission('hr.view'), (_req, res) => {
   );
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="employees-${new Date().toISOString().slice(0, 10)}.csv"`);
-  res.send(toCsv([...EMP_CSV_COLUMNS], rows));
+  const cols = req.user!.permissions.includes('payroll.view')
+    ? [...EMP_CSV_COLUMNS]
+    : EMP_CSV_COLUMNS.filter((c) => !(PAY_FIELDS as readonly string[]).includes(c));
+  res.send(toCsv(cols, rows));
 });
 
 // POST /api/hr/employees/import — create/update the 201-file master from CSV.
@@ -220,6 +224,8 @@ router.post('/employees/import', requirePermission('hr.manage'), syncClass('clai
     return;
   }
 
+  // Rate columns only count for payroll.manage; anyone else imports master data and leaves pay as is.
+  const payOk = canChangePay(req.user);
   const report = importLoop(resolved.rows, !!dry_run, (row) => {
     const empNo = resolved.get(row, 'employee_no');
     const deptName = resolved.get(row, 'department');
@@ -235,9 +241,9 @@ router.post('/employees/import', requirePermission('hr.manage'), syncClass('clai
       name: resolved.get(row, 'name'),
       department_id: departmentId ?? undefined,
       position: resolved.get(row, 'position') || undefined,
-      rate_type: rateType === 'monthly' ? 'monthly' : 'daily',
-      daily_rate: resolved.get(row, 'daily_rate') || 0,
-      monthly_rate: resolved.get(row, 'monthly_rate') || undefined,
+      rate_type: payOk && rateType === 'monthly' ? 'monthly' : 'daily',
+      daily_rate: payOk ? resolved.get(row, 'daily_rate') || 0 : 0,
+      monthly_rate: payOk ? resolved.get(row, 'monthly_rate') || undefined : undefined,
       status: resolved.get(row, 'status') || undefined,
       start_date: resolved.get(row, 'start_date') || undefined,
       sss_no: resolved.get(row, 'sss_no') || undefined,
@@ -253,7 +259,7 @@ router.post('/employees/import', requirePermission('hr.manage'), syncClass('clai
       // logged there too (effective today, same default as the Edit Employee form) — otherwise an
       // employee who already has history rows would keep being paid the old rate.
       const importedDaily = effectiveDailyRate(d);
-      if (round2(importedDaily) !== round2(existing.daily_rate)) {
+      if (payOk && round2(importedDaily) !== round2(existing.daily_rate)) {
         recordRateChange(
           existing.id, now().toISOString().slice(0, 10),
           { rate_type: d.rate_type, daily_rate: importedDaily, monthly_rate: d.rate_type === 'monthly' ? (d.monthly_rate ?? null) : null },
@@ -266,7 +272,9 @@ router.post('/employees/import', requirePermission('hr.manage'), syncClass('clai
            monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?
          WHERE id = ?`,
         d.name, departmentId ?? existing.department_id ?? null, d.position ?? existing.position ?? null,
-        effectiveDailyRate(d), d.rate_type, d.rate_type === 'monthly' ? d.monthly_rate : null,
+        payOk ? effectiveDailyRate(d) : existing.daily_rate,
+        payOk ? d.rate_type : existing.rate_type,
+        payOk ? (d.rate_type === 'monthly' ? d.monthly_rate : null) : (existing.monthly_rate ?? null),
         d.status, d.start_date ?? existing.start_date ?? null,
         d.sss_no ?? existing.sss_no ?? null, d.philhealth_no ?? existing.philhealth_no ?? null,
         d.pagibig_no ?? existing.pagibig_no ?? null, d.tin_no ?? existing.tin_no ?? null,
@@ -293,21 +301,21 @@ router.post('/employees/import', requirePermission('hr.manage'), syncClass('clai
 // docs/PH-PAYROLL-COMPLIANCE.md.
 
 // GET /api/hr/payroll-tables?date=YYYY-MM-DD — every stored version + the set resolved for `date`
-router.get('/payroll-tables', requirePermission('hr.view'), (req, res) => {
+router.get('/payroll-tables', requirePermission('payroll.view'), (req, res) => {
   const date = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
     ? req.query.date : undefined;
   res.json({ rows: listPayrollTables(), effective: effectiveTables(date), as_of: date || new Date().toISOString().slice(0, 10) });
 });
 
 // POST /api/hr/payroll-tables — add/replace a version { kind, effective_from, data, note? }
-router.post('/payroll-tables', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/payroll-tables', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(payrollTableSchema, req.body);
   upsertPayrollTable(input.kind, input.effective_from, input.data, input.note ?? null, req.user!.id);
   res.status(201).json({ ok: true });
 });
 
 // DELETE /api/hr/payroll-tables/:id
-router.delete('/payroll-tables/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.delete('/payroll-tables/:id', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
   if (!deletePayrollTable(Number(req.params.id))) {
     res.status(404).json({ error: 'Rate table version not found' });
     return;
@@ -318,7 +326,7 @@ router.delete('/payroll-tables/:id', requirePermission('hr.manage'), syncClass('
 // GET /api/hr/thirteenth-month?year=YYYY — 13th-month pay per employee = total basic
 // salary earned that calendar year / 12. Reads the generated hr_payroll records; each is
 // dated by its pay_date (falling back to created_at).
-router.get('/thirteenth-month', requirePermission('hr.view'), (req, res) => {
+router.get('/thirteenth-month', requirePermission('payroll.view'), (req, res) => {
   const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
   const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
   if (!form) { res.json({ year, rows: [], total: 0 }); return; }
@@ -356,7 +364,7 @@ router.get('/thirteenth-month', requirePermission('hr.view'), (req, res) => {
 // GET /api/hr/final-pay/:employeeId — final-pay / back-pay worksheet for a separated
 // employee. Operator inputs come in as query params (leave balances, loans, unpaid days
 // aren't derivable from the payslips). Read-only — the accountant reviews before release.
-router.get('/final-pay/:employeeId', requirePermission('hr.view'), (req, res) => {
+router.get('/final-pay/:employeeId', requirePermission('payroll.view'), (req, res) => {
   const emp = queryOne<Employee & { department_name?: string }>(
     `SELECT e.*, d.name AS department_name FROM employees e
      LEFT JOIN departments d ON d.id = e.department_id WHERE e.id = ?`,
@@ -437,9 +445,34 @@ function checkLinkedUser(userId: number | null, excludeEmployeeId?: number): str
   return clash ? `That account is already linked to ${clash.name}` : null;
 }
 
+/** Pay fields of a new employee created by someone without payroll.manage. */
+const NO_PAY = {
+  rate_type: 'daily' as const, daily_rate: 0, monthly_rate: null,
+  deduct_sss: true, deduct_philhealth: true, deduct_pagibig: true, deduct_withholding_tax: true,
+  withholding_tax_override: null, sss_override: null, philhealth_override: null, pagibig_override: null,
+  contribution_basis: 'actual' as const,
+};
+
+/** An employee's stored pay fields, shaped like employeeSchema's input. */
+function storedPay(id: number) {
+  const r = queryOne<{
+    rate_type: 'daily' | 'monthly'; daily_rate: number; monthly_rate: number | null;
+    deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+    withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
+    pagibig_override: number | null; contribution_basis: 'actual' | 'fixed';
+  }>(`SELECT ${PAY_FIELDS.join(', ')} FROM employees WHERE id = ?`, id)!;
+  return {
+    ...r,
+    deduct_sss: r.deduct_sss !== 0, deduct_philhealth: r.deduct_philhealth !== 0,
+    deduct_pagibig: r.deduct_pagibig !== 0, deduct_withholding_tax: r.deduct_withholding_tax !== 0,
+  };
+}
+
 // POST /api/hr/employees
 router.post('/employees', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(employeeSchema, req.body);
+  // Without payroll.manage the employee starts with no pay set; payroll fills it in.
+  if (!canChangePay(req.user)) Object.assign(input, NO_PAY);
   if (queryOne('SELECT id FROM employees WHERE employee_no = ?', input.employee_no)) {
     res.status(409).json({ error: `Employee number "${input.employee_no}" is already in use` }); return;
   }
@@ -494,8 +527,12 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
   const linkErr = checkLinkedUser(input.user_id, id);
   if (linkErr) { res.status(409).json({ error: linkErr }); return; }
 
-  const dailyRate = effectiveDailyRate(input);
-  if (round2(dailyRate) !== round2(existing.daily_rate)) {
+  // The form of someone without payroll.manage never had the pay fields (or sent them blank):
+  // keep what's stored, and never log a rate change from it.
+  const payOk = canChangePay(req.user);
+  if (!payOk) Object.assign(input, storedPay(id));
+  const dailyRate = payOk ? effectiveDailyRate(input) : existing.daily_rate;
+  if (payOk && round2(dailyRate) !== round2(existing.daily_rate)) {
     const today = now().toISOString().slice(0, 10);
     const effectiveFrom = input.rate_effective_date || today;
     if (effectiveFrom > today) {
@@ -556,7 +593,7 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
 });
 
 // GET /api/hr/employees/:id/rate-history — read-only log for the Edit Employee form.
-router.get('/employees/:id/rate-history', requirePermission('hr.manage'), (req, res) => {
+router.get('/employees/:id/rate-history', requirePermission('payroll.view'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM employees WHERE id = ?', id)) {
     res.status(404).json({ error: 'Employee not found' }); return;
@@ -1002,7 +1039,7 @@ router.get('/payroll-policy', requirePermission('hr.view'), (_req, res) => {
 });
 
 // PUT /api/hr/payroll-policy
-router.put('/payroll-policy', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.put('/payroll-policy', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(payrollPolicySchema, req.body);
   setSetting('payroll_policy', input);
   res.json(input);
@@ -1043,7 +1080,7 @@ router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
      ORDER BY e.name`,
     id
   );
-  res.json({ ...period, roster });
+  res.json({ ...period, roster: redactPay(roster as object[], req.user) });
 });
 
 // GET /api/hr/timekeeping/incomplete — employees with an incomplete day (exactly one of
@@ -2005,7 +2042,7 @@ function computeEmployeeStatutory(
 }
 
 // POST /api/hr/periods/:id/generate-payslips
-router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
@@ -2263,7 +2300,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('hr.manage'), sy
 // aggregate journal entry (Payroll Journal). A deliberate, separate action from
 // generate-payslips itself (see src/accounting-autopost.ts's maybeAutoPostPayroll for why) —
 // safe to click again after a regenerate, which reverses the prior entry and posts fresh.
-router.post('/periods/:id/post-payroll-gl', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/periods/:id/post-payroll-gl', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
   if (!ledgerEnabled()) { res.status(400).json({ error: 'The General Ledger isn’t enabled — turn it on under Accounting → Books first.' }); return; }
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
@@ -2281,7 +2318,7 @@ router.post('/periods/:id/post-payroll-gl', requirePermission('hr.manage'), sync
 // POST /api/hr/payroll/:recordId/mark-paid — locks a generated payslip: generate-payslips
 // will skip it on future regenerates, and the generic /api/form-records PUT/DELETE routes
 // refuse to touch it (see form-builder.routes.ts) until it's unmarked.
-router.post('/payroll/:recordId/mark-paid', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/payroll/:recordId/mark-paid', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
   const rec = queryOne<{ id: number; status: string; slug: string }>(
     `SELECT fr.id, fr.status, fd.slug FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
@@ -2302,7 +2339,7 @@ router.post('/payroll/:recordId/mark-paid', requirePermission('hr.manage'), sync
 });
 
 // POST /api/hr/payroll/:recordId/unmark-paid — unlocks it again for editing/regeneration.
-router.post('/payroll/:recordId/unmark-paid', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/payroll/:recordId/unmark-paid', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
   const rec = queryOne<{ id: number; status: string; slug: string }>(
     `SELECT fr.id, fr.status, fd.slug FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
@@ -2330,7 +2367,7 @@ router.post('/payroll/:recordId/unmark-paid', requirePermission('hr.manage'), sy
 // resolution + compute engine generate-payslips used, so the per-day numbers can never disagree
 // with what's actually on the payslip. 404s with a clear reason if either match fails, rather
 // than returning an empty/wrong table.
-router.get('/payroll/:recordId/detail', requirePermission('hr.manage'), (req, res) => {
+router.get('/payroll/:recordId/detail', requirePermission('payroll.view'), (req, res) => {
   const rec = queryOne<FormRecord & { slug: string }>(
     `SELECT fr.*, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     Number(req.params.recordId)
@@ -2479,7 +2516,7 @@ function recomputeDeductionsFor(
 // payroll detail view can never disagree with what Save would actually produce. Any key omitted
 // from the body keeps that deduction's current applied state (from the stored record), not
 // reset to on/empty.
-router.post('/payroll/:recordId/preview-deductions', requirePermission('hr.manage'), (req, res) => {
+router.post('/payroll/:recordId/preview-deductions', requirePermission('payroll.manage'), (req, res) => {
   const ctx = resolvePayrollDeductionContext(Number(req.params.recordId), res);
   if (!ctx) return;
   const input = parseBody(payrollDeductionTogglesSchema, req.body);
@@ -2496,7 +2533,7 @@ router.post('/payroll/:recordId/preview-deductions', requirePermission('hr.manag
 // PUT /api/hr/payroll/:recordId/deductions — same recompute, persisted into the record. Locked
 // the same way the generic form-records PUT is (see form-builder.routes.ts) — a marked-Paid
 // payslip can't be touched until unmarked.
-router.put('/payroll/:recordId/deductions', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.put('/payroll/:recordId/deductions', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
   const ctx = resolvePayrollDeductionContext(Number(req.params.recordId), res);
   if (!ctx) return;
   if (ctx.rec.status === 'paid') {
@@ -2530,7 +2567,7 @@ router.put('/payroll/:recordId/deductions', requirePermission('hr.manage'), sync
 // Employees have no email of their own (that's exactly what the account-linking feature is
 // for) — this only works once HR has linked one under Employees, and only if that account has
 // an email address set.
-router.post('/payroll/:recordId/email', requirePermission('hr.manage'), syncClass('online'), async (req, res, next) => {
+router.post('/payroll/:recordId/email', requirePermission('payroll.manage'), syncClass('online'), async (req, res, next) => {
   try {
     const rec = queryOne<FormRecord & { slug: string }>(
       `SELECT fr.*, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,

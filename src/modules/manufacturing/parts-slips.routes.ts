@@ -5,14 +5,14 @@
  *  slip id. The slip is a record in the app (paperless); /:id/print is the printable copy. */
 import { Router } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { partsSlipHtml } from './parts-slip-print';
 import type { PartsReleaseSlip, PartsReleaseSlipItem } from '../../shared/types';
 
 const router = Router();
 router.use(requireAuth);
 
-const readGate = requirePermission('inventory.view');
+const readGate = requireAnyPermission(['inventory.view', 'production.view']); // stock documents: warehouse or production
 
 const SLIP_SELECT = `
   SELECT s.*, j.number AS job_order_number, j.product_name, j.qty_ordered,

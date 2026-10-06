@@ -262,15 +262,11 @@ router.get('/overview', (req, res) => {
   const can = (p: Permission) => req.user!.permissions.includes(p);
   const out: Record<string, unknown> = { generated_at: new Date().toISOString() };
 
-  if (can('inventory.view')) {
-    out.inventory = inventorySection();
-    out.production = productionSection();
-  }
-  if (can('orders.view')) {
-    out.purchasing = purchasingSection();
-    out.sales = salesSection();
-  }
-  if (can('hr.view')) out.payroll = payrollSection();
+  if (can('inventory.view')) out.inventory = inventorySection();
+  if (can('production.view')) out.production = productionSection();
+  if (can('purchasing.view')) out.purchasing = purchasingSection();
+  if (can('orders.view')) out.sales = salesSection();
+  if (can('payroll.view')) out.payroll = payrollSection(); // pay is its own permission (payroll/pay-access.ts)
 
   res.json(out);
 });

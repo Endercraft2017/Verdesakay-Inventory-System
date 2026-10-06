@@ -286,7 +286,7 @@ App.register('inventory', async (view, filter) => {
       <button class="btn secondary" id="inv-import" title="Create or update items from a CSV file">${UI.icon('upload')} Import</button>
       <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
       <button class="btn secondary" id="inv-labels" title="Print barcode labels for the current list">${UI.icon('printer')} Labels</button>
-      ${App.hasPermission('orders.create') ? `<button class="btn secondary" id="inv-reorder" title="Draft purchase orders to restock everything below its reorder level">${UI.icon('inbox')} Reorder PO</button>` : ''}
+      ${App.hasPermission('purchasing.manage') ? `<button class="btn secondary" id="inv-reorder" title="Draft purchase orders to restock everything below its reorder level">${UI.icon('inbox')} Reorder PO</button>` : ''}
       <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
     </div>
     <div class="panel"><div id="inv-table"></div></div>`;

@@ -450,13 +450,14 @@ describe('executeTool unit tests', () => {
     const { executeTool } = await import('../src/modules/ai/ai-tools');
     const { db } = await import('../src/shared/db');
     const user = db.prepare('SELECT id FROM users LIMIT 1').get() as { id: number };
-    const result = await executeTool('create_order', {
-      type: 'purchase', items: [{ name: 'Bond paper', quantity: 2, unit_price: 150 }],
-    }, {
+    const caller = (permissions: string[]) => ({
       id: user.id, username: 'admin', full_name: 'Admin', role: 'admin',
-      department_id: null, active: 1, department_name: null,
-      permissions: ['orders.create'],
-    });
+      department_id: null, active: 1, department_name: null, permissions,
+    }) as never;
+    const order = { type: 'purchase', items: [{ name: 'Bond paper', quantity: 2, unit_price: 150 }] };
+    // Purchase orders are purchasing's (src/modules/inventory/order-access.ts): orders.create alone is refused.
+    expect((await executeTool('create_order', order, caller(['orders.create']))).success).toBe(false);
+    const result = await executeTool('create_order', order, caller(['orders.create', 'purchasing.manage']));
     expect(result.success).toBe(true);
     expect((result.data as { number: string }).number).toMatch(/^PR-\d{5}$/);
     // type comes back so the frontend can build a "View purchase request" link (public/js/tools.js's

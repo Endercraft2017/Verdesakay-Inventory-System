@@ -548,6 +548,62 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
 .perm-chip.is-locked:hover { border-color: var(--border); }
 .perm-override { display: inline-flex; color: var(--accent); }
 
+/* ---------- Permission picker (role editor + Access drawer, lib/access-editor.js) ---------- */
+.drawer.drawer-wide { width: 600px; }
+.drawer-wide .drawer-foot { display: flex; gap: 8px; }
+.drawer-wide .drawer-foot .btn { width: auto; flex: 1; }
+/* The AI bubble (z-index 120) sits over a drawer's footer buttons — step it aside while one is open. */
+body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
+.role-hint { font-size: 12px; margin: 6px 0 0; min-height: 1em; }
+.pp-rolecard {
+  margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13px;
+}
+.pp-rolecard p { margin: 4px 0 0; font-size: 12px; }
+.pp-toolbar { display: flex; gap: 8px; align-items: center; position: sticky; top: -14px; z-index: 2; background: var(--surface); padding: 6px 0; }
+.pp-search { flex: 1; min-width: 0; }
+.pp-search input { width: 100%; }
+.pp-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 999px; overflow: hidden; flex: 0 0 auto; }
+.pp-seg button { border: none; background: none; padding: 5px 11px; font: inherit; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+.pp-seg button + button { border-left: 1px solid var(--border); }
+.pp-seg button.on { background: var(--accent); color: var(--accent-contrast); }
+.pp-summary { font-size: 12px; color: var(--text-muted); margin: 6px 0 10px; }
+.pp-summary .pp-added { color: var(--success); }
+.pp-summary .pp-removed { color: var(--danger); }
+.pp-group { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 10px; overflow: hidden; }
+.pp-group-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.pp-group-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; color: var(--text-muted); }
+.pp-count { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.pp-count.some { color: var(--accent); font-weight: 600; }
+.pp-bulk { border: none; background: none; font: inherit; font-size: 11.5px; color: var(--accent); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.pp-bulk:hover { background: var(--accent-weak); }
+.pp-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; border-top: 1px solid var(--border); }
+.pp-group-head + .pp-row { border-top: none; }
+.pp-row.is-added { box-shadow: inset 3px 0 0 var(--success); }
+.pp-row.is-removed { box-shadow: inset 3px 0 0 var(--danger); }
+.pp-row.is-locked .pp-text { opacity: 0.65; }
+.pp-text { flex: 1; min-width: 0; }
+.pp-label { font-size: 13px; font-weight: 600; color: var(--text); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pp-row:not(.is-on) .pp-label { font-weight: 500; color: var(--text-muted); }
+.pp-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.pp-where { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.pp-where span { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--text-muted); }
+.pp-tag { font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
+.pp-tag.added { background: var(--success-weak); color: var(--success); }
+.pp-tag.removed { background: var(--danger-weak); color: var(--danger); }
+.pp-tag.locked { background: var(--surface-3); color: var(--text-faint); font-weight: 500; }
+.pp-undo { border: none; background: none; font: inherit; font-size: 12px; color: var(--accent); cursor: pointer; align-self: center; }
+/* Switch drawn over a real checkbox (keyboard + screen readers still see the checkbox). */
+.pp-switch { position: relative; flex: 0 0 auto; width: 34px; height: 20px; margin-top: 1px; cursor: pointer; }
+.pp-switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; z-index: 1; }
+.pp-track { position: absolute; inset: 0; border-radius: 999px; background: var(--border-strong); transition: background .15s; }
+.pp-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.pp-switch input:checked + .pp-track { background: var(--accent); }
+.pp-switch input:checked + .pp-track::after { transform: translateX(14px); }
+.pp-switch input:focus-visible + .pp-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pp-switch input:disabled { cursor: not-allowed; }
+.pp-switch input:disabled + .pp-track { opacity: 0.5; }
+
 /* ---------- Context menu ---------- */
 .context-menu {
   position: fixed; z-index: 210; min-width: 190px; padding: 5px;

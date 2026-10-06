@@ -92,6 +92,10 @@ removed meanwhile, or an approval whose match fails only on the cloud, stands, f
 **Trigger:** a purchase order is created (`purchasing`), either manually or as a
 draft raised by the sales-order shortfall flow above, or via
 `POST /inventory/reorder-po` (low-stock reorder).
+**Permissions:** `purchasing.view` to see POs, receipts and bills; `purchasing.manage` to create /
+change POs and raise / approve bills; receiving (step 2) needs `inventory.adjust`
+(`inventory/order-access.ts`). Desktop menu: Inventory → Purchasing → Purchase Orders → Goods
+Receipts → Vendor Bills.
 
 1. **PO created** (`purchasing`) — draft or open.
 2. **Goods receipt** (`purchasing`) — a GRN records what physically arrived;
@@ -401,6 +405,28 @@ phone (listed as a count, never sent or discardable by the current person).
 **Terminal states:** ended with `end_reason` logout / revoked / password / deactivated / idle /
 expired; the row stays as sign-in history for 90 days (`cleanupSessions`), then is deleted.
 
+## Account access (define role → create account → adjust one person)
+
+**Trigger:** an administrator sets up who can do what, or HR onboards an employee.
+1. **Define roles** (`core/roles.routes`, Admin → Accounts → Roles; `users.manage`) — a role is a
+   named permission bundle in `roles`. Built-ins are seeded once; the workspace adds, edits,
+   duplicates and deletes its own. Administrator is fixed (everything).
+2. **Create the account with a role** (`POST /api/users`; Admin → Accounts, or HR's employee form)
+   — the account gets the role's bundle, including the phone app (`mobile.access`) by default.
+   HR without `users.manage` may only pick staff roles (`shared/permissions.isStaffRole`).
+3. **Adjust one person** (`PUT /api/users/:id/permissions`, the Access drawer) — sparse overrides
+   add or remove single permissions on top of the role; HR only for staff-role accounts and
+   staff-level permissions.
+4. **Enforce** (`shared/auth.requireAuth` → `shared/roles.userPermissions`) — each request
+   resolves role bundle + overrides; routes check permissions, menus hide screens the account
+   can't open (`nav-config.js`).
+
+**Branches:** HR picks a management role or permission ⇒ 403; unknown role ⇒ 400; role edited ⇒
+every holder's access changes on their next request; deleting a role still held ⇒ 409 (move the
+accounts first).
+**Terminal states:** account active with its effective permissions; role deleted (only when
+unused); account disabled (`PUT /users/:id` active=false ends its sessions).
+
 ## Company asset issuance (issue → hold → return)
 
 **Offline (phase 4e):** issuing and returning are `physical` (they work with no internet); deleting an
@@ -427,6 +453,10 @@ snapshot). Not linked to Inventory stock — issuing moves no stock.
 ## Payroll run
 
 **Trigger:** a payroll period/cutoff is closed (`hr`, `hr.routes.ts`).
+**Permissions:** timekeeping (punches, cutoffs, daily records) is `hr.view` / `hr.manage`; every pay
+step — rates, payroll rules, generate / post / mark paid / email payslips, 13th month, final pay —
+is `payroll.view` / `payroll.manage` (`payroll/pay-access.ts`), so a timekeeping clerk can close
+cutoffs without seeing pay.
 
 **Offline (phase 4g, docs/OFFLINE-FIRST.md §26):** the whole run, from cutoff to marked paid, works at the
 main site with the internet down; payslip numbers come from the site host's blocks. Emailing payslips waits

@@ -1,7 +1,8 @@
 /** QuickBooks Online: OAuth connect/disconnect + push an order. See src/quickbooks.ts. */
 import crypto from 'node:crypto';
 import { Router } from 'express';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
+import { canOnOrder } from '../inventory/order-access';
 import { withTenant, getSetting, setSetting, queryOne, queryAll } from '../../shared/db';
 import { parseBody } from '../../shared/validation';
 import { z } from 'zod';
@@ -82,11 +83,13 @@ router.put('/auto-push', requirePermission('users.manage'), syncClass('online'),
 });
 
 // POST /api/quickbooks/push/order/:id — push a single order (create or update in QBO)
-router.post('/push/order/:id', requirePermission('orders.edit'), syncClass('online'), async (req, res, next) => {
+router.post('/push/order/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), syncClass('online'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+    // A purchase order (pushed as a QBO Bill) is purchasing's; a sale order the orders module's.
+    if (!canOnOrder(req.user!, order.type, 'edit')) { res.status(403).json({ error: 'Forbidden: insufficient permissions' }); return; }
     const items = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
     const result = await pushOrder(order, items);
     res.json(result);
@@ -98,7 +101,9 @@ router.post('/push/order/:id', requirePermission('orders.edit'), syncClass('onli
 });
 
 // GET /api/quickbooks/order/:id/link — the QBO link for an order (for the UI badge)
-router.get('/order/:id/link', requirePermission('orders.view'), (req, res) => {
+router.get('/order/:id/link', requireAnyPermission(['orders.view', 'purchasing.view']), (req, res) => {
+  const order = queryOne<{ type: string }>('SELECT type FROM orders WHERE id = ?', Number(req.params.id));
+  if (order && !canOnOrder(req.user!, order.type, 'view')) { res.status(403).json({ error: 'Forbidden: insufficient permissions' }); return; }
   res.json(orderLink(Number(req.params.id)));
 });
 

@@ -135,6 +135,29 @@ describe('mobile bootstrap', () => {
     expect(text).not.toContain('Products In');
   });
 
+  it('a new account with the default mobile.access gets in without an employee link, showing its role name', async () => {
+    const win = await bootAs({
+      id: 7, username: 'acct1', full_name: 'Office One', role: 'line_supervisor', role_label: 'Line Supervisor',
+      employee: null, modules: null, permissions: ['mobile.access', 'messages.view', 'messages.send'],
+    });
+    win.location.hash = '#/home';
+    win.MApp.render();
+    expect(win.document.getElementById('m-view').textContent).not.toContain('Nothing here for you yet');
+    expect(win.document.getElementById('m-ctx-role').textContent).toBe('Line Supervisor');
+  });
+
+  it('an account with mobile.access removed and no employee link sees the blocked screen', async () => {
+    const win = await bootAs({
+      id: 8, username: 'acct2', full_name: 'Office Two', role: 'accounting', employee: null, modules: null,
+      permissions: ['accounting.view', 'messages.view'],
+    });
+    win.location.hash = '#/home';
+    win.MApp.render();
+    const text = win.document.getElementById('m-view').textContent;
+    expect(text).toContain('Nothing here for you yet');
+    expect(text).toContain('Use the phone app');
+  });
+
   it('a releasing_clerk-only account has no Production tab access but sees Release orders on Work', async () => {
     const win = await bootAs({
       id: 2, username: 'rel1', full_name: 'Release One', role: 'releasing_clerk', employee: true, modules: null,

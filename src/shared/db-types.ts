@@ -1182,6 +1182,16 @@ export interface RepairRevisions {
   decided_at: string | null;
 }
 
+export interface Roles {
+  key: string;
+  label: string;
+  description: Generated<string>;
+  permissions: Generated<string>;
+  sort_order: Generated<number>;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface Sessions {
   token: string;
   user_id: number;
@@ -1479,6 +1489,7 @@ export interface DB {
   repair_part_requests: RepairPartRequests;
   repair_request_events: RepairRequestEvents;
   repair_revisions: RepairRevisions;
+  roles: Roles;
   sessions: Sessions;
   settings: Settings;
   shifts: Shifts;

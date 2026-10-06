@@ -17,6 +17,7 @@ import { recordSiteClash, syncClass } from '../../sync';
 import { siteDecisionStands } from '../../shared/sync-context';
 import { currentAuthorization, latestOverride, slipError, splitUnreleased } from './release-auth';
 import { isAppClient } from '../../shared/device';
+import { canOnOrder, visibleOrderTypes } from './order-access';
 
 const router = Router();
 router.use(requireAuth);
@@ -134,12 +135,20 @@ const BACKORDER_SQL = `
             WHERE ju.order_id = o.id AND ju.product_item_id = oi.item_id AND ju.status IN ('reserved', 'sold'))
   )`;
 
-// GET /api/orders?type=&q=&backorder=1
+// GET /api/orders?type=&q=&backorder=1 — sale / job orders need orders.view, purchase orders
+// purchasing.view (order-access.ts); without a type, the list holds the types the caller may see.
 router.get('/', (req, res) => {
   const { type, q } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
-  if (type === 'sale' || type === 'job' || type === 'purchase') { where.push('o.type = ?'); params.push(type); }
+  const types = visibleOrderTypes(req.user!);
+  if (type === 'sale' || type === 'job' || type === 'purchase') {
+    if (!types.includes(type)) { res.status(403).json({ error: 'Forbidden: insufficient permissions' }); return; }
+    where.push('o.type = ?'); params.push(type);
+  } else {
+    if (!types.length) { res.status(403).json({ error: 'Forbidden: insufficient permissions' }); return; }
+    where.push(`o.type IN (${types.map(() => '?').join(', ')})`); params.push(...types);
+  }
   if (typeof q === 'string' && q.trim()) {
     where.push('(o.number LIKE ? OR o.customer_name LIKE ?)');
     const like = `%${q.trim()}%`;
@@ -179,6 +188,10 @@ router.get('/:id', (req, res) => {
   );
   if (!order) {
     res.status(404).json({ error: 'Order not found' });
+    return;
+  }
+  if (!canOnOrder(req.user!, order.type, 'view')) {
+    res.status(403).json({ error: 'Forbidden: insufficient permissions' });
     return;
   }
   order.items = queryAll<OrderItem>(
@@ -742,7 +755,7 @@ router.post('/:id/produce-shortfall', requirePermission('inventory.adjust'), syn
 // POST /api/orders/:id/purchase-shortfall — draft purchase order(s) for what has to be
 // bought: short lines that aren't made here, plus the short BOM components of finished-
 // product lines. Grouped by each item's preferred supplier.
-router.post('/:id/purchase-shortfall', requirePermission('orders.create'), syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/purchase-shortfall', requirePermission('purchasing.manage'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -770,8 +783,12 @@ router.post('/:id/purchase-shortfall', requirePermission('orders.create'), syncC
 });
 
 // POST /api/orders — create with auto number + computed totals
-router.post('/', requirePermission('orders.create'), syncClass('merge'), (req, res) => {
+router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), syncClass('merge'), (req, res) => {
   const input = parseBody(createOrderSchema, req.body);
+  if (!canOnOrder(req.user!, input.type, 'create')) {
+    res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+    return;
+  }
   const { lines, subtotal, tax_amount, total } = computeTotals(input.items, input.tax_percent);
 
   const cust = resolveCustomer(input.type, input);
@@ -876,11 +893,15 @@ router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', 
 });
 
 // PUT /api/orders/:id — replace header + items, recompute totals (type/number unchanged)
-router.put('/:id', requirePermission('orders.edit'), syncClass('claim', orderSite), (req, res) => {
+router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order) {
     res.status(404).json({ error: 'Order not found' });
+    return;
+  }
+  if (!canOnOrder(req.user!, order.type, 'edit')) {
+    res.status(403).json({ error: 'Forbidden: insufficient permissions' });
     return;
   }
   const input = parseBody(updateOrderSchema, req.body);
@@ -967,8 +988,13 @@ router.put('/:id', requirePermission('orders.edit'), syncClass('claim', orderSit
 });
 
 // DELETE /api/orders/:id (cascades items)
-router.delete('/:id', requirePermission('orders.delete'), syncClass('claim', orderSite), (req, res) => {
+router.delete('/:id', requireAnyPermission(['orders.delete', 'purchasing.manage']), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
+  const kind = queryOne<{ type: string }>('SELECT type FROM orders WHERE id = ?', id);
+  if (kind && !canOnOrder(req.user!, kind.type, 'delete')) {
+    res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+    return;
+  }
   // If this sale was posted to the ledger / drew down stock, reverse both before the row
   // (and its cascaded line items) go away; then return any reserved units to stock.
   maybeFulfillSale(id, req.user!.id, 'release');

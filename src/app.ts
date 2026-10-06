@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit';
 
 import authRoutes from './core/auth.routes';
 import usersRoutes from './core/users.routes';
+import rolesRoutes from './core/roles.routes';
 import inventoryRoutes from './modules/inventory/inventory.routes';
 import suppliersRoutes from './modules/inventory/suppliers.routes';
 import customersRoutes from './modules/inventory/customers.routes';
@@ -215,6 +216,7 @@ export function createApp() {
   // workspace keeps.
   app.use('/api/quickbooks', requireModule('quickbooks'), quickbooksRoutes);
   app.use('/api/users', usersRoutes);
+  app.use('/api/roles', rolesRoutes);
   app.use('/api/inventory', requireModule('inventory'), inventoryRoutes);
   app.use('/api/suppliers', requireModule('inventory'), suppliersRoutes);
   app.use('/api/customers', requireModule('inventory'), customersRoutes);

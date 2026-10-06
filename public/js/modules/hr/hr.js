@@ -13,7 +13,7 @@ App.register('hr', async (view) => {
     { icon: 'users', title: 'Employees', hint: 'Master list: department, position, daily rate, leave-day bank.', action: () => App.navigate('hr-employees') },
     { icon: 'calendar', title: 'Time Keeping', hint: 'Per-cutoff roster with daily time-in/out.', action: () => App.navigate('hr-timekeeping') },
     { icon: 'note', title: 'Leave Management', hint: 'Leave requests, status & balance impact — edit an employee’s leave-day bank under Employees.', action: () => openDataForm('leave_request') },
-  ];
+  ].filter((m) => m.title !== 'Payroll' || App.hasPermission('payroll.view')); // pay is its own permission
 
   const [daily, initialPending, initialFlags, periodsList] = await Promise.all([
     API.get('/hr/daily-report').catch(() => null),

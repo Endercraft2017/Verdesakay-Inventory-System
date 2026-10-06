@@ -16,7 +16,7 @@ import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { db, newToken } from './db';
 import type { AuthUser, AuthSession, Role } from './types';
-import { resolvePermissions } from './permissions';
+import { userPermissions } from './roles';
 import { deviceIdOf, clientIpOf, userAgentOf, deviceLabel } from './device';
 import { syncHooks } from './sync-context';
 
@@ -115,7 +115,7 @@ function resolveSession(token: string | null): { user: AuthUser; session: AuthSe
     permission_overrides: _po, s_sid, s_shared, s_device_id, s_last_seen_at, s_last_ip, ...rest
   } = row;
   return {
-    user: { ...rest, permissions: resolvePermissions(row.role, overrides) },
+    user: { ...rest, permissions: userPermissions(row.role, overrides) },
     session: { sid: s_sid, shared: s_shared === 1, device_id: s_device_id, last_seen_at: s_last_seen_at, last_ip: s_last_ip },
   };
 }
@@ -134,7 +134,7 @@ export function authUserById(id: number): AuthUser | null {
   let overrides: Record<string, boolean> = {};
   try { overrides = JSON.parse(row.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
   const { permission_overrides: _po, ...rest } = row;
-  return { ...rest, permissions: resolvePermissions(row.role, overrides) };
+  return { ...rest, permissions: userPermissions(row.role, overrides) };
 }
 
 /** Resolve a bearer token to the current user, or null if invalid/expired/ended/disabled. */

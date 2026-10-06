@@ -18,7 +18,7 @@ import { syncClass } from '../../sync';
 const router = Router();
 router.use(requireAuth);
 
-const readGate = requireAnyPermission(['inventory.view']);
+const readGate = requireAnyPermission(['production.view']);
 // Anyone working the job order can report: line lead, QC/QA inspectors, the RTS clerk (a
 // product-data mismatch, which holds the unit out of stock — see rts.ts), the warehouse, managers.
 const reportGate = requireAnyPermission([

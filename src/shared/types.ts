@@ -3,32 +3,27 @@
  * These mirror the database schema in src/db.ts and the JSON shapes the API returns.
  */
 
-export type Role =
-  | 'admin' | 'admin_staff' | 'accounting' | 'warehouse'
-  | 'releasing' | 'csr' | 'hr' | 'marketing'
-  // Narrow, single-task shop-floor roles — each holds only the one production
-  // permission its person needs (see permissions.ts ROLE_DEFAULTS), on top of what
-  // 'warehouse' already covers for general operations. Introduced so a parts-request
-  // clerk, a line lead, a QC inspector, a QA inspector and a Products In clerk can each
-  // get an account scoped to exactly their own task instead of sharing inventory.adjust.
-  // QC and QA are deliberately separate roles/people, matching the pipeline's own
-  // first-pass-QC-then-final-pass-QA distinction (docs/modules/pipelines.md).
-  | 'parts_clerk' | 'production_lead' | 'production_manager' | 'qc_inspector' | 'qa_inspector' | 'receiving_clerk'
-  // Same narrowing, orders module: a mobile-only account that just scans/enters goods out
-  // against an approved sale order, without the broad inventory.adjust that also lets it
-  // adjust arbitrary stock.
-  | 'releasing_clerk';
+/** A role key from the tenant's `roles` table (src/shared/roles.ts). Workspaces create their own
+    roles, so this is any string; the built-in seeds are listed in permissions.ts BUILTIN_ROLES.
+    Only 'admin' is fixed (always every permission). */
+export type Role = string;
 
 export type Permission =
+  // Sign in to the phone app (/m). Every role carries it by default — see permissions.ts BASELINE.
+  | 'mobile.access'
   | 'inventory.view' | 'inventory.create' | 'inventory.edit' | 'inventory.delete'
   | 'inventory.adjust' | 'inventory.configure' | 'inventory.mobile'
   | 'orders.view' | 'orders.create' | 'orders.edit' | 'orders.delete'
+  // Purchase orders, goods receipts and vendor bills (split from orders.*; inventory/order-access.ts).
+  | 'purchasing.view' | 'purchasing.manage'
   | 'forms.view' | 'forms.upload' | 'forms.delete'
   | 'forms.manage.hr' | 'forms.manage.inventory' | 'forms.manage.admin' | 'forms.manage.accounting'
   | 'messages.view' | 'messages.send'
   | 'templates.view' | 'templates.edit' | 'templates.company'
   | 'users.manage'
   | 'hr.view' | 'hr.manage'
+  // Pay, split from HR records (src/modules/payroll/pay-access.ts): rates, payslips, payroll runs.
+  | 'payroll.view' | 'payroll.manage'
   | 'accounting.view' | 'accounting.manage'
   | 'audit.view'
   // Case handlers for the anonymous reporting channel (src/core/confidential-reports.ts).
@@ -42,6 +37,7 @@ export type Permission =
   // Narrow production-pipeline actions, each independently grantable alongside (or
   // instead of) the broad inventory.adjust — see job-orders.routes.ts / production.routes.ts
   // requireAnyPermission(['inventory.adjust', 'production.xxx']) call sites.
+  | 'production.view'       // see the production screens (job orders, QC, batches, BOM) — split from inventory.view
   | 'production.approve'    // production manager: approve a draft job order for release
   | 'production.pause'      // pause / resume a running job order (e.g. for a higher-priority one)
   | 'production.repairs'    // warehouse: accept/reject a rework parts request

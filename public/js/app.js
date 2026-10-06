@@ -71,7 +71,7 @@ const App = (() => {
     appScreen().classList.remove('hidden');
 
     document.getElementById('me-name').textContent = me.full_name;
-    document.getElementById('me-role').textContent = me.role;
+    document.getElementById('me-role').textContent = me.role_label || me.role;
     document.getElementById('me-dept').textContent = me.department_name || 'No dept';
     document.getElementById('me-avatar').textContent = UI.initials(me.full_name);
 
@@ -188,13 +188,14 @@ const App = (() => {
 
   /* ---------- Nav-config helpers ---------- */
 
-  /** Visible primaries — filtered by adminOnly (legacy), requiredPermission, requiredModule. */
+  /** Visible primaries — filtered by adminOnly (legacy), requiredPermission, requiredModule, and
+      dropped when none of their subtabs is visible (e.g. Inventory for an HR-only account). */
   function visiblePrimaries() {
     return NAV.filter((p) => {
       if (p.adminOnly && !isAdmin()) return false;
       if (p.requiredPermission && !hasPermission(p.requiredPermission)) return false;
       if (p.requiredModule && !hasModule(p.requiredModule)) return false;
-      return true;
+      return visibleSubtabs(p).length > 0;
     });
   }
 

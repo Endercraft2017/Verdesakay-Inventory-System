@@ -10,6 +10,10 @@
        subtab  { id, label, requiredPermission?, requiredModule?, tree[] }
          leaf    { label, icon, route, filter? }
 
+   `requiredPermission` hides it from accounts without that permission (match the permission the
+   screen's own GET endpoint checks — UI hiding never replaces the server check); a primary whose
+   subtabs are all hidden is hidden too. The Access editor lists these as the screens each
+   permission opens (public/js/lib/access-editor.js).
    `requiredModule` hides the primary/subtab when the tenant's SaaS plan / entitlements
    don't include that feature module (see src/modules.ts; App.hasModule in app.js).
    Self-hosted / single-tenant has every module, so nothing is hidden there.
@@ -39,14 +43,14 @@ const NAV = [
     id: 'inventory', label: 'Inventory', icon: 'inventory', requiredModule: 'inventory',
     subtabs: [
       {
-        id: 'items', label: 'Items',
+        id: 'items', label: 'Items', requiredPermission: 'inventory.view',
         tree: [
           { label: 'All Items', icon: 'inventory', route: 'inventory' },
           { label: 'Low Stock', icon: 'alert', route: 'inventory', filter: { low: '1' } },
         ],
       },
       {
-        id: 'movements', label: 'Stock Movements',
+        id: 'movements', label: 'Stock Movements', requiredPermission: 'inventory.view',
         tree: [
           { label: 'All Movements', icon: 'adjust', route: 'inventory-movements' },
           // Offline stock-outs that went below recorded stock (docs/OFFLINE-FIRST.md D1).
@@ -54,7 +58,7 @@ const NAV = [
         ],
       },
       {
-        id: 'suppliers', label: 'Suppliers',
+        id: 'suppliers', label: 'Suppliers', requiredPermission: 'inventory.view',
         tree: [
           { label: 'Suppliers', icon: 'building', route: 'suppliers' },
         ],
@@ -66,17 +70,16 @@ const NAV = [
         ],
       },
       {
-        id: 'locations', label: 'Locations',
+        id: 'locations', label: 'Locations', requiredPermission: 'inventory.view',
         tree: [
           { label: 'Locations', icon: 'building', route: 'locations' },
         ],
       },
       {
-        id: 'orders', label: 'Orders',
+        id: 'orders', label: 'Orders', requiredPermission: 'orders.view',
         tree: [
           { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
           { label: 'Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
-          { label: 'Purchase Orders', icon: 'adjust', route: 'orders', filter: { type: 'purchase' } },
         ],
       },
       {
@@ -89,8 +92,10 @@ const NAV = [
         ],
       },
       {
-        id: 'purchasing', label: 'Purchasing', requiredPermission: 'orders.view', requiredModule: 'purchasing',
+        /* Purchase-to-pay in pipeline order: purchase order -> goods receipt -> vendor bill. */
+        id: 'purchasing', label: 'Purchasing', requiredPermission: 'purchasing.view', requiredModule: 'purchasing',
         tree: [
+          { label: 'Purchase Orders', icon: 'adjust', route: 'orders', filter: { type: 'purchase' } },
           { label: 'Goods Receipts', icon: 'inbox', route: 'purchasing', filter: { tab: 'receipts' } },
           { label: 'Vendor Bills', icon: 'sheet', route: 'purchasing', filter: { tab: 'bills' } },
         ],
@@ -104,7 +109,7 @@ const NAV = [
     ],
   },
   {
-    id: 'production', label: 'Production', icon: 'factory', requiredModule: 'manufacturing',
+    id: 'production', label: 'Production', icon: 'factory', requiredPermission: 'production.view', requiredModule: 'manufacturing',
     /* Subtabs are ordered to match the real build pipeline, not alphabetically or by
        feature-add order: overview (home/summary) -> setup (prerequisite) -> schedule/start ->
        scheduling (supporting, monitoring-only) -> QC -> repair branch -> receive ("Products
@@ -174,7 +179,7 @@ const NAV = [
     id: 'docs', label: 'Documents', icon: 'forms',
     subtabs: [
       {
-        id: 'files', label: 'Files',
+        id: 'files', label: 'Files', requiredPermission: 'forms.view',
         tree: [
           { label: 'All Files', icon: 'folder', route: 'forms' },
         ],
@@ -186,7 +191,7 @@ const NAV = [
         ],
       },
       {
-        id: 'templates', label: 'Templates',
+        id: 'templates', label: 'Templates', requiredPermission: 'templates.view',
         tree: [
           { label: 'Templates', icon: 'file', route: 'templates' },
         ],
@@ -211,7 +216,7 @@ const NAV = [
         ],
       },
       {
-        id: 'payroll', label: 'Payroll',
+        id: 'payroll', label: 'Payroll', requiredPermission: 'payroll.view',
         tree: [
           { label: 'Payroll', icon: 'sheet', route: 'form-records', filter: { slug: 'hr_payroll' } },
         ],
@@ -283,7 +288,7 @@ const NAV = [
     ],
   },
   {
-    id: 'messages', label: 'Messages', icon: 'messages',
+    id: 'messages', label: 'Messages', icon: 'messages', requiredPermission: 'messages.view',
     subtabs: [
       {
         id: 'chat', label: 'Messages',
@@ -300,6 +305,7 @@ const NAV = [
         id: 'accounts', label: 'Accounts',
         tree: [
           { label: 'User Accounts', icon: 'users', route: 'admin' },
+          { label: 'Roles', icon: 'key', route: 'admin', filter: { tab: 'roles' } },
           { label: 'Departments', icon: 'building', route: 'admin', filter: { tab: 'departments' } },
         ],
       },

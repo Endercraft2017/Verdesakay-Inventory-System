@@ -23,7 +23,7 @@ window.MApp = (function () {
   // manufacturing/production.js's own per-row permission filtering).
   function hasProductionAccess() {
     return isWarehouse() && !!(me && Array.isArray(me.permissions) &&
-      me.permissions.some(function (p) { return p === 'inventory.adjust' || p.indexOf('production.') === 0; }));
+      me.permissions.some(function (p) { return p === 'inventory.adjust' || (p.indexOf('production.') === 0 && p !== 'production.view'); }));
   }
   function canApprove() { return !!(me && me.can_approve); }
 
@@ -123,7 +123,7 @@ window.MApp = (function () {
     });
 
     // context line
-    var role = me && me.role ? me.role.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : '';
+    var role = me && me.role_label ? me.role_label : me && me.role ? me.role.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : '';
     document.getElementById('m-ctx-role').textContent = role || (isWarehouse() ? 'Warehouse' : 'Employee');
     document.getElementById('m-ctx-place').textContent = (me && me.department_name) || 'Main';
     setOnline(navigator.onLine);
@@ -171,7 +171,10 @@ window.MApp = (function () {
     if (pw) pw.value = '';
   }
 
-  function hasAccess() { return can('inventory.mobile') || !!(me && me.employee); }
+  // mobile.access is in every role by default (src/shared/permissions.ts BASELINE), so a new
+  // account can sign in here straight away. The phone warehouse tools and an employee link (Clock
+  // is universal) also let a person in, as they did before mobile.access existed.
+  function hasAccess() { return can('mobile.access') || can('inventory.mobile') || !!(me && me.employee); }
 
   function showBlocked() {
     appScreen().classList.remove('hidden');
@@ -184,8 +187,8 @@ window.MApp = (function () {
       '<div class="m-blocked">' +
       '<div class="m-blocked-icon">&#128683;</div>' +
       '<h2>Nothing here for you yet</h2>' +
-      '<p>This account has no mobile features. Ask an administrator for the ' +
-      '<b>inventory.mobile</b> permission, or ask HR to link your account to your employee record.</p>' +
+      '<p>This account isn\'t set up for the phone app. Ask an administrator to turn on ' +
+      '<b>Use the phone app</b> for your role or account, or ask HR to link your account to your employee record.</p>' +
       '<button class="m-btn m-btn-secondary" id="m-blocked-out">Sign out</button></div>';
     document.getElementById('m-blocked-out').onclick = signOut;
   }

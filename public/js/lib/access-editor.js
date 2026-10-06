@@ -1,225 +1,394 @@
-/* Shared account-access editor: the role labels, permission catalog grouping and the
-   "Customize permissions" drawer, used by Admin > Accounts (users.manage, edits everything)
-   and HR > Employees (hr.manage, edits only what GET /users/permissions/catalog reports as
-   grantable for staff-role accounts — the server enforces the same limit on save). */
-window.AccessEditor = (() => {
-  const ROLE_LABELS = {
-    admin: 'Administrator',
-    admin_staff: 'Admin Staff',
-    accounting: 'Accounting',
-    warehouse: 'Warehouse',
-    releasing: 'Releasing',
-    csr: 'Customer Service',
-    hr: 'HR',
-    marketing: 'Marketing',
-    // Narrow, single-task shop-floor roles (mobile-first) — each holds only the one
-    // production permission its person needs, not the broad Warehouse role's full
-    // inventory.adjust. See src/shared/permissions.ts ROLE_DEFAULTS.
-    parts_clerk: 'Parts Clerk (accepts repair parts requests)',
-    production_lead: 'Production Lead (records units off the line)',
-    production_manager: 'Production Manager (lead + pause / resume / close early + QA holds)',
-    qc_inspector: 'QC Inspector (first-pass inspection)',
-    qa_inspector: 'QA Inspector (final-pass inspection)',
-    receiving_clerk: 'Products In Clerk (receives passed units)',
-    releasing_clerk: 'Releasing Clerk (scans SOs out)',
-  };
+/* Shared account-access UI: the permission catalog (labels, grouping, which screens each one
+   opens), the permission picker, the per-account "Access" drawer and the role editor drawer.
+   Used by Admin > Accounts / Roles (users.manage, edits everything) and HR > Employees
+   (hr.manage, edits only what GET /users/permissions/catalog reports as grantable on staff-role
+   accounts — the server enforces the same limit on save).
 
-  // Grouping/labels are a frontend-only presentation concern. The actual permission keys and
-  // per-role defaults are NOT duplicated here — they're fetched from GET /users/permissions/catalog
-  // (backed by src/permissions.ts) so this view can never drift from the backend's role defaults
-  // the way its old hand-copied ROLE_DEFAULTS did (it was missing the hr.view/hr.manage permissions
-  // entirely, so admins couldn't grant/revoke them here even though HR accounts had them).
-  //
-  // Each entry carries an explicit label rather than deriving one from the key (e.g. stripping
-  // the group prefix off "messages.send" and "mail.send" both land on "send" — indistinguishable
-  // checkboxes with the same caption right next to each other).
+   A role is a named bundle of permissions (src/shared/roles.ts). An account gets its role's
+   bundle; the Access drawer then adds or removes single permissions for that one person. */
+window.AccessEditor = (() => {
+  // Role key -> label. Filled from the catalog (roles are workspace data, GET /roles); kept as one
+  // live object because other screens read AccessEditor.ROLE_LABELS directly.
+  const ROLE_LABELS = {};
+  function roleLabel(key) { return ROLE_LABELS[key] || humanize(key); }
+
+  // Grouping/labels are presentation only — the permission keys themselves come from the
+  // catalog endpoint, so this list can't drift from the backend. Groups follow the work's own
+  // order (phone + basics, then stock -> orders -> production -> delivery, then office areas).
+  // `where` names screens a permission opens that the desktop menu can't tell us (phone app,
+  // buttons inside a screen); desktop menu entries are added from nav-config.js automatically.
   const PERMISSION_GROUPS = [
-    { label: 'Inventory', items: [
-      { key: 'inventory.view', label: 'View', desc: 'See inventory items and stock levels' },
-      { key: 'inventory.create', label: 'Create', desc: 'Add new inventory items' },
-      { key: 'inventory.edit', label: 'Edit', desc: 'Edit existing inventory items' },
-      { key: 'inventory.delete', label: 'Delete', desc: 'Delete inventory items' },
-      { key: 'inventory.adjust', label: 'Adjust stock', desc: 'Receive, consume, or correct stock quantities' },
-      { key: 'inventory.configure', label: 'Configure', desc: 'Change inventory settings — units, categories, locations' },
-      { key: 'inventory.mobile', label: 'Mobile app access', desc: 'Use the mobile warehouse app' },
-    ] },
-    { label: 'Quality Control', items: [
-      { key: 'qc.configure', label: 'Configure QC checklists', desc: 'Set up QC checklists and inspection criteria' },
-    ] },
-    { label: 'Production', items: [
-      { key: 'production.approve', label: 'Approve job orders', desc: 'Sign off a draft job order so the warehouse can release its parts' },
-      { key: 'production.pause', label: 'Pause / resume job orders', desc: 'Hold a running job order (e.g. for a higher-priority one) and continue it later' },
-      { key: 'production.manage', label: 'Manage the line', desc: 'Pause, resume and close job orders early — each with a recorded reason' },
-      { key: 'production.repairs', label: 'Accept/reject parts requests', desc: 'Warehouse: issue or decline parts a rework unit needs' },
-      { key: 'production.record', label: 'Record production', desc: 'Add finished units/batches off the line' },
-      { key: 'production.inspect_qc', label: 'Inspect units (QC, first pass)', desc: 'Pass/fail units and batches on the first inspection pass, request repair parts' },
-      { key: 'production.inspect_qa', label: 'Inspect units (QA, final pass)', desc: 'Pass/fail units and batches on the final inspection pass, request repair parts' },
-      { key: 'production.qa_review', label: 'Decide QA holds', desc: 'Release a unit QA held for review: pass it, send it to rectification or fail it (QA inspectors can too)' },
-      { key: 'production.receive', label: 'Products In', desc: 'Receive QC/QA-passed output into stock' },
-    ] },
-    { label: 'Orders', items: [
-      { key: 'orders.view', label: 'View', desc: 'See sales and purchase orders' },
-      { key: 'orders.create', label: 'Create', desc: 'Create new orders' },
-      { key: 'orders.edit', label: 'Edit', desc: 'Edit existing orders' },
-      { key: 'orders.delete', label: 'Delete', desc: 'Delete orders' },
-      { key: 'orders.release', label: 'Release sale orders', desc: 'Scan/enter goods out against an approved sale order' },
-    ] },
-    { label: 'Files', items: [
-      { key: 'forms.view', label: 'View', desc: 'See uploaded files and documents' },
-      { key: 'forms.upload', label: 'Upload', desc: 'Upload new files' },
-      { key: 'forms.delete', label: 'Delete', desc: 'Delete uploaded files' },
-    ] },
-    { label: 'Form Builder', items: [
-      { key: 'forms.manage.hr', label: 'HR forms', desc: 'Build and edit HR form templates' },
-      { key: 'forms.manage.inventory', label: 'Inventory forms', desc: 'Build and edit inventory form templates' },
-      { key: 'forms.manage.admin', label: 'Admin forms', desc: 'Build and edit admin form templates' },
-      { key: 'forms.manage.accounting', label: 'Accounting forms', desc: 'Build and edit accounting form templates' },
-    ] },
-    { label: 'Messages & Email', items: [
-      { key: 'messages.view', label: 'View messages', desc: 'Read in-app messages' },
+    { id: 'basics', label: 'Phone app & basics', items: [
+      { key: 'mobile.access', label: 'Use the phone app', desc: 'Sign in at /m — Home, Clock, Inbox, payslips, requests, schedule and Profile', where: ['Phone: Home, Clock, Inbox, Profile'] },
+      { key: 'messages.view', label: 'Read messages', desc: 'Read in-app chat', where: ['Phone: Inbox'] },
       { key: 'messages.send', label: 'Send messages', desc: 'Send in-app messages to other staff' },
-      { key: 'mail.send', label: 'Send email (SMTP)', desc: "Send external email through the company's mailbox" },
     ] },
-    { label: 'Templates', items: [
-      { key: 'templates.view', label: 'View', desc: 'See document templates' },
-      { key: 'templates.edit', label: 'Edit', desc: 'Edit document templates' },
-      { key: 'templates.company', label: 'Company templates', desc: 'Edit shared, company-wide templates' },
+    { id: 'inventory', label: 'Inventory', items: [
+      { key: 'inventory.view', label: 'See inventory', desc: 'Items, stock levels, movements, suppliers, locations' },
+      { key: 'inventory.create', label: 'Add items', desc: 'Create new inventory items' },
+      { key: 'inventory.edit', label: 'Edit items', desc: 'Change existing inventory items' },
+      { key: 'inventory.delete', label: 'Delete items', desc: 'Remove inventory items' },
+      { key: 'inventory.adjust', label: 'Move stock', desc: 'Receive, consume, transfer or correct stock — also every production step (with See production)' },
+      { key: 'inventory.configure', label: 'Inventory settings', desc: 'Units, categories, locations setup' },
+      { key: 'inventory.mobile', label: 'Phone warehouse tools', desc: 'The Work tab: scan, stock moves, counts, picking', where: ['Phone: Work tab, Scan'] },
     ] },
-    { label: 'HR', items: [
-      { key: 'hr.view', label: 'View', desc: 'See HR records — employees, timekeeping, payroll' },
-      { key: 'hr.manage', label: 'Manage', desc: 'Manage HR records and run payroll' },
+    { id: 'orders', label: 'Orders & releasing', items: [
+      { key: 'orders.view', label: 'See orders', desc: 'Sale and job orders, customers, releasing' },
+      { key: 'orders.create', label: 'Create orders', desc: 'Raise new sale and job orders' },
+      { key: 'orders.edit', label: 'Edit orders', desc: 'Change and approve sale and job orders' },
+      { key: 'orders.delete', label: 'Delete orders', desc: 'Remove sale and job orders' },
+      { key: 'orders.release', label: 'Release sale orders', desc: 'Scan or enter goods out against an approved sale order', where: ['Phone: Release SOs'] },
     ] },
-    { label: 'Accounting', items: [
-      { key: 'accounting.view', label: 'View', desc: 'See accounting records — AP/AR, tax filings' },
-      { key: 'accounting.manage', label: 'Manage', desc: 'Manage accounting records and post transactions' },
+    { id: 'purchasing', label: 'Purchasing', items: [
+      { key: 'purchasing.view', label: 'See purchasing', desc: 'Purchase orders, goods receipts, vendor bills', where: ['Phone: Receive PR'] },
+      { key: 'purchasing.manage', label: 'Run purchasing', desc: 'Create and change purchase orders (incl. reorder / shortfall POs); raise, approve and dispute vendor bills' },
     ] },
-    { label: 'Admin', items: [
-      { key: 'users.manage', label: 'Manage users & permissions', desc: 'Create/edit staff accounts and set their permissions' },
-      { key: 'audit.view', label: 'View activity log', desc: 'View the app-wide activity/audit log' },
-      { key: 'reports.confidential', label: 'Handle anonymous reports', desc: 'Read, reply to and close reports filed through the anonymous channel' },
+    { id: 'production', label: 'Production', items: [
+      { key: 'production.view', label: 'See production', desc: 'Job orders, QC, batches, schedule, teams, products & BOM — read only' },
+      { key: 'production.approve', label: 'Approve job orders', desc: 'Sign off a draft job order so the warehouse can release its parts' },
+      { key: 'production.record', label: 'Record production', desc: 'Add finished units and batches off the line', where: ['Phone: Record output'] },
+      { key: 'production.pause', label: 'Pause / resume job orders', desc: 'Hold a running job order and continue it later' },
+      { key: 'production.manage', label: 'Manage the line', desc: 'Pause, resume and close job orders early — each with a reason' },
+      { key: 'production.repairs', label: 'Parts requests', desc: 'Issue or decline parts a rework unit needs', where: ['Phone: Repairs'] },
+      { key: 'production.inspect_qc', label: 'QC inspection (first pass)', desc: 'Pass / fail units on the technical check', where: ['Phone: QC desk'] },
+      { key: 'production.inspect_qa', label: 'QA inspection (final pass)', desc: 'Pass / fail units on the final appearance check', where: ['Phone: QA desk'] },
+      { key: 'production.qa_review', label: 'Decide QA holds', desc: 'Pass, rectify or fail a unit QA put on hold' },
+      { key: 'production.receive', label: 'Products In', desc: 'Receive inspected output into stock', where: ['Phone: Products In'] },
+      { key: 'qc.configure', label: 'Set up QC checklists', desc: 'Inspection checklists and criteria' },
     ] },
-    { label: 'Announcements', items: [
-      { key: 'announce', label: 'Post announcements', desc: 'Post company-wide announcements' },
+    { id: 'delivery', label: 'Deliveries', items: [
+      { key: 'delivery.run', label: 'Run deliveries', desc: 'Mark deliveries picked up or completed', where: ['Phone: Deliveries'] },
+      { key: 'delivery.manage', label: 'Schedule deliveries', desc: 'Plan and manage deliveries' },
     ] },
-    { label: 'Deliveries', items: [
-      { key: 'delivery.run', label: 'Run deliveries', desc: 'Mark deliveries as picked up or completed' },
-      { key: 'delivery.manage', label: 'Manage deliveries', desc: 'Schedule and manage deliveries' },
+    { id: 'docs', label: 'Files, templates & forms', items: [
+      { key: 'forms.view', label: 'See files', desc: 'Uploaded files and documents' },
+      { key: 'forms.upload', label: 'Upload files', desc: 'Add new files' },
+      { key: 'forms.delete', label: 'Delete files', desc: 'Remove uploaded files' },
+      { key: 'templates.view', label: 'See templates', desc: 'Document templates' },
+      { key: 'templates.edit', label: 'Edit own templates', desc: 'Create and change personal templates' },
+      { key: 'templates.company', label: 'Edit company templates', desc: 'Shared, company-wide templates' },
+      { key: 'forms.manage.inventory', label: 'Build inventory forms', desc: 'Form Builder for the Inventory section' },
+      { key: 'forms.manage.hr', label: 'Build HR forms', desc: 'Form Builder for the HR section (memos, notices)' },
+      { key: 'forms.manage.accounting', label: 'Build accounting forms', desc: 'Form Builder for the Accounting section' },
+      { key: 'forms.manage.admin', label: 'Build admin forms', desc: 'Form Builder for the Admin section' },
+    ] },
+    { id: 'comms', label: 'Announcements & email', items: [
+      { key: 'announce', label: 'Post announcements', desc: 'Company-wide announcements', where: ['Phone: Announcements'] },
+      { key: 'mail.send', label: 'Send email', desc: "External email through the company's mailbox" },
+    ] },
+    { id: 'hr', label: 'HR & payroll', items: [
+      { key: 'hr.view', label: 'See HR records', desc: 'Employees, timekeeping, daily report, memos — not pay' },
+      { key: 'hr.manage', label: 'Manage HR records', desc: 'Add and edit employees, cutoffs and timekeeping; approve requests', where: ['Phone: Approvals'] },
+      { key: 'payroll.view', label: 'See pay', desc: 'Rates on the employee record, payslips, 13th month, final pay' },
+      { key: 'payroll.manage', label: 'Run payroll', desc: 'Change rates and pay settings; generate, post, mark paid and email payslips' },
+      { key: 'reports.confidential', label: 'Handle anonymous reports', desc: 'Read, reply to and close anonymous-channel reports' },
+    ] },
+    { id: 'accounting', label: 'Accounting', items: [
+      { key: 'accounting.view', label: 'See the books', desc: 'Ledger, AR/AP, tax filings, petty cash' },
+      { key: 'accounting.manage', label: 'Post to the books', desc: 'Record and post accounting transactions' },
+    ] },
+    { id: 'admin', label: 'Administration', items: [
+      { key: 'users.manage', label: 'Manage accounts & roles', desc: 'Create accounts, edit roles and anyone\'s access, Installed PCs' },
+      { key: 'audit.view', label: 'Activity log', desc: 'The app-wide audit trail' },
     ] },
   ];
 
-  // Fallback label/tooltip for a permission key with no explicit entry above (e.g. a newly
-  // added backend permission this list hasn't been updated for yet) — never blank, never
-  // collides with a sibling that happens to share its last segment.
-  function humanizePermKey(key) {
-    const words = key.split('.').join(' ').replace(/_/g, ' ');
+  function humanize(key) {
+    const words = String(key || '').split('.').join(' ').replace(/_/g, ' ');
     return words.charAt(0).toUpperCase() + words.slice(1);
   }
 
+  /** Desktop menu entries each permission opens, read from nav-config.js (window.NAV) so the
+      hint follows the real menu: "Inventory › Customers", "HR" … */
+  function desktopScreens() {
+    const out = {};
+    const add = (k, label) => { (out[k] = out[k] || []).includes(label) || out[k].push(label); };
+    (window.NAV || []).forEach((p) => {
+      if (p.requiredPermission) add(p.requiredPermission, p.label);
+      (p.subtabs || []).forEach((s) => {
+        if (s.requiredPermission && s.requiredPermission !== p.requiredPermission) add(s.requiredPermission, `${p.label} › ${s.label}`);
+      });
+    });
+    return out;
+  }
+
   let permCatalog = null;
-  async function getCatalog() {
-    if (permCatalog) return permCatalog;
+  /** GET /users/permissions/catalog, plus `groups` (with "where" hints) and the role label map.
+      `fresh` re-reads it — after a role was added or edited. */
+  async function getCatalog(fresh) {
+    if (permCatalog && !fresh) return permCatalog;
     permCatalog = await API.get('/users/permissions/catalog');
-    // Any backend permission key not covered by a group above still needs to be editable —
-    // surface it under "Other" rather than silently dropping it from the UI.
+    for (const k of Object.keys(ROLE_LABELS)) delete ROLE_LABELS[k];
+    (permCatalog.roles || []).forEach((r) => { ROLE_LABELS[r.key] = r.label; });
+    const screens = desktopScreens();
     const known = new Set(PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key)));
     const extra = (permCatalog.permissions || []).filter((p) => !known.has(p));
-    permCatalog.groups = extra.length
-      ? [...PERMISSION_GROUPS, { label: 'Other', items: extra.map((k) => ({ key: k, label: humanizePermKey(k), desc: `Permission key: ${k}` })) }]
+    const groups = extra.length
+      ? [...PERMISSION_GROUPS, { id: 'other', label: 'Other', items: extra.map((k) => ({ key: k, label: humanize(k), desc: `Permission key: ${k}` })) }]
       : PERMISSION_GROUPS;
+    const live = new Set(permCatalog.permissions || []);
+    permCatalog.groups = groups.map((g) => ({
+      ...g,
+      items: g.items.filter((i) => live.has(i.key)).map((i) => ({ ...i, where: [...(screens[i.key] || []), ...(i.where || [])] })),
+    })).filter((g) => g.items.length);
     return permCatalog;
   }
 
-  /** Open the permissions drawer for an account. `u` needs id, full_name, role and
-      permission_overrides (JSON string) — or pass just an id and it's fetched from
-      GET /users/:id/access. `onSaved(overridesJson)` runs after a successful save. */
-  async function open(u, { onSaved } = {}) {
-    if (typeof u !== 'object') u = await API.get(`/users/${u}/access`);
-    const catalog = await getCatalog();
-    const grantable = new Set(catalog.grantable || catalog.permissions);
-    const allPermissions = catalog.groups.flatMap((g) => g.items.map((i) => i.key));
-    let overrides = {};
-    try { overrides = JSON.parse(u.permission_overrides || '{}'); } catch { /* ignore */ }
-    const roleDefaults = new Set(catalog.roleDefaults[u.role] || []);
-    const roleEditable = !catalog.assignableRoles || catalog.assignableRoles.includes(u.role);
+  function roleOf(catalog, key) { return (catalog.roles || []).find((r) => r.key === key) || null; }
 
-    function effectivePerms() {
-      const result = new Set();
-      for (const p of allPermissions) {
-        const ov = overrides[p];
-        if (ov === true) result.add(p);
-        else if (ov === false) { /* revoked */ }
-        else if (roleDefaults.has(p)) result.add(p);
-      }
-      return result;
+  /* ---------- Permission picker ----------
+     renderPicker(container, {
+       catalog,
+       isOn(key) -> bool,
+       change(key) -> 'added' | 'removed' | null   (account mode: difference from the role)
+       lockReason(key) -> string | null            (shown instead of a usable switch)
+       onToggle(key, on), onReset(key)?
+     }) -> { refresh() }
+     Search, an "On / Changed" filter, per-section "All / None" and live counts. */
+  function renderPicker(container, o) {
+    const ui = { q: '', show: 'all' };
+    const showChanged = typeof o.change === 'function';
+    container.innerHTML = `
+      <div class="pp-toolbar">
+        <div class="search-box pp-search">${UI.icon('search', 15)}<input type="search" data-pp-q placeholder="Find a permission or screen…" /></div>
+        <div class="pp-seg" role="group" aria-label="Show">
+          <button type="button" data-pp-show="all" class="on">All</button>
+          <button type="button" data-pp-show="on">On</button>
+          ${showChanged ? '<button type="button" data-pp-show="changed">Changed</button>' : ''}
+        </div>
+      </div>
+      <div class="pp-summary" data-pp-summary></div>
+      <div class="pp-list" data-pp-list></div>`;
+    const list = container.querySelector('[data-pp-list]');
+    const summary = container.querySelector('[data-pp-summary]');
+
+    function matches(i, g) {
+      if (ui.show === 'on' && !o.isOn(i.key)) return false;
+      if (ui.show === 'changed' && !(showChanged && o.change(i.key))) return false;
+      if (!ui.q) return true;
+      const hay = `${g.label} ${i.label} ${i.desc || ''} ${(i.where || []).join(' ')} ${i.key}`.toLowerCase();
+      return ui.q.split(/\s+/).every((w) => hay.includes(w));
     }
 
-    function renderEditor(container) {
-      const effective = effectivePerms();
-      container.innerHTML = catalog.groups.map((g) => `
-        <div class="perm-group">
-          <div class="perm-group-label">${UI.esc(g.label)}</div>
-          <div class="perm-group-items">
-            ${g.items.map(({ key: k, label, desc }) => {
-              const checked = effective.has(k);
-              const isOverride = k in overrides;
-              const locked = !roleEditable || !grantable.has(k);
-              return `<label class="perm-chip${checked ? ' is-checked' : ''}${locked ? ' is-locked' : ''}" data-tip="${UI.esc(locked ? 'Only an administrator can change this' : (desc || label))}">
-                <input type="checkbox" data-perm="${k}" ${checked ? 'checked' : ''} ${locked ? 'disabled' : ''} />
-                <span>${UI.esc(label)}</span>${isOverride ? ` <span class="perm-override" data-tip="Overridden from role default">${UI.icon('star', 11)}</span>` : ''}
-              </label>`;
-            }).join('')}
+    function row(i) {
+      const on = o.isOn(i.key);
+      const lock = o.lockReason ? o.lockReason(i.key) : null;
+      const ch = showChanged ? o.change(i.key) : null;
+      return `
+        <div class="pp-row${on ? ' is-on' : ''}${lock ? ' is-locked' : ''}${ch ? ' is-' + ch : ''}">
+          <label class="pp-switch" ${lock ? `data-tip="${UI.esc(lock)}"` : ''}>
+            <input type="checkbox" data-pp-key="${UI.esc(i.key)}" ${on ? 'checked' : ''} ${lock ? 'disabled' : ''} aria-label="${UI.esc(i.label)}" />
+            <span class="pp-track"></span>
+          </label>
+          <div class="pp-text">
+            <div class="pp-label">${UI.esc(i.label)}
+              ${ch === 'added' ? '<span class="pp-tag added">Added for this person</span>' : ''}
+              ${ch === 'removed' ? '<span class="pp-tag removed">Removed for this person</span>' : ''}
+              ${lock ? `<span class="pp-tag locked">${UI.esc(lock)}</span>` : ''}
+            </div>
+            ${i.desc ? `<div class="pp-desc">${UI.esc(i.desc)}</div>` : ''}
+            ${i.where && i.where.length ? `<div class="pp-where">${i.where.map((w) => `<span>${UI.esc(w)}</span>`).join('')}</div>` : ''}
           </div>
-        </div>`).join('');
+          ${ch && o.onReset && !lock ? `<button type="button" class="pp-undo" data-pp-reset="${UI.esc(i.key)}" title="Back to the role's setting">Undo</button>` : ''}
+        </div>`;
+    }
 
-      container.querySelectorAll('[data-perm]').forEach((cb) => {
-        cb.addEventListener('change', () => {
-          const key = cb.dataset.perm;
-          const isDefault = roleDefaults.has(key);
-          const checked = cb.checked;
-          if (checked === isDefault) {
-            delete overrides[key]; // back to default, no override needed
-          } else {
-            overrides[key] = checked;
-          }
-          renderEditor(container); // re-render to update ★ markers
-        });
+    function refresh() {
+      const all = o.catalog.groups.flatMap((g) => g.items);
+      const onCount = all.filter((i) => o.isOn(i.key)).length;
+      const changes = showChanged ? all.filter((i) => o.change(i.key)) : [];
+      const added = changes.filter((i) => o.change(i.key) === 'added').length;
+      summary.innerHTML = `<b>${onCount}</b> of ${all.length} on`
+        + (showChanged && changes.length ? ` · <span class="pp-added">${added} added</span> · <span class="pp-removed">${changes.length - added} removed</span> for this person` : '');
+
+      const html = o.catalog.groups.map((g) => {
+        const items = g.items.filter((i) => matches(i, g));
+        if (!items.length) return '';
+        const groupOn = g.items.filter((i) => o.isOn(i.key)).length;
+        const editable = g.items.some((i) => !(o.lockReason && o.lockReason(i.key)));
+        return `
+          <section class="pp-group">
+            <header class="pp-group-head">
+              <span class="pp-group-label">${UI.esc(g.label)}</span>
+              <span class="pp-count${groupOn ? ' some' : ''}">${groupOn}/${g.items.length}</span>
+              <span class="grow"></span>
+              ${editable ? `<button type="button" class="pp-bulk" data-pp-bulk="${g.id}" data-on="1">All</button>
+              <button type="button" class="pp-bulk" data-pp-bulk="${g.id}" data-on="0">None</button>` : ''}
+            </header>
+            ${items.map(row).join('')}
+          </section>`;
+      }).join('');
+      list.innerHTML = html || UI.emptyState({ icon: 'search', title: 'Nothing matches', hint: ui.show === 'all' ? 'Try another word.' : 'Switch the filter back to All.' });
+
+      list.querySelectorAll('[data-pp-key]').forEach((cb) => {
+        cb.onchange = () => { o.onToggle(cb.dataset.ppKey, cb.checked); refresh(); };
+      });
+      list.querySelectorAll('[data-pp-reset]').forEach((b) => {
+        b.onclick = () => { o.onReset(b.dataset.ppReset); refresh(); };
+      });
+      list.querySelectorAll('[data-pp-bulk]').forEach((b) => {
+        b.onclick = () => {
+          const g = o.catalog.groups.find((x) => x.id === b.dataset.ppBulk);
+          g.items.filter((i) => !(o.lockReason && o.lockReason(i.key)))
+            .forEach((i) => o.onToggle(i.key, b.dataset.on === '1'));
+          refresh();
+        };
       });
     }
 
-    const editorId = 'perm-editor-' + u.id;
-    UI.drawer({
-      title: `Permissions — ${u.full_name}`,
-      bodyHTML: `
-        <p class="muted" style="font-size:12px;margin-top:0">
-          Role: <strong>${UI.esc(ROLE_LABELS[u.role] || u.role)}</strong> · ★ = overridden from role default
-          ${roleEditable ? '' : '<br>This account has a management role — only an administrator can change its access.'}
-        </p>
-        <div id="${editorId}"></div>`,
-      footHTML: `
-        <button class="btn secondary" id="perm-reset" ${roleEditable ? '' : 'disabled'}>Reset to defaults</button>
-        <button class="btn" id="perm-save" ${roleEditable ? '' : 'disabled'}>Save permissions</button>`,
-      onOpen: (el) => {
-        renderEditor(el.querySelector(`#${editorId}`));
-        el.querySelector('#perm-reset').onclick = () => {
-          // Only drop overrides this caller may touch; locked ones must stay as they are.
-          for (const k of Object.keys(overrides)) if (grantable.has(k)) delete overrides[k];
-          renderEditor(el.querySelector(`#${editorId}`));
-          UI.toast('Reset to role defaults (not yet saved)');
-        };
-        el.querySelector('#perm-save').onclick = async () => {
-          try {
-            await API.put(`/users/${u.id}/permissions`, { overrides });
-          } catch (e) {
-            UI.toast(e.message, 'error');
-            return;
-          }
-          u.permission_overrides = JSON.stringify(overrides);
-          if (onSaved) onSaved(u.permission_overrides);
-          UI.toast('Permissions saved');
-        };
-      },
+    container.querySelector('[data-pp-q]').addEventListener('input', (e) => { ui.q = e.target.value.trim().toLowerCase(); refresh(); });
+    container.querySelectorAll('[data-pp-show]').forEach((b) => {
+      b.onclick = () => {
+        ui.show = b.dataset.ppShow;
+        container.querySelectorAll('[data-pp-show]').forEach((x) => x.classList.toggle('on', x === b));
+        refresh();
+      };
     });
+    refresh();
+    return { refresh };
   }
 
-  return { ROLE_LABELS, open, getCatalog };
+  /** Open the Access drawer for one account: its role's permissions, plus switches to add or
+      remove single permissions for this person only. `u` needs id, full_name, role and
+      permission_overrides (JSON string) — or pass an id and it's fetched from
+      GET /users/:id/access. `onSaved(overridesJson)` runs after a successful save. */
+  async function open(u, { onSaved } = {}) {
+    if (typeof u !== 'object') u = await API.get(`/users/${u}/access`);
+    const catalog = await getCatalog(true);
+    const grantable = new Set(catalog.grantable || catalog.permissions);
+    let overrides = {};
+    try { overrides = JSON.parse(u.permission_overrides || '{}'); } catch { /* ignore */ }
+    const role = roleOf(catalog, u.role);
+    const fixedAdmin = !!(role && role.fixed);
+    const roleSet = new Set(role ? role.permissions : []);
+    const roleEditable = !fixedAdmin && (!catalog.assignableRoles || catalog.assignableRoles.includes(u.role));
+
+    const isOn = (k) => fixedAdmin || (k in overrides ? overrides[k] === true : roleSet.has(k));
+    const change = (k) => (fixedAdmin || !(k in overrides) ? null : overrides[k] ? 'added' : 'removed');
+    const lockReason = (k) => {
+      if (fixedAdmin) return 'Administrators always have this';
+      if (!roleEditable || !grantable.has(k)) return 'Only an administrator can change this';
+      return null;
+    };
+
+    const d = UI.drawer({
+      title: `Access — ${u.full_name}`,
+      icon: 'key',
+      bodyHTML: `
+        <div class="pp-rolecard">
+          <div><span class="muted">Role</span> <strong>${UI.esc(role ? role.label : roleLabel(u.role))}</strong>
+            <span class="muted">· ${fixedAdmin ? 'every permission' : `${roleSet.size} permissions`}</span></div>
+          <p class="muted">${fixedAdmin
+            ? 'Administrators always have every permission.'
+            : roleEditable
+              ? 'Switches here change <b>this person only</b>. To change everyone with this role, edit the role under Admin › Roles.'
+              : 'This account has a management role — only an administrator can change its access.'}</p>
+        </div>
+        <div data-picker></div>`,
+      footHTML: `
+        <button class="btn secondary" id="perm-reset" ${roleEditable ? '' : 'disabled'}>Match the role</button>
+        <button class="btn" id="perm-save" ${roleEditable ? '' : 'disabled'}>Save access</button>`,
+      onOpen: (el) => el.classList.add('drawer-wide'),
+    });
+    if (!d) return;
+    const el = d.el;
+    const picker = renderPicker(el.querySelector('[data-picker]'), {
+      catalog, isOn, change, lockReason,
+      onToggle: (k, on) => { if (on === roleSet.has(k)) delete overrides[k]; else overrides[k] = on; },
+      onReset: (k) => { delete overrides[k]; },
+    });
+    el.querySelector('#perm-reset').onclick = () => {
+      // Only drop overrides this caller may touch; locked ones stay as they are.
+      for (const k of Object.keys(overrides)) if (grantable.has(k)) delete overrides[k];
+      picker.refresh();
+      UI.toast('Matches the role again (not saved yet)');
+    };
+    el.querySelector('#perm-save').onclick = async () => {
+      try {
+        await API.put(`/users/${u.id}/permissions`, { overrides });
+      } catch (e) {
+        UI.toast(e.message, 'error');
+        return;
+      }
+      u.permission_overrides = JSON.stringify(overrides);
+      if (onSaved) onSaved(u.permission_overrides);
+      UI.toast('Access saved');
+      d.close();
+    };
+  }
+
+  /** Create or edit a role (users.manage). `role` null = new role; `copyFrom` pre-fills a new
+      role from an existing one. `onSaved(role)` runs after save. */
+  async function editRole(role, { copyFrom, onSaved } = {}) {
+    const catalog = await getCatalog(true);
+    const isNew = !role;
+    const src = role || copyFrom;
+    // A brand-new role starts with the phone app and messaging, like every built-in one.
+    const selected = new Set(src ? src.permissions : ['mobile.access', 'messages.view', 'messages.send']);
+    const staff = new Set(catalog.staffPermissions || []);
+    const name = isNew ? (copyFrom ? `${copyFrom.label} (copy)` : '') : role.label;
+
+    const d = UI.drawer({
+      title: isNew ? 'New role' : `Role — ${role.label}`,
+      icon: 'users',
+      bodyHTML: `
+        <div><label>Role name *</label><input data-r="label" maxlength="60" value="${UI.esc(name)}" placeholder="e.g. Line Supervisor" /></div>
+        <div style="margin-top:10px"><label>What this role is for</label><input data-r="description" maxlength="200" value="${UI.esc(src ? src.description || '' : '')}" placeholder="One line people see when picking a role" /></div>
+        <div class="pp-rolecard" data-r-note></div>
+        <div data-picker></div>`,
+      footHTML: `
+        <button class="btn secondary" data-cancel>Cancel</button>
+        <button class="btn" id="role-save">${isNew ? 'Create role' : 'Save role'}</button>`,
+      onOpen: (el) => el.classList.add('drawer-wide'),
+    });
+    if (!d) return;
+    const el = d.el;
+    el.querySelector('[data-cancel]').onclick = d.close;
+    const note = el.querySelector('[data-r-note]');
+    function paintNote() {
+      const hrOk = [...selected].every((k) => staff.has(k));
+      const people = role ? role.user_count : 0;
+      note.innerHTML = `<p class="muted">${people
+        ? `<b>${people}</b> account${people === 1 ? ' has' : 's have'} this role — saving changes their access right away.`
+        : 'Accounts given this role get exactly these permissions. You can still add or remove single permissions per person.'}
+        ${hrOk ? 'HR can assign this role.' : 'Only an administrator can assign it — it includes management permissions.'}</p>`;
+    }
+    paintNote();
+    renderPicker(el.querySelector('[data-picker]'), {
+      catalog,
+      isOn: (k) => selected.has(k),
+      onToggle: (k, on) => { if (on) selected.add(k); else selected.delete(k); paintNote(); },
+    });
+    el.querySelector('#role-save').onclick = async () => {
+      const body = {
+        label: el.querySelector('[data-r="label"]').value.trim(),
+        description: el.querySelector('[data-r="description"]').value.trim(),
+        permissions: [...selected],
+      };
+      if (!body.label) { UI.toast('Give the role a name', 'error'); return; }
+      let saved;
+      try {
+        saved = isNew ? await API.post('/roles', body) : await API.put('/roles/' + encodeURIComponent(role.key), body);
+      } catch (e) { UI.toast(e.message, 'error'); return; }
+      await getCatalog(true);
+      UI.toast(isNew ? 'Role created' : 'Role saved');
+      d.close();
+      if (onSaved) onSaved(saved);
+    };
+  }
+
+  /** One-line summary of what a role covers, by section: "Phone app & basics (3) · Inventory (2)". */
+  function roleSummary(catalog, key) {
+    const r = roleOf(catalog, key);
+    if (!r) return '';
+    if (r.fixed) return 'Every permission';
+    const set = new Set(r.permissions);
+    const parts = catalog.groups.map((g) => {
+      const n = g.items.filter((i) => set.has(i.key)).length;
+      return n ? `${g.label} (${n})` : null;
+    }).filter(Boolean);
+    return parts.length ? parts.join(' · ') : 'No permissions yet';
+  }
+
+  return { ROLE_LABELS, roleLabel, open, editRole, getCatalog, renderPicker, roleSummary, PERMISSION_GROUPS };
 })();

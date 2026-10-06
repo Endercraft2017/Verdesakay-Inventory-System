@@ -10,6 +10,7 @@
 import { queryAll, queryOne } from '../../shared/db';
 import type { CerebrasTool, ToolResult } from './ai-tools';
 import type { AuthUser, FormScope, Permission, FieldDef, FormAction } from '../../shared/types';
+import { PAYROLL_FORM_SLUG } from '../payroll/pay-access';
 
 type HrFormToolName =
   | 'list_form_types'
@@ -23,6 +24,12 @@ function canManageScope(user: AuthUser, scope: FormScope | null): boolean {
   return scope
     ? user.permissions.includes(`forms.manage.${scope}` as Permission)
     : SCOPES.every((s) => user.permissions.includes(`forms.manage.${s}` as Permission));
+}
+
+/** Reading a form's records: payslips (hr_payroll) take payroll.view — pay is its own permission
+    (modules/payroll/pay-access.ts); every other form its section's forms.manage.<scope>. */
+function canReadRecords(user: AuthUser, form: { scope: FormScope | null; slug: string }): boolean {
+  return form.slug === PAYROLL_FORM_SLUG ? user.permissions.includes('payroll.view') : canManageScope(user, form.scope);
 }
 
 /** Any of the read tools need at least hr.view or one forms.manage.* scope. */
@@ -157,7 +164,7 @@ export function executeHrFormTool(name: string, args: unknown, user: AuthUser): 
           `SELECT id, name, slug, scope, fields, actions FROM form_definitions
            ${slug ? 'WHERE slug = ?' : scope ? 'WHERE scope = ?' : ''}`,
           ...(slug ? [slug] : scope ? [scope] : []))
-          .filter((d) => canManageScope(user, d.scope));
+          .filter((d) => canReadRecords(user, d));
         if (!defs.length) return { success: false, error: 'No matching form you can access.' };
 
         const status = typeof a.status === 'string' ? a.status.trim() : '';
@@ -190,7 +197,7 @@ export function executeHrFormTool(name: string, args: unknown, user: AuthUser): 
            FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
            WHERE fr.id = ?`, Number(a.id));
         if (!row) return { success: false, error: 'Record not found.' };
-        if (!canManageScope(user, row.scope)) return { success: false, error: 'Permission denied.' };
+        if (!canReadRecords(user, row)) return { success: false, error: 'Permission denied.' };
         return {
           success: true,
           data: { id: row.id, number: row.number, status: row.status, created_at: row.created_at, form: row.name, slug: row.slug, data: parse<Record<string, unknown>>(row.data, {}) },

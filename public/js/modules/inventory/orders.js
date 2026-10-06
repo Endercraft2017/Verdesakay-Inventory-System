@@ -7,7 +7,10 @@ App.register('orders', async (view, filter) => {
   const qbDoc = type === 'purchase' ? 'Bill' : 'Invoice';
   let qb = { connected: false };
   try { qb = await API.get('/quickbooks/status'); } catch { /* not configured */ }
-  const canQbPush = qb.connected && App.hasPermission('orders.edit');
+  // Purchase orders are purchasing's (purchasing.manage), sale / job orders the orders module's —
+  // the server checks the same per order (src/modules/inventory/order-access.ts).
+  const canWrite = (action) => App.hasPermission(type === 'purchase' ? 'purchasing.manage' : 'orders.' + action);
+  const canQbPush = qb.connected && canWrite('edit');
 
   let suppliers = [];
   if (type === 'purchase') { try { suppliers = await API.get('/suppliers'); } catch { /* optional */ } }
@@ -31,7 +34,7 @@ App.register('orders', async (view, filter) => {
       <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" placeholder="Search number, customer…" /></div>
       ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show only approved/released orders with an unfulfilled line">${UI.icon('alert', 15)} Backorders</button>` : ''}
       ${App.hasPermission('users.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
-      <button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>
+      ${canWrite('create') ? `<button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>` : ''}
     </div>
     <div class="panel"><div id="ord-table"></div></div>`;
 
@@ -92,7 +95,7 @@ App.register('orders', async (view, filter) => {
               ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
               <button class="icon-btn" title="Edit" data-edit="${o.id}">${UI.icon('edit')}</button>
-              <button class="icon-btn danger" title="Delete" data-del="${o.id}">${UI.icon('trash')}</button>
+              ${canWrite('delete') ? `<button class="icon-btn danger" title="Delete" data-del="${o.id}">${UI.icon('trash')}</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
@@ -736,7 +739,8 @@ App.register('orders', async (view, filter) => {
     state.q = e.target.value.trim();
     searchTimer = setTimeout(load, 250);
   });
-  view.querySelector('#ord-new').addEventListener('click', () => orderModal(null));
+  const newBtn = view.querySelector('#ord-new'); // hidden without create permission for this type
+  if (newBtn) newBtn.addEventListener('click', () => orderModal(null));
 
   await load();
   // filter.id deep-links straight into one order's edit modal (used by the AI assistant's
