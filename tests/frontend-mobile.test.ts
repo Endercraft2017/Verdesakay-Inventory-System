@@ -197,8 +197,16 @@ describe('mobile bootstrap', () => {
   it('a screen the role does not permit says so up front, whatever link or address opened it', async () => {
     const WAREHOUSE = ['allocate', 'batch', 'cycle-count', 'damage', 'receive', 'pick', 'stock-move', 'transfer',
       'assign-qr', 'new-item', 'item', 'location', 'low-stock'];
+    // The shell's background reads (inbox badge, Home summary) answered so neither rejects unhandled;
+    // anything else a permitted screen asks for fails like a missing record, which screens handle.
+    // (/api/auth/me stays unanswered: the shell catches that and keeps the cached account.)
+    // The warehouse screens a permitted account opens load their lists (low stock, locations, orders): empty.
+    const quiet = (url: string) => url === '/api/auth/me' ? undefined
+      : url === '/api/messages/unread-count' ? { count: 0 } : url === '/api/me/today' ? {}
+      : /^\/api\/(inventory|locations|orders)(\?|$)/.test(url) ? []
+      : { __status: 404, body: { error: 'Not found' } };
     const qc = await bootAs({ id: 4, username: 'qc8', full_name: 'QC Desk', role: 'qc_inspector', employee: true, modules: null,
-      permissions: ['mobile.access', 'inventory.mobile', 'production.inspect_qc', 'messages.view', 'messages.send'] });
+      permissions: ['mobile.access', 'inventory.mobile', 'production.inspect_qc', 'messages.view', 'messages.send'] }, quiet);
     const blocked = (win: Record<string, any>, route: string) => {
       win.location.hash = '#/' + route;
       win.MApp.render();
@@ -207,18 +215,21 @@ describe('mobile bootstrap', () => {
     expect(WAREHOUSE.filter((r) => !blocked(qc, r))).toEqual([]);
     expect(blocked(qc, 'record')).toBe(false); // a desk that handles the unit may open its record
     const wh = await bootAs({ id: 5, username: 'wh8', full_name: 'Warehouse', role: 'warehouse', employee: true, modules: null,
-      permissions: ['mobile.access', 'inventory.mobile', 'inventory.view', 'inventory.create', 'inventory.adjust', 'messages.view', 'messages.send'] });
+      permissions: ['mobile.access', 'inventory.mobile', 'inventory.view', 'inventory.create', 'inventory.adjust', 'messages.view', 'messages.send'] }, quiet);
     expect(WAREHOUSE.filter((r) => blocked(wh, r))).toEqual([]);
   });
 
   it('a desk-only account counts its Work tiles from its own queue, never the job-order list', async () => {
     const asked: string[] = [];
-    const win = await bootAs({
-      id: 3, username: 'qc9', full_name: 'QC Only', role: 'desk_qc', employee: true, modules: null,
-      permissions: ['mobile.access', 'production.inspect_qc', 'messages.view', 'messages.send'],
-    }, (url: string) => {
+    const ME = { id: 3, username: 'qc9', full_name: 'QC Only', role: 'desk_qc', employee: true, modules: null,
+      permissions: ['mobile.access', 'production.inspect_qc', 'messages.view', 'messages.send'] };
+    const win = await bootAs(ME, (url: string) => {
       asked.push(url);
       if (url.startsWith('/api/qc/queue')) return { role: 'qc', units: [{ id: 1 }, { id: 2 }], completed: [] };
+      // The shell's own background reads (inbox badge, Home summary) — answered so neither rejects
+      // unhandled. (/api/auth/me is left unanswered: the shell catches that and keeps the cached account.)
+      if (url === '/api/messages/unread-count') return { count: 0 };
+      if (url === '/api/me/today') return {};
       return undefined;
     });
     win.location.hash = '#/work';
