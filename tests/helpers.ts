@@ -16,6 +16,9 @@ export interface TestContext {
   app: Express;
   api: supertest.Agent;
   tmpDir: string;
+  /** Closes this test file's database handles so cleanup() can delete tmpDir (Windows refuses to
+      delete an open SQLite file, which used to leave every %TEMP%ds-test-* folder behind). */
+  closeDb?: () => void;
 }
 
 export async function setupApp(): Promise<TestContext> {
@@ -36,12 +39,14 @@ export async function setupApp(): Promise<TestContext> {
   platform._resetPlatformDb(); // drop any cached handle from a previous test file
   const { createApp } = await import('../src/app');
   const app = createApp();
-  return { app, api: supertest(app), tmpDir };
+  const closeDb = () => { db.closeAllConnections(); platform._resetPlatformDb(); };
+  return { app, api: supertest(app), tmpDir, closeDb };
 }
 
 export function cleanup(ctx: TestContext): void {
+  try { ctx.closeDb?.(); } catch { /* best effort */ }
   try {
-    fs.rmSync(ctx.tmpDir, { recursive: true, force: true });
+    fs.rmSync(ctx.tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   } catch {
     /* best effort */
   }

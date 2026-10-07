@@ -293,6 +293,16 @@ export function run(sql: string, ...params: unknown[]) {
   return db.prepare(sql).run(...(params as Param[]));
 }
 
+/** Close every open tenant connection and forget it (a later call reopens on demand). For the
+    test harness: Windows can't delete a database file that's still open, so tests/helpers.ts
+    cleanup() closes first — otherwise each test file leaves its %TEMP%\vds-test-* folder behind. */
+export function closeAllConnections(): void {
+  for (const conn of registry.values()) {
+    try { conn.close(); } catch { /* already closed */ }
+  }
+  registry.clear();
+}
+
 /** Open (if needed) + migrate the default tenant's database. Safe to call repeatedly. */
 export function init(): void {
   getDb(DEFAULT_TENANT);
