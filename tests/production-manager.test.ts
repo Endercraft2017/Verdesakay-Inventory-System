@@ -40,8 +40,9 @@ describe('production_manager role', () => {
   it('carries lead + line-decision permissions but not inventory.adjust, and HR may assign it', async () => {
     const { roleDefaults, HR_ASSIGNABLE_ROLES, HR_GRANTABLE_PERMISSIONS } = await import('../src/shared/permissions');
     const perms = roleDefaults('production_manager');
-    expect(perms).toEqual(expect.arrayContaining(['production.record', 'production.pause', 'production.manage', 'inventory.mobile']));
+    expect(perms).toEqual(expect.arrayContaining(['production.record', 'production.pause', 'production.manage', 'mobile.access']));
     expect(perms).not.toContain('inventory.adjust');
+    expect(perms).not.toContain('inventory.mobile'); // floor desks: no warehouse phone tools (2026-10-06)
     expect(HR_ASSIGNABLE_ROLES).toContain('production_manager');
     expect(HR_GRANTABLE_PERMISSIONS).toContain('production.manage');
   });

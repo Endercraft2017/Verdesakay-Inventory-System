@@ -135,6 +135,28 @@ describe('mobile bootstrap', () => {
     expect(text).not.toContain('Products In');
   });
 
+  it('a floor desk without the warehouse phone tools (inventory.mobile) still gets its own desk', async () => {
+    // The built-in floor roles carry only the phone app + their desk permission (permissions.ts).
+    const win = await bootAs({
+      id: 9, username: 'qcdesk', full_name: 'QC Desk', role: 'qc_inspector', role_label: 'QC Inspector',
+      employee: true, modules: null, permissions: ['mobile.access', 'messages.view', 'messages.send', 'production.inspect_qc'],
+    });
+    expect(win.MApp.isWarehouse()).toBe(false);
+    expect(win.MApp.hasProductionAccess()).toBe(true);
+    win.location.hash = '#/work';
+    win.MApp.render();
+    const text = win.document.getElementById('m-view').textContent;
+    expect(text).toContain('QC technical inspection');
+    expect(text).not.toContain('Cycle count');
+    win.mQuickOrbit.refresh();
+    const orbitRoutes = [...win.document.querySelectorAll('.v2-orbit-action')].map((b: any) => b.dataset.route);
+    expect(orbitRoutes).toContain('qc');
+    // A warehouse screen opened by its address is refused (ROUTE_NEEDS in app.js).
+    win.location.hash = '#/stock-move';
+    win.MApp.render();
+    expect(win.document.querySelector('#m-view [data-no-permission]')).not.toBeNull();
+  });
+
   it('a new account with the default mobile.access gets in without an employee link, showing its role name', async () => {
     const win = await bootAs({
       id: 7, username: 'acct1', full_name: 'Office One', role: 'line_supervisor', role_label: 'Line Supervisor',

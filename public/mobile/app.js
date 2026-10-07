@@ -15,14 +15,16 @@ window.MApp = (function () {
       (self-hosted, or pre-login) → treat every module as on. */
   function hasModule(m) { return !me || !Array.isArray(me.modules) || me.modules.indexOf(m) !== -1; }
   function isEmployee() { return !!(me && me.employee); }
+  // The warehouse phone tools (stock moves, counts, picking, scan). Floor desks don't hold
+  // inventory.mobile (src/shared/permissions.ts): their Work rows, Quick Orbit action and the
+  // Production tab follow their own desk permission instead.
   function isWarehouse() { return can('inventory.mobile') && hasModule('inventory'); }
-  // Narrower than isWarehouse(): a releasing_clerk account also holds inventory.mobile (to
-  // reach the app + the Work tab's "Release SOs" row) but has none of the production.*
-  // permissions or inventory.adjust — the Production tab has nothing for it to do, so it
-  // stays hidden rather than opening on an empty queue (see public/mobile/modules/
-  // manufacturing/production.js's own per-row permission filtering).
+  // The Production tab: anyone with a production action to take — inventory.adjust or any
+  // production.* desk permission (production.view alone is read-only, nothing to do here). A
+  // releasing_clerk has none, so the tab stays hidden rather than opening on an empty queue (see
+  // public/mobile/modules/manufacturing/production.js's own per-row permission filtering).
   function hasProductionAccess() {
-    return isWarehouse() && !!(me && Array.isArray(me.permissions) &&
+    return hasModule('manufacturing') && !!(me && Array.isArray(me.permissions) &&
       me.permissions.some(function (p) { return p === 'inventory.adjust' || (p.indexOf('production.') === 0 && p !== 'production.view'); }));
   }
   function canApprove() { return !!(me && me.can_approve); }
