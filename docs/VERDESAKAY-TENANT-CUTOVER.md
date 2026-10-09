@@ -92,7 +92,8 @@ must already point to this service and have valid HTTPS; no wildcard DNS is need
 
 Start the normal server. Desktop, mobile, API, uploads, chat and offline queues use
 the tenant path. The owner console stays at `/_platform`. It shows a tenant link.
-The original company's root/API aliases are retired: root/mobile entries redirect,
+The original company's API aliases are retired: the root now serves the public
+customer website, while legacy mobile entries redirect,
 old unprefixed company APIs are refused, and root `/api/health` remains available
 for Railway. Background maintenance, backups and migration commands must not open
 the retired original database. The original is recovery-only, not a second company.
@@ -163,8 +164,8 @@ startup and must never be used while another writer is running.
    retained recovery directory and `Verdesakay registered`. This deployment then
    starts the normal app with tenant routing and owner console enabled.
 5. Verify the existing company login/data/uploads at `/verdesakay`, and Verdesakay's
-   row in `/_platform`, before resuming activity. The root redirects to Verdesakay
-   for now; the public marketing landing page is a separate next change.
+   row in `/_platform`, before resuming activity. The root serves the public customer website; legacy mobile entries redirect
+   to Verdesakay.
 6. **Immediately after success**, persist the five cutover routing variables shown
    above plus `DEPLOY_MODE=cloud` in Railway and restore **Start Command** to
    `npm start`. Save these settings together, then redeploy normally. Do not leave

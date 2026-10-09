@@ -7,7 +7,7 @@ const html = readFileSync(new URL('web-console/index.html', root), 'utf8');
 const script = readFileSync(new URL('web-console/app.js', root), 'utf8');
 
 describe('owner subscription workflow', () => {
-  it('creates from one company name, then configures monthly module and employee pricing', async () => {
+  it('creates from one company name, then configures monthly module and seat pricing', async () => {
     const dom = new JSDOM(html, { url: 'https://otom.afkcube.com/_platform', runScripts: 'outside-only' });
     const w = dom.window;
     w.localStorage.setItem('vds_platform_token', 'owner-token');
@@ -17,8 +17,8 @@ describe('owner subscription workflow', () => {
     const full = { slug: 'acme-manufacturing', name: 'Acme Manufacturing', url: 'https://otom.afkcube.com/acme-manufacturing',
       plan: 'starter', status: 'active', modules: { override: [], effective: [], plan_default: ['inventory'] },
       usage: { employees: 0, users: 1 }, photo_retention: {},
-      subscription: { mode: 'per_module', bundle: 'starter', modules: [], employee_limit: 0,
-        bundle_price: null, module_prices: {}, employee_price: null } };
+      subscription: { mode: 'per_module', bundle: 'starter', modules: [], seat_limit: null,
+        bundle_price: null, module_prices: {}, seat_price: null } };
     const fetch = vi.fn(async (url: string, opts: { method: string; body?: string }) => {
       const path = url.replace('/_platform/api', '');
       let data: unknown = full;
@@ -58,8 +58,8 @@ describe('owner subscription workflow', () => {
       await vi.waitFor(() => expect(fetch.mock.calls.some(([, opts]) => opts.method === 'PUT')).toBe(true));
       const saved = JSON.parse(fetch.mock.calls.find(([, opts]) => opts.method === 'PUT')![1].body!);
       expect(saved.modules).toEqual(['inventory', 'manufacturing', 'hr']);
-      expect(saved.employee_limit).toBe(2);
-      expect(saved.employee_price).toBe(50);
+      expect(saved.seat_limit).toBe(2);
+      expect(saved.seat_price).toBe(50);
     } finally { w.close(); }
   });
 });

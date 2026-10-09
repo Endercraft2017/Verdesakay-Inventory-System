@@ -209,33 +209,70 @@ Test a restore now and then. A backup you've never restored from hasn't been pro
 
 ### Owner-managed subscriptions and monthly PHP quotes
 
-**New tenant** now asks only for company name and the initial admin credentials. The
-URL name is derived automatically (for example, `Acme Manufacturing` →
-`acme-manufacturing`). A new tenant created without an explicit API plan starts with
-no optional modules and a zero employee allowance. After creation, the console opens
-**Subscription**; this editor is also accessible from the tenant's details.
+**New tenant** asks for company name and initial admin credentials; the URL slug is
+derived automatically. New owner-created tenants start without optional modules;
+configure their subscription afterward in the dedicated editor. Choose a bundle or
+individual modules, active login seats, and monthly PHP rates. Required module
+dependencies are included and separately priced in individual-module mode.
 
-Choose a module bundle or individual modules, set the maximum employee records, and
-enter monthly PHP prices. Rates start unset; zero explicitly means free. The quote
-is the bundle price or sum of effective module prices, plus the employee allowance
-multiplied by its per-employee price. Required dependencies (such as Inventory for
-Manufacturing) are included and priced in individual-module mode. Missing rates, an
-empty module selection, or an unlimited employee allowance leave the quote unset.
-These are per-tenant negotiated rates; this does not create invoices, recurring
-charges, or a shared pricing catalog. Existing user/storage/item/AI quotas continue
-to come from the tenant's resource plan; switching to individual modules retains
-that resource plan.
+Monthly quote = bundle/module prices + allocated login seats × seat price. Blank
+rates mean unset; zero explicitly means free. These are negotiated owner quotes,
+not provider payments or a public pricing catalog. Blank seat allowance retains the
+resource plan's active-account limit; existing unlimited tenants stay unlimited.
+Employee records are always unlimited and do not consume login seats. Creating or
+reactivating a login account consumes a seat; disabling one releases capacity.
+Reducing seats preserves all accounts and employee records but blocks additions and
+reactivations while capacity is exceeded. Existing employee-based quote JSON keeps
+its modules; its old employee allowance/rate is not converted into a seat charge.
+The owner must enter the new seat pricing before a monthly total is available.
 
-The employee allowance counts **all stored HR employee records**, including inactive
-employees, separately from active login accounts. Blank allowance means unlimited;
-zero blocks new records. Both manual creation and CSV imports enforce the limit.
-CSV imports report over-limit rows and continue to allow updates to existing records;
-dry runs roll back their provisional writes. Reducing an allowance below current
-usage preserves records and blocks additions until capacity is increased or usage
-falls below the cap. Existing tenants have unlimited employees until configured.
+`PUT /_platform/api/tenants/:slug/subscription` validates and atomically saves the
+subscription and matching entitlements. Once configured, use this editor/API to
+change bundles/modules rather than the legacy plan/module setters. Other resource
+caps continue to follow the resource plan; individual modules retain that plan.
 
-Owner API: `PUT /_platform/api/tenants/:slug/subscription` saves the complete validated
-subscription atomically, including its effective entitlements. Once configured, use
-this editor/API to change bundles or modules; the legacy plan/module setters reject
-changes to avoid separating access from the saved quote. The Verdesakay adoption
-helper remains unchanged and keeps existing data and entitlements.
+### Tenant analytics and support
+
+Open a tenant, then **Analytics & support**. Owner-only endpoints expose aggregate
+usage/capacity, recursive upload storage and folder breakdown, database size, AI
+cost estimates, active users (7/30 days), successful/failed logins, daily activity,
+module activity, onboarding, sync heartbeats/conflicts, local backup metadata,
+response-time mean/p95, alerts, usage snapshots, subscription history, customer
+contact details, internal notes, support issues and JSON exports.
+
+Authenticated API activity is an engagement proxy, not time spent in the UI.
+Telemetry excludes health checks, sync transport, and anonymous reports; no request
+bodies, credentials, IP addresses or employee financial details are stored. Mobile
+usage is identified by the authenticated client's X-Client header. Detailed events
+are retained for 90 days; daily usage snapshots for up to a year, with the latest
+90 returned. An hourly cloud job and owner analytics views refresh today's snapshot.
+Historical trends begin at deployment and are not reconstructed from current data.
+
+Thresholds are configurable per tenant: capacity percentage, inactivity days, stale
+device hours, and an optional estimated PHP cost per AI request. Alerts are displayed
+in the console; automatic customer emails and delivery tracking are not implemented.
+Costs based on request counts are estimates, not token-based provider invoices.
+Server-visible sync queues do not establish the state of unsent queues on devices.
+Local backup timestamps do not prove remote/volume backups or a verified restore.
+Unavailable metrics are shown as unknown. Payment history, renewals and collected
+revenue remain unavailable until a payment provider and verified webhooks exist.
+
+### Public customer website
+
+With `TENANT_PATH_HOST=otom.afkcube.com`, the apex serves the public feature/subscription
+website on desktop and mobile. `/login` asks for the company's URL name and opens
+its tenant; `/signup` opens the new-customer form. `/site/*` holds public assets.
+Tenant app paths and the owner console remain separate. Keep
+`DEFAULT_TENANT_REDIRECT=verdesakay`: it still retires old unprefixed company APIs
+and keeps the original database recovery-only; it no longer redirects the apex
+website. Root mobile aliases continue to direct existing users to Verdesakay.
+
+Self-service signup requires `SIGNUPS_OPEN=true`. It provisions a **14-day trial**,
+with selected modules (dependencies included), 1–5 active login seats, unlimited
+employee records, and no payment collected. Trial expiry makes the tenant read-only.
+Paid checkout and larger self-service seat purchases await payment integration.
+When signup is disabled, the form states registration is not open and cannot submit.
+
+Deploy using the regular `npm start` command after the completed Verdesakay cutover;
+do not rerun the one-time adoption launcher. Preserve existing data variables,
+secrets, volume, tenant routing variables and migrated Verdesakay database/uploads.

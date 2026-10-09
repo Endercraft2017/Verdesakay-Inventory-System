@@ -4,6 +4,7 @@
  * which the central error handler turns into a 400 response.
  */
 import { z } from 'zod';
+import { MODULES } from './modules';
 
 export class ValidationError extends Error {
   status = 400;
@@ -206,6 +207,8 @@ export const signupSchema = z.object({
   admin_username: trimmed.toLowerCase().regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
   admin_password: z.string().min(6, 'Password must be at least 6 characters'),
   admin_email: z.union([z.literal(''), z.string().trim().email()]).optional(),
+  modules: z.array(z.enum(MODULES)).min(1).optional(),
+  seats: z.number().int().min(1).max(5).optional(),
 });
 /** @deprecated alias — use csvImportSchema. */
 export const importInventorySchema = csvImportSchema;

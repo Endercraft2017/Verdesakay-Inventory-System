@@ -18,6 +18,7 @@ import {
   type TenantRow, type TenantStatus, tenantPublicUrl,
 } from './platform';
 import { createTenant, importTenant, purgeTenant } from './provisioning';
+import { tenantAnalytics, saveOwnerDetails, addSupport, updateSupport } from './owner-analytics';
 import { saveSubscription, subscriptionView } from './subscription';
 import { tenantUsage } from './quota';
 import { punchPhotoUsageBytes } from '../modules/hr/punch-photos';
@@ -141,6 +142,45 @@ router.get('/tenants/:slug', (req, res) => {
   res.json({ ...tenantView(t), log: listProvisioningLog(t.slug, 50) });
 });
 
+// Owner-only aggregate analytics and operational notes.
+router.get('/tenants/:slug/analytics', (req, res, next) => {
+  const t = getTenant(req.params.slug);
+  if (!t || t.status === 'purged') { res.status(404).json({ error: 'Unknown tenant.' }); return; }
+  try { res.json(tenantAnalytics(t)); } catch (e) { next(e); }
+});
+router.get('/tenants/:slug/analytics/export', (req, res, next) => {
+  const t = getTenant(req.params.slug);
+  if (!t || t.status === 'purged') { res.status(404).json({ error: 'Unknown tenant.' }); return; }
+  try {
+    res.set('Content-Disposition', `attachment; filename="${t.slug}-analytics.json"`);
+    res.json({ tenant: { slug: t.slug, name: t.name }, analytics: tenantAnalytics(t) });
+  } catch (e) { next(e); }
+});
+router.put('/tenants/:slug/owner-details', (req, res) => {
+  if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
+  try {
+    saveOwnerDetails(req.params.slug, req.body);
+    logProvisioning(req.params.slug, 'owner-details', (req as PlatformAuthedRequest).platformUser?.username ?? 'operator');
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+router.post('/tenants/:slug/support', (req, res) => {
+  if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
+  try {
+    addSupport(req.params.slug, req.body, (req as PlatformAuthedRequest).platformUser?.username ?? 'operator');
+    logProvisioning(req.params.slug, 'support', 'Support entry added');
+    res.status(201).json({ ok: true });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+router.patch('/tenants/:slug/support/:id', (req, res) => {
+  if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
+  try {
+    if (!updateSupport(req.params.slug, Number(req.params.id), req.body)) { res.status(404).json({ error: 'Unknown support entry.' }); return; }
+    logProvisioning(req.params.slug, 'support', `Entry ${req.params.id}: ${req.body.status}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
 // POST /_platform/api/tenants — provision a new workspace.
 router.post('/tenants', (req: Request, res: Response, next) => {
   try {
@@ -160,8 +200,8 @@ router.post('/tenants', (req: Request, res: Response, next) => {
       logProvisioning(slug, 'modules', JSON.stringify(list));
     }
     if (!b.plan && !Array.isArray(b.modules)) {
-      saveSubscription(slug, { mode: 'per_module', bundle: 'starter', modules: [], employee_limit: 0,
-        bundle_price: null, module_prices: {}, employee_price: null });
+      saveSubscription(slug, { mode: 'per_module', bundle: 'starter', modules: [], seat_limit: null,
+        bundle_price: null, module_prices: {}, seat_price: null });
     }
     const t = getTenant(slug)!;
     res.status(201).json(tenantView(t));

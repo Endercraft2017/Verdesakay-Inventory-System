@@ -41,7 +41,7 @@ export const RESERVED_SLUGS = new Set([
   'platform', '_platform', 'default', 'localhost', 'test', 'tests', 'staging',
   'stage', 'dev', 'demo', 'status', 'health', 'help', 'support', 'docs', 'blog',
   'signup', 'login', 'auth', 'billing', 'account',
-  'ws', 'm', 'mobile', 'js', 'css', 'images', 'icons', 'fonts', 'vendor',
+  'site', 'ws', 'm', 'mobile', 'js', 'css', 'images', 'icons', 'fonts', 'vendor',
 ]);
 
 export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'purged';

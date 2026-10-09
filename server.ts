@@ -11,6 +11,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { spawnSync } from 'node:child_process';
 import { init, cleanupSessions, getDb, DB_PATH, withTenant } from './src/shared/db';
+import { snapshotTenantUsage } from './src/platform/owner-analytics';
 import { retiredDefaultTenant, listTenants } from './src/platform/platform';
 import { createApp, BEHIND_PROXY } from './src/app';
 import { sendDueTaskReminders } from './src/shared/push';
@@ -43,6 +44,14 @@ const housekeeping = () => {
   for (const slug of backgroundTenants()) withTenant(slug, cleanupSessions);
   cleanupPlatformSessions();
 };
+const usageSnapshots = () => {
+  if (DEPLOY_MODE !== 'cloud') return;
+  for (const t of listTenants().filter(t => t.status !== 'purged')) {
+    try { snapshotTenantUsage(t.slug); } catch (e) { console.error('[analytics] snapshot failed:', t.slug, (e as Error).message); }
+  }
+};
+usageSnapshots();
+setInterval(usageSnapshots, 60 * 60 * 1000).unref();
 housekeeping(); // sweep stale sessions / old audit-log rows once at boot, then hourly
 setInterval(housekeeping, 60 * 60 * 1000).unref(); // hourly
 // Push reminders are an outside side effect: only the cloud sends them (OFFLINE-FIRST §7.8).

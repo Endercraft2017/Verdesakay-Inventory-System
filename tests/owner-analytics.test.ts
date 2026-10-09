@@ -1,0 +1,130 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import { setupApp, cleanup, type TestContext } from './helpers';
+let ctx: TestContext;
+let owner: string, token: string;
+let platform: typeof import('../src/platform/platform');
+let db: typeof import('../src/shared/db');
+const op = () => ({ Authorization: `Bearer ${owner}` });
+const tenant = () => ({ Authorization: `Bearer ${token}`, 'X-Tenant': 'analyticsco' });
+beforeAll(async () => {
+  process.env.PLATFORM_CONSOLE = 'true';
+  ctx = await setupApp();
+  platform = await import('../src/platform/platform');
+  db = await import('../src/shared/db');
+  (await import('../src/platform/platform-users')).upsertPlatformUser('owner', 'ownerpass1');
+  owner = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1' })).body.token;
+  const { createTenant } = await import('../src/platform/provisioning');
+  createTenant({ slug: 'analyticsco', name: 'Analytics', plan: 'complete', admin_username: 'owner', admin_password: 'secret1' });
+  createTenant({ slug: 'isolatedco', name: 'Isolated', plan: 'complete', admin_username: 'owner', admin_password: 'secret1' });
+  token = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'analyticsco').send({ username: 'owner', password: 'secret1' })).body.token;
+});
+afterAll(() => { delete process.env.PLATFORM_CONSOLE; cleanup(ctx); });
+describe('owner aggregate analytics', () => {
+  it('requires owner auth and isolates each tenant', async () => {
+    expect((await ctx.api.get('/_platform/api/tenants/analyticsco/analytics')).status).toBe(401);
+    expect((await ctx.api.get('/_platform/api/tenants/analyticsco/analytics').set({ Authorization: `Bearer ${token}` })).status).toBe(401);
+    await ctx.api.get('/api/inventory').set(tenant()).set('X-Client', 'mobile');
+    const a = (await ctx.api.get('/_platform/api/tenants/analyticsco/analytics').set(op())).body;
+    expect(a.engagement.active_7).toBe(1);
+    expect(a.engagement.active_30).toBe(1);
+    expect(a.login_activity.successful).toBe(1);
+    expect(a.module_usage.find((m: { module: string }) => m.module === 'inventory').requests).toBeGreaterThan(0);
+    expect(a.module_usage.find((m: { module: string }) => m.module === 'mobile').requests).toBe(1);
+    const other = (await ctx.api.get('/_platform/api/tenants/isolatedco/analytics').set(op())).body;
+    expect(other.engagement.active_30).toBe(0);
+    expect(other.engagement.last_activity).toBeNull();
+    expect(a.billing.collected_revenue_php).toBeNull();
+    expect(a.backup.restore_verified).toBeNull();
+  });
+  it('counts nested uploads, ignores symlinks and records daily usage without invented history', async () => {
+    const uploads = db.uploadDir('analyticsco');
+    fs.mkdirSync(path.join(uploads, 'documents'), { recursive: true });
+    fs.mkdirSync(path.join(uploads, 'kiosk-punches'), { recursive: true });
+    fs.writeFileSync(path.join(uploads, 'documents', 'file.bin'), Buffer.alloc(1024 * 1024));
+    fs.writeFileSync(path.join(uploads, 'kiosk-punches', 'photo.bin'), Buffer.alloc(1024 * 1024));
+    fs.symlinkSync(path.join(uploads, 'documents'), path.join(uploads, 'external-link'));
+    const a = (await ctx.api.get('/_platform/api/tenants/analyticsco/analytics').set(op())).body;
+    expect(a.usage.storage_mb).toBe(2);
+    expect(a.storage.kiosk_photos_mb).toBe(1);
+    expect(a.history).toHaveLength(1);
+    expect(a.storage_growth.mb_per_day).toBeNull();
+    const telemetry = platform.platformDb().prepare('SELECT * FROM tenant_telemetry WHERE slug=?').all('analyticsco');
+    expect(JSON.stringify(telemetry)).not.toContain('secret1');
+    expect(JSON.stringify(telemetry)).not.toContain('Bearer');
+  });
+  it('saves owner-only notes and thresholds, provides alerts, and exports a summary', async () => {
+    await ctx.api.put('/_platform/api/tenants/analyticsco/subscription').set(op()).send({ mode: 'bundle', bundle: 'complete', modules: [], seat_limit: 2, seat_price: null, bundle_price: null, module_prices: {} });
+    const details = { contact_name: 'Customer', contact_email: 'customer@example.test', notes: '<script>private note</script>', warning_pct: 1, inactive_days: 7, sync_stale_hours: 12, ai_cost_per_call_php: 1.5 };
+    expect((await ctx.api.put('/_platform/api/tenants/analyticsco/owner-details').set(op()).send(details)).status).toBe(200);
+    expect((await ctx.api.put('/_platform/api/tenants/analyticsco/owner-details').set(op()).send({ ...details, warning_pct: 101 })).status).toBe(400);
+    const a = (await ctx.api.get('/_platform/api/tenants/analyticsco/analytics').set(op())).body;
+    expect(a.details.notes).toBe(details.notes);
+    expect(a.alerts.some((a: { code: string }) => a.code === 'capacity')).toBe(true);
+    expect(a.ai_estimated_cost_php).toBe(0);
+    const exported = await ctx.api.get('/_platform/api/tenants/analyticsco/analytics/export').set(op());
+    expect(exported.headers['content-disposition']).toContain('analyticsco-analytics.json');
+    expect(exported.body.tenant.slug).toBe('analyticsco');
+    expect((await ctx.api.get('/api/tenant').set(tenant())).body).not.toHaveProperty('notes');
+  });
+  it('supports issue resolution without allowing cross-tenant updates', async () => {
+    expect((await ctx.api.post('/_platform/api/tenants/analyticsco/support').set(op()).send({ subject: 'Check sync', status: 'open' })).status).toBe(201);
+    const a = (await ctx.api.get('/_platform/api/tenants/analyticsco/analytics').set(op())).body;
+    const id = a.support[0].id;
+    expect((await ctx.api.patch('/_platform/api/tenants/isolatedco/support/' + id).set(op()).send({ status: 'resolved' })).status).toBe(404);
+    expect((await ctx.api.patch('/_platform/api/tenants/analyticsco/support/' + id).set(op()).send({ status: 'resolved' })).status).toBe(200);
+    expect((await ctx.api.get('/_platform/api/tenants/analyticsco/analytics').set(op())).body.support[0].status).toBe('resolved');
+  });
+  it('keeps old employee quotes from becoming seat limits or employee caps', async () => {
+    platform.platformDb().prepare('UPDATE tenants SET subscription=? WHERE slug=?').run(JSON.stringify({ mode: 'bundle', bundle: 'complete', modules: [], employee_limit: 1, employee_price: 100, bundle_price: 1000, module_prices: {} }), 'analyticsco');
+    const own = await ctx.api.get('/api/tenant').set(tenant());
+    expect(own.body.limits.users).toBe(150);
+    expect(own.body.limits.employees).toBeNull();
+    const a = (await ctx.api.get('/_platform/api/tenants/analyticsco/analytics').set(op())).body;
+    expect(a.billing.monthly_quote_php).toBeNull();
+    expect((await ctx.api.post('/api/hr/employees').set(tenant()).send({ name: 'First', employee_no: 'E1' })).status).toBe(201);
+    expect((await ctx.api.post('/api/hr/employees').set(tenant()).send({ name: 'Second', employee_no: 'E2' })).status).toBe(201);
+  });
+});
+it('renders analytics and saves owner notes through the console UI without rendering note HTML', async () => {
+  const { JSDOM } = await import('jsdom');
+  const { vi } = await import('vitest');
+  const root = path.join(import.meta.dirname, '..');
+  const dom = new JSDOM(fs.readFileSync(path.join(root, 'web-console/index.html'), 'utf8'), { url: 'https://example.test/_platform', runScripts: 'outside-only' });
+  const w = dom.window;
+  w.localStorage.setItem('vds_platform_token', owner);
+  Object.assign(w, { fetch: async (url: string, opts: { method: string; body?: string }) => {
+    let request;
+    if (opts.method === 'PUT') request = ctx.api.put(url);
+    else if (opts.method === 'POST') request = ctx.api.post(url);
+    else if (opts.method === 'PATCH') request = ctx.api.patch(url);
+    else request = ctx.api.get(url);
+    request.set(op());
+    if (opts.body) request.send(JSON.parse(opts.body));
+    const r = await request;
+    return { status: r.status, ok: r.status < 400, headers: { get: (key: string) => r.headers[key.toLowerCase()] }, json: async () => r.body };
+  } });
+  try {
+    w.eval(fs.readFileSync(path.join(root, 'web-console/app.js'), 'utf8'));
+    await vi.waitFor(() => expect(w.document.getElementById('rows')?.textContent).toContain('analyticsco'));
+    const row = [...w.document.querySelectorAll<HTMLElement>('#rows tr')].find(r => r.textContent?.includes('analyticsco'))!;
+    row.click();
+    await vi.waitFor(() => expect(w.document.getElementById('drawer')).not.toBeNull());
+    const analytics = [...w.document.querySelectorAll<HTMLButtonElement>('#drawer button')].find(b => b.textContent === 'Analytics & support')!;
+    analytics.click();
+    await vi.waitFor(() => expect(w.document.querySelector('.analytics-card')).not.toBeNull());
+    const card = w.document.querySelector('.analytics-card')!;
+    expect(card.textContent).toContain('Unlimited allowance');
+    expect(card.textContent).toContain('Payment provider not connected');
+    expect(card.querySelector('script')).toBeNull();
+    const notes = card.querySelector('textarea')!;
+    expect(notes.value).toBe('<script>private note</script>');
+    notes.value = 'Updated support note';
+    [...card.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Save details & thresholds')!.click();
+    await vi.waitFor(async () => {
+      const a = await ctx.api.get('/_platform/api/tenants/analyticsco/analytics').set(op());
+      expect(a.body.details.notes).toBe('Updated support note');
+    });
+  } finally { w.close(); }
+});

@@ -82,9 +82,12 @@ describe('tenants on one configured domain', () => {
     } finally { delete process.env.PLATFORM_HOST; }
   });
 
-  it('redirects the old company entry and blocks its API after cutover, keeping health checks working', async () => {
+  it('serves the public apex and retires old company API aliases after cutover', async () => {
     process.env.DEFAULT_TENANT_REDIRECT = 'verdesakay';
-    expect((await ctx.api.get('/').set('Host', host)).headers.location).toBe('/verdesakay/');
+    const root = await ctx.api.get('/').set('Host', host);
+    expect(root.status).toBe(200);
+    expect(root.text).toContain('Less busywork.');
+    expect(root.text).not.toContain('window.VDS_BASE_PATH');
     expect((await ctx.api.get('/m').set('Host', host)).headers.location).toBe('/verdesakay/m');
     expect((await ctx.api.post('/api/auth/login').set('Host', host).send({ username: 'admin', password: 'admin123' })).status).toBe(410);
     expect((await ctx.api.get('/api/health').set('Host', host)).body.ok).toBe(true);

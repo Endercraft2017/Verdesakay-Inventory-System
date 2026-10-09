@@ -54,6 +54,9 @@ import quickbooksRoutes from './modules/quickbooks/quickbooks.routes';
 import { recordActivity } from './shared/activity';
 import { idempotency } from './shared/idempotency';
 import { tenantStore, getDb, DEFAULT_TENANT } from './shared/db';
+import { MODULES, MODULE_DEPS } from './shared/modules';
+import { recordTenantRequest, requestModule } from './platform/owner-analytics';
+import { SIGNUPS_OPEN } from './platform/platform';
 import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost, retiredDefaultTenant } from './platform/platform';
 import { tenantPath, onTenantPathHost } from './platform/tenant-path';
 import { requireModule, moduleEnabled } from './shared/modules';
@@ -72,6 +75,22 @@ const NATIVE_APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost'
 
 export function createApp() {
   const app = express();
+  // Apply headers to public pages as well as tenant/API responses.
+  app.use(helmet({ contentSecurityPolicy: false, hsts: false }));
+  // The public site belongs only to the configured cloud apex, never a tenant/node.
+  app.use((req, res, next) => {
+    if (!onTenantPathHost(req.headers.host)) { next(); return; }
+    if (req.path === '/' || req.path === '/index.html' || req.path === '/login' || req.path === '/signup') {
+      res.set('Cache-Control', 'no-cache');
+      res.sendFile(path.join(ROOT, 'website', 'index.html')); return;
+    }
+    if (req.path === '/site/config') {
+      res.json({ signups_open: SIGNUPS_OPEN, trial_seats: 5, modules: MODULES, module_deps: MODULE_DEPS }); return;
+    }
+    next();
+  });
+  app.use('/site', express.static(path.join(ROOT, 'website'), { index: false,
+    setHeaders: res => res.set('Cache-Control', 'no-cache') }));
   // Strip a configured tenant prefix before the existing API, audit and sync machinery.
   // Keep the normalized originalUrl so anonymous reports remain anonymous and sync
   // commands stay portable to an installed PC's unprefixed local API.
@@ -94,7 +113,7 @@ export function createApp() {
           res.redirect(307, `${origin}/${landing}${req.url}`); return;
         }
         // The retained original DB is a recovery source, never a second writable company.
-        if (req.path === '/api' || (req.path.startsWith('/api/') && req.path !== '/api/health')) {
+        if (req.path === '/api' || (req.path.startsWith('/api/') && req.path !== '/api/health' && req.path !== '/api/signup')) {
           res.status(410).json({ error: `This company has moved to /${landing}.` }); return;
         }
       }
@@ -111,7 +130,6 @@ export function createApp() {
   // Security headers. Disable CSP defaults that would block our inline view scripts;
   // a tailored policy can be added later if the app is exposed beyond the LAN.
   // HSTS is off so a device can be pointed back at plain HTTP without getting stuck.
-  app.use(helmet({ contentSecurityPolicy: false, hsts: false }));
   // The installed phone app (docs/OFFLINE-FIRST.md §29) serves its own pages from inside the app
   // (https://localhost on Android, capacitor://localhost on iPhone) and calls this server's API
   // cross-origin. Only those two origins, only /api, and no cookies: requests carry the bearer
@@ -139,6 +157,7 @@ export function createApp() {
     if (!consoleHost) { next(); return; }
     const onConsoleHost = String(req.headers.host || '').toLowerCase().split(':')[0] === consoleHost;
     if (onConsoleHost && res.locals.tenantSlug) { next(); return; }
+    if (onConsoleHost && onTenantPathHost(req.headers.host) && !req.path.startsWith('/_platform')) { next(); return; }
     const consolePath = req.path === '/_platform' || req.path.startsWith('/_platform/');
     if (onConsoleHost === consolePath || req.path === '/api/health') { next(); return; }
     if (onConsoleHost && !req.path.startsWith('/api/')) { res.redirect('/_platform/'); return; }
@@ -178,6 +197,7 @@ export function createApp() {
         return;
       }
     }
+    res.locals.resolvedTenant = slug;
     // Shared assets, health checks and the owner console need no original-company DB.
     tenantStore.run({ db: getDb(slug === DEFAULT_TENANT ? retiredDefaultTenant() ?? slug : slug), slug }, () => next());
   });
@@ -198,17 +218,29 @@ export function createApp() {
   // Lightweight API request log + persistent activity log (mutations only; see activity.ts).
   app.use((req, res, next) => {
     const start = Date.now();
+    const analyticsPath = (req.originalUrl || req.url).split('?')[0] || '';
+    const analyticsSlug = String(res.locals.resolvedTenant || 'default');
     // Capture a created record's id from the JSON response so the audit row can point at it.
     const sendJson = res.json.bind(res);
     res.json = (body: unknown) => {
       if (body && typeof body === 'object' && 'id' in body) {
         res.locals.createdId = (body as { id: unknown }).id;
       }
+      if (analyticsPath === '/api/auth/login' && body && typeof body === 'object' && 'user' in body) {
+        const user = (body as { user?: { id?: number } }).user;
+        if (typeof user?.id === 'number') res.locals.analyticsUserId = user.id;
+      }
       return sendJson(body);
     };
     res.on('finish', () => {
       if (req.path.startsWith('/api')) {
         console.log(`${req.method} ${req.path} -> ${res.statusCode} (${Date.now() - start}ms)`);
+      }
+      if (analyticsSlug !== 'default' && analyticsPath.startsWith('/api/')
+        && !analyticsPath.startsWith('/api/sync') && analyticsPath !== '/api/health'
+        && !isAnonymousReportPath(analyticsPath)) {
+        recordTenantRequest(analyticsSlug, req.user?.id ?? res.locals.analyticsUserId ?? null,
+          requestModule(analyticsPath), res.statusCode, Date.now() - start, req.get('x-client') === 'mobile' ? 'mobile' : 'desktop');
       }
       // Anonymous-report requests leave no identity trail (user, IP, body) — see confidential-reports.ts.
       if (!isAnonymousReportPath((req.originalUrl || req.url).split('?')[0] ?? '')) recordActivity(req, res);

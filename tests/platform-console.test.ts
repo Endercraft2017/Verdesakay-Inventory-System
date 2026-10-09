@@ -153,11 +153,11 @@ describe('logout', () => {
   });
 });
 
-describe('module subscriptions and employee allowances', () => {
+describe('module subscriptions and login seats', () => {
   const settings = {
     mode: 'per_module', bundle: 'starter', modules: ['hr', 'manufacturing'],
-    employee_limit: 2, bundle_price: null,
-    module_prices: { hr: 500, manufacturing: 250, inventory: 100 }, employee_price: 50,
+    seat_limit: 2, bundle_price: null,
+    module_prices: { hr: 500, manufacturing: 250, inventory: 100 }, seat_price: 50,
   };
   let tenantToken: string;
   const tenantHeaders = () => ({ ...asTenant('subscriptionco'), Authorization: `Bearer ${tenantToken}` });
@@ -168,27 +168,27 @@ describe('module subscriptions and employee allowances', () => {
     });
     expect(r.status).toBe(201);
     expect(r.body.modules.effective).toEqual([]);
-    expect(r.body.subscription.employee_limit).toBe(0);
+    expect(r.body.subscription.seat_limit).toBeNull();
     expect(r.body.subscription.monthly_total).toBeNull();
     tenantToken = (await ctx.api.post('/api/auth/login').set(asTenant('subscriptionco'))
       .send({ username: 'owner', password: 'ownerpass1' })).body.token;
   });
 
-  it('saves module prices, expands dependencies and quotes employee allowance', async () => {
+  it('saves module prices, expands dependencies and quotes seat allowance', async () => {
     const r = await ctx.api.put('/_platform/api/tenants/subscriptionco/subscription').set(opHdr()).send(settings);
     expect(r.status).toBe(200);
     expect(r.body.modules.effective).toEqual(['inventory', 'manufacturing', 'hr']);
     expect(r.body.subscription.monthly_total).toBe(950);
     expect(r.body.subscription.currency).toBe('PHP');
     const own = await ctx.api.get('/api/tenant').set(tenantHeaders());
-    expect(own.body.limits.employees).toBe(2);
+    expect(own.body.limits.users).toBe(2);
   });
 
   it('rejects invalid prices without changing entitlements, requires owner auth', async () => {
     const url = '/_platform/api/tenants/subscriptionco/subscription';
     expect((await ctx.api.put(url).send(settings)).status).toBe(401);
-    for (const patch of [{ employee_limit: -1 }, { employee_limit: 1.5 }, { employee_price: -10 },
-      { employee_price: 0.001 }, { modules: ['unknown'] }, { module_prices: { unknown: 10 } }]) {
+    for (const patch of [{ seat_limit: -1 }, { seat_limit: 1.5 }, { seat_price: -10 },
+      { seat_price: 0.001 }, { modules: ['unknown'] }, { module_prices: { unknown: 10 } }]) {
       expect((await ctx.api.put(url).set(opHdr()).send({ ...settings, ...patch })).status).toBe(400);
     }
     const unchanged = await ctx.api.get('/_platform/api/tenants/subscriptionco').set(opHdr());
@@ -196,38 +196,36 @@ describe('module subscriptions and employee allowances', () => {
     expect((await ctx.api.patch('/_platform/api/tenants/subscriptionco').set(opHdr()).send({ plan: 'complete' })).status).toBe(400);
   });
 
-  it('enforces employee caps on create and CSV import, while permitting updates', async () => {
-    const create = await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E1', name: 'First', status: 'resigned' });
-    expect(create.status).toBe(201);
-    const preview = await ctx.api.post('/api/hr/employees/import').set(tenantHeaders())
-      .send({ csv: 'employee_no,name\nE2,Second\nE3,Third', dry_run: true });
-    expect(preview.body.created).toBe(1);
-    expect(preview.body.skipped).toBe(1);
-    expect((await ctx.api.get('/api/tenant').set(tenantHeaders())).body.usage.employees).toBe(1);
+  it('enforces active login seats on creation and reactivation, without capping employees', async () => {
+    const second = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'second', full_name: 'Second', password: 'secret1' });
+    expect(second.status).toBe(201);
+    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret1' })).status).toBe(402);
+    expect((await ctx.api.put('/api/users/' + second.body.id).set(tenantHeaders()).send({ active: false })).status).toBe(200);
+    const third = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret1' });
+    expect(third.status).toBe(201);
+    expect((await ctx.api.put('/api/users/' + second.body.id).set(tenantHeaders()).send({ active: true })).status).toBe(402);
+    const created = await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E1', name: 'First', status: 'resigned' });
+    expect(created.status).toBe(201);
     const imported = await ctx.api.post('/api/hr/employees/import').set(tenantHeaders())
-      .send({ csv: 'employee_no,name\nE2,Second\nE3,Third' });
-    expect(imported.status).toBe(200);
-    expect(imported.body.created).toBe(1);
-    expect(imported.body.skipped).toBe(1);
-    expect(imported.body.errors[0].message).toMatch(/employee record limit/);
-    expect((await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E4', name: 'Fourth' })).status).toBe(402);
-    const update = await ctx.api.post('/api/hr/employees/import').set(tenantHeaders())
-      .send({ csv: 'employee_no,name\nE1,First updated' });
-    expect(update.body.updated).toBe(1);
+      .send({ csv: 'employee_no,name\nE2,Second\nE3,Third\nE4,Fourth' });
+    expect(imported.body.created).toBe(3);
+    expect(imported.body.skipped).toBe(0);
     const usage = await ctx.api.get('/api/tenant').set(tenantHeaders());
-    expect(usage.body.usage.employees).toBe(2);
+    expect(usage.body.usage.employees).toBe(4);
+    expect(usage.body.limits.employees).toBeNull(); // Infinity serialized to null
   });
 
-  it('switches to bundles and preserves records when reducing allowance', async () => {
+  it('switches to bundles and preserves accounts and employees when reducing seats', async () => {
     const r = await ctx.api.put('/_platform/api/tenants/subscriptionco/subscription').set(opHdr())
-      .send({ ...settings, mode: 'bundle', bundle: 'operations', employee_limit: 1, bundle_price: 2000 });
+      .send({ ...settings, mode: 'bundle', bundle: 'operations', seat_limit: 1, bundle_price: 2000 });
     expect(r.status).toBe(200);
     expect(r.body.modules.override).toBeNull();
     expect(r.body.subscription.monthly_total).toBe(2050);
-    expect(r.body.usage.employees).toBe(2);
-    expect((await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E5', name: 'Fifth' })).status).toBe(402);
+    expect(r.body.usage.employees).toBe(4);
+    expect((await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E5', name: 'Fifth' })).status).toBe(201);
+    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'fourth', full_name: 'Fourth', password: 'secret1' })).status).toBe(402);
     const blank = await ctx.api.put('/_platform/api/tenants/subscriptionco/subscription').set(opHdr())
-      .send({ ...settings, module_prices: { hr: 0 }, employee_limit: null });
+      .send({ ...settings, module_prices: { hr: 0 }, seat_limit: null });
     expect(blank.body.subscription.monthly_total).toBeNull();
     expect((await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E6', name: 'Sixth' })).status).toBe(201);
   });

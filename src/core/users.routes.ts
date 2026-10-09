@@ -117,6 +117,8 @@ router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req,
   const department_id = input.department_id !== undefined ? input.department_id : user.department_id;
   const active = input.active !== undefined ? (input.active ? 1 : 0) : user.active;
 
+  if (user.active !== 1 && active === 1) enforceQuota('users');
+
   // Never strip the last active administrator.
   const demoting = user.role === 'admin' && role !== 'admin';
   const disabling = user.role === 'admin' && user.active === 1 && active === 0;

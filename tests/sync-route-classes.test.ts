@@ -32,6 +32,10 @@ const NO_CLASS_NEEDED: Record<string, string> = {
   'src/platform/platform.routes.ts:post /tenants/import': 'cloud console',
   'src/platform/platform.routes.ts:patch /tenants/:slug': 'cloud console',
   'src/platform/platform.routes.ts:post /tenants/:slug/purge': 'cloud console',
+  'src/platform/platform.routes.ts:put /tenants/:slug/subscription': 'cloud-only subscription pricing and entitlements in platform.db',
+  'src/platform/platform.routes.ts:put /tenants/:slug/owner-details': 'cloud-only owner notes and alert thresholds in platform.db',
+  'src/platform/platform.routes.ts:post /tenants/:slug/support': 'cloud-only owner support records in platform.db',
+  'src/platform/platform.routes.ts:patch /tenants/:slug/support/:id': 'cloud-only owner support records in platform.db',
   'src/platform/signup.routes.ts:post /': 'cloud sign-up',
 };
 /** The sync layer's own endpoints: they are the transport, not business writes. */

@@ -46,7 +46,7 @@ export function createTenant(input: CreateTenantInput): { slug: string } {
   // default 'admin' account); adopt the caller's chosen credentials onto it.
   withTenant(slug, () => {
     const hash = bcrypt.hashSync(input.admin_password, 10);
-    run("UPDATE users SET username = ?, password_hash = ? WHERE username = 'admin'", username, hash);
+    run("UPDATE users SET username = ?, password_hash = ?, email = ? WHERE username = 'admin'", username, hash, input.admin_email || null);
   });
 
   logProvisioning(slug, 'create', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', admin: username }));

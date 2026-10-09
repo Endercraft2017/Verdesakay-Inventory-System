@@ -4,8 +4,11 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { parseBody, signupSchema } from '../shared/validation';
+import { saveSubscription } from './subscription';
+import { saveOwnerDetails } from './owner-analytics';
+import { planModules } from './plans';
 import { createTenant } from './provisioning';
-import { SIGNUPS_OPEN, tenantPublicUrl } from './platform';
+import { SIGNUPS_OPEN, tenantPublicUrl, setTrialEndsAt } from './platform';
 
 const router = Router();
 
@@ -34,6 +37,10 @@ router.post('/', signupLimiter, (req, res, next) => {
       plan: 'trial',
       status: 'trial',
     });
+    saveSubscription(slug, { mode: 'per_module', bundle: 'trial', modules: input.modules ?? planModules('trial'),
+      seat_limit: input.seats ?? 5, seat_price: null, bundle_price: null, module_prices: {} });
+    saveOwnerDetails(slug, { contact_name: input.admin_username, contact_email: input.admin_email ?? '' });
+    setTrialEndsAt(slug, new Date(Date.now() + 14 * 86400000).toISOString());
     res.status(201).json({
       slug,
       url: tenantPublicUrl(slug),

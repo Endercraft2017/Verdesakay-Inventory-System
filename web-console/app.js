@@ -238,8 +238,8 @@
       trialField,
       el('div', { class: 'field' }, [el('label', { text: 'Subscribed modules' }), el('div', { class: 'muted', text: st.useOverride ? withDeps(st.mods).join(', ') || 'None selected' : st.planDefault.join(', ') })]),
       el('div', { class: 'muted', text: 'Monthly PHP quote: ' + (st.subscription && st.subscription.monthly_total != null ? st.subscription.monthly_total.toFixed(2) : 'Unset') }),
-      el('div', { class: 'muted', text: 'Employee allowance: ' + (st.subscription && st.subscription.employee_limit != null ? st.subscription.employee_limit : 'Unlimited') }),
-      el('div', { class: 'field' }, [el('label', { text: 'Current usage' }), usageBox]),
+      el('div', { class: 'muted', text: 'Login seat allowance: ' + (st.subscription && st.subscription.seat_limit != null ? st.subscription.seat_limit : 'Bundle default') }),
+      el('div', { class: 'field' }, [el('label', { text: 'Current usage' }), usageBox, el('button', { class: 'btn ghost', style: 'margin-top:12px', onclick: function () { openAnalytics(st.slug).catch(function (e) { toast(e.message); }); } }, ['Analytics & support'])]),
       photoField,
       logBox,
       el('div', { class: 'danger-zone' }, [
@@ -266,13 +266,111 @@
     syncTrialVisibility();
   }
 
+  /* ---------- tenant analytics ---------- */
+  async function openAnalytics(slug) {
+    var a = await api('GET', '/tenants/' + encodeURIComponent(slug) + '/analytics');
+    var d = a.details;
+    function textValue(v) {
+      if (v == null) return 'Not available';
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v) && !isNaN(Date.parse(v))) return new Date(v).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) + ' PHT';
+      return String(v);
+    }
+    function section(title, kids) { return el('section', { class: 'analytics-section' }, [el('h3', { text: title })].concat(kids)); }
+    function table(headers, rows) {
+      return el('div', { class: 'analytics-table' }, [el('table', {}, [
+        el('thead', {}, [el('tr', {}, headers.map(function (h) { return el('th', { text: h }); }))]),
+        el('tbody', {}, rows.length ? rows.map(function (r) { return el('tr', {}, r.map(function (v) { return el('td', { text: textValue(v) }); })); }) : [el('tr', {}, [el('td', { colspan: headers.length, text: 'No recorded data yet.' })])]),
+      ])]);
+    }
+    var inputs = {};
+    function field(key, label, type) {
+      var attrs = { type: type || 'text', value: d[key] == null ? '' : d[key] };
+      if (type === 'number') { attrs.min = '0'; attrs.step = key === 'ai_cost_per_call_php' ? '0.0001' : '1'; }
+      var input = key === 'notes' ? el('textarea', { rows: '4' }, [d[key] || '']) : el('input', attrs);
+      inputs[key] = input;
+      return el('div', { class: 'field' }, [el('label', { text: label }), input]);
+    }
+    var error = el('div', { class: 'err', role: 'alert' });
+    var close = function () { modal.remove(); };
+    var usageRows = a.capacity.map(function (c) { return [c.key === 'users' ? 'Active login seats' : c.key, c.used, c.limit == null ? 'Unlimited' : c.limit, c.percent == null ? '—' : c.percent + '%']; });
+    var historyRange = el('select', {}, [el('option', { value: '7', text: 'Last 7 snapshots' }), el('option', { value: '30', text: 'Last 30 snapshots', selected: 'selected' }), el('option', { value: '90', text: 'Last 90 snapshots' })]);
+    var history = el('div');
+    function renderHistory() {
+      history.replaceChildren(table(['Day (UTC)', 'Login seats', 'Employees', 'Storage MB', 'Monthly AI calls'], a.history.slice(-Number(historyRange.value)).map(function (h) { return [h.day, h.usage.users, h.usage.employees, h.usage.storage_mb, h.usage.ai_calls_month]; })));
+    }
+    historyRange.addEventListener('change', renderHistory);
+    renderHistory();
+    var supportSubject = el('input', { placeholder: 'Support issue or follow-up', maxlength: '500' });
+    var supportList = el('div');
+    a.support.forEach(function (s) {
+      var row = el('div', { class: 'support-entry' }, [el('span', { text: s.status + ' · ' + s.subject + ' · ' + s.at })]);
+      row.appendChild(el('button', { class: 'btn ghost', onclick: async function () {
+        try { await api('PATCH', '/tenants/' + encodeURIComponent(slug) + '/support/' + s.id, { status: s.status === 'open' ? 'resolved' : 'open' }); close(); await openAnalytics(slug); }
+        catch (e) { error.textContent = e.message; }
+      } }, [s.status === 'open' ? 'Resolve' : 'Reopen']));
+      supportList.appendChild(row);
+    });
+    var modal = el('div', { class: 'modal' }, [el('div', { class: 'card analytics-card' }, [
+      el('div', { class: 'analytics-heading' }, [el('h2', { text: 'Tenant analytics — ' + slug }), el('button', { class: 'btn ghost', onclick: close }, ['Close'])]),
+      el('p', { class: 'muted', text: 'Updated ' + textValue(a.generated_at) + '. Activity is measured from recorded authenticated API requests; it is not time spent in the app.' }),
+      section('Alerts', a.alerts.length ? a.alerts.map(function (v) { return el('div', { class: 'analytics-alert', text: v.message }); }) : [el('p', { text: 'No current alerts.' })]),
+      section('Usage & capacity', [table(['Resource', 'Used', 'Allowance', 'Used %'], usageRows), el('p', { text: 'Employee records: ' + textValue(a.usage && a.usage.employees) + ' · Unlimited allowance' })]),
+      section('Engagement & onboarding', [table(['Metric', 'Value'], [
+        ['Last activity', a.engagement.last_activity], ['Active users · 7 days', a.engagement.active_7], ['Active users · 30 days', a.engagement.active_30],
+        ['Tracking since', a.tracking_started_at], ['Successful logins · 30 days', a.login_activity.successful], ['Failed logins · 30 days', a.login_activity.failed],
+      ]), table(['Setup step', 'Status'], a.onboarding.map(function (v) { return [v.step, v.done ? 'Complete' : 'Pending']; }))]),
+      section('Daily activity · retained 90 days', [table(['Day (UTC)', 'Active users', 'API requests', 'Server errors'], a.daily_activity.slice(-30).map(function (v) { return [v.day, v.active_users, v.requests, v.errors]; }))]),
+      section('Module usage · 30 days', [table(['Subscribed module', 'API requests', 'Active users', 'Last used'], a.module_usage.map(function (v) { return [v.module, v.requests, v.active_users || 0, v.last_used]; })), el('p', { class: 'muted', text: 'These counts measure API activity. Module activation alone does not establish usage.' })]),
+      section('Storage & AI costs', [table(['Metric', 'Value'], [
+        ['Uploads MB', a.storage && a.storage.uploads_mb], ['Database MB (excludes WAL)', a.storage && a.storage.database_mb],
+        ['Kiosk photos MB', a.storage && a.storage.kiosk_photos_mb], ['Storage growth MB/day', a.storage_growth.mb_per_day],
+        ['Estimated days to storage limit', a.storage_growth.estimated_days_to_limit], ['Estimated AI cost PHP/month', a.ai_estimated_cost_php],
+      ]), table(['Upload folder', 'MB'], a.storage ? a.storage.folders.map(function (f) { return [f.name, f.mb]; }) : []), el('p', { class: 'muted', text: 'AI cost uses your configured estimate per request; it is not a provider invoice. Growth requires at least two daily snapshots.' })]),
+      section('Device sync & backup health', [table(['Device', 'Last heartbeat', 'Status'], a.sync.devices.map(function (v) { return [v.name, v.last_seen_at, v.stale ? 'Stale / never seen' : 'Recent heartbeat']; })), table(['Metric', 'Value'], [
+        ['Server-visible pending sync commands', a.sync.pending], ['Undismissed sync conflicts / rejections', a.sync.conflicts],
+        ['Latest local backup snapshot', a.backup.last_snapshot_at], ['Latest recorded backup attempt', a.backup.last_run_at],
+        ['Backup attempt succeeded', a.backup.last_run_ok], ['Restore test verified', a.backup.restore_verified],
+      ]), el('p', { class: 'muted', text: a.sync.device_local_queue_visibility + ' A recent heartbeat is not proof that all device data is synced. A backup file is not proof of a successful restore.' })]),
+      section('Application performance', [table(['Metric', 'Value'], [
+        ['API requests · 30 days', a.engagement.requests], ['Server errors · 30 days', a.engagement.errors],
+        ['Mean response ms · 30 days', a.engagement.avg_ms], ['95th percentile response ms · 7 days', a.performance.p95_ms_7_days],
+      ])]),
+      section('Subscription & payments', [el('p', { text: 'Monthly quote PHP: ' + textValue(a.billing.monthly_quote_php) }), el('p', { class: 'muted', text: a.billing.note }), table(['Date', 'Subscription change'], a.subscription_history.map(function (v) { return [v.created_at, v.detail || v.action]; }))]),
+      section('Usage history', [historyRange, history]),
+      section('Customer details & alert thresholds', [
+        field('contact_name', 'Customer contact'), field('contact_email', 'Contact email', 'email'), field('notes', 'Internal notes'),
+        el('div', { class: 'row2' }, [field('warning_pct', 'Capacity warning %', 'number'), field('inactive_days', 'Inactive after days', 'number')]),
+        el('div', { class: 'row2' }, [field('sync_stale_hours', 'Stale device after hours', 'number'), field('ai_cost_per_call_php', 'Estimated PHP cost per AI call (optional)', 'number')]),
+        el('button', { class: 'btn', onclick: async function () {
+          var patch = {};
+          Object.keys(inputs).forEach(function (k) { patch[k] = inputs[k].type === 'number' ? inputs[k].value === '' && k === 'ai_cost_per_call_php' ? null : Number(inputs[k].value) : inputs[k].value; });
+          try { await api('PUT', '/tenants/' + encodeURIComponent(slug) + '/owner-details', patch); close(); await openAnalytics(slug); toast('Customer details saved'); }
+          catch (e) { error.textContent = e.message; }
+        } }, ['Save details & thresholds']),
+      ]),
+      section('Support history', [supportSubject, el('button', { class: 'btn ghost', onclick: async function () {
+        try { await api('POST', '/tenants/' + encodeURIComponent(slug) + '/support', { subject: supportSubject.value.trim(), status: 'open' }); close(); await openAnalytics(slug); }
+        catch (e) { error.textContent = e.message; }
+      } }, ['Add support issue']), supportList]),
+      error,
+      el('button', { class: 'btn ghost', onclick: async function () {
+        try {
+          var report = await api('GET', '/tenants/' + encodeURIComponent(slug) + '/analytics/export');
+          var url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+          var link = el('a', { href: url, download: slug + '-analytics.json' }); document.body.appendChild(link); link.click(); link.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        } catch (e) { error.textContent = e.message; }
+      } }, ['Export tenant summary']),
+    ])]);
+    document.body.appendChild(modal);
+  }
+
   /* ---------- subscription editor ---------- */
   function openSubscription() {
     var st = drawerState;
     var sub = st.subscription || {
       mode: st.useOverride ? 'per_module' : 'bundle', bundle: st.plan,
-      modules: withDeps(st.mods), employee_limit: null,
-      bundle_price: null, module_prices: {}, employee_price: null,
+      modules: withDeps(st.mods), seat_limit: null,
+      bundle_price: null, module_prices: {}, seat_price: null,
     };
     sub = JSON.parse(JSON.stringify(sub));
     var selected = {};
@@ -289,9 +387,9 @@
       return el('option', { value: p, text: p, selected: p === sub.bundle ? 'selected' : null });
     }));
     var bundlePrice = moneyInput(sub.bundle_price);
-    var employees = el('input', { type: 'number', min: '0', max: '1000000', step: '1',
-      placeholder: 'Unlimited', value: sub.employee_limit == null ? '' : sub.employee_limit });
-    var employeePrice = moneyInput(sub.employee_price);
+    var seats = el('input', { type: 'number', min: '1', max: '1000000', step: '1',
+      placeholder: 'Bundle default', value: sub.seat_limit == null ? '' : sub.seat_limit });
+    var seatPrice = moneyInput(sub.seat_price);
     var bundleModules = el('p', { class: 'muted' });
     var moduleRows = el('div', { class: 'subscription-modules' }, [el('div', { class: 'muted', text: 'Individual module prices: PHP per month' })]);
     var checkboxes = {};
@@ -319,11 +417,11 @@
       el('div', { class: 'field' }, [el('label', { text: 'Module selection' }), mode]),
       bundleFields, moduleRows,
       el('div', { class: 'row2' }, [
-        el('div', { class: 'field' }, [el('label', { text: 'Maximum employee records' }), employees]),
-        el('div', { class: 'field' }, [el('label', { text: 'Price per employee (PHP / month)' }), employeePrice]),
+        el('div', { class: 'field' }, [el('label', { text: 'Maximum active login seats' }), seats]),
+        el('div', { class: 'field' }, [el('label', { text: 'Price per login seat (PHP / month)' }), seatPrice]),
       ]),
-      el('p', { class: 'muted', text: 'Blank allowance = unlimited; 0 = no new employees. Counts all HR employee records, including inactive ones. Login account limits remain separate.' }),
-      el('p', { class: 'muted', text: 'Monthly quote = bundle or selected module prices + employee allowance × employee price. Required module dependencies are included and priced separately. Blank prices are unset; enter 0 for free. These settings do not collect payments.' }),
+      el('p', { class: 'muted', text: 'Blank seats = bundle account limit. Active login accounts use seats; employee records are unlimited.' }),
+      el('p', { class: 'muted', text: 'Monthly quote = bundle or selected module prices + login seat allowance × seat price. Required module dependencies are included and priced separately. Blank prices are unset; enter 0 for free. These settings do not collect payments.' }),
       quote, err,
       el('div', { style: 'display:flex;gap:10px' }, [go, el('button', { class: 'btn ghost', onclick: function () { modal.remove(); } }, ['Cancel'])]),
     ])]);
@@ -332,8 +430,8 @@
       var prices = {};
       ref.modules.forEach(function (m) { prices[m] = amount(priceInputs[m]); });
       return { mode: mode.value, bundle: bundle.value, modules: withDeps(selected),
-        employee_limit: amount(employees), bundle_price: amount(bundlePrice),
-        module_prices: prices, employee_price: amount(employeePrice) };
+        seat_limit: amount(seats), bundle_price: amount(bundlePrice),
+        module_prices: prices, seat_price: amount(seatPrice) };
     }
     function update() {
       bundleFields.classList.toggle('hidden', mode.value !== 'bundle');
@@ -349,10 +447,9 @@
       var moduleTotal = v.mode === 'bundle' ? v.bundle_price :
         !effective.length || effective.some(function (m) { return v.module_prices[m] === null; }) ? null :
           effective.reduce(function (sum, m) { return sum + Math.round(v.module_prices[m] * 100); }, 0) / 100;
-      var employeeTotal = v.employee_limit === 0 ? 0 :
-        v.employee_limit === null || v.employee_price === null ? null : v.employee_limit * Math.round(v.employee_price * 100) / 100;
-      quote.textContent = moduleTotal === null || employeeTotal === null ? 'Monthly quote: rates or employee allowance unset' :
-        'Monthly quote: ' + new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(moduleTotal + employeeTotal) + ' / month';
+      var seatTotal = v.seat_limit === null || v.seat_price === null ? null : v.seat_limit * Math.round(v.seat_price * 100) / 100;
+      quote.textContent = moduleTotal === null || seatTotal === null ? 'Monthly quote: rates or login seat allowance unset' :
+        'Monthly quote: ' + new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(moduleTotal + seatTotal) + ' / month';
     }
     mode.addEventListener('change', update);
     bundle.addEventListener('change', update);
@@ -419,7 +516,7 @@
         el('div', { class: 'field' }, [el('label', { text: 'Admin username' }), el('input', { id: 'n-user', placeholder: 'owner' })]),
         el('div', { class: 'field' }, [el('label', { text: 'Admin password' }), el('input', { id: 'n-pass', type: 'password' })]),
       ]),
-      el('p', { class: 'muted', text: 'Choose modules, employee allowance, and pricing after creating the tenant.' }),
+      el('p', { class: 'muted', text: 'Choose modules, login seat allowance, and pricing after creating the tenant.' }),
       el('div', { class: 'err', id: 'n-err' }),
       el('div', { style: 'display:flex;gap:10px;margin-top:6px' }, [
         el('button', { class: 'btn', id: 'n-go' }, ['Create']),

@@ -27,17 +27,23 @@ export function currentSlug(): string {
 export function planFor(slug = currentSlug()): { plan: string; limits: PlanLimits & { employees: number } } {
   if (slug === DEFAULT_TENANT) return { plan: 'unlimited', limits: { ...PLANS.unlimited, employees: Infinity } };
   const t = getTenant(slug);
-  return { plan: t?.plan ?? 'trial', limits: { ...planLimitsFor(t?.plan), employees: t ? storedSubscription(t)?.employee_limit ?? Infinity : Infinity } };
+  const base = planLimitsFor(t?.plan);
+  const subscription = t ? storedSubscription(t) : null;
+  return { plan: t?.plan ?? 'trial', limits: { ...base, users: subscription?.seat_limit ?? base.users, employees: Infinity } };
 }
 
-function dirSizeBytes(dir: string): number {
+export function dirSizeBytes(dir: string): number {
   let total = 0;
   try {
-    for (const name of fs.readdirSync(dir)) {
-      const st = fs.statSync(path.join(dir, name));
-      total += st.isDirectory() ? 0 : st.size; // per-tenant folders are flat
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) total += dirSizeBytes(file);
+      else if (entry.isFile()) total += fs.statSync(file).size;
+      // Do not follow links out of a tenant's upload directory.
     }
-  } catch { /* missing dir → 0 */ }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+  }
   return total;
 }
 
@@ -72,7 +78,7 @@ export function enforceQuota(kind: QuotaKind, addingBytes = 0): void {
   const cap = limits[kind];
   if (!Number.isFinite(cap)) return;
 
-  const used = tenantUsage(slug)[kind];
+  const used = kind === 'storage_mb' ? dirSizeBytes(uploadDir(slug)) / (1024 * 1024) : tenantUsage(slug)[kind];
   const willBe = kind === 'storage_mb' ? used + addingBytes / (1024 * 1024) : used + 1;
   if (willBe > cap) {
     throw Object.assign(
