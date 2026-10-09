@@ -1,5 +1,27 @@
 # Feature pipelines
 
+## Original company → registered tenant
+
+1. **Preview** (`platform/adopt-default.ts`, CLI `scripts/adopt-default-tenant.ts`):
+   validate source integrity, user/file counts, slug and unoccupied destinations.
+2. **Quiesce** (operations): sync outstanding device work; stop every writer on the
+   existing volume. `--apply --server-stopped` asserts this prerequisite.
+3. **Preserve and verify** (`platform`): SQLite/WAL snapshot, platform snapshot,
+   recursive upload backup/copy, file-hash and database-byte verification. Original
+   DB/uploads remain untouched. Other tenants' upload folders are excluded.
+4. **Register** (`platform`): catalog row and provisioning log in one transaction;
+   preserve existing users/passwords/business records and default to unlimited entitlements.
+5. **Cut over** (`app`, shared clients): configure path host and default redirect;
+   serve `/<slug>` with normal tenant gates, scoped sessions/queues/PWA/chat; refuse
+   old company APIs and skip the retired source in maintenance/backups/migrations.
+6. **Validate** (operations): verify known records/uploads, existing login, new URL,
+   devices and owner listing before resuming work.
+
+Failure: refuse missing/corrupt sources, collisions, symlinks, changed files and
+unstopped-writer assertions; retain originals and recovery artifacts for diagnosis.
+Do not roll back to the original after new writes without reconciling them.
+Runbook: `docs/VERDESAKAY-TENANT-CUTOVER.md`.
+
 Real end-to-end business processes, as ordered module stages. See
 `docs/modules/catalog.md` for what each module owns. Written per the "Mapping
 feature pipelines" section of `~/.claude/CLAUDE.md` — when placing a new feature,

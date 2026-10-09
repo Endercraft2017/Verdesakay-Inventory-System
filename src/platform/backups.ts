@@ -23,6 +23,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { getDb, DB_PATH, DATA_DIR, UPLOAD_DIR, DEFAULT_TENANT } from '../shared/db';
+import { retiredDefaultTenant } from './platform';
 import {
   backupDir, mirrorDir, kindDir, snapshotTo, pruneDaily, pruneNewest, retention, localDate, stamp,
   isRetentionManagedUpload, type BackupKind,
@@ -44,7 +45,7 @@ export interface BackupResult {
 
 /** Every database to back up, as name → live connection (opened lazily). */
 function targets(): Array<{ name: string; conn: () => DatabaseSync }> {
-  const slugs = [DEFAULT_TENANT, ...listTenants().filter((t) => t.status !== 'purged').map((t) => t.slug)];
+  const slugs = [...(retiredDefaultTenant() ? [] : [DEFAULT_TENANT]), ...listTenants().filter((t) => t.status !== 'purged').map((t) => t.slug)];
   return [
     ...slugs.map((slug) => ({ name: slug, conn: () => getDb(slug) })),
     { name: PLATFORM_BACKUP_NAME, conn: () => platformDb() },

@@ -82,7 +82,9 @@ by this reorg; flagged for a future follow-up rather than fixed here.
 **Responsibility:** tenant provisioning, plans, quotas, and the owner console — sits
 above the tenant-facing app, not one of its features. Single-tenant/self-hosted
 installs never touch this.
-**Owned files:** `plans.ts`, `quota.ts`, `provisioning.ts`, `platform.ts` (tenant
+**Owned files:** `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
+verified adoption of the original company, preserving source DB/uploads; CLI
+`scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
 catalog in `platform.db`), `platform-users.ts` (operator accounts, separate auth from
 `shared/auth.ts`), `backups.ts` (daily backup job over every tenant DB + `platform.db` +
 uploads, run from `server.ts`; manual backup/list/restore behind `npm run backup*` /
@@ -96,6 +98,14 @@ workspace DB as a tenant; console route `POST /_platform/api/tenants/import`).
 **Dependencies:** `shared/` only, downward. One reverse pull: `modules/hr/punch-photos.ts`
 reads `platform/platform.ts` for per-tenant photo-retention settings.
 **Status:** working.
+
+Path tenancy: `TENANT_PATH_HOST` enables `/<slug>` for desktop/mobile/API/chat;
+`DEFAULT_TENANT_REDIRECT` retires the original company after verified adoption.
+The owner console remains separate and shows tenant URLs. Browser storage, mobile
+queues, service-worker caches/scopes and manifests are tenant-scoped. Server
+maintenance, backups and `migrate:all` skip the retired source. Operational cutover
+and recovery: `docs/VERDESAKAY-TENANT-CUTOVER.md`. Paths share a browser origin;
+these namespaces do not replace authentication or sanitization.
 
 ## sync/ — offline-first replication (partial)
 

@@ -6,10 +6,10 @@
  *   npm run migrate:all
  */
 import { forceMigrate, SCHEMA_VERSION, DEFAULT_TENANT } from '../src/shared/db';
-import { listTenants } from '../src/platform/platform';
+import { listTenants, retiredDefaultTenant } from '../src/platform/platform';
 
 const slugs = [
-  DEFAULT_TENANT,
+  ...(retiredDefaultTenant() ? [] : [DEFAULT_TENANT]),
   ...listTenants().filter((t) => t.status !== 'purged').map((t) => t.slug),
 ];
 

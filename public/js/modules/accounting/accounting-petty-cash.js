@@ -115,7 +115,7 @@ App.register('accounting-petty-cash', async (view) => {
     const qs = new URLSearchParams({ format: 'csv' });
     if (state.from) qs.set('from', state.from);
     if (state.to) qs.set('to', state.to);
-    window.open(`/api/accounting/petty-cash/funds/${state.fundId}/entries?${qs}`, '_blank');
+    window.open(API.base() + `/api/accounting/petty-cash/funds/${state.fundId}/entries?${qs}`, '_blank');
   }
 
   /* ---- record a money-in / money-out entry ---- */

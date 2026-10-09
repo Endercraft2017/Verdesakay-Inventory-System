@@ -140,6 +140,7 @@
     var full = await api('GET', '/tenants/' + encodeURIComponent(slug));
     drawerState = {
       slug: slug,
+      url: full.url,
       name: full.name,
       plan: full.plan,
       status: full.status,
@@ -252,6 +253,7 @@
     ));
 
     var body = el('div', { class: 'body' }, [
+      el('div', { class: 'field' }, [el('label', { text: 'Tenant link' }), el('a', { href: st.url, target: '_blank', rel: 'noopener', text: st.url })]),
       el('div', { class: 'field' }, [el('label', { text: 'Name' }), el('input', { id: 'd-name', value: st.name || '' })]),
       el('div', { class: 'row2' }, [
         el('div', { class: 'field' }, [el('label', { text: 'Plan' }), planSel]),
@@ -329,13 +331,13 @@
     } catch (ex) { toast(ex.message); }
   }
 
-  /* ---------- new workspace ---------- */
+  /* ---------- new tenant ---------- */
   $('new-btn').addEventListener('click', function () {
     var planOpts = ref.plans.map(function (p) {
       return el('option', { value: p, text: p, selected: p === 'starter' ? 'selected' : null });
     });
     var card = el('div', { class: 'card' }, [
-      el('h2', { text: 'New workspace' }),
+      el('h2', { text: 'New tenant' }),
       el('div', { class: 'field' }, [el('label', { text: 'Slug' }), el('input', { id: 'n-slug', placeholder: 'acme' })]),
       el('div', { class: 'field' }, [el('label', { text: 'Company name' }), el('input', { id: 'n-name', placeholder: 'Acme Mfg' })]),
       el('div', { class: 'row2' }, [

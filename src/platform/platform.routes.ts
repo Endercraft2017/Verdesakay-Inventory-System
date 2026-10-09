@@ -15,7 +15,7 @@ import { tenantStore, withTenant, DEFAULT_TENANT } from '../shared/db';
 import {
   listTenants, getTenant, setTenantPlan, setTenantStatus, setTenantName,
   setTrialEndsAt, setTenantModules, setTenantPhotoRetention, listProvisioningLog, logProvisioning,
-  type TenantRow, type TenantStatus,
+  type TenantRow, type TenantStatus, tenantPublicUrl,
 } from './platform';
 import { createTenant, importTenant, purgeTenant } from './provisioning';
 import { tenantUsage } from './quota';
@@ -107,6 +107,7 @@ function tenantView(t: TenantRow) {
   try { photoUsageMb = Math.round(withTenant(t.slug, () => punchPhotoUsageBytes()) / (1024 * 1024) * 10) / 10; } catch { photoUsageMb = null; }
   return {
     slug: t.slug,
+    url: tenantPublicUrl(t.slug),
     name: t.name,
     status: t.status,
     plan: t.plan,

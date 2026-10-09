@@ -11,6 +11,7 @@ import bcrypt from 'bcryptjs';
 import { withTenant, run, DATA_DIR, UPLOAD_DIR } from '../shared/db';
 import {
   createTenantRow, getTenant, isValidSlug, logProvisioning, setTenantStatus,
+  retiredDefaultTenant,
   type TenantStatus,
 } from './platform';
 
@@ -132,6 +133,7 @@ export function resumeTenant(slug: string): boolean {
 
 /** Mark purged and delete the tenant's DB file(s) + upload folder. Irreversible. */
 export function purgeTenant(slug: string): boolean {
+  if (slug === retiredDefaultTenant()) throw httpError(409, 'Change DEFAULT_TENANT_REDIRECT before purging the migrated company.');
   if (!getTenant(slug)) return false;
   setTenantStatus(slug, 'purged');
   for (const suffix of ['', '-wal', '-shm']) {

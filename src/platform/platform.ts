@@ -17,6 +17,11 @@ const ROOT = path.join(import.meta.dirname, '..', '..');
 export const PLATFORM_DB_PATH = process.env.PLATFORM_DB_PATH || path.join(ROOT, 'db', 'platform.db');
 /** Root domain for tenant subdomains, e.g. `verdesakay.app`. Empty ⇒ single-tenant. */
 export const APP_DOMAIN = (process.env.APP_DOMAIN || '').toLowerCase().trim();
+/** Customer entry URL, shared by provisioning responses and the owner console. */
+export function tenantPublicUrl(slug: string): string {
+  const host = (process.env.TENANT_PATH_HOST || '').toLowerCase().trim();
+  return host ? `https://${host}/${slug}` : APP_DOMAIN ? `https://${slug}.${APP_DOMAIN}` : `/?tenant=${slug}`;
+}
 /** Self-serve `POST /api/signup` is only live when this is exactly "true". */
 export const SIGNUPS_OPEN = process.env.SIGNUPS_OPEN === 'true';
 /** The owner console at `/_platform` is only mounted when this is exactly "true".
@@ -36,6 +41,7 @@ export const RESERVED_SLUGS = new Set([
   'platform', '_platform', 'default', 'localhost', 'test', 'tests', 'staging',
   'stage', 'dev', 'demo', 'status', 'health', 'help', 'support', 'docs', 'blog',
   'signup', 'login', 'auth', 'billing', 'account',
+  'ws', 'm', 'mobile', 'js', 'css', 'images', 'icons', 'fonts', 'vendor',
 ]);
 
 export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'purged';
@@ -153,6 +159,17 @@ export function getTenant(slug: string): TenantRow | null {
 
 export function listTenants(): TenantRow[] {
   return pdb().prepare('SELECT * FROM tenants ORDER BY created_at DESC').all() as unknown as TenantRow[];
+}
+
+/** Once adopted, the original default database is recovery-only, on every hostname. */
+export function retiredDefaultTenant(): string | null {
+  const slug = (process.env.DEFAULT_TENANT_REDIRECT || '').trim();
+  if (!slug) return null;
+  if (!process.env.TENANT_PATH_HOST || !isValidSlug(slug) || !getTenant(slug)
+    || getTenant(slug)?.status === 'purged') {
+    throw new Error('DEFAULT_TENANT_REDIRECT requires TENANT_PATH_HOST and an existing, non-purged tenant. Complete adoption before enabling cutover.');
+  }
+  return slug;
 }
 
 export function createTenantRow(input: {

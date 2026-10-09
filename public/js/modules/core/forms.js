@@ -105,7 +105,7 @@ App.register('forms', async (view) => {
   // iframe inside a modal that's already part of the page never opens a new window/tab).
   async function printFile(f) {
     try {
-      const res = await fetch('/api/forms/' + f.id + '/download', {
+      const res = await fetch(API.base() + '/api/forms/' + f.id + '/download', {
         headers: { Authorization: 'Bearer ' + API.getToken() },
       });
       if (!res.ok) throw new Error('Could not open file');
@@ -139,7 +139,7 @@ App.register('forms', async (view) => {
   async function download(id) {
     // Authenticated download: fetch as blob with token, then save.
     try {
-      const res = await fetch('/api/forms/' + id + '/download', {
+      const res = await fetch(API.base() + '/api/forms/' + id + '/download', {
         headers: { Authorization: 'Bearer ' + API.getToken() },
       });
       if (!res.ok) throw new Error('Download failed');

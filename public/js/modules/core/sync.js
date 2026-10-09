@@ -153,7 +153,7 @@ App.register('sync', async (view) => {
       API.get('/sync/clashes'),
       API.get('/desktop/installer/info').catch(() => ({ available: false })),
     ]);
-    const origin = location.origin;
+    const origin = location.origin + (window.VDS_BASE_PATH || '');
     const hostName = (no) => (sites.hosts.find((h) => h.node_no === no) || { name: '#' + no }).name;
     const role = (p) => p.is_host ? 'Site host' : p.host_node_no ? 'PC of ' + hostName(p.host_node_no) : 'PC';
     const hostOptions = (selected) => ['<option value="">— cloud only —</option>']

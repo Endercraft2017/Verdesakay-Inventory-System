@@ -418,7 +418,7 @@ window.MApp = (function () {
   if ('serviceWorker' in navigator && !window.VDS_NATIVE) {
     var hadController = !!navigator.serviceWorker.controller;
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('/mobile/sw.js', { scope: '/m' }).catch(function () {});
+      navigator.serviceWorker.register((window.VDS_BASE_PATH || '') + '/mobile/sw.js', { scope: (window.VDS_BASE_PATH || '') + '/m' }).catch(function () {});
     });
     var reloaded = false;
     navigator.serviceWorker.addEventListener('controllerchange', function () {

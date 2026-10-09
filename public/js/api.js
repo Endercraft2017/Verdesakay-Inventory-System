@@ -49,7 +49,7 @@ const API = (() => {
   /** Where the API lives: this page's own server, or — in the installed phone app, whose pages are
       bundled inside it (docs/OFFLINE-FIRST.md §29) — the server the phone was pointed at. */
   function base() {
-    if (!window.VDS_NATIVE) return '';
+    if (!window.VDS_NATIVE) return window.VDS_BASE_PATH || '';
     try { return (localStorage.getItem('vds_api_base') || '').replace(/\/+$/, ''); } catch (e) { return ''; }
   }
 
@@ -59,7 +59,7 @@ const API = (() => {
     if (token) headers['Authorization'] = 'Bearer ' + token;
     if (!/^\/anonymous-reports/.test(path)) headers['X-Device-Id'] = deviceId();
     // Which app this is (src/shared/device.ts): both are held to the evidence-photo rules.
-    headers['X-Client'] = window.VDS_NATIVE || /^\/m(\/|$)/.test(location.pathname) ? 'mobile' : 'desktop';
+    headers['X-Client'] = window.VDS_NATIVE || /^\/m(\/|$)/.test(location.pathname.slice((window.VDS_BASE_PATH || '').length)) ? 'mobile' : 'desktop';
     // Opt-in idempotency: a caller (e.g. the mobile offline queue) passes a stable
     // key so a retried request is de-duplicated server-side instead of re-applied.
     if (opts && opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
@@ -159,3 +159,5 @@ const API = (() => {
     blobUrl, download,
   };
 })();
+// Shared mobile helpers and chat test for window.API before using the client.
+window.API = API;

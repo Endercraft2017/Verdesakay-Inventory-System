@@ -5,7 +5,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { parseBody, signupSchema } from '../shared/validation';
 import { createTenant } from './provisioning';
-import { SIGNUPS_OPEN, APP_DOMAIN } from './platform';
+import { SIGNUPS_OPEN, tenantPublicUrl } from './platform';
 
 const router = Router();
 
@@ -36,7 +36,7 @@ router.post('/', signupLimiter, (req, res, next) => {
     });
     res.status(201).json({
       slug,
-      url: APP_DOMAIN ? `https://${slug}.${APP_DOMAIN}` : `/?tenant=${slug}`,
+      url: tenantPublicUrl(slug),
     });
   } catch (e) {
     const err = e as Error & { status?: number };

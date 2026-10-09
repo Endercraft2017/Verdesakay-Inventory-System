@@ -10,7 +10,8 @@ import path from 'node:path';
 import http from 'node:http';
 import https from 'node:https';
 import { spawnSync } from 'node:child_process';
-import { init, cleanupSessions, getDb, DB_PATH } from './src/shared/db';
+import { init, cleanupSessions, getDb, DB_PATH, withTenant } from './src/shared/db';
+import { retiredDefaultTenant, listTenants } from './src/platform/platform';
 import { createApp, BEHIND_PROXY } from './src/app';
 import { sendDueTaskReminders } from './src/shared/push';
 import { cleanupPlatformSessions } from './src/platform/platform-users';
@@ -33,12 +34,23 @@ if (BEHIND_PROXY && !process.env.TZ) {
   process.exit(1);
 }
 
-init();
-const housekeeping = () => { cleanupSessions(); cleanupPlatformSessions(); };
+const retired = DEPLOY_MODE === 'cloud' ? retiredDefaultTenant() : null;
+if (retired) getDb(retired); else init();
+const backgroundTenants = () => DEPLOY_MODE === 'cloud'
+  ? [...(retired ? [] : ['default']), ...listTenants().filter(t => t.status === 'active' || t.status === 'trial' || t.status === 'past_due').map(t => t.slug)]
+  : ['default'];
+const housekeeping = () => {
+  for (const slug of backgroundTenants()) withTenant(slug, cleanupSessions);
+  cleanupPlatformSessions();
+};
 housekeeping(); // sweep stale sessions / old audit-log rows once at boot, then hourly
 setInterval(housekeeping, 60 * 60 * 1000).unref(); // hourly
 // Push reminders are an outside side effect: only the cloud sends them (OFFLINE-FIRST §7.8).
-if (DEPLOY_MODE === 'cloud') setInterval(() => { void sendDueTaskReminders(); }, 60 * 1000).unref();
+if (DEPLOY_MODE === 'cloud') setInterval(() => {
+  for (const slug of backgroundTenants()) {
+    void withTenant(slug, sendDueTaskReminders).catch(e => console.error(`[push] reminders failed for ${slug}: ${(e as Error).message}`));
+  }
+}, 60 * 1000).unref();
 // An installed PC syncs with its cloud in the background (docs/OFFLINE-FIRST.md §12).
 if (DEPLOY_MODE === 'node') {
   startSyncLoop('default');

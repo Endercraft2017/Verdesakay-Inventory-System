@@ -13,7 +13,7 @@
    is how many belong to someone else on this phone — they wait for that person.
 */
 (function () {
-  var DB_NAME = 'vds_mobile';
+  var DB_NAME = 'vds_mobile' + (window.VDS_BASE_PATH || '');
   var STORE = 'ops';
   var META = 'meta'; // { k, v, user_id } — the bearer token + its account, for the service worker
   var dbP = null;

@@ -20,7 +20,7 @@
     return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   }
 
-  function reg() { return navigator.serviceWorker.getRegistration('/m'); }
+  function reg() { return navigator.serviceWorker.getRegistration((window.VDS_BASE_PATH || '') + '/m'); }
 
   var mPush = {
     isSupported: isSupported,

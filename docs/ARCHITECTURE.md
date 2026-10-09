@@ -21,6 +21,16 @@ scrollable, time/photo inputs readable and long labels/actions wrapping. Attenda
 and workflows are unchanged. Small styling hooks also live in `hr-assets.js` and
 `hr-contact-verification.js`; verification limitations and delivery are recorded in HANDOFF.md.
 
+Tenant adoption and path routing (2026-10-09): `platform/adopt-default.ts` and
+`scripts/adopt-default-tenant.ts` snapshot/copy/verify the original company before
+catalog registration, retaining source DB/uploads and recovery copies.
+`platform/tenant-path.ts` and `app.ts` support `TENANT_PATH_HOST/<slug>`; the client
+API, chat, storage, mobile worker/queues and manifest retain that tenant context.
+`DEFAULT_TENANT_REDIRECT` makes the original company recovery-only across aliases;
+server maintenance, backups and `migrate:all` skip it. The console exposes tenant
+links. See [VERDESAKAY-TENANT-CUTOVER.md](VERDESAKAY-TENANT-CUTOVER.md) for activation,
+validation and recovery. Production migration has not been executed.
+
 HR desktop UI refinement (2026-10-09): Timekeeping cutoff/roster and the Payroll form list now
 separate primary actions, filters and secondary tools; add labeled keyboard entry points and
 load-error/filter recovery; and gate list write controls by their existing permissions.

@@ -1009,7 +1009,7 @@ App.register('hr-employees', async (view) => {
   async function downloadDoc(employeeId, docId, docs) {
     const doc = docs.find((x) => String(x.id) === String(docId));
     try {
-      const res = await fetch(`/api/hr/employees/${employeeId}/documents/${docId}/download`, {
+      const res = await fetch(API.base() + `/api/hr/employees/${employeeId}/documents/${docId}/download`, {
         headers: { Authorization: 'Bearer ' + API.getToken() },
       });
       if (!res.ok) throw new Error('Download failed');

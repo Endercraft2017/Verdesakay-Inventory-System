@@ -3,6 +3,7 @@
  * but does NOT start listening — so tests can import it via supertest.
  */
 import path from 'node:path';
+import fs from 'node:fs';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -53,7 +54,8 @@ import quickbooksRoutes from './modules/quickbooks/quickbooks.routes';
 import { recordActivity } from './shared/activity';
 import { idempotency } from './shared/idempotency';
 import { tenantStore, getDb, DEFAULT_TENANT } from './shared/db';
-import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost } from './platform/platform';
+import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost, retiredDefaultTenant } from './platform/platform';
+import { tenantPath, onTenantPathHost } from './platform/tenant-path';
 import { requireModule, moduleEnabled } from './shared/modules';
 import { BEHIND_PROXY } from './shared/hosting';
 import { installSync, replayTenantOf, syncRequestMiddleware, syncRoutes } from './sync';
@@ -70,6 +72,35 @@ const NATIVE_APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost'
 
 export function createApp() {
   const app = express();
+  // Strip a configured tenant prefix before the existing API, audit and sync machinery.
+  // Keep the normalized originalUrl so anonymous reports remain anonymous and sync
+  // commands stay portable to an installed PC's unprefixed local API.
+  app.use((req, res, next) => {
+    const route = tenantPath(req.headers.host, req.url);
+    if (route) {
+      if (route.url === '/_platform' || route.url.startsWith('/_platform/')) {
+        res.status(404).json({ error: 'Not found' }); return;
+      }
+      res.locals.tenantSlug = route.slug;
+      res.locals.tenantBase = route.base;
+      req.url = route.url;
+      req.originalUrl = route.url;
+    } else if (onTenantPathHost(req.headers.host) || resolveTenantSlug(req.headers.host) === DEFAULT_TENANT) {
+      const landing = retiredDefaultTenant();
+      if (landing) {
+        if (req.path === '/' || req.path === '/m' || req.path.startsWith('/m/')
+          || req.path === '/index.html' || req.path === '/mobile/index.html') {
+          const origin = onTenantPathHost(req.headers.host) ? '' : `https://${process.env.TENANT_PATH_HOST}`;
+          res.redirect(307, `${origin}/${landing}${req.url}`); return;
+        }
+        // The retained original DB is a recovery source, never a second writable company.
+        if (req.path === '/api' || (req.path.startsWith('/api/') && req.path !== '/api/health')) {
+          res.status(410).json({ error: `This company has moved to /${landing}.` }); return;
+        }
+      }
+    }
+    next();
+  });
   // Offline-first sync hooks (docs/OFFLINE-FIRST.md). Inert for any tenant DB without a sync
   // role, i.e. every tenant until enrolment exists.
   installSync(app);
@@ -107,6 +138,7 @@ export function createApp() {
     const consoleHost = PLATFORM_CONSOLE ? platformHost() : '';
     if (!consoleHost) { next(); return; }
     const onConsoleHost = String(req.headers.host || '').toLowerCase().split(':')[0] === consoleHost;
+    if (onConsoleHost && res.locals.tenantSlug) { next(); return; }
     const consolePath = req.path === '/_platform' || req.path.startsWith('/_platform/');
     if (onConsoleHost === consolePath || req.path === '/api/health') { next(); return; }
     if (onConsoleHost && !req.path.startsWith('/api/')) { res.redirect('/_platform/'); return; }
@@ -120,11 +152,11 @@ export function createApp() {
   // resolves with no catalog row, so single-tenant / self-hosted installs are unaffected.
   app.use((req, res, next) => {
     // An internal sync replay names its tenant (authenticated by a per-process secret).
-    const slug = replayTenantOf(req) ?? resolveTenantSlug(
+    const slug = replayTenantOf(req) ?? res.locals.tenantSlug ?? (onTenantPathHost(req.headers.host) ? DEFAULT_TENANT : resolveTenantSlug(
       req.headers.host,
       req.get('x-tenant'),
       typeof req.query.tenant === 'string' ? req.query.tenant : undefined
-    );
+    ));
     if (slug !== DEFAULT_TENANT) {
       const tenant = getTenant(slug);
       if (!tenant) {
@@ -146,7 +178,8 @@ export function createApp() {
         return;
       }
     }
-    tenantStore.run({ db: getDb(slug), slug }, () => next());
+    // Shared assets, health checks and the owner console need no original-company DB.
+    tenantStore.run({ db: getDb(slug === DEFAULT_TENANT ? retiredDefaultTenant() ?? slug : slug), slug }, () => next());
   });
 
   // Sync: replay context, the node write guard, and the cloud's effect stream (src/sync/capture.ts).
@@ -274,10 +307,31 @@ export function createApp() {
   // The mobile service worker lives under /mobile/ but must control /m — the
   // Service-Worker-Allowed header lets it claim that broader scope.
   app.get('/mobile/sw.js', (_req, res) => {
-    res.set('Service-Worker-Allowed', '/m');
+    const base = String(res.locals.tenantBase || '');
+    res.set('Service-Worker-Allowed', base + '/m');
     res.set('Cache-Control', 'no-cache');
     res.type('text/javascript');
-    res.sendFile(path.join(ROOT, 'public', 'mobile', 'sw.js'));
+    res.send(`var TENANT_BASE = ${JSON.stringify(base)};\n` + fs.readFileSync(path.join(ROOT, 'public', 'mobile', 'sw.js'), 'utf8'));
+  });
+
+  function sendAppShell(res: Response, mobile: boolean): void {
+    const base = String(res.locals.tenantBase || '');
+    const file = path.join(ROOT, 'public', mobile ? 'mobile/index.html' : 'index.html');
+    const html = fs.readFileSync(file, 'utf8').replace(/<head>/i,
+      `<head><script>window.VDS_BASE_PATH=${JSON.stringify(base)};</script>`)
+      .replace(/\b(src|href)="\/(?!\/)/g, `$1="${base}/`);
+    res.set('Cache-Control', 'no-cache').type('html').send(html);
+  }
+  app.get('/index.html', (_req, res) => sendAppShell(res, false));
+  app.get('/mobile/index.html', (_req, res) => sendAppShell(res, true));
+  app.get('/mobile/manifest.webmanifest', (_req, res) => {
+    const base = String(res.locals.tenantBase || '');
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/mobile/manifest.webmanifest'), 'utf8'));
+    manifest.start_url = base + '/m';
+    manifest.scope = base + '/m';
+    manifest.id = base + '/m';
+    manifest.icons.forEach((icon: { src: string }) => { icon.src = base + icon.src; });
+    res.set('Cache-Control', 'no-cache').type('application/manifest+json').send(JSON.stringify(manifest));
   });
 
   // Static assets (css/js/images and the mobile/* bundle). `index: false` so that
@@ -323,11 +377,12 @@ export function createApp() {
     const override = typeof req.query.view === 'string' ? req.query.view : undefined;
     if (override === 'desktop' || override === 'mobile') {
       res.cookie('vds_view', override, {
+        path: String(res.locals.tenantBase || '/'),
         maxAge: 365 * 24 * 60 * 60 * 1000,
         sameSite: 'lax',
         httpOnly: false,
       });
-      res.redirect(override === 'mobile' ? '/m' : '/');
+      res.redirect(String(res.locals.tenantBase || '') + (override === 'mobile' ? '/m' : '/'));
       return;
     }
 
@@ -346,21 +401,21 @@ export function createApp() {
           + `<title>Mobile app unavailable</title>`
           + `<div style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:20vh auto;padding:0 1.5rem;text-align:center">`
           + `<h1 style="font-size:1.1rem">The mobile app isn't enabled for this workspace</h1>`
-          + `<p style="color:#666">Open <a href="/?view=desktop">the full app</a> instead, or ask your administrator to enable the mobile module.</p></div>`
+          + `<p style="color:#666">Open <a href="${String(res.locals.tenantBase || '')}/?view=desktop">the full app</a> instead, or ask your administrator to enable the mobile module.</p></div>`
         );
         return;
       }
-      res.sendFile(path.join(ROOT, 'public', 'index.html'));
+      sendAppShell(res, false);
       return;
     }
 
     // Only auto-redirect INTO the mobile app; never force a desktop browser out of /m.
     if (wantsMobile && !onMobilePath) {
-      res.redirect('/m');
+      res.redirect(String(res.locals.tenantBase || '') + '/m');
       return;
     }
 
-    res.sendFile(path.join(ROOT, 'public', onMobilePath ? 'mobile/index.html' : 'index.html'));
+    sendAppShell(res, onMobilePath);
   });
 
   // Central error handler: validation errors -> 400, anything with a numeric status is

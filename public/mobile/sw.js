@@ -5,10 +5,13 @@
      device reconnects, even if no tab is open (Android; iOS flushes on open).
 
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
-var CACHE_VERSION = 'vds-m-v67';
+var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
+var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
+var CACHE_VERSION = CACHE_PREFIX + 'v68';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
+  '/js/tenant-context.js',
   '/m',
   '/mobile/index.html',
   '/mobile/manifest.webmanifest',
@@ -97,7 +100,7 @@ function precache() {
   return caches.open(CACHE_VERSION).then(function (c) {
     // Cache each asset independently — one bad/renamed file shouldn't fail the batch.
     return Promise.all(SHELL.map(function (u) {
-      return c.add(new Request(u, { cache: 'reload' })).catch(function () { /* skip */ });
+      return c.add(new Request(TENANT_BASE + u, { cache: 'reload' })).catch(function () { /* skip */ });
     }));
   });
 }
@@ -112,7 +115,9 @@ self.addEventListener('activate', function (e) {
   e.waitUntil(
     caches.keys()
       .then(function (keys) {
-        return Promise.all(keys.filter(function (k) { return k !== CACHE_VERSION; })
+        return Promise.all(keys.filter(function (k) {
+          return k !== CACHE_VERSION && (k.indexOf(CACHE_PREFIX) === 0 || (!TENANT_BASE && /^vds-m-v\d+$/.test(k)));
+        })
           .map(function (k) { return caches.delete(k); }));
       })
       .catch(function () { /* CacheStorage unavailable — still take control */ })
@@ -121,7 +126,7 @@ self.addEventListener('activate', function (e) {
 });
 
 function safeMatch(req) {
-  return caches.match(req).catch(function () { return undefined; });
+  return caches.open(CACHE_VERSION).then(function (c) { return c.match(req); }).catch(function () { return undefined; });
 }
 
 self.addEventListener('fetch', function (e) {
@@ -131,7 +136,7 @@ self.addEventListener('fetch', function (e) {
   if (req.method !== 'GET') return; // writes go straight to the network / the app's queue
 
   // API: always live, never cached.
-  if (url.origin === self.location.origin && url.pathname.indexOf('/api/') === 0) {
+  if (url.origin === self.location.origin && /(?:^|\/)api(?:\/|$)/.test(url.pathname)) {
     return; // default network handling
   }
 
@@ -139,7 +144,7 @@ self.addEventListener('fetch', function (e) {
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req).catch(function () {
-        return safeMatch('/mobile/index.html').then(function (r) { return r || safeMatch('/m'); });
+        return safeMatch(TENANT_BASE + '/mobile/index.html').then(function (r) { return r || safeMatch(TENANT_BASE + '/m'); });
       })
     );
     return;
@@ -179,11 +184,11 @@ self.addEventListener('push', function (e) {
 self.addEventListener('notificationclick', function (e) {
   e.notification.close();
   var hash = (e.notification.data && e.notification.data.url) || '#/home';
-  var target = new URL('/m' + hash, self.location.origin).href;
+  var target = new URL(TENANT_BASE + '/m' + hash, self.location.origin).href;
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
     for (var i = 0; i < list.length; i++) {
       var c = list[i];
-      if (c.url.indexOf('/m') !== -1) {
+      if (new URL(c.url).pathname === TENANT_BASE + '/m' || new URL(c.url).pathname.indexOf(TENANT_BASE + '/m/') === 0) {
         if ('navigate' in c) { try { c.navigate(target); } catch (err) { /* ignore */ } }
         return c.focus();
       }
@@ -202,7 +207,7 @@ self.addEventListener('message', function (e) {
 
 function idb() {
   return new Promise(function (resolve, reject) {
-    var r = indexedDB.open('vds_mobile', 2);
+    var r = indexedDB.open('vds_mobile' + TENANT_BASE, 2);
     r.onsuccess = function () { resolve(r.result); };
     r.onerror = function () { reject(r.error); };
   });
@@ -257,7 +262,7 @@ async function replayQueue() {
     // Only ever replay an op as the account that queued it (legacy unstamped ops excepted).
     if (op.user_id != null && op.user_id !== tokenUser) continue;
     try {
-      var res = await fetch('/api' + op.path, {
+      var res = await fetch(TENANT_BASE + '/api' + op.path, {
         method: op.method || 'POST',
         headers: Object.assign({ 'Idempotency-Key': op.key }, headers),
         body: JSON.stringify(op.body),
