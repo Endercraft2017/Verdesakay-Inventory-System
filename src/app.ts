@@ -2,6 +2,7 @@
  * Express application factory. Builds the app with middleware, routes, and error handling
  * but does NOT start listening — so tests can import it via supertest.
  */
+import supportRoutes from './platform/support.routes';
 import path from 'node:path';
 import fs from 'node:fs';
 import express, { type Request, type Response, type NextFunction } from 'express';
@@ -187,12 +188,13 @@ export function createApp() {
         return;
       }
       // A lapsed trial is treated as past_due: reads still work, writes are blocked
-      // (except auth, so they can log in and see the billing banner).
+      // (except auth and support, so administrators can seek help with billing).
       const lapsedTrial = tenant.status === 'trial' && !!tenant.trial_ends_at
         && tenant.trial_ends_at < new Date().toISOString();
       const readOnly = tenant.status === 'past_due' || lapsedTrial;
       if (readOnly && req.method !== 'GET' && req.method !== 'HEAD'
-        && !req.path.startsWith('/api/auth') && req.path !== '/api/tenant') {
+        && !req.path.startsWith('/api/auth') && req.path !== '/api/tenant'
+        && req.path !== '/api/support' && !req.path.startsWith('/api/support/')) {
         res.status(402).json({ error: 'This workspace is past due — it is read-only until billing is resolved.' });
         return;
       }
@@ -268,6 +270,7 @@ export function createApp() {
   app.use('/api/desktop', desktopRoutes);
   app.use('/api/confidential-reports', confidentialReportRoutes);
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
+  app.use('/api/support', supportRoutes);
   app.use('/api/tenant', tenantRoutes); // current workspace plan / status / usage
   // Mounted here (before the bare-'/api' routers below) so its public OAuth /callback
   // isn't shadowed by another router's top-level requireAuth.

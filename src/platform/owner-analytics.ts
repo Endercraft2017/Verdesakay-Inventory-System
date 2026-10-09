@@ -24,6 +24,14 @@ function db() {
         id INTEGER PRIMARY KEY, slug TEXT NOT NULL, subject TEXT NOT NULL, status TEXT NOT NULL,
         by TEXT NOT NULL, at TEXT NOT NULL);`);
     if (!(d.prepare('PRAGMA table_info(tenant_telemetry)').all() as Array<{name: string}>).some(c => c.name === 'client')) d.exec("ALTER TABLE tenant_telemetry ADD COLUMN client TEXT NOT NULL DEFAULT 'desktop'");
+    const supportColumns = new Set((d.prepare('PRAGMA table_info(tenant_support)').all() as Array<{name: string}>).map(c => c.name));
+    for (const [name, definition] of Object.entries({ description: "TEXT NOT NULL DEFAULT ''", category: "TEXT NOT NULL DEFAULT 'issue'", priority: "TEXT NOT NULL DEFAULT 'normal'", source: "TEXT NOT NULL DEFAULT 'owner'" })) {
+      if (!supportColumns.has(name)) d.exec(`ALTER TABLE tenant_support ADD COLUMN ${name} ${definition}`);
+    }
+    d.exec(`CREATE TABLE IF NOT EXISTS tenant_support_replies (
+      id INTEGER PRIMARY KEY, ticket_id INTEGER NOT NULL, slug TEXT NOT NULL,
+      body TEXT NOT NULL, by TEXT NOT NULL, source TEXT NOT NULL, at TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS support_reply_ticket ON tenant_support_replies(slug,ticket_id);`);
     initialized = d;
   }
   return d;
@@ -80,12 +88,36 @@ export function saveOwnerDetails(slug: string, input: unknown) {
   db().prepare('INSERT INTO tenant_owner_details(slug,details) VALUES(?,?) ON CONFLICT(slug) DO UPDATE SET details=excluded.details')
     .run(slug, JSON.stringify(details));
 }
-export function addSupport(slug: string, input: unknown, by: string) {
-  const v = z.object({ subject: z.string().trim().min(1).max(500), status: z.enum(['open', 'resolved']) }).strict().parse(input);
-  db().prepare('INSERT INTO tenant_support(slug,subject,status,by,at) VALUES(?,?,?,?,?)').run(slug, v.subject, v.status, by, new Date().toISOString());
+export const ticketSchema = z.object({
+  subject: z.string().trim().min(1).max(500),
+  description: z.string().trim().min(1).max(10000),
+  category: z.enum(['bug', 'issue']).default('issue'),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+}).strict();
+export function addSupport(slug: string, input: unknown, by: string, source: 'owner' | 'tenant' = 'owner') {
+  const v = source === 'tenant' ? { ...ticketSchema.parse(input), status: 'open' } : ticketSchema.extend({
+    description: z.string().trim().max(10000).default(''), status: z.enum(['open', 'in_progress', 'resolved']),
+  }).parse(input);
+  const result = db().prepare('INSERT INTO tenant_support(slug,subject,status,by,at,description,category,priority,source) VALUES(?,?,?,?,?,?,?,?,?)')
+    .run(slug, v.subject, v.status, by, new Date().toISOString(), v.description, v.category, v.priority, source);
+  return Number(result.lastInsertRowid);
+}
+export function listSupport(slug: string, tenantOnly = false) {
+  const d = db();
+  const tickets = d.prepare(`SELECT * FROM tenant_support WHERE slug=? ${tenantOnly ? "AND source='tenant'" : ''} ORDER BY id DESC`).all(slug) as Array<{id: number; status: string; priority: string; [key: string]: unknown}>;
+  const replies = d.prepare('SELECT * FROM tenant_support_replies WHERE slug=? ORDER BY id').all(slug) as Array<{ticket_id: number; [key: string]: unknown}>;
+  return tickets.map(t => ({ ...t, replies: replies.filter(r => r.ticket_id === t.id) }));
+}
+export function replySupport(slug: string, id: number, input: unknown, by: string, source: 'owner' | 'tenant') {
+  const v = z.object({ body: z.string().trim().min(1).max(10000) }).strict().parse(input);
+  const d = db();
+  if (!d.prepare(`SELECT 1 FROM tenant_support WHERE slug=? AND id=? ${source === 'tenant' ? "AND source='tenant'" : ''}`).get(slug, id)) return false;
+  d.prepare('INSERT INTO tenant_support_replies(ticket_id,slug,body,by,source,at) VALUES(?,?,?,?,?,?)')
+    .run(id, slug, v.body, by, source, new Date().toISOString());
+  return true;
 }
 export function updateSupport(slug: string, id: number, input: unknown) {
-  const v = z.object({ status: z.enum(['open', 'resolved']) }).strict().parse(input);
+  const v = z.object({ status: z.enum(['open', 'in_progress', 'resolved']) }).strict().parse(input);
   return db().prepare('UPDATE tenant_support SET status=? WHERE slug=? AND id=?').run(v.status, slug, id).changes > 0;
 }
 function backupHealth(slug: string) {
@@ -179,6 +211,6 @@ export function tenantAnalytics(t: TenantRow) {
     billing: { connected: false, monthly_quote_php: subscriptionView(t)?.monthly_total ?? null,
       collected_revenue_php: null, paid_through: null, renewal_at: null, payment_history: [],
       note: 'Payment provider not connected; quotes are not collected revenue.' },
-    support: d.prepare('SELECT id,subject,status,by,at FROM tenant_support WHERE slug=? ORDER BY id DESC LIMIT 50').all(t.slug),
+    support: listSupport(t.slug),
     tracking_started_at: d.prepare('SELECT MIN(at) AS at FROM tenant_telemetry WHERE slug=?').get(t.slug)?.at ?? null };
 }

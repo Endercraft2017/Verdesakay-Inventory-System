@@ -1,5 +1,6 @@
 /** Job & Sale Orders: stored records with line items, auto numbers, server-computed
     totals. One router serves both types (?type=sale|job). */
+import { moduleEnabled, requireModule } from '../../shared/modules';
 import { Router, type Request } from 'express';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
@@ -50,6 +51,7 @@ function shortageStands(req: Request, number: string, shortLines: number): boole
     Never blocks the response; failures are logged only. */
 function maybeAutoPush(orderId: number): void {
   try {
+    if (!moduleEnabled('quickbooks')) return;
     if (!getQboStatus().auto_push || !getQboStatus().connected) return;
   } catch { return; }
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
@@ -718,7 +720,7 @@ router.get('/:id/availability', (req, res) => {
 // POST /api/orders/:id/produce-shortfall — for each finished-product line that's short,
 // raise a draft job order (linked to this sale order) for the missing quantity. Reports
 // per line whether the components are on hand to actually build it.
-router.post('/:id/produce-shortfall', requirePermission('inventory.adjust'), syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/produce-shortfall', requireModule('manufacturing'), requirePermission('inventory.adjust'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -755,7 +757,7 @@ router.post('/:id/produce-shortfall', requirePermission('inventory.adjust'), syn
 // POST /api/orders/:id/purchase-shortfall — draft purchase order(s) for what has to be
 // bought: short lines that aren't made here, plus the short BOM components of finished-
 // product lines. Grouped by each item's preferred supplier.
-router.post('/:id/purchase-shortfall', requirePermission('purchasing.manage'), syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/purchase-shortfall', requireModule('purchasing'), requirePermission('purchasing.manage'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }

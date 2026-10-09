@@ -14,7 +14,7 @@ window.MApp = (function () {
   /** SaaS feature-module entitlement for this workspace (see src/modules.ts). Absent list
       (self-hosted, or pre-login) → treat every module as on. */
   function hasModule(m) { return !me || !Array.isArray(me.modules) || me.modules.indexOf(m) !== -1; }
-  function isEmployee() { return !!(me && me.employee); }
+  function isEmployee() { return hasModule('hr') && !!(me && me.employee); }
   // The warehouse phone tools (stock moves, counts, picking, scan). Floor desks don't hold
   // inventory.mobile (src/shared/permissions.ts): their Work rows, Quick Orbit action and the
   // Production tab follow their own desk permission instead.

@@ -5,6 +5,7 @@
  * Personal tools (notes, tasks) require no special permission — any authenticated user.
  * Tools are filtered to those the calling user actually holds before being sent to the LLM.
  */
+import { moduleEnabled } from '../../shared/modules';
 import { db, queryOne, queryAll, run, getSetting, setSetting } from '../../shared/db';
 import { endUserSessions } from '../../shared/auth';
 import { getRole } from '../../shared/roles';
@@ -587,8 +588,22 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Preserve role permissions, while removing capabilities the tenant has disabled. */
+function entitledUser(user: AuthUser): AuthUser {
+  return { ...user, permissions: user.permissions.filter(p => {
+    if (/^(inventory|orders|delivery)\./.test(p) || p === 'forms.manage.inventory') return moduleEnabled('inventory');
+    if (/^(production|qc)\./.test(p)) return moduleEnabled('manufacturing');
+    if (p.startsWith('purchasing.')) return moduleEnabled('purchasing');
+    if (/^(hr|payroll)\./.test(p) || p === 'forms.manage.hr') return moduleEnabled('hr');
+    if (p.startsWith('accounting.') || p === 'forms.manage.accounting') return moduleEnabled('accounting');
+    if (p.startsWith('mail.')) return moduleEnabled('email');
+    return true;
+  }) };
+}
+
 /** Return the subset of tools the authenticated user is permitted to call. */
 export function getToolsForUser(user: AuthUser): CerebrasTool[] {
+  user = entitledUser(user);
   const core = (Object.keys(TOOL_SPECS) as ToolName[])
     .filter((name) => {
       const perm = TOOL_PERMISSION[name];
@@ -612,6 +627,7 @@ type LineItem = {
 
 /** Execute one tool call. Always returns a ToolResult — never throws. */
 export async function executeTool(name: string, args: unknown, user: AuthUser): Promise<ToolResult> {
+  user = entitledUser(user);
   const a = (args ?? {}) as Record<string, unknown>;
 
   // Permission guard (defence-in-depth — the LLM only receives allowed tools)

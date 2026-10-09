@@ -18,7 +18,7 @@ import {
   type TenantRow, type TenantStatus, tenantPublicUrl,
 } from './platform';
 import { createTenant, importTenant, purgeTenant } from './provisioning';
-import { tenantAnalytics, saveOwnerDetails, addSupport, updateSupport } from './owner-analytics';
+import { tenantAnalytics, saveOwnerDetails, addSupport, updateSupport, replySupport } from './owner-analytics';
 import { saveSubscription, subscriptionView } from './subscription';
 import { tenantUsage } from './quota';
 import { punchPhotoUsageBytes } from '../modules/hr/punch-photos';
@@ -169,6 +169,15 @@ router.post('/tenants/:slug/support', (req, res) => {
   try {
     addSupport(req.params.slug, req.body, (req as PlatformAuthedRequest).platformUser?.username ?? 'operator');
     logProvisioning(req.params.slug, 'support', 'Support entry added');
+    res.status(201).json({ ok: true });
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+router.post('/tenants/:slug/support/:id/replies', (req, res) => {
+  if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
+  try {
+    if (!replySupport(req.params.slug, Number(req.params.id), req.body, (req as PlatformAuthedRequest).platformUser?.username ?? 'operator', 'owner')) {
+      res.status(404).json({ error: 'Unknown ticket.' }); return;
+    }
     res.status(201).json({ ok: true });
   } catch (e) { res.status(400).json({ error: (e as Error).message }); }
 });

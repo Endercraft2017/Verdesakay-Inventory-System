@@ -405,16 +405,32 @@
     var supportSubject = el('input', { placeholder: 'Support issue or follow-up', maxlength: '500' });
     var supportList = el('div');
     a.support.forEach(function (s) {
-      var row = el('div', { class: 'support-entry' }, [el('span', { text: s.status + ' · ' + s.subject + ' · ' + s.at })]);
+      var reply = el('textarea', { rows: '2', maxlength: '10000', placeholder: 'Reply to this ticket', 'aria-label': 'Reply to ticket ' + s.id });
+      var status = el('select', { 'aria-label': 'Status for ticket ' + s.id }, ['open', 'in_progress', 'resolved'].map(function (v) { return el('option', { value: v, text: v.replace('_', ' ') }); }));
+      status.value = s.status;
+      var row = el('section', { class: 'support-entry' }, [
+        el('h3', { text: '#' + s.id + ' · ' + s.subject }),
+        el('p', { class: 'muted', text: (s.source === 'tenant' ? 'Tenant report' : 'Internal note') + ' · ' + (s.category || 'issue') + ' · ' + (s.priority || 'normal') + ' · ' + s.by + ' · ' + s.at }),
+        el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere', text: s.description || '' }), status,
+      ]);
+      status.addEventListener('change', async function () {
+        try { await api('PATCH', '/tenants/' + encodeURIComponent(slug) + '/support/' + s.id, { status: status.value }); s.status = status.value; toast('Ticket status updated'); }
+        catch (e) { status.value = s.status; error.textContent = e.message; }
+      });
+      (s.replies || []).forEach(function (r) {
+        row.appendChild(el('div', { class: 'ticket-reply' }, [el('strong', { text: (r.source === 'owner' ? 'OTOM Support' : r.by) + ' · ' + r.at }), el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere', text: r.body })]));
+      });
+      row.appendChild(reply);
       row.appendChild(el('button', { class: 'btn ghost', onclick: async function () {
-        try { await api('PATCH', '/tenants/' + encodeURIComponent(slug) + '/support/' + s.id, { status: s.status === 'open' ? 'resolved' : 'open' }); close(); await openAnalytics(slug); }
+        try { await api('POST', '/tenants/' + encodeURIComponent(slug) + '/support/' + s.id + '/replies', { body: reply.value }); await openAnalytics(slug); }
         catch (e) { error.textContent = e.message; }
-      } }, [s.status === 'open' ? 'Resolve' : 'Reopen']));
+      } }, ['Send reply']));
       supportList.appendChild(row);
     });
     var dashboard = el('div', { class: 'analytics-card' }, [
       el('div', { class: 'analytics-heading' }, [el('h2', { text: 'Tenant analytics — ' + slug }), el('button', { class: 'btn ghost', onclick: close }, ['Close'])]),
       el('p', { class: 'muted', text: 'Updated ' + textValue(a.generated_at) + '. Activity is measured from recorded authenticated API requests; it is not time spent in the app.' }),
+      section('Support tickets', [el('p', { text: a.support.filter(function (t) { return t.status !== 'resolved'; }).length + ' unresolved · ' + a.support.filter(function (t) { return t.priority === 'urgent' && t.status !== 'resolved'; }).length + ' urgent' }), el('button', { class: 'btn ghost', onclick: function () { selectTab('support'); }, text: 'View tickets' })]),
       section('Alerts', a.alerts.length ? a.alerts.map(function (v) { return el('div', { class: 'analytics-alert', text: v.message }); }) : [el('p', { text: 'No current alerts.' })]),
       section('Usage & capacity', [table(['Resource', 'Used', 'Allowance', 'Used %'], usageRows), el('p', { text: 'Employee records: ' + textValue(a.usage && a.usage.employees) + ' · Unlimited allowance' })]),
       section('Engagement & onboarding', [table(['Metric', 'Value'], [
@@ -463,7 +479,7 @@
         } catch (e) { error.textContent = e.message; }
       } }, ['Export tenant summary']),
     ]);
-    var groups = { 'Alerts': 'overview', 'Usage & capacity': 'usage', 'Engagement & onboarding': 'overview', 'Daily activity · retained 90 days': 'usage', 'Module usage · 30 days': 'usage', 'Storage & AI costs': 'usage', 'Device sync & backup health': 'health', 'Application performance': 'health', 'Subscription & payments': 'usage', 'Usage history': 'usage', 'Customer details & alert thresholds': 'support', 'Support history': 'support' };
+    var groups = { 'Support tickets': 'overview', 'Alerts': 'overview', 'Usage & capacity': 'usage', 'Engagement & onboarding': 'overview', 'Daily activity · retained 90 days': 'usage', 'Module usage · 30 days': 'usage', 'Storage & AI costs': 'usage', 'Device sync & backup health': 'health', 'Application performance': 'health', 'Subscription & payments': 'usage', 'Usage history': 'usage', 'Customer details & alert thresholds': 'support', 'Support history': 'support' };
     dashboard.querySelectorAll('.analytics-section').forEach(function (s) { s.classList.toggle('hidden', groups[s.querySelector('h3').textContent] !== activeTab); });
     if (activeTab === 'overview' || activeTab === 'usage') dashboard.prepend(buildCharts(a));
     $('tenant-content').replaceChildren(dashboard);

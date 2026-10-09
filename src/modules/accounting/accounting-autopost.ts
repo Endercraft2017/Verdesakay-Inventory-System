@@ -7,6 +7,7 @@
  * logs on failure. A posted document can be *unposted*, which writes a reversing entry
  * (the original posted rows are never deleted — CAS rule).
  */
+import { moduleEnabled } from '../../shared/modules';
 import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } from '../../shared/db';
 import {
   buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
@@ -20,7 +21,7 @@ import type { Order, VendorBill, Payment, CreditNote } from '../../shared/types'
 const RULES_KEY = 'accounting_posting_rules';
 
 export function ledgerEnabled(): boolean {
-  return !!(getSetting<{ enabled?: boolean }>('accounting_ledger') || {}).enabled;
+  return moduleEnabled('accounting') && !!(getSetting<{ enabled?: boolean }>('accounting_ledger') || {}).enabled;
 }
 
 export function getPostingRules(): PostingRules {
