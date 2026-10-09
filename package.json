@@ -30,20 +30,15 @@
     "desktop:smoke": "node scripts/desktop.mjs --smoke",
     "desktop:cert": "powershell -ExecutionPolicy Bypass -File scripts/desktop-cert.ps1",
     "desktop:build": "electron-builder --win nsis",
-    "test:node24": "node scripts/test-node24.mjs",
-    "prestart": "node --no-warnings --input-type=module -e 'import fs from '\\''node:fs'\\'';\nimport path from '\\''node:path'\\'';\nimport crypto from '\\''node:crypto'\\'';\nimport { DatabaseSync } from '\\''node:sqlite'\\'';\nconst root='\\''/data/db/tenants'\\'', target=root+'\\''/verdesakay.db'\\'', uploads='\\''/data/uploads/verdesakay'\\'', registry='\\''/data/db/platform.db'\\'';\nconst out={tenant_registration:'\\''unknown'\\'',destination_database:fs.existsSync(target)?'\\''exists'\\'':'\\''missing'\\'',destination_uploads:fs.existsSync(uploads)?'\\''exists'\\'':'\\''missing'\\'',recovery_verification:'\\''unknown'\\''};\nfunction ro(file,fn){ if(!fs.statSync(file).isFile()) throw Error(); const db=new DatabaseSync(file,{readOnly:true}); try {db.exec('\\''PRAGMA query_only=ON'\\'');return fn(db);}finally{db.close();} }\nfunction integrity(file){return ro(file,d=>{const r=d.prepare('\\''PRAGMA integrity_check'\\'').all();return r.length===1&&r[0].integrity_check==='\\''ok'\\'';});}\nfunction validFiles(base,files){return files.every(f=>{if(typeof f.name!=='\\''string'\\''||path.isAbsolute(f.name)||f.name.split(/[\\\\/]/).includes('\\''..'\\''))return false;const file=path.join(base,f.name);const stat=fs.lstatSync(file);return stat.isFile()&&!stat.isSymbolicLink()&&stat.size===f.bytes&&crypto.createHash('\\''sha256'\\'').update(fs.readFileSync(file)).digest('\\''hex'\\'')===f.sha256;});}\ntry{\n if(!fs.existsSync(registry))out.tenant_registration='\\''registry_missing'\\'';\n else out.tenant_registration=ro(registry,d=>d.prepare('\\''SELECT status FROM tenants WHERE slug=?'\\'').get('\\''verdesakay'\\''))?'\\''registered'\\'':'\\''not_registered'\\'';\n if(fs.existsSync(target))out.destination_database=integrity(target)?'\\''exists_integrity_ok'\\'':'\\''exists_integrity_failed'\\'';\n if(fs.existsSync(uploads)&&!fs.lstatSync(uploads).isDirectory())out.destination_uploads='\\''exists_not_directory'\\'';\n const dirs=fs.existsSync(root)?fs.readdirSync(root).filter(n=>n.startsWith('\\''.adopt-default-'\\'')):[];\n out.recovery_verification='\\''no_matching_manifest'\\'';\n for(const n of dirs){\n  const dir=path.join(root,n),file=path.join(dir,'\\''verification.json'\\'');\n  if(!fs.existsSync(file))continue;\n  try{\n   const m=JSON.parse(fs.readFileSync(file,'\\''utf8'\\''));\n   if(m.slug!=='\\''verdesakay'\\'')continue;\n   const files=m.files_manifest;\n   const structure=m.stage==='\\''copies_verified'\\''&&m.source_database==='\\''/data/db/data.db'\\''&&m.target_database===target&&m.target_uploads===uploads&&Array.isArray(files)&&files.length===m.files&&files.reduce((s,f)=>s+f.bytes,0)===m.upload_bytes;\n   const recoveryOK=structure&&integrity(path.join(dir,'\\''source.db'\\''))&&integrity(path.join(dir,'\\''platform.db'\\''))&&validFiles(path.join(dir,'\\''uploads'\\''),files);\n   const destinationOK=recoveryOK&&out.destination_database==='\\''exists_integrity_ok'\\''&&out.destination_uploads==='\\''exists'\\''&&validFiles(uploads,files);\n   out.recovery_verification=destinationOK?'\\''verified_recovery_integrity_and_manifest_upload_hashes'\\'':recoveryOK?'\\''recovery_verified_destination_unverified'\\'':'\\''verification_failed'\\'';\n   if(destinationOK)break;\n  }catch{out.recovery_verification='\\''verification_failed'\\'';}\n }\n}catch{out.recovery_verification='\\''inspection_error'\\'';}\nconsole.log('\\''VERDESAKAY_READ_ONLY_STATUS '\\''+JSON.stringify(out));\n'"
+    "test:node24": "node scripts/test-node24.mjs"
   },
   "build": {
     "appId": "com.verdesakay.desktop",
     "productName": "Verdesakay",
     "copyright": "Verdesakay",
-    "directories": {
-      "output": "dist-desktop"
-    },
+    "directories": { "output": "dist-desktop" },
     "asar": false,
-    "extraMetadata": {
-      "main": "electron/main.cjs"
-    },
+    "extraMetadata": { "main": "electron/main.cjs" },
     "files": [
       "server.ts",
       "package.json",
@@ -53,9 +48,7 @@
       "scripts/sync-enrol.ts",
       "!**/*.test.ts"
     ],
-    "win": {
-      "target": "nsis"
-    },
+    "win": { "target": "nsis" },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
