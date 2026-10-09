@@ -2,7 +2,10 @@
 
 Target URL: **https://otom.afkcube.com/verdesakay**. This procedure needs the code
 on `restructure/module-architecture` including the adoption and path-routing changes.
-It has been exercised on isolated fixtures, not on the Railway production volume.
+
+> **Status: completed on production 2026-10-09.** See [Cutover record](#cutover-record-2026-10-09)
+> for what was actually run. Do **not** run the adoption again: Verdesakay is registered,
+> and `/data/db/data.db` is now a recovery-only copy that the app never opens.
 
 ## Existing Railway paths
 
@@ -133,6 +136,14 @@ source/recovery files, refuses occupied destinations, and starts the app only af
 verification and registration succeed. It is not an automatic migration on ordinary
 startup and must never be used while another writer is running.
 
+> **Not used in the 2026-10-09 cutover.** On this service the start command is the
+> service-level **Start Command** setting: Railway does not read `railway.json` here
+> (the deployment's `fileServiceManifest` is empty), so editing `deploy.startCommand`
+> in that file has no effect. A *Redeploy* of an existing deployment also reuses that
+> deployment's old settings; start a fresh deployment (`serviceInstanceDeployV2` with
+> the commit) after changing the Start Command. Railway SSH (`railway ssh`) is available,
+> so the record below runs the helper over SSH instead.
+
 1. Pause Verdesakay activity, sync pending device/browser work, retain a volume backup,
    and check enough free space as described above. Confirm this service has the
    existing persistent `/data` volume and the four existing data variables.
@@ -165,3 +176,37 @@ logs, source files and recovery snapshots. A failure before registration leaves 
 original source available for recovery; if registration succeeded but server startup
 failed, switch to the normal command with the persistent cutover variables rather
 than repeating adoption.
+
+## Cutover record (2026-10-09)
+
+Railway project `ERP` / `production`, service `Verdesakay-Inventory-System`, volume
+`verdesakay-inventory-system-volume` at `/data` (one replica, no cron). All times UTC.
+
+1. **Before:** deployed `3f06607`; tenant catalog empty; no destination or recovery files.
+   Source: 115 tables, 14 users, 57 employees, 2 upload files (14,497 bytes).
+2. **Writers stopped (05:35):** company activity paused by the owner. Start Command set
+   to `node scripts/maintenance-server.mjs` (health 200, everything else 503, opens no
+   database) and deployed fresh. Verified over SSH: only that process running, and
+   `data.db`, `platform.db` and their WAL files unchanged (size, time, sha256) for 45 s.
+3. **Backups (05:37–05:38):**
+   - Railway volume backup `pre-verdesakay-cutover-2026-10-09`;
+   - `/data/db/cutover-backup-2026-10-09T05-37-47-962Z/`: raw database/WAL/SHM files,
+     `VACUUM INTO` snapshots, uploads, and `manifest.json` with sha256 hashes;
+   - an off-site copy of that folder on the owner's PC, hash-checked against the manifest.
+4. **Preview, then apply over SSH:**
+   `node --import tsx scripts/adopt-default-tenant.ts --slug verdesakay --name Verdesakay`,
+   then the same command with `--apply --server-stopped`. Result `applied: true`, recovery
+   folder `/data/db/tenants/.adopt-default-gzDxtl`, registered 05:42:34 as `unlimited`/`active`.
+5. **Independent verification:** every row of all 115 tables in `verdesakay.db` matches the
+   source snapshot (accounts and password hashes included); integrity `ok`; uploads match
+   by hash; the original `data.db` and WAL are byte-identical to the pre-cutover backup.
+6. **Switch-over:** saved `TENANT_PATH_HOST`, `APP_DOMAIN`, `DEFAULT_TENANT_REDIRECT=verdesakay`,
+   `PLATFORM_CONSOLE=true`, `DEPLOY_MODE=cloud`, `TZ=Asia/Manila`; Start Command back to
+   `npm start`; deployed `81058a5`. The running server holds only `tenants/verdesakay.db`
+   and `platform.db` open.
+7. **Live checks:** `/` and `/m` redirect to `/verdesakay/` and `/verdesakay/m`; tenant shells,
+   manifest and service worker are scoped to `/verdesakay`; both health endpoints return 200;
+   the old company API answers 410; `/_platform` lists Verdesakay with 57 employees / 14 users.
+
+Left to the owner before resuming work: sign in with an existing account, point phones
+and the two kiosk PCs at `/verdesakay` (kiosks may need re-approval), and spot-check records.
