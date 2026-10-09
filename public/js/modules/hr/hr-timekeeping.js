@@ -20,19 +20,54 @@ App.register('hr-timekeeping', async (view, filter) => {
 
 /* ── Cutoff list ──────────────────────────────────────────────────────────── */
 async function renderList(view) {
+  // Cutoff writes are hr.manage server-side (hr.routes.ts) — a read-only HR viewer gets the
+  // list and the calendar/log tools, not create/delete buttons that would only 403.
+  const canManage = App.hasPermission('hr.manage');
   view.innerHTML = `
     <div class="topbar">
-      <h2>Time Keeping</h2>
+      <div>
+        <h2>Time Keeping</h2>
+        <div class="sub">Pay cutoffs — open one to log daily time-in/out and generate payslips.</div>
+      </div>
       <div class="grow"></div>
-      ${App.hasPermission('payroll.view') ? `<button class="btn secondary" id="tk-govforms">${UI.icon('sheet')} Payroll Worksheets ▾</button>` : ''}
-      <button class="btn secondary" id="tk-holidays" style="margin-left:8px" title="The PH holiday calendar (Regular / Special Non-Working / Special Working) — pays every employee automatically unless overridden on that person's own Daily Time record">${UI.icon('calendar')} Holidays</button>
-      <button class="btn secondary" id="tk-noWork" style="margin-left:8px" title="Company-wide suspensions and other no-work declarations (typhoon, equipment failure, etc.) — not a public holiday, see the Holidays button for those — applies to every employee automatically, no per-employee linking needed">${UI.icon('alert')} No Work / Suspension</button>
-      <button class="btn secondary" id="tk-punchlog" style="margin-left:8px" title="Every raw time-clock punch — where each phone punch came from (office, distance, map), and remote punches by field staff">${UI.icon('sheet')} Punch Log</button>
-      <button class="btn secondary" id="tk-policy" style="margin-left:8px">${UI.icon('settings')} Policy Settings</button>
-      <button class="btn" id="tk-new" style="margin-left:8px">${UI.icon('plus')} New Cutoff</button>
+      <button type="button" class="btn secondary" id="tk-tools-toggle" aria-expanded="false" aria-controls="tk-tools">${UI.icon('settings')} Calendar &amp; tools</button>
+      ${canManage ? `<button type="button" class="btn" id="tk-new">${UI.icon('plus')} New Cutoff</button>` : ''}
     </div>
-    <div class="panel"><div id="tk-table"></div></div>`;
+    <div class="hr-tools" id="tk-tools" hidden>
+      <div class="hr-tools-group" role="group" aria-labelledby="tk-tools-cal">
+        <span class="hr-tools-label" id="tk-tools-cal">Calendar</span>
+        <button type="button" class="btn secondary small" id="tk-holidays" title="The PH holiday calendar (Regular / Special Non-Working / Special Working) — pays every employee automatically unless overridden on that person's own Daily Time record">${UI.icon('calendar', 14)} Holidays</button>
+        <button type="button" class="btn secondary small" id="tk-noWork" title="Company-wide suspensions and other no-work declarations (typhoon, equipment failure, etc.) — not a public holiday, see the Holidays button for those — applies to every employee automatically, no per-employee linking needed">${UI.icon('alert', 14)} No Work / Suspension</button>
+      </div>
+      <div class="hr-tools-group" role="group" aria-labelledby="tk-tools-rec">
+        <span class="hr-tools-label" id="tk-tools-rec">Records</span>
+        <button type="button" class="btn secondary small" id="tk-punchlog" title="Every raw time-clock punch — where each phone punch came from (office, distance, map), and remote punches by field staff">${UI.icon('sheet', 14)} Punch Log</button>
+        ${App.hasPermission('payroll.view') ? `<button type="button" class="btn secondary small" id="tk-govforms">${UI.icon('sheet', 14)} Payroll Worksheets</button>` : ''}
+      </div>
+      <div class="hr-tools-group" role="group" aria-labelledby="tk-tools-set">
+        <span class="hr-tools-label" id="tk-tools-set">Setup</span>
+        <button type="button" class="btn secondary small" id="tk-policy">${UI.icon('settings', 14)} Policy Settings</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="hr-filters" id="tk-filters" hidden>
+        <div class="search-box search">
+          <span class="ic">${UI.icon('search', 15)}</span>
+          <label class="hr-sr-only" for="tk-search">Search cutoffs</label>
+          <input type="search" id="tk-search" placeholder="Search name or date…" autocomplete="off" />
+        </div>
+        <div class="fld">
+          <label for="tk-year">Year</label>
+          <select id="tk-year"><option value="">All years</option></select>
+        </div>
+        <button type="button" class="btn secondary small" id="tk-filter-reset" hidden>Reset</button>
+        <div class="grow"></div>
+        <span class="hr-filter-count" id="tk-count" aria-live="polite"></span>
+      </div>
+      <div id="tk-table"></div>
+    </div>`;
 
+  wireHrDisclosure(view.querySelector('#tk-tools-toggle'), view.querySelector('#tk-tools'));
   view.querySelector('#tk-punchlog').addEventListener('click', () => punchLogModal());
   view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
   const govBtn = view.querySelector('#tk-govforms'); // payroll.view only
@@ -41,54 +76,131 @@ async function renderList(view) {
   view.querySelector('#tk-noWork').addEventListener('click', () => noWorkMemoModal());
 
   const tableEl = view.querySelector('#tk-table');
+  const filtersEl = view.querySelector('#tk-filters');
+  const searchInput = view.querySelector('#tk-search');
+  const yearSel = view.querySelector('#tk-year');
+  const resetBtn = view.querySelector('#tk-filter-reset');
+  const countEl = view.querySelector('#tk-count');
+  let all = [];
 
   async function load() {
-    tableEl.innerHTML = '<div class="empty">Loading…</div>';
-    const list = await API.get('/hr/periods');
-    render(list);
+    tableEl.setAttribute('aria-busy', 'true');
+    tableEl.innerHTML = '<div class="empty" role="status">Loading cutoffs…</div>';
+    try {
+      all = await API.get('/hr/periods');
+    } catch (err) {
+      filtersEl.hidden = true;
+      tableEl.innerHTML = UI.emptyState({
+        icon: 'alert',
+        title: 'Couldn’t load cutoffs',
+        hint: (err && err.message) || 'Check your connection, then try again.',
+        action: '<button type="button" class="btn secondary" id="tk-retry">Try again</button>',
+      });
+      tableEl.querySelector('#tk-retry').onclick = () => load();
+      return;
+    } finally {
+      tableEl.removeAttribute('aria-busy');
+    }
+    // Year options come from the cutoffs themselves (newest first, like the list).
+    const years = [...new Set(all.map((p) => String(p.start_date || '').slice(0, 4)).filter(Boolean))];
+    const keep = years.includes(yearSel.value) ? yearSel.value : '';
+    yearSel.innerHTML = '<option value="">All years</option>' +
+      years.map((y) => `<option value="${UI.esc(y)}"${y === keep ? ' selected' : ''}>${UI.esc(y)}</option>`).join('');
+    render();
   }
 
-  function render(list) {
-    if (!list.length) {
+  function render() {
+    filtersEl.hidden = !all.length;
+    if (!all.length) {
       tableEl.innerHTML = UI.emptyState({
         icon: 'calendar',
         title: 'No cutoffs yet',
-        hint: 'Create a pay cutoff to start logging daily time-in/out.',
-        action: `<button class="btn" id="tk-empty-new">${UI.icon('plus')} New Cutoff</button>`,
+        hint: canManage ? 'Create a pay cutoff to start logging daily time-in/out.' : 'HR hasn’t created a pay cutoff yet.',
+        action: canManage ? `<button type="button" class="btn" id="tk-empty-new">${UI.icon('plus')} New Cutoff</button>` : '',
       });
       const en = tableEl.querySelector('#tk-empty-new');
       if (en) en.onclick = () => periodModal(null, load);
       return;
     }
+    const q = searchInput.value.trim().toLowerCase();
+    const year = yearSel.value;
+    const list = all.filter((p) =>
+      (!year || String(p.start_date || '').startsWith(year)) &&
+      (!q || [p.label, p.start_date, p.end_date].some((v) => String(v || '').toLowerCase().includes(q))));
+    resetBtn.hidden = !(q || year);
+    countEl.textContent = list.length === all.length
+      ? `${all.length} cutoff${all.length === 1 ? '' : 's'}`
+      : `${list.length} of ${all.length} cutoffs`;
+    if (!list.length) {
+      tableEl.innerHTML = UI.emptyState({
+        icon: 'search',
+        title: 'No cutoffs match these filters',
+        hint: 'Try a different name, date or year.',
+        action: '<button type="button" class="btn secondary" id="tk-clear-filters">Clear filters</button>',
+      });
+      tableEl.querySelector('#tk-clear-filters').onclick = () => resetFilters();
+      return;
+    }
     tableEl.innerHTML = `
       <table>
-        <thead><tr><th>Cutoff</th><th>Date range</th><th class="right">Employees</th><th></th></tr></thead>
+        <thead><tr><th>Cutoff</th><th>Date range</th><th class="right">Employees</th>${canManage ? '<th><span class="hr-sr-only">Actions</span></th>' : ''}</tr></thead>
         <tbody>${list.map((p) => `
           <tr class="clickable" data-open="${p.id}">
-            <td><strong>${UI.esc(p.label)}</strong></td>
+            <td><button type="button" class="hr-row-open">${UI.esc(p.label)}</button></td>
             <td>${UI.esc(p.start_date)} &ndash; ${UI.esc(p.end_date)}</td>
             <td class="right">${p.employee_count || 0}</td>
-            <td class="actions"><button class="icon-btn danger" title="Delete" data-del="${p.id}">${UI.icon('trash')}</button></td>
+            ${canManage ? `<td class="actions"><button type="button" class="icon-btn danger" title="Delete cutoff" aria-label="Delete cutoff ${UI.esc(p.label)}" data-del="${p.id}">${UI.icon('trash')}</button></td>` : ''}
           </tr>`).join('')}
         </tbody>
       </table>`;
-    tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); del(b.dataset.del, list); });
+    tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); del(b.dataset.del); });
+    // The label is a real <button>, so Tab + Enter/Space opens a cutoff; its click bubbles here.
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;
       App.navigate('hr-timekeeping', { period_id: tr.dataset.open });
     });
   }
 
-  async function del(id, list) {
-    const p = list.find((x) => String(x.id) === String(id));
+  function resetFilters() {
+    searchInput.value = '';
+    yearSel.value = '';
+    render();
+    searchInput.focus();
+  }
+
+  async function del(id) {
+    const p = all.find((x) => String(x.id) === String(id));
+    if (!p) return;
     if (!await UI.confirmDialog(`Delete cutoff "${p.label}"? All logged time-in/out for it will be lost.`, 'Delete')) return;
-    await API.del('/hr/periods/' + id);
+    try {
+      await API.del('/hr/periods/' + id);
+    } catch (err) {
+      UI.toast((err && err.message) || 'Could not delete the cutoff', 'error');
+      return;
+    }
     UI.toast('Cutoff deleted');
     load();
   }
 
-  view.querySelector('#tk-new').addEventListener('click', () => periodModal(null, load));
+  // Only #tk-table re-renders, so the search field keeps focus/caret while typing.
+  searchInput.addEventListener('input', () => render());
+  yearSel.addEventListener('change', () => render());
+  resetBtn.addEventListener('click', () => resetFilters());
+  const newBtn = view.querySelector('#tk-new'); // hr.manage only
+  if (newBtn) newBtn.addEventListener('click', () => periodModal(null, load));
   await load();
+}
+
+// Inline progressive disclosure for rarely used tools: a toggle button that shows/hides a
+// panel rendered in normal flow (never an absolutely positioned menu, so nothing gets clipped
+// by a scrolling ancestor). Shared by the cutoff list and the cutoff detail screen.
+function wireHrDisclosure(toggle, panel) {
+  if (!toggle || !panel) return;
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(open));
+    panel.hidden = !open;
+  });
 }
 
 /* ── Cutoff create/edit modal ─────────────────────────────────────────────── */
@@ -1186,28 +1298,71 @@ async function rateTablesModal() {
 async function renderPeriod(view, periodId, initialEmployeeId) {
   let period = null;
   try { period = await API.get('/hr/periods/' + periodId); }
-  catch { view.innerHTML = '<div class="empty">Cutoff not found.</div>'; return; }
+  catch (err) {
+    // A deleted/bad id is final; anything else (offline, 5xx) gets a retry instead of a dead end.
+    const notFound = err && err.status === 404;
+    view.innerHTML = `
+      <div class="topbar">
+        <button type="button" class="btn secondary small" id="tk-back">${UI.icon('arrow-left', 14)} All Cutoffs</button>
+      </div>
+      <div class="panel">${UI.emptyState({
+        icon: notFound ? 'calendar' : 'alert',
+        title: notFound ? 'Cutoff not found' : 'Couldn’t load this cutoff',
+        hint: notFound ? 'It may have been deleted. Go back to the cutoff list.' : ((err && err.message) || 'Check your connection, then try again.'),
+        action: notFound ? '' : '<button type="button" class="btn secondary" id="tk-retry">Try again</button>',
+      })}</div>`;
+    view.querySelector('#tk-back').onclick = () => App.navigate('hr-timekeeping');
+    const retry = view.querySelector('#tk-retry');
+    if (retry) retry.onclick = () => renderPeriod(view, periodId, initialEmployeeId);
+    return;
+  }
   // The payroll_period label used for the last (or most recent) Generate Payslips run — it's
   // editable there, so "Post to GL" needs to target the same label, not always period.label.
   let lastPayrollPeriod = period.label;
+  // Roster/cutoff writes are hr.manage and payslip/GL writes payroll.manage server-side; read-only
+  // viewers keep the roster, daily grids and CSV export without buttons that would only 403.
+  const canManage = App.hasPermission('hr.manage');
+  const canPayroll = App.hasPermission('payroll.manage');
+  const showRate = App.hasPermission('payroll.view');
+  const hasTools = canManage || canPayroll;
 
   view.innerHTML = `
     <div class="topbar">
-      <button class="btn secondary small" id="tk-back">${UI.icon('arrow-left', 14)} All Cutoffs</button>
-      <h2 style="margin-left:10px">${UI.esc(period.label)}</h2>
-      <span class="muted" style="margin-left:6px">${UI.esc(period.start_date)} &ndash; ${UI.esc(period.end_date)}</span>
+      <button type="button" class="btn secondary small" id="tk-back">${UI.icon('arrow-left', 14)} All Cutoffs</button>
+      <div>
+        <h2 id="tk-period-title">${UI.esc(period.label)}</h2>
+        <div class="sub" id="tk-period-sub"></div>
+      </div>
       <div class="grow"></div>
-      <button class="btn secondary" id="tk-edit-period">${UI.icon('edit')} Edit Cutoff</button>
-      <button class="btn secondary" id="tk-import-punches" style="margin-left:8px" title="Punches fill time-in/out live while someone's on this cutoff's roster — use this to backfill anyone who punched before being added">${UI.icon('calendar')} Import Punches</button>
-      <button class="btn secondary" id="tk-export-csv" style="margin-left:8px" title="Download this cutoff's whole timekeeping roster as CSV">${UI.icon('download')} Export CSV</button>
-      ${App.hasPermission('payroll.manage') ? `<button class="btn secondary" id="tk-post-gl" style="margin-left:8px" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 15)} Post to GL</button>
-      <button class="btn" id="tk-generate" style="margin-left:8px">${UI.icon('sheet')} Generate Payslips</button>` : ''}
+      <button type="button" class="btn secondary" id="tk-export-csv" title="Download this cutoff's whole timekeeping roster as CSV">${UI.icon('download')} Export CSV</button>
+      ${hasTools ? `<button type="button" class="btn secondary" id="tk-more-toggle" aria-expanded="false" aria-controls="tk-more">${UI.icon('settings')} Cutoff tools</button>` : ''}
+      ${canPayroll ? `<button type="button" class="btn" id="tk-generate">${UI.icon('sheet')} Generate Payslips</button>` : ''}
     </div>
+    ${hasTools ? `<div class="hr-tools" id="tk-more" hidden>
+      ${canManage ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-cutoff">
+        <span class="hr-tools-label" id="tk-more-cutoff">Cutoff</span>
+        <button type="button" class="btn secondary small" id="tk-edit-period">${UI.icon('edit', 14)} Edit Cutoff</button>
+        <button type="button" class="btn secondary small" id="tk-import-punches" title="Punches fill time-in/out live while someone's on this cutoff's roster — use this to backfill anyone who punched before being added">${UI.icon('calendar', 14)} Import Punches</button>
+      </div>` : ''}
+      ${canPayroll ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-acct">
+        <span class="hr-tools-label" id="tk-more-acct">Accounting</span>
+        <button type="button" class="btn secondary small" id="tk-post-gl" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 14)} Post to GL</button>
+      </div>` : ''}
+    </div>` : ''}
     <div class="panel">
       <div class="tk-roster-filters">
         <div class="search-box search">
           <span class="ic">${UI.icon('search', 15)}</span>
+          <label class="hr-sr-only" for="tk-roster-search">Search roster by name</label>
           <input type="search" id="tk-roster-search" placeholder="Search name…" autocomplete="off" />
+        </div>
+        <div class="fld">
+          <label for="tk-roster-show">Show</label>
+          <select id="tk-roster-show">
+            <option value="" selected>Everyone</option>
+            <option value="incomplete">Incomplete days</option>
+            <option value="unlogged">Nothing logged</option>
+          </select>
         </div>
         <div class="fld">
           <label for="tk-roster-group">Group</label>
@@ -1223,47 +1378,57 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             <option value="name">Name</option>
             <option value="department">Department</option>
             <option value="status">Status</option>
-            ${App.hasPermission('payroll.view') ? '<option value="daily_rate">Daily Rate</option>' : ''}
+            ${showRate ? '<option value="daily_rate">Daily Rate</option>' : ''}
             <option value="days_logged">Days Logged</option>
           </select>
         </div>
-        <button type="button" class="icon-btn" id="tk-roster-sort-dir" title="Reverse sort order">${UI.icon('adjust', 15)}</button>
+        <button type="button" class="icon-btn" id="tk-roster-sort-dir" title="Reverse sort order" aria-label="Sort descending">${UI.icon('adjust', 15)}</button>
+        <button type="button" class="btn secondary small" id="tk-roster-reset" hidden>Reset</button>
         <div class="grow"></div>
-        <button class="btn danger small" id="tk-remove-selected" hidden>${UI.icon('trash')} Remove selected</button>
-        <button class="btn secondary" id="tk-add-emp">${UI.icon('plus')} Add Employee</button>
+        <span class="hr-filter-count" id="tk-roster-count" aria-live="polite"></span>
+        ${canManage ? `<button type="button" class="btn danger small" id="tk-remove-selected" hidden>${UI.icon('trash')} Remove selected</button>
+        <button type="button" class="btn secondary" id="tk-add-emp">${UI.icon('plus')} Add Employee</button>` : ''}
       </div>
       <div id="tk-roster"></div>
     </div>`;
 
+  function renderHeader() {
+    view.querySelector('#tk-period-title').textContent = period.label;
+    const n = (period.roster || []).length;
+    view.querySelector('#tk-period-sub').textContent =
+      `${period.start_date} – ${period.end_date} · ${n} employee${n === 1 ? '' : 's'} on roster`;
+  }
+  renderHeader();
+
   view.querySelector('#tk-back').onclick = () => App.navigate('hr-timekeeping');
-  view.querySelector('#tk-edit-period').onclick = () => periodModal(period, async () => {
-    period = await API.get('/hr/periods/' + periodId);
-    renderRoster();
-  });
+  wireHrDisclosure(view.querySelector('#tk-more-toggle'), view.querySelector('#tk-more'));
+  const editBtn = view.querySelector('#tk-edit-period'); // hr.manage only
+  // reload() also re-renders the header, so an edited label/date range shows immediately.
+  if (editBtn) editBtn.onclick = () => periodModal(period, reload);
   const genBtn = view.querySelector('#tk-generate'); // payroll.manage only
   if (genBtn) genBtn.onclick = () => generateModal();
   const glBtn = view.querySelector('#tk-post-gl');
   if (glBtn) glBtn.onclick = () => postGlModal();
-  view.querySelector('#tk-import-punches').onclick = async (e) => {
-    if (!App.hasPermission('hr.manage')) { UI.toast('Needs HR manage', 'error'); return; }
+  const importBtn = view.querySelector('#tk-import-punches'); // hr.manage only
+  if (importBtn) importBtn.onclick = async () => {
     const ok = await UI.confirmDialog(
       'Fill each roster day’s time-in / time-out from the employee’s clock punches for that date. Days you’ve already set by hand are left untouched.',
       'Import'
     );
     if (!ok) return;
-    e.target.disabled = true;
+    importBtn.disabled = true;
     try {
       const r = await API.post(`/hr/clock/import/${periodId}`);
       UI.toast(`Filled ${r.filled} day(s) across ${r.dates} date(s)`, 'success');
-      period = await API.get('/hr/periods/' + periodId);
-      renderRoster();
+      await reload();
     } catch (ex) {
       UI.toast(ex.message || 'Import failed', 'error');
     } finally {
-      e.target.disabled = false;
+      importBtn.disabled = false;
     }
   };
-  view.querySelector('#tk-add-emp').onclick = () => addEmployeeModal();
+  const addEmpBtn = view.querySelector('#tk-add-emp'); // hr.manage only
+  if (addEmpBtn) addEmpBtn.onclick = () => addEmployeeModal();
   view.querySelector('#tk-export-csv').onclick = () =>
     API.download(`/hr/periods/${periodId}/attendance/export`, `timekeeping-${period.label.replace(/[^a-z0-9]+/gi, '-')}.csv`)
       .catch((e) => UI.toast(e.message, 'error'));
@@ -1273,7 +1438,15 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   const sortSel = view.querySelector('#tk-roster-sort');
   const sortDirBtn = view.querySelector('#tk-roster-sort-dir');
   const searchInput = view.querySelector('#tk-roster-search');
-  const rosterView = { groupBy: 'department', sortBy: 'name', sortDir: 'asc', search: '' };
+  const showSel = view.querySelector('#tk-roster-show');
+  const resetBtn = view.querySelector('#tk-roster-reset');
+  const countEl = view.querySelector('#tk-roster-count');
+  const ROSTER_DEFAULTS = { groupBy: 'department', sortBy: 'name', sortDir: 'asc', search: '', show: '' };
+  const rosterView = { ...ROSTER_DEFAULTS };
+  const SHOW_FILTERS = {
+    incomplete: (r) => (r.days_incomplete || 0) > 0,
+    unlogged: (r) => !(r.days_logged || 0),
+  };
 
   const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', suspended: 'Suspended', resigned: 'Resigned', terminated: 'Terminated' };
   const SORTERS = {
@@ -1298,60 +1471,93 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   function rosterRowHtml(r) {
     return `
       <tr class="clickable" data-open="${r.employee_id}">
-        <td><input type="checkbox" class="tk-roster-chk" data-emp="${r.employee_id}" data-name="${UI.esc(r.name)}" /></td>
-        <td><strong>${UI.esc(r.name)}</strong></td>
+        ${canManage ? `<td><input type="checkbox" class="tk-roster-chk" data-emp="${r.employee_id}" data-name="${UI.esc(r.name)}" aria-label="Select ${UI.esc(r.name)}" /></td>` : ''}
+        <td><button type="button" class="hr-row-open" title="Open daily time">${UI.esc(r.name)}</button></td>
         <td>${UI.esc(r.department_name || '—')}</td>
         <td>${UI.esc(STATUS_LABELS[r.status] || r.status || '—')}</td>
-        ${App.hasPermission('payroll.view') ? `<td class="right">${UI.money(r.daily_rate)}</td>` : ''}
+        ${showRate ? `<td class="right">${UI.money(r.daily_rate)}</td>` : ''}
         <td class="right">${r.days_logged || 0} / ${r.days_total || 0}${r.days_incomplete
           ? ` <span class="tk-roster-incomplete" title="${r.days_incomplete} incomplete day(s) — only one of time in/out set">${UI.icon('alert', 13)} ${r.days_incomplete}</span>`
           : ''}</td>
-        <td class="actions">${r.days_incomplete && r.user_id
-          ? `<button class="icon-btn" title="Send this employee a notice to fix their missing time-out and see HR" data-notify="${r.employee_id}">${UI.icon('send', 15)}</button>`
-          : ''}<button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
+        <td class="actions">${canManage && r.days_incomplete && r.user_id
+          ? `<button type="button" class="icon-btn" title="Send this employee a notice to fix their missing time-out and see HR" aria-label="Send ${UI.esc(r.name)} a missing time-out notice" data-notify="${r.employee_id}">${UI.icon('send', 15)}</button>`
+          : ''}${canManage ? `<button type="button" class="icon-btn danger" title="Remove from cutoff" aria-label="Remove ${UI.esc(r.name)} from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button>` : ''}</td>
       </tr>`;
   }
 
   // One table for the whole roster — group headers are separator rows inside its <tbody>, not
   // separate <table>s, so every group's columns line up on the same fixed grid. `sections` is
-  // [{ name, rows }]; name === null renders no header (the ungrouped case).
+  // [{ name, rows }]; name === null renders no header (the ungrouped case). The checkbox and
+  // rate columns exist only for roles that see them, so the <col>s and group colspan follow suit.
   function rosterTableHtml(sections) {
+    const colCount = 5 + (canManage ? 1 : 0) + (showRate ? 1 : 0);
     const body = sections.map((s) => {
       const head = s.name != null
-        ? `<tr class="tk-group-row"><td colspan="7">${UI.esc(s.name)} <span>(${s.rows.length})</span></td></tr>`
+        ? `<tr class="tk-group-row"><td colspan="${colCount}">${UI.esc(s.name)} <span>(${s.rows.length})</span></td></tr>`
         : '';
       return head + s.rows.map(rosterRowHtml).join('');
     }).join('');
     return `
       <table class="tk-roster-table">
         <colgroup>
-          <col class="c-chk" /><col class="c-emp" /><col class="c-dept" />
-          <col class="c-status" /><col class="c-rate" /><col class="c-days" /><col class="c-act" />
+          ${canManage ? '<col class="c-chk" />' : ''}<col class="c-emp" /><col class="c-dept" />
+          <col class="c-status" />${showRate ? '<col class="c-rate" />' : ''}<col class="c-days" /><col class="c-act" />
         </colgroup>
-        <thead><tr><th></th><th>Employee</th><th>Department</th><th>Status</th>${App.hasPermission('payroll.view') ? '<th class="right">Daily Rate</th>' : ''}<th class="right">Days Logged</th><th></th></tr></thead>
+        <thead><tr>${canManage ? '<th><span class="hr-sr-only">Select</span></th>' : ''}<th>Employee</th><th>Department</th><th>Status</th>${showRate ? '<th class="right">Daily Rate</th>' : ''}<th class="right">Days Logged</th><th><span class="hr-sr-only">Actions</span></th></tr></thead>
         <tbody>${body}</tbody>
       </table>`;
   }
 
+  function rosterFiltersActive() {
+    return Object.keys(ROSTER_DEFAULTS).some((k) => k === 'search'
+      ? !!rosterView.search.trim()
+      : rosterView[k] !== ROSTER_DEFAULTS[k]);
+  }
+
+  function resetRosterView() {
+    Object.assign(rosterView, ROSTER_DEFAULTS);
+    searchInput.value = '';
+    showSel.value = ROSTER_DEFAULTS.show;
+    groupSel.value = ROSTER_DEFAULTS.groupBy;
+    sortSel.value = ROSTER_DEFAULTS.sortBy;
+    renderRoster();
+    searchInput.focus();
+  }
+
   function renderRoster() {
+    renderHeader();
     const fullRoster = period.roster || [];
+    resetBtn.hidden = !rosterFiltersActive();
+    sortDirBtn.setAttribute('aria-label', rosterView.sortDir === 'asc' ? 'Sort descending' : 'Sort ascending');
     if (!fullRoster.length) {
+      countEl.textContent = '';
       rosterEl.innerHTML = UI.emptyState({
         icon: 'users',
         title: 'No employees on this cutoff yet',
-        hint: 'Add employees to start logging their daily time-in/out.',
+        hint: canManage ? 'Add employees to start logging their daily time-in/out.' : 'HR hasn’t added anyone to this cutoff yet.',
+        action: canManage ? `<button type="button" class="btn" id="tk-empty-add">${UI.icon('plus')} Add Employee</button>` : '',
       });
+      const emptyAdd = rosterEl.querySelector('#tk-empty-add');
+      if (emptyAdd) emptyAdd.onclick = () => addEmployeeModal();
+      updateRemoveSelectedBtn();
       return;
     }
 
     const q = rosterView.search.trim().toLowerCase();
-    const roster = q ? fullRoster.filter((r) => (r.name || '').toLowerCase().includes(q)) : fullRoster;
+    const showFn = SHOW_FILTERS[rosterView.show];
+    const roster = fullRoster.filter((r) =>
+      (!q || (r.name || '').toLowerCase().includes(q)) && (!showFn || showFn(r)));
+    countEl.textContent = roster.length === fullRoster.length
+      ? `${fullRoster.length} employee${fullRoster.length === 1 ? '' : 's'}`
+      : `${roster.length} of ${fullRoster.length} employees`;
     if (!roster.length) {
       rosterEl.innerHTML = UI.emptyState({
         icon: 'search',
-        title: `No one on this cutoff matches “${rosterView.search.trim()}”`,
-        hint: 'Clear the search to see the whole roster.',
+        title: q ? `No one on this cutoff matches “${rosterView.search.trim()}”` : 'No one on this cutoff matches this filter',
+        hint: 'Clear the filters to see the whole roster.',
+        action: '<button type="button" class="btn secondary" id="tk-roster-clear">Clear filters</button>',
       });
+      rosterEl.querySelector('#tk-roster-clear').onclick = () => resetRosterView();
       updateRemoveSelectedBtn();
       return;
     }
@@ -1392,12 +1598,13 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     updateRemoveSelectedBtn();
   }
 
-  const removeSelectedBtn = view.querySelector('#tk-remove-selected');
+  const removeSelectedBtn = view.querySelector('#tk-remove-selected'); // hr.manage only
   function selectedEmployees() {
     return Array.from(rosterEl.querySelectorAll('.tk-roster-chk:checked'))
       .map((c) => ({ id: c.dataset.emp, name: c.dataset.name }));
   }
   function updateRemoveSelectedBtn() {
+    if (!removeSelectedBtn) return;
     const n = selectedEmployees().length;
     removeSelectedBtn.hidden = n === 0;
     removeSelectedBtn.textContent = '';
@@ -1407,7 +1614,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   // confirm — each removal is its own irreversible action (their logged time for this cutoff
   // goes with it), so a rushed single "yes to all" click shouldn't be able to take out someone
   // the user didn't mean to. Cancelling one skips just that employee and moves to the next.
-  removeSelectedBtn.onclick = async () => {
+  if (removeSelectedBtn) removeSelectedBtn.onclick = async () => {
     const targets = selectedEmployees();
     let removed = 0, skipped = 0;
     for (const t of targets) {
@@ -1451,22 +1658,37 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
 
   groupSel.addEventListener('change', () => { rosterView.groupBy = groupSel.value; renderRoster(); });
   sortSel.addEventListener('change', () => { rosterView.sortBy = sortSel.value; renderRoster(); });
+  showSel.addEventListener('change', () => { rosterView.show = showSel.value; renderRoster(); });
   sortDirBtn.addEventListener('click', () => {
     rosterView.sortDir = rosterView.sortDir === 'asc' ? 'desc' : 'asc';
     renderRoster();
   });
+  resetBtn.addEventListener('click', () => resetRosterView());
   // Only #tk-roster is re-rendered, so the search field keeps focus/caret while typing.
   searchInput.addEventListener('input', () => { rosterView.search = searchInput.value; renderRoster(); });
 
+  // Refetch after any write. A failed refresh keeps the roster already on screen (the write
+  // itself went through) and says so, rather than throwing into the caller's success path.
   async function reload() {
-    period = await API.get('/hr/periods/' + periodId);
+    try {
+      period = await API.get('/hr/periods/' + periodId);
+    } catch (err) {
+      UI.toast(`Couldn’t refresh the roster: ${(err && err.message) || 'request failed'}`, 'error');
+      return;
+    }
     renderRoster();
   }
 
   async function removeEmployee(employeeId, roster) {
     const r = roster.find((x) => String(x.employee_id) === String(employeeId));
+    if (!r) return;
     if (!await UI.confirmDialog(`Remove ${r.name} from this cutoff? Their logged time for it will be lost.`, 'Remove')) return;
-    await API.del(`/hr/periods/${periodId}/employees/${employeeId}`);
+    try {
+      await API.del(`/hr/periods/${periodId}/employees/${employeeId}`);
+    } catch (err) {
+      UI.toast((err && err.message) || 'Could not remove the employee', 'error');
+      return;
+    }
     UI.toast('Employee removed from cutoff');
     reload();
   }
@@ -1865,13 +2087,14 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     UI.modal({
       title: `Daily time — ${rosterRow.name}`,
       size: 'xl',
-      headActionHTML: rosterRow.user_id
+      headActionHTML: canManage && rosterRow.user_id
         ? `<button type="button" class="btn secondary small" id="tk-notify-emp">${UI.icon('send', 14)} Send notice</button>`
         : '',
-      bodyHTML: `<div class="line-items"><table class="line-table"><thead><tr>
+      bodyHTML: `${canManage ? '' : '<p class="muted">Read-only attendance. An HR manager can make corrections.</p>'}<div class="line-items"><table class="line-table"><thead><tr>
           <th>Date</th><th>Shift</th><th>Time In</th><th>Lunch Out</th><th>Lunch In</th><th>Time Out</th><th>Day Type</th><th>Half Day</th><th>Rest Day</th><th>Notes</th><th>Linked Form</th>
         </tr></thead><tbody id="tk-days"></tbody></table></div>`,
-      confirmText: 'Save',
+      confirmText: canManage ? 'Save' : null,
+      cancelText: canManage ? 'Cancel' : 'Close',
       onOpen: (ov) => {
         const body = ov.querySelector('#tk-days');
         const notifyBtn = ov.querySelector('#tk-notify-emp');
@@ -2148,6 +2371,17 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             </tr>`;
           }).join('');
           body.querySelectorAll('[data-photo-url]').forEach((b) => b.addEventListener('click', () => openPunchPhoto(b.dataset.photoUrl)));
+          if (!canManage) {
+            body.querySelectorAll('input, select, textarea').forEach((field) => { field.disabled = true; });
+            body.querySelectorAll('button:not([data-photo-url])').forEach((button) => { button.hidden = true; });
+            body.querySelectorAll('[data-unlink]').forEach((badge) => {
+              badge.removeAttribute('data-unlink');
+              badge.removeAttribute('title');
+              badge.style.cursor = 'default';
+              badge.textContent = badge.textContent.replace(/ ×$/, '');
+            });
+            return; // Do not attach mutation handlers; photo inspection remains available.
+          }
           body.querySelectorAll('input[data-k], select[data-k]').forEach((inp) => {
             if (TIME_KEYS.includes(inp.dataset.k)) { wireTimeInput(inp); return; }
             const evt = inp.tagName === 'SELECT' ? 'change' : 'input';
@@ -2334,6 +2568,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         renderRows();
       },
       onConfirm: async () => {
+        if (!canManage) return;
         await API.put(`/hr/periods/${periodId}/attendance`, {
           employee_id: employeeId,
           days: days.map((d) => ({

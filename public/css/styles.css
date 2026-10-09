@@ -520,6 +520,60 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
 .tk-roster-table tr.tk-group-row:hover td { background: var(--surface-2); }
 .tk-roster-table tr.tk-group-row span { font-weight: 400; opacity: 0.8; }
 
+/* HR Time Keeping + Payroll list (hr-timekeeping.js, form-records.js payroll branch). Scoped
+   hr-* classes only; everything else on these screens keeps the shared styles. */
+.hr-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+/* Rarely used tools: an inline strip under the heading (normal flow, so nothing clips). */
+.hr-tools {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px;
+  margin: -8px 0 18px; padding: 10px 14px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.hr-tools[hidden] { display: none; }
+.hr-tools-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.hr-tools-label { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-right: 2px; }
+.topbar .btn.secondary[aria-controls="tk-tools"][aria-expanded="true"],
+.topbar .btn.secondary[aria-controls="tk-more"][aria-expanded="true"],
+.topbar .btn.secondary[aria-controls="fr-more"][aria-expanded="true"] { background: var(--accent-weak); border-color: var(--accent); color: var(--text); }
+/* Filter row: same compact vocabulary as .tk-roster-filters. */
+.hr-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.hr-filters[hidden] { display: none; }
+.hr-filters .fld { display: flex; align-items: center; gap: 6px; }
+.hr-filters .fld > label { margin: 0; font-weight: 500; font-size: 12.5px; color: var(--text-muted); white-space: nowrap; }
+.hr-filters select { width: auto; min-width: 118px; padding: 7px 9px; }
+.hr-filters .search { flex: 1 1 220px; max-width: 360px; }
+.hr-filters .search input { padding-top: 7px; padding-bottom: 7px; }
+.hr-filters .grow { flex: 1; }
+.hr-filters-bar { padding: 0 0 14px; border-bottom: 0; }
+.hr-filter-count { font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Row-opening control: reads as the row's bold name, but is a focusable button. */
+.hr-row-open {
+  background: none; border: 0; padding: 0; margin: 0; font: inherit; font-weight: 650;
+  color: var(--text); text-align: left; cursor: pointer; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hr-row-open:hover { color: var(--accent); }
+.hr-row-open:focus-visible, .payroll-bundle-toggle:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px;
+}
+.hr-tools .btn:focus-visible, .hr-filters .btn:focus-visible, .topbar .btn[aria-expanded]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.payroll-bundle-toggle {
+  display: flex; align-items: center; gap: 10px; min-width: 190px;
+  background: none; border: 0; padding: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer;
+}
+.payroll-bundle-caret { font-size: 12px; width: 14px; flex-shrink: 0; }
+.payroll-bundle-meta { display: block; font-size: 11.5px; }
+@media (max-width: 720px) {
+  .hr-filters .search { max-width: none; flex-basis: 100%; }
+  .hr-filters .grow { display: none; }
+  .hr-tools { gap: 10px; }
+}
+
 /* ---------- Template editor ---------- */
 .tpl-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px; }
 .tpl-body { width: 100%; min-height: 320px; font-family: 'Consolas', ui-monospace, monospace; font-size: 12.5px; line-height: 1.5; }

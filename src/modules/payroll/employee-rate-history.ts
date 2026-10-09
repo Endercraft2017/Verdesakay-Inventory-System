@@ -41,6 +41,20 @@ export function effectiveDailyRateOn(employeeId: number, onDate: string, fallbac
   return row ? row.daily_rate : fallback;
 }
 
+/** The whole logged rate (type, daily, monthly) in force on `onDate`, or undefined when no row
+    covers it — what employees.daily_rate/rate_type/monthly_rate should hold once a rate change
+    is logged, since a backdated change can land behind a later one that still wins today. */
+export function rateInForceOn(
+  employeeId: number, onDate: string
+): { rate_type: 'daily' | 'monthly'; daily_rate: number; monthly_rate: number | null } | undefined {
+  return queryOne<{ rate_type: 'daily' | 'monthly'; daily_rate: number; monthly_rate: number | null }>(
+    `SELECT rate_type, daily_rate, monthly_rate FROM employee_rate_history
+      WHERE employee_id = ? AND effective_from <= ?
+      ORDER BY effective_from DESC LIMIT 1`,
+    employeeId, onDate
+  );
+}
+
 function insertRow(
   employeeId: number, effectiveFrom: string,
   rate: { rate_type: 'daily' | 'monthly'; daily_rate: number; monthly_rate: number | null },
@@ -71,18 +85,19 @@ export function seedInitialRate(
   insertRow(employeeId, startDate || '2000-01-01', rate, 'Starting rate', userId);
 }
 
-/** Log a rate change effective on or before today (see hr.routes.ts — future-dated changes
-    aren't supported yet). `prev` is only used the first time this particular employee gets a
+/** Log a rate change effective on or before today (see hr.routes.ts POST
+    /employees/:id/rate-change — future-dated changes aren't supported yet). `prev` is only used the first time this particular employee gets a
     logged change (an employee that predates this feature, so seedInitialRate never ran for
     them): it backfills one row for whatever their rate was immediately before this edit, dated
     at their start date, so work dates before today still resolve to the old rate instead of
-    silently picking up the new one. */
+    silently picking up the new one. Returns the earliest affected date, including any
+    previously unset rates filled in, so callers refresh all affected payslips. */
 export function recordRateChange(
   employeeId: number, effectiveFrom: string,
   next: { rate_type: 'daily' | 'monthly'; daily_rate: number; monthly_rate: number | null },
   prev: { rate_type: 'daily' | 'monthly'; daily_rate: number; monthly_rate: number | null; start_date: string | null },
   note: string | null, userId: number | null
-): void {
+): string {
   const hasHistory = queryOne('SELECT 1 FROM employee_rate_history WHERE employee_id = ?', employeeId);
   if (!hasHistory) {
     insertRow(
@@ -92,7 +107,8 @@ export function recordRateChange(
     );
   }
   insertRow(employeeId, effectiveFrom, next, note, userId);
-  if (next.daily_rate > 0) fillUnsetRate(employeeId, next);
+  const filledFrom = next.daily_rate > 0 ? fillUnsetRate(employeeId, next) : null;
+  return filledFrom && filledFrom < effectiveFrom ? filledFrom : effectiveFrom;
 }
 
 /** A ₱0 rate means "not set yet" (employee created or imported without one), never a rate anyone
@@ -103,13 +119,16 @@ export function recordRateChange(
 function fillUnsetRate(
   employeeId: number,
   rate: { rate_type: 'daily' | 'monthly'; daily_rate: number; monthly_rate: number | null }
-): void {
-  run(
+): string | null {
+  const filled = queryAll<{ effective_from: string }>(
     `UPDATE employee_rate_history SET rate_type = ?, daily_rate = ?, monthly_rate = ?
       WHERE employee_id = ? AND daily_rate = 0
         AND NOT EXISTS (SELECT 1 FROM employee_rate_history p
                          WHERE p.employee_id = employee_rate_history.employee_id
-                           AND p.daily_rate > 0 AND p.effective_from < employee_rate_history.effective_from)`,
+                           AND p.daily_rate > 0 AND p.effective_from < employee_rate_history.effective_from)
+      RETURNING effective_from`,
     rate.rate_type, rate.daily_rate, rate.monthly_rate, employeeId
   );
+  return filled.reduce<string | null>((earliest, row) =>
+    earliest == null || row.effective_from < earliest ? row.effective_from : earliest, null);
 }

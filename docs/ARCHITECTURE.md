@@ -16,6 +16,19 @@
 
 ## 1. Overview
 
+HR desktop UI refinement (2026-10-09): Timekeeping cutoff/roster and the Payroll form list now
+separate primary actions, filters and secondary tools; add labeled keyboard entry points and
+load-error/filter recovery; and gate list write controls by their existing permissions.
+Source: `public/js/modules/hr/hr-timekeeping.js`, payroll branches in
+`public/js/modules/core/form-records.js`, scoped `hr-*` styles in `public/css/styles.css`.
+Tests: `tests/frontend-hr-ux.test.ts`. No schema, API, module ownership or payroll-rule changes
+in this UI pass. Verification and delivery status: [../HANDOFF.md](../HANDOFF.md).
+
+HR/payroll review status (2026-10-08): see [../HANDOFF.md](../HANDOFF.md). Rate history's
+`recordRateChange` now returns the earliest affected date (including filled unset rates), used
+by HR's Change rate route to refresh all affected cutoffs. Effective dates use calendar-date
+validation in `src/shared/validation.ts`. Module ownership and database schema are unchanged.
+
 A LAN office system: **inventory**, **forms/files**, **user accounts with roles &
 departments**, and **internal messaging**. One PC runs the server; other PCs use it in a
 browser.

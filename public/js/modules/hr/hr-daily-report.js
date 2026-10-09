@@ -15,13 +15,14 @@ App.register('hr-daily-report', async (view, filter) => {
   const STATUS_META = {
     present: { label: 'Present', badge: 'ok' },
     late: { label: 'Late', badge: 'status-confirmed' },
+    half_day: { label: 'Half Day', badge: 'status-open' },
     absent: { label: 'Absent', badge: 'low' },
     leave: { label: 'On Leave', badge: 'status-open' },
     reported: { label: 'Reported', badge: 'status-confirmed' },
     not_scheduled: { label: 'Not Scheduled', badge: 'muted' },
     pending: { label: 'Not Yet In', badge: 'muted' },
   };
-  const STATUS_FILTERS = ['present', 'late', 'absent', 'leave', 'reported', 'not_scheduled', 'pending'];
+  const STATUS_FILTERS = ['present', 'late', 'half_day', 'absent', 'leave', 'reported', 'not_scheduled', 'pending'];
 
   const TODAY = todayStr();
   // HR Overview's "present today" cards link straight in here pre-filtered to one status
@@ -90,6 +91,7 @@ App.register('hr-daily-report', async (view, filter) => {
       <div class="cards">
         ${card('present', 'good', 'check', t.present, 'Present')}
         ${card('late', 'warn', 'history', t.late, 'Late')}
+        ${card('half_day', '', 'calendar', t.half_day, 'Half Day')}
         ${card('absent', 'alert', 'alert', t.absent, 'Absent')}
         ${card('leave', '', 'calendar', t.leave, 'On Leave')}
         ${card('reported', '', 'messages', t.reported, 'Reported')}
@@ -97,7 +99,9 @@ App.register('hr-daily-report', async (view, filter) => {
       <p class="muted dr-footnote">Also ${t.not_scheduled} not scheduled today (rest day, holiday,
         or a company no-work day)${isToday ? ` and ${t.pending} not yet due in` : ''} —
         neither is counted as absent above. "Reported" means a chat/verbal report was linked to
-        the absence — still unpaid, just not a silent no-call/no-show.</p>`;
+        the absence — still unpaid, just not a silent no-call/no-show. "Half Day" is anyone who
+        first timed in after lunch started, left at lunch, or has a Half Day form or HR's half-day
+        mark — the same days payroll pays as half days; any lateness is in the note.</p>`;
   }
 
   /** Employees grouped by department into a <table> (no wrapping .panel — callers add their
@@ -155,13 +159,14 @@ App.register('hr-daily-report', async (view, filter) => {
         <div class="panel-head"><h3>By department</h3></div>
         <table>
           <thead><tr>
-            <th>Department</th><th class="right">Present</th><th class="right">Late</th>
+            <th>Department</th><th class="right">Present</th><th class="right">Late</th><th class="right">Half Day</th>
             <th class="right">Absent</th><th class="right">Reported</th><th class="right">On Leave</th><th class="right">Total</th>
           </tr></thead>
           <tbody>${byDept.map((r) => `<tr>
             <td>${UI.esc(r.department_name)}</td>
             <td class="right">${r.present}</td>
             <td class="right">${r.late}</td>
+            <td class="right">${r.half_day}</td>
             <td class="right">${r.absent}</td>
             <td class="right">${r.reported}</td>
             <td class="right">${r.leave}</td>

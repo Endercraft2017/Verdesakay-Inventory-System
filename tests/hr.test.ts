@@ -2703,3 +2703,122 @@ describe('mid-cutoff rate changes (employee_rate_history)', () => {
     expect(rates).toEqual([['2026-06-01', 650], ['2026-05-01', 600], ['2020-01-01', 600]]);
   });
 });
+
+describe('Change rate (POST /employees/:id/rate-change) recomputes payroll from its effective date', () => {
+  // Three one-day cutoffs, no holidays: July (before the change), early Aug (marked paid), mid Aug (unpaid).
+  async function setUp(tag: string, dailyRate = 600) {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: `TEST-RATECHG-${tag}`, name: `Rate Change ${tag}`, daily_rate: dailyRate, start_date: '2026-01-01' });
+    const cutoffs: Array<[string, string, string, string]> = [
+      [`Rate Chg ${tag} Jul`, '2026-07-01', '2026-07-07', '2026-07-06'],
+      [`Rate Chg ${tag} Aug A`, '2026-08-01', '2026-08-07', '2026-08-04'],
+      [`Rate Chg ${tag} Aug B`, '2026-08-16', '2026-08-20', '2026-08-18'],
+    ];
+    let formId = 0;
+    for (const [label, start, end, day] of cutoffs) {
+      const p = await ctx.api.post('/api/hr/periods').set(hdr()).send({ label, start_date: start, end_date: end });
+      await ctx.api.post(`/api/hr/periods/${p.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
+      await ctx.api.put(`/api/hr/periods/${p.body.id}/attendance`).set(hdr()).send({
+        employee_id: emp.body.id,
+        days: [{ work_date: day, time_in: '08:00', time_out: '17:00', notes: '', shift_id: null, form_record_id: null }],
+      });
+      const gen = await ctx.api.post(`/api/hr/periods/${p.body.id}/generate-payslips`).set(hdr()).send({ payroll_period: label });
+      formId = gen.body.form_id;
+    }
+    const slip = async (which: 'Jul' | 'Aug A' | 'Aug B') => {
+      const recs = await ctx.api.get(`/api/form-definitions/${formId}/records`).query({ period: `Rate Chg ${tag} ${which}` }).set(hdr());
+      return recs.body.find((r: { data: { employee_id: number } }) => r.data.employee_id === emp.body.id);
+    };
+    await ctx.api.post(`/api/hr/payroll/${(await slip('Aug A')).id}/mark-paid`).set(hdr());
+    const change = (body: object) => ctx.api.post(`/api/hr/employees/${emp.body.id}/rate-change`).set(hdr()).send(body);
+    return { empId: emp.body.id as number, slip, change };
+  }
+
+  it('recomputes unpaid payslips, leaves paid ones as paid and reports what they are short', async () => {
+    const { slip, change } = await setUp('A');
+    expect((await slip('Aug B')).data.basic_salary).toBeCloseTo(600, 6);
+
+    const res = await change({ rate_type: 'daily', daily_rate: 650, effective_date: '2026-08-01', note: 'Backdated raise' });
+    expect(res.status).toBe(200);
+    expect(res.body.daily_rate).toBe(650);
+
+    // July ends before the effective date — not touched, not reported.
+    expect(res.body.recomputed.map((r: { period: string }) => r.period)).toEqual(['Rate Chg A Aug B']);
+    expect(res.body.recomputed[0]).toMatchObject({ earnings_before: 600, earnings_after: 650, gl_posted: false });
+    expect(res.body.paid).toEqual([expect.objectContaining({
+      period: 'Rate Chg A Aug A', earnings_paid: 600, earnings_at_new_rate: 650, difference: 50,
+    })]);
+
+    const augB = await slip('Aug B');
+    expect(augB.data.basic_salary).toBeCloseTo(650, 6);
+    expect(augB.data.daily_rate).toBe(650);
+    const augA = await slip('Aug A');
+    expect(augA.status).toBe('paid');
+    expect(augA.data.basic_salary).toBeCloseTo(600, 6);
+    expect((await slip('Jul')).data.basic_salary).toBeCloseTo(600, 6);
+  });
+
+  it('a change backdated behind a later one fixes only its own window and keeps today\'s rate', async () => {
+    const { empId, slip, change } = await setUp('B');
+    await change({ rate_type: 'daily', daily_rate: 650, effective_date: '2026-08-01' });
+
+    // A July correction, behind the Aug 1 raise.
+    const res = await change({ rate_type: 'daily', daily_rate: 620, effective_date: '2026-07-01', note: 'July correction' });
+    expect(res.status).toBe(200);
+    expect(res.body.daily_rate).toBe(650); // Aug 1's 650 still wins today
+    const employee = (await ctx.api.get('/api/hr/employees').set(hdr())).body.find((e: { id: number }) => e.id === empId);
+    expect(employee.daily_rate).toBe(650);
+
+    expect((await slip('Jul')).data.basic_salary).toBeCloseTo(620, 6);
+    expect((await slip('Aug B')).data.basic_salary).toBeCloseTo(650, 6);
+    expect(res.body.paid).toEqual([expect.objectContaining({ period: 'Rate Chg B Aug A', difference: 50 })]);
+
+    const history = await ctx.api.get(`/api/hr/employees/${empId}/rate-history`).set(hdr());
+    expect(history.body.map((h: { effective_from: string; daily_rate: number }) => [h.effective_from, h.daily_rate]))
+      .toEqual([['2026-08-01', 650], ['2026-07-01', 620], ['2026-01-01', 600]]);
+  });
+
+  it('setting the first real rate also refreshes earlier unpaid cutoffs and reports earlier paid shortfalls', async () => {
+    const { slip, change } = await setUp('FIRST', 0);
+    const paidBefore = await slip('Aug A');
+    expect((await slip('Jul')).data.basic_salary).toBe(0);
+    const res = await change({ rate_type: 'daily', daily_rate: 650, effective_date: '2026-08-16' });
+    expect(res.status).toBe(200);
+    expect(res.body.recomputed.map((r: { period: string }) => r.period))
+      .toEqual(['Rate Chg FIRST Jul', 'Rate Chg FIRST Aug B']);
+    expect((await slip('Jul')).data.basic_salary).toBeCloseTo(650, 6);
+    expect((await slip('Aug B')).data.basic_salary).toBeCloseTo(650, 6);
+    expect(await slip('Aug A')).toEqual(paidBefore);
+    expect(res.body.paid).toEqual([expect.objectContaining({
+      period: 'Rate Chg FIRST Aug A', earnings_paid: 0, earnings_at_new_rate: 650, difference: 650,
+    })]);
+  });
+
+  it('rejects impossible effective dates without changing rates, history or payslips', async () => {
+    const { empId, slip, change } = await setUp('DATE');
+    const historyBefore = (await ctx.api.get(`/api/hr/employees/${empId}/rate-history`).set(hdr())).body;
+    const slipBefore = await slip('Aug B');
+    for (const effective_date of ['2026-02-30', '2025-02-29', '2026-00-01', '2026-04-31']) {
+      expect((await change({ rate_type: 'daily', daily_rate: 650, effective_date })).status).toBe(400);
+      expect((await ctx.api.put(`/api/hr/employees/${empId}`).set(hdr()).send({
+        employee_no: 'TEST-RATECHG-DATE', name: 'Rate Change DATE', daily_rate: 650,
+        rate_effective_date: effective_date,
+      })).status).toBe(400);
+    }
+    expect((await ctx.api.get(`/api/hr/employees/${empId}/rate-history`).set(hdr())).body).toEqual(historyBefore);
+    expect(await slip('Aug B')).toEqual(slipBefore);
+    const employee = (await ctx.api.get('/api/hr/employees').set(hdr())).body.find((e: { id: number }) => e.id === empId);
+    expect(employee.daily_rate).toBe(600);
+    expect((await change({ rate_type: 'daily', daily_rate: 650, effective_date: '2024-02-29' })).status).toBe(200);
+  });
+
+  it('rejects a future date, a missing rate, and an unknown employee', async () => {
+    const { change } = await setUp('C');
+    expect((await change({ rate_type: 'daily', daily_rate: 650, effective_date: '2099-01-01' })).status).toBe(400);
+    expect((await change({ rate_type: 'daily', daily_rate: 0, effective_date: '2026-08-01' })).status).toBe(400);
+    expect((await change({ rate_type: 'monthly', effective_date: '2026-08-01' })).status).toBe(400);
+    const unknown = await ctx.api.post('/api/hr/employees/999999/rate-change').set(hdr())
+      .send({ rate_type: 'daily', daily_rate: 650, effective_date: '2026-08-01' });
+    expect(unknown.status).toBe(404);
+  });
+});

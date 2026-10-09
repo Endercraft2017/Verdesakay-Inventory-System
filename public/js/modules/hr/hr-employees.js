@@ -442,28 +442,25 @@ App.register('hr-employees', async (view) => {
           </div>
 
           <div data-formpanel="pay" class="form-panel hidden">
+            ${canSeePay ? '' : PAY_HIDDEN_NOTE}
+            <div class="${canSeePay ? '' : 'hidden'}">
             <div class="field-row">
-              <div><label>Rate type</label><select data-f="rate_type">
+              <div><label>Rate type</label><select data-f="rate_type" ${editing ? 'disabled' : ''}>
                 <option value="daily" ${rateType === 'daily' ? 'selected' : ''}>Daily</option>
                 <option value="monthly" ${rateType === 'monthly' ? 'selected' : ''}>Monthly</option>
               </select></div>
               <div><label id="emp-rate-label">${rateType === 'monthly' ? 'Monthly rate' : 'Daily rate'}</label>
-                <input data-f="rate_amount" type="number" step="0.01" min="0" value="${UI.esc(String(rateAmount || 0))}" />
+                <input data-f="rate_amount" type="number" step="0.01" min="0" value="${UI.esc(String(rateAmount || 0))}" ${editing ? 'readonly' : ''} />
                 <div class="muted" id="emp-rate-hint" style="font-size:12px;margin-top:3px"></div>
               </div>
             </div>
             ${editing ? `
-            <div class="field-row" id="emp-rate-change-row" style="display:none;margin-top:8px">
-              <div><label>Effective date</label><input data-f="rate_effective_date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
-              <div><label>Note (optional)</label><input data-f="rate_change_note" placeholder="e.g. Annual raise" /></div>
-            </div>
-            <p class="muted" id="emp-rate-change-hint" style="font-size:12px;margin:4px 0 0;display:none">
-              Logged to this employee's rate history — payroll will use ${UI.esc(existing.daily_rate != null ? money(existing.daily_rate) + '/day' : 'the old rate')}
-              for cutoff days before this date, and the new rate from this date on. Can be backdated; not before today for a future raise yet.</p>
-            <div style="margin-top:10px">
+            <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+              ${canChangePay ? `<button type="button" class="btn secondary small" id="emp-rate-change">${UI.icon('edit', 15)} Change rate</button>` : ''}
               <button type="button" class="btn secondary small" id="emp-rate-history-toggle">${UI.icon('history', 15)} Rate history</button>
-              <div id="emp-rate-history" style="display:none;margin-top:8px"></div>
-            </div>` : ''}
+            </div>
+            <div id="emp-rate-history" style="display:none;margin-top:8px"></div>` : ''}
+            </div>
             <label style="margin-top:18px;display:block">Default shift</label>
             <select data-f="default_shift_id">${shiftOpts}</select>
             <p class="muted" style="font-size:12px;margin:4px 0 0">Pre-fills new Daily Time rows in Time Keeping — a
@@ -608,8 +605,6 @@ App.register('hr-employees', async (view) => {
           const rateLabel = ov.querySelector('#emp-rate-label');
           const rateHint = ov.querySelector('#emp-rate-hint');
           const rateAmountInp = ov.querySelector('[data-f="rate_amount"]');
-          const rateChangeRow = ov.querySelector('#emp-rate-change-row');
-          const rateChangeHint = ov.querySelector('#emp-rate-change-hint');
           function updateRateUI() {
             if (rateTypeSel.value === 'monthly') {
               rateLabel.textContent = 'Monthly rate';
@@ -621,16 +616,6 @@ App.register('hr-employees', async (view) => {
               rateLabel.textContent = 'Daily rate';
               rateHint.textContent = '';
             }
-            // Only editing mode has these elements — the effective-date/note fields (and their
-            // hint) matter only when this save would actually change the resolved daily rate,
-            // so they stay hidden the rest of the time instead of cluttering every edit.
-            if (rateChangeRow) {
-              const amt = Number(rateAmountInp.value) || 0;
-              const newDaily = rateTypeSel.value === 'monthly' ? amt / monthlyRateDivisor : amt;
-              const changed = Math.round(newDaily * 100) !== Math.round((existing.daily_rate || 0) * 100);
-              rateChangeRow.style.display = changed ? 'flex' : 'none';
-              rateChangeHint.style.display = changed ? 'block' : 'none';
-            }
           }
           rateTypeSel.addEventListener('change', updateRateUI);
           rateAmountInp.addEventListener('input', updateRateUI);
@@ -640,10 +625,26 @@ App.register('hr-employees', async (view) => {
           if (rateHistoryToggle) {
             const historyEl = ov.querySelector('#emp-rate-history');
             let historyLoaded = false;
-            rateHistoryToggle.onclick = async () => {
+            rateHistoryToggle.onclick = () => {
               const opening = historyEl.style.display === 'none';
               historyEl.style.display = opening ? 'block' : 'none';
-              if (!opening || historyLoaded) return;
+              if (opening && !historyLoaded) loadRateHistory();
+            };
+            // The rate fields are read-only while editing: a rate change goes through its own
+            // dialog, which logs it and recomputes the affected payslips straight away. The
+            // fields then show the rate in force today, so Save here never re-sends an old rate.
+            const rateChangeBtn = ov.querySelector('#emp-rate-change');
+            if (rateChangeBtn) rateChangeBtn.onclick = () => rateChangeModal(existing, (r) => {
+              existing.rate_type = r.rate_type;
+              existing.daily_rate = r.daily_rate;
+              existing.monthly_rate = r.monthly_rate;
+              rateTypeSel.value = r.rate_type;
+              rateAmountInp.value = String(r.rate_type === 'monthly' ? r.monthly_rate : r.daily_rate);
+              updateRateUI();
+              if (historyEl.style.display !== 'none') loadRateHistory(); else historyLoaded = false;
+              load();
+            });
+            async function loadRateHistory() {
               historyLoaded = true;
               historyEl.innerHTML = '<div class="muted" style="padding:6px 0">Loading…</div>';
               try {
@@ -662,7 +663,7 @@ App.register('hr-employees', async (view) => {
               } catch (e) {
                 historyEl.innerHTML = `<div class="muted" style="padding:6px 0">${UI.esc(e.message || 'Failed to load')}</div>`;
               }
-            };
+            }
           }
 
           const accessBtn = ov.querySelector('#emp-user-access');
@@ -824,18 +825,115 @@ App.register('hr-employees', async (view) => {
             contribution_basis: ov.querySelector('[data-f="contribution_basis_fixed"]').checked ? 'fixed' : 'actual',
             photo: photoData,
           };
-          if (editing) {
-            const effDateInp = ov.querySelector('[data-f="rate_effective_date"]');
-            if (effDateInp) body.rate_effective_date = effDateInp.value;
-            const noteInp = ov.querySelector('[data-f="rate_change_note"]');
-            if (noteInp) body.rate_change_note = noteInp.value.trim();
-          }
           if (editing) await API.put('/hr/employees/' + existing.id, body);
           else await API.post('/hr/employees', body);
           UI.toast(editing ? 'Employee saved' : 'Employee created');
           load();
         },
       });
+    });
+  }
+
+  /* ---------- Change rate (logs it, then recomputes the payslips it reaches) ---------- */
+  function rateLabelText(r) {
+    return r.rate_type === 'monthly' ? `${money(r.monthly_rate)}/mo (${money(r.daily_rate)}/day)` : `${money(r.daily_rate)}/day`;
+  }
+
+  function rateChangeModal(emp, onDone) {
+    // Same UTC "today" the server checks a future date against.
+    const today = new Date().toISOString().slice(0, 10);
+    const type = emp.rate_type || 'daily';
+    UI.modal({
+      title: `Change rate — ${emp.name}`,
+      bodyHTML: `
+        <p class="muted" style="font-size:13px;margin-top:0">Current rate: <strong>${UI.esc(rateLabelText(emp))}</strong></p>
+        <div class="field-row">
+          <div><label>Rate type</label><select data-r="rate_type">
+            <option value="daily" ${type === 'daily' ? 'selected' : ''}>Daily</option>
+            <option value="monthly" ${type === 'monthly' ? 'selected' : ''}>Monthly</option>
+          </select></div>
+          <div><label data-r="amount_label">${type === 'monthly' ? 'New monthly rate' : 'New daily rate'}</label>
+            <input data-r="amount" type="number" step="0.01" min="0" />
+            <div class="muted" data-r="amount_hint" style="font-size:12px;margin-top:3px"></div>
+          </div>
+        </div>
+        <div class="field-row" style="margin-top:8px">
+          <div><label>Effective date</label><input data-r="effective_date" type="date" max="${today}" value="${today}" /></div>
+          <div><label>Note (optional)</label><input data-r="note" maxlength="200" placeholder="e.g. Annual raise" /></div>
+        </div>
+        <p class="muted" style="font-size:12px;margin:10px 0 0">Days before the effective date keep the old rate. Every
+          unpaid payslip for a cutoff ending on or after it is recomputed now. Payslips already marked paid are not
+          changed — you'll see how much each one is short. Can be backdated; a future date isn't supported yet.</p>`,
+      confirmText: 'Change rate',
+      onOpen: (ov) => {
+        const typeSel = ov.querySelector('[data-r="rate_type"]');
+        const amountInp = ov.querySelector('[data-r="amount"]');
+        const sync = () => {
+          const monthly = typeSel.value === 'monthly';
+          ov.querySelector('[data-r="amount_label"]').textContent = monthly ? 'New monthly rate' : 'New daily rate';
+          const amt = Number(amountInp.value) || 0;
+          ov.querySelector('[data-r="amount_hint"]').textContent = monthly && amt
+            ? `≈ ${money(amt / monthlyRateDivisor)} / day (monthly ÷ ${monthlyRateDivisor})` : '';
+        };
+        typeSel.addEventListener('change', sync);
+        amountInp.addEventListener('input', sync);
+        setTimeout(() => amountInp.focus(), 0);
+      },
+      onConfirm: async (ov, showErr) => {
+        const rateType = ov.querySelector('[data-r="rate_type"]').value;
+        const amount = Number(ov.querySelector('[data-r="amount"]').value) || 0;
+        const effectiveDate = ov.querySelector('[data-r="effective_date"]').value;
+        if (amount <= 0) { showErr('Enter the new rate'); return false; }
+        if (!effectiveDate) { showErr('Pick the date the new rate takes effect'); return false; }
+        if (effectiveDate > today) { showErr('The effective date can\'t be in the future yet'); return false; }
+        const result = await API.post(`/hr/employees/${emp.id}/rate-change`, {
+          rate_type: rateType,
+          daily_rate: rateType === 'daily' ? amount : 0,
+          monthly_rate: rateType === 'monthly' ? amount : null,
+          effective_date: effectiveDate,
+          note: ov.querySelector('[data-r="note"]').value.trim() || null,
+        });
+        onDone(result);
+        rateChangeResultModal(emp, { rate_type: rateType, daily_rate: rateType === 'monthly' ? amount / monthlyRateDivisor : amount, monthly_rate: amount }, effectiveDate, result);
+      },
+    });
+  }
+
+  function rateChangeResultModal(emp, newRate, effectiveDate, result) {
+    const recomputed = result.recomputed || [];
+    const paid = result.paid || [];
+    const glPosted = recomputed.filter((r) => r.gl_posted);
+    const owed = paid.reduce((s, p) => s + (Number(p.difference) || 0), 0);
+    const row = (title, sub) => `
+      <div class="tool-row"><div class="tool-row-main">
+        <div class="tool-row-title">${title}</div><div class="tool-row-sub">${sub}</div>
+      </div></div>`;
+    UI.modal({
+      title: 'Rate changed',
+      cancelText: 'Close',
+      bodyHTML: `
+        <p style="margin-top:0">${UI.esc(emp.name)} is now on <strong>${UI.esc(rateLabelText(newRate))}</strong>
+          from ${UI.esc(UI.fmtDateShort(effectiveDate))}.</p>
+        ${!recomputed.length && !paid.length ? `<p class="muted" style="font-size:13px">No payslips were affected —
+          cutoffs generated from now on use the new rate.</p>` : ''}
+        ${recomputed.length ? `
+          <label style="display:block;margin-top:14px">Payslips recomputed (${recomputed.length})</label>
+          ${recomputed.map((r) => row(
+            `${UI.esc(r.period)} <span class="muted" style="font-weight:normal">· ${UI.esc(r.number)}</span>`,
+            `Gross ${money(r.earnings_before)} → ${money(r.earnings_after)} · Net ${money(r.net_before)} → ${money(r.net_after)}`
+          )).join('')}` : ''}
+        ${glPosted.length ? `<p class="form-error" style="margin-top:8px">Already posted to the General Ledger:
+          ${glPosted.map((r) => UI.esc(r.period)).join(', ')}. Open each cutoff and post its payroll to the GL again.</p>` : ''}
+        ${paid.length ? `
+          <label style="display:block;margin-top:14px">Already paid — not changed (${paid.length})</label>
+          ${paid.map((p) => row(
+            `${UI.esc(p.period)} <span class="muted" style="font-weight:normal">· ${UI.esc(p.number)}</span>`,
+            `Paid ${money(p.earnings_paid)} gross · at the new rate ${money(p.earnings_at_new_rate)} · `
+              + `<strong>${p.difference >= 0 ? 'short' : 'over'} ${money(Math.abs(p.difference))}</strong>`
+          )).join('')}
+          <p class="muted" style="font-size:12px;margin:6px 0 0">Total ${owed >= 0 ? 'owed' : 'overpaid'}:
+            <strong>${money(Math.abs(owed))}</strong> gross. Settle it by hand, or unmark a payslip as paid and
+            regenerate its cutoff to recompute it.</p>` : ''}`,
     });
   }
 

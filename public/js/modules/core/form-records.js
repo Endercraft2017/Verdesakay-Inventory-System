@@ -157,44 +157,87 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     return employeesCache;
   }
 
-  view.innerHTML = `
+  // Payslip writes need payroll.manage server-side (form-builder.routes.ts canAccessRecords); a
+  // payroll.view-only reader browses, prints and exports. Every other form reaches this point
+  // only with its manage permission, so canWrite is always true for them.
+  const canWrite = !isPayroll || canManagePayroll;
+  const statusOptions = `
+        <option value="" ${state.status ? '' : 'selected'}>All statuses</option>
+        ${['pending', 'draft', 'submitted', 'approved', 'rejected', 'completed'].concat(isPayroll ? ['paid'] : [])
+          .map((s) => `<option value="${s}" ${state.status === s ? 'selected' : ''}>${s}</option>`).join('')}`;
+
+  // Payroll gets a heading row (context + primary action), a separate filter / print-export
+  // row, and its rare import/cleanup tools behind an inline disclosure. Other forms keep the
+  // original single toolbar unchanged.
+  const headerHTML = isPayroll ? `
+    <div class="topbar">
+      <button type="button" class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} All Forms</button>
+      <div>
+        <h2>${UI.esc(formDef.name)}</h2>
+        <div class="sub">Payslips grouped by cutoff — open one to see how its pay was computed.</div>
+      </div>
+      <div class="grow"></div>
+      ${canManagePayroll ? `
+        <button type="button" class="btn secondary" id="fr-more-toggle" aria-expanded="false" aria-controls="fr-more">${UI.icon('settings')} Import &amp; cleanup</button>
+        <button type="button" class="btn" id="fr-new">${UI.icon('plus')} New Record</button>` : ''}
+    </div>
+    ${canManagePayroll ? `<div class="hr-tools" id="fr-more" hidden>
+      <div class="hr-tools-group" role="group" aria-labelledby="fr-more-import">
+        <span class="hr-tools-label" id="fr-more-import">Import</span>
+        <button type="button" class="btn secondary small" id="fr-import-csv">${UI.icon('upload', 14)} Upload CSV</button>
+      </div>
+      <div class="hr-tools-group" role="group" aria-labelledby="fr-more-clean">
+        <span class="hr-tools-label" id="fr-more-clean">Cleanup</span>
+        <button type="button" class="btn secondary small danger" id="fr-del-all" title="Delete all currently visible records">${UI.icon('trash', 14)} Delete Period</button>
+      </div>
+    </div>` : ''}
+    <div class="hr-filters hr-filters-bar">
+      <div class="search-box search">
+        <span class="ic">${UI.icon('search', 15)}</span>
+        <label class="hr-sr-only" for="fr-search">Search payslips by employee name</label>
+        <input type="search" id="fr-search" placeholder="Search employee name…" autocomplete="off" />
+      </div>
+      <div class="fld"><label for="fr-status">Status</label><select id="fr-status">${statusOptions}</select></div>
+      <div class="fld"><label for="fr-period">Period</label><select id="fr-period"><option value="">All periods</option></select></div>
+      <button type="button" class="btn secondary small" id="fr-filter-reset" hidden>Reset</button>
+      <div class="grow"></div>
+      <div class="hr-tools-group" role="group" aria-label="Print and export the payslips in view">
+        <button type="button" class="btn secondary small" id="fr-print-slips">${UI.icon('printer', 14)} Print All</button>
+        <button type="button" class="btn secondary small" id="fr-print-summary" title="Print a payroll summary (totals, department subtotals, full payroll list) for the payslips in view">${UI.icon('printer', 14)} Print Summary</button>
+        <button type="button" class="btn secondary small" id="fr-download-csv" title="Download the currently filtered payslips as a styled Excel workbook, with summary and per-department totals">${UI.icon('download', 14)} Download Excel</button>
+      </div>
+    </div>` : `
     <div class="topbar">
       <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} All Forms</button>
       <h2 style="margin-left:10px">${UI.esc(formDef.name)}</h2>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="fr-search" placeholder="${isPayroll ? 'Search employee name…' : 'Search number…'}" /></div>
-      <select id="fr-status" style="margin-left:8px">
-        <option value="" ${state.status ? '' : 'selected'}>All statuses</option>
-        ${['pending', 'draft', 'submitted', 'approved', 'rejected', 'completed'].concat(isPayroll ? ['paid'] : [])
-          .map((s) => `<option value="${s}" ${state.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+      <div class="search-box search">${UI.icon('search', 16)}<input id="fr-search" placeholder="Search number…" /></div>
+      <select id="fr-status" style="margin-left:8px">${statusOptions}
       </select>
-      ${isPayroll ? `
-        <select id="fr-period" style="margin-left:8px;padding:6px 8px;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:13px" title="Filter by payroll period">
-          <option value="">All periods</option>
-        </select>
-        <button class="btn secondary" id="fr-import-csv" style="margin-left:8px">${UI.icon('upload')} Upload CSV</button>
-        <button class="btn secondary" id="fr-print-slips" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
       ${canBulkPrint ? `<button class="btn secondary" id="fr-print-all-tpl" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
-      <button class="btn secondary" id="fr-download-csv" style="margin-left:8px" title="${isPayroll ? 'Download the currently filtered payslips as a styled Excel workbook, with summary and per-department totals' : 'Download the currently filtered records as a CSV file'}">${UI.icon('download')} ${isPayroll ? 'Download Excel' : 'Download CSV'}</button>
+      <button class="btn secondary" id="fr-download-csv" style="margin-left:8px" title="Download the currently filtered records as a CSV file">${UI.icon('download')} Download CSV</button>
       <button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete Period</button>
       <button class="btn" id="fr-new" style="margin-left:8px">${UI.icon('plus')} New Record</button>
-    </div>
+    </div>`;
+
+  view.innerHTML = `${headerHTML}
     <div id="fr-bulk-bar" style="display:none;align-items:center;gap:8px;padding:7px 16px;background:var(--accent-weak,#e7f1ff);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0">
       <span id="fr-sel-count" style="font-weight:700;font-size:13px;color:var(--accent,#2b7fff)">0 selected</span>
       <div style="flex:1"></div>
       ${isPayroll ? `<button class="btn secondary small" id="fr-bulk-print">${UI.icon('printer')} Print selected</button>` : ''}
       ${canBulkPrint ? `<button class="btn secondary small" id="fr-bulk-print-tpl">${UI.icon('printer')} Print selected</button>` : ''}
-      <button class="btn secondary small" id="fr-bulk-status">${UI.icon('edit', 14)} Change status</button>
+      ${canWrite ? `<button class="btn secondary small" id="fr-bulk-status">${UI.icon('edit', 14)} Change status</button>` : ''}
       ${isPayroll && canManagePayroll ? `
         <button class="btn secondary small" id="fr-bulk-mark-paid">${UI.icon('check')} Mark paid</button>
         <button class="btn secondary small" id="fr-bulk-unmark-paid">${UI.icon('reply', 15)} Unmark paid</button>` : ''}
-      <button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>
+      ${canWrite ? `<button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>` : ''}
       <button class="btn secondary small" id="fr-bulk-clear">${UI.icon('close', 12)} Clear</button>
     </div>
     <div class="panel"><div id="fr-table"></div></div>`;
 
   view.querySelector('#fr-back').onclick = () => App.navigate('form-records');
-  view.querySelector('#fr-new').onclick = () => recordModal(null);
+  const newBtn = view.querySelector('#fr-new'); // absent for a payroll.view-only reader
+  if (newBtn) newBtn.onclick = () => recordModal(null);
   view.querySelector('#fr-search').addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     state.q = e.target.value.trim();
@@ -205,13 +248,22 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     load();
   });
   if (isPayroll) {
-    view.querySelector('#fr-import-csv').onclick = () => importCsvModal();
+    const moreToggle = view.querySelector('#fr-more-toggle');
+    if (moreToggle) moreToggle.onclick = () => {
+      const open = moreToggle.getAttribute('aria-expanded') !== 'true';
+      moreToggle.setAttribute('aria-expanded', String(open));
+      view.querySelector('#fr-more').hidden = !open;
+    };
+    const importBtn = view.querySelector('#fr-import-csv');
+    if (importBtn) importBtn.onclick = () => importCsvModal();
     view.querySelector('#fr-print-slips').onclick = () => printSlips();
+    view.querySelector('#fr-print-summary').onclick = () => printSummary();
     view.querySelector('#fr-bulk-print').onclick = () => printSelected();
     view.querySelector('#fr-period').addEventListener('change', (e) => {
       state.period = e.target.value;
       load();
     });
+    view.querySelector('#fr-filter-reset').onclick = () => clearPayrollFilters();
   }
   if (canBulkPrint) {
     view.querySelector('#fr-print-all-tpl').onclick = () => printRecordsViaTemplate(currentRecords);
@@ -219,10 +271,24 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       printRecordsViaTemplate(currentRecords.filter((r) => selectedIds.has(r.id)));
   }
   view.querySelector('#fr-download-csv').onclick = () => downloadCsv();
-  view.querySelector('#fr-del-all').onclick = () => delAll();
-  view.querySelector('#fr-bulk-del').onclick = () => delSelected();
+  const delAllBtn = view.querySelector('#fr-del-all');
+  if (delAllBtn) delAllBtn.onclick = () => delAll();
+  const bulkDelBtn = view.querySelector('#fr-bulk-del');
+  if (bulkDelBtn) bulkDelBtn.onclick = () => delSelected();
   view.querySelector('#fr-bulk-clear').onclick = () => { selectedIds.clear(); syncSelection(); };
-  view.querySelector('#fr-bulk-status').onclick = () => bulkChangeStatus();
+  const bulkStatusBtn = view.querySelector('#fr-bulk-status');
+  if (bulkStatusBtn) bulkStatusBtn.onclick = () => bulkChangeStatus();
+
+  // Payroll's Reset / "Clear filters": drop search, status and period together, then reload.
+  function clearPayrollFilters() {
+    clearTimeout(searchTimer);
+    state.q = ''; state.status = ''; state.period = '';
+    view.querySelector('#fr-search').value = '';
+    view.querySelector('#fr-status').value = '';
+    view.querySelector('#fr-period').value = '';
+    load();
+    view.querySelector('#fr-search').focus();
+  }
   if (isPayroll && canManagePayroll) {
     view.querySelector('#fr-bulk-mark-paid').onclick = () => bulkSetPaid(true);
     view.querySelector('#fr-bulk-unmark-paid').onclick = () => bulkSetPaid(false);
@@ -451,6 +517,43 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         ifr.contentWindow.focus();
         ifr.contentWindow.print();
         return false; // keep the preview open — printing shouldn't close it
+      },
+    });
+  }
+
+  // Printable payroll summary for one period (or whatever's filtered) — same records and
+  // totals as Download Excel (hr-payroll-export.js buildPayrollSummaryHtml), same preview-
+  // modal + iframe pattern as printSlips() above. `records`/`labelHint` come from a period
+  // bundle's own button; the header button prints what's currently in view.
+  async function printSummary(records, labelHint) {
+    const list = records || currentRecords;
+    if (!list.length) { UI.toast('No records to print', 'error'); return; }
+    if (typeof buildPayrollSummaryHtml === 'undefined') { UI.toast('Print module failed to load', 'error'); return; }
+    const period = labelHint || state.period;
+    const meta = period ? periodsMeta.find((p) => p.label === period) : null;
+    const company = await API.get('/templates/company').catch(() => null);
+    const subtitle = `${list.length} payslip${list.length === 1 ? '' : 's'}` +
+      (!labelHint && state.status ? ` — status "${state.status}"` : '') +
+      (!labelHint && state.q ? ` — search "${state.q}"` : '');
+    const html = buildPayrollSummaryHtml(list, formDef, {
+      title: period || formDef.name,
+      subtitle,
+      company,
+      dateRange: meta ? `${meta.start_date} – ${meta.end_date}` : '',
+      printedAt: new Date().toLocaleString(),
+    });
+    UI.modal({
+      title: 'Payroll Summary Preview',
+      size: 'xl',
+      bodyHTML: `<iframe id="payroll-summary-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+      cancelText: 'Close',
+      confirmText: 'Print…',
+      onOpen: (ov) => { ov.querySelector('#payroll-summary-frame').srcdoc = UI.printableHtml(html, `Payroll Summary - ${period || formDef.name}`); },
+      onConfirm: (ov) => {
+        const ifr = ov.querySelector('#payroll-summary-frame');
+        ifr.contentWindow.focus();
+        ifr.contentWindow.print();
+        return false;
       },
     });
   }
@@ -773,12 +876,27 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   async function load() {
     const el = view.querySelector('#fr-table');
     if (!el) return;
-    el.innerHTML = '<div class="empty">Loading…</div>';
+    el.innerHTML = isPayroll ? '<div class="empty" role="status">Loading payslips…</div>' : '<div class="empty">Loading…</div>';
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.status) params.set('status', state.status);
     if (state.period) params.set('period', state.period);
-    const records = await API.get('/form-definitions/' + formId + '/records?' + params.toString());
+    if (isPayroll) view.querySelector('#fr-filter-reset').hidden = !(state.q || state.status || state.period);
+    let records;
+    try {
+      records = await API.get('/form-definitions/' + formId + '/records?' + params.toString());
+    } catch (err) {
+      if (!isPayroll) throw err;
+      // Payroll: an inline, retryable error instead of a list stuck on "Loading…".
+      el.innerHTML = UI.emptyState({
+        icon: 'alert',
+        title: 'Couldn’t load payslips',
+        hint: (err && err.message) || 'Check your connection, then try again.',
+        action: '<button type="button" class="btn secondary" id="fr-retry">Try again</button>',
+      });
+      el.querySelector('#fr-retry').onclick = () => load();
+      return;
+    }
     currentRecords = records;
     selectedIds.clear();
     updateBulkBar();
@@ -851,20 +969,23 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       </tr></thead>
       <tbody>${records.map((r) => `
         <tr class="clickable" data-id="${r.id}">
-          <td style="text-align:center"><input type="checkbox" data-row-check="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''} /></td>
-          <td><strong>${UI.esc(r.number)}</strong></td>
+          <td style="text-align:center"><input type="checkbox" data-row-check="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}${isPayroll ? ` aria-label="Select ${UI.esc(r.number)}"` : ''} /></td>
+          <td>${isPayroll
+            // A real button, so Tab + Enter opens the payslip detail; its click bubbles to the row.
+            ? `<button type="button" class="hr-row-open" title="View payslip details">${UI.esc(r.number)}</button>`
+            : `<strong>${UI.esc(r.number)}</strong>`}</td>
           ${visibleFields.map((f) => `<td>${UI.esc(String(r.data[f.key] ?? ''))}</td>`).join('')}
           <td><span class="badge-pill status-${UI.esc(r.status)}">${UI.esc(r.status)}</span></td>
           <td>${UI.esc(UI.fmtDateShort(r.created_at))}</td>
           <td class="actions">
-            ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip">${UI.icon('printer')}</button>` : ''}
+            ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip" aria-label="Print payslip ${UI.esc(r.number)}">${UI.icon('printer')}</button>` : ''}
             ${!isPayroll && formDef.template_id ? `<button class="icon-btn" data-print-tpl="${r.id}" title="Print">${UI.icon('printer')}</button>` : ''}
-            ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip">${UI.icon('mail')}</button>` : ''}
+            ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip" aria-label="Email payslip ${UI.esc(r.number)}">${UI.icon('mail')}</button>` : ''}
             ${isPayroll && canManagePayroll ? (r.status === 'paid'
-              ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)">${UI.icon('reply', 15)}</button>`
-              : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)">${UI.icon('check')}</button>`) : ''}
-            ${r.status !== 'paid' ? `<button class="icon-btn" data-edit="${r.id}" title="Edit">${UI.icon('edit')}</button>` : ''}
-            ${r.status !== 'paid' ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>` : ''}
+              ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)" aria-label="Unmark payslip ${UI.esc(r.number)} as paid">${UI.icon('reply', 15)}</button>`
+              : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)" aria-label="Mark payslip ${UI.esc(r.number)} as paid">${UI.icon('check')}</button>`) : ''}
+            ${r.status !== 'paid' && canWrite ? `<button class="icon-btn" data-edit="${r.id}" title="Edit"${isPayroll ? ` aria-label="Edit payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('edit')}</button>` : ''}
+            ${r.status !== 'paid' && canWrite ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete"${isPayroll ? ` aria-label="Delete payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('trash')}</button>` : ''}
           </td>
         </tr>`).join('')}
       </tbody></table>`;
@@ -908,18 +1029,22 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     // the last open bundle back down to zero, undoing their own click.
     if (!bundlesDefaultApplied && bundles.length) { expandedBundles.add(bundles[0].label); bundlesDefaultApplied = true; }
 
-    return bundles.map((b) => {
+    return bundles.map((b, i) => {
       const open = expandedBundles.has(b.label);
       const t = payslipTotals(b.records);
       const dateRange = b.meta ? `${UI.esc(b.meta.start_date)} – ${UI.esc(b.meta.end_date)} · ` : '';
+      // The caret + label is a real disclosure <button> (keyboard + screen-reader state); a
+      // click anywhere else on the header still toggles via [data-bundle-toggle] below.
       return `<div class="panel payroll-bundle" style="margin-bottom:10px;padding:0;overflow:hidden">
         <div class="payroll-bundle-head clickable" data-bundle-toggle="${UI.esc(b.label)}"
              style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px">
-          <span style="font-size:12px;width:14px;flex-shrink:0">${open ? '▾' : '▸'}</span>
-          <div style="min-width:170px">
-            <strong>${UI.esc(b.label)}</strong>
-            <div class="muted" style="font-size:11.5px">${dateRange}${b.records.length} payslip${b.records.length === 1 ? '' : 's'}</div>
-          </div>
+          <button type="button" class="payroll-bundle-toggle" aria-expanded="${open}" aria-controls="fr-bundle-${i}">
+            <span class="payroll-bundle-caret" aria-hidden="true">${open ? '▾' : '▸'}</span>
+            <span>
+              <strong>${UI.esc(b.label)}</strong>
+              <span class="muted payroll-bundle-meta">${dateRange}${b.records.length} payslip${b.records.length === 1 ? '' : 's'}</span>
+            </span>
+          </button>
           <div style="display:flex;gap:22px;flex-wrap:wrap">
             <div><div class="muted" style="font-size:10.5px">Gross</div><div style="font-weight:700;font-size:13px">${UI.money(t.gross)}</div></div>
             <div><div class="muted" style="font-size:10.5px">Deductions</div><div style="font-weight:700;font-size:13px">${UI.money(t.totalDeductions)}</div></div>
@@ -928,11 +1053,12 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
           <div class="grow"></div>
           <div class="payroll-bundle-actions" data-bundle-actions style="display:flex;gap:6px" onclick="event.stopPropagation()">
             <button type="button" class="btn secondary small" data-bundle-print="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print All</button>
+            <button type="button" class="btn secondary small" data-bundle-summary="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print Summary</button>
             <button type="button" class="btn secondary small" data-bundle-csv="${UI.esc(b.label)}">${UI.icon('download', 13)} Export Excel</button>
             ${canManagePayroll && b.meta ? `<button type="button" class="btn secondary small" data-bundle-post-gl="${b.meta.id}" data-bundle-post-gl-label="${UI.esc(b.label)}">${UI.icon('building', 13)} Post to GL</button>` : ''}
           </div>
         </div>
-        <div ${open ? '' : 'hidden'} data-bundle-body="${UI.esc(b.label)}" style="border-top:1px solid var(--border,#dce6f2)">
+        <div ${open ? '' : 'hidden'} id="fr-bundle-${i}" data-bundle-body="${UI.esc(b.label)}" style="border-top:1px solid var(--border,#dce6f2)">
           ${tableHTML(b.records, `data-check-all="${UI.esc(b.label)}"`)}
         </div>
       </div>`;
@@ -941,6 +1067,26 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
 
   function renderRecords(records) {
     const el = view.querySelector('#fr-table');
+    if (!records.length && isPayroll) {
+      // Payroll counts the period filter too, offers one-step recovery, and only offers New
+      // Record to someone who can write payslips.
+      const filtered = !!(state.q || state.status || state.period);
+      el.innerHTML = UI.emptyState({
+        icon: formDef.icon || 'file',
+        title: filtered ? 'No payslips match these filters' : 'No payslips yet',
+        hint: filtered
+          ? 'Try a different name, status or period.'
+          : 'Generate payslips from a Time Keeping cutoff, or upload a payroll CSV.',
+        action: filtered
+          ? '<button type="button" class="btn secondary" id="fr-empty-clear">Clear filters</button>'
+          : (canManagePayroll ? `<button type="button" class="btn" id="fr-empty-new">${UI.icon('plus')} New Record</button>` : ''),
+      });
+      const clear = el.querySelector('#fr-empty-clear');
+      if (clear) clear.onclick = () => clearPayrollFilters();
+      const en = el.querySelector('#fr-empty-new');
+      if (en) en.onclick = () => recordModal(null);
+      return;
+    }
     if (!records.length) {
       el.innerHTML = UI.emptyState({
         icon: formDef.icon || 'file',
@@ -965,10 +1111,19 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         const label = head.dataset.bundleToggle;
         if (expandedBundles.has(label)) expandedBundles.delete(label); else expandedBundles.add(label);
         renderRecords(records); // cheap re-render — just flips which bundle bodies are hidden
+        // The re-render replaced the button a keyboard user just pressed; put focus back on it.
+        const again = [...el.querySelectorAll('[data-bundle-toggle]')].find((h) => h.dataset.bundleToggle === label);
+        const toggleBtn = again && again.querySelector('.payroll-bundle-toggle');
+        if (toggleBtn) toggleBtn.focus();
       });
       el.querySelectorAll('[data-bundle-print]').forEach((b) => b.onclick = (e) => {
         e.stopPropagation();
         printSlips(records.filter((r) => (r.period || '(no period)') === b.dataset.bundlePrint).map((r) => r.data));
+      });
+      el.querySelectorAll('[data-bundle-summary]').forEach((b) => b.onclick = (e) => {
+        e.stopPropagation();
+        const label = b.dataset.bundleSummary;
+        printSummary(records.filter((r) => (r.period || '(no period)') === label), label);
       });
       el.querySelectorAll('[data-bundle-csv]').forEach((b) => b.onclick = (e) => {
         e.stopPropagation();

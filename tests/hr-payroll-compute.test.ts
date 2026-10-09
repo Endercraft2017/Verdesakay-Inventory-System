@@ -1451,6 +1451,27 @@ describe('computeAttendanceForEmployee — undocumented half day (looks like a h
     expect(r.days[0]!.possible_half_day).toBe(true); // still surfaced so HR files the actual request
   });
 
+  it('afternoon starts at the lunch gap: 12:01 is a PM half day and not late; 13:30 is a PM half day, late', () => {
+    const early = computeAttendanceForEmployee([day({ time_in: '12:01', time_out: '17:00' })], DAILY_RATE, POLICY);
+    expect(early.days[0]!.status).toBe('half_day');
+    expect(early.days[0]!.late_minutes).toBe(0);
+    const late = computeAttendanceForEmployee([day({ time_in: '13:30', time_out: '17:00' })], DAILY_RATE, POLICY);
+    expect(late.days[0]!.status).toBe('half_day');
+    expect(late.days[0]!.late_minutes).toBe(60); // 20 past grace, rounded up to the 1-hour late_unit
+  });
+
+  it('11:30 is before lunch: a late whole day, no longer an afternoon half day', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '11:30', time_out: '17:00' })], DAILY_RATE, POLICY);
+    expect(r.days[0]!.possible_half_day).toBe(false);
+    expect(r.days_half).toBe(0);
+    expect(r.days[0]!.late_minutes).toBeGreaterThan(0);
+  });
+
+  it('an afternoon arrival that stays late into the evening is still a PM half day (extra time is OT\'s concern)', () => {
+    const r = computeAttendanceForEmployee([day({ time_in: '12:30', time_out: '20:00' })], DAILY_RATE, POLICY);
+    expect(r.days[0]!.status).toBe('half_day');
+  });
+
   it('leaving early, AM pattern: 08:00-12:10 is a morning half day', () => {
     const r = computeAttendanceForEmployee([day({ time_in: '08:00', time_out: '12:10' })], DAILY_RATE, POLICY);
     expect(r.days_worked).toBe(0.5);

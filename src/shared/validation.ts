@@ -1288,6 +1288,8 @@ export function birthDateError(v: string): string | null {
   return null;
 }
 
+const rateEffectiveDate = trimmed.pipe(z.iso.date());
+
 export const employeeSchema = z.object({
   employee_no: trimmed.min(1, 'Employee number is required').max(40),
   name: trimmed.min(1, 'Employee name is required').max(160),
@@ -1303,7 +1305,7 @@ export const employeeSchema = z.object({
   // Only used when this save actually changes the effective daily rate — logs it to
   // employee_rate_history instead of just overwriting the flat current value. Not persisted as
   // an employees column. See src/employee-rate-history.ts and hr.routes.ts PUT /employees/:id.
-  rate_effective_date: trimmed.max(10).optional().nullable(),
+  rate_effective_date: rateEffectiveDate.or(trimmed.length(0)).optional().nullable(),
   rate_change_note: trimmed.max(200).optional().nullable(),
   status: employeeStatusEnum.default('probationary'),
   start_date: trimmed.max(40).optional().nullable(),
@@ -1363,6 +1365,21 @@ export const employeeSchema = z.object({
 }).refine(
   (v) => v.rate_type !== 'monthly' || (v.monthly_rate != null && v.monthly_rate > 0),
   { message: 'Monthly rate is required when rate type is monthly', path: ['monthly_rate'] }
+);
+
+/** HR → Employees → Edit → Pay → Change rate (POST /api/hr/employees/:id/rate-change). */
+export const rateChangeSchema = z.object({
+  rate_type: z.enum(['daily', 'monthly']),
+  daily_rate: numCoerce.min(0, 'Daily rate cannot be negative').default(0),
+  monthly_rate: numCoerce.min(0, 'Monthly rate cannot be negative').optional().nullable(),
+  effective_date: rateEffectiveDate,
+  note: trimmed.max(200).optional().nullable(),
+}).refine(
+  (v) => v.rate_type !== 'monthly' || (v.monthly_rate != null && v.monthly_rate > 0),
+  { message: 'Monthly rate is required when rate type is monthly', path: ['monthly_rate'] }
+).refine(
+  (v) => v.rate_type !== 'daily' || v.daily_rate > 0,
+  { message: 'Daily rate is required', path: ['daily_rate'] }
 );
 
 // ---- HR: Asset issuance (company property issued to an employee) ----

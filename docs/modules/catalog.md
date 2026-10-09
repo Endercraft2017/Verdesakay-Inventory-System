@@ -583,6 +583,13 @@ date / civil status on the Edit Employee form (`PUT /api/hr/employees/:id`; omit
 unchanged, '' ⇒ cleared; changes logged with source `hr_edit`).
 `GET /api/me/payslips` also matches legal names replaced this way (`previousNames`).
 Tests: `tests/info-change.test.ts`.
+**Daily Report** (`hr-daily-report.ts` + `GET /api/hr/daily-report`, UI HR → Time Keeping →
+Daily Report and the HR Overview cards): Present / Late / **Half Day** / Absent / On Leave /
+Reported / Not Scheduled / Not Yet In per employee and department. Half days come from
+`payroll`'s exported half-day rule (see modules/payroll), with lateness against the half's own
+start in the note; live, a lunch-out with no return reads as still at lunch until the lunch gap
++ 60 min has passed. Tests: `tests/hr-daily-report.test.ts` (includes a day-for-day match against
+`computeAttendanceForEmployee`).
 **Rest-day forms:** `rest-day.ts` owns rest-day resolution for payroll
 (`attendanceDaysForEmployee`), the Daily Time grid (`GET /periods/:id/attendance` adds
 `rest_day_swap` / `rest_day_swap_form_id`) and the Daily Report: per-day grid override, then an
@@ -645,6 +652,17 @@ Schedule 1 layout, so it's unchanged.
 **Public interface:** pure computation/rendering functions (no routes of its own — exposed
 through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
 `GET /api/me/payslips/:id/pdf`).
+**Half-day rule (one copy, shared with the HR Daily Report):** `hr-payroll-compute.ts` exports
+`detectHalfDaySession` / `halfDayArrival` / `pastLunchReturn` ("HH:MM" in, no DB). A day is a
+half day when a Half Day request is linked (its session), else HR's `half_day_override`, else —
+only on a day with no form linked — from the times: **afternoon** = first time-in at/after the
+lunch gap's start (12:00 on 08:00-17:00 with 60-min lunch; 11:59 is a late whole day), late
+judged against the PM half's start (13:00) past grace; **morning** = left within 60 min of the
+lunch gap having worked under 3/4 of the day, or left at lunch and never came back. Auto-detected
+days are paid as half days and still flagged `possible_half_day` so HR files the request.
+`hr/hr-daily-report.ts` calls these (connection `hr` → `payroll`, direct call), so the board
+and the payslip always agree on who worked half a day. Changed 2026-10-03: the afternoon rule used
+to start an hour before lunch and needed a time-out under 3/4 of the day.
 **Contribution bases rule (2026-10-05, docs/PH-PAYROLL-COMPLIANCE.md §1):** each fund has its own
 base — SSS on the month's actual remuneration (RA 11199), Pag-IBIG on actual basic pay (RA 9679),
 both summed over the cutoffs *ending* in the month and trued up on the month's last deducting
@@ -663,12 +681,25 @@ payslip as `statutory_basis.basis` and honoured by the agency schedule.
 Tests: `tests/ph-contribution-bases.test.ts`, `tests/hr.test.ts` ("SSS / Pag-IBIG on the month's
 actual pay").
 **Rate history rule:** generate-payslips pays each day at `effectiveDailyRateOn(employee, day)` —
-the latest `employee_rate_history` row on or before it. Rows are written by Edit Employee (the
-Pay tab's "Effective date", shown only while the rate is being changed, default today) and, since
+the latest `employee_rate_history` row on or before it. Rows are written by the Pay tab's
+**Change rate** dialog (2026-10-05; the rate fields themselves are read-only while editing) →
+`POST /hr/employees/:id/rate-change` {rate_type, daily_rate | monthly_rate, effective_date ≤ today,
+note}, which also sets `employees.daily_rate/rate_type/monthly_rate` to the rate in force today
+(`rateInForceOn` — a backdated change can sit behind a later one) and recomputes the employee's
+payslips for every cutoff ending on or after the earliest affected date (`recomputePayslipsFrom`, sharing
+generate-payslips' `payslipRun`/`payslipData`): unpaid ones rewritten, Paid ones untouched and
+returned as `paid[]` with `difference` (gross owed at the new rate), `recomputed[].gl_posted` when
+the cutoff's GL entry needs re-posting. Payslips match a cutoff by label, like the detail view.
+PhilHealth's fixed basic / the fixed SSS·Pag-IBIG basis use the rate in force at the cutoff's end,
+not today's. `PUT /hr/employees/:id` still logs a rate change (`rate_effective_date`) for API
+clients but recomputes nothing. Also written, since
 2026-10-04, by the employee CSV import (effective today, note "Employee import"). A ₱0 rate means
 "not set yet": entering the first real rate fills every ₱0 row ahead of it (`fillUnsetRate`), and
 the SCHEMA_VERSION 56 step repaired existing ones — before that, an employee created at ₱0 and
 given a rate later kept paying ₱0 for every day before the edit's effective date.
+As of 2026-10-08, `recordRateChange` returns that earliest affected date, including repaired
+unset-rate history, so Change rate also refreshes older unpaid slips and reports older Paid
+shortfalls. Both rate-change and employee-edit effective dates reject impossible calendar dates.
 **Next-day time-out rule (2026-10-04):** a time-out earlier than the time-in is the next morning
 for any shift (`nextDayIfBefore` in `hr-payroll-compute.ts`, also in `rawPresentMinutes` and
 `unrecordedOtMinutes`) — before, only an overnight *shift* did that, so a day-shift driver in at

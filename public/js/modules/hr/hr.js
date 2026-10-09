@@ -47,6 +47,7 @@ App.register('hr', async (view) => {
     <div class="cards">
       ${statCard('good', 'check', 'Present', t.present, 'hr-daily-report:present')}
       ${statCard(t.late > 0 ? 'warn' : '', 'history', 'Late', t.late, 'hr-daily-report:late')}
+      ${statCard('', 'calendar', 'Half Day', t.half_day, 'hr-daily-report:half_day')}
       ${statCard(t.absent > 0 ? 'alert' : '', 'alert', 'Absent', t.absent, 'hr-daily-report:absent')}
       ${statCard('', 'calendar', 'On Leave', t.leave, 'hr-daily-report:leave')}
       ${statCard('', 'messages', 'Reported', t.reported, 'hr-daily-report:reported')}

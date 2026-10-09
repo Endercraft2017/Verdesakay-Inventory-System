@@ -319,7 +319,7 @@ function halfDayWindow(
 }
 
 /** The inferred half-day session ('Morning (AM)' when the day ends near the lunch gap,
-    'Afternoon (PM)' when it starts near it — see halfDayWindow) if this day's raw clock times
+    'Afternoon (PM)' when it starts after it — see halfDayWindow) if this day's raw clock times
     resemble one of the shift's own AM/PM half-day windows even though no Half Day request is
     linked, else null. A real, live bug found this way: HR types the raw times straight into the
     Daily Time grid without also filing+linking a Half Day request, so the day would otherwise be
@@ -331,25 +331,82 @@ function halfDayWindow(
     "flag only, never touch pay" call: per the customer, a suspected half day should be *paid*
     as a half day, not as a whole day it plainly wasn't, with DayBreakdown.possible_half_day
     still set so HR knows to file the actual request for the record.
-    `tolerance` (60 min) allows for a half day that started/ended a bit early or late itself. */
+    Afternoon (per the customer, 2026-10-03): a first time-in at or after the lunch gap's start
+    — the whole morning was missed — however late in the afternoon and however long they then
+    stayed (time past the shift end is OT's concern, not this). No tolerance before lunch: 11:59
+    on an 08:00 shift is a late whole day, 12:01 a PM half day (on time — the PM half starts at
+    the end of the lunch gap; 13:30 is a PM half day 30 minutes late). Needs no time-out, so the
+    live Daily Report can call it the moment someone arrives.
+    Morning: left near the lunch gap (`tolerance`, 60 min either side, allows for leaving a bit
+    early or late) having worked under 3/4 of the day. */
 function unlinkedHalfDaySession(
-  shiftStart: number, shiftEnd: number, lunchMinutes: number, timeInRel: number, timeOutRel: number
-): 'Morning (AM)' | 'Afternoon (PM)' | null {
+  shiftStart: number, shiftEnd: number, lunchMinutes: number, timeInRel: number, timeOutRel: number | null
+): HalfDaySession | null {
+  const lunch = lunchWindow(shiftStart, shiftEnd, lunchMinutes);
+  if (timeInRel >= lunch.start && timeInRel < shiftEnd) return 'Afternoon (PM)';
+  if (timeOutRel == null) return null;
   const workSpan = Math.max(0, shiftEnd - shiftStart - lunchMinutes);
   const rawMinutes = Math.max(0, timeOutRel - timeInRel);
   if (rawMinutes <= 0 || rawMinutes >= workSpan * 0.75) return null; // most of a full day -> not a half day
-  const lunch = lunchWindow(shiftStart, shiftEnd, lunchMinutes);
-  const tolerance = 60;
-  const pmPattern = timeInRel >= lunch.start - tolerance && timeInRel <= lunch.end + tolerance;
-  const amPattern = timeOutRel >= lunch.start - tolerance && timeOutRel <= lunch.end + tolerance;
-  // Both boundaries lunch-adjacent (a very short day straddling the gap) — classify by which
-  // side of lunch more of the clocked time actually sat.
-  if (pmPattern && amPattern) {
-    return (timeOutRel - lunch.end) >= (lunch.start - timeInRel) ? 'Afternoon (PM)' : 'Morning (AM)';
-  }
-  if (amPattern) return 'Morning (AM)';
-  if (pmPattern) return 'Afternoon (PM)';
-  return null;
+  const tolerance = HALF_DAY_TOLERANCE_MIN;
+  return timeOutRel >= lunch.start - tolerance && timeOutRel <= lunch.end + tolerance ? 'Morning (AM)' : null;
+}
+
+export type HalfDaySession = 'Morning (AM)' | 'Afternoon (PM)';
+const HALF_DAY_TOLERANCE_MIN = 60;
+
+/** A shift on one continuous timeline (an overnight end pushed past 24:00) plus the mapper that
+    puts a raw "HH:MM" reading on it — the same normalization computeAttendanceForEmployee does
+    inline. null when the shift is missing or unparseable. */
+function shiftTimeline(shift: AttendanceDay['shift']) {
+  const start = shift ? toMinutes(shift.start_time) : null;
+  const end0 = shift ? toMinutes(shift.end_time) : null;
+  if (start == null || end0 == null) return null;
+  const overnight = end0 < start;
+  const rel = (hm: string | null | undefined): number | null => {
+    const m = toMinutes(hm);
+    return m == null ? null : overnight && m < start ? m + DAY_MIN : m;
+  };
+  return { start, end: overnight ? end0 + DAY_MIN : end0, rel };
+}
+
+/* "HH:MM" wrappers over the half-day rules above, for the HR Daily Report (src/modules/hr/
+   hr-daily-report.ts) — so the board and payroll call the same day a half day, with the same
+   session and the same lateness, instead of keeping a second copy of the rule. */
+
+/** The auto-detected half-day session for these raw times (see unlinkedHalfDaySession), or null.
+    `timeOut` may be null (still clocked in) — only an afternoon half day is detectable then. */
+export function detectHalfDaySession(
+  shift: AttendanceDay['shift'], lunchMinutes: number, timeIn: string, timeOut: string | null
+): HalfDaySession | null {
+  const tl = shiftTimeline(shift);
+  const inRel = tl?.rel(timeIn);
+  if (!tl || inRel == null) return null;
+  return unlinkedHalfDaySession(tl.start, tl.end, lunchMinutes, inRel, tl.rel(timeOut));
+}
+
+/** The half window's own start ("HH:MM", wall clock) and the raw minutes `timeIn` (if given)
+    arrived after it — negative = early. Grace is the caller's to apply, as payroll does. */
+export function halfDayArrival(
+  shift: AttendanceDay['shift'], lunchMinutes: number, session: string | undefined, timeIn: string | null
+): { start: string; late_raw: number | null } | null {
+  const tl = shiftTimeline(shift);
+  if (!tl) return null;
+  const win = halfDayWindow(tl.start, tl.end, lunchMinutes, session);
+  const wall = Math.round(win.start) % DAY_MIN;
+  const start = `${String(Math.floor(wall / 60)).padStart(2, '0')}:${String(wall % 60).padStart(2, '0')}`;
+  const inRel = tl.rel(timeIn);
+  return { start, late_raw: inRel == null ? null : inRel - win.start };
+}
+
+/** Whether `now` ("HH:MM") is past the latest time a lunch-out can still be a normal lunch —
+    the lunch gap's end plus the same tolerance the morning half-day pattern allows. Before
+    then, a lunch-out with no return yet is just someone at lunch, not someone who left. */
+export function pastLunchReturn(shift: AttendanceDay['shift'], lunchMinutes: number, now: string): boolean {
+  const tl = shiftTimeline(shift);
+  const nowRel = tl?.rel(now);
+  if (!tl || nowRel == null) return false;
+  return nowRel > lunchWindow(tl.start, tl.end, lunchMinutes).end + HALF_DAY_TOLERANCE_MIN;
 }
 
 const ZERO: AttendanceComputation = {
@@ -458,7 +515,7 @@ export function computeAttendanceForEmployee(
     let belowMin = false;
     let possibleHalfDay = false;
     let halfDayManual = false;
-    let unlinkedHalfSession: 'Morning (AM)' | 'Afternoon (PM)' | null = null;
+    let unlinkedHalfSession: HalfDaySession | null = null;
     // HR's manual "credit this as a half day anyway" call — ignored whenever a real
     // halfday_request is linked (that always wins), same gate undocumentedHalfDay uses below.
     const halfDayOverrideSession: 'Morning (AM)' | 'Afternoon (PM)' | null =

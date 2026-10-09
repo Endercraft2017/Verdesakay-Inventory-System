@@ -499,7 +499,10 @@ for the internet (it uses the company's mail server, which only the cloud has).
    early time is unpaid presence (flagged as unrecorded OT).
 2. **Computation** (`payroll`) — `hr-payroll-compute.ts` applies pay-per-hour-basis
    rules, OT cap, night differential, statutory deduction tables
-   (`payroll-tables.ts`, `ph-statutory.ts`).
+   (`payroll-tables.ts`, `ph-statutory.ts`). Half-day branch: a linked Half Day request, HR's
+   half-day mark, or (no form linked) a first time-in at/after lunch start (PM) or a departure
+   at lunch (AM) credits 0.5 day, late judged against that half's start; the Daily Report
+   (stage 0, live) uses the same rule, so it shows the same half days before the cutoff closes.
    Statutory branch (2026-10-05): SSS / Pag-IBIG are computed on the month's actual pay — the
    cutoffs ending in the month, read from the employee's earlier payslips — and the month's last
    deducting cutoff trues up what earlier cutoffs took; a fund scheduled only on an earlier cutoff
@@ -508,6 +511,19 @@ for the internet (it uses the company's mail server, which only the cloud has).
    full day for any day with both a time-in and a time-out — no half day, late or undertime.
 3. **Payslip** (`hr`) — generated per employee as a `draft`; Other Deductions itemized.
    Employees see drafts on mobile as previews that may still change (no download).
+   HR reviews the cutoff on Forms → HR Payroll: **Print All** (slips), **Print Summary** (A4
+   landscape register — totals, department subtotals, every payslip, Prepared/Checked/Approved
+   lines; 2026-10-05) and **Download Excel** read the same totals (`public/js/hr-payroll-export.js`).
+   Rate change branch (2026-10-05): HR → Employees → Edit → Pay → **Change rate** (new rate +
+   effective date, today or backdated) logs the rate, then redoes stage 2–3 for that employee on
+   every cutoff ending on or after the date (`POST /hr/employees/:id/rate-change`, oldest first).
+   First-rate branch (2026-10-08): when an unset zero rate is filled for earlier history, start
+   recomputation at that earliest repaired date too. Impossible effective dates are rejected
+   before any history or payslip mutation.
+   Unpaid payslips are rewritten in place; a payslip already marked Paid is left as paid and
+   reported with what it is short (or over) at the new rate, for HR to settle by hand or un-mark
+   and regenerate. A recomputed cutoff whose payroll was already posted to the GL is flagged for
+   re-posting (stage 4). Cutoffs with no payslip yet just use the new rate when generated.
 3a. **Finalize & release** (`hr` → `payroll` → `core/me`) — HR marks the payslip Paid (locks
    it). Only then does the employee's list carry `finalized` + `download_url`, and
    `GET /api/me/payslips/:id/pdf` render it (`payroll/payslip-pdf.ts`), re-checking ownership

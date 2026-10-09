@@ -13,6 +13,7 @@ import { requireAuth, requirePermission } from '../../shared/auth';
 import {
   parseBody,
   employeeSchema,
+  rateChangeSchema,
   csvImportSchema,
   payrollTableSchema,
   attendancePeriodSchema,
@@ -35,7 +36,7 @@ import { suggestEmployeeNumber } from './hr-employee-numbering';
 import { toCsv } from '../../shared/csv';
 import { resolveImport, importLoop } from '../../shared/csv-import';
 import { listPayrollTables, effectiveTables, upsertPayrollTable, deletePayrollTable } from '../payroll/payroll-tables';
-import { listRateHistory, seedInitialRate, recordRateChange, effectiveDailyRateOn } from '../payroll/employee-rate-history';
+import { listRateHistory, seedInitialRate, recordRateChange, effectiveDailyRateOn, rateInForceOn } from '../payroll/employee-rate-history';
 import {
   taxableCompensation, withholdingTax, RWT_2026, sssContribution, philHealthContribution, pagIbigContribution,
   sssCompensation, pagIbigCompensation, philHealthMonthlyBasic, contributionBasis, monthRemainder,
@@ -51,7 +52,7 @@ import { enforceQuota } from '../../platform/quota';
 import { slotPunchIdsForDates, type CorrectionSlot } from './clock';
 import { photoIdsForPunches } from './punch-photos';
 import { sendMail } from '../../shared/mailer';
-import { ledgerEnabled, maybeAutoPostPayroll } from '../accounting/accounting-autopost';
+import { ledgerEnabled, maybeAutoPostPayroll, postedEntryForSource } from '../accounting/accounting-autopost';
 import { noWorkFormIds as noWorkFormIdsWithAction } from '../../core/form-actions';
 import { notifyUser } from '../../shared/push';
 import { recordSiteClash, syncClass } from '../../sync';
@@ -599,6 +600,43 @@ router.get('/employees/:id/rate-history', requirePermission('payroll.view'), (re
     res.status(404).json({ error: 'Employee not found' }); return;
   }
   res.json(listRateHistory(id));
+});
+
+// POST /api/hr/employees/:id/rate-change — the Pay tab's "Change rate": logs the new rate from
+// its effective date (today or backdated), then recomputes this employee's payslips for every
+// cutoff ending on or after it. Unpaid payslips are rewritten in place; payslips marked Paid are
+// left as paid and reported with what the new rate would have earned, for HR to settle by hand.
+router.post('/employees/:id/rate-change', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
+  const id = Number(req.params.id);
+  const emp = queryOne<{ daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null; start_date: string | null }>(
+    'SELECT daily_rate, rate_type, monthly_rate, start_date FROM employees WHERE id = ?', id
+  );
+  if (!emp) { res.status(404).json({ error: 'Employee not found' }); return; }
+  const input = parseBody(rateChangeSchema, req.body);
+  const today = now().toISOString().slice(0, 10);
+  if (input.effective_date > today) {
+    res.status(400).json({ error: 'Rate changes can be backdated or effective today — scheduling one for a future date isn\'t supported yet' });
+    return;
+  }
+  const next = {
+    rate_type: input.rate_type,
+    daily_rate: effectiveDailyRate(input),
+    monthly_rate: input.rate_type === 'monthly' ? (input.monthly_rate ?? null) : null,
+  };
+  db.exec('BEGIN');
+  try {
+    const affectedFrom = recordRateChange(id, input.effective_date, next, emp, input.note || null, req.user!.id);
+    // A backdated change can sit behind a later logged one that still wins today.
+    const current = rateInForceOn(id, today) ?? next;
+    run('UPDATE employees SET daily_rate = ?, rate_type = ?, monthly_rate = ? WHERE id = ?',
+      current.daily_rate, current.rate_type, current.monthly_rate, id);
+    const payroll = recomputePayslipsFrom(id, affectedFrom);
+    db.exec('COMMIT');
+    res.json({ ok: true, ...current, ...payroll });
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 });
 
 // DELETE /api/hr/employees/:id
@@ -1354,11 +1392,13 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
 
   const employeeRows = employees.map((emp) => {
     const ar = queryOne<{
-      time_in: string | null; time_out: string | null; form_record_id: number | null;
-      form_record_ids: string | null; holiday_type: string | null; rest_day: string | null;
+      time_in: string | null; time_out: string | null; lunch_out: string | null; lunch_in: string | null;
+      form_record_id: number | null; form_record_ids: string | null; holiday_type: string | null;
+      rest_day: string | null; half_day_override: string | null;
       shift_start: string | null; shift_end: string | null;
     }>(
-      `SELECT ar.time_in, ar.time_out, ar.form_record_id, ar.form_record_ids, ar.holiday_type, ar.rest_day,
+      `SELECT ar.time_in, ar.time_out, ar.lunch_out, ar.lunch_in, ar.form_record_id, ar.form_record_ids,
+              ar.holiday_type, ar.rest_day, ar.half_day_override,
               s.start_time AS shift_start, s.end_time AS shift_end
        FROM attendance_records ar
        LEFT JOIN shifts s ON s.id = ar.shift_id
@@ -1372,16 +1412,23 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
     // "Import Punches" on the cutoff detail screen is for).
     let timeIn = ar?.time_in || null;
     let timeOut = ar?.time_out || null;
+    // Out for lunch and not back (yet) — the classifier decides whether that's still lunch.
+    let leftAtLunch = !timeOut && ar?.lunch_out && !ar.lunch_in ? ar.lunch_out : null;
     if (!timeIn) {
-      const punches = queryAll<{ ts: string; kind: string }>(
-        'SELECT ts, kind FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
+      const punches = queryAll<{ ts: string; kind: string; segment: string }>(
+        'SELECT ts, kind, segment FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
         emp.id, date
       );
       if (punches.length) {
         const firstIn = punches.find((p) => p.kind === 'in');
         if (firstIn) timeIn = firstIn.ts.slice(11, 16);
-        const lastOut = [...punches].reverse().find((p) => p.kind === 'out');
-        if (!timeOut && lastOut) timeOut = lastOut.ts.slice(11, 16);
+        // Only the LAST punch says whether they're out: a lunch-out followed by an afternoon
+        // time-in is someone back at work, not someone who left at 12:00.
+        const last = punches[punches.length - 1]!;
+        if (!timeOut && last.kind === 'out') {
+          if (last.segment === 'lunch_out') leftAtLunch = last.ts.slice(11, 16);
+          else timeOut = last.ts.slice(11, 16);
+        }
       }
     }
 
@@ -1393,15 +1440,22 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
       ? (safeParseIdArray(ar.form_record_ids).length ? safeParseIdArray(ar.form_record_ids)
         : ar.form_record_id ? [ar.form_record_id] : [])
       : [];
-    const linkedSlugs = linkedIds.length
-      ? queryAll<{ slug: string }>(
-          `SELECT fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+    // Same filter attendanceDaysFor applies for payroll: a pending rest-day form changes nothing.
+    const linkedForms = linkedIds.length
+      ? queryAll<{ slug: string; data: string; status: string }>(
+          `SELECT fd.slug, fr.data, fr.status FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
            WHERE fr.id IN (${linkedIds.map(() => '?').join(',')})`,
           ...linkedIds
-        ).map((f) => f.slug)
+        ).filter((f) => !(REST_DAY_FORM_SLUGS.includes(f.slug) && f.status !== 'approved'))
       : [];
+    const linkedSlugs = linkedForms.map((f) => f.slug);
     const onLeave = linkedSlugs.includes('leave_request');
     const reported = linkedSlugs.includes('reported_absence');
+    const halfDayForm = linkedForms.find((f) => f.slug === 'halfday_request');
+    let halfDaySession: string | null = null;
+    if (halfDayForm) {
+      try { halfDaySession = (JSON.parse(halfDayForm.data || '{}') as { session?: string }).session ?? null; } catch { /* AM default */ }
+    }
 
     const restDays: number[] = emp.rest_days ? JSON.parse(emp.rest_days) : policy.default_rest_days;
     const isRestDay = resolveRestDay(ar?.rest_day, restDaySwapsFor(emp.id).get(date), restDays.includes(weekdayOf(date)));
@@ -1411,17 +1465,22 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
     const result = classifyDailyStatus({
       time_in: timeIn, time_out: timeOut, shift, on_leave: onLeave, reported, holiday, no_work: noWork,
       is_rest_day: isRestDay, grace_minutes: policy.grace_minutes, now: nowStr,
+      lunch_minutes: policy.lunch_break_minutes, left_at_lunch: leftAtLunch,
+      half_day_form: halfDayForm ? { session: halfDaySession } : null,
+      half_day_override: ar?.half_day_override === 'am' || ar?.half_day_override === 'pm' ? ar.half_day_override : null,
+      has_linked_forms: linkedForms.length > 0,
     });
 
     return {
       id: emp.id, name: emp.name, employee_no: emp.employee_no,
       department_id: emp.department_id, department_name: emp.department_name || 'Unassigned',
-      time_in: timeIn, time_out: timeOut,
+      time_in: timeIn, time_out: timeOut ?? leftAtLunch,
       status: result.status, late_minutes: result.late_minutes, note: result.note,
+      half_day_session: result.half_day_session ?? null,
     };
   });
 
-  const blankTallies = () => ({ present: 0, late: 0, absent: 0, leave: 0, reported: 0, not_scheduled: 0, pending: 0, total: 0 });
+  const blankTallies = () => ({ present: 0, late: 0, half_day: 0, absent: 0, leave: 0, reported: 0, not_scheduled: 0, pending: 0, total: 0 });
   const totals = blankTallies();
   const byDept = new Map<string, ReturnType<typeof blankTallies> & { department_id: number | null; department_name: string }>();
   for (const r of employeeRows) {
@@ -2041,6 +2100,280 @@ function computeEmployeeStatutory(
   };
 }
 
+/** The employee columns a payslip is generated from — one SELECT list shared by the cutoff
+    roster (generate-payslips) and the one-employee recompute after a rate change. */
+const PAYSLIP_EMPLOYEE_COLUMNS = `e.id AS employee_id, e.name, e.position, e.daily_rate,
+            e.rate_type, e.monthly_rate, d.name AS department_name,
+            COALESCE(e.deduct_sss, 1) AS deduct_sss,
+            COALESCE(e.deduct_philhealth, 1) AS deduct_philhealth,
+            COALESCE(e.deduct_pagibig, 1) AS deduct_pagibig,
+            COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax,
+            e.withholding_tax_override, e.sss_override, e.philhealth_override, e.pagibig_override,
+            e.rest_days, COALESCE(e.late_exempt, 0) AS late_exempt, COALESCE(e.ot_exempt, 0) AS ot_exempt,
+            COALESCE(e.always_whole_day, 0) AS always_whole_day, e.contribution_basis`;
+
+interface PayslipEmployee {
+  employee_id: number; name: string; position: string | null; daily_rate: number;
+  rate_type: 'daily' | 'monthly'; monthly_rate: number | null; department_name: string | null;
+  deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
+  withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
+  pagibig_override: number | null; rest_days: string | null; late_exempt: number; ot_exempt: number;
+  always_whole_day: number; contribution_basis: string | null;
+}
+
+/** What one cutoff's payslip run shares across every employee on it. Build it per cutoff, never
+    reuse it across cutoffs: `earlierInMonth` reads the payslips already saved this month, so a
+    recompute walking several cutoffs in date order sees the ones it just rewrote. */
+function payslipRun(period: AttendancePeriod, payDate: string | undefined) {
+  const policy = currentPolicy();
+  // Per-cutoff statutory deduction schedule: which of SSS/PhilHealth/Pag-IBIG/withholding
+  // tax this specific cutoff (period) deducts, and — for the three that are normally a
+  // monthly total split across cutoffs — how many of this month's slots share that split.
+  // Period-wide, not per-employee, so resolved once per run.
+  const schedule = effectiveSchedule(policy, PERIODS_PER_MONTH[policy.pay_frequency]);
+  const slot = slotIndexFor(period, policy.pay_frequency);
+  // Matches an employee's existing payslip for this cutoff by stamped employee_id or by any
+  // current/former name, so regenerating after a rename updates it instead of duplicating it.
+  const owner = payslipOwnerResolver();
+  return {
+    period, policy, owner,
+    noWorkFor: buildNoWorkResolver(),
+    holidayFor: buildHolidayResolver(),
+    // Statutory rate tables in force for this run (by pay date, else the cutoff end).
+    statTables: effectiveTables(payDate || period.end_date),
+    thisSlot: schedule[slot] ?? ALL_ON,
+    slotDivisor: (key: keyof DeductionSlot): number => Math.max(1, schedule.filter((s) => s[key]).length),
+    // SSS / Pag-IBIG accrue over the contribution month (payroll/statutory-month.ts): each
+    // employee's earlier payslips this month, whether this cutoff closes the month, and which
+    // later cutoffs of the month still deduct each fund.
+    earlierInMonth: earlierPayslipsInMonth(period, owner),
+    monthComplete: isLastCutoffOfMonth(period, policy.pay_frequency),
+    laterSlots: schedule.slice(slot + 1),
+  };
+}
+type PayslipRun = ReturnType<typeof payslipRun>;
+
+function payslipFields(rec: FormRecord | undefined): Record<string, unknown> {
+  if (!rec) return {};
+  try { return JSON.parse(rec.data as string) as Record<string, unknown>; } catch { return {}; }
+}
+
+/** One employee's payslip `data` for the run's cutoff — attendance, each day at its own logged
+    rate, statutory — with `prev` (the payslip's current data, `{}` for a new one) supplying the
+    manual fields that carry over. Reads the DB, writes nothing; the caller saves it. */
+function payslipData(
+  runCtx: PayslipRun, emp: PayslipEmployee, prev: Record<string, unknown>,
+  payrollPeriod: string, payDate: string | undefined
+): { data: Record<string, unknown>; possibleHalfDay: boolean } {
+  const { period, policy, noWorkFor, holidayFor, statTables, thisSlot, slotDivisor } = runCtx;
+  // PhilHealth's fixed monthly basic (and the fixed SSS/Pag-IBIG basis) follow the rate in force
+  // at this cutoff, not today's — a July cutoff recomputed in October keeps July's rate.
+  const rateAtCutoff = rateInForceOn(emp.employee_id, period.end_date);
+  const deptPosition = [emp.department_name, emp.position].filter(Boolean).join(' / ');
+  const zeros = {
+    days_worked: 0, days_absent: 0, days_half: 0, days_undertime: 0,
+    ot_hours: 0, ot_rate_hour: 0, basic_salary: 0, overtime_pay: 0,
+    undertime_pay: 0, undertime_day_pay: 0, night_diff_pay: 0,
+    holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, total_earnings: 0,
+    sss: 0, philhealth: 0, pagibig: 0, cash_advance: 0, other_deductions: [] as Array<{ label: string; amount: number }>,
+    other_deductions_total: 0, late_absences: 0, total_deductions: 0, net_pay: 0,
+  };
+
+  // Attendance + whatever OT/Half Day/Leave/Undertime/Offset form (and its resolved shift)
+  // is linked to each day — the compute engine itself never touches the DB, this is exactly
+  // the resolution step src/hr-payroll-compute.ts expects its caller to do.
+  const attendanceDays = attendanceDaysForEmployee(
+    period.id, emp.employee_id, emp.rest_days, policy, noWorkFor, holidayFor
+  );
+  // Resolves each day's own rate from employee_rate_history — a flat emp.daily_rate for
+  // every employee who's never had a logged rate change, exactly as before this existed.
+  const { computed, basicSalary } = computeAttendanceMultiRate(
+    attendanceDays, (workDate) => effectiveDailyRateOn(emp.employee_id, workDate, emp.daily_rate),
+    policy, !!emp.late_exempt, !!emp.ot_exempt, !!emp.always_whole_day
+  );
+  // The rate as of the cutoff's last day — what the "Daily Rate" line and the informational
+  // OT-rate-per-hour figure below show, even though pay above was computed per-day.
+  const currentDailyRate = effectiveDailyRateOn(emp.employee_id, period.end_date, emp.daily_rate);
+
+  // Regenerating recomputes every attendance-derived field fresh — that's the point of
+  // "generate payslips" (pick up the latest attendance/link edits) — but purely-manual
+  // fields with no computed source (statutory deductions, cash advance, and the final net
+  // pay) are carried over from a previous generation rather than reset to zero, same as the
+  // un-computed fields always did before this feature. Rest Day OT and OT Rate/Hour USED to
+  // be in this bucket (hand-typed every time) — both are now auto-computed (Rest Day OT from
+  // attendance holiday/rest-day marking, OT Rate/Hour as hourly rate x the policy's OT% —
+  // see below), so a value someone typed in before this feature will be overwritten on next
+  // regenerate.
+  const num = (v: unknown): number => Number(v) || 0;
+  // Purely-manual fields with no computed source are carried over rather than reset.
+  const prevManual = {
+    cash_advance: prev.cash_advance,
+    // Ad-hoc per-cutoff deduction lines (Cash Advance, uniform, misc, …) — see
+    // payrollDeductionTogglesSchema/other_deductions. No computed source, same "manual edit
+    // survives a regenerate" treatment as cash_advance itself.
+    other_deductions: Array.isArray(prev.other_deductions) ? prev.other_deductions : [],
+    pay_date: prev.pay_date,
+  };
+  const otherDeductionsTotal = round2(
+    ((prevManual.other_deductions as Array<{ amount: unknown }>) || []).reduce((sum, d) => sum + (Number(d.amount) || 0), 0)
+  );
+  // The base (ordinary-day) OT rate per hour — informational, same "one flat number" the
+  // Daily Rate line already is; the actual overtime_pay above still scales per-day by
+  // holiday/rest-day (see dayRateMultiplier in hr-payroll-compute.ts), this is just what
+  // an ordinary day's OT hour is worth at a glance.
+  const otRateHour = round2((currentDailyRate / 8) * (policy.ot_rate_percent / 100));
+
+  const cashAdvance = num(prevManual.cash_advance);
+  const totalEarnings = round2(
+    basicSalary + computed.overtime_pay + computed.undertime_pay + computed.undertime_day_pay
+    + computed.night_diff_pay + computed.holiday_pay + computed.special_holiday_30 + computed.rest_day_ot
+  );
+
+  // SSS / PhilHealth / Pag-IBIG + BIR withholding. When policy.auto_statutory is off,
+  // keep whatever a previous generation / manual edit left (old behaviour). Each
+  // contribution is also gated by a per-employee flag set from Accounting → Statutory
+  // Deductions (default on), this cutoff's slot in the deduction schedule, AND this one
+  // payslip's own per-record override (the payroll detail view's deduction toggles below) —
+  // the override is carried over from the previous generation (prevApplied), same "manual
+  // edit survives a regenerate" treatment as cash_advance/pay_date, so re-running Generate
+  // Payslips for the whole cutoff never silently undoes what HR chose for one payslip.
+  let sss = num(prev.sss), philhealth = num(prev.philhealth), pagibig = num(prev.pagibig);
+  let withholding_tax = num(prev.withholding_tax);
+  const prevApplied = appliedFromRecordData(prev);
+  // Employer-side shares (for the GL payroll posting — src/accounting-autopost.ts's
+  // maybeAutoPostPayroll) are persisted here at generate time, not recomputed later, so a
+  // later rate-table/flag change can't silently drift the two apart. Nested under one key
+  // (not flat) so it stays invisible to the employee's own mobile payslip view, the CSV
+  // export, and the print slip — all of which only read a fixed set of top-level fields.
+  let employerContributions = (prev.employer_contributions ?? { sss_er: 0, sss_ec: 0, philhealth_er: 0, pagibig_er: 0 }) as
+    { sss_er: number; sss_ec: number; philhealth_er: number; pagibig_er: number };
+  let statutoryBasis = prev.statutory_basis as StatutoryBasis | undefined;
+  if (policy.auto_statutory) {
+    const statutory = computeEmployeeStatutory(rateAtCutoff ? { ...emp, ...rateAtCutoff } : emp, {
+      total_earnings: totalEarnings, late_absences: round2(computed.late_deduction),
+      overtime_pay: round2(computed.overtime_pay), night_diff_pay: round2(computed.night_diff_pay),
+      special_holiday_30: round2(computed.special_holiday_30), rest_day_ot: round2(computed.rest_day_ot),
+    }, { earlier: runCtx.earlierInMonth.get(emp.employee_id) ?? [], monthComplete: runCtx.monthComplete, laterSlots: runCtx.laterSlots },
+    prevApplied, policy, statTables, thisSlot, slotDivisor);
+    sss = statutory.sss; philhealth = statutory.philhealth; pagibig = statutory.pagibig;
+    withholding_tax = statutory.withholding_tax;
+    employerContributions = statutory.employer_contributions;
+    statutoryBasis = statutory.statutory_basis;
+  }
+
+  const totalDeductions = policy.auto_statutory
+    ? round2(sss + philhealth + pagibig + withholding_tax + computed.late_deduction + cashAdvance + otherDeductionsTotal)
+    : num(prev.total_deductions);
+  const netPay = policy.auto_statutory ? round2(totalEarnings - totalDeductions) : num(prev.net_pay);
+
+  const data = {
+    ...zeros,
+    ...prevManual,
+    employee_name: emp.name, employee_id: emp.employee_id, dept_position: deptPosition,
+    payroll_period: payrollPeriod, pay_date: payDate || (prevManual.pay_date as string) || '',
+    daily_rate: currentDailyRate,
+    days_worked: computed.days_worked,
+    // Informational only, doesn't itself subtract anything — an absent day already isn't
+    // in days_worked, so it's already excluded from basic_salary below. This just makes
+    // that reduction visible on the payslip (see the "Late / Absences" line's own comment
+    // in src/hr-payroll-compute.ts — despite the name, it never held an absence figure).
+    days_absent: computed.days_absent,
+    // Half Days/Undertime Days: already folded into days_worked (0.5 each) / excluded from
+    // it (0 credit) respectively — these just surface the counts themselves, same
+    // informational purpose as days_absent. See PayrollPolicy.whole_day_min_minutes.
+    days_half: computed.days_half,
+    days_undertime: computed.days_undertime,
+    ot_hours: computed.ot_hours,
+    ot_rate_hour: otRateHour,
+    overtime_pay: round2(computed.overtime_pay),
+    undertime_pay: round2(computed.undertime_pay),
+    // Undertime Days' own proportional pay (positive, its own earnings line) — separate
+    // from undertime_pay above (a deduction FROM an otherwise-flat whole day).
+    undertime_day_pay: round2(computed.undertime_day_pay),
+    night_diff_pay: round2(computed.night_diff_pay),
+    holiday_pay: round2(computed.holiday_pay),
+    special_holiday_30: round2(computed.special_holiday_30),
+    rest_day_ot: round2(computed.rest_day_ot),
+    late_absences: round2(computed.late_deduction),
+    basic_salary: round2(basicSalary),
+    total_earnings: totalEarnings,
+    sss, philhealth, pagibig, withholding_tax,
+    other_deductions: prevManual.other_deductions,
+    other_deductions_total: otherDeductionsTotal,
+    // Persisted so the payroll detail view's deduction toggles (and this same regenerate
+    // path next time) know which of the four were actually selected for this one payslip —
+    // see computeEmployeeStatutory/appliedFromRecordData above.
+    sss_applied: prevApplied.sss, philhealth_applied: prevApplied.philhealth,
+    pagibig_applied: prevApplied.pagibig, withholding_tax_applied: prevApplied.withholding_tax,
+    total_deductions: totalDeductions,
+    net_pay: netPay,
+    employer_contributions: employerContributions,
+    statutory_basis: statutoryBasis,
+  };
+  return { data, possibleHalfDay: computed.days.some((d) => d.possible_half_day) };
+}
+
+interface RecomputedPayslip {
+  record_id: number; number: string; period: string;
+  earnings_before: number; earnings_after: number; net_before: number; net_after: number;
+  /** This cutoff's payroll journal entry was booked before the recompute — re-post it. */
+  gl_posted: boolean;
+}
+interface PaidPayslipShortfall {
+  record_id: number; number: string; period: string;
+  /** Gross earnings as paid, and at the rates now on file — `difference` is what's owed (or overpaid, if negative). */
+  earnings_paid: number; earnings_at_new_rate: number; difference: number;
+}
+
+/** After a rate change effective `from`: rebuilds this employee's payslip for every cutoff they're
+    on that ends on or after `from`, in date order (so each cutoff's SSS/Pag-IBIG month-to-date sees
+    the earlier ones already redone). Unpaid payslips are saved; paid ones are only measured. A
+    cutoff with no payslip yet is skipped — generating it later picks the new rate up anyway. A
+    payslip is matched to its cutoff by label, the same link the payroll detail view uses. */
+function recomputePayslipsFrom(employeeId: number, from: string): { recomputed: RecomputedPayslip[]; paid: PaidPayslipShortfall[] } {
+  const recomputed: RecomputedPayslip[] = [];
+  const paid: PaidPayslipShortfall[] = [];
+  const form = queryOne<FormDefinition>("SELECT * FROM form_definitions WHERE slug = 'hr_payroll'");
+  if (!form) return { recomputed, paid };
+  const periods = queryAll<AttendancePeriod>(
+    `SELECT * FROM attendance_periods p
+      WHERE p.end_date >= ? AND EXISTS (SELECT 1 FROM attendance_records ar WHERE ar.period_id = p.id AND ar.employee_id = ?)
+      ORDER BY p.start_date, p.id`,
+    from, employeeId
+  );
+  const emp = queryOne<PayslipEmployee>(
+    `SELECT ${PAYSLIP_EMPLOYEE_COLUMNS} FROM employees e LEFT JOIN departments d ON d.id = e.department_id WHERE e.id = ?`,
+    employeeId
+  );
+  if (!emp) return { recomputed, paid };
+  const num = (v: unknown): number => Number(v) || 0;
+  for (const period of periods) {
+    const owner = payslipOwnerResolver();
+    const slip = queryAll<FormRecord>('SELECT * FROM form_records WHERE form_def_id = ? AND period = ?', form.id, period.label)
+      .find((r) => owner.idOf(payslipFields(r)) === employeeId);
+    if (!slip) continue;
+    const prev = payslipFields(slip);
+    const payDate = (prev.pay_date as string) || undefined;
+    const { data } = payslipData(payslipRun(period, payDate), emp, prev, period.label, payDate);
+    const base = { record_id: slip.id, number: slip.number, period: period.label };
+    if (slip.status === 'paid') {
+      paid.push({
+        ...base, earnings_paid: num(prev.total_earnings), earnings_at_new_rate: num(data.total_earnings),
+        difference: round2(num(data.total_earnings) - num(prev.total_earnings)),
+      });
+      continue;
+    }
+    run(`UPDATE form_records SET data = ?, updated_at = datetime('now') WHERE id = ?`, JSON.stringify(data), slip.id);
+    recomputed.push({
+      ...base,
+      earnings_before: num(prev.total_earnings), earnings_after: num(data.total_earnings),
+      net_before: num(prev.net_pay), net_after: num(data.net_pay),
+      gl_posted: !!postedEntryForSource('payroll_run', period.id),
+    });
+  }
+  return { recomputed, paid };
+}
+
 // POST /api/hr/periods/:id/generate-payslips
 router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.id);
@@ -2052,23 +2385,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
   const form = queryOne<FormDefinition>("SELECT * FROM form_definitions WHERE slug = 'hr_payroll'");
   if (!form) { res.status(400).json({ error: 'HR Payroll form is missing — check Admin > Form Builder' }); return; }
 
-  const roster = queryAll<{
-    employee_id: number; name: string; position: string | null; daily_rate: number;
-    rate_type: 'daily' | 'monthly'; monthly_rate: number | null; department_name: string | null;
-    deduct_sss: number; deduct_philhealth: number; deduct_pagibig: number; deduct_withholding_tax: number;
-    withholding_tax_override: number | null; sss_override: number | null; philhealth_override: number | null;
-    pagibig_override: number | null; rest_days: string | null; late_exempt: number; ot_exempt: number;
-    always_whole_day: number; contribution_basis: string | null;
-  }>(
-    `SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.daily_rate,
-            e.rate_type, e.monthly_rate, d.name AS department_name,
-            COALESCE(e.deduct_sss, 1) AS deduct_sss,
-            COALESCE(e.deduct_philhealth, 1) AS deduct_philhealth,
-            COALESCE(e.deduct_pagibig, 1) AS deduct_pagibig,
-            COALESCE(e.deduct_withholding_tax, 1) AS deduct_withholding_tax,
-            e.withholding_tax_override, e.sss_override, e.philhealth_override, e.pagibig_override,
-            e.rest_days, COALESCE(e.late_exempt, 0) AS late_exempt, COALESCE(e.ot_exempt, 0) AS ot_exempt,
-            COALESCE(e.always_whole_day, 0) AS always_whole_day, e.contribution_basis
+  const roster = queryAll<PayslipEmployee>(
+    `SELECT DISTINCT ${PAYSLIP_EMPLOYEE_COLUMNS}
      FROM attendance_records ar
      JOIN employees e ON e.id = ar.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
@@ -2077,23 +2395,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
   );
   if (!roster.length) { res.status(400).json({ error: 'This cutoff has no employees yet' }); return; }
 
-  const policy = currentPolicy();
-  const noWorkFor = buildNoWorkResolver();
-  const holidayFor = buildHolidayResolver();
-
-  // Statutory rate tables in force for this run (by pay date, else the cutoff end).
-  const statTables = effectiveTables(input.pay_date || period.end_date);
-  const periodsPerMonth = PERIODS_PER_MONTH[policy.pay_frequency];
-
-  // Per-cutoff statutory deduction schedule: which of SSS/PhilHealth/Pag-IBIG/withholding
-  // tax this specific cutoff (period) deducts, and — for the three that are normally a
-  // monthly total split across cutoffs — how many of this month's slots share that split.
-  // Same schedule and slot count for every employee in this run (it's period-wide, not
-  // per-employee), so resolved once here rather than inside the per-employee loop below.
-  const schedule = effectiveSchedule(policy, periodsPerMonth);
-  const thisSlot = schedule[slotIndexFor(period, policy.pay_frequency)] ?? ALL_ON;
-  const slotDivisor = (key: keyof DeductionSlot): number => Math.max(1, schedule.filter((s) => s[key]).length);
-
+  const runCtx = payslipRun(period, input.pay_date || undefined);
   let created = 0;
   let updated = 0;
   let skippedLocked = 0;
@@ -2102,24 +2404,15 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
   // response, not just something HR happens to notice if they open a specific payslip's detail
   // view or the Daily Time grid for that one employee.
   let possibleHalfDayEmployees = 0;
-  // Matches an employee's existing payslip for this cutoff by stamped employee_id or by any
-  // current/former name, so regenerating after a rename updates it instead of duplicating it.
-  const owner = payslipOwnerResolver();
   const periodSlips = queryAll<FormRecord>(
     `SELECT * FROM form_records WHERE form_def_id = ? AND period = ?`,
     form.id, payrollPeriod
   );
-  // SSS / Pag-IBIG accrue over the contribution month (payroll/statutory-month.ts): each
-  // employee's earlier payslips this month, whether this cutoff closes the month, and which
-  // later cutoffs of the month still deduct each fund.
-  const earlierInMonth = earlierPayslipsInMonth(period, owner);
-  const monthComplete = isLastCutoffOfMonth(period, policy.pay_frequency);
-  const laterSlots = schedule.slice(slotIndexFor(period, policy.pay_frequency) + 1);
   db.exec('BEGIN');
   try {
     for (const emp of roster) {
       const existing = periodSlips.find((r) => {
-        try { return owner.idOf(JSON.parse(r.data as string)) === emp.employee_id; }
+        try { return runCtx.owner.idOf(JSON.parse(r.data as string)) === emp.employee_id; }
         catch { return false; }
       });
       // A payslip marked Paid is locked — skip it entirely (don't even read its attendance)
@@ -2127,150 +2420,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
       // first (POST /hr/payroll/:recordId/unmark-paid) to let it be regenerated again.
       if (existing && existing.status === 'paid') { skippedLocked++; continue; }
 
-      const deptPosition = [emp.department_name, emp.position].filter(Boolean).join(' / ');
-      const zeros = {
-        days_worked: 0, days_absent: 0, days_half: 0, days_undertime: 0,
-        ot_hours: 0, ot_rate_hour: 0, basic_salary: 0, overtime_pay: 0,
-        undertime_pay: 0, undertime_day_pay: 0, night_diff_pay: 0,
-        holiday_pay: 0, special_holiday_30: 0, rest_day_ot: 0, total_earnings: 0,
-        sss: 0, philhealth: 0, pagibig: 0, cash_advance: 0, other_deductions: [] as Array<{ label: string; amount: number }>,
-        other_deductions_total: 0, late_absences: 0, total_deductions: 0, net_pay: 0,
-      };
-
-      // Attendance + whatever OT/Half Day/Leave/Undertime/Offset form (and its resolved shift)
-      // is linked to each day — the compute engine itself never touches the DB, this is exactly
-      // the resolution step src/hr-payroll-compute.ts expects its caller to do.
-      const attendanceDays = attendanceDaysForEmployee(
-        periodId, emp.employee_id, emp.rest_days, policy, noWorkFor, holidayFor
-      );
-      // Resolves each day's own rate from employee_rate_history — a flat emp.daily_rate for
-      // every employee who's never had a logged rate change, exactly as before this existed.
-      const { computed, basicSalary } = computeAttendanceMultiRate(
-        attendanceDays, (workDate) => effectiveDailyRateOn(emp.employee_id, workDate, emp.daily_rate),
-        policy, !!emp.late_exempt, !!emp.ot_exempt, !!emp.always_whole_day
-      );
-      if (computed.days.some((d) => d.possible_half_day)) possibleHalfDayEmployees++;
-      // The rate as of the cutoff's last day — what the "Daily Rate" line and the informational
-      // OT-rate-per-hour figure below show, even though pay above was computed per-day.
-      const currentDailyRate = effectiveDailyRateOn(emp.employee_id, period.end_date, emp.daily_rate);
-
-      // Regenerating recomputes every attendance-derived field fresh — that's the point of
-      // "generate payslips" (pick up the latest attendance/link edits) — but purely-manual
-      // fields with no computed source (statutory deductions, cash advance, and the final net
-      // pay) are carried over from a previous generation rather than reset to zero, same as the
-      // un-computed fields always did before this feature. Rest Day OT and OT Rate/Hour USED to
-      // be in this bucket (hand-typed every time) — both are now auto-computed (Rest Day OT from
-      // attendance holiday/rest-day marking, OT Rate/Hour as hourly rate x the policy's OT% —
-      // see below), so a value someone typed in before this feature will be overwritten on next
-      // regenerate.
-      const prev = existing ? (() => { try { return JSON.parse(existing.data as string) as Record<string, unknown>; } catch { return {}; } })() : {};
-      const num = (v: unknown): number => Number(v) || 0;
-      // Purely-manual fields with no computed source are carried over rather than reset.
-      const prevManual = {
-        cash_advance: prev.cash_advance,
-        // Ad-hoc per-cutoff deduction lines (Cash Advance, uniform, misc, …) — see
-        // payrollDeductionTogglesSchema/other_deductions. No computed source, same "manual edit
-        // survives a regenerate" treatment as cash_advance itself.
-        other_deductions: Array.isArray(prev.other_deductions) ? prev.other_deductions : [],
-        pay_date: prev.pay_date,
-      };
-      const otherDeductionsTotal = round2(
-        ((prevManual.other_deductions as Array<{ amount: unknown }>) || []).reduce((sum, d) => sum + (Number(d.amount) || 0), 0)
-      );
-      // The base (ordinary-day) OT rate per hour — informational, same "one flat number" the
-      // Daily Rate line already is; the actual overtime_pay above still scales per-day by
-      // holiday/rest-day (see dayRateMultiplier in hr-payroll-compute.ts), this is just what
-      // an ordinary day's OT hour is worth at a glance.
-      const otRateHour = round2((currentDailyRate / 8) * (policy.ot_rate_percent / 100));
-
-      const cashAdvance = num(prevManual.cash_advance);
-      const totalEarnings = round2(
-        basicSalary + computed.overtime_pay + computed.undertime_pay + computed.undertime_day_pay
-        + computed.night_diff_pay + computed.holiday_pay + computed.special_holiday_30 + computed.rest_day_ot
-      );
-
-      // SSS / PhilHealth / Pag-IBIG + BIR withholding. When policy.auto_statutory is off,
-      // keep whatever a previous generation / manual edit left (old behaviour). Each
-      // contribution is also gated by a per-employee flag set from Accounting → Statutory
-      // Deductions (default on), this cutoff's slot in the deduction schedule, AND this one
-      // payslip's own per-record override (the payroll detail view's deduction toggles below) —
-      // the override is carried over from the previous generation (prevApplied), same "manual
-      // edit survives a regenerate" treatment as cash_advance/pay_date, so re-running Generate
-      // Payslips for the whole cutoff never silently undoes what HR chose for one payslip.
-      let sss = num(prev.sss), philhealth = num(prev.philhealth), pagibig = num(prev.pagibig);
-      let withholding_tax = num(prev.withholding_tax);
-      const prevApplied = appliedFromRecordData(prev);
-      // Employer-side shares (for the GL payroll posting — src/accounting-autopost.ts's
-      // maybeAutoPostPayroll) are persisted here at generate time, not recomputed later, so a
-      // later rate-table/flag change can't silently drift the two apart. Nested under one key
-      // (not flat) so it stays invisible to the employee's own mobile payslip view, the CSV
-      // export, and the print slip — all of which only read a fixed set of top-level fields.
-      let employerContributions = (prev.employer_contributions ?? { sss_er: 0, sss_ec: 0, philhealth_er: 0, pagibig_er: 0 }) as
-        { sss_er: number; sss_ec: number; philhealth_er: number; pagibig_er: number };
-      let statutoryBasis = prev.statutory_basis as StatutoryBasis | undefined;
-      if (policy.auto_statutory) {
-        const statutory = computeEmployeeStatutory(emp, {
-          total_earnings: totalEarnings, late_absences: round2(computed.late_deduction),
-          overtime_pay: round2(computed.overtime_pay), night_diff_pay: round2(computed.night_diff_pay),
-          special_holiday_30: round2(computed.special_holiday_30), rest_day_ot: round2(computed.rest_day_ot),
-        }, { earlier: earlierInMonth.get(emp.employee_id) ?? [], monthComplete, laterSlots },
-        prevApplied, policy, statTables, thisSlot, slotDivisor);
-        sss = statutory.sss; philhealth = statutory.philhealth; pagibig = statutory.pagibig;
-        withholding_tax = statutory.withholding_tax;
-        employerContributions = statutory.employer_contributions;
-        statutoryBasis = statutory.statutory_basis;
-      }
-
-      const totalDeductions = policy.auto_statutory
-        ? round2(sss + philhealth + pagibig + withholding_tax + computed.late_deduction + cashAdvance + otherDeductionsTotal)
-        : num(prev.total_deductions);
-      const netPay = policy.auto_statutory ? round2(totalEarnings - totalDeductions) : num(prev.net_pay);
-
-      const data = {
-        ...zeros,
-        ...prevManual,
-        employee_name: emp.name, employee_id: emp.employee_id, dept_position: deptPosition,
-        payroll_period: payrollPeriod, pay_date: input.pay_date || (prevManual.pay_date as string) || '',
-        daily_rate: currentDailyRate,
-        days_worked: computed.days_worked,
-        // Informational only, doesn't itself subtract anything — an absent day already isn't
-        // in days_worked, so it's already excluded from basic_salary below. This just makes
-        // that reduction visible on the payslip (see the "Late / Absences" line's own comment
-        // in src/hr-payroll-compute.ts — despite the name, it never held an absence figure).
-        days_absent: computed.days_absent,
-        // Half Days/Undertime Days: already folded into days_worked (0.5 each) / excluded from
-        // it (0 credit) respectively — these just surface the counts themselves, same
-        // informational purpose as days_absent. See PayrollPolicy.whole_day_min_minutes.
-        days_half: computed.days_half,
-        days_undertime: computed.days_undertime,
-        ot_hours: computed.ot_hours,
-        ot_rate_hour: otRateHour,
-        overtime_pay: round2(computed.overtime_pay),
-        undertime_pay: round2(computed.undertime_pay),
-        // Undertime Days' own proportional pay (positive, its own earnings line) — separate
-        // from undertime_pay above (a deduction FROM an otherwise-flat whole day).
-        undertime_day_pay: round2(computed.undertime_day_pay),
-        night_diff_pay: round2(computed.night_diff_pay),
-        holiday_pay: round2(computed.holiday_pay),
-        special_holiday_30: round2(computed.special_holiday_30),
-        rest_day_ot: round2(computed.rest_day_ot),
-        late_absences: round2(computed.late_deduction),
-        basic_salary: round2(basicSalary),
-        total_earnings: totalEarnings,
-        sss, philhealth, pagibig, withholding_tax,
-        other_deductions: prevManual.other_deductions,
-        other_deductions_total: otherDeductionsTotal,
-        // Persisted so the payroll detail view's deduction toggles (and this same regenerate
-        // path next time) know which of the four were actually selected for this one payslip —
-        // see computeEmployeeStatutory/appliedFromRecordData above.
-        sss_applied: prevApplied.sss, philhealth_applied: prevApplied.philhealth,
-        pagibig_applied: prevApplied.pagibig, withholding_tax_applied: prevApplied.withholding_tax,
-        total_deductions: totalDeductions,
-        net_pay: netPay,
-        employer_contributions: employerContributions,
-        statutory_basis: statutoryBasis,
-      };
-
+      const { data, possibleHalfDay } = payslipData(runCtx, emp, payslipFields(existing), payrollPeriod, input.pay_date || undefined);
+      if (possibleHalfDay) possibleHalfDayEmployees++;
       if (existing) {
         run(`UPDATE form_records SET data = ?, updated_at = datetime('now') WHERE id = ?`,
           JSON.stringify(data), existing.id);

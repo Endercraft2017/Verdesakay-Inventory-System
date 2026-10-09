@@ -432,8 +432,11 @@ const GUIDE_PIPELINES = [
         title: "Check today's attendance at a glance",
         role: 'HR / timekeeper · hr.view',
         to: { route: 'hr-daily-report', label: 'HR → Time Keeping → Daily Report' },
-        body: `A live, whole-company snapshot for one date: <b>Present / Late / Absent / On
-          Leave</b> counts, broken down per department, plus a searchable employee list. Reads
+        body: `A live, whole-company snapshot for one date: <b>Present / Late / Half Day /
+          Absent / On Leave</b> counts, broken down per department, plus a searchable employee
+          list. <b>Half Day</b> is anyone who first timed in after lunch started (late if past the
+          afternoon start), left at lunch, or has a Half Day form — the same days payroll pays as
+          half days. Reads
           today's kiosk/phone punches directly — no need to wait for <i>Import Punches</i> or a
           cutoff to exist. Rest days, holidays, and company no-work days are shown separately so
           they're never mistaken for absences.`,
