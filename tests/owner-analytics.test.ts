@@ -108,14 +108,17 @@ it('renders analytics and saves owner notes through the console UI without rende
   try {
     w.eval(fs.readFileSync(path.join(root, 'web-console/app.js'), 'utf8'));
     await vi.waitFor(() => expect(w.document.getElementById('rows')?.textContent).toContain('analyticsco'));
-    const row = [...w.document.querySelectorAll<HTMLElement>('#rows tr')].find(r => r.textContent?.includes('analyticsco'))!;
+    const row = [...w.document.querySelectorAll<HTMLElement>('#rows .tenant-choice')].find(r => r.textContent?.includes('analyticsco'))!;
     row.click();
-    await vi.waitFor(() => expect(w.document.getElementById('drawer')).not.toBeNull());
-    const analytics = [...w.document.querySelectorAll<HTMLButtonElement>('#drawer button')].find(b => b.textContent === 'Analytics & support')!;
-    analytics.click();
     await vi.waitFor(() => expect(w.document.querySelector('.analytics-card')).not.toBeNull());
+    expect(w.document.querySelector('.modal .analytics-card')).toBeNull();
+    expect(w.document.querySelector('.dashboard-visuals')).not.toBeNull();
+    (w.document.querySelector('[data-tab=usage]') as HTMLElement).click();
+    await vi.waitFor(() => expect(w.document.querySelector('.chart-svg')).not.toBeNull());
+    (w.document.querySelector('[data-tab=support]') as HTMLElement).click();
+    await vi.waitFor(() => expect(w.document.querySelector('textarea')).not.toBeNull());
     const card = w.document.querySelector('.analytics-card')!;
-    expect(card.textContent).toContain('Unlimited allowance');
+    expect(w.document.querySelector('#tenant-workspace')).not.toBeNull();
     expect(card.textContent).toContain('Payment provider not connected');
     expect(card.querySelector('script')).toBeNull();
     const notes = card.querySelector('textarea')!;
@@ -126,5 +129,21 @@ it('renders analytics and saves owner notes through the console UI without rende
       const a = await ctx.api.get('/_platform/api/tenants/analyticsco/analytics').set(op());
       expect(a.body.details.notes).toBe('Updated support note');
     });
+    (w.document.querySelector('[data-tab=settings]') as HTMLElement).click();
+    await vi.waitFor(() => expect(w.document.querySelector('#d-name')).not.toBeNull());
+    expect(w.document.querySelector('.drawer')).toBeNull();
+    (w.document.querySelector('#d-name') as HTMLInputElement).value = 'Analytics Company';
+    (w.document.querySelector('#d-save') as HTMLElement).click();
+    await vi.waitFor(async () => {
+      const saved = await ctx.api.get('/_platform/api/tenants/analyticsco').set(op());
+      expect(saved.body.name).toBe('Analytics Company');
+    });
+    await vi.waitFor(() => expect(w.document.querySelector('.tenant-page-heading')?.textContent).toContain('Analytics Company'));
+    await vi.waitFor(() => expect((w.document.querySelector('#d-save') as HTMLButtonElement)?.disabled).toBe(false));
+    const other = [...w.document.querySelectorAll<HTMLElement>('#rows .tenant-choice')].find(r => r.textContent?.includes('isolatedco'))!;
+    other.click();
+    await vi.waitFor(() => expect(w.document.querySelector('.tenant-page-heading')?.textContent).toContain('Isolated'));
+    await vi.waitFor(() => expect(w.document.querySelector('.dashboard-visuals')).not.toBeNull());
+    expect(w.document.querySelector('.modal')).toBeNull();
   } finally { w.close(); }
 });

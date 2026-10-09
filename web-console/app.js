@@ -89,9 +89,11 @@
     await load();
   }
 
-  async function load() {
+  async function load(refreshSelected) {
     tenants = await api('GET', '/tenants');
     render();
+    if (refreshSelected && drawerState && tenants.some(function (t) { return t.slug === drawerState.slug; })) await openDrawer(drawerState.slug, activeTab);
+    else if (!drawerState && tenants.length) await openDrawer(tenants[0].slug);
   }
 
   /* ---------- table ---------- */
@@ -115,24 +117,18 @@
     $('count').textContent = list.length + ' of ' + tenants.length;
     var tb = $('rows'); tb.innerHTML = '';
     list.forEach(function (t) {
-      var u = t.usage || {};
-      var tr = el('tr', { onclick: function () { openDrawer(t.slug); } }, [
-        el('td', { class: 'mono', text: t.slug }),
-        el('td', { text: t.name || '' }),
-        el('td', {}, [statusBadge(t.status)]),
-        el('td', { text: t.subscription ? (t.subscription.mode === 'bundle' ? t.subscription.bundle : 'Per module') : t.plan }),
-        el('td', {}, [moduleChips(t.modules)]),
-        el('td', { text: u.users != null ? String(u.users) : '–' }),
-        el('td', { text: u.inventory_items != null ? String(u.inventory_items) : '–' }),
-        el('td', { class: 'muted', text: (t.created_at || '').slice(0, 10) }),
-      ]);
-      tb.appendChild(tr);
+      tb.appendChild(el('button', { class: 'tenant-choice' + (drawerState && drawerState.slug === t.slug ? ' selected' : ''),
+        'aria-pressed': drawerState && drawerState.slug === t.slug ? 'true' : 'false',
+        onclick: function () { openDrawer(t.slug).catch(function (e) { toast(e.message); }); } }, [
+        el('strong', { text: t.name || t.slug }),
+        el('span', { class: 'tenant-meta' }, [el('span', { text: t.slug }), statusBadge(t.status)]),
+      ]));
     });
-    if (!list.length) tb.appendChild(el('tr', {}, [el('td', { colspan: '8', class: 'muted', text: 'No workspaces.' })]));
+    if (!list.length) tb.appendChild(el('p', { class: 'muted', text: q ? 'No matching tenants.' : 'No tenants yet.' }));
   }
 
   $('filter').addEventListener('input', render);
-  $('refresh-btn').addEventListener('click', load);
+  $('refresh-btn').addEventListener('click', function () { load(true).catch(function (e) { toast(e.message); }); });
 
   /* ---------- module dependency helpers (client mirror of src/modules.ts) ---------- */
   function depsOf(name) { return (ref.module_deps && ref.module_deps[name]) || []; }
@@ -149,8 +145,12 @@
   /* ---------- drawer / editor ---------- */
   var drawerState = null;
 
-  async function openDrawer(slug) {
+  var activeTab = 'overview';
+  var selectionVersion = 0;
+  async function openDrawer(slug, tab) {
+    var version = ++selectionVersion;
     var full = await api('GET', '/tenants/' + encodeURIComponent(slug));
+    if (version !== selectionVersion) return;
     drawerState = {
       slug: slug,
       url: full.url,
@@ -169,20 +169,41 @@
       photoUsageMb: full.photo_retention.usage_mb,
       log: full.log || [],
     };
-    paintDrawer();
+    activeTab = tab || 'overview';
+    render(); paintFrame();
+    await selectTab(activeTab);
   }
 
   function closeDrawer() {
-    var s = $('scrim'), d = $('drawer');
-    if (s) s.remove();
-    if (d) d.remove();
-    drawerState = null;
+    drawerState = null; ++selectionVersion;
+    $('tenant-workspace').replaceChildren(el('div', { class: 'dashboard-empty' }, [el('h2', { text: 'Select a tenant' })]));
+    render();
+  }
+  function paintFrame() {
+    var st = drawerState;
+    $('tenant-workspace').replaceChildren(
+      el('div', { class: 'tenant-page-heading' }, [
+        el('div', {}, [el('div', { class: 'tenant-title-line' }, [el('h2', { text: st.name || st.slug }), statusBadge(st.status)]), el('p', { class: 'muted', text: 'Tenant overview / ' + st.slug })]),
+        el('a', { class: 'btn ghost', href: st.url, target: '_blank', rel: 'noopener', text: 'Open workspace' }),
+      ]),
+      el('nav', { class: 'tenant-tabs', 'aria-label': 'Tenant sections' }, ['overview', 'usage', 'health', 'subscription', 'support', 'settings'].map(function (tab) {
+        return el('button', { 'data-tab': tab, onclick: function () { selectTab(tab).catch(function (e) { toast(e.message); }); }, text: tab.charAt(0).toUpperCase() + tab.slice(1) });
+      })),
+      el('div', { id: 'tenant-content', 'aria-live': 'polite' })
+    );
+  }
+  async function selectTab(tab) {
+    activeTab = tab;
+    document.querySelectorAll('[data-tab]').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false'); });
+    if (tab === 'settings') { paintDrawer(); return; }
+    if (tab === 'subscription') { openSubscription(); return; }
+    $('tenant-content').replaceChildren(el('p', { class: 'muted', text: 'Loading analytics…' }));
+    await openAnalytics(drawerState.slug);
   }
 
   function paintDrawer() {
     closeExisting();
     var st = drawerState;
-    document.body.appendChild(el('div', { id: 'scrim', class: 'scrim', onclick: closeDrawer }));
 
     var statusSel = el('select', { id: 'd-status' }, ref.statuses.map(function (s) {
       return el('option', { value: s, text: s, selected: s === st.status ? 'selected' : null });
@@ -232,14 +253,14 @@
       el('div', { class: 'field' }, [el('label', { text: 'Tenant link' }), el('a', { href: st.url, target: '_blank', rel: 'noopener', text: st.url })]),
       el('div', { class: 'field' }, [el('label', { text: 'Name' }), el('input', { id: 'd-name', value: st.name || '' })]),
       el('div', { class: 'row2' }, [
-        el('div', { class: 'field' }, [el('label', { text: 'Subscription' }), el('button', { class: 'btn ghost', onclick: openSubscription }, ['Configure subscription'])]),
+        el('div', { class: 'field' }, [el('label', { text: 'Subscription' }), el('button', { class: 'btn ghost', onclick: function () { selectTab('subscription'); } }, ['Configure subscription'])]),
         el('div', { class: 'field' }, [el('label', { text: 'Status' }), statusSel]),
       ]),
       trialField,
       el('div', { class: 'field' }, [el('label', { text: 'Subscribed modules' }), el('div', { class: 'muted', text: st.useOverride ? withDeps(st.mods).join(', ') || 'None selected' : st.planDefault.join(', ') })]),
       el('div', { class: 'muted', text: 'Monthly PHP quote: ' + (st.subscription && st.subscription.monthly_total != null ? st.subscription.monthly_total.toFixed(2) : 'Unset') }),
       el('div', { class: 'muted', text: 'Login seat allowance: ' + (st.subscription && st.subscription.seat_limit != null ? st.subscription.seat_limit : 'Bundle default') }),
-      el('div', { class: 'field' }, [el('label', { text: 'Current usage' }), usageBox, el('button', { class: 'btn ghost', style: 'margin-top:12px', onclick: function () { openAnalytics(st.slug).catch(function (e) { toast(e.message); }); } }, ['Analytics & support'])]),
+      el('div', { class: 'field' }, [el('label', { text: 'Current usage' }), usageBox, el('button', { class: 'btn ghost', style: 'margin-top:12px', onclick: function () { selectTab('overview').catch(function (e) { toast(e.message); }); } }, ['Analytics & support'])]),
       photoField,
       logBox,
       el('div', { class: 'danger-zone' }, [
@@ -249,15 +270,14 @@
       ]),
     ]);
 
-    var drawer = el('div', { id: 'drawer', class: 'drawer' }, [
-      el('header', {}, [el('h1', { text: st.slug }), el('button', { class: 'btn ghost', onclick: closeDrawer }, ['Close'])]),
+    var drawer = el('div', { id: 'settings-panel', class: 'settings-panel' }, [
       body,
       el('div', { class: 'foot' }, [
         el('button', { class: 'btn', id: 'd-save', onclick: save }, ['Save changes']),
-        el('button', { class: 'btn ghost', onclick: closeDrawer }, ['Cancel']),
+        el('button', { class: 'btn ghost', onclick: function () { selectTab('overview'); } }, ['Cancel']),
       ]),
     ]);
-    document.body.appendChild(drawer);
+    $('tenant-content').replaceChildren(drawer);
 
     function syncTrialVisibility() {
       $('d-trial-field').classList.toggle('hidden', $('d-status').value !== 'trial' && $('d-status').value !== 'past_due');
@@ -266,9 +286,91 @@
     syncTrialVisibility();
   }
 
+  /* ---------- charts: local SVG, no external requests ---------- */
+  function buildCharts(a) {
+    var nf = new Intl.NumberFormat('en-PH', { maximumFractionDigits: 1 });
+    var value = function (v) { return v == null ? '—' : nf.format(v); };
+    var seats = a.capacity.find(function (c) { return c.key === 'users'; });
+    var wrap = el('div', { class: 'dashboard-visuals' });
+    var cards = activeTab === 'overview' ? [
+      ['Active users', a.engagement.active_30, 'Last 30 days'], ['Login seats', a.usage && a.usage.users, seats && seats.limit != null ? 'of ' + seats.limit + ' allocated' : 'Unlimited allowance'],
+      ['Employee records', a.usage && a.usage.employees, 'Unlimited · no seat required'], ['Server errors', a.engagement.errors, 'Last 30 days'],
+    ] : [
+      ['Upload storage', a.storage && a.storage.uploads_mb, 'MB · includes nested uploads'], ['AI requests', a.usage && a.usage.ai_calls_month, 'Current calendar month'],
+      ['Inventory items', a.usage && a.usage.inventory_items, 'Current item count'], ['Enabled modules', a.module_usage.length, 'Subscribed capabilities'],
+    ];
+    wrap.appendChild(el('div', { class: 'kpi-grid' }, cards.map(function (v) {
+      return el('div', { class: 'kpi' }, [el('div', { class: 'kpi-label', text: v[0] }), el('div', { class: 'kpi-value', text: value(v[1]) }), el('div', { class: 'kpi-note', text: v[2] })]);
+    })));
+    var range = el('select', { 'aria-label': 'Chart date range' }, [7, 30, 90].map(function (n) { return el('option', { value: n, text: 'Last ' + n + ' days', selected: n === 30 ? 'selected' : null }); }));
+    var plots = el('div', { class: 'chart-grid' });
+    wrap.appendChild(el('div', { class: 'chart-heading' }, [el('strong', { text: activeTab === 'overview' ? 'Engagement overview' : 'Usage trends' }), range]));
+    wrap.appendChild(plots);
+    function svgNode(tag, attrs, text) {
+      var n = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+      if (text != null) n.textContent = text;
+      return n;
+    }
+    function lineChart(title, description, rows, key, color) {
+      var card = el('div', { class: 'chart-card' }, [el('h3', { text: title }), el('p', { text: description })]);
+      var valid = rows.filter(function (r) { return r[key] != null && Number.isFinite(Number(r[key])); });
+      if (!valid.length) { card.appendChild(el('div', { class: 'chart-empty', text: 'No recorded data in this range. Trends will appear as activity is collected.' })); return card; }
+      var svg = svgNode('svg', { viewBox: '0 0 660 250', class: 'chart-svg', role: 'img', 'aria-label': title + ': ' + valid.length + ' recorded days' });
+      var max = Math.max(1, Math.max.apply(null, valid.map(function (r) { return Number(r[key]); })) * 1.15);
+      var minDate = Date.parse(valid[0].day), maxDate = Date.parse(valid[valid.length - 1].day);
+      function x(r) { return maxDate === minDate ? 345 : 50 + (Date.parse(r.day) - minDate) / (maxDate - minDate) * 590; }
+      function y(r) { return 205 - Number(r[key]) / max * 175; }
+      for (var i = 0; i <= 4; i++) {
+        var yy = 205 - i / 4 * 175;
+        svg.appendChild(svgNode('line', { x1: 50, y1: yy, x2: 640, y2: yy, stroke: 'var(--line)', 'stroke-dasharray': '3 5' }));
+        svg.appendChild(svgNode('text', { x: 40, y: yy + 4, 'text-anchor': 'end' }, nf.format(max * i / 4)));
+      }
+      var points = valid.map(function (r) { return x(r) + ',' + y(r); }).join(' ');
+      if (valid.length > 1) {
+        svg.appendChild(svgNode('polygon', { points: '50,205 ' + points + ' 640,205', fill: color, opacity: '.08' }));
+        svg.appendChild(svgNode('polyline', { points: points, fill: 'none', stroke: color, 'stroke-width': 3, 'stroke-linejoin': 'round' }));
+      }
+      valid.forEach(function (r) {
+        var dot = svgNode('circle', { cx: x(r), cy: y(r), r: 4, fill: color, tabindex: '0' });
+        dot.appendChild(svgNode('title', {}, r.day + ': ' + nf.format(r[key]))); svg.appendChild(dot);
+      });
+      function dayLabel(day) { return new Date(day + 'T00:00:00Z').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' }); }
+      svg.appendChild(svgNode('text', { x: 50, y: 235 }, dayLabel(valid[0].day)));
+      svg.appendChild(svgNode('text', { x: 640, y: 235, 'text-anchor': 'end' }, dayLabel(valid[valid.length - 1].day)));
+      card.appendChild(svg);
+      card.appendChild(el('div', { class: 'chart-legend' }, [el('span', { style: '--series:' + color, text: title }), el('small', { text: valid.length === 1 ? 'One snapshot · more data needed for a trend' : 'Recorded days · UTC' })]));
+      return card;
+    }
+    function draw() {
+      plots.replaceChildren();
+      var since = new Date(); since.setUTCDate(since.getUTCDate() - Number(range.value) + 1);
+      var day = since.toISOString().slice(0, 10);
+      if (activeTab === 'overview') {
+        plots.appendChild(lineChart('Daily active users', 'Unique users with successful authenticated activity. Hover a point for its value.', a.daily_activity.filter(function (r) { return r.day >= day; }), 'active_users', 'var(--accent)'));
+        var modules = el('div', { class: 'chart-card' }, [el('h3', { text: 'Module adoption' }), el('p', { text: 'Authenticated API requests · last 30 days' })]);
+        var max = Math.max(1, Math.max.apply(null, a.module_usage.map(function (m) { return m.requests; })));
+        a.module_usage.forEach(function (m) { modules.appendChild(el('div', { class: 'module-bar' }, [
+          el('div', { class: 'bar-heading' }, [el('span', { text: m.module.charAt(0).toUpperCase() + m.module.slice(1) }), el('strong', { text: value(m.requests) })]),
+          el('div', { class: 'bar-track', role: 'img', 'aria-label': m.module + ': ' + m.requests + ' requests' }, [el('div', { class: 'bar-fill', style: 'width:' + Math.max(0, m.requests / max * 100) + '%' })]),
+        ])); });
+        if (!a.module_usage.length) modules.appendChild(el('div', { class: 'chart-empty', text: 'No optional modules subscribed.' }));
+        plots.appendChild(modules);
+      } else {
+        var rows = a.history.filter(function (r) { return r.day >= day; }).map(function (r) { return { day: r.day, storage_mb: r.usage.storage_mb, users: r.usage.users }; });
+        plots.appendChild(lineChart('Upload storage (MB)', 'Verified usage snapshots, including nested folders.', rows, 'storage_mb', 'var(--accent)'));
+        plots.appendChild(lineChart('Active login seats', 'Active accounts at each recorded snapshot.', rows, 'users', '#23a88a'));
+      }
+    }
+    range.addEventListener('change', draw); draw();
+    return wrap;
+  }
+
   /* ---------- tenant analytics ---------- */
   async function openAnalytics(slug) {
+    var tabAtRequest = activeTab, version = selectionVersion;
     var a = await api('GET', '/tenants/' + encodeURIComponent(slug) + '/analytics');
+    if (!drawerState || drawerState.slug !== slug || version !== selectionVersion || activeTab !== tabAtRequest) return;
     var d = a.details;
     function textValue(v) {
       if (v == null) return 'Not available';
@@ -291,7 +393,7 @@
       return el('div', { class: 'field' }, [el('label', { text: label }), input]);
     }
     var error = el('div', { class: 'err', role: 'alert' });
-    var close = function () { modal.remove(); };
+    var close = function () {};
     var usageRows = a.capacity.map(function (c) { return [c.key === 'users' ? 'Active login seats' : c.key, c.used, c.limit == null ? 'Unlimited' : c.limit, c.percent == null ? '—' : c.percent + '%']; });
     var historyRange = el('select', {}, [el('option', { value: '7', text: 'Last 7 snapshots' }), el('option', { value: '30', text: 'Last 30 snapshots', selected: 'selected' }), el('option', { value: '90', text: 'Last 90 snapshots' })]);
     var history = el('div');
@@ -310,7 +412,7 @@
       } }, [s.status === 'open' ? 'Resolve' : 'Reopen']));
       supportList.appendChild(row);
     });
-    var modal = el('div', { class: 'modal' }, [el('div', { class: 'card analytics-card' }, [
+    var dashboard = el('div', { class: 'analytics-card' }, [
       el('div', { class: 'analytics-heading' }, [el('h2', { text: 'Tenant analytics — ' + slug }), el('button', { class: 'btn ghost', onclick: close }, ['Close'])]),
       el('p', { class: 'muted', text: 'Updated ' + textValue(a.generated_at) + '. Activity is measured from recorded authenticated API requests; it is not time spent in the app.' }),
       section('Alerts', a.alerts.length ? a.alerts.map(function (v) { return el('div', { class: 'analytics-alert', text: v.message }); }) : [el('p', { text: 'No current alerts.' })]),
@@ -360,8 +462,11 @@
           var link = el('a', { href: url, download: slug + '-analytics.json' }); document.body.appendChild(link); link.click(); link.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
         } catch (e) { error.textContent = e.message; }
       } }, ['Export tenant summary']),
-    ])]);
-    document.body.appendChild(modal);
+    ]);
+    var groups = { 'Alerts': 'overview', 'Usage & capacity': 'usage', 'Engagement & onboarding': 'overview', 'Daily activity · retained 90 days': 'usage', 'Module usage · 30 days': 'usage', 'Storage & AI costs': 'usage', 'Device sync & backup health': 'health', 'Application performance': 'health', 'Subscription & payments': 'usage', 'Usage history': 'usage', 'Customer details & alert thresholds': 'support', 'Support history': 'support' };
+    dashboard.querySelectorAll('.analytics-section').forEach(function (s) { s.classList.toggle('hidden', groups[s.querySelector('h3').textContent] !== activeTab); });
+    if (activeTab === 'overview' || activeTab === 'usage') dashboard.prepend(buildCharts(a));
+    $('tenant-content').replaceChildren(dashboard);
   }
 
   /* ---------- subscription editor ---------- */
@@ -412,7 +517,7 @@
     var quote = el('p', { class: 'subscription-quote' });
     var err = el('div', { class: 'err' });
     var go = el('button', { class: 'btn' }, ['Save subscription']);
-    var modal = el('div', { class: 'modal' }, [el('div', { class: 'card subscription-card' }, [
+    var modal = el('div', { class: 'subscription-view' }, [el('div', { class: 'card subscription-card' }, [
       el('h2', { text: 'Subscription — ' + st.name }),
       el('div', { class: 'field' }, [el('label', { text: 'Module selection' }), mode]),
       bundleFields, moduleRows,
@@ -423,7 +528,7 @@
       el('p', { class: 'muted', text: 'Blank seats = bundle account limit. Active login accounts use seats; employee records are unlimited.' }),
       el('p', { class: 'muted', text: 'Monthly quote = bundle or selected module prices + login seat allowance × seat price. Required module dependencies are included and priced separately. Blank prices are unset; enter 0 for free. These settings do not collect payments.' }),
       quote, err,
-      el('div', { style: 'display:flex;gap:10px' }, [go, el('button', { class: 'btn ghost', onclick: function () { modal.remove(); } }, ['Cancel'])]),
+      el('div', { style: 'display:flex;gap:10px' }, [go, el('button', { class: 'btn ghost', onclick: function () { selectTab('overview'); } }, ['Cancel'])]),
     ])]);
     function amount(input) { return input.value.trim() === '' ? null : Number(input.value); }
     function value() {
@@ -463,13 +568,12 @@
         modal.remove(); await load(); await openDrawer(st.slug); toast('Subscription saved');
       } catch (ex) { err.textContent = ex.message; go.disabled = false; }
     });
-    document.body.appendChild(modal);
+    $('tenant-content').replaceChildren(modal);
     update();
   }
 
   function closeExisting() {
-    var s = $('scrim'), d = $('drawer');
-    if (s) s.remove(); if (d) d.remove();
+    $('tenant-content').replaceChildren();
   }
 
   async function save() {
@@ -490,8 +594,8 @@
     try {
       await api('PATCH', '/tenants/' + encodeURIComponent(st.slug), patch);
       toast('Saved ' + st.slug);
-      closeDrawer();
       await load();
+      await openDrawer(st.slug, 'settings');
     } catch (ex) { toast(ex.message); $('d-save').disabled = false; }
   }
 
@@ -544,8 +648,7 @@
         close();
         await load();
         toast('Created ' + created.slug);
-        await openDrawer(created.slug);
-        openSubscription();
+        await openDrawer(created.slug, 'subscription');
       } catch (ex) { $('n-err').textContent = ex.message; $('n-go').disabled = false; }
     });
   });
@@ -591,8 +694,7 @@
         close();
         await load();
         toast('Imported ' + created.slug + ' (' + created.imported_users + ' users)');
-        await openDrawer(created.slug);
-        openSubscription();
+        await openDrawer(created.slug, 'subscription');
       } catch (ex) { $('i-err').textContent = ex.message; $('i-go').disabled = false; $('i-go').textContent = 'Import'; }
     });
   });

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Workspace Console</title>
+<title>OTOM · Owner console</title>
 <style>
   :root {
     --bg: #f4f5f7; --panel: #ffffff; --ink: #1c2430; --muted: #67707d; --line: #e2e5ea;
@@ -82,7 +82,7 @@
   .analytics-table td { white-space:normal; overflow-wrap:anywhere; }
   .analytics-alert { border-left:3px solid var(--accent); padding:8px 12px; margin:8px 0; background:var(--panel); }
   .support-entry { display:flex; justify-content:space-between; gap:12px; align-items:center; margin:10px 0; }
-  textarea { width:100%; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:7px; padding:10px; font:inherit; }
+  textarea { width:100%; color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:7px; padding:10px; font:inherit; }
   /* drawer */
   .scrim { position: fixed; inset: 0; background: rgba(10,15,25,.4); z-index: 20; }
   .drawer { position: fixed; top: 0; right: 0; height: 100%; width: 460px; max-width: 100vw;
@@ -113,13 +113,37 @@
   .modal h2 { margin: 0 0 12px; font-size: 16px; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 8px; z-index: 40; font-size: 13px; }
+  .console-label { font-weight:400; font-size:12px; color:var(--muted); margin-left:12px; }
+  .console-shell { display:grid; grid-template-columns:252px minmax(0,1fr); max-width:none; padding:0; min-height:calc(100vh - 61px); }
+  .tenant-sidebar { background:var(--panel); border-right:1px solid var(--line); padding:24px 16px; position:sticky; top:61px; height:calc(100vh - 61px); display:flex; flex-direction:column; gap:18px; }
+  .sidebar-heading,.sidebar-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .sidebar-heading strong { font-size:13px; }.sidebar-heading span { font-size:11px; }.sidebar-actions .btn { font-size:12px; padding:9px 10px; }
+  .tenant-list { overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:6px; }.sidebar-refresh { font-size:12px; }
+  .tenant-choice { text-align:left; border:1px solid transparent; border-radius:10px; padding:14px 12px; background:transparent; color:var(--ink); width:100%; }
+  .tenant-choice:hover { background:var(--chip); }.tenant-choice.selected { background:color-mix(in srgb,var(--accent) 9%,var(--panel)); border-color:color-mix(in srgb,var(--accent) 35%,var(--line)); }
+  .tenant-choice strong { display:block; font-size:13px; overflow-wrap:anywhere; }.tenant-choice .tenant-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; font-size:11px; color:var(--muted); }
+  .tenant-workspace { min-width:0; padding:32px 36px; max-width:1600px; width:100%; margin:0 auto; }.dashboard-empty { padding:80px 20px; text-align:center; }
+  .tenant-page-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:24px; }.tenant-page-heading h2 { font-size:26px; letter-spacing:-.7px; margin:0 0 4px; }.tenant-page-heading p { margin:0; font-size:12px; }
+  .tenant-title-line { display:flex; align-items:center; gap:12px; }.tenant-tabs { display:flex; gap:24px; border-bottom:1px solid var(--line); margin-bottom:24px; overflow-x:auto; }
+  .tenant-tabs button { padding:12px 2px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font-size:13px; white-space:nowrap; }.tenant-tabs button.active { color:var(--accent); border-color:var(--accent); font-weight:650; }
+  .analytics-card { min-width:0; }.analytics-card>.analytics-heading { display:none; }.analytics-card>p { font-size:11px; margin-bottom:20px; }
+  .analytics-section { border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:20px; margin:18px 0; }.analytics-section h3 { font-size:14px; }
+  .kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-bottom:20px; }.kpi { border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:20px; }.kpi-label { font-size:11px; color:var(--muted); }.kpi-value { font-size:29px; font-weight:700; letter-spacing:-1px; margin:8px 0 3px; }.kpi-note { font-size:11px; color:var(--muted); }
+  .chart-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:18px; }.chart-card { border:1px solid var(--line); background:var(--panel); border-radius:12px; padding:22px; min-width:0; }.chart-card h3 { font-size:14px; margin:0; }.chart-card p { font-size:11px; color:var(--muted); margin:5px 0 16px; }
+  .chart-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }.chart-heading select { width:auto; font-size:12px; padding:6px; }.chart-svg { width:100%; height:auto; display:block; }.chart-svg text { fill:var(--muted); font-size:11px; }.chart-empty { min-height:200px; display:grid; place-items:center; text-align:center; color:var(--muted); font-size:12px; }.chart-legend { display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin:12px 0 0; }.chart-legend span:before { content:''; display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--series); margin-right:6px; }
+  .module-bar { margin:16px 0; }.bar-heading { display:flex; justify-content:space-between; font-size:12px; gap:12px; margin-bottom:7px; }.bar-track { height:7px; background:var(--chip); border-radius:8px; overflow:hidden; }.bar-fill { height:100%; border-radius:8px; background:var(--accent); min-width:0; }
+  .settings-panel { max-width:850px; }.settings-panel .body { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:24px; }.settings-panel .foot { display:flex; gap:10px; padding:18px 0; }.settings-panel .usage { display:none; }
+  .subscription-card { max-width:850px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:24px; }.subscription-card h2 { font-size:18px; margin-top:0; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+  @media(max-width:1050px) { .console-shell { grid-template-columns:220px minmax(0,1fr); }.tenant-workspace { padding:24px; }.kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }.chart-grid { grid-template-columns:1fr; } }
+  @media(max-width:650px) { .console-shell { display:block; }.tenant-sidebar { position:static; height:auto; border-right:0; border-bottom:1px solid var(--line); padding:16px; gap:12px; }.tenant-list { max-height:180px; }.sidebar-refresh { align-self:flex-start; }.tenant-workspace { padding:20px 16px; }.tenant-page-heading { align-items:flex-start; flex-wrap:wrap; }.tenant-tabs { gap:20px; }.kpi { padding:16px; }.kpi-value { font-size:25px; }.chart-card { padding:16px; }.row2 { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
 
 <section id="login">
   <form class="card" id="login-form">
-    <h1>Workspace Console</h1>
+    <h1>OTOM <span class="console-label">Owner console</span></h1>
     <div class="muted">Operator sign-in</div>
     <label for="lu">Username</label>
     <input id="lu" autocomplete="username" autofocus>
@@ -132,25 +156,19 @@
 
 <div id="app" class="hidden">
   <header>
-    <h1>Workspace Console</h1>
+    <h1>OTOM <span class="console-label">Owner console</span></h1>
     <span class="muted" id="who"></span>
     <button class="btn ghost" id="logout">Log out</button>
   </header>
-  <main>
-    <div class="toolbar">
-      <button class="btn" id="new-btn">＋ New tenant</button>
-      <button class="btn ghost" id="import-btn">Import workspace</button>
-      <button class="btn ghost" id="refresh-btn">Refresh</button>
-      <input id="filter" placeholder="Filter by slug or name…">
-      <span class="muted" id="count"></span>
-    </div>
-    <table>
-      <thead><tr>
-        <th>Slug</th><th>Name</th><th>Status</th><th>Plan</th><th>Modules</th>
-        <th>Users</th><th>Items</th><th>Created</th>
-      </tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
+  <main class="console-shell">
+    <aside class="tenant-sidebar" aria-label="Tenants">
+      <div class="sidebar-heading"><strong>Tenants</strong><span class="muted" id="count"></span></div>
+      <label class="sr-only" for="filter">Search tenants</label><input id="filter" placeholder="Search tenants…">
+      <div class="sidebar-actions"><button class="btn" id="new-btn">+ New tenant</button><button class="btn ghost" id="import-btn">Import</button></div>
+      <div id="rows" class="tenant-list"></div>
+      <button class="btn ghost sidebar-refresh" id="refresh-btn">Refresh tenants</button>
+    </aside>
+    <section id="tenant-workspace" class="tenant-workspace" aria-label="Tenant dashboard"><div class="dashboard-empty"><h2>Your tenants, at a glance.</h2><p class="muted">Select a tenant to explore its activity, capacity, and service health.</p></div></section>
   </main>
 </div>
 
