@@ -23,6 +23,19 @@
     (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
     return n;
   };
+  function companySlug(name) {
+    return name.trim().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+  function companyIdentity(id) {
+    var name = $(id).value.trim();
+    if (!name) throw new Error('Enter a company name.');
+    var slug = companySlug(name);
+    if (!/^[a-z][a-z0-9-]{1,30}$/.test(slug)) {
+      throw new Error('Company name must produce a URL name of 2–31 characters starting with a letter.');
+    }
+    return { name: name, slug: slug };
+  }
   function token() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
   function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
 
@@ -107,7 +120,7 @@
         el('td', { class: 'mono', text: t.slug }),
         el('td', { text: t.name || '' }),
         el('td', {}, [statusBadge(t.status)]),
-        el('td', { text: t.plan }),
+        el('td', { text: t.subscription ? (t.subscription.mode === 'bundle' ? t.subscription.bundle : 'Per module') : t.plan }),
         el('td', {}, [moduleChips(t.modules)]),
         el('td', { text: u.users != null ? String(u.users) : '–' }),
         el('td', { text: u.inventory_items != null ? String(u.inventory_items) : '–' }),
@@ -143,6 +156,7 @@
       url: full.url,
       name: full.name,
       plan: full.plan,
+      subscription: full.subscription,
       status: full.status,
       trial_ends_at: full.trial_ends_at,
       useOverride: !!full.modules.override,
@@ -170,9 +184,6 @@
     var st = drawerState;
     document.body.appendChild(el('div', { id: 'scrim', class: 'scrim', onclick: closeDrawer }));
 
-    var planSel = el('select', { id: 'd-plan' }, ref.plans.map(function (p) {
-      return el('option', { value: p, text: p, selected: p === st.plan ? 'selected' : null });
-    }));
     var statusSel = el('select', { id: 'd-status' }, ref.statuses.map(function (s) {
       return el('option', { value: s, text: s, selected: s === st.status ? 'selected' : null });
     }));
@@ -181,44 +192,9 @@
       el('input', { id: 'd-trial', type: 'date', value: st.trial_ends_at ? st.trial_ends_at.slice(0, 10) : '' }),
     ]);
 
-    // modules block
-    var modeSel = el('select', { id: 'd-modmode', onchange: function () {
-      st.useOverride = this.value === 'custom';
-      renderModOptions();
-    } }, [
-      el('option', { value: 'plan', text: 'Use plan default (' + st.planDefault.join(', ') + ')', selected: st.useOverride ? null : 'selected' }),
-      el('option', { value: 'custom', text: 'Custom set', selected: st.useOverride ? 'selected' : null }),
-    ]);
-    var modOpts = el('div', { class: 'mods', id: 'd-modopts' });
-
-    function renderModOptions() {
-      modOpts.innerHTML = '';
-      if (!st.useOverride) {
-        modOpts.appendChild(el('div', { class: 'muted', text: st.planDefault.join(', ') }));
-        return;
-      }
-      var effective = withDeps(st.mods);
-      var depSet = {};
-      effective.forEach(function (m) { depsOf(m).forEach(function (d) { depSet[d] = true; }); });
-      ref.modules.forEach(function (name) {
-        var checkedByUser = !!st.mods[name];
-        var pulledIn = !checkedByUser && effective.indexOf(name) !== -1;
-        var opt = el('label', { class: 'opt' + (pulledIn ? ' dep' : '') }, [
-          el('input', {
-            type: 'checkbox',
-            checked: (checkedByUser || pulledIn) ? 'checked' : null,
-            disabled: pulledIn ? 'disabled' : null,
-            onchange: function () { st.mods[name] = this.checked; renderModOptions(); },
-          }),
-          el('span', { text: name + (pulledIn ? '  (required by another)' : '') }),
-        ]);
-        modOpts.appendChild(opt);
-      });
-    }
-
     var usageBox = el('div', { class: 'usage' });
     if (st.usage) {
-      [['users', 'Users'], ['inventory_items', 'Items'], ['storage_mb', 'Storage MB'], ['ai_calls_month', 'AI calls (mo)']]
+      [['employees', 'Employee records'], ['users', 'Login accounts'], ['inventory_items', 'Items'], ['storage_mb', 'Storage MB'], ['ai_calls_month', 'AI calls (mo)']]
         .forEach(function (p) {
           usageBox.appendChild(el('div', {}, [el('span', { text: p[1] }), el('span', { text: String(st.usage[p[0]]) })]));
         });
@@ -256,11 +232,13 @@
       el('div', { class: 'field' }, [el('label', { text: 'Tenant link' }), el('a', { href: st.url, target: '_blank', rel: 'noopener', text: st.url })]),
       el('div', { class: 'field' }, [el('label', { text: 'Name' }), el('input', { id: 'd-name', value: st.name || '' })]),
       el('div', { class: 'row2' }, [
-        el('div', { class: 'field' }, [el('label', { text: 'Plan' }), planSel]),
+        el('div', { class: 'field' }, [el('label', { text: 'Subscription' }), el('button', { class: 'btn ghost', onclick: openSubscription }, ['Configure subscription'])]),
         el('div', { class: 'field' }, [el('label', { text: 'Status' }), statusSel]),
       ]),
       trialField,
-      el('div', { class: 'field' }, [el('label', { text: 'Feature modules' }), modeSel, modOpts]),
+      el('div', { class: 'field' }, [el('label', { text: 'Subscribed modules' }), el('div', { class: 'muted', text: st.useOverride ? withDeps(st.mods).join(', ') || 'None selected' : st.planDefault.join(', ') })]),
+      el('div', { class: 'muted', text: 'Monthly PHP quote: ' + (st.subscription && st.subscription.monthly_total != null ? st.subscription.monthly_total.toFixed(2) : 'Unset') }),
+      el('div', { class: 'muted', text: 'Employee allowance: ' + (st.subscription && st.subscription.employee_limit != null ? st.subscription.employee_limit : 'Unlimited') }),
       el('div', { class: 'field' }, [el('label', { text: 'Current usage' }), usageBox]),
       photoField,
       logBox,
@@ -286,7 +264,110 @@
     }
     statusSel.addEventListener('change', syncTrialVisibility);
     syncTrialVisibility();
-    renderModOptions();
+  }
+
+  /* ---------- subscription editor ---------- */
+  function openSubscription() {
+    var st = drawerState;
+    var sub = st.subscription || {
+      mode: st.useOverride ? 'per_module' : 'bundle', bundle: st.plan,
+      modules: withDeps(st.mods), employee_limit: null,
+      bundle_price: null, module_prices: {}, employee_price: null,
+    };
+    sub = JSON.parse(JSON.stringify(sub));
+    var selected = {};
+    sub.modules.forEach(function (m) { selected[m] = true; });
+    var priceInputs = {};
+    function moneyInput(value) {
+      return el('input', { type: 'number', min: '0', step: '0.01', placeholder: 'Rate unset', value: value == null ? '' : value });
+    }
+    var mode = el('select', {}, [
+      el('option', { value: 'bundle', text: 'Module bundle', selected: sub.mode === 'bundle' ? 'selected' : null }),
+      el('option', { value: 'per_module', text: 'Individual modules', selected: sub.mode === 'per_module' ? 'selected' : null }),
+    ]);
+    var bundle = el('select', {}, ref.plans.map(function (p) {
+      return el('option', { value: p, text: p, selected: p === sub.bundle ? 'selected' : null });
+    }));
+    var bundlePrice = moneyInput(sub.bundle_price);
+    var employees = el('input', { type: 'number', min: '0', max: '1000000', step: '1',
+      placeholder: 'Unlimited', value: sub.employee_limit == null ? '' : sub.employee_limit });
+    var employeePrice = moneyInput(sub.employee_price);
+    var bundleModules = el('p', { class: 'muted' });
+    var moduleRows = el('div', { class: 'subscription-modules' }, [el('div', { class: 'muted', text: 'Individual module prices: PHP per month' })]);
+    var checkboxes = {};
+    ref.modules.forEach(function (m) {
+      var check = el('input', { type: 'checkbox', checked: selected[m] ? 'checked' : null });
+      checkboxes[m] = check;
+      var rate = moneyInput(sub.module_prices[m]);
+      priceInputs[m] = rate;
+      check.addEventListener('change', function () { selected[m] = check.checked; update(); });
+      moduleRows.appendChild(el('div', { class: 'subscription-module' }, [
+        el('label', {}, [check, el('span', { text: m })]), rate,
+      ]));
+    });
+    var bundleFields = el('div', {}, [
+      el('div', { class: 'row2' }, [
+        el('div', { class: 'field' }, [el('label', { text: 'Bundle' }), bundle]),
+        el('div', { class: 'field' }, [el('label', { text: 'Bundle price (PHP / month)' }), bundlePrice]),
+      ]), bundleModules,
+    ]);
+    var quote = el('p', { class: 'subscription-quote' });
+    var err = el('div', { class: 'err' });
+    var go = el('button', { class: 'btn' }, ['Save subscription']);
+    var modal = el('div', { class: 'modal' }, [el('div', { class: 'card subscription-card' }, [
+      el('h2', { text: 'Subscription — ' + st.name }),
+      el('div', { class: 'field' }, [el('label', { text: 'Module selection' }), mode]),
+      bundleFields, moduleRows,
+      el('div', { class: 'row2' }, [
+        el('div', { class: 'field' }, [el('label', { text: 'Maximum employee records' }), employees]),
+        el('div', { class: 'field' }, [el('label', { text: 'Price per employee (PHP / month)' }), employeePrice]),
+      ]),
+      el('p', { class: 'muted', text: 'Blank allowance = unlimited; 0 = no new employees. Counts all HR employee records, including inactive ones. Login account limits remain separate.' }),
+      el('p', { class: 'muted', text: 'Monthly quote = bundle or selected module prices + employee allowance × employee price. Required module dependencies are included and priced separately. Blank prices are unset; enter 0 for free. These settings do not collect payments.' }),
+      quote, err,
+      el('div', { style: 'display:flex;gap:10px' }, [go, el('button', { class: 'btn ghost', onclick: function () { modal.remove(); } }, ['Cancel'])]),
+    ])]);
+    function amount(input) { return input.value.trim() === '' ? null : Number(input.value); }
+    function value() {
+      var prices = {};
+      ref.modules.forEach(function (m) { prices[m] = amount(priceInputs[m]); });
+      return { mode: mode.value, bundle: bundle.value, modules: withDeps(selected),
+        employee_limit: amount(employees), bundle_price: amount(bundlePrice),
+        module_prices: prices, employee_price: amount(employeePrice) };
+    }
+    function update() {
+      bundleFields.classList.toggle('hidden', mode.value !== 'bundle');
+      moduleRows.classList.toggle('hidden', mode.value !== 'per_module');
+      bundleModules.textContent = 'Included modules: ' + (ref.plan_modules[bundle.value] || []).join(', ');
+      var v = value(), effective = v.modules;
+      ref.modules.forEach(function (m) {
+        var included = effective.indexOf(m) !== -1;
+        checkboxes[m].checked = included;
+        checkboxes[m].disabled = included && !selected[m];
+        priceInputs[m].disabled = !included;
+      });
+      var moduleTotal = v.mode === 'bundle' ? v.bundle_price :
+        !effective.length || effective.some(function (m) { return v.module_prices[m] === null; }) ? null :
+          effective.reduce(function (sum, m) { return sum + Math.round(v.module_prices[m] * 100); }, 0) / 100;
+      var employeeTotal = v.employee_limit === 0 ? 0 :
+        v.employee_limit === null || v.employee_price === null ? null : v.employee_limit * Math.round(v.employee_price * 100) / 100;
+      quote.textContent = moduleTotal === null || employeeTotal === null ? 'Monthly quote: rates or employee allowance unset' :
+        'Monthly quote: ' + new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(moduleTotal + employeeTotal) + ' / month';
+    }
+    mode.addEventListener('change', update);
+    bundle.addEventListener('change', update);
+    modal.addEventListener('input', function (event) {
+      if (event.target.type !== 'checkbox') update();
+    });
+    go.addEventListener('click', async function () {
+      err.textContent = ''; go.disabled = true;
+      try {
+        await api('PUT', '/tenants/' + encodeURIComponent(st.slug) + '/subscription', value());
+        modal.remove(); await load(); await openDrawer(st.slug); toast('Subscription saved');
+      } catch (ex) { err.textContent = ex.message; go.disabled = false; }
+    });
+    document.body.appendChild(modal);
+    update();
   }
 
   function closeExisting() {
@@ -298,14 +379,12 @@
     var st = drawerState;
     var patch = {
       name: $('d-name').value.trim(),
-      plan: $('d-plan').value,
       status: $('d-status').value,
     };
     if ($('d-status').value === 'trial' || $('d-status').value === 'past_due') {
       var v = $('d-trial').value;
       patch.trial_ends_at = v ? new Date(v + 'T00:00:00').toISOString() : null;
     }
-    patch.modules = st.useOverride ? withDeps(st.mods) : null;
     var daysStr = $('d-photo-days').value.trim();
     var mbStr = $('d-photo-mb').value.trim();
     patch.photo_retention_days = daysStr === '' ? null : Number(daysStr);
@@ -333,18 +412,14 @@
 
   /* ---------- new tenant ---------- */
   $('new-btn').addEventListener('click', function () {
-    var planOpts = ref.plans.map(function (p) {
-      return el('option', { value: p, text: p, selected: p === 'starter' ? 'selected' : null });
-    });
     var card = el('div', { class: 'card' }, [
       el('h2', { text: 'New tenant' }),
-      el('div', { class: 'field' }, [el('label', { text: 'Slug' }), el('input', { id: 'n-slug', placeholder: 'acme' })]),
-      el('div', { class: 'field' }, [el('label', { text: 'Company name' }), el('input', { id: 'n-name', placeholder: 'Acme Mfg' })]),
+      el('div', { class: 'field' }, [el('label', { text: 'Company name' }), el('input', { id: 'n-name', placeholder: 'Acme Mfg' }), el('small', { class: 'muted', id: 'n-url', text: 'Company name also determines the tenant URL.' })]),
       el('div', { class: 'row2' }, [
         el('div', { class: 'field' }, [el('label', { text: 'Admin username' }), el('input', { id: 'n-user', placeholder: 'owner' })]),
         el('div', { class: 'field' }, [el('label', { text: 'Admin password' }), el('input', { id: 'n-pass', type: 'password' })]),
       ]),
-      el('div', { class: 'field' }, [el('label', { text: 'Plan' }), el('select', { id: 'n-plan' }, planOpts)]),
+      el('p', { class: 'muted', text: 'Choose modules, employee allowance, and pricing after creating the tenant.' }),
       el('div', { class: 'err', id: 'n-err' }),
       el('div', { style: 'display:flex;gap:10px;margin-top:6px' }, [
         el('button', { class: 'btn', id: 'n-go' }, ['Create']),
@@ -354,39 +429,39 @@
     var modal = el('div', { class: 'modal', id: 'modal' }, [card]);
     document.body.appendChild(modal);
     var close = function () { modal.remove(); };
+    $('n-name').addEventListener('input', function () {
+      $('n-url').textContent = 'Tenant URL name: /' + companySlug(this.value);
+    });
     $('n-cancel').addEventListener('click', close);
     $('n-go').addEventListener('click', async function () {
       $('n-err').textContent = '';
       $('n-go').disabled = true;
       try {
+        var company = companyIdentity('n-name');
         var created = await api('POST', '/tenants', {
-          slug: $('n-slug').value.trim(),
-          name: $('n-name').value.trim(),
+          slug: company.slug,
+          name: company.name,
           admin_username: $('n-user').value.trim(),
           admin_password: $('n-pass').value,
-          plan: $('n-plan').value,
         });
         close();
         await load();
         toast('Created ' + created.slug);
-        openDrawer(created.slug);
+        await openDrawer(created.slug);
+        openSubscription();
       } catch (ex) { $('n-err').textContent = ex.message; $('n-go').disabled = false; }
     });
   });
 
   /* ---------- import an existing workspace (.db file) ---------- */
   $('import-btn').addEventListener('click', function () {
-    var planOpts = ref.plans.map(function (p) {
-      return el('option', { value: p, text: p, selected: p === 'complete' ? 'selected' : null });
-    });
     var card = el('div', { class: 'card' }, [
       el('h2', { text: 'Import workspace' }),
       el('p', { class: 'muted', text: 'Upload a database snapshot from an existing install (npm run backup). ' +
         'Its users, passwords and records carry over unchanged. Uploaded files are not included.' }),
       el('div', { class: 'field' }, [el('label', { text: 'Database file' }), el('input', { id: 'i-file', type: 'file', accept: '.db,.sqlite,.sqlite3' })]),
-      el('div', { class: 'field' }, [el('label', { text: 'Slug' }), el('input', { id: 'i-slug', placeholder: 'acme' })]),
-      el('div', { class: 'field' }, [el('label', { text: 'Company name' }), el('input', { id: 'i-name', placeholder: 'Acme Mfg' })]),
-      el('div', { class: 'field' }, [el('label', { text: 'Plan' }), el('select', { id: 'i-plan' }, planOpts)]),
+      el('div', { class: 'field' }, [el('label', { text: 'Company name' }), el('input', { id: 'i-name', placeholder: 'Acme Mfg' }), el('small', { class: 'muted', id: 'i-url', text: 'Company name also determines the tenant URL.' })]),
+      el('p', { class: 'muted', text: 'Configure subscription pricing after import. Existing records are retained.' }),
       el('div', { class: 'err', id: 'i-err' }),
       el('div', { style: 'display:flex;gap:10px;margin-top:6px' }, [
         el('button', { class: 'btn', id: 'i-go' }, ['Import']),
@@ -396,16 +471,22 @@
     var modal = el('div', { class: 'modal', id: 'modal' }, [card]);
     document.body.appendChild(modal);
     var close = function () { modal.remove(); };
+    $('i-name').addEventListener('input', function () {
+      $('i-url').textContent = 'Tenant URL name: /' + companySlug(this.value);
+    });
     $('i-cancel').addEventListener('click', close);
     $('i-go').addEventListener('click', async function () {
       $('i-err').textContent = '';
       var f = $('i-file').files[0];
       if (!f) { $('i-err').textContent = 'Choose a database file.'; return; }
+      var company;
+      try { company = companyIdentity('i-name'); }
+      catch (ex) { $('i-err').textContent = ex.message; return; }
       var fd = new FormData();
       fd.append('db', f);
-      fd.append('slug', $('i-slug').value.trim());
-      fd.append('name', $('i-name').value.trim());
-      fd.append('plan', $('i-plan').value);
+      fd.append('slug', company.slug);
+      fd.append('name', company.name);
+      fd.append('plan', 'complete');
       $('i-go').disabled = true;
       $('i-go').textContent = 'Importing…';
       try {
@@ -413,7 +494,8 @@
         close();
         await load();
         toast('Imported ' + created.slug + ' (' + created.imported_users + ' users)');
-        openDrawer(created.slug);
+        await openDrawer(created.slug);
+        openSubscription();
       } catch (ex) { $('i-err').textContent = ex.message; $('i-go').disabled = false; $('i-go').textContent = 'Import'; }
     });
   });

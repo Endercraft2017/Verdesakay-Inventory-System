@@ -124,3 +124,44 @@ Keep the registered copy and all recovery files for diagnosis.
 After new writes have begun, do not simply revert to the older original: it would
 omit those writes. Stop writers and reconcile or restore from the latest tenant
 backup. Never purge Verdesakay or overwrite either copy to perform a rollback.
+
+## Railway workflow when you do not have a service shell
+
+The one-time launcher `scripts/start-verdesakay-cutover.ts` runs the same adoption
+helper before starting any application server or background jobs. It retains all
+source/recovery files, refuses occupied destinations, and starts the app only after
+verification and registration succeed. It is not an automatic migration on ordinary
+startup and must never be used while another writer is running.
+
+1. Pause Verdesakay activity, sync pending device/browser work, retain a volume backup,
+   and check enough free space as described above. Confirm this service has the
+   existing persistent `/data` volume and the four existing data variables.
+2. Ensure the deployment includes the launcher. Stop the current deployment and any
+   other scheduled/background writers through Railway. **Do not delete the service
+   or its volume.** If the UI only offers a deployment-removal operation, confirm it
+   stops just the running deployment and retains the service, variables and volume.
+3. Set the service's custom **Start Command** to:
+
+   ```sh
+   node --import tsx scripts/start-verdesakay-cutover.ts --writers-stopped
+   ```
+
+   The flag is your assertion that all old writers have stopped. The command cannot
+   verify that remote workers or installed devices have been paused.
+4. Deploy that revision against the same volume. Check logs for `applied: true`, the
+   retained recovery directory and `Verdesakay registered`. This deployment then
+   starts the normal app with tenant routing and owner console enabled.
+5. Verify the existing company login/data/uploads at `/verdesakay`, and Verdesakay's
+   row in `/_platform`, before resuming activity. The root redirects to Verdesakay
+   for now; the public marketing landing page is a separate next change.
+6. **Immediately after success**, persist the five cutover routing variables shown
+   above plus `DEPLOY_MODE=cloud` in Railway and restore **Start Command** to
+   `npm start`. Save these settings together, then redeploy normally. Do not leave
+   the one-time launcher as the regular restart command: a second attempt refuses
+   the existing tenant and exits safely rather than overwriting it.
+
+If the launcher fails, do not delete destination files or rerun it blindly. Preserve
+logs, source files and recovery snapshots. A failure before registration leaves the
+original source available for recovery; if registration succeeded but server startup
+failed, switch to the normal command with the persistent cutover variables rather
+than repeating adoption.

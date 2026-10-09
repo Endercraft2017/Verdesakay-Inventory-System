@@ -206,3 +206,36 @@ older-schema backup is fine: it's migrated (and snapshotted again) when the serv
 Uploads are restored by copying files back from `BACKUP_DIR/uploads/`.
 
 Test a restore now and then. A backup you've never restored from hasn't been proven to work.
+
+### Owner-managed subscriptions and monthly PHP quotes
+
+**New tenant** now asks only for company name and the initial admin credentials. The
+URL name is derived automatically (for example, `Acme Manufacturing` →
+`acme-manufacturing`). A new tenant created without an explicit API plan starts with
+no optional modules and a zero employee allowance. After creation, the console opens
+**Subscription**; this editor is also accessible from the tenant's details.
+
+Choose a module bundle or individual modules, set the maximum employee records, and
+enter monthly PHP prices. Rates start unset; zero explicitly means free. The quote
+is the bundle price or sum of effective module prices, plus the employee allowance
+multiplied by its per-employee price. Required dependencies (such as Inventory for
+Manufacturing) are included and priced in individual-module mode. Missing rates, an
+empty module selection, or an unlimited employee allowance leave the quote unset.
+These are per-tenant negotiated rates; this does not create invoices, recurring
+charges, or a shared pricing catalog. Existing user/storage/item/AI quotas continue
+to come from the tenant's resource plan; switching to individual modules retains
+that resource plan.
+
+The employee allowance counts **all stored HR employee records**, including inactive
+employees, separately from active login accounts. Blank allowance means unlimited;
+zero blocks new records. Both manual creation and CSV imports enforce the limit.
+CSV imports report over-limit rows and continue to allow updates to existing records;
+dry runs roll back their provisional writes. Reducing an allowance below current
+usage preserves records and blocks additions until capacity is increased or usage
+falls below the cap. Existing tenants have unlimited employees until configured.
+
+Owner API: `PUT /_platform/api/tenants/:slug/subscription` saves the complete validated
+subscription atomically, including its effective entitlements. Once configured, use
+this editor/API to change bundles or modules; the legacy plan/module setters reject
+changes to avoid separating access from the saved quote. The Verdesakay adoption
+helper remains unchanged and keeps existing data and entitlements.

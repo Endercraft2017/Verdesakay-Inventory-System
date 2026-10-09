@@ -18,6 +18,7 @@ import {
   type TenantRow, type TenantStatus, tenantPublicUrl,
 } from './platform';
 import { createTenant, importTenant, purgeTenant } from './provisioning';
+import { saveSubscription, subscriptionView } from './subscription';
 import { tenantUsage } from './quota';
 import { punchPhotoUsageBytes } from '../modules/hr/punch-photos';
 import { enabledModules, isModuleName, withDeps, MODULES, MODULE_DEPS } from '../shared/modules';
@@ -111,6 +112,7 @@ function tenantView(t: TenantRow) {
     name: t.name,
     status: t.status,
     plan: t.plan,
+    subscription: subscriptionView(t),
     trial_ends_at: t.trial_ends_at,
     created_at: t.created_at,
     modules: {
@@ -157,6 +159,10 @@ router.post('/tenants', (req: Request, res: Response, next) => {
       setTenantModules(slug, list);
       logProvisioning(slug, 'modules', JSON.stringify(list));
     }
+    if (!b.plan && !Array.isArray(b.modules)) {
+      saveSubscription(slug, { mode: 'per_module', bundle: 'starter', modules: [], employee_limit: 0,
+        bundle_price: null, module_prices: {}, employee_price: null });
+    }
     const t = getTenant(slug)!;
     res.status(201).json(tenantView(t));
   } catch (e) {
@@ -191,6 +197,19 @@ router.post('/tenants/import', importUpload.single('db'), (req: Request, res: Re
   }
 });
 
+// Subscription settings are saved separately from general tenant settings.
+router.put('/tenants/:slug/subscription', (req, res) => {
+  if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
+  try {
+    saveSubscription(req.params.slug, req.body);
+    logProvisioning(req.params.slug, 'subscription', JSON.stringify({
+      by: (req as PlatformAuthedRequest).platformUser?.username,
+      subscription: subscriptionView(getTenant(req.params.slug)!),
+    }));
+    res.json(tenantView(getTenant(req.params.slug)!));
+  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+});
+
 // PATCH /_platform/api/tenants/:slug — { name?, plan?, status?, trial_ends_at?, modules? }
 // `modules`: an array (explicit override, dependencies auto-added) or null (use the plan default).
 router.patch('/tenants/:slug', (req, res, next) => {
@@ -199,6 +218,9 @@ router.patch('/tenants/:slug', (req, res, next) => {
   const b = req.body || {};
   const by = (req as PlatformAuthedRequest).platformUser?.username || 'operator';
   const changed: string[] = [];
+  if (t.subscription && ('plan' in b || 'modules' in b)) {
+    res.status(400).json({ error: 'Use subscription settings to change this tenant’s bundle or modules.' }); return;
+  }
   try {
     if (typeof b.name === 'string' && b.name.trim() && b.name.trim() !== t.name) {
       setTenantName(t.slug, b.name.trim()); changed.push('name');

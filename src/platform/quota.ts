@@ -7,11 +7,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { tenantStore, queryOne, getSetting, setSetting, uploadDir, DEFAULT_TENANT } from '../shared/db';
 import { getTenant } from './platform';
+import { storedSubscription } from './subscription';
 import { PLANS, planLimitsFor, type PlanLimits } from './plans';
 
-export type QuotaKind = keyof PlanLimits;
+export type QuotaKind = keyof PlanLimits | 'employees';
 
 const LABEL: Record<QuotaKind, string> = {
+  employees: 'employee record',
   users: 'user',
   inventory_items: 'inventory item',
   storage_mb: 'storage',
@@ -22,10 +24,10 @@ export function currentSlug(): string {
   return tenantStore.getStore()?.slug ?? DEFAULT_TENANT;
 }
 
-export function planFor(slug = currentSlug()): { plan: string; limits: PlanLimits } {
-  if (slug === DEFAULT_TENANT) return { plan: 'unlimited', limits: PLANS.unlimited };
+export function planFor(slug = currentSlug()): { plan: string; limits: PlanLimits & { employees: number } } {
+  if (slug === DEFAULT_TENANT) return { plan: 'unlimited', limits: { ...PLANS.unlimited, employees: Infinity } };
   const t = getTenant(slug);
-  return { plan: t?.plan ?? 'trial', limits: planLimitsFor(t?.plan) };
+  return { plan: t?.plan ?? 'trial', limits: { ...planLimitsFor(t?.plan), employees: t ? storedSubscription(t)?.employee_limit ?? Infinity : Infinity } };
 }
 
 function dirSizeBytes(dir: string): number {
@@ -49,6 +51,7 @@ export function recordAiCall(): void {
 
 export function tenantUsage(slug = currentSlug()): Record<QuotaKind, number> {
   return {
+    employees: queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM employees')?.c ?? 0,
     users: queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM users WHERE active = 1')?.c ?? 0,
     inventory_items: queryOne<{ c: number }>(
       "SELECT COUNT(*) AS c FROM inventory_items WHERE IFNULL(category,'') <> 'Damage'"

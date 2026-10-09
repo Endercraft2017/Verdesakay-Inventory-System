@@ -60,6 +60,7 @@ export interface TenantRow {
    *  system default; 0 = no limit for that dimension. */
   photo_retention_days: number | null;
   photo_max_mb: number | null;
+  subscription: string | null;
   notes: string | null;
   created_at: string;
 }
@@ -106,6 +107,7 @@ function pdb(): DatabaseSync {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  ensureColumn(d, 'tenants', 'subscription', 'TEXT');
   ensureColumn(d, 'tenants', 'modules', 'TEXT'); // added after the initial control-plane schema
   ensureColumn(d, 'tenants', 'photo_retention_days', 'INTEGER');
   ensureColumn(d, 'tenants', 'photo_max_mb', 'INTEGER');
@@ -188,6 +190,7 @@ export function setTenantStatus(slug: string, status: TenantStatus): boolean {
 }
 
 export function setTenantPlan(slug: string, plan: string): boolean {
+  if (getTenant(slug)?.subscription) throw new Error('Use owner subscription settings to change the bundle.');
   return pdb().prepare('UPDATE tenants SET plan = ? WHERE slug = ?').run(plan, slug).changes > 0;
 }
 
@@ -210,6 +213,7 @@ export function listProvisioningLog(slug?: string, limit = 100): ProvisioningLog
 /** Set the per-tenant feature-module override. `mods` = an array of module names (stored
  *  as JSON), or null to clear the override and fall back to the plan's default bundle. */
 export function setTenantModules(slug: string, mods: string[] | null): boolean {
+  if (getTenant(slug)?.subscription) throw new Error('Use owner subscription settings to change modules.');
   const value = mods === null ? null : JSON.stringify(mods);
   return pdb().prepare('UPDATE tenants SET modules = ? WHERE slug = ?').run(value, slug).changes > 0;
 }

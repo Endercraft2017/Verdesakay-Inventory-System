@@ -283,6 +283,7 @@ router.post('/employees/import', requirePermission('hr.manage'), syncClass('clai
       );
       return 'updated';
     }
+    enforceQuota('employees');
     run(
       `INSERT INTO employees
         (employee_no, name, department_id, position, daily_rate, rate_type, monthly_rate, status, start_date,
@@ -479,6 +480,7 @@ router.post('/employees', requirePermission('hr.manage'), syncClass('claim'), (r
   }
   const linkErr = checkLinkedUser(input.user_id);
   if (linkErr) { res.status(409).json({ error: linkErr }); return; }
+  enforceQuota('employees');
   const dailyRate = effectiveDailyRate(input);
   const info = run(
     `INSERT INTO employees
