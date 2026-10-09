@@ -52,7 +52,7 @@ App.register('hr-contact-verification', async (view) => {
     catch (e) { UI.toast(e.message, 'error'); return; }
     const p = d.profile;
     const row = (label, value) => `
-      <div style="display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid var(--border-strong)">
+      <div class="hr-contact-row" style="display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid var(--border-strong)">
         <span class="muted" style="font-size:12.5px">${UI.esc(label)}</span>
         <span style="font-weight:600;text-align:right">${UI.esc(value || '—')}</span>
       </div>`;
@@ -78,7 +78,7 @@ App.register('hr-contact-verification', async (view) => {
         ${row('Home address', p.home_address)}
         ${row('Emergency contact', [p.emergency_contact_name, p.emergency_contact_relation].filter(Boolean).join(' · '))}
         ${row('Emergency contact phone', p.emergency_contact_phone)}
-        <h4 style="margin:20px 0 8px">Change history</h4>${history}`,
+        <h4 style="margin:20px 0 8px">Change history</h4><div class="hr-contact-history">${history}</div>`,
       onOpen: (ov) => {
         const btn = ov.querySelector('#cv-verify');
         if (btn) btn.onclick = async () => {

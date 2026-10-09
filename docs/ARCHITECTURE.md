@@ -16,6 +16,11 @@
 
 ## 1. Overview
 
+HR layout-only repairs (2026-10-09): scoped styles keep wide employee/attendance/payroll tables
+scrollable, time/photo inputs readable and long labels/actions wrapping. Attendance modal fields
+and workflows are unchanged. Small styling hooks also live in `hr-assets.js` and
+`hr-contact-verification.js`; verification limitations and delivery are recorded in HANDOFF.md.
+
 HR desktop UI refinement (2026-10-09): Timekeeping cutoff/roster and the Payroll form list now
 separate primary actions, filters and secondary tools; add labeled keyboard entry points and
 load-error/filter recovery; and gate list write controls by their existing permissions.

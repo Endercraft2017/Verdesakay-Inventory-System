@@ -477,7 +477,7 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
 
 /* Small camera badge over a time cell — shown only when the kiosk captured a photo for that
    punch (see hr-timekeeping.js's photoBtnHtml / openPunchPhoto). */
-.tk-time-cell { position: relative; }
+.tk-time-cell { position: relative; min-width: 112px; }
 .tk-time-cell input { padding-right: 26px; }
 .tk-photo-btn {
   position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; padding: 0;
@@ -497,12 +497,12 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
 .tk-roster-filters .grow { flex: 1; }
 
 /* One fixed grid for the whole roster so every department group's columns line up. */
-.tk-roster-table { table-layout: fixed; }
+.tk-roster-table { table-layout: fixed; min-width: 780px; }
 .tk-roster-table col.c-chk { width: 44px; }
 .tk-roster-table col.c-status { width: 128px; }
 .tk-roster-table col.c-rate { width: 108px; }
 .tk-roster-table col.c-days { width: 120px; }
-.tk-roster-table col.c-act { width: 84px; }
+.tk-roster-table col.c-act { width: 100px; }
 .tk-roster-table th, .tk-roster-table td { overflow: hidden; text-overflow: ellipsis; }
 .tk-roster-table td:first-child { overflow: visible; }
 .tk-roster-table thead th:first-child, .tk-roster-table thead th:last-child { padding: 12px 8px; }
@@ -553,7 +553,7 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
 .hr-row-open {
   background: none; border: 0; padding: 0; margin: 0; font: inherit; font-weight: 650;
   color: var(--text); text-align: left; cursor: pointer; max-width: 100%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  white-space: normal; overflow-wrap: anywhere;
 }
 .hr-row-open:hover { color: var(--accent); }
 .hr-row-open:focus-visible, .payroll-bundle-toggle:focus-visible {
@@ -572,6 +572,48 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
   .hr-filters .search { max-width: none; flex-basis: 100%; }
   .hr-filters .grow { display: none; }
   .hr-tools { gap: 10px; }
+}
+
+/* HR layout repairs only: keep every existing field, action and modal. Wide tables
+   scroll inside their panels instead of losing columns under .panel's clipping. */
+#emp-table, #cv-body, #as-body, #tk-table, #tk-roster,
+#fr-table:has(.hr-row-open), .payroll-bundle > [data-bundle-body],
+#dr-body .panel:has(table) { max-width: 100%; overflow-x: auto; }
+.tk-roster-table .badge-pill { white-space: normal; overflow-wrap: anywhere; }
+.tk-roster-table td:not(.actions) { overflow-wrap: anywhere; }
+.hr-filters .fld, .tk-roster-filters .fld { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+.hr-filters select, .tk-roster-filters select { max-width: 100%; }
+.hr-filter-count { white-space: normal; }
+.payroll-bundle-toggle { min-width: 0; max-width: 100%; }
+.payroll-bundle-toggle > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.payroll-bundle-actions { flex-wrap: wrap; max-width: 100%; }
+
+/* Time inputs need room for HH:MM AM/PM AND the existing photo affordance.
+   Dropdowns size to their option text; the existing .line-items provides scrolling. */
+.tk-daily-table select { width: auto; min-width: 100%; }
+.tk-daily-table input[data-k="notes"] { min-width: 180px; }
+.tk-daily-table td:last-child { min-width: 180px; }
+.tk-daily-table .badge-pill { white-space: normal; overflow-wrap: anywhere; }
+#pd-slip { max-width: 100%; overflow-x: auto; }
+
+/* Long employee names must not force close/print/notice actions off the modal. */
+.modal:has(#tk-days, #pd-slip, #emp-photo-preview, .hr-contact-row) { min-width: 0; }
+.modal:has(#tk-days, #pd-slip, #emp-photo-preview, .hr-contact-row) .modal-head { flex-wrap: wrap; }
+.modal:has(#tk-days, #pd-slip, #emp-photo-preview, .hr-contact-row) .modal-head h3 {
+  min-width: 0; flex: 1 1 220px; overflow-wrap: anywhere;
+}
+.modal:has(#tk-days, #pd-slip, #emp-photo-preview, .hr-contact-row) .modal-head-actions {
+  flex-wrap: wrap; max-width: 100%;
+}
+.modal:has(#tk-days, #pd-slip, #emp-photo-preview, .hr-contact-row) .modal-foot { flex-wrap: wrap; }
+.hr-contact-row > span { min-width: 0; overflow-wrap: anywhere; }
+.hr-contact-history { max-width: 100%; overflow-x: auto; }
+.hr-contact-history td { overflow-wrap: anywhere; }
+.hr-asset-filters { flex-wrap: wrap; }
+.hr-asset-filters > div { flex-basis: 180px; }
+.hr-asset-filters #as-sep { width: auto; flex: 0 0 auto; }
+@media (max-width: 900px) {
+  .hr-asset-filters > div { width: 100%; flex: none; }
 }
 
 /* ---------- Template editor ---------- */

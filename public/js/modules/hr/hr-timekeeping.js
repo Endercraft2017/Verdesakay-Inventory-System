@@ -2090,7 +2090,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       headActionHTML: canManage && rosterRow.user_id
         ? `<button type="button" class="btn secondary small" id="tk-notify-emp">${UI.icon('send', 14)} Send notice</button>`
         : '',
-      bodyHTML: `${canManage ? '' : '<p class="muted">Read-only attendance. An HR manager can make corrections.</p>'}<div class="line-items"><table class="line-table"><thead><tr>
+      bodyHTML: `${canManage ? '' : '<p class="muted">Read-only attendance. An HR manager can make corrections.</p>'}<div class="line-items"><table class="line-table tk-daily-table"><thead><tr>
           <th>Date</th><th>Shift</th><th>Time In</th><th>Lunch Out</th><th>Lunch In</th><th>Time Out</th><th>Day Type</th><th>Half Day</th><th>Rest Day</th><th>Notes</th><th>Linked Form</th>
         </tr></thead><tbody id="tk-days"></tbody></table></div>`,
       confirmText: canManage ? 'Save' : null,

@@ -56,7 +56,7 @@ App.register('hr-assets', async (view) => {
     </div>
     <div id="as-cards"></div>
     <div class="panel">
-      <div class="field-row" style="align-items:flex-end;margin-bottom:10px">
+      <div class="field-row hr-asset-filters" style="align-items:flex-end;margin-bottom:10px">
         <div><label>Status</label><select id="as-status">
           <option value="issued">Still out</option>
           <option value="lost">Lost</option>
@@ -64,7 +64,7 @@ App.register('hr-assets', async (view) => {
           <option value="returned">Returned</option>
           <option value="all">All</option>
         </select></div>
-        <div style="flex:1"><label>Search</label><input id="as-q" placeholder="Asset, tag / serial, category, employee, form no." /></div>
+        <div><label>Search</label><input id="as-q" placeholder="Asset, tag / serial, category, employee, form no." /></div>
         <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;padding-bottom:8px">
           <input type="checkbox" id="as-sep" /> Only people who have left
         </label>
