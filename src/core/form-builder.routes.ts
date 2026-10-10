@@ -463,8 +463,11 @@ router.delete('/form-records/:id', syncClass('claim'), (req, res) => {
   );
   if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
   if (!canAccessRecords(req, res, existing, true)) return;
-  if (existing.slug === 'hr_payroll' && existing.status === 'paid') {
-    res.status(423).json({ error: 'This payslip is marked Paid — unmark it first to delete.' }); return;
+  // A payslip that was ever marked Paid is part of the payroll record: correct it (unmark, edit,
+  // mark paid again), never delete it. payslip_paid_history is written by hr.routes.ts.
+  if (existing.slug === 'hr_payroll'
+    && (existing.status === 'paid' || queryOne('SELECT 1 AS x FROM payslip_paid_history WHERE record_id = ? LIMIT 1', id))) {
+    res.status(423).json({ error: 'This payslip has been paid, so it is kept as part of the payroll record. Unmark it and edit it to correct it.' }); return;
   }
   if (REQUEST_SLUGS.includes(existing.slug)) { res.status(400).json({ error: 'HR requests are kept for decision history. Withdraw pending requests from My HR instead of deleting them.' }); return; }
   const info = run('DELETE FROM form_records WHERE id = ?', id);

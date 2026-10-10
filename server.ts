@@ -19,6 +19,7 @@ import { cleanupPlatformSessions } from './src/platform/platform-users';
 import { attachWebSocket } from './src/shared/ws';
 import { runDailyBackups } from './src/platform/backups';
 import { pushOffsite } from './src/platform/offsite';
+import { backupHealthTick } from './src/platform/backup-health';
 import { DEPLOY_MODE, startSyncLoop, syncConfigOf } from './src/sync';
 import { roleChange } from './src/sync/failover';
 import { startSiteElection } from './src/sync/site-election';
@@ -70,8 +71,9 @@ if (DEPLOY_MODE === 'node') {
 // over (a no-op for any DB that already has one). Never let a backup error crash the server.
 const dailyBackup = () => {
   try { runDailyBackups(); } catch (e) { console.error(`[backup] daily run failed: ${(e as Error).message}`); }
-  // Then copy anything new (or previously failed) to the off-site buckets, if configured.
-  void pushOffsite();
+  // Then copy anything new (or previously failed) to the off-site buckets, if configured, and
+  // check the result: restore drill when due, alert on failures (src/platform/backup-health.ts).
+  void pushOffsite().catch(() => [] as unknown[]).then(() => backupHealthTick());
 };
 dailyBackup();
 setInterval(dailyBackup, 60 * 60 * 1000).unref();

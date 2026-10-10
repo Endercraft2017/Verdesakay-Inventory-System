@@ -1304,6 +1304,14 @@ describe('generate-payslips computes real numbers from attendance + linked forms
       .send({ payroll_period: 'Lock Cutoff' });
     expect(gen3.body.skipped_locked).toBe(0);
     expect(gen3.body.updated).toBe(1);
+
+    // Once paid, always part of the payroll record: unmarking reopens editing, never deletion.
+    expect((await ctx.api.delete(`/api/form-records/${recId}`).set(hdr())).status).toBe(423);
+    const { queryAll } = await import('../src/shared/db');
+    expect(queryAll<{ action: string }>('SELECT action FROM payslip_paid_history WHERE record_id = ? ORDER BY id', recId)
+      .map((r) => r.action)).toEqual(['paid', 'unpaid']);
+    // A payslip that was never paid can still be deleted.
+    if (otherRec) expect((await ctx.api.delete(`/api/form-records/${otherRec.id}`).set(hdr())).status).toBe(200);
   });
 
   it('emailing a payslip 400s when the employee has no linked account (or the linked account has no email)', async () => {

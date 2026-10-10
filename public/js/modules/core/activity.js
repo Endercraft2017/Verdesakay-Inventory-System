@@ -18,7 +18,6 @@ App.register('activity', async (view) => {
       <select id="al-action" style="width:150px"><option value="">All actions</option></select>
       <label class="inline-date">From <input type="date" id="al-from" /></label>
       <label class="inline-date">To <input type="date" id="al-to" /></label>
-      <button class="btn secondary" id="al-prune">Prune…</button>
     </div>
     <div id="al-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px"></div>
     <div class="panel"><div id="al-table"></div></div>
@@ -151,26 +150,6 @@ App.register('activity', async (view) => {
     });
   }
 
-  function prune() {
-    UI.modal({
-      title: 'Prune activity log',
-      bodyHTML: `
-        <p class="muted" style="margin-top:0">The log is kept for about a month automatically — use this only to clear entries sooner.</p>
-        <label>Older than (days)</label>
-        <input data-f="days" type="number" min="1" value="30" />`,
-      confirmText: 'Delete entries',
-      onConfirm: async (overlay, showErr) => {
-        const days = parseInt(overlay.querySelector('[data-f="days"]').value, 10);
-        if (!days || days < 1) { showErr('Enter a positive number of days'); return false; }
-        const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-        const r = await API.del('/activity?before=' + cutoff);
-        UI.toast(`Deleted ${r.deleted} entr${r.deleted === 1 ? 'y' : 'ies'}`);
-        state.offset = 0;
-        load();
-      },
-    });
-  }
-
   let t;
   view.querySelector('#al-q').addEventListener('input', (e) => {
     clearTimeout(t); state.q = e.target.value.trim(); state.offset = 0; t = setTimeout(load, 250);
@@ -180,7 +159,6 @@ App.register('activity', async (view) => {
   view.querySelector('#al-action').addEventListener('change', (e) => { state.action = e.target.value; state.offset = 0; load(); });
   view.querySelector('#al-from').addEventListener('change', (e) => { state.from = e.target.value; state.offset = 0; load(); });
   view.querySelector('#al-to').addEventListener('change', (e) => { state.to = e.target.value; state.offset = 0; load(); });
-  view.querySelector('#al-prune').addEventListener('click', prune);
 
   await load();
 });

@@ -23,6 +23,8 @@
     "db:types": "tsx scripts/gen-db-types.ts",
     "backup": "tsx scripts/backup.ts now",
     "backup:list": "tsx scripts/backup.ts list",
+    "backup:drill": "tsx scripts/backup.ts drill",
+    "backup:health": "tsx scripts/backup.ts health",
     "backup:restore": "tsx scripts/backup.ts restore",
     "backup:offsite": "tsx scripts/offsite.ts",
     "sync:enrol": "tsx scripts/sync-enrol.ts",

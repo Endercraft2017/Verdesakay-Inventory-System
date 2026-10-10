@@ -479,6 +479,9 @@ snapshot). Not linked to Inventory stock — issuing moves no stock.
 step — rates, payroll rules, generate / post / mark paid / email payslips, 13th month, final pay —
 is `payroll.view` / `payroll.manage` (`payroll/pay-access.ts`), so a timekeeping clerk can close
 cutoffs without seeing pay.
+**Terminal state "paid" is permanent:** every Mark Paid / Unmark Paid is logged to
+`payslip_paid_history`, and a payslip with any entry there can't be deleted (only unmarked and
+corrected), so the payroll record keeps every slip that was ever paid.
 
 **Offline (phase 4g, docs/OFFLINE-FIRST.md §26):** the whole run, from cutoff to marked paid, works at the
 main site with the internet down; payslip numbers come from the site host's blocks. Emailing payslips waits

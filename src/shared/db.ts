@@ -976,6 +976,18 @@ function createSchema(): void {
       updated_at  TEXT
     );
 
+    -- Every Mark Paid / Unmark Paid of a payslip (hr.routes.ts). A payslip with any row here was
+    -- paid at some point, so it is part of the payroll record and can no longer be deleted
+    -- (form-builder.routes.ts) — only corrected. No FK: the history must outlive the record.
+    CREATE TABLE IF NOT EXISTS payslip_paid_history (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      record_id  INTEGER NOT NULL,
+      action     TEXT NOT NULL CHECK (action IN ('paid','unpaid')),
+      by_user_id INTEGER,
+      at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_payslip_paid_history_record ON payslip_paid_history(record_id);
+
     CREATE TABLE IF NOT EXISTS global_variables (
       key        TEXT PRIMARY KEY,
       label      TEXT NOT NULL,
@@ -3922,9 +3934,11 @@ function orderTemplateBody(title: string): string {
 </div>`;
 }
 
-/** How long the app-wide activity_log is kept. Rows older than this are swept on the
-    housekeeping timer; admins can still prune earlier by hand via DELETE /api/activity. */
-export const ACTIVITY_LOG_RETENTION_DAYS = 31;
+/** How long the app-wide activity_log (the audit trail) is kept: 5 years by default, the span
+    PH payroll and accounting records are kept for. Rows older than this are swept on the
+    housekeeping timer; nothing in the app can delete them sooner. ACTIVITY_LOG_RETENTION_DAYS
+    overrides it (never below 31). ~60 MB per busy company-year at current volumes. */
+export const ACTIVITY_LOG_RETENTION_DAYS = Math.max(31, Number(process.env.ACTIVITY_LOG_RETENTION_DAYS) || 1827);
 
 /** How long an ended or expired session row is kept as sign-in history (account "Where
     you're signed in" / admin view). Live sessions are never swept. */

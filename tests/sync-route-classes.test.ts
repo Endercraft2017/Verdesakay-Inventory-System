@@ -12,7 +12,6 @@ import { describe, it, expect } from 'vitest';
 const NO_CLASS_NEEDED: Record<string, string> = {
   // Writes only node-local tables (sessions, push subscriptions, tickets, the activity log, the AI
   // search index), which never sync, or writes nothing at all.
-  'src/core/activity.routes.ts:delete /': 'prunes this copy\'s own activity log (node-local)',
   'src/core/auth.routes.ts:post /login': 'sessions are node-local',
   'src/core/auth.routes.ts:post /logout': 'sessions / push subscriptions are node-local',
   'src/core/auth.routes.ts:post /sessions/revoke-others': 'sessions are node-local',

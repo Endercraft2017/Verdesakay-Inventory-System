@@ -7,6 +7,7 @@ import { queryOne, queryAll, withTenant, getDb, uploadDir, DATA_DIR } from '../s
 import { MODULES, enabledModules } from '../shared/modules';
 import { planFor, tenantUsage, dirSizeBytes } from './quota';
 import { backupDir } from '../shared/backup';
+import { lastDrill } from './backup-health';
 import { subscriptionView } from './subscription';
 
 let initialized: ReturnType<typeof platformDb> | null = null;
@@ -121,8 +122,13 @@ export function updateSupport(slug: string, id: number, input: unknown) {
   return db().prepare('UPDATE tenant_support SET status=? WHERE slug=? AND id=?').run(v.status, slug, id).changes > 0;
 }
 function backupHealth(slug: string) {
-  const result: { last_snapshot_at: string | null; last_run_at: string | null; last_run_ok: boolean | null; restore_verified: null } =
-    { last_snapshot_at: null, last_run_at: null, last_run_ok: null, restore_verified: null };
+  const result: { last_snapshot_at: string | null; last_run_at: string | null; last_run_ok: boolean | null;
+    restore_verified: boolean | null; restore_verified_at: string | null } =
+    { last_snapshot_at: null, last_run_at: null, last_run_ok: null, restore_verified: null, restore_verified_at: null };
+  // This workspace's copies in the last off-site restore drill (src/platform/backup-health.ts).
+  const drill = lastDrill();
+  const drilled = drill?.results.filter((r) => r.name === slug) ?? [];
+  if (drill && drilled.length) { result.restore_verified = drilled.every((r) => r.ok); result.restore_verified_at = drill.at; }
   for (const kind of ['daily', 'manual']) {
     const dir = path.join(backupDir(), slug, kind);
     if (fs.existsSync(dir)) for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.db'))) {
@@ -191,6 +197,7 @@ export function tenantAnalytics(t: TenantRow) {
   if (!stats.last_activity) alerts.push({ code: 'activity_unknown', message: 'No activity recorded since telemetry was enabled' });
   if (!backup.last_snapshot_at || backup.last_snapshot_at < isoAgo(2)) alerts.push({ code: 'backup', message: 'No recent local backup snapshot' });
   if (backup.last_run_ok === false) alerts.push({ code: 'backup_failure', message: 'Latest recorded backup attempt failed' });
+  if (backup.restore_verified === false) alerts.push({ code: 'restore_drill_failure', message: 'The last off-site restore drill failed' });
   if (sync.devices.some(d => d.stale)) alerts.push({ code: 'sync', message: 'One or more enrolled devices have stale heartbeats' });
   if (Number(stats.errors) > 0) alerts.push({ code: 'errors', message: 'Server errors recorded in the last 30 days' });
   const trialLapsed = t.status === 'trial' && t.trial_ends_at && Date.parse(t.trial_ends_at) < Date.now();

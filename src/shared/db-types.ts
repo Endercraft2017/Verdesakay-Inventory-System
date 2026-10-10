@@ -877,6 +877,14 @@ export interface PayrollTables {
   created_at: Generated<string>;
 }
 
+export interface PayslipPaidHistory {
+  id: Generated<number>;
+  record_id: number;
+  action: string;
+  by_user_id: number | null;
+  at: Generated<string>;
+}
+
 export interface PettyCashEntries {
   id: Generated<number>;
   fund_id: number;
@@ -1465,6 +1473,7 @@ export interface DB {
   payment_allocations: PaymentAllocations;
   payments: Payments;
   payroll_tables: PayrollTables;
+  payslip_paid_history: PayslipPaidHistory;
   petty_cash_entries: PettyCashEntries;
   petty_cash_funds: PettyCashFunds;
   product_package_items: ProductPackageItems;

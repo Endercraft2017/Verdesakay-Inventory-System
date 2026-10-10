@@ -2552,9 +2552,25 @@ router.post('/payroll/:recordId/mark-paid', requirePermission('payroll.manage'),
     }
     res.status(400).json({ error: 'Already marked paid' }); return;
   }
-  run("UPDATE form_records SET status = 'paid', updated_at = datetime('now') WHERE id = ?", rec.id);
+  recordPaidChange(rec.id, 'paid', req.user!.id, () =>
+    run("UPDATE form_records SET status = 'paid', updated_at = datetime('now') WHERE id = ?", rec.id));
   res.json({ ok: true });
 });
+
+/** Apply a paid/unpaid status change together with its payslip_paid_history row, so a payslip
+ *  that was ever paid stays undeletable even after it is unmarked (form-builder.routes.ts). */
+function recordPaidChange(recordId: number, action: 'paid' | 'unpaid', userId: number, change: () => void): void {
+  db.exec('BEGIN');
+  try {
+    change();
+    run('INSERT INTO payslip_paid_history (record_id, action, by_user_id, at) VALUES (?, ?, ?, ?)',
+      recordId, action, userId, now().toISOString().slice(0, 19).replace('T', ' '));
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
 
 // POST /api/hr/payroll/:recordId/unmark-paid — unlocks it again for editing/regeneration.
 router.post('/payroll/:recordId/unmark-paid', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
@@ -2573,7 +2589,8 @@ router.post('/payroll/:recordId/unmark-paid', requirePermission('payroll.manage'
     }
     res.status(400).json({ error: 'This payslip is not marked paid' }); return;
   }
-  run("UPDATE form_records SET status = 'draft', updated_at = datetime('now') WHERE id = ?", rec.id);
+  recordPaidChange(rec.id, 'unpaid', req.user!.id, () =>
+    run("UPDATE form_records SET status = 'draft', updated_at = datetime('now') WHERE id = ?", rec.id));
   res.json({ ok: true });
 });
 

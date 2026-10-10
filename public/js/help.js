@@ -554,7 +554,7 @@
         <p>An append-only record of every change made in the system — who, what, when,
         from where. Filter by user, module, action, or date. Admin-only.</p>
         <p>Use it to answer "who changed this?" and as evidence for audits. Entries are
-        kept for about a month, then trimmed automatically; "Prune…" clears them sooner.</p>`,
+        kept for five years, then trimmed automatically; nobody can delete them sooner.</p>`,
     },
     {
       id: 'offline-pcs', title: 'Working offline (installed PCs)', group: 'Admin',

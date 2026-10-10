@@ -52,6 +52,11 @@ function targets(): Array<{ name: string; conn: () => DatabaseSync }> {
   ];
 }
 
+/** The backup names (tenant slugs, `default`, `_platform`) a daily run covers. */
+export function backupNames(): string[] {
+  return targets().map((t) => t.name);
+}
+
 /** The on-disk file a backup name restores onto. */
 export function liveFileFor(name: string): string {
   if (name === PLATFORM_BACKUP_NAME) return PLATFORM_DB_PATH;

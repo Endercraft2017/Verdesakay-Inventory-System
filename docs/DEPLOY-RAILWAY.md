@@ -271,3 +271,75 @@ Then stop the app and swap the file in with `npm run backup:restore -- verdesaka
 Uploaded files: `npm run backup:offsite -- fetch-uploads b2 /data/uploads-restored`.
 You can do the same from a PC by setting the same `BACKUP_S3_*` and `BACKUP_KEY` variables
 there first.
+
+## Part 5 — Backup safety settings (do once)
+
+The app already snapshots daily, copies off-site, runs a restore drill every 30 days and checks
+backup health every hour (`src/platform/backup-health.ts`). These settings live outside the
+code, in the Railway and Backblaze dashboards. Do them in this order.
+
+### 15. Get backup alerts on your phone (5 min)
+Uses [ntfy](https://ntfy.sh): free, no account needed.
+1. Install the **ntfy** app (Play Store / App Store).
+2. In the app tap **+** and subscribe to a topic with a long random name nobody can guess,
+   e.g. `vds-backups-7f3k9q2m8x`. Anyone who knows the name can read it, so treat it like a password.
+3. Railway → the app service → **Variables** → **New Variable**:
+   `BACKUP_ALERT_WEBHOOK` = `https://ntfy.sh/vds-backups-7f3k9q2m8x` (your topic). Railway redeploys.
+4. Test it: in a terminal in this repo, `railway ssh`, then
+   `npm run backup:health -- --test-alert`. Your phone should buzz within seconds.
+
+Discord or Slack work too: paste the channel's *incoming webhook* URL instead. You'll get one
+message when something breaks (repeated every 12 h while it stays broken) and one when it recovers.
+
+### 16. Turn on Railway's own volume backups (2 min)
+These snapshot the whole volume (databases and uploads) on Railway's side, separate from the app.
+1. Railway → project **ERP** → click the **volume** under the app service
+   (`verdesakay-inventory-system-volume`) → **Backups** tab.
+2. Under the schedule, tick **Daily**, **Weekly** and **Monthly** → save.
+3. A manual backup is also there (**Backup now**). Take one before any risky change, e.g. moving
+   region. To restore: pick a backup → **Restore** (the app goes down briefly; restoring replaces
+   the volume's current contents, so take a fresh manual backup first).
+
+### 17. Protect the off-site copies from deletion (10 min)
+The server holds a Backblaze key. If the server or the Railway account were ever compromised,
+whoever has that key could delete the off-site copies too. Object Lock stops that: locked copies
+can't be deleted by anyone until their lock runs out.
+1. Backblaze → **Buckets** → `afkcube-erp-backup` → **Bucket Settings** → **Object Lock** →
+   **Enable**, default retention **Compliance**, **30 days** → save.
+   (Compliance can't be shortened later, even by you. Start with 30 days.)
+2. Same bucket → **Lifecycle Settings** → **Keep prior versions for this number of days**: `30`.
+   This removes old and hidden versions after the lock ends, so storage doesn't grow forever and
+   deleted punch photos really go away (30 days later than in the app).
+3. Check it still works: `railway ssh`, then `npm run backup:offsite -- test` and
+   `npm run backup:drill`. Both should finish with ✓.
+
+Optional, stronger: replace the app's key with one that can't delete at all. The Backblaze website
+can't create that kind of key; the `b2` command-line tool can:
+`b2 key create --bucket afkcube-erp-backup vds-app listBuckets,listFiles,readFiles,writeFiles`.
+Put the new key ID and key in `BACKUP_S3_B2_KEY_ID` / `BACKUP_S3_B2_SECRET`, then delete the old
+key in Backblaze → **Application Keys**.
+
+### 18. Keep the backup key somewhere safe (2 min)
+Without `BACKUP_KEY`, the off-site copies can never be decrypted, and if you lost the Railway
+account you'd lose the key with it.
+1. Railway → app service → **Variables** → `BACKUP_KEY` → reveal and copy it.
+2. Save it in your password manager as "Verdesakay off-site backup key", and keep a second copy
+   offline (printed, in a safe). Never put it in the repo or a chat.
+
+### 19. Check everything (1 min)
+`railway ssh`, then:
+```
+npm run backup:health     # "Backups are healthy." or a list of problems
+npm run backup:drill      # restores every off-site copy into a temp file and checks it
+```
+The owner console (`/_platform`) shows each workspace's last backup and whether its last restore
+drill passed.
+
+### Settings you can change
+| Variable | Default | What it does |
+|---|---|---|
+| `BACKUP_ALERT_WEBHOOK` | none | Where problem / recovery alerts go (ntfy, Discord, Slack) |
+| `BACKUP_DRILL_DAYS` | 30 | Days between restore drills (a failed drill retries the next day) |
+| `BACKUP_STALE_HOURS` | 26 | Alert when a database has no snapshot / no off-site copy for this long |
+| `BACKUP_ALERT_REPEAT_HOURS` | 12 | Repeat an unresolved alert this often |
+| `ACTIVITY_LOG_RETENTION_DAYS` | 1827 (5 years) | How long the audit trail is kept (minimum 31) |
