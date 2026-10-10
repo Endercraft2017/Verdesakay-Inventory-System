@@ -28,18 +28,20 @@ App.register('hr-employees', async (view) => {
 
   view.innerHTML = `
     <div class="topbar">
-      <h2>Employees</h2>
+      <div><h2>Employees</h2><div class="sub">Employee records, department assignments, pay and schedules.</div></div>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="emp-search" placeholder="Search name…" /></div>
-      <select id="emp-dept-filter" style="margin-left:8px"><option value="">All departments</option></select>
-      <select id="emp-status-filter" style="margin-left:8px">
+      ${canManage ? `<button class="btn secondary" id="emp-no-settings" title="Employee numbering format" aria-label="Employee numbering format">${UI.icon('settings', 15)}</button>` : ''}
+      ${canManage ? `<button class="btn secondary" id="emp-import" title="Create or update employees from a CSV file">${UI.icon('upload')} Import</button>` : ''}
+      ${canManage ? `<button class="btn" id="emp-new">${UI.icon('plus')} New Employee</button>` : ''}
+    </div>
+    <div class="hr-filters hr-employee-filters">
+      <div class="search-box search"><label class="hr-sr-only" for="emp-search">Search employees</label>${UI.icon('search', 16)}<input id="emp-search" placeholder="Search name…" /></div>
+      <div class="fld"><label for="emp-dept-filter">Department</label><select id="emp-dept-filter"><option value="">All departments</option></select></div>
+      <div class="fld"><label for="emp-status-filter">Status</label><select id="emp-status-filter">
         <option value="">All statuses</option>
         ${Object.keys(STATUS_LABELS).map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join('')}
-      </select>
-      ${canManage ? `<button class="btn secondary" id="emp-no-settings" style="margin-left:8px" title="Employee numbering format">${UI.icon('settings', 15)}</button>` : ''}
-      ${canManage ? `<button class="btn secondary" id="emp-import" style="margin-left:8px" title="Create or update employees from a CSV file">${UI.icon('upload')} Import</button>` : ''}
-      ${canManage ? `<button class="btn danger small" id="emp-remove-selected" style="margin-left:8px" hidden>${UI.icon('trash')} Remove selected</button>` : ''}
-      ${canManage ? `<button class="btn" id="emp-new" style="margin-left:8px">${UI.icon('plus')} New Employee</button>` : ''}
+      </select></div>
+      ${canManage ? `<button class="btn danger small" id="emp-remove-selected" hidden>${UI.icon('trash')} Remove selected</button>` : ''}
     </div>
     <div class="panel"><div id="emp-table"></div></div>`;
 
@@ -387,7 +389,7 @@ App.register('hr-employees', async (view) => {
           </div>
 
           <div data-formpanel="basic" class="form-panel">
-            <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px">
+            <div class="hr-employee-identity">
               <div style="text-align:center">
                 <img id="emp-photo-preview" src="${UI.esc(photoData || PLACEHOLDER_PHOTO)}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:1px solid var(--border-strong)" />
                 <div style="margin-top:6px">
@@ -518,7 +520,7 @@ App.register('hr-employees', async (view) => {
               payslip and drops them from that fund's remittance schedule. An override replaces the computed
               amount with a fixed peso figure whenever its checkbox stays on (SSS/PhilHealth/Pag-IBIG still
               split across cutoffs the normal way; leave blank to keep using the computed table amount).</p>
-            <div style="display:grid;grid-template-columns:160px 1fr;gap:10px 12px;align-items:center">
+            <div class="hr-deduction-grid">
               <div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase">Fund</div>
               <div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase">Override amount</div>
               ${[

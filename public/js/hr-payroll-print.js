@@ -170,7 +170,7 @@ function buildSlipContext(d) {
 
 function renderSlip(d, templateBody) {
   if (!d) return '<div></div>';
-  return _renderTemplate()(templateBody, buildSlipContext(d));
+  return _renderTemplate()(templateBody || FALLBACK_BODY, buildSlipContext(d));
 }
 
 /** Wraps one rendered slip in the outer (fixed-height, overflow:hidden — the actual grid item)

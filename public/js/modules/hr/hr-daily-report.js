@@ -147,7 +147,7 @@ App.register('hr-daily-report', async (view, filter) => {
       cancelText: 'Close',
       confirmText: null,
       bodyHTML: list.length
-        ? groupedTableHTML(list)
+        ? `<div class="hr-table-scroll">${groupedTableHTML(list)}</div>`
         : UI.emptyState({ icon: 'users', title: `Nobody is ${meta.label.toLowerCase()}` }),
     });
   }

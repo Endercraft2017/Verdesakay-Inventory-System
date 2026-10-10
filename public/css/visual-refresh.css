@@ -109,3 +109,133 @@
   from { opacity: 0; transform: translateY(7px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* HR audit: a consistent section treatment also covers HR-owned forms and dialogs. */
+@media screen {
+  .main[data-section='hr'] > .topbar {
+    padding: 20px 22px; border: 1px solid var(--border); border-radius: 16px;
+    background: linear-gradient(115deg, var(--surface), var(--ambient)); box-shadow: var(--card-shadow);
+  }
+  .main[data-section='hr'] > .topbar > div:not(.grow) { min-width: 0; }
+  .main[data-section='hr'] .topbar h2 { overflow-wrap: anywhere; }
+  .main[data-section='hr'] .topbar > :is(select, input) { width: auto; max-width: 100%; flex: 0 1 240px; }
+  .main[data-section='hr'] .hr-filters,
+  .main[data-section='hr'] .tk-roster-filters,
+  .main[data-section='hr'] .dr-toolbar {
+    background: var(--surface-highlight); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 16px;
+  }
+  .main[data-section='hr'] .panel > :is(.hr-filters, .tk-roster-filters) { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; margin-bottom: 0; }
+  .main[data-section='hr'] .hr-tools { border-radius: 12px; box-shadow: var(--shadow-sm); }
+  .main[data-section='hr'] [hidden], .modal-overlay[data-section='hr'] [hidden] { display: none !important; }
+  .main[data-section='hr'] :is(.grid-2, .panel, .cards) { min-width: 0; }
+  .main[data-section='hr'] .cards { grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); }
+  .main[data-section='hr'] .stat-card { gap: 12px; padding: 18px 16px; }
+  .main[data-section='hr'] .stat-card .stat-ic { width: 40px; height: 40px; }
+  .main[data-section='hr'] .stat-card .label { line-height: 1.4; }
+  .main[data-section='hr'] :is(#cr-body, #fb-forms-table, #fr-table), .hr-table-scroll { max-width: 100%; overflow-x: auto; }
+  .main[data-section='hr'] table td { font-variant-numeric: tabular-nums; }
+  .main[data-section='hr'] table .actions { white-space: nowrap; }
+  .hr-asset-filters { padding: 16px; margin-bottom: 0 !important; border-bottom: 1px solid var(--border); background: var(--surface-highlight); }
+  .hr-summary-body { min-height: 240px; max-height: 380px; overflow-y: auto; }
+  #hr-flags-head { align-items: center; }
+  #hr-flags-period { flex: 1 1 220px; min-width: 0; margin-right: 0 !important; }
+  .dr-asof { line-height: 1.6; }
+  .main[data-section='hr'] .dr-footnote { background: var(--surface-2); border: 1px solid var(--border); padding: 12px 16px; border-radius: 12px; line-height: 1.7; margin-top: 0; }
+  .main[data-section='hr'] .kiosk { grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); }
+  .main[data-section='hr'] .kiosk-main { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 22px; box-shadow: var(--card-shadow); min-width: 0; }
+  .main[data-section='hr'] .kiosk-side { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; min-width: 0; }
+  .main[data-section='hr'] .kiosk-visual { max-width: 100%; }
+  .main[data-section='hr'] .kiosk-form input { flex: 1 1 180px; min-width: 0; width: auto; }
+  .modal-overlay[data-section='hr'] { z-index: 150; }
+  .modal-overlay[data-section='hr'] .modal { display: flex; flex-direction: column; overflow: hidden; }
+  .modal-overlay[data-section='hr'] .modal-head { flex-wrap: wrap; background: linear-gradient(115deg, var(--surface-highlight), var(--surface-2)); flex-shrink: 0; }
+  .modal-overlay[data-section='hr'] .modal-head h3 { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+  .modal-overlay[data-section='hr'] .modal-head-actions { flex-wrap: wrap; max-width: 100%; }
+  .modal-overlay[data-section='hr'] .modal-body { overflow: auto; min-height: 0; overflow-wrap: anywhere; }
+  .modal-overlay[data-section='hr'] .modal-foot { flex-shrink: 0; flex-wrap: wrap; background: var(--surface-highlight); }
+  .modal-overlay[data-section='hr'] .form-tabs { background: var(--surface-2); padding: 6px; border: 1px solid var(--border); border-radius: 12px; gap: 4px; }
+  .modal-overlay[data-section='hr'] .form-tab { white-space: normal; }
+  .modal-overlay[data-section='hr'] .form-tab.active { background: var(--surface); box-shadow: var(--shadow-sm); }
+  .modal-overlay[data-section='hr'] .form-panel > label:first-child { margin-top: 0; }
+  .hr-employee-identity { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 14px; }
+  .hr-employee-identity > div { min-width: 0; }
+  .hr-deduction-grid { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr); gap: 10px 12px; align-items: center; }
+  .modal-overlay[data-section='hr'] .hr-contact-row { align-items: baseline; padding: 12px 0 !important; }
+  .modal-overlay[data-section='hr'] #pd-slip { color-scheme: light; }
+  @media (max-width: 1100px) {
+    .main[data-section='hr'] .kiosk { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 600px) {
+    .main[data-section='hr'] > .topbar { padding: 18px; gap: 10px; }
+    .main[data-section='hr'] > .topbar > div:not(.grow) { flex: 1 1 100%; }
+    .main[data-section='hr'] > .topbar .grow { display: none; }
+    .main[data-section='hr'] .hr-filters .fld { width: 100%; }
+    .main[data-section='hr'] .hr-filters .fld select { flex: 1; }
+    .main[data-section='hr'] .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .main[data-section='hr'] .stat-card { flex-direction: column; align-items: flex-start; padding: 14px; gap: 8px; }
+    .main[data-section='hr'] .stat-card .value { font-size: 25px; }
+    .main[data-section='hr'] .kiosk-main { padding: 16px; }
+    .modal-overlay[data-section='hr'] { padding: 10px; }
+    .modal-overlay[data-section='hr'] .modal { max-height: calc(100dvh - 20px); border-radius: 16px; }
+    .modal-overlay[data-section='hr'] :is(.modal-head, .modal-body, .modal-foot) { padding: 16px; }
+    .hr-employee-identity { flex-direction: column; gap: 12px; }
+    .hr-employee-identity > div { width: 100%; }
+    .hr-employee-identity > div:first-child { display: flex; align-items: center; gap: 12px; text-align: left !important; }
+    .hr-employee-identity > div:first-child > div { display: flex; flex-wrap: wrap; gap: 6px; }
+    .hr-deduction-grid { grid-template-columns: minmax(100px, 1fr) minmax(0, 1fr); }
+    .modal-overlay[data-section='hr'] .hr-contact-row { flex-direction: column; gap: 4px !important; }
+    .modal-overlay[data-section='hr'] .hr-contact-row > span { text-align: left !important; }
+    #hr-req-toggle { flex-wrap: wrap; }
+  }
+}
+@media screen {
+  .modal-overlay[data-section='hr'] :is(#tk-shifts-list, #tk-ded-schedule) { max-width: 100%; overflow-x: auto; }
+  @media (max-width: 900px) {
+    .workspace:has(.main[data-section='hr']) { grid-template-columns: minmax(0, 1fr); }
+    .workspace:has(.main[data-section='hr']) > :is(.tree, .rail) { min-width: 0; max-width: 100%; }
+    .main[data-section='hr'] { padding: 20px 16px; }
+  }
+}
+@media screen {
+  .modal-overlay[data-section='hr'] .modal-body > table { display: block; max-width: 100%; overflow-x: auto; }
+  .modal-overlay[data-section='hr'] table:has(#asset-rows) { width: 100%; }
+  .modal-overlay[data-section='hr'] table:has(#asset-rows) :is(th, td) { min-width: 110px; }
+  @media (max-width: 600px) {
+    .main[data-section='hr'] > .hr-hero > .hr-hero-icon { flex: 0 0 46px; }
+    .main[data-section='hr'] > .hr-hero > div:last-child { flex: 1 1 180px; }
+  }
+}
+@media screen {
+  .modal-overlay[data-section='hr'] .line-table { min-width: 560px; overflow-wrap: normal; }
+  .modal-overlay[data-section='hr'] .line-table th { white-space: nowrap; }
+  .modal-overlay[data-section='hr'] .tk-daily-table { min-width: 1100px; }
+  .modal-overlay[data-section='hr'] .modal-body:has(#pd-slip) .line-items table { min-width: 1000px; }
+}
+@media screen {
+  /* Anchor clipped accessible labels; a label in a scrolled roster cell must not
+     create a second scrollbar on the document itself. */
+  .main[data-section='hr'] .hr-sr-only,
+  .modal-overlay[data-section='hr'] .hr-sr-only { top: 0; left: 0; }
+}
+@media screen {
+  .main[data-section='hr'] :is(#emp-table, #cv-body, #as-body, #cr-body, #fb-forms-table, #fr-table) table { min-width: 720px; }
+  .main[data-section='hr'] #dr-body table { min-width: 680px; }
+  .modal-overlay[data-section='hr'] .modal-body table { overflow-wrap: normal; }
+  .modal-overlay[data-section='hr'] .modal-body table th { white-space: nowrap; }
+  .modal-overlay[data-section='hr'] :is(.hr-contact-history, .hr-table-scroll) table { min-width: 640px; }
+}
+@media screen {
+  .main[data-section='hr'] .cards { grid-template-columns: repeat(auto-fit, minmax(min(155px, 100%), 1fr)); }
+  .modal-overlay[data-section='hr'] .modal-body div:has(> table) { max-width: 100%; overflow-x: auto; }
+  @media (max-width: 600px) {
+    .main[data-section='hr'] .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .main[data-section='hr'] > .topbar.hr-hero > .hr-hero-icon { flex: 0 0 46px; width: 46px; }
+    .main[data-section='hr'] > .topbar.hr-hero > div:last-child { flex: 1 1 180px; }
+  }
+}
+@media screen {
+  .hr-overview-panels { margin-bottom: 20px; align-items: stretch; }
+  .hr-overview-panels > .panel { display: flex; flex-direction: column; }
+  .hr-overview-panels .hr-summary-body { flex: 1; }
+}

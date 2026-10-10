@@ -21,6 +21,7 @@ function loadModule() {
   const docTemplateExports = loadFile('doc-template.js', requireForDocTemplate);
   const requireForPrint = (p: string) => (p === './doc-template.js' ? docTemplateExports : loadFile(p, requireForPrint));
   return loadFile('hr-payroll-print.js', requireForPrint) as {
+    renderSlip: (data: Record<string, unknown>, templateBody?: string) => string;
     buildPayrollSlipsHtml: (data: unknown[], templateBody?: string) => string;
     buildSlipContext: (d: Record<string, unknown>) => Record<string, string>;
     FALLBACK_BODY: string;
@@ -28,7 +29,7 @@ function loadModule() {
   };
 }
 
-const { buildPayrollSlipsHtml, buildSlipContext, FALLBACK_BODY, _fitScale } = loadModule();
+const { renderSlip, buildPayrollSlipsHtml, buildSlipContext, FALLBACK_BODY, _fitScale } = loadModule();
 
 const CUSTOM_BODY = '<div class="slip">{{employee_name}} | earn {{total_earnings}} | ded {{total_deductions}} | net {{net_pay}}</div>';
 
@@ -174,5 +175,16 @@ describe('_fitScale', () => {
 
   it('treats a zero/negative box height as unmeasured (not yet laid out) rather than dividing by it', () => {
     expect(_fitScale(200, 0)).toBeNull();
+  });
+});
+
+
+describe('single payslip detail preview', () => {
+  it('renders the fallback when the configured template is unavailable', () => {
+    const html = renderSlip(emp());
+    expect(html).toContain('EMPLOYEE PAYROLL SLIP');
+    expect(html).toContain('Dela Cruz, Juan');
+    expect(html).toContain('NET PAY: 7,626.20');
+    expect(html).not.toContain('{{');
   });
 });

@@ -71,6 +71,11 @@ const UI = (() => {
     const root = document.getElementById('modal-root');
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
+    // Keep visual styling attached to the section when dialogs render outside #view.
+    const view = document.getElementById('view');
+    if (view && (view.dataset.section === 'hr' || /^hr(?:-|$)/.test(view.dataset.route || ''))) {
+      overlay.dataset.section = 'hr';
+    }
     overlay.innerHTML = `
       <div class="modal${opts.size ? ' ' + opts.size : ''}">
         <div class="modal-head">

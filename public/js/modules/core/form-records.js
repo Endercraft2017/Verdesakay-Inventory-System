@@ -56,6 +56,7 @@ function formCardHTML(f) {
 
 /* ── Form index: pick which form to open, grouped by the section that owns it ────── */
 async function renderIndex(view, onlyScope) {
+  if (onlyScope === 'hr') view.dataset.section = 'hr';
   const heading = onlyScope
     ? `${FORM_RECORDS_SCOPE_LABELS[onlyScope] || onlyScope} Forms`
     : 'Data Forms';
@@ -144,6 +145,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     return;
   }
 
+  // HR records retain the section's visual treatment even when opened by form id.
+  if (formDef.scope === 'hr') view.dataset.section = 'hr';
   const isPayroll = formDef.slug === 'hr_payroll';
   const canManagePayroll = isPayroll && App.hasPermission('payroll.manage');
   // Any other form with a linked print template gets the same "Print All"/"Print selected"

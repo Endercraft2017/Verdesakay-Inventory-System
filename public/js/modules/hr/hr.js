@@ -225,7 +225,7 @@ App.register('hr', async (view) => {
       bodyHTML: records.length
         ? `<div style="margin:-4px -4px 0">${records.map((r, i) => `
             <button type="button" class="clickable" data-pick="${i}"
-              style="display:flex;width:100%;align-items:center;gap:12px;padding:11px 8px;border:none;background:none;text-align:left;font:inherit;cursor:pointer;border-bottom:1px solid var(--border-strong)">
+              style="display:flex;width:100%;align-items:center;gap:12px;padding:11px 8px;border:none;background:none;color:var(--text);text-align:left;font:inherit;cursor:pointer;border-bottom:1px solid var(--border-strong)">
               <div style="flex:1;min-width:0">
                 <div style="font-weight:600">${UI.esc(r.data.employee_name || r.number)}</div>
                 <div class="muted" style="font-size:12px">${UI.esc(r.number)}${r.data.date_from ? ` · ${UI.esc(r.data.date_from)}${r.data.date_to && r.data.date_to !== r.data.date_from ? ` – ${UI.esc(r.data.date_to)}` : ''}` : ''}</div>
@@ -306,14 +306,14 @@ App.register('hr', async (view) => {
 
     ${todayHTML}
 
-    <div class="grid-2" style="margin-bottom:20px;align-items:start">
+    <div class="grid-2 hr-overview-panels">
       <div class="panel">
         <div class="panel-head" style="flex-wrap:wrap;row-gap:8px">
           <h3>Requests</h3>
           <div class="grow"></div>
           <div id="hr-req-toggle" style="display:flex;gap:4px">${reqToggleHTML()}</div>
         </div>
-        <div id="hr-req-body" style="height:420px;overflow-y:auto">${reqBodyHTML()}</div>
+        <div id="hr-req-body" class="hr-summary-body">${reqBodyHTML()}</div>
       </div>
       <div class="panel">
         <div class="panel-head" id="hr-flags-head" style="flex-wrap:wrap;row-gap:8px">
@@ -325,7 +325,7 @@ App.register('hr', async (view) => {
           Possible half day with no request linked, OT worked with no request filed, or a day
           with only one of time-in/time-out — flagged for the cutoff selected above.
         </p>
-        <div id="hr-flags-body" style="height:420px;overflow-y:auto;margin-top:8px">${flagsBodyHTML()}</div>
+        <div id="hr-flags-body" class="hr-summary-body">${flagsBodyHTML()}</div>
       </div>
     </div>
 
