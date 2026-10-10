@@ -16,7 +16,7 @@ const due = '2099-12-31';
 
 async function newTenant(slug: string) {
   await ctx.api.post('/_platform/api/tenants').set(opHdr())
-    .send({ slug, name: slug.toUpperCase(), admin_username: 'owner', admin_password: 'ownerpass1', plan: 'starter' });
+    .send({ slug, name: slug.toUpperCase(), admin_username: 'owner', admin_password: 'ownerpass1', admin_email: `${slug}@example.test`, plan: 'starter' });
   const r = await ctx.api.post('/api/auth/login').set(asTenant(slug)).send({ username: 'owner', password: 'ownerpass1' });
   tenantTok[slug] = r.body.token;
 }

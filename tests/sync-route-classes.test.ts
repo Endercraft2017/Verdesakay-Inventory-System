@@ -38,6 +38,8 @@ const NO_CLASS_NEEDED: Record<string, string> = {
   'src/platform/platform.routes.ts:patch /tenants/:slug/support/:id': 'cloud-only owner support records in platform.db',
   'src/platform/platform.routes.ts:post /tenants/:slug/support/:id/replies': 'cloud-only owner ticket replies in platform.db',
   'src/platform/signup.routes.ts:post /': 'cloud sign-up',
+  'src/platform/platform.routes.ts:post /tenants/:slug/reset-owner-password': 'cloud console',
+  'src/platform/platform.routes.ts:post /tenants/:slug/recover-owner-username': 'cloud console',
   'src/platform/billing-console.routes.ts:put /billing/settings': 'cloud-only billing in platform.db',
   'src/platform/billing-console.routes.ts:post /billing/settings/gcash-qr': 'cloud-only billing in platform.db',
   'src/platform/billing-console.routes.ts:delete /billing/settings/gcash-qr': 'cloud-only billing in platform.db',

@@ -138,7 +138,7 @@ describe('with GCash and a price list', () => {
 
   it('a workspace the owner creates is usable straight away', async () => {
     const r = await ctx.api.post('/_platform/api/tenants').set(opHdr())
-      .send({ name: 'Console Made', slug: 'consolemade', admin_username: 'owner', admin_password: 'secret1', plan: 'starter' });
+      .send({ name: 'Console Made', slug: 'consolemade', admin_username: 'owner', admin_password: 'secret1', admin_email: 'owner@consolemade.test', plan: 'starter' });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     expect(r.body.awaiting_payment).toBe(false);
     const h = await tenantLogin('consolemade');
