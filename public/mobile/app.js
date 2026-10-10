@@ -423,7 +423,7 @@ window.MApp = (function () {
         .then(function (res) {
           API.setToken(res.token, { shared: shared });
           if (sharedBox) sharedBox.checked = false;
-          enterApp(res.user);
+          return API.get('/auth/me').then(function (profile) { enterApp(profile.user); });
         })
         .catch(function (ex) {
           err.textContent = ex.message || 'Sign in failed';

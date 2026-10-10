@@ -135,6 +135,7 @@ it('a delegate approves only their department, and HR receives the decision with
         .send({ user_ids: [delegate.id] })
     ).status,
   ).toBe(200);
+  expect((await ctx.api.get('/api/auth/me').set(hdr(delegate.token))).body.user.can_approve).toBe(true);
   const id = await file(filer),
     other = await file(outsider);
   const inbox = await ctx.api.get('/api/me/approvals').set(hdr(delegate.token));
@@ -185,6 +186,7 @@ it('a delegate approves only their department, and HR receives the decision with
         .send({ user_ids: [] })
     ).status,
   ).toBe(200);
+  expect((await ctx.api.get('/api/auth/me').set(hdr(delegate.token))).body.user.can_approve).toBe(false);
   const next = await file(filer);
   expect(
     (
@@ -427,4 +429,41 @@ it('self-filers cannot substitute another employee identity, and employees can w
   expect(
     (await ctx.api.post(`/api/me/requests/${behalf.body.id}/cancel`).set(hdr(filer.token))).status,
   ).toBe(404);
+});
+it('self-file request types omit approval fields and employees cannot inject overtime approval', async () => {
+  const user = await member();
+  const definitions = await ctx.api.get('/api/form-definitions').set(hdr());
+  const overtime = definitions.body.find((f: any) => f.slug === 'overtime_request');
+  const created = await (overtime ? ctx.api.put('/api/form-definitions/' + overtime.id) : ctx.api.post('/api/form-definitions')).set(hdr()).send({
+    name: 'Workflow Overtime', slug: 'overtime_request', scope: 'hr', number_prefix: 'WOT', icon: 'clock',
+    fields: [{ key: 'reason', label: 'Reason', type: 'textarea', required: true }, { key: 'approved_hours', label: 'Approved hours', type: 'number' }, { key: 'approved_by', label: 'Approved by', type: 'text' }],
+  });
+  expect(created.status).toBe(overtime ? 200 : 201);
+  const formId = overtime?.id || created.body.id;
+  const types = await ctx.api.get('/api/me/request-types').set(hdr(user.token));
+  const fields = types.body.find((f: any) => f.id === formId).fields;
+  expect(fields.map((f: any) => f.key)).toEqual(['reason']);
+  const request = await ctx.api.post('/api/form-records').set(hdr(user.token)).send({ form_def_id: formId, data: { employee_name: user.username, work_date: '2026-04-01', reason: 'Extra work', approved_hours: 99, approved_by: 'HR', decided_by: 'HR', decision_note: 'Pretend approved' } });
+  expect(request.status).toBe(201);
+  const stored = JSON.parse(queryOne<{ data: string }>('SELECT data FROM form_records WHERE id = ?', request.body.id)!.data);
+  expect(stored.reason).toBe('Extra work');
+  expect(stored.approved_hours).toBeUndefined();
+  expect(stored.approved_by).toBeUndefined();
+  expect(stored.decision_note).toBeUndefined();
+});
+it.each(['pending', 'rejected', 'cancelled'])('a linked %s leave request does not authorize pay', async status => {
+  const user = await member(), p = await cutoff(user), id = await file(user, 1);
+  if (status === 'rejected') await ctx.api.post(`/api/me/approvals/requests/${id}/decide`).set(hdr()).send({ decision: 'rejected' });
+  if (status === 'cancelled') await ctx.api.post(`/api/me/requests/${id}/cancel`).set(hdr(user.token));
+  await ctx.api.put(`/api/hr/periods/${p}/attendance`).set(hdr()).send({ employee_id: user.employeeId, days: [{ work_date: '2026-04-01', form_record_id: id }] });
+  const gen = await ctx.api.post(`/api/hr/periods/${p}/generate-payslips`).set(hdr()).send({ payroll_period: `Approval check ${p}` });
+  expect(gen.status).toBe(201);
+  const rows = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: gen.body.period }).set(hdr());
+  expect(rows.body[0].data.basic_salary).toBe(0);
+  if (status === 'pending') {
+    expect((await ctx.api.post(`/api/me/approvals/requests/${id}/decide`).set(hdr()).send({ decision: 'approved' })).status).toBe(200);
+    await ctx.api.post(`/api/hr/periods/${p}/generate-payslips`).set(hdr()).send({ payroll_period: gen.body.period });
+    const approved = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: gen.body.period }).set(hdr());
+    expect(approved.body[0].data.basic_salary).toBe(500);
+  }
 });

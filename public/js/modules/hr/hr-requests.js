@@ -119,7 +119,7 @@ App.register('hr-requests', async (view, filter) => {
       title: fixes ? 'Attendance correction' : r.form_name,
       cancelText: 'Close',
       bodyHTML: `<p>Status: ${UI.esc(r.status)}</p>${Object.entries(data)
-        .filter(([, v]) => v != null && v !== '')
+        .filter(([k, v]) => v != null && v !== '' && !['employee_id', 'decided_by'].includes(k))
         .map(
           ([k, v]) =>
             `<div class="tool-row"><strong>${UI.esc(k.replace(/_/g, ' '))}</strong><span>${UI.esc(String(v))}</span></div>`,

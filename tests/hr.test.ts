@@ -5,13 +5,22 @@ import { setupApp, cleanup, login, createEmployee, type TestContext } from './he
 
 let ctx: TestContext;
 let token: string;
+let reviewerToken: string;
 const hdr = () => ({ Authorization: `Bearer ${token}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
+  await ctx.api.post('/api/users').set(hdr()).send({ username: 'payroll-reviewer', full_name: 'Payroll Reviewer', password: 'payroll-reviewer-pass', role: 'admin' });
+  reviewerToken = await login(ctx.api, 'payroll-reviewer', 'payroll-reviewer-pass');
 });
 afterAll(() => cleanup(ctx));
+
+/** Payroll fixtures use the same explicit approval path as HR rather than creation status. */
+async function approveRequestFixture(id: number) {
+  const r = await ctx.api.post('/api/me/approvals/requests/' + id + '/decide').set({ Authorization: 'Bearer ' + reviewerToken }).send({ decision: 'approved', override_balance: true, note: 'Payroll test fixture reviewed' });
+  expect(r.status).toBe(200);
+}
 
 describe('hr', () => {
   it('requires authentication', async () => {
@@ -689,6 +698,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
 
     const otRecord = await ctx.api.post('/api/form-records').set(hdr())
       .send({ form_def_id: overtimeFormId, data: { employee_name: 'Compute Test Employee' }, status: 'approved' });
+    await approveRequestFixture(otRecord.body.id);
 
     await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
       employee_id: emp.body.id,
@@ -753,6 +763,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
 
     const leaveRecord = await ctx.api.post('/api/form-records').set(hdr())
       .send({ form_def_id: leaveFormId, data: { employee_name: 'Leave Test Employee', with_pay: 'Yes' }, status: 'approved' });
+    await approveRequestFixture(leaveRecord.body.id);
 
     await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
       employee_id: emp.body.id,
@@ -1334,6 +1345,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
 
     const otRecord = await ctx.api.post('/api/form-records').set(hdr())
       .send({ form_def_id: overtimeFormId, data: { employee_name: 'Detail Test Employee' }, status: 'approved' });
+    await approveRequestFixture(otRecord.body.id);
 
     await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
       employee_id: emp.body.id,
@@ -1716,6 +1728,7 @@ describe('generate-payslips — holiday_adjacency_requirement end to end', () =>
       data: { employee_name: 'Adjacency Before Leave Employee', with_pay: 'Yes' },
       status: 'approved',
     });
+    await approveRequestFixture(leaveForm.body.id);
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Adjacency Before Leave Cutoff', start_date: '2025-12-31', end_date: '2026-01-01' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -2162,6 +2175,7 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
       data: { employee_name: 'Half Day PM Employee', date: '2026-08-05', session: 'Afternoon (PM)', reason: 'Personal' },
       status: 'approved',
     });
+    await approveRequestFixture(halfdayRecord.body.id);
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-HALFDAY-PM', name: 'Half Day PM Employee', daily_rate: 800 });
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -2256,6 +2270,7 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
       data: { employee_name: 'Offset Employee', work_date: '2026-08-08', new_time_out: '19:00', reason: 'Arrived late, agreed to stay later' },
       status: 'approved',
     });
+    await approveRequestFixture(offsetRecord.body.id);
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-OFFSET', name: 'Offset Employee', daily_rate: 800 }); // hourly = 100
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -2288,6 +2303,7 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
       data: { employee_name: 'Full Offset Employee', work_date: '2026-08-10', new_time_in: '10:00', new_time_out: '19:00', reason: 'Whole shift moved 2hrs later' },
       status: 'approved',
     });
+    await approveRequestFixture(offsetRecord.body.id);
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-FULLOFFSET', name: 'Full Offset Employee', daily_rate: 800 });
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -2318,6 +2334,7 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
       data: { employee_name: 'Undertime Paid Employee', work_date: '2026-08-09', with_pay: 'Yes', reason: 'Documented emergency' },
       status: 'approved',
     });
+    await approveRequestFixture(undertimeRecord.body.id);
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-UNDERTIME-PAID', name: 'Undertime Paid Employee', daily_rate: 800 });
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -2387,6 +2404,7 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
       data: { employee_name: 'Days Half Employee', date: '2026-08-12', session: 'Morning (AM)', reason: 'Personal' },
       status: 'approved',
     });
+    await approveRequestFixture(halfdayRecord.body.id);
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-DAYSHALF', name: 'Days Half Employee', daily_rate: 800 });
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -2416,11 +2434,13 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
       data: { employee_name: 'Multi Form Employee', date: '2026-08-14', session: 'Morning (AM)', reason: 'Personal' },
       status: 'approved',
     });
+    await approveRequestFixture(half.body.id);
     const ot = await ctx.api.post('/api/form-records').set(hdr()).send({
       form_def_id: otFormId,
       data: { employee_name: 'Multi Form Employee', work_date: '2026-08-14', reason: 'Coverage' },
       status: 'approved',
     });
+    await approveRequestFixture(ot.body.id);
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-MULTIFORM', name: 'Multi Form Employee', daily_rate: 800 }); // hourly = 100
     const period = await ctx.api.post('/api/hr/periods').set(hdr())

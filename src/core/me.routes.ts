@@ -1,3 +1,4 @@
+import { REQUEST_SLUGS } from '../modules/hr/request-policy';
 /** Employee self-service — everything scoped to the caller's own linked employee
  *  record. Mounted at /api/me. Any logged-in user; endpoints 403 if the account
  *  isn't linked to an `employees` row. */
@@ -194,12 +195,7 @@ router.get('/schedule', (req, res) => {
 });
 
 /** Slugs an employee may self-file from mobile. */
-export const REQUEST_SLUGS = [
-  'leave_request', 'overtime_request', 'undertime_request', 'halfday_request', 'offset_form',
-  'lunch_offset_form', 'holiday_work_request', 'travel_order', 'coe_request',
-  'reimbursement_request', 'loan_application', 'training_request', 'incident_report',
-  'information_change', 'rest_day_work_request', 'rest_day_change',
-];
+export { REQUEST_SLUGS } from '../modules/hr/request-policy';
 
 // GET /api/me/request-types — the HR request forms available to file
 router.get('/request-types', (_req, res) => {
@@ -215,7 +211,9 @@ router.get('/request-types', (_req, res) => {
     // meant to be set by whoever approves the request (HR, when linking it to an attendance
     // day), not handed to the employee filing it, so it's stripped out of the self-file form
     // even though it's a normal field everywhere else (Data Forms, Daily Time's own quick-add).
-    const visibleFields = r.slug === 'overtime_request' ? fields.filter((f) => f.key !== 'approved_hours') : fields;
+    const internalFields = ['employee_id', 'approved_by', 'decided_by', 'decided_at', 'decision_note'];
+    if (r.slug === 'overtime_request') internalFields.push('approved_hours');
+    const visibleFields = fields.filter((f) => !internalFields.includes(f.key));
     return { ...r, fields: visibleFields };
   }));
 });

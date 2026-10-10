@@ -596,7 +596,7 @@ App.register('form-builder', async (view, filter) => {
       el.innerHTML = `<div class="muted" style="text-align:center;padding:12px">No fields yet — add one above.</div>`;
       return;
     }
-    const typeOptions = ['text', 'number', 'date', 'select', 'textarea', 'checkbox', 'employee']
+    const typeOptions = ['text', 'number', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee']
       .map((t) => `<option value="${t}">${t === 'employee' ? 'employee (dropdown)' : t}</option>`).join('');
 
     el.innerHTML = `<table class="line-table"><thead><tr>

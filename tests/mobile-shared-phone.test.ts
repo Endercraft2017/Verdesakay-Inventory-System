@@ -61,6 +61,7 @@ async function boot(opts: { storage?: Record<string, string>; respond?: Responde
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://localhost/m' });
   const win = dom.window as unknown as Record<string, any>;
   const calls: Call[] = [];
+  let authenticatedUser: unknown;
   win.matchMedia = win.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   win.indexedDB = fakeIndexedDB();
   if (opts.online === false) Object.defineProperty(win.navigator, 'onLine', { get: () => false });
@@ -68,7 +69,9 @@ async function boot(opts: { storage?: Record<string, string>; respond?: Responde
   win.fetch = (url: string, init: any = {}) => {
     const body = init.body ? JSON.parse(init.body) : undefined;
     calls.push({ url: String(url), headers: init.headers || {}, body });
-    const out = opts.respond ? opts.respond(String(url), body) : undefined;
+    let out = opts.respond ? opts.respond(String(url), body) : undefined;
+    if (String(url).endsWith('/auth/login') && out) authenticatedUser = (out as any).user;
+    if (String(url).endsWith('/auth/me') && out === undefined && authenticatedUser) out = { user: authenticatedUser };
     if (out === undefined) return Promise.reject(new Error('no network in test'));
     return Promise.resolve({
       ok: true, status: 200,
@@ -193,4 +196,14 @@ describe('mobile shared-phone safety', () => {
     expect(win.localStorage.getItem('vds_identified_report_draft')).toBeNull();
     expect(win.localStorage.getItem('vds_device_id')).toBeTruthy();
   });
+});
+
+it('fresh mobile login loads the linked employee profile before enabling HR requests', async () => {
+  const profile = { ...EMP(9), modules: ['hr', 'mobile'], permissions: ['mobile.access'], employee: { id: 4, name: 'Linked Employee' } };
+  const { win, calls } = await boot({ respond: url => url.endsWith('/auth/login') ? { token: 'employee-token', user: { ...profile, employee: undefined } } : url.endsWith('/auth/me') ? { user: profile } : undefined });
+  await signInVia(win);
+  expect(calls.some(c => c.url.endsWith('/auth/me') && c.headers.Authorization === 'Bearer employee-token')).toBe(true);
+  expect(win.MApp.getMe().employee.id).toBe(4);
+  expect(win.MApp.isEmployee()).toBe(true);
+  win.close();
 });

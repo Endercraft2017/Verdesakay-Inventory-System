@@ -1489,7 +1489,7 @@ export interface AttendanceRecord {
 export interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox' | 'employee';
+  type: 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox' | 'employee';
   required: boolean;
   options: string[];  // only for type = 'select'
   default: string;

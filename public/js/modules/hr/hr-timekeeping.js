@@ -1877,8 +1877,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     // on a day in some other cutoff (keep it).
     const loadedFormIds = new Set(days.flatMap((d) => d._formIds));
 
-    // "Make a new form" — the fields that actually drive payroll for each request type; the
-    // record is created approved and linked to this day in one step (POST /form-records).
+    // "Make a new form" — the configured form fields plus payroll-specific fields. Requests
+    // remain pending until a department approver or HR decides them.
     const MAKE_FORM_TYPES = [
       { slug: 'halfday_request', label: 'Half Day', dateKey: 'date', fields: [
         { key: 'session', label: 'Session', type: 'select', options: ['Morning (AM)', 'Afternoon (PM)'], required: true },
@@ -1924,6 +1924,22 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         { key: 'new_rest_day', label: 'New rest day', type: 'date', required: true },
       ] },
     ];
+
+    // Preserve configured details (including custom fields); only employee identity and the
+    // selected attendance date are supplied by this grid. Approval metadata is server-owned.
+    MAKE_FORM_TYPES.forEach((type) => {
+      const def = holidayForms.find((form) => form.slug === type.slug);
+      const supplied = ['employee_id', 'employee_name', 'employee_no', 'name', 'department', 'position', type.dateKey,
+        'approved_by', 'decided_by', 'decided_at', 'decision_note'];
+      if (type.slug === 'leave_request') supplied.push('date_to', 'days');
+      const fields = new Map(type.fields.map((field) => [field.key, field]));
+      (def && Array.isArray(def.fields) ? def.fields : []).forEach((field) => {
+        if (!supplied.includes(field.key)) fields.set(field.key, { ...fields.get(field.key), ...field });
+      });
+      if (!fields.has('reason')) fields.set('reason', { key: 'reason', label: 'Reason', type: 'textarea' });
+      fields.set('reason', { ...fields.get('reason'), required: true, type: 'textarea' });
+      type.fields = [...fields.values()];
+    });
 
     // Same two-layer resolution as the payroll engine (hr-payroll-compute.ts via hr.routes.ts)
     // — a per-record override wins, else the Company Holidays calendar, else not a holiday —
@@ -1974,7 +1990,6 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       <option value="no" ${selected === 'no' ? 'selected' : ''}>Working day</option>`;
 
     // Rest-day forms only count once approved (same rule as payroll — src/modules/hr/rest-day.ts).
-    const REST_DAY_FORM_SLUGS = ['rest_day_work_request', 'rest_day_change'];
     const isApprovedLink = (l) => l.status === 'approved';
     // Mirror of restDaySwapsFor: an approved Change of Rest Day linked on ANY day of this grid
     // (saved or not) moves the rest day for both of its dates. A swap the server found through a
@@ -2075,7 +2090,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     }
 
     function possibleHalfDayFlagged(d) {
-      if ((d._links || []).length) return false; // a linked form (Half Day, Undertime…) already says what the day was
+      if ((d._links || []).some(l => isApprovedLink(l) || l.slug === 'reported_absence')) return false; // a linked form (Half Day, Undertime…) already says what the day was
       if (d.half_day_override) return false; // HR already manually credited this day a half day
       if (rosterRow.always_whole_day) return false; // always paid a whole day — never a half day
       const workedMin = workedMinutesFor(d);
@@ -2351,7 +2366,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             // Explicit "Half Day" identifier — the linked-form badge in the last column already
             // names the form, but doesn't stand out as a distinct DAY TYPE the way the holiday/
             // rest-day tags above it do, so a half day was easy to miss at a glance.
-            const hdLink = (d._links || []).find((l) => l.slug === 'halfday_request');
+            const hdLink = (d._links || []).find((l) => l.slug === 'halfday_request' && isApprovedLink(l));
             const halfDayTag = hdLink
               ? `<span class="badge-pill status-confirmed" title="Judged against just this half's own AM/PM window, not the full shift">Half Day${hdLink.session ? ` (${hdLink.session.startsWith('After') ? 'PM' : 'AM'})` : ''}</span>`
               : d.half_day_override
@@ -2379,7 +2394,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
               <td><select data-k="rest_day" title="Override this one day/employee — leave at Default to inherit the weekly rest-day pattern. Use for a rest day that moves week to week.">${restDayOptions(d.rest_day)}</select></td>
               <td><input data-k="notes" value="${UI.esc(d.notes || '')}" placeholder="optional" /></td>
               <td>
-                ${(d._links || []).map((l, li) => `<span class="badge-pill" data-unlink="${i}" data-unlink-idx="${li}" title="Click to unlink" style="cursor:pointer;margin:1px 2px 1px 0;display:inline-block">${UI.esc(l.label)}${REST_DAY_FORM_SLUGS.includes(l.slug) && !isApprovedLink(l) ? ` · ${UI.esc(l.status || 'pending')}` : ''} ✕</span>`).join('')}
+                ${(d._links || []).map((l, li) => `<span class="badge-pill" data-unlink="${i}" data-unlink-idx="${li}" title="Click to unlink" style="cursor:pointer;margin:1px 2px 1px 0;display:inline-block">${UI.esc(l.label)}${l.slug !== 'reported_absence' && !isApprovedLink(l) ? ` · ${UI.esc(l.status || 'pending')}` : ''} ✕</span>`).join('')}
                 <button type="button" class="icon-btn" data-link="${i}" title="Link or create an OT/Half Day/Leave/Undertime/Offset/Reported/Rest Day form — a day can have more than one">${UI.icon('plus', 14)}</button>
               </td>
             </tr>`;
@@ -2448,7 +2463,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             });
           });
 
-          const typeOpts = MAKE_FORM_TYPES.map((t) => `<option value="${t.slug}">${UI.esc(t.label)}</option>`).join('');
+          const typeOpts = MAKE_FORM_TYPES.filter(t => defs.some(def => def.slug === t.slug)).map((t) => `<option value="${t.slug}">${UI.esc(t.label)}</option>`).join('');
           const m2 = UI.modal({
             title: `Link a form — ${rosterRow.name} · ${day.work_date}`,
             headActionHTML: `<button type="button" class="btn secondary small" id="tk-link-goto">${UI.icon('forms', 14)} Data Forms</button>`,
@@ -2463,7 +2478,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 : `<p class="muted" style="font-size:12.5px;margin:2px 0">No unlinked OT/Half Day/Leave/Undertime/Offset/Reported/Rest Day records for ${UI.esc(rosterRow.name)}.</p>`}
               <hr style="margin:14px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
               <div style="font-weight:600;margin-bottom:2px">Make a new form</div>
-              <p class="muted" style="font-size:12px;margin:2px 0 8px">Created approved for ${UI.esc(rosterRow.name)} on ${day.work_date} and linked to this day.</p>
+              <p class="muted" style="font-size:12px;margin:2px 0 8px">Filed for ${UI.esc(rosterRow.name)} on ${day.work_date} and linked to this day. Requests stay pending until approved. Leave here covers this day only (1 day).</p>
               <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
                 <div><label style="font-size:12px">Type</label><select id="mf-type"><option value="">Choose…</option>${typeOpts}</select></div>
               </div>
@@ -2476,6 +2491,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
               ov2.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
                 const o = options[Number(b.dataset.pick)];
                 day._formIds.push(o.record.id);
+                ov.__markDirty?.();
                 day._links.push({ id: o.record.id, label: `${o.form.name} ${o.record.number}`, slug: o.form.slug, session: (o.record.data && o.record.data.session) || null, status: o.record.status, data: o.record.data || {} });
                 m2.close();
                 renderRows();
@@ -2489,7 +2505,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 const t = MAKE_FORM_TYPES.find((x) => x.slug === typeSel.value);
                 errEl.textContent = '';
                 if (!t) { fieldsEl.innerHTML = ''; createBtn.disabled = true; return; }
-                createBtn.disabled = false;
+                createBtn.disabled = !App.hasPermission('forms.manage.hr');
+                if (createBtn.disabled) errEl.textContent = 'Creating HR forms requires HR form-management access.';
                 // Overtime: offer Early OT only when this day's time-in is 1 h+ before the shift
                 // start; the hint below re-computes as the tick / approved hours change.
                 const earlyMin = t.detectOt ? earlyMinutesFor(day) : 0;
@@ -2504,12 +2521,15 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                   : '';
                 fieldsEl.innerHTML = hintHtml + t.fields.map((f) => {
                   const lbl = `<label style="font-size:12px">${UI.esc(f.label)}${f.required ? ' *' : ''}</label>`;
-                  if (f.type === 'select') {
-                    return `<div>${lbl}<select data-mf="${f.key}"><option value="">—</option>${f.options.map((o) => `<option value="${UI.esc(o)}">${UI.esc(o)}</option>`).join('')}</select></div>`;
+                  if (f.type === 'select' || f.type === 'employee') {
+                    return `<div>${lbl}<select data-mf="${f.key}"><option value="">—</option>${(f.options || []).map((o) => { const value = typeof o === 'object' ? o.value || o.id || o.label || o.name : o; const label = typeof o === 'object' ? o.label || o.name || value : o; return `<option value="${UI.esc(String(value))}">${UI.esc(String(label))}</option>`; }).join('')}</select></div>`;
                   }
+                  if (f.type === 'textarea') return `<div style="flex-basis:100%">${lbl}<textarea data-mf="${f.key}" rows="3"></textarea></div>`;
+                  if (f.type === 'checkbox') return `<div>${lbl}<input type="checkbox" data-mf="${f.key}" style="width:auto" /></div>`;
                   const inputType = f.type === 'number' ? 'number' : f.type === 'time' ? 'time' : f.type === 'date' ? 'date' : 'text';
                   return `<div>${lbl}<input type="${inputType}" data-mf="${f.key}" ${f.type === 'number' ? 'min="0" step="0.5"' : ''} /></div>`;
                 }).join('');
+                t.fields.forEach(f => { const el = fieldsEl.querySelector(`[data-mf="${f.key}"]`); if (el && f.default != null && f.default !== '') { if (el.type === 'checkbox') el.checked = f.default === true || f.default === 'Yes'; else el.value = f.default; } });
                 if (t.detectOt) {
                   const earlyBox = fieldsEl.querySelector('#mf-early-ot');
                   const approvedInp = fieldsEl.querySelector('[data-mf="approved_hours"]');
@@ -2529,16 +2549,19 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 const def = defs.find((d) => d.slug === t.slug);
                 if (!def) { errEl.textContent = `The "${t.label}" form isn't set up in Data Forms.`; return; }
                 const data = {
+                  employee_id: employeeId,
                   employee_name: rosterRow.name,
+                  employee_no: rosterRow.employee_no || '',
+                  position: rosterRow.position || '',
                   department: rosterRow.department_name || rosterRow.department || '',
-                  reason: 'Filed from Time Keeping',
                 };
                 data[t.dateKey] = day.work_date;
                 if (t.slug === 'leave_request') { data.date_to = day.work_date; data.days = 1; }
                 for (const f of t.fields) {
                   const el = ov2.querySelector(`[data-mf="${f.key}"]`);
-                  const v = el ? el.value.trim() : '';
+                  const v = el ? (el.type === 'checkbox' ? (el.checked ? 'Yes' : 'No') : el.value.trim()) : '';
                   if (f.required && !v) { errEl.textContent = `${f.label} is required.`; return; }
+                  if (v && f.type === 'number' && !Number.isFinite(Number(v))) { errEl.textContent = `${f.label} must be a valid number.`; return; }
                   if (v) data[f.key] = f.type === 'number' ? Number(v) : v;
                 }
                 // Early OT tick (only rendered on a day timed in 1 h+ early) — read by payroll.
@@ -2546,16 +2569,18 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 if (t.slug === 'overtime_request') data.early_ot = !!(earlyBox && earlyBox.checked);
                 // Leave: the payroll engine treats a leave day as paid only when with_pay==='Yes'
                 // — infer it from the leave type so a leave made here computes correctly.
-                if (t.slug === 'leave_request') data.with_pay = data.leave_type === 'Unpaid Leave' ? 'No' : 'Yes';
+                if (t.slug === 'leave_request') data.with_pay = data.leave_type === 'Unpaid Leave' ? 'No' : (data.with_pay || 'Yes');
                 if (t.slug === 'rest_day_change' && data.new_rest_day === data.original_rest_day) {
                   errEl.textContent = 'The new rest day must be a different date.'; return;
                 }
                 createBtn.disabled = true;
                 try {
-                  const res = await API.post('/form-records', { form_def_id: def.id, data, status: 'approved' });
+                  const status = def.slug === 'reported_absence' ? 'approved' : 'pending';
+                  const res = await API.post('/form-records', { form_def_id: def.id, data, status });
                   day._formIds.push(res.id);
-                  day._links.push({ id: res.id, label: `${def.name} ${res.number || ''}`.trim(), slug: def.slug, session: data.session || null, status: 'approved', data });
-                  UI.toast(`${def.name} ${res.number || ''} created & linked${['leave_request','overtime_request','undertime_request','halfday_request','offset_form','lunch_offset_form','holiday_work_request','rest_day_work_request','rest_day_change'].includes(def.slug) ? ' — pending approval' : ''}`);
+                  ov.__markDirty?.();
+                  day._links.push({ id: res.id, label: `${def.name} ${res.number || ''}`.trim(), slug: def.slug, session: data.session || null, status, data });
+                  UI.toast(`${def.name} ${res.number || ''} created — save Daily Time to keep the link${['leave_request','overtime_request','undertime_request','halfday_request','offset_form','lunch_offset_form','holiday_work_request','rest_day_work_request','rest_day_change'].includes(def.slug) ? ' — pending approval' : ''}`);
                   m2.close();
                   renderRows();
                 } catch (err) {

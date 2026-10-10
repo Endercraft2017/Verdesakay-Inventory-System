@@ -1191,7 +1191,7 @@ export const templateSchema = z.object({
 // 'employee' renders as a live dropdown of current employees (never a stale, form-design-time
 // options list) — its stored value is still just the employee's name, the same plain string
 // convention every other form already relies on (e.g. matching attendance to a form record).
-const fieldTypeEnum = z.enum(['text', 'number', 'date', 'select', 'textarea', 'checkbox', 'employee']);
+const fieldTypeEnum = z.enum(['text', 'number', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee']);
 
 export const fieldDefSchema = z.object({
   key: trimmed.min(1).max(64).regex(/^[a-z0-9_]+$/, 'Key must be lowercase letters, numbers, or underscores'),

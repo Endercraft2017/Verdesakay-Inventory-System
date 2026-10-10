@@ -1,3 +1,4 @@
+import { effectiveHrForm } from './request-policy';
 /** HR: Employees master list (201 file: status, statutory numbers, photo, documents) +
     Time Keeping (cutoff periods with daily time-in/out), wired to generate records in the
     existing "HR Payroll" form so the existing print pipeline (form-records.js /
@@ -34,7 +35,7 @@ import {
 import type { Employee, EmployeeDocument, AttendancePeriod, FormDefinition, FormRecord, Shift, PayrollPolicy, EmployeeNumberPolicy, AssetIssuance, AssetIssuanceItem } from '../../shared/types';
 import { computeAttendanceMultiRate, computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../payroll/hr-payroll-compute';
 import { classifyDailyStatus } from './hr-daily-report';
-import { restDaySwapsFor, resolveRestDay, REST_DAY_FORM_SLUGS } from './rest-day';
+import { restDaySwapsFor, resolveRestDay } from './rest-day';
 import { suggestEmployeeNumber } from './hr-employee-numbering';
 import { toCsv } from '../../shared/csv';
 import { resolveImport, importLoop } from '../../shared/csv-import';
@@ -1504,13 +1505,13 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
       ? (safeParseIdArray(ar.form_record_ids).length ? safeParseIdArray(ar.form_record_ids)
         : ar.form_record_id ? [ar.form_record_id] : [])
       : [];
-    // Same filter attendanceDaysFor applies for payroll: a pending rest-day form changes nothing.
+    // Same filter attendanceDaysFor applies for payroll: a pending request changes nothing.
     const linkedForms = linkedIds.length
       ? queryAll<{ slug: string; data: string; status: string }>(
           `SELECT fd.slug, fr.data, fr.status FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
            WHERE fr.id IN (${linkedIds.map(() => '?').join(',')})`,
           ...linkedIds
-        ).filter((f) => !(REST_DAY_FORM_SLUGS.includes(f.slug) && f.status !== 'approved'))
+        ).filter((f) => effectiveHrForm(f.slug, f.status))
       : [];
     const linkedSlugs = linkedForms.map((f) => f.slug);
     const onLeave = linkedSlugs.includes('leave_request');
@@ -1781,11 +1782,11 @@ function notifyUnrecordedOt(
       const ids = d.form_record_ids && d.form_record_ids.length ? d.form_record_ids : d.form_record_id ? [d.form_record_id] : [];
       const linkedForms: NonNullable<AttendanceDay['linkedForms']> = [];
       for (const id of ids) {
-        const fr = queryOne<{ data: string; slug: string }>(
-          `SELECT fr.data, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+        const fr = queryOne<{ data: string; slug: string; status: string }>(
+          `SELECT fr.data, fd.slug, fr.status FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
           id
         );
-        if (fr) { try { linkedForms.push({ slug: fr.slug, data: JSON.parse(fr.data) }); } catch { /* skip */ } }
+        if (fr && effectiveHrForm(fr.slug, fr.status)) { try { linkedForms.push({ slug: fr.slug, data: JSON.parse(fr.data) }); } catch { /* skip */ } }
       }
       const mins = unrecordedOtMinutes(
         {
@@ -1973,8 +1974,8 @@ function attendanceDaysForEmployee(
        WHERE fr.id IN (${allFormIds.map(() => '?').join(',')})`,
       ...allFormIds
     ).forEach((f) => {
-      // Rest-day forms count only once approved; a pending one linked early changes nothing.
-      if (REST_DAY_FORM_SLUGS.includes(f.slug) && f.status !== 'approved') return;
+      // Requests count only once approved; linking one early does not authorize payroll.
+      if (!effectiveHrForm(f.slug, f.status)) return;
       try { formById.set(f.id, { slug: f.slug, data: JSON.parse(f.data || '{}') }); } catch { /* skip unparseable */ }
     });
   }

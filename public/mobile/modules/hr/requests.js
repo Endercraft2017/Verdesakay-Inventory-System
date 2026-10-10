@@ -120,7 +120,7 @@
     var host = shell(view, '46:692', r.form_name, r.number || 'Request details', function () { list(view); });
     var data = r.data || {};
     var fields = Object.keys(data).filter(function (key) {
-      return data[key] != null && String(data[key]).trim() !== '' && typeof data[key] !== 'object' && key !== 'decision_note';
+      return data[key] != null && String(data[key]).trim() !== '' && typeof data[key] !== 'object' && ['decision_note', 'employee_id', 'decided_by'].indexOf(key) < 0;
     });
     var current = statusLabel(r.status);
     var isPending = r.status === 'pending' || r.status === 'draft' || r.status === 'review';
@@ -219,10 +219,11 @@
     return { data: data, missing: missing };
   }
 
-  function form(view, type, prefillDate) {
+  function form(view, type, prefillDate, draft) {
     MApp.setTitle(type.name);
     var host = shell(view, '46:663', 'New ' + type.name.toLowerCase(), 'Complete the details, then review before submitting', function () { pickType(view); });
     var employee = (MApp.getMe() || {}).employee || {};
+    if (!employee.id) { host.innerHTML = '<div class="m-empty">Your account is not linked to an employee record. Ask HR to link your account before filing requests.</div>'; return; }
     var autofill = { employee_name: employee.name, name: employee.name, department: employee.department_name, position: employee.position, employee_no: employee.employee_no };
     var fields = (type.fields || []).filter(function (field) { return !autofill[field.key]; });
     var meta = TYPE_META[type.slug] || { guide: 'This request will be routed for the required approval.' };
@@ -238,9 +239,10 @@
 
     (type.fields || []).forEach(function (field) {
       var input = formEl.querySelector('[data-k="' + field.key + '"]');
-      if (input && field.default != null && field.default !== '' && input.type !== 'checkbox') input.value = field.default;
+      var value = draft && draft[field.key] != null ? draft[field.key] : field.default;
+      if (input && value != null && value !== '') { if (input.type === 'checkbox') input.checked = value === true || value === 'Yes'; else input.value = value; }
     });
-    if (prefillDate) {
+    if (prefillDate && !draft) {
       var dateInput = formEl.querySelector('[data-k="work_date"]') || formEl.querySelector('[data-k="date"]');
       if (dateInput) dateInput.value = prefillDate;
     }
@@ -261,7 +263,7 @@
         if (input) input.focus();
         return;
       }
-      review(view, type, result.data, function () { form(view, type, prefillDate); });
+      review(view, type, result.data, function () { form(view, type, prefillDate, result.data); });
     };
   }
 

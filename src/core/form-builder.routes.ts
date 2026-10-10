@@ -353,6 +353,12 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
     else { delete input.data.employee_id; }
   }
 
+  if (REQUEST_SLUGS.includes(form.slug)) {
+    // Filing is not approval: decision metadata belongs to the decision endpoint.
+    for (const key of ['approved_by', 'decided_by', 'decided_at', 'decision_note']) delete input.data[key];
+    if (selfFile && form.slug === 'overtime_request') delete input.data.approved_hours;
+  }
+
   let recordId: number;
   let number: string;
   db.exec('BEGIN');

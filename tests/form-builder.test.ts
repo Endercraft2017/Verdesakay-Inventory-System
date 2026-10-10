@@ -610,3 +610,12 @@ describe('hr payroll csv import', () => {
     };
   }
 });
+it('supports editable time fields used by HR offset requests', async () => {
+  const form = { name: 'Time field test', slug: 'time_field_test', number_prefix: 'TFT', scope: 'hr', fields: [{ key: 'new_time_out', label: 'New time out', type: 'time', required: true }] };
+  const created = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send(form);
+  expect(created.status).toBe(201);
+  const saved = await ctx.api.get(`/api/form-definitions/${created.body.id}`).set(hdr(adminToken));
+  expect(saved.body.fields[0].type).toBe('time');
+  const updated = await ctx.api.put(`/api/form-definitions/${created.body.id}`).set(hdr(adminToken)).send({ ...form, name: 'Updated time field test' });
+  expect(updated.status).toBe(200);
+});

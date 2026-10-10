@@ -439,3 +439,46 @@ describe('Ordinary form records are unaffected', () => {
     expect(q(view, '#fr-bulk-del')).not.toBeNull();
   });
 });
+
+it.each(['leave_request', 'halfday_request', 'offset_form', 'overtime_request', 'undertime_request', 'lunch_offset_form', 'rest_day_work_request', 'rest_day_change', 'reported_absence'])('Timekeeping %s retains configured details, requires a reason and shows its real status', async (slug) => {
+  const form = { id: 40, slug, name: 'Configured request', fields: [{ key: 'reason', label: 'Reason', type: 'textarea', required: true }, { key: 'contact', label: 'Contact during absence', type: 'text', required: true }] };
+  const { win, view, routes } = boot(TK_SRC, ['hr.view', 'hr.manage', 'forms.manage.hr'], p => {
+    if (p.includes('/attendance?')) return [{ work_date: '2026-03-02', time_in: '08:00', time_out: '17:00', notes: '' }];
+    if (p === '/hr/payroll-policy') return { default_rest_days: [0, 6] };
+    if (p === '/form-definitions') return [form];
+    return periodGet(p);
+  });
+  const modals: HTMLElement[] = [];
+  const posts: any[] = [];
+  win.API.post = async (path: string, body: any) => { posts.push({ path, body }); return { id: 50, number: 'REQ-50' }; };
+  win.__UI.modal = (options: any) => {
+    const overlay = win.document.createElement('div');
+    overlay.innerHTML = (options.headActionHTML || '') + options.bodyHTML;
+    win.document.body.appendChild(overlay);
+    modals.push(overlay);
+    options.onOpen?.(overlay);
+    return { overlay, close() { overlay.remove(); } };
+  };
+  await routes['hr-timekeeping']!(view, { period_id: 7 });
+  q(view, '.hr-row-open')!.click();await flush();
+  q(modals[0]!, '[data-link]')!.click();await flush();
+  const modal = modals[1]!;
+  setValue(q(modal, '#mf-type'), slug, 'change');
+  expect(q(modal, 'textarea[data-mf="reason"]')).not.toBeNull();
+  expect(q(modal, '[data-mf="contact"]')).not.toBeNull();
+  for (const input of qa(modal, '[data-mf]') as HTMLInputElement[]) {
+    if (input.dataset.mf === 'reason') continue;
+    input.value = input.type === 'select-one' ? (input as unknown as HTMLSelectElement).options[1]!.value : input.type === 'date' ? '2026-03-03' : input.type === 'time' ? '18:00' : input.type === 'number' ? '1' : 'Emergency contact';
+  }
+  q(modal, '#mf-create')!.click();await flush();
+  expect(posts).toHaveLength(0);
+  expect(q(modal, '#mf-err')!.textContent).toContain('Reason is required');
+  setValue(q(modal, '[data-mf="reason"]'), 'Medical appointment');
+  q(modal, '#mf-create')!.click();await flush();
+  expect(posts).toHaveLength(1);
+  expect(posts[0].body.data).toMatchObject({ employee_id: 11, employee_name: 'Ana Cruz', reason: 'Medical appointment', contact: 'Emergency contact' });
+  expect(posts[0].body.status).toBe(slug === 'reported_absence' ? 'approved' : 'pending');
+  if (slug === 'leave_request') expect(posts[0].body.data).toMatchObject({ date_from: '2026-03-02', date_to: '2026-03-02', days: 1 });
+  if (slug === 'halfday_request') expect(qa(modals[0]!, '.badge-pill.status-confirmed').some(b => b.textContent?.includes('Half Day (AM)'))).toBe(false);
+  win.close();
+});

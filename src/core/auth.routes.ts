@@ -1,3 +1,4 @@
+import { approverDepartmentIds } from '../modules/hr/workflow';
 /** Authentication routes: login, logout, current user, self password change, password reset,
  *  and the caller's own sessions ("Where you're signed in" — list / end one / end the others). */
 import crypto from 'node:crypto';
@@ -109,9 +110,8 @@ router.get('/me', requireAuth, (req, res) => {
     req.user!.id
   );
   // Whether to show the mobile "To Approve" tile: any hr.manage holder, or the
-  // registered head of at least one department.
-  const headsDept = queryOne('SELECT 1 AS x FROM departments WHERE head_user_id = ?', req.user!.id);
-  const canApprove = req.user!.permissions.includes('hr.manage') || !!headsDept;
+  // registered head or appointed delegate of at least one department.
+  const canApprove = req.user!.permissions.includes('hr.manage') || approverDepartmentIds(req.user!.id).length > 0;
   res.json({
     user: {
       ...req.user, role_label: getRole(req.user!.role)?.label ?? req.user!.role,
