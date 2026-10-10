@@ -303,6 +303,7 @@ const App = (() => {
 
     // Render the view.
     const view = document.getElementById('view');
+    view.dataset.route = name;
     view.innerHTML = '<div class="empty">Loading…</div>';
     Promise.resolve(routes[name](view, filter)).catch((e) => {
       view.innerHTML = `<div class="empty">Failed to load: ${UI.esc(e.message)}</div>`;

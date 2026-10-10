@@ -289,8 +289,9 @@ App.register('hr', async (view) => {
     : '';
 
   view.innerHTML = `
-    <div class="topbar">
-      <div><h2>Human Resources</h2>
+    <div class="topbar hr-hero">
+      <div class="hr-hero-icon" aria-hidden="true">${UI.icon('users', 30)}</div>
+      <div><div class="hr-eyebrow">People &amp; workplace</div><h2>Human Resources</h2>
       <div class="sub">A live look at who's in today and what's waiting on you.</div></div>
     </div>
 
@@ -319,12 +320,12 @@ App.register('hr', async (view) => {
       </div>
     </div>
 
-    <div class="panel" style="padding:24px">
-      <h3 style="margin:0 0 14px">Modules</h3>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:14px">
+    <div class="panel hr-modules">
+      <h3>Modules</h3>
+      <div class="hr-module-grid">
         ${MODULES.map((m, i) => `
-          <div class="${m.action ? 'clickable' : ''}" data-mod="${i}" style="border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:18px;background:var(--surface-2)">
-            <div style="color:var(--text-faint);margin-bottom:10px">${UI.icon(m.icon, 26)}</div>
+          <div class="hr-module-card ${m.action ? 'clickable' : ''}" data-mod="${i}">
+            <div class="hr-module-icon">${UI.icon(m.icon, 24)}</div>
             <div style="font-weight:600;margin-bottom:4px">${UI.esc(m.title)}</div>
             <div class="muted" style="font-size:12.5px">${UI.esc(m.hint)}</div>
             ${!m.action ? '<span class="badge-pill muted" style="margin-top:8px;display:inline-block">Coming soon</span>' : ''}
