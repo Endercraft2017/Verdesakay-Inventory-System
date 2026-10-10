@@ -67,7 +67,9 @@ const App = (() => {
     document.getElementById('login-password').value = '';
   }
 
-  async function showApp() {
+  /** `departmentsReq`: the department list, already requested by the caller (boot starts it
+      alongside /auth/me so a page load waits one round trip less). */
+  async function showApp(departmentsReq) {
     loginScreen().classList.add('hidden');
     appScreen().classList.remove('hidden');
 
@@ -76,7 +78,7 @@ const App = (() => {
     document.getElementById('me-dept').textContent = me.department_name || 'No dept';
     document.getElementById('me-avatar').textContent = UI.initials(me.full_name);
 
-    try { departments = await API.get('/users/departments/list'); } catch { departments = []; }
+    try { departments = await (departmentsReq || API.get('/users/departments/list')); } catch { departments = []; }
 
     renderPrimaryNav(); // (re)build chrome; honours admin-only visibility
     // The AI Assistant bubble is a per-tenant feature module.
@@ -165,26 +167,23 @@ const App = (() => {
     });
   }
 
+  /** Rail badges: messages, notifications and (admins) open bug reports — fetched together,
+      not one after another, so a refresh costs one round trip. */
   async function refreshUnread() {
-    try {
-      const { count } = await API.get('/messages/unread-count');
-      const badge = document.getElementById('msg-badge');
+    const setBadge = (id, count) => {
+      const badge = document.getElementById(id);
       if (badge) {
         badge.textContent = count;
         badge.classList.toggle('hidden', !count);
       }
-    } catch { /* ignore */ }
-    refreshNotificationBadge();
-    if (hasPermission('users.manage')) {
-      try {
-        const { count } = await API.get('/bug-reports/open-count');
-        const bugBadge = document.getElementById('bug-badge');
-        if (bugBadge) {
-          bugBadge.textContent = count;
-          bugBadge.classList.toggle('hidden', !count);
-        }
-      } catch { /* ignore */ }
-    }
+    };
+    await Promise.all([
+      API.get('/messages/unread-count').then(({ count }) => setBadge('msg-badge', count)).catch(() => {}),
+      refreshNotificationBadge(),
+      hasPermission('users.manage')
+        ? API.get('/bug-reports/open-count').then(({ count }) => setBadge('bug-badge', count)).catch(() => {})
+        : null,
+    ]);
   }
 
   /* ---------- Nav-config helpers ---------- */
@@ -562,10 +561,12 @@ const App = (() => {
 
     // Resume session if token present.
     if (API.getToken()) {
+      const departmentsReq = API.get('/users/departments/list');
+      departmentsReq.catch(() => {}); // awaited (and its failure handled) in showApp
       try {
         const { user } = await API.get('/auth/me');
         me = user;
-        await showApp();
+        await showApp(departmentsReq);
         return;
       } catch { API.clearToken(); }
     }

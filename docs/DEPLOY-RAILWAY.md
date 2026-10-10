@@ -31,6 +31,17 @@ Commit and push the branch you want to run to GitHub.
 Railway → **New Project → Deploy from GitHub repo** → choose this repo, then under the
 service's **Settings → Source** pick the branch.
 
+**Region: Southeast Asia (Singapore, `asia-southeast1-eqsg3a`).** The users are in the
+Philippines; every request pays the round trip to the server, and from the Philippines US West
+cost 300–540 ms per request against ~100–170 ms for Singapore (measured 2026-10-10, when the
+live service was moved there from `sfo`). The app itself answers in a few ms either way. A
+service with a volume moves region only by migrating the volume (downtime while it copies):
+take `npm run backup` + a Railway volume backup first, then change the region and redeploy.
+
+Caching in front of the app: Cloudflare (orange cloud on `otom.afkcube.com`) compresses and,
+for the desktop shell, caches the content-versioned `?v=<hash>` scripts/styles at its edge
+(`src/shared/asset-version.ts`: those are `immutable`, everything else `no-cache`).
+
 ### 3. Add a volume (required)
 SQLite lives on disk, so **without a volume every redeploy wipes all data.**
 Service → right-click / **+ → Volume**, attach it to the service, mount path **`/data`**.

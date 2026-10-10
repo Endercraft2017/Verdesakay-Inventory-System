@@ -107,6 +107,10 @@ maintenance, backups and `migrate:all` skip the retired source. Operational cuto
 and recovery: `docs/VERDESAKAY-TENANT-CUTOVER.md`. Paths share a browser origin;
 these namespaces do not replace authentication or sanitization.
 
+App shell caching (`src/shared/asset-version.ts`, shared utility): the desktop shell names each
+script/style `?v=<content hash>`; a matching request is `immutable` (browser + Cloudflare edge),
+anything else `no-cache`. The phone shell keeps plain URLs for its service-worker precache.
+
 ## sync/ — offline-first replication (partial)
 
 Design: `docs/OFFLINE-FIRST.md` (§10 = what is built). Infrastructure, not a business module: it

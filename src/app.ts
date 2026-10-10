@@ -64,6 +64,7 @@ import { requireModule, moduleEnabled } from './shared/modules';
 import { BEHIND_PROXY } from './shared/hosting';
 import { installSync, replayTenantOf, syncRequestMiddleware, syncRoutes } from './sync';
 import desktopRoutes from './desktop/desktop.routes';
+import { versionAssetUrls, staticCacheControl } from './shared/asset-version';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -235,8 +236,10 @@ export function createApp() {
       return sendJson(body);
     };
     res.on('finish', () => {
-      if (req.path.startsWith('/api')) {
-        console.log(`${req.method} ${req.path} -> ${res.statusCode} (${Date.now() - start}ms)`);
+      // analyticsPath, not req.path: by 'finish' a mounted router has rewritten req.url to its
+      // own sub-path, so req.path no longer starts with /api for anything but app-level routes.
+      if (analyticsPath.startsWith('/api')) {
+        console.log(`${req.method} ${String(res.locals.tenantBase || '')}${analyticsPath} -> ${res.statusCode} (${Date.now() - start}ms)`);
       }
       if (analyticsSlug !== 'default' && analyticsPath.startsWith('/api/')
         && !analyticsPath.startsWith('/api/sync') && analyticsPath !== '/api/health'
@@ -352,7 +355,9 @@ export function createApp() {
   function sendAppShell(res: Response, mobile: boolean): void {
     const base = String(res.locals.tenantBase || '');
     const file = path.join(ROOT, 'public', mobile ? 'mobile/index.html' : 'index.html');
-    const html = fs.readFileSync(file, 'utf8').replace(/<head>/i,
+    const raw = fs.readFileSync(file, 'utf8');
+    // Desktop only: the phone app's service worker caches the plain URLs (src/shared/asset-version.ts).
+    const html = (mobile ? raw : versionAssetUrls(raw, path.join(ROOT, 'public'))).replace(/<head>/i,
       `<head><script>window.VDS_BASE_PATH=${JSON.stringify(base)};</script>`)
       .replace(/\b(src|href)="\/(?!\/)/g, `$1="${base}/`);
     res.set('Cache-Control', 'no-cache').type('html').send(html);
@@ -371,16 +376,16 @@ export function createApp() {
 
   // Static assets (css/js/images and the mobile/* bundle). `index: false` so that
   // "/" falls through to the SPA fallback below, where device detection runs.
-  // Cache-Control: no-cache (NOT no-store) — the browser still keeps the response and can
-  // reuse it, but must always revalidate with the server first (a fast 304 via the ETag/
-  // Last-Modified express.static already sends when nothing changed). Without this, some
-  // browsers apply their own heuristic freshness window and serve a stale JS/CSS file for a
-  // while after a real edit even on an ordinary reload — no build step here means every
-  // change is meant to be live on the next request, so nothing should ever look "stuck" a
-  // step behind what was actually just deployed.
+  // A request naming the file's current content hash (`?v=`, written into the desktop shell by
+  // sendAppShell) is immutable: the browser and the CDN keep it until the file changes, which
+  // changes its URL. Anything else is no-cache (NOT no-store) — the browser keeps the response
+  // but revalidates first (a fast 304 via the ETag/Last-Modified express.static sends), so
+  // with no build step an edit is still live on the next request. See src/shared/asset-version.ts.
   app.use(express.static(path.join(ROOT, 'public'), {
     index: false,
-    setHeaders: (res) => res.set('Cache-Control', 'no-cache'),
+    setHeaders: (res, filePath) => {
+      res.setHeader('Cache-Control', staticCacheControl(filePath, (res as Response).req?.query?.v));
+    },
   }));
 
   // SPA fallback + mobile routing.

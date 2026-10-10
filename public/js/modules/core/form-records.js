@@ -893,6 +893,14 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     if (state.status) params.set('status', state.status);
     if (state.period) params.set('period', state.period);
     if (isPayroll) view.querySelector('#fr-filter-reset').hidden = !(state.q || state.status || state.period);
+    // Payroll's two side lists don't depend on the records, so all three go out together.
+    const periodSel = isPayroll ? view.querySelector('#fr-period') : null;
+    const periodsReq = periodSel
+      ? API.get('/form-definitions/' + formId + '/periods').catch(() => null) // non-critical
+      : null;
+    // Only needed for the grouped "All periods" bundle view below — skip the extra request
+    // otherwise (a single period selected already scopes everything, no grouping to do).
+    const periodsMetaReq = isPayroll && !state.period ? API.get('/hr/periods').catch(() => []) : null;
     let records;
     try {
       records = await API.get('/form-definitions/' + formId + '/records?' + params.toString());
@@ -912,22 +920,13 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     selectedIds.clear();
     updateBulkBar();
     // Refresh the period dropdown with known periods (preserving selection).
-    if (isPayroll) {
-      const periodSel = view.querySelector('#fr-period');
-      if (periodSel) {
-        try {
-          const periods = await API.get('/form-definitions/' + formId + '/periods');
-          const cur = state.period;
-          periodSel.innerHTML = '<option value="">All periods</option>' +
-            periods.map((p) => `<option value="${UI.esc(p)}" ${p === cur ? 'selected' : ''}>${UI.esc(p)}</option>`).join('');
-        } catch { /* non-critical */ }
-      }
-      // Only needed for the grouped "All periods" bundle view below — skip the extra request
-      // otherwise (a single period selected already scopes everything, no grouping to do).
-      if (!state.period) {
-        periodsMeta = await API.get('/hr/periods').catch(() => []);
-      }
+    const periods = await periodsReq;
+    if (periodSel && periods) {
+      const cur = state.period;
+      periodSel.innerHTML = '<option value="">All periods</option>' +
+        periods.map((p) => `<option value="${UI.esc(p)}" ${p === cur ? 'selected' : ''}>${UI.esc(p)}</option>`).join('');
     }
+    if (periodsMetaReq) periodsMeta = await periodsMetaReq;
     renderRecords(records);
   }
 
