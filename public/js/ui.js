@@ -69,6 +69,9 @@ const UI = (() => {
        size ('lg'|'xl'), headActionHTML (raw HTML placed left of the close button) } */
   function modal(opts) {
     const root = document.getElementById('modal-root');
+    const previousFocus = document.activeElement;
+    let dirty = false;
+    let saving = false;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     // Keep visual styling attached to the section when dialogs render outside #view.
@@ -77,7 +80,7 @@ const UI = (() => {
       overlay.dataset.section = 'hr';
     }
     overlay.innerHTML = `
-      <div class="modal${opts.size ? ' ' + opts.size : ''}">
+      <div class="modal${opts.size ? ' ' + opts.size : ''}" role="dialog" aria-modal="true" aria-label="${esc(opts.title)}" tabindex="-1">
         <div class="modal-head">
           <h3>${esc(opts.title)}</h3>
           <div class="modal-head-actions">
@@ -96,9 +99,34 @@ const UI = (() => {
       </div>`;
     root.appendChild(overlay);
 
-    const close = () => overlay.remove();
-    overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
-    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+    const beforeUnload = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
+    const close = () => {
+      window.removeEventListener('beforeunload', beforeUnload);
+      overlay.remove();
+      if (previousFocus && previousFocus.isConnected) previousFocus.focus();
+      if (opts.onClose) opts.onClose();
+    };
+    const canDismiss = () => !saving && (!dirty || window.confirm('Discard your unsaved changes?'));
+    overlay.__canDismiss = canDismiss;
+    overlay.__markDirty = () => { dirty = true; };
+    overlay.__close = close;
+    const dismiss = () => { if (canDismiss()) close(); };
+    if (opts.confirmText && opts.protectChanges !== false) {
+      overlay.addEventListener('input', () => { dirty = true; });
+      overlay.addEventListener('change', () => { dirty = true; });
+      window.addEventListener('beforeunload', beforeUnload);
+    }
+    overlay.addEventListener('keydown', (e) => {
+      if (overlay !== root.lastElementChild) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dismiss(); }
+      if (e.key !== 'Tab') return;
+      const elements = [...overlay.querySelectorAll('button,input,select,textarea,a[href],[tabindex="0"]')].filter(el => !el.disabled && !el.closest('.hidden,[hidden]'));
+      const first = elements[0], last = elements[elements.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !overlay.contains(document.activeElement))) { e.preventDefault(); if (last) last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); if (first) first.focus(); }
+    });
+    overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', dismiss));
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) dismiss(); });
 
     const errBox = overlay.querySelector('[data-modal-error]');
     const showErr = (msg) => { errBox.textContent = msg; errBox.classList.remove('hidden'); };
@@ -108,6 +136,9 @@ const UI = (() => {
       confirmBtn.addEventListener('click', async () => {
         errBox.classList.add('hidden');
         confirmBtn.disabled = true;
+        saving = true;
+        let finishSave;
+        overlay.__whenSaved = new Promise(resolve => { finishSave = resolve; });
         try {
           const ok = await opts.onConfirm(overlay, showErr);
           if (ok !== false) close();
@@ -115,6 +146,9 @@ const UI = (() => {
           showErr(e.message);
         } finally {
           confirmBtn.disabled = false;
+          saving = false;
+          overlay.__whenSaved = null;
+          finishSave();
         }
       });
     }
@@ -122,9 +156,10 @@ const UI = (() => {
     overlay.querySelectorAll('input').forEach((inp) => {
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && confirmBtn) { e.preventDefault(); confirmBtn.click(); } });
     });
-    if (opts.onOpen) opts.onOpen(overlay);
-    const firstInput = overlay.querySelector('input,select,textarea');
+    if (opts.onOpen) Promise.resolve(opts.onOpen(overlay)).catch(e => showErr(e.message || 'Could not load dialog details'));
+    const firstInput = [...overlay.querySelectorAll('input,select,textarea')].find(el => !el.disabled && !['hidden', 'file'].includes(el.type) && !el.closest('.hidden,[hidden]'));
     if (firstInput) firstInput.focus();
+    else overlay.querySelector('.modal').focus();
     return { overlay, close, showErr };
   }
 
@@ -134,6 +169,8 @@ const UI = (() => {
         title: 'Please confirm',
         bodyHTML: `<p>${esc(message)}</p>`,
         confirmText,
+        protectChanges: false,
+        onClose: () => resolve(false),
         onConfirm: () => { resolve(true); return true; },
       });
       m.overlay.querySelectorAll('[data-close]').forEach((b) =>
@@ -269,7 +306,7 @@ const UI = (() => {
       setTimeout(() => el.remove(), 180); // let the slide-out finish
     }
     catcher.addEventListener('mousedown', close);
-    el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
+    el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', dismiss));
     document.addEventListener('keydown', onKey);
     currentDrawer = { el, key: opts.key, close };
     requestAnimationFrame(() => el.classList.add('open'));

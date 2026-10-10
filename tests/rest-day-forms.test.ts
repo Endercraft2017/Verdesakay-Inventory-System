@@ -2,10 +2,11 @@
     authorizes the rest-day premium when PayrollPolicy.require_rest_day_form is on, and a Change
     of Rest Day moves the rest day for both of its dates. Both count only once APPROVED. */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
+let reviewerToken: string;
 const hdr = () => ({ Authorization: `Bearer ${token}` });
 
 // 2026-08-16 and 2026-08-23 are Sundays; 2026-08-19 is a Wednesday. Company rest day: Sunday.
@@ -16,6 +17,7 @@ const BASE_POLICY = { pay_frequency: 'semi_monthly', auto_statutory: true, defau
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
+  reviewerToken = (await createEmployee(ctx.api, token, { role: 'hr' })).token;
 });
 afterAll(() => cleanup(ctx));
 afterEach(async () => {
@@ -33,6 +35,10 @@ async function fileForm(slug: string, data: Record<string, unknown>, status: 'ap
   const res = await ctx.api.post('/api/form-records').set(hdr())
     .send({ form_def_id: await formId(slug), data, status });
   expect(res.status).toBe(201);
+  if (status === 'approved') {
+    const decision = await ctx.api.post(`/api/me/approvals/requests/${res.body.id}/decide`).set({ Authorization: `Bearer ${reviewerToken}` }).send({ decision: 'approved' });
+    expect(decision.status).toBe(200);
+  }
   return res.body.id as number;
 }
 

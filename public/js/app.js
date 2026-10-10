@@ -8,6 +8,7 @@ const App = (() => {
   // Active chrome selection (which primary/subtab the tree+subnav reflect).
   let activePrimaryId = null;
   let activeSubtabId = null;
+  let renderedLocation = null;
   let suppressHash = false; // guard so programmatic hash changes don't re-navigate
 
   function register(name, renderFn) { routes[name] = renderFn; }
@@ -223,7 +224,7 @@ const App = (() => {
           if (filter === undefined) {
             if (!routeFallback) routeFallback = { primary, subtab, leaf };
             if (!leaf.filter) return { primary, subtab, leaf };
-          } else if (filtersEqual(leaf.filter, filter)) {
+          } else if (filtersEqual(leaf.filter, filter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String(filter[key])))) {
             return { primary, subtab, leaf };
           }
         }
@@ -298,7 +299,7 @@ const App = (() => {
     if (!el) return;
     if (!primary || !subtab) { el.innerHTML = ''; return; }
     const leaves = subtab.tree.map((leaf) => {
-      const on = leaf.route === activeRoute && filtersEqual(leaf.filter, activeFilter);
+      const on = leaf.route === activeRoute && (filtersEqual(leaf.filter, activeFilter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String((activeFilter || {})[key]))));
       return `<button class="tree-leaf ${on ? 'active' : ''}" data-route="${leaf.route}"
         data-filter='${leaf.filter ? UI.esc(JSON.stringify(leaf.filter)) : ''}'>
         ${UI.icon(leaf.icon, 16)}<span>${UI.esc(leaf.label)}</span></button>`;
@@ -319,6 +320,14 @@ const App = (() => {
   /* ---------- Navigation ---------- */
 
   function navigate(name, filter) {
+    const dialogs = [...document.querySelectorAll('.modal-overlay')].reverse();
+    const savingDialog = dialogs.find(dialog => dialog.__whenSaved);
+    if (savingDialog) { savingDialog.__whenSaved.then(() => navigate(name, filter)); return; }
+    if (dialogs.some(dialog => dialog.__canDismiss && !dialog.__canDismiss())) {
+      if (renderedLocation) history.replaceState(null, '', '#' + hashFor(renderedLocation.name, renderedLocation.filter));
+      return;
+    }
+    dialogs.forEach(dialog => dialog.__close ? dialog.__close() : dialog.remove());
     if (!routes[name]) { name = 'dashboard'; filter = undefined; }
 
     // Resolve where this lives in the nav tree (for chrome highlighting).
@@ -335,6 +344,7 @@ const App = (() => {
       activeSubtabId = loc.subtab.id;
     }
 
+    renderedLocation = { name, filter };
     // Reflect in the URL without triggering a re-navigation.
     suppressHash = true;
     location.hash = hashFor(name, filter);
@@ -348,7 +358,9 @@ const App = (() => {
     renderTree(primary, subtab, name, filter);
 
     // Render the view.
-    const view = document.getElementById('view');
+    const previousView = document.getElementById('view');
+    const view = previousView.cloneNode(false);
+    previousView.replaceWith(view);
     view.dataset.route = name;
     view.dataset.section = activePrimaryId || '';
     view.innerHTML = '<div class="empty">Loading…</div>';
@@ -544,6 +556,7 @@ const App = (() => {
     window.addEventListener('hashchange', () => {
       if (suppressHash || !me) return;
       const parsed = parseHash();
+      if (renderedLocation && parsed.route === renderedLocation.name && filtersEqual(parsed.filter, renderedLocation.filter)) return;
       if (routes[parsed.route]) navigate(parsed.route, parsed.filter);
     });
 

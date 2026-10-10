@@ -133,7 +133,7 @@
   .main[data-section='hr'] .stat-card { gap: 12px; padding: 18px 16px; }
   .main[data-section='hr'] .stat-card .stat-ic { width: 40px; height: 40px; }
   .main[data-section='hr'] .stat-card .label { line-height: 1.4; }
-  .main[data-section='hr'] :is(#cr-body, #fb-forms-table, #fr-table), .hr-table-scroll { max-width: 100%; overflow-x: auto; }
+  .main[data-section='hr'] :is(#cr-body, #fb-forms-table, #fr-table, .table-wrap), .hr-table-scroll { max-width: 100%; overflow-x: auto; }
   .main[data-section='hr'] table td { font-variant-numeric: tabular-nums; }
   .main[data-section='hr'] table .actions { white-space: nowrap; }
   .hr-asset-filters { padding: 16px; margin-bottom: 0 !important; border-bottom: 1px solid var(--border); background: var(--surface-highlight); }
@@ -239,3 +239,17 @@
   .hr-overview-panels > .panel { display: flex; flex-direction: column; }
   .hr-overview-panels .hr-summary-body { flex: 1; }
 }
+
+/* HR workflow pages share the existing themed panels, filters and table treatment. */
+.main[data-section='hr'] :is(#ap-list, #myhr-content) { min-width: 0; padding: 16px 0; }
+.main[data-section='hr'] :is(#ap-search, #myhr-content input) { max-width: 100%; }
+.main[data-section='hr'] :is(#ap-list, #myhr-content) table { min-width: 540px; }
+.main[data-section='hr'] :is(#ap-search, .tabs) { margin-bottom: 12px; }
+.main[data-section='hr'] .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.modal-overlay[data-section='hr'] .tool-row > span { min-width: 0; overflow-wrap: anywhere; }
+
+.main[data-section='hr'] .hr-workflow-toolbar { padding: 16px; border-bottom: 1px solid var(--border); background: var(--surface-highlight); }
+.main[data-section='hr'] .hr-workflow-notice { padding: 16px; }
+.main[data-section='hr'] .hr-workflow-notice p:last-child { margin-bottom: 0; }
+.main[data-section='hr'] #tk-warnings { border-left: 4px solid var(--warn); }
+.main[data-section='hr'] #myhr-content > :is(.topbar, p, .empty) { margin-left: 16px; margin-right: 16px; }

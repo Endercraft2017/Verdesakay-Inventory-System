@@ -2,6 +2,9 @@
     Time Keeping (cutoff periods with daily time-in/out), wired to generate records in the
     existing "HR Payroll" form so the existing print pipeline (form-records.js /
     hr-payroll-print.js) handles payslip printing. */
+import { cutoffIsPaid, payrollWarnings } from './workflow';
+import { logEvent } from '../../shared/activity';
+import { z } from 'zod';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -112,7 +115,13 @@ function ensureRosterDays(periodId: number, employeeId: number, start: string, e
   const insert = db.prepare(
     `INSERT OR IGNORE INTO attendance_records (period_id, employee_id, work_date) VALUES (?, ?, ?)`
   );
-  for (const d of datesInRange(start, end)) insert.run(periodId, employeeId, d);
+  for (const d of datesInRange(start, end)) {
+    const added = insert.run(periodId, employeeId, d);
+    if (added.changes) {
+      const fix = queryOne<{ requested_in: string | null; requested_out: string | null; decision_note: string | null }>("SELECT requested_in, requested_out, decision_note FROM time_corrections WHERE employee_id = ? AND work_date = ? AND status = 'approved' ORDER BY decided_at DESC, id DESC LIMIT 1", employeeId, d);
+      if (fix) run("UPDATE attendance_records SET time_in = ?, time_out = ?, notes = ? WHERE period_id = ? AND employee_id = ? AND work_date = ?", fix.requested_in, fix.requested_out, 'Approved attendance correction' + (fix.decision_note ? ' — ' + fix.decision_note : ''), periodId, employeeId, d);
+    }
+  }
 }
 
 // ─── Employees ──────────────────────────────────────────────────────────────
@@ -655,6 +664,52 @@ router.delete('/employees/:id', requirePermission('hr.manage'), syncClass('claim
   res.json({ ok: true });
 });
 
+router.get('/calendar/:slug', requirePermission('hr.view'), (req, res) => {
+  if (!['company_holiday', 'no_work_memo'].includes(String(req.params.slug))) { res.status(404).json({ error: 'Calendar not found' }); return; }
+  const form = queryOne<{ id: number }>('SELECT id FROM form_definitions WHERE slug = ?', String(req.params.slug));
+  if (!form) { res.status(404).json({ error: 'Calendar form has not been configured.' }); return; }
+  const records = queryAll<FormRecord>('SELECT * FROM form_records WHERE form_def_id = ? ORDER BY id DESC', form.id);
+  res.json(records.map(record => ({ ...record, data: JSON.parse(record.data as string) })));
+});
+
+// HR appoints department delegates without granting global HR permissions.
+router.get('/approval-authorities', requirePermission('hr.manage'), (_req, res) => {
+  res.json({ departments: queryAll('SELECT d.id, d.name, d.head_user_id, u.full_name AS head_name FROM departments d LEFT JOIN users u ON u.id = d.head_user_id ORDER BY d.name'),
+    users: queryAll('SELECT DISTINCT u.id, u.full_name, CASE WHEN e.id IS NOT NULL THEN e.department_id ELSE u.department_id END AS department_id FROM users u LEFT JOIN employees e ON e.user_id = u.id WHERE u.active = 1 ORDER BY u.full_name'),
+    delegates: (getSetting<Record<string, number[]>>('hr_department_approvers') ?? {}) });
+});
+router.put('/approval-authorities/:departmentId', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+  const departmentId = Number(req.params.departmentId);
+  if (!queryOne('SELECT id FROM departments WHERE id = ?', departmentId)) { res.status(404).json({ error: 'Department not found' }); return; }
+  const { user_ids } = parseBody(z.object({ user_ids: z.array(z.number().int().positive()).max(100) }), req.body);
+  const ids = [...new Set(user_ids)];
+  for (const id of ids) {
+    if (!queryOne('SELECT u.id FROM users u LEFT JOIN employees e ON e.user_id = u.id WHERE u.id = ? AND u.active = 1 AND CASE WHEN e.id IS NOT NULL THEN e.department_id ELSE u.department_id END = ?', id, departmentId)) {
+      res.status(400).json({ error: 'Choose active accounts belonging to this department.' }); return;
+    }
+  }
+  const delegates = (getSetting<Record<string, number[]>>('hr_department_approvers') ?? {});
+  delegates[String(departmentId)] = ids;
+  setSetting('hr_department_approvers', delegates);
+  res.json({ ok: true });
+});
+router.get('/employees/:id/leave-adjustments', requirePermission('hr.view'), (req, res) => {
+  res.json(queryAll("SELECT created_at, user_name, summary FROM activity_log WHERE entity = 'hr' AND entity_id = ? AND action = 'leave-adjustment' ORDER BY id DESC LIMIT 50", String(req.params.id)));
+});
+
+// HR adjusts the employee's own bank without rewriting the consumed-days counter.
+router.post('/employees/:id/leave-adjustments', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+  const input = parseBody(z.object({ days: z.coerce.number().finite().refine(n => n !== 0, 'Enter a non-zero adjustment'), reason: z.string().trim().min(3).max(1000) }), req.body);
+  const id = Number(req.params.id);
+  const emp = queryOne<{ name: string; leave_days_per_year: number; leave_days_used: number }>('SELECT name, leave_days_per_year, leave_days_used FROM employees WHERE id = ?', id);
+  if (!emp) { res.status(404).json({ error: 'Employee not found' }); return; }
+  const entitlement = emp.leave_days_per_year + input.days;
+  if (entitlement < 0) { res.status(400).json({ error: 'The total leave entitlement cannot be negative.' }); return; }
+  run("UPDATE employees SET leave_days_per_year = ? WHERE id = ?", entitlement, id);
+  logEvent(req, { entity: 'hr', entityId: id, action: 'leave-adjustment', summary: `${emp.name}: ${input.days > 0 ? '+' : ''}${input.days} leave days; ${emp.leave_days_per_year - emp.leave_days_used} → ${entitlement - emp.leave_days_used} remaining. ${input.reason}` });
+  res.json({ remaining: entitlement - emp.leave_days_used, entitlement });
+});
+
 // ─── Employee 201 documents ─────────────────────────────────────────────────
 
 // GET /api/hr/employees/:id/documents
@@ -1093,7 +1148,7 @@ router.get('/periods', requirePermission('hr.view'), (_req, res) => {
      FROM attendance_periods p
      ORDER BY p.start_date DESC, p.id DESC`
   );
-  res.json(rows);
+  res.json(rows.map(p => ({ ...p, locked: cutoffIsPaid(p.id) })));
 });
 
 // GET /api/hr/periods/:id — header + roster (employee + days_logged reference count)
@@ -1118,7 +1173,7 @@ router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
      ORDER BY e.name`,
     id
   );
-  res.json({ ...period, roster: redactPay(roster as object[], req.user) });
+  res.json({ ...period, locked: cutoffIsPaid(id), warnings: payrollWarnings(period), roster: redactPay(roster as object[], req.user) });
 });
 
 // GET /api/hr/timekeeping/incomplete — employees with an incomplete day (exactly one of
@@ -1167,6 +1222,15 @@ router.post('/periods', requirePermission('hr.manage'), syncClass('claim'), (req
     input.label, input.start_date, input.end_date, req.user!.id
   );
   res.status(201).json({ id: info.lastInsertRowid });
+});
+
+// Freeze attendance/header/roster changes once payment starts. Payroll retains the explicit
+// Unmark Paid operation; all paid slips must be unmarked before attendance can change.
+router.use('/periods/:id', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method) && !['/generate-payslips', '/post-payroll-gl'].includes(req.path) && cutoffIsPaid(Number(req.params.id))) {
+    res.status(423).json({ error: 'This cutoff is locked after payment. Unmark all paid payslips before changing attendance or the roster.' }); return;
+  }
+  next();
 });
 
 // PUT /api/hr/periods/:id — update header; extend roster day-rows to cover a widened range
@@ -1645,6 +1709,7 @@ router.get('/cutoff-flags', requirePermission('hr.view'), (req, res) => {
   res.json({
     period: { id: period.id, label: period.label, start_date: period.start_date, end_date: period.end_date },
     employees,
+    warnings: payrollWarnings(period),
     totals: {
       half_day: employees.filter((e) => e.possible_half_day_dates.length).length,
       unrecorded_ot: employees.filter((e) => e.unrecorded_ot_dates.length).length,
@@ -2269,7 +2334,7 @@ function payslipData(
   const data = {
     ...zeros,
     ...prevManual,
-    employee_name: emp.name, employee_id: emp.employee_id, dept_position: deptPosition,
+    employee_name: emp.name, employee_id: emp.employee_id, cutoff_id: period.id, dept_position: deptPosition,
     payroll_period: payrollPeriod, pay_date: payDate || (prevManual.pay_date as string) || '',
     daily_rate: currentDailyRate,
     days_worked: computed.days_worked,
@@ -2349,12 +2414,12 @@ function recomputePayslipsFrom(employeeId: number, from: string): { recomputed: 
   const num = (v: unknown): number => Number(v) || 0;
   for (const period of periods) {
     const owner = payslipOwnerResolver();
-    const slip = queryAll<FormRecord>('SELECT * FROM form_records WHERE form_def_id = ? AND period = ?', form.id, period.label)
+    const slip = queryAll<FormRecord>("SELECT * FROM form_records WHERE form_def_id = ? AND (period = ? OR CASE WHEN json_valid(data) THEN CAST(json_extract(data, '$.cutoff_id') AS INTEGER) END = ?)", form.id, period.label, period.id)
       .find((r) => owner.idOf(payslipFields(r)) === employeeId);
     if (!slip) continue;
     const prev = payslipFields(slip);
     const payDate = (prev.pay_date as string) || undefined;
-    const { data } = payslipData(payslipRun(period, payDate), emp, prev, period.label, payDate);
+    const { data } = payslipData(payslipRun(period, payDate), emp, prev, slip.period || period.label, payDate);
     const base = { record_id: slip.id, number: slip.number, period: period.label };
     if (slip.status === 'paid') {
       paid.push({
@@ -2405,8 +2470,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
   // view or the Daily Time grid for that one employee.
   let possibleHalfDayEmployees = 0;
   const periodSlips = queryAll<FormRecord>(
-    `SELECT * FROM form_records WHERE form_def_id = ? AND period = ?`,
-    form.id, payrollPeriod
+    `SELECT * FROM form_records WHERE form_def_id = ? AND (period = ? OR CASE WHEN json_valid(data) THEN CAST(json_extract(data, '$.cutoff_id') AS INTEGER) END = ?)`,
+    form.id, payrollPeriod, periodId
   );
   db.exec('BEGIN');
   try {
@@ -2423,8 +2488,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
       const { data, possibleHalfDay } = payslipData(runCtx, emp, payslipFields(existing), payrollPeriod, input.pay_date || undefined);
       if (possibleHalfDay) possibleHalfDayEmployees++;
       if (existing) {
-        run(`UPDATE form_records SET data = ?, updated_at = datetime('now') WHERE id = ?`,
-          JSON.stringify(data), existing.id);
+        run(`UPDATE form_records SET data = ?, period = ?, updated_at = datetime('now') WHERE id = ?`,
+          JSON.stringify(data), payrollPeriod, existing.id);
         updated++;
       } else {
         const number = nextSequence(`form_seq_${form.id}`, form.number_prefix);
@@ -2440,6 +2505,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
     res.status(201).json({
       created, updated, skipped_locked: skippedLocked, period: payrollPeriod, form_id: form.id,
       possible_half_day_employees: possibleHalfDayEmployees,
+      warnings: payrollWarnings(period),
     });
   } catch (e) {
     db.exec('ROLLBACK');
@@ -2533,7 +2599,7 @@ router.get('/payroll/:recordId/detail', requirePermission('payroll.view'), (req,
     res.status(404).json({ error: `No employee record named "${employeeName}" — it may have been renamed since this payslip was generated.` });
     return;
   }
-  const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE label = ?', rec.period);
+  const period = (Number(data.cutoff_id) ? queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', Number(data.cutoff_id)) : queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE label = ?', rec.period));
   if (!period) {
     res.status(404).json({ error: `No cutoff found for period "${rec.period}" — it may have been renamed or removed since this payslip was generated.` });
     return;
@@ -2614,7 +2680,7 @@ function resolvePayrollDeductionContext(
     res.status(404).json({ error: `No employee record named "${employeeName}" — it may have been renamed since this payslip was generated.` });
     return null;
   }
-  const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE label = ?', rec.period);
+  const period = (Number(data.cutoff_id) ? queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', Number(data.cutoff_id)) : queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE label = ?', rec.period));
   if (!period) {
     res.status(404).json({ error: `No cutoff found for period "${rec.period}" — it may have been renamed or removed since this payslip was generated.` });
     return null;

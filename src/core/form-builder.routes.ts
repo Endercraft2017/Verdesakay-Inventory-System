@@ -15,6 +15,7 @@ import {
 import { parsePayrollSummaryCsv } from '../modules/payroll/hr-payroll-import';
 import { PAYROLL_FORM_SLUG } from '../modules/payroll/pay-access';
 import { runFormActions } from './form-actions';
+import { notifyApprovers } from '../modules/hr/workflow';
 import { REQUEST_SLUGS } from './me.routes';
 import { INFO_CHANGE_SLUG, prepareInfoChange } from '../modules/hr/info-change';
 import type { FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../shared/types';
@@ -340,8 +341,17 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
     res.status(403).json({ error: 'Forbidden: insufficient permissions' });
     return;
   }
-  const status = selfFile ? 'pending' : input.status;
+  const status = REQUEST_SLUGS.includes(form.slug) ? 'pending' : input.status;
   if (infoChange) input.data = prepareInfoChange(req.user!.id, input.data as Record<string, unknown>);
+  else if (REQUEST_SLUGS.includes(form.slug)) {
+    const subject = selfFile
+      ? queryOne<{ id: number; name: string }>('SELECT id, name FROM employees WHERE user_id = ?', req.user!.id)
+      : Number(input.data.employee_id)
+        ? queryOne<{ id: number; name: string }>('SELECT id, name FROM employees WHERE id = ?', Number(input.data.employee_id))
+        : queryOne<{ id: number; name: string }>('SELECT id, name FROM employees WHERE name = ? ORDER BY id', String(input.data.employee_name || ''));
+    if (subject) input.data = { ...input.data, employee_id: subject.id, employee_name: subject.name };
+    else { delete input.data.employee_id; }
+  }
 
   let recordId: number;
   let number: string;
@@ -374,6 +384,10 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
       trigger: 'create', actingUserId: req.user!.id,
     }).warnings;
   }
+  if (REQUEST_SLUGS.includes(form.slug)) {
+    const employee = Number(input.data.employee_id) ? queryOne<{ name: string; department_id: number | null }>('SELECT name, department_id FROM employees WHERE id = ?', Number(input.data.employee_id)) : queryOne<{ name: string; department_id: number | null }>('SELECT name, department_id FROM employees WHERE user_id = ?', req.user!.id);
+    notifyApprovers(employee?.department_id ?? null, { title: 'New HR request', body: `${employee?.name || req.user!.full_name} — ${form.name}`, url: '#/approvals', link: { route: 'hr-approvals', params:{id:recordId,kind:'request'} }, tag: 'hr-request-' + recordId }, req.user!.id);
+  }
   res.status(201).json({ id: recordId, number, action_warnings });
 });
 
@@ -403,12 +417,19 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
   if (existing.slug === INFO_CHANGE_SLUG) {
     res.status(400).json({ error: 'Decide information-change requests in Approvals so the change is applied to the employee record.' }); return;
   }
+  if (REQUEST_SLUGS.includes(existing.slug) && (existing.status !== 'pending' || (input.status && input.status !== existing.status))) {
+    res.status(400).json({ error: 'Decide HR requests in Approvals. Decided requests cannot be edited; file a new request instead.' }); return;
+  }
   const newStatus = input.status ?? existing.status;
+  const recordData = { ...input.data };
+  const previousData = parseData(existing.data as string);
+  if (existing.slug === 'hr_payroll' && typeof previousData.cutoff_id === 'number') recordData.cutoff_id = previousData.cutoff_id;
+  if (REQUEST_SLUGS.includes(existing.slug) && typeof previousData.employee_id === 'number') recordData.employee_id = previousData.employee_id;
   run(
     `UPDATE form_records
      SET data = ?, status = ?, updated_at = datetime('now')
      WHERE id = ?`,
-    JSON.stringify(input.data),
+    JSON.stringify(recordData),
     newStatus,
     id
   );
@@ -439,6 +460,7 @@ router.delete('/form-records/:id', syncClass('claim'), (req, res) => {
   if (existing.slug === 'hr_payroll' && existing.status === 'paid') {
     res.status(423).json({ error: 'This payslip is marked Paid — unmark it first to delete.' }); return;
   }
+  if (REQUEST_SLUGS.includes(existing.slug)) { res.status(400).json({ error: 'HR requests are kept for decision history. Withdraw pending requests from My HR instead of deleting them.' }); return; }
   const info = run('DELETE FROM form_records WHERE id = ?', id);
   if (info.changes === 0) { res.status(404).json({ error: 'Record not found' }); return; }
   res.json({ ok: true });

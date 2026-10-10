@@ -25,6 +25,7 @@
  *                            applyPunchToAttendance in clock.ts — so this is only needed to
  *                            catch punches that predate the roster row existing at all.
  */
+import { cutoffIsPaid } from './workflow';
 import { Router, type Request } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
 import { requireAuth, requirePermission, deviceUsualUserId } from '../../shared/auth';
@@ -250,6 +251,7 @@ router.post('/import/:periodId', requirePermission('hr.manage'), syncClass('clai
     res.status(404).json({ error: 'Cutoff period not found' });
     return;
   }
+  if (cutoffIsPaid(periodId)) { res.status(423).json({ error: 'This cutoff is locked after payment.' }); return; }
   res.json({ ok: true, ...importPunchesForPeriod(periodId) });
 });
 

@@ -22,7 +22,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'confidential-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'support'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'support'];
 
 const NAV = [
   {
@@ -37,6 +37,10 @@ const NAV = [
           { label: 'Announcements', icon: 'messages', route: 'announcements' },
         ],
       },
+      { id: 'my-hr', label: 'My HR', requiredModule: 'hr', tree: [
+        { label: 'My HR', icon: 'users', route: 'hr-requests' },
+        { label: 'Approvals', icon: 'check', route: 'hr-approvals' },
+      ] },
     ],
   },
   { id: 'support', label: 'Support', icon: 'help', requiredPermission: 'users.manage', subtabs: [{ id: 'support-tickets', label: 'Bug reports & issues', tree: [{ label: 'Contact OTOM', icon: 'help', route: 'support' }] }] },
@@ -223,9 +227,9 @@ const NAV = [
         ],
       },
       {
-        id: 'memos', label: 'Memos & Notices',
+        id: 'memos', label: 'HR Forms', requiredPermission: 'forms.manage.hr',
         tree: [
-          { label: 'Memos & Notices', icon: 'alert', route: 'form-records', filter: { scope: 'hr' } },
+          { label: 'HR Forms', icon: 'alert', route: 'form-records', filter: { scope: 'hr' } },
         ],
       },
       {

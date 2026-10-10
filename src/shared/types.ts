@@ -1437,6 +1437,8 @@ export interface AttendancePeriod {
   created_by: number | null;
   created_at: string;
   employee_count?: number;
+  locked?: boolean;
+  warnings?: string[];
 }
 
 export interface AttendanceRecord {

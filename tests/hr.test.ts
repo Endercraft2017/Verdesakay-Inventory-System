@@ -1438,11 +1438,11 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(noEmp.body.error).toMatch(/no employee record/i);
     await ctx.api.put(`/api/form-records/${recId}`).set(hdr()).send({ data: orig.data }); // restore
 
-    // Renaming the cutoff breaks the period-label link.
+    // A generated slip keeps its stable cutoff id across a label change.
     await ctx.api.put(`/api/hr/periods/${period.body.id}`).set(hdr()).send({ label: 'Renamed Cutoff', start_date: '2026-08-06', end_date: '2026-08-06' });
     const noPeriod = await ctx.api.get(`/api/hr/payroll/${recId}/detail`).set(hdr());
-    expect(noPeriod.status).toBe(404);
-    expect(noPeriod.body.error).toMatch(/no cutoff found/i);
+    expect(noPeriod.status).toBe(200);
+    expect(noPeriod.body.period_label).toBe('Renamed Cutoff');
   });
 
   it('post-payroll-gl books an aggregate payroll journal entry when the ledger is on, 400s otherwise', async () => {

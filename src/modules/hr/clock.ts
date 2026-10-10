@@ -6,6 +6,7 @@
  * same kiosk instead. There is NO device binding; a guard stationed at the kiosk
  * hears a distinct chime per punch (see the desktop kiosk view).
  */
+import { cutoffIsPaid } from './workflow';
 import crypto from 'node:crypto';
 import { getSetting, setSetting, queryOne, queryAll, run } from '../../shared/db';
 import { now } from '../../shared/sync-context';
@@ -430,11 +431,11 @@ export function correctPunch(
     finalPunches = [...prior, row];
   }
 
-  run(
-    `UPDATE attendance_records SET ${SLOT_COLUMN[slot]} = ?, updated_at = datetime('now')
-     WHERE employee_id = ? AND work_date = ?`,
-    row.ts.slice(11, 16), employee.id, date
-  );
+  const periods = queryAll<{ period_id: number }>('SELECT DISTINCT period_id FROM attendance_records WHERE employee_id = ? AND work_date = ?', employee.id, date);
+  for (const period of periods) {
+    if (cutoffIsPaid(period.period_id)) continue;
+    run(`UPDATE attendance_records SET ${SLOT_COLUMN[slot]} = ?, updated_at = datetime('now') WHERE employee_id = ? AND work_date = ? AND period_id = ?`, row.ts.slice(11, 16), employee.id, date, period.period_id);
+  }
 
   return {
     ok: true, id: row.id, employee_id: employee.id, employee_name: employee.name,
@@ -520,6 +521,7 @@ function applyPunchToAttendance(employeeId: number, workDate: string): void {
   if (!punches.length) return;
   const cols = deriveDayColumns(punches);
   for (const r of rows) {
+    if (cutoffIsPaid(r.period_id)) continue;
     const timeIn = r.time_in || cols.time_in;
     const lunchOut = r.lunch_out || cols.lunch_out;
     const lunchIn = r.lunch_in || cols.lunch_in;
@@ -539,6 +541,7 @@ function applyPunchToAttendance(employeeId: number, workDate: string): void {
  *  the employee was added to this period's roster. Only touches roster columns that don't
  *  already have a manual value set. Returns how many rows were filled. */
 export function importPunchesForPeriod(periodId: number): { filled: number; dates: number } {
+  if (cutoffIsPaid(periodId)) return { filled: 0, dates: 0 };
   const roster = queryAll<{
     employee_id: number; work_date: string;
     time_in: string | null; lunch_out: string | null; lunch_in: string | null; time_out: string | null;

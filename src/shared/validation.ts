@@ -90,6 +90,7 @@ export const createUserSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: roleEnum.default('admin_staff'),
   department_id: optionalId,
+  employee_id: optionalId.optional(),
 });
 
 export const updateUserSchema = z.object({

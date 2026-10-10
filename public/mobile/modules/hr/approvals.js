@@ -181,8 +181,8 @@
   function showUndo(decision) {
     hideUndo();
     var bar = mEl('<div class="m-undo" id="m-appr-undo">' +
-      '<span class="ok-ic">✓</span>' + (decision === 'approved' ? 'Approved.' : 'Rejected.') +
-      ' You can undo this action. <button>Undo</button></div>');
+      '<span class="ok-ic">✓</span>' + (decision === 'approved' ? 'Approval queued.' : 'Rejection queued.') +
+      ' Not saved yet — you can undo this action. <button>Undo</button></div>');
     bar.querySelector('button').onclick = undo;
     document.body.appendChild(bar);
   }

@@ -1,7 +1,7 @@
 /** User-account and department management. Listing is open to all; mutations require users.manage. */
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { queryOne, queryAll, run } from '../shared/db';
+import { db, queryOne, queryAll, run } from '../shared/db';
 import {
   requireAuth, requirePermission, requireAnyPermission, endUserSessions, endSessionBySid, listUserSessions,
 } from '../shared/auth';
@@ -83,19 +83,30 @@ router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), syncClass(
     res.status(409).json({ error: 'Username already taken' });
     return;
   }
+  if (input.employee_id) {
+    if (!req.user!.permissions.includes('hr.manage')) { res.status(403).json({ error: 'HR authority is required to link an employee account.' }); return; }
+    const employee = queryOne<{ user_id: number | null }>('SELECT user_id FROM employees WHERE id = ?', input.employee_id);
+    if (!employee) { res.status(404).json({ error: 'Save the employee record before creating its account.' }); return; }
+    if (employee.user_id != null) { res.status(409).json({ error: 'This employee already has an account. Unlink and save before creating another.' }); return; }
+  }
   enforceQuota('users');
   const hash = bcrypt.hashSync(input.password, 10);
-  const info = run(
-    `INSERT INTO users (username, full_name, email, password_hash, role, department_id)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    input.username,
-    input.full_name,
-    input.email || null,
-    hash,
-    input.role,
-    input.department_id
-  );
-  res.status(201).json({ id: info.lastInsertRowid });
+  db.exec('BEGIN');
+  try {
+    const info = run(
+      `INSERT INTO users (username, full_name, email, password_hash, role, department_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      input.username,
+      input.full_name,
+      input.email || null,
+      hash,
+      input.role,
+      input.department_id
+    );
+    if (input.employee_id) run("UPDATE employees SET user_id = ? WHERE id = ?", Number(info.lastInsertRowid), input.employee_id);
+    db.exec('COMMIT');
+    res.status(201).json({ id: info.lastInsertRowid });
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
 // PUT /api/users/:id — update account details

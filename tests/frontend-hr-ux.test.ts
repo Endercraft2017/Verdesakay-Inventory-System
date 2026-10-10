@@ -419,7 +419,7 @@ describe('Payroll records list', () => {
 
 describe('Ordinary form records are unaffected', () => {
   it('keeps the original single toolbar, write controls and plain row numbers', async () => {
-    const form = { id: 9, slug: 'leave_request', name: 'Leave Request', scope: 'hr', icon: 'file', template_id: null, fields: [{ key: 'reason', label: 'Reason' }], actions: [] };
+    const form = { id: 9, slug: 'hr_notice', name: 'HR Notice', scope: 'hr', icon: 'file', template_id: null, fields: [{ key: 'reason', label: 'Reason' }], actions: [] };
     const records = [{ id: 1, number: 'LR-0001', status: 'pending', period: null, created_at: '2026-03-02T00:00:00Z', data: { reason: 'Sick' } }];
     const { view, routes } = boot(FR_SRC, ['forms.manage.hr'], (p) => (p === '/form-definitions/9' ? form : records));
     await routes['form-records']!(view, { form_id: 9 });

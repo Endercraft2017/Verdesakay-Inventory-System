@@ -16,6 +16,7 @@ import { unrecordedOtMinutes, type AttendanceDay } from '../modules/payroll/hr-p
 import { currentPolicy } from '../modules/hr/hr.routes';
 import type { FormDefinition, FormRecord, TimeCorrection } from '../shared/types';
 import { recordSiteClash, syncClass } from '../sync';
+import { approverDepartmentIds, cutoffIsPaid, notifyApprovers } from '../modules/hr/workflow';
 import { now, reRunOfRecordedCommand, siteDecisionStands } from '../shared/sync-context';
 
 const router = Router();
@@ -225,22 +226,24 @@ router.get('/requests', (req, res) => {
     `SELECT fr.id, fr.number, fr.status, fr.data, fr.created_at, fr.updated_at,
             fd.name AS form_name, fd.slug
      FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
-     WHERE fr.created_by = ? AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
+     LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by)
+     WHERE (fr.created_by = ? OR e.user_id = ?) AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
      ORDER BY fr.id DESC LIMIT 100`,
-    req.user!.id, ...REQUEST_SLUGS
+    req.user!.id, req.user!.id, ...REQUEST_SLUGS
   );
   res.json(rows.map((r) => ({ ...r, data: parse(r.data) })));
 });
 
 // POST /api/me/requests/:id/cancel — withdraw your own still-pending request
 router.post('/requests/:id/cancel', syncClass('merge'), (req, res) => {
-  const rec = queryOne<{ id: number; status: string; created_by: number | null; slug: string }>(
-    `SELECT fr.id, fr.status, fr.created_by, fd.slug
+  const rec = queryOne<{ id: number; status: string; created_by: number | null; slug: string; employee_user_id: number | null }>(
+    `SELECT fr.id, fr.status, fr.created_by, fd.slug, e.user_id AS employee_user_id
      FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+     LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END
      WHERE fr.id = ?`,
     Number(req.params.id)
   );
-  if (!rec || rec.created_by !== req.user!.id || !REQUEST_SLUGS.includes(rec.slug)) {
+  if (!rec || (rec.created_by !== req.user!.id && rec.employee_user_id !== req.user!.id) || !REQUEST_SLUGS.includes(rec.slug)) {
     res.status(404).json({ error: 'Request not found' }); return;
   }
   if (rec.status !== 'pending' && rec.status !== 'draft') {
@@ -280,13 +283,7 @@ router.post('/time-corrections', syncClass('merge'), (req, res) => {
     url: '#/approvals',
     tag: 'tc-new-' + info.lastInsertRowid,
   };
-  if (emp.department_id) {
-    const head = queryOne<{ head_user_id: number | null }>(
-      'SELECT head_user_id FROM departments WHERE id = ?', emp.department_id
-    );
-    if (head?.head_user_id && head.head_user_id !== req.user!.id) void notifyUser(head.head_user_id, payload);
-  }
-  void notifyPermission('hr.manage', payload);
+  notifyApprovers(emp.department_id, { ...payload, link: { route: 'hr-approvals' } }, req.user!.id);
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
@@ -308,7 +305,7 @@ router.post('/time-corrections/:id/cancel', syncClass('merge'), (req, res) => {
 
 /** Department ids this user is the registered head of. */
 function headedDeptIds(userId: number): number[] {
-  return queryAll<{ id: number }>('SELECT id FROM departments WHERE head_user_id = ?', userId).map((r) => r.id);
+  return approverDepartmentIds(userId);
 }
 /** May the caller decide an item belonging to the given department? */
 function mayDecide(req: Request, deptId: number | null): boolean {
@@ -320,8 +317,10 @@ function mayDecide(req: Request, deptId: number | null): boolean {
 router.get('/approvals', (req, res) => {
   const isHrManager = req.user!.permissions.includes('hr.manage');
   const heads = headedDeptIds(req.user!.id);
-  if (!isHrManager && !heads.length) { res.json({ requests: [], time_corrections: [] }); return; }
+  if (!isHrManager && !heads.length) { res.json({ can_approve: false, requests: [], time_corrections: [], history: [] }); return; }
   const inScope = (deptId: number | null) => isHrManager || (deptId != null && heads.includes(deptId));
+  const departmentSQL = isHrManager ? '' : ` AND e.department_id IN (${heads.map(() => '?').join(',')})`;
+  const departmentParams = isHrManager ? [] : heads;
 
   const reqRows = queryAll<FormRecord & { form_name: string; slug: string; filed_by: string | null; employee_name: string | null; department_id: number | null }>(
     `SELECT fr.id, fr.number, fr.status, fr.data, fr.created_at,
@@ -330,21 +329,29 @@ router.get('/approvals', (req, res) => {
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
      LEFT JOIN users u ON u.id = fr.created_by
-     LEFT JOIN employees e ON e.user_id = fr.created_by
+     LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by)
      WHERE fr.status = 'pending' AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
-       AND (fr.created_by IS NULL OR fr.created_by != ?)
+       AND CASE WHEN e.id IS NOT NULL THEN COALESCE(e.user_id, 0) ELSE COALESCE(fr.created_by, 0) END != ?
+     ${departmentSQL}
      ORDER BY fr.id DESC LIMIT 200`,
-    ...REQUEST_SLUGS, req.user!.id
+    ...REQUEST_SLUGS, req.user!.id, ...departmentParams
   );
   const tcRows = queryAll<TimeCorrection & { employee_name: string; department_id: number | null }>(
     `SELECT tc.*, e.name AS employee_name, e.department_id
      FROM time_corrections tc JOIN employees e ON e.id = tc.employee_id
      WHERE tc.status = 'pending' AND (tc.user_id IS NULL OR tc.user_id != ?)
+     ${departmentSQL}
      ORDER BY tc.id DESC LIMIT 200`,
-    req.user!.id
+    req.user!.id, ...departmentParams
   );
   res.json({
     // Information changes touch the official HR record, so only hr.manage sees/decides them.
+    can_approve: isHrManager || heads.length > 0,
+    history: [
+      ...queryAll<FormRecord & { form_name: string; slug: string; employee_name: string | null; department_id: number | null }>(`SELECT fr.*, fd.name AS form_name, fd.slug, e.name AS employee_name, e.department_id FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by) WHERE fr.status IN ('approved', 'rejected') AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')}) ${departmentSQL} ORDER BY fr.updated_at DESC LIMIT 100`, ...REQUEST_SLUGS, ...departmentParams)
+        .filter(r => inScope(r.department_id) && (r.slug !== INFO_CHANGE_SLUG || isHrManager)).map(r => ({ ...r, kind: 'request', data: parse(r.data) })),
+      ...queryAll<TimeCorrection & { employee_name: string; department_id: number | null; decided_by_name: string | null }>(`SELECT tc.*, e.name AS employee_name, e.department_id, u.full_name AS decided_by_name FROM time_corrections tc JOIN employees e ON e.id = tc.employee_id LEFT JOIN users u ON u.id = tc.decided_by WHERE tc.status IN ('approved', 'rejected') ${departmentSQL} ORDER BY tc.decided_at DESC LIMIT 100`, ...departmentParams).filter(r => inScope(r.department_id)).map(r => ({ ...r, kind: 'correction', form_name: 'Attendance correction', updated_at: r.decided_at }))
+    ].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 100),
     requests: reqRows
       .filter((r) => inScope(r.department_id) && (r.slug !== INFO_CHANGE_SLUG || isHrManager))
       .map((r) => ({ ...r, data: parse(r.data) })),
@@ -357,18 +364,18 @@ router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => 
   const id = Number(req.params.id);
   const rec = queryOne<{
     id: number; status: string; created_by: number | null; data: string; slug: string; form_name: string;
-    department_id: number | null; employee_id: number | null; leave_days_per_year: number | null; leave_days_used: number | null;
+    department_id: number | null; employee_id: number | null; employee_user_id: number | null; leave_days_per_year: number | null; leave_days_used: number | null;
   }>(
     `SELECT fr.id, fr.status, fr.created_by, fr.data, fd.slug, fd.name AS form_name,
-            e.department_id, e.id AS employee_id, e.leave_days_per_year, e.leave_days_used
+            e.department_id, e.id AS employee_id, e.user_id AS employee_user_id, e.leave_days_per_year, e.leave_days_used
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
-     LEFT JOIN employees e ON e.user_id = fr.created_by
+     LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by)
      WHERE fr.id = ?`,
     id
   );
   if (!rec || !REQUEST_SLUGS.includes(rec.slug)) { res.status(404).json({ error: 'Request not found' }); return; }
-  if (rec.created_by === req.user!.id) { res.status(403).json({ error: 'You can’t decide your own request' }); return; }
+  if ((rec.employee_id && rec.employee_user_id === req.user!.id) || (!rec.employee_id && rec.created_by === req.user!.id)) { res.status(403).json({ error: 'You can’t decide your own request' }); return; }
   if (!mayDecide(req, rec.department_id)) { res.status(403).json({ error: 'Not an approver for this request' }); return; }
   const infoChange = rec.slug === INFO_CHANGE_SLUG;
   if (infoChange && !req.user!.permissions.includes('hr.manage')) {
@@ -414,45 +421,57 @@ router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => 
       void notifyUser(rec.created_by, {
         title: `Information change ${decision}`,
         body: String(data.field ?? rec.form_name) + (note ? ' — ' + note : ''),
-        url: '#/requests', tag: 'req-' + id,
+        url: '#/requests', link: {route:'hr-requests',params:{id,kind:'request'}}, tag: 'req-' + id,
       });
     }
     res.json({ ok: true, status: decision, applied: applied?.applied ?? false, applied_note: applied?.note ?? null });
     return;
   }
 
-  // Approving a paid Leave request consumes the employee's fixed leave-day bank. Blocked if it
-  // would go negative, unless the approver explicitly overrides — a rejected decision, or one
-  // where with_pay isn't 'Yes', never touches the balance (see docs on the "simple fixed bank"
-  // design: no accrual math, no carry-over, one-way consumption with no un-approve path).
-  if (decision === 'approved' && rec.slug === 'leave_request' && data.with_pay === 'Yes' && rec.employee_id) {
-    const days = Number(data.days) || 0;
-    if (days > 0) {
-      const remaining = (rec.leave_days_per_year ?? 5) - (rec.leave_days_used ?? 0);
-      if (remaining - days < 0 && !override_balance) {
-        // Clash-check (D6): the main site saw enough leave left; the cloud approved other leave
-        // meanwhile. The approval stands and the balance goes below zero, flagged.
-        if (!siteDecisionStands()) {
-          res.status(400).json({ error: `Requested ${days} day(s), only ${remaining} remaining. Approve anyway to override.` });
-          return;
+  db.exec('BEGIN');
+  try {
+    // Approving a paid Leave request consumes the employee's fixed leave-day bank. Blocked if it
+    // would go negative, unless the approver explicitly overrides — a rejected decision, or one
+    // where with_pay isn't 'Yes', never touches the balance (see docs on the "simple fixed bank"
+    // design: no accrual math, no carry-over, one-way consumption with no un-approve path).
+    if (decision === 'approved' && rec.slug === 'leave_request' && data.with_pay === 'Yes' && rec.employee_id) {
+      const days = Number(data.days) || 0;
+      if (days > 0) {
+        const remaining = (rec.leave_days_per_year ?? 5) - (rec.leave_days_used ?? 0);
+        if (remaining - days < 0 && !override_balance) {
+          // Clash-check (D6): the main site saw enough leave left; the cloud approved other leave
+          // meanwhile. The approval stands and the balance goes below zero, flagged.
+          if (!siteDecisionStands()) {
+            db.exec('ROLLBACK');
+            res.status(400).json({ error: `Requested ${days} day(s), only ${remaining} remaining. Approve anyway to override.` });
+            return;
+          }
+          recordSiteClash(req, `Leave request #${id} was approved at the main site, but on the cloud only ${remaining} day(s) remained for ${days} requested; the balance is now below zero.`);
         }
-        recordSiteClash(req, `Leave request #${id} was approved at the main site, but on the cloud only ${remaining} day(s) remained for ${days} requested; the balance is now below zero.`);
+        run('UPDATE employees SET leave_days_used = leave_days_used + ? WHERE id = ?', days, rec.employee_id);
       }
-      run('UPDATE employees SET leave_days_used = leave_days_used + ? WHERE id = ?', days, rec.employee_id);
     }
-  }
 
-  data.decided_by = req.user!.full_name;
-  data.decided_at = now().toISOString().slice(0, 16).replace('T', ' ');
-  if (note) data.decision_note = note;
-  run("UPDATE form_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?", decision, JSON.stringify(data), id);
+    data.decided_by = req.user!.full_name;
+    data.decided_at = now().toISOString().slice(0, 16).replace('T', ' ');
+    if (note) data.decision_note = note;
+    run("UPDATE form_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?", decision, JSON.stringify(data), id);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
   if (rec.created_by) {
     void notifyUser(rec.created_by, {
       title: `Request ${decision}`,
       body: rec.form_name + (note ? ' — ' + note : ''),
       url: '#/requests',
+      link: {route:'hr-requests',params:{id,kind:'request'}},
       tag: 'req-' + id,
     });
+  }
+  if (rec.employee_user_id && rec.employee_user_id !== rec.created_by) {
+    void notifyUser(rec.employee_user_id, { title: `Request ${decision}`, body: rec.form_name + (note ? ' — ' + note : ''), url:'#/requests',link:{route:'hr-requests',params:{id,kind:'request'}},tag:'req-'+id });
+  }
+  if (!req.user!.permissions.includes('hr.manage')) {
+    void notifyPermission('hr.manage', { title: `Department request ${decision}`, body: `${req.user!.full_name} — ${rec.form_name}${note ? ' — ' + note : ''}`, url: '#/approvals', link: { route: 'hr-approvals', params:{id,kind:'request',tab:'recent'} }, tag: 'hr-decision-' + id });
   }
   res.json({ ok: true, status: decision });
 });
@@ -479,38 +498,50 @@ router.post('/approvals/time-corrections/:id/decide', syncClass('claim'), (req, 
   }
 
   const { decision, note } = parseBody(approvalDecisionSchema, req.body);
-  run(
-    "UPDATE time_corrections SET status = ?, decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ?",
-    decision, req.user!.id, note || null, id
-  );
-  let applied = false;
-  if (decision === 'approved') {
-    const period = queryOne<{ id: number }>(
-      'SELECT id FROM attendance_periods WHERE ? BETWEEN start_date AND end_date ORDER BY id DESC LIMIT 1',
-      tc.work_date
-    );
-    if (period) {
-      run(
-        `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(period_id, employee_id, work_date) DO UPDATE SET
-           time_in  = COALESCE(excluded.time_in, attendance_records.time_in),
-           time_out = COALESCE(excluded.time_out, attendance_records.time_out),
-           notes    = excluded.notes,
-           updated_at = datetime('now')`,
-        period.id, tc.employee_id, tc.work_date, tc.requested_in || null, tc.requested_out || null,
-        'Time correction approved' + (note ? ' — ' + note : '')
-      );
-      applied = true;
-    }
+  const correctionPeriod = queryOne<{ id: number }>('SELECT id FROM attendance_periods WHERE ? BETWEEN start_date AND end_date ORDER BY id DESC LIMIT 1', tc.work_date);
+  if (decision === 'approved' && correctionPeriod && cutoffIsPaid(correctionPeriod.id)) {
+    res.status(423).json({ error: 'This cutoff is locked after payment. Payroll must unmark its paid payslips before an attendance correction can be applied.' }); return;
   }
+  let applied = false;
+  db.exec('BEGIN');
+  try {
+    run(
+      "UPDATE time_corrections SET status = ?, decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ?",
+      decision, req.user!.id, note || null, id
+    );
+    if (decision === 'approved') {
+      const period = queryOne<{ id: number }>(
+        'SELECT id FROM attendance_periods WHERE ? BETWEEN start_date AND end_date ORDER BY id DESC LIMIT 1',
+        tc.work_date
+      );
+      if (period) {
+        run(
+          `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(period_id, employee_id, work_date) DO UPDATE SET
+             time_in  = COALESCE(excluded.time_in, attendance_records.time_in),
+             time_out = COALESCE(excluded.time_out, attendance_records.time_out),
+             notes    = excluded.notes,
+             updated_at = datetime('now')`,
+          period.id, tc.employee_id, tc.work_date, tc.requested_in || null, tc.requested_out || null,
+          'Time correction approved' + (note ? ' — ' + note : '')
+        );
+        applied = true;
+      }
+    }
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
   if (tc.user_id) {
     void notifyUser(tc.user_id, {
       title: `Time fix ${decision}`,
       body: tc.work_date + (note ? ' — ' + note : ''),
       url: '#/time-fix',
+      link: {route:'hr-requests',params:{id,kind:'correction'}},
       tag: 'tc-' + id,
     });
+  }
+  if (!req.user!.permissions.includes('hr.manage')) {
+    void notifyPermission('hr.manage', { title: `Department time correction ${decision}`, body: `${req.user!.full_name} — ${tc.work_date}${note ? ' — ' + note : ''}`, url: '#/approvals', link: { route: 'hr-approvals', params:{id,kind:'correction',tab:'recent'} }, tag: 'hr-correction-' + id });
   }
   res.json({ ok: true, status: decision, applied });
 });
@@ -745,9 +776,9 @@ router.get('/today', (req, res) => {
     const pendReq = queryAll<{ department_id: number | null }>(
       `SELECT e.department_id
        FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
-       LEFT JOIN employees e ON e.user_id = fr.created_by
+       LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by)
        WHERE fr.status = 'pending' AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
-         AND (fr.created_by IS NULL OR fr.created_by != ?)`,
+         AND CASE WHEN e.id IS NOT NULL THEN COALESCE(e.user_id, 0) ELSE COALESCE(fr.created_by, 0) END != ?`,
       ...REQUEST_SLUGS, req.user!.id
     ).filter((r) => inScope(r.department_id)).length;
     const pendTc = queryAll<{ department_id: number | null }>(

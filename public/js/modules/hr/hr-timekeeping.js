@@ -146,10 +146,10 @@ async function renderList(view) {
         <thead><tr><th>Cutoff</th><th>Date range</th><th class="right">Employees</th>${canManage ? '<th><span class="hr-sr-only">Actions</span></th>' : ''}</tr></thead>
         <tbody>${list.map((p) => `
           <tr class="clickable" data-open="${p.id}">
-            <td><button type="button" class="hr-row-open">${UI.esc(p.label)}</button></td>
+            <td><button type="button" class="hr-row-open">${UI.esc(p.label)}</button>${p.locked ? ' <span class="badge-pill">Paid · locked</span>' : ''}</td>
             <td>${UI.esc(p.start_date)} &ndash; ${UI.esc(p.end_date)}</td>
             <td class="right">${p.employee_count || 0}</td>
-            ${canManage ? `<td class="actions"><button type="button" class="icon-btn danger" title="Delete cutoff" aria-label="Delete cutoff ${UI.esc(p.label)}" data-del="${p.id}">${UI.icon('trash')}</button></td>` : ''}
+            ${canManage ? `<td class="actions"><button type="button" class="icon-btn danger" title="Delete cutoff" aria-label="Delete cutoff ${UI.esc(p.label)}" data-del="${p.id}" ${p.locked ? 'disabled title="Locked after payment"' : ''}>${UI.icon('trash')}</button></td>` : ''}
           </tr>`).join('')}
         </tbody>
       </table>`;
@@ -194,6 +194,11 @@ async function renderList(view) {
 // Inline progressive disclosure for rarely used tools: a toggle button that shows/hides a
 // panel rendered in normal flow (never an absolutely positioned menu, so nothing gets clipped
 // by a scrolling ancestor). Shared by the cutoff list and the cutoff detail screen.
+function hrWorkflowLoadError(root, error, retry) {
+  root.innerHTML=UI.emptyState({icon:'alert',title:'Couldn’t load these records',hint:error.message || 'Check your connection.',action:'<button type="button" class="btn secondary" data-hr-retry>Try again</button>'});
+  root.querySelector('[data-hr-retry]').onclick=retry;
+}
+
 function wireHrDisclosure(toggle, panel) {
   if (!toggle || !panel) return;
   toggle.addEventListener('click', () => {
@@ -515,7 +520,7 @@ function shiftModal(existing, onSaved) {
 /* ── Policy Settings: shifts list (add/edit/delete/default) + company-wide payroll rules ──── */
 async function policySettingsModal() {
   const [shiftsInit, policy] = await Promise.all([
-    API.get('/hr/shifts').catch(() => []),
+    API.get('/hr/shifts').catch(e => { UI.toast('Couldn’t load shifts: '+e.message,'error'); return []; }),
     API.get('/hr/payroll-policy').catch(() => null),
   ]);
   let shifts = shiftsInit;
@@ -811,7 +816,7 @@ async function policySettingsModal() {
         });
       }
       async function refreshShifts() {
-        shifts = await API.get('/hr/shifts').catch(() => []);
+        shifts = await API.get('/hr/shifts').catch(e => { UI.toast('Couldn’t load shifts: '+e.message,'error'); return []; });
         renderShifts();
       }
       renderShifts();
@@ -886,7 +891,7 @@ async function thirteenthMonthModal() {
       let last = { rows: [], total: 0, year: '' };
       async function load() {
         ov.querySelector('#tm-body').innerHTML = '<div class="empty">Loading…</div>';
-        last = await API.get('/hr/thirteenth-month?year=' + yearSel.value).catch(() => ({ rows: [], total: 0, year: yearSel.value }));
+        try { last = await API.get('/hr/thirteenth-month?year=' + yearSel.value); } catch(e) { last={rows:[],total:0,year:yearSel.value}; hrWorkflowLoadError(ov.querySelector('#tm-body'),e,load); return; }
         const b = ov.querySelector('#tm-body');
         if (!last.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
         b.innerHTML = `<table class="line-table"><thead><tr>
@@ -924,16 +929,17 @@ async function thirteenthMonthModal() {
    underlying "No Work Memo" Data Form always existed for this; this is just a direct way to
    manage it from Time Keeping instead of via Form Builder / Data Forms. */
 async function noWorkMemoModal() {
+  const canWrite = App.hasPermission('forms.manage.hr');
   let formId = null;
   try {
     const forms = await API.get('/form-definitions');
     const f = forms.find((x) => x.slug === 'no_work_memo');
     formId = f ? f.id : null;
-  } catch { /* fall through to the error state below */ }
+  } catch(e) { UI.toast('Couldn’t load HR forms: '+e.message,'error'); return; }
   if (!formId) { UI.toast('No Work Memo form not found — ask an admin to check Form Builder (HR).', 'error'); return; }
 
   async function load() {
-    return API.get(`/form-definitions/${formId}/records`).catch(() => []);
+    return API.get('/hr/calendar/no_work_memo');
   }
 
   const m = UI.modal({
@@ -948,12 +954,12 @@ async function noWorkMemoModal() {
         cutoff covering these dates; paid credits a full day, unpaid is the same as an absence but documented. No
         per-employee linking needed.</p>
       <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
-        <button type="button" class="btn secondary small" id="nw-new">${UI.icon('plus')} New</button></div>
+        ${canWrite ? `<button type="button" class="btn secondary small" id="nw-new">${UI.icon('plus')} New</button>` : ''}</div>
       <div id="nw-list"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       const list = ov.querySelector('#nw-list');
       async function refresh() {
-        const records = await load();
+        let records; try { records = await load(); } catch(e) { hrWorkflowLoadError(list,e,refresh); return; }
         if (!records.length) {
           list.innerHTML = UI.emptyState({ icon: 'alert', title: 'No holidays or no-work declarations yet', hint: 'Add one for an upcoming holiday or suspension.' });
           return;
@@ -966,7 +972,7 @@ async function noWorkMemoModal() {
               <td>${UI.esc(r.data.date_to || '')}</td>
               <td>${UI.esc(r.data.reason || '')}</td>
               <td><span class="badge-pill ${r.data.paid === 'Yes' ? 'status-completed' : 'status-cancelled'}">${UI.esc(r.data.paid || 'No')}</span></td>
-              <td class="actions"><button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button></td>
+              <td class="actions">${canWrite ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>` : ''}</td>
             </tr>`).join('')}</tbody></table>`;
         list.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
           if (!await UI.confirmDialog('Delete this declaration?', 'Delete')) return;
@@ -974,7 +980,7 @@ async function noWorkMemoModal() {
           catch (e) { UI.toast(e.message, 'error'); }
         });
       }
-      ov.querySelector('#nw-new').onclick = () => newModal(refresh);
+      const create=ov.querySelector('#nw-new'); if(create) create.onclick = () => newModal(refresh);
       refresh();
     },
   });
@@ -1011,12 +1017,13 @@ async function noWorkMemoModal() {
    fields (date range + paid vs a single date + type) don't actually overlap much. Seeded with
    reference dates in src/db.ts; admin edits/adds/deletes freely here. */
 async function companyHolidaysModal() {
+  const canWrite = App.hasPermission('forms.manage.hr');
   let formId = null;
   try {
     const forms = await API.get('/form-definitions');
     const f = forms.find((x) => x.slug === 'company_holiday');
     formId = f ? f.id : null;
-  } catch { /* fall through to the error state below */ }
+  } catch(e) { UI.toast('Couldn’t load HR forms: '+e.message,'error'); return; }
   if (!formId) { UI.toast('Company Holidays form not found — ask an admin to check Form Builder (HR).', 'error'); return; }
 
   const TYPE_BADGE = {
@@ -1026,7 +1033,7 @@ async function companyHolidaysModal() {
   };
 
   async function load() {
-    const records = await API.get(`/form-definitions/${formId}/records`).catch(() => []);
+    const records = await API.get('/hr/calendar/company_holiday');
     return records.slice().sort((a, b) => String(a.data.date || '').localeCompare(String(b.data.date || '')));
   }
 
@@ -1040,12 +1047,12 @@ async function companyHolidaysModal() {
         not). A specific employee's Daily Time record can override any date here for that one person (Daily Time —
         Day Type column).</p>
       <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
-        <button type="button" class="btn secondary small" id="ch-new">${UI.icon('plus')} New</button></div>
+        ${canWrite ? `<button type="button" class="btn secondary small" id="ch-new">${UI.icon('plus')} New</button>` : ''}</div>
       <div id="ch-list"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       const list = ov.querySelector('#ch-list');
       async function refresh() {
-        const records = await load();
+        let records; try { records = await load(); } catch(e) { hrWorkflowLoadError(list,e,refresh); return; }
         if (!records.length) {
           list.innerHTML = UI.emptyState({ icon: 'calendar', title: 'No holidays yet', hint: 'Add a date and its DOLE-declared type.' });
           return;
@@ -1056,7 +1063,7 @@ async function companyHolidaysModal() {
               <td class="mono">${UI.esc(r.data.date || '')}</td>
               <td>${UI.esc(r.data.name || '')}</td>
               <td><span class="badge-pill ${TYPE_BADGE[r.data.type] || ''}">${UI.esc(r.data.type || '')}</span></td>
-              <td class="actions"><button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button></td>
+              <td class="actions">${canWrite ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>` : ''}</td>
             </tr>`).join('')}</tbody></table>`;
         list.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
           if (!await UI.confirmDialog('Delete this holiday?', 'Delete')) return;
@@ -1064,7 +1071,7 @@ async function companyHolidaysModal() {
           catch (e) { UI.toast(e.message, 'error'); }
         });
       }
-      ov.querySelector('#ch-new').onclick = () => newModal(refresh);
+      const create=ov.querySelector('#ch-new'); if(create) create.onclick = () => newModal(refresh);
       refresh();
     },
   });
@@ -1220,10 +1227,11 @@ async function finalPayModal() {
 const RATE_KIND_LABEL = { sss: 'SSS', philhealth: 'PhilHealth', pagibig: 'Pag-IBIG', rwt: 'BIR withholding tax' };
 
 async function rateTablesModal() {
+  const canWrite=App.hasPermission('payroll.manage');
   async function load() {
-    return API.get('/hr/payroll-tables').catch(() => ({ rows: [], effective: {}, as_of: '' }));
+    return API.get('/hr/payroll-tables');
   }
-  let state = await load();
+  let state; try { state=await load(); } catch(e) { UI.modal({title:'Couldn’t load statutory rate tables',bodyHTML:`<p>${UI.esc(e.message)}</p>`,cancelText:'Close',confirmText:'Retry',protectChanges:false,onConfirm:()=>{rateTablesModal();}});return; }
 
   const m = UI.modal({
     title: 'Statutory rate tables',
@@ -1253,15 +1261,15 @@ async function rateTablesModal() {
             ${versions.map((v) => `
               <span class="chip" style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border,#dce6f2);border-radius:12px;padding:1px 8px;margin:2px 4px 2px 0">
                 ${UI.esc(v.effective_from)}${v.note ? ` · ${UI.esc(v.note)}` : ''}
-                <button type="button" class="icon-btn" data-del-ver="${v.id}" title="Delete this version" style="padding:0">${UI.icon('trash', 12)}</button>
+                ${canWrite ? `<button type="button" class="icon-btn" data-del-ver="${v.id}" title="Delete this version" style="padding:0">${UI.icon('trash', 12)}</button>` : ''}
               </span>`).join('') || '<span class="muted">no stored versions — using the built-in 2026 seed</span>'}
           </div>
           <label style="font-size:12px">Effective figures (JSON)</label>
-          <textarea data-json="${kind}" rows="7" style="width:100%;font-family:monospace;font-size:12px">${UI.esc(JSON.stringify(eff, null, 2))}</textarea>
+          <textarea data-json="${kind}" ${canWrite ? '' : 'readonly'} rows="7" style="width:100%;font-family:monospace;font-size:12px">${UI.esc(JSON.stringify(eff, null, 2))}</textarea>
           <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-            <input type="date" data-date="${kind}" value="${new Date().getFullYear() + 1}-01-01" style="width:150px" />
-            <input type="text" data-note="${kind}" placeholder="Note (e.g. 'per SSS Circular 2027-001')" style="flex:1" />
-            <button type="button" class="btn secondary small" data-save="${kind}">Save as new version</button>
+            <input type="date" data-date="${kind}" ${canWrite ? '' : 'disabled'} value="${new Date().getFullYear() + 1}-01-01" style="width:150px" />
+            <input type="text" data-note="${kind}" ${canWrite ? '' : 'disabled'} placeholder="Note (e.g. 'per SSS Circular 2027-001')" style="flex:1" />
+            ${canWrite ? `<button type="button" class="btn secondary small" data-save="${kind}">Save as new version</button>` : ''}
           </div>
         </div>`;
     }).join('');
@@ -1321,7 +1329,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   let lastPayrollPeriod = period.label;
   // Roster/cutoff writes are hr.manage and payslip/GL writes payroll.manage server-side; read-only
   // viewers keep the roster, daily grids and CSV export without buttons that would only 403.
-  const canManage = App.hasPermission('hr.manage');
+  const canManage = App.hasPermission('hr.manage') && !period.locked;
   const canPayroll = App.hasPermission('payroll.manage');
   const showRate = App.hasPermission('payroll.view');
   const hasTools = canManage || canPayroll;
@@ -1338,6 +1346,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       ${hasTools ? `<button type="button" class="btn secondary" id="tk-more-toggle" aria-expanded="false" aria-controls="tk-more">${UI.icon('settings')} Cutoff tools</button>` : ''}
       ${canPayroll ? `<button type="button" class="btn" id="tk-generate">${UI.icon('sheet')} Generate Payslips</button>` : ''}
     </div>
+    ${period.locked ? '<div class="panel hr-workflow-notice"><strong>Locked after payment</strong><p class="muted">Attendance, roster and cutoff dates are read-only. Payroll must explicitly unmark all paid payslips to reopen them. Remaining unpaid payslips can still be reviewed and paid.</p></div>' : ''}
+    ${(period.warnings || []).length ? `<div class="panel hr-workflow-notice" id="tk-warnings" role="status"><strong>Payroll review warnings — generation is still allowed</strong><ul>${period.warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul><button class="btn secondary small" id="tk-review-approvals">Review approvals</button></div>` : ''}
     ${hasTools ? `<div class="hr-tools" id="tk-more" hidden>
       ${canManage ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-cutoff">
         <span class="hr-tools-label" id="tk-more-cutoff">Cutoff</span>
@@ -1399,6 +1409,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       `${period.start_date} – ${period.end_date} · ${n} employee${n === 1 ? '' : 's'} on roster`;
   }
   renderHeader();
+  const reviewApprovals = view.querySelector('#tk-review-approvals'); if (reviewApprovals) reviewApprovals.onclick = () => App.navigate('hr-approvals');
 
   view.querySelector('#tk-back').onclick = () => App.navigate('hr-timekeeping');
   wireHrDisclosure(view.querySelector('#tk-more-toggle'), view.querySelector('#tk-more'));
@@ -1676,6 +1687,9 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       UI.toast(`Couldn’t refresh the roster: ${(err && err.message) || 'request failed'}`, 'error');
       return;
     }
+    if (period.locked) { App.navigate('hr-timekeeping', { period_id: periodId }); return; }
+    const warningPanel = view.querySelector('#tk-warnings');
+    if (warningPanel) warningPanel.querySelector('ul').innerHTML = (period.warnings || []).map(w => `<li>${UI.esc(w)}</li>`).join('');
     renderRoster();
   }
 
@@ -1842,9 +1856,9 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form', 'lunch_offset_form', 'reported_absence', 'rest_day_work_request', 'rest_day_change'];
     const [days, shifts, policy, holidayForms] = await Promise.all([
       API.get(`/hr/periods/${periodId}/attendance?employee_id=${employeeId}`),
-      API.get('/hr/shifts').catch(() => []),
-      API.get('/hr/payroll-policy').catch(() => ({ default_rest_days: [0, 6] })),
-      API.get('/form-definitions').catch(() => []),
+      API.get('/hr/shifts').catch(e => { UI.toast('Couldn’t load shifts: '+e.message,'error'); return []; }),
+      API.get('/hr/payroll-policy').catch(e => { UI.toast('Couldn’t load payroll policy. Daily previews may be incomplete; payroll uses the server policy.','error'); return { default_rest_days: [0, 6] }; }),
+      API.get('/form-definitions').catch(e => { UI.toast('Couldn’t load HR forms: '+e.message,'error'); return []; }),
     ]);
     const defaultShift = shifts.find((s) => s.is_default) || null;
     days.forEach((d) => {
@@ -1918,7 +1932,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     const holidayForm = holidayForms.find((f) => f.slug === 'company_holiday');
     const holidayByDate = {};
     if (holidayForm) {
-      const records = await API.get(`/form-definitions/${holidayForm.id}/records`).catch(() => []);
+      const records = await API.get('/hr/calendar/company_holiday').catch(e => { UI.toast('Holiday calendar unavailable: '+e.message,'error');return []; });
       const TYPE_TO_CODE = { 'Regular Holiday': 'regular', 'Special Non-Working Holiday': 'special_non_working', 'Special Working Holiday': 'special_working' };
       records.forEach((r) => { if (r.data.date) holidayByDate[r.data.date] = TYPE_TO_CODE[r.data.type] || null; });
     }
@@ -1930,7 +1944,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     const noWorkForm = holidayForms.find((f) => f.slug === 'no_work_memo');
     let noWorkMemos = [];
     if (noWorkForm) {
-      noWorkMemos = (await API.get(`/form-definitions/${noWorkForm.id}/records`).catch(() => []))
+      noWorkMemos = (await API.get('/hr/calendar/no_work_memo').catch(e => { UI.toast('No-work calendar unavailable: '+e.message,'error');return []; }))
         .filter((r) => r.data.date_from && r.data.date_to);
     }
     function noWorkFor(workDate) {
@@ -2413,7 +2427,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
 
         async function linkFormModal(rowIndex) {
           const day = days[rowIndex];
-          const defs = await API.get('/form-definitions').catch(() => []);
+          const defs = await API.get('/form-definitions').catch(e => { UI.toast('Couldn’t load HR forms: '+e.message,'error'); return []; });
           const relevant = defs.filter((f) => FORM_LINK_SLUGS.includes(f.slug));
           const [lists, linkedIds] = await Promise.all([
             Promise.all(relevant.map((f) => API.get(`/form-definitions/${f.id}/records`).catch(() => []))),
@@ -2541,7 +2555,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                   const res = await API.post('/form-records', { form_def_id: def.id, data, status: 'approved' });
                   day._formIds.push(res.id);
                   day._links.push({ id: res.id, label: `${def.name} ${res.number || ''}`.trim(), slug: def.slug, session: data.session || null, status: 'approved', data });
-                  UI.toast(`${def.name} ${res.number || ''} created & linked`);
+                  UI.toast(`${def.name} ${res.number || ''} created & linked${['leave_request','overtime_request','undertime_request','halfday_request','offset_form','lunch_offset_form','holiday_work_request','rest_day_work_request','rest_day_change'].includes(def.slug) ? ' — pending approval' : ''}`);
                   m2.close();
                   renderRows();
                 } catch (err) {
@@ -2593,6 +2607,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     UI.modal({
       title: 'Generate payslips',
       bodyHTML: `
+        ${(period.warnings || []).length ? `<div role="status"><strong>Warnings — you can still generate</strong><ul>${period.warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul></div>` : ''}
         <p class="muted" style="margin-top:0">Creates or updates one HR Payroll record per employee on this cutoff — days worked,
           late deductions, and OT/Holiday pay are computed automatically from the daily log and any linked forms (per the
           Policy Settings rules). Statutory deductions (SSS/PhilHealth/Pag-IBIG), cash advances, and net pay still need your review —
@@ -2619,9 +2634,11 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           title: 'Payslips ready',
           bodyHTML: `<p>${res.created} created, ${res.updated} updated for "${UI.esc(res.period)}".</p>
             <p class="muted">Fill in hours/earnings/deductions there, then use the existing Print flow.</p>
-            ${halfDayWarning}`,
+            ${halfDayWarning}
+            ${res.skipped_locked ? `<p>${res.skipped_locked} paid payslip(s) were left unchanged.</p>` : ''}
+            ${(res.warnings || []).length ? `<div role="status"><strong>Review warnings</strong><ul>${res.warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul></div>` : ''}`,
           confirmText: 'Open Payroll',
-          onConfirm: () => { App.navigate('form-records', { form_id: res.form_id, period: res.period }); },
+          onConfirm: () => { App.navigate('form-records', { form_id: res.form_id, slug: 'hr_payroll', period: res.period }); },
         });
       },
     });

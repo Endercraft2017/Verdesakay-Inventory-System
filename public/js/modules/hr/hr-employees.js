@@ -4,7 +4,7 @@
    virtual ID card from the editable "Employee ID Card" document template (Documents >
    Templates), the same way payslips print from the "HR Payroll Slip" template.
    Route: hr-employees. */
-App.register('hr-employees', async (view) => {
+App.register('hr-employees', async (view, filter) => {
   if (!App.hasPermission('hr.view')) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
@@ -130,6 +130,7 @@ App.register('hr-employees', async (view) => {
   }
 
   async function createLinkedAccount(empOv, typedName, onCreated) {
+    if (!empOv.dataset.employeeId) { UI.toast('Save this employee first, then open it to create and link an account.','info'); return; }
     const fullName = typedName || empOv.querySelector('[data-f="name"]').value.trim();
     const deptId = empOv.querySelector('[data-f="department_id"]').value;
     let catalog;
@@ -152,13 +153,13 @@ App.register('hr-employees', async (view) => {
         <div style="margin-top:10px"><label>Email <span class="muted">(for password resets)</span></label>
           <input id="na-email" type="email" placeholder="name@company.com" /></div>
         <div style="margin-top:10px"><label>Temporary password *</label><input id="na-pw" class="mono" value="${tempPassword()}" /></div>
-        <p class="muted" style="font-size:12px">Share this with the employee; they can change it under My Account. The account is created right away and linked to this employee when you save the form. Need more access than one role gives? Add it afterwards with the <strong>Access</strong> button next to the linked account.</p>`,
+        <p class="muted" style="font-size:12px">Share this with the employee; they can change it under My Account. The account is created and linked to the saved employee immediately. Cancel does not undo account creation. Need more access than one role gives? Add it afterwards with the <strong>Access</strong> button next to the linked account.</p>`,
       confirmText: 'Create account',
       onConfirm: async (ov, showErr) => {
         const val = (id) => ov.querySelector(id).value.trim();
         const body = {
           full_name: val('#na-name'), username: val('#na-user'), password: ov.querySelector('#na-pw').value,
-          email: val('#na-email'), role: val('#na-role'), department_id: val('#na-dept') || null,
+          email: val('#na-email'), role: val('#na-role'), department_id: val('#na-dept') || null, employee_id: Number(empOv.dataset.employeeId),
         };
         if (!body.full_name || !body.username || !body.password) { showErr('Full name, username and password are required'); return false; }
         if (!body.role) { showErr('Choose a role for the account'); return false; }
@@ -195,7 +196,10 @@ App.register('hr-employees', async (view) => {
     UI.toast('Department deleted');
   }
 
+  let displayedEmployees = [];
+  let loadVersion = 0;
   async function load() {
+    const version = ++loadVersion;
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     await ensureDepts();
     const deptFilter = view.querySelector('#emp-dept-filter');
@@ -207,11 +211,18 @@ App.register('hr-employees', async (view) => {
     if (state.q) params.set('q', state.q);
     if (state.department_id) params.set('department_id', state.department_id);
     if (state.status) params.set('status', state.status);
-    const list = await API.get('/hr/employees?' + params.toString());
-    render(list);
+    try {
+      const list = await API.get('/hr/employees?' + params.toString());
+      if (version === loadVersion) render(list);
+    } catch (e) {
+      if (version !== loadVersion) return;
+      tableEl.innerHTML = UI.emptyState({icon:'alert',title:'Couldn’t load employees',hint:e.message,action:'<button class="btn secondary" id="emp-retry">Try again</button>'});
+      tableEl.querySelector('#emp-retry').onclick=load;
+    }
   }
 
   function render(list) {
+    displayedEmployees = list;
     if (!list.length) {
       tableEl.innerHTML = UI.emptyState({
         icon: 'users',
@@ -240,8 +251,8 @@ App.register('hr-employees', async (view) => {
             <td><span class="badge-pill ${STATUS_CLASS[e.status] || 'muted'}">${STATUS_LABELS[e.status] || e.status}</span></td>
             <td class="actions">
               <button class="icon-btn" title="Generate ID" data-id-card="${e.id}">${UI.icon('idcard')}</button>
-              <button class="icon-btn" title="Edit" data-edit="${e.id}">${UI.icon('edit')}</button>
-              <button class="icon-btn danger" title="Delete" data-del="${e.id}">${UI.icon('trash')}</button>
+              <button class="icon-btn" title="${canManage ? 'Edit' : 'View employee'}" data-edit="${e.id}">${UI.icon(canManage ? 'edit' : 'users')}</button>
+              ${canManage ? `<button class="icon-btn danger" title="Delete" data-del="${e.id}">${UI.icon('trash')}</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
@@ -253,6 +264,7 @@ App.register('hr-employees', async (view) => {
       const emp = list.find((x) => String(x.id) === String(b.dataset.idCard));
       if (emp) generateId(emp);
     });
+    tableEl.querySelectorAll('tr[data-open]').forEach(tr => { tr.tabIndex=0; tr.onkeydown=e=>{if(e.target===tr && (e.key==='Enter' || e.key===' ')){e.preventDefault();openEmployee(tr.dataset.open,list);}}; });
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions') || e.target.closest('.emp-chk')) return;
       openEmployee(tr.dataset.open, list);
@@ -296,7 +308,14 @@ App.register('hr-employees', async (view) => {
 
   function openEmployee(id, list) {
     const emp = list.find((x) => String(x.id) === String(id));
-    if (emp) employeeModal(emp);
+    if (!emp) return;
+    if (canManage) { employeeModal(emp); return; }
+    const fields = [['Employee number',emp.employee_no],['Department',emp.department_name],['Position',emp.position],['Status',emp.status],['Start date',emp.start_date],['Available leave',(emp.leave_days_per_year ?? 5)-(emp.leave_days_used ?? 0)],['SSS',emp.sss_no],['PhilHealth',emp.philhealth_no],['Pag-IBIG',emp.pagibig_no],['TIN',emp.tin_no]];
+    if (canSeePay) fields.push(['Daily rate',money(emp.daily_rate)],['Monthly rate',money(emp.monthly_rate)]);
+    UI.modal({title:emp.name,cancelText:'Close',bodyHTML:`<p class="muted">Read-only employee record. An HR manager can make changes.</p>${fields.map(([label,value])=>`<div class="tool-row"><strong>${UI.esc(label)}</strong><span>${UI.esc(String(value ?? '—'))}</span></div>`).join('')}<h4>Documents</h4><div id="emp-read-docs">Loading…</div><h4>Assets</h4><div id="emp-read-assets">Loading…</div>`,onOpen:async ov=>{
+      try {const docs=await API.get(`/hr/employees/${emp.id}/documents`);ov.querySelector('#emp-read-docs').innerHTML=docs.length?docs.map((d,i)=>`<button class="btn secondary small" data-download="${i}">${UI.esc(d.title)}</button>`).join(' '):'<p class="muted">No documents.</p>';ov.querySelectorAll('[data-download]').forEach(b=>b.onclick=()=>downloadDoc(emp.id,docs[Number(b.dataset.download)].id,docs));}catch(e){ov.querySelector('#emp-read-docs').textContent='Couldn’t load documents: '+e.message;}
+      try {const assets=await API.get(`/hr/employees/${emp.id}/assets`);ov.querySelector('#emp-read-assets').innerHTML=assets.length?assets.map(a=>`<p>${UI.esc(a.form_number || '')} — ${(a.items || []).map(i=>`${UI.esc(i.asset_name)} (${UI.esc(i.status)})`).join(', ')}</p>`).join(''):'<p class="muted">No assets.</p>';}catch(e){ov.querySelector('#emp-read-assets').textContent='Couldn’t load assets: '+e.message;}
+    }});
   }
 
   /* ---------- Photo: resize client-side to a small JPEG data URI before storing ---------- */
@@ -546,11 +565,12 @@ App.register('hr-employees', async (view) => {
             </div>
           </div>
 
-          <div data-formpanel="leave" class="form-panel hidden">
-            <label style="display:block">Paid leave (simple fixed bank — not accrual-based)</label>
+          <div data-formpanel="leave" class="form-panel hidden"><p class="muted">Document uploads, asset changes, leave adjustments and rate changes save immediately. Save applies the employee fields; Cancel does not undo those separate actions.</p>
+            <label style="display:block">Employee leave bank</label><p class="muted">Set an individual entitlement. Approved paid leave consumes this bank. Use Adjust balance to add or deduct days with a recorded reason.</p>
+            ${editing ? '<button class="btn secondary small" type="button" id="emp-leave-adjust">Adjust balance</button> <button class="btn secondary small" type="button" id="emp-leave-history">Adjustment history</button>' : ''}
             <div class="field-row">
-              <div><label>Days / year</label><input data-f="leave_days_per_year" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_per_year ?? 5) : 5))}" /></div>
-              <div><label>Days used (this year)</label><input data-f="leave_days_used" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_used ?? 0) : 0))}" />
+              <div><label>Individual entitlement (days)</label><input data-f="leave_days_per_year" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_per_year ?? 5) : 5))}" /></div>
+              <div><label>Days consumed</label><input data-f="leave_days_used" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_used ?? 0) : 0))}" />
                 ${editing ? `<div class="muted" style="font-size:12px;margin-top:3px">${UI.esc(String((existing.leave_days_per_year ?? 5) - (existing.leave_days_used ?? 0)))} remaining</div>` : ''}
               </div>
             </div>
@@ -675,7 +695,7 @@ App.register('hr-employees', async (view) => {
             selected: currentUserId != null ? currentUserId : '',
             placeholder: 'Type a name or username…',
             emptyText: 'No matching account',
-            onSelect: syncAccessBtn,
+            onSelect: () => { syncAccessBtn(); if(ov.__markDirty) ov.__markDirty(); },
             action: {
               label: '+ Create new account',
               onClick: (typed) => createLinkedAccount(ov, typed, (u) => {
@@ -683,6 +703,7 @@ App.register('hr-employees', async (view) => {
                 users.sort((a, b) => a.full_name.localeCompare(b.full_name));
                 userCombo.setOptions(userComboOptions());
                 userCombo.setSelected(u.id);
+                existing.user_id = u.id;
                 syncAccessBtn();
               }),
             },
@@ -707,9 +728,18 @@ App.register('hr-employees', async (view) => {
           ov.querySelector('#emp-photo-clear').onclick = () => { photoData = ''; preview.src = PLACEHOLDER_PHOTO; };
 
           if (!editing) return;
+          ov.dataset.employeeId = existing.id;
+          ov.querySelector('#emp-leave-adjust').onclick=()=>{
+            if(Number(ov.querySelector('[data-f="leave_days_per_year"]').value)!==(existing.leave_days_per_year ?? 5) || Number(ov.querySelector('[data-f="leave_days_used"]').value)!==(existing.leave_days_used ?? 0)) { UI.toast('Save your leave field changes before adjusting the balance.','info');return; }
+            UI.modal({title:`Adjust leave — ${existing.name}`,bodyHTML:'<p class="muted">This adjustment saves immediately. Use positive days to add leave or negative days to deduct it.</p><label for="leave-days">Days to add / deduct</label><input id="leave-days" type="number" step="0.5"><label for="leave-reason">Reason *</label><textarea id="leave-reason" maxlength="1000"></textarea>',confirmText:'Save adjustment',onConfirm:async(ad,showErr)=>{
+              const days=Number(ad.querySelector('#leave-days').value), reason=ad.querySelector('#leave-reason').value.trim();if(!days || reason.length<3){showErr('Enter a non-zero number of days and a short reason.');return false;}
+              const res=await API.post(`/hr/employees/${existing.id}/leave-adjustments`,{days,reason});existing.leave_days_per_year=res.entitlement;ov.querySelector('[data-f="leave_days_per_year"]').value=res.entitlement;UI.toast(`Leave adjusted — ${res.remaining} days remaining`);load();
+            }});
+          };
+          ov.querySelector('#emp-leave-history').onclick=async()=>{try{const history=await API.get(`/hr/employees/${existing.id}/leave-adjustments`);UI.modal({title:'Leave adjustment history',cancelText:'Close',bodyHTML:history.length?history.map(h=>`<div class="tool-row"><span>${UI.esc(h.created_at)} · ${UI.esc(h.user_name || '')}</span><span>${UI.esc(h.summary)}</span></div>`).join(''):'<p class="muted">No recorded adjustments.</p>'});}catch(e){UI.toast(e.message,'error');}};
           const docsEl = ov.querySelector('#emp-docs');
           async function loadDocs() {
-            const docs = await API.get(`/hr/employees/${existing.id}/documents`).catch(() => []);
+            let docs; try { docs = await API.get(`/hr/employees/${existing.id}/documents`); } catch(e) { docsEl.innerHTML = `<p>${UI.esc(e.message)}</p><button type="button" class="btn secondary small" id="emp-doc-retry">Retry documents</button>`; docsEl.querySelector('#emp-doc-retry').onclick=loadDocs; return; }
             if (!docs.length) { docsEl.innerHTML = '<div class="muted" style="padding:6px 0">No documents uploaded yet.</div>'; return; }
             docsEl.innerHTML = docs.map((d) => `
               <div class="tool-row" data-doc="${d.id}">
@@ -723,8 +753,7 @@ App.register('hr-employees', async (view) => {
             docsEl.querySelectorAll('[data-doc-dl]').forEach((b) => b.onclick = () => downloadDoc(existing.id, b.dataset.docDl, docs));
             docsEl.querySelectorAll('[data-doc-del]').forEach((b) => b.onclick = async () => {
               if (!await UI.confirmDialog('Delete this document?', 'Delete')) return;
-              await API.del(`/hr/employees/${existing.id}/documents/${b.dataset.docDel}`);
-              loadDocs();
+              try { await API.del(`/hr/employees/${existing.id}/documents/${b.dataset.docDel}`); loadDocs(); } catch(e) { UI.toast(e.message,'error'); }
             });
           }
           const docFileInp = ov.querySelector('#emp-doc-file');
@@ -747,7 +776,7 @@ App.register('hr-employees', async (view) => {
 
           const assetsEl = ov.querySelector('#emp-assets');
           async function loadAssets() {
-            const issuances = await API.get(`/hr/employees/${existing.id}/assets`).catch(() => []);
+            let issuances; try { issuances = await API.get(`/hr/employees/${existing.id}/assets`); } catch(e) { assetsEl.innerHTML = `<p>${UI.esc(e.message)}</p><button type="button" class="btn secondary small" id="emp-assets-retry">Retry assets</button>`; assetsEl.querySelector('#emp-assets-retry').onclick=loadAssets; return; }
             if (!issuances.length) { assetsEl.innerHTML = '<div class="muted" style="padding:6px 0">No assets issued yet.</div>'; return; }
             assetsEl.innerHTML = issuances.map((f) => `
               <div class="tool-row" data-issuance="${f.id}" style="align-items:flex-start">
@@ -774,8 +803,7 @@ App.register('hr-employees', async (view) => {
             });
             assetsEl.querySelectorAll('[data-asset-del]').forEach((b) => b.onclick = async () => {
               if (!await UI.confirmDialog('Delete this asset issuance record?', 'Delete')) return;
-              await API.del(`/hr/assets/${b.dataset.assetDel}`);
-              loadAssets();
+              try { await API.del(`/hr/assets/${b.dataset.assetDel}`); loadAssets(); } catch(e) { UI.toast(e.message,'error'); }
             });
           }
           ov.querySelector('#emp-asset-issue').onclick = () => assetIssuanceModal(existing, loadAssets);
@@ -1272,4 +1300,5 @@ App.register('hr-employees', async (view) => {
   }));
 
   await load();
+  if (filter && filter.id && view.isConnected) openEmployee(filter.id, displayedEmployees);
 });

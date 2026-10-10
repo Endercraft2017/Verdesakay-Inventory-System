@@ -1,5 +1,6 @@
 /* Form Records: index of all custom forms, or records list for a specific form.
    Route: form-records.  filter.form_id = <id> to open a specific form directly. */
+const HR_REQUEST_SLUGS = ['leave_request','overtime_request','undertime_request','halfday_request','offset_form','lunch_offset_form','holiday_work_request','travel_order','coe_request','reimbursement_request','loan_application','training_request','incident_report','information_change','rest_day_work_request','rest_day_change'];
 const FORM_RECORDS_SCOPE_LABELS = { hr: 'HR', inventory: 'Inventory', admin: 'Admin', accounting: 'Accounting' };
 const FORM_RECORDS_SCOPE_ORDER = ['hr', 'inventory', 'admin', 'accounting', null];
 
@@ -15,9 +16,14 @@ App.register('form-records', async (view, filter) => {
   if (filter.slug && !filter.form_id) {
     try {
       const forms = await API.get('/form-definitions');
-      const f = forms.find((x) => x.slug === filter.slug);
-      if (f) { await renderFormView(view, f.id, filter.period || '', filter.status || ''); return; }
-    } catch { /* fall through to the index */ }
+      const f = forms.find(x => x.slug === filter.slug);
+      if (!f) throw new Error('This form has not been configured. Ask HR to set it up in Form Builder.');
+      await renderFormView(view, f.id, filter.period || '', filter.status || ''); return;
+    } catch (e) {
+      view.innerHTML = `<div class="panel">${UI.emptyState({icon:'alert',title:'Couldn’t open the requested form',hint:e.message,action:'<button class="btn secondary" id="fr-retry-destination">Try again</button>'})}</div>`;
+      view.querySelector('#fr-retry-destination').onclick = () => App.navigate('form-records', filter);
+      return;
+    }
   }
   if (filter.form_id) {
     await renderFormView(view, Number(filter.form_id), filter.period || '', filter.status || '');
@@ -96,7 +102,7 @@ async function renderIndex(view, onlyScope) {
     </div>`).join('');
 
   el.querySelectorAll('.form-card[data-id]').forEach((card) =>
-    card.onclick = () => App.navigate('form-records', { form_id: card.dataset.id }));
+    card.onclick = () => App.navigate('form-records', { form_id: card.dataset.id, slug: forms.find(f => String(f.id) === card.dataset.id)?.slug, ...(onlyScope ? { scope: onlyScope } : {}) }));
 }
 
 /* ── Per-form records view ───────────────────────────────────────────────── */
@@ -141,7 +147,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         title: 'No access to this form’s records',
         hint: 'Filed one yourself? Open Requests in the mobile app to see your own submissions and their status.',
       })}</div>`;
-    view.querySelector('#fr-back').onclick = () => App.navigate('form-records');
+    view.querySelector('#fr-back').onclick = () => App.navigate('form-records', formDef.scope ? { scope: formDef.scope } : undefined);
     return;
   }
 
@@ -219,7 +225,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       </select>
       ${canBulkPrint ? `<button class="btn secondary" id="fr-print-all-tpl" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
       <button class="btn secondary" id="fr-download-csv" style="margin-left:8px" title="Download the currently filtered records as a CSV file">${UI.icon('download')} Download CSV</button>
-      <button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete Period</button>
+      ${HR_REQUEST_SLUGS.includes(formDef.slug) ? '<button class="btn secondary" id="fr-open-approvals">Open Approvals</button>' : `<button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete Period</button>`}
       <button class="btn" id="fr-new" style="margin-left:8px">${UI.icon('plus')} New Record</button>
     </div>`;
 
@@ -229,16 +235,16 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       <div style="flex:1"></div>
       ${isPayroll ? `<button class="btn secondary small" id="fr-bulk-print">${UI.icon('printer')} Print selected</button>` : ''}
       ${canBulkPrint ? `<button class="btn secondary small" id="fr-bulk-print-tpl">${UI.icon('printer')} Print selected</button>` : ''}
-      ${canWrite ? `<button class="btn secondary small" id="fr-bulk-status">${UI.icon('edit', 14)} Change status</button>` : ''}
+      ${canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="btn secondary small" id="fr-bulk-status">${UI.icon('edit', 14)} Change status</button>` : ''}
       ${isPayroll && canManagePayroll ? `
         <button class="btn secondary small" id="fr-bulk-mark-paid">${UI.icon('check')} Mark paid</button>
         <button class="btn secondary small" id="fr-bulk-unmark-paid">${UI.icon('reply', 15)} Unmark paid</button>` : ''}
-      ${canWrite ? `<button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>` : ''}
+      ${canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>` : ''}
       <button class="btn secondary small" id="fr-bulk-clear">${UI.icon('close', 12)} Clear</button>
     </div>
     <div class="panel"><div id="fr-table"></div></div>`;
 
-  view.querySelector('#fr-back').onclick = () => App.navigate('form-records');
+  view.querySelector('#fr-back').onclick = () => App.navigate('form-records', formDef.scope ? { scope: formDef.scope } : undefined);
   const newBtn = view.querySelector('#fr-new'); // absent for a payroll.view-only reader
   if (newBtn) newBtn.onclick = () => recordModal(null);
   view.querySelector('#fr-search').addEventListener('input', (e) => {
@@ -274,6 +280,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       printRecordsViaTemplate(currentRecords.filter((r) => selectedIds.has(r.id)));
   }
   view.querySelector('#fr-download-csv').onclick = () => downloadCsv();
+  const approvalsBtn = view.querySelector('#fr-open-approvals'); if (approvalsBtn) approvalsBtn.onclick = () => App.navigate('hr-approvals', { slug: formDef.slug });
   const delAllBtn = view.querySelector('#fr-del-all');
   if (delAllBtn) delAllBtn.onclick = () => delAll();
   const bulkDelBtn = view.querySelector('#fr-bulk-del');
@@ -353,7 +360,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
     const targets = currentRecords.filter((r) => selectedIds.has(r.id));
 
-    const statusOpts = ['draft', 'submitted', 'approved', 'rejected', 'completed'];
+    const statusOpts = (request ? ['pending'] : ['draft', 'submitted', 'approved', 'rejected', 'completed']);
     // Same resolve(true/false)-on-[data-close] wrapping UI.confirmDialog itself uses (ui.js) —
     // the only supported way to read "confirmed vs cancelled" out of a modal that also needs
     // to hand back a value (the picked status), not just a yes/no.
@@ -533,7 +540,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     if (!list.length) { UI.toast('No records to print', 'error'); return; }
     if (typeof buildPayrollSummaryHtml === 'undefined') { UI.toast('Print module failed to load', 'error'); return; }
     const period = labelHint || state.period;
-    const meta = period ? periodsMeta.find((p) => p.label === period) : null;
+    const cutoffId = currentRecords.find(r => r.period === period && r.data && r.data.cutoff_id)?.data.cutoff_id;
+    const meta = period ? periodsMeta.find(p => cutoffId ? p.id === Number(cutoffId) : p.label === period) : null;
     const company = await API.get('/templates/company').catch(() => null);
     const subtitle = `${list.length} payslip${list.length === 1 ? '' : 's'}` +
       (!labelHint && state.status ? ` — status "${state.status}"` : '') +
@@ -988,7 +996,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
               ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)" aria-label="Unmark payslip ${UI.esc(r.number)} as paid">${UI.icon('reply', 15)}</button>`
               : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)" aria-label="Mark payslip ${UI.esc(r.number)} as paid">${UI.icon('check')}</button>`) : ''}
             ${r.status !== 'paid' && canWrite ? `<button class="icon-btn" data-edit="${r.id}" title="Edit"${isPayroll ? ` aria-label="Edit payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('edit')}</button>` : ''}
-            ${r.status !== 'paid' && canWrite ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete"${isPayroll ? ` aria-label="Delete payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('trash')}</button>` : ''}
+            ${r.status !== 'paid' && canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete"${isPayroll ? ` aria-label="Delete payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('trash')}</button>` : ''}
           </td>
         </tr>`).join('')}
       </tbody></table>`;
@@ -1017,7 +1025,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       groups.get(label).push(r);
     }
     const bundles = [...groups.entries()].map(([label, recs]) => ({
-      label, records: recs, meta: periodsMeta.find((p) => p.label === label) || null,
+      label, records: recs, meta: periodsMeta.find(p => recs[0]?.data?.cutoff_id ? p.id === Number(recs[0].data.cutoff_id) : p.label === label) || null,
     }));
     // Most recent cutoff first — by its real start_date when known, else fall back to the
     // label itself (periods endpoint already returns labels in DESC order server-side).
@@ -1252,8 +1260,13 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // "Review & issue" flow so a proposed memo/NTE opens here for the user to confirm.
   async function recordModal(existing, prefill) {
     const editing = !!existing;
+    const request = HR_REQUEST_SLUGS.includes(formDef.slug);
+    if (request && existing && (existing.status !== 'pending' || formDef.slug === 'information_change')) {
+      UI.modal({title: `${formDef.name} — ${existing.number}`,cancelText:'Close',bodyHTML:`<p>Status: ${UI.esc(existing.status)}</p><p class="muted">HR requests are decided in Approvals. Decided requests cannot be edited.</p>${Object.entries(existing.data || {}).map(([k,v])=>`<div class="tool-row"><strong>${UI.esc(k.replace(/_/g,' '))}</strong><span>${UI.esc(String(v ?? ''))}</span></div>`).join('')}`});
+      return;
+    }
     const data = editing ? { ...existing.data } : { ...(prefill || {}) };
-    const statusOpts = ['draft', 'submitted', 'approved', 'rejected', 'completed']
+    const statusOpts = (request ? ['pending'] : ['draft', 'submitted', 'approved', 'rejected', 'completed'])
       .map((s) => `<option value="${s}" ${(existing ? existing.status : 'draft') === s ? 'selected' : ''}>${s}</option>`)
       .join('');
     const employees = formDef.fields.some((f) => f.type === 'employee') ? await getEmployees() : [];
@@ -1273,7 +1286,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       bodyHTML: `
         <div style="margin-bottom:14px">
           <label>Status</label>
-          <select data-f="status">${statusOpts}</select>
+          <select data-f="status" ${request ? 'disabled' : ''}>${statusOpts}</select>${request ? '<p class="muted">Submit as Pending. Use Approvals to approve or reject.</p>' : ''}
         </div>
         ${formDef.fields.map((field) => renderFieldInput(field, data, employees)).join('')}
         ${netPayField}
