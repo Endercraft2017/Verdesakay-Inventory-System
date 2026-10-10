@@ -201,6 +201,22 @@ export const aiConfigSchema = z.object({
   token_cap: z.coerce.number().min(0).max(1_000_000_000).optional(),
 });
 
+/** Operator-created workspaces: sandbox accounts may omit their recovery email and slug. */
+export const platformCreateTenantSchema = z.object({
+  name: trimmed.min(1, 'Company name is required').max(120),
+  slug: trimmed.toLowerCase().optional(),
+  admin_username: trimmed.toLowerCase().regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
+  admin_password: z.string().min(6, 'Password must be at least 6 characters'),
+  admin_email: z.union([z.literal(''), z.string().trim().toLowerCase().email('Enter a valid owner email address')]).optional(),
+  is_sandbox: z.boolean().default(false),
+  plan: trimmed.optional(),
+  modules: z.array(z.string()).optional(),
+}).superRefine((v, ctx) => {
+  if (!v.is_sandbox && !v.admin_email) {
+    ctx.addIssue({ code: 'custom', path: ['admin_email'], message: 'Owner email is required for regular accounts' });
+  }
+});
+
 /** POST /api/signup — create a new tenant workspace (self-serve, gated by SIGNUPS_OPEN). */
 export const signupSchema = z.object({
   company_name: trimmed.min(1, 'Company name is required').max(120),

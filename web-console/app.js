@@ -120,7 +120,7 @@
       tb.appendChild(el('button', { class: 'tenant-choice' + (drawerState && drawerState.slug === t.slug ? ' selected' : ''),
         'aria-pressed': drawerState && drawerState.slug === t.slug ? 'true' : 'false',
         onclick: function () { openDrawer(t.slug).catch(function (e) { toast(e.message); }); } }, [
-        el('strong', { text: t.name || t.slug }),
+        el('strong', { text: (t.name || t.slug) + (t.is_sandbox ? ' (Sandbox)' : '') }),
         el('span', { class: 'tenant-meta' }, [el('span', { text: t.slug }), statusBadge(t.status)]),
       ]));
     });
@@ -167,6 +167,8 @@
       photoRetentionDays: full.photo_retention.retention_days,
       photoMaxMb: full.photo_retention.max_mb,
       photoUsageMb: full.photo_retention.usage_mb,
+      owner: full.owner,
+      isSandbox: full.is_sandbox,
       log: full.log || [],
     };
     activeTab = tab || 'overview';
@@ -240,6 +242,52 @@
       el('div', { class: 'muted', style: 'margin-top:4px', text: 'Blank = system default. 0 = no limit. Current usage: ' + (st.photoUsageMb == null ? 'unavailable' : st.photoUsageMb + ' MB') }),
     ]);
 
+    var owner = st.owner;
+    var recovery = el('form', { class: 'field', onsubmit: async function (e) {
+      e.preventDefault();
+      var password = $('d-owner-password');
+      var again = $('d-owner-confirm');
+      var err = $('d-owner-err');
+      var btn = $('d-owner-reset');
+      err.textContent = '';
+      if (password.value !== again.value) { err.textContent = 'Passwords do not match.'; return; }
+      btn.disabled = true;
+      try {
+        var result = await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/reset-owner-password', {
+          owner_id: owner.id, new_password: password.value,
+        });
+        password.value = ''; again.value = '';
+        err.textContent = 'Password reset for ' + owner.username + '. Share the new password with the owner.';
+        if (!st.isSandbox && result.email) err.textContent += result.email.sent ? ' Notification email sent.' : ' Email not sent: ' + result.email.reason;
+        st.log = (await api('GET', '/tenants/' + encodeURIComponent(st.slug))).log || [];
+      } catch (ex) { err.textContent = ex.message; }
+      finally { btn.disabled = false; }
+    } }, [
+      el('label', { text: 'Owner login recovery' }),
+      el('p', { class: 'muted', text: st.isSandbox ? 'Sandbox account: recovery emails are disabled.' : 'Regular account: recovery emails go to ' + (owner && owner.email || 'no address on file') + '.' }),
+      el('p', { class: 'muted', text: owner ? 'First admin login: ' + owner.username + (owner.active ? '' : ' (inactive)') : 'No administrator account available.' }),
+    ]);
+    if (owner) {
+      recovery.appendChild(el('p', { class: 'muted', text: 'Set a new password when the owner cannot sign in. This signs them out everywhere and invalidates recovery links.' }));
+      recovery.appendChild(el('label', { for: 'd-owner-password', text: 'New owner password' }));
+      recovery.appendChild(el('input', { id: 'd-owner-password', type: 'password', minlength: '6', required: 'required', autocomplete: 'new-password' }));
+      recovery.appendChild(el('label', { for: 'd-owner-confirm', text: 'Confirm password' }));
+      recovery.appendChild(el('input', { id: 'd-owner-confirm', type: 'password', minlength: '6', required: 'required', autocomplete: 'new-password' }));
+      recovery.appendChild(el('div', { id: 'd-owner-err', role: 'status', class: 'muted' }));
+      recovery.appendChild(el('button', { id: 'd-owner-reset', type: 'submit', class: 'btn', style: 'margin-top:8px' }, ['Reset owner password']));
+      if (!st.isSandbox) recovery.appendChild(el('button', {
+        type: 'button', class: 'btn ghost', style: 'margin-top:8px',
+        onclick: async function () {
+          var button = this; button.disabled = true;
+          try {
+            var r = await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/recover-owner-username');
+            $('d-owner-err').textContent = r.email.sent ? 'Owner username emailed.' : 'Email not sent: ' + r.email.reason;
+          } catch (ex) { $('d-owner-err').textContent = ex.message; }
+          finally { button.disabled = false; }
+        },
+      }, ['Email owner username']));
+    }
+
     var logBox = el('div', { class: 'log' }, [el('div', { class: 'muted', text: 'Recent activity' })].concat(
       st.log.slice(0, 12).map(function (e) {
         return el('div', { class: 'e' }, [
@@ -262,11 +310,12 @@
       el('div', { class: 'muted', text: 'Login seat allowance: ' + (st.subscription && st.subscription.seat_limit != null ? st.subscription.seat_limit : 'Bundle default') }),
       el('div', { class: 'field' }, [el('label', { text: 'Current usage' }), usageBox, el('button', { class: 'btn ghost', style: 'margin-top:12px', onclick: function () { selectTab('overview').catch(function (e) { toast(e.message); }); } }, ['Analytics & support'])]),
       photoField,
+      recovery,
       logBox,
       el('div', { class: 'danger-zone' }, [
         el('h3', { text: 'Danger zone' }),
-        el('div', { class: 'muted', text: 'Purge deletes this workspace’s database and uploaded files. Irreversible.' }),
-        el('button', { class: 'btn danger', style: 'margin-top:8px', onclick: purge }, ['Purge workspace']),
+        el('div', { class: 'muted', text: st.isSandbox ? 'Remove this sandbox tenant and delete its database and uploaded files. Irreversible.' : 'Purge deletes this workspace’s database and uploaded files. Irreversible.' }),
+        el('button', { class: 'btn danger', style: 'margin-top:8px', onclick: purge }, [st.isSandbox ? 'Remove sandbox tenant' : 'Purge workspace']),
       ]),
     ]);
 
@@ -617,7 +666,7 @@
 
   async function purge() {
     var st = drawerState;
-    var typed = prompt('Type "' + st.slug + '" to permanently purge this workspace:');
+    var typed = prompt('Type "' + st.slug + '" to permanently ' + (st.isSandbox ? 'remove this sandbox tenant:' : 'purge this workspace:'));
     if (typed == null) return;
     try {
       await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/purge', { confirm: typed });
@@ -637,6 +686,17 @@
         el('div', { class: 'field' }, [el('label', { text: 'Admin password' }), el('input', { id: 'n-pass', type: 'password' })]),
       ]),
       el('p', { class: 'muted', text: 'Choose modules, login seat allowance, and pricing after creating the tenant.' }),
+      el('div', { class: 'field' }, [el('label', { for: 'n-sandbox' }, [
+        el('input', { id: 'n-sandbox', type: 'checkbox', onchange: function () {
+          $('n-email-field').classList.toggle('hidden', this.checked);
+          $('n-email').required = !this.checked;
+        } }), ' Sandbox account',
+      ]), el('p', { class: 'muted', text: 'Sandbox accounts need only a company name and login details. Recovery emails are disabled.' })]),
+      el('div', { class: 'field', id: 'n-email-field' }, [
+        el('label', { for: 'n-email', text: 'Owner recovery email (required)' }),
+        el('input', { id: 'n-email', type: 'email', required: 'required', autocomplete: 'email' }),
+        el('p', { class: 'muted', text: 'Used to recover the owner username and password.' }),
+      ]),
       el('div', { class: 'err', id: 'n-err' }),
       el('div', { style: 'display:flex;gap:10px;margin-top:6px' }, [
         el('button', { class: 'btn', id: 'n-go' }, ['Create']),
@@ -652,6 +712,9 @@
     $('n-cancel').addEventListener('click', close);
     $('n-go').addEventListener('click', async function () {
       $('n-err').textContent = '';
+      if (!$('n-sandbox').checked && (!$('n-email').value.trim() || !$('n-email').checkValidity())) {
+        $('n-err').textContent = 'Enter a valid owner recovery email address.'; return;
+      }
       $('n-go').disabled = true;
       try {
         var company = companyIdentity('n-name');
@@ -660,6 +723,8 @@
           name: company.name,
           admin_username: $('n-user').value.trim(),
           admin_password: $('n-pass').value,
+          is_sandbox: $('n-sandbox').checked,
+          admin_email: $('n-sandbox').checked ? undefined : $('n-email').value.trim(),
         });
         close();
         await load();

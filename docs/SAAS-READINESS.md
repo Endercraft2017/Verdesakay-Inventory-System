@@ -297,6 +297,24 @@ All enforceable cheaply per-tenant because the data is one file:
    404s off the apex host), `web-console/` (dependency-free SPA), mounted in `src/app.ts`
    only when `PLATFORM_CONSOLE=true`. CLI: `npm run platform:user`. Tests:
    `tests/platform-console*.test.ts`.
+   Owner recovery: open a workspace in `/_platform/` and use **Owner login recovery**.
+   It displays the first administrator (lowest user ID with role `admin`) and lets an
+   operator set and confirm a new password. `POST /_platform/api/tenants/:slug/reset-owner-password`
+   accepts `{ owner_id, new_password }`; the account ID must match the displayed owner.
+   Recovery revokes that account's sessions and password-reset links and records the
+   operator and account in the provisioning log, without storing the password there.
+   Account activation and workspace suspension remain separate controls.
+   When operators create a workspace, **Sandbox account** permits company name and
+   login details only; the slug can be generated automatically. Regular accounts require
+   a valid owner recovery email, saved on the first admin. Existing tenants default to
+   regular accounts; creation validation does not change their existing login details.
+   Recovery emails include the username; operators can also use **Email owner username**.
+   Regular owner password resets send a notification without the new password. Email
+   uses the workspace's existing SMTP settings; the console reports delivery failures.
+   Sandbox recovery sends no emails, even if an email address is added later.
+   **Remove sandbox tenant** requires the slug confirmation and permanently deletes
+   its database and uploads, removing it from the active tenant list. The provisioning
+   audit record remains available.
 9. **Custom domains, per-tenant branding, billing integration** (§8).
 10. **Backups job, deploy-time migration runner** (§5, §7).
 11. **Retention policies** by plan (`activity_log` / `mail_log` / soft-deletes) (§9).

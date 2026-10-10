@@ -11,9 +11,9 @@ import os from 'node:os';
 import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
-import { tenantStore, withTenant, DEFAULT_TENANT } from '../shared/db';
+import { tenantStore, withTenant, DEFAULT_TENANT, db, queryOne, run } from '../shared/db';
 import {
-  listTenants, getTenant, setTenantPlan, setTenantStatus, setTenantName,
+  listTenants, getTenant, isValidSlug, setTenantPlan, setTenantStatus, setTenantName,
   setTrialEndsAt, setTenantModules, setTenantPhotoRetention, listProvisioningLog, logProvisioning,
   type TenantRow, type TenantStatus, tenantPublicUrl,
 } from './platform';
@@ -23,6 +23,9 @@ import { saveSubscription, subscriptionView } from './subscription';
 import { tenantUsage } from './quota';
 import { punchPhotoUsageBytes } from '../modules/hr/punch-photos';
 import { enabledModules, isModuleName, withDeps, MODULES, MODULE_DEPS } from '../shared/modules';
+import bcrypt from 'bcryptjs';
+import { sendMail } from '../shared/mailer';
+import { parseBody, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
 import { PLANS, PLAN_MODULES, planModules } from './plans';
 import {
   requirePlatformAuth, platformLogin, platformLogout, listPlatformUsers,
@@ -116,6 +119,7 @@ function tenantView(t: TenantRow) {
     subscription: subscriptionView(t),
     trial_ends_at: t.trial_ends_at,
     created_at: t.created_at,
+    is_sandbox: t.is_sandbox === 1,
     modules: {
       effective: [...enabledModules(t.slug)],
       override,
@@ -130,6 +134,13 @@ function tenantView(t: TenantRow) {
   };
 }
 
+// The first administrator is the tenant owner's login.
+function tenantOwner(slug: string) {
+  return withTenant(slug, () => queryOne<{ id: number; username: string; full_name: string; active: number; email: string | null }>(
+    "SELECT id, username, full_name, active, email FROM users WHERE role = 'admin' ORDER BY id LIMIT 1",
+  ) ?? null);
+}
+
 // GET /_platform/api/tenants
 router.get('/tenants', (_req, res) => {
   res.json(listTenants().filter((t) => t.status !== 'purged').map(tenantView));
@@ -138,8 +149,8 @@ router.get('/tenants', (_req, res) => {
 // GET /_platform/api/tenants/:slug
 router.get('/tenants/:slug', (req, res) => {
   const t = getTenant(req.params.slug);
-  if (!t) { res.status(404).json({ error: 'Unknown workspace.' }); return; }
-  res.json({ ...tenantView(t), log: listProvisioningLog(t.slug, 50) });
+  if (!t || t.status === 'purged') { res.status(404).json({ error: 'Unknown workspace.' }); return; }
+  res.json({ ...tenantView(t), owner: tenantOwner(t.slug), log: listProvisioningLog(t.slug, 50) });
 });
 
 // Owner-only aggregate analytics and operational notes.
@@ -190,16 +201,81 @@ router.patch('/tenants/:slug/support/:id', (req, res) => {
   } catch (e) { res.status(400).json({ error: (e as Error).message }); }
 });
 
+// POST /_platform/api/tenants/:slug/reset-owner-password — operator-only recovery.
+router.post('/tenants/:slug/reset-owner-password', async (req, res, next) => {
+  try {
+    const t = getTenant(req.params.slug);
+    if (!t || t.status === 'purged') { res.status(404).json({ error: 'Unknown workspace.' }); return; }
+    const { new_password } = parseBody(resetPasswordSchema, req.body);
+    const owner = tenantOwner(t.slug);
+    if (!owner) { res.status(409).json({ error: 'This workspace has no administrator account.' }); return; }
+    // Confirm the displayed account so a stale drawer cannot reset a different admin.
+    if (req.body?.owner_id !== owner.id) {
+      res.status(409).json({ error: 'The owner account changed. Reopen the workspace and try again.' }); return;
+    }
+    const hash = bcrypt.hashSync(new_password, 10);
+    withTenant(t.slug, () => {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        run('UPDATE users SET password_hash = ? WHERE id = ?', hash, owner.id);
+        run('DELETE FROM sessions WHERE user_id = ?', owner.id);
+        run('DELETE FROM password_resets WHERE user_id = ?', owner.id);
+        db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
+    });
+    const by = (req as PlatformAuthedRequest).platformUser!.username;
+    logProvisioning(t.slug, 'owner-password-reset', `${by}: reset owner ${owner.username} (id=${owner.id})`);
+    const email = t.is_sandbox === 1 ? { sent: false, reason: 'sandbox' } :
+      owner.email ? await withTenant(t.slug, async () => {
+        const result = await sendMail({
+          to: owner.email!, subject: 'Owner login password reset',
+          text: `The password for your ${t.name} workspace was reset by a platform administrator.\n\nYour username: ${owner.username}\n\nContact your SaaS provider for the new password.`,
+        });
+        return { sent: result.ok, reason: result.ok ? '' : result.error };
+      }) : { sent: false, reason: 'No recovery email on file.' };
+    res.json({ ok: true, username: owner.username, email });
+  } catch (e) { next(e); }
+});
+
+// Send a forgotten username to the recorded owner email; sandbox recovery stays manual.
+router.post('/tenants/:slug/recover-owner-username', async (req, res, next) => {
+  try {
+    const t = getTenant(req.params.slug);
+    if (!t || t.status === 'purged') { res.status(404).json({ error: 'Unknown workspace.' }); return; }
+    const owner = tenantOwner(t.slug);
+    if (!owner) { res.status(409).json({ error: 'This workspace has no administrator account.' }); return; }
+    if (t.is_sandbox === 1) { res.json({ ok: true, username: owner.username, email: { sent: false, reason: 'sandbox' } }); return; }
+    if (!owner.email) { res.status(409).json({ error: 'No recovery email on file.' }); return; }
+    const result = await withTenant(t.slug, () => sendMail({
+      to: owner.email!, subject: 'Your workspace owner username',
+      text: `Your username for ${t.name}: ${owner.username}\n\nIf you also forgot your password, use Forgot username or password on the workspace sign-in page.`,
+    }));
+    logProvisioning(t.slug, 'owner-username-recovery', `${(req as PlatformAuthedRequest).platformUser!.username}: ${owner.username}; email ${result.ok ? 'sent' : 'failed'}`);
+    res.json({ ok: true, username: owner.username, email: { sent: result.ok, reason: result.error || '' } });
+  } catch (e) { next(e); }
+});
+
+/** A missing slug is derived from the company name, with a suffix for collisions. */
+function availableSlug(name: string): string {
+  let base = name.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24).replace(/-+$/g, '');
+  if (!isValidSlug(base)) base = 'workspace';
+  let slug = base;
+  for (let i = 2; getTenant(slug); i++) slug = `${base}-${i}`;
+  return slug;
+}
+
 // POST /_platform/api/tenants — provision a new workspace.
 router.post('/tenants', (req: Request, res: Response, next) => {
   try {
-    const b = req.body || {};
+    const b = parseBody(platformCreateTenantSchema, req.body);
     const { slug } = createTenant({
-      slug: String(b.slug || ''),
+      slug: b.slug || availableSlug(b.name),
       name: String(b.name || ''),
       admin_username: String(b.admin_username || ''),
       admin_password: String(b.admin_password || ''),
-      admin_email: b.admin_email ? String(b.admin_email) : undefined,
+      admin_email: b.admin_email,
+      is_sandbox: b.is_sandbox,
       plan: b.plan ? String(b.plan) : undefined,
     });
     // An explicit module set at creation time (optional).

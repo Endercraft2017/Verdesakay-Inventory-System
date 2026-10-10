@@ -21,6 +21,7 @@ export interface CreateTenantInput {
   admin_username: string;
   admin_password: string;
   admin_email?: string;
+  is_sandbox?: boolean;
   plan?: string;
   status?: TenantStatus;
 }
@@ -40,13 +41,13 @@ export function createTenant(input: CreateTenantInput): { slug: string } {
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw httpError(400, 'Admin username must be 3–30 chars: letters, numbers, dot, underscore, hyphen.');
   if (String(input.admin_password || '').length < 6) throw httpError(400, 'Admin password must be at least 6 characters.');
 
-  createTenantRow({ slug, name: input.name.trim() || slug, plan: input.plan, status: input.status });
+  createTenantRow({ slug, name: input.name.trim() || slug, plan: input.plan, status: input.status, is_sandbox: input.is_sandbox });
 
   // withTenant opens + creates + migrates + seeds <DATA_DIR>/<slug>.db (seed() makes a
   // default 'admin' account); adopt the caller's chosen credentials onto it.
   withTenant(slug, () => {
     const hash = bcrypt.hashSync(input.admin_password, 10);
-    run("UPDATE users SET username = ?, password_hash = ?, email = ? WHERE username = 'admin'", username, hash, input.admin_email || null);
+    run("UPDATE users SET username = ?, password_hash = ?, email = ? WHERE username = 'admin'", username, hash, input.is_sandbox ? null : (input.admin_email?.trim().toLowerCase() || null));
   });
 
   logProvisioning(slug, 'create', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', admin: username }));

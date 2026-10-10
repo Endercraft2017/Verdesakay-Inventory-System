@@ -42,7 +42,7 @@ describe('operator auth', () => {
   it('the console 404s on a tenant sub-domain (apex host only)', async () => {
     // create one first so the slug resolves past the tenant middleware
     await ctx.api.post('/_platform/api/tenants').set(opHdr())
-      .send({ slug: 'hostcheck', name: 'Host Check', admin_username: 'owner', admin_password: 'ownerpass1', plan: 'starter' });
+      .send({ slug: 'hostcheck', name: 'Host Check', admin_username: 'owner', admin_password: 'ownerpass1', admin_email: 'owner@acme.test', plan: 'starter' });
     const r = await ctx.api.get('/_platform/api/tenants').set(opHdr()).set(asTenant('hostcheck'));
     expect(r.status).toBe(404);
   });
@@ -59,9 +59,74 @@ describe('bootstrap reference', () => {
 });
 
 describe('provision + edit a workspace', () => {
+  it('requires a recovery email for regular accounts and persists it on the owner', async () => {
+    const input = { name: 'Real Company', admin_username: 'realowner', admin_password: 'realpass1' };
+    expect((await ctx.api.post('/_platform/api/tenants').set(opHdr()).send(input)).status).toBe(400);
+    expect((await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({ ...input, admin_email: 'invalid' })).status).toBe(400);
+    expect((await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({ ...input, is_sandbox: 'true' })).status).toBe(400);
+    const r = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({ ...input, admin_email: ' Owner@Real.test ' });
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ slug: 'real-company', is_sandbox: false });
+    const detail = await ctx.api.get('/_platform/api/tenants/real-company').set(opHdr());
+    expect(detail.body.owner.email).toBe('owner@real.test');
+    const { withTenant, setSetting, queryOne } = await import('../src/shared/db');
+    withTenant('real-company', () => setSetting('mail_settings', { transport: 'smtp', smtp_host: 'smtp.real.test', from_email: 'system@real.test' }));
+    const forgot = await ctx.api.post('/api/auth/forgot-password').set(asTenant('real-company')).send({ identifier: 'owner@real.test' });
+    expect(forgot.body.sent).toBe(true);
+    expect((await ctx.api.post('/_platform/api/tenants/real-company/recover-owner-username').set(opHdr())).body.email.sent).toBe(true);
+    const reset = await ctx.api.post('/_platform/api/tenants/real-company/reset-owner-password').set(opHdr())
+      .send({ owner_id: 1, new_password: 'newrealpass1' });
+    expect(reset.body.email.sent).toBe(true);
+    expect(withTenant('real-company', () => queryOne<{ c: number }>("SELECT COUNT(*) AS c FROM mail_log WHERE to_addr = 'owner@real.test' AND status = 'sent'")!.c)).toBe(3);
+  });
+
+  it('creates sandbox tenants from just company and login, skips every recovery email, and removes them', async () => {
+    const input = { name: 'Sandbox Company', admin_username: 'sandboxowner', admin_password: 'sandboxpass1', is_sandbox: true };
+    expect((await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({ ...input, name: '' })).status).toBe(400);
+    const r = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send(input);
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ slug: 'sandbox-company', is_sandbox: true });
+    const duplicate = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send(input);
+    expect(duplicate.body.slug).toBe('sandbox-company-2');
+    const { withTenant, setSetting, run, queryOne, DATA_DIR } = await import('../src/shared/db');
+    const fs = await import('node:fs');
+    const { _resetPlatformDb, getTenant } = await import('../src/platform/platform');
+    _resetPlatformDb();
+    expect(getTenant('sandbox-company')!.is_sandbox).toBe(1);
+    const detail = await ctx.api.get('/_platform/api/tenants/sandbox-company').set(opHdr());
+    expect(detail.body.owner.email).toBeNull();
+    // Even an email added later and functioning SMTP must not send sandbox recovery mail.
+    withTenant('sandbox-company', () => {
+      run("UPDATE users SET email = 'sandbox@acme.test' WHERE id = 1");
+      setSetting('mail_settings', { transport: 'smtp', smtp_host: 'smtp.acme.test', from_email: 'system@acme.test' });
+    });
+    const forgot = await ctx.api.post('/api/auth/forgot-password').set(asTenant('sandbox-company')).send({ identifier: 'sandboxowner' });
+    expect(forgot.body).toMatchObject({ sent: false });
+    expect(forgot.body.reason).toMatch(/Sandbox/);
+    const reminder = await ctx.api.post('/_platform/api/tenants/sandbox-company/recover-owner-username').set(opHdr());
+    expect(reminder.body.email).toEqual({ sent: false, reason: 'sandbox' });
+    const reset = await ctx.api.post('/_platform/api/tenants/sandbox-company/reset-owner-password').set(opHdr())
+      .send({ owner_id: 1, new_password: 'new-sandbox1' });
+    expect(reset.status).toBe(200);
+    expect(reset.body.email).toEqual({ sent: false, reason: 'sandbox' });
+    expect(withTenant('sandbox-company', () => queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM mail_log')!.c)).toBe(0);
+    expect(withTenant('sandbox-company', () => queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM password_resets')!.c)).toBe(0);
+    expect((await ctx.api.post('/api/auth/login').set(asTenant('sandbox-company')).send({ username: 'sandboxowner', password: 'new-sandbox1' })).status).toBe(200);
+    const path = '/_platform/api/tenants/sandbox-company/purge';
+    expect((await ctx.api.post(path).send({ confirm: 'sandbox-company' })).status).toBe(401);
+    expect((await ctx.api.post(path).set(opHdr()).send({ confirm: 'wrong' })).status).toBe(400);
+    expect(fs.existsSync(`${DATA_DIR}/sandbox-company.db`)).toBe(true);
+    expect((await ctx.api.post(path).set(opHdr()).send({ confirm: 'sandbox-company' })).status).toBe(200);
+    expect(fs.existsSync(`${DATA_DIR}/sandbox-company.db`)).toBe(false);
+    expect((await ctx.api.get('/_platform/api/tenants').set(opHdr())).body.some((t: { slug: string }) => t.slug === 'sandbox-company')).toBe(false);
+    expect((await ctx.api.post('/api/auth/login').set(asTenant('sandbox-company')).send({ username: 'sandboxowner', password: 'new-sandbox1' })).status).toBe(403);
+    expect((await ctx.api.get('/_platform/api/tenants/sandbox-company').set(opHdr())).status).toBe(404);
+    expect(fs.existsSync(`${DATA_DIR}/sandbox-company.db`)).toBe(false);
+  });
+
   it('creates one on the starter bundle', async () => {
     const r = await ctx.api.post('/_platform/api/tenants').set(opHdr())
-      .send({ slug: 'consoleco', name: 'Console Co', admin_username: 'owner', admin_password: 'ownerpass1', plan: 'starter' });
+      .send({ slug: 'consoleco', name: 'Console Co', admin_username: 'owner', admin_password: 'ownerpass1', admin_email: 'owner@acme.test', plan: 'starter' });
     expect(r.status).toBe(201);
     expect(r.body.slug).toBe('consoleco');
     expect(r.body.modules.effective).toEqual(['inventory', 'purchasing', 'mobile']);
@@ -136,11 +201,50 @@ describe('provision + edit a workspace', () => {
       .send({ username: 'owner', password: 'ownerpass1' })).status).toBe(200);
   });
 
+  it('recovers only the first admin login, revokes sessions and reset links, and audits without secrets', async () => {
+    const { withTenant, run, queryOne } = await import('../src/shared/db');
+    const bcrypt = (await import('bcryptjs')).default;
+    const old = await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
+      .send({ username: 'owner', password: 'ownerpass1' });
+    withTenant('consoleco', () => {
+      run("INSERT INTO users (username, full_name, password_hash, role) VALUES (?, ?, ?, 'admin')",
+        'secondadmin', 'Second Admin', bcrypt.hashSync('secondpass1', 10));
+      run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES ('old-reset', 1, datetime('now', '+1 hour'))");
+    });
+    const view = await ctx.api.get('/_platform/api/tenants/consoleco').set(opHdr());
+    expect(view.body.owner).toMatchObject({ id: 1, username: 'owner' });
+    expect(view.body.owner.password_hash).toBeUndefined();
+    const path = '/_platform/api/tenants/consoleco/reset-owner-password';
+    const body = { owner_id: 1, new_password: 'replacement1' };
+    expect((await ctx.api.post(path).send(body)).status).toBe(401);
+    expect((await ctx.api.post(path).set({ Authorization: `Bearer ${old.body.token}` }).send(body)).status).toBe(401);
+    expect((await ctx.api.post(path).set(opHdr()).set(asTenant('consoleco')).send(body)).status).toBe(404);
+    expect((await ctx.api.post(path).set(opHdr()).send({ ...body, owner_id: 2 })).status).toBe(409);
+    expect((await ctx.api.post(path).set(opHdr()).send({ ...body, new_password: 'short' })).status).toBe(400);
+    expect((await ctx.api.post(path).set(opHdr()).send(body)).status).toBe(200);
+    expect((await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
+      .send({ username: 'owner', password: 'ownerpass1' })).status).toBe(401);
+    expect((await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
+      .send({ username: 'owner', password: body.new_password })).status).toBe(200);
+    expect((await ctx.api.get('/api/auth/me').set(asTenant('consoleco'))
+      .set({ Authorization: `Bearer ${old.body.token}` })).status).toBe(401);
+    expect((await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
+      .send({ username: 'secondadmin', password: 'secondpass1' })).status).toBe(200);
+    expect(withTenant('consoleco', () => queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM password_resets')!.c)).toBe(0);
+    expect((await ctx.api.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })).status).toBe(200);
+    const detail = (await ctx.api.get('/_platform/api/tenants/consoleco').set(opHdr())).body;
+    expect(detail.log.find((e: { action: string }) => e.action === 'owner-password-reset').detail).toContain('owner: reset owner owner');
+    expect(JSON.stringify(detail)).not.toContain(body.new_password);
+    expect((await ctx.api.post('/_platform/api/tenants/missing/reset-owner-password').set(opHdr()).send(body)).status).toBe(404);
+  });
+
   it('purge needs the slug typed back, then the workspace is gone', async () => {
     expect((await ctx.api.post('/_platform/api/tenants/consoleco/purge').set(opHdr()).send({ confirm: 'wrong' })).status).toBe(400);
     expect((await ctx.api.post('/_platform/api/tenants/consoleco/purge').set(opHdr()).send({ confirm: 'consoleco' })).status).toBe(200);
     const list = (await ctx.api.get('/_platform/api/tenants').set(opHdr())).body;
     expect(list.map((t: { slug: string }) => t.slug)).not.toContain('consoleco');
+    expect((await ctx.api.post('/_platform/api/tenants/consoleco/reset-owner-password').set(opHdr())
+      .send({ owner_id: 1, new_password: 'replacement2' })).status).toBe(404);
   });
 });
 

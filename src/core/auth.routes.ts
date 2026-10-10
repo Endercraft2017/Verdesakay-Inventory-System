@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { queryOne, queryAll, run, newToken } from '../shared/db';
+import { queryOne, queryAll, run, newToken, DEFAULT_TENANT } from '../shared/db';
 import {
   createSession, destroySession, requireAuth, endUserSessions, endSessionBySid, listUserSessions,
 } from '../shared/auth';
@@ -15,6 +15,8 @@ import {
   forgotPasswordSchema, selfResetPasswordSchema,
 } from '../shared/validation';
 import { sendMail, mailReady } from '../shared/mailer';
+import { currentSlug } from '../platform/quota';
+import { getTenant } from '../platform/platform';
 import type { UserRow } from '../shared/types';
 import { syncClass } from '../sync';
 
@@ -139,6 +141,11 @@ router.post('/change-password', requireAuth, syncClass('online'), (req, res) => 
 router.post('/forgot-password', syncClass('online'), async (req, res, next) => {
   try {
     const { identifier } = parseBody(forgotPasswordSchema, req.body);
+    const slug = currentSlug();
+    if (slug !== DEFAULT_TENANT && getTenant(slug)?.is_sandbox === 1) {
+      res.json({ ok: true, sent: false, reason: 'Sandbox account — ask your SaaS administrator to recover your login.' });
+      return;
+    }
     const id = identifier.toLowerCase();
     const user = queryAll<UserRow>(
       'SELECT * FROM users WHERE active = 1 AND (username = ? OR (email IS NOT NULL AND lower(email) = ?)) LIMIT 1',
@@ -157,7 +164,7 @@ router.post('/forgot-password', syncClass('online'), async (req, res, next) => {
       const r = await sendMail({
         to: user.email,
         subject: 'Password reset',
-        text: `Hi ${user.full_name},\n\nUse this link within ${RESET_TTL_MIN} minutes to set a new password:\n${link}\n\nIf you didn't ask for this, ignore this email.`,
+        text: `Hi ${user.full_name},\n\nYour username: ${user.username}\n\nUse this link within ${RESET_TTL_MIN} minutes to set a new password:\n${link}\n\nIf you didn't ask for this, ignore this email.`,
       }, user.id);
       done.sent = r.ok;
       if (!r.ok) done.reason = r.error || 'send failed';

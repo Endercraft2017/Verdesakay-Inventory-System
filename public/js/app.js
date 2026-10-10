@@ -466,16 +466,16 @@ const App = (() => {
 
   function forgotPassword() {
     UI.modal({
-      title: 'Reset your password',
+      title: 'Recover your login',
       bodyHTML: `<p class="muted" style="margin-top:0">Enter your username or email. If we have an
-        address on file and email is set up, you'll get a reset link.</p>
+        address on file and email is set up, you'll get your username and a password reset link.</p>
         <label>Username or email</label><input data-f="id" autocomplete="username" />`,
       confirmText: 'Send reset link',
       onConfirm: async (ov, showErr) => {
         const id = ov.querySelector('[data-f="id"]').value.trim();
         if (!id) { showErr('Enter your username or email.'); return false; }
         const r = await API.post('/auth/forgot-password', { identifier: id });
-        UI.toast(r.sent ? 'Check your email for the reset link.'
+        UI.toast(r.sent ? 'Check your email for your username and reset link.'
           : (r.reason ? 'Could not send: ' + r.reason : 'If that account exists, a link is on its way.'),
           r.sent ? 'success' : 'error');
       },

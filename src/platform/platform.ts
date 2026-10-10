@@ -61,6 +61,7 @@ export interface TenantRow {
   photo_retention_days: number | null;
   photo_max_mb: number | null;
   subscription: string | null;
+  is_sandbox: number;
   notes: string | null;
   created_at: string;
 }
@@ -108,6 +109,7 @@ function pdb(): DatabaseSync {
     );
   `);
   ensureColumn(d, 'tenants', 'subscription', 'TEXT');
+  ensureColumn(d, 'tenants', 'is_sandbox', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(d, 'tenants', 'modules', 'TEXT'); // added after the initial control-plane schema
   ensureColumn(d, 'tenants', 'photo_retention_days', 'INTEGER');
   ensureColumn(d, 'tenants', 'photo_max_mb', 'INTEGER');
@@ -175,12 +177,12 @@ export function retiredDefaultTenant(): string | null {
 }
 
 export function createTenantRow(input: {
-  slug: string; name: string; plan?: string; status?: TenantStatus; trial_ends_at?: string | null;
+  slug: string; name: string; plan?: string; status?: TenantStatus; trial_ends_at?: string | null; is_sandbox?: boolean;
 }): TenantRow {
   const info = pdb().prepare(
-    `INSERT INTO tenants (slug, name, plan, status, trial_ends_at) VALUES (?, ?, ?, ?, ?)`
+    `INSERT INTO tenants (slug, name, plan, status, trial_ends_at, is_sandbox) VALUES (?, ?, ?, ?, ?, ?)`
   ).run(
-    input.slug, input.name, input.plan ?? 'starter', input.status ?? 'active', input.trial_ends_at ?? null
+    input.slug, input.name, input.plan ?? 'starter', input.status ?? 'active', input.trial_ends_at ?? null, input.is_sandbox ? 1 : 0
   );
   return pdb().prepare('SELECT * FROM tenants WHERE id = ?').get(info.lastInsertRowid) as unknown as TenantRow;
 }
