@@ -2470,8 +2470,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             bodyHTML: `
               <div style="font-weight:600;margin-bottom:6px">Link an existing form</div>
               ${options.length
-                ? `<div class="var-pick-list">${options.map((o, i) => `
-                    <button type="button" class="var-pick" data-pick="${i}">
+                ? `<div class="var-pick-list" style="display:grid;gap:6px;max-height:180px;overflow-y:auto">${options.map((o, i) => `
+                    <button type="button" class="var-pick btn secondary small" style="display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;white-space:normal" data-pick="${i}">
                       <span>${UI.esc(o.form.name)} — ${UI.esc(o.record.number)}</span>
                       <span class="muted">${UI.esc(o.record.status)}</span>
                     </button>`).join('')}</div>`
