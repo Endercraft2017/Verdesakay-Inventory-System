@@ -103,6 +103,8 @@ export interface UserRow {
   full_name: string;
   email: string | null;
   password_hash: string;
+  password_change_required: number;
+  temporary_password_expires_at: string | null;
   role: Role;
   department_id: number | null;
   active: number; // 0 | 1
@@ -113,6 +115,8 @@ export interface UserRow {
 
 /** The authenticated user attached to requests (no password hash). */
 export interface AuthUser {
+  password_change_required?: number;
+  temporary_password_expires_at?: string | null;
   id: number;
   username: string;
   full_name: string;

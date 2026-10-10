@@ -67,9 +67,31 @@ const App = (() => {
     document.getElementById('login-password').value = '';
   }
 
-  /** `departmentsReq`: the department list, already requested by the caller (boot starts it
-      alongside /auth/me so a page load waits one round trip less). */
+  function requireNewPassword() {
+    appScreen().classList.add('hidden');
+    loginScreen().classList.remove('hidden');
+    if (window.ChatWS) ChatWS.disconnect();
+    const m = UI.modal({
+      title: 'Choose your new password', cancelText: 'Sign out', confirmText: 'Save new password',
+      bodyHTML: `<p>Your temporary password must be replaced before you can access the workspace.</p>
+        <label>Temporary password</label><input data-f="current" type="password" autocomplete="current-password" />
+        <label>New password</label><input data-f="new" type="password" autocomplete="new-password" />
+        <label>Confirm new password</label><input data-f="confirm" type="password" autocomplete="new-password" />`,
+      onConfirm: async (ov, showErr) => {
+        const pw = ov.querySelector('[data-f="new"]').value;
+        if (pw !== ov.querySelector('[data-f="confirm"]').value) { showErr('Passwords do not match.'); return false; }
+        await API.post('/auth/change-password', { current_password: ov.querySelector('[data-f="current"]').value, new_password: pw });
+        ov.querySelectorAll('input').forEach((input) => { input.value = ''; });
+        me = (await API.get('/auth/me')).user;
+        await showApp();
+      },
+    });
+    m.overlay.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', logout));
+    m.overlay.addEventListener('mousedown', (e) => { if (e.target === m.overlay) logout(); });
+  }
+
   async function showApp(departmentsReq) {
+    if (me && me.password_change_required) { requireNewPassword(); return; }
     loginScreen().classList.add('hidden');
     appScreen().classList.remove('hidden');
 
@@ -319,6 +341,7 @@ const App = (() => {
   /* ---------- Navigation ---------- */
 
   function navigate(name, filter) {
+    if (me && me.password_change_required) return;
     const dialogs = [...document.querySelectorAll('.modal-overlay')].reverse();
     const savingDialog = dialogs.find(dialog => dialog.__whenSaved);
     if (savingDialog) { savingDialog.__whenSaved.then(() => navigate(name, filter)); return; }

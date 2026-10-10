@@ -37,10 +37,11 @@ describe('owner subscription workflow', () => {
       (w.document.getElementById('n-name') as HTMLInputElement).value = 'Acme Manufacturing';
       (w.document.getElementById('n-user') as HTMLInputElement).value = 'owner';
       (w.document.getElementById('n-pass') as HTMLInputElement).value = 'secret1';
+      (w.document.getElementById('n-email') as HTMLInputElement).value = 'owner@acme.test';
       (w.document.getElementById('n-go') as HTMLElement).click();
       await vi.waitFor(() => expect(w.document.querySelector('.subscription-card')).not.toBeNull());
       const create = fetch.mock.calls.find(([url, opts]) => url.endsWith('/tenants') && opts.method === 'POST')!;
-      expect(JSON.parse(create[1].body!)).toEqual({ slug: 'acme-manufacturing', name: 'Acme Manufacturing', admin_username: 'owner', admin_password: 'secret1' });
+      expect(JSON.parse(create[1].body!)).toEqual({ slug: 'acme-manufacturing', name: 'Acme Manufacturing', admin_username: 'owner', admin_password: 'secret1', is_sandbox: false, admin_email: 'owner@acme.test' });
       const card = w.document.querySelector('.subscription-card')!;
       const checks = card.querySelectorAll<HTMLInputElement>('input[type=checkbox]');
       checks[1]!.click(); // manufacturing pulls in inventory

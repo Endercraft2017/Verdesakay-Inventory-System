@@ -60,7 +60,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 61; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 62; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -203,6 +203,8 @@ export const SCHEMA_VERSION = 61; // 20: employees.late_exempt; 21: attendance_r
 //     grant holding inventory.view also gets production.view, once
 // 61: data, no columns -- purchasing split from orders.*: orders.view grants purchasing.view and
 //     orders.create / orders.edit grant purchasing.manage, once
+
+// 62: users temporary_password_expires_at / password_change_required for owner recovery.
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -2599,6 +2601,15 @@ function migrate(): void {
   const punchGeoCols = db.prepare('PRAGMA table_info(time_punches)').all() as { name: string }[];
   for (const [col, decl] of [['lat', 'REAL'], ['lng', 'REAL'], ['accuracy_m', 'REAL'], ['distance_m', 'REAL'], ['geo_site', 'TEXT']]) {
     if (!punchGeoCols.some((c) => c.name === col)) db.exec(`ALTER TABLE time_punches ADD COLUMN ${col} ${decl}`);
+  }
+
+  // (SCHEMA_VERSION 62) Temporary owner recovery passwords require replacement.
+  const recoveryUserCols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!recoveryUserCols.some((c) => c.name === 'password_change_required')) {
+    db.exec('ALTER TABLE users ADD COLUMN password_change_required INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!recoveryUserCols.some((c) => c.name === 'temporary_password_expires_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN temporary_password_expires_at TEXT');
   }
 
   // (SCHEMA_VERSION 47) Approved time-in kiosk devices (src/modules/hr/kiosk-devices.ts). Only a

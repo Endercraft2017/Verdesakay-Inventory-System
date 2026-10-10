@@ -243,6 +243,23 @@
     ]);
 
     var owner = st.owner;
+    var temporaryValue = el('input', { id: 'd-owner-temporary-value', readonly: 'readonly', autocomplete: 'off', class: 'hidden', 'aria-label': 'Temporary owner password' });
+    var temporaryInfo = el('div', { id: 'd-owner-temporary-info', role: 'status', class: 'muted' });
+    var fallback = el('button', {
+      id: 'd-owner-temporary', type: 'button', class: 'btn ghost' + (st.isSandbox ? '' : ' hidden'), style: 'margin-top:8px',
+      onclick: async function () {
+        if (!confirm('Generate a temporary password for ' + owner.username + '? This replaces the current password and signs the owner out everywhere.')) return;
+        var button = this; button.disabled = true;
+        temporaryValue.value = ''; temporaryValue.classList.add('hidden'); temporaryInfo.textContent = '';
+        try {
+          var r = await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/reset-owner-password', { owner_id: owner.id, temporary: true });
+          temporaryValue.value = r.temporary_password; temporaryValue.classList.remove('hidden');
+          temporaryInfo.textContent = 'Share this password with the owner now. It expires in 24 hours and they must choose a new password at sign-in. It will disappear when you close this panel.';
+          $('d-owner-err').textContent = 'Temporary password generated for ' + r.username + '.';
+        } catch (ex) { $('d-owner-err').textContent = ex.message; }
+        finally { button.disabled = false; }
+      },
+    }, ['Generate temporary password']);
     var recovery = el('form', { class: 'field', onsubmit: async function (e) {
       e.preventDefault();
       var password = $('d-owner-password');
@@ -257,8 +274,10 @@
           owner_id: owner.id, new_password: password.value,
         });
         password.value = ''; again.value = '';
+        temporaryValue.value = ''; temporaryValue.classList.add('hidden'); temporaryInfo.textContent = '';
         err.textContent = 'Password reset for ' + owner.username + '. Share the new password with the owner.';
         if (!st.isSandbox && result.email) err.textContent += result.email.sent ? ' Notification email sent.' : ' Email not sent: ' + result.email.reason;
+        fallback.classList.toggle('hidden', !st.isSandbox && (!result.email || result.email.sent));
         st.log = (await api('GET', '/tenants/' + encodeURIComponent(st.slug))).log || [];
       } catch (ex) { err.textContent = ex.message; }
       finally { btn.disabled = false; }
@@ -275,6 +294,9 @@
       recovery.appendChild(el('input', { id: 'd-owner-confirm', type: 'password', minlength: '6', required: 'required', autocomplete: 'new-password' }));
       recovery.appendChild(el('div', { id: 'd-owner-err', role: 'status', class: 'muted' }));
       recovery.appendChild(el('button', { id: 'd-owner-reset', type: 'submit', class: 'btn', style: 'margin-top:8px' }, ['Reset owner password']));
+      recovery.appendChild(fallback);
+      recovery.appendChild(temporaryValue);
+      recovery.appendChild(temporaryInfo);
       if (!st.isSandbox) recovery.appendChild(el('button', {
         type: 'button', class: 'btn ghost', style: 'margin-top:8px',
         onclick: async function () {
@@ -282,6 +304,7 @@
           try {
             var r = await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/recover-owner-username');
             $('d-owner-err').textContent = r.email.sent ? 'Owner username emailed.' : 'Email not sent: ' + r.email.reason;
+            fallback.classList.toggle('hidden', r.email.sent);
           } catch (ex) { $('d-owner-err').textContent = ex.message; }
           finally { button.disabled = false; }
         },
@@ -717,7 +740,7 @@
       }
       $('n-go').disabled = true;
       try {
-        var company = companyIdentity('n-name');
+        var company = $('n-sandbox').checked ? { name: $('n-name').value.trim() } : companyIdentity('n-name');
         var created = await api('POST', '/tenants', {
           slug: company.slug,
           name: company.name,

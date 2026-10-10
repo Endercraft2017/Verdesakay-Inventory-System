@@ -238,6 +238,53 @@ describe('provision + edit a workspace', () => {
     expect((await ctx.api.post('/_platform/api/tenants/missing/reset-owner-password').set(opHdr()).send(body)).status).toBe(404);
   });
 
+  it('issues a temporary fallback once, blocks workspace access until replacement, and expires it', async () => {
+    const { withTenant, queryOne, run } = await import('../src/shared/db');
+    const bcrypt = (await import('bcryptjs')).default;
+    const create = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
+      slug: 'temprecovery', name: 'Temporary Recovery', admin_email: 'tempowner@acme.test',
+      admin_username: 'tempowner', admin_password: 'old-temporary1',
+    });
+    expect(create.status).toBe(201);
+    const path = '/_platform/api/tenants/temprecovery/reset-owner-password';
+    expect((await ctx.api.post(path).send({ owner_id: 1, temporary: true })).status).toBe(401);
+    expect((await ctx.api.post(path).set(opHdr()).send({ owner_id: 1, temporary: 'true' })).status).toBe(400);
+    const issue = await ctx.api.post(path).set(opHdr()).send({ owner_id: 1, temporary: true });
+    expect(issue.status).toBe(200);
+    expect(issue.headers['cache-control']).toBe('no-store');
+    const temporary = issue.body.temporary_password;
+    expect(temporary).toMatch(/^[A-Za-z0-9_-]{24}$/);
+    expect(Date.parse(issue.body.expires_at) - Date.now()).toBeGreaterThan(23 * 60 * 60 * 1000);
+    const user = withTenant('temprecovery', () => queryOne<{ password_hash: string; password_change_required: number }>('SELECT * FROM users WHERE id = 1')!);
+    expect(user.password_hash).not.toBe(temporary);
+    expect(bcrypt.compareSync(temporary, user.password_hash)).toBe(true);
+    expect(user.password_change_required).toBe(1);
+    expect(withTenant('temprecovery', () => queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM mail_log')!.c)).toBe(0);
+    const detail = await ctx.api.get('/_platform/api/tenants/temprecovery').set(opHdr());
+    expect(JSON.stringify(detail.body)).not.toContain(temporary);
+    const loginResult = await ctx.api.post('/api/auth/login').set(asTenant('temprecovery')).send({ username: 'tempowner', password: temporary });
+    expect(loginResult.status).toBe(200);
+    expect(loginResult.body.user.password_change_required).toBe(1);
+    expect(loginResult.body.user.permissions).toEqual([]);
+    const header = { Authorization: `Bearer ${loginResult.body.token}` };
+    expect((await ctx.api.get('/api/users').set(asTenant('temprecovery')).set(header)).status).toBe(403);
+    expect((await ctx.api.get('/api/auth/me').set(asTenant('temprecovery')).set(header)).body.user.password_change_required).toBe(1);
+    const { userFromToken } = await import('../src/shared/auth');
+    expect(withTenant('temprecovery', () => userFromToken(loginResult.body.token))).toBeNull(); // WebSocket auth stays blocked too.
+    expect((await ctx.api.post('/api/auth/change-password').set(asTenant('temprecovery')).set(header)
+      .send({ current_password: temporary, new_password: temporary })).status).toBe(400);
+    expect((await ctx.api.post('/api/auth/change-password').set(asTenant('temprecovery')).set(header)
+      .send({ current_password: temporary, new_password: 'permanent-owner1' })).status).toBe(200);
+    expect((await ctx.api.get('/api/users').set(asTenant('temprecovery')).set(header)).status).toBe(200);
+    expect((await ctx.api.post('/api/auth/login').set(asTenant('temprecovery')).send({ username: 'tempowner', password: temporary })).status).toBe(401);
+    const replacement = await ctx.api.post(path).set(opHdr()).send({ owner_id: 1, temporary: true });
+    expect(replacement.body.temporary_password).not.toBe(temporary);
+    expect((await ctx.api.get('/api/auth/me').set(asTenant('temprecovery')).set(header)).status).toBe(401);
+    withTenant('temprecovery', () => run("UPDATE users SET temporary_password_expires_at = ? WHERE id = 1", new Date(Date.now() - 1000).toISOString()));
+    expect((await ctx.api.post('/api/auth/login').set(asTenant('temprecovery'))
+      .send({ username: 'tempowner', password: replacement.body.temporary_password })).status).toBe(401);
+  });
+
   it('purge needs the slug typed back, then the workspace is gone', async () => {
     expect((await ctx.api.post('/_platform/api/tenants/consoleco/purge').set(opHdr()).send({ confirm: 'wrong' })).status).toBe(400);
     expect((await ctx.api.post('/_platform/api/tenants/consoleco/purge').set(opHdr()).send({ confirm: 'consoleco' })).status).toBe(200);
@@ -268,7 +315,7 @@ describe('module subscriptions and login seats', () => {
 
   it('creates a tenant without selecting or pricing modules', async () => {
     const r = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
-      slug: 'subscriptionco', name: 'Subscription Co', admin_username: 'owner', admin_password: 'ownerpass1',
+      slug: 'subscriptionco', name: 'Subscription Co', admin_username: 'owner', admin_password: 'ownerpass1', admin_email: 'owner@subscription.test',
     });
     expect(r.status).toBe(201);
     expect(r.body.modules.effective).toEqual([]);

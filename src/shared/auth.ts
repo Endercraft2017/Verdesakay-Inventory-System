@@ -35,6 +35,8 @@ interface UserSessionRow {
   role: Role;
   department_id: number | null;
   active: number;
+  password_change_required: number;
+  temporary_password_expires_at: string | null;
   permission_overrides: string;
   department_name: string | null;
   s_sid: string;
@@ -92,12 +94,12 @@ export function endSessionBySid(userId: number, sid: string, reason: SessionEndR
   return Number(info.changes) > 0;
 }
 
-function resolveSession(token: string | null): { user: AuthUser; session: AuthSession } | null {
+function resolveSession(token: string | null, allowPasswordChange = false): { user: AuthUser; session: AuthSession } | null {
   if (!token) return null;
   const row = db
     .prepare(
       `SELECT u.id, u.username, u.full_name, u.role, u.department_id, u.active,
-              u.permission_overrides, d.name AS department_name,
+              u.permission_overrides, u.password_change_required, u.temporary_password_expires_at, d.name AS department_name,
               s.sid AS s_sid, s.shared AS s_shared, s.device_id AS s_device_id,
               s.last_seen_at AS s_last_seen_at, s.last_ip AS s_last_ip
        FROM sessions s
@@ -109,13 +111,15 @@ function resolveSession(token: string | null): { user: AuthUser; session: AuthSe
     )
     .get(token) as UserSessionRow | undefined;
   if (!row || row.active !== 1) return null;
+  if (row.password_change_required && !allowPasswordChange) return null;
+  if (row.password_change_required && (row.temporary_password_expires_at && Date.parse(row.temporary_password_expires_at) <= Date.now())) return null;
   let overrides: Record<string, boolean> = {};
   try { overrides = JSON.parse(row.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
   const {
     permission_overrides: _po, s_sid, s_shared, s_device_id, s_last_seen_at, s_last_ip, ...rest
   } = row;
   return {
-    user: { ...rest, permissions: userPermissions(row.role, overrides) },
+    user: { ...rest, permissions: row.password_change_required ? [] : userPermissions(row.role, overrides) },
     session: { sid: s_sid, shared: s_shared === 1, device_id: s_device_id, last_seen_at: s_last_seen_at, last_ip: s_last_ip },
   };
 }
@@ -126,20 +130,21 @@ export function authUserById(id: number): AuthUser | null {
   const row = db
     .prepare(
       `SELECT u.id, u.username, u.full_name, u.role, u.department_id, u.active,
-              u.permission_overrides, d.name AS department_name
+              u.permission_overrides, u.password_change_required, u.temporary_password_expires_at, d.name AS department_name
        FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.id = ?`
     )
     .get(id) as (Omit<AuthUser, 'permissions'> & { permission_overrides: string }) | undefined;
-  if (!row || row.active !== 1) return null;
+  if (!row || row.active !== 1 || row.password_change_required) return null;
+  if (row.password_change_required && (row.temporary_password_expires_at && Date.parse(row.temporary_password_expires_at) <= Date.now())) return null;
   let overrides: Record<string, boolean> = {};
   try { overrides = JSON.parse(row.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
   const { permission_overrides: _po, ...rest } = row;
-  return { ...rest, permissions: userPermissions(row.role, overrides) };
+  return { ...rest, permissions: row.password_change_required ? [] : userPermissions(row.role, overrides) };
 }
 
 /** Resolve a bearer token to the current user, or null if invalid/expired/ended/disabled. */
-export function userFromToken(token: string | null): AuthUser | null {
-  return resolveSession(token)?.user ?? null;
+export function userFromToken(token: string | null, allowPasswordChange = false): AuthUser | null {
+  return resolveSession(token, allowPasswordChange)?.user ?? null;
 }
 
 /** Record that the session was just used (throttled — see TOUCH_SECONDS). */
@@ -168,10 +173,14 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return;
   }
   const token = getToken(req);
-  const resolved = resolveSession(token);
+  const resolved = resolveSession(token, true);
   if (!resolved || !token) {
     res.status(401).json({ error: 'Not authenticated' });
     return;
+  }
+  if (resolved.user.password_change_required && !(req.baseUrl === '/api/auth' &&
+      ((req.method === 'GET' && req.path === '/me') || (req.method === 'POST' && ['/change-password', '/logout'].includes(req.path))))) {
+    res.status(403).json({ error: 'Choose a new password before accessing your workspace.', password_change_required: true }); return;
   }
   touchSession(token, resolved.session, clientIpOf(req));
   req.user = resolved.user;

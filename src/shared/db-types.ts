@@ -1349,6 +1349,8 @@ export interface Users {
   active: Generated<number>;
   permission_overrides: Generated<string>;
   created_at: Generated<string>;
+  password_change_required: Generated<number>;
+  temporary_password_expires_at: string | null;
 }
 
 export interface VendorBillItems {

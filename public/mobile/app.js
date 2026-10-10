@@ -155,6 +155,7 @@ window.MApp = (function () {
   };
 
   function render() {
+    if (me && me.password_change_required) return;
     if (!me) return;
     if (!hasAccess()) { showBlocked(); return; }
     var parsed = parseHash();
@@ -277,8 +278,40 @@ window.MApp = (function () {
     if (out) out.onclick = signOut;
   }
 
+  function temporaryPasswordScreen() {
+    loginScreen().classList.add('hidden'); appScreen().classList.remove('hidden');
+    ['m-back', 'm-segments', 'm-tabbar'].forEach(function (id) { var element = document.getElementById(id); if (element) element.classList.add('hidden'); });
+    setTitle('Choose a new password');
+    if (window.ChatWS) ChatWS.disconnect();
+    viewEl().innerHTML = '<form id="m-new-password-form">' +
+      '<p>Replace your temporary password before accessing the workspace.</p>' +
+      '<label>Temporary password</label><input id="m-temp-password" type="password" autocomplete="current-password" required />' +
+      '<label>New password</label><input id="m-new-password" type="password" autocomplete="new-password" minlength="6" required />' +
+      '<label>Confirm new password</label><input id="m-confirm-password" type="password" autocomplete="new-password" required />' +
+      '<p id="m-password-error" role="status"></p><button class="m-btn" type="submit">Save new password</button>' +
+      '<button class="m-btn m-btn-secondary" id="m-password-out" type="button">Sign out</button></form>';
+    document.getElementById('m-password-out').onclick = function () { API.post('/auth/logout').catch(function () {}).finally(showLogin); };
+    document.getElementById('m-new-password-form').onsubmit = async function (e) {
+      e.preventDefault();
+      var err = document.getElementById('m-password-error'); var button = e.target.querySelector('[type="submit"]');
+      var pw = document.getElementById('m-new-password').value;
+      if (pw !== document.getElementById('m-confirm-password').value) { err.textContent = 'Passwords do not match.'; return; }
+      button.disabled = true;
+      try {
+        await API.post('/auth/change-password', { current_password: document.getElementById('m-temp-password').value, new_password: pw });
+        e.target.querySelectorAll('input').forEach(function (input) { input.value = ''; });
+        enterApp((await API.get('/auth/me')).user);
+      } catch (ex) { err.textContent = ex.message; }
+      finally { button.disabled = false; }
+    };
+  }
+
   function enterApp(user) {
     me = user;
+    if (user.password_change_required) {
+      try { localStorage.removeItem(ME_KEY); sessionStorage.removeItem(ME_KEY); } catch (e) {}
+      temporaryPasswordScreen(); return;
+    }
     var cached = cachedMe();
     var prevOwner = null;
     try { prevOwner = localStorage.getItem(OWNER_KEY); } catch (e) { /* ignore */ }

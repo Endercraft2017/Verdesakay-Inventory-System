@@ -8,6 +8,7 @@
  */
 import fs from 'node:fs';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
@@ -24,6 +25,7 @@ import { tenantUsage } from './quota';
 import { punchPhotoUsageBytes } from '../modules/hr/punch-photos';
 import { enabledModules, isModuleName, withDeps, MODULES, MODULE_DEPS } from '../shared/modules';
 import bcrypt from 'bcryptjs';
+import { endUserSessions } from '../shared/auth';
 import { sendMail } from '../shared/mailer';
 import { parseBody, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
 import { PLANS, PLAN_MODULES, planModules } from './plans';
@@ -206,7 +208,12 @@ router.post('/tenants/:slug/reset-owner-password', async (req, res, next) => {
   try {
     const t = getTenant(req.params.slug);
     if (!t || t.status === 'purged') { res.status(404).json({ error: 'Unknown workspace.' }); return; }
-    const { new_password } = parseBody(resetPasswordSchema, req.body);
+    if ('temporary' in (req.body || {}) && typeof req.body.temporary !== 'boolean') {
+      res.status(400).json({ error: 'temporary must be a boolean.' }); return;
+    }
+    const temporary = req.body?.temporary === true;
+    const new_password = temporary ? crypto.randomBytes(18).toString('base64url') : parseBody(resetPasswordSchema, req.body).new_password;
+    const expiresAt = temporary ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
     const owner = tenantOwner(t.slug);
     if (!owner) { res.status(409).json({ error: 'This workspace has no administrator account.' }); return; }
     // Confirm the displayed account so a stale drawer cannot reset a different admin.
@@ -217,15 +224,15 @@ router.post('/tenants/:slug/reset-owner-password', async (req, res, next) => {
     withTenant(t.slug, () => {
       db.exec('BEGIN IMMEDIATE');
       try {
-        run('UPDATE users SET password_hash = ? WHERE id = ?', hash, owner.id);
-        run('DELETE FROM sessions WHERE user_id = ?', owner.id);
+        run('UPDATE users SET password_hash = ?, password_change_required = ?, temporary_password_expires_at = ? WHERE id = ?', hash, temporary ? 1 : 0, expiresAt, owner.id);
+        endUserSessions(owner.id, 'password');
         run('DELETE FROM password_resets WHERE user_id = ?', owner.id);
         db.exec('COMMIT');
       } catch (e) { db.exec('ROLLBACK'); throw e; }
     });
     const by = (req as PlatformAuthedRequest).platformUser!.username;
-    logProvisioning(t.slug, 'owner-password-reset', `${by}: reset owner ${owner.username} (id=${owner.id})`);
-    const email = t.is_sandbox === 1 ? { sent: false, reason: 'sandbox' } :
+    logProvisioning(t.slug, 'owner-password-reset', `${by}: reset owner ${owner.username} (id=${owner.id}); ${temporary ? 'temporary password' : 'password'}`);
+    const email = temporary ? { sent: false, reason: 'Share the temporary password directly with the owner.' } : t.is_sandbox === 1 ? { sent: false, reason: 'sandbox' } :
       owner.email ? await withTenant(t.slug, async () => {
         const result = await sendMail({
           to: owner.email!, subject: 'Owner login password reset',
@@ -233,7 +240,10 @@ router.post('/tenants/:slug/reset-owner-password', async (req, res, next) => {
         });
         return { sent: result.ok, reason: result.ok ? '' : result.error };
       }) : { sent: false, reason: 'No recovery email on file.' };
-    res.json({ ok: true, username: owner.username, email });
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, username: owner.username, email,
+      ...(temporary ? { temporary_password: new_password, expires_at: expiresAt } : {}),
+    });
   } catch (e) { next(e); }
 });
 

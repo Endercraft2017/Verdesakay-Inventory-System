@@ -168,7 +168,7 @@ router.post('/:id/reset-password', requirePermission('users.manage'), syncClass(
     return;
   }
   const hash = bcrypt.hashSync(new_password, 10);
-  run('UPDATE users SET password_hash = ? WHERE id = ?', hash, id);
+  run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', hash, id);
   endUserSessions(id, 'password');
   res.json({ ok: true });
 });

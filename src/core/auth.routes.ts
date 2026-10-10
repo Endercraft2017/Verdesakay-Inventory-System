@@ -30,7 +30,7 @@ router.post('/login', (req, res) => {
   const { username, password, shared } = parseBody(loginSchema, req.body);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE username = ?', username.toLowerCase());
 
-  if (!user || user.active !== 1 || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || user.active !== 1 || (user.password_change_required === 1 && user.temporary_password_expires_at && Date.parse(user.temporary_password_expires_at) <= Date.now()) || !bcrypt.compareSync(password, user.password_hash)) {
     res.status(401).json({ error: 'Invalid username or password' });
     return;
   }
@@ -57,7 +57,8 @@ router.post('/login', (req, res) => {
       role_label: getRole(user.role)?.label ?? user.role,
       department_id: user.department_id,
       department_name: dept ? dept.name : null,
-      permissions: userPermissions(user.role, overrides),
+      password_change_required: user.password_change_required,
+      permissions: user.password_change_required ? [] : userPermissions(user.role, overrides),
       modules: [...enabledModules()], // feature areas enabled for this workspace
     },
     session: { shared: !!shared },
@@ -128,8 +129,11 @@ router.post('/change-password', requireAuth, syncClass('online'), (req, res) => 
     res.status(400).json({ error: 'Current password is incorrect' });
     return;
   }
+  if (user.password_change_required && bcrypt.compareSync(new_password, user.password_hash)) {
+    res.status(400).json({ error: 'Choose a password different from the temporary password.' }); return;
+  }
   const hash = bcrypt.hashSync(new_password, 10);
-  run('UPDATE users SET password_hash = ? WHERE id = ?', hash, req.user!.id);
+  run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', hash, req.user!.id);
   // Keep the current session, end the rest.
   endUserSessions(req.user!.id, 'password', req.token);
   res.json({ ok: true });
@@ -190,7 +194,7 @@ router.post('/reset-password', syncClass('online'), (req, res) => {
     res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
     return;
   }
-  run('UPDATE users SET password_hash = ? WHERE id = ?', bcrypt.hashSync(new_password, 10), row.user_id);
+  run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', bcrypt.hashSync(new_password, 10), row.user_id);
   run('UPDATE password_resets SET used = 1 WHERE token_hash = ?', sha256(token));
   endUserSessions(row.user_id, 'password'); // force re-login everywhere
   res.json({ ok: true });

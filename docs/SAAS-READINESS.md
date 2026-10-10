@@ -315,6 +315,12 @@ All enforceable cheaply per-tenant because the data is one file:
    **Remove sandbox tenant** requires the slug confirmation and permanently deletes
    its database and uploads, removing it from the active tenant list. The provisioning
    audit record remains available.
+   If recovery email fails, **Generate temporary password** displays a random password
+   once in the operator's panel for direct sharing. It is never emailed or logged,
+   expires after 24 hours, revokes existing sessions and recovery links, and requires
+   the owner to choose a different password before desktop, mobile, or WebSocket access.
+   Closing the panel removes the displayed password. Sandbox operators can use this
+   action directly because sandbox recovery email is disabled.
 9. **Custom domains, per-tenant branding, billing integration** (§8).
 10. **Backups job, deploy-time migration runner** (§5, §7).
 11. **Retention policies** by plan (`activity_log` / `mail_log` / soft-deletes) (§9).
