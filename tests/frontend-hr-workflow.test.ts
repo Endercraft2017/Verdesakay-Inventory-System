@@ -301,3 +301,17 @@ it('successful modal actions can navigate after saving, while cancelled navigati
   await flush();
   expect(w.document.getElementById('view').textContent).toBe('Approvals');
 });
+
+it('cutoff deep links from Home retain HR chrome and section styling', () => {
+  const { w } = boot();
+  w.document.body.insertAdjacentHTML('beforeend', '<div id="tree-nav"></div>');
+  w.UI = w.auditUI;
+  w.eval(read('js/nav-config.js') + '\n' + read('js/app.js').replace("document.addEventListener('DOMContentLoaded', () => App.boot());", '') + '\nwindow.router=App;');
+  w.router.register('dashboard', (view: any) => { view.textContent = 'Home'; });
+  w.router.register('hr-timekeeping', (view: any) => { view.textContent = 'Cutoff'; });
+  w.router.navigate('dashboard');
+  w.router.navigate('hr-timekeeping', { period_id: 123, employee_id: 4 });
+  expect(w.document.getElementById('view').dataset.section).toBe('hr');
+  expect(w.document.querySelector('.tree-leaf.active')?.dataset.route).toBe('hr-timekeeping');
+  expect(w.location.hash).toBe('#hr-timekeeping?period_id=123&employee_id=4');
+});

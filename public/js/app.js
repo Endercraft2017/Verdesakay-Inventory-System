@@ -242,8 +242,8 @@ const App = (() => {
       for (const subtab of primary.subtabs) {
         for (const leaf of subtab.tree) {
           if (leaf.route !== route) continue;
+          if (!routeFallback) routeFallback = { primary, subtab, leaf };
           if (filter === undefined) {
-            if (!routeFallback) routeFallback = { primary, subtab, leaf };
             if (!leaf.filter) return { primary, subtab, leaf };
           } else if (filtersEqual(leaf.filter, filter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String(filter[key])))) {
             return { primary, subtab, leaf };
@@ -320,7 +320,7 @@ const App = (() => {
     if (!el) return;
     if (!primary || !subtab) { el.innerHTML = ''; return; }
     const leaves = subtab.tree.map((leaf) => {
-      const on = leaf.route === activeRoute && (filtersEqual(leaf.filter, activeFilter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String((activeFilter || {})[key]))));
+      const on = leaf.route === activeRoute && (!leaf.filter || filtersEqual(leaf.filter, activeFilter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String((activeFilter || {})[key]))));
       return `<button class="tree-leaf ${on ? 'active' : ''}" data-route="${leaf.route}"
         data-filter='${leaf.filter ? UI.esc(JSON.stringify(leaf.filter)) : ''}'>
         ${UI.icon(leaf.icon, 16)}<span>${UI.esc(leaf.label)}</span></button>`;
