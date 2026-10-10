@@ -673,6 +673,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       size: 'xl',
       headActionHTML: `<button type="button" class="btn secondary small" id="pd-print">${UI.icon('printer')} Print</button>`,
       bodyHTML: `
+        ${detail.notice ? `<p class="hr-workflow-notice" role="status">${UI.esc(detail.notice)}</p>` : ''}
         <div id="pd-slip" style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff;color:#111">${slipHtml}</div>
         ${detail.late_exempt ? `<p class="muted" style="font-size:12px;margin:0 0 8px">This employee is exempt from late deductions —
           late minutes are still shown below for reference, but never subtracted from pay.</p>` : ''}

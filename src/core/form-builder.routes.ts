@@ -16,6 +16,7 @@ import { parsePayrollSummaryCsv } from '../modules/payroll/hr-payroll-import';
 import { PAYROLL_FORM_SLUG } from '../modules/payroll/pay-access';
 import { runFormActions } from './form-actions';
 import { notifyApprovers } from '../modules/hr/workflow';
+import { normalizeRequest, attachLeave, leaveWarnings, requestEmployeeId } from '../modules/hr/request-data';
 import { REQUEST_SLUGS } from './me.routes';
 import { INFO_CHANGE_SLUG, prepareInfoChange } from '../modules/hr/info-change';
 import type { FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../shared/types';
@@ -321,6 +322,7 @@ router.get('/form-records/:id', (req, res) => {
 // create an already-'approved'/'completed' record and skip the real approval workflow.
 router.post('/form-records', syncClass('merge'), (req, res) => {
   const input = parseBody(createFormRecordSchema, req.body);
+  delete input.data._calculation_snapshot;
   const form = queryOne<FormDefinition>(
     'SELECT * FROM form_definitions WHERE id = ?',
     input.form_def_id
@@ -348,7 +350,7 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
       ? queryOne<{ id: number; name: string }>('SELECT id, name FROM employees WHERE user_id = ?', req.user!.id)
       : Number(input.data.employee_id)
         ? queryOne<{ id: number; name: string }>('SELECT id, name FROM employees WHERE id = ?', Number(input.data.employee_id))
-        : queryOne<{ id: number; name: string }>('SELECT id, name FROM employees WHERE name = ? ORDER BY id', String(input.data.employee_name || ''));
+        : (() => { const matches = queryAll<{ id: number; name: string }>('SELECT id, name FROM employees WHERE name = ?', String(input.data.employee_name || '')); return matches.length === 1 ? matches[0] : undefined; })();
     if (subject) input.data = { ...input.data, employee_id: subject.id, employee_name: subject.name };
     else { delete input.data.employee_id; }
   }
@@ -357,6 +359,7 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
     // Filing is not approval: decision metadata belongs to the decision endpoint.
     for (const key of ['approved_by', 'decided_by', 'decided_at', 'decision_note']) delete input.data[key];
     if (selfFile && form.slug === 'overtime_request') delete input.data.approved_hours;
+    input.data = normalizeRequest(form.slug, parseFields(form.fields as string) as any, input.data, Number(input.data.employee_id)) as typeof input.data;
   }
 
   let recordId: number;
@@ -384,11 +387,15 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
   // transaction so a failed action never un-creates the record. Skipped for self-filed HR
   // requests (forced to 'pending' above — those go through the me.routes approval flow).
   let action_warnings: string[] = [];
+  if (form.slug === 'leave_request') {
+    action_warnings.push(...leaveWarnings(Number(input.data.employee_id), input.data, recordId), ...attachLeave(recordId).warnings);
+    if (action_warnings.length) { input.data.leave_warnings = action_warnings.join('\n'); run('UPDATE form_records SET data = ? WHERE id = ?', JSON.stringify(input.data), recordId); }
+  }
   if (!selfFile) {
-    action_warnings = runFormActions({
+    action_warnings.push(...runFormActions({
       recordId, recordNumber: number, formDef: form, data: input.data as Record<string, unknown>,
       trigger: 'create', actingUserId: req.user!.id,
-    }).warnings;
+    }).warnings);
   }
   if (REQUEST_SLUGS.includes(form.slug)) {
     const employee = Number(input.data.employee_id) ? queryOne<{ name: string; department_id: number | null }>('SELECT name, department_id FROM employees WHERE id = ?', Number(input.data.employee_id)) : queryOne<{ name: string; department_id: number | null }>('SELECT name, department_id FROM employees WHERE user_id = ?', req.user!.id);
@@ -429,8 +436,27 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
   const newStatus = input.status ?? existing.status;
   const recordData = { ...input.data };
   const previousData = parseData(existing.data as string);
+  if (existing.slug === 'hr_payroll') {
+    delete recordData._calculation_snapshot;
+    if (previousData._calculation_snapshot) recordData._calculation_snapshot = String(previousData._calculation_snapshot);
+    if (previousData.employee_id) recordData.employee_id = Number(previousData.employee_id);
+    if (previousData._calculation_snapshot) {
+      for (const key of ['daily_rate','days_worked','days_absent','days_half','days_undertime','ot_hours','ot_rate_hour','basic_salary',
+        'overtime_pay','undertime_pay','undertime_day_pay','night_diff_pay','holiday_pay','special_holiday_30','rest_day_ot','total_earnings','late_absences']) {
+        if (recordData[key] !== undefined && Number(recordData[key]) !== Number(previousData[key] ?? 0)) {
+          res.status(400).json({ error: 'Attendance-derived payroll amounts are saved with their breakdown. Update Timekeeping and regenerate the payslip instead.' }); return;
+        }
+        if (previousData[key] !== undefined) recordData[key] = previousData[key] as any;
+      }
+    }
+  }
   if (existing.slug === 'hr_payroll' && typeof previousData.cutoff_id === 'number') recordData.cutoff_id = previousData.cutoff_id;
-  if (REQUEST_SLUGS.includes(existing.slug) && typeof previousData.employee_id === 'number') recordData.employee_id = previousData.employee_id;
+  if (REQUEST_SLUGS.includes(existing.slug)) recordData.employee_id = requestEmployeeId(previousData) || requestEmployeeId(recordData);
+  if (REQUEST_SLUGS.includes(existing.slug)) {
+    const definition = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', existing.form_def_id)!;
+    Object.assign(recordData, normalizeRequest(existing.slug, parseFields(definition.fields as string) as any, recordData, Number(recordData.employee_id)));
+    for (const key of ['approved_by', 'decided_by', 'decided_at', 'decision_note', 'charged_dates', 'leave_days_charged', 'leave_warnings']) delete recordData[key];
+  }
   run(
     `UPDATE form_records
      SET data = ?, status = ?, updated_at = datetime('now')
@@ -442,6 +468,10 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
 
   // Fire `run_on: 'approved'` actions the first time a record reaches 'approved'.
   let action_warnings: string[] = [];
+  if (existing.slug === 'leave_request') {
+    action_warnings.push(...leaveWarnings(Number(recordData.employee_id), recordData, id), ...attachLeave(id).warnings);
+    if (action_warnings.length) { recordData.leave_warnings = action_warnings.join('\n'); run('UPDATE form_records SET data = ? WHERE id = ?', JSON.stringify(recordData), id); }
+  }
   if (newStatus === 'approved' && existing.status !== 'approved') {
     const form = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', existing.form_def_id);
     if (form) {

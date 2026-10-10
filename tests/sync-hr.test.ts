@@ -33,9 +33,16 @@ const leaveUsed = (conn: DatabaseSync) =>
 const clashes = async () =>
   ((await ok(api().get('/api/sync/clashes').set(T.cloudHdr()))).body as Array<{ summary: string }>).map((c) => c.summary);
 /** Leave filed by the worker (on the cloud unless `hdr` says otherwise). */
-const fileLeave = async (days: number, hdr: Record<string, string> | null = null) =>
-  (await ok(api().post('/api/form-records').set(hdr ?? { Authorization: `Bearer ${cloudWorkerToken}` })
-    .send({ form_def_id: leaveForm, data: { employee_name: 'Rosa Diaz', with_pay: 'Yes', days }, status: 'pending' }), 201)).body as { id: number; number: string };
+let leaveDateSequence = 0;
+const fileLeave = async (days: number, hdr: Record<string, string> | null = null) => {
+  const headers = hdr ?? { Authorization: `Bearer ${cloudWorkerToken}` };
+  const first = new Date(Date.UTC(2026, 5, 1 + (++leaveDateSequence)*20));
+  const last = new Date(first); last.setUTCDate(last.getUTCDate()+13);
+  const preview = await ok(api().post('/api/me/leave-preview').set(headers).send({ date_from: first.toISOString().slice(0,10), date_to: last.toISOString().slice(0,10) }));
+  const dates = preview.body.working_dates.slice(0, days);
+  return (await ok(api().post('/api/form-records').set(headers)
+    .send({ form_def_id: leaveForm, data: { employee_name: 'Rosa Diaz', with_pay: 'Yes', days, leave_dates: dates.join(','), reason: 'Reviewed leave' }, status: 'pending' }), 201)).body as { id: number; number: string };
+};
 let cloudWorkerToken = '';
 
 beforeAll(async () => {

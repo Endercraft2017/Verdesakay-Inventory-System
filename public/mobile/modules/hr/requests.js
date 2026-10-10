@@ -225,17 +225,18 @@
     var employee = (MApp.getMe() || {}).employee || {};
     if (!employee.id) { host.innerHTML = '<div class="m-empty">Your account is not linked to an employee record. Ask HR to link your account before filing requests.</div>'; return; }
     var autofill = { employee_name: employee.name, name: employee.name, department: employee.department_name, position: employee.position, employee_no: employee.employee_no };
-    var fields = (type.fields || []).filter(function (field) { return !autofill[field.key]; });
+    var fields = (type.fields || []).filter(function (field) { return !autofill[field.key] && !(type.slug === 'leave_request' && ['date_from','date_to','days','leave_dates'].indexOf(field.key) >= 0); });
     var meta = TYPE_META[type.slug] || { guide: 'This request will be routed for the required approval.' };
 
     host.innerHTML =
       '<button class="m-request-selected-type" type="button"><span><small>Request type</small><b>' + mEsc(type.name) + '</b></span><i aria-hidden="true">›</i></button>' +
-      '<form class="m-request-form">' + fields.map(fieldMarkup).join('') +
+      '<form class="m-request-form">' + (type.slug === 'leave_request' ? LeaveDates.markup() : '') + fields.map(fieldMarkup).join('') +
         '<aside class="m-request-guidance">' + mEsc(meta.guide) + '</aside>' +
         '<button class="m-v2-primary" type="submit">Review request</button></form>' +
       '<div id="m-req-form-balance"></div>';
     host.querySelector('.m-request-selected-type').onclick = function () { pickType(view); };
     var formEl = host.querySelector('form');
+    var leavePicker = type.slug === 'leave_request' ? LeaveDates.mount(formEl, { data: draft || (prefillDate ? { date_from: prefillDate, date_to: prefillDate } : {}), preview: function (data) { return API.post('/me/leave-preview', data); } }) : null;
 
     (type.fields || []).forEach(function (field) {
       var input = formEl.querySelector('[data-k="' + field.key + '"]');
@@ -256,6 +257,7 @@
     formEl.onsubmit = function (event) {
       event.preventDefault();
       var result = collect(formEl, type, autofill);
+      if (leavePicker) { Object.assign(result.data, leavePicker.value()); if (!result.data.leave_dates) result.missing = 'Inclusive leave dates'; }
       if (result.missing) {
         mToast(result.missing + ' is required', 'err');
         var missingField = (type.fields || []).filter(function (field) { return field.label === result.missing; })[0];
@@ -281,7 +283,8 @@
       var button = this;
       button.disabled = true;
       button.textContent = 'Submitting…';
-      API.post('/form-records', { form_def_id: type.id, data: data, status: 'pending' }).then(function () {
+      API.post('/form-records', { form_def_id: type.id, data: data, status: 'pending' }).then(function (result) {
+        if (result.action_warnings && result.action_warnings.length) window.alert(result.action_warnings.join('\n\n'));
         mToast('Request submitted');
         list(view, 'pending');
       }).catch(function (ex) {

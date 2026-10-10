@@ -3,6 +3,7 @@ import { notifyUser, type PushPayload } from '../../shared/push';
 import { userPermissions } from '../../shared/roles';
 import type { Role } from '../../shared/types';
 import { queryAll, queryOne, getSetting } from '../../shared/db';
+import { requestMatchesDay, requestEmployeeJoin } from './request-data';
 
 export function approverDepartmentIds(userId: number): number[] {
   const heads = queryAll<{ id: number }>(
@@ -81,13 +82,19 @@ export function payrollWarnings(period: {
     warnings.push(`${fixes} attendance correction(s) for this cutoff are pending approval.`);
   const requests =
     queryOne<{ n: number }>(
-      `SELECT COUNT(DISTINCT fr.id) AS n FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by) WHERE fr.status = 'pending' AND fd.scope = 'hr' AND e.id IN (SELECT employee_id FROM attendance_records WHERE period_id = ?)`,
+      `SELECT COUNT(DISTINCT fr.id) AS n FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id JOIN employees e ON ${requestEmployeeJoin} WHERE fr.status = 'pending' AND fd.scope = 'hr' AND e.id IN (SELECT employee_id FROM attendance_records WHERE period_id = ?)`,
       period.id,
     )?.n ?? 0;
   if (requests)
     warnings.push(
       `${requests} HR request(s) from roster employees are pending. Check whether they affect this cutoff.`,
     );
+  const links = queryAll<{ employee_id: number; work_date: string; slug: string; data: string }>(
+    `SELECT ar.employee_id, ar.work_date, fd.slug, fr.data FROM attendance_records ar,
+     json_each(COALESCE(ar.form_record_ids, json_array(ar.form_record_id))) je
+     JOIN form_records fr ON fr.id = je.value JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE ar.period_id = ?`, period.id);
+  const invalid = links.filter(link => { try { return !requestMatchesDay(link.slug, JSON.parse(link.data), link.employee_id, link.work_date); } catch { return true; } });
+  if (invalid.length) warnings.push(`${invalid.length} linked form(s) do not match their employee/date and will not authorize payroll. Review their details.`);
   return warnings;
 }
 

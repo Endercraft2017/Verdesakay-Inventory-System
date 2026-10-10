@@ -566,11 +566,11 @@ App.register('hr-employees', async (view, filter) => {
           </div>
 
           <div data-formpanel="leave" class="form-panel hidden"><p class="muted">Document uploads, asset changes, leave adjustments and rate changes save immediately. Save applies the employee fields; Cancel does not undo those separate actions.</p>
-            <label style="display:block">Employee leave bank</label><p class="muted">Set an individual entitlement. Approved paid leave consumes this bank. Use Adjust balance to add or deduct days with a recorded reason.</p>
+            <label style="display:block">Employee leave bank</label><p class="muted">Approved paid leave consumes scheduled working days. Use Adjust balance to add or deduct days with a recorded reason; ordinary employee edits preserve the bank.</p>
             ${editing ? '<button class="btn secondary small" type="button" id="emp-leave-adjust">Adjust balance</button> <button class="btn secondary small" type="button" id="emp-leave-history">Adjustment history</button>' : ''}
             <div class="field-row">
-              <div><label>Individual entitlement (days)</label><input data-f="leave_days_per_year" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_per_year ?? 5) : 5))}" /></div>
-              <div><label>Days consumed</label><input data-f="leave_days_used" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_used ?? 0) : 0))}" />
+              <div><label>Individual entitlement (days)</label><input data-f="leave_days_per_year" type="number" step="0.5" min="0" ${editing ? 'readonly' : ''} value="${UI.esc(String(editing ? (existing.leave_days_per_year ?? 5) : 5))}" /></div>
+              <div><label>Days consumed</label><input data-f="leave_days_used" type="number" step="0.5" min="0" ${editing ? 'readonly' : ''} value="${UI.esc(String(editing ? (existing.leave_days_used ?? 0) : 0))}" />
                 ${editing ? `<div class="muted" style="font-size:12px;margin-top:3px">${UI.esc(String((existing.leave_days_per_year ?? 5) - (existing.leave_days_used ?? 0)))} remaining</div>` : ''}
               </div>
             </div>

@@ -1,4 +1,5 @@
 import { effectiveHrForm } from './request-policy';
+import { requestMatchesDay, attachEmployeeLeaves, attachLeave, leaveDates, leaveWarnings, leavePreview, scheduledLeaveDates, ATTENDANCE_REQUESTS, requestEmployeeId } from './request-data';
 /** HR: Employees master list (201 file: status, statutory numbers, photo, documents) +
     Time Keeping (cutoff periods with daily time-in/out), wired to generate records in the
     existing "HR Payroll" form so the existing print pipeline (form-records.js /
@@ -123,6 +124,7 @@ function ensureRosterDays(periodId: number, employeeId: number, start: string, e
       if (fix) run("UPDATE attendance_records SET time_in = ?, time_out = ?, notes = ? WHERE period_id = ? AND employee_id = ? AND work_date = ?", fix.requested_in, fix.requested_out, 'Approved attendance correction' + (fix.decision_note ? ' — ' + fix.decision_note : ''), periodId, employeeId, d);
     }
   }
+  attachEmployeeLeaves(employeeId);
 }
 
 // ─── Employees ──────────────────────────────────────────────────────────────
@@ -561,7 +563,7 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
   run(
     `UPDATE employees SET employee_no = ?, name = ?, department_id = ?, position = ?, user_id = ?, daily_rate = ?, rate_type = ?,
        monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?,
-       leave_days_per_year = ?, leave_days_used = ?, rest_days = ?, default_shift_id = ?, late_exempt = ?,
+       rest_days = ?, default_shift_id = ?, late_exempt = ?,
        ot_exempt = ?, deduct_sss = ?, deduct_philhealth = ?, deduct_pagibig = ?, deduct_withholding_tax = ?, withholding_tax_override = ?,
        sss_override = ?, philhealth_override = ?, pagibig_override = ?, photo = ?,
        clock_anywhere = COALESCE(?, clock_anywhere),
@@ -573,7 +575,7 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
     input.employee_no, input.name, input.department_id, input.position ?? null, input.user_id, dailyRate, input.rate_type,
     input.rate_type === 'monthly' ? input.monthly_rate : null, input.status,
     input.start_date ?? null, input.sss_no ?? null, input.philhealth_no ?? null,
-    input.pagibig_no ?? null, input.tin_no ?? null, input.leave_days_per_year, input.leave_days_used,
+    input.pagibig_no ?? null, input.tin_no ?? null,
     input.rest_days ? JSON.stringify(input.rest_days) : null, input.default_shift_id, input.late_exempt ? 1 : 0,
     input.ot_exempt ? 1 : 0, input.deduct_sss === false ? 0 : 1, input.deduct_philhealth === false ? 0 : 1,
     input.deduct_pagibig === false ? 0 : 1, input.deduct_withholding_tax === false ? 0 : 1,
@@ -1008,6 +1010,27 @@ router.get('/linked-form-record-ids', requirePermission('hr.view'), (_req, res) 
       WHERE je.value IS NOT NULL`
   );
   res.json(rows.map((r) => r.id));
+});
+
+// Explicit linking is reviewable and covers every selected leave date across open cutoffs.
+router.get('/requests/eligible', requirePermission('hr.view'), (req, res) => {
+  const employeeId = Number(req.query.employee_id), date = String(req.query.date || '');
+  const records = queryAll<{ id: number; form_def_id: number; number: string; data: string; status: string; slug: string }>(
+    `SELECT fr.id, fr.form_def_id, fr.number, fr.data, fr.status, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+     WHERE fd.slug IN (${ATTENDANCE_REQUESTS.map(() => '?').join(',')}) AND fr.status IN ('pending','approved') ORDER BY fr.id DESC`, ...ATTENDANCE_REQUESTS);
+  res.json(records.flatMap(r => { const data = JSON.parse(r.data); return requestMatchesDay(r.slug, data, employeeId, date) ? [{ ...r, data: { ...data, employee_id: employeeId } }] : []; }));
+});
+router.post('/requests/:id/link-attendance', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+  const record = queryOne<{ data: string; status: string; slug: string }>('SELECT fr.data, fr.status, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?', Number(req.params.id));
+  if (!record || record.slug !== 'leave_request') { res.status(404).json({ error: 'Leave request not found' }); return; }
+  if (!['pending', 'approved'].includes(record.status)) { res.status(400).json({ error: 'Only pending or approved leave can be linked.' }); return; }
+  const data = JSON.parse(record.data);
+  const result = attachLeave(Number(req.params.id));
+  res.json({ ok: true, ...result, covered_dates: leaveDates(data), warnings: [...leaveWarnings(requestEmployeeId(data), data, Number(req.params.id)), ...result.warnings] });
+});
+router.post('/leave-preview', requirePermission('hr.view'), (req, res) => {
+  const input = parseBody(z.object({ employee_id: z.coerce.number().int().positive(), data: z.record(z.string(), z.unknown()) }), req.body);
+  res.json(leavePreview(input.employee_id, input.data));
 });
 
 // POST /api/hr/shifts
@@ -1511,7 +1534,8 @@ router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
           `SELECT fd.slug, fr.data, fr.status FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
            WHERE fr.id IN (${linkedIds.map(() => '?').join(',')})`,
           ...linkedIds
-        ).filter((f) => effectiveHrForm(f.slug, f.status))
+        ).filter((f) => effectiveHrForm(f.slug, f.status) && requestMatchesDay(f.slug, JSON.parse(f.data), emp.id, date)
+          && (f.slug !== 'leave_request' || scheduledLeaveDates(emp.id, [date]).length > 0))
       : [];
     const linkedSlugs = linkedForms.map((f) => f.slug);
     const onLeave = linkedSlugs.includes('leave_request');
@@ -1727,6 +1751,17 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), syncClass(
     res.status(404).json({ error: 'Cutoff not found' }); return;
   }
   const input = parseBody(saveAttendanceSchema, req.body);
+  const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId)!;
+  for (const day of input.days) {
+    if (day.work_date < period.start_date || day.work_date > period.end_date) { res.status(400).json({ error: `${day.work_date} is outside this cutoff.` }); return; }
+    const ids = day.form_record_ids?.length ? day.form_record_ids : day.form_record_id ? [day.form_record_id] : [];
+    for (const id of ids) {
+      const form = queryOne<{ slug: string; data: string }>('SELECT fd.slug, fr.data FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?', id);
+      if (!form || !requestMatchesDay(form.slug, JSON.parse(form.data), input.employee_id, day.work_date)) {
+        res.status(400).json({ error: `Form #${id} does not cover this employee on ${day.work_date}. Review its details before linking.` }); return;
+      }
+    }
+  }
   if (!queryOne('SELECT id FROM employees WHERE id = ?', input.employee_id)) {
     res.status(404).json({ error: 'Employee not found' }); return;
   }
@@ -1751,6 +1786,7 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), syncClass(
         d.half_day_override || null
       );
     }
+    attachEmployeeLeaves(input.employee_id);
     db.exec('COMMIT');
     res.json({ ok: true });
     notifyUnrecordedOt(input.employee_id, input.days);
@@ -1776,6 +1812,9 @@ function notifyUnrecordedOt(
     const flagged: string[] = [];
     for (const d of days) {
       if (!d.time_in || !d.time_out) continue;
+      const filed = queryAll<{ data: string }>(`SELECT fr.data FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+        WHERE fd.slug = 'overtime_request' AND fr.status IN ('pending','approved') AND CAST(json_extract(fr.data,'$.employee_id') AS INTEGER) = ?`, employeeId);
+      if (filed.some(r => { try { return requestMatchesDay('overtime_request', JSON.parse(r.data), employeeId, d.work_date); } catch { return false; } })) continue;
       const shift = d.shift_id
         ? queryOne<{ start_time: string; end_time: string }>('SELECT start_time, end_time FROM shifts WHERE id = ?', d.shift_id)
         : null;
@@ -1980,6 +2019,7 @@ function attendanceDaysForEmployee(
     });
   }
   const restDaySwaps = restDaySwapsFor(employeeId);
+  const workingLeaveDates = new Set(scheduledLeaveDates(employeeId, attendanceRows.map(r => r.work_date)));
   // Per-record override (attendance_records.holiday_type / .rest_day) beats the calendar /
   // weekly pattern; holiday 'none' means "not a holiday for this person" even if the calendar
   // says so, and rest_day 'yes'/'no' force a single date on/off regardless of its weekday
@@ -1988,7 +2028,8 @@ function attendanceDaysForEmployee(
   return attendanceRows.map((r) => {
     const ids = safeParseIdArray(r.form_record_ids);
     const linkIds = ids.length ? ids : r.form_record_id ? [r.form_record_id] : [];
-    const linkedForms = linkIds.map((id) => formById.get(id)).filter((f): f is { slug: string; data: Record<string, unknown> } => !!f);
+    const linkedForms = linkIds.map((id) => formById.get(id)).filter((f): f is { slug: string; data: Record<string, unknown> } => !!f && requestMatchesDay(f.slug, f.data, employeeId, r.work_date)
+      && (f.slug !== 'leave_request' || workingLeaveDates.has(r.work_date)));
     const holiday = r.holiday_type === 'none' ? null : (r.holiday_type as AttendanceDay['holiday']) || holidayFor(r.work_date);
     return {
     work_date: r.work_date,
@@ -2375,6 +2416,10 @@ function payslipData(
     net_pay: netPay,
     employer_contributions: employerContributions,
     statutory_basis: statutoryBasis,
+    _calculation_snapshot: JSON.stringify({ version: 1, calculated_at: now().toISOString(),
+      employee_name: emp.name, period_label: period.label, daily_rate: currentDailyRate,
+      late_exempt: !!emp.late_exempt, always_whole_day: !!emp.always_whole_day,
+      days: computed.days, totals: { ...computed, days: undefined, basic_salary: basicSalary } }),
   };
   return { data, possibleHalfDay: computed.days.some((d) => d.possible_half_day) };
 }
@@ -2609,6 +2654,19 @@ router.get('/payroll/:recordId/detail', requirePermission('payroll.view'), (req,
   );
   if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
   const data = JSON.parse(rec.data as string) as Record<string, unknown>;
+  if (data._calculation_snapshot) {
+    try { const snapshot = JSON.parse(String(data._calculation_snapshot));
+      if (snapshot.version !== 1 || !Array.isArray(snapshot.days) || !snapshot.totals) throw new Error('Invalid saved calculation');
+      const header = queryOne<{ label: string }>('SELECT label FROM attendance_periods WHERE id = ?', Number(data.cutoff_id));
+      res.json({ ...snapshot, period_label: header?.label || snapshot.period_label, source: 'saved_calculation' }); return; }
+    catch { /* safely handle legacy damaged snapshots below */ }
+  }
+  if (rec.status === 'paid') {
+    res.json({ employee_name: data.employee_name, period_label: rec.period, daily_rate: data.daily_rate,
+      late_exempt: false, always_whole_day: false, days: [], source: 'legacy_paid',
+      notice: 'This paid payslip predates saved calculation breakdowns. Its stored amounts are shown; a historical day-by-day breakdown is unavailable.',
+      totals: { ...data, late_deduction: data.late_absences || 0 } }); return;
+  }
   const employeeName = String(data.employee_name || '');
   // By stamped employee_id or current/former name — survives renames (payroll/payslip-owner.ts).
   const ownerId = payslipOwnerResolver().idOf(data);

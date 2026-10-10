@@ -27,6 +27,7 @@ export function parseBody<T>(schema: z.ZodType<T>, data: unknown): T {
 }
 
 const trimmed = z.string().trim();
+const realCalendarDate = trimmed.refine(v => /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v, 'Enter a real YYYY-MM-DD date');
 const optionalText = trimmed.max(2000).optional().nullable();
 
 /** Accepts number, numeric string, '', null or missing -> number | null. */
@@ -1239,16 +1240,20 @@ export const linkFormTemplateSchema = z.object({
 // round-tripped by the generic PUT" reasoning.
 const formFieldScalar = z.union([z.string().max(10000), z.number(), z.boolean(), z.null()]);
 const formFieldObject = z.record(z.string().max(64), formFieldScalar);
-const formFieldValue = z.union([formFieldScalar, formFieldObject, z.array(formFieldObject).max(50)]);
+const formFieldValue = z.union([formFieldScalar, formFieldObject, z.array(formFieldObject).max(50), z.string().max(500000)]);
+const formRecordData = z.record(z.string().max(64), formFieldValue).superRefine((data, ctx) => {
+  for (const [key, value] of Object.entries(data)) if (key !== '_calculation_snapshot' && typeof value === 'string' && value.length > 10000)
+    ctx.addIssue({ code: 'custom', path: [key], message: 'Field must not exceed 10000 characters' });
+});
 
 export const createFormRecordSchema = z.object({
   form_def_id: z.coerce.number().int().positive('Form definition is required'),
-  data: z.record(z.string().max(64), formFieldValue).default({}),
+  data: formRecordData.default({}),
   status: trimmed.max(40).default('draft'),
 });
 
 export const updateFormRecordSchema = z.object({
-  data: z.record(z.string().max(64), formFieldValue).default({}),
+  data: formRecordData.default({}),
   status: trimmed.max(40).optional(),
 });
 
@@ -1429,19 +1434,19 @@ export const returnAssetItemSchema = z.object({
 export const attendancePeriodSchema = z
   .object({
     label: trimmed.min(1, 'Cutoff label is required').max(120),
-    start_date: trimmed.min(1, 'Start date is required').max(40),
-    end_date: trimmed.min(1, 'End date is required').max(40),
+    start_date: realCalendarDate,
+    end_date: realCalendarDate,
   })
   .refine((v) => v.end_date >= v.start_date, {
     message: 'End date must be on or after the start date',
     path: ['end_date'],
-  });
+  }).refine(v => (Date.parse(v.end_date) - Date.parse(v.start_date)) / 86400000 < 366, 'A cutoff must not exceed 366 days');
 
-const timeOfDay = z.union([trimmed.max(20), z.null()]).optional();
+const timeOfDay = z.union([trimmed.refine(v => v === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(v), 'Time must be HH:MM, 24-hour'), z.null()]).optional();
 const nullableId = z.coerce.number().int().positive().nullable().optional();
 
 const attendanceDaySchema = z.object({
-  work_date: trimmed.min(1).max(40),
+  work_date: realCalendarDate,
   time_in: timeOfDay,
   // Lunch-break bracket — display-only (payroll subtracts PayrollPolicy.lunch_break_minutes,
   // it never reads these). Split from the raw punches on reconcile, or hand-typed in the grid.
@@ -1473,7 +1478,7 @@ const attendanceDaySchema = z.object({
 export const saveAttendanceSchema = z.object({
   employee_id: z.coerce.number().int().positive('Employee is required'),
   days: z.array(attendanceDaySchema).max(62),
-});
+}).refine(v => new Set(v.days.map(d => d.work_date)).size === v.days.length, 'Each attendance date must appear only once');
 
 export const addRosterEmployeeSchema = z.object({
   employee_id: z.coerce.number().int().positive('Employee is required'),
@@ -1695,7 +1700,7 @@ const clockTime = z.preprocess(
 
 export const timeCorrectionSchema = z
   .object({
-    work_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'work_date must be YYYY-MM-DD'),
+    work_date: realCalendarDate,
     requested_in: clockTime,
     requested_out: clockTime,
     reason: trimmed.min(3, 'A short reason is required').max(1000),

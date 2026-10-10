@@ -52,7 +52,7 @@ async function file(user: Awaited<ReturnType<typeof member>>, days = 2) {
     .send({
       form_def_id: leaveId,
       status: 'approved',
-      data: { employee_name: user.username, with_pay: 'Yes', days },
+      data: { employee_name: user.username, with_pay: 'Yes', days, reason: 'Workflow leave', date_from: '2026-04-01', date_to: `2026-04-${String(days).padStart(2,'0')}` },
     });
   expect(r.status).toBe(201);
   return r.body.id as number;
@@ -101,7 +101,7 @@ it('generic creation cannot approve leave, and generic editing cannot bypass bal
       'SELECT leave_days_used FROM employees WHERE id = ?',
       user.employeeId,
     )?.leave_days_used,
-  ).toBe(2);
+  ).toBe(1);
   expect(
     (
       await ctx.api
@@ -371,7 +371,7 @@ it('HR-filed leave follows the subject employee and never consumes the clerk’s
         employee_id: subject.employeeId,
         employee_name: subject.username,
         with_pay: 'Yes',
-        days: 2,
+        days: 2, date_from: '2026-04-01', date_to: '2026-04-02', reason: 'Workflow leave',
       },
     });
   expect(request.status).toBe(201);
@@ -390,7 +390,7 @@ it('HR-filed leave follows the subject employee and never consumes the clerk’s
       'SELECT leave_days_used FROM employees WHERE id = ?',
       subject.employeeId,
     )?.leave_days_used,
-  ).toBe(2);
+  ).toBe(1);
   expect(
     queryOne<{ leave_days_used: number }>(
       'SELECT leave_days_used FROM employees WHERE id = ?',
@@ -407,7 +407,7 @@ it('self-filers cannot substitute another employee identity, and employees can w
     .set(hdr(filer.token))
     .send({
       form_def_id: leaveId,
-      data: { employee_id: other.employeeId, employee_name: other.username, days: 1 },
+      data: { employee_id: other.employeeId, employee_name: other.username, days: 1, date_from: '2026-04-01', date_to: '2026-04-01', reason: 'Workflow leave' },
     });
   expect(spoofed.status).toBe(201);
   expect(
@@ -421,7 +421,7 @@ it('self-filers cannot substitute another employee identity, and employees can w
     .set(hdr())
     .send({
       form_def_id: leaveId,
-      data: { employee_id: other.employeeId, employee_name: other.username, days: 1 },
+      data: { employee_id: other.employeeId, employee_name: other.username, days: 1, date_from: '2026-04-01', date_to: '2026-04-01', reason: 'Workflow leave' },
     });
   expect(
     (await ctx.api.post(`/api/me/requests/${behalf.body.id}/cancel`).set(hdr(other.token))).status,

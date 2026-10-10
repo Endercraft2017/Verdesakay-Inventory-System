@@ -18,6 +18,7 @@ import { currentPolicy } from '../modules/hr/hr.routes';
 import type { FormDefinition, FormRecord, TimeCorrection } from '../shared/types';
 import { recordSiteClash, syncClass } from '../sync';
 import { approverDepartmentIds, cutoffIsPaid, notifyApprovers } from '../modules/hr/workflow';
+import { normalizeRequest, leaveDates, scheduledLeaveDates, overlappingLeave, leaveWarnings, attachLeave, leavePreview, requestEmployeeJoin } from '../modules/hr/request-data';
 import { now, reRunOfRecordedCommand, siteDecisionStands } from '../shared/sync-context';
 
 const router = Router();
@@ -211,20 +212,26 @@ router.get('/request-types', (_req, res) => {
     // meant to be set by whoever approves the request (HR, when linking it to an attendance
     // day), not handed to the employee filing it, so it's stripped out of the self-file form
     // even though it's a normal field everywhere else (Data Forms, Daily Time's own quick-add).
-    const internalFields = ['employee_id', 'approved_by', 'decided_by', 'decided_at', 'decision_note'];
+    const internalFields = ['employee_id', 'approved_by', 'decided_by', 'decided_at', 'decision_note', 'leave_days_charged', 'charged_dates', 'leave_warnings'];
     if (r.slug === 'overtime_request') internalFields.push('approved_hours');
     const visibleFields = fields.filter((f) => !internalFields.includes(f.key));
+    if (r.slug === 'leave_request' && !visibleFields.some(f => f.key === 'leave_dates')) visibleFields.push({ key: 'leave_dates', label: 'Selected dates (optional; replaces the range)', type: 'textarea' } as any);
     return { ...r, fields: visibleFields };
   }));
 });
 
 // GET /api/me/requests — records this user filed for any request form, newest first
+router.post('/leave-preview', (req, res) => {
+  const employee = me(req.user!.id);
+  if (!needEmp(res, employee)) return;
+  res.json(leavePreview(employee.id, req.body));
+});
 router.get('/requests', (req, res) => {
   const rows = queryAll<FormRecord & { form_name: string; slug: string }>(
     `SELECT fr.id, fr.number, fr.status, fr.data, fr.created_at, fr.updated_at,
             fd.name AS form_name, fd.slug
      FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
-     LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by)
+     LEFT JOIN employees e ON ${requestEmployeeJoin}
      WHERE (fr.created_by = ? OR e.user_id = ?) AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
      ORDER BY fr.id DESC LIMIT 100`,
     req.user!.id, req.user!.id, ...REQUEST_SLUGS
@@ -237,7 +244,7 @@ router.post('/requests/:id/cancel', syncClass('merge'), (req, res) => {
   const rec = queryOne<{ id: number; status: string; created_by: number | null; slug: string; employee_user_id: number | null }>(
     `SELECT fr.id, fr.status, fr.created_by, fd.slug, e.user_id AS employee_user_id
      FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
-     LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END
+     LEFT JOIN employees e ON ${requestEmployeeJoin}
      WHERE fr.id = ?`,
     Number(req.params.id)
   );
@@ -327,7 +334,7 @@ router.get('/approvals', (req, res) => {
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
      LEFT JOIN users u ON u.id = fr.created_by
-     LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by)
+     LEFT JOIN employees e ON ${requestEmployeeJoin}
      WHERE fr.status = 'pending' AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
        AND CASE WHEN e.id IS NOT NULL THEN COALESCE(e.user_id, 0) ELSE COALESCE(fr.created_by, 0) END != ?
      ${departmentSQL}
@@ -346,7 +353,7 @@ router.get('/approvals', (req, res) => {
     // Information changes touch the official HR record, so only hr.manage sees/decides them.
     can_approve: isHrManager || heads.length > 0,
     history: [
-      ...queryAll<FormRecord & { form_name: string; slug: string; employee_name: string | null; department_id: number | null }>(`SELECT fr.*, fd.name AS form_name, fd.slug, e.name AS employee_name, e.department_id FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by) WHERE fr.status IN ('approved', 'rejected') AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')}) ${departmentSQL} ORDER BY fr.updated_at DESC LIMIT 100`, ...REQUEST_SLUGS, ...departmentParams)
+      ...queryAll<FormRecord & { form_name: string; slug: string; employee_name: string | null; department_id: number | null }>(`SELECT fr.*, fd.name AS form_name, fd.slug, e.name AS employee_name, e.department_id FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id LEFT JOIN employees e ON ${requestEmployeeJoin} WHERE fr.status IN ('approved', 'rejected') AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')}) ${departmentSQL} ORDER BY fr.updated_at DESC LIMIT 100`, ...REQUEST_SLUGS, ...departmentParams)
         .filter(r => inScope(r.department_id) && (r.slug !== INFO_CHANGE_SLUG || isHrManager)).map(r => ({ ...r, kind: 'request', data: parse(r.data) })),
       ...queryAll<TimeCorrection & { employee_name: string; department_id: number | null; decided_by_name: string | null }>(`SELECT tc.*, e.name AS employee_name, e.department_id, u.full_name AS decided_by_name FROM time_corrections tc JOIN employees e ON e.id = tc.employee_id LEFT JOIN users u ON u.id = tc.decided_by WHERE tc.status IN ('approved', 'rejected') ${departmentSQL} ORDER BY tc.decided_at DESC LIMIT 100`, ...departmentParams).filter(r => inScope(r.department_id)).map(r => ({ ...r, kind: 'correction', form_name: 'Attendance correction', updated_at: r.decided_at }))
     ].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 100),
@@ -368,7 +375,7 @@ router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => 
             e.department_id, e.id AS employee_id, e.user_id AS employee_user_id, e.leave_days_per_year, e.leave_days_used
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
-     LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by)
+     LEFT JOIN employees e ON ${requestEmployeeJoin}
      WHERE fr.id = ?`,
     id
   );
@@ -390,7 +397,13 @@ router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => 
   }
 
   const { decision, note, override_balance } = parseBody(approvalDecisionSchema, req.body);
-  const data = parse(rec.data);
+  let data = parse(rec.data);
+  let warnings: string[] = [];
+  if (decision === 'approved') {
+    const fields = queryOne<{ fields: string }>('SELECT fd.fields FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?', id)?.fields;
+    data = normalizeRequest(rec.slug, parse(fields || '[]') as any, data, Number(rec.employee_id));
+    if (rec.slug === 'leave_request') warnings = leaveWarnings(Number(rec.employee_id), data, id);
+  }
 
   // Information change: apply to the employee record and record the decision in ONE
   // transaction, re-checking pending inside it so a double-tap can't apply twice.
@@ -433,7 +446,14 @@ router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => 
     // where with_pay isn't 'Yes', never touches the balance (see docs on the "simple fixed bank"
     // design: no accrual math, no carry-over, one-way consumption with no un-approve path).
     if (decision === 'approved' && rec.slug === 'leave_request' && data.with_pay === 'Yes' && rec.employee_id) {
-      const days = Number(data.days) || 0;
+      const dates = scheduledLeaveDates(rec.employee_id, leaveDates(data));
+      const alreadyCharged = new Set(overlappingLeave(rec.employee_id, dates, id)
+        .filter(r => r.status === 'approved' && r.data.with_pay === 'Yes')
+        .flatMap(r => String(r.data.charged_dates || r.dates.join(',')).split(',')));
+      const chargedDates = dates.filter(d => !alreadyCharged.has(d));
+      const days = chargedDates.length;
+      data.charged_dates = chargedDates.join(','); data.leave_days_charged = days;
+      if (days < dates.length) warnings.push(`${dates.length - days} date(s) are already covered by approved paid leave; they are not deducted twice.`);
       if (days > 0) {
         const remaining = (rec.leave_days_per_year ?? 5) - (rec.leave_days_used ?? 0);
         if (remaining - days < 0 && !override_balance) {
@@ -453,9 +473,11 @@ router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => 
     data.decided_by = req.user!.full_name;
     data.decided_at = now().toISOString().slice(0, 16).replace('T', ' ');
     if (note) data.decision_note = note;
+    if (warnings.length) data.leave_warnings = warnings.join('\n');
     run("UPDATE form_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?", decision, JSON.stringify(data), id);
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
+  if (decision === 'approved' && rec.slug === 'leave_request') warnings.push(...attachLeave(id).warnings);
   if (rec.created_by) {
     void notifyUser(rec.created_by, {
       title: `Request ${decision}`,
@@ -471,7 +493,7 @@ router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => 
   if (!req.user!.permissions.includes('hr.manage')) {
     void notifyPermission('hr.manage', { title: `Department request ${decision}`, body: `${req.user!.full_name} — ${rec.form_name}${note ? ' — ' + note : ''}`, url: '#/approvals', link: { route: 'hr-approvals', params:{id,kind:'request',tab:'recent'} }, tag: 'hr-decision-' + id });
   }
-  res.json({ ok: true, status: decision });
+  res.json({ ok: true, status: decision, warnings, leave_days_charged: data.leave_days_charged });
 });
 
 // POST /api/me/approvals/time-corrections/:id/decide — { decision, note? }
@@ -774,7 +796,7 @@ router.get('/today', (req, res) => {
     const pendReq = queryAll<{ department_id: number | null }>(
       `SELECT e.department_id
        FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
-       LEFT JOIN employees e ON e.id = CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data, '$.employee_id') AS INTEGER) END OR (CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_id') END IS NULL AND e.user_id = fr.created_by)
+       LEFT JOIN employees e ON ${requestEmployeeJoin}
        WHERE fr.status = 'pending' AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
          AND CASE WHEN e.id IS NOT NULL THEN COALESCE(e.user_id, 0) ELSE COALESCE(fr.created_by, 0) END != ?`,
       ...REQUEST_SLUGS, req.user!.id

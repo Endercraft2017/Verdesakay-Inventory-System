@@ -166,6 +166,7 @@
     hideUndo();
     API.post(p.it.path, { decision: p.decision, note: p.note || null })
       .then(function (res) {
+        if (res && res.warnings && res.warnings.length) window.alert(res.warnings.join('\n\n'));
         mToast(res && res.applied_note ? 'Approved — ' + res.applied_note
           : res && res.applied ? 'Approved — employee record updated'
           : p.decision === 'approved' ? 'Approved' : 'Rejected');

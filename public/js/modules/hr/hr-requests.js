@@ -167,10 +167,11 @@ App.register('hr-requests', async (view, filter) => {
       position: employee.position,
       department: employee.department_name,
     };
-    const fields = type.fields.filter((f) => !autofill[f.key]);
+    const fields = type.fields.filter((f) => !autofill[f.key] && !(type.slug === 'leave_request' && ['date_from','date_to','days','leave_dates'].includes(f.key)));
+    let leavePicker;
     UI.modal({
       title: `New ${type.name}`,
-      bodyHTML: `<p class="muted">Submitted requests go to your department approvers or HR. Leave is deducted only when approved.</p>${fields
+      bodyHTML: `<p class="muted">Submitted requests go to your department approvers or HR. Leave is deducted only when approved.</p>${type.slug === 'leave_request' ? LeaveDates.markup() : ''}${fields
         .map((f, i) => {
           let input;
           const attrs = `data-field="${i}" id="myhr-f-${i}"`;
@@ -192,8 +193,10 @@ App.register('hr-requests', async (view, filter) => {
         })
         .join('')}`,
       confirmText: 'Submit request',
+      onOpen: ov => { if (type.slug === 'leave_request') leavePicker = LeaveDates.mount(ov, { preview: data => API.post('/me/leave-preview', data) }); },
       onConfirm: async (ov, showErr) => {
         const data = Object.fromEntries(Object.entries(autofill).filter(([, v]) => v));
+        if (leavePicker) { Object.assign(data, leavePicker.value()); if (!data.leave_dates) { showErr('Select at least one leave date.'); return false; } }
         for (const [i, f] of fields.entries()) {
           const el = ov.querySelector(`[data-field="${i}"]`),
             value = el.type === 'checkbox' ? (el.checked ? 'Yes' : 'No') : el.value.trim();
@@ -204,8 +207,9 @@ App.register('hr-requests', async (view, filter) => {
           }
           if (value) data[f.key] = value;
         }
-        await API.post('/form-records', { form_def_id: type.id, data, status: 'pending' });
+        const result = await API.post('/form-records', { form_def_id: type.id, data, status: 'pending' });
         UI.toast('Request submitted for approval');
+        if (result.action_warnings && result.action_warnings.length) UI.modal({ title: 'Request review notes', bodyHTML: `<ul>${result.action_warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul>`, cancelText: 'Close' });
         await load();
       },
     });

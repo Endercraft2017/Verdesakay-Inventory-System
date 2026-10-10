@@ -1903,7 +1903,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         { key: 'new_lunch_out', label: 'Approved lunch/break start', type: 'time', required: true },
         { key: 'new_lunch_in', label: 'Approved return (optional)', type: 'time' },
       ] },
-      { slug: 'leave_request', label: 'Leave (this day)', dateKey: 'date_from', fields: [
+      { slug: 'leave_request', label: 'Leave', dateKey: 'date_from', fields: [
         { key: 'leave_type', label: 'Leave type', type: 'select', required: true,
           options: ['Vacation Leave', 'Sick Leave', 'Emergency Leave', 'Maternity/Paternity Leave', 'Bereavement Leave', 'Unpaid Leave'] },
       ] },
@@ -1931,7 +1931,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       const def = holidayForms.find((form) => form.slug === type.slug);
       const supplied = ['employee_id', 'employee_name', 'employee_no', 'name', 'department', 'position', type.dateKey,
         'approved_by', 'decided_by', 'decided_at', 'decision_note'];
-      if (type.slug === 'leave_request') supplied.push('date_to', 'days');
+      if (type.slug === 'leave_request') supplied.push('date_to', 'days', 'leave_dates');
       const fields = new Map(type.fields.map((field) => [field.key, field]));
       (def && Array.isArray(def.fields) ? def.fields : []).forEach((field) => {
         if (!supplied.includes(field.key)) fields.set(field.key, { ...fields.get(field.key), ...field });
@@ -2443,9 +2443,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         async function linkFormModal(rowIndex) {
           const day = days[rowIndex];
           const defs = await API.get('/form-definitions').catch(e => { UI.toast('Couldn’t load HR forms: '+e.message,'error'); return []; });
-          const relevant = defs.filter((f) => FORM_LINK_SLUGS.includes(f.slug));
-          const [lists, linkedIds] = await Promise.all([
-            Promise.all(relevant.map((f) => API.get(`/form-definitions/${f.id}/records`).catch(() => []))),
+          const [eligible, linkedIds] = await Promise.all([
+            API.get(`/hr/requests/eligible?employee_id=${employeeId}&date=${day.work_date}`),
             API.get('/hr/linked-form-record-ids').catch(() => []),
           ]);
           // A form record is "already used" if it's linked to any attendance day system-wide
@@ -2453,15 +2452,17 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           // (days[]._formIds). Either way it shouldn't be offered again.
           const used = new Set(linkedIds);
           days.forEach((dd) => (dd._formIds || []).forEach((id) => used.add(id)));
-          const options = [];
-          relevant.forEach((f, fi) => {
-            (lists[fi] || []).forEach((r) => {
-              const name = (r.data && r.data.employee_name) || '';
-              if (String(name).trim() === String(rosterRow.name).trim() && !used.has(r.id)) {
-                options.push({ form: f, record: r });
-              }
+          const options = eligible.filter(r => r.slug === 'leave_request' || !used.has(r.id))
+            .map(r => ({ form: defs.find(f => f.id === r.form_def_id), record: r })).filter(o => o.form);
+          function linkLocally(form, record) {
+            const targets = form.slug === 'leave_request' ? days.filter(d => LeaveDates.parse(record.data).includes(d.work_date)) : [day];
+            targets.forEach(d => {
+              if (!d._formIds.includes(record.id)) d._formIds.push(record.id);
+              if (!d._links.some(l => l.id === record.id)) d._links.push({ id: record.id, label: `${form.name} ${record.number}`, slug: form.slug,
+                session: record.data.session || null, status: record.status, data: record.data });
             });
-          });
+            ov.__markDirty?.(); renderRows();
+          }
 
           const typeOpts = MAKE_FORM_TYPES.filter(t => defs.some(def => def.slug === t.slug)).map((t) => `<option value="${t.slug}">${UI.esc(t.label)}</option>`).join('');
           const m2 = UI.modal({
@@ -2472,13 +2473,13 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
               ${options.length
                 ? `<div class="var-pick-list" style="display:grid;gap:6px;max-height:180px;overflow-y:auto">${options.map((o, i) => `
                     <button type="button" class="var-pick btn secondary small" style="display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;white-space:normal" data-pick="${i}">
-                      <span>${UI.esc(o.form.name)} — ${UI.esc(o.record.number)}</span>
+                      <span>${UI.esc(o.form.name)} — ${UI.esc(o.record.number)}<small style="display:block;font-weight:normal">${UI.esc(o.record.data.leave_dates || o.record.data.work_date || o.record.data.date || '')} · View details</small></span>
                       <span class="muted">${UI.esc(o.record.status)}</span>
                     </button>`).join('')}</div>`
                 : `<p class="muted" style="font-size:12.5px;margin:2px 0">No unlinked OT/Half Day/Leave/Undertime/Offset/Reported/Rest Day records for ${UI.esc(rosterRow.name)}.</p>`}
               <hr style="margin:14px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
               <div style="font-weight:600;margin-bottom:2px">Make a new form</div>
-              <p class="muted" style="font-size:12px;margin:2px 0 8px">Filed for ${UI.esc(rosterRow.name)} on ${day.work_date} and linked to this day. Requests stay pending until approved. Leave here covers this day only (1 day).</p>
+              <p class="muted" style="font-size:12px;margin:2px 0 8px">Filed for ${UI.esc(rosterRow.name)}. Requests stay pending until approved. Leave links to every selected date across open cutoffs.</p>
               <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
                 <div><label style="font-size:12px">Type</label><select id="mf-type"><option value="">Choose…</option>${typeOpts}</select></div>
               </div>
@@ -2488,19 +2489,28 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             cancelText: 'Close',
             onOpen: (ov2) => {
               ov2.querySelector('#tk-link-goto').onclick = () => App.navigate('form-records');
-              ov2.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
+              ov2.querySelectorAll('[data-pick]').forEach((b) => b.onclick = async () => {
                 const o = options[Number(b.dataset.pick)];
-                day._formIds.push(o.record.id);
-                ov.__markDirty?.();
-                day._links.push({ id: o.record.id, label: `${o.form.name} ${o.record.number}`, slug: o.form.slug, session: (o.record.data && o.record.data.session) || null, status: o.record.status, data: o.record.data || {} });
-                m2.close();
-                renderRows();
+                const labels = new Map((o.form.fields || []).map(f => [f.key, f.label]));
+                const preview = o.form.slug === 'leave_request' ? await API.post('/hr/leave-preview', { employee_id: employeeId, data: o.record.data }) : null;
+                UI.modal({ title: `${o.form.name} — ${o.record.number}`, confirmText: o.form.slug === 'leave_request' ? 'Link all covered dates' : 'Link this date', cancelText: 'Back',
+                  bodyHTML: `<p><strong>Status:</strong> ${UI.esc(o.record.status)}</p><dl>${Object.entries(o.record.data).filter(([key, value]) => !['employee_id','charged_dates','decided_by'].includes(key) && value != null && value !== '').map(([key, value]) => `<dt style="font-weight:600;margin-top:10px">${UI.esc(labels.get(key) || key.replaceAll('_',' '))}</dt><dd style="margin:3px 0;white-space:pre-wrap;overflow-wrap:anywhere">${UI.esc(String(value))}</dd>`).join('')}</dl>${preview ? `<p>${preview.days} scheduled working day(s) · ${preview.remaining} available</p><ul>${preview.warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul>` : ''}`,
+                  onConfirm: async () => {
+                    if (o.form.slug === 'leave_request') {
+                      const result = await API.post(`/hr/requests/${o.record.id}/link-attendance`);
+                      if (result.warnings.length) UI.toast(result.warnings.join(' '), 'info');
+                    }
+                    linkLocally(o.form, o.record); m2.close();
+                    UI.toast('Form linked to its covered dates — save Daily Time to keep other edits.');
+                  },
+                });
               });
 
               const typeSel = ov2.querySelector('#mf-type');
               const fieldsEl = ov2.querySelector('#mf-fields');
               const createBtn = ov2.querySelector('#mf-create');
               const errEl = ov2.querySelector('#mf-err');
+              let leavePicker;
               typeSel.onchange = () => {
                 const t = MAKE_FORM_TYPES.find((x) => x.slug === typeSel.value);
                 errEl.textContent = '';
@@ -2519,7 +2529,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 const hintHtml = t.detectOt
                   ? `<p class="muted" id="mf-ot-hint" style="font-size:12.5px;margin:2px 0;flex-basis:100%">${UI.esc(detectedOtText(day))}</p>${earlyHtml}`
                   : '';
-                fieldsEl.innerHTML = hintHtml + t.fields.map((f) => {
+                fieldsEl.innerHTML = hintHtml + (t.slug === 'leave_request' ? LeaveDates.markup() : '') + t.fields.map((f) => {
                   const lbl = `<label style="font-size:12px">${UI.esc(f.label)}${f.required ? ' *' : ''}</label>`;
                   if (f.type === 'select' || f.type === 'employee') {
                     return `<div>${lbl}<select data-mf="${f.key}"><option value="">—</option>${(f.options || []).map((o) => { const value = typeof o === 'object' ? o.value || o.id || o.label || o.name : o; const label = typeof o === 'object' ? o.label || o.name || value : o; return `<option value="${UI.esc(String(value))}">${UI.esc(String(label))}</option>`; }).join('')}</select></div>`;
@@ -2529,6 +2539,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                   const inputType = f.type === 'number' ? 'number' : f.type === 'time' ? 'time' : f.type === 'date' ? 'date' : 'text';
                   return `<div>${lbl}<input type="${inputType}" data-mf="${f.key}" ${f.type === 'number' ? 'min="0" step="0.5"' : ''} /></div>`;
                 }).join('');
+                leavePicker = t.slug === 'leave_request' ? LeaveDates.mount(fieldsEl, { data: { date_from: day.work_date, date_to: day.work_date }, preview: data => API.post('/hr/leave-preview', { employee_id: employeeId, data }) }) : null;
                 t.fields.forEach(f => { const el = fieldsEl.querySelector(`[data-mf="${f.key}"]`); if (el && f.default != null && f.default !== '') { if (el.type === 'checkbox') el.checked = f.default === true || f.default === 'Yes'; else el.value = f.default; } });
                 if (t.detectOt) {
                   const earlyBox = fieldsEl.querySelector('#mf-early-ot');
@@ -2556,7 +2567,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                   department: rosterRow.department_name || rosterRow.department || '',
                 };
                 data[t.dateKey] = day.work_date;
-                if (t.slug === 'leave_request') { data.date_to = day.work_date; data.days = 1; }
+                if (t.slug === 'leave_request') { Object.assign(data, leavePicker.value()); if (!data.leave_dates) { errEl.textContent = 'Select at least one leave date.'; return; } }
                 for (const f of t.fields) {
                   const el = ov2.querySelector(`[data-mf="${f.key}"]`);
                   const v = el ? (el.type === 'checkbox' ? (el.checked ? 'Yes' : 'No') : el.value.trim()) : '';
@@ -2577,9 +2588,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 try {
                   const status = def.slug === 'reported_absence' ? 'approved' : 'pending';
                   const res = await API.post('/form-records', { form_def_id: def.id, data, status });
-                  day._formIds.push(res.id);
-                  ov.__markDirty?.();
-                  day._links.push({ id: res.id, label: `${def.name} ${res.number || ''}`.trim(), slug: def.slug, session: data.session || null, status, data });
+                  linkLocally(def, { id: res.id, number: res.number || '', status, data });
+                  if (res.action_warnings && res.action_warnings.length) UI.modal({ title: 'Leave review notes', bodyHTML: `<ul>${res.action_warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul>`, cancelText: 'Close' });
                   UI.toast(`${def.name} ${res.number || ''} created — save Daily Time to keep the link${['leave_request','overtime_request','undertime_request','halfday_request','offset_form','lunch_offset_form','holiday_work_request','rest_day_work_request','rest_day_change'].includes(def.slug) ? ' — pending approval' : ''}`);
                   m2.close();
                   renderRows();

@@ -159,6 +159,7 @@ App.register('hr-approvals', async (view, filter) => {
               : res.applied_note || `Request ${res.status || decision}`,
           res.clash || (correction && decision === 'approved' && !res.applied) ? 'info' : 'success',
         );
+        if (res.warnings && res.warnings.length) UI.modal({ title: 'Leave review notes', bodyHTML: `<ul>${res.warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul>`, cancelText: 'Close' });
         await load();
       },
     });

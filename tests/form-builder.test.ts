@@ -432,12 +432,14 @@ describe('form records', () => {
     // sampleForm ('Leave Request', slug leave_request) was created earlier with no scope — a
     // marketing-role user holds none of the four forms.manage.* and couldn't manage it, but
     // self-filing bypasses the scope gate entirely for the ~12 whitelisted HR request slugs.
-    const marketing = (await createEmployee(ctx.api, adminToken, { role: 'marketing' })).token;
+    const person = await createEmployee(ctx.api, adminToken, { role: 'marketing' });
+    const marketing = person.token;
+    await ctx.api.post('/api/hr/employees').set(hdr(adminToken)).send({ employee_no: `FORM-SELF-${person.id}`, name: person.username, user_id: person.id });
     const leaveFormId = (await ctx.api.get('/api/form-definitions').set(hdr(adminToken)))
       .body.find((f: { slug: string }) => f.slug === 'leave_request').id;
     const res = await ctx.api.post('/api/form-records').set(hdr(marketing)).send({
       form_def_id: leaveFormId,
-      data: { reason: 'Trip', days: 2 },
+      data: { reason: 'Trip', days: 2, date_from: '2026-06-01', date_to: '2026-06-02' },
       status: 'approved', // a self-filer trying to skip the workflow — must be ignored
     });
     expect(res.status).toBe(201);

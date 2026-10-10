@@ -39,7 +39,7 @@ function boot(src: string, perms: string[], get: GetHandler) {
     download: () => Promise.resolve(),
   };
   // One script, as in frontend-mobile.test.ts: top-level `const UI` isn't shared across evals.
-  win.eval(`${UI_SRC}\nwindow.__UI = UI;\n${src}`);
+  win.eval(`${UI_SRC}\nwindow.__UI = UI;\n${fs.readFileSync(path.join(PUBLIC, "js/leave-dates.js"), "utf8")}\n${src}`);
   const UI = win.__UI;
   UI.toast = (msg: string) => { toasts.push(msg); };
   UI.confirmDialog = () => Promise.resolve(false);
@@ -184,7 +184,8 @@ const periodGet: GetHandler = (p) => (p === '/hr/periods/7' ? PERIOD : []);
 describe('Time Keeping cutoff roster', () => {
   it.each([false, true])('daily time permits edits only for HR managers (manage=%s)', async (manage) => {
     const { win, view, routes } = boot(TK_SRC, manage ? ['hr.view', 'hr.manage'] : ['hr.view'], (p) => {
-      if (p.includes('/attendance?')) return [{ work_date: '2026-03-02', time_in: '08:00', time_out: '17:00', notes: 'Preview' }];
+      if (p.startsWith('/hr/requests/eligible')) return [];
+    if (p.includes('/attendance?')) return [{ work_date: '2026-03-02', time_in: '08:00', time_out: '17:00', notes: 'Preview' }];
       if (p === '/hr/payroll-policy') return { default_rest_days: [0, 6] };
       return periodGet(p);
     });
@@ -443,6 +444,7 @@ describe('Ordinary form records are unaffected', () => {
 it.each(['leave_request', 'halfday_request', 'offset_form', 'overtime_request', 'undertime_request', 'lunch_offset_form', 'rest_day_work_request', 'rest_day_change', 'reported_absence'])('Timekeeping %s retains configured details, requires a reason and shows its real status', async (slug) => {
   const form = { id: 40, slug, name: 'Configured request', fields: [{ key: 'reason', label: 'Reason', type: 'textarea', required: true }, { key: 'contact', label: 'Contact during absence', type: 'text', required: true }] };
   const { win, view, routes } = boot(TK_SRC, ['hr.view', 'hr.manage', 'forms.manage.hr'], p => {
+    if (p.startsWith('/hr/requests/eligible')) return [];
     if (p.includes('/attendance?')) return [{ work_date: '2026-03-02', time_in: '08:00', time_out: '17:00', notes: '' }];
     if (p === '/hr/payroll-policy') return { default_rest_days: [0, 6] };
     if (p === '/form-definitions') return [form];
@@ -450,7 +452,7 @@ it.each(['leave_request', 'halfday_request', 'offset_form', 'overtime_request', 
   });
   const modals: HTMLElement[] = [];
   const posts: any[] = [];
-  win.API.post = async (path: string, body: any) => { posts.push({ path, body }); return { id: 50, number: 'REQ-50' }; };
+  win.API.post = async (path: string, body: any) => { if (path === '/hr/leave-preview') return { days: 1, remaining: 8, warnings: [] }; posts.push({ path, body }); return { id: 50, number: 'REQ-50' }; };
   win.__UI.modal = (options: any) => {
     const overlay = win.document.createElement('div');
     overlay.innerHTML = (options.headActionHTML || '') + options.bodyHTML;
@@ -478,7 +480,33 @@ it.each(['leave_request', 'halfday_request', 'offset_form', 'overtime_request', 
   expect(posts).toHaveLength(1);
   expect(posts[0].body.data).toMatchObject({ employee_id: 11, employee_name: 'Ana Cruz', reason: 'Medical appointment', contact: 'Emergency contact' });
   expect(posts[0].body.status).toBe(slug === 'reported_absence' ? 'approved' : 'pending');
-  if (slug === 'leave_request') expect(posts[0].body.data).toMatchObject({ date_from: '2026-03-02', date_to: '2026-03-02', days: 1 });
+  if (slug === 'leave_request') expect(posts[0].body.data).toMatchObject({ date_from: '2026-03-02', date_to: '2026-03-02', leave_dates: '2026-03-02' });
   if (slug === 'halfday_request') expect(qa(modals[0]!, '.badge-pill.status-confirmed').some(b => b.textContent?.includes('Half Day (AM)'))).toBe(false);
+  win.close();
+});
+
+it('Timekeeping previews saved reason and dates before confirming a multi-day link', async () => {
+  const form = { id: 40, slug: 'leave_request', name: 'Leave Request', fields: [{ key: 'reason', label: 'Reason', type: 'textarea', required: true }] };
+  const record = { id: 50, form_def_id: 40, number: 'LV-50', slug: 'leave_request', status: 'approved', data: { employee_id: 11, employee_name: 'Ana Cruz', leave_dates: '2026-03-02,2026-03-04', reason: 'Medical procedure and follow-up' } };
+  const { win, view, routes } = boot(TK_SRC, ['hr.view', 'hr.manage', 'forms.manage.hr'], p => {
+    if (p.startsWith('/hr/requests/eligible')) return [record];
+    if (p.includes('/attendance?')) return ['2026-03-02','2026-03-03','2026-03-04'].map(work_date => ({ work_date, notes: '' }));
+    if (p === '/form-definitions') return [form]; return periodGet(p);
+  });
+  const modals: any[] = [], posts: string[] = [];
+  win.API.post = async (path: string) => { posts.push(path); return path === '/hr/leave-preview' ? { days: 2, remaining: 8, warnings: [] } : { warnings: [] }; };
+  win.__UI.modal = (options: any) => { const overlay = win.document.createElement('div'); overlay.innerHTML = (options.headActionHTML || '') + options.bodyHTML;
+    win.document.body.appendChild(overlay); modals.push({ options, overlay }); options.onOpen?.(overlay); return { overlay, close() { overlay.remove(); } }; };
+  await routes['hr-timekeeping']!(view, { period_id: 7 }); q(view, '.hr-row-open')!.click(); await flush();
+  q(modals[0].overlay, '[data-link]')!.click(); await flush();
+  q(modals[1].overlay, '[data-pick]')!.click(); await flush();
+  expect(posts).not.toContain('/hr/requests/50/link-attendance');
+  expect(modals[2].overlay.textContent).toContain('Medical procedure and follow-up');
+  expect(modals[2].overlay.textContent).toContain('2026-03-02,2026-03-04');
+  expect(modals[2].options.confirmText).toBe('Link all covered dates');
+  await modals[2].options.onConfirm(); await flush();
+  expect(posts).toContain('/hr/requests/50/link-attendance');
+  const linkButtons = qa(modals[0].overlay, '[data-unlink]');
+  expect(linkButtons.map(b => b.dataset.unlink)).toEqual(['0','2']);
   win.close();
 });
