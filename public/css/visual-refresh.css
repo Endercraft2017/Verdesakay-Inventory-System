@@ -1,0 +1,111 @@
+/* Shared visual language. Screen-only so printed records keep their plain styling. */
+:root, [data-theme='light'] {
+  --accent-end: #5864db;
+  --ambient: #e9efff;
+  --ambient-secondary: #e7f5f5;
+  --surface-highlight: #fbfcff;
+  --focus-ring: #537be0;
+  --card-shadow: 0 3px 12px rgb(30 53 94 / 5%), 0 12px 32px rgb(30 53 94 / 3%);
+}
+[data-theme='dark'] {
+  --accent-end: #b4a1fa;
+  --ambient: #22203b;
+  --ambient-secondary: #182a32;
+  --surface-highlight: #242135;
+  --focus-ring: #b4bfff;
+  --card-shadow: 0 4px 18px rgb(0 0 0 / 18%), 0 12px 32px rgb(0 0 0 / 12%);
+}
+@media screen {
+  .main, .login-wrap {
+    background: radial-gradient(ellipse at 0 0, var(--ambient), transparent 55%),
+      radial-gradient(ellipse at 100% 100%, var(--ambient-secondary), transparent 60%), var(--bg);
+  }
+  .topnav { background: linear-gradient(110deg, var(--surface), var(--surface-highlight)); }
+  .brand .mark, .login-brand .mark {
+    background: linear-gradient(135deg, var(--accent), var(--accent-end));
+    color: var(--accent-contrast); box-shadow: var(--shadow-md);
+  }
+  .util-bar { background: var(--surface-highlight); }
+  .tree, .rail { background: linear-gradient(180deg, var(--sidebar), var(--surface-highlight)); }
+  .tree-group-label { padding-top: 12px; padding-bottom: 12px; font-weight: 700; letter-spacing: .09em; }
+  .tree-leaf { border-radius: 10px; }
+  .tree-leaf.active { box-shadow: inset 3px 0 var(--accent); }
+  .primary-item.active { background: linear-gradient(0deg, var(--accent-weak), transparent); }
+  .subtab.active { box-shadow: inset 0 0 0 1px var(--border); }
+  .topbar h2 { font-size: 24px; letter-spacing: -.035em; }
+  .panel, .stat-card, .form-card { box-shadow: var(--card-shadow); }
+  .panel-head { background: linear-gradient(110deg, var(--surface-highlight), var(--surface)); padding: 16px 18px; }
+  .panel-head h3 { letter-spacing: -.015em; }
+  .stat-card {
+    background: linear-gradient(135deg, var(--surface), var(--surface-highlight));
+    border-top: 3px solid var(--accent); padding: 20px 18px;
+  }
+  .stat-card.good { border-top-color: var(--success); }
+  .stat-card.warn { border-top-color: var(--warn); }
+  .stat-card.alert { border-top-color: var(--danger); }
+  .stat-card .value { font-size: 29px; font-variant-numeric: tabular-nums; line-height: 1.25; }
+  .stat-card .label { margin-top: 4px; font-weight: 500; }
+  .stat-card .stat-ic { width: 46px; height: 46px; border-radius: 14px; }
+  .btn { transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+  .btn:not(.secondary):not(.danger) {
+    background: linear-gradient(120deg, var(--accent), var(--accent-end));
+    box-shadow: var(--shadow-sm);
+  }
+  .btn:not(.secondary):not(.danger):hover:not(:disabled) { filter: brightness(1.07); box-shadow: var(--shadow-md); }
+  .btn.secondary { background: var(--surface-highlight); }
+  .btn.secondary.active { background: var(--accent); }
+  :where(button, a, [tabindex]):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+  input:focus, select:focus, textarea:focus { border-color: var(--focus-ring); }
+  th { background: var(--surface-highlight); font-size: 11px; letter-spacing: .065em; }
+  .modal { border-radius: 20px; }
+  .empty-state .empty-ic { background: var(--accent-weak); color: var(--accent); border-radius: 20px; }
+  .login-card { background: linear-gradient(145deg, var(--surface), var(--surface-highlight)); border-radius: 24px; }
+
+  /* HR dashboard: visual emphasis without changing its workflows or data. */
+  .main[data-route^='hr-'] > .topbar {
+    padding: 20px; border: 1px solid var(--border); border-radius: 16px;
+    background: linear-gradient(115deg, var(--surface), var(--ambient)); box-shadow: var(--card-shadow);
+  }
+  .hr-hero {
+    padding: 26px; border: 1px solid var(--border); border-radius: 20px;
+    background: radial-gradient(ellipse at 100% 0, var(--ambient-secondary), transparent 65%),
+      linear-gradient(115deg, var(--surface), var(--ambient)); box-shadow: var(--card-shadow);
+    gap: 18px;
+  }
+  .hr-hero h2 { font-size: 28px; }
+  .hr-eyebrow { color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 5px; }
+  .hr-hero-icon { width: 60px; height: 60px; border-radius: 18px; background: var(--accent-weak); color: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
+  .hr-modules { padding: 24px; }
+  .hr-modules > h3 { margin: 0 0 16px; font-size: 16px; }
+  .hr-module-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 14px; }
+  .hr-module-card { padding: 20px; border: 1px solid var(--border); border-radius: 14px; background: linear-gradient(145deg, var(--surface-highlight), var(--surface)); }
+  .hr-module-icon { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 13px; color: var(--accent); background: var(--accent-weak); margin-bottom: 16px; }
+  .hr-module-card:nth-child(2) .hr-module-icon { color: var(--success); background: var(--success-weak); }
+  .hr-module-card:nth-child(3) .hr-module-icon { color: var(--warn); background: var(--warn-weak); }
+  .hr-module-card:nth-child(4) .hr-module-icon { color: var(--danger); background: var(--danger-weak); }
+  #hr-req-body .clickable:hover, #hr-flags-body .clickable:hover { background: var(--surface-2); }
+  #hr-req-toggle { padding: 3px; border-radius: 12px; background: var(--surface-2); }
+  #hr-flags-period { max-width: 100%; }
+  @media (max-width: 600px) {
+    .hr-hero { padding: 20px; gap: 12px; }
+    .hr-hero h2 { font-size: 24px; }
+    .hr-hero-icon { width: 46px; height: 46px; border-radius: 14px; }
+    .hr-modules { padding: 18px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .main > .topbar, .main > .cards, .main > .panel, .main > .grid-2 { animation: surface-enter .3s ease-out both; }
+    .main > .cards { animation-delay: .04s; }
+    .main > .grid-2 { animation-delay: .08s; }
+    .stat-card.clickable, .hr-module-card, .form-card.clickable { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+    @media (hover: hover) {
+      .stat-card.clickable:hover, .hr-module-card.clickable:hover, .form-card.clickable:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--accent); }
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+}
+@keyframes surface-enter {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
