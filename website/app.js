@@ -1,7 +1,13 @@
 (function () {
   'use strict';
   var slug = function (v) { return v.trim().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); };
-  document.querySelectorAll('[data-open]').forEach(function (b) { b.addEventListener('click', function () { document.getElementById(b.dataset.open + '-dialog').showModal(); }); });
+  var LABELS = { inventory: 'Inventory', manufacturing: 'Manufacturing', purchasing: 'Purchasing', hr: 'HR & Payroll', accounting: 'Accounting', ai: 'AI Assistant', mobile: 'Mobile app', email: 'Email', quickbooks: 'QuickBooks' };
+  var signupsOpen = false;
+  document.querySelectorAll('[data-open]').forEach(function (b) { b.addEventListener('click', function () {
+    // Self-service sign-up is off unless the owner opens it; every "sign up" path leads to Talk to us.
+    var which = b.dataset.open === 'signup' && !signupsOpen ? 'contact' : b.dataset.open;
+    document.getElementById(which + '-dialog').showModal();
+  }); });
   document.querySelectorAll('.close').forEach(function (b) { b.addEventListener('click', function () { b.closest('dialog').close(); }); });
   document.getElementById('login-form').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -37,6 +43,16 @@
       ? 'Create your workspace, then pay the first month by ' + how + ' from inside it. It opens as soon as we confirm your payment. Employee records are unlimited.'
       : 'Self-service registration is not open yet. New subscriptions are currently set up by the platform owner.';
     pricing = c.pricing || null;
+    signupsOpen = !!c.signups_open;
+    document.querySelectorAll('.signup-only').forEach(function (el) { el.classList.toggle('hidden', !signupsOpen); });
+    showContact(c.contact || {});
+    var box = document.getElementById('contact-modules');
+    c.modules.forEach(function (m) {
+      var label = document.createElement('label'), check = document.createElement('input');
+      check.type = 'checkbox'; check.value = m;
+      label.append(check, document.createTextNode(LABELS[m] || m));
+      box.appendChild(label);
+    });
     document.getElementById('signup-submit').disabled = !c.signups_open;
     moduleDeps = c.module_deps;
     c.modules.forEach(function (m) {
@@ -60,5 +76,45 @@
       window.location.assign('/' + encodeURIComponent(data.slug));
     } catch (ex) { error.textContent = ex.message; button.disabled = false; }
   });
-  if (window.location.pathname === '/login' || window.location.pathname === '/signup') document.getElementById(window.location.pathname.slice(1) + '-dialog').showModal();
+  /* The owner's direct contact details (console → Inquiries → Website contact details), when set. */
+  function showContact(c) {
+    var box = document.getElementById('contact-direct');
+    box.replaceChildren();
+    function line(label, text, href) {
+      var row = document.createElement('div'), a = document.createElement('a');
+      a.href = href; a.textContent = text;
+      if (/^https:/.test(href)) { a.target = '_blank'; a.rel = 'noopener'; }
+      row.append(document.createTextNode(label + ' '), a); box.appendChild(row);
+    }
+    if (c.phone) line('Call or text', c.phone, 'tel:' + c.phone.replace(/[^+\d]/g, ''));
+    if (c.email) line('Email', c.email, 'mailto:' + c.email);
+    if (c.messenger) line('Message us on', 'Messenger', c.messenger);
+    if (box.children.length) {
+      var lead = document.createElement('div'); lead.textContent = 'Prefer to reach us directly?';
+      lead.style.fontWeight = '650'; box.prepend(lead);
+    }
+    box.classList.toggle('hidden', !box.children.length);
+  }
+  document.getElementById('contact-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var form = this, error = form.querySelector('.error'), button = document.getElementById('contact-submit');
+    error.textContent = '';
+    var get = function (id) { return document.getElementById(id).value.trim(); };
+    if (!get('c-name') || !get('c-company')) { error.textContent = 'Enter your name and company.'; return; }
+    if (!document.getElementById('c-email').checkValidity() || !get('c-email')) { error.textContent = 'Enter a valid email address.'; return; }
+    button.disabled = true; button.textContent = 'Sending…';
+    try {
+      var modules = Array.prototype.slice.call(document.querySelectorAll('#contact-modules input:checked')).map(function (i) { return i.value; });
+      var r = await fetch('/site/inquiry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        name: get('c-name'), company: get('c-company'), email: get('c-email'), phone: get('c-phone'),
+        employees: document.getElementById('c-employees').value, modules: modules, message: get('c-message'), website: get('c-website') }) });
+      var data = await r.json().catch(function () { return {}; });
+      if (!r.ok) throw new Error(data.error || 'Your message could not be sent. Please try again.');
+      form.classList.add('hidden');
+      document.getElementById('contact-done').classList.remove('hidden');
+    } catch (ex) { error.textContent = ex.message; button.disabled = false; button.textContent = 'Send →'; }
+  });
+  var path = window.location.pathname;
+  if (path === '/login') document.getElementById('login-dialog').showModal();
+  if (path === '/signup' || path === '/contact') document.getElementById(path === '/signup' && signupsOpen ? 'signup-dialog' : 'contact-dialog').showModal();
 })();

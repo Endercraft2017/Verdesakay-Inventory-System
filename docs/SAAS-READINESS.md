@@ -434,6 +434,15 @@ Support answer (`src/app.ts`, 402 otherwise; `/m` shows a "finish payment on a c
 an operator confirms the first payment. A workspace the operator creates in the console is never
 locked. The operator can also open a waiting workspace by hand (console → tenant → Billing).
 
+**Website = "Talk to us" (2026-10-10, same day):** the public site sells by conversation, not
+self-serve checkout. Every call to action opens a **Talk to us** form (name, company, email,
+mobile, employees, modules of interest, message; rate-limited + honeypot) stored in `platform.db`
+`inquiries` (`src/platform/inquiries*.ts`, `POST /site/inquiry`). The owner works them in the
+console's **Inquiries** view (status new/contacted/won/lost, notes) and **creates the workspace from
+the inquiry** — prefilled, linked, and optionally **locked until the first payment**. The phone /
+email / Messenger shown beside the form are set in the console. Self-serve sign-up (below) stays
+built but off (`SIGNUPS_OPEN` unset); its buttons only appear if it is turned on.
+
 **First invoice:** the console's price list (per module per month + per login seat) prices the
 sign-up's quote; when every chosen module and the seat price have a price, the first month's
 invoice is issued automatically (due in 7 days) and the website shows the monthly total before

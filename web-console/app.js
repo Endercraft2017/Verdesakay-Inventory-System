@@ -89,6 +89,7 @@
     showApp();
     await load();
     if (window.ConsoleBilling) window.ConsoleBilling.refreshCount();
+    if (window.ConsoleInquiries) window.ConsoleInquiries.refreshCount();
   }
 
   async function load(refreshSelected) {
@@ -143,6 +144,8 @@
     api: api, el: el, toast: toast, $: $, token: token,
     tenants: function () { return tenants; },
     refs: function () { return ref; },
+    newTenant: function (prefill) { openNewTenant(prefill); },
+    openTenant: function (slug) { return openDrawer(slug); },
     reloadTenant: function (slug) { return load(true).then(function () { if (slug) return openDrawer(slug, 'billing'); }); },
   };
 
@@ -718,7 +721,10 @@
   }
 
   /* ---------- new tenant ---------- */
-  $('new-btn').addEventListener('click', function () {
+  // `prefill` (from a website inquiry, inquiries.js): { name, email, inquiry_id }.
+  $('new-btn').addEventListener('click', function () { openNewTenant(); });
+  function openNewTenant(prefill) {
+    prefill = prefill || {};
     var card = el('div', { class: 'card' }, [
       el('h2', { text: 'New tenant' }),
       el('div', { class: 'field' }, [el('label', { text: 'Company name' }), el('input', { id: 'n-name', placeholder: 'Acme Mfg' }), el('small', { class: 'muted', id: 'n-url', text: 'Company name also determines the tenant URL.' })]),
@@ -738,6 +744,10 @@
         el('input', { id: 'n-email', type: 'email', required: 'required', autocomplete: 'email' }),
         el('p', { class: 'muted', text: 'Used to recover the owner username and password.' }),
       ]),
+      el('div', { class: 'field' }, [el('label', { for: 'n-lock' }, [
+        el('input', { id: 'n-lock', type: 'checkbox' }), ' Lock until first payment',
+      ]), el('p', { class: 'muted', text: 'They can sign in and pay from Billing; everything else opens once you confirm their first payment.' })]),
+      prefill.inquiry_id ? el('p', { class: 'muted', text: 'Linked to website inquiry #' + prefill.inquiry_id + '.' }) : null,
       el('div', { class: 'err', id: 'n-err' }),
       el('div', { style: 'display:flex;gap:10px;margin-top:6px' }, [
         el('button', { class: 'btn', id: 'n-go' }, ['Create']),
@@ -750,6 +760,8 @@
     $('n-name').addEventListener('input', function () {
       $('n-url').textContent = 'Tenant URL name: /' + companySlug(this.value);
     });
+    if (prefill.name) { $('n-name').value = prefill.name; $('n-name').dispatchEvent(new Event('input')); }
+    if (prefill.email) $('n-email').value = prefill.email;
     $('n-cancel').addEventListener('click', close);
     $('n-go').addEventListener('click', async function () {
       $('n-err').textContent = '';
@@ -766,14 +778,17 @@
           admin_password: $('n-pass').value,
           is_sandbox: $('n-sandbox').checked,
           admin_email: $('n-sandbox').checked ? undefined : $('n-email').value.trim(),
+          awaiting_payment: $('n-lock').checked || undefined,
+          inquiry_id: prefill.inquiry_id || undefined,
         });
         close();
         await load();
         toast('Created ' + created.slug);
         await openDrawer(created.slug, 'subscription');
+        return created;
       } catch (ex) { $('n-err').textContent = ex.message; $('n-go').disabled = false; }
     });
-  });
+  }
 
   /* ---------- import an existing workspace (.db file) ---------- */
   $('import-btn').addEventListener('click', function () {

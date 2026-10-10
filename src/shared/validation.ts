@@ -211,6 +211,8 @@ export const platformCreateTenantSchema = z.object({
   is_sandbox: z.boolean().default(false),
   plan: trimmed.optional(),
   modules: z.array(z.string()).optional(),
+  awaiting_payment: z.boolean().optional(),
+  inquiry_id: z.number().int().positive().optional(),
 }).superRefine((v, ctx) => {
   if (!v.is_sandbox && !v.admin_email) {
     ctx.addIssue({ code: 'custom', path: ['admin_email'], message: 'Owner email is required for regular accounts' });

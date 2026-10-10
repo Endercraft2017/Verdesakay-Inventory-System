@@ -52,6 +52,8 @@ import signupRoutes from './platform/signup.routes';
 import tenantRoutes from './platform/tenant.routes';
 import billingRoutes from './platform/billing.routes';
 import { getBillingSettings } from './platform/billing';
+import inquiryRoutes from './platform/inquiries.routes';
+import { getSiteContact } from './platform/inquiries';
 import platformConsoleRoutes from './platform/platform.routes';
 import quickbooksRoutes from './modules/quickbooks/quickbooks.routes';
 import { recordActivity } from './shared/activity';
@@ -84,7 +86,7 @@ export function createApp() {
   // The public site belongs only to the configured cloud apex, never a tenant/node.
   app.use((req, res, next) => {
     if (!onTenantPathHost(req.headers.host)) { next(); return; }
-    if (req.path === '/' || req.path === '/index.html' || req.path === '/login' || req.path === '/signup') {
+    if (req.path === '/' || req.path === '/index.html' || req.path === '/login' || req.path === '/signup' || req.path === '/contact') {
       res.set('Cache-Control', 'no-cache');
       res.sendFile(path.join(ROOT, 'website', 'index.html')); return;
     }
@@ -93,7 +95,8 @@ export function createApp() {
       const prices = getBillingSettings();
       res.json({ signups_open: SIGNUPS_OPEN, max_seats: 500, modules: MODULES, module_deps: MODULE_DEPS,
         pricing: { module_prices: prices.module_prices, seat_price: prices.seat_price, vat_registered: prices.vat_registered },
-        payment_methods: { bank: !!prices.bank_details, gcash: !!prices.gcash_number } }); return;
+        payment_methods: { bank: !!prices.bank_details, gcash: !!prices.gcash_number },
+        contact: getSiteContact() }); return;
     }
     next();
   });
@@ -295,6 +298,7 @@ export function createApp() {
   // The desktop app's installer download (work in progress: nothing published yet).
   app.use('/api/desktop', desktopRoutes);
   app.use('/api/confidential-reports', confidentialReportRoutes);
+  app.use('/site/inquiry', inquiryRoutes); // website "Talk to us" form (public site host only)
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
   app.use('/api/support', supportRoutes);
   app.use('/api/tenant/billing', billingRoutes); // our invoices to this workspace + reporting a payment

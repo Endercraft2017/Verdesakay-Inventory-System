@@ -702,3 +702,19 @@ balance; owner opens a waiting workspace without payment; sign-up with an unpric
 automatic invoice, owner issues it; a `suspended` workspace is not reopened by a payment.
 **Terminal states:** paid (workspace open/active); voided; overdue → flagged only (moving to
 `past_due` / `suspended` is manual; automatic step planned). Customer routes are sync class `online`.
+
+## Sales inquiry (website → follow-up → workspace) — working
+
+Built 2026-10-10 (`docs/SAAS-READINESS.md` §12). **Trigger:** a visitor sends the website's
+**Talk to us** form.
+1. **Inquire** (`platform/inquiries.routes.ts`, public site) — name, company, email, mobile,
+   employees, modules of interest, message → `inquiries` row, status `new`. The form also shows the
+   owner's phone / email / Messenger (console-set) for direct contact.
+2. **Follow up** (owner, console → Inquiries) — call / email; status `contacted`, private notes.
+3. **Create workspace** (console, prefilled from the inquiry) — linked to the inquiry; optionally
+   **locked until first payment**, which hands over to the "Workspace billing" pipeline (invoice →
+   pay → confirm → open). Unlocked, it is usable at once.
+
+**Branches:** bot fills the hidden field → accepted silently, nothing stored; invalid fields → 400;
+more than 5 per hour from one connection → 429. **Terminal states:** `won` (workspace created and
+linked), `lost`. The owner sets these; nothing changes them automatically.

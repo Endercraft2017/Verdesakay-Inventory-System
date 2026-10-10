@@ -2,3 +2,9 @@
 
 fieldset{border:1px solid #cdd7c7;border-radius:8px;margin-top:16px}legend{font-size:12px;font-weight:650}#signup-modules{display:grid;grid-template-columns:1fr 1fr;gap:6px}#signup-modules label{display:flex;align-items:center;gap:8px;margin:0}#signup-modules input{width:auto}dialog{max-height:90vh;overflow-y:auto}
 .estimate { font-weight: 600; margin: 4px 0 0; }
+.hidden{display:none!important}.optional{font-weight:400;color:#63786b}
+select,textarea{width:100%;border:1px solid #bfcdba;border-radius:7px;background:white;padding:12px;font:inherit;font-size:14px;color:#183c35}
+textarea{resize:vertical}select:focus-visible,textarea:focus-visible{outline:3px solid #7da76b;outline-offset:3px}
+.module-checks{display:grid;grid-template-columns:1fr 1fr;gap:6px}.module-checks label{display:flex;align-items:center;gap:8px;margin:0;font-weight:500}.module-checks input{width:auto}
+.contact-direct{background:#e7ecdf;border-radius:10px;padding:12px 14px;font-size:14px;display:grid;gap:4px}.contact-direct a{font-weight:650}
+.hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}

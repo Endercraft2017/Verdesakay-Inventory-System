@@ -110,7 +110,11 @@ payment with proof + optional 2307, GCash QR image; `syncClass('online')`), `bil
 (operator: issue, confirm / reject / record / void, BIR invoice no., settings, QR upload). Website
 sign-up (`signup.routes.ts`) is pay-first: locked workspace + automatic first invoice when the price
 list covers it. Frontend: `web-console/billing.js`, desktop `public/js/modules/core/billing.js` and
-the locked shell in `public/js/app.js`. **Interface:** `tenantBillingSummary()`, `priceListQuote()`,
+the locked shell in `public/js/app.js`. Website inquiries (2026-10-10): `inquiries.ts` (`inquiries` + `site_settings` contact details in
+`platform.db`), `inquiries.routes.ts` (public `POST /site/inquiry`, site host only, rate-limited +
+honeypot), `inquiries-console.routes.ts` (operator list / status / notes / contact details); console
+`web-console/inquiries.js`; console tenant creation takes `awaiting_payment` + `inquiry_id`.
+Tests: `tests/inquiries.test.ts`. **Interface:** `tenantBillingSummary()`, `priceListQuote()`,
 `setAwaitingPayment()` (platform.ts). **Not built:** PayMongo, overdue automation, notifications,
 recurring invoices. Tests: `tests/billing.test.ts`, `tests/billing-signup.test.ts`, `tests/frontend-billing.test.ts`.
 

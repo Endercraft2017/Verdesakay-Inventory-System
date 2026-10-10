@@ -20,6 +20,8 @@ import {
 } from './platform';
 import { createTenant, importTenant, purgeTenant } from './provisioning';
 import billingConsoleRoutes from './billing-console.routes';
+import inquiriesConsoleRoutes from './inquiries-console.routes';
+import { updateInquiry, getInquiry } from './inquiries';
 import { tenantBillingSummary } from './billing';
 import { tenantAnalytics, saveOwnerDetails, addSupport, updateSupport, replySupport } from './owner-analytics';
 import { saveSubscription, subscriptionView } from './subscription';
@@ -302,6 +304,13 @@ router.post('/tenants', (req: Request, res: Response, next) => {
       saveSubscription(slug, { mode: 'per_module', bundle: 'starter', modules: [], seat_limit: null,
         bundle_price: null, module_prices: {}, seat_price: null });
     }
+    // Optional: keep it on the Billing screen until the first payment is confirmed (billing.ts).
+    if (b.awaiting_payment) { setAwaitingPayment(slug, true); logProvisioning(slug, 'update', 'locked until first payment'); }
+    // Created from a website inquiry: link the two so the inquiry shows its workspace.
+    if (b.inquiry_id && getInquiry(b.inquiry_id)) {
+      updateInquiry(b.inquiry_id, { tenant_slug: slug });
+      logProvisioning(slug, 'inquiry', `created from website inquiry #${b.inquiry_id}`);
+    }
     const t = getTenant(slug)!;
     res.status(201).json(tenantView(t));
   } catch (e) {
@@ -444,5 +453,7 @@ router.get('/log', (req, res) => {
 
 // Workspace billing: invoices, reported payments, bank + GCash details, price list (billing-console.routes.ts).
 router.use(billingConsoleRoutes);
+// Website "Talk to us" inquiries + the contact details the site shows (inquiries-console.routes.ts).
+router.use(inquiriesConsoleRoutes);
 
 export default router;

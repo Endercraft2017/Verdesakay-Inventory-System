@@ -40,7 +40,7 @@ export const RESERVED_SLUGS = new Set([
   'mail', 'smtp', 'imap', 'ftp', 'ns1', 'ns2',
   'platform', '_platform', 'default', 'localhost', 'test', 'tests', 'staging',
   'stage', 'dev', 'demo', 'status', 'health', 'help', 'support', 'docs', 'blog',
-  'signup', 'login', 'auth', 'billing', 'account',
+  'signup', 'login', 'auth', 'billing', 'account', 'contact',
   'site', 'ws', 'm', 'mobile', 'js', 'css', 'images', 'icons', 'fonts', 'vendor',
 ]);
 

@@ -34,6 +34,7 @@
   /* ---------- the cross-workspace billing view ---------- */
   var open = false;
   function toggleView(show) {
+    if (show && window.ConsoleInquiries) window.ConsoleInquiries.close();
     open = show;
     document.querySelector('main.console-shell').classList.toggle('hidden', show);
     $('billing-view').classList.toggle('hidden', !show);
@@ -364,5 +365,5 @@
     });
   }
 
-  window.ConsoleBilling = { refreshCount: refreshCount, renderTenant: renderTenant };
+  window.ConsoleBilling = { refreshCount: refreshCount, renderTenant: renderTenant, close: function () { if (open) toggleView(false); } };
 })();

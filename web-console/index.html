@@ -145,6 +145,11 @@
   .badge.paid, .badge.confirmed { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
   .badge.void { background: var(--chip); color: var(--muted); text-decoration: line-through; }
   .badge.overdue, .badge.rejected { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+  .badge.inq-new { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+  .badge.inq-contacted { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .badge.inq-won { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .badge.inq-lost { background: var(--chip); color: var(--muted); }
+  .field label input[type="checkbox"] { width: auto; margin: 0 8px 0 0; vertical-align: middle; }
   .count-pill { background: var(--accent); color: var(--accent-ink); border-radius: 999px; font-size: 11px; padding: 0 7px; margin-left: 6px; }
   .billing-view { padding: 24px; max-width: 1200px; margin: 0 auto; }
   .billing-view .toolbar { flex-wrap: wrap; }
@@ -182,6 +187,7 @@
   <header>
     <h1>OTOM <span class="console-label">Owner console</span></h1>
     <span class="muted" id="who"></span>
+    <button class="btn ghost" id="inquiries-btn">Inquiries<span class="count-pill hidden" id="inquiry-count"></span></button>
     <button class="btn ghost" id="billing-btn">Billing<span class="count-pill hidden" id="review-count"></span></button>
     <button class="btn ghost" id="logout">Log out</button>
   </header>
@@ -196,9 +202,11 @@
     <section id="tenant-workspace" class="tenant-workspace" aria-label="Tenant dashboard"><div class="dashboard-empty"><h2>Your tenants, at a glance.</h2><p class="muted">Select a tenant to explore its activity, capacity, and service health.</p></div></section>
   </main>
   <section id="billing-view" class="billing-view hidden" aria-label="Billing"></section>
+  <section id="inquiries-view" class="billing-view hidden" aria-label="Inquiries"></section>
 </div>
 
 <script src="app.js"></script>
 <script src="billing.js"></script>
+<script src="inquiries.js"></script>
 </body>
 </html>
