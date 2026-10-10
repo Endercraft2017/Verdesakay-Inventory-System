@@ -28,19 +28,21 @@ it('serves the public site on desktop and mobile while preserving tenant routing
   expect((await ctx.api.get('/site/style.css').set('Host', host)).status).toBe(200);
   const config = (await ctx.api.get('/site/config').set('Host', host)).body;
   expect(config.signups_open).toBe(true);
-  expect(config.trial_seats).toBe(5);
+  expect(config.max_seats).toBe(500);
   expect(config.modules).toContain('hr');
   expect((await ctx.api.get('/_platform/').set('Host', host)).status).toBe(200);
   expect((await ctx.api.get('/verdesakay').set('Host', host)).text).toContain('window.VDS_BASE_PATH="/verdesakay"');
   expect((await ctx.api.get('/api/inventory').set('Host', host)).status).toBe(410);
 });
-it('registers a time-limited trial at the apex without reopening the original company database', async () => {
+it('registers a pay-first workspace at the apex without reopening the original company database', async () => {
   const r = await ctx.api.post('/api/signup').set('Host', host).send({ slug: 'new-company', company_name: 'New Company', admin_username: 'new-admin', admin_password: 'secret1', admin_email: 'new@example.test', seats: 3, modules: ['manufacturing', 'hr'] });
   expect(r.status).toBe(201);
   expect(r.body.url).toBe('https://otom.afkcube.com/new-company');
   const { getTenant } = await import('../src/platform/platform');
-  expect(getTenant('new-company')?.status).toBe('trial');
-  expect(Date.parse(getTenant('new-company')!.trial_ends_at!) - Date.now()).toBeGreaterThan(13 * 86400000);
+  // Website sign-ups pay before they get in: no trial, locked to Billing (tests/billing-signup.test.ts).
+  expect(getTenant('new-company')?.status).toBe('active');
+  expect(getTenant('new-company')?.awaiting_payment).toBe(1);
+  expect(getTenant('new-company')?.trial_ends_at).toBeNull();
   const login = await ctx.api.post('/new-company/api/auth/login').set('Host', host).send({ username: 'new-admin', password: 'secret1' });
   expect(login.status).toBe(200);
   const own = await ctx.api.get('/new-company/api/tenant').set('Host', host).set('Authorization', `Bearer ${login.body.token}`);
@@ -48,9 +50,9 @@ it('registers a time-limited trial at the apex without reopening the original co
   expect(own.body.modules).toEqual(['inventory', 'manufacturing', 'hr']);
   expect(own.body.limits.employees).toBeNull();
 });
-it('rejects unknown modules and oversized trial seat requests before creating a tenant', async () => {
+it('rejects unknown modules and out-of-range seat requests before creating a tenant', async () => {
   const input = { slug: 'invalid-trial', company_name: 'Invalid Trial', admin_username: 'owner', admin_password: 'secret1', admin_email: 'owner@example.test' };
-  for (const extra of [{ seats: 100 }, { seats: 0 }, { modules: ['unknown-module'] }]) {
+  for (const extra of [{ seats: 1000 }, { seats: 0 }, { modules: ['unknown-module'] }]) {
     expect((await ctx.api.post('/api/signup').set('Host', host).send({ ...input, ...extra })).status).toBe(400);
   }
   const { getTenant } = await import('../src/platform/platform');

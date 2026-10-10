@@ -15,10 +15,12 @@ import multer from 'multer';
 import { tenantStore, withTenant, DEFAULT_TENANT, db, queryOne, run } from '../shared/db';
 import {
   listTenants, getTenant, isValidSlug, setTenantPlan, setTenantStatus, setTenantName,
-  setTrialEndsAt, setTenantModules, setTenantPhotoRetention, listProvisioningLog, logProvisioning,
+  setTrialEndsAt, setTenantModules, setTenantPhotoRetention, listProvisioningLog, logProvisioning, setAwaitingPayment,
   type TenantRow, type TenantStatus, tenantPublicUrl,
 } from './platform';
 import { createTenant, importTenant, purgeTenant } from './provisioning';
+import billingConsoleRoutes from './billing-console.routes';
+import { tenantBillingSummary } from './billing';
 import { tenantAnalytics, saveOwnerDetails, addSupport, updateSupport, replySupport } from './owner-analytics';
 import { saveSubscription, subscriptionView } from './subscription';
 import { tenantUsage } from './quota';
@@ -133,6 +135,8 @@ function tenantView(t: TenantRow) {
       max_mb: t.photo_max_mb,
       usage_mb: photoUsageMb,
     },
+    awaiting_payment: !!t.awaiting_payment, // self-signed-up, locked until the first payment is confirmed
+    billing: tenantBillingSummary(t.slug),
   };
 }
 
@@ -360,6 +364,10 @@ router.patch('/tenants/:slug', (req, res, next) => {
     if (typeof b.name === 'string' && b.name.trim() && b.name.trim() !== t.name) {
       setTenantName(t.slug, b.name.trim()); changed.push('name');
     }
+    // Open a self-signed-up workspace without waiting for payment (or lock it again).
+    if (typeof b.awaiting_payment === 'boolean' && b.awaiting_payment !== !!t.awaiting_payment) {
+      setAwaitingPayment(t.slug, b.awaiting_payment); changed.push(b.awaiting_payment ? 'locked until paid' : 'opened without payment');
+    }
     if (typeof b.plan === 'string' && b.plan !== t.plan) {
       if (!(b.plan in PLANS)) { res.status(400).json({ error: `Unknown plan "${b.plan}".` }); return; }
       setTenantPlan(t.slug, b.plan); changed.push(`plan=${b.plan}`);
@@ -433,5 +441,8 @@ router.get('/log', (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 100, 500);
   res.json(listProvisioningLog(slug, limit));
 });
+
+// Workspace billing: invoices, reported payments, bank + GCash details, price list (billing-console.routes.ts).
+router.use(billingConsoleRoutes);
 
 export default router;

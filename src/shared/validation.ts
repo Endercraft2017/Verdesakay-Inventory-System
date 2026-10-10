@@ -225,7 +225,7 @@ export const signupSchema = z.object({
   admin_password: z.string().min(6, 'Password must be at least 6 characters'),
   admin_email: z.union([z.literal(''), z.string().trim().email()]).optional(),
   modules: z.array(z.enum(MODULES)).min(1).optional(),
-  seats: z.number().int().min(1).max(5).optional(),
+  seats: z.number().int().min(1).max(500).optional(),
 });
 /** @deprecated alias — use csvImportSchema. */
 export const importInventorySchema = csvImportSchema;

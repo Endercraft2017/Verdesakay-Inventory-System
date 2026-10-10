@@ -50,6 +50,8 @@ import meRoutes from './core/me.routes';
 import announcementsRoutes from './core/announcements.routes';
 import signupRoutes from './platform/signup.routes';
 import tenantRoutes from './platform/tenant.routes';
+import billingRoutes from './platform/billing.routes';
+import { getBillingSettings } from './platform/billing';
 import platformConsoleRoutes from './platform/platform.routes';
 import quickbooksRoutes from './modules/quickbooks/quickbooks.routes';
 import { recordActivity } from './shared/activity';
@@ -87,7 +89,11 @@ export function createApp() {
       res.sendFile(path.join(ROOT, 'website', 'index.html')); return;
     }
     if (req.path === '/site/config') {
-      res.json({ signups_open: SIGNUPS_OPEN, trial_seats: 5, modules: MODULES, module_deps: MODULE_DEPS }); return;
+      // Sign-up is pay-first: the price list lets the form show the monthly total before submitting.
+      const prices = getBillingSettings();
+      res.json({ signups_open: SIGNUPS_OPEN, max_seats: 500, modules: MODULES, module_deps: MODULE_DEPS,
+        pricing: { module_prices: prices.module_prices, seat_price: prices.seat_price, vat_registered: prices.vat_registered },
+        payment_methods: { bank: !!prices.bank_details, gcash: !!prices.gcash_number } }); return;
     }
     next();
   });
@@ -188,14 +194,31 @@ export function createApp() {
         res.status(403).json({ error: 'This workspace is not active. Please contact your administrator.' });
         return;
       }
+      const billingPath = req.path === '/api/tenant' || req.path.startsWith('/api/tenant/billing/')
+        || req.path === '/api/tenant/billing' || req.path.startsWith('/api/auth')
+        || req.path === '/api/support' || req.path.startsWith('/api/support/');
+      // Signed up on the website and not yet paid (src/platform/billing.ts): only sign-in, Billing
+      // and Support work until an operator confirms the first payment. The phone app says so.
+      if (tenant.awaiting_payment) {
+        if (req.path.startsWith('/api/') && !billingPath) {
+          res.status(402).json({ error: 'This workspace opens once your first payment is confirmed. Open Billing to pay.', awaiting_payment: true });
+          return;
+        }
+        if (req.path === '/m' || req.path.startsWith('/m/')) {
+          const home = `${res.locals.tenantBase || ''}/`;
+          res.status(402).type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
+            + `<title>Workspace not open yet</title><body style="font:16px/1.5 system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:0 20px">`
+            + `<h1 style="font-size:20px">Your workspace isn't open yet</h1><p>It opens once your first payment is confirmed. `
+            + `Sign in on a computer at <a href="${home}">${home}</a> and open Billing to pay and send your proof of payment.</p></body>`);
+          return;
+        }
+      }
       // A lapsed trial is treated as past_due: reads still work, writes are blocked
-      // (except auth and support, so administrators can seek help with billing).
+      // (except auth, billing and support, so administrators can pay or seek help).
       const lapsedTrial = tenant.status === 'trial' && !!tenant.trial_ends_at
         && tenant.trial_ends_at < new Date().toISOString();
       const readOnly = tenant.status === 'past_due' || lapsedTrial;
-      if (readOnly && req.method !== 'GET' && req.method !== 'HEAD'
-        && !req.path.startsWith('/api/auth') && req.path !== '/api/tenant'
-        && req.path !== '/api/support' && !req.path.startsWith('/api/support/')) {
+      if (readOnly && req.method !== 'GET' && req.method !== 'HEAD' && !billingPath) {
         res.status(402).json({ error: 'This workspace is past due — it is read-only until billing is resolved.' });
         return;
       }
@@ -274,6 +297,7 @@ export function createApp() {
   app.use('/api/confidential-reports', confidentialReportRoutes);
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
   app.use('/api/support', supportRoutes);
+  app.use('/api/tenant/billing', billingRoutes); // our invoices to this workspace + reporting a payment
   app.use('/api/tenant', tenantRoutes); // current workspace plan / status / usage
   // Mounted here (before the bare-'/api' routers below) so its public OAuth /callback
   // isn't shadowed by another router's top-level requireAuth.

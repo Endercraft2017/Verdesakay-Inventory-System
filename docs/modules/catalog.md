@@ -99,6 +99,18 @@ workspace DB as a tenant; console route `POST /_platform/api/tenants/import`).
 reads `platform/platform.ts` for per-tenant photo-retention settings.
 **Status:** working.
 
+Billing (partial, 2026-10-10, `docs/SAAS-READINESS.md` §12): `billing.ts` (invoices / payments /
+settings in `platform.db`, VAT + EWT-on-net-of-VAT, price list, GCash + bank details, status from
+payments; paid → a website sign-up's `awaiting_payment` lock lifts, `trial`/`past_due` → `active`),
+`billing.routes.ts` (customer `/api/tenant/billing`: invoices, how to pay, report a GCash / bank
+payment with proof + optional 2307, GCash QR image; `syncClass('online')`), `billing-console.routes.ts`
+(operator: issue, confirm / reject / record / void, BIR invoice no., settings, QR upload). Website
+sign-up (`signup.routes.ts`) is pay-first: locked workspace + automatic first invoice when the price
+list covers it. Frontend: `web-console/billing.js`, desktop `public/js/modules/core/billing.js` and
+the locked shell in `public/js/app.js`. **Interface:** `tenantBillingSummary()`, `priceListQuote()`,
+`setAwaitingPayment()` (platform.ts). **Not built:** PayMongo, overdue automation, notifications,
+recurring invoices. Tests: `tests/billing.test.ts`, `tests/billing-signup.test.ts`, `tests/frontend-billing.test.ts`.
+
 Path tenancy: `TENANT_PATH_HOST` enables `/<slug>` for desktop/mobile/API/chat;
 `DEFAULT_TENANT_REDIRECT` retires the original company after verified adoption.
 The owner console remains separate and shows tenant URLs. Browser storage, mobile

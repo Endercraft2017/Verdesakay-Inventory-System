@@ -62,6 +62,9 @@ export interface TenantRow {
   photo_max_mb: number | null;
   subscription: string | null;
   is_sandbox: number;
+  /** 1 = signed up on the public website and not yet paid: everything but sign-in and Billing is
+   *  locked (src/app.ts) until an operator confirms the first payment (src/platform/billing.ts). */
+  awaiting_payment: number;
   notes: string | null;
   created_at: string;
 }
@@ -113,6 +116,7 @@ function pdb(): DatabaseSync {
   ensureColumn(d, 'tenants', 'modules', 'TEXT'); // added after the initial control-plane schema
   ensureColumn(d, 'tenants', 'photo_retention_days', 'INTEGER');
   ensureColumn(d, 'tenants', 'photo_max_mb', 'INTEGER');
+  ensureColumn(d, 'tenants', 'awaiting_payment', 'INTEGER NOT NULL DEFAULT 0');
   _db = d;
   seedPlatformUserFromEnv();
   return d;
@@ -194,6 +198,11 @@ export function setTenantStatus(slug: string, status: TenantStatus): boolean {
 export function setTenantPlan(slug: string, plan: string): boolean {
   if (getTenant(slug)?.subscription) throw new Error('Use owner subscription settings to change the bundle.');
   return pdb().prepare('UPDATE tenants SET plan = ? WHERE slug = ?').run(plan, slug).changes > 0;
+}
+
+/** Lock (true) or open (false) a self-signed-up workspace pending its first payment. */
+export function setAwaitingPayment(slug: string, awaiting: boolean): boolean {
+  return pdb().prepare('UPDATE tenants SET awaiting_payment = ? WHERE slug = ?').run(awaiting ? 1 : 0, slug).changes > 0;
 }
 
 export function setTenantName(slug: string, name: string): boolean {

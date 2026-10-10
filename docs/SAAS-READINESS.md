@@ -8,7 +8,7 @@
 > `default` tenant needs no catalog row, has every module, and the console is off unless
 > `PLATFORM_CONSOLE=true`). Backups job done 2026-09-24 (daily + pre-migration snapshots, see
 > SAAS-OPERATIONS.md#backups). Remaining: custom domains / branding / billing, retention policies.
-> **Last updated:** 2026-09-10
+> **Last updated:** 2026-10-10 (billing, §12)
 > **Question asked:** "Can this be a SaaS (many companies on one deployment)?"
 
 **Short answer:** yes, and the current design is closer than it looks — *because* it's
@@ -223,7 +223,7 @@ New, and it lives **outside** the tenant DBs (its own `platform.db` or Postgres)
 | `tenants` | `id, slug, name, status (trial/active/past_due/suspended/purged), plan, trial_ends_at, created_at` |
 | `tenant_domains` | custom-domain → tenant mapping, verification state |
 | `platform_users` | *your* staff who can see across tenants (support, billing) — separate from any tenant's `users` |
-| `subscriptions` / billing | plan, seats, current period, Stripe (or manual) — drives §9 |
+| `subscriptions` / billing | plan, seats, current period, invoices; manual GCash / bank transfer now, PayMongo later (§12) — drives §9 |
 | `provisioning_log` | audit of create/migrate/suspend/delete per tenant |
 | `tenant_secrets` (optional) | if you centralise SMTP/AI keys instead of per-tenant `settings` |
 
@@ -321,7 +321,7 @@ All enforceable cheaply per-tenant because the data is one file:
    the owner to choose a different password before desktop, mobile, or WebSocket access.
    Closing the panel removes the displayed password. Sandbox operators can use this
    action directly because sandbox recovery email is disabled.
-9. **Custom domains, per-tenant branding, billing integration** (§8).
+9. **Custom domains, per-tenant branding, billing integration** (§8; billing phase a built 2026-10-10 — §12).
 10. **Backups job, deploy-time migration runner** (§5, §7).
 11. **Retention policies** by plan (`activity_log` / `mail_log` / soft-deletes) (§9).
 
@@ -411,6 +411,53 @@ writer ("all tenants fighting each other to get the single write lock")
 - Self-serve signup **open** at launch, or **flag-off** and you provision each tenant?
 - Control-plane admin: a `/_platform` page in this same app now, or just the CLI script
   until it's needed?
+
+---
+
+## 12. Billing (decided + phase a built 2026-10-10)
+
+**Decision:** collect fees by **manual GCash / bank transfer** first — the customer reports the
+payment with its reference number and a receipt screenshot (and the BIR 2307 when they withhold),
+and an operator confirms it against the GCash / bank history. **PayMongo** comes later, once the
+business is registered (DTI/SEC + BIR 2303); an unregistered PayMongo "Individual" account is QR Ph
+only with a ₱50k wallet cap. Personal GCash has no API, so there is no automatic detection.
+
+**Why:** Stripe does not onboard Philippine companies; PayMongo is cheaper than Xendit and has no
+dormant fee. Buyers with ≥₱12M (≥₱5M in smaller districts) gross sales are BIR Top Withholding
+Agents and withhold 2% EWT (on the amount net of VAT) with a Form 2307, so an invoice paid by
+transfer must stay possible. Under the EOPT Act (RR 7-2024) the BIR-registered invoice is the
+primary sales document; this app records its number (`bir_invoice_no`) but does not print it.
+
+**Who pays when:** a company that signs up on the public website (`/api/signup`) **pays before it
+gets in** — its workspace is created with `tenants.awaiting_payment = 1`; only sign-in, Billing and
+Support answer (`src/app.ts`, 402 otherwise; `/m` shows a "finish payment on a computer" page) until
+an operator confirms the first payment. A workspace the operator creates in the console is never
+locked. The operator can also open a waiting workspace by hand (console → tenant → Billing).
+
+**First invoice:** the console's price list (per module per month + per login seat) prices the
+sign-up's quote; when every chosen module and the seat price have a price, the first month's
+invoice is issued automatically (due in 7 days) and the website shows the monthly total before
+sign-up. Otherwise the workspace still waits and the operator issues the invoice.
+
+**Built (`src/platform/billing.ts`, `billing.routes.ts`, `billing-console.routes.ts`):** invoices +
+payments + settings in `platform.db` (centavos; VAT 12% when VAT-registered; EWT default 2%);
+customer reporting with channel `gcash`/`bank`; operator confirm / reject / record / void / BIR
+invoice no.; GCash name, number and QR image; bank details; price list. Paid → a waiting workspace
+opens, a `trial`/`past_due` one becomes `active` (a `suspended` one is left alone). Console: header
+**Billing** view + per-tenant **Billing** tab (`web-console/billing.js`). Desktop: Admin → Billing
+(`public/js/modules/core/billing.js`), banner link, and the locked shell while awaiting payment.
+
+**Not built:** PayMongo (checkout + webhook, then subscriptions); automatic overdue → `past_due`;
+email/notification to the operator on a new sign-up or reported payment (the console badge counts
+payments to review); recurring monthly invoices (the operator issues them).
+
+**Not verified:** the EWT / invoicing rules should be confirmed by the company's accountant.
+
+Sources: [PayMongo pricing](https://www.paymongo.com/en/pricing),
+[PayMongo business types](https://docs.paymongo.com/docs/account-settings-business-types),
+[Xendit pricing](https://www.xendit.co/en/pricing/),
+[RR 31-2020](https://bir-cdn.bir.gov.ph/local/pdf/RR%20No.%2031-2020.pdf),
+[PwC – EoPT invoicing](https://www.pwc.com/ph/en/tax/tax-publications/taxwise-or-otherwise/2024/eopt-invoicing-clarified.html).
 
 ---
 

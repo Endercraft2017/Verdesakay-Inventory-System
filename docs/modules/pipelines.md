@@ -675,3 +675,27 @@ round → the PC keeps working locally and retries.
 stops working at once; its rows keep their ids); diverged (sync loop stops — re-enrol).
 **Phone setup (site host):** a phone opens `http://<host>:3001`, installs the site certificate
 once, then uses `https://<host>:3000/m` on the office Wi-Fi (D5).
+
+## Workspace billing (sign up / invoice → pay → confirm → open) — partial
+
+Built 2026-10-10, design `docs/SAAS-READINESS.md` §12. **Trigger:** a company signs up on the public
+website, or the owner issues an invoice (monthly plan, implementation fee).
+1. **Sign up** (`platform/signup.routes.ts`, website) — workspace created with `awaiting_payment`
+   (locked to sign-in, Billing, Support); quote priced from the price list; first month's invoice
+   issued automatically when every chosen module and the seat price are priced. *Skipped* for
+   workspaces the owner creates in the console (never locked).
+2. **Invoice** (`platform/billing.ts`, console) — reference `<prefix>-<year>-0001`, gross, net of 2%
+   EWT, due date. Status `open`.
+3. **Pay** (customer, desktop Admin → Billing) — by GCash (number + QR shown) or bank transfer, then
+   **Report payment** with channel, reference no., amount, date, receipt screenshot, optional 2307.
+   Status `payment_submitted`. *Planned:* PayMongo checkout as a third, automatic branch.
+4. **Confirm** (operator, console Billing) — checks GCash history / bank app; confirm or reject with
+   a note the customer sees; or records a payment seen directly (check, bank app).
+5. **Open / activate** (`platform/billing.ts`) — confirmed ≥ net − ₱1 → `paid`; the workspace's
+   `awaiting_payment` lock lifts; a `trial`/`past_due` workspace becomes `active`.
+
+**Branches:** proof doesn't match → rejected, back to `open`; short payment → stays `open` with a
+balance; owner opens a waiting workspace without payment; sign-up with an unpriced module → no
+automatic invoice, owner issues it; a `suspended` workspace is not reopened by a payment.
+**Terminal states:** paid (workspace open/active); voided; overdue → flagged only (moving to
+`past_due` / `suspended` is manual; automatic step planned). Customer routes are sync class `online`.

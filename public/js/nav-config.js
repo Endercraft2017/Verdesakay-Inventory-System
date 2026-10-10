@@ -22,7 +22,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'support'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'support', 'billing'];
 
 const NAV = [
   {
@@ -325,6 +325,13 @@ const NAV = [
         tree: [
           // Offline-capable PCs enrolled against this workspace (docs/OFFLINE-FIRST.md §13).
           { label: 'Installed PCs', icon: 'building', route: 'sync' },
+        ],
+      },
+      {
+        id: 'billing', label: 'Billing',
+        tree: [
+          // Our invoices to this workspace + paying by GCash or bank transfer (docs/SAAS-READINESS.md §12).
+          { label: 'Invoices & payments', icon: 'file', route: 'billing' },
         ],
       },
       {

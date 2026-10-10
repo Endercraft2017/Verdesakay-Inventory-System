@@ -14,6 +14,7 @@
   var el = function (tag, attrs, kids) {
     var n = document.createElement(tag);
     if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (attrs[k] == null) return; // `selected: cond ? 'selected' : null` must leave the attribute off
       if (k === 'class') n.className = attrs[k];
       else if (k === 'text') n.textContent = attrs[k];
       else if (k === 'html') n.innerHTML = attrs[k];
@@ -87,6 +88,7 @@
     $('who').textContent = me.full_name || me.username;
     showApp();
     await load();
+    if (window.ConsoleBilling) window.ConsoleBilling.refreshCount();
   }
 
   async function load(refreshSelected) {
@@ -98,6 +100,12 @@
 
   /* ---------- table ---------- */
   function statusBadge(s) { return el('span', { class: 'badge ' + s, text: s.replace('_', ' ') }); }
+  /** Status, plus an "awaiting payment" badge for a website sign-up that hasn't paid yet. */
+  function statusBadges(t) {
+    var wrap = el('span', { class: 'badge-row' }, [statusBadge(t.status)]);
+    if (t.awaiting_payment) wrap.appendChild(el('span', { class: 'badge awaiting', text: 'awaiting payment' }));
+    return wrap;
+  }
 
   function moduleChips(m) {
     var wrap = el('span');
@@ -121,7 +129,7 @@
         'aria-pressed': drawerState && drawerState.slug === t.slug ? 'true' : 'false',
         onclick: function () { openDrawer(t.slug).catch(function (e) { toast(e.message); }); } }, [
         el('strong', { text: (t.name || t.slug) + (t.is_sandbox ? ' (Sandbox)' : '') }),
-        el('span', { class: 'tenant-meta' }, [el('span', { text: t.slug }), statusBadge(t.status)]),
+        el('span', { class: 'tenant-meta' }, [el('span', { text: t.slug }), statusBadges(t)]),
       ]));
     });
     if (!list.length) tb.appendChild(el('p', { class: 'muted', text: q ? 'No matching tenants.' : 'No tenants yet.' }));
@@ -129,6 +137,14 @@
 
   $('filter').addEventListener('input', render);
   $('refresh-btn').addEventListener('click', function () { load(true).catch(function (e) { toast(e.message); }); });
+
+  /* ---------- shared with billing.js ---------- */
+  window.Console = {
+    api: api, el: el, toast: toast, $: $, token: token,
+    tenants: function () { return tenants; },
+    refs: function () { return ref; },
+    reloadTenant: function (slug) { return load(true).then(function () { if (slug) return openDrawer(slug, 'billing'); }); },
+  };
 
   /* ---------- module dependency helpers (client mirror of src/modules.ts) ---------- */
   function depsOf(name) { return (ref.module_deps && ref.module_deps[name]) || []; }
@@ -158,6 +174,7 @@
       plan: full.plan,
       subscription: full.subscription,
       status: full.status,
+      awaiting_payment: !!full.awaiting_payment,
       trial_ends_at: full.trial_ends_at,
       useOverride: !!full.modules.override,
       // working checkbox map for custom mode; seed from the effective set
@@ -185,10 +202,10 @@
     var st = drawerState;
     $('tenant-workspace').replaceChildren(
       el('div', { class: 'tenant-page-heading' }, [
-        el('div', {}, [el('div', { class: 'tenant-title-line' }, [el('h2', { text: st.name || st.slug }), statusBadge(st.status)]), el('p', { class: 'muted', text: 'Tenant overview / ' + st.slug })]),
+        el('div', {}, [el('div', { class: 'tenant-title-line' }, [el('h2', { text: st.name || st.slug }), statusBadges(st)]), el('p', { class: 'muted', text: 'Tenant overview / ' + st.slug })]),
         el('a', { class: 'btn ghost', href: st.url, target: '_blank', rel: 'noopener', text: 'Open workspace' }),
       ]),
-      el('nav', { class: 'tenant-tabs', 'aria-label': 'Tenant sections' }, ['overview', 'usage', 'health', 'subscription', 'support', 'settings'].map(function (tab) {
+      el('nav', { class: 'tenant-tabs', 'aria-label': 'Tenant sections' }, ['overview', 'usage', 'health', 'subscription', 'billing', 'support', 'settings'].map(function (tab) {
         return el('button', { 'data-tab': tab, onclick: function () { selectTab(tab).catch(function (e) { toast(e.message); }); }, text: tab.charAt(0).toUpperCase() + tab.slice(1) });
       })),
       el('div', { id: 'tenant-content', 'aria-live': 'polite' })
@@ -199,6 +216,7 @@
     document.querySelectorAll('[data-tab]').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false'); });
     if (tab === 'settings') { paintDrawer(); return; }
     if (tab === 'subscription') { openSubscription(); return; }
+    if (tab === 'billing') { window.ConsoleBilling.renderTenant(drawerState, $('tenant-content')); return; }
     $('tenant-content').replaceChildren(el('p', { class: 'muted', text: 'Loading analytics…' }));
     await openAnalytics(drawerState.slug);
   }

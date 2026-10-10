@@ -100,6 +100,13 @@ const App = (() => {
     document.getElementById('me-dept').textContent = me.department_name || 'No dept';
     document.getElementById('me-avatar').textContent = UI.initials(me.full_name);
 
+    // Signed up online and not paid yet: the server only answers sign-in, Billing and Support, so
+    // show just the Billing screen until the first payment is confirmed (src/platform/billing.ts).
+    let ws = null;
+    try { ws = await API.get('/tenant'); } catch { /* no workspace info: carry on normally */ }
+    appScreen().classList.toggle('awaiting-payment', !!(ws && ws.awaiting_payment));
+    if (ws && ws.awaiting_payment) { showAwaitingPayment(ws); return; }
+
     try { departments = await (departmentsReq || API.get('/users/departments/list')); } catch { departments = []; }
 
     renderPrimaryNav(); // (re)build chrome; honours admin-only visibility
@@ -128,23 +135,50 @@ const App = (() => {
     navigate(start, parsed.route === start ? parsed.filter : undefined);
   }
 
+  /** The locked shell for a workspace awaiting its first payment: a banner and the Billing screen. */
+  function showAwaitingPayment(ws) {
+    const aiFab = document.getElementById('ai-fab');
+    if (aiFab) aiFab.classList.add('hidden');
+    paintBanner(`Welcome, ${ws.name}! Your workspace opens once your first payment is confirmed.`, 'warn', false);
+    const view = document.getElementById('view');
+    if (routes.billing) routes.billing(view);
+  }
+
   async function showWorkspaceBanner() {
     let t;
     try { t = await API.get('/tenant'); } catch { return; }
-    document.getElementById('ws-banner')?.remove();
     let msg = '', tone = 'warn';
     if (t.read_only) { msg = `${t.name} is past due — the workspace is read-only until billing is resolved.`; tone = 'danger'; }
     else if (t.status === 'suspended') { msg = `${t.name} is suspended.`; tone = 'danger'; }
     else if (t.trial_days_left != null && t.trial_days_left <= 14) {
       msg = t.trial_days_left <= 0 ? `${t.name}'s trial has ended.`
         : `${t.name} — trial: ${t.trial_days_left} day${t.trial_days_left === 1 ? '' : 's'} left.`;
+    } else if (t.billing && t.billing.open) {
+      // Our unpaid invoices to this workspace (only sent to users.manage — see Admin → Billing).
+      msg = t.billing.overdue
+        ? `${t.billing.overdue} overdue invoice${t.billing.overdue === 1 ? '' : 's'} for ${t.name}.`
+        : `${t.billing.open} unpaid invoice${t.billing.open === 1 ? '' : 's'} for ${t.name}.`;
+      if (t.billing.overdue) tone = 'danger';
     }
-    if (!msg) return;
+    document.getElementById('ws-banner')?.remove();
+    if (msg) paintBanner(msg, tone, !!t.billing);
+  }
+
+  function paintBanner(msg, tone, billingLink) {
+    document.getElementById('ws-banner')?.remove();
     const bar = document.createElement('div');
     bar.id = 'ws-banner';
     bar.style.cssText = `padding:6px 14px;font-size:13px;text-align:center;color:#fff;`
       + `background:${tone === 'danger' ? 'var(--danger,#d64545)' : 'var(--warn,#b8860b)'}`;
     bar.textContent = msg;
+    if (billingLink) {
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.textContent = 'View billing';
+      link.style.cssText = 'margin-left:10px;background:transparent;border:1px solid #fff;color:#fff;border-radius:6px;padding:1px 8px;font-size:12px;cursor:pointer';
+      link.onclick = () => navigate('billing');
+      bar.appendChild(link);
+    }
     appScreen().prepend(bar);
   }
 

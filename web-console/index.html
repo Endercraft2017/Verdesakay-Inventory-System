@@ -138,6 +138,29 @@
   .sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
   @media(max-width:1050px) { .console-shell { grid-template-columns:220px minmax(0,1fr); }.tenant-workspace { padding:24px; }.kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }.chart-grid { grid-template-columns:1fr; } }
   @media(max-width:650px) { .console-shell { display:block; }.tenant-sidebar { position:static; height:auto; border-right:0; border-bottom:1px solid var(--line); padding:16px; gap:12px; }.tenant-list { max-height:180px; }.sidebar-refresh { align-self:flex-start; }.tenant-workspace { padding:20px 16px; }.tenant-page-heading { align-items:flex-start; flex-wrap:wrap; }.tenant-tabs { gap:20px; }.kpi { padding:16px; }.kpi-value { font-size:25px; }.chart-card { padding:16px; }.row2 { grid-template-columns:1fr; } }
+  /* billing (billing.js) */
+  .badge-row { display:inline-flex; gap:4px; flex-wrap:wrap; }
+  .badge.awaiting, .badge.payment_submitted, .badge.pending { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+  .badge.open { background: var(--chip); color: var(--ink); }
+  .badge.paid, .badge.confirmed { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .badge.void { background: var(--chip); color: var(--muted); text-decoration: line-through; }
+  .badge.overdue, .badge.rejected { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+  .count-pill { background: var(--accent); color: var(--accent-ink); border-radius: 999px; font-size: 11px; padding: 0 7px; margin-left: 6px; }
+  .billing-view { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .billing-view .toolbar { flex-wrap: wrap; }
+  .billing-table-wrap { overflow-x: auto; }
+  .billing-table-wrap table tbody tr { cursor: pointer; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sums { font-size: 13px; border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; }
+  .sums div { display: flex; justify-content: space-between; padding: 2px 0; font-variant-numeric: tabular-nums; }
+  .sums div.total { font-weight: 700; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
+  .pay { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; margin-bottom: 10px; font-size: 13px; }
+  .pay .acts { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .btn.small { padding: 5px 10px; font-size: 12.5px; }
+  textarea { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; width: 100%; min-height: 84px; resize: vertical; }
+  .price-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .price-grid label { font-weight: 400; font-size: 12px; }
+  .awaiting-note { border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
 </style>
 </head>
 <body>
@@ -159,6 +182,7 @@
   <header>
     <h1>OTOM <span class="console-label">Owner console</span></h1>
     <span class="muted" id="who"></span>
+    <button class="btn ghost" id="billing-btn">Billing<span class="count-pill hidden" id="review-count"></span></button>
     <button class="btn ghost" id="logout">Log out</button>
   </header>
   <main class="console-shell">
@@ -171,8 +195,10 @@
     </aside>
     <section id="tenant-workspace" class="tenant-workspace" aria-label="Tenant dashboard"><div class="dashboard-empty"><h2>Your tenants, at a glance.</h2><p class="muted">Select a tenant to explore its activity, capacity, and service health.</p></div></section>
   </main>
+  <section id="billing-view" class="billing-view hidden" aria-label="Billing"></section>
 </div>
 
 <script src="app.js"></script>
+<script src="billing.js"></script>
 </body>
 </html>

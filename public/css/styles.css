@@ -1531,3 +1531,8 @@ textarea { resize: vertical; min-height: 84px; }
   .guide-spot { animation: none; }
   .guide-coach { transition: opacity .18s ease; }
 }
+
+/* Workspace awaiting its first payment (public/js/app.js showAwaitingPayment): only Billing and sign-out. */
+.app.awaiting-payment .util-bar, .app.awaiting-payment #primary-nav, .app.awaiting-payment #subnav,
+.app.awaiting-payment #tree-nav, .app.awaiting-payment .rail-btn:not(#logout-btn):not(#theme-btn) { display: none !important; }
+.app.awaiting-payment .workspace { grid-template-columns: 1fr var(--rail-w); }
