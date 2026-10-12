@@ -553,7 +553,7 @@ const UI = (() => {
       a body-level bubble so it never gets clipped by a scrolling modal. */
   function helpIcon(text) {
     if (!text) return '';
-    return `<button type="button" class="help-icon" aria-label="${esc(text)}" data-tip="${esc(text)}">?</button>`;
+    return `<button type="button" class="help-icon" aria-label="Help: ${esc(text)}" aria-expanded="false" data-tip="${esc(text)}">?</button>`;
   }
 
   /* Tooltip controller: hover (mouse) + tap/click (touch) → floating bubble.
@@ -563,39 +563,34 @@ const UI = (() => {
      for touch devices, so its click still opens the tip rather than toggling it
      away like a generic target would. */
   (function initHelpTips() {
-    let tip = null;
-    const hide = () => { if (tip) { tip.remove(); tip = null; } };
-    function show(target) {
-      hide();
-      const text = target.getAttribute('data-tip');
-      if (!text) return;
-      tip = document.createElement('div');
-      tip.className = 'help-tip';
-      tip.textContent = text;
-      document.body.appendChild(tip);
-      const r = target.getBoundingClientRect();
-      const tr = tip.getBoundingClientRect();
-      let top = r.top - tr.height - 8;
-      if (top < 8) top = r.bottom + 8; // flip below if it would clip the top
-      let left = r.left + r.width / 2 - tr.width / 2;
-      left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
-      tip.style.top = `${Math.round(top)}px`;
-      tip.style.left = `${Math.round(left)}px`;
+    let tip = null, target = null, pinned = false, seq = 0, previousDescription = null;
+    const hide = () => {
+      if (target) { if (previousDescription) target.setAttribute('aria-describedby', previousDescription); else target.removeAttribute('aria-describedby'); if (target.classList.contains('help-icon')) target.setAttribute('aria-expanded', 'false'); }
+      if (tip) tip.remove(); tip = null; target = null; pinned = false;
+    };
+    function show(el, pin = false) {
+      hide(); const text = el.getAttribute('data-tip'); if (!text) return;
+      target = el; pinned = pin; previousDescription = el.getAttribute('aria-describedby');
+      tip = document.createElement('div'); tip.className = 'help-tip'; tip.id = 'help-tip-' + (++seq); tip.setAttribute('role', 'tooltip'); tip.textContent = text;
+      document.body.appendChild(tip); el.setAttribute('aria-describedby', [previousDescription, tip.id].filter(Boolean).join(' '));
+      if (el.classList.contains('help-icon')) el.setAttribute('aria-expanded', 'true');
+      const r = el.getBoundingClientRect(), tr = tip.getBoundingClientRect();
+      let top = r.top - tr.height - 8; if (top < 8) top = r.bottom + 8;
+      tip.style.top = Math.max(8, Math.min(top, window.innerHeight - tr.height - 8)) + 'px';
+      tip.style.left = Math.max(8, Math.min(r.left + r.width / 2 - tr.width / 2, window.innerWidth - tr.width - 8)) + 'px';
     }
-    document.addEventListener('mouseover', (e) => {
-      const h = e.target.closest && e.target.closest('[data-tip]');
-      if (h) show(h);
-    });
-    document.addEventListener('mouseout', (e) => {
-      const h = e.target.closest && e.target.closest('[data-tip]');
-      if (h && !(e.relatedTarget && h.contains(e.relatedTarget))) hide();
-    });
-    document.addEventListener('click', (e) => {
-      const h = e.target.closest && e.target.closest('.help-icon');
-      if (h) { e.preventDefault(); e.stopPropagation(); show(h); }
+    document.addEventListener('mouseover', e => { const h = e.target.closest?.('[data-tip]'); if (h && !pinned) show(h); });
+    document.addEventListener('mouseout', e => { const h = e.target.closest?.('[data-tip]'); if (h && !pinned && document.activeElement !== h && !h.contains(e.relatedTarget)) hide(); });
+    document.addEventListener('focusin', e => { const h = e.target.closest?.('[data-tip]'); if (h) show(h); });
+    document.addEventListener('focusout', e => { if (e.target === target) hide(); });
+    document.addEventListener('click', e => {
+      const h = e.target.closest?.('.help-icon');
+      if (h) { e.preventDefault(); e.stopPropagation(); if (target === h && pinned) hide(); else show(h, true); }
       else hide();
     });
-    window.addEventListener('scroll', hide, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && tip) { e.preventDefault(); e.stopPropagation(); hide(); } }, true);
+    window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
+
   })();
 
   /** Inline SVG icon by name. Inherits text color; size in px (default 18). */

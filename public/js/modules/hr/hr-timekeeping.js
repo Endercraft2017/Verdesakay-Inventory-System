@@ -495,9 +495,8 @@ function shiftModal(existing, onSaved) {
       <div><label>Name *</label><input data-f="name" value="${UI.esc(editing ? existing.name : '')}" placeholder="e.g. Morning" autofocus /></div>
       <div class="field-row" style="margin-top:10px">
         <div><label>Start time *</label><input data-f="start_time" type="time" value="${UI.esc(editing ? existing.start_time : '')}" /></div>
-        <div><label>End time *</label><input data-f="end_time" type="time" value="${UI.esc(editing ? existing.end_time : '')}" /></div>
+        <div><label>End time * ${UI.helpIcon('An end time earlier than the start time is an overnight shift, for example 22:00 to 06:00.')}</label><input data-f="end_time" type="time" value="${UI.esc(editing ? existing.end_time : '')}" /></div>
       </div>
-      <p class="muted" style="font-size:12px;margin:6px 0 0">An end time earlier than the start time is treated as an overnight shift (e.g. 22:00 &rarr; 06:00).</p>
       <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
         <input type="checkbox" data-f="is_default" style="width:auto" ${editing && existing.is_default ? 'checked' : ''} /> Default shift
       </label></div>`,

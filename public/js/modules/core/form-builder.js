@@ -525,45 +525,28 @@ App.register('form-builder', async (view, filter) => {
       title: editing ? `Edit: ${existing.name}` : 'New Form',
       size: 'lg',
       bodyHTML: `
-        <div class="field-row">
-          <div style="flex:2">
-            <label>Form name</label>
-            <input data-f="name" value="${UI.esc(seed ? seed.name : '')}" placeholder="e.g. Leave Request" />
-          </div>
-          <div>
-            <label>Slug <span class="muted">(unique ID)</span></label>
-            <input data-f="slug" value="${UI.esc(seed ? seed.slug : '')}" placeholder="leave_request" class="mono" />
-          </div>
-        </div>
-        <div class="field-row">
-          <div>
-            <label>Number prefix</label>
-            <input data-f="number_prefix" value="${UI.esc(seed ? seed.number_prefix : 'FM')}" placeholder="FM" class="mono" style="width:90px" />
-          </div>
-          <div>
-            <label>Icon</label>
-            <input data-f="icon" value="${UI.esc(seed ? seed.icon : 'file')}" placeholder="file" style="width:100px" />
-          </div>
-        </div>
-        <div style="margin-top:16px;display:flex;align-items:center;gap:12px;margin-bottom:8px">
-          <strong>Fields</strong>
-          <button type="button" class="btn secondary small" id="fb-add-field">${UI.icon('plus', 14)} Add field</button>
-        </div>
-        <div id="fb-fields-list"></div>
-        <p class="muted" style="font-size:12px;margin-top:8px">
-          Each field becomes a template variable: <span class="mono">{{field_key}}</span> —
-          this form belongs to <strong>${UI.esc(FORM_SCOPE_LABELS[scope])}</strong>.
-        </p>
-        <div style="margin-top:18px;display:flex;align-items:center;gap:12px;margin-bottom:8px">
-          <strong>Automated actions</strong>
-          <button type="button" class="btn secondary small" id="fb-add-action">${UI.icon('plus', 14)} Add action</button>
-        </div>
-        <div id="fb-actions-list"></div>
-        <p class="muted" style="font-size:12px;margin-top:8px">
-          Actions run when a record is saved (or reaches <em>approved</em>). "Notify"/"File to 201"/"Email"
-          use the field of type <span class="mono">employee</span> to find who the record is about.
-          Message text may use <span class="mono">{number} {form} {employee} {field:key}</span>.
-        </p>`,
+        <div class="fb-editor">
+          <section class="fb-section fb-basics">
+            <div class="fb-section-title"><h3>Form details</h3><span class="fb-scope">${UI.esc(FORM_SCOPE_LABELS[scope])}</span></div>
+            <label for="fb-name">Form name *</label>
+            <input id="fb-name" data-f="name" value="${UI.esc(seed ? seed.name : '')}" placeholder="e.g. Leave Request" />
+            <details class="fb-advanced"><summary>Advanced settings ${UI.helpIcon('The form ID is generated from its name. Change the ID, numbering prefix, or icon only when needed.')}</summary>
+              <div class="fb-settings-grid">
+                <div><label for="fb-slug">Form ID ${UI.helpIcon('A unique ID using lowercase letters, numbers, and underscores. Templates and workflows may refer to this ID, so take care when changing an existing form.')}</label><input id="fb-slug" data-f="slug" value="${UI.esc(seed ? seed.slug : '')}" placeholder="leave_request" class="mono" /></div>
+                <div><label for="fb-prefix">Number prefix ${UI.helpIcon('The letters at the start of issued record numbers, such as LV in LV-00001. Use uppercase letters or numbers.')}</label><input id="fb-prefix" data-f="number_prefix" value="${UI.esc(seed ? seed.number_prefix : 'FM')}" placeholder="FM" class="mono" /></div>
+                <div><label for="fb-icon">Icon ${UI.helpIcon('The icon name used for this form in menus, for example file, calendar, or users.')}</label><input id="fb-icon" data-f="icon" value="${UI.esc(seed ? seed.icon : 'file')}" placeholder="file" /></div>
+              </div>
+            </details>
+          </section>
+          <section class="fb-section">
+            <div class="fb-section-title"><h3>Fields ${UI.helpIcon('Choose the information people must provide. Each field key can be used in a print template as {{field_key}}.')}</h3><button type="button" class="btn secondary small" id="fb-add-field">${UI.icon('plus', 14)} Add field</button></div>
+            <div id="fb-fields-list"></div>
+          </section>
+          <details class="fb-section fb-actions" ${actions.length ? 'open' : ''}>
+            <summary>Automated actions <span class="fb-optional">${actions.length ? actions.length + ' configured' : 'Optional'}</span> ${UI.helpIcon('Actions run when a record is saved or approved. Notify, File to 201, and Email use an employee field to identify the recipient. Messages can use {number}, {form}, {employee}, and {field:key}.')}</summary>
+            <div class="fb-actions-content"><div class="fb-section-title"><span class="muted">What happens after submission</span><button type="button" class="btn secondary small" id="fb-add-action">${UI.icon('plus', 14)} Add action</button></div><div id="fb-actions-list"></div></div>
+          </details>
+        </div>`,
       confirmText: editing ? 'Save form' : 'Create form',
       onOpen: (ov) => {
         const nameEl = ov.querySelector('[data-f="name"]');
@@ -594,10 +577,11 @@ App.register('form-builder', async (view, filter) => {
       onConfirm: async (ov, showErr) => {
         const f = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
         if (!f('name')) { showErr('Form name is required'); return false; }
-        if (!f('slug')) { showErr('Slug is required'); return false; }
-        if (!/^[a-z0-9_]+$/.test(f('slug'))) { showErr('Slug must be lowercase letters, numbers, or underscores'); return false; }
+        const advancedError = (message, key) => { ov.querySelector('.fb-advanced').open = true; showErr(message); ov.querySelector(`[data-f="${key}"]`).focus(); return false; };
+        if (!f('slug')) return advancedError('Form ID is required', 'slug');
+        if (!/^[a-z0-9_]+$/.test(f('slug'))) return advancedError('Form ID must use lowercase letters, numbers, or underscores', 'slug');
         if (!f('number_prefix') || !/^[A-Z0-9]+$/.test(f('number_prefix'))) {
-          showErr('Prefix must be uppercase letters or numbers (e.g. FM, LR)'); return false;
+          return advancedError('Prefix must be uppercase letters or numbers (e.g. FM, LR)', 'number_prefix');
         }
         for (const field of fields) {
           if (!field.key) { showErr('All fields must have a key'); return false; }
@@ -626,7 +610,7 @@ App.register('form-builder', async (view, filter) => {
   function renderFields(ov, fields) {
     const el = ov.querySelector('#fb-fields-list');
     if (!fields.length) {
-      el.innerHTML = `<div class="muted" style="text-align:center;padding:12px">No fields yet — add one above.</div>`;
+      el.innerHTML = `<div class="fb-empty muted">No fields yet — add one above.</div>`;
       return;
     }
     const typeOptions = ['text', 'number', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee']
@@ -689,7 +673,7 @@ App.register('form-builder', async (view, filter) => {
   function renderActions(ov, actions) {
     const el = ov.querySelector('#fb-actions-list');
     if (!actions.length) {
-      el.innerHTML = `<div class="muted" style="text-align:center;padding:12px">No actions — this form just stores records.</div>`;
+      el.innerHTML = `<div class="fb-empty muted">No actions — this form just stores records.</div>`;
       return;
     }
     const typeOpts = (sel) => ACTION_TYPES

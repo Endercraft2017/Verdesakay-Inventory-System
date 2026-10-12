@@ -334,3 +334,24 @@
 @media (max-width: 600px) { .tk-cutoff-header .tk-cutoff-actions .btn { flex: 1 1 auto; justify-content: center; } }
 /* Direction changes keep a fixed footprint, including numeric sorting labels. */
 #tk-roster-sort-dir { min-width: 86px; justify-content: center; }
+.fb-editor { display: grid; gap: 16px; }
+.fb-section { padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.fb-section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.fb-section-title h3 { margin: 0; font-size: 15px; }
+.fb-scope, .fb-optional { color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.fb-scope { padding: 3px 9px; border-radius: 999px; background: var(--accent-weak); color: var(--accent); }
+.fb-editor label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 650; }
+.fb-editor input { box-sizing: border-box; min-width: 0; }
+.fb-advanced { margin-top: 14px; }
+.fb-editor summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+.fb-settings-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 14px; }
+.fb-actions { background: var(--surface-2); }
+.fb-actions-content { padding-top: 16px; }
+.fb-editor :is(#fb-fields-list, #fb-actions-list) > .empty { padding: 12px; font-size: 12px; border: 1px dashed var(--border); border-radius: 10px; }
+.help-tip { max-width: min(360px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow: auto; box-sizing: border-box; padding: 12px 14px; font-size: 12px; line-height: 1.6; z-index: 300; }
+.help-icon { flex-shrink: 0; margin-left: 4px; vertical-align: middle; }
+.help-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 600px) { .fb-section { padding: 14px; } .fb-settings-grid { grid-template-columns: 1fr; } .fb-section-title { flex-wrap: wrap; } }
+.fb-editor :is(#fb-fields-list, #fb-actions-list) { min-width: 0; overflow-x: auto; }
+.fb-editor #fb-fields-list table { min-width: 650px; }
+.fb-empty { padding: 14px; text-align: center; font-size: 12px; border: 1px dashed var(--border); border-radius: 10px; }
