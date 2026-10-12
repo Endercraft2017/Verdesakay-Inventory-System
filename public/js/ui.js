@@ -282,14 +282,19 @@ const UI = (() => {
     }
     if (currentDrawer) currentDrawer.close();
 
+    const previousFocus = document.activeElement;
+    const descriptions = { notes: 'Private notes, saved to your account.', email: 'Compose a message or manage your mailbox.', scheduler: 'Plan tasks and keep track of due dates.', bookmarks: 'Quick access to your saved pages.', bug: 'Tell us what happened and how to reproduce it.', help: 'Find guidance for this screen and the rest of the app.' };
     const catcher = document.createElement('div');
     catcher.className = 'drawer-catch';
     const el = document.createElement('aside');
     el.className = 'drawer';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', opts.title);
+    el.setAttribute('tabindex', '-1');
     el.innerHTML = `
       <div class="drawer-head">
         ${opts.icon ? icon(opts.icon, 18) : ''}
-        <h3>${esc(opts.title)}</h3>
+        <div class="drawer-heading"><h3>${esc(opts.title)}</h3>${descriptions[opts.key] ? `<p>${esc(descriptions[opts.key])}</p>` : ''}</div>
         <button class="icon-btn drawer-close" data-close aria-label="Close">${icon('close')}</button>
       </div>
       <div class="drawer-body">${opts.bodyHTML || ''}</div>
@@ -297,19 +302,31 @@ const UI = (() => {
     root.appendChild(catcher);
     root.appendChild(el);
 
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const onKey = (e) => {
+      if (document.querySelector('.modal-overlay')) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      if (e.key === 'Tab') {
+        const items = [...el.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')].filter(x => !x.disabled && !x.closest('[hidden], .hidden'));
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && (document.activeElement === first || document.activeElement === el)) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
+    };
     function close() {
       el.classList.remove('open');
       catcher.remove();
       document.removeEventListener('keydown', onKey);
       if (currentDrawer && currentDrawer.el === el) currentDrawer = null;
+      el.inert = true;
+      el.querySelectorAll('[id]').forEach(x => x.removeAttribute('id'));
+      if (previousFocus?.isConnected) previousFocus.focus();
       setTimeout(() => el.remove(), 180); // let the slide-out finish
     }
     catcher.addEventListener('mousedown', close);
     el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
     document.addEventListener('keydown', onKey);
     currentDrawer = { el, key: opts.key, close };
-    requestAnimationFrame(() => el.classList.add('open'));
+    requestAnimationFrame(() => { if (currentDrawer?.el === el) { el.classList.add('open'); el.querySelector('[data-close]').focus(); } });
     if (opts.onOpen) opts.onOpen(el);
     return { el, close };
   }

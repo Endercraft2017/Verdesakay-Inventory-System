@@ -12,6 +12,7 @@
       b.insertAdjacentHTML('afterbegin', UI.icon(TOOL_ICONS[b.dataset.tool] || 'dot'));
       b.addEventListener('click', () => openTool(b.dataset.tool));
     });
+    document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.tool-row-main[role="button"]')) { e.preventDefault(); e.target.click(); } });
     wireBookmarkContextMenu();
     const fab = document.getElementById('ai-fab');
     if (fab) {
@@ -534,7 +535,7 @@
       }
       listEl.innerHTML = notes.map((n) => `
         <div class="tool-row" data-id="${n.id}">
-          <div class="tool-row-main" data-edit="${n.id}">
+          <div class="tool-row-main" role="button" tabindex="0" data-edit="${n.id}">
             <div class="tool-row-title">${UI.esc(n.title || 'Untitled')}</div>
             <div class="tool-row-sub">${UI.esc((n.body || '').slice(0, 90))}</div>
           </div>
@@ -606,6 +607,7 @@
       listEl.querySelectorAll('[data-del]').forEach((b) =>
         b.onclick = async () => { await API.del('/tasks/' + b.dataset.del); refresh(); });
     }
+    d.el.querySelector('#task-title').setAttribute('aria-label', 'Task title');
     d.el.querySelector('#task-add').addEventListener('submit', async (e) => {
       e.preventDefault();
       const title = d.el.querySelector('#task-title').value.trim();
@@ -638,7 +640,7 @@
       }
       listEl.innerHTML = bms.map((b) => `
         <div class="tool-row" data-id="${b.id}">
-          <div class="tool-row-main" data-go="${b.id}">
+          <div class="tool-row-main" role="button" tabindex="0" data-go="${b.id}">
             <div class="tool-row-title">${UI.icon('bookmark', 13)} ${UI.esc(b.label)}</div>
           </div>
           <button class="icon-btn danger" data-del="${b.id}" title="Delete">${UI.icon('trash', 16)}</button>
