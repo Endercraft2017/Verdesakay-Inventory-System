@@ -935,3 +935,9 @@ The native browser adapter remains behind this registry until the document-model
 Clipboard copy/paste round-trips field tokens instead of editor markup; normal cut is a
 command transaction and tracked cut/paste retains the review handler. Table/list Tab and
 atomic-token navigation extend the same keyboard editing pipeline without schema changes.
+
+`public/js/doc-model.js` belongs to the core document studio: typed node categories,
+canonical HTML adapters and immutable paragraph-alignment changes. It preserves unknown
+content and keeps live DOM/path maps ephemeral. The editor patches alignment attributes
+in place; existing HTML snapshots, field rendering and API publication remain authoritative.
+Tests: doc-model, doc-model-templates and the model-backed doc-editor-commands fixtures.

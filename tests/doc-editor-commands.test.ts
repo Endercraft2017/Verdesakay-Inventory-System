@@ -2,12 +2,14 @@ import {describe,it,expect,vi,afterEach} from 'vitest';
 import fs from 'node:fs';
 import {JSDOM} from 'jsdom';
 const source=fs.readFileSync(new URL('../public/js/doc-editor.js',import.meta.url),'utf8');
+const modelSource=fs.readFileSync(new URL('../public/js/doc-model.js',import.meta.url),'utf8');
 const uiSource=fs.readFileSync(new URL('../public/js/ui.js',import.meta.url),'utf8');
 const windows:JSDOM[]=[];
 afterEach(()=>windows.splice(0).forEach(dom=>dom.window.close()));
-function setup(body='<p>Original content</p>'){
+function setup(body='<p>Original content</p>',withModel=false){
  const dom=new JSDOM('<div id="view"></div><div id="modal-root"></div><div id="toasts"></div>',{url:'https://studio.test',runScripts:'dangerously',pretendToBeVisual:true});windows.push(dom);
  const w=dom.window as any;w.eval(uiSource+';window.UI=UI;');w.UI.confirmDialog=vi.fn(async()=>true);
+ if(withModel)w.eval(modelSource);
  w.document.execCommand=vi.fn(()=>true);w.document.queryCommandState=vi.fn(()=>false);w.eval(source);
  const ed=w.DocEditor.open({name:'Commands',body,getVariables:()=>[],onSave:()=>true});
  const root=w.document.querySelector('.doc-surface');
@@ -100,6 +102,13 @@ describe('document command dispatch',()=>{
   const {w,root,ed,select}=setup('<p>Before {{name}}after</p>');let paragraph=root.querySelector('p');select(paragraph.lastChild,0,0);
   root.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));expect(root.querySelector('.doc-chip')).toBeNull();
   ed._history.undo();paragraph=root.querySelector('p');expect(paragraph.querySelector('.doc-chip')).not.toBeNull();expect(w.getSelection().isCollapsed).toBe(true);expect(w.getSelection().anchorNode).toBe(paragraph.lastChild);expect(w.getSelection().anchorOffset).toBe(0);
+ });
+
+ it('runs paragraph alignment on the model without execCommand and preserves fields and history',()=>{
+  const {w,doc,root,ed,select}=setup('<p>Original {{name}}</p><p>Other</p>',true);select(root.querySelector('p').firstChild,8,0);doc.execCommand.mockClear();doc.queryCommandState.mockImplementation(()=>{throw Error('Native state unavailable');});
+  expect(ed.commands.run('paragraph.center')).toBe(true);expect(doc.execCommand).not.toHaveBeenCalled();expect(root.querySelector('p').style.textAlign).toBe('center');expect(root.querySelectorAll('p')[1].style.textAlign).toBe('');expect(root.querySelector('.doc-chip').dataset.token).toBe('name');
+  expect(ed.commands.state('paragraph.center').active).toBe(true);expect(w.getSelection().anchorOffset).toBe(8);expect(w.getSelection().focusOffset).toBe(0);
+  ed._history.undo();expect(root.querySelector('p').style.textAlign).toBe('');ed._history.redo();expect(root.querySelector('p').style.textAlign).toBe('center');expect(root.querySelector('.doc-chip').dataset.token).toBe('name');
  });
 
 });

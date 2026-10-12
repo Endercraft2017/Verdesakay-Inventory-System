@@ -93,3 +93,11 @@ atomic field chips. Plain text uses a text command. Cut and adjacent-token delet
 undoable transactions and respect locked selections. Tab changes list nesting or navigates
 table cells (including merged cells), adding a data row at the table's end. Native Enter
 continues/exits lists. Tracked structural/token edits remain outside the review scope.
+
+## Document model foundation
+
+A versioned browser model and canonical HTML adapters preserve fields, repeat rows,
+unknown HTML, SVG, sections/design pages and review/notes markup. Paragraph alignment
+uses immutable model changes and patches live attributes without replacing text/chip nodes.
+Existing HTML remains the saved representation. Model-backed typing, inline formatting,
+semantic ranges and layout are subsequent slices; this is not a full engine replacement.

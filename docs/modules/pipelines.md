@@ -752,3 +752,8 @@ Clipboard serialization writes canonical HTML/plain bindings and paste restores 
 chips after sanitization. List Tab changes level; table Tab traverses merged physical
 cells and creates an undoable data row at the end. Token boundary movement/deletion
 operates on whole chips and respects the review/locked-content guards.
+
+Model-backed paragraph alignment captures the current document into versioned nodes,
+resolves selected paragraph paths, rejects locked ancestors, creates an immutable model
+change and patches only changed style attributes. Existing caret/history and shared
+publication then persist canonical HTML. Unknown markup and opaque SVG remain preserved.

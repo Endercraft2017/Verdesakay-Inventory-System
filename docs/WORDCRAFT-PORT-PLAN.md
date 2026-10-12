@@ -33,8 +33,8 @@ The initial browser-history adaptation is independently implemented against our 
 
 | Phase | Work | Acceptance gate | Status |
 |---|---|---|---|
-| 1. Editing foundation | Selection bookmarks, input transactions, composition safety, command dispatch, shortcuts, reliable clipboard and list editing | Undo/redo restores content and selection; unrelated edits are separate; IME creates one edit; chips survive; browser and regression checks pass | Slices 1–3 verified; acceptance consolidation next |
-| 2. Document model and formatting | Typed blocks/runs, styles and inheritance, semantic positions, HTML adapters, progressively replace execCommand | Existing template corpus round-trips without lost fields/styles; commands work without DOM-dependent state | Planned |
+| 1. Editing foundation | Selection bookmarks, input transactions, composition safety, command dispatch, shortcuts, reliable clipboard and list editing | Undo/redo restores content and selection; unrelated edits are separate; IME creates one edit; chips survive; browser and regression checks pass | Editing foundation verified; model work underway |
+| 2. Document model and formatting | Typed blocks/runs, styles and inheritance, semantic positions, HTML adapters, progressively replace execCommand | Existing template corpus round-trips without lost fields/styles; commands work without DOM-dependent state | In progress: adapters and paragraph alignment |
 | 3. Tables and page layout | Word-style cell/row/column commands, split/merge, repeat headers, sizing, section/page flow, wrapping and running content | Table and section fixtures match preview/print; no lost rows, extra blank sheets or multipage grids | Planned |
 | 4. Review and references | Structural/format revisions, comments anchored to model positions, footnotes/endnotes, references and contents | Accept/reject and undo preserve structure; references survive save/reopen and print | Planned |
 | 5. Document interoperability | DOCX model mapping and round-trip corpus; explicit unsupported-feature preservation/reporting | Real Word/Docs/LibreOffice fixtures inspected for content and page fidelity; originals recoverable | Planned |
@@ -146,3 +146,47 @@ changes on production; the editor model and storage schema are unchanged by this
 
 Final integration check: typecheck passes and all 74 tests across the seven affected
 editor/collaboration, notes, HR, sync and unit files pass.
+
+
+### Phase 1 acceptance handoff
+
+Existing acceptance fixtures now cover selection-aware history, composition, command and
+modal focus, clipboard tokens, list/table keyboard editing, locking, shared save and print.
+Phase 1's browser foundation is verified. Composition with tracked changes and structural
+tracking remain explicitly deferred to the review/model phases.
+
+### Phase 2, slice 1 — model and HTML preservation foundation
+
+New module: `public/js/doc-model.js`, loaded before the editor on desktop.
+- Versioned document nodes classify paragraphs, runs, fields, lists, tables/cells, pages,
+  sections and images. Unknown elements/attributes and non-HTML namespaces remain present;
+  SVG is opaque until supported object commands arrive.
+- Canonical HTML import/export preserves field/control tokens, row loops, image bindings,
+  styles, sections, design pages, revisions and notes. Temporary field markers avoid HTML
+  table foster-parenting and are never retained in model data or output.
+- Editor capture converts chips/repeat rows to bindings and excludes editor-only controls.
+  DOM references/path maps are ephemeral and never enter the saved document representation.
+- Pure paragraph alignment produces a new model plus changed attributes; the live adapter
+  patches those attributes in place, preserving text nodes, chips and selection direction.
+  Left/center/right/justify commands and their active state use this model for supported
+  paragraph blocks. Existing history, shared save and publication remain the same pipeline.
+- A selection ending at the next paragraph's first text position does not format that
+  otherwise unselected paragraph. Locked ancestors are rejected before any live patch.
+
+Verification: all seeded template field/control sequences survive the adapters; conversions
+are idempotent. Fixtures cover quotes in attributes, CSS URL semicolons, opaque SVG fields,
+unknown comments/attributes, repeat rows, revisions, merged cells, sections and design pages.
+Chromium runs alignment with native alignment deliberately disabled, preserving backwards
+selection/fields and undo/redo, then saves through the real API. Existing print checks pass.
+Full regression: 2,240 tests passed; one stale generated-type ordering mismatch from
+the checklist schema was corrected with db:types. All 24 affected model/editor/corpus
+and database-type tests pass on rerun. Typecheck and model/print browser checks pass.
+
+Limits: preservation is after standard HTML parsing/serialization, not byte-for-byte source
+formatting. HTML remains the persistence and history contract. The model is captured at
+command boundaries; it does not yet own typing, layout, or the full editing session. Other
+formatting commands still use the isolated browser adapter, and freeform text without a
+paragraph block retains that adapter. No database migration or Rust/WASM runtime is added.
+
+Next: phase 2, slice 2 — explicit text positions/ranges, run formatting and inheritance,
+then move inline-formatting commands onto model operations without dropping existing markup.

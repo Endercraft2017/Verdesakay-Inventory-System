@@ -1306,8 +1306,12 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   };
   const commands = createDocCommandRegistry({
     prepare:restoreSel,enabled:editableSelection,
-    native:(cmd,val)=>document.execCommand(cmd,false,val),
-    active:cmd=>{try{return document.queryCommandState(cmd);}catch{return false;}},
+    native:(cmd,val)=>{
+      const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];
+      if(align && window.DocModel){const result=window.DocModel.alignSelection(surface,window.getSelection(),align);if(result!==null)return result;}
+      return document.execCommand(cmd,false,val);
+    },
+    active:cmd=>{const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];if(align&&window.DocModel)return window.DocModel.alignmentActive(surface,window.getSelection(),align);try{return document.queryCommandState(cmd);}catch{return false;}},
     size:value=>{
       const size=Number(value);if(!Number.isFinite(size)||size<1||size>400)return false;
       if(document.execCommand('fontSize',false,'7')===false)return false;

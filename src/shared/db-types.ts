@@ -812,13 +812,13 @@ export interface Messages {
 }
 
 export interface Notes {
-  checklist: Generated<string>;
   id: Generated<number>;
   user_id: number;
   title: string | null;
   body: string;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+  checklist: Generated<string>;
 }
 
 export interface Notifications {
@@ -1339,7 +1339,6 @@ export interface Suppliers {
 }
 
 export interface Tasks {
-  note_id: number | null;
   id: Generated<number>;
   user_id: number;
   title: string;
@@ -1349,6 +1348,7 @@ export interface Tasks {
   remind_sent: Generated<number>;
   done: Generated<number>;
   created_at: Generated<string>;
+  note_id: number | null;
 }
 
 export interface TaxCodes {
