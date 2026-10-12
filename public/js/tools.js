@@ -522,7 +522,7 @@
   function openNotes(noteId) {
     const d = UI.drawer({ key: 'notes', icon: 'note', title: 'Notes', bodyHTML: '<label class="sr-only" for="notes-search">Search notes</label><input id="notes-search" type="search" placeholder="Search notes and checklist items…"><div id="notes-list" aria-live="polite"><div class="empty">Loading…</div></div>', footHTML: `<button class="btn" id="note-new">${UI.icon('plus', 16)} New note / checklist</button>` });
     if (!d) return;
-    const list = d.el.querySelector('#notes-list'); let notes = [];
+    const list = d.el.querySelector('#notes-list'); let notes = []; const pendingNotes = new Set();
     function render() {
       const query = d.el.querySelector('#notes-search').value.trim().toLowerCase();
       const shown = notes.filter(n => [n.title, n.body, ...(n.checklist || []).map(i => i.text)].join(' ').toLowerCase().includes(query));
@@ -536,12 +536,14 @@
       list.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (await UI.confirmDialog('Delete this note? Its scheduled task will remain in Scheduler.', 'Delete')) { try { await API.del('/notes/' + b.dataset.del); await refresh(); } catch (e) { UI.toast(e.message, 'error'); } } });
       list.querySelectorAll('[data-item]').forEach(input => input.onchange = async () => {
         const note = notes.find(n => n.id === Number(input.dataset.note)), items = note.checklist.map(i => ({ ...i }));
-        items[Number(input.dataset.item)].done = input.checked; input.disabled = true;
-        try { await API.put('/notes/' + note.id, { title: note.title, body: note.body, checklist: items }); await refresh(); }
-        catch (e) { input.checked = !input.checked; input.disabled = false; UI.toast(e.message, 'error'); }
+        items[Number(input.dataset.item)].done = input.checked; pendingNotes.add(note.id);
+        input.closest('.note-card').querySelectorAll('input, button').forEach(el => el.disabled = true);
+        try { await API.put('/notes/' + note.id, { title: note.title, body: note.body, checklist: items }); pendingNotes.delete(note.id); await refresh(); }
+        catch (e) { pendingNotes.delete(note.id); render(); UI.toast(e.message, 'error'); }
       });
+      pendingNotes.forEach(id => { const input = list.querySelector(`[data-note="${id}"]`); input?.closest('.note-card').querySelectorAll('input, button').forEach(el => el.disabled = true); });
     }
-    async function refresh() { try { notes = await API.get('/notes'); render(); } catch (e) { list.innerHTML = `<p class="tool-note">${UI.esc(e.message)}</p><button class="btn secondary" id="notes-retry">Try again</button>`; list.querySelector('#notes-retry').onclick = refresh; } }
+    async function refresh() { try { notes = await API.get('/notes'); if (!d.el.inert) render(); } catch (e) { list.innerHTML = `<p class="tool-note">${UI.esc(e.message)}</p><button class="btn secondary" id="notes-retry">Try again</button>`; list.querySelector('#notes-retry').onclick = refresh; } }
     d.el.querySelector('#notes-search').oninput = render;
     d.el.querySelector('#note-new').onclick = () => noteModal(null, refresh);
     refresh().then(() => { if (noteId) { const note = notes.find(n => n.id === Number(noteId)); if (note) noteModal(note, refresh); } });

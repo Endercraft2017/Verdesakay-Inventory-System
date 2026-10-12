@@ -23,3 +23,18 @@ it('creates a checklist-only note, schedules it, and retries scheduling without 
   click('[data-confirm]'); await flush(); expect(calls.filter(c => c.method === 'POST' && c.path === '/notes')).toHaveLength(1); expect(calls[2]!.path).toBe('/notes/12'); expect(w.document.querySelector('.modal-overlay')).toBeNull();
   dom.window.close();
 });
+
+it('prevents rapid checklist clicks from overwriting another in-flight change', async () => {
+  const dom = new JSDOM('<button class="rail-btn" data-tool="notes"></button><div id="drawer-root"></div>', { runScripts: 'outside-only', url: 'https://localhost/' });
+  const w = dom.window as any; await new Promise(r => setTimeout(r, 0));
+  let note = { id: 1, title: 'Checklist', body: '', checklist: [{ id: 'a', text: 'First', done: false }, { id: 'b', text: 'Second', done: false }] };
+  let resolveSave: () => void = () => {}; let writes = 0;
+  w.API = { get: async () => [note], put: async (_p: string, data: any) => { writes++; await new Promise<void>(r => { resolveSave = r; }); note = { ...note, ...data }; } };
+  w.App = { hasPermission: () => true }; w.requestAnimationFrame = (cb: any) => { cb(); return 1; };
+  w.eval(['ui.js', 'tools.js'].map(s => fs.readFileSync(path.join(import.meta.dirname, '../public/js', s), 'utf8')).join('\n;\n'));
+  w.document.dispatchEvent(new w.Event('DOMContentLoaded')); w.document.querySelector('[data-tool]').click();
+  const flush = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0)); }; await flush();
+  w.document.querySelector('[data-item="0"]').click(); expect(w.document.querySelector('[data-item="1"]').disabled).toBe(true); w.document.querySelector('[data-item="1"]').click(); expect(writes).toBe(1);
+  resolveSave(); await flush(); expect(w.document.querySelector('[data-item="0"]').checked).toBe(true); expect(w.document.querySelector('[data-item="1"]').disabled).toBe(false);
+  dom.window.close();
+});
