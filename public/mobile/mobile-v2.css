@@ -672,3 +672,36 @@ button.m-thumb{padding:0;cursor:pointer}
 .m-session-row small { display: block; color: var(--m-muted); font-size: 12px; overflow-wrap: anywhere; }
 .m-session-row .m-btn { flex: none; width: auto; margin: 0; }
 .m-session-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 600; background: var(--v2-warn-soft); color: var(--v2-warn-text); }
+
+/* Shared leave-date controls use the mobile request form's theme and touch sizing. */
+.m-request-form .leave-date-picker {
+  border-color: var(--v2-line) !important;
+  background: var(--v2-surface);
+}
+.m-request-form .leave-date-picker label {
+  display: flex;
+  flex-direction: column;
+  gap: .38rem;
+  color: var(--v2-muted);
+  font-size: .75rem;
+  font-weight: 700;
+}
+.m-request-form .leave-date-picker input[type="date"] {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 44px;
+  padding: .65rem .7rem;
+  border: 1px solid var(--v2-line);
+  border-radius: 12px;
+  background: var(--v2-surface-soft);
+  color: var(--v2-text);
+  color-scheme: light;
+  font: inherit;
+}
+:root[data-theme="dark"] .m-request-form .leave-date-picker input[type="date"] {
+  color-scheme: dark;
+}
+.m-request-form .leave-date-picker input:focus-visible {
+  outline: 2px solid var(--v2-green);
+  outline-offset: 2px;
+}
