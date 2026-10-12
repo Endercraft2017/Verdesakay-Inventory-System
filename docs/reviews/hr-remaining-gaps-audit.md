@@ -2,6 +2,8 @@
 
 Reviewed commit: `fea60c3` on `restructure/module-architecture`. This is a findings report; the defects below are not fixed by this audit.
 
+Remediation: see [HR leave linking and request integrity fixes](hr-leave-linking-fixes.md) for the subsequent implementation and verification.
+
 ## Evidence and boundaries
 
 Nine focused API checks passed against disposable SQLite databases: eight reproduced gaps and one confirmed that approved attendance corrections are applied when a matching cutoff roster is subsequently created. The checks intentionally asserted current defective behavior; their success does not mean the implementation is correct. Code review traced the API effects into the Timekeeping picker and payroll calculation.
