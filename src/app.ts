@@ -5,6 +5,7 @@
 import supportRoutes from './platform/support.routes';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -89,6 +90,36 @@ export function createApp() {
   // time-in) on its own pages only; nothing else (microphone, payment, USB, …).
   app.use((_req, res, next) => {
     res.setHeader('Permissions-Policy', 'camera=(self), geolocation=(self), microphone=(), payment=(), usb=(), serial=(), bluetooth=(), hid=()');
+    next();
+  });
+  // Content-Security-Policy: scripts only from this server, plus inline scripts carrying this
+  // response's nonce (the app shells' theme bootstrap and injected base path, the QuickBooks
+  // callback page). An injected <script> or onclick= therefore never runs. Inline styles stay
+  // allowed — the screens use style="" throughout — which is far less dangerous. Images may come
+  // from any https site (link previews). CSP_MODE=report (log violations in the browser only)
+  // or CSP_MODE=off is the emergency switch if a screen ever breaks.
+  app.use((req, res, next) => {
+    const mode = (process.env.CSP_MODE || 'enforce').toLowerCase();
+    const nonce = crypto.randomBytes(16).toString('base64');
+    res.locals.cspNonce = nonce;
+    if (mode !== 'off') {
+      const host = /^[a-z0-9.:-]+$/i.test(String(req.headers.host || '')) ? String(req.headers.host) : '';
+      res.setHeader(mode === 'report' ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy', [
+        "default-src 'self'",
+        `script-src 'self' 'nonce-${nonce}'`,
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob: https:",
+        "font-src 'self' data:",
+        `connect-src 'self'${host ? ` wss://${host} ws://${host}` : ''}`,
+        "worker-src 'self' blob:",
+        "frame-src 'self' blob: data:",
+        "media-src 'self' blob: data:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'self'",
+      ].join('; '));
+    }
     next();
   });
   // The public site belongs only to the configured cloud apex, never a tenant/node.
@@ -260,7 +291,8 @@ export function createApp() {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => `${tenantStore.getStore()?.slug ?? DEFAULT_TENANT}:${String((req.body as { username?: unknown } | undefined)?.username ?? '').trim().toLowerCase()}`,
-    skip: () => process.env.NODE_ENV === 'test',
+    // The code step (/login/mfa) has no username: its own challenge allows 5 tries (shared/mfa.ts).
+    skip: (req) => process.env.NODE_ENV === 'test' || !(req.body as { username?: unknown } | undefined)?.username,
     message: { error: 'Too many failed sign-ins for this account. Please wait 15 minutes and try again.' },
   });
   // Password recovery sends email and checks reset links: keep it from being used to flood
@@ -420,7 +452,9 @@ export function createApp() {
     // Desktop only: the phone app's service worker caches the plain URLs (src/shared/asset-version.ts).
     const html = (mobile ? raw : versionAssetUrls(raw, path.join(ROOT, 'public'))).replace(/<head>/i,
       `<head><script>window.VDS_BASE_PATH=${JSON.stringify(base)};</script>`)
-      .replace(/\b(src|href)="\/(?!\/)/g, `$1="${base}/`);
+      .replace(/\b(src|href)="\/(?!\/)/g, `$1="${base}/`)
+      // Inline scripts run only with this response's CSP nonce (see the CSP middleware).
+      .replace(/<script>/g, `<script nonce="${String(res.locals.cspNonce || '')}">`);
     res.set('Cache-Control', 'no-cache').type('html').send(html);
   }
   app.get('/index.html', (_req, res) => sendAppShell(res, false));

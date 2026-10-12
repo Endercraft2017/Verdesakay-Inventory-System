@@ -240,6 +240,7 @@ export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
       migrate();
       setSetting('schema_version', SCHEMA_VERSION);
     }
+    hashLegacySessionTokens(conn);
     createStudioSchema(conn);
     createFormTemplateSchema(conn);
     createDocumentDefaultsSchema(conn);
@@ -602,6 +603,47 @@ function createSchema(): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_ai_messages_user ON ai_messages(user_id, id);
+
+    -- A data-changing AI tool call waiting for the person to confirm it (ai.routes.ts): the
+    -- assistant never changes data on its own, so text it reads can't make it act.
+    CREATE TABLE IF NOT EXISTS ai_pending_actions (
+      id          TEXT PRIMARY KEY,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tool        TEXT NOT NULL,
+      args        TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
+      result      TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_at  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_pending_actions_user ON ai_pending_actions(user_id, created_at);
+
+    -- Two-step sign-in (src/core/mfa.ts). secret: the authenticator-app secret, encrypted with
+    -- the server key (shared/secrets.ts); enabled_at NULL while being set up; last_step: the
+    -- last 30-second step accepted, so a code can't be used twice.
+    CREATE TABLE IF NOT EXISTS user_mfa (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      secret     TEXT NOT NULL,
+      enabled_at TEXT,
+      last_step  INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    -- One-time recovery codes (SHA-256 of each; shown to the person once).
+    CREATE TABLE IF NOT EXISTS user_mfa_recovery (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code_hash TEXT NOT NULL,
+      used_at   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_mfa_recovery_user ON user_mfa_recovery(user_id);
+    -- "Password accepted, now the code": a short-lived challenge from POST /auth/login.
+    CREATE TABLE IF NOT EXISTS mfa_challenges (
+      token_hash TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      shared     INTEGER NOT NULL DEFAULT 0,
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT NOT NULL
+    );
 
     CREATE TABLE IF NOT EXISTS orders (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3041,10 +3083,14 @@ function seed(): void {
       .get('Administration') as { id: number } | undefined;
     const password = process.env.ADMIN_PASSWORD || 'admin123';
     const hash = bcrypt.hashSync(password, 10);
+    // A default / bootstrap password is known to whoever installed the server, so the first
+    // sign-in must replace it (the server allows nothing else until then — shared/auth.ts).
+    // Tests sign in as this account directly. Provisioning clears the flag when the operator
+    // sets the owner's own password (platform/provisioning.ts).
     db.prepare(
-      `INSERT INTO users (username, full_name, password_hash, role, department_id)
-       VALUES (?, ?, ?, 'admin', ?)`
-    ).run('admin', 'System Administrator', hash, adminDept ? adminDept.id : null);
+      `INSERT INTO users (username, full_name, password_hash, role, department_id, password_change_required)
+       VALUES (?, ?, ?, 'admin', ?, ?)`
+    ).run('admin', 'System Administrator', hash, adminDept ? adminDept.id : null, process.env.NODE_ENV === 'test' ? 0 : 1);
 
     if (!process.env.DB_PATH) {
       // Only print credentials for a real server start, not during tests.
@@ -3052,7 +3098,7 @@ function seed(): void {
       console.log('  Default admin account created:');
       console.log('     username: admin');
       console.log(`     password: ${password}`);
-      console.log('  >> Log in and change this password immediately. <<');
+      console.log('  >> You will be asked to choose a new password at first sign-in. <<');
       console.log('========================================================');
     }
   }
@@ -4011,6 +4057,31 @@ export function cleanupSessions(): void {
 
 export function newToken(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+/** What is stored for a bearer token (sessions, platform_sessions): its SHA-256, prefixed so a
+ *  stored value can never be mistaken for — or presented as — a raw token. A copy of the
+ *  database then holds no usable sign-in. */
+export const TOKEN_DIGEST_PREFIX = 'h1:';
+export function tokenDigest(token: string): string {
+  return TOKEN_DIGEST_PREFIX + crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/** One-time, idempotent: sessions stored before tokens were hashed get their digest, so
+ *  everyone stays signed in across the upgrade. Rows already prefixed are skipped. */
+export function hashLegacySessionTokens(conn: DatabaseSync, table = 'sessions'): number {
+  const rows = conn.prepare(`SELECT rowid AS r, token FROM ${table} WHERE token NOT LIKE '${TOKEN_DIGEST_PREFIX}%'`).all() as Array<{ r: number; token: string }>;
+  if (!rows.length) return 0;
+  const update = conn.prepare(`UPDATE ${table} SET token = ? WHERE rowid = ?`);
+  conn.exec('BEGIN');
+  try {
+    for (const row of rows) update.run(tokenDigest(row.token), row.r);
+    conn.exec('COMMIT');
+  } catch (e) {
+    conn.exec('ROLLBACK');
+    throw e;
+  }
+  return rows.length;
 }
 
 function ensureUploadDir(): void {

@@ -218,8 +218,9 @@ App.register('production-batches', async (view, filter) => {
           .lbl{width:52mm;height:30mm;border:1px solid #ddd;border-radius:2mm;display:flex;gap:2mm;padding:2mm;align-items:center;page-break-inside:avoid;overflow:hidden}
           .lbl-qr{width:26mm;height:26mm;flex:none}.lbl-txt{overflow:hidden;font-size:9pt;line-height:1.2}
           .lbl-name{font-weight:700}.lbl-variant{font-size:8.5pt}.lbl-code{font-family:ui-monospace,monospace;font-size:8pt;word-break:break-all}.lbl-sub{color:#888;font-size:7.5pt}
-        </style></head><body><div class="sheet">${Array(n).fill(cell).join('')}</div><script>window.onload=function(){window.print()}<\/script></body></html>`);
+        </style></head><body><div class="sheet">${Array(n).fill(cell).join('')}</div></body></html>`);
         w.document.close();
+        UI.printWhenLoaded(w);
         UI.toast(`${n} label${n === 1 ? '' : 's'} ready`);
       },
     });

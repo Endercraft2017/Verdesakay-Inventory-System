@@ -55,6 +55,17 @@ export interface AiMessages {
   created_at: Generated<string>;
 }
 
+export interface AiPendingActions {
+  id: string;
+  user_id: number;
+  tool: string;
+  args: string;
+  status: Generated<string>;
+  result: string | null;
+  created_at: Generated<string>;
+  decided_at: string | null;
+}
+
 export interface Announcements {
   id: Generated<number>;
   title: string;
@@ -811,6 +822,14 @@ export interface Messages {
   deleted_by: number | null;
 }
 
+export interface MfaChallenges {
+  token_hash: string;
+  user_id: number;
+  shared: Generated<number>;
+  attempts: Generated<number>;
+  expires_at: string;
+}
+
 export interface Notes {
   id: Generated<number>;
   user_id: number;
@@ -1412,6 +1431,21 @@ export interface TimePunches {
   device_user_id: number | null;
 }
 
+export interface UserMfa {
+  user_id: Generated<number>;
+  secret: string;
+  enabled_at: string | null;
+  last_step: Generated<number>;
+  created_at: Generated<string>;
+}
+
+export interface UserMfaRecovery {
+  id: Generated<number>;
+  user_id: number;
+  code_hash: string;
+  used_at: string | null;
+}
+
 export interface Users {
   id: Generated<number>;
   username: string;
@@ -1474,6 +1508,7 @@ export interface DB {
   accounts: Accounts;
   activity_log: ActivityLog;
   ai_messages: AiMessages;
+  ai_pending_actions: AiPendingActions;
   announcements: Announcements;
   anonymous_report_aliases: AnonymousReportAliases;
   anonymous_report_attachments: AnonymousReportAttachments;
@@ -1537,6 +1572,7 @@ export interface DB {
   message_attachments: MessageAttachments;
   message_reactions: MessageReactions;
   messages: Messages;
+  mfa_challenges: MfaChallenges;
   notes: Notes;
   notifications: Notifications;
   order_items: OrderItems;
@@ -1586,6 +1622,8 @@ export interface DB {
   time_corrections: TimeCorrections;
   time_punch_holds: TimePunchHolds;
   time_punches: TimePunches;
+  user_mfa: UserMfa;
+  user_mfa_recovery: UserMfaRecovery;
   users: Users;
   vendor_bill_items: VendorBillItems;
   vendor_bills: VendorBills;

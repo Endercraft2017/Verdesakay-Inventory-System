@@ -1,6 +1,7 @@
 /**
  * Session-token authentication and role-based access middleware.
- * Tokens are random 256-bit strings stored in the `sessions` table with a 12-hour expiry.
+ * Tokens are random 256-bit strings with a 12-hour expiry. Only their digest (tokenDigest) is
+ * stored in `sessions`, so a copy of the database holds no usable sign-in.
  *
  * Each session also records where it was signed in (device ID, IP, user agent — see
  * device.ts) and when it was last used. Signing out ENDS the row (ended_at + end_reason)
@@ -14,11 +15,12 @@
  */
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
-import { db, newToken } from './db';
+import { db, newToken, tokenDigest } from './db';
 import type { AuthUser, AuthSession, Role } from './types';
 import { userPermissions } from './roles';
 import { deviceIdOf, clientIpOf, userAgentOf, deviceLabel } from './device';
 import { syncHooks } from './sync-context';
+import { mfaSetupRequired } from './mfa';
 
 const SESSION_HOURS = 12;
 export const SHARED_SESSION_HOURS = 4;
@@ -57,7 +59,7 @@ export function createSession(userId: number, opts: { req?: Request; shared?: bo
     `INSERT INTO sessions (token, sid, user_id, expires_at, device_id, ip, user_agent, last_seen_at, last_ip, shared, idle_minutes)
      VALUES (?, ?, ?, datetime('now', '+${hours} hours'), ?, ?, ?, datetime('now'), ?, ?, ?)`
   ).run(
-    token, sid, userId,
+    tokenDigest(token), sid, userId,
     opts.req ? deviceIdOf(opts.req) : null, ip, opts.req ? userAgentOf(opts.req) : null, ip,
     shared, shared ? SHARED_IDLE_MINUTES : null
   );
@@ -68,7 +70,7 @@ export function createSession(userId: number, opts: { req?: Request; shared?: bo
 export function endSession(token: string, reason: SessionEndReason): void {
   db.prepare(
     "UPDATE sessions SET ended_at = datetime('now'), end_reason = ? WHERE token = ? AND ended_at IS NULL"
-  ).run(reason, token);
+  ).run(reason, tokenDigest(token));
 }
 
 /** Sign-out of the current session. */
@@ -81,7 +83,7 @@ export function endUserSessions(userId: number, reason: SessionEndReason, except
   const info = db.prepare(
     `UPDATE sessions SET ended_at = datetime('now'), end_reason = ?
      WHERE user_id = ? AND ended_at IS NULL AND token != ?`
-  ).run(reason, userId, exceptToken ?? '');
+  ).run(reason, userId, exceptToken ? tokenDigest(exceptToken) : '');
   return Number(info.changes);
 }
 
@@ -109,7 +111,7 @@ function resolveSession(token: string | null, allowPasswordChange = false): { us
          AND (s.idle_minutes IS NULL
               OR COALESCE(s.last_seen_at, s.created_at) >= datetime('now', '-' || s.idle_minutes || ' minutes'))`
     )
-    .get(token) as UserSessionRow | undefined;
+    .get(tokenDigest(token)) as UserSessionRow | undefined;
   if (!row || row.active !== 1) return null;
   if (row.password_change_required && !allowPasswordChange) return null;
   if (row.password_change_required && (row.temporary_password_expires_at && Date.parse(row.temporary_password_expires_at) <= Date.now())) return null;
@@ -153,7 +155,7 @@ function touchSession(token: string, session: AuthSession, ip: string | null): v
     || Date.now() - new Date(session.last_seen_at.replace(' ', 'T') + 'Z').getTime() >= TOUCH_SECONDS * 1000;
   if (!stale && ip === session.last_ip) return;
   try {
-    db.prepare("UPDATE sessions SET last_seen_at = datetime('now'), last_ip = ? WHERE token = ?").run(ip, token);
+    db.prepare("UPDATE sessions SET last_seen_at = datetime('now'), last_ip = ? WHERE token = ?").run(ip, tokenDigest(token));
   } catch { /* bookkeeping must never fail a request */ }
 }
 
@@ -181,6 +183,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   if (resolved.user.password_change_required && !(req.baseUrl === '/api/auth' &&
       ((req.method === 'GET' && req.path === '/me') || (req.method === 'POST' && ['/change-password', '/logout'].includes(req.path))))) {
     res.status(403).json({ error: 'Choose a new password before accessing your workspace.', password_change_required: true }); return;
+  }
+  // Workspace requires two-step sign-in for this (privileged) account and it isn't set up yet:
+  // only the set-up screens until it is (shared/mfa.ts).
+  if (mfaSetupRequired(resolved.user) && !(req.baseUrl === '/api/auth' &&
+      ((req.method === 'GET' && ['/me', '/mfa'].includes(req.path)) ||
+       (req.method === 'POST' && ['/mfa/setup', '/mfa/enable', '/logout'].includes(req.path))))) {
+    res.status(403).json({ error: 'Set up two-step sign-in before using the workspace.', mfa_setup_required: true }); return;
   }
   touchSession(token, resolved.session, clientIpOf(req));
   req.user = resolved.user;
@@ -234,7 +243,7 @@ export function listUserSessions(userId: number, opts: { currentToken?: string; 
     .filter((r) => opts.includeEnded || !r.ended_at)
     .map((r) => ({
       id: r.sid,
-      current: !!opts.currentToken && r.token === opts.currentToken,
+      current: !!opts.currentToken && r.token === tokenDigest(opts.currentToken),
       device: deviceLabel(r.user_agent),
       device_id: r.device_id,
       shared: r.shared === 1,

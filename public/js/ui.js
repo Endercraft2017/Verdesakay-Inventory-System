@@ -433,6 +433,16 @@ const UI = (() => {
     @media screen { body { padding:24px; background:#eef0f3; } .doc-print-content { background:#fff; margin:0 auto; } }
   `;
 
+  /** Print a pop-up written with document.write() once its images / SVGs have loaded. It is
+      triggered from this page (the opener): a <script> inside the written document would be
+      blocked by the Content-Security-Policy, which about:blank windows inherit. */
+  function printWhenLoaded(w) {
+    let done = false;
+    const go = () => { if (done) return; done = true; try { w.focus(); w.print(); } catch (e) { /* closed */ } };
+    if (w.document.readyState === 'complete') setTimeout(go, 50);
+    else { w.addEventListener('load', go, { once: true }); setTimeout(go, 1500); }
+  }
+
   /** Same content typography in the editor and standalone output. Saved float
    * percentages use the full paper as their reference, while print @page margins
    * leave a smaller content box: translate those coordinates into physical units. */
@@ -717,7 +727,7 @@ const UI = (() => {
 
   return {
     esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
-    drawer, contextMenu, closeContextMenu, printableHtml, documentCss, loadPrintFrame, printFrame, combo,
+    drawer, contextMenu, closeContextMenu, printableHtml, printWhenLoaded, documentCss, loadPrintFrame, printFrame, combo,
     icon, helpIcon, emptyState, fileIconName, downloadCsv, csvImportModal,
   };
 })();

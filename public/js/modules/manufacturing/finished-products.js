@@ -501,8 +501,9 @@ App.register('finished-products', async (view, filter) => {
     const w = window.open('', '_blank');
     if (!w) { showErr && showErr('Allow pop-ups to open the print sheet'); return false; }
     w.document.write(`<!doctype html><html><head><title>${UI.esc(title)}</title><style>${LABEL_SHEET_CSS}</style></head>`
-      + `<body><div class="sheet">${cells.join('')}</div><script>window.onload=function(){window.print()}<\/script></body></html>`);
+      + `<body><div class="sheet">${cells.join('')}</div></body></html>`);
     w.document.close();
+    UI.printWhenLoaded(w);
     return true;
   }
 

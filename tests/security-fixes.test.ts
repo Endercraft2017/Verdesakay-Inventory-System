@@ -99,3 +99,24 @@ describe('idempotency replay (L5)', () => {
     expect(anonymous.status).toBe(401);
   });
 });
+
+describe('Content-Security-Policy (M3)', () => {
+  it('allows only this server\'s scripts plus the page\'s own nonce', async () => {
+    for (const page of ['/index.html', '/mobile/index.html']) {
+      const res = await ctx.api.get(page);
+      const csp = String(res.headers['content-security-policy'] || '');
+      const nonce = /'nonce-([^']+)'/.exec(csp)?.[1];
+      expect(nonce, page).toBeTruthy();
+      expect(csp).toContain("script-src 'self' 'nonce-");
+      expect(csp).toContain("object-src 'none'");
+      expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
+      // Every inline <script> in the shell carries this response's nonce; none is left bare.
+      expect(res.text).not.toMatch(/<script>/);
+      expect(res.text).toContain(`<script nonce="${nonce}">`);
+    }
+    // A fresh nonce per response.
+    const a = String((await ctx.api.get('/index.html')).headers['content-security-policy']);
+    const b = String((await ctx.api.get('/index.html')).headers['content-security-policy']);
+    expect(a).not.toBe(b);
+  });
+});

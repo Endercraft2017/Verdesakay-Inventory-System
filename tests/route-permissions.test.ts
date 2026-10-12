@@ -36,6 +36,8 @@ const ROUTE_REASONS: Record<string, string> = {
   'src/modules/ai/ai.routes.ts:get /messages': "the caller's own assistant chat",
   'src/modules/ai/ai.routes.ts:delete /messages': "the caller's own assistant chat",
   'src/modules/ai/ai.routes.ts:post /chat': 'each tool checks its own permission (ai-tools.ts TOOL_PERMISSION)',
+  'src/modules/ai/ai.routes.ts:post /actions/:id/confirm': "the caller's own prepared action; executeTool re-checks the tool's permission",
+  'src/modules/ai/ai.routes.ts:post /actions/:id/cancel': "the caller's own prepared action",
   'src/modules/hr/clock.routes.ts:post /punch': 'Clock is for every employee (their own punch)',
   'src/modules/hr/clock.routes.ts:get /my-status': "the caller's own clock status",
   'src/modules/inventory/orders.routes.ts:get /': 'orders.view / purchasing.view per order type, checked inside (order-access.ts)',

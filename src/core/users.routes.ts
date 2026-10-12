@@ -19,6 +19,8 @@ import { ALL_PERMISSIONS, STAFF_PERMISSIONS } from '../shared/permissions';
 import { listRoles, getRole } from '../shared/roles';
 import type { UserRow, Department, Role } from '../shared/types';
 import { syncClass } from '../sync';
+import { z } from 'zod';
+import { mfaApplies, mfaEnabled, mfaUserIds, securityPolicy, setSecurityPolicy, disableMfa } from '../shared/mfa';
 
 const router = Router();
 router.use(requireAuth);
@@ -61,7 +63,36 @@ router.get('/', (req, res) => {
     );
     return;
   }
-  res.json(rows);
+  const withMfa = mfaUserIds();
+  res.json(rows.map((u) => ({ ...u, mfa_enabled: withMfa.has(u.id) })));
+});
+
+// GET /api/users/security-policy — workspace sign-in rules (shared/mfa.ts).
+router.get('/security-policy', requirePermission('users.manage'), (req, res) => {
+  res.json({ ...securityPolicy(), available: mfaApplies(), you_have_mfa: mfaEnabled(req.user!.id) });
+});
+
+// PUT /api/users/security-policy — { require_mfa_privileged }. Switching the requirement on is
+// refused until the person doing it uses two-step sign-in themselves, so the workspace can't be
+// locked out by its own admin.
+router.put('/security-policy', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+  const { require_mfa_privileged } = parseBody(z.object({ require_mfa_privileged: z.boolean() }), req.body);
+  if (require_mfa_privileged && !mfaEnabled(req.user!.id)) {
+    res.status(409).json({ error: 'Turn on two-step sign-in for your own account first (Account → Two-step sign-in).' });
+    return;
+  }
+  setSecurityPolicy({ require_mfa_privileged });
+  res.json({ ok: true, require_mfa_privileged });
+});
+
+// POST /api/users/:id/mfa/reset — someone lost their phone: remove their two-step sign-in so
+// they can set it up again (and sign them out everywhere).
+router.post('/:id/mfa/reset', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT 1 AS x FROM users WHERE id = ?', id)) { res.status(404).json({ error: 'User not found' }); return; }
+  disableMfa(id);
+  endUserSessions(id, 'revoked');
+  res.json({ ok: true });
 });
 
 // POST /api/users — create an account. hr.manage (without users.manage) may also create one —

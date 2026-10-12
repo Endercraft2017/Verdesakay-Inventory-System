@@ -348,6 +348,23 @@ completely apart.
 4. Open `https://console.afkcube.com/_platform` and sign in again. `otom.afkcube.com/_platform`
    now answers "Not found", which is intended.
 
+### 21. Turn on two-step sign-in (5 min)
+1. Sign in to the company app → **Account** → **Two-step sign-in** → **Turn on**. Scan the QR code
+   with an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password),
+   type the code, and **save the 10 recovery codes** (password manager or printed).
+2. **Accounts & Roles** → **Sign-in security** → tick **Require two-step sign-in** → Save. From
+   then on every admin and anyone who manages accounts, payroll or accounting must set it up at
+   their next sign-in (on desktop or phone) before they can use the app. You can only switch this on
+   after step 1, so you can never lock yourself out.
+3. Lost phone: an admin opens **Accounts & Roles**, finds the person (badge **2-step**) and clicks
+   **Reset 2-step**; they sign in with their password and set it up again. A recovery code also works.
+
+Installed office PCs sign in with the password alone; two-step sign-in applies online.
+
+Owner console password: `PLATFORM_ADMIN_PASSWORD` is written over the console owner's password on
+every restart (`seedPlatformUserFromEnv`). Once you have signed in, change the console password and
+remove `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` from Railway, or every deploy resets it.
+
 ### Settings you can change
 | Variable | Default | What it does |
 |---|---|---|
@@ -357,3 +374,4 @@ completely apart.
 | `BACKUP_ALERT_REPEAT_HOURS` | 12 | Repeat an unresolved alert this often |
 | `ACTIVITY_LOG_RETENTION_DAYS` | 1827 (5 years) | How long the audit trail is kept (minimum 31) |
 | `CLIENT_IP_HEADER` | `x-real-ip` on Railway, none elsewhere | Header holding the visitor's IP (rate limits, sign-in history). Only set it to a header your edge proxy overwrites |
+| `CSP_MODE` | `enforce` | Content-Security-Policy: `report` only logs violations in the browser, `off` removes it. Emergency switch if a screen ever breaks |

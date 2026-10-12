@@ -8,6 +8,7 @@ let run: typeof import('../src/shared/db').run;
 let queryOne: typeof import('../src/shared/db').queryOne;
 let queryAll: typeof import('../src/shared/db').queryAll;
 let cleanupSessions: typeof import('../src/shared/db').cleanupSessions;
+let tokenDigest: typeof import('../src/shared/db').tokenDigest;
 let currentKioskCode: typeof import('../src/modules/hr/clock').currentKioskCode;
 let deviceLabel: typeof import('../src/shared/device').deviceLabel;
 
@@ -21,7 +22,7 @@ const BEN_PHONE = 'dev-ben-phone-0001';
 
 beforeAll(async () => {
   ctx = await setupApp();
-  ({ run, queryOne, queryAll, cleanupSessions } = await import('../src/shared/db'));
+  ({ run, queryOne, queryAll, cleanupSessions, tokenDigest } = await import('../src/shared/db'));
   ({ currentKioskCode } = await import('../src/modules/hr/clock'));
   ({ deviceLabel } = await import('../src/shared/device'));
   adminToken = await login(ctx.api);
@@ -52,7 +53,7 @@ describe('sessions', () => {
     const acc = await createEmployee(ctx.api, adminToken);
     const token = await signIn(acc.username, acc.password, 'dev-list-000001', IPHONE_UA);
     const row = queryOne<{ device_id: string; user_agent: string; ip: string | null; sid: string }>(
-      'SELECT device_id, user_agent, ip, sid FROM sessions WHERE token = ?', token
+      'SELECT device_id, user_agent, ip, sid FROM sessions WHERE token = ?', tokenDigest(token)
     )!;
     expect(row.device_id).toBe('dev-list-000001');
     expect(row.user_agent).toContain('iPhone');
@@ -68,7 +69,7 @@ describe('sessions', () => {
   it('a malformed device id is ignored rather than stored', async () => {
     const acc = await createEmployee(ctx.api, adminToken);
     const token = await signIn(acc.username, acc.password, 'bad id <script>');
-    expect(queryOne<{ device_id: string | null }>('SELECT device_id FROM sessions WHERE token = ?', token)!.device_id).toBeNull();
+    expect(queryOne<{ device_id: string | null }>('SELECT device_id FROM sessions WHERE token = ?', tokenDigest(token))!.device_id).toBeNull();
   });
 
   it('logout ends the session but keeps it as history', async () => {
@@ -76,7 +77,7 @@ describe('sessions', () => {
     const token = await signIn(acc.username, acc.password, 'dev-logout-0001');
     expect((await ctx.api.post('/api/auth/logout').set(B(token))).status).toBe(200);
     expect((await ctx.api.get('/api/auth/me').set(B(token))).status).toBe(401);
-    const row = queryOne<{ ended_at: string | null; end_reason: string }>('SELECT ended_at, end_reason FROM sessions WHERE token = ?', token)!;
+    const row = queryOne<{ ended_at: string | null; end_reason: string }>('SELECT ended_at, end_reason FROM sessions WHERE token = ?', tokenDigest(token))!;
     expect(row.ended_at).toBeTruthy();
     expect(row.end_reason).toBe('logout');
 
@@ -109,7 +110,7 @@ describe('sessions', () => {
   it("cannot sign out someone else's session by id", async () => {
     const a = await createEmployee(ctx.api, adminToken);
     const b = await createEmployee(ctx.api, adminToken);
-    const bSid = queryOne<{ sid: string }>('SELECT sid FROM sessions WHERE token = ?', b.token)!.sid;
+    const bSid = queryOne<{ sid: string }>('SELECT sid FROM sessions WHERE token = ?', tokenDigest(b.token))!.sid;
     expect((await ctx.api.post(`/api/auth/sessions/${bSid}/revoke`).set(B(a.token))).status).toBe(404);
     expect((await ctx.api.get('/api/auth/me').set(B(b.token))).status).toBe(200);
   });
@@ -121,7 +122,7 @@ describe('sessions', () => {
       .send({ current_password: acc.password, new_password: 'newsecret1' });
     expect(res.status).toBe(200);
     expect((await ctx.api.get('/api/auth/me').set(B(other))).status).toBe(401);
-    expect(queryOne<{ end_reason: string }>('SELECT end_reason FROM sessions WHERE token = ?', other)!.end_reason).toBe('password');
+    expect(queryOne<{ end_reason: string }>('SELECT end_reason FROM sessions WHERE token = ?', tokenDigest(other))!.end_reason).toBe('password');
     expect((await ctx.api.get('/api/auth/me').set(B(acc.token))).status).toBe(200);
   });
 
@@ -141,7 +142,7 @@ describe('borrowed-phone sign-in', () => {
     const acc = await createEmployee(ctx.api, adminToken);
     const token = await signIn(acc.username, acc.password, BEN_PHONE, ANDROID_UA, true);
     const row = queryOne<{ shared: number; idle_minutes: number; hours: number }>(
-      "SELECT shared, idle_minutes, round((julianday(expires_at) - julianday(created_at)) * 24) AS hours FROM sessions WHERE token = ?", token
+      "SELECT shared, idle_minutes, round((julianday(expires_at) - julianday(created_at)) * 24) AS hours FROM sessions WHERE token = ?", tokenDigest(token)
     )!;
     expect(row).toEqual({ shared: 1, idle_minutes: 30, hours: 4 });
     const me = await ctx.api.get('/api/auth/me').set(B(token));
@@ -155,7 +156,7 @@ describe('borrowed-phone sign-in', () => {
   it('times out after 30 idle minutes', async () => {
     const acc = await createEmployee(ctx.api, adminToken);
     const token = await signIn(acc.username, acc.password, BEN_PHONE, ANDROID_UA, true);
-    run("UPDATE sessions SET last_seen_at = datetime('now', '-31 minutes') WHERE token = ?", token);
+    run("UPDATE sessions SET last_seen_at = datetime('now', '-31 minutes') WHERE token = ?", tokenDigest(token));
     expect((await ctx.api.get('/api/auth/me').set(B(token))).status).toBe(401);
     const list = await ctx.api.get('/api/auth/sessions?history=1').set(B(acc.token));
     expect(list.body.find((s: { shared: boolean }) => s.shared)).toMatchObject({ end_reason: 'idle' });
@@ -215,7 +216,7 @@ describe('admin session controls', () => {
     const res = await ctx.api.put(`/api/users/${acc.id}`).set(A())
       .send({ full_name: 'Test Employee', role: 'admin_staff', department_id: null, active: false });
     expect(res.status).toBe(200);
-    expect(queryOne<{ end_reason: string }>('SELECT end_reason FROM sessions WHERE token = ?', acc.token)!.end_reason).toBe('deactivated');
+    expect(queryOne<{ end_reason: string }>('SELECT end_reason FROM sessions WHERE token = ?', tokenDigest(acc.token))!.end_reason).toBe('deactivated');
   });
 });
 

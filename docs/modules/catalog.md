@@ -28,6 +28,10 @@ and 30 min idle; `endUserSessions` / `endSessionBySid` / `listUserSessions` /
 Railway via `CLIENT_IP_HEADER` in `hosting.ts`) and `rateLimitKey` for every rate limiter, and a
 readable user-agent label), `password-policy.ts` (`newPasswordSchema`: 8–128 characters, not on
 the bundled common-password list — used by every password-setting schema in `validation.ts`),
+`totp.ts` (RFC 6238 codes, no dependency) + `mfa.ts` (two-step sign-in: enrol / verify / recovery
+codes / sign-in challenge, `security_policy.require_mfa_privileged` enforced in `requireAuth`; tables
+`user_mfa`, `user_mfa_recovery`, `mfa_challenges`, cloud-only), `db.ts tokenDigest` (sessions and
+owner-console sessions store `h1:`+SHA-256 of the bearer token, never the token),
 `activity.ts` (audit log writer, now with `device_id` + `device` label per row; `logEvent()` for events the
 mutation middleware can't see, e.g. a payslip download; a route may set
 `res.locals.activity = { action, summary, snapshot }` to make its middleware row readable and
@@ -824,6 +828,9 @@ report/docx generation, FTS5 RAG over documents, HR-form proposals, sending mail
 markdown/docx rendering, used only by `ai-reporting.ts` today), routes: `ai.routes.ts`.
 **Dependencies:** `shared/`, `modules/inventory` (`ai-tools.ts` calls stock-mutation
 functions directly), `core/` (the `visibilityClause` wart noted above).
+**Confirm before run:** data-changing / sending tools (`CONFIRM_TOOLS` in `ai.routes.ts`) become
+`ai_pending_actions` rows shown as Confirm / Cancel cards; `POST /ai/actions/:id/confirm` runs one once,
+as the person, with their current permissions (prompt-injection guard).
 **Offline (phase 4i):** `online`: the assistant, its key, history and usage stay on the cloud (D8); an
 installed PC says it needs the internet. The search-index rebuild is per copy (no class).
 **Status:** working.

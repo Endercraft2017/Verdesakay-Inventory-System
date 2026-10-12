@@ -40,6 +40,11 @@ App.register('account', async (view) => {
     </div>
 
     <div class="panel" style="max-width:760px;margin-top:18px">
+      <div class="panel-head"><h3>Two-step sign-in</h3></div>
+      <div class="panel-body" id="acc-mfa"><div class="muted">Loading…</div></div>
+    </div>
+
+    <div class="panel" style="max-width:760px;margin-top:18px">
       <div class="panel-head"><h3>Where you're signed in</h3></div>
       <div class="panel-body" id="acc-sessions"></div>
     </div>
@@ -85,6 +90,31 @@ App.register('account', async (view) => {
         </div>`;
     })();
   }
+
+  // Two-step sign-in (lib/mfa.js): an authenticator-app code after the password.
+  async function renderMfa() {
+    const box = view.querySelector('#acc-mfa');
+    let st;
+    try { st = await API.get('/auth/mfa'); } catch (e) { box.innerHTML = `<div class="muted">${UI.esc(e.message)}</div>`; return; }
+    if (!st.available) { box.innerHTML = '<div class="muted">Not used on this installed PC — it applies when you sign in online.</div>'; return; }
+    const left = st.recovery_codes_left;
+    box.innerHTML = st.enabled
+      ? `<p style="margin-top:0"><strong>On.</strong> After your password, you enter a code from your authenticator app.
+          <span class="muted">${left} recovery code${left === 1 ? '' : 's'} left.</span></p>
+         <div style="display:flex;gap:8px;flex-wrap:wrap">
+           <button class="btn secondary" id="mfa-codes">New recovery codes</button>
+           ${st.required ? '<span class="muted" style="align-self:center">Required by your workspace.</span>' : '<button class="btn secondary" id="mfa-off">Turn off</button>'}
+         </div>`
+      : `<p style="margin-top:0"><strong>Off.</strong> Add a code from an authenticator app on your phone, so a stolen
+          password alone can't open your account.</p><button class="btn" id="mfa-on">Turn on</button>`;
+    const on = box.querySelector('#mfa-on');
+    if (on) on.onclick = async () => { if (await Mfa.setup()) { UI.toast('Two-step sign-in is on', 'success'); renderMfa(); } };
+    const off = box.querySelector('#mfa-off');
+    if (off) off.onclick = async () => { if (await Mfa.disable()) { UI.toast('Two-step sign-in is off'); renderMfa(); } };
+    const codes = box.querySelector('#mfa-codes');
+    if (codes) codes.onclick = async () => { await Mfa.newRecoveryCodes(); renderMfa(); };
+  }
+  renderMfa();
 
   // Sessions: live ones (sign out any but this one) + recent history.
   SessionList.render(view.querySelector('#acc-sessions'), {

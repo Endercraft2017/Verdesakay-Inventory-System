@@ -20,8 +20,15 @@ import { currentSlug } from '../platform/quota';
 import { getTenant } from '../platform/platform';
 import type { UserRow } from '../shared/types';
 import { syncClass } from '../sync';
+import { z } from 'zod';
+import {
+  mfaApplies, mfaEnabled, mfaSetupRequired, isPrivileged, securityPolicy, recoveryCodesLeft, startMfaSetup,
+  enableMfa, checkMfaCode, disableMfa, regenerateRecoveryCodes, createMfaChallenge, completeMfaChallenge,
+} from '../shared/mfa';
 
 const router = Router();
+
+const mfaLoginSchema = z.object({ mfa_token: z.string().min(16).max(200), code: z.string().trim().min(6).max(20) });
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
 const RESET_TTL_MIN = 60;
@@ -45,7 +52,29 @@ router.post('/login', (req, res) => {
     return;
   }
 
-  const token = createSession(user.id, { req, shared: !!shared });
+  // Two-step sign-in on: the password alone opens nothing — the app asks for the code next
+  // (POST /login/mfa with this short-lived token). See shared/mfa.ts.
+  if (mfaApplies() && mfaEnabled(user.id)) {
+    res.json({ mfa_required: true, mfa_token: createMfaChallenge(user.id, !!shared) });
+    return;
+  }
+  res.json(signIn(user, req, !!shared));
+});
+
+// POST /api/auth/login/mfa — { mfa_token, code }: the second step (authenticator code or a
+// recovery code). Same answer as /login on success.
+router.post('/login/mfa', syncClass('online'), (req, res) => {
+  const { mfa_token, code } = parseBody(mfaLoginSchema, req.body);
+  const out = completeMfaChallenge(mfa_token, code);
+  if ('error' in out) { res.status(401).json({ error: out.error }); return; }
+  const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', out.userId);
+  if (!user || user.active !== 1) { res.status(401).json({ error: 'Invalid username or password' }); return; }
+  res.json(signIn(user, req, out.shared));
+});
+
+/** Open a session and build the sign-in answer (token + the user as the app needs it). */
+function signIn(user: UserRow, req: Request, shared: boolean) {
+  const token = createSession(user.id, { req, shared });
   const dept = user.department_id
     ? queryOne<{ name: string }>('SELECT name FROM departments WHERE id = ?', user.department_id)
     : null;
@@ -56,8 +85,8 @@ router.post('/login', (req, res) => {
   // Resolved the same way userFromToken does, from the role + this user's own overrides.
   let overrides: Record<string, boolean> = {};
   try { overrides = JSON.parse(user.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
-
-  res.json({
+  const permissions = user.password_change_required ? [] : userPermissions(user.role, overrides);
+  return {
     token,
     user: {
       id: user.id,
@@ -68,11 +97,72 @@ router.post('/login', (req, res) => {
       department_id: user.department_id,
       department_name: dept ? dept.name : null,
       password_change_required: user.password_change_required,
-      permissions: user.password_change_required ? [] : userPermissions(user.role, overrides),
+      mfa_setup_required: mfaSetupRequired({ id: user.id, role: user.role, permissions }),
+      permissions,
       modules: [...enabledModules()], // feature areas enabled for this workspace
     },
-    session: { shared: !!shared },
+    session: { shared },
+  };
+}
+
+// ── Two-step sign-in: the caller's own set-up (shared/mfa.ts) ──────────────────────────────
+const passwordOnly = z.object({ password: z.string().min(1, 'Enter your password').max(200) });
+const passwordAndCode = passwordOnly.extend({ code: z.string().trim().min(6, 'Enter the code from your app').max(20) });
+
+function passwordMatches(userId: number, password: string): boolean {
+  const row = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', userId);
+  return !!row && bcrypt.compareSync(password, row.password_hash);
+}
+
+// GET /api/auth/mfa — whether it is on, required, and how many recovery codes are left.
+router.get('/mfa', requireAuth, (req, res) => {
+  const u = req.user!;
+  res.json({
+    available: mfaApplies(),
+    enabled: mfaEnabled(u.id),
+    required: securityPolicy().require_mfa_privileged && isPrivileged(u),
+    recovery_codes_left: recoveryCodesLeft(u.id),
   });
+});
+
+// POST /api/auth/mfa/setup — { password }: a new secret + otpauth link to add to the app.
+router.post('/mfa/setup', requireAuth, syncClass('online'), (req, res) => {
+  const { password } = parseBody(passwordOnly, req.body);
+  if (!passwordMatches(req.user!.id, password)) { res.status(400).json({ error: 'Password is incorrect' }); return; }
+  res.set('Cache-Control', 'no-store').json(startMfaSetup(req.user!.id, `${req.user!.username}@${currentSlug()}`));
+});
+
+// POST /api/auth/mfa/enable — { code }: confirm the app works; returns the recovery codes once.
+router.post('/mfa/enable', requireAuth, syncClass('online'), (req, res) => {
+  const { code } = parseBody(z.object({ code: z.string().trim().min(6).max(10) }), req.body);
+  const codes = enableMfa(req.user!.id, code);
+  if (!codes) { res.status(400).json({ error: 'That code is not right. Check the time on your phone and try the newest code.' }); return; }
+  res.set('Cache-Control', 'no-store').json({ ok: true, recovery_codes: codes });
+});
+
+// POST /api/auth/mfa/disable — { password, code }
+router.post('/mfa/disable', requireAuth, syncClass('online'), (req, res) => {
+  const { password, code } = parseBody(passwordAndCode, req.body);
+  if (securityPolicy().require_mfa_privileged && isPrivileged(req.user!)) {
+    res.status(403).json({ error: 'Your workspace requires two-step sign-in for your account. Ask an admin to reset it if you changed phones.' });
+    return;
+  }
+  if (!passwordMatches(req.user!.id, password) || !checkMfaCode(req.user!.id, code)) {
+    res.status(400).json({ error: 'Password or code is incorrect' });
+    return;
+  }
+  disableMfa(req.user!.id);
+  res.json({ ok: true });
+});
+
+// POST /api/auth/mfa/recovery-codes — { password, code }: replace the recovery codes.
+router.post('/mfa/recovery-codes', requireAuth, syncClass('online'), (req, res) => {
+  const { password, code } = parseBody(passwordAndCode, req.body);
+  if (!passwordMatches(req.user!.id, password) || !checkMfaCode(req.user!.id, code)) {
+    res.status(400).json({ error: 'Password or code is incorrect' });
+    return;
+  }
+  res.set('Cache-Control', 'no-store').json({ recovery_codes: regenerateRecoveryCodes(req.user!.id) });
 });
 
 // POST /api/auth/logout
@@ -125,6 +215,7 @@ router.get('/me', requireAuth, (req, res) => {
     user: {
       ...req.user, role_label: getRole(req.user!.role)?.label ?? req.user!.role,
       employee: emp ?? null, can_approve: canApprove, modules: [...enabledModules()],
+      mfa_enabled: mfaEnabled(req.user!.id), mfa_setup_required: mfaSetupRequired(req.user!),
     },
     session: { shared: !!req.authSession?.shared },
   });

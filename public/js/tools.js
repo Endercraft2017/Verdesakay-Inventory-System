@@ -152,6 +152,43 @@
 
   const AI_GREETING = "Hi! I'm your assistant — ask me about inventory, orders, messages, or your notes and tasks.";
 
+  /** Confirm / Cancel cards for actions the assistant prepared but may not run by itself
+      (POST /api/ai/actions/:id/confirm|cancel). The outcome is added to the conversation so the
+      assistant knows on the next turn what was actually done. */
+  function renderPendingActions(chat, pending) {
+    pending.forEach((p) => {
+      const rows = Object.entries(p.args || {})
+        .filter(([, v]) => v !== null && v !== undefined && v !== '')
+        .map(([k, v]) => `<div><span class="muted">${UI.esc(k.replace(/_/g, ' '))}:</span> ${UI.esc(typeof v === 'object' ? JSON.stringify(v) : String(v))}</div>`)
+        .join('');
+      chat.insertAdjacentHTML('beforeend', `
+        <div class="ai-msg bot ai-confirm" data-action="${UI.esc(p.id)}">
+          <div><strong>${UI.esc(p.label)}?</strong> <span class="muted">— not done until you confirm</span></div>
+          <div style="font-size:12.5px;margin:6px 0">${rows || '<span class="muted">No details</span>'}</div>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="btn small" data-ai-act="confirm">Confirm</button>
+            <button type="button" class="btn secondary small" data-ai-act="cancel">Cancel</button>
+          </div>
+        </div>`);
+      const card = chat.lastElementChild;
+      card.querySelectorAll('[data-ai-act]').forEach((b) => b.onclick = async () => {
+        const act = b.dataset.aiAct;
+        card.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+        let note;
+        try {
+          const r = await API.post(`/ai/actions/${encodeURIComponent(p.id)}/${act}`, {});
+          note = act === 'cancel' ? `Cancelled: ${p.label}.`
+            : r.ok ? `Done: ${p.label}.` : `Could not ${p.label.toLowerCase()}: ${(r.result && r.result.error) || 'failed'}.`;
+        } catch (e) {
+          note = e.message;
+        }
+        card.querySelector('div:last-child').outerHTML = `<div class="muted">${UI.esc(note)}</div>`;
+        aiHistory.push({ role: 'assistant', content: `[${note}]` });
+      });
+    });
+    chat.scrollTop = chat.scrollHeight;
+  }
+
   /** Append a finished assistant turn (chips + reply + record/report links), wiring its
       buttons. Shared by the live reply path and by replaying saved history on open. */
   function renderBotTurn(chat, reply, steps) {
@@ -262,6 +299,7 @@
 
         renderBotTurn(chat, res.reply, res.steps);
         aiHistory.push({ role: 'assistant', content: res.reply || '' });
+        if (res.pending && res.pending.length) renderPendingActions(chat, res.pending);
         // Keep the client's LLM-context window under the route's cap (see AI_HISTORY_LIMIT);
         // the full conversation stays saved server-side regardless.
         if (aiHistory.length > AI_HISTORY_LIMIT) aiHistory = aiHistory.slice(-AI_HISTORY_LIMIT);

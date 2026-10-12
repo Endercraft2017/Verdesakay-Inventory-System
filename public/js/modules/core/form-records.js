@@ -1069,7 +1069,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
             <div><div class="muted" style="font-size:10.5px">Net Pay</div><div style="font-weight:700;font-size:13px">${UI.money(t.net)}</div></div>
           </div>
           <div class="grow"></div>
-          <div class="payroll-bundle-actions" data-bundle-actions style="display:flex;gap:6px" onclick="event.stopPropagation()">
+          <div class="payroll-bundle-actions" data-bundle-actions style="display:flex;gap:6px">
             <button type="button" class="btn secondary small" data-bundle-print="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print All</button>
             <button type="button" class="btn secondary small" data-bundle-summary="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print Summary</button>
             <button type="button" class="btn secondary small" data-bundle-csv="${UI.esc(b.label)}">${UI.icon('download', 13)} Export Excel</button>

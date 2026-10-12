@@ -306,12 +306,81 @@ window.MApp = (function () {
     };
   }
 
+  /* Two-step sign-in (server: src/shared/mfa.ts). A full-screen step like the temporary-password
+     screen: hide the chrome, show one small form. */
+  function bareScreen(title, html) {
+    loginScreen().classList.add('hidden'); appScreen().classList.remove('hidden');
+    ['m-back', 'm-segments', 'm-tabbar'].forEach(function (id) { var element = document.getElementById(id); if (element) element.classList.add('hidden'); });
+    setTitle(title);
+    if (window.ChatWS) ChatWS.disconnect();
+    viewEl().innerHTML = html;
+  }
+
+  /** After a correct password: the authenticator code (or a recovery code). */
+  function mfaCodeScreen(mfaToken, shared) {
+    bareScreen('Two-step sign-in', '<form id="m-mfa-form">' +
+      '<p>Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>' +
+      '<input id="m-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="11" required />' +
+      '<p id="m-mfa-error" role="status"></p><button class="m-btn" type="submit">Sign in</button>' +
+      '<button class="m-btn m-btn-secondary" id="m-mfa-back" type="button">Back</button></form>');
+    document.getElementById('m-mfa-back').onclick = showLogin;
+    document.getElementById('m-mfa-form').onsubmit = async function (e) {
+      e.preventDefault();
+      var err = document.getElementById('m-mfa-error'); var button = e.target.querySelector('[type="submit"]');
+      button.disabled = true;
+      try {
+        var res = await API.post('/auth/login/mfa', { mfa_token: mfaToken, code: document.getElementById('m-mfa-code').value.trim() });
+        API.setToken(res.token, { shared: shared });
+        enterApp((await API.get('/auth/me')).user);
+      } catch (ex) { err.textContent = ex.message; button.disabled = false; }
+    };
+    setTimeout(function () { var c = document.getElementById('m-mfa-code'); if (c) c.focus(); }, 50);
+  }
+
+  /** The workspace requires two-step sign-in for this account: set it up before anything else. */
+  function mfaSetupScreen() {
+    var signOutBtn = '<button class="m-btn m-btn-secondary" data-mfa-out type="button">Sign out</button>';
+    var wireOut = function () { var b = viewEl().querySelector('[data-mfa-out]'); if (b) b.onclick = function () { API.post('/auth/logout').catch(function () {}).finally(showLogin); }; };
+    bareScreen('Set up two-step sign-in', '<form id="m-mfa-pw">' +
+      '<p>Your workspace requires two-step sign-in for your account. You need an authenticator app ' +
+      '(Google Authenticator, Microsoft Authenticator, Authy…).</p>' +
+      '<label>Your password</label><input id="m-mfa-password" type="password" autocomplete="current-password" required />' +
+      '<p id="m-mfa-error" role="status"></p><button class="m-btn" type="submit">Continue</button>' + signOutBtn + '</form>');
+    wireOut();
+    document.getElementById('m-mfa-pw').onsubmit = async function (e) {
+      e.preventDefault();
+      var err = document.getElementById('m-mfa-error');
+      var s;
+      try { s = await API.post('/auth/mfa/setup', { password: document.getElementById('m-mfa-password').value }); }
+      catch (ex) { err.textContent = ex.message; return; }
+      var key = String(s.secret).replace(/(.{4})/g, '$1 ').trim();
+      viewEl().innerHTML = '<form id="m-mfa-enable">' +
+        '<p><a class="m-btn" href="' + mEsc(s.otpauth_url) + '">Open in authenticator app</a></p>' +
+        '<p>Or add an account in the app and type this key: <strong style="user-select:all">' + mEsc(key) + '</strong></p>' +
+        '<label>Code the app shows</label><input id="m-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required />' +
+        '<p id="m-mfa-error" role="status"></p><button class="m-btn" type="submit">Turn on</button>' + signOutBtn + '</form>';
+      wireOut();
+      document.getElementById('m-mfa-enable').onsubmit = async function (ev) {
+        ev.preventDefault();
+        var err2 = document.getElementById('m-mfa-error');
+        var r;
+        try { r = await API.post('/auth/mfa/enable', { code: document.getElementById('m-mfa-code').value.trim() }); }
+        catch (ex) { err2.textContent = ex.message; return; }
+        viewEl().innerHTML = '<p><strong>Two-step sign-in is on.</strong> Save these recovery codes somewhere safe — each signs you in once ' +
+          'if you lose your phone. They won\'t be shown again.</p><pre style="user-select:all">' + r.recovery_codes.map(mEsc).join('\n') + '</pre>' +
+          '<button class="m-btn" id="m-mfa-done" type="button">I saved them</button>';
+        document.getElementById('m-mfa-done').onclick = async function () { enterApp((await API.get('/auth/me')).user); };
+      };
+    };
+  }
+
   function enterApp(user) {
     me = user;
     if (user.password_change_required) {
       try { localStorage.removeItem(ME_KEY); sessionStorage.removeItem(ME_KEY); } catch (e) {}
       temporaryPasswordScreen(); return;
     }
+    if (user.mfa_setup_required) { mfaSetupScreen(); return; }
     var cached = cachedMe();
     var prevOwner = null;
     try { prevOwner = localStorage.getItem(OWNER_KEY); } catch (e) { /* ignore */ }
@@ -421,6 +490,7 @@ window.MApp = (function () {
       if (shared) body.shared = true;
       API.post('/auth/login', body)
         .then(function (res) {
+          if (res.mfa_required) { if (sharedBox) sharedBox.checked = false; mfaCodeScreen(res.mfa_token, shared); return; }
           API.setToken(res.token, { shared: shared });
           if (sharedBox) sharedBox.checked = false;
           return API.get('/auth/me').then(function (profile) { enterApp(profile.user); });

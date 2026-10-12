@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { platformDb } from './platform';
+import { tokenDigest } from '../shared/db';
 
 const SESSION_HOURS = 12;
 const newToken = () => crypto.randomBytes(32).toString('hex');
@@ -60,13 +61,13 @@ export function platformLogin(username: string, password: string): string | null
   d.prepare(
     `INSERT INTO platform_sessions (token, user_id, expires_at)
      VALUES (?, ?, datetime('now', '+${SESSION_HOURS} hours'))`
-  ).run(token, row.id);
+  ).run(tokenDigest(token), row.id);
   d.prepare("UPDATE platform_users SET last_login_at = datetime('now') WHERE id = ?").run(row.id);
   return token;
 }
 
 export function platformLogout(token: string): void {
-  platformDb().prepare('DELETE FROM platform_sessions WHERE token = ?').run(token);
+  platformDb().prepare('DELETE FROM platform_sessions WHERE token = ?').run(tokenDigest(token));
 }
 
 export function platformUserFromToken(token: string | null): PlatformUser | null {
@@ -75,7 +76,7 @@ export function platformUserFromToken(token: string | null): PlatformUser | null
     `SELECT u.id, u.username, u.full_name
      FROM platform_sessions s JOIN platform_users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at >= datetime('now')`
-  ).get(token) as PlatformUser | undefined;
+  ).get(tokenDigest(token)) as PlatformUser | undefined;
   return row ?? null;
 }
 

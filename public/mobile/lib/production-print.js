@@ -49,12 +49,23 @@
     '.lbl-sub{color:#888;font-size:7.5pt}' +
     '@media print{.lbl{border-color:#999}}';
 
+  /* Print once the sheet's QR images have loaded — triggered from here, because a <script>
+     inside the written pop-up would be blocked by the Content-Security-Policy it inherits
+     (same as UI.printWhenLoaded on desktop). */
+  function printWhenLoaded(w) {
+    var done = false;
+    var go = function () { if (done) return; done = true; try { w.focus(); w.print(); } catch (e) { /* closed */ } };
+    if (w.document.readyState === 'complete') setTimeout(go, 50);
+    else { w.addEventListener('load', go, { once: true }); setTimeout(go, 1500); }
+  }
+
   function openSheet(title, cells) {
     var w = window.open('', '_blank');
     if (!w) { mToast('Allow pop-ups to open the print sheet', 'err'); return false; }
     w.document.write('<!doctype html><html><head><title>' + mEsc(title) + '</title><style>' + SHEET_CSS + '</style></head>' +
-      '<body><div class="sheet">' + cells.join('') + '</div><script>window.onload=function(){window.print()}<\/script></body></html>');
+      '<body><div class="sheet">' + cells.join('') + '</div></body></html>');
     w.document.close();
+    printWhenLoaded(w);
     return true;
   }
 

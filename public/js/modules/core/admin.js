@@ -16,6 +16,7 @@ App.register('admin', async (view, filter) => {
       <div class="grow"></div>
       <div class="search-box search" id="user-search-box">${UI.icon('search', 16)}<input id="user-search" placeholder="Search staff…" /></div>
       <button class="btn secondary" id="manage-depts">${UI.icon('building')} Departments</button>
+      <button class="btn secondary" id="sign-in-security">${UI.icon('key')} Sign-in security</button>
       <button class="btn" id="add-user">${UI.icon('plus')} New account</button>
       <button class="btn hidden" id="add-role">${UI.icon('plus')} New role</button>
     </div>
@@ -68,6 +69,7 @@ App.register('admin', async (view, filter) => {
     view.querySelectorAll('#acct-tabs [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     view.querySelector('#user-search-box').classList.toggle('hidden', tab !== 'accounts');
     view.querySelector('#manage-depts').classList.toggle('hidden', tab !== 'accounts');
+    view.querySelector('#sign-in-security').classList.toggle('hidden', tab !== 'accounts');
     view.querySelector('#add-user').classList.toggle('hidden', tab !== 'accounts');
     view.querySelector('#add-role').classList.toggle('hidden', tab !== 'roles');
     if (tab === 'roles') renderRoles(); else renderUsers();
@@ -143,19 +145,52 @@ App.register('admin', async (view, filter) => {
             <td><span class="badge-pill role-${UI.esc(u.role)}">${UI.esc(roleLabel(u.role))}</span>${overrideCount(u)
               ? ' <span class="muted" style="font-size:11.5px" data-tip="Has access added or removed just for this person">+ custom</span>' : ''}</td>
             <td>${UI.esc(u.department_name || '—')}</td>
-            <td>${u.active ? '<span class="badge-pill ok">Active</span>' : '<span class="badge-pill low">Disabled</span>'}</td>
+            <td>${u.active ? '<span class="badge-pill ok">Active</span>' : '<span class="badge-pill low">Disabled</span>'}${u.mfa_enabled
+              ? ' <span class="badge-pill" title="Two-step sign-in is on">2-step</span>' : ''}</td>
             <td class="actions">
               <button class="icon-btn" title="Edit" data-edit="${u.id}">${UI.icon('edit')}</button>
               <button class="icon-btn" title="Reset password" data-pw="${u.id}">${UI.icon('key')}</button>
+              ${u.mfa_enabled ? `<button class="btn secondary small" title="Lost phone: remove their two-step sign-in so they can set it up again" data-mfa-reset="${u.id}">Reset 2-step</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
       </table>`;
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => editUser(allUsers.find((x) => x.id == b.dataset.edit)));
     tableEl.querySelectorAll('[data-pw]').forEach((b) => b.onclick = () => resetPw(allUsers.find((x) => x.id == b.dataset.pw)));
+    tableEl.querySelectorAll('[data-mfa-reset]').forEach((b) => b.onclick = async () => {
+      const u = allUsers.find((x) => x.id == b.dataset.mfaReset);
+      if (!(await UI.confirmDialog(`Reset two-step sign-in for ${u.full_name}? They will be signed out and can set it up again with their password.`, 'Reset'))) return;
+      try { await API.post(`/users/${u.id}/mfa/reset`, {}); } catch (e) { UI.toast(e.message, 'error'); return; }
+      u.mfa_enabled = false;
+      UI.toast('Two-step sign-in reset');
+      renderUsers();
+    });
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;
       editUser(allUsers.find((x) => x.id == tr.dataset.open));
+    });
+  }
+
+  /** Workspace sign-in rules (PUT /users/security-policy): require two-step sign-in for
+      privileged accounts. The server refuses to switch it on until you use it yourself. */
+  async function signInSecurity() {
+    let p;
+    try { p = await API.get('/users/security-policy'); } catch (e) { UI.toast(e.message, 'error'); return; }
+    UI.modal({
+      title: 'Sign-in security',
+      bodyHTML: `
+        <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400">
+          <input type="checkbox" data-f="req" style="width:auto;margin-top:3px" ${p.require_mfa_privileged ? 'checked' : ''} />
+          <span><strong>Require two-step sign-in</strong> for administrators and anyone who manages accounts,
+          payroll or accounting. Until they set it up, they can only reach the set-up screen.</span>
+        </label>
+        ${p.you_have_mfa ? '' : '<p class="muted" style="font-size:12.5px">Turn it on for your own account first (Account → Two-step sign-in).</p>'}
+        ${p.available ? '' : '<p class="muted" style="font-size:12.5px">This installed PC signs in with passwords only; the rule applies online.</p>'}`,
+      confirmText: 'Save',
+      onConfirm: async (ov) => {
+        await API.put('/users/security-policy', { require_mfa_privileged: ov.querySelector('[data-f="req"]').checked });
+        UI.toast('Sign-in security saved');
+      },
     });
   }
 
@@ -377,6 +412,7 @@ App.register('admin', async (view, filter) => {
     if (b.dataset.tab !== tab) App.navigate('admin', b.dataset.tab === 'roles' ? { tab: 'roles' } : undefined);
   }));
   view.querySelector('#manage-depts').addEventListener('click', manageDepartments);
+  view.querySelector('#sign-in-security').addEventListener('click', signInSecurity);
   view.querySelector('#user-search').addEventListener('input', (e) => {
     userQuery = e.target.value.trim();
     renderUsers();

@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
-import { DEFAULT_TENANT } from '../shared/db';
+import { DEFAULT_TENANT, hashLegacySessionTokens } from '../shared/db';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
@@ -118,6 +118,7 @@ function pdb(): DatabaseSync {
   ensureColumn(d, 'tenants', 'photo_max_mb', 'INTEGER');
   ensureColumn(d, 'tenants', 'awaiting_payment', 'INTEGER NOT NULL DEFAULT 0');
   _db = d;
+  hashLegacySessionTokens(d, 'platform_sessions'); // stored as digests, like tenant sessions
   seedPlatformUserFromEnv();
   return d;
 }

@@ -90,8 +90,20 @@ const App = (() => {
     m.overlay.addEventListener('mousedown', (e) => { if (e.target === m.overlay) logout(); });
   }
 
+  /** The workspace requires two-step sign-in for this account and it isn't set up yet: the
+      server allows nothing else until it is (src/shared/mfa.ts). */
+  async function requireMfaSetup() {
+    appScreen().classList.add('hidden');
+    loginScreen().classList.remove('hidden');
+    if (window.ChatWS) ChatWS.disconnect();
+    if (!(await Mfa.setup({ forced: true }))) { logout(); return; }
+    me = (await API.get('/auth/me')).user;
+    await showApp();
+  }
+
   async function showApp(departmentsReq) {
     if (me && me.password_change_required) { requireNewPassword(); return; }
+    if (me && me.mfa_setup_required) { requireMfaSetup(); return; }
     loginScreen().classList.add('hidden');
     appScreen().classList.remove('hidden');
 
@@ -510,8 +522,11 @@ const App = (() => {
     const body = { username, password };
     if (shared) body.shared = true;
     const data = await API.post('/auth/login', body);
-    API.setToken(data.token, { shared: !!shared });
-    me = data.user;
+    // Two-step sign-in: the password alone opened nothing; the code finishes it (lib/mfa.js).
+    const signedIn = data.mfa_required ? await Mfa.askCode(data.mfa_token) : data;
+    if (!signedIn) return;
+    API.setToken(signedIn.token, { shared: !!shared });
+    me = signedIn.user;
     await showApp();
   }
 
