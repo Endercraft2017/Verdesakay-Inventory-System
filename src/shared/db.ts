@@ -63,8 +63,9 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 63; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 64; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -1848,11 +1849,16 @@ function migrate(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_bom_product ON bom_components(product_item_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_bom_component ON bom_components(component_item_id)');
 
+  // v64: checklist notes and a durable, one-to-one scheduler link.
+  const noteCols = db.prepare('PRAGMA table_info(notes)').all() as { name: string }[];
+  if (!noteCols.some(c => c.name === 'checklist')) db.exec("ALTER TABLE notes ADD COLUMN checklist TEXT NOT NULL DEFAULT '[]'");
   // ---- Tasks: scheduling + reminders ----
   const taskCols = db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[];
   if (!taskCols.some((c) => c.name === 'notes')) db.exec('ALTER TABLE tasks ADD COLUMN notes TEXT');
   if (!taskCols.some((c) => c.name === 'remind_at')) db.exec('ALTER TABLE tasks ADD COLUMN remind_at TEXT');
   if (!taskCols.some((c) => c.name === 'remind_sent')) db.exec('ALTER TABLE tasks ADD COLUMN remind_sent INTEGER NOT NULL DEFAULT 0');
+  if (!taskCols.some(c => c.name === 'note_id')) db.exec('ALTER TABLE tasks ADD COLUMN note_id INTEGER REFERENCES notes(id) ON DELETE SET NULL');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_note ON tasks(note_id) WHERE note_id IS NOT NULL');
 
   // ---- Per-location stock (Phase 4) ----
   const txnCols = db.prepare('PRAGMA table_info(inventory_transactions)').all() as { name: string }[];

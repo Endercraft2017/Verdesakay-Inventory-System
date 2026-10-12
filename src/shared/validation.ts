@@ -711,9 +711,16 @@ export const reactSchema = z.object({
 });
 
 // ---- Personal tools (notes / tasks / bookmarks) ----
+export const checklistItemSchema = z.object({ id: trimmed.min(1).max(80), text: trimmed.min(1).max(500), done: z.boolean() });
 export const noteSchema = z.object({
   title: trimmed.max(200).optional().nullable(),
-  body: trimmed.min(1, 'Note cannot be empty').max(20000),
+  body: trimmed.max(20000).default(''),
+  checklist: z.array(checklistItemSchema).max(200).optional()
+    .refine(items => !items || new Set(items.map(i => i.id)).size === items.length, 'Checklist IDs must be unique'),
+}).refine(v => !!v.body || !!v.checklist?.length, 'Add a note or a checklist item');
+export const scheduleNoteSchema = z.object({
+  due_date: trimmed.refine(v => /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?$/.test(v) && realCalendarDate.safeParse(v.slice(0, 10)).success && (!v.slice(11) || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v.slice(11))), 'Choose a valid due date and time'),
+  remind_at: z.string().datetime({ offset: true }).optional().nullable(),
 });
 
 export const taskSchema = z.object({

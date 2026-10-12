@@ -812,6 +812,7 @@ export interface Messages {
 }
 
 export interface Notes {
+  checklist: Generated<string>;
   id: Generated<number>;
   user_id: number;
   title: string | null;
@@ -1338,6 +1339,7 @@ export interface Suppliers {
 }
 
 export interface Tasks {
+  note_id: number | null;
   id: Generated<number>;
   user_id: number;
   title: string;

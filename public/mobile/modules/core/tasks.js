@@ -2,7 +2,7 @@
    reminder (fires a push). Backed by /api/tasks. */
 (function () {
   var toStore = function (v) { return v ? v.replace('T', ' ') : null; };   // input → "YYYY-MM-DD HH:MM"
-  var toInput = function (v) { return v ? String(v).replace(' ', 'T').slice(0, 16) : ''; };
+  var toInput = function (v) { if (!v) return ''; if (/Z$|[+-]\d\d:\d\d$/.test(v)) { var d = new Date(v); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); } return String(v).replace(' ', 'T').slice(0, 16); };
 
   function bucket(t, todayStr) {
     if (t.done) return 'Done';
@@ -77,7 +77,7 @@
       var body = {
         title: title,
         due_date: toStore(f.querySelector('[data-due]').value),
-        remind_at: toStore(f.querySelector('[data-remind]').value),
+        remind_at: f.querySelector('[data-remind]').value ? new Date(f.querySelector('[data-remind]').value).toISOString() : null,
         notes: f.querySelector('[data-notes]').value.trim() || null,
       };
       var p = t ? API.put('/tasks/' + t.id, body) : API.post('/tasks', body);

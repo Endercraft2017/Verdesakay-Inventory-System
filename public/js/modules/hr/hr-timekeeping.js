@@ -1342,12 +1342,12 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         <div class="sub" id="tk-period-sub"></div>
       </div>
       <div class="grow"></div>
+      <button type="button" class="btn secondary small tk-warning-trigger" id="tk-warnings" ${!(period.warnings || []).length ? 'hidden' : ''} aria-label="Review payroll warnings">${UI.icon('alert', 14)} Review notes <span id="tk-warning-count">${(period.warnings || []).length}</span></button>
       <button type="button" class="btn secondary" id="tk-export-csv" title="Download this cutoff's whole timekeeping roster as CSV">${UI.icon('download')} Export CSV</button>
       ${hasTools ? `<button type="button" class="btn secondary" id="tk-more-toggle" aria-expanded="false" aria-controls="tk-more">${UI.icon('settings')} Cutoff tools</button>` : ''}
       ${canPayroll ? `<button type="button" class="btn" id="tk-generate">${UI.icon('sheet')} Generate Payslips</button>` : ''}
     </div>
     ${period.locked ? '<div class="panel hr-workflow-notice"><strong>Locked after payment</strong><p class="muted">Attendance, roster and cutoff dates are read-only. Payroll must explicitly unmark all paid payslips to reopen them. Remaining unpaid payslips can still be reviewed and paid.</p></div>' : ''}
-    ${(period.warnings || []).length ? `<div class="panel hr-workflow-notice" id="tk-warnings" role="status"><strong>Payroll review warnings — generation is still allowed</strong><ul>${period.warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul><button class="btn secondary small" id="tk-review-approvals">Review approvals</button></div>` : ''}
     ${hasTools ? `<div class="hr-tools" id="tk-more" hidden>
       ${canManage ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-cutoff">
         <span class="hr-tools-label" id="tk-more-cutoff">Cutoff</span>
@@ -1409,7 +1409,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       `${period.start_date} – ${period.end_date} · ${n} employee${n === 1 ? '' : 's'} on roster`;
   }
   renderHeader();
-  const reviewApprovals = view.querySelector('#tk-review-approvals'); if (reviewApprovals) reviewApprovals.onclick = () => App.navigate('hr-approvals');
+  view.querySelector('#tk-warnings').onclick = () => UI.modal({ title: 'Payroll review notes', bodyHTML: `<p class="muted">These warnings do not block payslip generation. Review anything that may affect this cutoff.</p><ul class="review-note-list">${(period.warnings || []).map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul>`, cancelText: 'Close', confirmText: 'Review approvals', protectChanges: false, onConfirm: () => App.navigate('hr-approvals') });
 
   view.querySelector('#tk-back').onclick = () => App.navigate('hr-timekeeping');
   wireHrDisclosure(view.querySelector('#tk-more-toggle'), view.querySelector('#tk-more'));
@@ -1689,7 +1689,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     }
     if (period.locked) { App.navigate('hr-timekeeping', { period_id: periodId }); return; }
     const warningPanel = view.querySelector('#tk-warnings');
-    if (warningPanel) warningPanel.querySelector('ul').innerHTML = (period.warnings || []).map(w => `<li>${UI.esc(w)}</li>`).join('');
+    if (warningPanel) { warningPanel.hidden = !(period.warnings || []).length; warningPanel.querySelector('#tk-warning-count').textContent = (period.warnings || []).length; }
     renderRoster();
   }
 

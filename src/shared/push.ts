@@ -149,17 +149,18 @@ export async function notifyAll(payload: PushPayload): Promise<void> {
 
 /** One-shot task reminders. Call on a short interval (see server.ts). Fires a push
  *  for every due, not-yet-notified, not-done task, then marks it sent.
- *  (Default tenant only — same scope as cleanupSessions.) */
+ *  Called inside each active tenant context by the cloud reminder timer. */
 export async function sendDueTaskReminders(): Promise<void> {
   const due = queryAll<{ id: number; user_id: number; title: string }>(
     `SELECT id, user_id, title FROM tasks
      WHERE remind_at IS NOT NULL AND remind_sent = 0 AND done = 0
-       AND remind_at <= substr(datetime('now','localtime'), 1, 16)`
+       AND CASE WHEN instr(remind_at, 'T') > 0 THEN datetime(remind_at) <= datetime('now')
+                ELSE remind_at <= substr(datetime('now','localtime'), 1, 16) END`
   );
   for (const t of due) {
     run('UPDATE tasks SET remind_sent = 1 WHERE id = ?', t.id);
     await notifyUser(t.user_id, {
-      title: 'Reminder', body: t.title, url: '#/tasks', tag: 'task-' + t.id,
+      title: 'Reminder', body: t.title, url: '#/tasks', link: { route: 'tasks' }, tag: 'task-' + t.id,
     });
   }
 }

@@ -516,54 +516,70 @@
     }
   }
 
-  /* ---------------- Notes ---------------- */
-  function openNotes() {
-    const d = UI.drawer({
-      key: 'notes', icon: 'note', title: 'Notes',
-      bodyHTML: `<div id="notes-list"><div class="empty">Loading…</div></div>`,
-      footHTML: `<button class="btn" id="note-new">${UI.icon('plus', 16)} New note</button>`,
-    });
+  /* ---------------- Notes + linked scheduler tasks ---------------- */
+  const noteDate = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString([], { dateStyle: 'medium', ...(String(value).length > 10 ? { timeStyle: 'short' } : {}) }) : '';
+  const localDateTime = value => { if (!value) return ''; const d = new Date(value); if (String(value).includes('Z') || /[+-]\d\d:\d\d$/.test(value)) return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); return String(value).replace(' ', 'T').slice(0, 16); };
+  function openNotes(noteId) {
+    const d = UI.drawer({ key: 'notes', icon: 'note', title: 'Notes', bodyHTML: '<label class="sr-only" for="notes-search">Search notes</label><input id="notes-search" type="search" placeholder="Search notes and checklist items…"><div id="notes-list" aria-live="polite"><div class="empty">Loading…</div></div>', footHTML: `<button class="btn" id="note-new">${UI.icon('plus', 16)} New note / checklist</button>` });
     if (!d) return;
-    const listEl = d.el.querySelector('#notes-list');
-    async function refresh() {
-      let notes;
-      try { notes = await API.get('/notes'); }
-      catch (e) { listEl.innerHTML = `<div class="empty">${UI.esc(e.message)}</div>`; return; }
-      if (!notes.length) {
-        listEl.innerHTML = UI.emptyState({ icon: 'note', title: 'No notes yet', hint: 'Jot something down with “New note”.' });
-        return;
-      }
-      listEl.innerHTML = notes.map((n) => `
-        <div class="tool-row" data-id="${n.id}">
-          <div class="tool-row-main" role="button" tabindex="0" data-edit="${n.id}">
-            <div class="tool-row-title">${UI.esc(n.title || 'Untitled')}</div>
-            <div class="tool-row-sub">${UI.esc((n.body || '').slice(0, 90))}</div>
-          </div>
-          <button class="icon-btn danger" data-del="${n.id}" title="Delete">${UI.icon('trash', 16)}</button>
-        </div>`).join('');
-      listEl.querySelectorAll('[data-edit]').forEach((b) =>
-        b.onclick = () => noteModal(notes.find((x) => x.id == b.dataset.edit), refresh));
-      listEl.querySelectorAll('[data-del]').forEach((b) =>
-        b.onclick = async () => { if (await UI.confirmDialog('Delete this note?', 'Delete')) { await API.del('/notes/' + b.dataset.del); refresh(); } });
+    const list = d.el.querySelector('#notes-list'); let notes = [];
+    function render() {
+      const query = d.el.querySelector('#notes-search').value.trim().toLowerCase();
+      const shown = notes.filter(n => [n.title, n.body, ...(n.checklist || []).map(i => i.text)].join(' ').toLowerCase().includes(query));
+      if (!shown.length) { list.innerHTML = UI.emptyState({ icon: 'note', title: query ? 'No matching notes' : 'Your ideas and to-dos, together', hint: query ? 'Try a different search.' : 'Add a note, build a checklist, and schedule it when you need a reminder.' }); return; }
+      list.innerHTML = shown.map(n => {
+        const items = n.checklist || [], task = n.scheduled_task;
+        return `<article class="note-card"><div class="note-card-head"><button class="note-open" data-edit="${n.id}">${UI.esc(n.title || 'Untitled note')}</button><button class="icon-btn danger" data-del="${n.id}" aria-label="Delete ${UI.esc(n.title || 'note')}">${UI.icon('trash', 16)}</button></div>${n.body ? `<p class="note-excerpt">${UI.esc(n.body)}</p>` : ''}${items.length ? `<div class="note-progress">${items.filter(i => i.done).length} of ${items.length} completed</div><div class="note-checklist">${items.slice(0, 5).map((item, index) => `<label class="note-check ${item.done ? 'done' : ''}"><input type="checkbox" data-note="${n.id}" data-item="${index}" ${item.done ? 'checked' : ''}><span>${UI.esc(item.text)}</span></label>`).join('')}</div>${items.length > 5 ? `<button class="btn secondary small" data-edit="${n.id}">View ${items.length - 5} more items</button>` : ''}` : ''}<div class="note-card-foot"><button class="btn secondary small" data-schedule="${n.id}">${UI.icon('calendar', 14)} ${task ? UI.esc((task.done ? 'Completed · ' : 'Due · ') + noteDate(task.due_date)) : 'Schedule note'}</button>${task ? `<button class="btn secondary small" data-agenda="${task.id}">View in Scheduler</button>` : ''}</div></article>`;
+      }).join('');
+      list.querySelectorAll('[data-edit], [data-schedule]').forEach(b => b.onclick = () => noteModal(notes.find(n => n.id === Number(b.dataset.edit || b.dataset.schedule)), refresh, !!b.dataset.schedule));
+      list.querySelectorAll('[data-agenda]').forEach(b => b.onclick = () => openScheduler());
+      list.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (await UI.confirmDialog('Delete this note? Its scheduled task will remain in Scheduler.', 'Delete')) { try { await API.del('/notes/' + b.dataset.del); await refresh(); } catch (e) { UI.toast(e.message, 'error'); } } });
+      list.querySelectorAll('[data-item]').forEach(input => input.onchange = async () => {
+        const note = notes.find(n => n.id === Number(input.dataset.note)), items = note.checklist.map(i => ({ ...i }));
+        items[Number(input.dataset.item)].done = input.checked; input.disabled = true;
+        try { await API.put('/notes/' + note.id, { title: note.title, body: note.body, checklist: items }); await refresh(); }
+        catch (e) { input.checked = !input.checked; input.disabled = false; UI.toast(e.message, 'error'); }
+      });
     }
+    async function refresh() { try { notes = await API.get('/notes'); render(); } catch (e) { list.innerHTML = `<p class="tool-note">${UI.esc(e.message)}</p><button class="btn secondary" id="notes-retry">Try again</button>`; list.querySelector('#notes-retry').onclick = refresh; } }
+    d.el.querySelector('#notes-search').oninput = render;
     d.el.querySelector('#note-new').onclick = () => noteModal(null, refresh);
-    refresh();
+    refresh().then(() => { if (noteId) { const note = notes.find(n => n.id === Number(noteId)); if (note) noteModal(note, refresh); } });
   }
-
-  function noteModal(note, after) {
-    UI.modal({
-      title: note ? 'Edit note' : 'New note',
-      bodyHTML: `<label>Title</label><input data-f="title" value="${UI.esc(note ? note.title || '' : '')}" placeholder="Title (optional)" />
-        <label>Note *</label><textarea data-f="body" style="min-height:160px" placeholder="Write your note…">${UI.esc(note ? note.body || '' : '')}</textarea>`,
-      confirmText: 'Save',
+  function noteModal(note, after, scheduleFirst) {
+    let savedId = note && note.id, items = (note && note.checklist || []).map(i => ({ ...i }));
+    const task = note && note.scheduled_task;
+    UI.modal({ title: note ? 'Edit note' : 'New note', size: 'lg',
+      bodyHTML: `<div class="note-editor"><label for="note-title">Title</label><input id="note-title" maxlength="200" value="${UI.esc(note && note.title || '')}" placeholder="What would you like to remember?"><label for="note-body">Note</label><textarea id="note-body" rows="4" maxlength="20000" placeholder="Details, ideas, or context…">${UI.esc(note && note.body || '')}</textarea><div class="note-section-heading"><h4>Checklist</h4><span class="muted">Optional · up to 200 items</span></div><div id="note-items"></div><div class="note-item-add"><input id="note-item-text" maxlength="500" aria-label="New checklist item" placeholder="Add something to do…"><button type="button" class="btn secondary" id="note-item-add">Add item</button></div><section class="note-schedule"><label class="check-opt"><input type="checkbox" id="note-scheduled" ${task || scheduleFirst ? 'checked' : ''}> Schedule this note</label><p class="muted">One linked task keeps your checklist and Scheduler in sync.</p><div id="note-schedule-fields" ${task || scheduleFirst ? '' : 'hidden'}><label for="note-due">Due date and time *</label><input type="datetime-local" id="note-due" value="${UI.esc(localDateTime(task && task.due_date))}"><label for="note-remind">Remind me <span class="muted">(optional)</span></label><input type="datetime-local" id="note-remind" value="${UI.esc(localDateTime(task && task.remind_at))}"><p class="muted">Reminders appear through your existing notifications. Enable push on your device to receive them outside the app.</p></div></section></div>`,
+      confirmText: 'Save note',
+      onOpen: ov => {
+        const host = ov.querySelector('#note-items');
+        function renderItems() {
+          host.innerHTML = items.map((item, index) => `<div class="note-item-editor"><input type="checkbox" data-check="${index}" aria-label="Complete item ${index + 1}" ${item.done ? 'checked' : ''}><input data-text="${index}" maxlength="500" aria-label="Checklist item ${index + 1}" value="${UI.esc(item.text)}"><button type="button" class="icon-btn danger" data-remove="${index}" aria-label="Remove item ${index + 1}">${UI.icon('trash', 16)}</button></div>`).join('');
+          host.querySelectorAll('[data-check]').forEach(el => el.onchange = () => items[Number(el.dataset.check)].done = el.checked);
+          host.querySelectorAll('[data-text]').forEach(el => el.oninput = () => items[Number(el.dataset.text)].text = el.value);
+          host.querySelectorAll('[data-remove]').forEach(el => el.onclick = () => { items.splice(Number(el.dataset.remove), 1); ov.__markDirty?.(); renderItems(); });
+        }
+        const add = () => { const input = ov.querySelector('#note-item-text'); if (!input.value.trim()) { input.focus(); return; } if (items.length >= 200) { UI.toast('A checklist can have up to 200 items.', 'error'); return; } items.push({ id: crypto.randomUUID(), text: input.value.trim(), done: false }); input.value = ''; ov.__markDirty?.(); renderItems(); input.focus(); };
+        ov.querySelector('#note-item-add').onclick = add;
+        ov.querySelector('#note-item-text').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+        ov.querySelector('#note-scheduled').onchange = e => ov.querySelector('#note-schedule-fields').hidden = !e.target.checked;
+        renderItems(); if (scheduleFirst) ov.querySelector('#note-due').focus();
+      },
       onConfirm: async (ov, showErr) => {
-        const title = ov.querySelector('[data-f="title"]').value;
-        const body = ov.querySelector('[data-f="body"]').value.trim();
-        if (!body) { showErr('Note cannot be empty'); return false; }
-        if (note) await API.put('/notes/' + note.id, { title, body });
-        else await API.post('/notes', { title, body });
-        UI.toast('Note saved');
-        after();
+        const title = ov.querySelector('#note-title').value.trim(), body = ov.querySelector('#note-body').value.trim(), scheduled = ov.querySelector('#note-scheduled').checked;
+        // Include the item currently being typed, even if Add item was not pressed.
+        if (ov.querySelector('#note-item-text').value.trim()) ov.querySelector('#note-item-add').click();
+        if ((!body && !items.length) || items.some(i => !i.text.trim())) { showErr('Add note text or a checklist, and give every item a label.'); return false; }
+        const due = ov.querySelector('#note-due').value, reminder = ov.querySelector('#note-remind').value;
+        if (scheduled && !due) { showErr('Choose when this note is due.'); ov.querySelector('#note-due').focus(); return false; }
+        try {
+          const data = { title, body, checklist: items.map(i => ({ ...i, text: i.text.trim() })) };
+          if (savedId) await API.put('/notes/' + savedId, data); else savedId = (await API.post('/notes', data)).id;
+          if (scheduled) await API.post('/notes/' + savedId + '/schedule', { due_date: due, remind_at: reminder ? new Date(reminder).toISOString() : null });
+          else if (task) await API.del('/tasks/' + task.id);
+          UI.toast(scheduled ? 'Note saved and scheduled' : 'Note saved'); await after();
+        } catch (e) { showErr((savedId ? 'Note saved. ' : '') + e.message); return false; }
       },
     });
   }
@@ -597,11 +613,16 @@
           <label class="check-opt"><input type="checkbox" data-toggle="${t.id}" ${t.done ? 'checked' : ''} /></label>
           <div class="tool-row-main">
             <div class="tool-row-title">${UI.esc(t.title)}</div>
-            ${t.due_date ? `<div class="tool-row-sub ${overdue ? 'overdue' : ''}">${UI.esc(t.due_date)}${overdue ? ' · overdue' : ''}</div>` : ''}
+            ${t.due_date ? `<div class="tool-row-sub ${overdue ? 'overdue' : ''}">${UI.esc(noteDate(t.due_date))}${overdue ? ' · overdue' : ''}</div>` : ''}
+            ${t.remind_at ? `<div class="tool-row-sub">${UI.icon('bell', 12)} ${UI.esc(noteDate(t.remind_at))}</div>` : ''}
+            <button class="btn secondary small" data-task-edit="${t.id}">Schedule / edit</button>
+            ${t.note_id ? `<button class="btn secondary small" data-task-note="${t.note_id}">Open linked note</button>` : ''}
           </div>
           <button class="icon-btn danger" data-del="${t.id}" title="Delete">${UI.icon('trash', 16)}</button>
         </div>`;
       }).join('');
+      listEl.querySelectorAll('[data-task-edit]').forEach(b => b.onclick = () => taskModal(tasks.find(t => t.id === Number(b.dataset.taskEdit)), refresh));
+      listEl.querySelectorAll('[data-task-note]').forEach(b => b.onclick = () => openNotes(Number(b.dataset.taskNote)));
       listEl.querySelectorAll('[data-toggle]').forEach((c) =>
         c.onchange = async () => { await API.put('/tasks/' + c.dataset.toggle, { done: c.checked }); refresh(); });
       listEl.querySelectorAll('[data-del]').forEach((b) =>
@@ -619,6 +640,13 @@
       refresh();
     });
     refresh();
+  }
+
+  function taskModal(task, after) {
+    UI.modal({ title: 'Schedule task', bodyHTML: `<label for="task-edit-title">Task</label><input id="task-edit-title" maxlength="300" value="${UI.esc(task.title)}" ${task.note_id ? 'readonly' : ''}><label for="task-edit-due">Due date and time</label><input type="datetime-local" id="task-edit-due" value="${UI.esc(localDateTime(task.due_date))}"><label for="task-edit-remind">Remind me</label><input type="datetime-local" id="task-edit-remind" value="${UI.esc(localDateTime(task.remind_at))}">${task.note_id ? '<p class="muted">Edit the linked note to change its title or checklist.</p>' : ''}`, confirmText: 'Save schedule', onConfirm: async ov => {
+      await API.put('/tasks/' + task.id, { title: ov.querySelector('#task-edit-title').value.trim(), due_date: ov.querySelector('#task-edit-due').value.replace('T', ' ') || null, remind_at: ov.querySelector('#task-edit-remind').value ? new Date(ov.querySelector('#task-edit-remind').value).toISOString() : null });
+      await after(); UI.toast('Schedule saved');
+    } });
   }
 
   /* ---------------- Bookmarks ---------------- */
@@ -867,5 +895,6 @@
     });
   }
 
+  window.PersonalTools = { openNotes, openScheduler };
   document.addEventListener('DOMContentLoaded', init);
 })();

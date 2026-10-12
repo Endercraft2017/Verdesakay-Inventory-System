@@ -510,3 +510,14 @@ it('Timekeeping previews saved reason and dates before confirming a multi-day li
   expect(linkButtons.map(b => b.dataset.unlink)).toEqual(['0','2']);
   win.close();
 });
+
+it('keeps payroll warnings behind a compact header action and exposes details on demand', async () => {
+  const warnings = ['No punches recorded', 'Pending employee requests'];
+  const { win, view, routes, navigations } = boot(TK_SRC, ['hr.view', 'hr.manage', 'payroll.manage'], p => p === '/hr/periods/7' ? { ...PERIOD, warnings } : []);
+  let modal: any; win.__UI.modal = (opts: any) => { modal = opts; return { close() {} }; };
+  await routes['hr-timekeeping']!(view, { period_id: 7 });
+  const trigger = q(view, '.topbar #tk-warnings')!;
+  expect(trigger).not.toBeNull(); expect(trigger.textContent).toContain('2');
+  expect(q(view, '.hr-workflow-notice')).toBeNull(); expect(view.textContent).not.toContain(warnings[0]);
+  trigger.click(); expect(modal.bodyHTML).toContain(warnings[0]); expect(modal.bodyHTML).toContain('do not block'); modal.onConfirm(); expect(navigations).toContainEqual(['hr-approvals', undefined]);
+});

@@ -213,7 +213,8 @@ const App = (() => {
           const n = items.find((x) => String(x.id) === tr.dataset.n);
           if (!n.read_at) { try { await API.post('/notifications/' + n.id + '/read', {}); } catch { /* ignore */ } }
           refreshNotificationBadge();
-          if (n.link && routes[n.link.route]) { m.close(); navigate(n.link.route, n.link.params || undefined); }
+          if (n.link?.route === 'tasks' && window.PersonalTools) { m.close(); window.PersonalTools.openScheduler(); }
+          else if (n.link && routes[n.link.route]) { m.close(); navigate(n.link.route, n.link.params || undefined); }
         });
       },
       onConfirm: async () => {
