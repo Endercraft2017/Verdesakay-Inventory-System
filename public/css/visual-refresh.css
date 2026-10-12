@@ -329,3 +329,6 @@
 .modal-overlay :is(.modal-head, .modal-foot) { flex-shrink: 0; }
 #toasts { z-index: 250; }
 @media (max-width: 600px) { .modal-overlay { padding: 10px; } .modal-overlay .modal { max-height: calc(100dvh - 20px); } }
+.tk-cutoff-header > div:not(.tk-cutoff-actions) { flex: 1; }
+.tk-cutoff-header .tk-cutoff-actions { display: flex; flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+@media (max-width: 600px) { .tk-cutoff-header .tk-cutoff-actions .btn { flex: 1 1 auto; justify-content: center; } }

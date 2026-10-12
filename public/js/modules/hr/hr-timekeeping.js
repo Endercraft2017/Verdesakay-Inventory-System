@@ -1335,17 +1335,18 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   const hasTools = canManage || canPayroll;
 
   view.innerHTML = `
-    <div class="topbar">
+    <div class="topbar tk-cutoff-header">
       <button type="button" class="btn secondary small" id="tk-back">${UI.icon('arrow-left', 14)} All Cutoffs</button>
       <div>
         <h2 id="tk-period-title">${UI.esc(period.label)}</h2>
         <div class="sub" id="tk-period-sub"></div>
       </div>
-      <div class="grow"></div>
+      <div class="tk-cutoff-actions">
       <button type="button" class="btn secondary small tk-warning-trigger" id="tk-warnings" ${!(period.warnings || []).length ? 'hidden' : ''} aria-label="Review payroll warnings">${UI.icon('alert', 14)} Review notes <span id="tk-warning-count">${(period.warnings || []).length}</span></button>
       <button type="button" class="btn secondary" id="tk-export-csv" title="Download this cutoff's whole timekeeping roster as CSV">${UI.icon('download')} Export CSV</button>
       ${hasTools ? `<button type="button" class="btn secondary" id="tk-more-toggle" aria-expanded="false" aria-controls="tk-more">${UI.icon('settings')} Cutoff tools</button>` : ''}
       ${canPayroll ? `<button type="button" class="btn" id="tk-generate">${UI.icon('sheet')} Generate Payslips</button>` : ''}
+      </div>
     </div>
     ${period.locked ? '<div class="panel hr-workflow-notice"><strong>Locked after payment</strong><p class="muted">Attendance, roster and cutoff dates are read-only. Payroll must explicitly unmark all paid payslips to reopen them. Remaining unpaid payslips can still be reviewed and paid.</p></div>' : ''}
     ${hasTools ? `<div class="hr-tools" id="tk-more" hidden>
