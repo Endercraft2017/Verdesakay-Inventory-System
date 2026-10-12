@@ -10,6 +10,7 @@
  */
 import type { Request, Response, NextFunction } from 'express';
 import { db } from './db';
+import { userFromToken, getToken } from './auth';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const KEY_RE = /^[A-Za-z0-9._:-]{8,200}$/;
@@ -28,9 +29,13 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
+  // A stored outcome is replayed only to the caller who produced it, for the same method: this
+  // runs before any route's auth, so without that check anyone holding a key could read another
+  // user's stored response.
+  const callerId = userFromToken(getToken(req))?.id ?? null;
   const existing = db
-    .prepare('SELECT status_code, response FROM idempotency_keys WHERE key = ?')
-    .get(key) as StoredRow | undefined;
+    .prepare('SELECT status_code, response FROM idempotency_keys WHERE key = ? AND method = ? AND user_id IS ?')
+    .get(key, req.method, callerId) as StoredRow | undefined;
   if (existing) {
     res.set('Idempotency-Replayed', 'true');
     res.status(existing.status_code).type('application/json').send(existing.response);

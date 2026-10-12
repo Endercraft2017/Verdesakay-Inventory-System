@@ -216,7 +216,7 @@ MApp.route('settings', function (view) {
       event.preventDefault();
       var cur = page.querySelector('[data-cur]').value;
       var next = page.querySelector('[data-new]').value;
-      if (next.length < 6) { mToast('New password must be at least 6 characters', 'err'); return; }
+      if (next.length < 8) { mToast('New password must be at least 8 characters', 'err'); return; }
       var button = event.target.querySelector('button');
       button.disabled = true;
       API.post('/auth/change-password', { current_password: cur, new_password: next })

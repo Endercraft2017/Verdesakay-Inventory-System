@@ -33,6 +33,7 @@ import { endUserSessions } from '../shared/auth';
 import { sendMail } from '../shared/mailer';
 import { parseBody, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
 import { PLANS, PLAN_MODULES, planModules } from './plans';
+import { rateLimitKey } from '../shared/device';
 import {
   requirePlatformAuth, platformLogin, platformLogout, listPlatformUsers,
   type PlatformAuthedRequest,
@@ -64,7 +65,7 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders: false, keyGenerator: rateLimitKey,
   skip: () => process.env.NODE_ENV === 'test',
   message: { error: 'Too many attempts. Wait a few minutes and try again.' },
 });

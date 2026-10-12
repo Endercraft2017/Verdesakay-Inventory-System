@@ -11,6 +11,8 @@
  * the activity log, and the client does not send the header there).
  */
 import type { Request } from 'express';
+import { ipKeyGenerator } from 'express-rate-limit';
+import { CLIENT_IP_HEADER } from './hosting';
 
 const DEVICE_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 const UA_MAX = 300;
@@ -36,9 +38,21 @@ export function isAppClient(req: Request): boolean {
   return c === 'mobile' || c === 'desktop';
 }
 
-/** Client IP (the proxy's X-Forwarded-For when BEHIND_PROXY — see app.ts `trust proxy`). */
+/** Client IP: the edge proxy's client-address header when one is configured (CLIENT_IP_HEADER,
+ *  X-Real-IP on Railway — see shared/hosting.ts), else Express's `req.ip` (X-Forwarded-For when
+ *  BEHIND_PROXY, see app.ts `trust proxy`), else the socket's peer. */
 export function clientIpOf(req: Request): string | null {
+  if (CLIENT_IP_HEADER) {
+    const fromEdge = (req.get(CLIENT_IP_HEADER) || '').split(',')[0]!.trim();
+    if (fromEdge) return fromEdge;
+  }
   return req.ip ?? req.socket?.remoteAddress ?? null;
+}
+
+/** Rate-limit bucket for a request: its client IP (an IPv6 client by its /56, as
+ *  express-rate-limit does by default). Every limiter uses this, never `req.ip` directly. */
+export function rateLimitKey(req: Request): string {
+  return ipKeyGenerator(clientIpOf(req) ?? 'unknown');
 }
 
 /** The User-Agent, trimmed to a sane length for storage. */

@@ -335,6 +335,19 @@ npm run backup:drill      # restores every off-site copy into a temp file and ch
 The owner console (`/_platform`) shows each workspace's last backup and whether its last restore
 drill passed.
 
+### 20. Give the owner console its own address (10 min)
+Today the console runs at `otom.afkcube.com/_platform`, the same site as every company, so its
+sign-in sits in the same browser storage as theirs. On its own sub-domain the browser keeps the two
+completely apart.
+1. Railway → app service → **Settings** → **Networking** → **Custom Domain** → add
+   `console.afkcube.com`. Railway shows a **CNAME target**; copy it.
+2. Cloudflare → `afkcube.com` → **DNS** → **Add record**: type **CNAME**, name `console`,
+   target = the value from Railway, proxy **on** (orange cloud) → save. Wait until Railway shows the
+   domain as active.
+3. Railway → **Variables** → add `PLATFORM_HOST` = `console.afkcube.com` → Railway redeploys.
+4. Open `https://console.afkcube.com/_platform` and sign in again. `otom.afkcube.com/_platform`
+   now answers "Not found", which is intended.
+
 ### Settings you can change
 | Variable | Default | What it does |
 |---|---|---|
@@ -343,3 +356,4 @@ drill passed.
 | `BACKUP_STALE_HOURS` | 26 | Alert when a database has no snapshot / no off-site copy for this long |
 | `BACKUP_ALERT_REPEAT_HOURS` | 12 | Repeat an unresolved alert this often |
 | `ACTIVITY_LOG_RETENTION_DAYS` | 1827 (5 years) | How long the audit trail is kept (minimum 31) |
+| `CLIENT_IP_HEADER` | `x-real-ip` on Railway, none elsewhere | Header holding the visitor's IP (rate limits, sign-in history). Only set it to a header your edge proxy overwrites |

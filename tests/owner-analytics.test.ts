@@ -16,9 +16,9 @@ beforeAll(async () => {
   (await import('../src/platform/platform-users')).upsertPlatformUser('owner', 'ownerpass1');
   owner = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1' })).body.token;
   const { createTenant } = await import('../src/platform/provisioning');
-  createTenant({ slug: 'analyticsco', name: 'Analytics', plan: 'complete', admin_username: 'owner', admin_password: 'secret1' });
-  createTenant({ slug: 'isolatedco', name: 'Isolated', plan: 'complete', admin_username: 'owner', admin_password: 'secret1' });
-  token = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'analyticsco').send({ username: 'owner', password: 'secret1' })).body.token;
+  createTenant({ slug: 'analyticsco', name: 'Analytics', plan: 'complete', admin_username: 'owner', admin_password: 'secret123' });
+  createTenant({ slug: 'isolatedco', name: 'Isolated', plan: 'complete', admin_username: 'owner', admin_password: 'secret123' });
+  token = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'analyticsco').send({ username: 'owner', password: 'secret123' })).body.token;
 });
 afterAll(() => { delete process.env.PLATFORM_CONSOLE; cleanup(ctx); });
 describe('owner aggregate analytics', () => {
@@ -51,7 +51,7 @@ describe('owner aggregate analytics', () => {
     expect(a.history).toHaveLength(1);
     expect(a.storage_growth.mb_per_day).toBeNull();
     const telemetry = platform.platformDb().prepare('SELECT * FROM tenant_telemetry WHERE slug=?').all('analyticsco');
-    expect(JSON.stringify(telemetry)).not.toContain('secret1');
+    expect(JSON.stringify(telemetry)).not.toContain('secret123');
     expect(JSON.stringify(telemetry)).not.toContain('Bearer');
   });
   it('saves owner-only notes and thresholds, provides alerts, and exports a summary', async () => {

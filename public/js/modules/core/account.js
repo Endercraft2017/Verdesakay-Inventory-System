@@ -32,7 +32,7 @@ App.register('account', async (view) => {
         <div class="panel-body">
           <div class="form-error hidden" id="pw-err"></div>
           <label>Current password</label><input id="cur-pw" type="password" />
-          <label>New password</label><input id="new-pw" type="password" placeholder="min 6 characters" />
+          <label>New password</label><input id="new-pw" type="password" placeholder="min 8 characters" />
           <label>Confirm new password</label><input id="con-pw" type="password" />
           <button class="btn" id="pw-save" style="margin-top:16px">Update password</button>
         </div>
@@ -100,7 +100,7 @@ App.register('account', async (view) => {
     const cur = view.querySelector('#cur-pw').value;
     const nw = view.querySelector('#new-pw').value;
     const con = view.querySelector('#con-pw').value;
-    if (nw.length < 6) { err.textContent = 'New password must be at least 6 characters'; err.classList.remove('hidden'); return; }
+    if (nw.length < 8) { err.textContent = 'New password must be at least 8 characters'; err.classList.remove('hidden'); return; }
     if (nw !== con) { err.textContent = 'New passwords do not match'; err.classList.remove('hidden'); return; }
     try {
       await API.post('/auth/change-password', { current_password: cur, new_password: nw });

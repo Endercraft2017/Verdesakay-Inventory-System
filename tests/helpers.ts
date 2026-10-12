@@ -98,7 +98,7 @@ export async function createEmployee(
   overrides: Record<string, unknown> = {}
 ): Promise<{ id: number; token: string; username: string; password: string }> {
   const username = (overrides.username as string) || 'emp' + Math.floor(Math.random() * 1e6);
-  const password = (overrides.password as string) || 'secret1';
+  const password = (overrides.password as string) || 'secret123';
   const res = await api
     .post('/api/users')
     .set('Authorization', `Bearer ${adminToken}`)

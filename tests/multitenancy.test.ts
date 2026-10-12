@@ -41,8 +41,8 @@ describe('the default tenant still works with no catalog', () => {
 
 describe('provisioning + isolation', () => {
   it('rejects a reserved or malformed slug', () => {
-    expect(() => provisioning.createTenant({ slug: 'admin', name: 'X', admin_username: 'owner', admin_password: 'secret1' })).toThrow();
-    expect(() => provisioning.createTenant({ slug: 'A B', name: 'X', admin_username: 'owner', admin_password: 'secret1' })).toThrow();
+    expect(() => provisioning.createTenant({ slug: 'admin', name: 'X', admin_username: 'owner', admin_password: 'secret123' })).toThrow();
+    expect(() => provisioning.createTenant({ slug: 'A B', name: 'X', admin_username: 'owner', admin_password: 'secret123' })).toThrow();
   });
 
   it('creates a tenant with its own admin, isolated from the default tenant', async () => {
@@ -83,7 +83,7 @@ describe('provisioning + isolation', () => {
   });
 
   it('rejects a duplicate slug', () => {
-    expect(() => provisioning.createTenant({ slug: 'acme', name: 'Dupe', admin_username: 'x', admin_password: 'secret1' })).toThrow(/taken/i);
+    expect(() => provisioning.createTenant({ slug: 'acme', name: 'Dupe', admin_username: 'x', admin_password: 'secret123' })).toThrow(/taken/i);
   });
 });
 

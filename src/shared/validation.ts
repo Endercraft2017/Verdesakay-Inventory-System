@@ -3,6 +3,7 @@
  * Routes call parseBody(schema, req.body); invalid input throws a ValidationError
  * which the central error handler turns into a 400 response.
  */
+import { newPasswordSchema } from './password-policy';
 import { z } from 'zod';
 import { MODULES } from './modules';
 import { isMultiPageDocument, MULTIPAGE_GRID_ERROR } from './document-layout';
@@ -56,7 +57,7 @@ export const loginSchema = z.object({
 
 export const changePasswordSchema = z.object({
   current_password: z.string().min(1, 'Current password is required'),
-  new_password: z.string().min(6, 'New password must be at least 6 characters'),
+  new_password: newPasswordSchema('New password'),
 });
 
 // ---- Users / departments ----
@@ -89,7 +90,7 @@ export const createUserSchema = z.object({
     .regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
   full_name: trimmed.min(1, 'Full name is required').max(120),
   email: emailOpt,
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: newPasswordSchema('Password'),
   role: roleEnum.default('admin_staff'),
   department_id: optionalId,
   employee_id: optionalId.optional(),
@@ -104,7 +105,7 @@ export const updateUserSchema = z.object({
 });
 
 export const resetPasswordSchema = z.object({
-  new_password: z.string().min(6, 'New password must be at least 6 characters'),
+  new_password: newPasswordSchema('New password'),
 });
 
 /** POST /api/auth/forgot-password — username or email. Always answered with 200. */
@@ -115,7 +116,7 @@ export const forgotPasswordSchema = z.object({
 /** POST /api/auth/reset-password — the emailed token + a new password. */
 export const selfResetPasswordSchema = z.object({
   token: trimmed.min(10).max(200),
-  new_password: z.string().min(6, 'New password must be at least 6 characters'),
+  new_password: newPasswordSchema('New password'),
 });
 
 export const createDepartmentSchema = z.object({
@@ -208,7 +209,7 @@ export const platformCreateTenantSchema = z.object({
   name: trimmed.min(1, 'Company name is required').max(120),
   slug: trimmed.toLowerCase().optional(),
   admin_username: trimmed.toLowerCase().regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
-  admin_password: z.string().min(6, 'Password must be at least 6 characters'),
+  admin_password: newPasswordSchema('Password'),
   admin_email: z.union([z.literal(''), z.string().trim().toLowerCase().email('Enter a valid owner email address')]).optional(),
   is_sandbox: z.boolean().default(false),
   plan: trimmed.optional(),
@@ -226,7 +227,7 @@ export const signupSchema = z.object({
   company_name: trimmed.min(1, 'Company name is required').max(120),
   slug: trimmed.toLowerCase().regex(/^[a-z][a-z0-9-]{1,30}$/, 'Workspace name: a letter then letters/numbers/hyphens, 2–31 chars'),
   admin_username: trimmed.toLowerCase().regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
-  admin_password: z.string().min(6, 'Password must be at least 6 characters'),
+  admin_password: newPasswordSchema('Password'),
   admin_email: z.union([z.literal(''), z.string().trim().email()]).optional(),
   modules: z.array(z.enum(MODULES)).min(1).optional(),
   seats: z.number().int().min(1).max(500).optional(),

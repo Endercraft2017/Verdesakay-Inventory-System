@@ -22,6 +22,27 @@ harmless HTML marker on one endpoint, and sign-in IPs from this morning's local 
 
 Fix order: H1 and M6 first (one link click away from full takeover), then H2, H3 and M1, then M2 and M3.
 
+### Fix status (updated 2026-10-12)
+| Item | Status |
+|---|---|
+| H1 QuickBooks callback XSS | **Fixed**: every echoed value is HTML-escaped |
+| H2 Database creation from `state` | **Fixed**: the callback only opens a workspace that exists and is active |
+| H3 Dependencies | **Fixed**: multer 2.4, nodemailer 10.1, express 4.22.3 (+ body-parser, qs, proxy-addr, ip-address). `npm audit --omit=dev` leaves only node-forge (no fix; not reachable) |
+| M1 Client IP | **Fixed**: `clientIpOf()` reads the edge's `X-Real-IP` on Railway (`CLIENT_IP_HEADER`), and every rate limiter keys on it |
+| M2 Authentication | **Partly fixed**: 8+ characters and a 2,087-entry common-password block for every new password; failed sign-ins limited per account (10 / 15 min) as well as per IP. **Open:** multi-factor sign-in, forced change of the seeded `admin` password |
+| M3 Headers | **Partly fixed**: HSTS on the cloud host, `Permissions-Policy` everywhere. **Open:** Content-Security-Policy (needs the pages' inline scripts moved to files first) |
+| M4 AI acts without confirmation | **Open**: needs a confirm-before-run step in the chat on desktop and phone |
+| M5 AI key in the activity log | **Fixed**: `api_key`, `key_id`, `access_key`, credentials and authorization headers are redacted. Production had no such row, so nothing to scrub |
+| M6 Owner console on the tenants' origin | **Open (settings):** needs a separate sub-domain in DNS + `PLATFORM_HOST` on Railway |
+| L1 Forgot-password account discovery | **Fixed**: one answer for every case, email sent in the background, rate limited |
+| L2 Unhashed session tokens | Open |
+| L3 Reset link / token handling | **Fixed**: link built from `TENANT_PATH_HOST` + the workspace path; a link is claimed atomically and a reset cancels the account's other links |
+| L4 Chat attachments | **Fixed**: only plain raster images render inline; everything else downloads as `application/octet-stream` |
+| L5 Idempotency replay | **Fixed**: replayed only to the same user, same method |
+| L6 WebSocket token in URL, L7 idle timeout, L9 body size | Open |
+| L8 Link-preview SSRF ranges | **Fixed**: 100.64/10, 198.18/15, 192.0.0/24, 192.0.2/24, 224/4 and up, IPv6 multicast, NAT64 |
+| L10 Desktop `openExternal` | **Fixed**: only `http`/`https` links leave the app |
+
 ## High
 
 ### H1 — Reflected XSS in the QuickBooks OAuth callback (confirmed on production)

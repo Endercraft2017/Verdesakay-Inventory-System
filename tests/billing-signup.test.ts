@@ -14,12 +14,12 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 async function signup(slug: string, extra: Record<string, unknown> = {}) {
   return ctx.api.post('/api/signup').set('Host', host).send({
-    slug, company_name: slug.toUpperCase(), admin_username: 'owner', admin_password: 'secret1',
+    slug, company_name: slug.toUpperCase(), admin_username: 'owner', admin_password: 'secret123',
     admin_email: `${slug}@example.test`, seats: 3, modules: ['hr'], ...extra,
   });
 }
 async function tenantLogin(slug: string) {
-  const r = await ctx.api.post(`/${slug}/api/auth/login`).set('Host', host).send({ username: 'owner', password: 'secret1' });
+  const r = await ctx.api.post(`/${slug}/api/auth/login`).set('Host', host).send({ username: 'owner', password: 'secret123' });
   expect(r.status, JSON.stringify(r.body)).toBe(200);
   return { Host: host, Authorization: `Bearer ${r.body.token}` };
 }
@@ -138,7 +138,7 @@ describe('with GCash and a price list', () => {
 
   it('a workspace the owner creates is usable straight away', async () => {
     const r = await ctx.api.post('/_platform/api/tenants').set(opHdr())
-      .send({ name: 'Console Made', slug: 'consolemade', admin_username: 'owner', admin_password: 'secret1', admin_email: 'owner@consolemade.test', plan: 'starter' });
+      .send({ name: 'Console Made', slug: 'consolemade', admin_username: 'owner', admin_password: 'secret123', admin_email: 'owner@consolemade.test', plan: 'starter' });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     expect(r.body.awaiting_payment).toBe(false);
     const h = await tenantLogin('consolemade');

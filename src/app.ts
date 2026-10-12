@@ -66,6 +66,7 @@ import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost, retiredDe
 import { tenantPath, onTenantPathHost } from './platform/tenant-path';
 import { requireModule, moduleEnabled } from './shared/modules';
 import { BEHIND_PROXY } from './shared/hosting';
+import { rateLimitKey } from './shared/device';
 import { installSync, replayTenantOf, syncRequestMiddleware, syncRoutes } from './sync';
 import desktopRoutes from './desktop/desktop.routes';
 import { versionAssetUrls, staticCacheControl } from './shared/asset-version';
@@ -81,8 +82,15 @@ const NATIVE_APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost'
 
 export function createApp() {
   const app = express();
-  // Apply headers to public pages as well as tenant/API responses.
-  app.use(helmet({ contentSecurityPolicy: false, hsts: false }));
+  // Apply headers to public pages as well as tenant/API responses. HSTS only on an internet host
+  // behind TLS (BEHIND_PROXY): an office PC must stay reachable over plain HTTP on the LAN.
+  app.use(helmet({ contentSecurityPolicy: false, hsts: BEHIND_PROXY ? { maxAge: 31536000, includeSubDomains: false } : false }));
+  // Browser features the app may use: the camera (QR scanner, punch selfies) and location (phone
+  // time-in) on its own pages only; nothing else (microphone, payment, USB, …).
+  app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(self), geolocation=(self), microphone=(), payment=(), usb=(), serial=(), bluetooth=(), hid=()');
+    next();
+  });
   // The public site belongs only to the configured cloud apex, never a tenant/node.
   app.use((req, res, next) => {
     if (!onTenantPathHost(req.headers.host)) { next(); return; }
@@ -234,14 +242,37 @@ export function createApp() {
   // Sync: replay context, the node write guard, and the cloud's effect stream (src/sync/capture.ts).
   app.use(syncRequestMiddleware);
 
-  // Throttle login attempts to slow brute-force guessing.
+  // Throttle login attempts to slow brute-force guessing: per client IP (rateLimitKey — the real
+  // visitor, not the proxy), plus per account so guesses spread over many IPs still stop.
   const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 20,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: rateLimitKey,
     skip: () => process.env.NODE_ENV === 'test', // keep auth tests deterministic
     message: { error: 'Too many login attempts. Please wait a few minutes and try again.' },
+  });
+  const accountLoginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    skipSuccessfulRequests: true, // only failed sign-ins count
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => `${tenantStore.getStore()?.slug ?? DEFAULT_TENANT}:${String((req.body as { username?: unknown } | undefined)?.username ?? '').trim().toLowerCase()}`,
+    skip: () => process.env.NODE_ENV === 'test',
+    message: { error: 'Too many failed sign-ins for this account. Please wait 15 minutes and try again.' },
+  });
+  // Password recovery sends email and checks reset links: keep it from being used to flood
+  // inboxes or guess tokens.
+  const recoveryLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: rateLimitKey,
+    skip: () => process.env.NODE_ENV === 'test',
+    message: { error: 'Too many password-reset requests. Please wait a few minutes and try again.' },
   });
 
   // Lightweight API request log + persistent activity log (mutations only; see activity.ts).
@@ -288,7 +319,9 @@ export function createApp() {
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
   });
-  app.use('/api/auth/login', loginLimiter);
+  app.use('/api/auth/login', loginLimiter, accountLoginLimiter);
+  app.use('/api/auth/forgot-password', recoveryLimiter);
+  app.use('/api/auth/reset-password', recoveryLimiter);
   app.use('/api/auth', authRoutes);
   // Before the bare-'/api' routers below: their blanket requireAuth would otherwise 401 it.
   app.use('/api/anonymous-reports', anonymousReportRoutes);

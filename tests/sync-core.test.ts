@@ -56,7 +56,7 @@ describe('everyday work at a desk PC with no internet', () => {
   });
 
   it('account administration and password changes need the internet', async () => {
-    const add = await api().post('/api/users').set(T.lanHdr()).send({ username: 'nope', full_name: 'Nope', password: 'xxxxxx1', role: 'admin_staff' });
+    const add = await api().post('/api/users').set(T.lanHdr()).send({ username: 'nope', full_name: 'Nope', password: 'xxxxxx12', role: 'admin_staff' });
     expect(add.status).toBe(503);
     expect(add.body.error).toMatch(/internet/i);
     const pw = await api().post('/api/auth/change-password').set(T.lanHdr()).send({ current_password: 'admin123', new_password: 'admin1234' });

@@ -74,7 +74,7 @@ describe('the console', () => {
     expect(p.body).toMatchObject({ status: 'contacted', notes: 'Demo on Monday' });
 
     const t = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
-      name: 'Santos Metalworks', slug: 'santos', admin_username: 'owner', admin_password: 'secret1',
+      name: 'Santos Metalworks', slug: 'santos', admin_username: 'owner', admin_password: 'secret123',
       admin_email: 'maria@santos.test', awaiting_payment: true, inquiry_id: id,
     });
     expect(t.status, JSON.stringify(t.body)).toBe(201);
@@ -83,14 +83,14 @@ describe('the console', () => {
     expect(linked.tenant_slug).toBe('santos');
 
     // locked: sign-in works, the rest waits for the first payment
-    const login = await ctx.api.post('/santos/api/auth/login').set('Host', host).send({ username: 'owner', password: 'secret1' });
+    const login = await ctx.api.post('/santos/api/auth/login').set('Host', host).send({ username: 'owner', password: 'secret123' });
     const h = { Host: host, Authorization: `Bearer ${login.body.token}` };
     expect((await ctx.api.get('/santos/api/users').set(h)).status).toBe(402);
   });
 
   it('a workspace created without the lock is usable straight away', async () => {
     const t = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
-      name: 'Open Co', slug: 'openco', admin_username: 'owner', admin_password: 'secret1', admin_email: 'o@open.test',
+      name: 'Open Co', slug: 'openco', admin_username: 'owner', admin_password: 'secret123', admin_email: 'o@open.test',
     });
     expect(t.body.awaiting_payment).toBe(false);
   });

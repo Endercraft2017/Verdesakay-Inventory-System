@@ -206,10 +206,10 @@ describe('a sync round', () => {
   it('rejects and undoes the offline work of someone disabled on the cloud meanwhile', async () => {
     const id = await newItem(9);
     const u = await ctx.api.post('/api/users').set(cloudHdr())
-      .send({ username: 'wh-offline', full_name: 'Warehouse Offline', password: 'whpass1', role: 'warehouse' });
+      .send({ username: 'wh-offline', full_name: 'Warehouse Offline', password: 'whpass123', role: 'warehouse' });
     expect(u.status).toBe(201);
     await syncRound(); // the user (and password hash) reach the node, so they can sign in there
-    const wl = await ctx.api.post('/api/auth/login').set('X-Tenant', NODE).send({ username: 'wh-offline', password: 'whpass1' });
+    const wl = await ctx.api.post('/api/auth/login').set('X-Tenant', NODE).send({ username: 'wh-offline', password: 'whpass123' });
     expect(wl.status).toBe(200);
     const r = await ctx.api.post(`/api/inventory/${id}/adjust`)
       .set({ Authorization: `Bearer ${wl.body.token}`, 'X-Tenant': NODE }).send({ change: -2, reason: 'Before being disabled' });

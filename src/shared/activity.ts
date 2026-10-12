@@ -10,7 +10,9 @@ import { run } from './db';
 import { deviceIdOf, userAgentOf, deviceLabel, clientIpOf } from './device';
 
 const SKIP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const REDACT_KEY = /pass|password|token|secret|hash|otp|\bpin\b/i;
+// Field names whose values never reach the log: credentials and keys of every kind (an AI or
+// payment provider key arrives as `api_key`, a bucket key as `key_id` / `access_key`).
+const REDACT_KEY = /pass|password|token|secret|hash|otp|\bpin\b|api_?key|private_?key|access_?key|key_?id|credential|authorization/i;
 const META_MAX = 4000;
 
 /** Coarse module name for a path, e.g. "/api/inventory/5/adjust" -> "inventory". */

@@ -149,7 +149,7 @@ describe('per-tenant punch-photo retention (owner-only)', () => {
 
   async function tenantEmployee() {
     const acc = await ctx.api.post('/api/users').set(H())
-      .send({ username: 't' + Math.floor(Math.random() * 1e6), full_name: 'T', password: 'secret1', role: 'warehouse' });
+      .send({ username: 't' + Math.floor(Math.random() * 1e6), full_name: 'T', password: 'secret123', role: 'warehouse' });
     const employee_no = 'T' + Math.floor(Math.random() * 1e6);
     const emp = await ctx.api.post('/api/hr/employees').set(H())
       .send({ employee_no, name: 'TENANT EMP', user_id: acc.body.id, daily_rate: 500, rate_type: 'daily', status: 'regular' });

@@ -14,6 +14,7 @@ import { planModules } from './plans';
 import { createTenant } from './provisioning';
 import { SIGNUPS_OPEN, tenantPublicUrl, setAwaitingPayment } from './platform';
 import { getBillingSettings, priceListQuote, createInvoice, invoiceView } from './billing';
+import { rateLimitKey } from '../shared/device';
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -23,7 +24,7 @@ const signupLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 10,
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders: false, keyGenerator: rateLimitKey,
   skip: () => process.env.NODE_ENV === 'test',
   message: { error: 'Too many sign-up attempts. Please try again later.' },
 });

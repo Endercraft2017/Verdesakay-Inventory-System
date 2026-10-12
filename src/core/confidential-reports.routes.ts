@@ -39,6 +39,7 @@ import { attachCommandFiles } from '../sync/files';
 import { reRunOfRecordedCommand, syncContext } from '../shared/sync-context';
 import type { ScrubbedImage } from '../shared/image-metadata';
 import { keepRequestContext } from '../shared/request-context';
+import { rateLimitKey } from '../shared/device';
 
 /** Paths whose requests must leave no identity trail (activity log, idempotency store). */
 export function isAnonymousReportPath(p: string): boolean {
@@ -47,7 +48,7 @@ export function isAnonymousReportPath(p: string): boolean {
 
 // In-memory only (never persisted), so the limiter can't become a record of who reported.
 const limiter = (limit: number) => rateLimit({
-  windowMs: 15 * 60 * 1000, limit, standardHeaders: true, legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, limit, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
   skip: () => process.env.NODE_ENV === 'test',
   message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
 });

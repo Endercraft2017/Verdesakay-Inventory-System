@@ -478,8 +478,12 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
     res.status(410).json({ error: 'File is missing on disk' });
     return;
   }
-  if (att.mime_type) res.type(att.mime_type);
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.original_name)}"`);
+  // The type is whatever the uploader's browser claimed. Only plain raster images may render in
+  // place; anything else (HTML, SVG, PDF, …) is served as a download, so a file sent in chat can
+  // never run script on the app's own origin.
+  const inlineImage = !!att.mime_type && /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(att.mime_type);
+  res.type(inlineImage ? att.mime_type! : 'application/octet-stream');
+  res.setHeader('Content-Disposition', `${inlineImage ? 'inline' : 'attachment'}; filename="${encodeURIComponent(att.original_name)}"`);
   res.sendFile(filePath);
 });
 
@@ -542,13 +546,18 @@ function isPrivateIp(ip: string): boolean {
     if (a === 169 && b === 254) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT (100.64.0.0/10)
+    if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking (198.18.0.0/15)
+    if (a === 192 && b === 0 && (parts[2] === 0 || parts[2] === 2)) return true; // 192.0.0.0/24, TEST-NET-1
+    if (a >= 224) return true; // multicast, reserved, broadcast
     return false;
   }
   if (net.isIPv6(ip)) {
     const low = ip.toLowerCase();
     if (low === '::1' || low === '::') return true;
-    if (low.startsWith('fe80:') || low.startsWith('fc') || low.startsWith('fd')) return true;
+    if (low.startsWith('fe80:') || low.startsWith('fc') || low.startsWith('fd') || low.startsWith('ff')) return true;
     if (low.startsWith('::ffff:')) return isPrivateIp(low.slice(7));
+    if (low.startsWith('64:ff9b:')) return true; // NAT64: an IPv4 address in disguise
     return false;
   }
   return true; // not a literal IP we recognize -- treat conservatively as unsafe

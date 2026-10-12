@@ -216,9 +216,12 @@ describe('messages: attachments', () => {
     expect(msg.attachments[0].name).toBe('report.txt');
     expect(msg.attachments[0].url).toBe(`/messages/${msg.id}/attachments/${msg.attachments[0].id}`);
 
-    const dl = await ctx.api.get(`/api${msg.attachments[0].url}`).set(bearer(alice.token));
+    const dl = await ctx.api.get(`/api${msg.attachments[0].url}`).set(bearer(alice.token)).buffer(true)
+      .parse((res, done) => { const parts: Buffer[] = []; res.on('data', (c: Buffer) => parts.push(c)); res.on('end', () => done(null, Buffer.concat(parts))); });
     expect(dl.status).toBe(200);
-    expect(dl.text).toBe(FILE.toString());
+    // Not an image, so it is served as a download (never rendered in the app's origin).
+    expect(dl.headers['content-disposition']).toMatch(/^attachment;/);
+    expect((dl.body as Buffer).toString()).toBe(FILE.toString());
 
     const stranger = await createEmployee(ctx.api, adminToken, { username: 'dave_stranger' });
     const blocked = await ctx.api.get(`/api${msg.attachments[0].url}`).set(bearer(stranger.token));

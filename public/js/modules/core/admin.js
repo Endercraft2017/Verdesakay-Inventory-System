@@ -181,7 +181,7 @@ App.register('admin', async (view, filter) => {
           <div><label>Department</label>${deptSelect('department_id', null)}</div>
         </div>
         ${ROLE_HINT}
-        <div><label>Temporary password *</label><input data-f="password" type="text" placeholder="min 6 characters" /></div>
+        <div><label>Temporary password *</label><input data-f="password" type="text" placeholder="min 8 characters" /></div>
         <p class="muted" style="font-size:12px">Share this with the employee; they can change it under My Account.</p>`,
       confirmText: 'Create account',
       onOpen: wireRoleHint,
@@ -270,12 +270,12 @@ App.register('admin', async (view, filter) => {
   function resetPw(u) {
     UI.modal({
       title: 'Reset password — ' + u.full_name,
-      bodyHTML: `<div><label>New password *</label><input data-f="pw" type="text" placeholder="min 6 characters" /></div>
+      bodyHTML: `<div><label>New password *</label><input data-f="pw" type="text" placeholder="min 8 characters" /></div>
         <p class="muted" style="font-size:12px">This signs the user out of all sessions.</p>`,
       confirmText: 'Set password',
       onConfirm: async (overlay, showErr) => {
         const pw = overlay.querySelector('[data-f="pw"]').value;
-        if (!pw || pw.length < 6) { showErr('Password must be at least 6 characters'); return false; }
+        if (!pw || pw.length < 8) { showErr('Password must be at least 8 characters'); return false; }
         await API.post(`/users/${u.id}/reset-password`, { new_password: pw });
         UI.toast('Password reset');
       },

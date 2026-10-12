@@ -2,7 +2,7 @@ import { approverDepartmentIds } from '../modules/hr/workflow';
 /** Authentication routes: login, logout, current user, self password change, password reset,
  *  and the caller's own sessions ("Where you're signed in" — list / end one / end the others). */
 import crypto from 'node:crypto';
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run, newToken, DEFAULT_TENANT } from '../shared/db';
 import {
@@ -25,6 +25,15 @@ const router = Router();
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
 const RESET_TTL_MIN = 60;
+
+/** Where an emailed link points: the configured public host on the cloud (TENANT_PATH_HOST, not
+ *  the request's Host header, which the caller controls), else this request's own address (an
+ *  office server, or sub-domain tenancy where the host names the workspace). */
+function appOrigin(req: Request): string {
+  if (process.env.TENANT_PATH_HOST) return `https://${process.env.TENANT_PATH_HOST}`;
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0];
+  return `${proto}://${req.get('host')}`;
+}
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
@@ -156,28 +165,26 @@ router.post('/forgot-password', syncClass('online'), async (req, res, next) => {
       id, id
     )[0];
 
-    const done = { ok: true, sent: false as boolean, reason: '' as string };
+    // The same answer, at the same speed, whether or not the account exists or has an email:
+    // anything else tells a stranger which usernames / addresses are real. The mail goes out in
+    // the background; a failure is in the mail log for an admin.
     if (user && user.email && mailReady()) {
       const raw = newToken();
       run(
         "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, datetime('now', ?))",
         sha256(raw), user.id, `+${RESET_TTL_MIN} minutes`
       );
-      const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0];
-      const link = `${proto}://${req.get('host')}/?reset=${raw}`;
-      const r = await sendMail({
+      const link = `${appOrigin(req)}${String(res.locals.tenantBase || '')}/?reset=${raw}`;
+      void sendMail({
         to: user.email,
         subject: 'Password reset',
         text: `Hi ${user.full_name},\n\nYour username: ${user.username}\n\nUse this link within ${RESET_TTL_MIN} minutes to set a new password:\n${link}\n\nIf you didn't ask for this, ignore this email.`,
-      }, user.id);
-      done.sent = r.ok;
-      if (!r.ok) done.reason = r.error || 'send failed';
-    } else if (user && !user.email) {
-      done.reason = 'no email on file — ask an admin to reset it';
-    } else if (!mailReady()) {
-      done.reason = 'email is not configured — ask an admin to reset it';
+      }, user.id).catch(() => { /* recorded in mail_log by sendMail */ });
     }
-    res.json(done);
+    res.json({
+      ok: true,
+      message: 'If that account exists and has an email address on file, a reset link is on its way. Otherwise ask your administrator to reset your password.',
+    });
   } catch (e) {
     next(e);
   }
@@ -190,12 +197,14 @@ router.post('/reset-password', syncClass('online'), (req, res) => {
     "SELECT user_id FROM password_resets WHERE token_hash = ? AND used = 0 AND expires_at > datetime('now')",
     sha256(token)
   );
-  if (!row) {
+  // Claim the link in one statement, so two submissions racing with the same link can't both win.
+  if (!row || Number(run('UPDATE password_resets SET used = 1 WHERE token_hash = ? AND used = 0', sha256(token)).changes) !== 1) {
     res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
     return;
   }
   run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', bcrypt.hashSync(new_password, 10), row.user_id);
-  run('UPDATE password_resets SET used = 1 WHERE token_hash = ?', sha256(token));
+  // Every other outstanding link for this account stops working too.
+  run('UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0', row.user_id);
   endUserSessions(row.user_id, 'password'); // force re-login everywhere
   res.json({ ok: true });
 });

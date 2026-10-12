@@ -72,7 +72,8 @@ describe('provision + edit a workspace', () => {
     const { withTenant, setSetting, queryOne } = await import('../src/shared/db');
     withTenant('real-company', () => setSetting('mail_settings', { transport: 'smtp', smtp_host: 'smtp.real.test', from_email: 'system@real.test' }));
     const forgot = await ctx.api.post('/api/auth/forgot-password').set(asTenant('real-company')).send({ identifier: 'owner@real.test' });
-    expect(forgot.body.sent).toBe(true);
+    expect(forgot.body.ok).toBe(true); // same answer for every account; the link row proves it was issued
+    expect(withTenant('real-company', () => queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM password_resets')!.n)).toBeGreaterThan(0);
     expect((await ctx.api.post('/_platform/api/tenants/real-company/recover-owner-username').set(opHdr())).body.email.sent).toBe(true);
     const reset = await ctx.api.post('/_platform/api/tenants/real-company/reset-owner-password').set(opHdr())
       .send({ owner_id: 1, new_password: 'newrealpass1' });
@@ -348,11 +349,11 @@ describe('module subscriptions and login seats', () => {
   });
 
   it('enforces active login seats on creation and reactivation, without capping employees', async () => {
-    const second = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'second', full_name: 'Second', password: 'secret1' });
+    const second = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'second', full_name: 'Second', password: 'secret123' });
     expect(second.status).toBe(201);
-    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret1' })).status).toBe(402);
+    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret123' })).status).toBe(402);
     expect((await ctx.api.put('/api/users/' + second.body.id).set(tenantHeaders()).send({ active: false })).status).toBe(200);
-    const third = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret1' });
+    const third = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret123' });
     expect(third.status).toBe(201);
     expect((await ctx.api.put('/api/users/' + second.body.id).set(tenantHeaders()).send({ active: true })).status).toBe(402);
     const created = await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E1', name: 'First', status: 'resigned' });
@@ -374,7 +375,7 @@ describe('module subscriptions and login seats', () => {
     expect(r.body.subscription.monthly_total).toBe(2050);
     expect(r.body.usage.employees).toBe(4);
     expect((await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E5', name: 'Fifth' })).status).toBe(201);
-    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'fourth', full_name: 'Fourth', password: 'secret1' })).status).toBe(402);
+    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'fourth', full_name: 'Fourth', password: 'secret123' })).status).toBe(402);
     const blank = await ctx.api.put('/_platform/api/tenants/subscriptionco/subscription').set(opHdr())
       .send({ ...settings, module_prices: { hr: 0 }, seat_limit: null });
     expect(blank.body.subscription.monthly_total).toBeNull();

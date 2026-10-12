@@ -5,7 +5,7 @@
  * multi-tenancy lands); the SMTP password is encrypted at rest (src/secrets.ts).
  * Every send is recorded in `mail_log`.
  */
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 import { getSetting, setSetting, run, queryAll } from './db';
 import { encryptSecret, decryptSecret } from './secrets';
 import type { MailSettings, MailLogRow } from './types';
@@ -45,7 +45,7 @@ export function saveMailSettings(input: MailSettings & { smtp_pass?: string }): 
   }
 }
 
-function buildTransport(): nodemailer.Transporter {
+function buildTransport(): Transporter {
   if (process.env.NODE_ENV === 'test') {
     return nodemailer.createTransport({ jsonTransport: true });
   }

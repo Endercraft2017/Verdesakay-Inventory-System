@@ -39,7 +39,7 @@ describe('plan quotas on a named tenant', () => {
 
   it('blocks the 6th user with a 402', async () => {
     const mk = (n: number) => ctx.api.post('/api/users').set(asTenant('capco')).set('Authorization', `Bearer ${tkn}`)
-      .send({ username: `capuser${n}`, full_name: `Cap User ${n}`, password: 'secret1' });
+      .send({ username: `capuser${n}`, full_name: `Cap User ${n}`, password: 'secret123' });
     for (let i = 2; i <= 5; i++) expect((await mk(i)).status).toBe(201); // 1 (admin) + 4 = 5
     const sixth = await mk(6);
     expect(sixth.status).toBe(402);

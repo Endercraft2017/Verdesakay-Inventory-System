@@ -286,7 +286,7 @@ window.MApp = (function () {
     viewEl().innerHTML = '<form id="m-new-password-form">' +
       '<p>Replace your temporary password before accessing the workspace.</p>' +
       '<label>Temporary password</label><input id="m-temp-password" type="password" autocomplete="current-password" required />' +
-      '<label>New password</label><input id="m-new-password" type="password" autocomplete="new-password" minlength="6" required />' +
+      '<label>New password</label><input id="m-new-password" type="password" autocomplete="new-password" minlength="8" required />' +
       '<label>Confirm new password</label><input id="m-confirm-password" type="password" autocomplete="new-password" required />' +
       '<p id="m-password-error" role="status"></p><button class="m-btn" type="submit">Save new password</button>' +
       '<button class="m-btn m-btn-secondary" id="m-password-out" type="button">Sign out</button></form>';

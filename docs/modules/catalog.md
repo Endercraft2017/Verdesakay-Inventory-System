@@ -24,7 +24,10 @@ ENDED on sign-out rather than deleted — `ended_at`/`end_reason`, swept after
 `SESSION_HISTORY_DAYS` = 90 by `cleanupSessions()`; `shared` = borrowed-phone session, 4 h max
 and 30 min idle; `endUserSessions` / `endSessionBySid` / `listUserSessions` /
 `deviceUsualUserId`), `device.ts` (`X-Device-Id` — a random per-browser ID from
-`public/js/api.js`, not a fingerprint — plus client IP and a readable user-agent label),
+`public/js/api.js`, not a fingerprint — plus client IP (`clientIpOf`: the edge's `X-Real-IP` on
+Railway via `CLIENT_IP_HEADER` in `hosting.ts`) and `rateLimitKey` for every rate limiter, and a
+readable user-agent label), `password-policy.ts` (`newPasswordSchema`: 8–128 characters, not on
+the bundled common-password list — used by every password-setting schema in `validation.ts`),
 `activity.ts` (audit log writer, now with `device_id` + `device` label per row; `logEvent()` for events the
 mutation middleware can't see, e.g. a payslip download; a route may set
 `res.locals.activity = { action, summary, snapshot }` to make its middleware row readable and

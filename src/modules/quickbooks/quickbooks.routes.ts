@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { canOnOrder } from '../inventory/order-access';
-import { withTenant, getSetting, setSetting, queryOne, queryAll } from '../../shared/db';
+import { withTenant, getSetting, setSetting, queryOne, queryAll, DEFAULT_TENANT } from '../../shared/db';
+import { isValidSlug, getTenant, retiredDefaultTenant } from '../../platform/platform';
 import { parseBody } from '../../shared/validation';
 import { z } from 'zod';
 import {
@@ -17,22 +18,36 @@ const router = Router();
 
 const STATE_KEY = 'qbo_oauth_state'; // { nonce, ts }
 
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** The OAuth `state` names a workspace this server actually hosts (and that is active). */
+function knownWorkspace(slug: string): boolean {
+  if (slug === DEFAULT_TENANT) return !retiredDefaultTenant();
+  if (!isValidSlug(slug)) return false;
+  const t = getTenant(slug);
+  return !!t && t.status !== 'suspended' && t.status !== 'purged';
+}
+
 // GET /api/quickbooks/callback — Intuit redirects here (public, no session). `state`
 // carries the tenant slug + a CSRF nonce created by /connect.
 router.get('/callback', async (req, res, next) => {
   try {
     const { code, realmId, state, error } = req.query as Record<string, string>;
+    // Public page: everything that came from the query string is escaped before it is written.
     const done = (msg: string, ok: boolean) =>
       res.status(ok ? 200 : 400).type('html').send(
         `<!doctype html><meta charset=utf-8><title>QuickBooks</title>
          <body style="font:15px system-ui;padding:40px;text-align:center">
          <h2>${ok ? '✅ Connected to QuickBooks' : '⚠️ QuickBooks connection failed'}</h2>
-         <p>${msg}</p><p>You can close this tab.</p>
+         <p>${escapeHtml(msg)}</p><p>You can close this tab.</p>
          <script>try{window.opener&&window.opener.postMessage('qbo:${ok ? 'ok' : 'fail'}','*')}catch(e){}</script>`);
 
-    if (error) { done(`Intuit returned: ${error}`, false); return; }
+    if (error) { done(`Intuit returned: ${String(error).slice(0, 200)}`, false); return; }
     const [slug, nonce] = String(state || '').split('.', 2);
     if (!slug || !nonce || !code || !realmId) { done('Missing parameters.', false); return; }
+    // Only a workspace that exists may be opened: getDb() would otherwise create, migrate and seed
+    // a database for any name in the query string.
+    if (!knownWorkspace(slug)) { done('Unknown workspace.', false); return; }
 
     const valid = withTenant(slug, () => {
       const s = getSetting<{ nonce: string; ts: number }>(STATE_KEY);

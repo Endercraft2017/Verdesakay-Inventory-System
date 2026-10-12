@@ -168,7 +168,9 @@ function openWindow(url) {
     });
     win.webContents.setWindowOpenHandler(({ url: target }) => {
       if (!target.startsWith(`http://localhost:${PORT}`) && !target.startsWith(`https://localhost:${PORT}`)) {
-        shell.openExternal(target);
+        // Only web links go to the default browser: any other scheme (file:, ms-*, custom
+        // protocol handlers) could start a program on this PC.
+        if (/^https?:\/\//i.test(target)) shell.openExternal(target);
         return { action: 'deny' };
       }
       return { action: 'allow' };

@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { onTenantPathHost } from './tenant-path';
 import { createInquiry } from './inquiries';
 import { MODULES } from '../shared/modules';
+import { rateLimitKey } from '../shared/device';
 
 const router = Router();
 
@@ -17,7 +18,7 @@ const limiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 5,
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders: false, keyGenerator: rateLimitKey,
   skip: () => process.env.NODE_ENV === 'test',
   message: { error: 'Too many messages from this connection. Please try again later, or contact us directly.' },
 });

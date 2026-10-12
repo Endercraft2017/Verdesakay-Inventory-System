@@ -532,9 +532,10 @@ const App = (() => {
         const id = ov.querySelector('[data-f="id"]').value.trim();
         if (!id) { showErr('Enter your username or email.'); return false; }
         const r = await API.post('/auth/forgot-password', { identifier: id });
-        UI.toast(r.sent ? 'Check your email for your username and reset link.'
-          : (r.reason ? 'Could not send: ' + r.reason : 'If that account exists, a link is on its way.'),
-          r.sent ? 'success' : 'error');
+        // The server answers the same for every account (no hint which ones exist); only a
+        // sandbox workspace says why nothing is sent.
+        UI.toast(r.reason ? 'Could not send: ' + r.reason
+          : (r.message || 'If that account exists, a link is on its way.'), r.reason ? 'error' : 'success');
       },
     });
   }
@@ -543,12 +544,12 @@ const App = (() => {
     UI.modal({
       title: 'Set a new password',
       bodyHTML: `<label>New password</label>
-        <input data-f="pw" type="password" autocomplete="new-password" placeholder="at least 6 characters" />`,
+        <input data-f="pw" type="password" autocomplete="new-password" placeholder="at least 8 characters" />`,
       confirmText: 'Save & sign in',
       cancelText: 'Cancel',
       onConfirm: async (ov, showErr) => {
         const pw = ov.querySelector('[data-f="pw"]').value;
-        if ((pw || '').length < 6) { showErr('Password must be at least 6 characters.'); return false; }
+        if ((pw || '').length < 8) { showErr('Password must be at least 8 characters.'); return false; }
         try {
           await API.post('/auth/reset-password', { token, new_password: pw });
         } catch (e) { showErr(e.message); return false; }
