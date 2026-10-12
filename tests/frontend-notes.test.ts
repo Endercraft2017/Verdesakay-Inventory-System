@@ -14,6 +14,7 @@ it('creates a checklist-only note, schedules it, and retries scheduling without 
   const flush = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0)); };
   click('[data-tool="notes"]'); await flush(); click('#note-new');
   fill('#note-title', 'HR preparation'); fill('#note-item-text', 'Review leave');
+  w.document.querySelector('#note-item-text').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await flush(); expect(calls).toHaveLength(0); expect(w.document.querySelector('#note-items [data-text]')).not.toBeNull();
   w.document.querySelector('#note-scheduled').checked = true; w.document.querySelector('#note-scheduled').dispatchEvent(new w.Event('change'));
   fill('#note-due', '2026-11-05T10:00'); fill('#note-remind', '2026-11-05T09:00'); click('[data-confirm]'); await flush();
   expect(calls[0]!.body).toMatchObject({ title: 'HR preparation', body: '', checklist: [{ id: 'check-one', text: 'Review leave', done: false }] });

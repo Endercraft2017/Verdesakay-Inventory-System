@@ -154,7 +154,7 @@ const UI = (() => {
     }
     // Submit on Enter inside single-line inputs.
     overlay.querySelectorAll('input').forEach((inp) => {
-      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && confirmBtn) { e.preventDefault(); confirmBtn.click(); } });
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && confirmBtn && !inp.hasAttribute('data-no-submit')) { e.preventDefault(); confirmBtn.click(); } });
     });
     if (opts.onOpen) Promise.resolve(opts.onOpen(overlay)).catch(e => showErr(e.message || 'Could not load dialog details'));
     const firstInput = [...overlay.querySelectorAll('input,select,textarea')].find(el => !el.disabled && !['hidden', 'file'].includes(el.type) && !el.closest('.hidden,[hidden]'));

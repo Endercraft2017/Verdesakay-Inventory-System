@@ -321,3 +321,11 @@
 .note-schedule p { font-size: 12px; line-height: 1.5; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 600px) { .main { --page-gap: 16px; --panel-pad: 16px; } .note-item-add { flex-wrap: wrap; } }
+
+/* Editors launched from drawers stay above their parent panel, with visible actions. */
+.modal-overlay { z-index: 150; }
+.modal-overlay .modal { display: flex; flex-direction: column; overflow: hidden; max-height: calc(100dvh - 40px); }
+.modal-overlay .modal-body { overflow: auto; min-height: 0; }
+.modal-overlay :is(.modal-head, .modal-foot) { flex-shrink: 0; }
+#toasts { z-index: 250; }
+@media (max-width: 600px) { .modal-overlay { padding: 10px; } .modal-overlay .modal { max-height: calc(100dvh - 20px); } }
