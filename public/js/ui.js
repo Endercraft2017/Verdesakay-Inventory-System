@@ -306,7 +306,7 @@ const UI = (() => {
       setTimeout(() => el.remove(), 180); // let the slide-out finish
     }
     catcher.addEventListener('mousedown', close);
-    el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', dismiss));
+    el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
     document.addEventListener('keydown', onKey);
     currentDrawer = { el, key: opts.key, close };
     requestAnimationFrame(() => el.classList.add('open'));
