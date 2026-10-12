@@ -96,6 +96,102 @@ function serializeEditor(root) {
   return clone.innerHTML.trim();
 }
 
+/** Browser selection adapter for history. Element paths ignore editor-only controls;
+ * direct text offsets survive the adjacent text-node merging done by HTML round trips.
+ * Anchor/focus are kept separately so backwards selections retain their direction. */
+const SELECTION_CHROME = '.doc-float-handle,.doc-float-toolbar,.doc-promote-bar,.doc-snap-guide,.doc-page-guide';
+function selectionChildren(node) {
+  return [...node.childNodes].filter(n => n.nodeType === 3 || (n.nodeType === 1 && !n.matches(SELECTION_CHROME)));
+}
+function captureEditorSelection(root) {
+  const sel = root.ownerDocument.defaultView.getSelection();
+  if (!sel?.rangeCount || !root.contains(sel.anchorNode) || !root.contains(sel.focusNode)) return null;
+  function point(node, offset) {
+    const parent = node.nodeType === 3 ? node.parentNode : node;
+    if (parent.closest?.(SELECTION_CHROME)) return null;
+    const path = []; let el = parent;
+    while (el !== root) {
+      const up = el.parentNode;
+      if (!up) return null;
+      path.unshift([...up.children].filter(c => !c.matches(SELECTION_CHROME)).indexOf(el));
+      el = up;
+    }
+    let units = 0;
+    const children = new Set(selectionChildren(parent));
+    const before = node.nodeType === 3 ? [...parent.childNodes].slice(0, [...parent.childNodes].indexOf(node)) : [...parent.childNodes].slice(0, offset);
+    for (const child of before) if (children.has(child)) units += child.nodeType === 3 ? child.length : 1;
+    if (node.nodeType === 3) units += offset;
+    return { path, offset: units };
+  }
+  const anchor = point(sel.anchorNode, sel.anchorOffset), focus = point(sel.focusNode, sel.focusOffset);
+  return anchor && focus ? { anchor, focus } : null;
+}
+function restoreEditorSelection(root, bookmark) {
+  if (!bookmark) return false;
+  function point(saved) {
+    let node = root;
+    for (const index of saved.path) {
+      node = [...node.children].filter(c => !c.matches(SELECTION_CHROME))[index];
+      if (!node) return null;
+    }
+    let remaining = saved.offset;
+    for (const child of selectionChildren(node)) {
+      if (child.nodeType === 3) {
+        if (remaining <= child.length) return [child, remaining];
+        remaining -= child.length;
+      } else {
+        if (remaining === 0) return [node, [...node.childNodes].indexOf(child)];
+        remaining--;
+      }
+    }
+    return [node, node.childNodes.length];
+  }
+  const anchor = point(bookmark.anchor), focus = point(bookmark.focus);
+  if (!anchor || !focus) return false;
+  const sel = root.ownerDocument.defaultView.getSelection();
+  sel.setBaseAndExtent(...anchor, ...focus);
+  return true;
+}
+
+/** Model-ready command registry. The browser adapter is intentionally isolated here;
+ * later phases can replace one command at a time without changing toolbar/shortcut callers. */
+function createDocCommandRegistry(context) {
+  const definitions = new Map();
+  const native = {
+    bold:'format.bold', italic:'format.italic', underline:'format.underline', strikeThrough:'format.strike',
+    superscript:'format.superscript', subscript:'format.subscript', removeFormat:'format.clear',
+    justifyLeft:'paragraph.left', justifyCenter:'paragraph.center', justifyRight:'paragraph.right', justifyFull:'paragraph.justify',
+    insertUnorderedList:'list.bullets', insertOrderedList:'list.numbered', indent:'paragraph.indent', outdent:'paragraph.outdent',
+    formatBlock:'paragraph.style', fontName:'format.font', foreColor:'format.color', hiliteColor:'format.highlight',
+    createLink:'insert.link', insertHTML:'insert.html', insertText:'insert.text', delete:'edit.deleteSelection',
+  };
+  for (const [command, id] of Object.entries(native)) definitions.set(id, {
+    run: value => context.native(command, value),
+    active: () => context.active(command),
+  });
+  definitions.set('format.size', {run:value=>context.size(value)});
+  definitions.set('edit.deleteAtomic', {run:target=>context.deleteAtomic(target)});
+  definitions.set('edit.undo', {run:()=>context.undo(),history:true,enabled:()=>context.canUndo?.() ?? true});
+  definitions.set('edit.redo', {run:()=>context.redo(),history:true,enabled:()=>context.canRedo?.() ?? true});
+  function state(id) {
+    const def=definitions.get(id);
+    return {enabled:!!def && context.enabled(!!def.history) && def.enabled?.() !== false,active:!!def && !def.history && !!def.active?.()};
+  }
+  function run(id,value) {
+    const def=definitions.get(id);
+    if(!def || (!def.history && !context.prepare()) || !state(id).enabled)return false;
+    if(def.history){def.run();return true;}
+    context.before();
+    try {
+      if(def.run(value)===false)return false;
+      context.changed();return true;
+    } catch(err) {context.error(err);return false;}
+    finally {context.after();}
+  }
+  return {run,state,idForNative:command=>native[command] || ({undo:'edit.undo',redo:'edit.redo'})[command],
+    list:()=>[...definitions.keys()]};
+}
+
 /* ---- paste sanitizer (allowlist; keeps our chips/tables, strips Word/web cruft) ---- */
 const SANITIZE_TAGS = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUP', 'SUB', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'FIGURE', 'FIGCAPTION', 'UL', 'OL', 'LI', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'SPAN', 'DIV', 'A', 'IMG', 'HR', 'FONT', 'BLOCKQUOTE', 'INS', 'DEL']);
 const SANITIZE_ATTR = { A: ['href'], IMG: ['src', 'alt'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
@@ -779,9 +875,9 @@ function tablePanelHTML() {
 }
 
 /* ---- shared dialogs ---- */
-function insertTableDialog(insertHtml, saveSel) {
+function insertTableDialog(insertHtml, saveSel, modal = UI.modal) {
   saveSel();
-  UI.modal({
+  modal({
     title: 'Insert table',
     bodyHTML: `<div class="field-row"><div><label>Rows</label><input type="number" id="tb-rows" value="3" min="1" max="50"></div>
       <div><label>Columns</label><input type="number" id="tb-cols" value="3" min="1" max="20"></div></div>
@@ -805,9 +901,9 @@ function insertTableDialog(insertHtml, saveSel) {
   });
 }
 
-function imageDialog(insertHtml, saveSel) {
+function imageDialog(insertHtml, saveSel, modal = UI.modal) {
   saveSel();
-  UI.modal({
+  modal({
     title: 'Insert image',
     bodyHTML: `<label>Image URL</label><input id="img-url" placeholder="https://…">
       <label>…or upload a file</label><input type="file" id="img-file" accept="image/*">
@@ -859,9 +955,9 @@ function editPicture(img,onChange) {
 
 const SYMBOLS = ['₱', '$', '€', '£', '¥', '©', '®', '™', '°', '§', '¶', '•', '★', '✓', '✗', '½', '¼', '¾', '×', '÷', '±', '№'];
 
-function symbolDialog(insertHtml, saveSel) {
+function symbolDialog(insertHtml, saveSel, modal = UI.modal) {
   saveSel();
-  const m = UI.modal({
+  const m = modal({
     title: 'Insert symbol',
     bodyHTML: `<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px">
       ${SYMBOLS.map((s) => `<button type="button" class="btn secondary" data-sym="${escAttr(s)}" style="font-size:16px;padding:8px 0">${s}</button>`).join('')}
@@ -1064,7 +1160,7 @@ function variableDialog(saveSel, getVariables, insertFn, opts = {}) {
   const vars = getVariables ? getVariables() : [];
   const cats = [...new Set(vars.map((v) => v.category || 'Other'))];
   const rowHtml = (v) => `<button type="button" class="var-pick" data-token="${escAttr(v.token || v.key)}">${UI.esc(v.label || v.key)} <span class="muted mono">${escAttr(v.token || ('{{' + v.key + '}}'))}</span></button>`;
-  const m = UI.modal({
+  const m = (opts.modal || UI.modal)({
     title: opts.title || 'Insert variable',
     bodyHTML: `<input class="var-search" id="var-search" placeholder="Search variables…" autocomplete="off">
       <div class="var-tabs" id="var-tabs">${cats.map((c, i) => `<button type="button" class="var-tab ${i === 0 ? 'active' : ''}" data-cat="${escAttr(c)}">${UI.esc(c)}</button>`).join('')}</div>
@@ -1087,7 +1183,7 @@ function variableDialog(saveSel, getVariables, insertFn, opts = {}) {
 }
 
 /** Formula builder — clearly sectioned, with tooltips and a live result. */
-function formulaDialog(insertHtml, saveSel, getVariables, initial, sampleContext) {
+function formulaDialog(insertHtml, saveSel, getVariables, initial, sampleContext, modal = UI.modal) {
   saveSel();
   const vars = getVariables ? getVariables() : [];
   const cats = [...new Set(vars.map((v) => v.category || 'Other'))];
@@ -1103,7 +1199,7 @@ function formulaDialog(insertHtml, saveSel, getVariables, initial, sampleContext
   ];
   const OPS = [['+', 'Add'], ['-', 'Subtract'], ['*', 'Multiply'], ['/', 'Divide'], ['(', 'Open bracket'], [')', 'Close bracket']];
 
-  const m = UI.modal({
+  const m = modal({
     title: 'Insert a formula',
     size: 'lg',
     bodyHTML: `
@@ -1181,13 +1277,64 @@ function formulaDialog(insertHtml, saveSel, getVariables, initial, sampleContext
 }
 
 /* ---- wiring ---- */
-function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext, tabApi, getZoom, onUndo, onRedo) {
+function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext, tabApi, getZoom, onUndo, onRedo, commandContext = {}) {
   const zoomNow = () => (typeof getZoom === 'function' ? Number(getZoom()) : 1) || 1;
-  let savedRange = null;
-  const saveSel = () => { const sel = window.getSelection(); if (sel && sel.rangeCount && surface.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange(); };
-  const restoreSel = () => { surface.focus(); if (savedRange && surface.contains(savedRange.startContainer)) { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); } };
-  const exec = (cmd, val) => { restoreSel(); document.execCommand(cmd, false, val); saveSel(); onChange(); };
-  const insertHtml = (html) => { restoreSel(); document.execCommand('insertHTML', false, html); saveSel(); onChange(); };
+  let savedRange = null, savedBackwards = false;
+  const saveSel = () => {
+    const sel = window.getSelection();
+    if (sel?.rangeCount && surface.contains(sel.anchorNode) && surface.contains(sel.focusNode)) {
+      savedRange = sel.getRangeAt(0).cloneRange();
+      savedBackwards = !sel.isCollapsed && sel.anchorNode === savedRange.endContainer && sel.anchorOffset === savedRange.endOffset;
+    }
+  };
+  const restoreSel = () => {
+    saveSel(); surface.focus(); if (!savedRange) saveSel();
+    if (!savedRange || !surface.contains(savedRange.startContainer) || !surface.contains(savedRange.endContainer)) return false;
+    const sel = window.getSelection();
+    if (savedBackwards) sel.setBaseAndExtent(savedRange.endContainer,savedRange.endOffset,savedRange.startContainer,savedRange.startOffset);
+    else { sel.removeAllRanges(); sel.addRange(savedRange); }
+    return true;
+  };
+  const editableSelection = history => {
+    if(commandContext.isComposing?.() || commandContext.isVisual?.() === false)return false;
+    if(history)return true;
+    if(!savedRange || !surface.contains(savedRange.commonAncestorContainer))return false;
+    const el=n=>n.nodeType===3?n.parentElement:n;
+    const blocked=node=>{const element=el(node);return !!element?.closest?.('[data-doc-locked="true"]') || element?.closest?.('[contenteditable]')?.getAttribute('contenteditable')==='false';};
+    if(blocked(savedRange.startContainer) || blocked(savedRange.endContainer))return false;
+    return savedRange.collapsed || ![...surface.querySelectorAll('[data-doc-locked="true"]')].some(n=>savedRange.intersectsNode(n));
+  };
+  const commands = createDocCommandRegistry({
+    prepare:restoreSel,enabled:editableSelection,
+    native:(cmd,val)=>document.execCommand(cmd,false,val),
+    active:cmd=>{try{return document.queryCommandState(cmd);}catch{return false;}},
+    size:value=>{
+      const size=Number(value);if(!Number.isFinite(size)||size<1||size>400)return false;
+      if(document.execCommand('fontSize',false,'7')===false)return false;
+      surface.querySelectorAll('font[size="7"]').forEach(f=>{f.removeAttribute('size');f.style.fontSize=size+'pt';});
+    },
+    deleteAtomic:target=>{
+      if(!surface.contains(target) || !target.matches?.('.doc-chip,.doc-checkbox') || target.closest('[data-doc-locked="true"]'))return false;
+      const range=document.createRange();range.setStartBefore(target);target.remove();range.collapse(true);
+      const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
+    },
+    undo:()=>onUndo?.(),redo:()=>onRedo?.(),canUndo:()=>commandContext.canUndo?.() ?? true,canRedo:()=>commandContext.canRedo?.() ?? true,before:()=>commandContext.before?.(),after:()=>commandContext.after?.(),
+    changed:()=>{saveSel();onChange();reflect();},error:err=>UI.toast(err.message || 'Formatting could not be applied','error'),
+  });
+  const exec = (cmd, val) => commands.run(commands.idForNative(cmd),val);
+  const insertHtml = html => commands.run('insert.html',html);
+  const editorModal = options => {saveSel();return UI.modal({...options,onClose:()=>{options.onClose?.();if(surface.isConnected)restoreSel();}});};
+  const rememberSelection = () => {saveSel();};
+  document.addEventListener('selectionchange',rememberSelection);
+  surface.addEventListener('input',rememberSelection);
+  surface.addEventListener('focusout',rememberSelection);
+  panelsRoot.addEventListener('pointerdown',rememberSelection,true);
+  const onFormatKey = e => {
+    if(e.defaultPrevented||e.isComposing||commandContext.isComposing?.()||!(e.ctrlKey||e.metaKey)||e.altKey||e.shiftKey||!surface.contains(e.target))return;
+    const id={b:'format.bold',i:'format.italic',u:'format.underline'}[e.key.toLowerCase()];
+    if(id){e.preventDefault();commands.run(id);}
+  };
+  surface.addEventListener('keydown',onFormatKey);
   try { document.execCommand('styleWithCSS', false, true); } catch (e) { /* ignore */ }
 
   ['mouseup', 'keyup'].forEach((ev) => surface.addEventListener(ev, () => { saveSel(); updateTableBar(); }));
@@ -1195,43 +1342,35 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   panelsRoot.querySelectorAll('[data-ex]').forEach((b) => {
     b.addEventListener('mousedown', (e) => { saveSel(); e.preventDefault(); });
     b.addEventListener('click', () => {
-      if (b.dataset.ex === 'undo') { if (onUndo) onUndo(); return; }
-      if (b.dataset.ex === 'redo') { if (onRedo) onRedo(); return; }
       exec(b.dataset.ex);
     });
   });
   panelsRoot.querySelectorAll('select[data-cmd]').forEach((sel) => sel.addEventListener('change', () => exec(sel.dataset.cmd, sel.value)));
   panelsRoot.querySelectorAll('[data-color]').forEach((inp) => inp.addEventListener('input', () => exec(inp.dataset.color, inp.value)));
 
-  // numeric font size (pt) via the size-7 hack + CSS
-  panelsRoot.querySelector('[data-fontsize]').addEventListener('change', (e) => {
-    restoreSel();
-    document.execCommand('fontSize', false, '7');
-    surface.querySelectorAll('font[size="7"]').forEach((f) => { f.removeAttribute('size'); f.style.fontSize = e.target.value + 'pt'; });
-    saveSel(); onChange();
-  });
+  panelsRoot.querySelector('[data-fontsize]').addEventListener('change', e => commands.run('format.size',e.target.value));
 
   panelsRoot.querySelector('[data-paragraph]').addEventListener('mousedown',e=>{saveSel();e.preventDefault();});
   panelsRoot.querySelector('[data-paragraph]').addEventListener('click',()=>{
     const r=savedRange;if(!r)return;const anchor=r.startContainer.nodeType===3?r.startContainer.parentElement:r.startContainer;
     const blocks=[...surface.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li')].filter(el=>!el.closest('[data-doc-locked="true"]')&&(r.collapsed?el===anchor.closest('p,h1,h2,h3,h4,h5,h6,li'):r.intersectsNode(el)));
     if(!blocks.length){UI.toast('Select a paragraph first');return;}const css=getComputedStyle(blocks[0]);
-    UI.modal({title:'Paragraph spacing',confirmText:'Apply',bodyHTML:`<p class="muted">Apply to ${blocks.length} selected paragraph${blocks.length===1?'':'s'}.</p><div class="field-row"><label>Line spacing<select id="pg-line">${[1,1.15,1.5,2,2.5,3].map(v=>`<option value="${v}" ${Math.abs(parseFloat(css.lineHeight)/parseFloat(css.fontSize)-v)<.1?'selected':''}>${v}</option>`).join('')}</select></label><label>Before (px)<input id="pg-before" type="number" min="0" max="200" value="${parseFloat(css.marginTop)||0}"></label><label>After (px)<input id="pg-after" type="number" min="0" max="200" value="${parseFloat(css.marginBottom)||0}"></label></div><div class="field-row"><label>Left indent (px)<input id="pg-left" type="number" min="0" max="400" value="${parseFloat(css.marginLeft)||0}"></label><label>First line indent (px)<input id="pg-first" type="number" min="-200" max="200" value="${parseFloat(css.textIndent)||0}"></label></div>`,onConfirm:ov=>{
+    editorModal({title:'Paragraph spacing',confirmText:'Apply',bodyHTML:`<p class="muted">Apply to ${blocks.length} selected paragraph${blocks.length===1?'':'s'}.</p><div class="field-row"><label>Line spacing<select id="pg-line">${[1,1.15,1.5,2,2.5,3].map(v=>`<option value="${v}" ${Math.abs(parseFloat(css.lineHeight)/parseFloat(css.fontSize)-v)<.1?'selected':''}>${v}</option>`).join('')}</select></label><label>Before (px)<input id="pg-before" type="number" min="0" max="200" value="${parseFloat(css.marginTop)||0}"></label><label>After (px)<input id="pg-after" type="number" min="0" max="200" value="${parseFloat(css.marginBottom)||0}"></label></div><div class="field-row"><label>Left indent (px)<input id="pg-left" type="number" min="0" max="400" value="${parseFloat(css.marginLeft)||0}"></label><label>First line indent (px)<input id="pg-first" type="number" min="-200" max="200" value="${parseFloat(css.textIndent)||0}"></label></div>`,onConfirm:ov=>{
       const val=id=>Number(ov.querySelector('#pg-'+id).value);if(![['before',0,200],['after',0,200],['left',0,400],['first',-200,200]].every(([id,min,max])=>Number.isFinite(val(id))&&val(id)>=min&&val(id)<=max)){UI.toast('Enter spacing within the displayed limits','error');return false;}
       blocks.forEach(el=>{el.style.lineHeight=String(val('line'));el.style.marginTop=val('before')+'px';el.style.marginBottom=val('after')+'px';el.style.marginLeft=val('left')+'px';el.style.textIndent=val('first')+'px';});restoreSel();onChange();
     }});
   });
 
   // inserts
-  panelsRoot.querySelector('[data-ins="link"]').addEventListener('click', () => { saveSel(); UI.modal({ title: 'Insert link', bodyHTML: `<label>URL</label><input id="lnk" placeholder="https://…">`, confirmText: 'Insert', onConfirm: (ov) => { const u = ov.querySelector('#lnk').value.trim(); if (!safeDocumentUrl(u)) { UI.toast('Enter a valid web, email or telephone link', 'error'); return false; } exec('createLink', u); } }); });
+  panelsRoot.querySelector('[data-ins="link"]').addEventListener('click', () => { saveSel(); editorModal({ title: 'Insert link', bodyHTML: `<label>URL</label><input id="lnk" placeholder="https://…">`, confirmText: 'Insert', onConfirm: (ov) => { const u = ov.querySelector('#lnk').value.trim(); if (!safeDocumentUrl(u)) { UI.toast('Enter a valid web, email or telephone link', 'error'); return false; } return exec('createLink', u); } }); });
   panelsRoot.querySelector('[data-ins="hr"]').addEventListener('click', () => insertHtml('<hr>'));
   panelsRoot.querySelector('[data-ins="pagebreak"]').addEventListener('click', () => insertHtml('<div class="doc-pagebreak" style="page-break-after:always"></div><p><br></p>'));
-  panelsRoot.querySelector('[data-ins="table"]').addEventListener('click', () => insertTableDialog(insertHtml, saveSel));
-  panelsRoot.querySelector('[data-ins="image"]').addEventListener('click', () => imageDialog(insertHtml, saveSel));
+  panelsRoot.querySelector('[data-ins="table"]').addEventListener('click', () => insertTableDialog(insertHtml, saveSel, editorModal));
+  panelsRoot.querySelector('[data-ins="image"]').addEventListener('click', () => imageDialog(insertHtml, saveSel, editorModal));
   panelsRoot.querySelector('[data-ins="checkbox"]').addEventListener('click', () => insertHtml('<span class="doc-checkbox" data-checked="0">&#9744;</span>&nbsp;'));
-  panelsRoot.querySelector('[data-ins="variable"]').addEventListener('click', () => variableDialog(saveSel, getVariables, (tok) => insertHtml(tokenChip(tok.replace(/^\{\{|\}\}$/g, '')) + '&nbsp;')));
-  panelsRoot.querySelector('[data-ins="formula"]').addEventListener('click', () => formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext));
-  panelsRoot.querySelector('[data-ins="symbol"]').addEventListener('click', () => symbolDialog(insertHtml, saveSel));
+  panelsRoot.querySelector('[data-ins="variable"]').addEventListener('click', () => variableDialog(saveSel, getVariables, (tok) => insertHtml(tokenChip(tok.replace(/^\{\{|\}\}$/g, '')) + '&nbsp;'), {modal:editorModal}));
+  panelsRoot.querySelector('[data-ins="formula"]').addEventListener('click', () => formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext, editorModal));
+  panelsRoot.querySelector('[data-ins="symbol"]').addEventListener('click', () => symbolDialog(insertHtml, saveSel, editorModal));
   panelsRoot.querySelector('[data-ins="textbox"]').addEventListener('click', () => insertFloat('textbox'));
   panelsRoot.querySelector('[data-ins="shape-rect"]').addEventListener('click', () => insertFloat('shape-rect'));
   panelsRoot.querySelector('[data-ins="shape-oval"]').addEventListener('click', () => insertFloat('shape-oval'));
@@ -1280,7 +1419,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     split() { const c = currentCell(); if (c) splitTableCell(c); },
     width() { const c = currentCell(); if (!c) return; const cur = parseInt(c.style.width) || ''; UI.modal({ title: 'Column width', bodyHTML: `<label>Width in pixels (blank = auto)</label><input id="cw" type="number" min="24" value="${cur}" placeholder="e.g. 120">`, confirmText: 'Apply', onConfirm: (ov) => { const w = ov.querySelector('#cw').value; if (w && (!Number.isFinite(Number(w)) || Number(w) < 24)) { UI.toast('Width must be at least 24 pixels', 'error'); return false; } const m = tableGrid(c.closest('table')), p = m.positions.get(c); new Set(m.grid.map((row) => row[p.c]).filter(Boolean)).forEach((cell) => { cell.style.width = w ? Number(w) + 'px' : ''; }); onChange(); } }); },
     repeat() { const c = currentCell(); if (!c) return; const tr = c.parentNode; if (tr.hasAttribute('data-repeat')) { tr.removeAttribute('data-repeat'); tr.classList.remove('is-repeat'); UI.toast('Row no longer repeats'); } else { tr.setAttribute('data-repeat', 'items'); tr.classList.add('is-repeat'); UI.toast('This row will repeat for every line item when printed'); } },
-    fxcell() { const c = currentCell(); if (!c) return; formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext); },
+    fxcell() { const c = currentCell(); if (!c) return; formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext, editorModal); },
     delTable() { const c = currentCell(); if (!c) return; const t = c.closest('table'); UI.confirmDialog('Delete this whole table?', 'Delete').then((ok) => { if (ok) { t.remove(); updateTableBar(); onChange(); } }); },
   };
   panelsRoot.querySelectorAll('[data-tbl]').forEach((b) => {
@@ -1418,7 +1557,8 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     if (last) { const nr = document.createRange(); nr.setStartAfter(last); nr.collapse(true); const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(nr); }
     closeAC(); saveSel(); onChange();
   };
-  const updateAC = () => {
+  const updateAC = (event) => {
+    if (event?.isComposing) return closeAC();
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return closeAC();
     const range = sel.getRangeAt(0);
@@ -1458,32 +1598,97 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   surface.addEventListener('keydown', (e) => {
     if (e.key !== '=' || e.ctrlKey || e.metaKey) return; // Ctrl/Cmd+= is the zoom-in shortcut
     const c = currentCell();
-    if (c && c.textContent.trim() === '') { e.preventDefault(); saveSel(); formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext); }
+    if (c && c.textContent.trim() === '') { e.preventDefault(); saveSel(); formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext, editorModal); }
   });
 
   // drag-drop + paste images
   const embed = (file) => { const fr = new FileReader(); fr.onload = () => insertHtml(`<img src="${escAttr(fr.result)}" alt="${escAttr(file.name || '')}">`); fr.readAsDataURL(file); };
   surface.addEventListener('dragover', (e) => { if (e.dataTransfer && [...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault(); });
   surface.addEventListener('drop', (e) => { const files = [...(e.dataTransfer ? e.dataTransfer.files : [])].filter((f) => /^image\//.test(f.type)); if (files.length) { e.preventDefault(); saveSel(); files.forEach(embed); } });
-  surface.addEventListener('paste', (e) => {
-    const cd = e.clipboardData; if (!cd) return;
-    const img = [...(cd.items || [])].find((i) => /^image\//.test(i.type));
-    if (img) { e.preventDefault(); saveSel(); embed(img.getAsFile()); return; }
-    const html = cd.getData('text/html');
-    if (html) { e.preventDefault(); saveSel(); insertHtml(sanitizeHtml(html, document)); } // plain text falls through
+  const trackingText = () => {try{return !!JSON.parse(surface.querySelector('[data-doc-config]')?.dataset.docConfig || '{}').trackChanges;}catch{return false;}};
+  const clipboardSelection = () => {
+    const sel=window.getSelection();
+    if(!sel?.rangeCount || sel.isCollapsed || !surface.contains(sel.anchorNode) || !surface.contains(sel.focusNode))return null;
+    const box=document.createElement('div');box.append(sel.getRangeAt(0).cloneContents());
+    const html=serializeEditor(box);box.innerHTML=html;
+    box.querySelectorAll('br').forEach(el=>el.replaceWith(document.createTextNode('\n')));
+    box.querySelectorAll('p,div,li,tr,h1,h2,h3,h4,h5,h6').forEach(el=>el.append(document.createTextNode('\n')));
+    box.querySelectorAll('td,th').forEach(el=>el.append(document.createTextNode('\t')));
+    return {html,text:(box.textContent || '').replace(/[\t\n]+$/,'')};
+  };
+  surface.addEventListener('copy', e => {
+    const value=clipboardSelection();if(!value || !e.clipboardData)return;
+    e.clipboardData.setData('text/html',value.html);e.clipboardData.setData('text/plain',value.text);e.preventDefault();
+  });
+  surface.addEventListener('cut', e => {
+    saveSel();const value=clipboardSelection();if(!value || !e.clipboardData)return;
+    if(!commands.state('edit.deleteSelection').enabled){e.preventDefault();return;}
+    if(trackingText())return; // review's beforeinput handler owns tracked deletion
+    e.clipboardData.setData('text/html',value.html);e.clipboardData.setData('text/plain',value.text);e.preventDefault();
+    commands.run('edit.deleteSelection');
+  });
+  surface.addEventListener('paste', e => {
+    const cd=e.clipboardData;if(!cd || e.defaultPrevented)return;
+    const img=[...(cd.items || [])].find(i=>/^image\//.test(i.type));
+    if(img){e.preventDefault();saveSel();embed(img.getAsFile());return;}
+    const html=cd.getData('text/html'),text=cd.getData('text/plain');
+    if(html || text){e.preventDefault();saveSel();
+      if(html)insertHtml(bodyToEditorHtml(sanitizeHtml(html,document)));
+      else if(/\{\{[^}]+\}\}/.test(text))insertHtml(bodyToEditorHtml(escAttr(text).replace(/\r?\n/g,'<br>')));
+      else commands.run('insert.text',text);
+    }
+  });
+  // Tab in lists changes level; Tab in tables traverses physical cells once, including spans.
+  surface.addEventListener('keydown', e => {
+    if(e.defaultPrevented || e.isComposing || commandContext.isComposing?.() || e.ctrlKey || e.metaKey || e.altKey)return;
+    const sel=window.getSelection();if(!sel?.rangeCount || !sel.isCollapsed || !surface.contains(sel.anchorNode))return;
+    const node=sel.anchorNode.nodeType===3?sel.anchorNode.parentElement:sel.anchorNode;
+    if(e.key==='Tab'){
+      saveSel();if(!editableSelection(false)){e.preventDefault();return;}
+      const cell=node.closest?.('td,th');
+      if(cell){
+        const table=cell.closest('table'),cells=[...table.rows].filter(row=>row.closest('table')===table).flatMap(row=>[...row.cells]).filter(c=>!c.closest('[data-doc-locked="true"]'));
+        let target=cells[cells.indexOf(cell)+(e.shiftKey?-1:1)],inserted=false;
+        if(!target && !e.shiftKey){
+          if(trackingText()){e.preventDefault();UI.toast('Turn tracking off to add a table row','error');return;}
+          commandContext.before?.();
+          if(cell.parentElement.parentElement.tagName==='THEAD'){
+            const row=(table.tBodies[0] || table.createTBody()).insertRow();
+            for(let i=0;i<tableGrid(table).width;i++)row.append(blankTableCell(row,'td'));
+            target=row.cells[0];
+          }else {editTableRow(cell);target=cell.parentElement.nextElementSibling?.cells[0];}
+          inserted=true;
+        }
+        if(target){e.preventDefault();const range=document.createRange();range.selectNodeContents(target);range.collapse(true);sel.removeAllRanges();sel.addRange(range);saveSel();updateTableBar();if(inserted){onChange();commandContext.after?.();}}
+        return;
+      }
+      if(node.closest?.('li')){e.preventDefault();if(trackingText()){UI.toast('Turn tracking off to change list structure','error');return;}commands.run(e.shiftKey?'paragraph.outdent':'paragraph.indent');}
+      return;
+    }
+    if(!['ArrowLeft','ArrowRight','Backspace','Delete'].includes(e.key))return;
+    const range=sel.getRangeAt(0),back=e.key==='ArrowLeft'||e.key==='Backspace';
+    let container=range.startContainer,offset=range.startOffset,adjacent;
+    if(container.nodeType===3){if(back?offset!==0:offset!==container.length)return;adjacent=back?container.previousSibling:container.nextSibling;}
+    else adjacent=container.childNodes[offset+(back?-1:0)];
+    while(adjacent?.nodeType===3 && !adjacent.textContent)adjacent=back?adjacent.previousSibling:adjacent.nextSibling;
+    if(!adjacent?.matches?.('.doc-chip,.doc-checkbox'))return;
+    e.preventDefault();
+    if(e.key.startsWith('Arrow')){commandContext.before?.();if(back)range.setStartBefore(adjacent);else range.setStartAfter(adjacent);range.collapse(true);sel.removeAllRanges();sel.addRange(range);saveSel();return;}
+    if(trackingText()){UI.toast('Turn tracking off to remove a field token','error');return;}
+    saveSel();commands.run('edit.deleteAtomic',adjacent);
   });
   surface.addEventListener('input', onChange);
 
-  // reflect active inline-format state on the toolbar (Word-like)
-  const STATE = { bold: 'bold', italic: 'italic', underline: 'underline', strikeThrough: 'strikeThrough' };
+  // Toolbar and keyboard share command enabled/active state.
   const reflect = () => {
     if (!surface.isConnected) return;
-    const sel = window.getSelection();
-    if (!sel || !sel.anchorNode || !surface.contains(sel.anchorNode)) return;
-    Object.keys(STATE).forEach((cmd) => {
-      const b = panelsRoot.querySelector(`[data-ex="${cmd}"]`);
-      if (b) { try { b.classList.toggle('active', document.queryCommandState(cmd)); } catch (e) { /* ignore */ } }
+    saveSel();
+    panelsRoot.querySelectorAll('[data-ex]').forEach(b=>{
+      const id=commands.idForNative(b.dataset.ex);if(id?.startsWith('edit.'))return;
+      const state=commands.state(id);b.disabled=!state.enabled;
+      b.classList.toggle('active',state.active);b.setAttribute('aria-pressed',String(state.active));
     });
+    panelsRoot.querySelectorAll('[data-cmd],[data-color],[data-fontsize]').forEach(control=>{control.disabled=!commands.state(control.hasAttribute('data-fontsize')?'format.size':commands.idForNative(control.dataset.cmd||control.dataset.color)).enabled;});
   };
   document.addEventListener('selectionchange', reflect);
 
@@ -1999,6 +2204,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       document.removeEventListener('mouseup', endTableDrag);
       closeAC();
       document.removeEventListener('selectionchange', reflect);
+      document.removeEventListener('selectionchange', rememberSelection);
       document.removeEventListener('selectionchange', updateEditing);
       document.removeEventListener('pointermove', onFloatPointerMove);
       document.removeEventListener('pointerup', endFloatDrag);
@@ -2006,7 +2212,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       document.removeEventListener('keydown', onFloatKeydown);
       clearSnapGuides();
     },
-    normalizeFloats, selectFloat, insertHtml,
+    commands, normalizeFloats, selectFloat, insertHtml,
     blurFloats, // drop any float selection / promote bar (used for click-outside + Escape)
   };
 }
@@ -2759,19 +2965,21 @@ function open(opts = {}) {
     refreshPreview();
   }
 
-  let dirty = false, saving = false, closed = false, changeVersion = 0;
+  let dirty = false, saving = false, closed = false, changeVersion = 0, composing = false;
   const status = fs.querySelector('.doc-save-status');
   const setStatus = (text, state = '') => { if (status) { status.textContent = text; status.dataset.state = state; } };
   function updateWordCount(){const counter=fs.querySelector('.doc-word-count');if(!counter)return;const root=surface.cloneNode(true);root.querySelectorAll('.doc-chip,.doc-float-toolbar,.doc-float-handle,.doc-page-guide,.doc-snap-guide,[data-doc-hidden="true"]').forEach(el=>el.remove());root.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,td,th,div').forEach(el=>el.append(root.ownerDocument.createTextNode(' ')));const text=(root.textContent||'').trim();const count=text?text.split(/\s+/u).length:0;counter.textContent=count+' word'+(count===1?'':'s');}
   let syncGrid=()=>{};
-  const onChange = () => { DocAdvanced.refresh(surface);syncGrid();refreshContents(surface);updateWordCount();markBlocks(); changeVersion++; dirty = true; setStatus('Unsaved changes', 'dirty'); clearTimeout(previewTimer); if(previewEl||pageView) previewTimer=setTimeout(refreshPreview,150); if (history) history.scheduleRecord(); if (studio) studio.change(); if(shared) shared.changed(); };
+  const onChange = () => { if (composing) { changeVersion++; dirty = true; setStatus('Unsaved changes', 'dirty'); return; } DocAdvanced.refresh(surface);syncGrid();refreshContents(surface);updateWordCount();markBlocks(); changeVersion++; dirty = true; setStatus('Unsaved changes', 'dirty'); clearTimeout(previewTimer); if(previewEl||pageView) previewTimer=setTimeout(refreshPreview,150); if (history) history.scheduleRecord(); if (studio) studio.change(); if(shared) shared.changed(); };
   [nameInp, typeSel, periodInp].filter(Boolean).forEach((el) => {
     el.addEventListener('input', onChange); el.addEventListener('change', onChange);
   });
   const onBeforeUnload = (e) => { if (dirty || saving) { e.preventDefault(); e.returnValue = ''; } };
   window.addEventListener('beforeunload', onBeforeUnload);
   const wired = wireToolbar(panelsRoot, surface, opts.getVariables, onChange, opts.sampleContext, tabApi, getZoom,
-    () => { if (history) history.undo(); }, () => { if (history) history.redo(); });
+    () => { if (history) history.undo(); }, () => { if (history) history.redo(); }, {
+      isComposing:()=>composing,isVisual:()=>mode==='visual',canUndo:()=>history?.canUndo() ?? false,canRedo:()=>history?.canRedo() ?? false,before:()=>history?.boundary(),after:()=>history?.flush(),
+    });
 
   // Press anywhere on the grey "desk" (outside the page) to drop a float selection — the escape
   // hatch when a promoted object covers the whole page and there's no blank spot on it to click.
@@ -2946,9 +3154,10 @@ function open(opts = {}) {
   history = (() => {
     const SNAP_MS = 350, CAP = 60;
     const stack = [];
-    let index = -1, timer = 0, restoring = false;
+    let index = -1, timer = 0, restoring = false, inputKind = '', afterSelection = null;
     const snapshot = () => ({
       body: serializeEditor(surface),
+      selection: captureEditorSelection(surface),
       metadata: { name: nameInp.value, type: typeSel.value, period: periodInp?.value || '' },
       page: { size: sizeSel.value, orient: orientSel.value, w: customWInp.value, h: customHInp.value, margin: marginInp.value },
       grid: { rows: copiesInp.value, cols: perPageInp.value, fill: tileFillSel.value, continuous: continuousChk.checked, repeat: repeatInp.value, gapX:gapXInp.value,gapY:gapYInp.value },
@@ -2960,12 +3169,13 @@ function open(opts = {}) {
     function updateButtons() {
       const u = fs.querySelector('[data-ex="undo"]');
       const r = fs.querySelector('[data-ex="redo"]');
-      if (u) u.disabled = index <= 0;
-      if (r) r.disabled = index >= stack.length - 1;
+      if (u) u.disabled = index <= 0 && !timer;
+      if (r) r.disabled = !!timer || index >= stack.length - 1;
     }
     function record() {
       if (restoring) return;
       const s = snapshot();
+      if (afterSelection) s.selection = afterSelection;
       if (same(s, stack[index])) return;
       stack.splice(index + 1);          // drop any redo tail
       stack.push(s);
@@ -2973,11 +3183,13 @@ function open(opts = {}) {
       if (stack.length > CAP) { stack.shift(); index--; }
       updateButtons();
     }
-    function flush() { if (timer) { clearTimeout(timer); timer = 0; record(); } }
+    function flush() { if (composing) return; if (timer) { clearTimeout(timer); timer = 0; record(); } inputKind = ''; afterSelection = null; updateButtons(); }
     function scheduleRecord() {
-      if (restoring) return;
+      if (restoring || composing) return;
+      afterSelection = captureEditorSelection(surface);
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { timer = 0; record(); }, SNAP_MS);
+      timer = setTimeout(flush, SNAP_MS);
+      updateButtons();
     }
     function restore(s) {
       restoring = true;
@@ -2992,21 +3204,54 @@ function open(opts = {}) {
         DocAdvanced.refresh(surface);syncGrid();syncContinuousUI(); syncSizeUI(); applyCanvas(); applyZoom();
         changeVersion++; setStatus('Unsaved changes', 'dirty'); dirty = true;
         refreshPreview(); if (studio) { studio.change(); studio.render(); }
-        try { surface.focus(); } catch (e) { /* ignore */ }
+        try { surface.focus(); restoreEditorSelection(surface, s.selection); } catch (e) { /* a removed selection target must not prevent content recovery */ }
+        updateWordCount(); if (shared) shared.changed();
       } finally { restoring = false; }
       updateButtons();
     }
     return {
       init() { stack.length = 0; stack.push(snapshot()); index = 0; updateButtons(); },
+      beforeInput(kind) {
+        if (composing) return;
+        const selection = captureEditorSelection(surface);
+        const continuous = /^(insertText|deleteContentBackward|deleteContentForward)$/.test(kind);
+        if (!continuous || kind !== inputKind || JSON.stringify(selection) !== JSON.stringify(afterSelection)) flush();
+        if (!timer && stack[index]) stack[index].selection = selection || stack[index].selection;
+        inputKind = kind;
+      },
+      boundary() { flush(); if (stack[index]) stack[index].selection = captureEditorSelection(surface) || stack[index].selection; },
+      canUndo:()=>index>0 || !!timer,
+      canRedo:()=>!timer && index<stack.length-1,
       scheduleRecord,
       flush,
       record,
       cancel() { if (timer) { clearTimeout(timer); timer = 0; } },
-      undo() { if (mode !== 'visual') return; flush(); if (index <= 0) return; index--; restore(stack[index]); },
-      redo() { if (mode !== 'visual') return; flush(); if (index >= stack.length - 1) return; index++; restore(stack[index]); },
+      undo() { if (mode !== 'visual' || composing) return; flush(); if (index <= 0) return; index--; restore(stack[index]); },
+      redo() { if (mode !== 'visual' || composing) return; flush(); if (index >= stack.length - 1) return; index++; restore(stack[index]); },
     };
   })();
   history.init();
+  // Capture above the surface so tracking/paste handlers cannot bypass transaction starts.
+  fs.addEventListener('beforeinput', e => {
+    if (!surface.contains(e.target) || mode !== 'visual') return;
+    if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') {
+      e.preventDefault(); e.stopImmediatePropagation();
+      wired.commands.run(e.inputType === 'historyUndo' ? 'edit.undo' : 'edit.redo'); return;
+    }
+    history.beforeInput(e.inputType || 'input');
+  }, true);
+  fs.addEventListener('paste', e => { if (surface.contains(e.target)) history.boundary(); }, true);
+  surface.addEventListener('compositionstart', () => { history.boundary(); composing = true; });
+  surface.addEventListener('compositionend', () => {
+    composing = false;
+    queueMicrotask(() => { if (!closed && !composing) { onChange(); history.flush(); } });
+  });
+  panelsRoot.addEventListener('pointerdown', () => history.boundary(), true);
+  panelsRoot.addEventListener('click', () => history.boundary(), true);
+  surface.addEventListener('pointerdown', () => history.flush(), true);
+  surface.addEventListener('keydown', e => {
+    if (!e.isComposing && /^(Arrow|Home|End|Page)/.test(e.key)) history.flush();
+  }, true);
 
   // find & replace bar
   let findBar = null;
@@ -3077,6 +3322,7 @@ function open(opts = {}) {
     document.removeEventListener('keydown', onKey);
   }
   const onKey = (e) => {
+    if (e.isComposing || composing || e.keyCode === 229) return;
     // wireToolbar's own keydown handler already swallows Escape (via stopImmediatePropagation)
     // when a float is selected; this guard is a backstop so Escape can't close the editor while
     // an object selection is up.
@@ -3089,11 +3335,11 @@ function open(opts = {}) {
     // Undo / redo — visual mode only (CodeMirror owns its own history in code mode). preventDefault
     // so the browser's native contenteditable undo doesn't also fire.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && k === 'z' && !e.shiftKey) {
-      if (mode === 'visual' && !e.defaultPrevented) { e.preventDefault(); history.undo(); }
+      if (mode === 'visual' && !e.defaultPrevented) { e.preventDefault(); wired.commands.run('edit.undo'); }
       return;
     }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === 'y' || (k === 'z' && e.shiftKey))) {
-      if (mode === 'visual' && !e.defaultPrevented) { e.preventDefault(); history.redo(); }
+      if (mode === 'visual' && !e.defaultPrevented) { e.preventDefault(); wired.commands.run('edit.redo'); }
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); fs.querySelector('[data-save]').click(); }
@@ -3167,7 +3413,7 @@ function open(opts = {}) {
   if (opts.sharedStudio && window.DocStudio) {
     markBlocks();
     shared=window.DocStudio.mount(fs,opts,{
-      surface, snapshot: studioSnapshot, dirty:()=>dirty, markBlocks,
+      surface, snapshot: studioSnapshot, dirty:()=>dirty, isComposing:()=>composing, markBlocks,
       apply:value=>restoreStudio(value,true),change:onChange,render:()=>studio.render(),
       selected:()=>{const node=window.getSelection()?.anchorNode;const el=node?.nodeType===3?node.parentElement:node;return surface.querySelector('.doc-float.selected') || el?.closest?.('[data-doc-node]');},
       serialize:serializeEditor,sanitize:sanitizeHtml,safeUrl:safeDocumentUrl,
@@ -3175,11 +3421,11 @@ function open(opts = {}) {
     });studio.render();
   }
   surface.focus();
-  return { close, _history: history }; // _history exposed for tests (undo/redo without waiting on the debounce)
+  return { close, commands: wired.commands, _history: history }; // _history exposed for tests (undo/redo without waiting on the debounce)
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { bodyToEditorHtml, serializeEditor, sanitizeHtml, parsePageStyle, pageStyleTag, pageDims, replaceAllInSurface, safeDocumentUrl, tableGrid, editTableColumn, editTableRow, mergeTableCells, splitTableCell };
+  module.exports = { createDocCommandRegistry, captureEditorSelection, restoreEditorSelection, bodyToEditorHtml, serializeEditor, sanitizeHtml, parsePageStyle, pageStyleTag, pageDims, replaceAllInSurface, safeDocumentUrl, tableGrid, editTableColumn, editTableRow, mergeTableCells, splitTableCell };
 } else {
   window.DocEditor = { open, bodyToEditorHtml, serializeEditor, sanitizeHtml };
 }

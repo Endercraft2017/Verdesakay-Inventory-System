@@ -42,12 +42,13 @@ const DocStudio = (() => {
       conflict={snapshot:value,version:remoteVersion,base:base?clone(base):null};say(message||'Overlapping edits need review · your local draft is safe');api.render();
     }
     async function privateDraft() {
-      if(closed||!draftDirty||draftConflict)return;
+      if(closed||api.isComposing?.()||!draftDirty||draftConflict)return;
       const local=api.snapshot(), sentGeneration=generation;
       try {const r=await API.put(url()+'/draft',{snapshot:local,expected_version:draftVersion});if(closed)return;draftVersion=r.version;draft={snapshot:local,version:r.version};if(generation===sentGeneration)draftDirty=false; if(!conflict)say('Draft backed up to server');}
       catch(err){if(err.status===409){draftConflict=true;say('Draft changed on another device · open History to review');draft=await API.get(url()+'/draft');}else throw err;}
     }
     async function acceptRoom(room) {
+      if(api.isComposing?.())return;
       peers=room.presence||peers;
       if(room.room_saved_revision && room.saved_revision!==room.room_saved_revision){showConflict(room.snapshot,room.version,'Saved template changed outside this session · review Shared');return;}
       if(!room.snapshot){base=api.snapshot();version=0;return;}
@@ -65,12 +66,12 @@ const DocStudio = (() => {
       if(room.saved_revision && (!room.room_saved_revision||room.saved_revision===room.room_saved_revision))opts.onSharedRevision?.(room.saved_revision);
     }
     async function sync() {
-      if(!sharedEnabled||closed||paused||conflict)return;
+      if(!sharedEnabled||closed||paused||conflict||api.isComposing?.())return;
       const local=api.snapshot();if(base&&equal(local,base)&&version>0)return;
       const sent=clone(local);
       try {
         const response=await API.put(url()+'/room',{snapshot:sent,base:base||sent,expected_version:version,client_id:clientId});
-        if(closed)return;
+        if(closed||api.isComposing?.())return;
         const merged=merge(sent,api.snapshot(),response.snapshot);
         base=clone(response.snapshot);version=response.version;
         if(merged.conflicts.length){showConflict(response.snapshot,response.version);return;}
@@ -79,7 +80,7 @@ const DocStudio = (() => {
       }catch(err){if(err.status===409)showConflict(err.data?.snapshot||null,err.data?.version||version,err.message);else throw err;}
     }
     async function tick() {
-      if(closed||busy||initializing)return;busy=true;
+      if(closed||busy||initializing||api.isComposing?.())return;busy=true;
       try {
         if(!connected)await connect();
         if(draftDirty)await privateDraft();

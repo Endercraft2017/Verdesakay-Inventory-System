@@ -35,7 +35,7 @@ describe('validation: createUser', () => {
   it('rejects a too-short password', () => {
     expect(() =>
       parseBody(createUserSchema, { username: 'jdoe', full_name: 'J', password: '123' })
-    ).toThrow(/at least 6/);
+    ).toThrow(/at least 8/);
   });
   it('rejects an invalid username', () => {
     expect(() =>

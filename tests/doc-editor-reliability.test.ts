@@ -149,3 +149,70 @@ describe('shared document output', () => {
     expect(ui.documentCss).toContain('line-height: 1.55'); expect(html).toContain('width:182mm');
   });
 });
+
+describe('Wordcraft foundation: selection and editing transactions', () => {
+  function caret(w: any, node: Node, offset: number) { w.getSelection().setBaseAndExtent(node, offset, node, offset); }
+  function type(w: any, root: Element, text: string, inputType = 'insertText') {
+    root.dispatchEvent(new w.InputEvent('beforeinput', { inputType, data: text, bubbles: true, cancelable: true }));
+    const range = w.getSelection().getRangeAt(0); range.deleteContents();
+    const node = w.document.createTextNode(text); range.insertNode(node); caret(w, node, text.length);
+    root.dispatchEvent(new w.InputEvent('input', { inputType, data: text, bubbles: true }));
+  }
+  it('restores the original caret on undo and the resulting caret on redo, despite adjacent text nodes', () => {
+    const {w,doc,ed} = setup(); const root = doc.querySelector('.doc-surface');
+    caret(w,root.querySelector('p').firstChild,8); type(w,root,'new '); ed._history.flush();
+    ed._history.undo(); expect(root.textContent).toBe('Original content'); expect(w.getSelection().anchorOffset).toBe(8);
+    ed._history.redo(); expect(root.textContent).toBe('Originalnew  content'); expect(w.getSelection().anchorOffset).toBe(12);
+  });
+  it('enables Undo immediately for the first typing burst', () => {
+    const {w,doc}=setup(); const root=doc.querySelector('.doc-surface');
+    caret(w,root.querySelector('p').firstChild,0); type(w,root,'A'); type(w,root,'B');
+    const undo=doc.querySelector('[data-ex=undo]'); expect(undo.disabled).toBe(false);undo.click();
+    expect(root.textContent).toBe('Original content');doc.querySelector('[data-ex=redo]').click();
+    expect(root.textContent).toBe('ABOriginal content');
+  });
+  it('preserves a backwards selection when replacement text is undone', () => {
+    const {w,doc,ed} = setup(); const root = doc.querySelector('.doc-surface'), text = root.querySelector('p').firstChild;
+    w.getSelection().setBaseAndExtent(text,8,text,0); type(w,root,'New'); ed._history.undo();
+    expect(w.getSelection().toString()).toBe('Original');
+    expect(w.getSelection().anchorOffset).toBe(8); expect(w.getSelection().focusOffset).toBe(0);
+  });
+  it('separates typing after a caret move and discards the redo branch after a new edit', () => {
+    const {w,doc,ed} = setup(); const root = doc.querySelector('.doc-surface');
+    caret(w,root.querySelector('p').firstChild,0); type(w,root,'A');
+    caret(w,root.querySelector('p').lastChild,root.querySelector('p').lastChild.length); type(w,root,'B');
+    ed._history.undo(); expect(root.textContent).toBe('AOriginal content');
+    ed._history.undo(); expect(root.textContent).toBe('Original content');
+    type(w,root,'C'); ed._history.flush(); ed._history.redo(); expect(root.textContent).toBe('COriginal content');
+  });
+  it('routes browser beforeinput history commands through editor history once', () => {
+    const {w,doc} = setup(); const root = doc.querySelector('.doc-surface');
+    caret(w,root.querySelector('p').firstChild,0); type(w,root,'A');
+    const event = new w.InputEvent('beforeinput',{inputType:'historyUndo',bubbles:true,cancelable:true}); root.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true); expect(root.textContent).toBe('Original content');
+    root.dispatchEvent(new w.InputEvent('beforeinput',{inputType:'historyRedo',bubbles:true,cancelable:true})); expect(root.textContent).toBe('AOriginal content');
+  });
+  it('keeps a long composition as one undo step and does not consume IME keyboard events', async () => {
+    const {w,doc,ed} = setup(); const root = doc.querySelector('.doc-surface');
+    caret(w,root.querySelector('p').firstChild,0);
+    root.dispatchEvent(new w.CompositionEvent('compositionstart',{bubbles:true}));
+    type(w,root,'あ','insertCompositionText'); await new Promise(r=>setTimeout(r,400));
+    const key = new w.KeyboardEvent('keydown',{key:'z',ctrlKey:true,isComposing:true,bubbles:true,cancelable:true}); root.dispatchEvent(key);
+    expect(key.defaultPrevented).toBe(false);
+    type(w,root,'い','insertCompositionText');
+    root.dispatchEvent(new w.CompositionEvent('compositionend',{bubbles:true,data:'あい'})); await Promise.resolve();
+    ed._history.undo(); expect(root.textContent).toBe('Original content');
+    ed._history.redo(); expect(root.textContent).toBe('あいOriginal content');
+  });
+  it('restores selections around variable chips, empty cells and float controls after serialization', () => {
+    const root = surface('<table><tbody><tr><td><br></td><td>Before {{name}} after</td></tr></tbody></table><div class="doc-float"><p>Text</p><button class="doc-float-handle">UI</button></div>');
+    root.innerHTML=helpers.bodyToEditorHtml(root.innerHTML);
+    const win = root.ownerDocument.defaultView!; const cell=root.querySelectorAll('td')[1]!;
+    win.getSelection()!.setBaseAndExtent(cell.lastChild!,3,cell.firstChild!,2);
+    const bookmark=helpers.captureEditorSelection(root); root.innerHTML=helpers.bodyToEditorHtml(helpers.serializeEditor(root));
+    expect(helpers.restoreEditorSelection(root,bookmark)).toBe(true); expect(win.getSelection()!.anchorOffset).toBe(3);expect(win.getSelection()!.focusOffset).toBe(2);
+    const empty=root.querySelector('td')!;win.getSelection()!.setBaseAndExtent(empty,0,empty,0);
+    const emptyBookmark=helpers.captureEditorSelection(root);root.innerHTML=helpers.bodyToEditorHtml(helpers.serializeEditor(root));helpers.restoreEditorSelection(root,emptyBookmark);
+    expect(win.getSelection()!.anchorNode).toBe(root.querySelector('td'));
+  });
+});

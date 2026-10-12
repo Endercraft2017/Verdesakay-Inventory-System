@@ -7,7 +7,7 @@ let ctx:TestContext,admin:string,other:string,employee:string,id:number;
 const h=(token:string)=>({Authorization:'Bearer '+token});
 const doc=()=>'/api/templates/studio/documents/template:'+id;
 const snapshot=(body='<p><!--doc-sync:a-->One</p><!--doc-sync:b--><p>Two</p>')=>({name:'Shared',type:'generic',period:'',body,copiesPerRecord:1,recordsPerPage:1,tileFill:'blank',continuous:false,repeatCount:1});
-beforeAll(async()=>{ctx=await setupApp();admin=await login(ctx.api);employee=(await createEmployee(ctx.api,admin)).token;const user=await ctx.api.post('/api/users').set(h(admin)).send({username:'studio_editor',password:'secret123',full_name:'Other editor',role:'admin'});expect(user.status).toBe(201);other=await login(ctx.api,'studio_editor','secret123');const created=await ctx.api.post('/api/templates').set(h(admin)).send({name:'Shared',type:'generic',body:snapshot().body});id=created.body.id;});
+beforeAll(async()=>{ctx=await setupApp();admin=await login(ctx.api);employee=(await createEmployee(ctx.api,admin)).token;const user=await ctx.api.post('/api/users').set(h(admin)).send({username:'studio_editor',password:'StudioEditor!73952',full_name:'Other editor',role:'admin'});expect(user.status).toBe(201);other=await login(ctx.api,'studio_editor','StudioEditor!73952');const created=await ctx.api.post('/api/templates').set(h(admin)).send({name:'Shared',type:'generic',body:snapshot().body});id=created.body.id;});
 afterAll(()=>cleanup(ctx));
 describe('server studio recovery, library and collaboration',()=>{
  it('records original and subsequent saved versions without leaking another template history',async()=>{

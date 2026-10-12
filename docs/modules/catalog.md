@@ -920,3 +920,18 @@ remain local. Studio library assets/styles replicate as company data.
 Tests cover template revisions/permissions, form links, premade mappings, conversion,
 pagination/grid guards, private recovery/shared conflicts and editor workflows. See
 `DOCUMENT-STUDIO-CAPABILITIES.md` for delivered tools and remaining fidelity limits.
+
+The incremental Wordcraft port is tracked in `WORDCRAFT-PORT-PLAN.md`. Phase 1 keeps the
+HTML storage contract and adds direction-preserving browser selection bookmarks to undo,
+input transaction boundaries, browser history-event routing and composition-safe updates.
+Shared polling defers document replacement during composition and reconciles afterward.
+These are browser-side changes, not a replacement of the Rust document/layout engine.
+
+Phase-1 command dispatch centralizes browser formatting, insertion and history commands.
+Toolbar shortcuts share the same enabled/active state; selection memory spans font/color
+controls and insert dialogs, and commands respect locked content and editable float islands.
+The native browser adapter remains behind this registry until the document-model phase.
+
+Clipboard copy/paste round-trips field tokens instead of editor markup; normal cut is a
+command transaction and tracked cut/paste retains the review handler. Table/list Tab and
+atomic-token navigation extend the same keyboard editing pipeline without schema changes.

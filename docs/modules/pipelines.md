@@ -736,3 +736,19 @@ Trigger: a form manager opens Print templates, or an editor opens the document l
 Failures: permission/stale-revision/shared-version errors retain local work; retry after
 reviewing the latest document. Server private/shared working tables are cloud-only and
 are excluded from offline replication; publication follows the existing claim workflow.
+
+Editing transaction detail (Wordcraft port phase 1): capture the selection before an input,
+coalesce consecutive typing/deletion at the same caret, and close the group on movement,
+paste or toolbar activation. Undo/redo restores both HTML and anchor/focus. Composition
+keeps the live DOM intact until commit; shared-room reconciliation waits for composition
+to finish. Track-changes composition remains outside the supported review scope.
+
+Formatting dispatch captures selection, restores the document focus, checks the edit
+boundary, closes pending typing, executes the command and commits an undo transaction.
+Dialogs return focus/selection to the surface after dismissal; locked selections refuse
+formatting rather than silently changing protected content.
+
+Clipboard serialization writes canonical HTML/plain bindings and paste restores editable
+chips after sanitization. List Tab changes level; table Tab traverses merged physical
+cells and creates an undoable data row at the end. Token boundary movement/deletion
+operates on whole chips and respects the review/locked-content guards.

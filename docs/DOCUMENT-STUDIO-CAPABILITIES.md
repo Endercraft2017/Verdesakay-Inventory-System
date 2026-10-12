@@ -70,3 +70,26 @@ sessions and version history. Design content must match record previews and expo
 output. Exercise empty/long content, merged tables, images, narrow screens and both
 themes. Larger model changes require migration tests and preservation of existing HTML
 templates. Existing basic controls do not establish full compatibility with Word/Canva.
+
+## Wordcraft port: editing foundation
+
+The phased implementation is tracked in `WORDCRAFT-PORT-PLAN.md`. The first slice adds
+selection-aware undo/redo (including backwards selections), explicit typing boundaries,
+immediate Undo availability and native browser history-input routing. Composition input
+is kept in one history transaction with DOM refresh and shared-room replacement deferred
+until completion. Normal composition is supported; composition with tracked revisions
+remains a documented limitation. This slice retains the HTML model and execCommand;
+the model migration remains in phase 2.
+
+The second slice introduces shared command dispatch for inline/paragraph/list formatting,
+font/size/color, links/HTML insertion and history. Toolbar and keyboard formatting share
+enabled/active state, backwards selections survive control/dialog focus changes, and
+insert dialogs return focus to the document. Locked selections refuse commands; editable
+text islands within floating objects remain supported. Browser formatting is still the
+adapter behind these commands; typed model-backed editing is a later phase.
+
+Clipboard copy preserves canonical field bindings; paste sanitizes rich HTML and rebuilds
+atomic field chips. Plain text uses a text command. Cut and adjacent-token deletion use
+undoable transactions and respect locked selections. Tab changes list nesting or navigates
+table cells (including merged cells), adding a data row at the table's end. Native Enter
+continues/exits lists. Tracked structural/token edits remain outside the review scope.
