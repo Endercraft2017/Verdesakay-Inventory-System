@@ -332,3 +332,5 @@
 .tk-cutoff-header > div:not(.tk-cutoff-actions) { flex: 1; }
 .tk-cutoff-header .tk-cutoff-actions { display: flex; flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 @media (max-width: 600px) { .tk-cutoff-header .tk-cutoff-actions .btn { flex: 1 1 auto; justify-content: center; } }
+/* Direction changes keep a fixed footprint, including numeric sorting labels. */
+#tk-roster-sort-dir { min-width: 86px; justify-content: center; }

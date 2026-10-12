@@ -247,14 +247,14 @@ describe('Time Keeping cutoff roster', () => {
     const rows = () => qa(view, '#tk-roster tr[data-open]').map((r) => r.dataset.open);
     expect(rows()).toEqual(['11', '12', '13']);
     expect(q(view, '#tk-roster-count')!.textContent).toBe('3 employees');
-    expect(q(view, '#tk-roster-reset')!.hidden).toBe(true);
+    expect((q(view, '#tk-roster-reset') as HTMLButtonElement).disabled).toBe(true);
 
     setValue(q(view, '#tk-roster-show'), 'incomplete', 'change');
     expect(rows()).toEqual(['11']);
     expect(q(view, '#tk-roster-count')!.textContent).toBe('1 of 3 employees');
     setValue(q(view, '#tk-roster-show'), 'unlogged', 'change');
     expect(rows()).toEqual(['12']);
-    expect(q(view, '#tk-roster-reset')!.hidden).toBe(false);
+    expect((q(view, '#tk-roster-reset') as HTMLButtonElement).disabled).toBe(false);
 
     setValue(q(view, '#tk-roster-search'), 'zzz');
     expect(rows()).toEqual([]);
@@ -263,13 +263,19 @@ describe('Time Keeping cutoff roster', () => {
     expect((q(view, '#tk-roster-show') as HTMLSelectElement).value).toBe('');
 
     setValue(q(view, '#tk-roster-group'), 'none', 'change');
+    (q(view, '.tk-roster-chk[data-emp="11"]') as HTMLInputElement).checked = true;
+    const toolbar = q(view, '.tk-roster-filters');
     q(view, '#tk-roster-sort-dir')!.click();
+    expect(q(view, '.tk-roster-filters')).toBe(toolbar);
+    expect(q(view, '#tk-roster-sort-dir')!.textContent).toBe('Z–A');
+    expect((q(view, '.tk-roster-chk[data-emp="11"]') as HTMLInputElement).checked).toBe(true);
+    expect(q(view, '#tk-roster-reset')!.hidden).toBe(false);
     expect(rows()).toEqual(['13', '12', '11']);
     expect(q(view, '#tk-roster-sort-dir')!.getAttribute('aria-label')).toBe('Sort ascending');
     q(view, '#tk-roster-reset')!.click();
     expect(rows()).toEqual(['11', '12', '13']);
     expect((q(view, '#tk-roster-group') as HTMLSelectElement).value).toBe('department');
-    expect(q(view, '#tk-roster-reset')!.hidden).toBe(true);
+    expect((q(view, '#tk-roster-reset') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('read-only viewers keep the roster and CSV export without write controls or pay rates', async () => {

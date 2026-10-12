@@ -1393,8 +1393,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             <option value="days_logged">Days Logged</option>
           </select>
         </div>
-        <button type="button" class="icon-btn" id="tk-roster-sort-dir" title="Reverse sort order" aria-label="Sort descending">${UI.icon('adjust', 15)}</button>
-        <button type="button" class="btn secondary small" id="tk-roster-reset" hidden>Reset</button>
+        <button type="button" class="btn secondary small" id="tk-roster-sort-dir" title="Change sort direction" aria-label="Sort descending">A–Z</button>
+        <button type="button" class="btn secondary small" id="tk-roster-reset" disabled>Reset</button>
         <div class="grow"></div>
         <span class="hr-filter-count" id="tk-roster-count" aria-live="polite"></span>
         ${canManage ? `<button type="button" class="btn danger small" id="tk-remove-selected" hidden>${UI.icon('trash')} Remove selected</button>
@@ -1539,7 +1539,11 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   function renderRoster() {
     renderHeader();
     const fullRoster = period.roster || [];
-    resetBtn.hidden = !rosterFiltersActive();
+    const selected = new Set([...rosterEl.querySelectorAll('.tk-roster-chk:checked')].map(el => el.dataset.emp));
+    resetBtn.disabled = !rosterFiltersActive();
+    const numericSort = ['daily_rate', 'days_logged'].includes(rosterView.sortBy);
+    sortDirBtn.textContent = numericSort ? (rosterView.sortDir === 'asc' ? 'Low–high' : 'High–low') : (rosterView.sortDir === 'asc' ? 'A–Z' : 'Z–A');
+    sortDirBtn.title = `Current order: ${sortDirBtn.textContent}. Click to reverse.`;
     sortDirBtn.setAttribute('aria-label', rosterView.sortDir === 'asc' ? 'Sort descending' : 'Sort ascending');
     if (!fullRoster.length) {
       countEl.textContent = '';
@@ -1592,6 +1596,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       );
     }
 
+    rosterEl.querySelectorAll('.tk-roster-chk').forEach(el => { el.checked = selected.has(el.dataset.emp); });
     rosterEl.querySelectorAll('[data-rm]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); removeEmployee(b.dataset.rm, roster); });
     rosterEl.querySelectorAll('[data-notify]').forEach((b) => b.onclick = (e) => {
       e.stopPropagation();
