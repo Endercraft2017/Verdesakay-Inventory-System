@@ -720,6 +720,36 @@
     } catch (ex) { toast(ex.message); }
   }
 
+  /* ---------- change own password ---------- */
+  $('password-btn').addEventListener('click', function () {
+    var card = el('div', { class: 'card' }, [
+      el('h2', { text: 'Change password' }),
+      el('div', { class: 'field' }, [el('label', { for: 'pw-cur', text: 'Current password' }), el('input', { id: 'pw-cur', type: 'password', autocomplete: 'current-password' })]),
+      el('div', { class: 'field' }, [el('label', { for: 'pw-new', text: 'New password' }), el('input', { id: 'pw-new', type: 'password', autocomplete: 'new-password' }),
+        el('small', { class: 'muted', text: 'At least 8 characters, not a common password. Other signed-in browsers are signed out.' })]),
+      el('div', { class: 'field' }, [el('label', { for: 'pw-again', text: 'New password again' }), el('input', { id: 'pw-again', type: 'password', autocomplete: 'new-password' })]),
+      el('div', { class: 'err', id: 'pw-err', role: 'alert' }),
+      el('div', { style: 'display:flex;gap:10px;margin-top:6px' }, [
+        el('button', { class: 'btn', id: 'pw-go' }, ['Change password']),
+        el('button', { class: 'btn ghost', id: 'pw-cancel' }, ['Cancel']),
+      ]),
+    ]);
+    var modal = el('div', { class: 'modal', id: 'modal' }, [card]);
+    document.body.appendChild(modal);
+    $('pw-cur').focus();
+    $('pw-cancel').addEventListener('click', function () { modal.remove(); });
+    $('pw-go').addEventListener('click', async function () {
+      $('pw-err').textContent = '';
+      if ($('pw-new').value !== $('pw-again').value) { $('pw-err').textContent = 'The new passwords do not match.'; return; }
+      $('pw-go').disabled = true;
+      try {
+        await api('POST', '/password', { current_password: $('pw-cur').value, new_password: $('pw-new').value });
+        modal.remove();
+        toast('Password changed');
+      } catch (ex) { $('pw-err').textContent = ex.message; $('pw-go').disabled = false; }
+    });
+  });
+
   /* ---------- new tenant ---------- */
   // `prefill` (from a website inquiry, inquiries.js): { name, email, inquiry_id }.
   $('new-btn').addEventListener('click', function () { openNewTenant(); });

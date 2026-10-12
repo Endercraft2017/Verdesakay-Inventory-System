@@ -73,8 +73,9 @@ What each variable does:
 - `APP_SECRET` encrypts saved SMTP/AI keys. Changing it later makes them unreadable.
 - `ADMIN_PASSWORD` protects the unused `default` workspace, which is still reachable on the
   `*.up.railway.app` URL. Make it strong.
-- `PLATFORM_ADMIN_*` create your console login on first boot. Setting them again later
-  resets that password.
+- `PLATFORM_ADMIN_*` create your console login on first boot. After that they're ignored, so a
+  password you change in the console (**Change password**, top right) sticks. To reset a forgotten
+  one, also set `PLATFORM_ADMIN_RESET=true` and redeploy, then remove it again.
 - Leave `PLATFORM_HOST` out for now. You add it in Part 2, once DNS works.
   Until then the console is at `https://<service>.up.railway.app/_platform`.
 - Do **not** set `PLATFORM_ADMIN_TOKEN`; the console web page doesn't send it.
@@ -361,9 +362,10 @@ completely apart.
 
 Installed office PCs sign in with the password alone; two-step sign-in applies online.
 
-Owner console password: `PLATFORM_ADMIN_PASSWORD` is written over the console owner's password on
-every restart (`seedPlatformUserFromEnv`). Once you have signed in, change the console password and
-remove `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` from Railway, or every deploy resets it.
+Owner console password: sign in to the console → **Change password** (top right). That signs out
+your other console sessions. `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` only create the
+first login and no longer overwrite it, so once you've changed it, delete both from Railway: they
+still hold your old password in plain text.
 
 ### Settings you can change
 | Variable | Default | What it does |

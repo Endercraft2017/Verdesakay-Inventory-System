@@ -382,3 +382,49 @@ describe('module subscriptions and login seats', () => {
     expect((await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E6', name: 'Sixth' })).status).toBe(201);
   });
 });
+
+describe('operator password', () => {
+  const sessionOf = async (username: string, password: string) =>
+    (await ctx.api.post('/_platform/api/login').send({ username, password })).body.token as string | undefined;
+  const change = (tok: string, current_password: string, new_password: string) =>
+    ctx.api.post('/_platform/api/password').set({ Authorization: `Bearer ${tok}` }).send({ current_password, new_password });
+
+  it('changes your own password and signs out your other sessions', async () => {
+    users.upsertPlatformUser('pwtest', 'pwtestpass1');
+    const a = (await sessionOf('pwtest', 'pwtestpass1'))!;
+    const b = (await sessionOf('pwtest', 'pwtestpass1'))!;
+    expect((await change(a, 'wrong-current', 'Brand-new-pass-42')).status).toBe(400);
+    expect((await change(a, 'pwtestpass1', 'short1')).body.error).toMatch(/at least 8/);
+    expect((await change(a, 'pwtestpass1', 'Password1')).body.error).toMatch(/common/);
+    expect((await change(a, 'pwtestpass1', 'Brand-new-pass-42')).status).toBe(200);
+    expect((await ctx.api.get('/_platform/api/me').set({ Authorization: `Bearer ${a}` })).status).toBe(200);
+    expect((await ctx.api.get('/_platform/api/me').set({ Authorization: `Bearer ${b}` })).status).toBe(401);
+    expect(await sessionOf('pwtest', 'pwtestpass1')).toBeUndefined();
+    expect(typeof await sessionOf('pwtest', 'Brand-new-pass-42')).toBe('string');
+  });
+
+  it('needs a session', async () => {
+    expect((await ctx.api.post('/_platform/api/password').send({ current_password: 'x', new_password: 'y' })).status).toBe(401);
+  });
+
+  it('the env bootstrap no longer overwrites a changed password unless PLATFORM_ADMIN_RESET=true', async () => {
+    const platform = await import('../src/platform/platform');
+    const reopen = () => { platform._resetPlatformDb(); platform.platformDb(); };
+    process.env.PLATFORM_ADMIN_USERNAME = 'pwtest';
+    process.env.PLATFORM_ADMIN_PASSWORD = 'env-password-1';
+    try {
+      const live = (await sessionOf('pwtest', 'Brand-new-pass-42'))!;
+      reopen();
+      expect(await sessionOf('pwtest', 'env-password-1')).toBeUndefined();
+      expect(typeof await sessionOf('pwtest', 'Brand-new-pass-42')).toBe('string');
+      process.env.PLATFORM_ADMIN_RESET = 'true';
+      reopen();
+      expect(typeof await sessionOf('pwtest', 'env-password-1')).toBe('string');
+      expect((await ctx.api.get('/_platform/api/me').set({ Authorization: `Bearer ${live}` })).status).toBe(401);
+    } finally {
+      delete process.env.PLATFORM_ADMIN_USERNAME;
+      delete process.env.PLATFORM_ADMIN_PASSWORD;
+      delete process.env.PLATFORM_ADMIN_RESET;
+    }
+  });
+});

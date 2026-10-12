@@ -93,7 +93,7 @@ installs never touch this.
 verified adoption of the original company, preserving source DB/uploads; CLI
 `scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
 catalog in `platform.db`), `platform-users.ts` (operator accounts, separate auth from
-`shared/auth.ts`), `backups.ts` (daily backup job over every tenant DB + `platform.db` +
+`shared/auth.ts`; self-service password change `POST /_platform/api/password`), `backups.ts` (daily backup job over every tenant DB + `platform.db` +
 uploads, run from `server.ts`; manual backup/list/restore behind `npm run backup*` /
 `scripts/backup.ts`. Also runs for single-tenant installs, covering only `default` + `platform.db`), `offsite.ts` (encrypted copies of daily snapshots + uploads to S3-compatible buckets, e.g. Backblaze B2 / Railway Buckets, via `shared/s3.ts`; CLI `scripts/offsite.ts`), `backup-health.ts` (hourly after the backup run:
 restore drill every 30 days — newest off-site copy of every DB decrypted into a temp file and

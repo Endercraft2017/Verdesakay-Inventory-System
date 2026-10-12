@@ -129,20 +129,23 @@ export function platformDb(): DatabaseSync {
 }
 
 /** First-run bootstrap: if there are no operators yet and PLATFORM_ADMIN_USERNAME /
- *  PLATFORM_ADMIN_PASSWORD are set, create one. Also lets you reset the password by
- *  restarting with those vars set (it upserts). Safe to call repeatedly. */
+ *  PLATFORM_ADMIN_PASSWORD are set, create one. An existing operator's password (changed in
+ *  the console) is left alone, unless PLATFORM_ADMIN_RESET=true also asks to reset it, which
+ *  also ends their sessions — the recovery path for a forgotten password. Safe to call repeatedly. */
 function seedPlatformUserFromEnv(): void {
   const u = (process.env.PLATFORM_ADMIN_USERNAME || '').toLowerCase().trim();
   const p = process.env.PLATFORM_ADMIN_PASSWORD || '';
   if (!u || p.length < 6) return;
   const count = (_db!.prepare('SELECT COUNT(*) AS c FROM platform_users').get() as { c: number }).c;
-  const exists = _db!.prepare('SELECT 1 FROM platform_users WHERE username = ?').get(u);
-  if (count > 0 && !exists) return; // don't silently add a second operator once set up
+  const existing = _db!.prepare('SELECT id FROM platform_users WHERE username = ?').get(u) as { id: number } | undefined;
+  if (count > 0 && !existing) return; // don't silently add a second operator once set up
+  if (existing && process.env.PLATFORM_ADMIN_RESET !== 'true') return;
   const hash = bcrypt.hashSync(p, 10);
   _db!.prepare(
     `INSERT INTO platform_users (username, password_hash, full_name) VALUES (?, ?, ?)
      ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash`
   ).run(u, hash, process.env.PLATFORM_ADMIN_NAME || 'Owner');
+  if (existing) _db!.prepare('DELETE FROM platform_sessions WHERE user_id = ?').run(existing.id);
 }
 
 /** Add a column to a platform.db table if it isn't there yet (control-plane migrations

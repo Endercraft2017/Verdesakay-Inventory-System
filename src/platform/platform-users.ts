@@ -9,6 +9,7 @@ import type { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { platformDb } from './platform';
 import { tokenDigest } from '../shared/db';
+import { PASSWORD_MIN, PASSWORD_MAX, isCommonPassword } from '../shared/password-policy';
 
 const SESSION_HOURS = 12;
 const newToken = () => crypto.randomBytes(32).toString('hex');
@@ -64,6 +65,23 @@ export function platformLogin(username: string, password: string): string | null
   ).run(tokenDigest(token), row.id);
   d.prepare("UPDATE platform_users SET last_login_at = datetime('now') WHERE id = ?").run(row.id);
   return token;
+}
+
+/** Change an operator's own password: the current one must match, the new one follows the
+ *  password rules, and every other session of theirs ends (the calling session stays). Returns
+ *  an error message, or null on success. */
+export function changePlatformPassword(userId: number, current: string, next: string, keepToken: string): string | null {
+  const d = platformDb();
+  const row = d.prepare('SELECT password_hash FROM platform_users WHERE id = ?').get(userId) as
+    { password_hash: string } | undefined;
+  if (!row || !bcrypt.compareSync(current, row.password_hash)) return 'Current password is incorrect.';
+  if (next.length < PASSWORD_MIN) return `New password must be at least ${PASSWORD_MIN} characters.`;
+  if (next.length > PASSWORD_MAX) return `New password must be at most ${PASSWORD_MAX} characters.`;
+  if (isCommonPassword(next)) return 'New password is one of the most common passwords — choose one that is harder to guess.';
+  if (next === current) return 'New password must be different from the current one.';
+  d.prepare('UPDATE platform_users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(next, 10), userId);
+  d.prepare('DELETE FROM platform_sessions WHERE user_id = ? AND token <> ?').run(userId, tokenDigest(keepToken));
+  return null;
 }
 
 export function platformLogout(token: string): void {

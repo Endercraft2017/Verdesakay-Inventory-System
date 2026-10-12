@@ -30,7 +30,7 @@ one `default` tenant, exactly as before.
 | `PLATFORM_HOST` | Dedicated console host, e.g. `admin.app.example.com`. When set, `/_platform` answers **only** there and every other path on that host redirects to `/_platform/` (no tenant app is served on it). | *(unset: apex/default host)* |
 | `TZ` | Office time zone, e.g. `Asia/Manila`. Attendance/payroll dates and kiosk rules use server-local time (Node + SQLite `'localtime'`), so it must be set **before the process starts**. Required behind a proxy: the server refuses to start without it. | *(OS time zone)* |
 | `BEHIND_PROXY` | `"true"` when a TLS-terminating proxy fronts the app: serve plain HTTP on `PORT`, trust `X-Forwarded-*`. Auto-on when `RAILWAY_ENVIRONMENT` is set. See [DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md). | *(off)* |
-| `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` | Bootstrap the first console operator on boot (only when there are none yet). Or use `npm run platform:user`. | *(unset)* |
+| `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` | Bootstrap the first console operator on boot (only when there are none yet). Or use `npm run platform:user`. An existing operator's password is left alone unless `PLATFORM_ADMIN_RESET=true` (forgotten-password recovery; also ends their sessions). Operators change their own password in the console. | *(unset)* |
 | `PLATFORM_ADMIN_TOKEN` | Optional shared secret — when set, every `/_platform/api` request must also send `X-Platform-Token: <token>`. | *(unset)* |
 | `APP_SECRET` / `MAIL_SECRET_KEY` | AES key for secrets at rest (SMTP password, etc.). **Set this in SaaS mode** so tenant DB files aren't self-decrypting. | auto-generated per DB |
 

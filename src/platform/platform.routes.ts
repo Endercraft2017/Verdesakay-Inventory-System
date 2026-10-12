@@ -35,7 +35,7 @@ import { parseBody, resetPasswordSchema, platformCreateTenantSchema } from '../s
 import { PLANS, PLAN_MODULES, planModules } from './plans';
 import { rateLimitKey } from '../shared/device';
 import {
-  requirePlatformAuth, platformLogin, platformLogout, listPlatformUsers,
+  requirePlatformAuth, platformLogin, platformLogout, listPlatformUsers, changePlatformPassword,
   type PlatformAuthedRequest,
 } from './platform-users';
 
@@ -91,6 +91,16 @@ router.post('/logout', (req, res) => {
 
 router.get('/me', (req, res) => {
   res.json({ user: (req as PlatformAuthedRequest).platformUser });
+});
+
+// POST /_platform/api/password — change your own console password; other sessions end.
+router.post('/password', loginLimiter, (req, res) => {
+  const r = req as PlatformAuthedRequest;
+  const error = changePlatformPassword(r.platformUser!.id, String(req.body?.current_password || ''),
+    String(req.body?.new_password || ''), r.platformToken!);
+  if (error) { res.status(400).json({ error }); return; }
+  logProvisioning('_console', 'operator.password', `${r.platformUser!.username} changed their console password`);
+  res.json({ ok: true });
 });
 
 // GET /_platform/api/bootstrap — static reference the UI needs to render its controls.
