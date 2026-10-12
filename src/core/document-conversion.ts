@@ -55,6 +55,46 @@ export async function exportDocx(input: {
     const warn = (s: string) => warnings.add(s);
     if (/\{\{\s*[#/]\s*[^}]+\}\}/.test(input.body))
         warn('Repeating and conditional template blocks are not preserved as editable logic in Word. Export HTML for a reusable template, or choose Current preview data for a filled Word document.');
+    function runFormat(n: Element, inherited: IRunOptions): Mutable<IRunOptions> {
+        const s = styles(n), format: Mutable<IRunOptions> = { ...inherited };
+        if (['strong', 'b', 'th'].includes(n.name) || s['font-weight'] === 'bold' || Number(s['font-weight']) >= 600)
+            format.bold = true;
+        if (s['font-weight'] === 'normal' || /^(?:[1-5]00)$/.test(s['font-weight'] || '')) format.bold = false;
+        if (['em', 'i'].includes(n.name) || s['font-style'] === 'italic')
+            format.italics = true;
+        if (s['font-style'] === 'normal') format.italics = false;
+        if (n.name === 'u' || s['text-decoration']?.includes('underline'))
+            format.underline = {};
+        if (['s', 'strike'].includes(n.name) || (n.name === 'del' && !n.attribs['data-doc-change']) || (s['text-decoration'] || s['text-decoration-line'])?.includes('line-through'))
+            format.strike = true;
+        if (n.name === 'sup')
+            format.superScript = true;
+        if (n.name === 'sub')
+            format.subScript = true;
+        const size = px(s['font-size']);
+        if (size)
+            format.size = Math.round(size * 1.5);
+        const c = color(s.color);
+        if (c)
+            format.color = c;
+        if (s['font-family'])
+            format.font = s['font-family'].split(',')[0]!.replace(/['"]/g, '');
+        const fill = color(s['background-color'] || s.background);
+        if (fill) format.shading = { fill };
+        return format;
+    }
+    function revisionText(list: AnyNode[], inherited: IRunOptions): { text: string; format: IRunOptions }[] {
+        const parts: { text: string; format: IRunOptions }[] = [];
+        for (const node of list) {
+            if (++nodes > 30000) throw Error('Document has too many elements');
+            if (node.type === 'text') { parts.push({ text: node.data, format: inherited }); continue; }
+            if (!isTag(node) || ['script', 'style'].includes(node.name) || node.attribs['data-doc-hidden'] === 'true') continue;
+            const format = runFormat(node, inherited);
+            if (node.name === 'br') parts.push({ text: '', format: { ...format, break: 1 } });
+            else parts.push(...revisionText(children(node), format));
+        }
+        return parts;
+    }
     function runs(list: AnyNode[], inherited: IRunOptions = {}): (TextRun | ImageRun | InsertedTextRun | DeletedTextRun | FootnoteReferenceRun | ExternalHyperlink | InternalHyperlink | Bookmark)[] {
         const result: (TextRun | ImageRun | InsertedTextRun | DeletedTextRun | FootnoteReferenceRun | ExternalHyperlink | InternalHyperlink | Bookmark)[] = [];
         for (const n of list) {
@@ -79,31 +119,14 @@ export async function exportDocx(input: {
                 continue;
             }
             if (['ins', 'del'].includes(n.name) && n.attribs['data-doc-change']) {
-                const options = { ...inherited, text: text(n), id: ++changeId, author: (n.attribs['data-doc-author'] || 'Editor').slice(0, 100), date: /^\d{4}-\d{2}-\d{2}T/.test(n.attribs['data-doc-date'] || '') ? n.attribs['data-doc-date']! : new Date().toISOString() };
-                result.push(n.name === 'ins' ? new InsertedTextRun(options) : new DeletedTextRun(options));
+                const author = (n.attribs['data-doc-author'] || 'Editor').slice(0, 100), date = /^\d{4}-\d{2}-\d{2}T/.test(n.attribs['data-doc-date'] || '') ? n.attribs['data-doc-date']! : new Date().toISOString();
+                for (const part of revisionText(children(n), runFormat(n, inherited))) {
+                    const options = { ...part.format, text: part.text, id: ++changeId, author, date };
+                    result.push(n.name === 'ins' ? new InsertedTextRun(options) : new DeletedTextRun(options));
+                }
                 continue;
             }
-            const s = styles(n), format: Mutable<IRunOptions> = { ...inherited };
-            if (['strong', 'b', 'th'].includes(n.name) || s['font-weight'] === 'bold' || Number(s['font-weight']) >= 600)
-                format.bold = true;
-            if (['em', 'i'].includes(n.name) || s['font-style'] === 'italic')
-                format.italics = true;
-            if (n.name === 'u' || s['text-decoration']?.includes('underline'))
-                format.underline = {};
-            if (['s', 'strike', 'del'].includes(n.name))
-                format.strike = true;
-            if (n.name === 'sup')
-                format.superScript = true;
-            if (n.name === 'sub')
-                format.subScript = true;
-            const size = px(s['font-size']);
-            if (size)
-                format.size = Math.round(size * 1.5);
-            const c = color(s.color);
-            if (c)
-                format.color = c;
-            if (s['font-family'])
-                format.font = s['font-family'].split(',')[0]!.replace(/['"]/g, '');
+            const s = styles(n), format = runFormat(n, inherited);
             if (n.name === 'br') {
                 result.push(new TextRun({ ...format, break: 1 }));
                 continue;

@@ -757,3 +757,9 @@ Model-backed paragraph alignment captures the current document into versioned no
 resolves selected paragraph paths, rejects locked ancestors, creates an immutable model
 change and patches only changed style attributes. Existing caret/history and shared
 publication then persist canonical HTML. Unknown markup and opaque SVG remain preserved.
+
+Selected inline formatting validates structural text endpoints/values, captures a model
+with ephemeral selection bookmarks, produces immutable run changes and patches selected
+text/attributes. It then restores anchor/focus and removes bookmarks before history/shared
+publish snapshots. Atomic/derived/review-deleted content stays unchanged. Word conversion
+keeps explicit inherited-format resets and emits per-run formatting inside revisions.

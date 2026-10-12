@@ -111,4 +111,15 @@ describe('document command dispatch',()=>{
   ed._history.undo();expect(root.querySelector('p').style.textAlign).toBe('');ed._history.redo();expect(root.querySelector('p').style.textAlign).toBe('center');expect(root.querySelector('.doc-chip').dataset.token).toBe('name');
  });
 
+ it('uses model inline commands for selected text and keeps undo, fields and dialog focus',()=>{
+  const {w,doc,root,ed,select}=setup('<p>Original {{name}}</p>',true);select(root.querySelector('p').firstChild,8,0);doc.execCommand.mockClear();
+  expect(ed.commands.run('format.bold')).toBe(true);expect(doc.execCommand).not.toHaveBeenCalled();expect(w.getSelection().toString()).toBe('Original');expect(ed.commands.state('format.bold').active).toBe(true);expect(root.querySelector('.doc-chip').dataset.token).toBe('name');
+  ed.commands.run('format.italic');ed.commands.run('format.font','Georgia');ed.commands.run('format.size','18');ed.commands.run('format.color','#ff0000');
+  expect(doc.execCommand).not.toHaveBeenCalled();expect(root.querySelectorAll('[data-doc-run]')).toHaveLength(1);expect(root.querySelector('[data-doc-run]').style.fontSize).toBe('18pt');expect(root.querySelector('[data-doc-run]').style.fontFamily).toBe('Georgia');
+  ed._history.undo();expect(root.querySelector('[data-doc-run]').style.color).toBe('');ed._history.redo();expect(root.querySelector('[data-doc-run]').style.color).toBe('rgb(255, 0, 0)');expect(w.getSelection().toString()).toBe('Original');
+ });
+ it('retains native pending-format behavior for a collapsed caret',()=>{
+  const {doc,root,ed,select}=setup('<p>Text</p>',true);select(root.querySelector('p').firstChild,2,2);doc.execCommand.mockClear();expect(ed.commands.run('format.bold')).toBe(true);expect(doc.execCommand).toHaveBeenCalledWith('bold',false,undefined);
+ });
+
 });

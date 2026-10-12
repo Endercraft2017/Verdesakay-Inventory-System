@@ -48,3 +48,39 @@ describe('immutable model paragraph command',()=>{
   expect(model.alignmentActive(root,sel,'center')).toBe(true);expect(root.querySelectorAll('p')[1]!.getAttribute('style')).toBeNull();
  }));
 });
+
+describe('model text ranges and inline formatting',()=>{
+ it('formats an immutable backwards text range across runs without changing fields or annotations',()=>withDocument(doc=>{
+  const tree=model.fromHtml('<p><a href="https://example.com" data-extra="keep">One</a>{{name}}<ins data-doc-change="r">Two</ins></p>',doc),before=JSON.stringify(tree);
+  const range={anchor:{path:[0,2,0],offset:3},focus:{path:[0,0,0],offset:0}},result=model.formatTextRange(tree,range,'font-weight','bold');
+  const html=model.toHtml(result.document);expect(JSON.stringify(tree)).toBe(before);expect(html).toContain('href="https://example.com" data-extra="keep"');expect(html).toContain('{{name}}');expect(html).toContain('data-doc-change="r"');expect(html.match(/font-weight:bold/g)).toHaveLength(2);
+ }));
+ it('preserves a backwards live selection and field-chip identity while applying and toggling formatting',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>One <span class="doc-chip" data-token="name" contenteditable="false">name</span><a href="#keep">Two</a></p>';
+  const chip=root.querySelector('.doc-chip'),link=root.querySelector('a')!,p=root.querySelector('p')!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(link.firstChild!,3,p.firstChild!,0);
+  expect(model.formatSelection(root,sel,'font-weight','bold')).toBe(true);expect(sel.toString()).toBe('One nameTwo');expect(root.querySelector('.doc-chip')).toBe(chip);expect(root.querySelector('a')).toBe(link);expect(root.innerHTML).not.toContain('doc-inline-');expect(model.inlineActive(root,sel,'font-weight')).toBe(true);
+  expect(model.formatSelection(root,sel,'font-weight','normal')).toBe(true);expect(model.inlineActive(root,sel,'font-weight')).toBe(false);expect(root.querySelectorAll('[data-doc-run]')).toHaveLength(2);expect(sel.toString()).toBe('One nameTwo');
+ }));
+ it('formats only the selected part of a text node and keeps surrounding text unchanged',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>Before middle after</p>';const text=root.querySelector('p')!.firstChild!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(text,7,text,13);
+  model.formatSelection(root,sel,'font-style','italic');expect(root.querySelector('[data-doc-run]')!.textContent).toBe('middle');expect(root.textContent).toBe('Before middle after');expect(sel.toString()).toBe('middle');
+ }));
+ it('overrides inherited bold and reuses a fully selected model run',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><strong data-keep="yes">Original</strong></p>';const strong=root.querySelector('strong')!,sel=doc.defaultView!.getSelection()!;sel.selectAllChildren(strong);model.formatSelection(root,sel,'font-weight','normal');
+  expect(root.querySelector('strong')).toBe(strong);expect(root.querySelector('[data-doc-run]')!.getAttribute('style')).toContain('font-weight:normal');const text=root.querySelector('[data-doc-run]')!.firstChild!;sel.setBaseAndExtent(text,0,text,8);model.formatSelection(root,sel,'font-style','italic');
+  expect(root.querySelectorAll('[data-doc-run]')).toHaveLength(1);expect(sel.toString()).toBe('Original');expect(root.querySelector('strong')!.getAttribute('data-keep')).toBe('yes');
+ }));
+ it('rejects a locked range without leaving marker comments or changing HTML',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>One</p><p data-doc-locked="true">Two</p>';const before=root.innerHTML,p=root.querySelectorAll('p'),sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(p[0]!.firstChild!,0,p[1]!.firstChild!,3);
+  expect(()=>model.formatSelection(root,sel,'font-weight','bold')).toThrow('locked');expect(root.innerHTML).toBe(before);expect(sel.toString()).toBe('OneTwo');
+ }));
+ it('keeps hidden/deleted review text and opaque objects untouched',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>One<del data-doc-change="r">Old</del><span data-doc-hidden="true">Hidden</span><svg><text>SVG</text></svg>Two</p>';const sel=doc.defaultView!.getSelection()!;sel.selectAllChildren(root.querySelector('p')!);
+  model.formatSelection(root,sel,'color','#ff0000');expect(root.querySelector('del')!.innerHTML).toBe('Old');expect(root.querySelector('[data-doc-hidden]')!.innerHTML).toBe('Hidden');expect(root.querySelector('svg')!.innerHTML).toBe('<text>SVG</text>');expect(root.querySelectorAll('[data-doc-run]')).toHaveLength(2);
+ }));
+ it('rejects invalid values and positions that split emoji without changing live content',()=>withDocument(doc=>{
+  const tree=model.fromHtml('<p>😀 word</p>',doc),point={path:[0,0],offset:1};expect(()=>model.formatTextRange(tree,{anchor:point,focus:{path:[0,0],offset:2}},'font-weight','bold')).toThrow('Unicode');
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>😀 word</p>';const text=root.querySelector('p')!.firstChild!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(text,1,text,2);const before=root.innerHTML;
+  expect(()=>model.formatSelection(root,sel,'font-weight','bold')).toThrow('Unicode');expect(root.innerHTML).toBe(before);expect(()=>model.formatTextRange(tree,{anchor:{path:[0,0],offset:0},focus:{path:[0,0],offset:2}},'font-family','bad; color:red')).toThrow('Invalid');
+ }));
+});

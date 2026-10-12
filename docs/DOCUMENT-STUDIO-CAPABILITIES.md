@@ -101,3 +101,10 @@ unknown HTML, SVG, sections/design pages and review/notes markup. Paragraph alig
 uses immutable model changes and patches live attributes without replacing text/chip nodes.
 Existing HTML remains the saved representation. Model-backed typing, inline formatting,
 semantic ranges and layout are subsequent slices; this is not a full engine replacement.
+
+Selected bold/italic/font/point size/text color/highlight formatting now uses explicit
+model ranges and immutable runs. Selection direction, links, review metadata and atomic
+fields are preserved; undo/redo and shared save use the existing HTML contract. Word export
+respects normal bold/italic overrides, highlights and formatting within text revisions.
+Collapsed-caret pending formats and decoration/structural run commands remain on the
+browser adapter until their planned model operations are implemented.

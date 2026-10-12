@@ -34,7 +34,7 @@ The initial browser-history adaptation is independently implemented against our 
 | Phase | Work | Acceptance gate | Status |
 |---|---|---|---|
 | 1. Editing foundation | Selection bookmarks, input transactions, composition safety, command dispatch, shortcuts, reliable clipboard and list editing | Undo/redo restores content and selection; unrelated edits are separate; IME creates one edit; chips survive; browser and regression checks pass | Editing foundation verified; model work underway |
-| 2. Document model and formatting | Typed blocks/runs, styles and inheritance, semantic positions, HTML adapters, progressively replace execCommand | Existing template corpus round-trips without lost fields/styles; commands work without DOM-dependent state | In progress: adapters and paragraph alignment |
+| 2. Document model and formatting | Typed blocks/runs, styles and inheritance, semantic positions, HTML adapters, progressively replace execCommand | Existing template corpus round-trips without lost fields/styles; commands work without DOM-dependent state | In progress: selected text ranges and inline formatting |
 | 3. Tables and page layout | Word-style cell/row/column commands, split/merge, repeat headers, sizing, section/page flow, wrapping and running content | Table and section fixtures match preview/print; no lost rows, extra blank sheets or multipage grids | Planned |
 | 4. Review and references | Structural/format revisions, comments anchored to model positions, footnotes/endnotes, references and contents | Accept/reject and undo preserve structure; references survive save/reopen and print | Planned |
 | 5. Document interoperability | DOCX model mapping and round-trip corpus; explicit unsupported-feature preservation/reporting | Real Word/Docs/LibreOffice fixtures inspected for content and page fidelity; originals recoverable | Planned |
@@ -190,3 +190,43 @@ paragraph block retains that adapter. No database migration or Rust/WASM runtime
 
 Next: phase 2, slice 2 — explicit text positions/ranges, run formatting and inheritance,
 then move inline-formatting commands onto model operations without dropping existing markup.
+
+
+### Phase 2, slice 2 — selected text ranges and inline formatting
+
+Implemented:
+- Explicit structural text positions/ranges with UTF-16 offsets, ordering and validation.
+  Invalid positions, values and surrogate-splitting endpoints are refused before changes.
+- Pure immutable range formatting creates selected runs and retains surrounding elements,
+  links, review metadata, field/control tokens and opaque content. Locks are enforced.
+- Live formatting uses temporary boundary bookmarks, then restores selection direction
+  and removes every bookmark. Only selected text is split/wrapped; unrelated DOM stays.
+- Selected bold, italic, font family, point size, text color and highlight commands use
+  the model. Fully selected owned runs are reused across successive formats/toggles.
+  Active bold/italic state resolves inherited browser CSS.
+- Hidden/deleted review text, derived contents/note numbers, field chips, checkboxes and
+  opaque SVG remain untouched. The selectable text around these atoms is formatted.
+- Existing undo, drafts, shared publication, clipboard and conversion remain HTML-backed.
+  Run metadata survives sanitized paste, and typing after formatting uses the restored range.
+- Word export now respects explicit normal bold/italic overrides and text highlights.
+  Formatted revision text is emitted as attributed Word runs; rejecting a deletion does
+  not leave a permanent strikethrough from the revision's HTML del tag.
+
+Verification: immutable/model tests cover partial/backwards ranges, inherited overrides,
+links/revisions/fields, repeated formatting, locks, hidden/opaque content and Unicode.
+Chromium disables the corresponding native commands and verifies bold/italic/font/size/
+color, selection, subsequent typing, shared save, clipboard and the existing print/grid
+checks. Full suite: 2,253 tests passed. Export follow-up checks: 43 tests passed; typecheck
+passed. Seeded-template adapters and existing editor/conversion fixtures remain covered.
+
+Limits and next slice:
+- The model currently owns noncollapsed selected-text formatting. Collapsed-caret pending
+  formatting remains on the browser adapter until explicit pending marks and model-backed
+  typing are implemented.
+- Underline/strike, super/subscript and Clear Formatting remain on the browser adapter;
+  inherited decoration removal needs structural/run handling, not a misleading CSS reset.
+- Field/derived-object formatting is atomic/preserved; applying marks to those atoms is a
+  later operation. This slice does not claim full inline-formatting or document-engine parity.
+
+Next: phase 2, slice 3 — pending marks and selected-run normalization, atomic-field marks,
+then inherited decoration handling and model-owned insertion/deletion commands.

@@ -941,3 +941,9 @@ canonical HTML adapters and immutable paragraph-alignment changes. It preserves 
 content and keeps live DOM/path maps ephemeral. The editor patches alignment attributes
 in place; existing HTML snapshots, field rendering and API publication remain authoritative.
 Tests: doc-model, doc-model-templates and the model-backed doc-editor-commands fixtures.
+
+The model now owns selected text-range formatting for bold/italic, font/size/color and
+highlight. Temporary bookmarks restore selection and are removed before snapshots.
+Immutable run operations preserve annotations/atomic nodes; owned runs are reused.
+Word conversion shares run-format inheritance and exports explicit resets/highlights and
+formatted revision text. No persistence-schema change is introduced.

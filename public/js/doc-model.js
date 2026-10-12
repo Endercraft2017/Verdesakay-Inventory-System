@@ -3,9 +3,12 @@
 const DocModel = (() => {
   /** @typedef {{kind:'text',text:string}|{kind:'field',token:string,raw:string}|{kind:'comment',text:string}|{kind:'opaque',html:string}|{kind:'paragraph'|'run'|'list'|'listItem'|'table'|'tableGroup'|'row'|'cell'|'image'|'break'|'page'|'section'|'element',tag:string,attrs:Array<[string,string]>,children:Array<ModelNode>,repeat?:string}} ModelNode */
   /** @typedef {{kind:'document',version:1,children:Array<ModelNode>}} ModelDocument */
+  /** @typedef {{path:Array<number>,offset:number}} TextPosition */
+  /** @typedef {{anchor:TextPosition,focus:TextPosition}} ModelTextRange */
   const CHROME='.doc-float-handle,.doc-float-toolbar,.doc-promote-bar,.doc-snap-guide,.doc-page-guide';
   const RAW=new Set(['style','script','textarea','title']);
   const VOID=new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
+  const DERIVED=['data-doc-toc','data-doc-toc-page','data-doc-note-ref','data-doc-note-number'];
   const PARAGRAPHS='p,h1,h2,h3,h4,h5,h6,li,blockquote';
   const kinds={p:'paragraph',h1:'paragraph',h2:'paragraph',h3:'paragraph',h4:'paragraph',h5:'paragraph',h6:'paragraph',blockquote:'paragraph',ul:'list',ol:'list',li:'listItem',table:'table',thead:'tableGroup',tbody:'tableGroup',tfoot:'tableGroup',tr:'row',td:'cell',th:'cell',img:'image',br:'break',span:'run',b:'run',strong:'run',i:'run',em:'run',u:'run',s:'run',sup:'run',sub:'run',ins:'run',del:'run',a:'run'};
   const escapeText=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
@@ -13,9 +16,10 @@ const DocModel = (() => {
   const field=raw=>({kind:'field',raw,token:raw.slice(2,-2).trim()});
 
   /** Capture canonical data plus ephemeral DOM references. DOM references never enter saved data. */
-  function capture(root,{editor=true,fieldMarker=null}={}) {
+  function capture(root,{editor=true,fieldMarker=null,ignoreNodes=null}={}) {
     const paths=new WeakMap(),refs=new Map();
     function read(node,path) {
+      if(ignoreNodes?.has(node)||(node.nodeType===3&&!node.nodeValue))return null;
       paths.set(node,path);refs.set(JSON.stringify(path),node);
       if(node.nodeType===3)return {kind:'text',text:node.nodeValue};
       if(node.nodeType===8){
@@ -66,7 +70,7 @@ const DocModel = (() => {
   }
   function at(document,path){let node=document;for(const index of path){node=node.children?.[index];if(!node)return null;}return node;}
   // Split CSS statements without damaging semicolons in quoted values or URLs.
-  function alignStyle(style,value) {
+  function setStyleProperty(style,property,value) {
     const parts=[];let start=0,depth=0,quote='',comment=false;
     for(let i=0;i<style.length;i++){
       const ch=style[i];if(comment){if(ch==='*'&&style[i+1]==='/'){comment=false;i++;}continue;}
@@ -76,7 +80,7 @@ const DocModel = (() => {
       else if(ch===';'&&!depth){parts.push(style.slice(start,i));start=i+1;}
     }
     parts.push(style.slice(start));
-    return parts.filter(p=>p.trim()&&!/^text-align\s*:/i.test(p.replace(/\/\*[\s\S]*?\*\//g,'').trim())).join(';')+';text-align:'+value;
+    return parts.filter(p=>p.trim()&&p.replace(/\/\*[\s\S]*?\*\//g,'').trim().split(':')[0].trim().toLowerCase()!==property).join(';')+';'+property+':'+value;
   }
   /** Pure immutable model command; locked ancestors are rejected and unsupported paths remain intact. */
   function alignParagraphs(document,paths,value) {
@@ -87,7 +91,7 @@ const DocModel = (() => {
       const locked=path.some((_,i)=>at(next,path.slice(0,i+1))?.attrs?.some(([k,v])=>k==='data-doc-locked'&&v==='true'));
       if(locked)throw new Error('This paragraph is locked');
       const before=JSON.parse(JSON.stringify(node.attrs));let style=node.attrs.find(a=>a[0]==='style');
-      if(!style){style=['style',''];node.attrs.push(style);}style[1]=alignStyle(style[1],value);
+      if(!style){style=['style',''];node.attrs.push(style);}style[1]=setStyleProperty(style[1],'text-align',value);
       changes.push({path,before,after:node.attrs});
     }
     return {document:next,changes};
@@ -111,7 +115,102 @@ const DocModel = (() => {
     for(const change of result.changes){const el=captured.refs.get(JSON.stringify(change.path));const style=change.after.find(a=>a[0]==='style');el.setAttribute('style',style[1]);}
     return result.changes.length>0;
   }
-  return {capture,fromHtml,toHtml,at,alignParagraphs,alignSelection,alignmentActive};
+  /** Text positions are structural paths plus UTF-16 offsets; field/opaque nodes are atomic. */
+  function comparePosition(a,b){for(let i=0;i<Math.min(a.path.length,b.path.length);i++)if(a.path[i]!==b.path[i])return a.path[i]-b.path[i];return a.path.length-b.path.length || a.offset-b.offset;}
+  function validatePosition(document,point){
+    if(!point||!Array.isArray(point.path)||!point.path.every(i=>Number.isInteger(i)&&i>=0))throw new Error('Invalid text position');
+    const node=at(document,point.path),offset=point.offset;
+    if(node?.kind!=='text'||!Number.isInteger(offset)||offset<0||offset>node.text.length)throw new Error('Invalid text position');
+    if(offset>0&&offset<node.text.length&&/[\uD800-\uDBFF]/.test(node.text[offset-1])&&/[\uDC00-\uDFFF]/.test(node.text[offset]))throw new Error('Text position splits a Unicode character');
+  }
+  function validateInline(property,value){
+    if(property==='font-weight'&&!['bold','normal'].includes(value))throw new Error('Invalid font weight');
+    if(property==='font-style'&&!['italic','normal'].includes(value))throw new Error('Invalid font style');
+    if(property==='font-family'&&(!/^[\p{L}\p{N}\s,'"._-]{1,150}$/u.test(value)))throw new Error('Invalid font family');
+    if(property==='font-size'&&(!/^\d+(\.\d+)?pt$/.test(value)||parseFloat(value)<1||parseFloat(value)>400))throw new Error('Invalid font size');
+    if(['color','background-color'].includes(property)&&!/^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i.test(value))throw new Error('Invalid text color');
+    if(!['font-weight','font-style','font-family','font-size','color','background-color'].includes(property))throw new Error('Unsupported inline format');
+  }
+  /** Immutable selected-run command. Existing inline ancestors/attributes are retained. */
+  function formatTextRange(document,range,property,value){
+    validateInline(property,value);if(!range?.anchor||!range?.focus)throw new Error('Invalid text range');validatePosition(document,range.anchor);validatePosition(document,range.focus);
+    const [start,end]=comparePosition(range.anchor,range.focus)<=0?[range.anchor,range.focus]:[range.focus,range.anchor];
+    const next=JSON.parse(JSON.stringify(document)),changes=[];
+    function walk(node,path,locked=false,skip=false){
+      const attrs=node.attrs || [],attribute=name=>attrs.find(a=>a[0]===name)?.[1];
+      locked ||= attribute('data-doc-locked')==='true';
+      skip ||= DERIVED.some(key=>attrs.some(([k])=>k===key))||attribute('data-doc-hidden')==='true'||RAW.has(node.tag)||node.kind==='field'||node.kind==='opaque'||(node.tag==='del'&&attribute('data-doc-change'))||/\bdoc-checkbox\b/.test(attribute('class') || '');
+      if(skip)return;
+      if(node.kind==='text'){
+        const a=path.join(',')===start.path.join(',')?start.offset:0,b=path.join(',')===end.path.join(',')?end.offset:node.text.length;
+        if(comparePosition({path,offset:node.text.length},start)<=0||comparePosition({path,offset:0},end)>=0||b<=a)return;
+        if(locked)throw new Error('Selected text is locked');
+        const parentPath=path.slice(0,-1),parent=at(next,parentPath),owned=parent?.tag==='span'&&parent.attrs.some(([k,v])=>k==='data-doc-run'&&v==='inline')&&parent.children.length===1;
+        if(owned&&a===0&&b===node.text.length){
+          let style=parent.attrs.find(a=>a[0]==='style');if(!style){style=['style',''];parent.attrs.push(style);}style[1]=setStyleProperty(style[1],property,value);
+          changes.push({type:'attributes',path:parentPath,attrs:parent.attrs});return;
+        }
+        const run={kind:'run',tag:'span',attrs:[['data-doc-run','inline'],['style',property+':'+value]],children:[{kind:'text',text:node.text.slice(a,b)}]};
+        const parts=[];if(a)parts.push({kind:'text',text:node.text.slice(0,a)});parts.push(run);if(b<node.text.length)parts.push({kind:'text',text:node.text.slice(b)});
+        changes.push({type:'text',path,parts});return;
+      }
+      node.children?.forEach((child,i)=>walk(child,[...path,i],locked,skip));
+    }
+    // Resolve all paths before splicing. Reverse order keeps sibling path indices stable.
+    walk(next,[]);
+    for(const change of [...changes].reverse())if(change.type==='text'){const parent=at(next,change.path.slice(0,-1));parent.children.splice(change.path.at(-1),1,...change.parts);}
+    return {document:next,changes};
+  }
+  function editableText(root,range){
+    const texts=[],walker=root.ownerDocument.createTreeWalker(root,4);let node;
+    while((node=walker.nextNode())){
+      if(!node.length||node.parentElement.closest('svg,math')||node.parentElement.namespaceURI!=='http://www.w3.org/1999/xhtml'||node.parentElement.closest(CHROME+',.doc-chip,.doc-checkbox,[data-doc-toc],[data-doc-toc-page],[data-doc-note-ref],[data-doc-note-number],.doc-page-number,style,script,textarea,title,del[data-doc-change],[data-doc-hidden="true"]'))continue;
+      if(!range.intersectsNode(node))continue;
+      const start=range.startContainer===node?range.startOffset:0,end=range.endContainer===node?range.endOffset:node.length;
+      if(end>start)texts.push({node,start,end});
+    }
+    return texts;
+  }
+  /** Bold/italic active state resolved against inherited browser CSS. */
+  function inlineActive(root,selection,property){
+    if(!['font-weight','font-style'].includes(property))return null;
+    if(!selection?.rangeCount||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return null;
+    const range=selection.getRangeAt(0);if(range.collapsed)return null;
+    const texts=editableText(root,range);if(!texts.length)return false;
+    return texts.every(({node})=>{const css=root.ownerDocument.defaultView.getComputedStyle(node.parentElement);return property==='font-weight'?css.fontWeight==='bold'||Number(css.fontWeight)>=600:css.fontStyle==='italic';});
+  }
+  /** Marker bookmarks restore exact range boundaries/direction after selected text is split. */
+  function formatSelection(root,selection,property,value){
+    if(!selection?.rangeCount||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return null;
+    const original=selection.getRangeAt(0).cloneRange();if(original.collapsed)return null;
+    if(!editableText(root,original).length)return false;
+    for(const [node,offset] of [[original.startContainer,original.startOffset],[original.endContainer,original.endOffset]])if(node.nodeType===3&&offset>0&&offset<node.length&&/[\uD800-\uDBFF]/.test(node.data[offset-1])&&/[\uDC00-\uDFFF]/.test(node.data[offset]))throw new Error('Text position splits a Unicode character');
+    validateInline(property,value);
+    const backwards=selection.anchorNode===original.endContainer&&selection.anchorOffset===original.endOffset;
+    const start=root.ownerDocument.createComment('doc-inline-start'),end=root.ownerDocument.createComment('doc-inline-end');
+    const endRange=original.cloneRange();endRange.collapse(false);endRange.insertNode(end);const startRange=original.cloneRange();startRange.collapse(true);startRange.insertNode(start);
+    const markerParents=new Set([start.parentNode,end.parentNode]);
+    try{
+      const range=root.ownerDocument.createRange();range.setStartAfter(start);range.setEndBefore(end);
+      const texts=editableText(root,range),captured=capture(root,{ignoreNodes:new Set([start,end])});
+      if(!texts.length)return false;
+      const first=texts[0],last=texts.at(-1),modelRange={anchor:{path:captured.paths.get(first.node),offset:first.start},focus:{path:captured.paths.get(last.node),offset:last.end}};
+      const result=formatTextRange(captured.document,modelRange,property,value);
+      for(const change of result.changes){
+        const node=captured.refs.get(JSON.stringify(change.path));
+        if(change.type==='attributes'){node.setAttribute('style',change.attrs.find(a=>a[0]==='style')[1]);continue;}
+        const fragment=root.ownerDocument.createDocumentFragment();
+        for(const part of change.parts){if(part.kind==='text')fragment.append(root.ownerDocument.createTextNode(part.text));else{const span=root.ownerDocument.createElement('span');part.attrs.forEach(([k,v])=>span.setAttribute(k,v));span.textContent=part.children[0].text;fragment.append(span);}}
+        node.replaceWith(fragment);
+      }
+      return result.changes.length>0;
+    }finally{
+      const restored=root.ownerDocument.createRange();restored.setStartAfter(start);restored.setEndBefore(end);
+      if(backwards)selection.setBaseAndExtent(restored.endContainer,restored.endOffset,restored.startContainer,restored.startOffset);else{selection.removeAllRanges();selection.addRange(restored);}
+      end.remove();start.remove();markerParents.forEach(parent=>parent?.normalize());
+    }
+  }
+  return {capture,fromHtml,toHtml,at,alignParagraphs,alignSelection,alignmentActive,comparePosition,formatTextRange,formatSelection,inlineActive};
 })();
 if(typeof window!=='undefined')window.DocModel=DocModel;
 if(typeof module!=='undefined'&&module.exports)module.exports=DocModel;

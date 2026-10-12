@@ -197,7 +197,7 @@ const SANITIZE_TAGS = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'S
 const SANITIZE_ATTR = { A: ['href'], IMG: ['src', 'alt'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
 const SANITIZE_STYLE = ['color', 'background-color', 'background', 'text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'width', 'page-break-after', 'break-after',
   'position', 'left', 'top', 'right', 'bottom', 'height', 'z-index', 'border', 'border-color', 'border-radius', 'padding', 'margin-bottom', 'line-height', 'display', 'visibility', 'object-fit', 'object-position', 'clip-path', 'filter', 'rotate', 'opacity', 'margin-top', 'margin-left', 'margin-right', 'text-indent', 'vertical-align', 'table-layout', 'border-collapse', 'border-width', 'border-style', 'break-inside', 'page-break-inside','column-count','column-gap','break-before','page-break-before','box-shadow'];
-const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src', 'data-float-kind', 'data-doc-name', 'data-doc-locked', 'data-doc-hidden', 'data-doc-node', 'data-doc-toc','data-doc-toc-page','data-doc-settings','data-doc-config','data-doc-style','data-doc-style-version','data-doc-design-page','data-doc-page-name','data-doc-page-bg','data-doc-section','data-doc-section-name','data-doc-section-break','data-doc-section-bg','data-doc-section-width','data-doc-section-height','data-doc-section-margin','data-doc-footnote','data-doc-note-ref','data-doc-note-number','data-doc-note-text','data-doc-notes','data-doc-change','data-doc-author','data-doc-date','data-doc-numbering'];
+const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src', 'data-float-kind', 'data-doc-name', 'data-doc-locked', 'data-doc-hidden', 'data-doc-run','data-doc-node', 'data-doc-toc','data-doc-toc-page','data-doc-settings','data-doc-config','data-doc-style','data-doc-style-version','data-doc-design-page','data-doc-page-name','data-doc-page-bg','data-doc-section','data-doc-section-name','data-doc-section-break','data-doc-section-bg','data-doc-section-width','data-doc-section-height','data-doc-section-margin','data-doc-footnote','data-doc-note-ref','data-doc-note-number','data-doc-note-text','data-doc-notes','data-doc-change','data-doc-author','data-doc-date','data-doc-numbering'];
 
 // `position` is scoped to absolute/relative/static — `fixed`/`sticky` can escape the page and
 // overlay the app chrome, so a pasted style must not be able to smuggle those in.
@@ -1309,11 +1309,14 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     native:(cmd,val)=>{
       const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];
       if(align && window.DocModel){const result=window.DocModel.alignSelection(surface,window.getSelection(),align);if(result!==null)return result;}
+      const property={bold:'font-weight',italic:'font-style',fontName:'font-family',foreColor:'color',hiliteColor:'background-color'}[cmd];
+      if(property&&window.DocModel){const sel=window.getSelection();const value=cmd==='bold'?(window.DocModel.inlineActive(surface,sel,property)?'normal':'bold'):cmd==='italic'?(window.DocModel.inlineActive(surface,sel,property)?'normal':'italic'):val;const result=window.DocModel.formatSelection(surface,sel,property,value);if(result!==null)return result;}
       return document.execCommand(cmd,false,val);
     },
-    active:cmd=>{const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];if(align&&window.DocModel)return window.DocModel.alignmentActive(surface,window.getSelection(),align);try{return document.queryCommandState(cmd);}catch{return false;}},
+    active:cmd=>{const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];if(align&&window.DocModel)return window.DocModel.alignmentActive(surface,window.getSelection(),align);const property={bold:'font-weight',italic:'font-style'}[cmd];if(property&&window.DocModel){const active=window.DocModel.inlineActive(surface,window.getSelection(),property);if(active!==null)return active;}try{return document.queryCommandState(cmd);}catch{return false;}},
     size:value=>{
       const size=Number(value);if(!Number.isFinite(size)||size<1||size>400)return false;
+      if(window.DocModel){const result=window.DocModel.formatSelection(surface,window.getSelection(),'font-size',size+'pt');if(result!==null)return result;}
       if(document.execCommand('fontSize',false,'7')===false)return false;
       surface.querySelectorAll('font[size="7"]').forEach(f=>{f.removeAttribute('size');f.style.fontSize=size+'pt';});
     },
