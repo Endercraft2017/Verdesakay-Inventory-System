@@ -1,7 +1,8 @@
 /** Form builder: per-section-managed form definitions, per-form record CRUD, global variables. */
+import { z } from 'zod';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
-import { db, queryOne, queryAll, run, nextSequence } from '../shared/db';
+import { db, queryOne, queryAll, run, nextSequence, memoTemplateBody } from '../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../shared/auth';
 import {
   parseBody,
@@ -19,9 +20,10 @@ import { notifyApprovers } from '../modules/hr/workflow';
 import { normalizeRequest, attachLeave, leaveWarnings, requestEmployeeId } from '../modules/hr/request-data';
 import { REQUEST_SLUGS } from './me.routes';
 import { INFO_CHANGE_SLUG, prepareInfoChange } from '../modules/hr/info-change';
-import type { FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../shared/types';
+import type { DocTemplate, FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../shared/types';
 import { syncClass } from '../sync';
 import { syncUpload } from '../sync/files';
+import { templateRevision, checkTemplateRevision, templateWrite, checkStudioPublish, studioPublished, migrateStudioDocument } from './doc-template-version';
 
 const router = Router();
 router.use(requireAuth);
@@ -109,6 +111,7 @@ router.get('/form-definitions/:id', (req, res) => {
 router.post('/form-definitions', syncClass('claim'), (req, res) => {
   const input = parseBody(formDefinitionSchema, req.body);
   if (!canManageScope(req, res, input.scope)) return;
+  const created=templateWrite(()=>{
   const info = run(
     `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, actions, scope, created_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -121,7 +124,11 @@ router.post('/form-definitions', syncClass('claim'), (req, res) => {
     input.scope,
     req.user!.id
   );
-  res.status(201).json({ id: info.lastInsertRowid });
+  const tpl=run("INSERT INTO doc_templates(name,type,body,created_by) VALUES(?,'generic',?,?)",input.name+' Template',memoTemplateBody(input.name,input.fields),req.user!.id);
+  run('UPDATE form_definitions SET template_id=? WHERE id=?',tpl.lastInsertRowid,info.lastInsertRowid);
+  return Number(info.lastInsertRowid);
+  });
+  res.status(201).json({ id: created });
 });
 
 // PUT /api/form-definitions/:id — update (forms.manage.<scope> for its current scope, and for
@@ -149,6 +156,31 @@ router.put('/form-definitions/:id', syncClass('claim'), (req, res) => {
   res.json({ ok: true });
 });
 
+// A form owns several reusable layouts; template_id remains its explicit default.
+router.get('/form-definitions/:id/templates',(req,res)=>{
+ const form=queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id=?',Number(req.params.id));
+ if(!form){res.status(404).json({error:'Form not found'});return;}
+ if(!canManageScope(req,res,form.scope))return;
+ res.json(queryAll('SELECT t.id,t.name,t.type,t.updated_at,(t.id=?) AS is_default,(SELECT COUNT(*) FROM form_template_links WHERE template_id=t.id) AS linked_forms FROM form_template_links l JOIN doc_templates t ON t.id=l.template_id WHERE l.form_id=? ORDER BY is_default DESC,t.name',form.template_id,form.id));
+});
+router.post('/form-definitions/:id/templates',syncClass('claim'),(req,res)=>{
+ const form=queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id=?',Number(req.params.id));
+ if(!form){res.status(404).json({error:'Form not found'});return;}
+ if(!canManageScope(req,res,form.scope))return;
+ const input=parseBody(z.object({template_id:z.number().int().positive(),make_default:z.boolean().default(false)}),req.body);
+ if(!queryOne('SELECT id FROM doc_templates WHERE id=?',input.template_id)){res.status(404).json({error:'Template not found'});return;}
+ templateWrite(()=>{run('INSERT OR IGNORE INTO form_template_links VALUES(?,?)',form.id,input.template_id);if(input.make_default||!form.template_id)run("UPDATE form_definitions SET template_id=?,updated_at=datetime('now') WHERE id=?",input.template_id,form.id);});
+ res.json({ok:true});
+});
+router.delete('/form-definitions/:id/templates/:templateId',syncClass('claim'),(req,res)=>{
+ const form=queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id=?',Number(req.params.id));
+ if(!form){res.status(404).json({error:'Form not found'});return;}
+ if(!canManageScope(req,res,form.scope))return;
+ const templateId=Number(req.params.templateId);
+ templateWrite(()=>{run('DELETE FROM form_template_links WHERE form_id=? AND template_id=?',form.id,templateId);if(form.template_id===templateId){const next=queryOne<{template_id:number}>('SELECT template_id FROM form_template_links WHERE form_id=? ORDER BY template_id LIMIT 1',form.id);run('UPDATE form_definitions SET template_id=? WHERE id=?',next?.template_id??null,form.id);}});
+ res.json({ok:true});
+});
+
 // PUT /api/form-definitions/:id/template — link/unlink the doc_template used to print this
 // form's records (forms.manage.<scope> for the form's own scope). Separate from the full-form
 // update above since this only needs the id, not a resend of every field.
@@ -172,27 +204,44 @@ router.put('/form-definitions/:id/template', syncClass('claim'), (req, res) => {
 // from `/api/templates` (templates.routes.ts), which stays templates.edit-gated for the
 // Sale/Job/Purchase Order and other hand-authored templates unrelated to any one form.
 router.put('/form-definitions/:id/template-body', syncClass('claim'), (req, res) => {
-  const id = Number(req.params.id);
-  const existing = queryOne<FormDefinition>('SELECT template_id, scope FROM form_definitions WHERE id = ?', id);
-  if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
-  if (!canManageScope(req, res, existing.scope)) return;
-  const input = parseBody(templateSchema, req.body);
-  if (existing.template_id) {
-    run(
-      `UPDATE doc_templates SET name = ?, type = ?, period = ?, body = ?, copies_per_record = ?, records_per_page = ?, tile_fill = ?, repeat_count = ?, tile_continuous = ?, updated_at = datetime('now') WHERE id = ?`,
-      input.name, input.type, input.period ?? null, input.body, input.copies_per_record, input.records_per_page, input.tile_fill,
-      input.repeat_count, input.tile_continuous ? 1 : 0, existing.template_id
-    );
-    res.json({ id: existing.template_id });
-  } else {
-    const info = run(
-      'INSERT INTO doc_templates (name, type, period, body, copies_per_record, records_per_page, tile_fill, repeat_count, tile_continuous, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      input.name, input.type, input.period ?? null, input.body, input.copies_per_record, input.records_per_page, input.tile_fill,
-      input.repeat_count, input.tile_continuous ? 1 : 0, req.user!.id
-    );
-    run(`UPDATE form_definitions SET template_id = ?, updated_at = datetime('now') WHERE id = ?`, info.lastInsertRowid, id);
-    res.status(201).json({ id: info.lastInsertRowid });
-  }
+  const result = templateWrite(() => {
+    const id = Number(req.params.id);
+    const existing = queryOne<FormDefinition>('SELECT template_id, scope FROM form_definitions WHERE id = ?', id);
+    if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
+    if (!canManageScope(req, res, existing.scope)) return;
+    const input = parseBody(templateSchema.extend({template_id:z.number().int().positive().nullable().optional()}), req.body);
+    const targetId=input.template_id===undefined?existing.template_id:input.template_id;
+    if(targetId&&!queryOne('SELECT 1 FROM form_template_links WHERE form_id=? AND template_id=?',id,targetId)){res.status(400).json({error:'Link this template to the form before editing it'});return;}
+    if (targetId) {
+      const template = queryOne<DocTemplate>('SELECT * FROM doc_templates WHERE id = ?', targetId);
+      if (!template) { res.status(404).json({ error: 'Template not found' }); return; }
+      if (!checkTemplateRevision(template, input.expected_revision, res) || !checkStudioPublish(template.id, input.studio_version, res)) return;
+      run(
+        `UPDATE doc_templates SET name = ?, type = ?, period = ?, body = ?, copies_per_record = ?, records_per_page = ?, tile_fill = ?, repeat_count = ?, tile_continuous = ?, grid_gap_x_mm = ?, grid_gap_y_mm = ?, updated_at = datetime('now') WHERE id = ?`,
+        input.name, input.type, input.period ?? null, input.body, input.copies_per_record, input.records_per_page, input.tile_fill,
+        input.repeat_count, input.tile_continuous ? 1 : 0, input.grid_gap_x_mm, input.grid_gap_y_mm, targetId
+      );
+      const saved = queryOne<DocTemplate>('SELECT * FROM doc_templates WHERE id = ?', targetId)!;
+      studioPublished(saved);
+      return { status: 200, id: targetId, revision: templateRevision(saved) };
+    } else {
+      if(!existing.template_id&&!checkStudioPublish('form:'+id,input.studio_version,res))return;
+      if(input.source_template_id){const source=queryOne<DocTemplate>('SELECT * FROM doc_templates WHERE id=?',input.source_template_id);if(!source){res.status(404).json({error:'Source template not found'});return;}if(!checkTemplateRevision(source,input.source_revision,res))return;}
+      const info = run(
+        'INSERT INTO doc_templates (name, type, period, body, copies_per_record, records_per_page, tile_fill, repeat_count, tile_continuous, grid_gap_x_mm, grid_gap_y_mm, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        input.name, input.type, input.period ?? null, input.body, input.copies_per_record, input.records_per_page, input.tile_fill,
+        input.repeat_count, input.tile_continuous ? 1 : 0, input.grid_gap_x_mm, input.grid_gap_y_mm, req.user!.id
+      );
+      run('INSERT INTO form_template_links VALUES(?,?)',id,info.lastInsertRowid);
+      if(!existing.template_id)run(`UPDATE form_definitions SET template_id = ?, updated_at = datetime('now') WHERE id = ?`, info.lastInsertRowid, id);
+      if(input.source_template_id)run(`INSERT INTO doc_variables(scope,template_id,category,key,label,source_type,value,field_path,formula,data_type,sort) SELECT scope,?,category,key,label,source_type,value,field_path,formula,data_type,sort FROM doc_variables WHERE scope='template' AND template_id=?`,info.lastInsertRowid,input.source_template_id);
+      const saved = queryOne<DocTemplate>('SELECT * FROM doc_templates WHERE id = ?', info.lastInsertRowid)!;
+      if(!existing.template_id)migrateStudioDocument('form:'+id,'template:'+info.lastInsertRowid);
+      studioPublished(saved);
+      return { status: 201, id: info.lastInsertRowid, revision: templateRevision(saved) };
+    }
+  });
+  if (result) res.status(result.status).json({ id: result.id, revision: result.revision });
 });
 
 // DELETE /api/form-definitions/:id — delete + cascades records (forms.manage.<scope> for its scope)

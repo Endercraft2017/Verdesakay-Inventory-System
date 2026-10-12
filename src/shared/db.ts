@@ -10,6 +10,9 @@
  * With a single tenant (the default), everything behaves exactly as before.
  */
 import path from 'node:path';
+import { createDocumentDefaultsSchema, initializeDocumentDefaults } from './document-defaults';
+import { createFormTemplateSchema } from './form-template-schema';
+import { createStudioSchema } from './doc-studio-schema';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -60,7 +63,8 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 62; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+// 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
+export const SCHEMA_VERSION = 63; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -151,6 +155,7 @@ export const SCHEMA_VERSION = 62; // 20: employees.late_exempt; 21: attendance_r
 // (field staff may punch from anywhere, without the QR) and time_punches.lat / lng / accuracy_m /
 // distance_m / geo_site (where each phone punch came from, for HR review). The policy itself is
 // the clock_geofence setting; off by default, so existing installs punch exactly as before.
+// 48: durable document drafts/versions, shared company library, comments, working rooms and presence.
 // 47: kiosk_devices -- office PCs an HR manager approved to run the time-in kiosk. With the
 // kiosk lock on (default when internet-facing), the kiosk endpoints refuse any other browser.
 // 48: sale-order releasing -- orders.warehouse_accepted_by / warehouse_accepted_at (the warehouse
@@ -234,8 +239,29 @@ export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
       migrate();
       setSetting('schema_version', SCHEMA_VERSION);
     }
+    createStudioSchema(conn);
+    createFormTemplateSchema(conn);
+    createDocumentDefaultsSchema(conn);
     ensureUploadDir();
+    const previousForms=new Set((conn.prepare('SELECT id FROM form_definitions').all() as Array<{id:number}>).map(f=>f.id));
     seed();
+    initializeDocumentDefaults(conn);
+    if(!getSetting('payroll_print_grid_initialized')){conn.exec("UPDATE doc_templates SET copies_per_record=2,records_per_page=2 WHERE name='HR Payroll Slip' AND copies_per_record=1 AND records_per_page=1 AND tile_continuous=0 AND repeat_count=1");setSetting('payroll_print_grid_initialized',true);}
+    const linksInitialized=!!getSetting('form_template_links_initialized');
+    const newForms=(conn.prepare('SELECT id FROM form_definitions').all() as Array<{id:number}>).some(f=>!previousForms.has(f.id));
+    if (!linksInitialized || newForms) {
+      const slip = conn.prepare("SELECT id FROM doc_templates WHERE name='HR Payroll Slip' ORDER BY id LIMIT 1").get() as {id:number}|undefined;
+      const payroll=conn.prepare("SELECT id FROM form_definitions WHERE slug='hr_payroll' AND template_id IS NULL").get() as {id:number}|undefined;
+      if (slip && payroll && (!linksInitialized||!previousForms.has(payroll.id)))conn.prepare('UPDATE form_definitions SET template_id=? WHERE id=?').run(slip.id,payroll.id);
+      const forms=conn.prepare('SELECT id,name,fields FROM form_definitions WHERE template_id IS NULL').all() as Array<{id:number;name:string;fields:string}>;
+      for(const form of forms){
+        if(linksInitialized&&previousForms.has(form.id))continue;
+        const tpl=conn.prepare("INSERT INTO doc_templates(name,type,body) VALUES(?,'generic',?)").run(form.name+' Template',memoTemplateBody(form.name,JSON.parse(form.fields)));
+        conn.prepare('UPDATE form_definitions SET template_id=? WHERE id=?').run(tpl.lastInsertRowid,form.id);
+      }
+      conn.exec('INSERT OR IGNORE INTO form_template_links SELECT id,template_id FROM form_definitions WHERE template_id IS NOT NULL');
+      setSetting('form_template_links_initialized',true);
+    }
   });
   return conn;
 }
@@ -247,6 +273,9 @@ export function forceMigrate(slug: string): void {
     createSchema();
     migrate();
     setSetting('schema_version', SCHEMA_VERSION);
+    createStudioSchema(activeDb());
+    createFormTemplateSchema(activeDb());
+    createDocumentDefaultsSchema(activeDb());
   });
 }
 
@@ -1969,6 +1998,9 @@ function migrate(): void {
 
   // (SCHEMA_VERSION 35) See the version-history comment above. Defaults (1 / 0) reproduce
   // every existing template's current output exactly — continuous mode is opt-in.
+  for (const column of ['grid_gap_x_mm','grid_gap_y_mm']) {
+    if (!tplCols.some(c => c.name === column)) db.exec(`ALTER TABLE doc_templates ADD COLUMN ${column} REAL NOT NULL DEFAULT 6`);
+  }
   if (!tplCols.some((c) => c.name === 'repeat_count')) {
     db.exec('ALTER TABLE doc_templates ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 1');
   }
@@ -3532,9 +3564,10 @@ function seedMemoForms(): void {
     then one labelled line per form field ({{key}} placeholders the form-record print flow
     and src/form-actions.ts both substitute). Deliberately minimal; HR edits it in the doc
     editor from Form Builder. */
-function memoTemplateBody(title: string, fields: Array<{ key: string; label: string }>): string {
+export function memoTemplateBody(title: string, fields: Array<{ key: string; label: string }>): string {
+  const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
   const rows = fields
-    .map((f) => `  <div class="mm-row"><span class="mm-l">${f.label}</span><span class="mm-v">{{${f.key}}}</span></div>`)
+    .map((f) => `  <div class="mm-row"><span class="mm-l">${escape(f.label)}</span><span class="mm-v">{{${f.key}}}</span></div>`)
     .join('\n');
   return `<style>
   .memo { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; max-width: 720px; margin: 0 auto; }
@@ -3550,12 +3583,12 @@ function memoTemplateBody(title: string, fields: Array<{ key: string; label: str
 <div class="memo">
   <h1>{{company.name}}</h1>
   <div class="co">{{company.address}}</div>
-  <h2>${title.toUpperCase()}</h2>
+  <h2>${escape(title.toUpperCase())}</h2>
   <div class="mm-row"><span class="mm-l">Reference No.</span><span class="mm-v">{{number}}</span></div>
   <div class="mm-row"><span class="mm-l">Date Issued</span><span class="mm-v">{{today}}</span></div>
 ${rows}
   <div class="sig">
-    <div>Issued by (HR)</div>
+    <div>Issued by</div>
     <div>Received by (Employee)</div>
   </div>
 </div>`;
@@ -3625,21 +3658,19 @@ function seedTemplates(): void {
   const insert = db.prepare('INSERT INTO doc_templates (name, type, body) VALUES (?, ?, ?)');
   const hasType = (type: string) =>
     (db.prepare('SELECT COUNT(*) AS c FROM doc_templates WHERE type = ?').get(type) as { c: number }).c > 0;
-  if (!hasType('sale') && !hasType('job') && !hasType('purchase')) {
-    insert.run('Sale Order', 'sale', orderTemplateBody('SALES ORDER'));
-    insert.run('Job Order', 'job', orderTemplateBody('JOB ORDER'));
-    insert.run('Purchase Request', 'purchase', orderTemplateBody('PURCHASE REQUEST'));
-  }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('HR Payroll Slip')) {
+  if(!hasType('sale'))insert.run('Sale Order','sale',orderTemplateBody('SALES ORDER'));
+  if(!hasType('job'))insert.run('Job Order','job',orderTemplateBody('JOB ORDER'));
+  if(!hasType('purchase'))insert.run('Purchase Request','purchase',orderTemplateBody('PURCHASE REQUEST'));
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('HR Payroll Slip') && !db.prepare("SELECT t.id FROM form_definitions f JOIN doc_templates t ON t.id=f.template_id WHERE f.slug='hr_payroll'").get()) {
     insert.run('HR Payroll Slip', 'generic', payrollSlipTemplateBody());
   }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Employee ID Card')) {
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Employee ID Card') && !db.prepare("SELECT t.id FROM document_defaults d JOIN doc_templates t ON t.id=d.template_id WHERE d.key='employee_id'").get()) {
     insert.run('Employee ID Card', 'generic', employeeIdTemplateBody());
   }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('BIR 2316')) {
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('BIR 2316') && !db.prepare("SELECT t.id FROM document_defaults d JOIN doc_templates t ON t.id=d.template_id WHERE d.key='bir_2316'").get()) {
     insert.run('BIR 2316', 'generic', bir2316TemplateBody());
   }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Asset Issuance Form')) {
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Asset Issuance Form') && !db.prepare("SELECT t.id FROM document_defaults d JOIN doc_templates t ON t.id=d.template_id WHERE d.key='asset_issuance'").get()) {
     insert.run('Asset Issuance Form', 'generic', assetIssuanceTemplateBody());
   }
 }

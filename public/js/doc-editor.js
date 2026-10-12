@@ -9,7 +9,7 @@
                                       // Layout tab's "Print Grid" group (rows/columns/fill mode);
                                       // default 1/1/'blank', handed back to onSave alongside
                                       // name/type/period/body
-                                      continuous, repeatCount,  // same group's Continuous toggle +
+                                      continuous, repeatCount, gapXmm:Number(gapXInp.value),gapYmm:Number(gapYInp.value),  // same group's Continuous toggle +
                                       // Repeat count (default false/1) — decouples "copies per
                                       // record" from the grid shape; see print-tiling.js
                                       getVariables, onSave })
@@ -38,8 +38,24 @@ const EDITOR_IMG_PLACEHOLDER = (typeof UI !== 'undefined' && UI.PLACEHOLDER_PHOT
 
 function bodyToEditorHtml(body) {
   let html = String(body == null ? '' : body);
-  html = html.replace(/\{\{#items\}\}\s*<tr/g, '<tr data-repeat="items"');
-  html = html.replace(/<\/tr>\s*\{\{\/items\}\}/g, '</tr>');
+  // Only collapse a complete, single-row block. Comments keep other table block
+  // boundaries in place: spans/text in a tbody are otherwise foster-parented by HTML parsing.
+  html = html.replace(/\{\{\s*#items\s*\}\}\s*(<tr\b[^>]*>(?:(?!<tr\b|\{\{[#/])[\s\S])*?<\/tr>)\s*\{\{\s*\/items\s*\}\}/gi,
+    (_m, row) => row.replace(/<tr\b/i, '<tr data-repeat="items"'));
+  const stack = [];
+  html = html.replace(/(<[^>]*>)|\{\{\s*([#/][^}]+?)\s*\}\}/g, (m, tag, token) => {
+    if (tag) {
+      const t = tag.match(/^<\s*(\/?)\s*([a-z][\w-]*)/i);
+      if (t) {
+        const name = t[2].toLowerCase();
+        if (t[1]) { const i = stack.lastIndexOf(name); if (i >= 0) stack.splice(i); }
+        else if (!/^(br|img|hr|input|meta|link)$/.test(name) && !/\/\s*>$/.test(tag)) stack.push(name);
+      }
+      return tag;
+    }
+    return stack.includes('table') && Math.max(stack.lastIndexOf('td'), stack.lastIndexOf('th')) < stack.lastIndexOf('table')
+      ? '<!--doc-block:' + encodeURIComponent(token.trim()).replaceAll('-', '%2D') + '-->' : m;
+  });
   // A variable inside an <img src="…"> can't become an inline chip without breaking that
   // attribute's HTML (a chip is a <span>, which can't live inside a quoted attribute value) —
   // show a placeholder image instead and remember the real token in data-var-src.
@@ -67,19 +83,25 @@ function serializeEditor(root) {
     tr.parentNode.insertBefore(open, tr);
     if (tr.nextSibling) tr.parentNode.insertBefore(close, tr.nextSibling); else tr.parentNode.appendChild(close);
   });
+  const comments = clone.ownerDocument.createTreeWalker(clone, 128 /* SHOW_COMMENT */);
+  const markers = []; let marker;
+  while ((marker = comments.nextNode())) if (marker.data.startsWith('doc-block:')) markers.push(marker);
+  markers.forEach((node) => {
+    try { node.replaceWith(node.ownerDocument.createTextNode('{{' + decodeURIComponent(node.data.slice(10)) + '}}')); } catch { node.remove(); }
+  });
   clone.querySelectorAll('.cell-sel').forEach((c) => c.classList.remove('cell-sel'));
-  clone.querySelectorAll('.doc-float-handle,.doc-float-toolbar,.doc-promote-bar,.doc-snap-guide').forEach((el) => el.remove());
+  clone.querySelectorAll('.doc-float-handle,.doc-float-toolbar,.doc-promote-bar,.doc-snap-guide,.doc-page-guide').forEach((el) => el.remove());
   clone.querySelectorAll('.doc-float').forEach((el) => el.classList.remove('selected', 'behind-text', 'multi', 'editing')); // editor-only state; z-index carries the real meaning
   clone.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
   return clone.innerHTML.trim();
 }
 
 /* ---- paste sanitizer (allowlist; keeps our chips/tables, strips Word/web cruft) ---- */
-const SANITIZE_TAGS = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUP', 'SUB', 'H1', 'H2', 'H3', 'H4', 'UL', 'OL', 'LI', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'SPAN', 'DIV', 'A', 'IMG', 'HR', 'FONT', 'BLOCKQUOTE']);
+const SANITIZE_TAGS = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUP', 'SUB', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'FIGURE', 'FIGCAPTION', 'UL', 'OL', 'LI', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'SPAN', 'DIV', 'A', 'IMG', 'HR', 'FONT', 'BLOCKQUOTE', 'INS', 'DEL']);
 const SANITIZE_ATTR = { A: ['href'], IMG: ['src', 'alt'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
 const SANITIZE_STYLE = ['color', 'background-color', 'background', 'text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'width', 'page-break-after', 'break-after',
-  'position', 'left', 'top', 'right', 'bottom', 'height', 'z-index', 'border', 'border-color', 'border-radius'];
-const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src', 'data-float-kind'];
+  'position', 'left', 'top', 'right', 'bottom', 'height', 'z-index', 'border', 'border-color', 'border-radius', 'padding', 'margin-bottom', 'line-height', 'display', 'visibility', 'object-fit', 'object-position', 'clip-path', 'filter', 'rotate', 'opacity', 'margin-top', 'margin-left', 'margin-right', 'text-indent', 'vertical-align', 'table-layout', 'border-collapse', 'border-width', 'border-style', 'break-inside', 'page-break-inside','column-count','column-gap','break-before','page-break-before','box-shadow'];
+const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src', 'data-float-kind', 'data-doc-name', 'data-doc-locked', 'data-doc-hidden', 'data-doc-node', 'data-doc-toc','data-doc-toc-page','data-doc-settings','data-doc-config','data-doc-style','data-doc-style-version','data-doc-design-page','data-doc-page-name','data-doc-page-bg','data-doc-section','data-doc-section-name','data-doc-section-break','data-doc-section-bg','data-doc-section-width','data-doc-section-height','data-doc-section-margin','data-doc-footnote','data-doc-note-ref','data-doc-note-number','data-doc-note-text','data-doc-notes','data-doc-change','data-doc-author','data-doc-date','data-doc-numbering'];
 
 // `position` is scoped to absolute/relative/static — `fixed`/`sticky` can escape the page and
 // overlay the app chrome, so a pasted style must not be able to smuggle those in.
@@ -93,31 +115,67 @@ function filterStyle(s) {
     }).join('; ');
 }
 
+/** Explicit URL schemes; normalize browser-ignored controls before checking. */
+function safeDocumentUrl(value, image = false) {
+  const url = String(value || '').replace(/[\u0000-\u0020\u007f]/g, '');
+  if (!url) return false;
+  if (image && /^data:image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)[;,]/i.test(url)) return true;
+  if (/^(https?:)/i.test(url)) return true;
+  if (!image && /^(mailto:|tel:)/i.test(url)) return true;
+  return !/^[a-z][a-z0-9+.-]*:/i.test(url) && !url.startsWith('//') && !url.includes('\\');
+}
+
 function sanitizeNode(node, doc) {
+  if (node.nodeType === 8 && /^doc-sync:[\w-]{1,100}$/.test(node.data)) return [doc.createComment(node.data)];
+  if (node.nodeType === 8 && node.data.startsWith('doc-block:')) {
+    try { if (/^[#/][^{}<>]+$/.test(decodeURIComponent(node.data.slice(10)))) return [doc.createComment(node.data)]; } catch { /* malformed marker */ }
+    return [];
+  }
   if (node.nodeType === 3) return [doc.createTextNode(node.nodeValue)];
   if (node.nodeType !== 1) return [];
+  if (node.matches('.doc-page-guide,.doc-snap-guide,.doc-float-handle,.doc-float-toolbar,.doc-promote-bar')) return [];
   const tag = node.nodeName;
-  const cls = (node.getAttribute && node.getAttribute('class')) || '';
-  const special = /\bdoc-(chip|checkbox|pagebreak)\b/.test(cls);
   const kids = [].concat(...[...node.childNodes].map((c) => sanitizeNode(c, doc)));
   if (tag === 'SCRIPT' || tag === 'STYLE') return [];
-  if (!SANITIZE_TAGS.has(tag) && !special) return kids; // drop tag, keep contents
+  if (!SANITIZE_TAGS.has(tag)) return kids; // drop tag, keep contents
   const el = doc.createElement(tag.toLowerCase());
   [...node.attributes].forEach((a) => {
     const n = a.name.toLowerCase();
     if (n.startsWith('on')) return;
     if (n === 'style') { const v = filterStyle(a.value); if (v) el.setAttribute('style', v); return; }
-    if (n === 'class') { const keep = (a.value.match(/doc-(chip|chip-ctrl|chip-fx|checkbox|pagebreak|table|striped|shaded|plain|is-repeat|float|float-body|float-shape)/g) || []).join(' '); if (keep) el.setAttribute('class', keep); return; }
+    if (n === 'class') { const keep = (a.value.match(/doc-(chip|chip-ctrl|chip-fx|checkbox|pagebreak|table|striped|shaded|plain|is-repeat|float|float-body|float-shape|running-header|running-footer|page-number)/g) || []).join(' '); if (keep) el.setAttribute('class', keep); return; }
     if (n === 'contenteditable') { if (a.value === 'false' || a.value === 'true') el.setAttribute('contenteditable', a.value); return; }
+    if(n==='id' && /^doc-(?:heading|note|note-ref)-[a-zA-Z0-9_-]{1,150}$/.test(a.value)){el.setAttribute(n,a.value);return;}
     if (SANITIZE_DATA.includes(n)) { el.setAttribute(n, a.value); return; }
     if ((SANITIZE_ATTR[tag] || []).includes(n)) {
-      if (n === 'href' && /^\s*javascript:/i.test(a.value)) return;
-      if (n === 'src' && !/^(data:image\/|https?:|\/)/i.test(a.value)) return;
+      if (n === 'href' && !safeDocumentUrl(a.value)) return;
+      if (n === 'src' && !safeDocumentUrl(a.value, true)) return;
       el.setAttribute(n, a.value);
     }
   });
   kids.forEach((k) => el.appendChild(k));
   return [el];
+}
+
+/** Contents links are regenerated from semantic headings; no guessed print page numbers. */
+function refreshContents(root) {
+  const contents=[...root.querySelectorAll('[data-doc-toc]')];if(!contents.length)return;
+  const headings=[...root.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(h=>!h.closest('[data-doc-toc]'));
+  const seen=new Set();headings.forEach(h=>{if(!/^doc-heading-[\w-]{1,40}$/.test(h.id)||seen.has(h.id))h.id='doc-heading-'+(typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID().slice(0,16):Math.random().toString(36).slice(2));seen.add(h.id);});
+  for(const toc of contents){if(toc.closest('[data-doc-locked="true"]'))continue;const list=root.ownerDocument.createElement('ul');list.style.cssText='list-style:none;padding-left:0';headings.forEach(h=>{const item=root.ownerDocument.createElement('li'),link=root.ownerDocument.createElement('a');item.style.marginLeft=((Number(h.tagName.slice(1))-1)*16)+'px';link.href='#'+h.id;const title=h.cloneNode(true);title.querySelectorAll('.doc-chip').forEach(chip=>chip.replaceWith(root.ownerDocument.createTextNode('{{'+chip.dataset.token+'}}')));link.textContent=title.textContent||'Untitled heading';const number=root.ownerDocument.createElement('span');number.dataset.docTocPage=h.id;number.style.cssText='float:right;min-width:32px;text-align:right';item.append(link,number);list.append(item);});const title=root.ownerDocument.createElement('p');title.style.fontWeight='700';title.textContent='Contents';toc.replaceChildren(title,list);toc.contentEditable='false';}
+}
+
+// Comments survive browser table parsing; raw loop text would be foster-parented out.
+function protectExportBlocks(html){return String(html||'').replace(/(<[^>]*>)|\{\{\s*([#/][^{}<>]+?)\s*\}\}/g,(_m,tag,token)=>tag||'<!--doc-export-token:'+encodeURIComponent(token).replaceAll('-','%2D')+'-->');}
+function restoreExportBlocks(html){return String(html||'').replace(/<!--doc-export-token:([^>]*?)-->/g,(_m,value)=>{try{const token=decodeURIComponent(value);return /^[#/][^{}<>]+$/.test(token)?'{{'+token+'}}':'';}catch{return '';}});}
+
+/** Standalone export keeps template CSS/classes while removing executable HTML. */
+function sanitizeExportHtml(html,doc) {
+  doc=doc||(typeof document!=='undefined'?document:null);if(!doc)return '';
+  const box=doc.createElement('template');box.innerHTML=protectExportBlocks(html);
+  box.content.querySelectorAll('script,iframe,object,embed,meta,base,link').forEach(el=>el.remove());
+  box.content.querySelectorAll('*').forEach(el=>{for(const attr of [...el.attributes]){const key=attr.name.toLowerCase();if(key.startsWith('on')||key==='srcdoc'||key==='formaction')el.removeAttribute(attr.name);else if(['href','src','action','xlink:href'].includes(key)&&!safeDocumentUrl(attr.value,key==='src'&&el.tagName==='IMG'))el.removeAttribute(attr.name);}});
+  return restoreExportBlocks(box.innerHTML);
 }
 
 /** Sanitize an HTML string to the allowlist (used on paste). */
@@ -152,9 +210,9 @@ function matchPagePreset(widthMm, heightMm) {
 function parsePageStyle(body) {
   let widthMm = PAGE_PRESETS_MM.a4[0], heightMm = PAGE_PRESETS_MM.a4[1], marginMm = 14;
   let rest = String(body == null ? '' : body);
-  const m = rest.match(/<style data-docpage>([\s\S]*?)<\/style>/i);
+  const m = rest.match(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>([\s\S]*?)<\/style>/i);
   if (m) {
-    rest = rest.replace(m[0], '');
+    rest = rest.replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/gi, '');
     const mmSize = m[1].match(/size:\s*([\d.]+)mm\s+([\d.]+)mm/i);
     if (mmSize) {
       widthMm = parseFloat(mmSize[1]);
@@ -193,14 +251,149 @@ function replaceAllInSurface(root, find, repl) {
   return count;
 }
 
+/** Logical table coordinates include spans and exclude nested table rows. */
+function tableGrid(table) {
+  const rows = [...table.rows].filter((r) => r.closest('table') === table);
+  const grid = [], positions = new Map();
+  rows.forEach((row, r) => {
+    grid[r] ||= []; let col = 0;
+    [...row.cells].forEach((cell) => {
+      while (grid[r][col]) col++;
+      const width = Math.max(1, cell.colSpan);
+      const groupEnd = rows.findIndex((other, i) => i > r && other.parentNode !== row.parentNode);
+      const remaining = (groupEnd < 0 ? rows.length : groupEnd) - r;
+      const height = cell.rowSpan === 0 ? remaining : Math.min(Math.max(1, cell.rowSpan), remaining);
+      const pos = { r, c: col, w: width, h: height }; positions.set(cell, pos);
+      for (let y = r; y < r + height; y++) {
+        grid[y] ||= [];
+        for (let x = col; x < col + width; x++) grid[y][x] = cell;
+      }
+      col += width;
+    });
+  });
+  return { rows, grid, positions, width: Math.max(0, ...grid.map((r) => r.length)) };
+}
+function blankTableCell(row, tag) {
+  const cell = row.ownerDocument.createElement(tag || (row.cells[0]?.nodeName === 'TH' ? 'th' : 'td'));
+  cell.innerHTML = '&nbsp;'; return cell;
+}
+function insertTableCell(row, cell, col, model) {
+  const before = [...row.cells].find((c) => model.positions.get(c)?.c >= col);
+  row.insertBefore(cell, before || null);
+}
+function editTableColumn(cell, remove = false) {
+  const model = tableGrid(cell.closest('table')), pos = model.positions.get(cell);
+  const col = remove ? pos.c : pos.c + pos.w;
+  if (remove && model.width <= 1) return;
+  const adjusted = new Set();
+  model.rows.forEach((row, r) => {
+    const hit = model.grid[r]?.[remove ? col : col - 1], hp = model.positions.get(hit);
+    if (hit && (remove || hp.c < col && hp.c + hp.w > col)) {
+      if (!adjusted.has(hit)) {
+        if (remove) { if (hit.colSpan > 1) hit.colSpan--; else hit.remove(); }
+        else hit.colSpan++;
+        adjusted.add(hit);
+      }
+    } else if (!remove) insertTableCell(row, blankTableCell(row), col, model);
+  });
+}
+function editTableRow(cell, remove = false) {
+  const table = cell.closest('table'), model = tableGrid(table), pos = model.positions.get(cell);
+  const r = remove ? pos.r : pos.r + 1, row = model.rows[pos.r];
+  if (remove) {
+    if (model.rows.length <= 1) return;
+    const next = model.rows[r + 1];
+    model.positions.forEach((p, c) => {
+      if (p.r < r && p.r + p.h > r) c.rowSpan = p.h - 1;
+      else if (p.r === r && p.h > 1 && next && next.parentNode === row.parentNode) {
+        c.rowSpan = p.h - 1; insertTableCell(next, c, p.c, model);
+      }
+    });
+    row.remove();
+  } else {
+    const tr = row.ownerDocument.createElement('tr');
+    const crossing = new Set();
+    for (let col = 0; col < model.width; col++) {
+      const c = model.grid[pos.r]?.[col], p = model.positions.get(c);
+      if (p && p.r + p.h > r) crossing.add(c);
+      else tr.appendChild(blankTableCell(row));
+    }
+    crossing.forEach((c) => { if (c.rowSpan !== 0) c.rowSpan++; });
+    row.parentNode.insertBefore(tr, row.nextSibling);
+  }
+}
+function mergeTableCells(cells) {
+  if (cells.length < 2) return false;
+  const table = cells[0].closest('table');
+  if (cells.some((c) => c.closest('table') !== table)) return false;
+  const model = tableGrid(table), chosen = new Set(cells);
+  const positions = cells.map((c) => model.positions.get(c));
+  const r1 = Math.min(...positions.map((p) => p.r)), r2 = Math.max(...positions.map((p) => p.r + p.h));
+  const c1 = Math.min(...positions.map((p) => p.c)), c2 = Math.max(...positions.map((p) => p.c + p.w));
+  if (model.rows.slice(r1, r2).some((r) => r.parentNode !== model.rows[r1].parentNode)) return false;
+  for (let r = r1; r < r2; r++) for (let c = c1; c < c2; c++) if (!chosen.has(model.grid[r]?.[c])) return false;
+  const top = model.grid[r1][c1];
+  const extra = cells.filter((c) => c !== top).sort((a, b) => {
+    const ap = model.positions.get(a), bp = model.positions.get(b); return ap.r - bp.r || ap.c - bp.c;
+  }).map((c) => c.innerHTML.trim()).filter((h) => h && h !== '&nbsp;');
+  if (extra.length) top.innerHTML += ' ' + extra.join(' ');
+  top.colSpan = c2 - c1; top.rowSpan = r2 - r1;
+  cells.forEach((c) => { if (c !== top) c.remove(); });
+  return true;
+}
+function splitTableCell(cell) {
+  const model = tableGrid(cell.closest('table')), p = model.positions.get(cell);
+  if (p.w === 1 && p.h === 1) return;
+  cell.colSpan = 1; cell.rowSpan = 1;
+  for (let r = p.r; r < p.r + p.h; r++) {
+    for (let col = p.c + (r === p.r ? 1 : 0); col < p.c + p.w; col++) {
+      insertTableCell(model.rows[r], blankTableCell(model.rows[r], cell.nodeName.toLowerCase()), col, model);
+    }
+  }
+}
+
+/** Consistent stroke icons, independent of emoji fonts and operating system. */
+function docIcon(name) {
+  const paths = {
+    document: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/>',
+    table: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
+    link: '<path d="m10 13 4-4M8 16l-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 2 1-1a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(2 1)"/>',
+    textbox: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 8h8M12 8v8M10 16h4"/>',
+    checkbox: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m7 12 3 3 7-7"/>',
+    pagebreak: '<path d="M4 3h16v6H4ZM4 15h16v6H4ZM2 12h3m3 0h3m3 0h3m3 0h2"/>',
+    signature: '<path d="m4 16 9-9 4 4-9 9H4Zm9-9 3-3a2 2 0 0 1 3 3l-2 4M3 22h18"/>',
+    'shape-rect': '<rect x="3" y="5" width="18" height="14" rx="1"/>',
+    'shape-oval': '<ellipse cx="12" cy="12" rx="9" ry="7"/>',
+    'shape-line': '<path d="m4 20 16-16"/><circle cx="4" cy="20" r="1"/><circle cx="20" cy="4" r="1"/>',
+    hr: '<path d="M3 12h18"/>',
+    variable: '<path d="M9 3H7v7l-3 2 3 2v7h2m6-18h2v7l3 2-3 2v7h-2"/>',
+    formula: '<path d="M17 4h-4l-3 16H6M7 9h8m2 4 5 7m0-7-5 7"/>',
+    symbol: '<path d="M3 20h5v-2a8 8 0 1 1 8 0v2h5"/>',
+    search: '<circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/>',
+    preview: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+    settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--surface,#fff)"/><circle cx="15" cy="17" r="3" fill="var(--surface,#fff)"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 5 2c-2 1-2 2-2 3m0 3h.01"/>',
+    close: '<path d="m6 6 12 12M6 18 18 6"/>',
+    save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v12a2 2 0 0 1-2 2ZM7 3v6h10V3M7 21v-8h10v8"/>',
+    trash: '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
+    undo: '<path d="m8 4-5 5 5 5M3 9h11a6 6 0 0 1 0 12"/>',
+    redo: '<path d="m16 4 5 5-5 5m5-5H10a6 6 0 0 0 0 12"/>',
+    justifyLeft: '<path d="M4 5h16M4 10h10M4 15h16M4 20h10"/>',
+    justifyCenter: '<path d="M4 5h16M7 10h10M4 15h16M7 20h10"/>',
+    justifyRight: '<path d="M4 5h16M10 10h10M4 15h16M10 20h10"/>',
+    justifyFull: '<path d="M4 5h16M4 10h16M4 15h16M4 20h16"/>',
+  };
+  return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.document}</svg>`;
+}
+
 function ensureStyles() {
   if (typeof document === 'undefined' || document.getElementById('doc-editor-styles')) return;
   const css = `
-    .doc-fs{position:fixed;inset:0;z-index:40;background:var(--bg,#f4f8fd);display:flex;flex-direction:column;--doc-desk:#e7ebf1;--doc-desk-dot:rgba(20,40,80,.09);--doc-paper:#fff;--dt-line:#dbe2ec;--dt-line-strong:#c2cddd}
+    .doc-fs{position:fixed;inset:0;z-index:40;background:var(--bg,#f4f8fd);display:flex;flex-direction:column;--doc-desk:#eef0f3;--doc-desk-dot:transparent;--doc-paper:#fff;--dt-line:#dbe2ec;--dt-line-strong:#c2cddd}
     @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .doc-fs{--doc-desk:#100f18;--doc-desk-dot:rgba(255,255,255,.06)}}
     :root[data-theme="dark"] .doc-fs{--doc-desk:#100f18;--doc-desk-dot:rgba(255,255,255,.06)}
-    .doc-fs-bar{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--surface,#fff);box-shadow:0 1px 0 var(--border,#dce6f2),0 2px 8px rgba(15,30,60,.05);position:relative;z-index:2;flex-shrink:0}
-    .doc-fs-bar-scroll{display:flex;align-items:center;gap:7px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden}
+    .doc-fs-bar{display:flex;align-items:center;gap:20px;padding:14px 24px;background:var(--surface,#fff);box-shadow:0 1px 0 var(--border,#dce6f2),0 2px 8px rgba(15,30,60,.05);position:relative;z-index:2;flex-shrink:0}
     .doc-fs-bar-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
     .doc-fs-title{font-weight:700;font-size:13px;color:var(--text,#16243d);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;flex-shrink:1;letter-spacing:-.01em}
     .doc-fs-name{font-size:12.5px;font-weight:600;padding:5px 9px;width:150px;flex-shrink:0;border:1px solid var(--border,#dce6f2);border-radius:7px;background:var(--surface,#fff);color:var(--text,#16243d)}
@@ -208,7 +401,7 @@ function ensureStyles() {
     .doc-fs-type{padding:5px 7px;flex-shrink:0;border:1px solid var(--border,#dce6f2);border-radius:7px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:12.5px}
     .doc-fs-type-top{width:82px}
     .doc-fs-name:focus,.doc-fs-period:focus,.doc-fs-type:focus{outline:none;border-color:var(--accent,#2b7fff);box-shadow:0 0 0 3px var(--accent-weak,#e7f1ff)}
-    .doc-modes{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--surface-2,#eef4fb);flex-shrink:0}
+    .doc-modes{display:inline-flex;gap:2px;padding:2px;border-radius:6px;background:var(--surface-2,#eef4fb);flex-shrink:0}
     .doc-modes button{border:none;background:none;padding:4px 11px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-muted,#5d6b84);font-family:inherit;white-space:nowrap;border-radius:6px;transition:background .12s,color .12s}
     .doc-modes button:hover{color:var(--text,#16243d)}
     .doc-modes button.active{background:var(--surface,#fff);color:var(--text,#16243d);box-shadow:0 1px 2px rgba(15,30,60,.12),0 1px 3px rgba(15,30,60,.08)}
@@ -217,41 +410,41 @@ function ensureStyles() {
     .doc-tab{border:none;background:none;padding:9px 15px 8px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text-muted,#5d6b84);font-family:inherit;border-bottom:2.5px solid transparent;margin-bottom:-1px;border-radius:6px 6px 0 0;transition:color .12s,background .12s}
     .doc-tab:hover{color:var(--text,#16243d);background:var(--surface-2,#eef4fb)}
     .doc-tab.active{color:var(--accent,#2b7fff);border-bottom-color:var(--accent,#2b7fff)}
-    .doc-panel{display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;align-items:stretch;padding:5px 10px;background:var(--surface,#fff);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0}
+    .doc-panel{display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;align-items:stretch;padding:8px 20px;background:var(--surface,#fff);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0}
     .doc-panel.table-panel{background:var(--accent-weak,#e7f1ff)}
     .doc-group{display:flex;flex-direction:column;align-items:center;justify-content:space-between;flex-shrink:0;padding:2px 11px;position:relative}
     .doc-group:not(:first-child)::before{content:"";position:absolute;left:0;top:14%;bottom:14%;width:1px;background:var(--border,#dce6f2)}
     .doc-group:first-child{padding-left:2px}
     .doc-group-row{display:flex;align-items:center;gap:2px}
-    .doc-group-cap{font-size:9.5px;color:var(--text-faint,#8a97ad);text-transform:uppercase;letter-spacing:.05em;margin-top:4px;white-space:nowrap;font-weight:600}
-    .doc-panel button{min-width:26px;height:26px;flex-shrink:0;border:1px solid transparent;background:none;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text,#16243d);padding:0 6px;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;transition:background .1s,color .1s}
+    .doc-group-cap{font-size:11px;color:var(--text-faint,#8a97ad);text-transform:uppercase;letter-spacing:.05em;margin-top:4px;white-space:nowrap;font-weight:600}
+    .doc-panel button{min-width:32px;height:32px;flex-shrink:0;border:1px solid transparent;background:none;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text,#16243d);padding:0 6px;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;transition:background .1s,color .1s}
     .doc-panel button:hover{background:var(--surface-2,#eef4fb)}
     .doc-panel button:active{background:var(--surface-3,#e6eef8)}
     .doc-panel button.active{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff)}
     .doc-panel button:disabled{opacity:.32;cursor:default;pointer-events:none}
     .doc-panel button:focus-visible,.doc-tab:focus-visible,.doc-modes button:focus-visible,.doc-panel select:focus-visible,.doc-tile:focus-visible{outline:2px solid var(--accent,#2b7fff);outline-offset:1px}
     .doc-page .doc-pagebreak{border:0;border-top:2px dashed var(--accent,#2b7fff);opacity:.5;margin:18px 0;height:0}
-    .doc-panel select{height:26px;flex-shrink:0;border:1px solid var(--border,#dce6f2);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:11.5px;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .doc-panel select[data-cmd="formatBlock"]{width:74px}
-    .doc-panel select[data-cmd="fontName"]{width:88px}
+    .doc-panel select{height:32px;flex-shrink:0;border:1px solid var(--border,#dce6f2);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:11.5px;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .doc-panel select[data-cmd="formatBlock"]{width:104px}
+    .doc-panel select[data-cmd="fontName"]{width:116px}
     .doc-panel select[data-fontsize]{width:46px}
     .doc-panel select[data-tblstyle]{width:90px}
     .doc-panel select.doc-zoomsel{width:66px}
     .doc-panel .tb-sep{width:1px;flex-shrink:0;align-self:center;height:18px;background:var(--border,#dce6f2);margin:0 4px}
-    .doc-panel .tb-color{display:inline-flex;align-items:center;gap:3px;font-size:12px;cursor:pointer;padding:0 5px;color:var(--text,#16243d);height:26px;flex-shrink:0;border-radius:6px}
+    .doc-panel .tb-color{display:inline-flex;align-items:center;gap:3px;font-size:12px;cursor:pointer;padding:0 5px;color:var(--text,#16243d);height:32px;flex-shrink:0;border-radius:6px}
     .doc-panel .tb-color:hover{background:var(--surface-2,#eef4fb)}
     .doc-panel .tb-color input{width:18px;height:18px;border:none;background:none;padding:0;cursor:pointer}
     .doc-panel .btn-variable{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff);font-weight:700}
     .doc-panel .btn-fx{background:var(--success-weak,#e3f6ec);color:var(--success,#168f54);font-weight:700}
-    .doc-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:56px;height:46px;flex-shrink:0;border:1px solid transparent;background:none;border-radius:8px;cursor:pointer;font-family:inherit;color:var(--text,#16243d);transition:background .1s}
+    .doc-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:72px;height:58px;flex-shrink:0;border:1px solid transparent;background:none;border-radius:8px;cursor:pointer;font-family:inherit;color:var(--text,#16243d);transition:background .1s}
     .doc-tile:hover{background:var(--surface-2,#eef4fb)}
     .doc-tile .doc-tile-ic{font-size:16px;line-height:1}
-    .doc-tile .doc-tile-lbl{font-size:9.5px;font-weight:600;line-height:1;white-space:nowrap}
+    .doc-tile .doc-tile-lbl{font-size:11px;font-weight:600;line-height:1;white-space:nowrap}
     .doc-tile-select{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;padding:0 5px}
-    .doc-tile-select .doc-tile-lbl{font-size:9.5px;font-weight:600;color:var(--text-muted,#5d6b84);white-space:nowrap}
+    .doc-tile-select .doc-tile-lbl{font-size:11px;font-weight:600;color:var(--text-muted,#5d6b84);white-space:nowrap}
     .doc-tile-select select{width:82px}
-    .doc-tile-select input[type="number"]{width:58px;height:26px;border:1px solid var(--border,#dce6f2);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:11.5px;padding:0 5px}
-    .doc-tile-select input[type="checkbox"]{width:auto;height:26px;cursor:pointer}
+    .doc-tile-select input[type="number"]{width:58px;height:32px;border:1px solid var(--border,#dce6f2);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:11.5px;padding:0 5px}
+    .doc-tile-select input[type="checkbox"]{width:auto;height:32px;cursor:pointer}
     /* Figma-style "desk": a soft neutral with a faint dot grid, not a flat slab of grey. */
     .doc-canvas{flex:1;overflow:auto;padding:32px;display:flex;justify-content:center;align-items:flex-start;
       background-color:var(--doc-desk,#e7ebf1);
@@ -268,26 +461,7 @@ function ensureStyles() {
        the "paper" into the grey canvas the way it did when .doc-page had no stacking context. */
     .doc-page{position:relative;isolation:isolate;width:816px;min-height:1056px;background:var(--doc-paper,#fff);color:#111;padding:56px 64px;box-shadow:0 1px 3px rgba(15,30,60,.08),0 14px 40px rgba(15,30,60,.16);border:1px solid rgba(15,30,60,.07);font-family:'Segoe UI',system-ui,Arial,sans-serif;font-size:13px;line-height:1.55;transform-origin:0 0}
     .doc-page:focus{outline:none}
-    .doc-page h1{font-size:22px;margin:0 0 4px}.doc-page h2{font-size:17px;margin:0 0 6px}.doc-page h3{font-size:15px}
-    /* Tables — one crisp, modern look shared with the print/preview stylesheet (ui.js PRINT_CSS).
-       Bare <table> (e.g. pasted) gets light collapsed borders; .doc-table (what Insert Table
-       builds) is the rounded, hairline-ruled variant with a proper <thead>. */
-    .doc-page table{border-collapse:collapse;margin:12px 0;width:100%;font-size:12.5px}
-    .doc-page td,.doc-page th{border:1px solid #d7dee8;padding:7px 10px;min-width:34px;vertical-align:top}
-    .doc-page th{background:#f4f7fb;text-align:left;font-weight:600;color:#1a2740}
-    .doc-page .doc-table{border-collapse:separate;border-spacing:0;border:1px solid #ccd6e2;border-radius:8px;overflow:hidden}
-    .doc-page .doc-table td,.doc-page .doc-table th{border:0;border-bottom:1px solid #e4e9f1;border-right:1px solid #e4e9f1}
-    .doc-page .doc-table tr td:last-child,.doc-page .doc-table tr th:last-child{border-right:0}
-    .doc-page .doc-table tbody tr:last-child td{border-bottom:0}
-    .doc-page .doc-table thead th{background:#f4f7fb;border-bottom:2px solid #ccd6e2}
-    .doc-page .doc-table.striped tbody tr:nth-child(even) td{background:#f8fafc}
-    .doc-page .doc-table.shaded thead th{background:#16243d;color:#fff;border-bottom-color:#16243d}
-    .doc-page .doc-table.plain{border:0}
-    .doc-page .doc-table.plain td,.doc-page .doc-table.plain th{border:0}
-    .doc-page .doc-table.plain thead th{border-bottom:1px solid #ccd6e2}
-    .doc-page .doc-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #222;padding-bottom:12px;margin-bottom:16px;gap:20px}
-    .doc-page .doc-meta{text-align:right}
-    .doc-page tr.is-repeat>td,.doc-page tr[data-repeat]>td{box-shadow:inset 0 0 0 2px var(--accent,#2b7fff)}
+    .doc-page tr.is-repeat>td,.doc-page tr[data-repeat]>td{box-shadow:inset 0 0 0 1px #bfd1e5}
     .doc-page td.cell-sel,.doc-page th.cell-sel{outline:2px solid var(--accent,#2b7fff);outline-offset:-2px;background:rgba(43,127,255,.12)!important}
     .doc-find{display:flex;gap:7px;align-items:center;padding:8px 14px;background:var(--surface,#fff);box-shadow:0 1px 0 var(--border,#dce6f2);flex-shrink:0}
     .doc-find input{padding:6px 10px;border:1px solid var(--border,#dce6f2);border-radius:7px;font-size:13px;background:var(--surface,#fff);color:var(--text,#16243d)}
@@ -295,7 +469,7 @@ function ensureStyles() {
     .doc-find button{border:1px solid var(--border,#dce6f2);background:var(--surface-2,#eef4fb);border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text,#16243d);font-family:inherit;transition:background .1s,color .1s}
     .doc-find button:hover{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff)}
     .doc-page img{max-width:100%}
-    .doc-chip{display:inline-block;background:#e7f1ff;color:#1e6ef0;border:1px solid #9ec5ff;border-radius:11px;padding:1px 9px 1px 7px;font-size:12px;font-weight:600;font-family:Consolas,ui-monospace,monospace;white-space:nowrap;line-height:1.5}
+    .doc-chip{display:inline-block;background:#f0f5fb;color:#45678e;border:1px solid #d2dfed;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;font-family:Consolas,ui-monospace,monospace;white-space:nowrap;line-height:1.5}
     .doc-chip-ctrl{background:#f0e6ff;color:#7a3cff;border-color:#cbb3ff}
     .doc-chip-fx{background:#eafaf0;color:#15803d;border-color:#86d3a6}
     .doc-chip::before{content:'{ }';font-size:9px;font-weight:800;opacity:.55;margin-right:5px;letter-spacing:-1px}
@@ -331,7 +505,7 @@ function ensureStyles() {
     .doc-ac-item{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--text,#16243d)}
     .doc-ac-item.active,.doc-ac-item:hover{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff)}
     .doc-ac-tok{font-family:Consolas,monospace;font-size:11px;color:var(--text-faint,#8a97ad)}
-    .doc-preview-float{position:fixed;top:96px;right:28px;width:480px;height:600px;min-width:300px;min-height:240px;background:var(--surface,#fff);border:1px solid var(--border,#dce6f2);border-radius:12px;box-shadow:0 24px 64px rgba(15,30,60,.28),0 2px 8px rgba(15,30,60,.12);display:flex;flex-direction:column;z-index:45;resize:both;overflow:hidden}
+    .doc-preview-float{position:fixed;top:96px;right:28px;width:480px;height:600px;min-width:300px;min-height:240px;background:var(--surface,#fff);border:1px solid var(--border,#dce6f2);border-radius:12px;box-shadow:0 24px 64px rgba(15,30,60,.28),0 2px 8px rgba(15,30,60,.12);display:flex;flex-direction:column;z-index:45;resize:both;overflow:hidden;max-width:calc(100vw - 32px);max-height:calc(100vh - 120px)}
     .doc-preview-head{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--surface-2,#eef4fb);box-shadow:0 1px 0 var(--border,#dce6f2);cursor:move;flex-shrink:0;font-weight:600;font-size:13px;color:var(--text,#16243d);user-select:none}
     .doc-preview-head .grow{flex:1}
     .doc-preview-head button{border:none;background:none;cursor:pointer;color:var(--text-muted,#5d6b84);font-size:15px;padding:2px 7px;border-radius:5px;line-height:1}
@@ -340,12 +514,9 @@ function ensureStyles() {
     /* ---- floating objects: shapes / text boxes / promoted images & tables ---- */
     .doc-float{box-sizing:border-box}
     .doc-float.selected{outline:1.5px solid var(--accent,#2b7fff);outline-offset:0;box-shadow:0 0 0 1px rgba(43,127,255,.22),0 3px 16px rgba(43,127,255,.16)}
-    /* Islanded floats (text box / promoted table / promoted block) fill their wrapper with an
-       editable interior. When SELECTED (move mode) they grow a 12px "grab frame" — press it to
-       move, press the interior once more to type. The selection outline hugs the interior (not the
-       frame) so "the object fills its box". When .editing (caret is in the interior) the frame +
-       handles disappear so they don't cover what you're typing; Escape pops back to move mode. */
-    .doc-float.selected[data-float-kind="text"],.doc-float.selected[data-float-kind="table"],.doc-float.selected[data-float-kind="textbox"]{padding:12px;background:rgba(43,127,255,.06);cursor:move;outline:none;box-shadow:none}
+    /* Selection never changes an editable object's padding or text wrapping.
+       The explicit Move grip separates object positioning from caret placement. */
+    .doc-float.selected[data-float-kind="text"],.doc-float.selected[data-float-kind="table"],.doc-float.selected[data-float-kind="textbox"]{padding:0;background:transparent;cursor:move;outline:none;box-shadow:none}
     .doc-float.selected[data-float-kind="text"]>:first-child,.doc-float.selected[data-float-kind="table"]>:first-child,.doc-float.selected[data-float-kind="textbox"]>:first-child{cursor:auto;background:var(--doc-paper,#fff);outline:1.5px solid var(--accent,#2b7fff);outline-offset:2px;box-shadow:0 0 0 1px rgba(43,127,255,.18)}
     .doc-float.selected.editing{padding:0;background:transparent;cursor:auto}
     .doc-float.selected.editing>.doc-float-handle{display:none}
@@ -384,9 +555,70 @@ function ensureStyles() {
     .doc-page .doc-snap-guide{position:absolute;z-index:1003;pointer-events:none;background:#ff2d78}
     .doc-page .doc-snap-guide.v{top:0;bottom:0;width:calc(1px / var(--zoom,1))}
     .doc-page .doc-snap-guide.h{left:0;right:0;height:calc(1px / var(--zoom,1))}
+
+    .doc-fs{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif}
+    .doc-fs-bar{box-shadow:none;border-bottom:1px solid var(--border,#e2e5e9)}
+    .doc-brand{display:flex;align-items:center;gap:12px;min-width:190px;margin-right:auto}
+    .doc-brand>svg{width:24px;height:24px;padding:4px;box-sizing:content-box;background:var(--surface-2,#f3f4f6);border:1px solid var(--border,#e2e5e9);border-radius:9px;color:var(--text,#253247)}
+    .doc-brand>div{display:flex;flex-direction:column;gap:3px}
+    .doc-brand-label{font-size:14px;font-weight:650;letter-spacing:-.02em;color:var(--text,#253247)}
+    .doc-fs-title{font-size:11px;color:var(--text-muted,#697586);font-weight:400;max-width:220px}
+    .doc-fs-bar .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:36px;border-radius:6px;padding:0 12px}
+    .doc-fs-bar .doc-icon-button{width:36px;padding:0}
+    .doc-save-status{font-size:11px;white-space:nowrap;color:var(--text-muted,#697586);padding-right:8px}
+    .doc-save-status[data-state="dirty"]::before{content:"";display:inline-block;width:5px;height:5px;background:#b7791f;border-radius:50%;margin-right:6px;vertical-align:middle}
+    .doc-save-status[data-state="error"]{color:var(--danger,#b42318)}
+    .doc-details{display:flex;align-items:end;gap:24px;padding:14px 24px 16px;background:var(--surface,#fff);border-bottom:1px solid var(--border,#e2e5e9);flex-shrink:0}
+    .doc-details label{display:flex;flex-direction:column;gap:6px;margin:0}
+    .doc-details label>span{font-size:10px;font-weight:600;letter-spacing:.035em;color:var(--text-muted,#697586)}
+    .doc-details .doc-name-field{flex:1;max-width:460px}
+    .doc-details input,.doc-details select{height:34px;box-sizing:border-box;border-radius:5px;font-size:13px;width:180px}
+    .doc-details .doc-fs-name{width:100%;font-size:16px;font-weight:600;letter-spacing:-.02em}
+    .doc-details .doc-fs-type-top{width:150px}
+    .doc-tabs{padding:0 24px;box-shadow:none;border-bottom:1px solid var(--border,#e2e5e9)}
+    .doc-tab{border-radius:0;font-size:12px;padding:11px 18px}
+    .doc-group{padding:2px 14px;gap:3px}
+    .doc-group-cap{line-height:14px;margin-top:3px;text-transform:none;letter-spacing:0;font-weight:400;color:var(--text-muted,#697586)}
+    .doc-panel .doc-tile{height:48px;min-width:64px;padding:6px 8px;gap:8px}
+    .doc-tile-ic{display:flex;align-items:center;justify-content:center}
+    .doc-tile-ic svg{width:20px;height:20px}
+    .doc-panel .btn-fx,.doc-panel .btn-variable{background:transparent;color:var(--text,#253247);font-weight:500}
+    .doc-panel .btn-fx:hover,.doc-panel .btn-variable:hover{background:var(--surface-2,#f3f4f6)}
+    .doc-canvas{background-image:none;padding:40px 32px 48px}
+    .doc-page{border:0;box-shadow:0 1px 4px rgba(25,35,50,.12),0 8px 24px rgba(25,35,50,.06)}
+    .doc-statusbar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:9px 24px;background:var(--surface,#fff);border-top:1px solid var(--border,#e2e5e9);font-size:11px;color:var(--text-muted,#697586);flex-shrink:0}
+    .doc-statusbar>span{display:flex;align-items:center;gap:7px}
+    .doc-statusbar svg{width:14px;height:14px}
+    .doc-preview-head>span{display:flex;align-items:center;gap:8px}
+    .doc-preview-float{border-radius:8px}
+    .doc-fs svg{flex-shrink:0;vertical-align:middle}
+    @media(max-width:1280px){.doc-save-status{display:none}.doc-fs-bar{gap:12px}.doc-brand{min-width:160px}.doc-fs-bar-actions{gap:4px}.doc-statusbar .doc-workspace-hint{display:none}}
+    @media(max-width:760px){.doc-fs-bar{padding:10px 12px;flex-wrap:wrap;gap:10px}.doc-brand{min-width:140px}.doc-brand-label{font-size:13px}.doc-brand>svg{display:none}.doc-fs-title{max-width:140px}.doc-fs-bar-actions{margin-left:auto}.doc-fs-bar-actions [data-save] span,.doc-fs-bar-actions [data-preview] span,.doc-fs-bar-actions [data-file] span{display:none}.doc-fs-bar-actions [data-file]{width:36px;padding:0}.doc-details{padding:12px;gap:12px;flex-wrap:wrap}.doc-details .doc-name-field{min-width:100%;max-width:none}.doc-details input,.doc-details select{width:150px}.doc-tabs{padding:0 12px}.doc-panel{padding:8px}.doc-statusbar{padding:9px 12px}.doc-canvas{padding:20px 12px}}
     @media (max-width:900px){.doc-page{padding:28px 22px}.doc-canvas{padding:10px}}
   `;
-  const el = document.createElement('style'); el.id = 'doc-editor-styles'; el.textContent = css;
+  const themeCss = `
+    .doc-fs{background:var(--bg)}
+    .doc-fs-bar{padding:12px 20px;background:var(--surface);box-shadow:var(--shadow-sm);z-index:4}
+    .doc-brand>svg{background:var(--accent-weak);color:var(--accent);border-color:var(--border);border-radius:var(--radius-sm)}
+    .doc-fs-bar .btn,.doc-details input,.doc-details select{border-radius:var(--radius-sm)}
+    .doc-details{padding:12px 20px;gap:20px;background:var(--surface)}
+    .doc-details-toggle{display:none}
+    .doc-details label>span{font-size:11px;color:var(--text-muted);letter-spacing:0}
+    .doc-tabs{gap:4px;padding:6px 20px;background:var(--surface-2)}
+    .doc-tab{border-radius:var(--radius-sm);padding:8px 16px;border-bottom:0;color:var(--text-muted)}
+    .doc-tab.active{background:var(--surface);color:var(--accent);box-shadow:var(--shadow-sm)}
+    .doc-panel{padding:10px 12px;background:var(--surface);scrollbar-width:thin}
+    .doc-panel.table-panel{background:var(--surface)}
+    .doc-group-cap{font-size:10px;color:var(--text-muted);font-weight:600}
+    .doc-canvas{background:var(--bg);padding:28px}
+    .doc-page{box-shadow:var(--shadow-md)}
+    .doc-modes{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:3px}
+    .doc-modes button.active{background:var(--surface);color:var(--accent);box-shadow:var(--shadow-sm)}
+    .doc-fs input:focus-visible,.doc-fs select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    @media(max-width:760px){.doc-details-toggle{display:inline-flex;float:right;border:0;background:var(--surface-2);color:var(--accent);border-radius:var(--radius-sm);padding:3px 8px;font:inherit;cursor:pointer}.doc-details:not(.details-expanded) .doc-secondary-details{display:none}.doc-fs-bar{padding:10px 12px}.doc-details{padding:10px 12px}.doc-tabs{padding:6px 8px}.doc-canvas{padding:16px 10px}}
+  `;
+  const contentCss = typeof UI !== 'undefined' && UI.documentCss ? UI.documentCss : '';
+  const el = document.createElement('style'); el.id = 'doc-editor-styles'; el.textContent = css + themeCss + contentCss + `.doc-grid-note{font:11px var(--font);color:var(--text-muted);margin:6px}.doc-studio-body input[type=color]{height:36px;min-height:36px;padding:3px}.doc-review-card{padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm)}.doc-page [data-doc-design-page]{margin-bottom:24px;box-shadow:0 0 0 1px var(--border);padding:0;display:flow-root}.doc-page ins[data-doc-change]{background:#dcfce7;color:#166534;text-decoration:underline}.doc-page del[data-doc-change]{background:#fee2e2;color:#991b1b;text-decoration:line-through}.doc-page [data-doc-settings]{display:none!important}.doc-page [data-doc-section]{display:flow-root}.doc-page ol[data-doc-numbering="hierarchical"],.doc-page ol[data-doc-numbering="hierarchical"] ol{counter-reset:doc-list;list-style:none}.doc-page ol[data-doc-numbering="hierarchical"] li::before{counter-increment:doc-list;content:counters(doc-list,".") ". "}`;
   document.head.appendChild(el);
 }
 
@@ -408,11 +640,11 @@ function tabsHTML() {
 
 function homePanelHTML() {
   const undo = groupHTML('Undo', `
-    <button type="button" data-ex="undo" title="Undo (Ctrl+Z)" disabled>↶</button>
-    <button type="button" data-ex="redo" title="Redo (Ctrl+Y)" disabled>↷</button>`);
+    <button type="button" data-ex="undo" title="Undo (Ctrl+Z)" disabled>${docIcon('undo')}</button>
+    <button type="button" data-ex="redo" title="Redo (Ctrl+Y)" disabled>${docIcon('redo')}</button>`);
   const font = groupHTML('Font', `
     <select data-cmd="formatBlock" title="Paragraph style">
-      <option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option>
+      <option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="h4">Heading 4</option><option value="h5">Heading 5</option><option value="h6">Heading 6</option>
     </select>
     <select data-cmd="fontName" title="Font">${FONTS.map((f) => `<option value="${f}">${f}</option>`).join('')}</select>
     <select data-fontsize title="Font size (pt)">${SIZES.map((s) => `<option value="${s}" ${s === 12 ? 'selected' : ''}>${s}</option>`).join('')}</select>
@@ -427,22 +659,23 @@ function homePanelHTML() {
     <label class="tb-color" title="Highlight">▣<input type="color" data-color="hiliteColor" value="#fff3b0"></label>
     <button type="button" data-ex="removeFormat" title="Clear formatting">⌫</button>`);
   const paragraph = groupHTML('Paragraph', `
-    <button type="button" data-ex="justifyLeft" title="Align left">⬅</button>
-    <button type="button" data-ex="justifyCenter" title="Align center">⬌</button>
-    <button type="button" data-ex="justifyRight" title="Align right">➡</button>
-    <button type="button" data-ex="justifyFull" title="Justify">☰</button>
+    <button type="button" data-ex="justifyLeft" title="Align left">${docIcon('justifyLeft')}</button>
+    <button type="button" data-ex="justifyCenter" title="Align center">${docIcon('justifyCenter')}</button>
+    <button type="button" data-ex="justifyRight" title="Align right">${docIcon('justifyRight')}</button>
+    <button type="button" data-ex="justifyFull" title="Justify">${docIcon('justifyFull')}</button>
     <button type="button" data-ex="insertUnorderedList" title="Bullet list">•≣</button>
     <button type="button" data-ex="insertOrderedList" title="Numbered list">1≣</button>
     <button type="button" data-ex="outdent" title="Decrease indent">⇤</button>
-    <button type="button" data-ex="indent" title="Increase indent">⇥</button>`);
+    <button type="button" data-ex="indent" title="Increase indent">⇥</button>
+    <button type="button" data-paragraph title="Paragraph spacing and indentation">Spacing</button>`);
   const editing = groupHTML('Editing', `
-    <button type="button" class="doc-tile" data-find title="Find &amp; replace (Ctrl+F)"><span class="doc-tile-ic">🔍</span><span class="doc-tile-lbl">Find</span></button>`);
+    <button type="button" class="doc-tile" data-find title="Find &amp; replace (Ctrl+F)"><span class="doc-tile-ic">${docIcon('search')}</span><span class="doc-tile-lbl">Find</span></button>`);
   return undo + font + paragraph + editing;
 }
 
 function tile(kind, value, icon, label, extraClass) {
   return `<button type="button" data-${kind}="${value}" class="doc-tile ${extraClass || ''}" title="${label}">
-    <span class="doc-tile-ic">${icon}</span><span class="doc-tile-lbl">${label}</span></button>`;
+    <span class="doc-tile-ic">${docIcon(value)}</span><span class="doc-tile-lbl">${label}</span></button>`;
 }
 
 function insertPanelHTML() {
@@ -500,6 +733,9 @@ function layoutPanelHTML() {
       <input type="checkbox" class="doc-fs-type doc-continuous" title="Off (default): Grid rows is the repeat count, one page-block of records at a time. On: Grid rows x Grid columns becomes a fixed page shape, Repeat (below) becomes independent, and records pour continuously across as many pages as needed."></div>
     <div class="doc-tile-select doc-repeat-wrap"><span class="doc-tile-lbl">Repeat</span>
       <input type="number" class="doc-fs-type doc-repeat" min="1" max="100" step="1" title="How many copies of each record to print. Only used when Continuous is on — independent of the Grid rows/columns shape above."></div>`);
+  const spacing = groupHTML('Grid spacing', `    <div class="doc-tile-select"><span class="doc-tile-lbl">Horizontal gap (mm)</span><input class="doc-fs-type doc-gap-x" type="number" min="0" max="30" step="0.5" title="Space between columns; zero packs cells together"></div>
+    <div class="doc-tile-select"><span class="doc-tile-lbl">Vertical gap (mm)</span><input class="doc-fs-type doc-gap-y" type="number" min="0" max="30" step="0.5" title="Space between rows"></div>
+`);
   const zoom = groupHTML('Zoom', `
     <button type="button" data-zoom="out" title="Zoom out (Ctrl -)">−</button>
     <select class="doc-fs-type doc-zoomsel" title="Zoom level">
@@ -515,28 +751,30 @@ function layoutPanelHTML() {
     </select>
     <button type="button" data-zoom="in" title="Zoom in (Ctrl +)">+</button>`);
   const previewGroup = groupHTML('Preview', `
-    <button type="button" class="doc-tile" data-preview title="Open a movable preview"><span class="doc-tile-ic">👁</span><span class="doc-tile-lbl">Preview</span></button>`);
-  return pageSetup + copies + zoom + previewGroup;
+    <button type="button" class="doc-tile" data-preview title="Open a movable preview"><span class="doc-tile-ic">${docIcon('preview')}</span><span class="doc-tile-lbl">Preview</span></button>`);
+  return pageSetup + copies + spacing + zoom + previewGroup;
 }
 
 function tablePanelHTML() {
   const rowsCols = groupHTML('Rows &amp; Columns', `
-    <button type="button" data-tbl="addRow" title="Insert row below">+Row</button>
-    <button type="button" data-tbl="delRow" title="Delete row">−Row</button>
-    <button type="button" data-tbl="addCol" title="Insert column right">+Col</button>
-    <button type="button" data-tbl="delCol" title="Delete column">−Col</button>`);
+    <button type="button" data-tbl="addRow" title="Insert row below">Insert row</button>
+    <button type="button" data-tbl="delRow" title="Delete row">Delete row</button>
+    <button type="button" data-tbl="addCol" title="Insert column right">Insert column</button>
+    <button type="button" data-tbl="delCol" title="Delete column">Delete column</button>`);
   const merge = groupHTML('Merge', `
     <button type="button" data-tbl="mergeRight" title="Merge with cell on the right">Merge →</button>
     <button type="button" data-tbl="mergeDown" title="Merge with cell below">Merge ↓</button>
     <button type="button" data-tbl="split" title="Split merged cell">Split</button>`);
   const design = groupHTML('Design', `
     <label class="tb-color" title="Cell shading">▮<input type="color" data-cellbg value="#ffffff"></label>
+    <button type="button" data-tbl="properties" title="Table borders, spacing, alignment and row settings">Properties</button>
+    <button type="button" data-tbl="distribute" title="Make all columns equal width">Equal columns</button>
     <button type="button" data-tbl="width" title="Set column width">↔ Width</button>
     <select data-tblstyle title="Table style"><option value="doc-table">Bordered</option><option value="doc-table striped">Striped</option><option value="doc-table shaded">Shaded header</option><option value="doc-table plain">Plain</option></select>`);
   const template = groupHTML('Template', `
     <button type="button" data-tbl="repeat" title="Repeat this row for each line item">↻ Item row</button>
     <button type="button" data-tbl="fxcell" class="btn-fx" title="Make this cell a formula (=)">= ƒx</button>
-    <button type="button" data-tbl="delTable" title="Delete table">🗑</button>`);
+    <button type="button" data-tbl="delTable" title="Delete table">${docIcon('trash')}</button>`);
   return rowsCols + merge + design + template;
 }
 
@@ -578,12 +816,45 @@ function imageDialog(insertHtml, saveSel) {
     onConfirm: async (ov, showErr) => {
       const url = ov.querySelector('#img-url').value.trim();
       const file = ov.querySelector('#img-file').files[0];
+      if (url && !safeDocumentUrl(url,true)) { showErr('Enter a valid image URL');return false; }
       if (url) { insertHtml(`<img src="${escAttr(url)}" alt="">`); return; }
       if (!file) { showErr('Provide a URL or choose a file'); return false; }
       const dataUrl = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(file); });
       insertHtml(`<img src="${escAttr(dataUrl)}" alt="${escAttr(file.name)}">`);
     },
   });
+}
+
+/** Image geometry and effects remain ordinary CSS in saved HTML and printed previews. */
+function editPicture(img,onChange) {
+  if(!img||img.closest('[data-doc-locked="true"]'))return;
+  const s=img.style,fit=s.objectFit||'contain',position=(s.objectPosition||'50% 50%').match(/[\d.]+/g)||['50','50'];
+  const mask=s.clipPath?.startsWith('circle')?'circle':s.clipPath?.startsWith('ellipse')?'ellipse':s.clipPath?.startsWith('polygon')?'diamond':'none';
+  const effect=name=>Number(new RegExp(name+'\\(([^)]+)\\)').exec(s.filter||'')?.[1]?.replace('%','')??(name==='brightness'||name==='contrast'||name==='saturate'?100:0));
+  const box=img.getBoundingClientRect(),computed=getComputedStyle(img);const width=parseFloat(computed.width)||img.naturalWidth||box.width||300,height=parseFloat(computed.height)||img.naturalHeight||box.height||200;
+  UI.modal({title:'Picture settings',size:'lg',confirmText:'Apply',bodyHTML:`
+    <div class="doc-picture-preview" style="display:flex;justify-content:center;align-items:center;background:var(--surface-2);padding:16px;border:1px solid var(--border);border-radius:var(--radius);min-height:180px"><img data-picture-preview src="${escAttr(img.src)}" alt="Picture preview" style="width:240px;height:160px"></div>
+    <div class="field-row"><label>Fit<select id="pic-fit"><option value="contain" ${fit==='contain'?'selected':''}>Fit entire image</option><option value="cover" ${fit==='cover'?'selected':''}>Crop to fill</option><option value="fill" ${fit==='fill'?'selected':''}>Stretch</option></select></label><label>Mask<select id="pic-mask">${['none','circle','ellipse','diamond'].map(v=>`<option ${mask===v?'selected':''}>${v}</option>`).join('')}</select></label><label>Corner radius (px)<input id="pic-radius" type="number" min="0" max="200" value="${parseFloat(s.borderRadius)||parseFloat(getComputedStyle(img).borderRadius)||0}"></label></div>
+    <div class="field-row"><label>Focal point X (%)<input id="pic-x" type="range" min="0" max="100" value="${position[0]}"><span data-picture-value="x"></span></label><label>Focal point Y (%)<input id="pic-y" type="range" min="0" max="100" value="${position[1]||position[0]}"><span data-picture-value="y"></span></label></div>
+    ${img.closest('.doc-float')?'':`<div class="field-row"><label>Frame width (px)<input id="pic-width" type="number" min="1" max="4000" value="${Math.min(4000,Math.round(width))}"></label><label>Frame height (px)<input id="pic-height" type="number" min="1" max="4000" value="${Math.min(4000,Math.round(height))}"></label></div>`}
+    <div class="field-row">${['brightness','contrast','saturate','grayscale'].map(name=>`<label>${name.charAt(0).toUpperCase()+name.slice(1)} (%)<input id="pic-${name}" type="range" min="0" max="${name==='grayscale'?100:200}" value="${effect(name)}"><span data-picture-value="${name}"></span></label>`).join('')}</div>
+    <label>Alternative text<input id="pic-alt" value="${escAttr(img.alt||'')}" maxlength="500" placeholder="Describe the image for people using screen readers"></label>
+    <label>Replace image URL (optional)<input id="pic-url" placeholder="https://…"></label><label>Or replace with a file<input id="pic-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"></label>
+    <p class="muted">Crop to fill uses the frame size and focal point. The original image is retained. Changes apply after you select Apply.</p>`,onOpen:ov=>{
+      const preview=ov.querySelector('[data-picture-preview]');
+      ov.addEventListener('input',()=>{const val=id=>ov.querySelector('#pic-'+id)?.value;const w=Number(val('width'))||parseFloat(getComputedStyle(img).width)||300,h=Number(val('height'))||parseFloat(getComputedStyle(img).height)||200;if(w>0&&h>0){const scale=Math.min(240/w,240/h);preview.style.width=w*scale+'px';preview.style.height=h*scale+'px';}ov.querySelectorAll('[data-picture-value]').forEach(output=>output.textContent=val(output.dataset.pictureValue)+'%');preview.style.objectFit=val('fit');preview.style.objectPosition=val('x')+'% '+val('y')+'%';preview.style.borderRadius=val('radius')+'px';preview.style.clipPath={none:'none',circle:'circle(closest-side at 50% 50%)',ellipse:'ellipse(50% 40% at 50% 50%)',diamond:'polygon(50% 0%,100% 50%,50% 100%,0% 50%)'}[val('mask')];preview.style.filter=['brightness','contrast','saturate','grayscale'].map(k=>k+'('+val(k)+'%)').join(' ');});ov.querySelector('#pic-x').dispatchEvent(new Event('input',{bubbles:true}));
+    },onConfirm:async(ov,showErr)=>{
+      const val=id=>ov.querySelector('#pic-'+id)?.value;
+      const limits=[['radius',0,200],['x',0,100],['y',0,100],['brightness',0,200],['contrast',0,200],['saturate',0,200],['grayscale',0,100],...(ov.querySelector('#pic-width')?[['width',1,4000],['height',1,4000]]:[])];
+      if(!limits.every(([id,min,max])=>Number.isFinite(Number(val(id)))&&Number(val(id))>=min&&Number(val(id))<=max)){showErr('Choose picture settings within the displayed limits');return false;}
+      const url=val('url').trim(),file=ov.querySelector('#pic-file').files[0];let replacement=url;
+      if(url&&!safeDocumentUrl(url,true)){showErr('Enter a valid image URL');return false;}
+      if(file){if(file.size>2*1024*1024||!/^image\/(png|jpeg|webp|gif|bmp)$/.test(file.type)){showErr('Choose a PNG, JPEG, WebP, GIF or BMP image up to 2 MB');return false;}replacement=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});}
+      if(!img.isConnected||img.closest('[data-doc-locked="true"]')){showErr('This picture changed or was removed. Close this dialog and select it again.');return false;}
+      s.objectFit=val('fit');s.objectPosition=val('x')+'% '+val('y')+'%';s.borderRadius=val('radius')+'px';s.clipPath={none:'none',circle:'circle(closest-side at 50% 50%)',ellipse:'ellipse(50% 40% at 50% 50%)',diamond:'polygon(50% 0%,100% 50%,50% 100%,0% 50%)'}[val('mask')];s.filter=['brightness','contrast','saturate','grayscale'].map(k=>k+'('+val(k)+'%)').join(' ');
+      if(ov.querySelector('#pic-width')){s.width=val('width')+'px';s.height=val('height')+'px';}
+      img.alt=val('alt');if(replacement){img.src=replacement;delete img.dataset.varSrc;}onChange();
+    }});
 }
 
 const SYMBOLS = ['₱', '$', '€', '£', '¥', '©', '®', '™', '°', '§', '¶', '•', '★', '✓', '✗', '½', '¼', '¾', '×', '÷', '±', '№'];
@@ -685,9 +956,9 @@ function docEditorHelpDialog() {
 
   const PANES = {
     basics: lead('It behaves like a normal document — type, format, and drop in tables or pictures.')
-      + bullet('Switch between the page and its raw code with <b>Visual</b> / <b>HTML&nbsp;/&nbsp;CSS</b> in the top bar.', SHOT_MODES)
+      + bullet('Switch between the page and its raw code with <b>Design</b> / <b>HTML&nbsp;/&nbsp;CSS</b> in the top bar.', SHOT_MODES)
       + bullet(`${kbd('Ctrl')}+${kbd('S')} saves. ${kbd('Ctrl')}+${kbd('Z')} / ${kbd('Ctrl')}+${kbd('Y')} undo and redo <i>everything</i> — text, tables, moved objects.`)
-      + bullet('<b>👁 Preview</b> (Layout tab) opens a movable preview filled with realistic sample data.')
+      + bullet('<b>Preview</b> (Layout tab) opens a movable preview filled with realistic sample data.')
       + bullet('<b>⚙</b> makes your own named variables. This <b>?</b> guide is always one click away.')
       + note('Nothing on the page is “live” — variables and formulas only turn into real values when the document is printed.'),
 
@@ -880,7 +1151,7 @@ function formulaDialog(insertHtml, saveSel, getVariables, initial, sampleContext
         try {
           const ev = (typeof evalFormula !== 'undefined') ? evalFormula : null;
           if (!ev) { out.textContent = '(preview unavailable)'; return; }
-          const v = ev(e, sampleContext || {});
+          const v = ev(e, (typeof sampleContext === 'function' ? sampleContext() : sampleContext) || {});
           out.textContent = (typeof v === 'number') ? (Number.isInteger(v) ? String(v) : v.toLocaleString('en-US', { maximumFractionDigits: 2 })) : String(v);
           out.className = 'fx-ok';
         } catch { out.textContent = '⚠ not a valid formula yet'; out.className = 'fx-bad'; }
@@ -914,21 +1185,21 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   const zoomNow = () => (typeof getZoom === 'function' ? Number(getZoom()) : 1) || 1;
   let savedRange = null;
   const saveSel = () => { const sel = window.getSelection(); if (sel && sel.rangeCount && surface.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange(); };
-  const restoreSel = () => { surface.focus(); if (savedRange) { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); } };
+  const restoreSel = () => { surface.focus(); if (savedRange && surface.contains(savedRange.startContainer)) { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); } };
   const exec = (cmd, val) => { restoreSel(); document.execCommand(cmd, false, val); saveSel(); onChange(); };
   const insertHtml = (html) => { restoreSel(); document.execCommand('insertHTML', false, html); saveSel(); onChange(); };
   try { document.execCommand('styleWithCSS', false, true); } catch (e) { /* ignore */ }
 
   ['mouseup', 'keyup'].forEach((ev) => surface.addEventListener(ev, () => { saveSel(); updateTableBar(); }));
 
-  panelsRoot.querySelectorAll('[data-ex]').forEach((b) => b.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    // Undo/Redo run the editor's own snapshot history (covers floats/tables/page-setup), not the
-    // browser's execCommand stack which only ever saw the rich-text edits.
-    if (b.dataset.ex === 'undo') { if (onUndo) onUndo(); return; }
-    if (b.dataset.ex === 'redo') { if (onRedo) onRedo(); return; }
-    exec(b.dataset.ex);
-  }));
+  panelsRoot.querySelectorAll('[data-ex]').forEach((b) => {
+    b.addEventListener('mousedown', (e) => { saveSel(); e.preventDefault(); });
+    b.addEventListener('click', () => {
+      if (b.dataset.ex === 'undo') { if (onUndo) onUndo(); return; }
+      if (b.dataset.ex === 'redo') { if (onRedo) onRedo(); return; }
+      exec(b.dataset.ex);
+    });
+  });
   panelsRoot.querySelectorAll('select[data-cmd]').forEach((sel) => sel.addEventListener('change', () => exec(sel.dataset.cmd, sel.value)));
   panelsRoot.querySelectorAll('[data-color]').forEach((inp) => inp.addEventListener('input', () => exec(inp.dataset.color, inp.value)));
 
@@ -940,8 +1211,19 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     saveSel(); onChange();
   });
 
+  panelsRoot.querySelector('[data-paragraph]').addEventListener('mousedown',e=>{saveSel();e.preventDefault();});
+  panelsRoot.querySelector('[data-paragraph]').addEventListener('click',()=>{
+    const r=savedRange;if(!r)return;const anchor=r.startContainer.nodeType===3?r.startContainer.parentElement:r.startContainer;
+    const blocks=[...surface.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li')].filter(el=>!el.closest('[data-doc-locked="true"]')&&(r.collapsed?el===anchor.closest('p,h1,h2,h3,h4,h5,h6,li'):r.intersectsNode(el)));
+    if(!blocks.length){UI.toast('Select a paragraph first');return;}const css=getComputedStyle(blocks[0]);
+    UI.modal({title:'Paragraph spacing',confirmText:'Apply',bodyHTML:`<p class="muted">Apply to ${blocks.length} selected paragraph${blocks.length===1?'':'s'}.</p><div class="field-row"><label>Line spacing<select id="pg-line">${[1,1.15,1.5,2,2.5,3].map(v=>`<option value="${v}" ${Math.abs(parseFloat(css.lineHeight)/parseFloat(css.fontSize)-v)<.1?'selected':''}>${v}</option>`).join('')}</select></label><label>Before (px)<input id="pg-before" type="number" min="0" max="200" value="${parseFloat(css.marginTop)||0}"></label><label>After (px)<input id="pg-after" type="number" min="0" max="200" value="${parseFloat(css.marginBottom)||0}"></label></div><div class="field-row"><label>Left indent (px)<input id="pg-left" type="number" min="0" max="400" value="${parseFloat(css.marginLeft)||0}"></label><label>First line indent (px)<input id="pg-first" type="number" min="-200" max="200" value="${parseFloat(css.textIndent)||0}"></label></div>`,onConfirm:ov=>{
+      const val=id=>Number(ov.querySelector('#pg-'+id).value);if(![['before',0,200],['after',0,200],['left',0,400],['first',-200,200]].every(([id,min,max])=>Number.isFinite(val(id))&&val(id)>=min&&val(id)<=max)){UI.toast('Enter spacing within the displayed limits','error');return false;}
+      blocks.forEach(el=>{el.style.lineHeight=String(val('line'));el.style.marginTop=val('before')+'px';el.style.marginBottom=val('after')+'px';el.style.marginLeft=val('left')+'px';el.style.textIndent=val('first')+'px';});restoreSel();onChange();
+    }});
+  });
+
   // inserts
-  panelsRoot.querySelector('[data-ins="link"]').addEventListener('click', () => { saveSel(); UI.modal({ title: 'Insert link', bodyHTML: `<label>URL</label><input id="lnk" placeholder="https://…">`, confirmText: 'Insert', onConfirm: (ov) => { const u = ov.querySelector('#lnk').value.trim(); if (!u) return false; exec('createLink', u); } }); });
+  panelsRoot.querySelector('[data-ins="link"]').addEventListener('click', () => { saveSel(); UI.modal({ title: 'Insert link', bodyHTML: `<label>URL</label><input id="lnk" placeholder="https://…">`, confirmText: 'Insert', onConfirm: (ov) => { const u = ov.querySelector('#lnk').value.trim(); if (!safeDocumentUrl(u)) { UI.toast('Enter a valid web, email or telephone link', 'error'); return false; } exec('createLink', u); } }); });
   panelsRoot.querySelector('[data-ins="hr"]').addEventListener('click', () => insertHtml('<hr>'));
   panelsRoot.querySelector('[data-ins="pagebreak"]').addEventListener('click', () => insertHtml('<div class="doc-pagebreak" style="page-break-after:always"></div><p><br></p>'));
   panelsRoot.querySelector('[data-ins="table"]').addEventListener('click', () => insertTableDialog(insertHtml, saveSel));
@@ -959,32 +1241,57 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
 
   // ---- table helpers ----
   const cellOf = (node) => { let n = node; while (n && n !== surface) { if (n.nodeName === 'TD' || n.nodeName === 'TH') return n; n = n.parentNode; } return null; };
-  const currentCell = () => cellOf(savedRange ? savedRange.startContainer : (window.getSelection().anchorNode));
+  const currentCell = () => { const c = cellOf(savedRange ? savedRange.startContainer : window.getSelection().anchorNode); return c && surface.contains(c) && !c.closest('[data-doc-locked="true"]') ? c : null; };
   function updateTableBar() {
     tabApi.setTableTabVisible(!!currentCell());
   }
 
   const tbl = {
-    addRow() { const c = currentCell(); if (!c) return; const row = c.parentNode; const tr = row.ownerDocument.createElement('tr'); for (let i = 0; i < row.children.length; i++) { const td = row.ownerDocument.createElement('td'); td.innerHTML = '&nbsp;'; tr.appendChild(td); } row.parentNode.insertBefore(tr, row.nextSibling); },
-    delRow() { const c = currentCell(); if (!c) return; const row = c.parentNode; const tb = row.parentNode; if (tb.children.length > 1) row.remove(); },
-    addCol() { const c = currentCell(); if (!c) return; const idx = c.cellIndex; c.closest('table').querySelectorAll('tr').forEach((tr) => { const cell = tr.ownerDocument.createElement(tr.children[0] && tr.children[0].nodeName === 'TH' ? 'th' : 'td'); cell.innerHTML = '&nbsp;'; tr.insertBefore(cell, tr.children[idx + 1] || null); }); },
-    delCol() { const c = currentCell(); if (!c) return; const idx = c.cellIndex; const table = c.closest('table'); if (table.rows[0].cells.length <= 1) return; table.querySelectorAll('tr').forEach((tr) => { if (tr.children[idx]) tr.children[idx].remove(); }); },
-    mergeRight() { const c = currentCell(); if (!c) return; const next = c.nextElementSibling; if (!next) return; c.colSpan = (c.colSpan || 1) + (next.colSpan || 1); c.innerHTML += ' ' + next.innerHTML; next.remove(); },
-    mergeDown() { const c = currentCell(); if (!c) return; const row = c.parentNode; const below = row.nextElementSibling; if (!below) return; const cell = below.children[c.cellIndex]; if (!cell) return; c.rowSpan = (c.rowSpan || 1) + (cell.rowSpan || 1); c.innerHTML += ' ' + cell.innerHTML; cell.remove(); },
-    split() { const c = currentCell(); if (!c) return; const cs = c.colSpan || 1; c.colSpan = 1; c.rowSpan = 1; const row = c.parentNode; for (let i = 1; i < cs; i++) { const td = row.ownerDocument.createElement('td'); td.innerHTML = '&nbsp;'; row.insertBefore(td, c.nextSibling); } },
-    width() { const c = currentCell(); if (!c) return; const cur = parseInt(c.style.width) || ''; UI.modal({ title: 'Column width', bodyHTML: `<label>Width in pixels (blank = auto)</label><input id="cw" type="number" value="${cur}" placeholder="e.g. 120">`, confirmText: 'Apply', onConfirm: (ov) => { const w = ov.querySelector('#cw').value; const idx = c.cellIndex; c.closest('table').querySelectorAll('tr').forEach((tr) => { if (tr.children[idx]) tr.children[idx].style.width = w ? w + 'px' : ''; }); } }); },
+    distribute() { const c=currentCell();if(!c)return;const t=c.closest('table'),m=tableGrid(t);t.style.tableLayout='fixed';t.querySelectorAll('th,td').forEach(cell=>cell.style.width=(100*(cell.colSpan||1)/m.width)+'%'); },
+    properties() {
+      const c=currentCell();if(!c)return;const t=c.closest('table'),css=getComputedStyle(c),row=c.parentNode;
+      UI.modal({title:'Table properties',confirmText:'Apply',bodyHTML:`
+        <p class="muted">Appearance applies to the whole table. Row and cell settings apply to the current selection.</p>
+        <div class="field-row"><label>Table width (%)<input id="tp-width" type="number" min="10" max="100" value="${parseFloat(t.style.width)||100}"></label><label>Cell padding (px)<input id="tp-padding" type="number" min="0" max="40" value="${parseFloat(css.padding)||8}"></label></div>
+        <div class="field-row"><label>Border width (px)<input id="tp-border" type="number" min="0" max="8" step="0.5" value="${parseFloat(css.borderWidth)||0}"></label><label>Border style<select id="tp-style">${['solid','dashed','dotted','none'].map(v=>`<option ${css.borderStyle===v?'selected':''}>${v}</option>`).join('')}</select></label><label>Border color<input id="tp-color" type="color" value="${(()=>{const rgb=css.borderColor.match(/\d+/g);return rgb&&rgb.length>=3?'#'+rgb.slice(0,3).map(v=>Number(v).toString(16).padStart(2,'0')).join(''):'#cbd5e1';})()}"></label></div>
+        <div class="field-row"><label>Table alignment<select id="tp-align"><option value="left">Left</option><option value="center" ${t.style.marginLeft==='auto'&&t.style.marginRight==='auto'?'selected':''}>Center</option><option value="right" ${t.style.marginLeft==='auto'&&t.style.marginRight!=='auto'?'selected':''}>Right</option></select></label><label>Cell vertical alignment<select id="tp-valign">${['top','middle','bottom'].map(v=>`<option ${css.verticalAlign===v?'selected':''}>${v}</option>`).join('')}</select></label></div>
+        <div class="field-row"><label>Row minimum height (px)<input id="tp-height" type="number" min="0" max="500" value="${parseFloat(row.style.height)||0}"></label><label>Column layout<select id="tp-layout"><option value="auto">Auto fit content</option><option value="fixed" ${t.style.tableLayout==='fixed'?'selected':''}>Fixed widths</option></select></label></div>
+        <label><input id="tp-header" type="checkbox" ${t.tHead?'checked':''}> First row is a header (repeats on paginated output)</label>
+        <label><input id="tp-keep" type="checkbox" ${row.style.breakInside==='avoid'?'checked':''}> Keep this row together when printing</label>`,onConfirm:ov=>{
+          const num=id=>Number(ov.querySelector('#tp-'+id).value),val=id=>ov.querySelector('#tp-'+id).value;
+          if(![[num('width'),10,100],[num('padding'),0,40],[num('border'),0,8],[num('height'),0,500]].every(([v,min,max])=>Number.isFinite(v)&&v>=min&&v<=max)){UI.toast('Enter values within the displayed limits','error');return false;}
+          t.style.width=num('width')+'%';t.style.tableLayout=val('layout');t.style.borderCollapse='collapse';const a=val('align');t.style.marginLeft=a==='left'?'0':'auto';t.style.marginRight=a==='right'?'0':'auto';
+          t.querySelectorAll('td,th').forEach(cell=>{cell.style.padding=num('padding')+'px';cell.style.border=`${num('border')}px ${val('style')} ${val('color')}`;});
+          c.style.verticalAlign=val('valign');row.style.height=num('height')?num('height')+'px':'';row.style.breakInside=ov.querySelector('#tp-keep').checked?'avoid':'';
+          const header=ov.querySelector('#tp-header').checked;
+          if(header&&!t.tHead){const first=t.rows[0];if(first)t.createTHead().append(first);}
+          else if(!header&&t.tHead){const body=t.tBodies[0]||t.createTBody();[...t.tHead.rows].reverse().forEach(r=>body.prepend(r));t.tHead.remove();}
+          if(header&&t.tHead)t.tHead.querySelectorAll('td').forEach(cell=>{const th=document.createElement('th');for(const a of cell.attributes)th.setAttribute(a.name,a.value);th.innerHTML=cell.innerHTML;cell.replaceWith(th);});
+          if(!header)t.querySelectorAll('th').forEach(cell=>{const td=document.createElement('td');for(const a of cell.attributes)td.setAttribute(a.name,a.value);td.innerHTML=cell.innerHTML;cell.replaceWith(td);});
+          onChange();
+        }});
+    },
+    addRow() { const c = currentCell(); if (c) editTableRow(c); },
+    delRow() { const c = currentCell(); if (c) editTableRow(c, true); },
+    addCol() { const c = currentCell(); if (c) editTableColumn(c); },
+    delCol() { const c = currentCell(); if (c) editTableColumn(c, true); },
+    mergeRight() { const c = currentCell(); if (!c) return; const m = tableGrid(c.closest('table')), p = m.positions.get(c); const next = m.grid[p.r]?.[p.c + p.w]; if (next && !mergeTableCells([c, next])) UI.toast('Select a complete rectangle to merge', 'error'); },
+    mergeDown() { const c = currentCell(); if (!c) return; const m = tableGrid(c.closest('table')), p = m.positions.get(c); const next = m.grid[p.r + p.h]?.[p.c]; if (next && !mergeTableCells([c, next])) UI.toast('Select a complete rectangle to merge', 'error'); },
+    split() { const c = currentCell(); if (c) splitTableCell(c); },
+    width() { const c = currentCell(); if (!c) return; const cur = parseInt(c.style.width) || ''; UI.modal({ title: 'Column width', bodyHTML: `<label>Width in pixels (blank = auto)</label><input id="cw" type="number" min="24" value="${cur}" placeholder="e.g. 120">`, confirmText: 'Apply', onConfirm: (ov) => { const w = ov.querySelector('#cw').value; if (w && (!Number.isFinite(Number(w)) || Number(w) < 24)) { UI.toast('Width must be at least 24 pixels', 'error'); return false; } const m = tableGrid(c.closest('table')), p = m.positions.get(c); new Set(m.grid.map((row) => row[p.c]).filter(Boolean)).forEach((cell) => { cell.style.width = w ? Number(w) + 'px' : ''; }); onChange(); } }); },
     repeat() { const c = currentCell(); if (!c) return; const tr = c.parentNode; if (tr.hasAttribute('data-repeat')) { tr.removeAttribute('data-repeat'); tr.classList.remove('is-repeat'); UI.toast('Row no longer repeats'); } else { tr.setAttribute('data-repeat', 'items'); tr.classList.add('is-repeat'); UI.toast('This row will repeat for every line item when printed'); } },
     fxcell() { const c = currentCell(); if (!c) return; formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext); },
     delTable() { const c = currentCell(); if (!c) return; const t = c.closest('table'); UI.confirmDialog('Delete this whole table?', 'Delete').then((ok) => { if (ok) { t.remove(); updateTableBar(); onChange(); } }); },
   };
-  panelsRoot.querySelectorAll('[data-tbl]').forEach((b) => b.addEventListener('mousedown', (e) => {
-    e.preventDefault(); const fn = tbl[b.dataset.tbl]; if (fn) { fn(); if (b.dataset.tbl !== 'delTable') onChange(); }
-  }));
+  panelsRoot.querySelectorAll('[data-tbl]').forEach((b) => {
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', () => { const fn = tbl[b.dataset.tbl]; if (fn) { fn(); if (b.dataset.tbl !== 'delTable' && b.dataset.tbl !== 'width' && b.dataset.tbl !== 'properties') onChange(); } });
+  });
   panelsRoot.querySelector('[data-cellbg]').addEventListener('input', (e) => { const c = currentCell(); if (c) { c.style.background = e.target.value; onChange(); } });
   panelsRoot.querySelector('[data-tblstyle]').addEventListener('change', (e) => { const c = currentCell(); if (c) { c.closest('table').className = e.target.value; onChange(); } });
 
   // checkbox toggle
-  surface.addEventListener('click', (e) => { const box = e.target.closest('.doc-checkbox'); if (!box) return; const on = box.getAttribute('data-checked') === '1'; box.setAttribute('data-checked', on ? '0' : '1'); box.innerHTML = on ? '&#9744;' : '&#9745;'; onChange(); });
+  surface.addEventListener('click', (e) => { const box = e.target.closest('.doc-checkbox'); if (!box || box.closest('[data-doc-locked="true"]')) return; const on = box.getAttribute('data-checked') === '1'; box.setAttribute('data-checked', on ? '0' : '1'); box.innerHTML = on ? '&#9744;' : '&#9745;'; onChange(); });
 
   // transient native color picker (opens within the user gesture)
   const pickColor = (initial, cb) => {
@@ -1006,46 +1313,45 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     clearCellSel();
     const table = tableOf(a);
     if (!table || tableOf(b) !== table) { a.classList.add('cell-sel'); return; }
-    const rows = [...table.rows];
-    const r1 = Math.min(a.parentNode.rowIndex, b.parentNode.rowIndex), r2 = Math.max(a.parentNode.rowIndex, b.parentNode.rowIndex);
-    const c1 = Math.min(a.cellIndex, b.cellIndex), c2 = Math.max(a.cellIndex, b.cellIndex);
-    for (let r = r1; r <= r2; r++) { const row = rows[r]; if (!row) continue; for (let c = c1; c <= c2; c++) { if (row.cells[c]) row.cells[c].classList.add('cell-sel'); } }
+    const m = tableGrid(table), ap = m.positions.get(a), bp = m.positions.get(b);
+    let r1 = Math.min(ap.r, bp.r), r2 = Math.max(ap.r + ap.h, bp.r + bp.h);
+    let c1 = Math.min(ap.c, bp.c), c2 = Math.max(ap.c + ap.w, bp.c + bp.w);
+    // Grow the rectangle to include every span it intersects.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let r = r1; r < r2; r++) for (let c = c1; c < c2; c++) {
+        const p = m.positions.get(m.grid[r]?.[c]); if (!p) continue;
+        const bounds = [Math.min(r1, p.r), Math.max(r2, p.r + p.h), Math.min(c1, p.c), Math.max(c2, p.c + p.w)];
+        if (bounds[0] !== r1 || bounds[1] !== r2 || bounds[2] !== c1 || bounds[3] !== c2) changed = true;
+        [r1, r2, c1, c2] = bounds;
+      }
+    }
+    for (let r = r1; r < r2; r++) for (let c = c1; c < c2; c++) m.grid[r]?.[c]?.classList.add('cell-sel');
   }
   function mergeSelection() {
     const cells = selectedCells();
     if (cells.length < 2) { tbl.mergeRight(); return; }
-    const table = tableOf(cells[0]); const rows = [...table.rows];
-    let r1 = Infinity, r2 = -1, c1 = Infinity, c2 = -1;
-    cells.forEach((c) => { const ri = c.parentNode.rowIndex, ci = c.cellIndex; r1 = Math.min(r1, ri); r2 = Math.max(r2, ri); c1 = Math.min(c1, ci); c2 = Math.max(c2, ci); });
-    const top = rows[r1].cells[c1]; const extra = [];
-    for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const cell = rows[r].cells[c]; if (cell && cell !== top) { const h = cell.innerHTML.trim(); if (h && h !== '&nbsp;') extra.push(h); } }
-    top.colSpan = c2 - c1 + 1; top.rowSpan = r2 - r1 + 1;
-    if (extra.length) top.innerHTML = (top.innerHTML.trim() === '' || top.innerHTML === '&nbsp;' ? '' : top.innerHTML + ' ') + extra.join(' ');
-    for (let r = r2; r >= r1; r--) for (let c = c2; c >= c1; c--) { const cell = rows[r].cells[c]; if (cell && cell !== top) cell.remove(); }
+    if (!mergeTableCells(cells)) { UI.toast('Select a complete rectangle within one table section', 'error'); return; }
     clearCellSel(); onChange();
   }
   function splitCells() {
     const cells = selectedCells().length ? selectedCells() : (currentCell() ? [currentCell()] : []);
-    cells.forEach((c) => {
-      const cs = c.colSpan || 1, rs = c.rowSpan || 1; if (cs === 1 && rs === 1) return;
-      const row = c.parentNode; const table = c.closest('table'); const ri = row.rowIndex; const ci = c.cellIndex;
-      c.colSpan = 1; c.rowSpan = 1;
-      for (let i = 1; i < cs; i++) { const td = row.ownerDocument.createElement('td'); td.innerHTML = '&nbsp;'; row.insertBefore(td, c.nextSibling); }
-      for (let r = 1; r < rs; r++) { const below = table.rows[ri + r]; if (!below) continue; for (let i = 0; i < cs; i++) { const td = below.ownerDocument.createElement('td'); td.innerHTML = '&nbsp;'; below.insertBefore(td, below.cells[ci] || null); } }
-    });
+    cells.forEach(splitTableCell);
     clearCellSel(); onChange();
   }
 
   let selAnchor = null, selecting = false, resizeIdx = null, resizeCells = null, resizeX0 = 0, resizeW0 = 0;
   surface.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.target.closest('[data-doc-locked="true"]')) return;
     const cell = e.target.closest('td,th');
     if (!cell || !surface.contains(cell)) { clearCellSel(); return; }
     const rect = cell.getBoundingClientRect();
     if (rect.right - e.clientX <= 6) { // column-resize handle
       e.preventDefault();
-      resizeIdx = cell.cellIndex; resizeX0 = e.clientX; resizeW0 = rect.width;
-      resizeCells = [...cell.closest('table').rows].map((r) => r.cells[resizeIdx]).filter(Boolean);
+      const m = tableGrid(cell.closest('table'));
+      resizeIdx = m.positions.get(cell).c; resizeX0 = e.clientX; resizeW0 = rect.width;
+      resizeCells = [...new Set(m.grid.map((r) => r[resizeIdx]).filter(Boolean))];
       return;
     }
     clearCellSel(); selAnchor = cell; selecting = true;
@@ -1055,12 +1361,13 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     if (!selecting) { const cell = e.target.closest('td,th'); surface.style.cursor = cell && (cell.getBoundingClientRect().right - e.clientX <= 6) ? 'col-resize' : ''; return; }
     if (e.buttons === 1 && selAnchor) { const cell = e.target.closest('td,th'); if (cell && cell !== selAnchor && tableOf(cell) === tableOf(selAnchor)) { e.preventDefault(); const s = window.getSelection(); if (s) s.removeAllRanges(); markRect(selAnchor, cell); } }
   });
-  document.addEventListener('mouseup', () => { if (resizeIdx !== null) { resizeIdx = null; resizeCells = null; onChange(); } selecting = false; });
+  const endTableDrag = () => { if (resizeIdx !== null) { resizeIdx = null; resizeCells = null; onChange(); } selecting = false; };
+  document.addEventListener('mouseup', endTableDrag);
 
   // right-click a cell → design menu (multi-cell when a range is selected)
   surface.addEventListener('contextmenu', (e) => {
     const cell = e.target.closest('td,th');
-    if (!cell || !surface.contains(cell)) return;
+    if (!cell || !surface.contains(cell) || cell.closest('[data-doc-locked="true"]')) return;
     e.preventDefault();
     const multi = selectedCells();
     const act = (fn) => { fn(); onChange(); };
@@ -1125,8 +1432,8 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     acItems = vars.filter((v) => ((v.label || '') + ' ' + (v.token || v.key || '')).toLowerCase().includes(query)).slice(0, 8);
     if (!acItems.length) return closeAC();
     acIndex = 0;
-    acRange = { node, start: range.startOffset - m[0].length, end: range.startOffset };
     closeAC();
+    acRange = { node, start: range.startOffset - m[0].length, end: range.startOffset };
     acPopup = document.createElement('div'); acPopup.className = 'doc-ac';
     acPopup.innerHTML = acItems.map((v, i) => `<div class="doc-ac-item${i === 0 ? ' active' : ''}" data-i="${i}">${UI.esc(v.label || v.token)} <span class="doc-ac-tok">${escAttr(v.token || v.key)}</span></div>`).join('');
     document.body.appendChild(acPopup);
@@ -1208,7 +1515,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     g.setAttribute('contenteditable', 'false');
     if (orient === 'v') g.style.left = pxToPct(posPx, pageRect.width) + '%';
     else g.style.top = pxToPct(posPx, pageRect.height) + '%';
-    surface.appendChild(g);
+    designFrame(selectedFloat).appendChild(g);
     snapGuideEls.push(g);
   }
   function nearestLine(v, lines, tol) {
@@ -1220,7 +1527,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   function siblingLines(exclude, pageRect) {
     const xs = []; const ys = [];
     surface.querySelectorAll('.doc-float').forEach((f) => {
-      if (f === exclude) return;
+      if (f === exclude || designFrame(f)!==designFrame(exclude)) return;
       const r = f.getBoundingClientRect();
       const l = r.left - pageRect.left; const rt = r.right - pageRect.left;
       const t = r.top - pageRect.top; const b = r.bottom - pageRect.top;
@@ -1333,11 +1640,11 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
 
   function wrapToolbarHTML(floatEl) {
     const kind = floatEl.getAttribute('data-float-kind');
-    let html = `<button type="button" data-float-act="z-up" title="Bring forward">⬆</button>`
-      + `<button type="button" data-float-act="z-down" title="Send backward (past the text)">⬇</button>`;
+    let html = `<button type="button" data-float-move title="Drag to move object" style="cursor:grab;touch-action:none">Move</button><button type="button" data-float-act="z-up" title="Bring forward">Forward</button>`
+      + `<button type="button" data-float-act="z-down" title="Send backward (past the text)">Backward</button>`;
     if (kind === 'image' || kind === 'table' || kind === 'text') html += `<button type="button" data-float-act="inline" title="Put back in the text (stop floating)">↩</button>`;
-    if (kind.startsWith('shape-')) html += `<button type="button" data-float-act="fill" title="Fill color">🎨</button><button type="button" data-float-act="border" title="Border color">▢</button>`;
-    html += `<button type="button" data-float-act="delete" title="Delete">🗑</button>`;
+    if (kind.startsWith('shape-')) html += `<button type="button" data-float-act="fill" title="Fill color">Fill</button><button type="button" data-float-act="border" title="Border color">Stroke</button>`;
+    html += `<button type="button" data-float-act="delete" title="Delete">${docIcon('trash')}</button>`;
     return html;
   }
 
@@ -1368,6 +1675,8 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     selectedFloat = floatEl;
   }
 
+  function designFrame(el) { return el?.closest?.('[data-doc-design-page]') || surface; }
+  function insertionFrame() { const n=window.getSelection()?.anchorNode;return designFrame(n?.nodeType===3?n.parentElement:n); }
   function insertFloat(kind) {
     const def = FLOAT_DEFAULTS[kind];
     if (!def) return;
@@ -1376,10 +1685,11 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     const el = document.createElement('div');
     el.className = 'doc-float';
     el.setAttribute('data-float-kind', kind);
+    el.style.touchAction = 'none';
     el.setAttribute('contenteditable', 'false');
     el.style.cssText = `position:absolute;left:${left}%;top:${top}%;width:${def.w}%;height:${def.h}%;z-index:1`;
     el.innerHTML = def.html;
-    surface.appendChild(el);
+    insertionFrame().appendChild(el);
     selectFloat(el);
     onChange();
   }
@@ -1392,7 +1702,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   function promoteToFloat(target) {
     const kind = target.nodeName === 'IMG' ? 'image' : target.nodeName === 'TABLE' ? 'table' : 'text';
     const rect = target.getBoundingClientRect();
-    const pageRect = surface.getBoundingClientRect();
+    const pageRect = designFrame(target).getBoundingClientRect();
     const leftPct = pxToPct(rect.left - pageRect.left, pageRect.width);
     const topPct = pxToPct(rect.top - pageRect.top, pageRect.height);
     const wPct = pxToPct(rect.width, pageRect.width);
@@ -1424,7 +1734,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   function showPromoteBar(target) {
     clearPromoteBar(); deselectFloat();
     const rect = target.getBoundingClientRect();
-    const pageRect = surface.getBoundingClientRect();
+    const pageRect = designFrame(target).getBoundingClientRect();
     // Don't offer to "make movable" a page-spanning container (the outer <div class="doc">, a
     // full-width section…): promoting it turns the whole document into one un-editable block —
     // the classic "I can't get out of it" trap. Nudge the user to pick a specific element.
@@ -1450,6 +1760,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     const actBtn = e.target.closest('.doc-float-toolbar button');
     if (actBtn && selectedFloat) {
       const act = actBtn.dataset.floatAct;
+      if (selectedFloat?.closest('[data-doc-locked="true"]')) return;
       if (act === 'delete') { const f = selectedFloat; selectedFloat = null; f.remove(); onChange(); return; }
       if (act === 'inline') { unpromoteFloat(selectedFloat); return; }
       if (act === 'z-up' || act === 'z-down') {
@@ -1476,7 +1787,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     const promoteBtn = e.target.closest('.doc-promote-bar button');
     if (promoteBtn) { const t = promoteTarget; clearPromoteBar(); if (t) promoteToFloat(t); return; }
 
-    const floatEl = e.target.closest('.doc-float');
+    const floatEl = e.target.closest('[data-float-kind="group"]') || e.target.closest('.doc-float');
     if (floatEl) {
       if (e.shiftKey) { toggleMulti(floatEl); return; }
       clearMulti();
@@ -1511,11 +1822,11 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   const samePointer = (e) => !dragState || dragState.pointerId == null || e.pointerId == null || e.pointerId === dragState.pointerId;
 
   surface.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.target.closest('[data-doc-locked="true"]')) return;
     const handle = e.target.closest('.doc-float-handle');
     if (handle && selectedFloat) {
       e.preventDefault(); e.stopPropagation();
-      const pageRect = surface.getBoundingClientRect();
+      const pageRect = designFrame(selectedFloat).getBoundingClientRect();
       const startRect = selectedFloat.getBoundingClientRect();
       dragState = {
         mode: 'resize', h: handle.dataset.h, floatEl: selectedFloat, pageRect,
@@ -1526,33 +1837,29 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       try { handle.setPointerCapture(e.pointerId); } catch (err) { /* jsdom / unsupported */ }
       return;
     }
-    const floatEl = e.target.closest('.doc-float');
+    const floatEl = e.target.closest('[data-float-kind="group"]') || e.target.closest('.doc-float');
     if (!floatEl) return;
     // Shapes/images have no editable interior, so any press starts a drag. Text boxes / promoted
     // tables / promoted blocks have an editable island — a press there must NOT start a drag.
     const editableRoot = islandOf(floatEl);
     const onToolbar = !!e.target.closest('.doc-float-toolbar');
     const onIsland = !!(editableRoot && (e.target === editableRoot || editableRoot.contains(e.target)));
-    if (onToolbar) return;
+    if (onToolbar && !e.target.closest('[data-float-move]')) return;
     if (onIsland) {
-      // First press on an un-selected islanded float → select it for moving and swallow the caret
-      // (Word-style: click once to select, click again to type). A press while it's already
-      // selected falls through so the browser drops a caret → that's "enter edit mode".
+      // One press can place a caret. Moving uses the explicit toolbar grip.
       if (!e.shiftKey && selectedFloat !== floatEl && !(multiSet.size >= 2 && multiSet.has(floatEl))) {
-        e.preventDefault();
-        clearMulti();
-        selectFloat(floatEl);
+        clearMulti(); selectFloat(floatEl);
       }
       return;
     }
     if (e.shiftKey) return;
-    // A press on the selection grab-frame (the padding the CSS adds around the island when
-    // selected) targets the wrapper itself → start a move.
+    // Pressing the Move grip or the non-editable wrapper starts a move.
     e.preventDefault();
 
-    const groupMove = multiSet.size >= 2 && multiSet.has(floatEl);
+    floatEl.classList.remove('editing');
+    const groupMove = multiSet.size >= 2 && multiSet.has(floatEl) && [...multiSet].every(f=>designFrame(f)===designFrame(floatEl));
     if (!groupMove && selectedFloat !== floatEl) { clearMulti(); selectFloat(floatEl); }
-    const pageRect = surface.getBoundingClientRect();
+    const pageRect = designFrame(floatEl).getBoundingClientRect();
     const startRect = floatEl.getBoundingClientRect();
     dragState = {
       mode: 'move', floatEl, pageRect,
@@ -1627,6 +1934,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     // stopImmediatePropagation keeps open()'s document-level onKey (registered after us) from also
     // acting on the same Escape. Two-stage (Word-style): Escape while typing in an islanded float's
     // interior first pops back out to the move/resize handles; a second Escape deselects.
+    if (e.target.closest?.('input,textarea,select,.modal-overlay,.doc-studio-side')) return;
     if (e.key === 'Escape' && (selectedFloat || multiSet.size || promoteBar)) {
       e.preventDefault(); e.stopImmediatePropagation();
       if (selectedFloat && selectedFloat.classList.contains('editing')) {
@@ -1638,13 +1946,24 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       }
       return;
     }
+    if (e.target.closest?.('input,textarea,select,.modal-overlay,.doc-studio-side') || e.defaultPrevented) return;
+    if (selectedFloat?.closest('[data-doc-locked="true"]')) return;
+    if (selectedFloat && !selectedFloat.classList.contains('editing') && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+      e.preventDefault(); const step = e.shiftKey ? 1 : 0.1;
+      const moving = multiSet.size ? [...multiSet] : [selectedFloat];
+      moving.filter(f=>!f.closest('[data-doc-locked="true"]')).forEach(f=>{
+        const prop = /Left|Right/.test(e.key) ? 'left' : 'top';
+        const value = parseFloat(f.style[prop]) || 0;
+        f.style[prop] = (value + (/Left|Up/.test(e.key) ? -step : step)) + '%';
+      }); onChange(); return;
+    }
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     const active = document.activeElement;
     const typingInside = (f) => active && f.contains(active) && active !== f; // caret is in an editable island
     if (multiSet.size) {
       if ([...multiSet].some(typingInside)) return;
       e.preventDefault();
-      multiSet.forEach((f) => f.remove());
+      multiSet.forEach((f) => { if (!f.closest('[data-doc-locked="true"]')) f.remove(); });
       clearMulti();
       onChange();
       return;
@@ -1669,14 +1988,16 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       el.classList.remove('selected', 'multi', 'editing');
       el.classList.toggle('behind-text', (parseInt(el.style.zIndex, 10) || 0) < 0); // restore the hint
       const kind = el.getAttribute('data-float-kind');
-      if (kind === 'textbox') { const body = el.querySelector(':scope > .doc-float-body'); if (body) body.setAttribute('contenteditable', 'true'); }
-      else if (kind === 'table' || kind === 'text') { const inner = el.firstElementChild; if (inner) inner.setAttribute('contenteditable', 'true'); }
+      if (kind === 'textbox') { const body = el.querySelector(':scope > .doc-float-body'); if (body) body.setAttribute('contenteditable', el.closest('[data-doc-locked="true"]') ? 'false' : 'true'); }
+      else if (kind === 'table' || kind === 'text') { const inner = el.firstElementChild; if (inner) inner.setAttribute('contenteditable', el.closest('[data-doc-locked="true"]') ? 'false' : 'true'); }
     });
   }
 
   updateTableBar();
   return {
     teardown() {
+      document.removeEventListener('mouseup', endTableDrag);
+      closeAC();
       document.removeEventListener('selectionchange', reflect);
       document.removeEventListener('selectionchange', updateEditing);
       document.removeEventListener('pointermove', onFloatPointerMove);
@@ -1685,9 +2006,498 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       document.removeEventListener('keydown', onFloatKeydown);
       clearSnapGuides();
     },
-    normalizeFloats,
+    normalizeFloats, selectFloat, insertHtml,
     blurFloats, // drop any float selection / promote bar (used for click-outside + Escape)
   };
+}
+
+/* Studio tools keep application state out of saved document markup. */
+/* Structured tools use HTML metadata so saves, drafts, copies and shared history agree. */
+const DocAdvanced = (() => {
+    const defaults = { normal: { name: 'Normal', tag: 'p', font: 'Arial', size: 13, color: '#111111', line: 1.55, after: 12 }, title: { name: 'Title', tag: 'h1', font: 'Arial', size: 32, color: '#16243d', line: 1.2, after: 20 }, heading1: { name: 'Heading 1', tag: 'h1', font: 'Arial', size: 24, color: '#16243d', line: 1.25, after: 14 }, heading2: { name: 'Heading 2', tag: 'h2', font: 'Arial', size: 20, color: '#16243d', line: 1.3, after: 12 }, heading3: { name: 'Heading 3', tag: 'h3', font: 'Arial', size: 16, color: '#16243d', line: 1.35, after: 10 }, caption: { name: 'Caption', tag: 'p', font: 'Arial', size: 11, color: '#666666', line: 1.4, after: 8 } };
+    function settings(root, create = false) { let node = root.querySelector('[data-doc-settings]'); if (!node && create) {
+        node = root.ownerDocument.createElement('div');
+        node.dataset.docSettings = 'true';
+        node.hidden = true;
+        node.style.display = 'none';
+        node.contentEditable = 'false';
+        root.prepend(node);
+    } let value = {}; try {
+        value = JSON.parse(node?.dataset.docConfig || '{}');
+    }
+    catch { } return { node, value }; }
+    function write(root, value) { const { node } = settings(root, true); node.dataset.docConfig = JSON.stringify(value); }
+    function uid(prefix) { return prefix + ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().replaceAll('-', '') : Date.now().toString(36) + Math.random().toString(36).slice(2, 8)); }
+    function multipage(root) { return root.querySelectorAll('[data-doc-design-page]').length > 1 || !!root.querySelector('.doc-pagebreak,[data-doc-section][data-doc-section-break="page"]'); }
+    function refresh(root) {
+        const config = settings(root).value, styles = { ...defaults, ...config.styles };
+        root.querySelectorAll('del[data-doc-change]').forEach(el => el.contentEditable = 'false');
+        root.querySelectorAll('[data-doc-style]').forEach(el => { const s = styles[el.dataset.docStyle]; if (!s || el.closest('[data-doc-locked="true"]'))
+            return; const version = JSON.stringify(s); if (el.dataset.docStyleVersion === version)
+            return; el.dataset.docStyleVersion = version; Object.assign(el.style, { fontFamily: s.font, fontSize: s.size + 'px', color: s.color, lineHeight: String(s.line), marginBottom: s.after + 'px' }); });
+        const notes = [...root.querySelectorAll('[data-doc-footnote]')], refs = [...root.querySelectorAll('[data-doc-note-ref]')];
+        refs.forEach((ref, i) => { const note = notes.find(n => n.dataset.docFootnote === ref.dataset.docNoteRef); if (!note)
+            return; ref.textContent = String(i + 1); ref.id = 'doc-note-ref-' + ref.dataset.docNoteRef; ref.href = '#doc-note-' + ref.dataset.docNoteRef; const label = note.querySelector('[data-doc-note-number]'); if (label)
+            {label.textContent = String(i + 1) + '. ';label.href='#doc-note-ref-'+ref.dataset.docNoteRef;} note.id = 'doc-note-' + ref.dataset.docNoteRef; });
+        root.querySelectorAll('[data-doc-notes]').forEach(list => [...list.children].sort((a, b) => refs.findIndex(r => r.dataset.docNoteRef === a.dataset.docFootnote) - refs.findIndex(r => r.dataset.docNoteRef === b.dataset.docFootnote)).forEach(n => list.append(n)));
+        root.querySelectorAll('[data-doc-design-page]').forEach((page, i) => { page.setAttribute('aria-label', page.dataset.docPageName || 'Design page ' + (i + 1)); page.style.position = 'relative'; page.style.isolation = 'isolate'; page.style.breakAfter = i < root.querySelectorAll('[data-doc-design-page]').length - 1 ? 'page' : 'auto'; });
+    }
+    function finishReview(root, accept, id) { root.querySelectorAll('[data-doc-change]').forEach(el => { if (id && el.dataset.docChange !== id)
+        return; const remove = (el.tagName === 'DEL') === accept; if (remove)
+        el.remove();
+    else
+        el.replaceWith(...el.childNodes); }); refresh(root); }
+    function mount(fs, root, opts, api, getTarget, restoreRange) {
+        let activePage = null;
+        const esc = UI.esc;
+        const changed = () => { refresh(root); api.normalize(); api.change(); api.layout(); };
+        const pages = () => [...root.querySelectorAll('[data-doc-design-page]')];
+        function page() { return pages().find(p => p.dataset.docDesignPage === activePage) || getTarget()?.closest('[data-doc-design-page]') || pages()[0]; }
+        function activatePage(p) { if (!p)
+            return; activePage = p.dataset.docDesignPage; root.focus(); const r = document.createRange(); r.selectNodeContents(p.querySelector('p,h1,h2,h3,h4,h5,h6') || p); r.collapse(true); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+        function onPageClick(e) { const p = e.target.closest('[data-doc-design-page]'); if (p)
+            activePage = p.dataset.docDesignPage; }
+        root.addEventListener('click', onPageClick);
+        function cleanClone(el) { const clone = el.cloneNode(true); clone.querySelectorAll('.doc-float-handle,.doc-float-toolbar,.doc-promote-bar,.doc-snap-guide,.doc-page-guide').forEach(n => n.remove()); clone.querySelectorAll('[data-doc-node]').forEach(n => n.removeAttribute('data-doc-node')); clone.querySelectorAll('[id]').forEach(n => n.removeAttribute('id')); const walker = root.ownerDocument.createTreeWalker(clone, 128), remove = []; let n; while ((n = walker.nextNode()))
+            if (n.data.startsWith('doc-sync:'))
+                remove.push(n); remove.forEach(n => n.remove()); return clone; }
+        function newPage() { const p = root.ownerDocument.createElement('div'); p.dataset.docDesignPage = uid('p'); p.dataset.docPageName = 'Page ' + (pages().length + 1); p.style.backgroundColor = '#ffffff'; p.style.height = Math.max(20, parsePageStyle(api.snapshot().body).heightMm - 2 * parsePageStyle(api.snapshot().body).marginMm) + 'mm'; p.innerHTML = '<p><br></p>'; return p; }
+        function ensurePages() { if (pages().length)
+            return; const p = newPage(); p.replaceChildren(); [...root.childNodes].filter(n => !(n.nodeType === 1 && n.matches('[data-doc-settings],.doc-page-guide'))).forEach(n => p.append(n)); root.append(p); activePage = p.dataset.docDesignPage; }
+        function selectedBlock() { const el = getTarget(); return el?.closest('p,h1,h2,h3,h4,h5,h6,li,figcaption') || null; }
+        function section() { return getTarget()?.closest('[data-doc-section]') || null; }
+        function applyStyle(key) { let block = selectedBlock(); if (!block || block.closest('[data-doc-locked="true"]')) {
+            UI.toast('Select a text paragraph first', 'error');
+            return;
+        } const cfg = settings(root).value; cfg.styles = { ...defaults, ...cfg.styles }; write(root, cfg); const s = cfg.styles[key]; if (block.tagName.toLowerCase() !== s.tag) {
+            const next = document.createElement(s.tag);
+            [...block.attributes].forEach(a => next.setAttribute(a.name, a.value));
+            next.append(...block.childNodes);
+            block.replaceWith(next);
+            block = next;
+        } block.dataset.docStyle = key; changed(); }
+        function styleDialog(key) { const config = settings(root).value, s = { ...defaults, ...config.styles }[key]; UI.modal({ title: 'Edit ' + s.name + ' style', bodyHTML: `<label>Font<select id="ds-font">${FONTS.map(f => `<option ${s.font === f ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select></label><div class="field-row"><label>Size (px)<input id="ds-size" type="number" min="6" max="200" value="${s.size}"></label><label>Color<input id="ds-color" type="color" value="${s.color}"></label></div><div class="field-row"><label>Line height<input id="ds-line" type="number" min="0.8" max="4" step="0.05" value="${s.line}"></label><label>Space after (px)<input id="ds-after" type="number" min="0" max="200" value="${s.after}"></label></div><p class="muted">Updates every paragraph using this named style in this document.</p>`, confirmText: 'Update style', onConfirm: ov => { const num = id => Number(ov.querySelector('#ds-' + id).value), size = num('size'), line = num('line'), after = num('after'); if (!Number.isFinite(size + line + after) || size < 6 || size > 200 || line < .8 || line > 4 || after < 0 || after > 200)
+                return false; config.styles = { ...config.styles, [key]: { ...s, font: ov.querySelector('#ds-font').value, size, line, after, color: ov.querySelector('#ds-color').value } }; write(root, config); changed(); } }); }
+        function sectionDialog() { const existing = section(); UI.modal({ title: existing ? 'Section settings' : 'Insert section', bodyHTML: `<label>Section name<input id="sec-name" maxlength="100" value="${esc(existing?.dataset.docSectionName || 'Section')}"></label><div class="field-row"><label>Columns<select id="sec-cols">${[1, 2, 3].map(n => `<option ${Number(existing?.style.columnCount || 1) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label>Column gap (mm)<input id="sec-gap" type="number" min="0" max="30" value="${parseFloat(existing?.style.columnGap) || 8}"></label></div><label>Start<select id="sec-break"><option value="continuous">Continue on current page</option><option value="page" ${existing?.dataset.docSectionBreak === 'page' ? 'selected' : ''}>New page</option></select></label><div class="field-row"><label>Page width (mm)<input id="sec-w" type="number" min="50" max="1000" value="${existing?.dataset.docSectionWidth || parsePageStyle(api.snapshot().body).widthMm}"></label><label>Page height (mm)<input id="sec-h" type="number" min="50" max="1000" value="${existing?.dataset.docSectionHeight || parsePageStyle(api.snapshot().body).heightMm}"></label></div><label>Margin (mm)<input id="sec-m" type="number" min="0" max="100" value="${existing?.dataset.docSectionMargin ?? parsePageStyle(api.snapshot().body).marginMm}"></label><label>Background<input id="sec-bg" type="color" value="${existing?.dataset.docSectionBg || '#ffffff'}"></label><p class="muted">Columns flow together. A new-page section disables print grids.</p>`, confirmText: existing ? 'Apply' : 'Insert', onConfirm: ov => { const gap = Number(ov.querySelector('#sec-gap').value), w = Number(ov.querySelector('#sec-w').value), h = Number(ov.querySelector('#sec-h').value), m = Number(ov.querySelector('#sec-m').value); if (!Number.isFinite(gap + w + h + m) || gap < 0 || gap > 30 || w < 50 || w > 1000 || h < 50 || h > 1000 || m < 0 || m > 100 || m * 2 >= Math.min(w, h))
+                return false; let el = existing; if (!el) {
+                restoreRange();
+                const sel = getSelection(), r = sel?.rangeCount ? sel.getRangeAt(0) : null;
+                el = document.createElement('div');
+                el.dataset.docSection = uid('s');
+                const start = r ? (r.startContainer.nodeType === 3 ? r.startContainer.parentElement : r.startContainer) : null;
+                const first = start?.closest?.('p,h1,h2,h3,h4,h5,h6,li,table,blockquote');
+                if (first && !first.closest('[data-doc-locked="true"]')) {
+                    const siblings = [...first.parentNode.children].filter(n => n === first || r && !r.collapsed && r.intersectsNode(n));
+                    if (siblings.some(n => n.matches('[data-doc-settings],[data-doc-design-page],[data-doc-section]') || n.closest('[data-doc-locked="true"]'))) {
+                        UI.toast('Select unlocked paragraphs within one page', 'error');
+                        return false;
+                    }
+                    first.before(el);
+                    siblings.forEach(n => el.append(n));
+                }
+                else {
+                    el.innerHTML = '<p>Section content</p>';
+                    const block = selectedBlock();
+                    if (block)
+                        block.after(el);
+                    else
+                        (page() || root).append(el);
+                }
+            } el.dataset.docSectionName = ov.querySelector('#sec-name').value || 'Section'; el.dataset.docSectionBreak = ov.querySelector('#sec-break').value; el.dataset.docSectionWidth = w; el.dataset.docSectionHeight = h; el.dataset.docSectionMargin = m; el.dataset.docSectionBg = ov.querySelector('#sec-bg').value; el.style.columnCount = ov.querySelector('#sec-cols').value; el.style.columnGap = gap + 'mm'; el.style.backgroundColor = el.dataset.docSectionBg; const base = parsePageStyle(api.snapshot().body); if (w !== base.widthMm || h !== base.heightMm || m !== base.marginMm)
+                el.dataset.docSectionBreak = 'page'; el.style.breakBefore = el.dataset.docSectionBreak === 'page' ? 'page' : 'auto'; changed(); } }); }
+        function footnoteDialog() { UI.modal({ title: 'Insert footnote', bodyHTML: '<label>Note text<textarea id="fn-text" maxlength="4000" placeholder="Source or explanatory note"></textarea></label><p class="muted">Linked notes appear at the end of this document and are renumbered automatically.</p>', confirmText: 'Insert', onConfirm: ov => { const text = ov.querySelector('#fn-text').value.trim(); if (!text)
+                return false; restoreRange(); const sel = getSelection(), r = sel?.rangeCount ? sel.getRangeAt(0) : null; if (!r || !root.contains(r.startContainer) || r.startContainer.parentElement?.closest('[data-doc-locked="true"],[data-doc-notes]')) {
+                UI.toast('Place the cursor in unlocked document text first', 'error');
+                return false;
+            } const id = uid('n'), ref = document.createElement('a'); ref.dataset.docNoteRef = id; ref.style.verticalAlign = 'super'; ref.style.fontSize = '.75em'; ref.textContent = '1'; r.collapse(false); r.insertNode(ref); let list = root.querySelector('[data-doc-notes]'); if (!list) {
+                list = document.createElement('div');
+                list.dataset.docNotes = 'true';
+                list.style.borderTop = '1px solid #cbd5e1';
+                list.style.marginTop = '24px';
+                (page() || root).append(list);
+            } const note = document.createElement('p'); note.dataset.docFootnote = id; const number = document.createElement('a'); number.dataset.docNoteNumber = 'true'; number.href = '#doc-note-ref-' + id; const body = document.createElement('span'); body.dataset.docNoteText = 'true'; body.textContent = text; note.append(number, body); list.append(note); changed(); } }); }
+        function trackedEdit(range, text) {
+            const start = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement, end = range.endContainer.nodeType === 1 ? range.endContainer : range.endContainer.parentElement;
+            if (start.closest('[data-doc-locked="true"],[data-doc-notes],[data-doc-toc],del') || end.closest('[data-doc-locked="true"],del'))
+                return false;
+            const a = start.closest('p,h1,h2,h3,h4,h5,h6,li,td,th,.doc-float-body'), b = end.closest('p,h1,h2,h3,h4,h5,h6,li,td,th,.doc-float-body');
+            if (a !== b || range.cloneContents().querySelector('[data-doc-change],[data-doc-note-ref],.doc-chip,.doc-float,img,table'))
+                return false;
+            const insertion = start.closest('ins[data-doc-change]');
+            if (insertion && insertion.contains(end)) {
+                range.deleteContents();
+                const node = document.createTextNode(text);
+                range.insertNode(node);
+                range.setStart(node,node.length);
+                range.collapse(true);
+                if (!insertion.textContent){range.setStartBefore(insertion);range.collapse(true);insertion.remove();}
+            }
+            else {
+                const id = uid('c'), author = settings(root).value.reviewAuthor || opts.reviewAuthor || 'Editor', date = new Date().toISOString();
+                if (!range.collapsed) {
+                    const del = document.createElement('del');
+                    del.dataset.docChange = id;
+                    del.dataset.docAuthor = author;
+                    del.dataset.docDate = date;
+                    del.contentEditable = 'false';
+                    del.append(range.extractContents());
+                    range.insertNode(del);
+                    range.setStartAfter(del);
+                    range.collapse(true);
+                }
+                if (text) {
+                    const ins = document.createElement('ins');
+                    ins.dataset.docChange = id;
+                    ins.dataset.docAuthor = author;
+                    ins.dataset.docDate = date;
+                    ins.textContent = text;
+                    range.insertNode(ins);
+                    range.setStart(ins.firstChild,ins.firstChild.length);
+                    range.collapse(true);
+                }
+            }
+            const sel = getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            changed();
+            return true;
+        }
+        function beforeInput(e) {
+            if (!settings(root).value.trackChanges || e.defaultPrevented)
+                return;
+            const sel = getSelection();
+            if (!sel?.rangeCount)
+                return;
+            const r = sel.getRangeAt(0).cloneRange();
+            if (!root.contains(r.commonAncestorContainer))
+                return;
+            if (e.isComposing || e.inputType === 'insertCompositionText') {
+                e.preventDefault();
+                UI.toast('Turn tracking off to use composition input; existing changes stay available for review', 'error');
+                return;
+            }
+            const type = e.inputType || '';
+            if (!/^(insertText|insertReplacementText|deleteContentBackward|deleteContentForward|deleteByCut|insertFromPaste)$/.test(type)) {
+                if (type.startsWith('insert') || type.startsWith('delete')) {
+                    e.preventDefault();
+                    UI.toast('Tracking supports text and paste within a paragraph. Turn it off for structural edits.', 'error');
+                }
+                return;
+            }
+            if (type === 'insertFromPaste')
+                return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (r.collapsed && type.startsWith('delete')) {
+                const n = r.startContainer, offset = r.startOffset;
+                if (n.nodeType !== 3) {
+                    UI.toast('Select text to track its deletion', 'error');
+                    return;
+                }
+                const backwards = type === 'deleteContentBackward';
+                let target = offset + (backwards ? -1 : 1);
+                if (target < 0 || target > n.length)
+                    return;
+                if (backwards && target > 0 && /[\uDC00-\uDFFF]/.test(n.data[target]))
+                    target--;
+                if (!backwards && target < n.length && /[\uDC00-\uDFFF]/.test(n.data[target]))
+                    target++;
+                if (backwards)
+                    r.setStart(n, target);
+                else
+                    r.setEnd(n, target);
+            }
+            if (!trackedEdit(r, type.startsWith('insert') ? e.data || '' : ''))
+                UI.toast('Select plain text within one unlocked paragraph for a tracked edit', 'error');
+        }
+        function paste(e) { if (!settings(root).value.trackChanges)
+            return; e.preventDefault(); e.stopImmediatePropagation(); const sel = getSelection(); if (sel?.rangeCount && !trackedEdit(sel.getRangeAt(0).cloneRange(), e.clipboardData?.getData('text/plain') || ''))
+            UI.toast('Paste tracked text inside one unlocked paragraph', 'error'); }
+        root.addEventListener('beforeinput', beforeInput, true);
+        root.addEventListener('paste', paste, true);
+        function render(tab, panel) {
+            const cfg = settings(root).value;
+            if (tab === 'Styles') {
+                const styles = { ...defaults, ...cfg.styles };
+                panel.innerHTML = '<h3>Document styles</h3><p>Apply a named style, then edit it to update matching paragraphs together.</p>' + Object.entries(styles).map(([key, s]) => `<div class="doc-prop-grid"><button data-adv="style-apply" data-style-key="${key}">${esc(s.name)}</button><button data-adv="style-edit" data-style-key="${key}">Edit</button></div>`).join('') + '<h3>Numbering</h3><p>Use numbered lists and Indent / Outdent for nested levels.</p><button data-adv="multilevel">Hierarchical numbering</button>';
+                return true;
+            }
+            if (tab === 'Review') {
+                const groups = new Map();
+                root.querySelectorAll('[data-doc-change]').forEach(el => { const id = el.dataset.docChange; if (!groups.has(id))
+                    groups.set(id, []); groups.get(id).push(el); });
+                panel.innerHTML = `<h3>Track text changes</h3><label>Reviewer name<input data-adv-author maxlength="100" value="${esc(cfg.reviewAuthor || opts.reviewAuthor || 'Editor')}"></label><label><input type="checkbox" data-adv-tracking ${cfg.trackChanges ? 'checked' : ''} style="width:auto"> Track typing, paste and deletion</label><p>Changes within one paragraph are tracked. Turn tracking off for tables, objects, paragraph breaks or composition input. Prints use the proposed final text.</p><div class="doc-prop-grid"><button data-adv="review-all-accept">Accept all</button><button data-adv="review-all-reject">Reject all</button></div><button data-adv="compare">Compare with opened document</button><h3>${groups.size} pending change${groups.size === 1 ? '' : 's'}</h3>` + [...groups].map(([id, els]) => `<div class="doc-review-card"><strong>${esc(els[0].dataset.docAuthor || 'Editor')}</strong><p>${esc(els.map(el => (el.tagName === 'DEL' ? 'Removed: ' : 'Added: ') + el.textContent).join(' → ').slice(0, 400))}</p><div class="doc-prop-grid"><button data-adv="review-accept" data-change-id="${id}">Accept</button><button data-adv="review-reject" data-change-id="${id}">Reject</button></div></div>`).join('');
+                return true;
+            }
+            if (tab === 'Pages') {
+                const all = pages(), current = page();
+                panel.innerHTML = `<h3>Design pages</h3><p>Each design page has its own objects and background. Two or more pages disable grid printing.</p><button data-adv="page-add">${all.length ? 'Add page' : 'Create design pages'}</button>` + (all.length ? `<div class="doc-prop-grid"><button data-adv="page-copy">Duplicate page</button><button data-adv="page-delete" ${all.length === 1 ? 'disabled' : ''}>Delete page</button><button data-adv="page-up">Move earlier</button><button data-adv="page-down">Move later</button></div><label>Page name<input data-adv-page-name maxlength="100" value="${esc(current?.dataset.docPageName || '')}"></label><label>Background<input data-adv-page-bg type="color" value="${current?.dataset.docPageBg || '#ffffff'}"></label>` : '') + all.map((p, i) => `<button data-adv="page-select" data-page-id="${p.dataset.docDesignPage}" aria-pressed="${p === current}">${i + 1}. ${esc(p.dataset.docPageName || 'Page')}</button>`).join('') + '<h3>Document flow</h3><button data-do="pageview">Open measured page view</button><button data-do="pagebreak">Insert page break</button><button data-do="header">Insert repeating header</button><button data-do="footer">Insert repeating footer</button><button data-do="pagenumber">Insert page number</button><button data-adv="section">Section / columns</button><button data-adv="footnote">Insert footnote</button><button data-do="overflow">Check overflow</button><div data-issues role="status"></div>';
+                return true;
+            }
+            return false;
+        }
+        async function action(button) {
+            const key = button.dataset.adv;
+            if (!key)
+                return false;
+            api.beforeEdit?.();
+            if (key === 'style-apply')
+                applyStyle(button.dataset.styleKey);
+            if (key === 'style-edit')
+                styleDialog(button.dataset.styleKey);
+            if (key === 'multilevel') {
+                const block = selectedBlock(), list = block?.closest('ol');
+                if (!list) {
+                    UI.toast('Select a numbered list first', 'error');
+                    return true;
+                }
+                list.dataset.docNumbering = 'hierarchical';
+                changed();
+            }
+            if (key === 'section')
+                sectionDialog();
+            if (key === 'footnote')
+                footnoteDialog();
+            if (key.startsWith('review-')) {
+                finishReview(root, key.endsWith('accept'), button.dataset.changeId);
+                changed();
+            }
+            if (key === 'compare') {
+                const original = document.createElement('div'), current = document.createElement('div');
+                original.innerHTML = bodyToEditorHtml(parsePageStyle(opts.body || '').rest);
+                current.innerHTML = serializeEditor(root);
+                original.querySelectorAll('[data-doc-settings],style').forEach(n => n.remove());
+                current.querySelectorAll('[data-doc-settings],style').forEach(n => n.remove());
+                finishReview(current, true);
+                UI.modal({ title: 'Compare document text', bodyHTML: `<p class="muted">Compares text with the document opened at the start of this session. Layout and formatting are not compared.</p><div class="field-row"><label>Opened document<textarea readonly>${esc(original.textContent)}</textarea></label><label>Current proposed text<textarea readonly>${esc(current.textContent)}</textarea></label></div>`, confirmText: 'Done', onConfirm: () => true });
+            }
+            if (key === 'page-add') {
+                if (pages().length >= 100) {
+                    UI.toast('A design can contain up to 100 pages', 'error');
+                    return true;
+                }
+                if (!pages().length) {
+                    ensurePages();
+                }
+                else {
+                    const p = newPage();
+                    (page() || pages().at(-1)).after(p);
+                    activatePage(p);
+                }
+                changed();
+            }
+            if (key === 'page-copy') {
+                if (pages().length >= 100)
+                    return true;
+                const original = page();
+                if (original) {
+                    const p = cleanClone(original);
+                    p.dataset.docDesignPage = uid('p');
+                    p.dataset.docPageName = (original.dataset.docPageName || 'Page') + ' copy';
+                    const noteMap=new Map();
+                    p.querySelectorAll('[data-doc-note-ref]').forEach(ref=>{const old=ref.dataset.docNoteRef;let note=[...p.querySelectorAll('[data-doc-footnote]')].find(n=>n.dataset.docFootnote===old);if(!note){const originalNote=[...root.querySelectorAll('[data-doc-footnote]')].find(n=>n.dataset.docFootnote===old);if(originalNote){let list=p.querySelector('[data-doc-notes]');if(!list){list=document.createElement('div');list.dataset.docNotes='true';p.append(list);}note=cleanClone(originalNote);list.append(note);}}if(note){const id=noteMap.get(old)||uid('n');noteMap.set(old,id);ref.dataset.docNoteRef=id;note.dataset.docFootnote=id;}});
+                    original.after(p);
+                    activatePage(p);
+                    changed();
+                }
+            }
+            if (key === 'page-delete' && pages().length > 1) {
+                const p = page();
+                if (p && await UI.confirmDialog('Delete this page and its content? Undo can restore it.', 'Delete page')) {
+                    p.remove();
+                    activePage = pages()[0].dataset.docDesignPage;
+                    changed();
+                }
+            }
+            if (key === 'page-up' || key === 'page-down') {
+                const p = page(), all = pages(), i = all.indexOf(p);
+                if (key === 'page-up' && i > 0)
+                    all[i - 1].before(p);
+                if (key === 'page-down' && i < all.length - 1)
+                    all[i + 1].after(p);
+                changed();
+            }
+            if (key === 'page-select') {
+                activePage = button.dataset.pageId;
+                const p = page();
+                p?.scrollIntoView?.({ block: 'center' });
+                if (p) {
+                    const r = document.createRange();
+                    r.selectNodeContents(p);
+                    r.collapse(true);
+                    const s = getSelection();
+                    s.removeAllRanges();
+                    s.addRange(r);
+                    root.focus();
+                }
+            }
+            return true;
+        }
+        function input(e) { const cfg = settings(root).value; if (e.target.matches('[data-adv-tracking]')) {
+            cfg.trackChanges = e.target.checked;
+            write(root, cfg);
+            changed();
+        } if (e.target.matches('[data-adv-author]')) {
+            cfg.reviewAuthor = e.target.value.trim().slice(0, 100) || 'Editor';
+            write(root, cfg);
+            changed();
+        } const p = page(); if (p && e.target.matches('[data-adv-page-name]')) {
+            p.dataset.docPageName = e.target.value.trim() || 'Page';
+            changed();
+        } if (p && e.target.matches('[data-adv-page-bg]')) {
+            p.dataset.docPageBg = e.target.value;
+            p.style.backgroundColor = e.target.value;
+            changed();
+        } }
+        return { render, action, input, close() { root.removeEventListener('click', onPageClick); root.removeEventListener('beforeinput', beforeInput, true); root.removeEventListener('paste', paste, true); } };
+    }
+    return { mount, refresh, multipage, finishReview };
+})();
+
+function mountStudio(fs, surface, opts, api) {
+  const me = typeof App !== 'undefined' && App.getMe ? App.getMe() : {};
+  const scope = location.host + ':' + (me?.tenant_id || '') + ':' + (me?.id || 'local');
+  const prefix = 'doc-studio:' + scope + ':';
+  let key = prefix + (opts.getDocumentKey?.() || opts.documentKey || opts.name || 'new');
+  const libraryKey = 'doc-library:' + scope;
+  let store = { versions: [] }, library = { styles: [], assets: [] }, timer, selected = null, range = null, disposed = false;
+  function read(k, fallback) { try { return JSON.parse(localStorage.getItem(k)) || fallback; } catch { return fallback; } }
+  store = read(key, store); library = read(libraryKey, library);
+  if (!store || typeof store !== 'object' || Array.isArray(store)) store = {versions:[]};
+  if (!library || typeof library !== 'object' || Array.isArray(library)) library = {styles:[],assets:[]};
+  if (!Array.isArray(store.versions)) store.versions = [];
+  store.versions = store.versions.filter(v=>v && typeof v.body==='string').slice(-20);
+  if (!Array.isArray(library.styles)) library.styles = [];
+  if (!Array.isArray(library.assets)) library.assets = [];
+  function write(k, value) { try { localStorage.setItem(k, JSON.stringify(value)); return true; } catch { note.textContent = 'Browser storage unavailable. Save your template to protect changes.'; return false; } }
+  const desk = document.createElement('div'); desk.className = 'doc-workspace';
+  const canvas = fs.querySelector('.doc-canvas'); canvas.before(desk); desk.append(canvas);
+  const side = document.createElement('aside'); side.className = 'doc-studio-side'; side.setAttribute('aria-label', 'Document tools'); desk.append(side);
+  side.innerHTML = `<nav>${['Properties','Layers','Outline','Data','Pages','Styles','Review','Library','History',...(opts.sharedStudio?['Shared']:[])].map((x,i)=>`<button type="button" data-studio-tab="${x}" aria-pressed="${!i}">${x}</button>`).join('')}</nav><div class="doc-studio-body"></div><p class="doc-studio-note" role="status"></p>`;
+  const toggle = fs.querySelector('[data-tools]');
+  side.hidden = !!window.matchMedia?.('(max-width:760px)').matches;
+  toggle.setAttribute('aria-expanded',String(!side.hidden));
+  toggle.addEventListener('click',()=>{side.hidden=!side.hidden;toggle.setAttribute('aria-expanded',String(!side.hidden));api.layout();});
+  const panel = side.querySelector('.doc-studio-body'), note = side.querySelector('.doc-studio-note'); let tab = 'Properties';
+  const style = document.createElement('style'); style.textContent = `.doc-workspace{display:flex;flex:1;min-height:0;overflow:hidden}.doc-workspace>.doc-canvas{min-width:0;flex:1}.doc-studio-side{width:280px;flex-shrink:0;background:var(--surface,#fff);border-left:1px solid var(--border,#ddd);overflow:auto;font-size:12px;color:var(--text,#222)}.doc-studio-side nav{display:grid;grid-template-columns:repeat(3,1fr);padding:8px;gap:4px;position:sticky;top:0;background:var(--surface,#fff);z-index:2}.doc-studio-side button{font:inherit;cursor:pointer;border:1px solid var(--border,#ddd);background:var(--surface,#fff);color:inherit;border-radius:var(--radius-sm,8px);padding:8px}.doc-studio-side button[aria-pressed=true]{background:var(--accent-weak,#edf3fc);color:var(--accent,#2765aa)}.doc-studio-body{padding:14px;display:flex;flex-direction:column;gap:10px}.doc-studio-body h3{font-size:14px;margin:4px 0}.doc-studio-body p{margin:0;line-height:1.6}.doc-studio-body label{display:flex;flex-direction:column;gap:5px;margin:0}.doc-studio-body input,.doc-studio-body textarea{font-weight:400!important}.doc-studio-body input,.doc-studio-body select,.doc-studio-body textarea{box-sizing:border-box;width:100%;padding:7px;border:1px solid var(--border,#ddd);border-radius:var(--radius-sm,8px);color:inherit;background:var(--surface,#fff);font:inherit}.doc-studio-body textarea{min-height:130px}.doc-prop-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.doc-layer{display:flex;gap:4px;align-items:center}.doc-layer>button{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis}.doc-layer input{width:auto}.doc-studio-note{padding:12px;margin:0;font-size:11px;color:var(--text-muted,#666)}.doc-page [data-doc-locked=true]{cursor:default}.doc-page-guide{position:absolute;left:0;right:0;border-top:1px dashed #91a4bb;pointer-events:none;z-index:1002;font:11px system-ui;color:#60718a}.doc-page .doc-pagebreak{border-top:1px dashed #91a4bb;height:20px;margin:12px 0}.doc-page .doc-pagebreak:after{content:'Page break';font:11px system-ui;color:#60718a}.doc-page [data-doc-hidden=true]{display:none!important}@media(max-width:1000px){.doc-studio-side{width:230px}}@media(max-width:760px){.doc-workspace{flex-direction:column}.doc-studio-side{width:100%;max-height:220px;border-left:0;border-top:1px solid var(--border,#ddd)}.doc-studio-side nav{grid-template-columns:repeat(6,1fr)}.doc-studio-body{padding:10px}.doc-studio-body .doc-prop-grid{grid-template-columns:repeat(4,1fr)}}`;
+  fs.append(style);
+  const esc = (x) => escAttr(String(x ?? ''));
+  const floats = () => [...surface.querySelectorAll('.doc-float')];
+  const target = () => selected?.isConnected ? selected : null;
+  function remember() { const s = window.getSelection(); if (s?.rangeCount && surface.contains(s.anchorNode)) range = s.getRangeAt(0).cloneRange(); }
+  function selection() { remember(); const s = window.getSelection(); let node = s?.anchorNode; if (node?.nodeType === 3) node = node.parentElement; if (node && node !== surface && surface.contains(node)) selected = node.closest('.doc-float') || node.closest('img,p,h1,h2,h3,h4,h5,h6,td,th,li,div') || node; }
+  function restoreRange() { surface.focus(); if (range && surface.contains(range.startContainer)) { const s = window.getSelection(); s.removeAllRanges(); s.addRange(range); } }
+  function insert(html) { restoreRange(); api.insert(html); }
+  function changed() { api.change(); guides(); }
+  function field(label, prop, value, type='number') { if(type==='number'&&Number.isFinite(Number(value)))value=Math.round(Number(value)*100)/100; return `<label>${label}<input data-prop="${prop}" type="${type}" value="${esc(value)}" ${type==='number'?'step="0.5"':''}></label>`; }
+  const advanced=DocAdvanced.mount(fs,surface,opts,api,target,restoreRange);
+  function render() {
+    side.querySelectorAll('[data-studio-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.studioTab===tab)));
+    if(advanced.render(tab,panel))return;
+    const el = target();
+    if (tab === 'Properties') {
+      panel.innerHTML = `<h3>${el ? 'Selected '+(el.dataset.floatKind || el.tagName.toLowerCase()) : 'Select text or an object'}</h3><p>Click text to edit it. Use Layers to select an object without moving it.</p>`;
+      if (!el) return;
+      const css = getComputedStyle(el), isFloat = el.classList.contains('doc-float');
+      const font = ['Segoe UI','Arial','Georgia','Times New Roman','Courier New'].find(f=>css.fontFamily.includes(f));
+      panel.innerHTML += `<div class="doc-prop-grid">${isFloat ? field('X (%)','left',parseFloat(el.style.left)||0)+field('Y (%)','top',parseFloat(el.style.top)||0)+field('Width (%)','width',parseFloat(el.style.width)||20)+field('Height (%)','height',parseFloat(el.style.height)||10)+field('Rotation (°)','rotate',parseFloat(el.style.rotate)||0)+field('Opacity (0–1)','opacity',el.style.opacity===''?1:Number(el.style.opacity))+field('Corner radius (px)','borderRadius',parseFloat(el.style.borderRadius)||0) : ''}${field('Font (px)','fontSize',parseFloat(css.fontSize)||13)+field('Line height','lineHeight',parseFloat(css.lineHeight)/parseFloat(css.fontSize)||1.55)+field('Padding (px)','padding',parseFloat(css.padding)||0)+field('Spacing below (px)','marginBottom',parseFloat(css.marginBottom)||0)}</div>${field('Text color','color',css.color,'text')}${field('Background','backgroundColor',el.style.backgroundColor || 'transparent','text')}<label>Font<select data-prop="fontFamily">${['Segoe UI','Arial','Georgia','Times New Roman','Courier New'].map(f=>`<option ${font===f?'selected':''}>${f}</option>`).join('')}</select></label><label>Alignment<select data-prop="textAlign">${['left','center','right','justify'].map(f=>`<option ${css.textAlign===f?'selected':''}>${f}</option>`).join('')}</select></label>${el.tagName==='IMG'||el.dataset.floatKind==='image'?'<button data-do="picture">Picture settings</button>':''}<button data-do="duplicate">Duplicate object / block</button>${isFloat?'<h3>Align to page</h3><div class="doc-prop-grid"><button data-do="align-left">Left</button><button data-do="align-center">Center</button><button data-do="align-right">Right</button><button data-do="align-top">Top</button><button data-do="align-middle">Middle</button><button data-do="align-bottom">Bottom</button><button data-do="distribute-x">Space horizontally</button><button data-do="distribute-y">Space vertically</button></div>':''}`;
+    } else if (tab === 'Outline') {
+      panel.innerHTML='<h3>Document outline</h3><p>Use heading styles to organize your document.</p><button data-do="contents">Insert contents list</button><p>Contents links update with headings. Page numbers appear after measured pagination in Preview / print.</p>'+[...surface.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((h,i)=>`<button data-outline="${i}" style="text-align:left;margin-left:${(Number(h.tagName.slice(1))-1)*8}px">${esc(h.textContent||'Untitled heading')}</button>`).join('');
+    } else if (tab === 'Layers') {
+      panel.innerHTML = '<h3>Objects</h3><p>Highest layer first. Hidden objects are also hidden when printed.</p>'+floats().sort((a,b)=>(+b.style.zIndex||0)-(+a.style.zIndex||0)).map((f)=>`<div class="doc-layer"><button data-layer="${floats().indexOf(f)}" aria-pressed="${f===el}">${esc(f.dataset.docName || f.dataset.floatKind || 'Object')}</button><label title="Visible"><input type="checkbox" data-visible="${floats().indexOf(f)}" ${f.dataset.docHidden!=='true'?'checked':''}>Show</label><label title="Locked"><input type="checkbox" data-lock="${floats().indexOf(f)}" ${f.dataset.docLocked==='true'?'checked':''}>Lock</label></div>`).join('') + (el?.classList.contains('doc-float') ? `${field('Object name','docName',el.dataset.docName || '', 'text')}<div class="doc-prop-grid"><button data-do="forward">Forward</button><button data-do="back">Backward</button><button data-do="group">Group selected</button><button data-do="ungroup">Ungroup</button></div>`:'');
+    } else if (tab === 'Data') {
+      const vars = (opts.getVariables?.() || []).filter(v=>!/^\{\{[#/]/.test(v.token||''));
+      panel.innerHTML = `<h3>Data blocks</h3><label>Field<select data-data-field>${vars.map(v=>`<option value="${esc(String(v.token||v.key).replace(/^\{\{|\}\}$/g,''))}">${esc(v.label||v.key)}</option>`).join('')}</select></label><div class="doc-prop-grid"><button data-do="variable">Insert field</button><button data-do="conditional">Conditional block</button></div><label>Repeat collection<input data-collection placeholder="items" value="items"></label><button data-do="repeat">Insert repeating table</button><button data-do="validate">Check fields and formulas</button>${opts.loadPreviewRecord ? '<label>Real record ID<input data-record-id type="number" min="1" placeholder="Record ID"></label><button data-do="loadRecord">Load real record</button>' : ''}<label>Preview scenario<select data-scenario><option value="sample">Sample data</option><option value="long">Long text</option><option value="empty">Missing values / empty tables</option><option value="large">Large tables (50 rows)</option><option value="custom">Custom / real record JSON</option></select></label><label>Record context (JSON)<textarea data-context placeholder='{"order":{"customer_name":"..."},"items":[]}'></textarea></label><button data-do="context">Apply preview data</button><p>Paste a real record’s template context here. This data is used only for preview and is not saved in the template.</p><div data-issues role="status"></div>`;
+      panel.querySelector('[data-scenario]').value = api.scenario();
+    } else if (tab === 'Pages') {
+      panel.innerHTML = '<h3>Page layout</h3><p>Dashed guides estimate paper boundaries. Preview checks actual printed flow. Table headers repeat across printed pages.</p><button data-do="pageview">Open measured page view</button><button data-do="pagebreak">Insert page break</button><button data-do="header">Insert repeating header</button><button data-do="footer">Insert repeating footer</button><button data-do="pagenumber">Insert page number</button><button data-do="overflow">Check overflow</button><div data-issues role="status"></div>';
+    } else if (tab === 'History') {
+      panel.innerHTML = '<h3>History on this browser</h3><p>Drafts and up to 20 saved checkpoints are stored on this device. Restore creates an undo step.</p><button data-do="checkpoint">Create checkpoint</button>' + (store.draft ? `<button data-do="recover">Recover draft · ${esc(new Date(store.draft.at).toLocaleString())}</button><button data-do="discardDraft">Delete draft</button>`:'') + store.versions.slice().reverse().map((v,i)=>`<button data-version="${store.versions.length-1-i}">${esc(v.label || 'Saved checkpoint')} · ${esc(new Date(v.at).toLocaleString())}</button>`).join('');
+    } else if (tab === 'Shared') {
+      panel.innerHTML = '<h3>Shared document</h3>';
+    } else {
+      panel.innerHTML = '<h3>Styles & assets on this browser</h3><label>Name<input data-library-name placeholder="Brand heading / logo"></label><button data-do="saveStyle">Save selected style</button><button data-do="saveAsset">Save selected object / block</button><h3>Styles</h3>'+library.styles.map((s,i)=>`<div class="doc-layer"><button data-style="${i}">${esc(s.name)}</button><button data-remove-style="${i}" aria-label="Delete style">×</button></div>`).join('')+'<h3>Assets</h3>'+library.assets.map((s,i)=>`<div class="doc-layer"><button data-asset="${i}">${esc(s.name)}</button><button data-remove-asset="${i}" aria-label="Delete asset">×</button></div>`).join('');
+    }
+    if (opts.sharedStudio) api.shared?.()?.renderInto(panel,tab);
+  }
+  function checkpoint(label='Checkpoint', value=api.snapshot()) { store.versions.push({...value,at:Date.now(),label}); store.versions=store.versions.slice(-20); write(key,store); }
+  function recover(value) { if (!value?.body || typeof value.body!=='string') return; api.restore(value); selected=null; render(); guides(); }
+  function issues(messages) { const out=panel.querySelector('[data-issues]'); if(out) { out.replaceChildren(...messages.map(msg=>{const p=document.createElement('p');p.textContent=msg;return p;})); } }
+  function validate() {
+    const body=api.body(), known=new Set((opts.getVariables?.()||[]).map(v=>String(v.token||v.key).replace(/^\{\{|\}\}$/g,'').trim())), stack=[], warnings=[];
+    for (const match of body.matchAll(/\{\{\s*([^}]+)\s*\}\}/g)) {
+      const token=match[1].trim();
+      if(token.startsWith('#')) stack.push(token.slice(1).split(/\s/)[0]);
+      else if(token.startsWith('/')) { if(stack.pop()!==token.slice(1)) warnings.push('Unmatched block: '+token); }
+      else if(token.startsWith('=')) { try { if(typeof evalFormula==='function') evalFormula(token.slice(1),api.context()); } catch(e) {warnings.push('Formula: '+e.message);} }
+      else if(known.size && !known.has(token) && !stack.some(x=>x!=='if') && !/^today$/.test(token)) warnings.push('Unknown field: '+token);
+      else if(!stack.some(x=>x!=='if') && !token.startsWith('=')) {const value=token.split('.').reduce((v,k)=>v?.[k],api.context());if(value==null||value==='')warnings.push('Missing preview value: '+token);}
+    }
+    stack.forEach(x=>warnings.push('Unclosed block: '+x)); issues([...new Set(warnings)].slice(0,30).concat(warnings.length?[]:['No field or block issues found. Preview with real data before printing.']));
+  }
+  function group() {
+    const members=[...surface.querySelectorAll('.doc-float.multi')]; if(elLocked(target())) return;
+    if(members.length<2) { note.textContent='Shift-click two or more objects before grouping.'; return; }
+    const frame=members[0].closest('[data-doc-design-page]')||surface;if(members.some(f=>(f.closest('[data-doc-design-page]')||surface)!==frame)){note.textContent='Group objects on the same page.';return;}const page=frame.getBoundingClientRect(); if(!page.width||!page.height) return;
+    const boxes=members.map(f=>f.getBoundingClientRect()); const left=Math.min(...boxes.map(b=>b.left)),top=Math.min(...boxes.map(b=>b.top)),right=Math.max(...boxes.map(b=>b.right)),bottom=Math.max(...boxes.map(b=>b.bottom));
+    if(right===left||bottom===top||members.some(elLocked)) return;
+    const g=document.createElement('div');g.className='doc-float';g.dataset.floatKind='group';g.style.cssText=`position:absolute;left:${(left-page.left)/page.width*100}%;top:${(top-page.top)/page.height*100}%;width:${(right-left)/page.width*100}%;height:${(bottom-top)/page.height*100}%;z-index:${Math.max(...members.map(f=>+f.style.zIndex||1))}`;
+    members.forEach((f,i)=>{const b=boxes[i];f.style.left=(b.left-left)/(right-left)*100+'%';f.style.top=(b.top-top)/(bottom-top)*100+'%';f.style.width=b.width/(right-left)*100+'%';f.style.height=b.height/(bottom-top)*100+'%';f.querySelectorAll('.doc-float-toolbar,.doc-float-handle').forEach(n=>n.remove());f.classList.remove('selected','multi','editing');g.append(f);});frame.append(g);api.normalize();selected=g;api.select(g);changed();render();
+  }
+  function elLocked(el) { return el?.closest('[data-doc-locked="true"]'); }
+  function ungroup(el) { if(el?.dataset.floatKind!=='group'||elLocked(el)) return; const frame=el.closest('[data-doc-design-page]')||surface;const outer=frame.getBoundingClientRect(); const children=[...el.children].filter(f=>f.classList.contains('doc-float'));const boxes=children.map(f=>f.getBoundingClientRect());if(!outer.width||!outer.height)return;children.forEach((f,i)=>{const b=boxes[i];f.style.left=(b.left-outer.left)/outer.width*100+'%';f.style.top=(b.top-outer.top)/outer.height*100+'%';f.style.width=b.width/outer.width*100+'%';f.style.height=b.height/outer.height*100+'%';frame.append(f);});el.remove();selected=null;api.normalize();changed();render(); }
+  panel.addEventListener('change',e=>{
+    advanced.input(e);
+    const el=target(), input=e.target;
+    if(input.dataset.visible!==undefined||input.dataset.lock!==undefined) { const f=floats()[+(input.dataset.visible??input.dataset.lock)];if(!f)return;if(input.dataset.visible!==undefined)f.dataset.docHidden=String(!input.checked);else { f.dataset.docLocked=String(input.checked);api.normalize(); }changed();return; }
+    if(input.dataset.scenario!==undefined) {api.setScenario(input.value);return;}
+    const prop=input.dataset.prop;if(!prop||!el||elLocked(el))return;
+    if(prop==='docName')el.dataset.docName=input.value.slice(0,100);
+    else { let value=input.value;if(input.type==='number') {const n=Number(value);if(!Number.isFinite(n)||( ['width','height','fontSize','lineHeight'].includes(prop)&&n<=0))return;if(prop==='opacity'&&(n<0||n>1))return;if(prop==='rotate'&&(n< -360||n>360))return;value=n+(['left','top','width','height'].includes(prop)?'%':prop==='rotate'?'deg':['lineHeight','opacity'].includes(prop)?'':'px');}if(typeof CSS !== 'undefined' && CSS.supports && !CSS.supports(prop.replace(/[A-Z]/g,x=>'-'+x.toLowerCase()),value)) {note.textContent='Enter a valid value.';return;}el.style[prop]=value;if(prop==='borderRadius'&&['image','shape-rect','shape-oval','shape-line'].includes(el.dataset.floatKind)&&el.firstElementChild)el.firstElementChild.style.borderRadius='inherit'; }changed();
+  });
+  panel.addEventListener('click', async e=>{
+    const b=e.target.closest('button');if(!b)return;if(b.dataset.adv){await advanced.action(b);render();return;}const el=target();
+    if(b.dataset.outline!==undefined){const h=surface.querySelectorAll('h1,h2,h3,h4,h5,h6')[Number(b.dataset.outline)];if(h){h.scrollIntoView?.({block:'center',behavior:'smooth'});surface.focus();const r=document.createRange();r.selectNodeContents(h);r.collapse(true);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);}return;}
+    if(b.dataset.layer!==undefined){selected=floats()[+b.dataset.layer];if(selected){api.select(selected);selected.scrollIntoView?.({block:'nearest'});}render();return;}
+    if(b.dataset.version!==undefined){recover(store.versions[+b.dataset.version]);return;}
+    if(b.dataset.removeStyle!==undefined||b.dataset.removeAsset!==undefined){library[b.dataset.removeStyle!==undefined?'styles':'assets'].splice(+(b.dataset.removeStyle??b.dataset.removeAsset),1);write(libraryKey,library);render();return;}
+    if(b.dataset.style!==undefined){if(el&&!elLocked(el)){const s=library.styles[+b.dataset.style];Object.entries(s.values).forEach(([k,v])=>el.style[k]=v);changed();}return;}
+    if(b.dataset.asset!==undefined){insert(library.assets[+b.dataset.asset].html);return;}
+    const action=b.dataset.do;
+    if(action==='recover')return recover(store.draft);
+    if(action==='discardDraft'){delete store.draft;write(key,store);render();return;}
+    if(action==='checkpoint'){checkpoint();render();return;}
+    if(action==='validate'){validate();return;}
+    if(action==='loadRecord'){const id=Number(panel.querySelector('[data-record-id]').value);if(!Number.isSafeInteger(id)||id<1){note.textContent='Enter a valid record ID.';return;}b.disabled=true;try{const value=await opts.loadPreviewRecord(id);if(disposed)return;api.setContext(value);panel.querySelector('[data-scenario]').value='custom';note.textContent='Real record loaded for preview.';}catch(err){if(!disposed)note.textContent=err.message || 'Could not load record';}finally{b.disabled=false;}return;}
+    if(action==='context'){try{const v=JSON.parse(panel.querySelector('[data-context]').value);if(!v||Array.isArray(v)||typeof v!=='object')throw Error('Use a JSON object');api.setContext(v);panel.querySelector('[data-scenario]').value='custom';note.textContent='Custom record applied to preview.';}catch(e){note.textContent=e.message;}return;}
+    if(action==='overflow'){const overflow=floats().filter(f=>{const bounds=(f.closest('[data-doc-design-page]')||surface).getBoundingClientRect();const b=f.getBoundingClientRect();return b.right>bounds.right+1||b.left<bounds.left-1||b.top<bounds.top-1||b.bottom>bounds.bottom+1;});issues([overflow.length?`${overflow.length} object(s) extend beyond the paper.`:'No objects extend beyond the paper.','Long text and repeated rows can add pages; check Preview.']);return;}
+    if(action==='group')return group();if(action==='ungroup')return ungroup(el);
+    if(action==='repeat'||action==='variable'||action==='conditional') {const field=panel.querySelector('[data-data-field]').value;if(action!=='repeat' && !/^[\w.]+$/.test(field)){note.textContent='Choose a simple field for this block.';return;}if(action==='variable')insert('{{'+field+'}}');else if(action==='conditional')insert(`<div>{{#if ${field}}}<p>Conditional content</p>{{/if}}</div>`);else{const collection=panel.querySelector('[data-collection]').value.trim();if(!/^[\w.]+$/.test(collection)){note.textContent='Enter a collection name such as items.';return;}insert(`<table class="doc-table"><thead><tr><th>Description</th></tr></thead><tbody>{{#${collection}}}<tr><td>{{name}}</td></tr>{{/${collection}}}</tbody></table>`);}return;}
+    if(action?.startsWith('align-')){if(!el?.classList.contains('doc-float')||elLocked(el)){note.textContent='Select an unlocked object first.';return;}const multi=[...surface.querySelectorAll('.doc-float.multi')];const targets=multi.length>1?multi:[el];if(targets.some(elLocked)){note.textContent='Unlock selected objects first.';return;}targets.forEach(object=>{const w=parseFloat(object.style.width)||20,h=parseFloat(object.style.height)||10;const positions={left:['left',0],center:['left',(100-w)/2],right:['left',100-w],top:['top',0],middle:['top',(100-h)/2],bottom:['top',100-h]};const [prop,value]=positions[action.slice(6)];object.style[prop]=Math.max(0,value)+'%';});changed();render();return;}
+    if(action?.startsWith('distribute-')){const members=[...surface.querySelectorAll('.doc-float.multi')];if(members.length<3||members.some(elLocked)||new Set(members.map(f=>f.parentElement)).size!==1){note.textContent='Shift-click at least three unlocked objects on the same layer.';return;}const horizontal=action==='distribute-x',pos=horizontal?'left':'top',size=horizontal?'width':'height';members.sort((a,b)=>parseFloat(a.style[pos])-parseFloat(b.style[pos]));const start=parseFloat(members[0].style[pos]),end=parseFloat(members.at(-1).style[pos])+parseFloat(members.at(-1).style[size]),total=members.reduce((sum,f)=>sum+parseFloat(f.style[size]),0),gap=(end-start-total)/(members.length-1);let cursor=start;members.forEach(f=>{f.style[pos]=cursor+'%';cursor+=parseFloat(f.style[size])+gap;});changed();render();return;}
+    if(action==='contents'){if(surface.querySelector('[data-doc-toc]')){note.textContent='This document already has a contents list.';return;}const toc=document.createElement('div');toc.dataset.docToc='true';surface.prepend(toc);refreshContents(surface);changed();render();return;}
+    if(action==='picture'){const img=el?.tagName==='IMG'?el:el?.dataset.floatKind==='image'?el.querySelector('img'):null;editPicture(img,()=>{changed();render();});return;}
+    if(action==='pageview'){api.pageView();return;}
+    if(action==='pagebreak')insert('<div class="doc-pagebreak" style="break-after:page"></div><p><br></p>');
+    if(action==='header')insert('<div class="doc-running-header">Document header</div>');
+    if(action==='footer')insert('<div class="doc-running-footer">Document footer</div>');
+    if(action==='pagenumber')insert('<span class="doc-page-number"></span>');
+    if(['duplicate','forward','back','saveStyle','saveAsset'].includes(action)&&(!el||elLocked(el))){note.textContent='Select an unlocked object or text block first.';return;}
+    if(action==='duplicate'){const root=document.createElement('div');root.append(el.cloneNode(true));insert(serializeEditor(root));}
+    if(action==='forward'||action==='back'){el.style.zIndex=String((+el.style.zIndex||0)+(action==='forward'?1:-1));changed();render();}
+    if(action==='saveStyle'||action==='saveAsset'){const name=panel.querySelector('[data-library-name]').value.trim();if(!name){note.textContent='Enter a name first.';return;}if(action==='saveStyle'){const css=getComputedStyle(el),values={};['fontFamily','fontSize','fontWeight','color','backgroundColor','lineHeight','textAlign','padding','marginBottom'].forEach(k=>values[k]=css[k]);library.styles.push({name,values});library.styles=library.styles.slice(-30);}else{const root=document.createElement('div');root.append(el.cloneNode(true));library.assets.push({name,html:serializeEditor(root)});library.assets=library.assets.slice(-30);}write(libraryKey,library);render();}
+  });
+  side.querySelector('nav').addEventListener('click',e=>{const b=e.target.closest('[data-studio-tab]');if(b){remember();tab=b.dataset.studioTab;render();}});
+  // Keep the caret when tool buttons are clicked; inputs remain editable.
+  side.addEventListener('mousedown',e=>{if(e.target.closest('button'))e.preventDefault();});
+  const onSelect=()=>{if(side.contains(document.activeElement))return;if(surface.contains(window.getSelection()?.anchorNode)){selection();if(tab==='Properties')render();}};
+  document.addEventListener('selectionchange',onSelect);
+  surface.addEventListener('click',e=>{selected=e.target.closest('.doc-float')||e.target.closest('img,p,h1,h2,h3,h4,h5,h6,td,th,li');remember();if(tab==='Properties'||tab==='Layers')render();});
+  function guides(){surface.querySelectorAll('.doc-page-guide').forEach(n=>n.remove());if(surface.querySelector('[data-doc-design-page]'))return;const h=parseFloat(surface.style.minHeight);if(!h)return;const count=Math.min(100,Math.ceil(surface.scrollHeight/h));for(let i=1;i<count;i++){const g=document.createElement('div');g.className='doc-page-guide';g.contentEditable='false';g.style.top=i*h+'px';g.textContent='Page '+(i+1)+' · approximate flow';surface.append(g);}}
+  const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(guides):null;observer?.observe(surface);
+  if (opts.body && store.versions.at(-1)?.body.replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim() !== api.body().replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim()) checkpoint('Opened template');
+  render();guides();if(store.draft){note.textContent='An unsaved draft is available in History.';tab='History';render();}
+  return { change(){clearTimeout(timer);timer=setTimeout(()=>{if(disposed)return;store.draft={...api.snapshot(),at:Date.now()};if(write(key,store))note.textContent='Draft saved on this browser · '+new Date().toLocaleTimeString();guides();},700);}, saved(value,unchanged){checkpoint('Saved template',value);if(unchanged){clearTimeout(timer);delete store.draft;}const oldKey=key;key=prefix+(opts.getDocumentKey?.() || opts.documentKey || opts.name || 'new');if(write(key,store)&&oldKey!==key){try{localStorage.removeItem(oldKey);}catch{/* the migrated checkpoint is already stored */}}}, close(){advanced.close();disposed=true;clearTimeout(timer);if(api.dirty()){store.draft={...api.snapshot(),at:Date.now()};write(key,store);}observer?.disconnect();document.removeEventListener('selectionchange',onSelect);}, render, guides };
 }
 
 function open(opts = {}) {
@@ -1696,31 +2506,37 @@ function open(opts = {}) {
   const fs = document.createElement('div');
   fs.className = 'doc-fs';
   fs.innerHTML = `
-    <div class="doc-fs-bar">
-      <div class="doc-fs-bar-scroll">
-        <span class="doc-fs-title">${UI.esc(opts.title || 'Template')}</span>
-        <input class="doc-fs-name" placeholder="Template name" value="${escAttr(opts.name || '')}">
-        <select class="doc-fs-type doc-fs-type-top" title="Template type — which order type this template is used for (or Generic if it's not tied to one)">${typeOptions.map((t) => `<option value="${t}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${t}</option>`).join('')}</select>
-        ${opts.periodLabel ? `<input class="doc-fs-period" placeholder="${escAttr(opts.periodLabel)}" value="${escAttr(opts.period || '')}" title="${escAttr(opts.periodLabel)}">` : ''}
-        <div class="doc-modes"><button type="button" data-mode="visual" class="active">Visual</button><button type="button" data-mode="code">HTML / CSS</button></div>
-        <button type="button" class="btn secondary" data-preview title="Open a movable preview">👁</button>
-        <button type="button" class="btn secondary" data-managevars title="Add / rename / remove variables">⚙</button>
-        <button type="button" class="btn secondary" data-help title="Quick guide — variables, repeating rows, formulas">?</button>
-      </div>
+    <header class="doc-fs-bar">
+      <div class="doc-brand">${docIcon('document')}<div><span class="doc-brand-label">Document studio</span><span class="doc-fs-title">${UI.esc(opts.title || 'Template')}</span></div></div>
+      <div class="doc-modes" aria-label="Editing mode"><button type="button" data-mode="visual" class="active">Design</button><button type="button" data-mode="pages">Pages</button><button type="button" data-mode="code">HTML / CSS</button></div>
       <div class="doc-fs-bar-actions">
-        <button type="button" class="btn" data-save>Save</button>
-        <button type="button" class="btn secondary" data-close title="Close (Esc)">✕ Close</button>
+        <span class="doc-save-status" role="status" aria-live="polite">No unsaved changes</span>
+        <button type="button" class="btn secondary" data-file title="Import and export document" aria-label="Import and export document">${docIcon('document')}<span>File</span></button>
+        <button type="button" class="btn secondary" data-preview title="Preview document">${docIcon('preview')}<span>Preview</span></button>
+        <button type="button" class="btn secondary" data-tools aria-expanded="true">Tools</button>
+        <button type="button" class="btn secondary doc-icon-button" data-managevars title="Manage variables" aria-label="Manage variables">${docIcon('settings')}</button>
+        <button type="button" class="btn secondary doc-icon-button" data-help title="Editor guide" aria-label="Editor guide">${docIcon('help')}</button>
+        <button type="button" class="btn" data-save>${docIcon('save')}<span>Save template</span></button>
+        <button type="button" class="btn secondary doc-icon-button" data-close title="Close editor (Esc)" aria-label="Close editor">${docIcon('close')}</button>
       </div>
+    </header>
+    <div class="doc-details">
+      <label class="doc-name-field"><span>Template name <button type="button" class="doc-details-toggle" data-details aria-expanded="false" aria-label="Show document type and period">Details</button></span><input class="doc-fs-name" placeholder="Untitled template" value="${escAttr(opts.name || '')}"></label>
+      <label class="doc-secondary-details"><span>Document type</span><select class="doc-fs-type doc-fs-type-top">${typeOptions.map((t) => `<option value="${escAttr(t)}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${escAttr(t.charAt(0).toUpperCase() + t.slice(1))}</option>`).join('')}</select></label>
+      ${opts.periodLabel ? `<label class="doc-secondary-details"><span>${escAttr(opts.periodLabel)}</span><input class="doc-fs-period" placeholder="e.g. October 2026" value="${escAttr(opts.period || '')}"></label>` : ''}
     </div>
     <div class="doc-tabs" role="tablist">${tabsHTML()}</div>
     <div class="doc-panel" data-panel="home" role="toolbar" aria-label="Home">${homePanelHTML()}</div>
     <div class="doc-panel" data-panel="insert" role="toolbar" aria-label="Insert" style="display:none">${insertPanelHTML()}</div>
     <div class="doc-panel" data-panel="layout" role="toolbar" aria-label="Layout" style="display:none">${layoutPanelHTML()}</div>
     <div class="doc-panel table-panel" data-panel="table" role="toolbar" aria-label="Table tools" style="display:none">${tablePanelHTML()}</div>
-    <div class="doc-canvas"><div class="doc-zoom"><div class="doc-page doc-surface" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document body"></div></div></div>
-    <div class="doc-code doc-code-cm" style="display:none"></div>`;
+    <div class="doc-canvas"><div class="doc-zoom"><div class="doc-page doc-surface doc-content" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document body"></div></div></div>
+    <div class="doc-code doc-code-cm" style="display:none"></div>
+    <footer class="doc-statusbar"><span>${docIcon('document')}<span class="doc-page-info"></span></span><span class="doc-word-count" aria-label="Document word count"></span><span class="doc-workspace-hint">Select an object to move or resize · Ctrl / ⌘ S to save</span><span class="doc-zoom-info">100%</span></footer>`;
+  fs.querySelectorAll('button[title],select[title],input[title]').forEach((el) => { if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', el.title); });
   document.body.appendChild(fs);
 
+  fs.querySelector('[data-details]').addEventListener('click',e=>{e.preventDefault();const expanded=fs.querySelector('.doc-details').classList.toggle('details-expanded');e.currentTarget.setAttribute('aria-expanded',String(expanded));});
   const tabsEl = fs.querySelector('.doc-tabs');
   const panels = {
     home: fs.querySelector('[data-panel="home"]'),
@@ -1760,31 +2576,93 @@ function open(opts = {}) {
 
   // Snapshot-based undo/redo — built further down (needs the page-setup controls + applyZoom);
   // declared here so onChange / wireToolbar can reference it before it exists.
-  let history = null;
+  let history = null, studio = null, shared = null;
+  let blockSequence=0, blocksInitialized=false;
+  const blockPrefix=(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).replace(/-/g,'');
+  function markBlocks() {
+    if (!opts.sharedStudio || mode !== 'visual') return;
+    const selector='p,h1,h2,h3,h4,h5,h6,td,th,.doc-float-body,div';const seen=new Set();let initialIndex=0;
+    [...surface.querySelectorAll(selector)].filter(el=>!el.querySelector(selector)&&!el.closest('.doc-float-toolbar,.doc-float-handle,.doc-page-guide,.doc-promote-bar,.doc-snap-guide')).forEach(el=>{
+      let id=el.dataset.docNode;const previous=el.previousSibling;
+      if(!id && previous?.nodeType===8 && /^doc-sync:[\w-]+$/.test(previous.data))id=previous.data.slice(9);
+      if(!id||!/^[\w-]{1,100}$/.test(id)||seen.has(id))id=blocksInitialized?'u'+blockPrefix+'_'+(++blockSequence):'b'+(++initialIndex);
+      seen.add(id);el.dataset.docNode=id;
+      if(previous?.nodeType===8 && previous.data.startsWith('doc-sync:'))previous.data='doc-sync:'+id;else el.before(document.createComment('doc-sync:'+id));
+    });blocksInitialized=true;
+  }
+  let previewScenario = 'sample', customPreviewContext = null;
+  function previewContextNow() {
+    const original = (typeof opts.sampleContext === 'function' ? opts.sampleContext() : opts.sampleContext) || {};
+    if (previewScenario === 'custom') return customPreviewContext || original;
+    if (previewScenario === 'sample') return original;
+    const transform = (value) => {
+      if (Array.isArray(value)) { if (previewScenario === 'empty') return []; return Array.from({length: previewScenario === 'large' ? 50 : value.length}, (_,i)=>transform(value[i % value.length] || {})); }
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,transform(v)]));
+      if (typeof value === 'string') return previewScenario === 'empty' ? '' : previewScenario === 'long' ? value + ' — ' + value.repeat(4) : value;
+      return value;
+    }; return transform(original);
+  }
 
   // ---- HTML/CSS code mode: a real CodeMirror editor (syntax highlighting + our own
   // {{variable}}/{{=formula}} autocomplete on top of CM's built-in HTML/CSS completions) —
   // mounted lazily on first switch to code mode, since mounting into a display:none
   // container makes CM mismeasure line layout. ----
-  let cmEditor = null;
+  let cmEditor = null, settingCode = false;
   function ensureCodeEditor() {
     if (cmEditor) return cmEditor;
     if (typeof window.CMBundle === 'undefined') { UI.toast('Code editor failed to load', 'error'); return null; }
     const theme = document.documentElement.getAttribute('data-theme');
     const dark = theme === 'dark' || (!theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    cmEditor = window.CMBundle.mount(codeContainer, {
+    try { cmEditor = window.CMBundle.mount(codeContainer, {
       doc: '',
-      onChange: () => onChange(),
+      onChange: () => { if (!settingCode) onChange(); },
       getVariables: opts.getVariables,
       dark,
-    });
+    }); } catch (err) { cmEditor = null; UI.toast('Code editor failed to initialize. Your document is preserved.', 'error'); }
     return cmEditor;
   }
   const getCode = () => (cmEditor ? cmEditor.getValue() : '');
-  const setCode = (text) => { const ed = ensureCodeEditor(); if (ed) ed.setValue(text || ''); };
+  const setCode = (text) => { const ed = ensureCodeEditor(); if (!ed) return false; settingCode = true; try { ed.setValue(text || ''); return true; } catch { UI.toast('Could not open code mode. Your document is preserved.', 'error'); return false; } finally { settingCode = false; } };
+
+  function downloadFile(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  fs.querySelector('[data-file]').addEventListener('click',()=>{
+    let imported=null,sourceFile=null,importVersion=0;
+    const identity=()=>opts.getDocumentKey?.()||opts.documentKey||'new-template:export';
+    const endpoint=suffix=>'/templates/studio/documents/'+encodeURIComponent(identity())+'/'+suffix;
+    UI.modal({title:'Import and export',size:'lg',cancelText:'Close',confirmText:'Apply import',bodyHTML:`
+      <h3>Export current document</h3><p class="muted">Exports include unsaved content. Word exports document content; print-grid settings remain in this template.</p><label>Export content<select data-export-content><option value="template">Editable template fields</option><option value="preview">Current preview data</option></select></label>
+      <div class="field-row"><button type="button" class="btn secondary" data-export-word>Word (.docx)</button><button type="button" class="btn secondary" data-export-html>HTML document</button><button type="button" class="btn secondary" data-export-pdf>Print / PDF preview</button></div>
+      <div data-export-result role="status"></div><hr><h3>Import a Word document</h3><label>DOCX file (up to 8 MB)<input data-import-file type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label>
+      <label>Import mode<select data-import-mode><option value="append">Append to this document</option><option value="replace">Replace document content</option></select></label>
+      <button type="button" class="btn secondary" data-import-convert>Convert and preview</button>
+      <p class="muted">Review the conversion before applying. Your original file is unchanged; this edit can be undone.</p><div data-import-result role="status"></div>`,onOpen:ov=>{
+      const exportResult=ov.querySelector('[data-export-result]'),importResult=ov.querySelector('[data-import-result]');
+      const exportSnapshot=()=>{const snapshot=studioSnapshot();if(ov.querySelector('[data-export-content]').value==='preview'&&typeof renderTemplate==='function')snapshot.body=renderTemplate(snapshot.body,previewContextNow());if(ov.querySelector('[data-export-content]').value==='preview'){const root=document.createElement('div');root.innerHTML=protectExportBlocks(snapshot.body);DocAdvanced.finishReview(root,true);snapshot.body=restoreExportBlocks(root.innerHTML);}return snapshot;};
+      ov.querySelector('[data-export-html]').onclick=()=>{const snapshot=exportSnapshot(),page=parsePageStyle(snapshot.body);const safe=pageStyleTag(page.widthMm,page.heightMm,page.marginMm)+sanitizeExportHtml(page.rest);downloadFile(new Blob([restoreExportBlocks(UI.printableHtml(protectExportBlocks(safe),snapshot.name||'Document'))],{type:'text/html;charset=utf-8'}),(snapshot.name||'Document')+'.html');};
+      ov.querySelector('[data-export-pdf]').onclick=()=>{ov.remove();if(!previewEl)togglePreview();else refreshPreview();};
+      ov.querySelector('[data-export-word]').onclick=async e=>{
+        const button=e.currentTarget;button.disabled=true;exportResult.textContent='Preparing Word document…';
+        try{const snapshot=exportSnapshot(),page=parsePageStyle(snapshot.body);const result=await API.post(endpoint('export-docx'),{body:snapshot.body,name:snapshot.name,widthMm:page.widthMm,heightMm:page.heightMm,marginMm:page.marginMm});if(!ov.isConnected)return;
+          exportResult.replaceChildren();const report=document.createElement('p');report.textContent=result.warnings.length?'Conversion notes: '+result.warnings.join(' '):'Word document ready.';exportResult.append(report);const download=document.createElement('button');download.type='button';download.className='btn';download.textContent='Download Word document';download.onclick=()=>downloadFile(new Blob([Uint8Array.from(atob(result.data),c=>c.charCodeAt(0))],{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}),result.filename);exportResult.append(download);
+        }catch(err){exportResult.textContent=err.message;}finally{button.disabled=false;}
+      };
+      ov.querySelector('[data-import-file]').onchange=()=>{imported=null;sourceFile=null;importResult.replaceChildren();};
+      ov.querySelector('[data-import-convert]').onclick=async e=>{
+        const file=ov.querySelector('[data-import-file]').files[0];if(!file||!file.name.toLowerCase().endsWith('.docx')||file.size>8*1024*1024){importResult.textContent='Choose a DOCX file up to 8 MB.';return;}
+        const button=e.currentTarget;button.disabled=true;imported=null;sourceFile=null;importResult.textContent='Converting Word document…';const startingVersion=changeVersion;
+        try{const data=new FormData();data.append('file',file);const result=await API.upload(endpoint('import-docx'),data);if(!ov.isConnected||ov.querySelector('[data-import-file]').files[0]!==file)return;imported=result;sourceFile=file;importVersion=startingVersion;
+          importResult.replaceChildren();const report=document.createElement('p');report.textContent=result.warnings.join(' ');importResult.append(report);const frame=document.createElement('iframe');frame.title='Converted Word document preview';frame.setAttribute('sandbox','');frame.style.cssText='width:100%;height:300px;border:1px solid var(--border);border-radius:var(--radius-sm);background:white';frame.srcdoc=UI.printableHtml(sanitizeHtml(result.body),'Import preview');importResult.append(frame);const original=document.createElement('button');original.type='button';original.className='btn secondary';original.textContent='Download original file';original.onclick=()=>downloadFile(sourceFile,sourceFile.name);importResult.append(original);
+        }catch(err){importResult.textContent=err.message;}finally{button.disabled=false;}
+      };
+    },onConfirm:(ov,showErr)=>{
+      if(!imported){showErr('Choose a DOCX file, then convert and preview it first');return false;}
+      const replace=ov.querySelector('[data-import-mode]').value==='replace';if(replace&&changeVersion!==importVersion){showErr('The document changed during conversion. Convert again or append to preserve those edits.');return false;}
+      if(mode!=='visual')setMode('visual');history.flush();const html=bodyToEditorHtml(sanitizeHtml(imported.body));if(replace)surface.innerHTML=html;else surface.insertAdjacentHTML('beforeend',html);wired.normalizeFloats();onChange();history.flush();applyZoom();UI.toast('Word content imported. Review it before saving.');
+    }});
+  });
 
   // ---- movable / resizable preview (hidden until toggled) ----
-  let previewEl = null;
+  let previewEl = null, pageView = null, previewTimer = 0;
   const currentBody = () => (mode === 'code' ? getCode() : serializeEditor(surface));
   // When the Print Grid controls (copiesInp/perPageInp — declared further down; safe to
   // reference here since this function only ever RUNS after open() has finished setting them
@@ -1804,10 +2682,11 @@ function open(opts = {}) {
   // opts.renderPreview is kept only as a fallback for a caller that supplies it without
   // sampleContext.
   function refreshPreview() {
-    if (!previewEl) return;
-    const frame = previewEl.querySelector('iframe');
+    const frames=[previewEl?.querySelector('iframe'),pageView?.querySelector('iframe')].filter(Boolean);
+    if (!frames.length) return;
     try {
-      const body = currentBody();
+      const { widthMm, heightMm } = currentPageMm();
+      const body = pageStyleTag(widthMm, heightMm, Number(marginInp.value) || 0) + currentBody();
       let inner;
       let isTiled = false;
       if (opts.sampleContext && typeof renderTemplate !== 'undefined') {
@@ -1815,7 +2694,7 @@ function open(opts = {}) {
         const cols = Math.max(1, Math.min(6, parseInt(perPageInp.value, 10) || 1));
         const continuous = continuousChk.checked;
         const repeatCount = Math.max(1, Math.min(100, parseInt(repeatInp.value, 10) || 1));
-        const renderOneRecord = () => renderTemplate(body, opts.sampleContext);
+        const renderOneRecord = () => renderTemplate(body, previewContextNow());
         if ((rows > 1 || cols > 1 || (continuous && repeatCount > 1)) && typeof buildTiledPagesHtml === 'function') {
           isTiled = true;
           const { heightMm } = currentPageMm();
@@ -1826,34 +2705,41 @@ function open(opts = {}) {
           // above so a 1-record preview visually fills its whole grid either way).
           inner = buildTiledPagesHtml([1], renderOneRecord, {
             copiesPerRecord: rows, recordsPerPage: cols, tileFill: 'repeat', pageContentHeightMm: contentHeightMm,
-            continuous, repeatCount,
+            continuous, repeatCount, gapXmm:Number(gapXInp.value),gapYmm:Number(gapYInp.value),
           });
+          if(!inner){isTiled=false;inner=renderOneRecord();}
         } else {
           inner = renderOneRecord();
         }
       }
       let html;
       if (inner !== undefined && typeof UI !== 'undefined') {
-        const { widthMm, heightMm } = currentPageMm();
-        const [pageWpx] = pageDims(widthMm, heightMm);
-        html = UI.printableHtml(`<div style="width:${pageWpx}px">${inner}</div>`, 'Preview');
+        html = UI.printableHtml(inner, 'Preview');
       } else {
         html = opts.renderPreview ? opts.renderPreview(body) : '<p>No preview</p>';
       }
       // Same shrink-to-fit the real print path applies (print-tiling.js's fitTiledCells) so the
       // design-time preview shows what will actually print, not an optimistic grid that then
       // clips a too-tall cell only once you print for real.
-      frame.onload = isTiled ? () => { if (typeof fitTiledCells === 'function') fitTiledCells(frame.contentDocument); } : null;
-      frame.srcdoc = html;
-    } catch { frame.srcdoc = '<p style="color:#b00;font-family:sans-serif;padding:16px">Preview error</p>'; }
+      frames.forEach(frame=>{
+        if(UI.loadPrintFrame) UI.loadPrintFrame(frame,html,isTiled&&typeof fitTiledCells==='function'?fitTiledCells:undefined).then(result=>{
+          if(!frame.isConnected)return;
+          if(pageView?.contains(frame)){
+            pageView.querySelector('[data-pages-status]').textContent=result.warnings.length?result.warnings.join(' '):`${result.pages || 1} measured page(s) · click a block to edit in Design`;
+            frame.contentDocument.addEventListener('click',event=>{const id=event.target.closest('[data-doc-node]')?.dataset.docNode;if(!id)return;setMode('visual');const target=surface.querySelector('[data-doc-node="'+id+'"]');if(target){target.scrollIntoView({block:'center'});const range=document.createRange();range.selectNodeContents(target);range.collapse(true);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);surface.focus();}});
+          }
+        }).catch(err=>{if(pageView?.contains(frame))pageView.querySelector('[data-pages-status]').textContent=err.message;});
+        else {frame.onload=isTiled?()=>{if(typeof fitTiledCells==='function')fitTiledCells(frame.contentDocument);}:null;frame.srcdoc=html;}
+      });
+    } catch { frames.forEach(frame=>{frame.srcdoc = '<p style="color:#b00;font-family:sans-serif;padding:16px">Preview error</p>';}); }
   }
   function togglePreview() {
     if (previewEl) { previewEl.remove(); previewEl = null; return; }
     previewEl = document.createElement('div');
     previewEl.className = 'doc-preview-float';
-    previewEl.innerHTML = `<div class="doc-preview-head"><span>👁 Preview</span><div class="grow"></div>
+    previewEl.innerHTML = `<div class="doc-preview-head"><span>${docIcon('preview')} Document preview</span><div class="grow"></div>
       <button type="button" data-pv="refresh" title="Refresh">⟳</button>
-      <button type="button" data-pv="close" title="Close">✕</button></div><iframe></iframe>`;
+      <button type="button" data-pv="close" title="Close">✕</button></div><iframe title="Document preview" sandbox="allow-same-origin allow-modals"></iframe>`;
     document.body.appendChild(previewEl);
     previewEl.querySelector('[data-pv="close"]').onclick = () => togglePreview();
     previewEl.querySelector('[data-pv="refresh"]').onclick = refreshPreview;
@@ -1861,10 +2747,11 @@ function open(opts = {}) {
     const head = previewEl.querySelector('.doc-preview-head');
     head.addEventListener('mousedown', (e) => {
       if (e.target.closest('button')) return;
-      const r = previewEl.getBoundingClientRect();
+      const draggedPreview = previewEl;
+      const r = draggedPreview.getBoundingClientRect();
       const ox = e.clientX - r.left, oy = e.clientY - r.top;
       previewEl.style.right = 'auto'; previewEl.style.left = r.left + 'px'; previewEl.style.top = r.top + 'px';
-      const move = (ev) => { previewEl.style.left = Math.max(0, ev.clientX - ox) + 'px'; previewEl.style.top = Math.max(0, ev.clientY - oy) + 'px'; };
+      const move = (ev) => { if (!draggedPreview.isConnected) return; draggedPreview.style.left = Math.max(0, ev.clientX - ox) + 'px'; draggedPreview.style.top = Math.max(0, ev.clientY - oy) + 'px'; };
       const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
       document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
       e.preventDefault();
@@ -1872,8 +2759,17 @@ function open(opts = {}) {
     refreshPreview();
   }
 
-  let dirty = false;
-  const onChange = () => { dirty = true; refreshPreview(); if (history) history.scheduleRecord(); };
+  let dirty = false, saving = false, closed = false, changeVersion = 0;
+  const status = fs.querySelector('.doc-save-status');
+  const setStatus = (text, state = '') => { if (status) { status.textContent = text; status.dataset.state = state; } };
+  function updateWordCount(){const counter=fs.querySelector('.doc-word-count');if(!counter)return;const root=surface.cloneNode(true);root.querySelectorAll('.doc-chip,.doc-float-toolbar,.doc-float-handle,.doc-page-guide,.doc-snap-guide,[data-doc-hidden="true"]').forEach(el=>el.remove());root.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,td,th,div').forEach(el=>el.append(root.ownerDocument.createTextNode(' ')));const text=(root.textContent||'').trim();const count=text?text.split(/\s+/u).length:0;counter.textContent=count+' word'+(count===1?'':'s');}
+  let syncGrid=()=>{};
+  const onChange = () => { DocAdvanced.refresh(surface);syncGrid();refreshContents(surface);updateWordCount();markBlocks(); changeVersion++; dirty = true; setStatus('Unsaved changes', 'dirty'); clearTimeout(previewTimer); if(previewEl||pageView) previewTimer=setTimeout(refreshPreview,150); if (history) history.scheduleRecord(); if (studio) studio.change(); if(shared) shared.changed(); };
+  [nameInp, typeSel, periodInp].filter(Boolean).forEach((el) => {
+    el.addEventListener('input', onChange); el.addEventListener('change', onChange);
+  });
+  const onBeforeUnload = (e) => { if (dirty || saving) { e.preventDefault(); e.returnValue = ''; } };
+  window.addEventListener('beforeunload', onBeforeUnload);
   const wired = wireToolbar(panelsRoot, surface, opts.getVariables, onChange, opts.sampleContext, tabApi, getZoom,
     () => { if (history) history.undo(); }, () => { if (history) history.redo(); });
 
@@ -1895,6 +2791,8 @@ function open(opts = {}) {
   const marginInp = fs.querySelector('.doc-margin');
   const copiesInp = fs.querySelector('.doc-copies');
   const perPageInp = fs.querySelector('.doc-records-per-page');
+  const gapXInp = fs.querySelector('.doc-gap-x'), gapYInp = fs.querySelector('.doc-gap-y');
+  gapXInp.value = opts.gapXmm ?? 6; gapYInp.value = opts.gapYmm ?? 6;
   const tileFillSel = fs.querySelector('.doc-tile-fill');
   const continuousChk = fs.querySelector('.doc-continuous');
   const repeatInp = fs.querySelector('.doc-repeat');
@@ -1926,6 +2824,8 @@ function open(opts = {}) {
       : 'How many times to repeat across the page';
   }
   syncContinuousUI();
+  const gridNote=document.createElement('p');gridNote.className='doc-grid-note';gridNote.setAttribute('role','status');copiesInp.closest('.doc-group').append(gridNote);
+  syncGrid=()=>{const multi=mode==='code'?(typeof isMultiPageDocument==='function'&&isMultiPageDocument(getCode())):DocAdvanced.multipage(surface);[copiesInp,perPageInp,tileFillSel,continuousChk,repeatInp,gapXInp,gapYInp].forEach(input=>input.disabled=!!multi);gridNote.textContent=multi?'Multipage document · grid printing unavailable':'';if(multi){copiesInp.value=1;perPageInp.value=1;continuousChk.checked=false;repeatInp.value=1;syncContinuousUI();}};
 
   function currentPageMm() {
     if (sizeSel.value === 'custom') {
@@ -1943,24 +2843,27 @@ function open(opts = {}) {
     const { widthMm, heightMm } = currentPageMm();
     const [w, h] = pageDims(widthMm, heightMm);
     surface.style.width = w + 'px'; surface.style.minHeight = h + 'px';
-    surface.style.padding = Math.round((Number(marginInp.value) || 0) * PX_PER_MM) + 'px';
+    surface.style.padding = ((Number(marginInp.value) || 0) * PX_PER_MM) + 'px';
+    surface.querySelectorAll('[data-doc-design-page]').forEach(page=>page.style.height=Math.max(10,heightMm-2*(Number(marginInp.value)||0))+'mm');
+    const info = fs.querySelector('.doc-page-info');
+    if (info) info.textContent = `${sizeSel.value === 'custom' ? 'Custom' : sizeSel.value.toUpperCase()} · ${widthMm} × ${heightMm} mm`;
   };
   [sizeSel, orientSel, customWInp, customHInp, marginInp].forEach((el) =>
-    el.addEventListener('change', () => { syncSizeUI(); applyCanvas(); applyZoom(); dirty = true; refreshPreview(); if (history) history.scheduleRecord(); }));
+    el.addEventListener('change', () => { syncSizeUI(); applyCanvas(); applyZoom(); onChange(); }));
   // Print Grid controls don't touch the editing canvas — just the tiled preview (see
   // refreshPreview above) and what gets saved.
-  [copiesInp, perPageInp, tileFillSel, repeatInp].forEach((el) =>
-    el.addEventListener('change', () => { dirty = true; refreshPreview(); if (history) history.scheduleRecord(); }));
-  continuousChk.addEventListener('change', () => { syncContinuousUI(); dirty = true; refreshPreview(); if (history) history.scheduleRecord(); });
+  [copiesInp, perPageInp, tileFillSel, repeatInp, gapXInp, gapYInp].forEach((el) =>
+    el.addEventListener('change', () => { onChange(); }));
+  continuousChk.addEventListener('change', () => { syncContinuousUI(); onChange(); });
   fs.querySelector('[data-swap-wh]').addEventListener('click', () => {
     const w = customWInp.value; customWInp.value = customHInp.value; customHInp.value = w;
-    applyCanvas(); applyZoom(); dirty = true; refreshPreview(); if (history) history.scheduleRecord();
+    applyCanvas(); applyZoom(); onChange();
   });
   syncSizeUI();
   applyCanvas();
 
   surface.innerHTML = bodyToEditorHtml(pg.rest); // initial load is not a "dirty" edit
-  wired.normalizeFloats();
+  wired.normalizeFloats();DocAdvanced.refresh(surface);syncGrid();refreshContents(surface);updateWordCount();
 
   // ---- canvas zoom: Zoom group in the Layout tab, Ctrl+wheel (zoom-to-cursor), Ctrl +/-/0 ----
   const zoomWrap = fs.querySelector('.doc-zoom');
@@ -1983,6 +2886,7 @@ function open(opts = {}) {
   function applyZoom() {
     const z = zoomMode === 'fit' ? computeFit() : currentZoom;
     currentZoom = z;
+    fs.querySelector('.doc-zoom-info').textContent = Math.round(z * 100) + '%';
     surface.style.transform = Math.abs(z - 1) < 0.0005 ? '' : 'scale(' + z + ')';
     const { w, h } = naturalPageSize();
     zoomWrap.style.width = Math.round(w * z) + 'px';
@@ -2045,11 +2949,14 @@ function open(opts = {}) {
     let index = -1, timer = 0, restoring = false;
     const snapshot = () => ({
       body: serializeEditor(surface),
+      metadata: { name: nameInp.value, type: typeSel.value, period: periodInp?.value || '' },
       page: { size: sizeSel.value, orient: orientSel.value, w: customWInp.value, h: customHInp.value, margin: marginInp.value },
+      grid: { rows: copiesInp.value, cols: perPageInp.value, fill: tileFillSel.value, continuous: continuousChk.checked, repeat: repeatInp.value, gapX:gapXInp.value,gapY:gapYInp.value },
     });
     const same = (a, b) => !!a && !!b && a.body === b.body
       && a.page.size === b.page.size && a.page.orient === b.page.orient
-      && a.page.w === b.page.w && a.page.h === b.page.h && a.page.margin === b.page.margin;
+      && a.page.w === b.page.w && a.page.h === b.page.h && a.page.margin === b.page.margin
+      && JSON.stringify(a.grid) === JSON.stringify(b.grid) && JSON.stringify(a.metadata) === JSON.stringify(b.metadata);
     function updateButtons() {
       const u = fs.querySelector('[data-ex="undo"]');
       const r = fs.querySelector('[data-ex="redo"]');
@@ -2075,13 +2982,16 @@ function open(opts = {}) {
     function restore(s) {
       restoring = true;
       try {
+        nameInp.value = s.metadata.name; typeSel.value = s.metadata.type; if (periodInp) periodInp.value = s.metadata.period;
         surface.innerHTML = bodyToEditorHtml(s.body);
         wired.normalizeFloats();
         sizeSel.value = s.page.size; orientSel.value = s.page.orient;
         customWInp.value = s.page.w; customHInp.value = s.page.h; marginInp.value = s.page.margin;
-        syncSizeUI(); applyCanvas(); applyZoom();
-        dirty = true;
-        refreshPreview();
+        gapXInp.value=s.grid.gapX ?? 6;gapYInp.value=s.grid.gapY ?? 6;copiesInp.value = s.grid.rows; perPageInp.value = s.grid.cols; tileFillSel.value = s.grid.fill;
+        continuousChk.checked = s.grid.continuous; repeatInp.value = s.grid.repeat;
+        DocAdvanced.refresh(surface);syncGrid();syncContinuousUI(); syncSizeUI(); applyCanvas(); applyZoom();
+        changeVersion++; setStatus('Unsaved changes', 'dirty'); dirty = true;
+        refreshPreview(); if (studio) { studio.change(); studio.render(); }
         try { surface.focus(); } catch (e) { /* ignore */ }
       } finally { restoring = false; }
       updateButtons();
@@ -2121,17 +3031,24 @@ function open(opts = {}) {
 
   function setMode(next) {
     if (next === mode) return;
+    if(next==='pages'){
+      if(mode==='code')setMode('visual');
+      if(!pageView){pageView=document.createElement('div');pageView.className='doc-pageview';pageView.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column';pageView.innerHTML='<div style="padding:10px;background:var(--surface,#fff);font-size:12px" data-pages-status>Measuring pages…</div><iframe title="Measured document pages" sandbox="allow-same-origin allow-modals" style="flex:1;width:100%;border:0;background:#eef0f3"></iframe>';canvas.after(pageView);}
+      pageView.style.display='flex';canvas.parentElement.style.display='';canvas.style.display='none';tabsEl.style.display='none';Object.values(panels).forEach(p=>p.style.display='none');mode='pages';fs.querySelectorAll('.doc-modes button').forEach(b=>b.classList.toggle('active',b.dataset.mode===next));refreshPreview();return;
+    }
+    if(pageView){pageView.remove();pageView=null;}
+
     if (history) history.flush(); // commit any pending visual edit before leaving/re-entering
     if (next === 'code') {
       const text = serializeEditor(surface);
-      codeContainer.style.display = ''; canvas.style.display = 'none'; tabsEl.style.display = 'none';
+      codeContainer.style.display = '';
+      if (!setCode(text)) { codeContainer.style.display = 'none'; return; }
+      canvas.parentElement.style.display = 'none'; canvas.style.display = 'none'; tabsEl.style.display = 'none';
       Object.values(panels).forEach((p) => { p.style.display = 'none'; });
-      setCode(text);
       if (cmEditor) cmEditor.focus();
     } else {
-      surface.innerHTML = bodyToEditorHtml(getCode());
-      wired.normalizeFloats();
-      codeContainer.style.display = 'none'; canvas.style.display = ''; tabsEl.style.display = '';
+      if(mode==='code'){surface.innerHTML = bodyToEditorHtml(getCode());wired.normalizeFloats();}
+      codeContainer.style.display = 'none'; canvas.parentElement.style.display = ''; canvas.style.display = ''; tabsEl.style.display = '';
       switchTab(activeTab);
       applyZoom(); // content height may have changed → resize the zoom sizer
       if (history) history.record(); // the code-mode result becomes an undo step
@@ -2143,10 +3060,16 @@ function open(opts = {}) {
   fs.querySelectorAll('.doc-modes button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
   async function close(force) {
+    if (closed || saving) return;
     if (dirty && !force) { const ok = await UI.confirmDialog('Discard unsaved changes to this template?', 'Discard'); if (!ok) return; }
+    closed = true;
+    window.removeEventListener('beforeunload', onBeforeUnload);
+    if (shared) shared.close();
+    if (studio) studio.close();
     if (wired && wired.teardown) wired.teardown();
     if (history) history.cancel();
     if (cmEditor) cmEditor.destroy();
+    clearTimeout(previewTimer);
     if (previewEl) previewEl.remove();
     if (zoomRO) zoomRO.disconnect();
     if (roRaf) cancelAnimationFrame(roRaf);
@@ -2157,8 +3080,12 @@ function open(opts = {}) {
     // wireToolbar's own keydown handler already swallows Escape (via stopImmediatePropagation)
     // when a float is selected; this guard is a backstop so Escape can't close the editor while
     // an object selection is up.
+    if (e.key === 'Escape' && e.target.closest?.('.doc-studio-side input,.doc-studio-side textarea,.doc-studio-side select')) return;
     if (e.key === 'Escape' && !document.querySelector('.modal-overlay')) { if (!wired.blurFloats()) close(); }
+    if (e.target.closest && e.target.closest('.modal-overlay')) return;
     const k = e.key.toLowerCase();
+    const externalTextInput = e.target.closest && !surface.contains(e.target) && e.target.closest('input,textarea,[contenteditable="true"]');
+    if (externalTextInput && (k === 'z' || k === 'y')) return;
     // Undo / redo — visual mode only (CodeMirror owns its own history in code mode). preventDefault
     // so the browser's native contenteditable undo doesn't also fire.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && k === 'z' && !e.shiftKey) {
@@ -2180,29 +3107,79 @@ function open(opts = {}) {
 
   fs.querySelector('[data-save]').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
+    if (saving) return;
+    if (shared) { saving=true;btn.disabled=true;try { await shared.prepareSave(); } catch(err) { shared.failed();UI.toast(err.message,'error');return; } finally { saving=false;btn.disabled=false; } }
     if (history) history.flush();
     let body = mode === 'code' ? getCode() : serializeEditor(surface);
+    const meaningful = body.replace(/<!--[\s\S]*?-->/g, '').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, '').replace(/&nbsp;|\s/g, '');
+    if (!meaningful && !/<(?:img|table|hr)\b|class=["'][^"']*doc-float/i.test(body)) { UI.toast('Add document content before saving', 'error'); return; }
     const { widthMm, heightMm } = currentPageMm();
-    body = pageStyleTag(widthMm, heightMm, Number(marginInp.value) || 0) + body.replace(/<style data-docpage>[\s\S]*?<\/style>/i, '');
-    btn.disabled = true;
+    const marginMm = Number(marginInp.value);
+    if (widthMm < 10 || heightMm < 10 || widthMm > 2000 || heightMm > 2000 || !Number.isFinite(marginMm) || marginMm < 0 || marginMm * 2 >= Math.min(widthMm, heightMm)) { UI.toast('Choose valid page dimensions and margins that leave room for content', 'error'); return; }
+    body = pageStyleTag(widthMm, heightMm, Number(marginInp.value) || 0) + body.replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i, '');
+    const savedVersion = changeVersion;
+    const savedSnapshot = studioSnapshot();
+    btn.disabled = true; saving = true; setStatus('Saving…', 'saving');
     try {
       const copiesPerRecord = Math.max(1, Math.min(6, parseInt(copiesInp.value, 10) || 1));
       const recordsPerPage = Math.max(1, Math.min(6, parseInt(perPageInp.value, 10) || 1));
       const tileFill = tileFillSel.value === 'repeat' ? 'repeat' : 'blank';
       const continuous = continuousChk.checked;
       const repeatCount = Math.max(1, Math.min(100, parseInt(repeatInp.value, 10) || 1));
-      const res = opts.onSave ? await opts.onSave({ name: nameInp.value, type: typeSel.value, period: periodInp ? periodInp.value : undefined, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount }) : true;
-      if (res === true || res === undefined) { dirty = false; close(true); }
-      else if (typeof res === 'string') UI.toast(res, 'error');
-    } catch (err) { UI.toast(err.message, 'error'); } finally { btn.disabled = false; }
+      if (copiesPerRecord * recordsPerPage > 12) throw new Error('Print grid cannot exceed 12 cells');
+      const gapXmm=Number(gapXInp.value),gapYmm=Number(gapYInp.value);
+      if (![gapXmm,gapYmm].every(v=>Number.isFinite(v)&&v>=0&&v<=30)) throw new Error('Grid gaps must be between 0 and 30 mm');
+      const res = opts.onSave ? await opts.onSave({ name: nameInp.value, type: typeSel.value, period: periodInp ? periodInp.value : undefined, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount, gapXmm, gapYmm, studioVersion: shared?.version }) : true;
+      saving = false;
+      if (res === true || res === undefined) { const completedUnchanged=shared?await shared.saved(changeVersion===savedVersion):changeVersion===savedVersion; studio.saved(savedSnapshot, completedUnchanged); if (completedUnchanged) { dirty = false; setStatus('Saved'); studio.render(); } else { setStatus('Unsaved changes', 'dirty'); } }
+      else if (typeof res === 'string') { setStatus('Save failed', 'error'); UI.toast(res, 'error'); }
+    } catch (err) { setStatus('Save failed', 'error'); UI.toast(err.message, 'error'); } finally { shared?.failed();saving = false; btn.disabled = false; }
   });
 
+  function studioSnapshot() {
+    return { body: pageStyleTag(currentPageMm().widthMm, currentPageMm().heightMm, Number(marginInp.value) || 0) + currentBody().replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,''), name: nameInp.value, type: typeSel.value, period: periodInp?.value || '', copiesPerRecord: Number(copiesInp.value), recordsPerPage: Number(perPageInp.value), tileFill: tileFillSel.value, continuous: continuousChk.checked, repeatCount: Number(repeatInp.value),gapXmm:Number(gapXInp.value),gapYmm:Number(gapYInp.value) };
+  }
+  function restoreStudio(value, remote = false) {
+      const wasCode=mode==='code';
+      const focused=document.activeElement;const selection=window.getSelection();const oldRange=selection?.rangeCount?selection.getRangeAt(0):null;
+      const anchor=oldRange?.startContainer?.nodeType===3?oldRange.startContainer.parentElement:oldRange?.startContainer;
+      const block=anchor?.closest?.('[data-doc-node]');const path=[];let node=oldRange?.startContainer;
+      while(block&&node&&node!==block){path.unshift([...node.parentNode.childNodes].indexOf(node));node=node.parentNode;}
+      const bookmark=block?{id:block.dataset.docNode,path,offset:oldRange.startOffset}:null;
+      if (wasCode && !remote) setMode('visual'); history.flush();
+      if(wasCode&&remote)setCode(parsePageStyle(value.body).rest);else surface.innerHTML=bodyToEditorHtml(parsePageStyle(value.body).rest);
+      nameInp.value=value.name || ''; typeSel.value=value.type || typeOptions[0]; if(periodInp) periodInp.value=value.period || '';
+      const page=parsePageStyle(value.body);
+      if(page) { const preset=matchPagePreset(page.widthMm,page.heightMm); sizeSel.value=preset; customWInp.value=page.widthMm;customHInp.value=page.heightMm; orientSel.value=page.widthMm>page.heightMm?'landscape':'portrait'; marginInp.value=page.marginMm; }
+      gapXInp.value=value.gapXmm ?? 6;gapYInp.value=value.gapYmm ?? 6;copiesInp.value=value.copiesPerRecord || 1;perPageInp.value=value.recordsPerPage || 1;tileFillSel.value=value.tileFill || 'blank';continuousChk.checked=!!value.continuous;repeatInp.value=value.repeatCount || 1;
+      wired.normalizeFloats();syncContinuousUI();syncSizeUI();applyCanvas();applyZoom();onChange();history.flush();
+      if(remote&&bookmark&&surface.contains(focused)){let root=surface.querySelector('[data-doc-node="'+bookmark.id+'"]');if(root){for(const i of bookmark.path)root=root?.childNodes[i];if(root){const range=document.createRange();range.setStart(root,Math.min(bookmark.offset,root.nodeType===3?root.textContent.length:root.childNodes.length));range.collapse(true);selection.removeAllRanges();selection.addRange(range);}}}
+    }
+  studio = mountStudio(fs, surface, opts, {
+    pageView:()=>setMode('pages'),shared: () => shared, body: currentBody, context: previewContextNow, scenario: () => previewScenario,
+    setScenario(value) { previewScenario=value; refreshPreview(); },
+    setContext(value) { customPreviewContext=value; previewScenario='custom'; refreshPreview(); },
+    snapshot: studioSnapshot, dirty: () => dirty, layout: applyZoom,
+    beforeEdit:()=>history.flush(),change: onChange, select: wired.selectFloat, normalize: wired.normalizeFloats,
+    insert(html) { if (mode==='code') { setCode(getCode()+html); onChange(); } else { wired.insertHtml(bodyToEditorHtml(html)); wired.normalizeFloats(); } },
+    restore(value) { restoreStudio(value); }
+  });
+  if (opts.sharedStudio && window.DocStudio) {
+    markBlocks();
+    shared=window.DocStudio.mount(fs,opts,{
+      surface, snapshot: studioSnapshot, dirty:()=>dirty, markBlocks,
+      apply:value=>restoreStudio(value,true),change:onChange,render:()=>studio.render(),
+      selected:()=>{const node=window.getSelection()?.anchorNode;const el=node?.nodeType===3?node.parentElement:node;return surface.querySelector('.doc-float.selected') || el?.closest?.('[data-doc-node]');},
+      serialize:serializeEditor,sanitize:sanitizeHtml,safeUrl:safeDocumentUrl,
+      insert:html=>{wired.insertHtml(bodyToEditorHtml(html));wired.normalizeFloats();}
+    });studio.render();
+  }
   surface.focus();
   return { close, _history: history }; // _history exposed for tests (undo/redo without waiting on the debounce)
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { bodyToEditorHtml, serializeEditor, sanitizeHtml, parsePageStyle, pageStyleTag, pageDims, replaceAllInSurface };
+  module.exports = { bodyToEditorHtml, serializeEditor, sanitizeHtml, parsePageStyle, pageStyleTag, pageDims, replaceAllInSurface, safeDocumentUrl, tableGrid, editTableColumn, editTableRow, mergeTableCells, splitTableCell };
 } else {
   window.DocEditor = { open, bodyToEditorHtml, serializeEditor, sanitizeHtml };
 }

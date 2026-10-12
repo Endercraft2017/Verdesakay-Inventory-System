@@ -1145,12 +1145,11 @@ App.register('hr-employees', async (view, filter) => {
   // Same preview-modal + iframe pattern as generateId() below — avoids window.open() popup blocking.
   async function printAssetIssuance(emp, issuance) {
     try {
-      const [templateList, company] = await Promise.all([
-        API.get('/templates'),
+      const [tpl, company] = await Promise.all([
+        API.get('/templates/defaults/asset_issuance'),
         API.get('/templates/company'),
       ]);
-      const meta = templateList.find((t) => t.name === 'Asset Issuance Form');
-      const tpl = meta ? await API.get('/templates/' + meta.id) : null;
+      const variables=await API.get('/templates/variables?template_id='+tpl.id);
       const tplBody = tpl ? tpl.body : FALLBACK_ASSET_FORM_TEMPLATE;
       const ctx = {
         company,
@@ -1168,7 +1167,9 @@ App.register('hr-employees', async (view, filter) => {
         })),
         today: new Date().toLocaleDateString(),
       };
-      const full = UI.printableHtml(renderTemplate(tplBody, ctx), 'Asset Issuance - ' + emp.name);
+      const tiled=buildTiledPagesHtml([issuance],()=>renderTemplate(tplBody,applyVariables(ctx,variables)),{copiesPerRecord:tpl.copies_per_record,recordsPerPage:tpl.records_per_page,tileFill:tpl.tile_fill,continuous:!!tpl.tile_continuous,gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount:tpl.repeat_count,pageContentHeightMm:pageContentHeightMm(tplBody)});
+      const full = UI.printableHtml(tiled||renderTemplate(tplBody,applyVariables(ctx,variables)), 'Asset Issuance - ' + emp.name);
+
 
       UI.modal({
         title: 'Asset Issuance Form Preview',
@@ -1176,11 +1177,10 @@ App.register('hr-employees', async (view, filter) => {
         bodyHTML: `<iframe id="asset-form-frame" style="width:100%;height:60vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
         cancelText: 'Close',
         confirmText: 'Print…',
-        onOpen: (ov) => { ov.querySelector('#asset-form-frame').srcdoc = full; },
-        onConfirm: (ov) => {
+        onOpen: (ov) => { UI.loadPrintFrame(ov.querySelector('#asset-form-frame'),full,tiled?fitTiledCells:undefined); },
+        onConfirm: async (ov) => {
           const ifr = ov.querySelector('#asset-form-frame');
-          ifr.contentWindow.focus();
-          ifr.contentWindow.print();
+          await UI.printFrame(ifr);
           return false; // keep the preview open — printing shouldn't close it
         },
       });
@@ -1205,12 +1205,11 @@ App.register('hr-employees', async (view, filter) => {
   // new window, so there's nothing for a popup blocker to block.
   async function generateId(emp) {
     try {
-      const [templateList, company] = await Promise.all([
-        API.get('/templates'),
+      const [tpl, company] = await Promise.all([
+        API.get('/templates/defaults/employee_id'),
         API.get('/templates/company'),
       ]);
-      const meta = templateList.find((t) => t.name === 'Employee ID Card');
-      const tpl = meta ? await API.get('/templates/' + meta.id) : null;
+      const variables=await API.get('/templates/variables?template_id='+tpl.id);
       const tplBody = tpl ? tpl.body : FALLBACK_ID_TEMPLATE;
       const ctx = {
         company,
@@ -1223,13 +1222,13 @@ App.register('hr-employees', async (view, filter) => {
       // Same opt-in Print Grid tiling as form-linked templates (public/js/print-tiling.js) —
       // e.g. a sheet of several ID card blanks (grid > 1x1), or 2 copies of the same card.
       const tiled = tpl && typeof buildTiledPagesHtml === 'function'
-        ? buildTiledPagesHtml([emp], () => renderTemplate(tplBody, ctx), {
+        ? buildTiledPagesHtml([emp], () => renderTemplate(tplBody,applyVariables(ctx,variables)), {
           copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
-          continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+          continuous: !!tpl.tile_continuous, gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount: tpl.repeat_count,
           pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tplBody) : undefined,
         })
         : '';
-      const full = UI.printableHtml(tiled || renderTemplate(tplBody, ctx), 'ID - ' + emp.name);
+      const full = UI.printableHtml(tiled || renderTemplate(tplBody,applyVariables(ctx,variables)), 'ID - ' + emp.name);
 
       UI.modal({
         title: 'ID Card Preview',
@@ -1239,13 +1238,11 @@ App.register('hr-employees', async (view, filter) => {
         confirmText: 'Print…',
         onOpen: (ov) => {
           const ifr = ov.querySelector('#idcard-preview-frame');
-          if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
-          ifr.srcdoc = full;
+          UI.loadPrintFrame(ifr, full, tiled && typeof fitTiledCells === 'function' ? fitTiledCells : undefined);
         },
-        onConfirm: (ov) => {
+        onConfirm: async (ov) => {
           const ifr = ov.querySelector('#idcard-preview-frame');
-          ifr.contentWindow.focus();
-          ifr.contentWindow.print();
+          await UI.printFrame(ifr);
           return false; // keep the preview open — printing shouldn't close it
         },
       });

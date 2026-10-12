@@ -416,7 +416,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
 
   async function printSelected() {
     if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
-    const list = currentRecords.filter((r) => selectedIds.has(r.id)).map((r) => r.data);
+    const list = currentRecords.filter((r) => selectedIds.has(r.id)).map(payrollPrintData);
     printSlips(list);
   }
 
@@ -493,20 +493,33 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // (from a row's Print button) to preview just that one employee's slip.
   // The per-slip HTML comes from the "HR Payroll Slip" document template (editable later
   // under Documents > Templates), not hardcoded — falls back to a plain layout if missing.
-  async function printSlips(dataList) {
-    const list = dataList || currentRecords.map((r) => r.data);
+  async function loadPrintContext(templateId){
+    const [company,globals,variables]=await Promise.all([API.get('/templates/company'),API.get('/global-variables'),API.get('/templates/variables?template_id='+templateId)]);
+    return {company,global:Object.fromEntries(globals.map(v=>[v.key,v.value])),variables};
+  }
+
+  async function choosePrintLayout(print) {
+    try {
+      const layouts=await API.get(`/form-definitions/${formDef.id}/templates`);
+      if(!layouts.length){UI.toast('No print template linked. Open Form Builder → Print templates.','error');return;}
+      const defaultId=layouts.find(t=>t.is_default)?.id||layouts[0].id;
+      if(layouts.length===1)return await print(defaultId);
+      UI.modal({title:'Choose print layout',bodyHTML:`<label>Template<select id="fr-print-layout">${layouts.map(t=>`<option value="${t.id}" ${t.id===defaultId?'selected':''}>${UI.esc(t.name)}${t.is_default?' (Default)':''}</option>`).join('')}</select></label><p class="muted">This choice applies to this print only. Change the default in Form Builder.</p>`,cancelText:'Cancel',confirmText:'Preview',onConfirm:async ov=>{const id=Number(ov.querySelector('#fr-print-layout').value);await print(id);return true;}});
+    }catch(err){UI.toast(err.message||'Could not load print layouts','error');}
+  }
+
+  function payrollPrintData(r){return {...r.data,number:r.number,record:{number:r.number,status:r.status,created_at:r.created_at},today:new Date().toLocaleDateString()};}
+  async function printSlips(dataList,templateId) {
+    if(!templateId)return choosePrintLayout(id=>printSlips(dataList,id));
+    const list = dataList || currentRecords.map(payrollPrintData);
     if (!list.length) { UI.toast('No records to print', 'error'); return; }
     if (typeof buildPayrollSlipsHtml === 'undefined') { UI.toast('Print module failed to load', 'error'); return; }
 
-    let templateBody;
-    try {
-      const templates = await API.get('/templates');
-      const meta = templates.find((t) => t.name === 'HR Payroll Slip');
-      if (meta) templateBody = (await API.get('/templates/' + meta.id)).body;
-    } catch { /* fall back to the built-in default layout */ }
-
-    const html = buildPayrollSlipsHtml(list, templateBody);
-    const full = UI.printableHtml(html, formDef.name);
+    const tpl=await API.get('/templates/'+templateId),context=await loadPrintContext(templateId);
+    const render=data=>renderSlip({...data,company:context.company,global:context.global},tpl.body,context.variables);
+    const tiled=buildTiledPagesHtml(list,render,{copiesPerRecord:tpl.copies_per_record,recordsPerPage:tpl.records_per_page,tileFill:tpl.tile_fill,continuous:!!tpl.tile_continuous,gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount:tpl.repeat_count,pageContentHeightMm:pageContentHeightMm(tpl.body)});
+    const html=tiled||list.map((data,i)=>`<div${i<list.length-1?' style="break-after:page"':''}>${render(data)}</div>`).join('');
+    const full=UI.printableHtml(html,formDef.name);
 
     UI.modal({
       title: 'Payslip Preview',
@@ -519,13 +532,11 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         // Once the slip HTML has actually rendered (real layout needed — scrollHeight is
         // meaningless before then), shrink any cell whose content overflows its fixed-height
         // grid cell instead of leaving it silently clipped by .payslip-grid's overflow:hidden.
-        ifr.onload = () => { if (typeof fitPayslipCells === 'function') fitPayslipCells(ifr.contentDocument); };
-        ifr.srcdoc = full;
+        UI.loadPrintFrame(ifr,full,tiled?fitTiledCells:undefined);
       },
-      onConfirm: (ov) => {
+      onConfirm: async (ov) => {
         const ifr = ov.querySelector('#payslip-preview-frame');
-        ifr.contentWindow.focus();
-        ifr.contentWindow.print();
+        await UI.printFrame(ifr);
         return false; // keep the preview open — printing shouldn't close it
       },
     });
@@ -615,13 +626,11 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       return;
     }
 
-    let templateBody;
+    let slipHtml='',templateBody,printContext={company:{},global:{},variables:[]};
     try {
-      const templates = await API.get('/templates');
-      const meta = templates.find((t) => t.name === 'HR Payroll Slip');
-      if (meta) templateBody = (await API.get('/templates/' + meta.id)).body;
-    } catch { /* fall back to renderSlip's own built-in default layout */ }
-    const slipHtml = typeof renderSlip === 'function' ? renderSlip(r.data, templateBody) : '';
+      const form=await API.get('/form-definitions/'+formDef.id);
+      if(form.template_id){const tpl=await API.get('/templates/'+form.template_id),context=await loadPrintContext(tpl.id);templateBody=tpl.body;printContext=context;slipHtml=renderSlip({...payrollPrintData(r),company:context.company,global:context.global},tpl.body,context.variables);}
+    } catch(err){UI.toast(err.message||'Could not load the default payslip layout','error');}
 
     const rows = detail.days.map((d) => `
       <tr>
@@ -690,7 +699,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         // closing without saving leaves the record (and the list behind this modal) untouched.
         let liveData = { ...r.data };
         const btn = ov.querySelector('#pd-print');
-        if (btn) btn.onclick = () => printSlips([liveData]);
+        if (btn) btn.onclick = () => printSlips([{...payrollPrintData(r),...liveData}]);
 
         const dedCheckboxes = ov.querySelectorAll('[data-ded]');
         if (!dedCheckboxes.length) return;
@@ -742,7 +751,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         // thing the user is looking at, not a separate summary table off to the side.
         const applyPreview = (vals) => {
           liveData = { ...liveData, ...vals };
-          slipEl.innerHTML = typeof renderSlip === 'function' ? renderSlip(liveData, templateBody) : slipEl.innerHTML;
+          if(templateBody)slipEl.innerHTML=renderSlip({...liveData,record:{number:r.number,status:r.status,created_at:r.created_at},company:printContext.company,global:printContext.global},templateBody,printContext.variables);
         };
         const refreshPreview = async () => {
           dedCheckboxes.forEach((cb) => { cb.disabled = locked; });
@@ -777,19 +786,19 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // template opts into a grid (Layout tab > Print Grid: rows/columns/fill mode), records are
   // tiled N-up instead via print-tiling.js's buildTiledPagesHtml — the same layout
   // hr-payroll-print.js hand-built for payroll, generalized for any template.
-  async function printRecordsViaTemplate(records) {
-    if (!formDef.template_id) { UI.toast('No print template linked to this form', 'error'); return; }
+  async function printRecordsViaTemplate(records,templateId) {
+    if(!templateId)return choosePrintLayout(id=>printRecordsViaTemplate(records,id));
+    if (!templateId) { UI.toast('No print template linked to this form', 'error'); return; }
     if (!records.length) { UI.toast('No records to print', 'error'); return; }
     let tpl;
-    try { tpl = await API.get('/templates/' + formDef.template_id); }
+    try { tpl = await API.get('/templates/' + templateId); }
     catch { UI.toast('The linked template could not be loaded', 'error'); return; }
-    let company = {};
-    try { company = await API.get('/templates/company'); } catch { /* optional */ }
-    const renderRecord = (r) => renderTemplate(tpl.body, { ...r.data, record: { number: r.number, status: r.status, created_at: r.created_at }, company });
+    const context=await loadPrintContext(templateId);
+    const renderRecord = r => renderTemplate(tpl.body,applyVariables({...r.data,number:r.number,today:new Date().toLocaleDateString(),record:{number:r.number,status:r.status,created_at:r.created_at},company:context.company,global:context.global},context.variables));
     const tiled = (typeof buildTiledPagesHtml === 'function')
       ? buildTiledPagesHtml(records, renderRecord, {
         copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
-        continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+        continuous: !!tpl.tile_continuous, gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount: tpl.repeat_count,
         pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tpl.body) : undefined,
       })
       : '';
@@ -814,15 +823,13 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         // tiled template: once the tiled grid has actually rendered (real layout needed),
         // shrink any cell whose content overflows its fixed-height grid cell instead of
         // leaving it silently clipped by .tiled-grid's overflow:hidden.
-        if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
-        ifr.srcdoc = full;
+        UI.loadPrintFrame(ifr, full, tiled && typeof fitTiledCells === 'function' ? fitTiledCells : undefined);
         const attachBtn = ov.querySelector('#fr-attach-pdf');
         if (attachBtn) attachBtn.onclick = () => attachPdfModal(records[0]);
       },
-      onConfirm: (ov) => {
+      onConfirm: async (ov) => {
         const ifr = ov.querySelector('#fr-tpl-preview-frame');
-        ifr.contentWindow.focus();
-        ifr.contentWindow.print();
+        await UI.printFrame(ifr);
         return false; // keep the preview open — printing shouldn't close it
       },
     });
@@ -1129,7 +1136,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       });
       el.querySelectorAll('[data-bundle-print]').forEach((b) => b.onclick = (e) => {
         e.stopPropagation();
-        printSlips(records.filter((r) => (r.period || '(no period)') === b.dataset.bundlePrint).map((r) => r.data));
+        printSlips(records.filter((r) => (r.period || '(no period)') === b.dataset.bundlePrint).map(payrollPrintData));
       });
       el.querySelectorAll('[data-bundle-summary]').forEach((b) => b.onclick = (e) => {
         e.stopPropagation();
@@ -1178,7 +1185,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       b.onclick = (e) => {
         e.stopPropagation();
         const r = records.find((x) => String(x.id) === String(b.dataset.print));
-        if (r) printSlips([r.data]);
+        if (r) printSlips([payrollPrintData(r)]);
       });
     el.querySelectorAll('[data-print-tpl]').forEach((b) =>
       b.onclick = (e) => {

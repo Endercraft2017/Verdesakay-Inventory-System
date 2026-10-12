@@ -1206,9 +1206,8 @@ async function bir2316Modal() {
       async function printOne(row) {
         try {
           const detail = await API.get(`/accounting/bir-2316/${row.employee_id}?year=${yearSel.value}`);
-          const meta = templates.find((t) => t.name === 'BIR 2316');
-          if (!meta) { UI.toast('BIR 2316 template not found (Documents → Templates)', 'error'); return; }
-          const tpl = await API.get('/templates/' + meta.id);
+          const tpl = await API.get('/templates/defaults/bir_2316');
+          const variables=await API.get('/templates/variables?template_id='+tpl.id);
           const tplBody = tpl.body;
           const g = detail.figures;
           const f = {};
@@ -1217,13 +1216,13 @@ async function bir2316Modal() {
           f.thirteenth_month_ceiling = accPeso(g.thirteenth_month_ceiling);
           f.over_withheld_label = g.over_withheld >= 0 ? 'OVER-WITHHELD (refund to employee)' : 'TAX STILL DUE FROM EMPLOYEE';
           f.over_withheld_abs = accPeso(Math.abs(g.over_withheld));
-          const ctx = { company: detail.company || {}, employee: detail.employee || {}, f, year: detail.year, today: new Date().toLocaleDateString() };
+          const ctx = applyVariables({ company: detail.company || {}, employee: detail.employee || {}, f, year: detail.year, today: new Date().toLocaleDateString() },variables);
           // Same opt-in Print Grid tiling as form-linked templates (public/js/print-tiling.js) —
           // e.g. 2 copies of the 2316 (one for BIR filing, one for the employee's file).
           const tiled = typeof buildTiledPagesHtml === 'function'
             ? buildTiledPagesHtml([detail], () => renderTemplate(tplBody, ctx), {
               copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
-              continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+              continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count, gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,
               pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tplBody) : undefined,
             })
             : '';
@@ -1233,10 +1232,9 @@ async function bir2316Modal() {
             bodyHTML: `<iframe id="b16-frame" style="width:100%;height:56vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
             onOpen: (o2) => {
               const ifr = o2.querySelector('#b16-frame');
-              if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
-              ifr.srcdoc = full;
+              UI.loadPrintFrame(ifr, full, tiled && typeof fitTiledCells === 'function' ? fitTiledCells : undefined);
             },
-            onConfirm: (o2) => { const ifr = o2.querySelector('#b16-frame'); ifr.contentWindow.focus(); ifr.contentWindow.print(); return false; },
+            onConfirm: async (o2) => { const ifr = o2.querySelector('#b16-frame'); await UI.printFrame(ifr); return false; },
           });
         } catch (e) { UI.toast(e.message, 'error'); }
       }

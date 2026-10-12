@@ -41,6 +41,7 @@ export function isNodeLocalTable(table: string): boolean {
     CLOUD_ONLY_TABLES.has(table) ||
     table.startsWith('sync_') ||
     table.startsWith('sqlite_') ||
+    table.startsWith('doc_studio_') && table !== 'doc_studio_library' || // private working state stays on its originating server
     table.startsWith('doc_chunks') || // AI search FTS5 index + its shadow tables, rebuilt per node
     table === 'sessions' ||
     table === 'idempotency_keys' ||

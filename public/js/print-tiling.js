@@ -67,6 +67,13 @@ function _tileNum(v, def) {
     above 1, and continuous mode isn't asking for more than 1 copy either — the caller's
     plain one-record-per-page path should run instead; this only kicks in once a template
     opts in. */
+function isMultiPageDocument(body) {
+  const markup=String(body||'').replace(/<!--[\s\S]*?-->/g,'').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'');
+  const tags=markup.match(/<[a-z][^>]*>/gi)||[];
+  if(tags.filter(tag=>/\sdata-doc-design-page(?:\s|=|>)/i.test(tag)).length>1)return true;
+  return tags.some(tag=>/\sdata-doc-section-break=["']page["']/i.test(tag)||/\sclass=["'][^"']*\bdoc-pagebreak\b/i.test(tag)||/\sstyle=["'][^"']*(?:break-(?:before|after)\s*:\s*page|page-break-(?:before|after)\s*:\s*always)/i.test(tag));
+}
+
 function buildTiledPagesHtml(records, renderRecord, opts) {
   const list = Array.isArray(records) ? records : [];
   if (!list.length) return '';
@@ -75,15 +82,21 @@ function buildTiledPagesHtml(records, renderRecord, opts) {
   const continuous = !!(opts && opts.continuous);
   const repeatCount = _tileNum(opts && opts.repeatCount, 1);
   if (copies <= 1 && perPage <= 1 && !(continuous && repeatCount > 1)) return '';
+  // Render before building cells: legacy templates or record-driven boundaries must also bypass grids.
+  const rendered = new Map(list.map(record=>[record,renderRecord(record)]));
+  if ([...rendered.values()].some(isMultiPageDocument)) return '';
+  renderRecord = record => rendered.get(record);
   const heightMm = (opts && opts.pageContentHeightMm) || 269;
+  const gap = v => v == null || !Number.isFinite(Number(v)) ? 6 : Math.max(0,Math.min(30,Number(v)));
+  const gapX = gap(opts?.gapXmm), gapY = gap(opts?.gapYmm);
   const fillRepeat = !!(opts && opts.tileFill === 'repeat');
 
   const css = `
     .tiled-page { page-break-after: always; }
     .tiled-page:last-child { page-break-after: auto; }
     .tiled-grid {
-      display: grid; grid-template-columns: repeat(${perPage}, 1fr); grid-template-rows: repeat(${copies}, 1fr);
-      grid-auto-flow: column; gap: 6mm; height: ${heightMm}mm;
+      display: grid; grid-template-columns: repeat(${perPage}, minmax(0, 1fr)); grid-template-rows: repeat(${copies}, minmax(0, 1fr));
+      grid-auto-flow: column; column-gap: ${gapX}mm; row-gap: ${gapY}mm; height: ${heightMm}mm;
     }
     /* position:relative scopes any floating object (.doc-float, position:absolute — an image/
        textbox/shape "made movable" in the template editor) to ITS OWN cell instead of the
@@ -102,7 +115,12 @@ function buildTiledPagesHtml(records, renderRecord, opts) {
   // by one root div by convention, but nothing enforces that), so wrapping it ourselves is what
   // makes ".tiled-grid > div" reliably mean "one record's cell" instead of depending on however
   // many top-level nodes this particular template's markup happens to produce.
-  const cell = (html) => `<div><div class="tiled-cell-inner">${html}</div></div>`;
+  let cellIndex=0;
+  const cell = (html) => {
+    const suffix='_tile_'+(++cellIndex);
+    const content=String(html??'').replace(/\bid=(["'])(doc-heading-[\w-]+)\1/g,(_m,q,id)=>`id=${q}${id}${suffix}${q}`).replace(/\bhref=(["'])#(doc-heading-[\w-]+)\1/g,(_m,q,id)=>`href=${q}#${id}${suffix}${q}`);
+    return `<div><div class="tiled-cell-inner">${content}</div></div>`;
+  };
 
   const pages = [];
   if (continuous) {
@@ -138,8 +156,8 @@ function buildTiledPagesHtml(records, renderRecord, opts) {
       }
       const cells = [];
       group.forEach((rec) => {
-        const html = rec == null ? '<div></div>' : cell(renderRecord(rec));
-        for (let c = 0; c < copies; c++) cells.push(html);
+        const html = rec == null ? null : renderRecord(rec);
+        for (let c = 0; c < copies; c++) cells.push(html == null ? '<div></div>' : cell(html));
       });
       pages.push(`<div class="tiled-page"><div class="tiled-grid">${cells.join('')}</div></div>`);
     }
@@ -161,8 +179,9 @@ function fitTiledCells(root) {
   cells.forEach((cell) => {
     const inner = cell.querySelector('.tiled-cell-inner');
     if (!inner) return;
-    const scale = _fitScale(inner.scrollHeight, cell.clientHeight);
-    if (scale) {
+    inner.style.transform = "";
+    const scale = Math.min(_fitScale(inner.scrollHeight, cell.clientHeight) || 1, _fitScale(inner.scrollWidth, cell.clientWidth) || 1);
+    if (scale < 1) {
       inner.style.transformOrigin = 'top left';
       inner.style.transform = `scale(${scale})`;
     }
@@ -175,5 +194,5 @@ function _fitScale(contentHeight, boxHeight) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { buildTiledPagesHtml, pageContentHeightMm, fitTiledCells, _fitScale };
+  module.exports = { buildTiledPagesHtml, pageContentHeightMm, fitTiledCells, _fitScale, isMultiPageDocument };
 }

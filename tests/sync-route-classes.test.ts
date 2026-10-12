@@ -23,6 +23,8 @@ const NO_CLASS_NEEDED: Record<string, string> = {
   'src/core/push.routes.ts:post /unsubscribe': 'push subscriptions are node-local',
   'src/core/push.routes.ts:post /test': 'writes nothing',
   'src/modules/ai/ai.routes.ts:post /reindex': 'the AI search index is rebuilt per copy (node-local)',
+  'src/core/me.routes.ts:post /leave-preview': 'read-only leave coverage preview',
+  'src/modules/hr/hr.routes.ts:post /leave-preview': 'read-only leave coverage preview',
   'src/modules/hr/hr.routes.ts:post /payroll/:recordId/preview-deductions': 'a read',
   // The platform console and sign-up run only on the cloud, outside any workspace.
   'src/platform/platform.routes.ts:post /login': 'cloud console',

@@ -128,6 +128,7 @@ function buildSlipContext(d) {
   const storedNetPay = d.net_pay != null && d.net_pay !== '' ? _num(d.net_pay) : NaN;
   const netPay = Number.isFinite(storedNetPay) ? storedNetPay : (totalEarnings - totalDeductions);
   return {
+    ...d,
     employee_name: d.employee_name || '',
     dept_position: d.dept_position || '',
     payroll_period: d.payroll_period || '',
@@ -168,9 +169,11 @@ function buildSlipContext(d) {
   };
 }
 
-function renderSlip(d, templateBody) {
+function renderSlip(d, templateBody, variables) {
   if (!d) return '<div></div>';
-  return _renderTemplate()(templateBody || FALLBACK_BODY, buildSlipContext(d));
+  const context=buildSlipContext(d);
+  const apply=typeof applyVariables==='function'?applyVariables:typeof module!=='undefined'?require('./doc-context.js').applyVariables:null;
+  return _renderTemplate()(templateBody || FALLBACK_BODY,apply?apply(context,variables):context);
 }
 
 /** Wraps one rendered slip in the outer (fixed-height, overflow:hidden — the actual grid item)
@@ -187,6 +190,8 @@ function buildPayrollSlipsHtml(dataList, templateBody) {
   const list = Array.isArray(dataList) ? dataList : [];
   if (!list.length) return '';
   const body = templateBody || FALLBACK_BODY;
+  const multi=typeof isMultiPageDocument==='function'?isMultiPageDocument:typeof require==='function'?require('./print-tiling.js').isMultiPageDocument:()=>false;
+  if(multi(body))return list.map((data,i)=>`<div${i<list.length-1?' style="break-after:page"':''}>${renderSlip(data,body)}</div>`).join('');
   const pages = [];
   for (let i = 0; i < list.length; i += 2) {
     const a = renderSlip(list[i], body);

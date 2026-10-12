@@ -1159,6 +1159,8 @@ export interface DocTemplate {
   // (SCHEMA_VERSION 35) Continuous tiling — see the db.ts version-history comment. Only
   // meaningful when tile_continuous is truthy; otherwise copies_per_record alone is still
   // the repeat count, exactly as before these two fields existed.
+  grid_gap_x_mm: number;
+  grid_gap_y_mm: number;
   repeat_count: number;
   tile_continuous: number; // 0 | 1
   created_by: number | null;

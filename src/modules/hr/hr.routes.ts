@@ -10,6 +10,7 @@ import { z } from 'zod';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { templateVariables } from '../../shared/doc-render';
 import { createRequire } from 'node:module';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -72,7 +73,7 @@ import { now, sideEffectsSuppressed, siteDecisionStands } from '../../shared/syn
 const clientRequire = createRequire(import.meta.url);
 const { renderSlip: renderPayrollSlip, FALLBACK_BODY: PAYROLL_SLIP_FALLBACK } =
   clientRequire('../../../public/js/hr-payroll-print.js') as {
-    renderSlip: (data: Record<string, unknown>, templateBody: string) => string;
+    renderSlip: (data: Record<string, unknown>, templateBody: string, variables?:unknown[]) => string;
     FALLBACK_BODY: string;
   };
 
@@ -2879,8 +2880,9 @@ router.post('/payroll/:recordId/email', requirePermission('payroll.manage'), syn
       });
       return;
     }
-    const tpl = queryOne<{ body: string }>("SELECT body FROM doc_templates WHERE name = 'HR Payroll Slip'");
-    const html = renderPayrollSlip(data, tpl?.body || PAYROLL_SLIP_FALLBACK);
+    const tpl = queryOne<{ id:number;body: string }>("SELECT t.id,t.body FROM form_definitions f JOIN doc_templates t ON t.id=f.template_id WHERE f.id=?", rec.form_def_id);
+    const globals=Object.fromEntries(queryAll<{key:string;value:string}>('SELECT key,value FROM global_variables').map(v=>[v.key,v.value]));
+    const html = renderPayrollSlip({...data,company:companyProfile(),global:globals}, tpl?.body || PAYROLL_SLIP_FALLBACK,tpl?templateVariables(tpl.id):[]);
     const r = await sendMail(
       { to: target.email, subject: `Payslip — ${data.payroll_period || rec.number}`, html },
       req.user!.id

@@ -291,6 +291,58 @@ export interface DocChunks {
   dept_id: string | null;
 }
 
+export interface DocStudioComments {
+  id: Generated<number>;
+  document_key: string;
+  block_id: Generated<string>;
+  body: string;
+  created_by: number | null;
+  resolved: Generated<number>;
+  created_at: Generated<string>;
+}
+
+export interface DocStudioDrafts {
+  document_key: string;
+  user_id: number;
+  snapshot: string;
+  version: Generated<number>;
+  updated_at: Generated<string>;
+}
+
+export interface DocStudioLibrary {
+  id: Generated<number>;
+  kind: string;
+  name: string;
+  value: string;
+  version: Generated<number>;
+  created_by: number | null;
+  updated_at: Generated<string>;
+}
+
+export interface DocStudioPresence {
+  document_key: string;
+  client_id: string;
+  user_id: number;
+  touched_at: number;
+}
+
+export interface DocStudioRooms {
+  document_key: string;
+  snapshot: string;
+  version: Generated<number>;
+  saved_revision: string | null;
+  updated_by: number | null;
+  updated_at: Generated<string>;
+}
+
+export interface DocStudioVersions {
+  id: Generated<number>;
+  template_id: number;
+  snapshot: string;
+  label: Generated<string>;
+  created_at: Generated<string>;
+}
+
 export interface DocTemplates {
   id: Generated<number>;
   name: string;
@@ -303,6 +355,8 @@ export interface DocTemplates {
   copies_per_record: Generated<number>;
   records_per_page: Generated<number>;
   tile_fill: Generated<string>;
+  grid_gap_x_mm: Generated<number>;
+  grid_gap_y_mm: Generated<number>;
   repeat_count: Generated<number>;
   tile_continuous: Generated<number>;
 }
@@ -322,6 +376,11 @@ export interface DocVariables {
   sort: Generated<number>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+}
+
+export interface DocumentDefaults {
+  key: string;
+  template_id: number | null;
 }
 
 export interface EmployeeDocuments {
@@ -457,6 +516,11 @@ export interface FormRecords {
   created_at: Generated<string>;
   updated_at: string | null;
   period: string | null;
+}
+
+export interface FormTemplateLinks {
+  form_id: Generated<number>;
+  template_id: number;
 }
 
 export interface Forms {
@@ -1429,8 +1493,15 @@ export interface DB {
   deliveries: Deliveries;
   departments: Departments;
   doc_chunks: DocChunks;
+  doc_studio_comments: DocStudioComments;
+  doc_studio_drafts: DocStudioDrafts;
+  doc_studio_library: DocStudioLibrary;
+  doc_studio_presence: DocStudioPresence;
+  doc_studio_rooms: DocStudioRooms;
+  doc_studio_versions: DocStudioVersions;
   doc_templates: DocTemplates;
   doc_variables: DocVariables;
+  document_defaults: DocumentDefaults;
   employee_documents: EmployeeDocuments;
   employee_profile_changes: EmployeeProfileChanges;
   employee_profiles: EmployeeProfiles;
@@ -1440,6 +1511,7 @@ export interface DB {
   form_definitions: FormDefinitions;
   form_record_action_runs: FormRecordActionRuns;
   form_records: FormRecords;
+  form_template_links: FormTemplateLinks;
   forms: Forms;
   global_variables: GlobalVariables;
   goods_receipt_items: GoodsReceiptItems;

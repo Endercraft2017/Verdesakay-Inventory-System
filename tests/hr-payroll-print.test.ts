@@ -188,3 +188,4 @@ describe('single payslip detail preview', () => {
     expect(html).not.toContain('{{');
   });
 });
+it('prints multipage payslip layouts as full documents instead of the legacy grid',()=>{const html=buildPayrollSlipsHtml([{employee_name:'Ada'}],'<div data-doc-design-page="a">{{employee_name}}</div><div data-doc-design-page="b">Details</div>');expect(html).toContain('Ada');expect(html).toContain('Details');expect(html).not.toContain('payslip-grid');});

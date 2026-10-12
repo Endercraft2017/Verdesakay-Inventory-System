@@ -718,3 +718,21 @@ Built 2026-10-10 (`docs/SAAS-READINESS.md` §12). **Trigger:** a visitor sends t
 **Branches:** bot fills the hidden field → accepted silently, nothing stored; invalid fields → 400;
 more than 5 per hour from one connection → 429. **Terminal states:** `won` (workspace created and
 linked), `lost`. The owner sets these; nothing changes them automatically.
+
+
+## Design, link and print a form layout
+
+Trigger: a form manager opens Print templates, or an editor opens the document library.
+1. Core resolves the template/form identity and edit scope, then loads HTML and revision.
+2. The studio edits text/design pages, fields, sections, tables and review markup. Local
+   undo/recovery preserves unsaved changes; cloud rooms/version checks protect shared edits.
+3. Publication validates the revision and shared version. Multipage layouts require 1×1
+   printing with Continuous off. Alternative links do not silently change the form default.
+4. The form manager chooses a default or selects an alternative for one print. Rendering
+   binds record/company/custom fields and the preview uses the same physical print layout.
+5. Single designs can use configurable grids; explicit multipage designs bypass grids.
+   Word conversion reports unsupported visual/template features and retains import originals.
+
+Failures: permission/stale-revision/shared-version errors retain local work; retry after
+reviewing the latest document. Server private/shared working tables are cloud-only and
+are excluded from offline replication; publication follows the existing claim workflow.

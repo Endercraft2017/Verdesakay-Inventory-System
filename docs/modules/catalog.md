@@ -277,7 +277,8 @@ personal notes/tasks, announcements, activity log, analytics, push-reminder rout
 **Owned files:** `doc-catalog.ts`, `form-actions.ts`, routes: `auth.routes.ts`,
 `users.routes.ts`, `attachments.routes.ts`, `bug-reports.routes.ts`, `forms.routes.ts`,
 `form-builder.routes.ts`, `messages.routes.ts`, `personal.routes.ts`,
-`templates.routes.ts`, `me.routes.ts`, `announcements.routes.ts`, `activity.routes.ts`,
+`templates.routes.ts`, `doc-studio.routes.ts`, `doc-template-version.ts`,
+`document-conversion.ts`, `doc-studio-merge.ts`, `me.routes.ts`, `announcements.routes.ts`, `activity.routes.ts`,
 `analytics.routes.ts`, `push.routes.ts`.
 **Offline (sync/, phase 4i, §28):** chat, personal notes / tasks / bookmarks and bug reports `merge` (files
 travel with the command); announcements, templates, departments and bug triage `claim`s at the main site; user
@@ -899,3 +900,20 @@ borrowed-phone sign-out clears them too. Borrowed-phone sign-in ("I'm using some
 phone") keeps token + profile in sessionStorage, shows `#m-shared-banner`, and keeps push off.
 Tests: `tests/mobile-shared-phone.test.ts`.
 **Status:** working.
+
+
+### Document studio and form print layouts (core)
+
+The document studio stores structured HTML in `doc_templates.body`: design pages, named
+styles, sections, notes, revisions and field bindings. Form-template links and built-in
+defaults support alternative/default layouts without depending on their display names.
+SQLite schema 63 adds layout link/default tables, studio recovery/history tables and grid
+gap columns while preserving migrations through production schema 62. Published layout and
+company-library writes use the existing claim workflow. Private drafts, shared working
+rooms, presence/comments and conversion operations require the cloud; their working
+state/history is excluded from replication. Browser recovery and normal editor undo
+remain local. Studio library assets/styles replicate as company data.
+
+Tests cover template revisions/permissions, form links, premade mappings, conversion,
+pagination/grid guards, private recovery/shared conflicts and editor workflows. See
+`DOCUMENT-STUDIO-CAPABILITIES.md` for delivered tools and remaining fidelity limits.

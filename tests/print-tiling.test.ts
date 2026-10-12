@@ -16,6 +16,7 @@ function loadModule() {
   return mod.exports as {
     buildTiledPagesHtml: (records: unknown[], renderRecord: (r: unknown) => string, opts?: Record<string, unknown>) => string;
     pageContentHeightMm: (body: string) => number;
+    fitTiledCells: (root: unknown) => void;
     _fitScale: (contentHeight: number, boxHeight: number) => number | null;
   };
 }
@@ -57,8 +58,8 @@ describe('buildTiledPagesHtml', () => {
     expect((html.match(/class="tiled-page"/g) || []).length).toBe(2);
     expect((html.match(/>a</g) || []).length).toBe(2);
     expect((html.match(/>b</g) || []).length).toBe(2);
-    expect(html).toContain('grid-template-columns: repeat(1, 1fr)');
-    expect(html).toContain('grid-template-rows: repeat(2, 1fr)');
+    expect(html).toContain('grid-template-columns: repeat(1, minmax(0, 1fr))');
+    expect(html).toContain('grid-template-rows: repeat(2, minmax(0, 1fr))');
   });
 
   it('reproduces hr-payroll-print.js\'s exact 2x2 ordering for records=2, copies=2 (a,a,b,b per page)', () => {
@@ -212,4 +213,27 @@ describe('_fitScale', () => {
   it('treats a zero/negative box height as unmeasured (not yet laid out) rather than dividing by it', () => {
     expect(_fitScale(200, 0)).toBeNull();
   });
+});
+
+
+describe('configurable grid spacing and width fitting',()=>{
+ it('supports zero horizontal gap and independent vertical spacing',()=>{
+  const html=buildTiledPagesHtml([1],()=>'<p>Content</p>',{copiesPerRecord:2,recordsPerPage:2,gapXmm:0,gapYmm:2.5});
+  expect(html).toContain('column-gap: 0mm; row-gap: 2.5mm');
+  expect(buildTiledPagesHtml([1],()=>'',{copiesPerRecord:2})).toContain('column-gap: 6mm; row-gap: 6mm');
+ });
+ it('shrinks wide content even when its height already fits and clears stale transforms',()=>{
+  const {fitTiledCells}=loadModule();const inner={scrollHeight:50,scrollWidth:400,style:{transform:'old',transformOrigin:''}};
+  const cell={clientHeight:100,clientWidth:200,querySelector:()=>inner};
+  fitTiledCells({querySelectorAll:()=>[cell]});expect(inner.style.transform).toBe('scale(0.5)');
+  inner.scrollWidth=100;fitTiledCells({querySelectorAll:()=>[cell]});expect(inner.style.transform).toBe('');
+ });
+});
+
+
+describe('heading links in grid copies',()=>{
+ it('assigns a distinct target to each repeated copy while keeping its own contents link',()=>{
+  const html=buildTiledPagesHtml([1],()=>'<a href="#doc-heading-example">Contents</a><h1 id="doc-heading-example">Heading</h1>',{copiesPerRecord:2,recordsPerPage:2,tileFill:'repeat'});
+  const ids=[...html.matchAll(/id="(doc-heading-[^"]+)"/g)].map(m=>m[1]);const links=[...html.matchAll(/href="#(doc-heading-[^"]+)"/g)].map(m=>m[1]);expect(ids).toHaveLength(4);expect(new Set(ids).size).toBe(4);expect(links).toEqual(ids);
+ });
 });

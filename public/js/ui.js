@@ -354,43 +354,130 @@ const UI = (() => {
 
   /* ---------- Printing ---------- */
   // Fixed black-on-white print stylesheet (independent of the app theme).
-  const PRINT_CSS = `
-    * { box-sizing: border-box; }
-    body { position: relative; isolation: isolate; font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #111; margin: 0; padding: 24px; font-size: 13px; }
-    img { max-width: 100%; }
-    .doc { max-width: 800px; margin: 0 auto; }
-    .doc-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 12px; margin-bottom: 16px; gap: 20px; }
-    .doc-company h1 { margin: 0 0 4px; font-size: 20px; }
-    .doc-meta { text-align: right; white-space: nowrap; }
-    .doc-meta h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 0.05em; }
-    .doc-parties { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
-    /* Tables — kept border-collapse for clean page-breaks; palette matches the editor (doc-editor.js). */
-    .doc-table { width: 100%; border-collapse: collapse; margin: 12px 0 14px; font-size: 12.5px; }
-    .doc-table th, .doc-table td { border: 1px solid #d7dee8; padding: 7px 10px; text-align: left; vertical-align: top; }
-    .doc-table th { background: #f4f7fb; font-weight: 600; color: #1a2740; }
-    .doc-table thead th { border-bottom: 2px solid #ccd6e2; }
-    .doc-table.striped tbody tr:nth-child(even) td { background: #f8fafc; }
-    .doc-table.shaded thead th { background: #16243d; color: #fff; border-bottom-color: #16243d; }
-    .doc-table.plain th, .doc-table.plain td { border: 0; }
-    .doc-table.plain thead th { border-bottom: 1px solid #ccd6e2; }
-    .doc-table .r { text-align: right; }
-    /* Floating objects placed in the template editor (position/size are % on the element). */
-    .doc-float { position: absolute; box-sizing: border-box; }
-    .doc-float-shape { width: 100%; height: 100%; box-sizing: border-box; }
-    .doc-float-body { width: 100%; height: 100%; box-sizing: border-box; overflow: hidden; padding: 4px; }
-    .doc-float[data-float-kind="image"] img { width: 100%; height: 100%; object-fit: contain; }
-    .doc-totals { margin-left: auto; width: 280px; text-align: right; }
-    .doc-totals .grand { font-size: 15px; font-weight: 700; border-top: 2px solid #222; margin-top: 6px; padding-top: 6px; }
-    .doc-notes { margin-top: 14px; }
-    .doc-foot { margin-top: 28px; color: #666; font-size: 11px; border-top: 1px solid #ddd; padding-top: 8px; }
-    .muted { color: #777; font-size: 11px; }
-    @page { margin: 14mm; }
+  const documentCss = `
+    .doc-content, .doc-content * { box-sizing: border-box; }
+    .doc-content { position: relative; isolation: isolate; font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #111; font-size: 13px; line-height: 1.55; }
+    .doc-content img { max-width: 100%; }
+    .doc-content [data-doc-settings]{display:none!important}
+    .doc-content ins[data-doc-change]{text-decoration:none}
+    .doc-content del[data-doc-change]{display:none!important}
+    .doc-content [data-doc-design-page]{position:relative;isolation:isolate;display:flow-root;margin:0;break-inside:avoid}
+    .doc-content [data-doc-design-page]:not(:last-of-type){break-after:page}
+    .doc-content ol[data-doc-numbering="hierarchical"],.doc-content ol[data-doc-numbering="hierarchical"] ol{counter-reset:doc-list;list-style:none}
+    .doc-content ol[data-doc-numbering="hierarchical"] li::before{counter-increment:doc-list;content:counters(doc-list,".") ". ";font-variant-numeric:tabular-nums}
+
+    .doc-content [data-doc-hidden="true"] { display:none !important; }
+    .doc-content thead {display:table-header-group}
+    .doc-content tfoot {display:table-footer-group}
+    .doc-content tr {break-inside:avoid}
+    .doc-content p {orphans:3;widows:3}
+    .doc-content h1,.doc-content h2,.doc-content h3,.doc-content h4,.doc-content h5,.doc-content h6 {break-after:avoid}
+    .doc-content .doc-running-header,.doc-content .doc-running-footer {font-size:11px;color:#666;border-bottom:1px solid #ddd;padding:4px}
+    .doc-content .doc-page-number:after {content:'Page number (print)';font-size:11px;color:#666}
+
+    .doc-content .doc { max-width: 800px; margin: 0 auto; }
+    .doc-content .doc-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 12px; margin-bottom: 16px; gap: 20px; }
+    .doc-content .doc-company h1 { margin: 0 0 4px; font-size: 20px; }
+    .doc-content .doc-meta { text-align: right; white-space: nowrap; }
+    .doc-content .doc-meta h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 0.05em; }
+    .doc-content .doc-parties { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
+    .doc-content .doc-table { width: 100%; border-collapse: collapse; margin: 12px 0 14px; font-size: 12.5px; }
+    .doc-content .doc-table th, .doc-content .doc-table td { border: 1px solid #d7dee8; padding: 7px 10px; text-align: left; vertical-align: top; }
+    .doc-content .doc-table th { background: #f4f7fb; font-weight: 600; color: #1a2740; }
+    .doc-content .doc-table thead th { border-bottom: 2px solid #ccd6e2; }
+    .doc-content .doc-table.striped tbody tr:nth-child(even) td { background: #f8fafc; }
+    .doc-content .doc-table.shaded thead th { background: #16243d; color: #fff; border-bottom-color: #16243d; }
+    .doc-content .doc-table.plain th, .doc-content .doc-table.plain td { border: 0; }
+    .doc-content .doc-table.plain thead th { border-bottom: 1px solid #ccd6e2; }
+    .doc-content .doc-table .r { text-align: right; }
+    .doc-content .doc-float { position: absolute; box-sizing: border-box; }
+    .doc-content .doc-float-shape { width: 100%; height: 100%; box-sizing: border-box; }
+    .doc-content .doc-float-body { width: 100%; height: 100%; box-sizing: border-box; overflow: hidden; padding: 4px; }
+    .doc-content .doc-float[data-float-kind="image"] img { width: 100%; height: 100%; object-fit: contain; }
+    .doc-content .doc-totals { margin-left: auto; width: 280px; text-align: right; }
+    .doc-content .doc-totals .grand { font-size: 15px; font-weight: 700; border-top: 2px solid #222; margin-top: 6px; padding-top: 6px; }
+    .doc-content .doc-notes { margin-top: 14px; }
+    .doc-content .doc-foot { margin-top: 28px; color: #666; font-size: 11px; border-top: 1px solid #ddd; padding-top: 8px; }
+    .doc-content .muted { color: #777; font-size: 11px; }
+
+
+    .doc-content h1 {font-size:22px;font-weight:700;margin:0 0 4px}
+    .doc-content h2 {font-size:17px;font-weight:700;margin:0 0 6px}
+    .doc-content h3 {font-size:15px;font-weight:700}
+    .doc-content table {width:100%;border-collapse:collapse;margin:12px 0 14px;font-size:12.5px}
+    .doc-content td,.doc-content th {border:1px solid #d7dee8;padding:7px 10px;min-width:34px;vertical-align:top;font-size:inherit;letter-spacing:normal;text-transform:none;color:inherit}
+    .doc-content p {margin:1em 0}
+    .doc-content tbody tr:hover td {background-color:inherit}
+    .doc-content th {text-align:left;font-weight:600;background:#f4f7fb;color:#1a2740}
+`;
+  const PRINT_CSS = documentCss + `
+    html, body { margin:0; padding:0; background:#fff; }
+    @page { margin:14mm; }
+    @media screen { body { padding:24px; background:#eef0f3; } .doc-print-content { background:#fff; margin:0 auto; } }
   `;
 
-  /** Full standalone HTML doc (print stylesheet + body); used for print + preview. */
+  /** Same content typography in the editor and standalone output. Saved float
+   * percentages use the full paper as their reference, while print @page margins
+   * leave a smaller content box: translate those coordinates into physical units. */
   function printableHtml(html, title) {
+    const source = String(html || '');
+    const setup = source.match(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>([\s\S]*?)<\/style>/i);
+    const size = setup && setup[1].match(/size:\s*([\d.]+)mm\s+([\d.]+)mm/i);
+    const margin = setup && setup[1].match(/margin:\s*([\d.]+)mm/i);
+    let content = source, pageCss = '';
+    if (size) {
+      const w = Number(size[1]), h = Number(size[2]), m = margin ? Number(margin[1]) : 14;
+      const container = document.createElement('div'); container.innerHTML = source;
+      if (!/class=["'][^"']*tiled-grid/.test(source)) container.querySelectorAll('.doc-float').forEach((el) => {
+        if (el.parentElement.closest('.doc-float,[data-doc-design-page]')) return;
+        ['left','top','width','height'].forEach((key) => {
+          const value = el.style[key];
+          if (!/^-?[\d.]+%$/.test(value)) return;
+          const length = key === 'left' || key === 'width' ? w : h;
+          const offset = key === 'left' || key === 'top' ? m : 0;
+          el.style[key] = (parseFloat(value) * length / 100 - offset) + 'mm';
+        });
+      });
+      content = `<div class="doc-print-content">${container.innerHTML}</div>`;
+      pageCss = `.doc-print-content{position:relative;isolation:isolate;width:${Math.max(1,w-2*m)}mm;min-height:${Math.max(1,h-2*m)}mm} @media print{.doc-print-content{width:100%;min-height:0}}`;
+    }
+    // Chromium supports paged-media margin boxes. Keep running text in screen
+    // preview; move its text into paper margins when printing, with safe CSS strings.
+    const running = document.createElement('div'); running.innerHTML = source;
+    const cssText = (value) => '"' + String(value).replace(/[\\"<>\n\r\f]/g, c => '\\' + c.charCodeAt(0).toString(16) + ' ') + '"';
+    running.querySelectorAll('[data-doc-section]').forEach((section,i)=>{const w=Number(section.dataset.docSectionWidth),h=Number(section.dataset.docSectionHeight),m=Number(section.dataset.docSectionMargin);if(w>=50&&w<=1000&&h>=50&&h<=1000&&m>=0&&m<=100&&m*2<Math.min(w,h)){const name='docsection'+i;pageCss+=`@page ${name}{size:${w}mm ${h}mm;margin:${m}mm} [data-doc-section="${section.dataset.docSection.replace(/[^a-zA-Z0-9_-]/g,'')}"]{page:${name};width:${w-m*2}mm}`;}});
+    const header = running.querySelector('.doc-running-header')?.textContent || '';
+    const footer = running.querySelector('.doc-running-footer')?.textContent || '';
+    const numbered = !!running.querySelector('.doc-page-number');
+    if (header || footer || numbered) pageCss += `@page { @top-center {content:${cssText(header)};font:10px Arial;color:#666} @bottom-center {content:${cssText(footer)}${numbered ? ' " · Page " counter(page) " of " counter(pages)' : ''};font:10px Arial;color:#666} } @media print { .doc-running-header,.doc-running-footer,.doc-page-number {display:none!important} }`;
     return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(title || 'Document')}</title>` +
-      `<style>${PRINT_CSS}</style></head><body>${html}</body></html>`;
+      `<style>${PRINT_CSS}${pageCss}</style></head><body class="doc-content">${content}</body></html>`;
+  }
+
+  /** Parent-driven layout also works in script-disabled preview iframes. */
+  function loadPrintFrame(frame, html, fit) {
+    frame._printReady = new Promise((resolve, reject) => {
+      frame.onload = async () => {
+        try {
+          const doc = frame.contentDocument;
+          if (!doc) throw new Error('Print preview could not load');
+          await doc.fonts?.ready;
+          if (fit) await fit(doc);
+          const result = window.DocPagination ? await window.DocPagination.paginate(doc) : {pages:0,warnings:[]};
+          frame.dataset.pageCount = result.pages;
+          frame.dataset.paginationWarning = result.warnings.join(' ');
+          resolve(result);
+        } catch(error) { reject(error); }
+      };
+      frame.srcdoc = html;
+    });
+    frame._printReady.catch(error => toast(error.message, 'error'));
+    return frame._printReady;
+  }
+  async function printFrame(frame) {
+    if (frame._printReady) await frame._printReady;
+    if (!frame.isConnected) return;
+    frame.contentWindow.focus(); frame.contentWindow.print();
   }
 
   /* ---------- Inline SVG icons (Lucide-style, stroke = currentColor) ---------- */
@@ -618,7 +705,7 @@ const UI = (() => {
 
   return {
     esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
-    drawer, contextMenu, closeContextMenu, printableHtml, combo,
+    drawer, contextMenu, closeContextMenu, printableHtml, documentCss, loadPrintFrame, printFrame, combo,
     icon, helpIcon, emptyState, fileIconName, downloadCsv, csvImportModal,
   };
 })();

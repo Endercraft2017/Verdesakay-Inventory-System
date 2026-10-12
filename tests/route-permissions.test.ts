@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 
 /** Whole files whose every route is the caller's own data or checks inside its handlers. */
 const FILE_REASONS: Record<string, string> = {
+  'src/core/doc-studio.routes.ts': 'document handlers resolve template or form-scope edit permissions; drafts are user-owned; company library is shared to authenticated users and writes require templates.company',
   'src/core/me.routes.ts': "the caller's own profile, payslips, requests and schedule; approvals check the approver inside",
   'src/core/notifications.routes.ts': "the caller's own notification history",
   'src/core/personal.routes.ts': "the caller's own notes, tasks and bookmarks",

@@ -194,6 +194,7 @@ describe('form definition scope-based access control', () => {
 describe('form definition template link', () => {
   let formId: number;
   let templateId: number;
+  let starterId:number;
 
   beforeAll(async () => {
     const form = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send({
@@ -206,9 +207,10 @@ describe('form definition template link', () => {
     templateId = tpl.body.id;
   });
 
-  it('starts unlinked', async () => {
+  it('starts with a linked starter template', async () => {
     const res = await ctx.api.get('/api/form-definitions/' + formId).set(hdr(empToken));
-    expect(res.body.template_id).toBeNull();
+    starterId=res.body.template_id;
+    expect(starterId).toBeGreaterThan(0);
   });
 
   it('employee cannot link a template (403)', async () => {
@@ -245,12 +247,12 @@ describe('form definition template link', () => {
     expect(detail.body.template_id).toBeNull();
   });
 
-  it('deleting the linked template un-links it automatically (ON DELETE SET NULL)', async () => {
+  it('deleting the default selects the remaining linked starter template', async () => {
     await ctx.api.put(`/api/form-definitions/${formId}/template`)
       .set(hdr(adminToken)).send({ template_id: templateId });
     await ctx.api.delete('/api/templates/' + templateId).set(hdr(adminToken));
     const detail = await ctx.api.get('/api/form-definitions/' + formId).set(hdr(empToken));
-    expect(detail.body.template_id).toBeNull();
+    expect(detail.body.template_id).toBe(starterId);
   });
 });
 
@@ -270,10 +272,12 @@ describe('form definition template-body (design print template, scope-authorized
     hrFormId = form.body.id;
   });
 
-  it('hr (no templates.edit) can create the template body for its own hr-scoped form', async () => {
+  it('hr (no templates.edit) can edit its form starter template', async () => {
+    const form=(await ctx.api.get('/api/form-definitions/'+hrFormId).set(hdr(hrToken))).body;
+    const opened=(await ctx.api.get('/api/templates/'+form.template_id).set(hdr(hrToken))).body;
     const res = await ctx.api.put(`/api/form-definitions/${hrFormId}/template-body`)
-      .set(hdr(hrToken)).send({ name: 'Leave Slip Template', type: 'generic', body: '<p>{{reason}}</p>' });
-    expect(res.status).toBe(201);
+      .set(hdr(hrToken)).send({ expected_revision:opened.revision, name: 'Leave Slip Template', type: 'generic', body: '<p>{{reason}}</p>' });
+    expect(res.status).toBe(200);
     const detail = await ctx.api.get('/api/form-definitions/' + hrFormId).set(hdr(hrToken));
     expect(detail.body.template_id).toBe(res.body.id);
     const tpl = await ctx.api.get('/api/templates/' + res.body.id).set(hdr(hrToken));
@@ -282,8 +286,9 @@ describe('form definition template-body (design print template, scope-authorized
 
   it('calling it again updates the same template (upsert), not a second one', async () => {
     const first = await ctx.api.get('/api/form-definitions/' + hrFormId).set(hdr(hrToken));
+    const opened = await ctx.api.get('/api/templates/' + first.body.template_id).set(hdr(hrToken));
     const res = await ctx.api.put(`/api/form-definitions/${hrFormId}/template-body`)
-      .set(hdr(hrToken)).send({ name: 'Leave Slip Template v2', type: 'generic', body: '<p>updated {{reason}}</p>' });
+      .set(hdr(hrToken)).send({ expected_revision: opened.body.revision, name: 'Leave Slip Template v2', type: 'generic', body: '<p>updated {{reason}}</p>' });
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(first.body.template_id);
     const tpl = await ctx.api.get('/api/templates/' + res.body.id).set(hdr(hrToken));

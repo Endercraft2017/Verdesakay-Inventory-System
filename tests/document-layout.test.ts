@@ -1,0 +1,8 @@
+import {it,expect} from 'vitest';
+import {isMultiPageDocument} from '../src/shared/document-layout';
+import {templateSchema} from '../src/shared/validation';
+import fs from 'node:fs';
+const mod={exports:{} as any};new Function('module',fs.readFileSync(new URL('../public/js/print-tiling.js',import.meta.url),'utf8'))(mod);
+it('recognizes real multipage markup consistently on server and browser',()=>{for(const [body,expected] of [ ['<div data-doc-design-page="a">A</div>',false],['<div data-doc-design-page="a">A</div><div data-doc-design-page="b">B</div>',true],['<div class="doc-pagebreak"></div>',true],['<div data-doc-section="s" data-doc-section-break="page">Section</div>',true],['<div style="break-before:page">Section</div>',true],['<!-- <div class="doc-pagebreak"> --> <p>Single</p>',false] ] as const){expect(isMultiPageDocument(body)).toBe(expected);expect(mod.exports.isMultiPageDocument(body)).toBe(expected);}});
+it('rejects incompatible published template settings while allowing full pages',()=>{const input={name:'Design',body:'<div data-doc-design-page="a">A</div><div data-doc-design-page="b">B</div>'};expect(templateSchema.safeParse({...input,copies_per_record:2}).success).toBe(false);expect(templateSchema.safeParse({...input,tile_continuous:true}).success).toBe(false);expect(templateSchema.safeParse(input).success).toBe(true);});
+it('bypasses old grids when any rendered record requires multiple pages',()=>{expect(mod.exports.buildTiledPagesHtml([1,2],(n:number)=>n===1?'<p>One</p>':'<div data-doc-design-page="a">A</div><div data-doc-design-page="b">B</div>',{copiesPerRecord:2})).toBe('');});

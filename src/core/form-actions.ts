@@ -9,6 +9,7 @@
  * (record, action type): once an action has a `success` row in form_record_action_runs it is
  * not run again, so re-saving / re-approving a record is safe.
  */
+import { renderDocument } from '../shared/doc-render';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -74,21 +75,12 @@ function fillTemplate(tpl: string, ctx: { number: string; form: string; employee
     .replace(/\{field:([a-z0-9_]+)\}/gi, (_m, k: string) => String(ctx.data[k] ?? ''));
 }
 
-/** Render a form's linked doc_template body to standalone HTML by plain {{key}} substitution
- *  (no formula engine — see docs). Used to file a snapshot of the notice into the 201 file. */
+/** Render the assigned default using the same escaped variables and controls as preview. */
 function renderTemplateHtml(templateId: number | null, ctx: Record<string, unknown>): string | null {
   if (!templateId) return null;
   const tpl = queryOne<{ body: string }>('SELECT body FROM doc_templates WHERE id = ?', templateId);
   if (!tpl) return null;
-  const flat: Record<string, string> = {};
-  for (const [k, v] of Object.entries(ctx)) flat[k] = v == null ? '' : String(v);
-  const co = companyProfile();
-  flat['company.name'] = String(co.name ?? '');
-  flat['company.address'] = String(co.address ?? '');
-  flat['company.phone'] = String(co.phone ?? '');
-  flat['company.email'] = String(co.email ?? '');
-  const body = tpl.body.replace(/\{\{\s*([a-z0-9_.]+)\s*\}\}/gi, (_m, k: string) => flat[k] ?? '');
-  return `<!doctype html><meta charset="utf-8"><body>${body}</body>`;
+  return `<!doctype html><meta charset="utf-8"><body>${renderDocument(tpl.body,{...ctx,company:companyProfile()},templateId)}</body>`;
 }
 
 function alreadySucceeded(recordId: number, type: string): boolean {
@@ -117,6 +109,7 @@ export function runFormActions(args: RunArgs): { warnings: string[] } {
   const tplCtx: Record<string, unknown> = {
     ...args.data,
     number: args.recordNumber,
+    record:{number:args.recordNumber,status:args.trigger==='approved'?'approved':(queryOne<{status:string}>('SELECT status FROM form_records WHERE id=?',args.recordId)?.status||''),created_at:queryOne<{created_at:string}>('SELECT created_at FROM form_records WHERE id=?',args.recordId)?.created_at||''},
     today: now().toISOString().slice(0, 10),
   };
 

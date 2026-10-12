@@ -98,7 +98,7 @@ App.register('form-builder', async (view, filter) => {
         req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('holiday_name', 'Holiday Name', 'text'),
-        req('date', 'Date', 'date'),
+        req('work_date', 'Date', 'date'),
         req('holiday_type', 'Holiday Type', 'select', ['Regular Holiday', 'Special Non-Working Holiday']),
         req('hours_worked', 'Hours Worked', 'number'),
         opt('approved_by', 'Approved By', 'text'),
@@ -110,7 +110,7 @@ App.register('form-builder', async (view, filter) => {
       fields: [
         req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
-        req('date', 'Date', 'date'),
+        req('work_date', 'Date', 'date'),
         req('time_start', 'Time Start', 'text'),
         req('time_end', 'Time End', 'text'),
         req('hours', 'Total Hours', 'number'),
@@ -318,7 +318,7 @@ App.register('form-builder', async (view, filter) => {
           <td>${f.record_count}</td>
           <td class="actions">
             <button class="btn secondary small" data-records="${f.id}" title="View Records">${UI.icon('forms', 14)} Records</button>
-            <button class="icon-btn" data-tpl="${f.id}" title="${f.template_id ? 'Edit print template' : 'Design print template'}">${UI.icon(f.template_id ? 'file' : 'plus', 16)}</button>
+            <button class="btn secondary small" data-tpl="${f.id}" title="Manage print templates">${UI.icon('file', 14)} Templates</button>
             <button class="icon-btn" data-edit="${f.id}" title="Edit">${UI.icon('edit')}</button>
             <button class="icon-btn danger" data-del="${f.id}" title="Delete">${UI.icon('trash')}</button>
           </td>
@@ -332,7 +332,7 @@ App.register('form-builder', async (view, filter) => {
     el.querySelectorAll('[data-records]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); App.navigate('form-records', { form_id: b.dataset.records }); });
     el.querySelectorAll('[data-tpl]').forEach((b) =>
-      b.onclick = (e) => { e.stopPropagation(); openFormTemplate(forms.find((f) => String(f.id) === String(b.dataset.tpl))); });
+      b.onclick = async (e) => { e.stopPropagation(); try{await manageFormTemplates(forms.find((f) => String(f.id) === String(b.dataset.tpl)));}catch(err){UI.toast(err.message,'error');} });
     el.querySelectorAll('tr[data-open]').forEach((tr) =>
       tr.onclick = (e) => {
         if (e.target.closest('.actions')) return;
@@ -380,6 +380,7 @@ App.register('form-builder', async (view, filter) => {
     switch (field.type) {
       case 'number': return 1;
       case 'date': return new Date().toLocaleDateString();
+      case 'time': return '09:00';
       case 'checkbox': return true;
       case 'select': return (field.options && field.options[0]) || '';
       default: return field.label || 'Sample';
@@ -435,14 +436,43 @@ App.register('form-builder', async (view, filter) => {
   // stays reserved for the hand-authored Sale/Job/Purchase Order etc. templates. Creation is
   // deferred to Save (not eagerly POSTed the moment the button is clicked), so opening the
   // editor and just closing it doesn't leave an orphan template behind.
-  async function openFormTemplate(form) {
+  async function manageFormTemplates(form) {
+    if(!form)return;
+    const [linked,available]=await Promise.all([API.get(`/form-definitions/${form.id}/templates`),API.get('/templates')]);
+    UI.modal({title:`${form.name} — Print templates`,size:'lg',cancelText:'Close',bodyHTML:`
+      <p class="muted">The default layout is used for printing and automated documents. Choose another layout when printing without changing the default. Editing a shared template affects every form linked to it; duplicate it for an independent copy.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"><button type="button" class="btn" data-new-layout>${UI.icon('plus')} Create template</button><select data-link-layout aria-label="Existing template"><option value="">Choose an existing template…</option>${available.filter(t=>!linked.some(l=>l.id===t.id)).map(t=>`<option value="${t.id}">${UI.esc(t.name)}</option>`).join('')}</select><button type="button" class="btn secondary" data-link-existing>Link selected</button></div>
+      <p class="muted">Templates from another form need matching field variables. Use the form's variable picker in the editor to map fields.</p>
+      ${linked.length?`<table><thead><tr><th>Layout</th><th>Default</th><th>Actions</th></tr></thead><tbody>${linked.map(t=>`<tr><td><strong>${UI.esc(t.name)}</strong>${t.linked_forms>1?`<div class="muted">Shared by ${t.linked_forms} forms</div>`:''}</td><td>${t.is_default?'Default':`<button type="button" class="btn secondary small" data-default="${t.id}">Make default</button>`}</td><td class="actions"><button type="button" class="btn secondary small" data-layout-edit="${t.id}">Edit</button><button type="button" class="btn secondary small" data-layout-copy="${t.id}">Duplicate</button><button type="button" class="btn secondary small" data-layout-unlink="${t.id}">Unlink</button></td></tr>`).join('')}</tbody></table>`:'<p>No templates linked. Create a layout or link an existing one.</p>'}`,
+      onOpen:ov=>{
+        const refresh=async()=>{const latest=await API.get('/form-definitions/'+form.id);Object.assign(form,latest);ov.remove();await loadForms();await manageFormTemplates(form);};
+        const action=fn=>async()=>{try{await fn();}catch(err){UI.toast(err.message,'error');}};
+        ov.querySelector('[data-new-layout]').onclick=action(async()=>{ov.remove();await openFormTemplate(form,null);});
+        ov.querySelector('[data-link-existing]').onclick=action(async()=>{const id=Number(ov.querySelector('[data-link-layout]').value);if(!id){UI.toast('Choose a template first','error');return;}await API.post(`/form-definitions/${form.id}/templates`,{template_id:id});await refresh();});
+        ov.querySelectorAll('[data-default]').forEach(b=>b.onclick=action(async()=>{await API.put(`/form-definitions/${form.id}/template`,{template_id:Number(b.dataset.default)});await refresh();}));
+        ov.querySelectorAll('[data-layout-edit]').forEach(b=>b.onclick=action(async()=>{ov.remove();await openFormTemplate(form,Number(b.dataset.layoutEdit));}));
+        ov.querySelectorAll('[data-layout-copy]').forEach(b=>b.onclick=action(async()=>{const source=await API.get('/templates/'+b.dataset.layoutCopy);ov.remove();await openFormTemplate(form,null,source);}));
+        ov.querySelectorAll('[data-layout-unlink]').forEach(b=>b.onclick=action(async()=>{if(!await UI.confirmDialog('Unlink this layout? Its template remains in Document Templates. Removing the default selects another linked layout when available.','Unlink'))return;await API.del(`/form-definitions/${form.id}/templates/${b.dataset.layoutUnlink}`);await refresh();}));
+      }
+    });
+  }
+
+  async function openFormTemplate(form, templateId = form?.template_id, source = null) {
     if (!form) return;
     if (!window.DocEditor) { UI.toast('Editor failed to load', 'error'); return; }
-    const existingTpl = form.template_id ? await API.get('/templates/' + form.template_id).catch(() => null) : null;
+    const existingTpl = templateId ? await API.get('/templates/' + templateId) : null;
     const isNew = !existingTpl;
-    const tpl = existingTpl || { name: `${form.name} Template`, type: 'generic', body: defaultFormTemplateBody(form) };
-    const sample = sampleContextFor(form);
+    const tpl = existingTpl || (source ? {...source,name:source.name+' (copy)'} : { name: `${form.name} Template`, type: 'generic', body: defaultFormTemplateBody(form) });
+    let savedId=existingTpl?.id||null;
+    const draftKey='new-template:form-'+form.id+'-'+crypto.randomUUID();
+    const custom=await API.get('/templates/variables'+(tpl.id?'?template_id='+tpl.id:''));
+    const sample = applyVariables(sampleContextFor(form),custom);
     window.DocEditor.open({
+      sharedStudio: true,
+      getSavedRevision: () => tpl.revision,
+      onSharedRevision: revision => { tpl.revision=revision; },
+      documentKey: savedId?'template:'+savedId:draftKey,
+      getDocumentKey:()=>savedId?'template:'+savedId:draftKey,
       title: isNew ? 'New Print Template' : 'Edit Print Template',
       name: tpl.name,
       type: tpl.type,
@@ -450,20 +480,29 @@ App.register('form-builder', async (view, filter) => {
       body: tpl.body,
       copiesPerRecord: tpl.copies_per_record || 1,
       recordsPerPage: tpl.records_per_page || 1,
+      gapXmm: tpl.grid_gap_x_mm ?? 6, gapYmm: tpl.grid_gap_y_mm ?? 6,
       tileFill: tpl.tile_fill || 'blank',
       continuous: !!tpl.tile_continuous,
       repeatCount: tpl.repeat_count || 1,
-      getVariables: () => formTemplateVariables(form),
+      getVariables: () => [...formTemplateVariables(form),...custom.map(v=>({category:v.category||'Custom variables',label:v.label,token:'{{'+v.key+'}}'}))],
       sampleContext: sample,
+      loadPreviewRecord: async (id) => {
+        const [record, company] = await Promise.all([API.get('/form-records/' + id), API.get('/templates/company')]);
+        if (Number(record.form_def_id) !== Number(form.id)) throw new Error('Choose a record from this form');
+        return { ...record.data, record: { number: record.number, status: record.status, created_at: record.created_at }, company };
+      },
       renderPreview: (body) => UI.printableHtml(renderTemplate(body, sample), 'Preview'),
-      onSave: async ({ name, type, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount }) => {
+      onSave: async ({ name, type, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount, gapXmm, gapYmm, studioVersion }) => {
         if (!name.trim()) return 'Template name is required';
         if (!body.trim()) return 'Template body cannot be empty';
         const res = await API.put(`/form-definitions/${form.id}/template-body`, {
-          name: name.trim(), type, body, copies_per_record: copiesPerRecord, records_per_page: recordsPerPage, tile_fill: tileFill,
-          tile_continuous: continuous, repeat_count: repeatCount,
+          template_id:savedId, source_template_id:!savedId?source?.id:undefined, source_revision:!savedId?source?.revision:undefined,
+          expected_revision: savedId?tpl.revision:undefined, period:tpl.period||undefined, name: name.trim(), type, body, copies_per_record: copiesPerRecord, records_per_page: recordsPerPage, tile_fill: tileFill,
+          grid_gap_x_mm: gapXmm, grid_gap_y_mm: gapYmm, tile_continuous: continuous, repeat_count: repeatCount, studio_version: studioVersion,
         });
-        form.template_id = res.id; // keep the in-memory row in sync until the next loadForms()
+        tpl.revision = res.revision;
+        savedId=res.id;
+        if(!form.template_id)form.template_id=res.id;
         UI.toast('Template saved');
         loadForms();
         return true;
@@ -576,13 +615,7 @@ App.register('form-builder', async (view, filter) => {
           await API.put('/form-definitions/' + existing.id, body);
         } else {
           const created = await API.post('/form-definitions', body);
-          // Quick Add forms come with a ready-made print template already, not just field
-          // defaults — no separate "Design template" click required before it's printable.
-          if (prefill) {
-            await API.put(`/form-definitions/${created.id}/template-body`,
-              { name: `${body.name} Template`, type: 'generic', body: defaultFormTemplateBody(body) })
-              .catch(() => { /* form itself still created fine; template can be designed later */ });
-          }
+
         }
         UI.toast(editing ? 'Form saved' : 'Form created');
         loadForms();

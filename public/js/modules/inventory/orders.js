@@ -624,15 +624,15 @@ App.register('orders', async (view, filter) => {
   async function printOrder(id) {
     try {
       const order = await API.get('/orders/' + id);
-      const [templateList, company] = await Promise.all([
-        API.get('/templates?type=' + order.type),
+      const [assigned, company] = await Promise.all([
+        API.get('/templates/defaults/'+({sale:'sale_order',job:'job_order',purchase:'purchase_request'}[order.type])),
         API.get('/templates/company'),
       ]);
       // List returns metadata only; fetch the full row (body + Print Grid settings) for the
       // first matching template.
-      const tplMeta = templateList[0];
+      const tplMeta = assigned;
       const [tpl, variables] = await Promise.all([
-        tplMeta ? API.get('/templates/' + tplMeta.id) : Promise.resolve(null),
+        Promise.resolve(assigned),
         // Global variables always apply; template-scoped ones only when a real template matched.
         API.get('/templates/variables' + (tplMeta ? `?template_id=${tplMeta.id}` : '')).catch(() => []),
       ]);
@@ -643,7 +643,7 @@ App.register('orders', async (view, filter) => {
       const tiled = tpl && typeof buildTiledPagesHtml === 'function'
         ? buildTiledPagesHtml([order], () => renderTemplate(tplBody, ctx), {
           copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
-          continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+          continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count, gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,
           pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tplBody) : undefined,
         })
         : '';
@@ -657,13 +657,11 @@ App.register('orders', async (view, filter) => {
         confirmText: 'Print…',
         onOpen: (ov) => {
           const ifr = ov.querySelector('#ord-preview-frame');
-          if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
-          ifr.srcdoc = full;
+          UI.loadPrintFrame(ifr, full, tiled && typeof fitTiledCells === 'function' ? fitTiledCells : undefined);
         },
-        onConfirm: (ov) => {
+        onConfirm: async (ov) => {
           const ifr = ov.querySelector('#ord-preview-frame');
-          ifr.contentWindow.focus();
-          ifr.contentWindow.print();
+          await UI.printFrame(ifr);
           return false; // keep the preview open — printing shouldn't close it
         },
       });

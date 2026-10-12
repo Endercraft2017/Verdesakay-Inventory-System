@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import { MODULES } from './modules';
+import { isMultiPageDocument, MULTIPAGE_GRID_ERROR } from './document-layout';
 
 export class ValidationError extends Error {
   status = 400;
@@ -1162,10 +1163,17 @@ export const matchToleranceSchema = z.object({
 });
 
 export const templateSchema = z.object({
+  studio_version: z.number().int().nonnegative().optional(),
+  expected_revision: trimmed.regex(/^[a-f0-9]{64}$/).optional(),
+  source_template_id: optionalId,
+  source_revision: trimmed.regex(/^[a-f0-9]{64}$/).optional(),
   name: trimmed.min(1, 'Template name is required').max(120),
   type: z.enum(['sale', 'job', 'purchase', 'generic']).default('generic'),
   period: trimmed.max(60).optional().nullable(),
-  body: trimmed.min(1, 'Template body cannot be empty').max(5000000),
+  body: trimmed.min(1, 'Template body cannot be empty').max(5000000).refine((body) => {
+    const content = body.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+    return !!content.replace(/<[^>]+>/g, '').replace(/&nbsp;|\s/g, '') || /<(?:img|table|hr)\b|class=["'][^"']*doc-float/i.test(content);
+  }, 'Template body cannot be empty'),
   // N-up print tiling (SCHEMA_VERSION 30/32) — the template editor shows these as Grid Rows /
   // Grid Columns / Fill mode. Both grid dimensions default to 1 (today's plain
   // one-record-per-page behavior). Capped at 6 each and 12 combined — past that a real page
@@ -1176,6 +1184,8 @@ export const templateSchema = z.object({
   // specific record (HR Payroll Slip's "2 employees x 2 copies"). 'repeat': cycle back through
   // the printed records to fill every cell — right for repeating ONE design across its whole
   // grid (print one record as a 3x3 sheet of itself).
+  grid_gap_x_mm: z.coerce.number().finite().min(0).max(30).default(6),
+  grid_gap_y_mm: z.coerce.number().finite().min(0).max(30).default(6),
   tile_fill: z.enum(['blank', 'repeat']).default('blank'),
   // (SCHEMA_VERSION 35) Continuous tiling: repeat_count is only consulted when tile_continuous
   // is on — copies_per_record/records_per_page then become a fixed page shape instead of the
@@ -1187,7 +1197,7 @@ export const templateSchema = z.object({
 }).refine((v) => v.copies_per_record * v.records_per_page <= 12, {
   message: 'Copies per record × records per page can\'t exceed 12',
   path: ['copies_per_record'],
-});
+}).refine(v => !isMultiPageDocument(v.body) || (v.copies_per_record === 1 && v.records_per_page === 1 && !v.tile_continuous), {message: MULTIPAGE_GRID_ERROR, path: ['copies_per_record']});
 
 // ---- Form builder ----
 
