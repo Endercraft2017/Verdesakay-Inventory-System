@@ -44,6 +44,8 @@ const NO_CLASS_NEEDED: Record<string, string> = {
   'src/platform/inquiries.routes.ts:post /': 'cloud website form, stored in platform.db',
   'src/platform/inquiries-console.routes.ts:patch /inquiries/:id': 'cloud console',
   'src/platform/inquiries-console.routes.ts:put /site/contact': 'cloud console',
+  'src/platform/platform-mail-console.routes.ts:put /mail': 'cloud console',
+  'src/platform/platform-mail-console.routes.ts:post /mail/test': 'cloud console',
   'src/platform/platform.routes.ts:post /tenants/:slug/reset-owner-password': 'cloud console',
   'src/platform/platform.routes.ts:post /tenants/:slug/recover-owner-username': 'cloud console',
   'src/platform/billing-console.routes.ts:put /billing/settings': 'cloud-only billing in platform.db',

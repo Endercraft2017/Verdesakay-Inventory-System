@@ -740,6 +740,8 @@ Built 2026-10-10 (`docs/SAAS-READINESS.md` §12). **Trigger:** a visitor sends t
    **locked until first payment**, which hands over to the "Workspace billing" pipeline (invoice →
    pay → confirm → open). Unlocked, it is usable at once.
 
+Each new inquiry, reported payment and self-serve sign-up also emails the owner when Email alerts
+are set up (`platform/platform-mail.ts`); a failed email never fails the request.
 **Branches:** bot fills the hidden field → accepted silently, nothing stored; invalid fields → 400;
 more than 5 per hour from one connection → 429. **Terminal states:** `won` (workspace created and
 linked), `lost`. The owner sets these; nothing changes them automatically.

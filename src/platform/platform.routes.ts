@@ -21,6 +21,7 @@ import {
 import { createTenant, importTenant, purgeTenant } from './provisioning';
 import billingConsoleRoutes from './billing-console.routes';
 import inquiriesConsoleRoutes from './inquiries-console.routes';
+import platformMailRoutes from './platform-mail-console.routes';
 import { updateInquiry, getInquiry } from './inquiries';
 import { tenantBillingSummary } from './billing';
 import { tenantAnalytics, saveOwnerDetails, addSupport, updateSupport, replySupport } from './owner-analytics';
@@ -466,5 +467,7 @@ router.get('/log', (req, res) => {
 router.use(billingConsoleRoutes);
 // Website "Talk to us" inquiries + the contact details the site shows (inquiries-console.routes.ts).
 router.use(inquiriesConsoleRoutes);
+// The platform mailbox + owner alerts (platform-mail-console.routes.ts).
+router.use(platformMailRoutes);
 
 export default router;

@@ -13,6 +13,7 @@ import { syncClass } from '../sync';
 import { DEFAULT_TENANT } from '../shared/db';
 import { currentSlug } from './quota';
 import { getTenant } from './platform';
+import { notifyOwner } from './platform-mail';
 import {
   listInvoices, getInvoice, getPayment, invoiceView, getBillingSettings, submitPayment, paymentInstructions,
   resolveBillingFile, fileType, toCentavos, BillingError, BILLING_FILE_MAX_BYTES, type UploadedFile,
@@ -65,7 +66,14 @@ router.post('/invoices/:id/payments', syncClass('online'), upload, (req: Request
       proof: asUpload(files.proof?.[0]),
       form_2307: asUpload(files.form_2307?.[0]),
     }, req.user!.username);
-    res.status(201).json(invoiceView(getInvoice(Number(req.params.id))!));
+    const inv = invoiceView(getInvoice(Number(req.params.id))!);
+    const channel = String(b.channel || 'bank') === 'gcash' ? 'GCash' : 'bank transfer';
+    void notifyOwner('payment', `Payment to check: ${slug} ${inv.reference}`, [
+      `${getTenant(slug)?.name || slug} reported a ${channel} for invoice ${inv.reference}.`, '',
+      `Amount: ₱${String(b.amount)}`, `Reference no.: ${String(b.reference_no || '')}`, `Paid on: ${String(b.paid_on || '')}`,
+      `Check it in your ${channel === 'GCash' ? 'GCash history' : 'bank app'}, then confirm or reject it in Billing.`,
+    ]);
+    res.status(201).json(inv);
   } catch (e) {
     if (e instanceof BillingError) { res.status(e.status).json({ error: e.message }); return; }
     throw e;

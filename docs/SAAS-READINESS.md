@@ -443,6 +443,13 @@ the inquiry** — prefilled, linked, and optionally **locked until the first pay
 email / Messenger shown beside the form are set in the console. Self-serve sign-up (below) stays
 built but off (`SIGNUPS_OPEN` unset); its buttons only appear if it is turned on.
 
+**Owner email alerts (2026-10-12):** the platform has its own mailbox (`src/platform/platform-mail.ts`,
+console → **Email alerts**), separate from each workspace's BYO-SMTP. It emails the owner on a new
+website inquiry, a customer-reported payment and a self-serve sign-up (each switchable), with a
+test-email button and a send log. Transport **Brevo** (HTTPS API) or **SMTP**: Railway blocks
+outgoing SMTP below its Pro plan, so Brevo is the default recommendation. The API key / password
+is encrypted in `platform.db` (with `MAIL_SECRET_KEY` / `APP_SECRET` when set) and never returned.
+
 **First invoice:** the console's price list (per module per month + per login seat) prices the
 sign-up's quote; when every chosen module and the seat price have a price, the first month's
 invoice is issued automatically (due in 7 days) and the website shows the monthly total before

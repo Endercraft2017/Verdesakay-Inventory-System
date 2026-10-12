@@ -11,6 +11,7 @@ import { onTenantPathHost } from './tenant-path';
 import { createInquiry } from './inquiries';
 import { MODULES } from '../shared/modules';
 import { rateLimitKey } from '../shared/device';
+import { notifyOwner } from './platform-mail';
 
 const router = Router();
 
@@ -47,6 +48,11 @@ router.post('/', limiter, (req, res) => {
   if (b.website) { res.status(201).json({ ok: true }); return; }
   createInquiry({ name: b.name, company: b.company, email: b.email, phone: b.phone || null,
     employees: b.employees || null, modules: b.modules, message: b.message || null });
+  void notifyOwner('inquiry', `New inquiry: ${b.company}`, [
+    `${b.name} from ${b.company} sent the "Talk to us" form.`, '',
+    `Email: ${b.email}`, b.phone ? `Mobile: ${b.phone}` : '', b.employees ? `Employees: ${b.employees}` : '',
+    b.modules?.length ? `Interested in: ${b.modules.join(', ')}` : '', b.message ? `\nMessage:\n${b.message}` : '',
+  ]);
   res.status(201).json({ ok: true });
 });
 

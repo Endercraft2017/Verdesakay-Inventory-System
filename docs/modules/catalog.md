@@ -121,7 +121,10 @@ the locked shell in `public/js/app.js`. Website inquiries (2026-10-10): `inquiri
 `platform.db`), `inquiries.routes.ts` (public `POST /site/inquiry`, site host only, rate-limited +
 honeypot), `inquiries-console.routes.ts` (operator list / status / notes / contact details); console
 `web-console/inquiries.js`; console tenant creation takes `awaiting_payment` + `inquiry_id`.
-Tests: `tests/inquiries.test.ts`. **Interface:** `tenantBillingSummary()`, `priceListQuote()`,
+Tests: `tests/inquiries.test.ts`. Owner email alerts (2026-10-12): `platform-mail.ts` (Brevo API or
+SMTP, encrypted secret, `platform_mail` + `platform_mail_log` in `platform.db`, `notifyOwner()` called
+by inquiries / billing / signup routes), `platform-mail-console.routes.ts`, console `web-console/mail.js`.
+Tests: `tests/platform-mail.test.ts`. **Interface:** `tenantBillingSummary()`, `priceListQuote()`,
 `setAwaitingPayment()` (platform.ts). **Not built:** PayMongo, overdue automation, notifications,
 recurring invoices. Tests: `tests/billing.test.ts`, `tests/billing-signup.test.ts`, `tests/frontend-billing.test.ts`.
 

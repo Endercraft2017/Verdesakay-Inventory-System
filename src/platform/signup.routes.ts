@@ -15,6 +15,7 @@ import { createTenant } from './provisioning';
 import { SIGNUPS_OPEN, tenantPublicUrl, setAwaitingPayment } from './platform';
 import { getBillingSettings, priceListQuote, createInvoice, invoiceView } from './billing';
 import { rateLimitKey } from '../shared/device';
+import { notifyOwner } from './platform-mail';
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -67,6 +68,11 @@ router.post('/', signupLimiter, (req, res, next) => {
         due_on: ymd(due), period_start: ymd(start), period_end: ymd(end),
       }, 'signup'));
     }
+    void notifyOwner('signup', `New sign-up: ${input.company_name}`, [
+      `${input.company_name} signed up on the website (/${slug}) and is waiting to pay.`,
+      input.admin_email ? `Email: ${input.admin_email}` : '',
+      invoice ? `First invoice ${invoice.reference}: ₱${invoice.amount}` : 'No invoice yet — issue one in Billing.',
+    ]);
     res.status(201).json({
       slug,
       url: tenantPublicUrl(slug),
