@@ -113,7 +113,8 @@ describe('ai-analytics: attendance reports', () => {
 
     // A leave form covering one more day so it isn't counted as an absence.
     const fd = db.run("INSERT INTO form_definitions (name, slug) VALUES ('Leave Request', 'leave_request')").lastInsertRowid;
-    const fr = db.run("INSERT INTO form_records (form_def_id, number, data) VALUES (?, 'LR-1', '{}')", fd).lastInsertRowid;
+    // Match the report's fixed August/September window instead of using today's date.
+    const fr = db.run("INSERT INTO form_records (form_def_id, number, data, created_at) VALUES (?, 'LR-1', '{}', '2026-08-08 09:00:00')", fd).lastInsertRowid;
     day('2026-08-08', null, Number(fr)); // excused
   });
 
