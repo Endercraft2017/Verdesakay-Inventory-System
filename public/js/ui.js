@@ -87,7 +87,7 @@ const UI = (() => {
           <div class="modal-head-actions">
             ${opts.helpTopic && window.Help ? '<button type="button" class="btn secondary small" data-modal-help>Guide</button>' : ''}
             ${opts.headActionHTML || ''}
-            <button class="icon-btn close" data-close>${icon('close')}</button>
+            <button type="button" class="icon-btn close" data-close aria-label="Close dialog" title="Close dialog">${icon('close')}</button>
           </div>
         </div>
         <div class="modal-body">

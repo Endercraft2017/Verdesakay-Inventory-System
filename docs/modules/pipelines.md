@@ -861,3 +861,11 @@ Responsive ribbon ResizeObserver/scroll events update the overflow action; closu
 its observer. Keyboard users can focus and scroll the toolbar, reaching all its controls.
 
 Dialog color swatch sizing preserves native picker and existing color-application handlers.
+
+Editor UX validation → isolated loopback server with real app routes/WebSocket → disposable
+admin/template fixtures → task checks and axe scans across modes, panels, dialogs and themes
+→ JSON plus screenshots/trace → nonzero exit on violations/task errors/runtime failures.
+A report-only baseline can collect violations but is not the delivery gate. Incomplete axe
+results, keyboard behavior and actual-user task understanding require separate judgment.
+The editor rail delegates Assistant to the existing enabled-module launcher; opening/closing
+the editor controls where the launcher is exposed, without changing AI requests or permissions.

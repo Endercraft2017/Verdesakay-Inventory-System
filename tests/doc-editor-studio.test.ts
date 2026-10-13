@@ -29,6 +29,11 @@ describe('document studio workflows',()=>{
     pointer('pointerdown',100,100);pointer('pointermove',100+96/25.4*20,100+96/25.4*10);pointer('pointerup',180,140);expect(doc.querySelector('.doc-custom-w').value).toBe('230');expect(doc.querySelector('.doc-custom-h').value).toBe('307');editor._history.undo();expect(doc.querySelector('.doc-pagesize').value).toBe('a4');editor._history.redo();expect(doc.querySelector('.doc-custom-w').value).toBe('230');
     pointer('pointerdown',100,100);pointer('pointermove',180,160);handle.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));expect(doc.querySelector('.doc-custom-w').value).toBe('230');expect(doc.querySelector('.doc-custom-h').value).toBe('307');expect(doc.querySelector('.doc-fs')).not.toBeNull();
   });
+  it('keeps the enabled assistant accessible from the editor tool rail',()=>{
+    const {doc,editor,reopen}=setup();const fab=doc.createElement('button');fab.id='ai-fab';const open=vi.fn();fab.addEventListener('click',open);doc.body.append(fab);
+    editor.close(true);reopen();doc.querySelector('[data-editor-assistant]').click();expect(open).toHaveBeenCalledOnce();
+    doc.querySelector('[data-rail-toggle]').click();expect(doc.querySelector('[data-editor-assistant]').dataset.tip).toBe('Assistant');
+  });
   it('opens existing field management from the variable bank',()=>{
     let vars=[{label:'Customer',token:'{{order.customer_name}}'}];
     const manage=vi.fn(({refresh})=>{vars=[...vars,{label:'New field',token:'{{new_field}}'}];refresh();});

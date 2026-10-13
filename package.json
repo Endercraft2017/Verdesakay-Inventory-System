@@ -32,7 +32,8 @@
     "desktop:smoke": "node scripts/desktop.mjs --smoke",
     "desktop:cert": "powershell -ExecutionPolicy Bypass -File scripts/desktop-cert.ps1",
     "desktop:build": "electron-builder --win nsis",
-    "test:node24": "node scripts/test-node24.mjs"
+    "test:node24": "node scripts/test-node24.mjs",
+    "test:editor:ux": "node scripts/test-editor-ux.mjs"
   },
   "build": {
     "appId": "com.afkcube.otom.desktop",
@@ -82,6 +83,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.6",
     "@types/jsdom": "^28.0.3",
@@ -95,6 +97,7 @@
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "jsdom": "^29.1.1",
+    "playwright": "^1.64.0",
     "supertest": "^7.2.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"

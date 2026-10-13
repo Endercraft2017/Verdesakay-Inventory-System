@@ -1074,3 +1074,14 @@ supports local search within the existing permission-filtered form list.
 
 Table and named-style dialog color pickers use full swatches with explicit height/padding,
 matching the existing inspector pickers rather than generic text-input padding.
+
+The project-specific editor UX skill lives in `.agents/skills/editor-ux/SKILL.md` and is
+routed from CLAUDE.md. It records the evaluated UI UX Pro Max revision and adapts NN/g,
+Fluent and W3C guidance to the existing stack. `npm run test:editor:ux` starts a disposable
+loopback app/database, performs Playwright task checks and axe A/AA scans, and fails on
+violations, task failures or runtime errors. JSON/screenshots/trace remain in ignored work/.
+Shared modal Close controls have explicit names; Insert table labels are associated with
+inputs. Resize handles retain their small visual square with larger hit areas, phone zoom
+controls meet minimum target sizing, and the enabled assistant moves into the editor rail
+rather than obscuring the paper. Mode buttons expose selection; word-count semantics avoid
+announcing every keystroke. None of these changes alter stored document content.
