@@ -297,17 +297,6 @@ const NAV = [
       },
     ],
   },
-  {
-    id: 'account', label: 'My Account', icon: 'settings',
-    subtabs: [
-      {
-        id: 'profile', label: 'Profile',
-        tree: [
-          { label: 'My Account', icon: 'settings', route: 'account' },
-        ],
-      },
-    ],
-  },
 ];
 
 // Browser: expose as globals (loaded via <script> before app.js).

@@ -33,7 +33,7 @@ export function vapidPublicKey(): string {
 
 function configure(): void {
   const k = vapid();
-  const subject = getSetting<string>(SUBJECT_KEY) || 'mailto:notify@verdesakay.local';
+  const subject = getSetting<string>(SUBJECT_KEY) || 'mailto:notify@otom.local';
   webpush.setVapidDetails(subject, k.publicKey, k.privateKey);
 }
 

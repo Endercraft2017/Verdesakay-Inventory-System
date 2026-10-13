@@ -1,4 +1,4 @@
-# Verdesakay Office System — Codebase Reference Map
+# Otom — Codebase Reference Map
 
 > **This is the single source of truth for how the code is organized.**
 > Before adding code, check here for an existing function/route/type to reuse instead of

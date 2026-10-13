@@ -75,7 +75,7 @@ function loadOrCreateCert(): { key: Buffer; cert: Buffer } | null {
         [
           'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '3650',
           '-keyout', KEY_FILE, '-out', CERT_FILE,
-          '-subj', '/CN=Verdesakay Office System',
+          '-subj', '/CN=Otom',
           '-addext', `subjectAltName=${sans.join(',')}`,
         ],
         { stdio: 'ignore' }
@@ -99,7 +99,7 @@ function loadOrCreateCert(): { key: Buffer; cert: Buffer } | null {
 }
 
 function banner(scheme: string): void {
-  console.log(`\nVerdesakay Office System is running (${scheme.toUpperCase()}):`);
+  console.log(`\nOtom is running (${scheme.toUpperCase()}):`);
   console.log(`   Local:   ${scheme}://localhost:${PORT}`);
   for (const ip of lanIps()) {
     console.log(`   Network: ${scheme}://${ip}:${PORT}  (for other office devices)`);

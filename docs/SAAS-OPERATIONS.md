@@ -20,7 +20,7 @@ one `default` tenant, exactly as before.
 
 | Var | Purpose | Default |
 |---|---|---|
-| `APP_DOMAIN` | Root domain for tenant sub-domains, e.g. `verdesakay.app`. **Empty ⇒ single-tenant** (host is ignored; only the `default` tenant). | *(empty)* |
+| `APP_DOMAIN` | Root domain for tenant sub-domains, e.g. `app.afkcube.com`. **Empty ⇒ single-tenant** (host is ignored; only the `default` tenant). | *(empty)* |
 | `PLATFORM_DB_PATH` | The control-plane DB file. | `<root>/db/platform.db` |
 | `DATA_DIR` | Where non-`default` tenant DB files live. | `<root>/db/tenants` |
 | `DB_PATH` | The `default` tenant's DB file. | `<root>/db/data.db` |

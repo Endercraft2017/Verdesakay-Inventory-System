@@ -281,7 +281,7 @@ export function findTarget(name: string): OffsiteTarget {
 /** Round-trip a small object through a target to prove the credentials and key work. */
 export async function testTarget(t: OffsiteTarget): Promise<void> {
   const key = `_selftest/${Date.now()}.txt.gz.enc`;
-  const payload = Buffer.from(`verdesakay offsite self-test ${new Date().toISOString()}`);
+  const payload = Buffer.from(`Otom offsite self-test ${new Date().toISOString()}`);
   await t.client.put(key, pack(payload));
   const back = unpack(await t.client.get(key));
   if (!back.equals(payload)) throw new Error('Downloaded copy did not match what was uploaded.');

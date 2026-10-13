@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#2b7fff" />
-  <title>Verdesakay Office System</title>
+  <title>Otom</title>
   <!-- Apply the saved/system theme before first paint to avoid a flash. -->
   <script>
     (function () {
@@ -24,10 +24,10 @@
   <div id="login-screen" class="login-wrap">
     <form class="login-card" id="login-form">
       <div class="login-brand">
-        <div class="mark">V</div>
+        <div class="mark">O</div>
         <div>
-          <h1>Verdesakay</h1>
-          <div class="brand-sub">Office Management System</div>
+          <h1>Otom</h1>
+          <div class="brand-sub">by AFKcube</div>
         </div>
       </div>
       <div id="login-error" class="form-error hidden"></div>
@@ -57,18 +57,18 @@
     <!-- Top primary menu -->
     <header class="topnav">
       <div class="brand">
-        <div class="mark">V</div>
-        <div class="name">Verdesakay<small>Office System</small></div>
+        <div class="mark">O</div>
+        <div class="name"><span id="tenant-name">Workspace</span><small>Otom</small></div>
       </div>
       <nav class="primary-nav" id="primary-nav"></nav>
       <div class="grow"></div>
-      <div class="topnav-user">
-        <div class="who">
-          <div class="name" id="me-name">—</div>
-          <div class="role"><span id="me-role"></span> · <span id="me-dept"></span></div>
-        </div>
-        <div class="avatar" id="me-avatar">—</div>
-      </div>
+      <button type="button" class="topnav-user" id="account-btn" title="My Account" aria-label="My Account">
+        <span class="who">
+          <span class="name" id="me-name">—</span>
+          <span class="role"><span id="me-role"></span> · <span id="me-dept"></span></span>
+        </span>
+        <span class="avatar" id="me-avatar">—</span>
+      </button>
     </header>
 
     <!-- Secondary sub-tab row -->
@@ -93,7 +93,6 @@
         </div>
         <div class="rail-bottom">
           <button class="rail-btn" data-tool="help" title="Help &amp; explainers" aria-label="Help"></button>
-          <button class="rail-btn rail-avatar" id="rail-account" data-route="account" title="My Account" aria-label="My Account"></button>
           <button class="rail-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"></button>
           <button class="rail-btn" id="logout-btn" title="Sign out" aria-label="Sign out"></button>
         </div>

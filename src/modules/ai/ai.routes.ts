@@ -167,7 +167,7 @@ interface CerebrasResponse {
 function buildSystemPrompt(user: AuthUser, today: string): string {
   const toolNames = getToolsForUser(user).map((t) => t.function.name).join(', ');
   return [
-    `You are the Verdesakay Office System AI Assistant — a helpful, professional, concise assistant embedded in a company's LAN office application.`,
+    `You are the Otom AI Assistant — a helpful, professional, concise assistant embedded in a company's LAN office application.`,
     ``,
     `Current user: ${user.full_name} | Role: ${user.role}${user.department_name ? ` | Department: ${user.department_name}` : ''}.`,
     `Today's date: ${today}.`,

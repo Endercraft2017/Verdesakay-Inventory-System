@@ -1,7 +1,7 @@
 {
-  "name": "verdesakay-office-system",
+  "name": "otom",
   "version": "1.0.0",
-  "description": "Verdesakay local office system: inventory, forms, accounts, messaging",
+  "description": "Otom by AFKcube: office system: inventory, forms, accounts, messaging",
   "type": "module",
   "main": "server.ts",
   "scripts": {

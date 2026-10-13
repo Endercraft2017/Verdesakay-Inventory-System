@@ -39,7 +39,7 @@ router.post('/test', configGate, async (req, res, next) => {
       return;
     }
     const r = await sendMail(
-      { to, subject: 'Verdesakay — test email', text: 'This is a test message from your Verdesakay system. Email is working.' },
+      { to, subject: 'Otom — test email', text: 'This is a test message from your Otom system. Email is working.' },
       req.user!.id
     );
     res.status(r.ok ? 200 : 400).json(r);

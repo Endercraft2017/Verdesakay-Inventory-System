@@ -1,4 +1,7 @@
-# Verdesakay Office System
+# Otom
+
+Otom is an office management web app by **AFKcube (AFK^3)**. Company names shown in
+the workspace header belong to the current tenant.
 
 A local office management system for inventory, forms/files, staff accounts, and
 internal messaging. It runs as a small web server on one office PC; other PCs on the
@@ -77,7 +80,7 @@ Other PCs reach this server over the LAN using the **Network** URL. If they can'
 connect, allow Node through the Windows Firewall on the host PC (one time):
 
 ```
-netsh advfirewall firewall add rule name="Verdesakay Office" dir=in action=allow protocol=TCP localport=3000
+netsh advfirewall firewall add rule name="Otom" dir=in action=allow protocol=TCP localport=3000
 ```
 
 ## Data & backups
