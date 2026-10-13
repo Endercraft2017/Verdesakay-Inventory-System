@@ -829,6 +829,8 @@ Page resizing → flush pending typing → freeze display zoom → adjust custom
 update page/handle geometry → release/cancel → restore zoom. Release records one history
 change and updates preview/shared/save; cancel restores dimensions without an undo entry.
 Visible mm inputs and keyboard handles share page sizing, including safe margin adjustment.
+Sidebar collapse updates tooltip text from purpose descriptions to tool names; it leaves
+the selected panel, document history and editing pipeline unchanged.
 The selected font/style/point-size readout follows current text rather than field-label
 chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
 the existing change/history path. Find/replace mounts above the workspace; source editing,

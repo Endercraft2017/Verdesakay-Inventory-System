@@ -1035,3 +1035,5 @@ Page dimensions are always exposed; corner resize handles edit custom mm dimensi
 zoom-aware pointer math, Shift aspect locking and keyboard increments. Cancel restores the
 previous page; completed drags enter the existing history/save path once. Chrome stays outside
 the serialized surface, and shared polling defers replacement until the drag ends.
+Expanded sidebar tooltips explain each tool; collapsed tooltips show its name. Both use
+the shared hover/focus tooltip controller and retain accessible button labels.
