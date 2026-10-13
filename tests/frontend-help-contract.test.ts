@@ -13,7 +13,7 @@ function setup() {
   const dom = new JSDOM(html, { url: 'http://localhost', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   w.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as any;
-  w.eval(sources.map(s => fs.readFileSync(path.join(root, s.slice(1)), 'utf8')).join('\n;\n') + ';window.__realUI = UI;');
+  w.eval(sources.map(s => fs.readFileSync(path.join(root, s.slice(1)), 'utf8')).join('\n;\n') + ';window.__realUI = UI;window.__realAPI = API;');
   return { dom, w };
 }
 
@@ -64,6 +64,50 @@ describe('Help with real script globals and UI', () => {
     expect(w.Help.forLocation('form-records', { form_id: '42' }).id).toBe('payroll-records');
     expect(w.Help.forLocation('form-records', { form_id: '43' }).id).toBe('hr-forms');
     expect(w.Help.forLocation('form-records', { form_id: '999' }).id).toBe('data-forms');
+    dom.window.close();
+  });
+});
+
+describe('guide feedback', () => {
+  it('requires actionable negative feedback and captures the topic and original screen', async () => {
+    const { dom, w } = setup();
+    const sent: any[] = [];
+    w.__realAPI.upload = async (url: string, body: FormData) => w.__send(url, body);
+    w.__send = (url: string, body: FormData) => sent.push({ url, fields: Object.fromEntries(body.entries()) });
+    w.App.currentLocation = () => ({ route: 'inventory', label: 'Low Stock' });
+    w.Help.open('low-stock');
+    w.document.querySelector<HTMLButtonElement>('[data-guide-feedback="no"]')!.click();
+    const modal = w.document.querySelector('.modal-overlay')!;
+    modal.querySelector<HTMLButtonElement>('[data-confirm]')!.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(sent).toHaveLength(0);
+    expect(modal.querySelector('[data-modal-error]')?.textContent).toContain('describe what needs improvement');
+    modal.querySelector<HTMLTextAreaElement>('textarea')!.value = 'Explain the target multiplier.';
+    w.App.currentLocation = () => ({ route: 'templates', label: 'Templates' });
+    modal.querySelector<HTMLButtonElement>('[data-confirm]')!.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(sent[0]).toEqual({ url: '/bug-reports', fields: {
+      title: 'Guide feedback: Low Stock',
+      steps_to_reproduce: 'Read guide: Low Stock (low-stock).\nRating: Needs improvement.',
+      description: 'Explain the target multiplier.',
+      page_context: 'Low Stock | Guide: low-stock',
+    } });
+    expect(w.document.querySelector('.modal-overlay')).toBeNull();
+    dom.window.close();
+  });
+
+  it('keeps feedback and an underlying unsaved form after a failed submission', async () => {
+    const { dom, w } = setup();
+    w.__realAPI.upload = async () => { throw new Error("Network unavailable"); };
+    w.__realUI.modal({ title: 'Draft', bodyHTML: '<input id="unsaved" value="Keep me" />' });
+    w.Help.open('new-item');
+    w.document.querySelector<HTMLButtonElement>('[data-guide-feedback="yes"]')!.click();
+    const modal = [...w.document.querySelectorAll('.modal-overlay')].at(-1)!;
+    modal.querySelector<HTMLButtonElement>('[data-confirm]')!.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(modal.querySelector('[data-modal-error]')?.textContent).toBe('Network unavailable');
+    expect(modal.querySelector<HTMLButtonElement>('[data-confirm]')!.disabled).toBe(false);
+    expect(w.document.querySelector<HTMLInputElement>('#unsaved')!.value).toBe('Keep me');
     dom.window.close();
   });
 });

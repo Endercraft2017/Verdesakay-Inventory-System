@@ -80,7 +80,8 @@ App.register('sop', (view, filter) => {
     const topic = active.startsWith('help:') && helpById[active.slice(5)];
     if (topic) {
       mainEl.innerHTML = `<div class="guide-hero"><h3>${UI.esc(topic.title)}</h3>
-        <div class="help-content">${topic.html}</div></div>`;
+        <div class="help-content">${topic.html}</div></div>${Help.feedbackHTML()}`;
+      Help.wireFeedback(mainEl, topic);
       mainEl.scrollTop = 0;
       return;
     }
@@ -132,6 +133,8 @@ App.register('sop', (view, filter) => {
         the fuller written guides for trainers are in <code>docs/guides/</code>.
       </p>`;
 
+    mainEl.insertAdjacentHTML('beforeend', Help.feedbackHTML());
+    Help.wireFeedback(mainEl, p);
     mainEl.querySelector('#guide-tour-start').onclick = () => window.GuideTour && GuideTour.start(p.id, 0);
     const resumeBtn = mainEl.querySelector('#guide-tour-resume');
     if (resumeBtn) resumeBtn.onclick = () => window.GuideTour && GuideTour.resume(p.id);

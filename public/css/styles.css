@@ -1364,3 +1364,10 @@ textarea { resize: vertical; min-height: 84px; }
   .guide-spot { animation: none; }
   .guide-coach { transition: opacity .18s ease; }
 }
+
+.guide-feedback { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }
+.guide-feedback p { margin: 0 0 8px; }
+.guide-checkpoints { margin-top: 14px; padding: 8px 12px; border-left: 3px solid var(--accent); }
+@media print { .guide-feedback { display: none; } }
+
+.modal-overlay.guide-feedback-modal { z-index: 124; }
