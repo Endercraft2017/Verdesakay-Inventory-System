@@ -23,6 +23,7 @@ App.register('hr-kiosk', async (view) => {
   // QR and typed employee numbers — only runs on office PCs an HR manager approved once.
   let kioskInfo = null;
   try { kioskInfo = await API.get('/hr/clock/kiosk-devices'); } catch (e) { /* show the kiosk; the server still guards it */ }
+  if (App.currentLocation().route !== 'hr-kiosk') return;
   if (kioskInfo && kioskInfo.lock_active && !kioskInfo.this_device) {
     const canApprove = App.hasPermission('hr.manage');
     view.innerHTML = `
@@ -68,6 +69,8 @@ App.register('hr-kiosk', async (view) => {
     });
   }
 
+  // Loading the QR script may finish after the walkthrough has left this route.
+  if (App.currentLocation().route !== 'hr-kiosk') return;
   view.innerHTML = `
     <div class="kiosk">
       <div class="kiosk-main">

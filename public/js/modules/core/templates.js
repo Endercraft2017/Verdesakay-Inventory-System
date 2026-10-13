@@ -467,6 +467,7 @@ App.register('templates', async (view) => {
       : '';
     const m = UI.modal({
       title: 'New template',
+      helpTopic: 'templates',
       size: 'lg',
       bodyHTML: `
         <p class="muted" style="margin-top:0">Pick a starting point — the whole layout is dropped into the editor and everything stays editable — or begin from a blank page.</p>
@@ -588,9 +589,11 @@ App.register('templates', async (view) => {
   }
 
   async function companyModal() {
+    const admin = App.hasPermission('templates.company');
     const c = await API.get('/templates/company');
     UI.modal({
       title: 'Company profile',
+      helpTopic: 'company-profile',
       bodyHTML: `
         <p class="muted" style="margin-top:0">Used by the {{company.*}} variables on printed documents.</p>
         <label>Company name</label><input data-f="name" value="${UI.esc(c.name)}" ${admin ? '' : 'disabled'} />

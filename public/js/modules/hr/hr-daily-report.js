@@ -74,6 +74,9 @@ App.register('hr-daily-report', async (view, filter) => {
       if (!silent) bodyEl.innerHTML = `<div class="empty">${UI.esc(e.message)}</div>`;
       return;
     }
+    // A walkthrough can navigate again while this request is pending.
+    // The shared #view may now belong to another screen.
+    if (!view.contains(bodyEl)) return;
     state.data = data;
     draw();
   }

@@ -463,6 +463,7 @@ App.register('inventory', async (view, filter) => {
     }
     UI.modal({
       title: 'Print barcode labels',
+      helpTopic: 'barcode-labels',
       size: 'lg',
       bodyHTML: `
         <p class="muted" style="margin-top:0">${printable.length} item${printable.length === 1 ? '' : 's'} in the current list have a code.${skipped ? ` ${skipped} without a SKU/barcode will be skipped.` : ''} Each label is a Code 128 barcode that this system's scanner reads back.</p>
@@ -691,6 +692,7 @@ App.register('inventory', async (view, filter) => {
     let imageState = null;
     const m = UI.modal({
       title: editing ? 'Edit item' : 'New item',
+      helpTopic: 'new-item',
       size: 'lg',
       headActionHTML: canCustomize ? `<button class="btn secondary small" id="item-option-btn">Option</button>` : '',
       bodyHTML: `<div id="item-form-host">${renderItemFormBody(_itemFormConfig, it)}</div>`,

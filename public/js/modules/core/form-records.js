@@ -119,6 +119,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
 
   try { formDef = await API.get('/form-definitions/' + formId); }
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }
+  if (window.Help) Help.rememberForm(formDef);
 
   // Browsing a section's records needs the same forms.manage.<scope> permission as managing
   // them — there's no separate view-only tier for this system (mirrors the server-side gate in

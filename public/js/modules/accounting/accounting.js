@@ -58,9 +58,9 @@ App.register('accounting', async (view) => {
     <div class="topbar"><h2>Tax &amp; Compliance</h2></div>
     <div class="panel" style="padding:22px">
       <p class="muted" style="margin-top:0">Each item is a <b>worksheet</b> built from your payroll, sales and
-      purchase records — review and adjust before filing in eBIRForms / eFPS or each agency's portal (PH agencies
-      have no direct filing API). See the roadmap for a full general ledger in
-      <code>docs/ACCOUNTING-SYSTEM-PLAN.md</code>.</p>
+      purchase records — review and adjust before filing in eBIRForms / eFPS or each agency's portal.
+      This app does not submit filings. Use <b>Books</b> for journals and financial statements, and
+      <b>Receivables &amp; Payables</b> for settlements.</p>
       ${SECTIONS.map(([group, cards]) => `
         <h4 style="margin:18px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${UI.esc(group)}</h4>
         <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:12px">
@@ -295,7 +295,8 @@ async function bir2550mModal() {
       </div>
       <p class="muted" style="font-size:12px;margin-top:0">Re-sourced from the BIR sales & purchase journals — the
         exempt / zero-rated split and any credit / debit notes are already netted. Confirm disallowed input VAT
-        before filing. Deadline: the 20th of the following month.</p>
+        before filing. This is the monthly worksheet; check current BIR requirements and use
+        BIR 2550Q for the quarterly VAT worksheet.</p>
       <div id="v-body"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       async function load() {

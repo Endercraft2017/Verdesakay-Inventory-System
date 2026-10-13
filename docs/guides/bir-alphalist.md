@@ -5,7 +5,7 @@ attached to the annual **BIR Form 1604-C** (due **January 31**).
 
 ## What the system does
 
-**Time Keeping → Alphalist** builds **Schedule 1** — one row per employee in the BIR's
+**Accounting → Tax & Compliance → BIR 1604-C Alphalist** builds **Schedule 1** — one row per employee in the BIR's
 published column order, computed from the year's payslips + the annual tax table:
 gross compensation, the non-taxable breakdown (13th-month, de-minimis, SSS/PhilHealth/
 Pag-IBIG, salaries ≤ ₱250k), the taxable breakdown, tax due, tax withheld, the year-end
@@ -20,7 +20,7 @@ lives in the **BIR Alphalist Data Entry & Validation Module**. So:
 
 1. Run all cutoffs and **Generate Payslips** for the whole year first (set the right
    **pay date** on each run).
-2. **Time Keeping → Alphalist**, pick the year, **Export CSV**.
+2. **Accounting → Tax & Compliance → BIR 1604-C Alphalist**, pick the year, **Export CSV**.
 3. Fill the columns payroll can't: **de-minimis benefits**, **allowances**, and any
    **previous-employer** compensation/tax for staff hired mid-year.
 4. Bring the data into the BIR module — type it in, or use an **Excel → DAT converter**

@@ -19,7 +19,8 @@ government updates from time to time. This guide is for the admin who keeps them
 | `rwt` | the BIR withholding-tax brackets, per pay frequency | by BIR RMC (unchanged since 2023) |
 
 Each table is stored **with an effective date**. A payroll run uses the newest table
-whose effective date is on or before the pay date — so when a new rate takes effect on
+whose effective date is on or before the entered pay date (or the cutoff end date
+when no pay date is entered) — so when a new rate takes effect on
 1 January, you add the new version dated `YYYY-01-01` and last year's runs still use last
 year's numbers.
 
@@ -28,17 +29,18 @@ year's numbers.
 1. **Time Keeping → Policy Settings → Statutory Rate Tables → Open rate tables.**
 2. Find the table that changed. Its current figures show as JSON — edit the numbers to
    match the new circular (the field names stay the same).
-3. Set the **effective date** (usually `YYYY-01-01`) and a **note** (e.g. the circular
+3. Set the **effective date** from the circular and a **note** (e.g. the circular
    number).
-4. **Save as new version.** The old version stays for past payroll.
+4. **Save as new version.** Choose a new effective date to preserve the old version.
+   Saving the same kind and effective date replaces that existing version.
 5. Run one payslip on the new period and check it against the agency's calculator.
 
 ## When to act
 
 - **Every January**, check for new SSS / PhilHealth circulars and a new BIR RMC. If the
-  numbers changed, add a new version dated `YYYY-01-01`.
-- **Never edit a past year's table in place** — that would silently change already-filed
-  payroll. Add a new dated version instead.
+  numbers changed, add a new version dated when the circular actually takes effect.
+- **Never edit a past year's table in place** — that changes the rules used if an earlier payroll is regenerated. Saved payslips
+  are not rewritten by a table update alone. Add a new dated version instead.
 
 ## How the figures are verified
 

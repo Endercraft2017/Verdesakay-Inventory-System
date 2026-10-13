@@ -323,6 +323,7 @@ a { color: var(--accent); }
   transform: translateX(100%); transition: transform 0.18s ease;
 }
 .drawer.open { transform: none; }
+.drawer.help-drawer { z-index: 122; }
 .drawer-head {
   display: flex; align-items: center; gap: 9px;
   padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;

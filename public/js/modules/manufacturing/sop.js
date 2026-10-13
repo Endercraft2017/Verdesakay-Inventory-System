@@ -8,25 +8,30 @@
 App.register('sop', (view, filter) => {
   const PIPELINES = (window.GUIDE && GUIDE.pipelines) || [];
   const byId = (window.GUIDE && GUIDE.byId) || {};
+  const topics = (window.Help && Help.topics) || [];
+  const helpById = Object.fromEntries(topics.map((t) => [t.id, t]));
 
   if (!PIPELINES.length) {
     view.innerHTML = `<div class="empty">Guide content unavailable.</div>`;
     return;
   }
 
-  let active = (filter && filter.topic && byId[filter.topic]) ? filter.topic : PIPELINES[0].id;
+  let active = filter && helpById[filter.helpTopic] ? 'help:' + filter.helpTopic
+    : (filter && filter.topic && byId[filter.topic]) ? filter.topic : PIPELINES[0].id;
 
   view.innerHTML = `
     <div class="topbar">
       <div>
         <h2>Guide</h2>
-        <div class="sub">How each pipeline works, where every button lives, and a step-by-step walkthrough.</div>
+        <div class="sub">Screen instructions, personal tools, and end-to-end workflows.</div>
       </div>
       <div class="grow"></div>
       <button class="btn secondary" id="guide-print">${UI.icon('printer')} Print</button>
     </div>
     <div class="guide-layout">
-      <nav class="guide-nav" id="guide-nav">
+      <nav class="guide-nav" id="guide-nav" aria-label="Guide topics">
+        <label>Find a guide<input type="search" id="guide-search" placeholder="Search screens, tools, workflows…" /></label>
+        <h4>Workflows</h4>
         ${PIPELINES.map((p) => `
           <button class="guide-nav-item" data-id="${p.id}">
             <span class="guide-nav-ic">${UI.icon(p.icon || 'help', 17)}</span>
@@ -35,6 +40,11 @@ App.register('sop', (view, filter) => {
               <span class="guide-nav-sub">${UI.esc(p.tagline || '')}</span>
             </span>
           </button>`).join('')}
+        <h4>Screens and tools</h4>
+        ${topics.map((t) => `<button class="guide-nav-item" data-id="help:${t.id}">
+          <span class="guide-nav-ic">${UI.icon('help', 17)}</span>
+          <span class="guide-nav-txt"><span class="guide-nav-title">${UI.esc(t.title)}</span>
+          <span class="guide-nav-sub">${UI.esc(t.group)}</span></span></button>`).join('')}
       </nav>
       <div class="guide-main" id="guide-main"></div>
     </div>`;
@@ -58,7 +68,7 @@ App.register('sop', (view, filter) => {
         ${UI.icon('send', 13)} Open: ${UI.esc(step.to.label || step.to.route)}</a>`;
     }
     if (step.to && step.to.external) {
-      return `<span class="guide-ext">${UI.icon('inventory', 13)} ${UI.esc(step.to.label)} <em>(phone app)</em></span>`;
+      return `<span class="guide-ext">${UI.icon('inventory', 13)} ${UI.esc(step.to.label || step.to.external)} <em>(phone app)</em></span>`;
     }
     return '';
   }
@@ -67,6 +77,13 @@ App.register('sop', (view, filter) => {
     navEl.querySelectorAll('.guide-nav-item').forEach((b) =>
       b.classList.toggle('active', b.dataset.id === active));
 
+    const topic = active.startsWith('help:') && helpById[active.slice(5)];
+    if (topic) {
+      mainEl.innerHTML = `<div class="guide-hero"><h3>${UI.esc(topic.title)}</h3>
+        <div class="help-content">${topic.html}</div></div>`;
+      mainEl.scrollTop = 0;
+      return;
+    }
     const p = byId[active];
     const saved = (window.GuideTour && GuideTour.savedStep(p.id)) || 0;
     const canResume = saved > 0 && saved < p.steps.length;
@@ -131,10 +148,16 @@ App.register('sop', (view, filter) => {
 
   navEl.querySelectorAll('.guide-nav-item').forEach((b) =>
     b.addEventListener('click', () => { active = b.dataset.id; draw(); }));
+  view.querySelector('#guide-search').addEventListener('input', (e) => {
+    const query = e.target.value.trim().toLowerCase();
+    navEl.querySelectorAll('.guide-nav-item').forEach((b) => {
+      b.hidden = !b.textContent.toLowerCase().includes(query);
+    });
+  });
   view.querySelector('#guide-print').onclick = () => window.print();
 
   const style = document.createElement('style');
-  style.textContent = `@media print{
+  style.textContent = `.guide-nav-item[hidden]{display:none!important} @media print{
     .topbar,.tool-rail,.rail,.primary-nav,.subnav,.tree,.util-bar,.guide-nav,.guide-cta,.guide-foot-note{display:none!important}
     .guide-layout{display:block!important}
     .guide-step,.guide-watch,.guide-hero{break-inside:avoid}
@@ -143,7 +166,8 @@ App.register('sop', (view, filter) => {
 
   draw();
 
-  if (filter && filter.tour === '1' && window.GuideTour) {
-    setTimeout(() => GuideTour.start(active, 0), 60);
+  if (filter && filter.tour === '1' && byId[active] && window.GuideTour) {
+    const pipelineId = active;
+    setTimeout(() => { if (view.isConnected) GuideTour.start(pipelineId, 0); }, 60);
   }
 });

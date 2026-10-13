@@ -66,7 +66,7 @@ const UI = (() => {
   }
 
   /* Modal: opts = { title, bodyHTML, confirmText, onConfirm(modalEl)->bool|Promise,
-       size ('lg'|'xl'), headActionHTML (raw HTML placed left of the close button) } */
+       size ('lg'|'xl'), helpTopic? (explicit Help topic for this dialog), headActionHTML (raw HTML placed left of the close button) } */
   function modal(opts) {
     const root = document.getElementById('modal-root');
     const overlay = document.createElement('div');
@@ -76,6 +76,7 @@ const UI = (() => {
         <div class="modal-head">
           <h3>${esc(opts.title)}</h3>
           <div class="modal-head-actions">
+            ${opts.helpTopic && window.Help ? '<button type="button" class="btn secondary small" data-modal-help>Guide</button>' : ''}
             ${opts.headActionHTML || ''}
             <button class="icon-btn close" data-close>${icon('close')}</button>
           </div>
@@ -91,6 +92,8 @@ const UI = (() => {
       </div>`;
     root.appendChild(overlay);
 
+    const helpButton = overlay.querySelector('[data-modal-help]');
+    if (helpButton) helpButton.addEventListener('click', () => Help.open(opts.helpTopic));
     const close = () => overlay.remove();
     overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
     overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });

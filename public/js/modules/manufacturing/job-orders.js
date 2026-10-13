@@ -97,6 +97,7 @@ App.register('job-orders', async (view, filter) => {
     if (!products.length) { UI.toast('Define a finished product first (Production → Finished Products)', 'error'); return; }
     UI.modal({
       title: 'New job order',
+      helpTopic: 'job-orders',
       bodyHTML: `<div class="form-grid">
         <div class="form-field span2"><div class="field-label"><label>Product to build <span class="req">*</span></label></div>
           <select data-f="product">${products.map((p) => {

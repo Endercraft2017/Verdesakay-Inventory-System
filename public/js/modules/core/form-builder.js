@@ -484,6 +484,7 @@ App.register('form-builder', async (view, filter) => {
 
     UI.modal({
       title: editing ? `Edit: ${existing.name}` : 'New Form',
+      helpTopic: 'form-builder',
       size: 'lg',
       bodyHTML: `
         <div class="field-row">

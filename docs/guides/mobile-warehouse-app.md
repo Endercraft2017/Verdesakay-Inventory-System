@@ -10,14 +10,15 @@ drops.
 - **Cycle counts** (spot counts) with variance shown
 - **Fulfilling orders** from the shelf
 - **Reporting damaged stock** and other problems with a photo
-- Everything queues and syncs automatically if you're offline
+- Supported stock and shop-floor writes queue offline; some actions require a connection
 
 ## Before you start
 
 - On the phone's browser, open the same address staff use for the system. Phones are
   sent to the mobile app (`/m`) automatically. You can also type `.../m` directly.
-- Log in with your normal account. You need the **mobile warehouse** permission — ask
-  your admin if the app says you're not allowed.
+- Log in with your normal account. Warehouse tools need **inventory.mobile**, the inventory
+  module, and the permissions for each action. Linked employees can also use their own
+  HR tools on the phone without warehouse access.
 - For the camera scanner to work the site must be **HTTPS**. If it isn't, you'll get a
   manual code-entry box instead — still fully usable.
 - Add it to your home screen (browser menu → "Add to Home Screen") so it opens like an
@@ -36,19 +37,27 @@ drops.
 ## Working offline
 
 - If you lose signal, submissions go into a **queue** (you'll see a counter).
-- Keep working — scanning and entering data all work offline.
-- When the connection returns, the queue **sends itself**. You don't need to do anything.
+- Previously cached lists and item lookups can be used offline. New data may not be available.
+- Stock moves, transfers, counts, QC decisions, parts requests, production receiving and
+  SO release scans use the queue. They do not take effect on the server until accepted.
+- Recording a serialized unit with its photo, recording delivery proof, and time-clock
+  punches need a connection and do not queue.
+- When the connection returns, the queue retries automatically. Check **Pending sync**
+  for rejected or failed actions and retry after resolving the reported problem.
 - Each queued action is tagged so it can't be applied twice, even if you retry.
 - Check the **queue view** to see what's pending or if anything failed to send.
 
 ## Reporting damage / a problem
 
-1. Pick **Report problem** or **Damage**.
-2. Scan or type the item.
-3. Enter how many units are affected and a short note.
-4. Add a **photo** if you can — it helps the office.
-5. Submit. Damaged units are moved out of normal stock into a "damage" record; the total
-   on hand is preserved, so nothing goes missing.
+1. Pick **Damage**, then scan or type the item.
+2. Enter the affected quantity, location and reason.
+3. Submit to move those units from sellable stock to a damage record. After an online
+   success, attach photos to that damage record if needed; photos are not queued with
+   an offline stock submission.
+
+**Report a problem** is different: choose a recipient, category and reference, then
+write the problem and send it as an internal message. It is text-only and does not move
+stock. A parts-kit issue belongs here; include the job order, part and quantity.
 
 ## Tips & gotchas
 
@@ -62,7 +71,7 @@ drops.
 
 | What you see | Fix |
 |---|---|
-| "Not allowed" / app won't load | You lack the mobile warehouse permission — ask an admin. |
+| "Not allowed" / app won't load | For warehouse tools, ask about inventory.mobile and workspace inventory access; for employee HR tools, ask HR to link your account to your employee record. |
 | Camera does nothing | Site isn't HTTPS, or the browser blocked the camera — allow it in the browser's site settings, or use manual entry. |
 | Queue count won't go down | No connection yet, or a queued item errored — open the queue view to see which one and why. |
 | "Item not found" on scan | The code isn't a known SKU or barcode — check it's the right label, or add the barcode to the item on the desktop. |

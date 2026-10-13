@@ -2,8 +2,8 @@
 
 **For:** warehouse staff, production team leads, QC inspectors, QA inspectors, product
 (receiving) clerks, releasing clerks, drivers/delivery crew, and their supervisors.
-**Where:** mostly the **phone app** (`/m`). Every step can also be done on desktop by an
-account with broad warehouse rights.
+**Where:** mostly the **phone app** (`/m`). Desktop supports production work and order management; delivery proof is recorded
+on the phone, and dispatcher actions need delivery.manage.
 
 This is the step-by-step, role-by-role version of the production and sale-order
 pipelines. For planners and managers who set up products, BOMs, checklists, and job
@@ -51,8 +51,8 @@ Recording → Ready to Sell → Sold** (side branches: *In Rework*, *Failed / Sc
 | 6 | Release units to a sale order | Releasing clerk | `releasing_clerk` | Work → **Release SOs** |
 | 7 | Deliver to the customer | Driver / delivery crew | an account with `delivery.run` | Work → **Deliveries** |
 
-Each narrow role sees **only its own tile**, and the server blocks it from doing any other
-step. A QC inspector cannot sign off QA, and a QA inspector cannot sign off QC. Accounts with
+Narrow roles see the work tiles their permissions allow, plus shared tools.
+The server checks permission on every action. A QC inspector cannot sign off QA, and a QA inspector cannot sign off QC. Accounts with
 broad warehouse rights (`warehouse`, `admin`, `admin_staff`, `releasing`) can do any step.
 
 > **Before you start, every phone needs:** a signed-in account with the right role, a
@@ -389,8 +389,8 @@ partly **released**.
   delivery.
 - Scanning works offline: scans queue and send later. Re-check the line counts once you're
   back online.
-- To un-release a wrong unit, ask a supervisor. It's done on desktop, where the unit goes
-  back to Ready to Sell.
+- To un-release a wrong unit, ask a supervisor to review the order's release history and
+  use the available Unreserve action. The unit returns to Ready to Sell.
 
 ---
 

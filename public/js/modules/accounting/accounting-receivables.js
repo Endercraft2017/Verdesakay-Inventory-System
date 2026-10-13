@@ -187,6 +187,7 @@ App.register('accounting-receivables', async (view, filter) => {
 
     UI.modal({
       title: 'Record payment',
+      helpTopic: 'payments',
       size: 'lg',
       bodyHTML: `<div id="rp-pay-wrap">${render()}</div>`,
       confirmText: 'Save payment',
@@ -318,6 +319,7 @@ App.register('accounting-receivables', async (view, filter) => {
     };
     UI.modal({
       title: 'New credit / debit note',
+      helpTopic: 'credit-notes',
       size: 'lg',
       bodyHTML: `<div id="cn-wrap">${render()}</div>`,
       confirmText: 'Issue note',

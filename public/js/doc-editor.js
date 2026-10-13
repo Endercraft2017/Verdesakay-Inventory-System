@@ -686,7 +686,7 @@ function docEditorHelpDialog() {
   const PANES = {
     basics: lead('It behaves like a normal document — type, format, and drop in tables or pictures.')
       + bullet('Switch between the page and its raw code with <b>Visual</b> / <b>HTML&nbsp;/&nbsp;CSS</b> in the top bar.', SHOT_MODES)
-      + bullet(`${kbd('Ctrl')}+${kbd('S')} saves. ${kbd('Ctrl')}+${kbd('Z')} / ${kbd('Ctrl')}+${kbd('Y')} undo and redo <i>everything</i> — text, tables, moved objects.`)
+      + bullet(`${kbd('Ctrl')}+${kbd('S')} saves. ${kbd('Ctrl')}+${kbd('Z')} / ${kbd('Ctrl')}+${kbd('Y')} undo and redo visual edits — text, tables and moved objects. In HTML / CSS mode, undo and redo apply to the code editor.`)
       + bullet('<b>👁 Preview</b> (Layout tab) opens a movable preview filled with realistic sample data.')
       + bullet('<b>⚙</b> makes your own named variables. This <b>?</b> guide is always one click away.')
       + note('Nothing on the page is “live” — variables and formulas only turn into real values when the document is printed.'),

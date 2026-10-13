@@ -10,7 +10,7 @@ same way.
 
 - **Onboarding** — get your existing item list, vendor list, or staff list into the
   system in minutes instead of typing each one.
-- **Bulk edits** — export, change a column in Excel (prices, reorder levels, positions),
+- **Bulk edits** — export, change a column in Excel (reorder levels, item descriptions, positions),
   re-import.
 - **Backups / sharing** — export a clean copy of your data whenever you want.
 
@@ -63,6 +63,9 @@ record is **updated**; otherwise a new one is **created**.
 (`probationary` / `regular` / `resigned` / `terminated`), `start_date` (`YYYY-MM-DD`),
 `sss_no`, `philhealth_no`, `pagibig_no`, `tin_no`.
 
+The item CSV importer does not support barcode, custom attributes or price/cost fields;
+edit those on the item screen.
+
 Column headers are not case-sensitive and a few friendly spellings are accepted
 (e.g. `Reorder Level` → `min_quantity`, `Salary` → `monthly_rate`, `Date Hired` →
 `start_date`).
@@ -73,8 +76,9 @@ Column headers are not case-sensitive and a few friendly spellings are accepted
   pointing at a department or supplier that doesn't exist is skipped with an error.
 - **One bad row doesn't stop the rest.** Good rows in the same file still import; only the
   flagged rows are skipped.
-- **Round-trip safely.** Export → edit → re-import is designed to produce *all updates,
-  no duplicates*, because the key column is preserved in the export.
+- **Preserve match keys.** Export → edit → re-import updates rows with unchanged keys.
+  A blank item SKU creates a new item on every import. Changing a SKU or employee number
+  also creates a new record instead of renaming the original.
 - Keep the header row. A file with no `name` column (or no `employee_no`) is rejected
   outright.
 - Big files are fine; the limit is about 5 MB of text (tens of thousands of rows).
@@ -88,4 +92,4 @@ Column headers are not case-sensitive and a few friendly spellings are accepted
 | “Unknown supplier "X"” | Add supplier X first, or clear that cell. |
 | “Monthly rate is required when rate type is monthly” | Fill `monthly_rate`, or set `rate_type` to `daily`. |
 | Row skipped, “Invalid row” | Usually a bad number (letters in a numeric column) or a value too long. |
-| Everything imported but stock is 0 | Expected for existing items — import never moves stock. Use **Stock in/out**, or delete the item and re-import it as new with a `quantity`. |
+| Everything imported but stock is 0 | Expected for existing items — import never moves stock. Use **Stock in/out** at the correct location to post the opening balance or correction. |

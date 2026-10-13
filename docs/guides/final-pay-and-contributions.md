@@ -15,6 +15,19 @@ filing in eBIRForms / eFPS or each agency's portal.
 
 ---
 
+## Other Tax & Compliance cards
+
+- **BIR 2550Q / SLSP**: quarterly VAT with a monthly breakdown, and summary sales/purchase lists.
+- **Tax codes**: VAT and withholding classifications used by source documents.
+- **Withholding register / 1601-EQ + QAP / 1604-E / BIR 2307**: supplier withholding
+  register, quarterly and annual returns, and a printable supplier certificate.
+- **BIR 1702Q / 1702-RT**: book income plus reviewed adjustments and credits to estimate corporate tax.
+- **Books of Accounts**: printable journals and ledger books with CSV downloads.
+- **Financial Statements (AFS)**: a comparative draft statement pack for accountant review.
+
+Use the export offered by each worksheet. DAT files are available for some supplier
+withholding and SLSP reports; the compensation Alphalist exports CSV, not DAT.
+
 ## Petty cash — money in and out
 
 **Accounting → Cash → Petty Cash** (record entries: *Accounting: manage*; read: *Accounting: view*).
@@ -55,12 +68,13 @@ payslips.
 
 ## BIR 2550M — monthly VAT declaration
 
-**Output VAT** from the month's sale orders, **input VAT** from approved vendor bills
-(each document's own tax amount, or a 12% derivation when it carries none). Tick
+**Output VAT** and **input VAT** are sourced from the BIR sales and purchase journals,
+with exempt/zero-rated classifications and credit/debit notes netted into the worksheet. Tick
 *Amounts are VAT-inclusive* if your order/bill totals already contain VAT. Enter any
 input-VAT carry-over and advance VAT payments. The worksheet nets it to **still payable**
 or **excess input VAT to carry forward**. Adjust for exempt / zero-rated sales and
-disallowed input before filing. Deadline: 20th of the following month.
+disallowed input before filing. This is the monthly worksheet; use the current BIR rules to determine required filings.
+For quarterly VAT, open **BIR 2550Q**, and use **SLSP** for summary sales/purchase lists.
 
 ## BIR 0619-E — expanded withholding remittance
 
@@ -82,7 +96,7 @@ The year-end **Annual Information Return of Income Taxes Withheld on Compensatio
   - *Tax due per Alphalist* (the annualised tax each employee owes).
 - **Over-remittance** carries forward / is refunded; **under-remittance** is still
   payable — settle it before filing.
-- Attach the **Alphalist** (Gov Forms → 1604-C Alphalist) to the return.
+- Attach the **Alphalist** (Accounting → Tax & Compliance → BIR 1604-C Alphalist) to the return.
 - Deadline: **January 31**.
 
 ## Final-pay / back-pay worksheet
@@ -120,13 +134,13 @@ The monthly per-employee collection list each agency wants.
 - Each row: the employee's agency ID (from their 201 file), the compensation **basis**,
   and the **employee**, **employer**, and — for SSS — **EC** shares, recomputed from the
   rate tables in force that month on the employee's total pay for the month.
-- **Export CSV** and upload it in the agency's own portal:
+- **Export CSV**, review and convert to the required agency format, then submit through its portal:
   - **SSS** — Electronic Loan / Contribution Collection List (via My.SSS / ELRS)
   - **PhilHealth** — Electronic Premium Remittance System (EPRS)
   - **Pag-IBIG** — Electronic Savings Remittance System (eSRS)
 
-There is **no direct filing API** for any PH agency (see
-[PH-PAYROLL-COMPLIANCE.md](../PH-PAYROLL-COMPLIANCE.md) §3b) — the CSV is the handoff.
+This app does not submit agency filings. Review the exported columns against the
+agency's current upload format, convert them if required, and submit through its portal.
 
 ## Gotchas
 

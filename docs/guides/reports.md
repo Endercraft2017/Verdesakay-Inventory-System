@@ -38,8 +38,9 @@ orders by status, and recently completed MOs.
 | **Bills to approve** | Draft vendor bills waiting on the 3-way match. |
 | **Payables aging** | **Approved** vendor bills bucketed by their due date vs today: current / not due, 1–30, 31–60, 60+ days overdue. |
 
-> Payment isn't tracked yet, so "approved" is treated as "payable". Aging uses the bill's
-> **due date**.
+> This dashboard buckets the full amount of approved bills by **due date**; it does
+> not deduct recorded payments. For outstanding balances after payments and notes,
+> use **Accounting → Receivables & Payables → AP Aging**.
 
 ### Sales orders *(needs View orders)*
 

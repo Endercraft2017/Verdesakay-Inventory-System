@@ -53,6 +53,7 @@ App.register('purchasing', async (view, filter) => {
     try { t = await API.get('/purchasing/tolerance'); } catch (e) { UI.toast(e.message, 'error'); return; }
     UI.modal({
       title: '3-way match tolerance',
+      helpTopic: 'purchasing',
       bodyHTML: `
         <p class="muted" style="margin-top:0">How far a vendor bill's price/quantity may drift from the
           purchase order + goods receipts before the match panel flags it as an exception. A price line fails

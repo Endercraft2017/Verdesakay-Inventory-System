@@ -88,7 +88,7 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Accept the parts kit',
-        role: 'Production lead · production.record',
+        role: 'Production lead · production.record or inventory.adjust',
         to: { route: 'job-orders', label: 'Job order → Accept parts kit' },
         body: `The production lead counts the released kit against the job order's Components
           list and taps <b>Accept job order</b> (optional handover note). Records who accepted it
@@ -97,16 +97,18 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Build (record production progress)',
-        role: 'Shop floor · inventory.adjust',
+        role: 'Shop floor · production.record or inventory.adjust',
         to: { route: 'job-orders', label: 'Job order → Record production' },
-        body: `Enter units <b>finished</b> and <b>scrapped</b>. Either way this doesn't post to
+        body: `Open the job order and record output only after the kit is accepted.
+          For serialized output, enter each unit's identifier and attach its build photo in the desktop or phone recording form;
+          this needs a connection. For bulk output, enter <b>finished</b> and <b>scrapped</b> counts. Either way this doesn't post to
           stock yet — with <b>0 inspection stages</b> the entry becomes a batch/lot awaiting
           Products In directly; with <b>1–2 stages</b> the units queue for inspection first —
           give the entry a <b>batch label</b> to group them.`,
       },
       {
         title: 'Inspect (QC/QA)',
-        role: 'QC/QA inspector · inventory.adjust',
+        role: 'Inspector · production.inspect_qc / production.inspect_qa, or inventory.adjust',
         to: { route: 'production-qc', label: 'Production → QC / QA' },
         spot: '.tree-leaf[data-route="production-qc"]',
         body: `Select a unit or a batch, work the checklist, then <b>Pass</b> or <b>Fail</b>. The
@@ -124,7 +126,7 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Repair / rework (branch)',
-        role: 'Production raises · Warehouse accepts · inventory.adjust',
+        role: 'Requests: production.inspect_qc/qa; decisions: production.repairs; inventory.adjust covers both',
         to: { route: 'repairs', label: 'Production → Repairs & Parts Requests' },
         body: `A unit failed as <b>repair</b> goes to rework and holds the job order open. From the
           repair panel, raise <b>parts requests</b> — <i>add</i> a missing part or <i>replace</i> a
@@ -134,7 +136,7 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Products In',
-        role: 'Warehouse · inventory.adjust',
+        role: 'Receiving · production.receive or inventory.adjust',
         to: { route: 'production-receiving', label: 'Production → Products In' },
         spot: '.tree-leaf[data-route="production-receiving"]',
         body: `The checkpoint that mirrors Purchasing's <b>Goods Receipt</b>: nothing posts to
@@ -160,7 +162,7 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Labels & QR',
-        role: 'Production · inventory.adjust',
+        role: 'Production · inventory.view (print) / inventory.adjust (label design)',
         to: { route: 'finished-products', label: 'Product Setup → Print QR labels' },
         body: `Print QR labels per unit (its identifier) or per batch. Edit the layout under
           <b>Label design</b>. Scanning a label in this system's scanner resolves it to the
@@ -183,8 +185,8 @@ const GUIDE_PIPELINES = [
         to: { route: 'finished-goods', label: 'Production → Finished Goods' },
         body: `<b>Finished Goods</b> is the cross-product view of what's actually on hand, ready
           to sell or move — everything Products In has received. Sell against a sale order, or
-          move it again with the same action used at receiving. Only received (in-stock) units
-          can be sold or moved.`,
+          move it again with the same action used at receiving. Only received (in-stock) units can be sold or moved. <b>Sell / Move → Sell</b> deducts stock immediately;
+          it differs from <b>Release SOs</b>, which reserves units until the sale order is confirmed/completed.`,
       },
     ],
     gotchas: [
@@ -212,7 +214,7 @@ const GUIDE_PIPELINES = [
         title: 'Raise the sale order',
         role: 'CSR / sales · orders.create',
         to: { route: 'orders', filter: { type: 'sale' }, label: 'Inventory → Orders → Sale Orders' },
-        spot: '.tree-leaf[data-route="orders"]',
+        spot: '.tree-leaf.active[data-route="orders"]',
         body: `Pick the customer, add line items from inventory (finished products or raw items), set
           the <b>Ship from</b> location and tax. It starts <b>open</b> and line items stay freely
           editable while it is.`,
@@ -237,8 +239,8 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Release the goods',
-        role: 'Warehouse releaser · inventory.adjust',
-        to: { external: 'Phone → Work → Release SOs' },
+        role: 'Releaser · orders.release or inventory.adjust (phone: inventory.mobile)',
+        to: { external: 'Phone → Work → Release SOs', label: 'Phone → Work → Release SOs' },
         body: `Open the order on the phone and press <b>Scan units to release</b>. Scan each unit's
           printed QR label; for non-serialized lines, type the quantity. Scanned units go to
           <b>reserved</b> — earmarked for the order but still physically on hand. Once every line is
@@ -246,9 +248,10 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Deliver',
-        role: 'Driver · delivery.run',
-        to: { external: 'Phone → Work → Deliveries' },
-        body: `Create / start a delivery linked to the order, capture the proof of delivery
+        role: 'Dispatcher · delivery.manage; driver · delivery.run',
+        to: { external: 'Phone → Work → Deliveries', label: 'Phone → Work → Deliveries' },
+        body: `A dispatcher creates a delivery linked to the order and assigns its driver. On the phone,
+          the driver starts the delivery and captures proof of delivery while connected
           (recipient, signature, photos, location) and mark it delivered. If the order isn't
           confirmed yet, the phone then offers <b>"Mark SO-xxxx completed"</b> — one tap runs the
           next step.`,
@@ -286,15 +289,15 @@ const GUIDE_PIPELINES = [
         title: 'Raise the purchase order',
         role: 'Purchasing · orders.create',
         to: { route: 'orders', filter: { type: 'purchase' }, label: 'Inventory → Orders → Purchase Orders' },
-        spot: '.tree-leaf[data-route="orders"]',
+        spot: '.tree-leaf.active[data-route="orders"]',
         body: `Pick the <b>supplier</b> and an <b>expected delivery</b> date. Lines can include items
           you already stock — that's just a top-up purchase.`,
       },
       {
         title: 'Let the system draft POs for you (optional)',
-        role: 'Purchasing · inventory.adjust',
+        role: 'Purchasing · orders.create (Reorder PO); inventory.adjust (job-order shortfall)',
         to: { route: 'inventory', filter: { low: '1' }, label: 'Inventory → Low Stock → Reorder PO' },
-        body: `<b>Inventory → Reorder PO</b> drafts a PO for everything below its reorder level (one
+        body: `<b>Inventory → Reorder PO</b> drafts a PO for everything at or below its reorder level (one
           per preferred supplier). The <b>Draft purchase orders for the shortfall</b> button on a
           short sale / job order does the same for that order's gap. Each lands as an <b>open</b>
           draft to review under Purchase Orders.`,
@@ -307,7 +310,8 @@ const GUIDE_PIPELINES = [
         body: `From the PO's <b>Receiving &amp; bills</b>, press <b>Record receipt</b>. Enter the
           quantity that actually arrived per line and the location. Posting the receipt (GRN-#####)
           <b>moves that stock in</b> and shows in the item's history. Receive as many times as
-          deliveries come. On the phone: <b>Work → Receive PR</b>.`,
+          deliveries come. The phone's <b>Work → Receive PR</b> is a separate quick stock receipt;
+          it does not create the GRN coverage needed for desktop bill matching.`,
       },
       {
         title: 'Vendor bill & the 3-way match',
@@ -315,7 +319,7 @@ const GUIDE_PIPELINES = [
         to: { route: 'purchasing', filter: { tab: 'bills' }, label: 'Inventory → Purchasing → Vendor Bills' },
         body: `Record the supplier's invoice, then <b>Approve</b>. The 3-way match requires every
           billed line to be covered by what was received, and the price to be within tolerance of
-          the PO price; off-PO charges are flagged. A clean match approves; an exception blocks
+          the PO price, counting earlier approved bills; off-PO charges are flagged. A clean match approves; an exception blocks
           approval until you receive the shortfall, fix the bill, or <b>Force approve</b> (recorded
           against your name).`,
       },
@@ -325,7 +329,8 @@ const GUIDE_PIPELINES = [
        warehouse receives, accounting approves.`,
       `The mobile "Receive PR" shortcut bypasses the desktop GRN / 3-way-match flow — use it only
        for quick unmatched receipts.`,
-      `Match tolerance (default 2% on price) is a workspace setting.`,
+      `Use <b>Match tolerance</b> on Goods Receipts or Vendor Bills to review the price percentage
+       (default 2%), flat-peso and quantity allowances. Saving requires <i>orders.edit</i>.`,
     ],
   },
 
@@ -349,7 +354,8 @@ const GUIDE_PIPELINES = [
           / Pag-IBIG / withholding tax</b> on to fill those lines from the government rate tables
           (the <b>2026</b> schedule is built in — <i>Statutory Rate Tables → Open rate tables</i>).`,
         tip: `Every January, paste any new SSS / PhilHealth / BIR figures and <b>Save as a new
-          version</b> dated <code>YYYY-01-01</code> — don't edit last year's in place.`,
+          version</b> with the actual effective date in the circular. Saving the same kind and date replaces
+          that version — use a new effective date to preserve earlier rules.`,
       },
       {
         title: 'Keep the employee 201 files current',
@@ -362,7 +368,7 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Open the cutoff period',
-        role: 'HR · hr.view',
+        role: 'HR · hr.view (read) / hr.manage (create cutoff)',
         to: { route: 'hr-timekeeping', label: 'HR → Time Keeping' },
         body: `Pick or create the cutoff you're processing. Each period holds a daily <b>time in /
           out</b> per employee and which shift applied that day.`,
@@ -381,13 +387,12 @@ const GUIDE_PIPELINES = [
         to: { route: 'hr-daily-report', label: 'HR → Time Keeping → Daily Report' },
         body: `A live, whole-company snapshot for one date: <b>Present / Late / Absent / On
           Leave</b> counts, broken down per department, plus a searchable employee list. Reads
-          today's kiosk/phone punches directly — no need to wait for <i>Import Punches</i> or a
-          cutoff to exist. Rest days, holidays, and company no-work days are shown separately so
+          today's kiosk/phone punches directly — no need to wait for <i>Import Punches</i>. The employee roster comes from cutoffs covering the selected date; set up the cutoff and roster first. Rest days, holidays, and company no-work days are shown separately so
           they're never mistaken for absences.`,
       },
       {
         title: 'Link OT / leave / offset forms',
-        role: 'HR · hr.manage',
+        role: 'HR · forms.manage.hr (forms) + hr.manage (attendance)',
         to: { route: 'form-records', filter: { scope: 'hr' }, label: 'HR → Memos & Notices / request forms' },
         body: `Attach an approved <b>Overtime</b>, <b>Leave</b>, <b>Offset</b> or <b>Undertime</b>
           form to the day so it's paid correctly (an Offset form's optional <i>New Time In</i>
@@ -399,12 +404,13 @@ const GUIDE_PIPELINES = [
         to: { route: 'hr-timekeeping', label: 'HR → Time Keeping → Generate Payslips' },
         body: `<b>Generate Payslips</b> creates records in the HR Payroll form for the period.
           With auto-compute on, SSS / PhilHealth / Pag-IBIG / withholding are filled from the rate
-          tables (the monthly contribution split across your cutoffs). Cash advance and rest-day OT
-          are entered by hand and are <b>kept</b> when you re-generate.`,
+          tables (the monthly contribution split across your cutoffs). Cash advances and other manual deduction lines are <b>kept</b> when regenerated.
+          Rest-day overtime and the OT rate are computed from attendance and policy and are recalculated.
+          Check the cutoff's deduction schedule and payslip switches; paid payslips are locked.`,
       },
       {
         title: 'Review & print payslips',
-        role: 'HR · hr.view',
+        role: 'HR · forms.manage.hr',
         to: { route: 'form-records', filter: { slug: 'hr_payroll' }, label: 'HR → Payroll' },
         body: `Open the Payroll form for the period, check the lines against the grid, then
           <b>print</b> each payslip against the payslip template.`,
@@ -420,7 +426,7 @@ const GUIDE_PIPELINES = [
         title: 'File the government forms',
         role: 'Accounting · accounting.view',
         to: { route: 'accounting', label: 'Accounting → Tax & Compliance' },
-        body: `<b>Tax &amp; Compliance</b> builds every statutory return from the payslips —
+        body: `<b>Tax &amp; Compliance</b> builds supported statutory worksheets from the payslips —
           <b>1601-C</b> (monthly), <b>1604-C</b> + <b>Alphalist</b> (annual), <b>2316</b> per
           employee, and the monthly <b>SSS / PhilHealth / Pag-IBIG</b> contribution schedules. All
           are worksheets — review before filing in eBIRForms / eFPS or each agency's portal.`,
@@ -449,16 +455,17 @@ const GUIDE_PIPELINES = [
     steps: [
       {
         title: 'Add your items',
-        role: 'Inventory · inventory.edit',
+        role: 'Inventory · inventory.create',
         to: { route: 'inventory', label: 'Inventory → All Items → New item' },
         spot: '.tree-leaf[data-route="inventory"]',
-        body: `Set a unique <b>SKU</b>, a unit, and a <b>reorder level</b> so the item flags when
+        body: `Click <b>New item</b>. On <b>Default</b>, enter Item Name, Item Code (SKU) and Unit;
+          on <b>Qty</b>, set <b>Safety Stock Quantity</b> (the reorder level) so the item flags when
           stock runs low. Optionally add a <b>Barcode</b> and a <b>Standard cost</b> (used to value
           stock and roll up BOM costs). Bulk-load with <b>Import</b> (matched by SKU).`,
       },
       {
         title: 'Set up locations & suppliers',
-        role: 'Inventory · inventory.edit',
+        role: 'Inventory · inventory.create (new) / inventory.edit (changes)',
         to: { route: 'locations', label: 'Inventory → Locations' },
         body: `Add each warehouse / branch / truck that holds stock; one is the <b>default</b> where
           new stock lands. Add vendors under <b>Suppliers</b> and link each item to a preferred one
@@ -481,7 +488,7 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Low stock & Reorder PO',
-        role: 'Purchasing · inventory.adjust',
+        role: 'Purchasing · orders.create (Reorder PO); inventory.adjust (job-order shortfall)',
         to: { route: 'inventory', filter: { low: '1' }, label: 'Inventory → Low Stock' },
         body: `The <b>Low Stock</b> filter shows everything at or below its reorder level.
           <b>Reorder PO</b> drafts purchase orders for that list — one per preferred supplier,
@@ -527,14 +534,14 @@ const GUIDE_PIPELINES = [
     icon: 'sheet',
     tagline: 'Books → journals → tax worksheets → AR/AP → petty cash → reports',
     audience: 'Accounting, finance, management',
-    intro: `Sale orders, vendor bills and payslips feed the ledger and the statutory returns. The
+    intro: `Confirmed sale orders, approved vendor bills and reviewed payroll cutoffs feed the ledger and the statutory returns. The
       tax screens are <b>worksheets</b> — review and adjust before filing.`,
     steps: [
       {
         title: 'What feeds Accounting',
         role: 'context',
         body: `<b>Sale orders</b> (output VAT, AR, sales), <b>approved vendor bills</b> (input VAT,
-          AP, expenses) and <b>generated payslips</b> (withholding, contributions) are the sources.
+          AP, expenses) and <b>generated payslips</b> (withholding, contributions) are the sources. Payroll enters the ledger only after <b>Post to GL</b> on the payroll records screen.
           Keep those flows clean and the accounting screens mostly fill themselves.`,
       },
       {
@@ -549,8 +556,8 @@ const GUIDE_PIPELINES = [
       {
         title: 'Record & post journals',
         role: 'Accounting · accounting.manage',
-        to: { route: 'accounting-ledger', label: 'Accounting → General Ledger → Journal' },
-        body: `Pick accounts, put amounts in the <b>Debit</b> or <b>Credit</b> column (totals must
+        to: { route: 'accounting-ledger', filter: { tab: 'journal' }, label: 'Accounting → General Ledger → Journal' },
+        body: `Open the <b>Journal</b> tab and click <b>New entry</b>. Pick accounts, put amounts in the <b>Debit</b> or <b>Credit</b> column (totals must
           match), save as a <b>draft</b>, then <b>Post</b>. A posted entry is never edited or
           deleted — <b>Reverse</b> it and a mirror entry is posted. Trial Balance / P&amp;L /
           Balance Sheet are live from the posted entries.`,
@@ -562,11 +569,12 @@ const GUIDE_PIPELINES = [
         spot: '.tree-leaf[data-route="accounting"]',
         body: `Builds <b>2550M</b> (VAT), <b>0619-E</b> (expanded withholding), <b>1601-C / 1604-C /
           Alphalist / 2316</b> (compensation tax) and the <b>SSS / PhilHealth / Pag-IBIG</b>
-          contribution schedules from your records. Export the CSV / DAT and file in each portal.`,
+          contribution schedules from your records. Use the CSV or DAT export offered by that worksheet, validate it in the agency's tools,
+          and submit through the appropriate portal. The payroll Alphalist exports CSV and needs conversion to DAT.`,
       },
       {
         title: 'Receivables & payables',
-        role: 'Accounting · accounting.view',
+        role: 'Accounting · accounting.view (read) / accounting.manage (payments and notes)',
         to: { route: 'accounting-receivables', label: 'Accounting → Receivables & Payables' },
         body: `AR / AP aging, <b>Payments</b> against invoices and bills, and <b>Credit / Debit
           Notes</b>. This is where a customer payment or a supplier settlement is recorded.`,
@@ -590,8 +598,7 @@ const GUIDE_PIPELINES = [
     ],
     gotchas: [
       `Closing a ledger <b>period</b> locks posting into its dates.`,
-      `PH agencies have no direct filing API — every tax screen produces a worksheet / export you
-       submit yourself.`,
+      `The app does not submit tax or agency filings; review its worksheets and validate exports before submission.`,
       `13th-month pay isn't a payslip line — add a December payout to that month's 1601-C by hand.`,
     ],
   },
@@ -603,7 +610,7 @@ const GUIDE_PIPELINES = [
     icon: 'check',
     tagline: 'Quick reference — fail → disposition → parts → re-inspect',
     audience: 'QC/QA, production, warehouse',
-    intro: `The short version of Production steps 6–7.`,
+    intro: `The repair branch of the Production workflow: inspection failure, parts requests, and re-inspection.`,
     steps: [
       {
         title: 'Fail → disposition',
@@ -642,17 +649,19 @@ const GUIDE_PIPELINES = [
 /* route (+ optional sub-tab hint) → pipeline id, so the per-screen Help drawer can
    offer "walk me through this". Screens not listed just link to the guide index. */
 const GUIDE_ROUTE_MAP = {
+  'production-overview': 'production',
   'finished-products': 'production',
   'finished-goods': 'production',
   'job-orders': 'production',
   'production-qc': 'production',
   'production-receiving': 'production',
-  'repairs': 'production',
+  'repairs': 'qc-repair',
   'production-batches': 'production',
   'production-schedule': 'production',
   'production-teams': 'production',
   'production-record': 'production',
   'orders': 'sales',
+  'customers': 'sales',
   'purchasing': 'purchasing',
   'hr': 'payroll',
   'hr-timekeeping': 'payroll',
@@ -667,7 +676,6 @@ const GUIDE_ROUTE_MAP = {
   'accounting-ledger': 'accounting',
   'accounting-receivables': 'accounting',
   'accounting-petty-cash': 'accounting',
-  'analytics': 'accounting',
 };
 
 const GUIDE = {
@@ -675,7 +683,10 @@ const GUIDE = {
   byId: Object.fromEntries(GUIDE_PIPELINES.map((p) => [p.id, p])),
   routeMap: GUIDE_ROUTE_MAP,
   /** Pipeline for a route name (or null). */
-  forRoute(route) {
+  forRoute(route, filter) {
+    if (route === 'orders' && filter && filter.type === 'purchase') return this.byId.purchasing;
+    if (route === 'orders' && filter && filter.type === 'job') return null;
+    if (route === 'form-records' && filter && (filter.slug === 'hr_payroll' || filter.scope === 'hr')) return this.byId.payroll;
     const id = GUIDE_ROUTE_MAP[route];
     return id ? this.byId[id] : null;
   },
