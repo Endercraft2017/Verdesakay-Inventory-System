@@ -140,6 +140,10 @@ Print preview are separate modes; Preview data remains the filled-record preview
 The Text, Insert and Page & print tabs organize the ribbon. Less-used character effects
 are in More text formatting. Font/style/size readouts follow the selection and show Mixed
 when necessary; inspector sizes use points consistently.
+Header, tab and toolbar spacing is compact to reserve more height for the document.
+Hide ribbon leaves the tabs visible; Show ribbon or selecting a tab restores its controls.
+The tool sidebar collapses to icons with accessible labels, and the inspector has a
+labelled Collapse button. These controls resize the workspace without changing the template.
 A labelled rail opens Inspect, Pages, Layers, Outline, Styles, Fields, Library, Review,
 History and Shared on demand. The inspector starts closed and can be dismissed without
 losing selection. The page fits available width initially; footer Fit/zoom controls are

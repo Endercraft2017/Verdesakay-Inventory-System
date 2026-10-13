@@ -163,6 +163,14 @@ describe('model paragraph commands',()=>{
 });
 
 describe('simplified editor workspace',()=>{
+ it('collapses the ribbon and tool sidebar without changing document content',()=>{
+  const {doc,root}=setup('<p>Text</p>',true);const ribbon=doc.querySelector('[data-ribbon-toggle]'),rail=doc.querySelector('[data-rail-toggle]');
+  ribbon.click();expect(ribbon.getAttribute('aria-expanded')).toBe('false');expect(doc.querySelector('.doc-fs').classList.contains('ribbon-collapsed')).toBe(true);
+  doc.querySelector('[data-tab=insert]').click();expect(ribbon.getAttribute('aria-expanded')).toBe('true');expect(doc.querySelector('[data-panel=insert]').style.display).toBe('');
+  rail.click();expect(rail.getAttribute('aria-expanded')).toBe('false');expect(doc.querySelector('.doc-workspace').classList.contains('rail-collapsed')).toBe(true);
+  doc.querySelector('[data-studio-tab=Pages]').click();expect(doc.querySelector('.doc-studio-side').hidden).toBe(false);doc.querySelector('[data-inspector-close]').click();expect(doc.querySelector('.doc-studio-side').hidden).toBe(true);
+  rail.click();expect(rail.getAttribute('aria-expanded')).toBe('true');expect(root.innerHTML).toBe('<p>Text</p>');
+ });
  it('keeps settings and inspector out of the initial workspace, with direct panel navigation and close focus',()=>{
   const {doc,root}=setup('<p>Text</p>',true);const side=doc.querySelector('.doc-studio-side');expect(side.hidden).toBe(true);expect(doc.querySelector('.doc-tool-rail')).not.toBeNull();
   const settings=doc.querySelector('[data-details]');settings.click();expect(settings.getAttribute('aria-expanded')).toBe('true');expect(doc.querySelector('.doc-details').classList.contains('details-expanded')).toBe(true);

@@ -1004,3 +1004,6 @@ Insert / Page & print ribbon tabs. A labelled rail opens a closed-by-default ins
 font/style/size readouts reflect the selection and inspector sizes use points. Initial
 fit-to-width/footer zoom and wrapped phone controls preserve usable page space. Find mounts
 above the workspace, and keyboard tab/menu behavior is covered alongside the editor tests.
+Compact header/ribbon spacing and reduced canvas padding reserve room for the document.
+The ribbon can be hidden while retaining its tabs; the tool rail collapses to labelled
+icons and the inspector has an explicit Collapse action. Workspace changes recalculate fit.
