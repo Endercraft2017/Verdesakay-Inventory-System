@@ -53,7 +53,34 @@
     const title = isDialog ? (root.querySelector('.modal-head h3, .drawer-head h3, .doc-fs-title')?.textContent || 'This dialog') : (root?.querySelector('.topbar h2, h2')?.textContent || route);
     const steps = [];
     const add = (title, body, target, tip) => { if (target) { const token = target.id || 'guide-control-' + Math.random().toString(36).slice(2); target.dataset.guideTarget = token; steps.push({ title, body, target, spot: '[data-guide-target="' + token + '"]', tip }); } };
-    if (!isDialog && route === 'form-records' && App.currentLocation?.().filter?.slug === 'hr_payroll') {
+    if (!isDialog && route === 'hr-employees') {
+      [
+        ['#emp-search','Find an employee','Type part of an employee’s name to narrow the employee list. Clear the search to show everyone again.'],
+        ['#emp-dept-filter','Filter by department','Select a department to show its employees. Choose All departments to remove this filter.'],
+        ['#emp-status-filter','Filter by employment status','Select the employment status you want to review. This filters the list; it does not change anyone’s status.'],
+        ['#emp-table','Open an employee record','Use the pencil on an employee’s row to edit their record, or the view button if you have read-only access. The ID-card button opens an ID preview.'],
+        ['#emp-new','Add an employee','Press New Employee, fill in Employee No. and Full name, then review Basic Info, Pay & Schedule, Payroll Rules, and Leave & Records before saving.'],
+        ['#emp-import','Import employees from CSV','Press Import and download the sample CSV. Include employee_no and name; existing employees are matched by employee_no, so check numbers before importing. Departments must already exist.'],
+        ['#emp-no-settings','Set the employee numbering format','Press this gear to configure the suggested employee number: prefix, increasing number or hire-date numbering, and zero-padding. Review the preview and press Save. Individual employee numbers remain editable.'],
+      ].forEach(([selector,name,body])=>add(name,body,root.querySelector(selector)));
+    } else if (isDialog && root.querySelector('#emp-no-preview')) {
+      [
+        ['[data-p="prefix"]','Choose a prefix','Enter the letters that should precede suggested employee numbers, such as EMP. Leave this blank if you do not want a prefix.'],
+        ['[data-p="mode"]','Choose the numbering method','Select Increasing number for a sequence, or Based on hire date to use the employee’s start date.'],
+        ['[data-p="pad"]','Set the number of digits','Enter how many digits to use, from 1 to 8. Short numbers are padded with leading zeroes.'],
+        ['#emp-no-preview','Check the example','Review the suggested-number preview before saving. This policy changes suggestions, not existing employee numbers.'],
+        ['#emp-no-save','Save the numbering policy','Press Save to apply this format to future suggested employee numbers.'],
+      ].forEach(([selector,name,body])=>add(name,body,root.querySelector(selector)));
+    } else if (isDialog && root.querySelector('[data-formtab="basic"]')) {
+      [
+        ['[data-f="employee_no"]','Enter the employee number','Use a unique employee number. Keep existing numbers stable because CSV imports match employees by this number.'],
+        ['[data-f="name"]','Enter the full name','Enter the employee’s full name as it should appear in HR records and payroll.'],
+        ['[data-formtab="basic"]','Complete Basic Info','Review department, position, employment status and start date. Link a login account here if the employee needs access to their own HR requests.'],
+        ['[data-formtab="pay"]','Review Pay & Schedule','Open this tab to review the daily or monthly rate, default shift and rest days. For an existing employee, use Change rate to record a pay change.'],
+        ['[data-formtab="rules"]','Review Payroll Rules','Open this tab and review the employee’s payroll settings before generating payslips.'],
+        ['[data-formtab="leave"]','Review Leave & Records','Open this tab to review leave balances, documents and issued assets. Adjust balance records additions or deductions with a reason.'],
+      ].forEach(([selector,name,body])=>add(name,body,root.querySelector(selector)));
+    } else if (!isDialog && route === 'form-records' && App.currentLocation?.().filter?.slug === 'hr_payroll') {
       add('Find an employee’s payslips', 'Search by employee name to narrow the payslips shown.', root.querySelector('#fr-search'));
       add('Filter by status', 'Show the payroll status you need to review. Filtering does not change any payslip.', root.querySelector('#fr-status'));
       add('Choose the payroll period', 'Select a cutoff to focus your review on its payslips and totals.', root.querySelector('#fr-period'));
@@ -78,12 +105,12 @@
     } else {
       const controls = [...(root?.querySelectorAll('input:not([type="hidden"]), select, textarea') || [])].filter(el => !el.disabled && !el.closest('[hidden], .hidden') && !el.closest('details:not([open])')).slice(0, 6);
       controls.forEach(el => {
-        const label = el.id ? [...root.querySelectorAll('label')].find(l => l.htmlFor === el.id) : null;
+        const label = (el.id ? [...root.querySelectorAll('label')].find(l => l.htmlFor === el.id) : null) || el.closest('.fld, .field, .field-row > div')?.querySelector('label');
         const name = (label?.textContent || el.getAttribute('aria-label') || el.placeholder || el.title || el.getAttribute('data-f') || 'This field').replace(/\s+/g, ' ').trim();
-        add(name, el.type === 'checkbox' ? 'Choose whether this option should apply. Read its help before changing it.' : 'Review this value and enter the information needed for your task. Required fields and validation still apply.', el);
+        const help = el.getAttribute('data-guide-help') || el.getAttribute('aria-description') || el.title; const described = (el.getAttribute('aria-describedby') || '').split(/\s+/).map(id=>document.getElementById(id)?.textContent || '').join(' ').trim(); const instruction = help || described || (el.tagName === 'SELECT' ? 'Choose an option in ' + name + '. This screen uses your selection when filtering or saving.' : el.type === 'checkbox' ? 'Turn ' + name + ' on or off for this record.' : 'Enter ' + name + (el.required ? '. This field is required.' : '.')); add(name, UI.esc(instruction), el);
       });
       if (!isDialog) {
-        [...(root?.querySelectorAll('.topbar .btn, .panel-head .btn') || [])].filter(el => !el.matches('[data-guide-open]') && !el.closest('[hidden],.hidden') && !el.disabled).slice(0, 5).forEach(el => add(el.textContent.trim(), 'Use this control when it matches the task you want to perform. Opening a dialog does not save or approve it.', el));
+        [...(root?.querySelectorAll('.topbar .btn, .panel-head .btn') || [])].filter(el => !el.matches('[data-guide-open]') && !el.closest('[hidden],.hidden') && !el.disabled).slice(0, 5).forEach(el => { const name = el.getAttribute('aria-label') || el.title || el.textContent.trim(); const help = el.getAttribute('data-guide-help') || el.getAttribute('aria-description') || el.title; if(name && help) add(name, UI.esc(help), el); });
       }
     }
     if (isDialog) add('Review before confirming', 'Check the information and warnings first. Confirming, saving, approving, deleting or paying is always your explicit action.', root.querySelector('.modal-foot [data-confirm], .drawer-foot .btn, .doc-btn-save'));

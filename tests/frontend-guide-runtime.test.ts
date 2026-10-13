@@ -68,3 +68,7 @@ it('highlights and numbers every payroll step without changing the page or submi
   for(let i=0;i<guide.steps.length;i++){const ring=w.document.querySelector('.guide-focus-ring');expect(ring.hidden).toBe(false);expect(ring.dataset.step).toBe(String(i+1));expect(ring.style.width).toBe('210px');if(i+1<guide.steps.length)w.document.querySelector('[data-act="next"]').click();}
   expect(navigations).toEqual([]);dom.window.close();
 });
+it('explains employee actions and icon-only numbering settings with concrete instructions',async()=>{
+  const {dom,w}=await boot();w.App.currentLocation=()=>({route:'hr-employees'});const view=w.document.querySelector('#view');view.innerHTML='<h2>Employees</h2><input id="emp-search"><select id="emp-dept-filter"></select><select id="emp-status-filter"></select><div id="emp-table"></div><button id="emp-new">New Employee</button><button id="emp-import">Import</button><button id="emp-no-settings" aria-label="Employee numbering format"></button>';
+  const guide=w.GuideCenter.contextual(view);const gear=guide.steps.find((s:any)=>s.target.id==='emp-no-settings');expect(gear.title).toBe('Set the employee numbering format');expect(gear.body).toContain('prefix');expect(gear.body).toContain('zero-padding');expect(gear.body).toContain('Save');expect(guide.steps.find((s:any)=>s.target.id==='emp-import').body).toContain('employee_no');expect(guide.steps.every((s:any)=>s.title && !s.body.includes('Use this control when'))).toBe(true);dom.window.close();
+});
