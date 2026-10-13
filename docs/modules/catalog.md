@@ -1051,3 +1051,5 @@ offer Save template and continue. Workspace isolation keeps resize/guide chrome 
 Page & print wraps whole control groups, keeps empty-cell/zoom labels readable, and uses
 compact themed checkboxes. Global desktop native select options follow shared theme tokens;
 printed paper keeps its independent light appearance.
+
+Page dimensions keep Width → Swap → Height together, with a theme divider before Margin.

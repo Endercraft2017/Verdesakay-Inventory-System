@@ -849,3 +849,5 @@ form-definition APIs → reload current status. Linking preserves other layouts;
 default uses the backend's existing fallback. No template content or editor draft is changed.
 The workspace forms a lower stacking context than editor menus; page resizing stays inside
 it. Native desktop options inherit app surface/text tokens in light and dark themes.
+
+The dimension swap remains between its two mm inputs; margin has a separate divider. Page sizing and history handlers are unchanged.
