@@ -169,11 +169,11 @@ App.register('messages', async (view, filter) => {
     if (isImage) {
       return `<button type="button" class="chat-attach-img-wrap" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" data-photo="1" aria-label="Enlarge ${UI.esc(a.name)}"><img class="chat-attach-img" alt="" /><span class="chat-photo-error" hidden>Photo unavailable. Ask the sender to resend it.</span></button>`;
     }
-    return `<div class="msg-attach" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" style="cursor:pointer">
+    return `<button type="button" class="msg-attach" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" aria-label="Preview ${UI.esc(a.name)}">
       <span class="msg-attach-icon">${UI.icon(UI.fileIconName(a.name), 16)}</span>
       <span class="msg-attach-name">${UI.esc(a.name)}</span>
       <span class="msg-attach-size muted">${UI.fmtBytes(a.size_bytes)}</span>
-    </div>`;
+    </button>`;
   }
 
   function bubbleHTML(m) {
@@ -397,7 +397,7 @@ App.register('messages', async (view, filter) => {
         e.stopPropagation();
         if (att.dataset.unavailable) return;
         if (att.dataset.photo) PhotoViewer.open(att.dataset.attUrl, att.dataset.attName);
-        else API.download(att.dataset.attUrl, att.dataset.attName).catch((err) => UI.toast(err.message, 'error'));
+        else AttachmentViewer.open(att.dataset.attUrl, att.dataset.attName);
         return;
       }
       const chip = e.target.closest('.chat-reaction');

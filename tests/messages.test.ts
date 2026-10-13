@@ -283,6 +283,60 @@ describe('messages: attachments', () => {
     expect(missing.body.error).toMatch(/resend/);
   });
 
+  it('previews document text for participants while keeping strangers out', async () => {
+    const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
+      .field('recipient_id', String(alice.id))
+      .attach('files', Buffer.from('Private preview text'), 'notes.txt');
+    const { queryOne } = await import('../src/shared/db');
+    const att = queryOne<{ id: number }>('SELECT id FROM message_attachments WHERE message_id = ?', send.body.id)!;
+    const url = `/api/messages/${send.body.id}/attachments/${att.id}/preview`;
+    const preview = await ctx.api.get(url).set(bearer(alice.token));
+    expect(preview.status).toBe(200);
+    expect(preview.body).toEqual({ text: 'Private preview text' });
+    const stranger = await createEmployee(ctx.api, adminToken, { username: 'preview_stranger' });
+    expect((await ctx.api.get(url).set(bearer(stranger.token))).status).toBe(403);
+  });
+
+  it('extracts bounded Word and spreadsheet previews without returning document markup', async () => {
+    const { Document, Packer, Paragraph } = await import('docx');
+    const JSZip = (await import('jszip')).default;
+    const docx = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('Word preview content')] }] }));
+    const book = new JSZip();
+    book.file('xl/sharedStrings.xml', '<sst><si><t>Spreadsheet preview</t></si></sst>');
+    book.file('xl/worksheets/sheet1.xml', '<worksheet><sheetData><row><c t="s"><v>0</v></c></row></sheetData></worksheet>');
+    const xlsx = await book.generateAsync({ type: 'nodebuffer' });
+    const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
+      .field('recipient_id', String(alice.id))
+      .attach('files', docx, 'note.docx')
+      .attach('files', xlsx, 'sheet.xlsx');
+    expect(send.status).toBe(201);
+    const { queryAll } = await import('../src/shared/db');
+    const atts = queryAll<{ id: number; original_name: string }>(
+      'SELECT id, original_name FROM message_attachments WHERE message_id = ? ORDER BY id', send.body.id
+    );
+    const previews = await Promise.all(atts.map((att) => ctx.api
+      .get(`/api/messages/${send.body.id}/attachments/${att.id}/preview`).set(bearer(alice.token))));
+    expect(previews.map((result) => result.status)).toEqual([200, 200]);
+    expect(previews[0]!.body.text).toContain('Word preview content');
+    expect(previews[1]!.body.text).toContain('Spreadsheet preview');
+    expect(previews[0]!.body.text).not.toContain('<');
+  });
+
+  it('counts both image and video attachments against the sender storage pool', async () => {
+    const before = (await ctx.api.get('/api/messages/quota').set(bearer(adminToken))).body.used_bytes;
+    const image = Buffer.alloc(31, 1);
+    const video = Buffer.alloc(47, 2);
+    const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
+      .field('recipient_id', String(alice.id))
+      .attach('files', image, { filename: 'photo.png', contentType: 'image/png' })
+      .attach('files', video, { filename: 'clip.mp4', contentType: 'video/mp4' });
+    expect(send.status).toBe(201);
+    const after = (await ctx.api.get('/api/messages/quota').set(bearer(adminToken))).body.used_bytes;
+    expect(after - before).toBe(image.length + video.length);
+    await ctx.api.delete(`/api/messages/${send.body.id}`).set(bearer(adminToken));
+    expect((await ctx.api.get('/api/messages/quota').set(bearer(adminToken))).body.used_bytes).toBe(before);
+  });
+
   it('rejects a file over 10 MB', async () => {
     const big = Buffer.alloc(11 * 1024 * 1024);
     const res = await ctx.api.post('/api/messages').set(bearer(adminToken))

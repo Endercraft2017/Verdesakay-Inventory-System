@@ -122,7 +122,7 @@ const API = (() => {
   }
 
   /** Fetch a binary endpoint with auth and return an object URL (caller revokes it). */
-  async function blobUrl(path) {
+  async function blobUrl(path, mimeOverride) {
     const token = getToken();
     const headers = { 'X-Device-Id': deviceId() };
     if (token) headers.Authorization = 'Bearer ' + token;
@@ -133,7 +133,8 @@ const API = (() => {
       throw new Error('Session expired. Please sign in again.');
     }
     if (!res.ok) throw new Error('Request failed (' + res.status + ')');
-    return URL.createObjectURL(await res.blob());
+    const blob = await res.blob();
+    return URL.createObjectURL(mimeOverride ? new Blob([blob], { type: mimeOverride }) : blob);
   }
 
   /** Fetch an auth'd endpoint that returns a file (CSV / DAT / etc.) and save it. */

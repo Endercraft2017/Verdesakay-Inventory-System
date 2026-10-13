@@ -224,8 +224,8 @@
     if (isImage) {
       return '<div class="m-chat-attach-img-wrap" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '"><img class="m-chat-attach-img" alt="" /><span class="m-chat-photo-error" hidden>Photo unavailable. Ask the sender to resend it.</span></div>';
     }
-    return '<div class="m-msg-attach" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '">' +
-      '<span>' + mEsc(a.name) + '</span><span class="m-muted">' + mFmtBytes(a.size_bytes) + '</span></div>';
+    return '<button type="button" class="m-msg-attach" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '" aria-label="Preview ' + mEsc(a.name) + '">' +
+      '<span>' + mEsc(a.name) + '</span><span class="m-muted">' + mFmtBytes(a.size_bytes) + '</span></button>';
   }
 
   function bubbleHTML(m) {
@@ -327,7 +327,7 @@
         event.stopPropagation();
         if (el.dataset.unavailable) return;
         if (el.classList.contains('m-chat-attach-img-wrap')) PhotoViewer.open(el.dataset.attUrl, el.dataset.attName);
-        else API.download(el.dataset.attUrl, el.dataset.attName).catch(function (e) { mToast(e.message || 'Download failed', 'err'); });
+        else AttachmentViewer.open(el.dataset.attUrl, el.dataset.attName);
       });
     });
     container.querySelectorAll('.m-chat-reaction:not([data-wired])').forEach(function (el) {

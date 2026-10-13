@@ -16,6 +16,8 @@ import { syncClass } from '../sync';
 import { syncUpload } from '../sync/files';
 import { sideEffectsSuppressed } from '../shared/sync-context';
 import { backupDir, mirrorDir } from '../shared/backup';
+import { previewMessageFile } from './message-preview';
+import { enforceQuota } from '../platform/quota';
 
 const router = Router();
 router.use(requireAuth);
@@ -24,8 +26,8 @@ function currentSlug(): string {
   return tenantStore.getStore()?.slug ?? DEFAULT_TENANT;
 }
 
-/** Fixed per-user pool for message attachments — independent of the tenant's plan
- *  storage_mb quota (see src/quota.ts). Freed automatically as messages are deleted. */
+/** Fixed per-user pool for message attachments, alongside the tenant plan's
+ *  storage_mb quota (see src/platform/quota.ts). Freed as messages are deleted. */
 const USER_STORAGE_CAP_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
 const FILE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const MAX_FILES_PER_MESSAGE = 10;
@@ -354,6 +356,14 @@ router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpl
       });
       return;
     }
+    try {
+      // Multer has already placed these files in uploadDir(), which dirSizeBytes
+      // includes. Passing addingBytes here would count the same upload twice.
+      enforceQuota('storage_mb');
+    } catch (error) {
+      unlinkAll(files);
+      throw error;
+    }
   }
   const info = run(
     'INSERT INTO messages (sender_id, recipient_id, subject, body, reply_to_id) VALUES (?, ?, ?, ?, ?)',
@@ -502,6 +512,43 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
   res.setHeader('Content-Disposition', `${inlineImage ? 'inline' : 'attachment'}; filename="${encodeURIComponent(att.original_name)}"`);
   if (filePath) res.sendFile(filePath);
   else if (att.data) res.send(Buffer.from(att.data));
+});
+
+// Text-only document previews. The same participant check as downloading applies;
+// never send Office markup to the chat page or a third-party conversion service.
+router.get('/:id/attachments/:attId/preview', requirePermission('messages.view'), async (req, res) => {
+  const messageId = Number(req.params.id);
+  const msg = queryOne<{ sender_id: number; recipient_id: number }>(
+    'SELECT sender_id, recipient_id FROM messages WHERE id = ?', messageId
+  );
+  if (!msg) { res.status(404).json({ error: 'Message not found' }); return; }
+  if (msg.sender_id !== req.user!.id && msg.recipient_id !== req.user!.id) {
+    res.status(403).json({ error: 'Forbidden' }); return;
+  }
+  const att = queryOne<{ stored_name: string; original_name: string; data: Uint8Array | null }>(
+    'SELECT stored_name, original_name, data FROM message_attachments WHERE id = ? AND message_id = ?',
+    Number(req.params.attId), messageId
+  );
+  if (!att) { res.status(404).json({ error: 'Attachment not found' }); return; }
+  const ext = path.extname(att.original_name).toLowerCase();
+  if (!['.txt', '.log', '.md', '.csv', '.tsv', '.json', '.docx', '.xlsx'].includes(ext)) {
+    res.status(415).json({ error: 'Preview is not available for this file type. Download it to view.' }); return;
+  }
+  const safeName = path.basename(att.stored_name);
+  const tenantPart = currentSlug() === DEFAULT_TENANT ? '' : currentSlug();
+  const locations = [path.join(uploadDir(), safeName), ...[backupDir(), mirrorDir()]
+    .filter((dir): dir is string => !!dir).map((dir) => path.join(dir, 'uploads', tenantPart, safeName))];
+  const location = locations.find((candidate) => fs.existsSync(candidate));
+  if (!location && !att.data) {
+    res.status(410).json({ error: 'File is no longer available. Ask the sender to resend it.' }); return;
+  }
+  try {
+    const input = location ? fs.readFileSync(location) : Buffer.from(att.data!);
+    const text = await previewMessageFile(att.original_name, input);
+    res.json({ text });
+  } catch {
+    res.status(422).json({ error: 'This file could not be previewed. Download it to view.' });
+  }
 });
 
 // POST /api/messages/:id/read — mark a single received message read (kept alongside the

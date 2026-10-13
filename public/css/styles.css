@@ -1201,7 +1201,7 @@ textarea { resize: vertical; min-height: 84px; }
 .msg-row .when { color: var(--text-faint); font-size: 12px; flex-shrink: 0; }
 
 /* Attachment row (non-image) — reused inside chat bubbles */
-.msg-attach { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-top: 6px; }
+.msg-attach { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-top: 6px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .msg-attach:hover { background: var(--surface-2); }
 .msg-attach-icon { color: var(--text-faint); flex-shrink: 0; }
 .msg-attach-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
