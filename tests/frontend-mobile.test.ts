@@ -39,12 +39,14 @@ describe('mobile bootstrap', () => {
     expect(source).toContain("MApp.can(op.permission)");
   });
 
-  it('maps Clock to the approved Figma V2 frame and server-authoritative review flow', () => {
+  it('maps Clock to Figma 46:577 with slot tiles that start the punch (scan, then auto selfie)', () => {
     const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'hr', 'clock.js'), 'utf8');
     expect(source).toContain('data-figma-node="46:577"');
-    expect(source).toContain('Select an action before confirming');
-    expect(source).toContain('Review & confirm');
-    expect(source).toContain("API.post('/hr/clock/punch'");
+    expect(source).toContain('Tap what you’re recording');
+    expect(source).toContain("API.post('/hr/clock/punch/scan'");
+    expect(source).toContain('mSelfie.take(');
+    expect(source).toContain("fd.append('slot'");
+    expect(source).toContain("API.upload('/hr/clock/punch/selfie'");
   });
 
   it('maps Home to the approved Figma V2 frame', () => {
@@ -240,24 +242,39 @@ describe('mobile bootstrap', () => {
     expect(asked.some((u) => u.startsWith('/api/job-orders'))).toBe(false);
   });
 
-  /** Boot the time clock view with a fake server + GPS; returns the view and the punch bodies sent. */
-  async function bootClock(status: Record<string, unknown>) {
+  /** Boot the time clock view with a fake server, GPS, QR scanner and front camera; returns the
+   *  view, the scan bodies sent, the selfie uploads and the scanner opens. `selfie: false` cancels
+   *  the camera. The scanner reads `ABCDEFGHIJ` as soon as it opens. */
+  async function bootClock(status: Record<string, unknown>, opts: { selfie?: boolean } = {}) {
     const win = await bootAs({
       id: 3, username: 'drv1', full_name: 'Driver One', role: 'employee', employee: true, modules: null,
       permissions: ['messages.view', 'messages.send'],
     });
     const punches: unknown[] = [];
+    const selfies: Array<{ hold_id: unknown; slot: unknown; photo: unknown }> = [];
+    const scans: string[] = [];
     const json = (data: unknown) => ({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => data });
-    win.fetch = async (url: string, init: { body?: string } = {}) => {
+    win.fetch = async (url: string, init: { body?: any } = {}) => {
       if (url.endsWith('/hr/clock/my-status')) {
-        return json({ employee_name: 'Driver One', clocked_in: false, punches: [], hours_today: 0, ...status });
+        return json({
+          employee_name: 'Driver One', clocked_in: false, punches: [], hours_today: 0,
+          slots: { in: null, lunchOut: null, lunchIn: null, out: null }, next_slot: 'in', ...status,
+        });
       }
-      if (url.endsWith('/hr/clock/punch')) {
+      if (url.endsWith('/hr/clock/punch/scan')) {
         punches.push(JSON.parse(init.body || '{}'));
-        return json({ kind: 'in', segment: 'morning_in', at: '08:00', hours_today: 0, work_date: '2026-09-25' });
+        return json({ hold_id: 41, expires_in_s: 300 });
+      }
+      if (url.endsWith('/hr/clock/punch/selfie')) {
+        selfies.push({ hold_id: init.body.get('hold_id'), slot: init.body.get('slot'), photo: init.body.get('photo') });
+        return json({ kind: 'in', segment: 'morning_in', at: '08:00', hours_today: 0, work_date: '2026-09-25', photo_id: 9, replaced: false });
       }
       return json([]);
     };
+    win.mSelfie.take = () => (opts.selfie === false
+      ? Promise.reject(new Error('cancelled'))
+      : Promise.resolve(new win.Blob(['jpeg'], { type: 'image/jpeg' })));
+    win.mScanner.open = (o: { title: string; onResult: (c: string) => void }) => { scans.push(o.title); o.onResult('ABCDEFGHIJ'); return { close() {} }; };
     Object.defineProperty(win.navigator, 'geolocation', {
       configurable: true,
       value: { getCurrentPosition: (ok: (p: unknown) => void) => ok({ coords: { latitude: 14.65, longitude: 120.98, accuracy: 12 } }) },
@@ -265,26 +282,70 @@ describe('mobile bootstrap', () => {
     win.location.hash = '#/clock';
     win.MApp.render();
     await new Promise((r) => setTimeout(r, 0));
-    return { win, view: win.document.getElementById('m-view'), punches };
+    return { win, view: win.document.getElementById('m-view'), punches, selfies, scans };
   }
+  const tile = (view: any, slot: string) => view.querySelector(`[data-slot="${slot}"]`);
+  const settle = () => new Promise((r) => setTimeout(r, 20));
 
-  it('time clock: staff who may clock in anywhere get "Clock in here", which sends GPS and no QR code', async () => {
-    const { view, punches } = await bootClock({ location_required: false, can_clock_anywhere: true });
-    const review = [...view.querySelectorAll('button')].find((b: { textContent: string }) => b.textContent.includes('Review & confirm'));
-    expect(review).toBeTruthy();
-    review.click();
-    const here = [...view.querySelectorAll('button')].find((b: { textContent: string }) => b.textContent.includes('Clock in here'));
-    expect(here).toBeTruthy();
-    here.click();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(punches).toEqual([{ location: { lat: 14.65, lng: 120.98, accuracy_m: 12 } }]);
+  it('time clock: the four kiosk slots are tiles, the suggested one marked Next, filled ones showing their time', async () => {
+    const { view } = await bootClock({ slots: { in: '08:02', lunchOut: null, lunchIn: null, out: null }, next_slot: 'lunchOut', clocked_in: true });
+    expect([...view.querySelectorAll('[data-slot]')].map((b: any) => b.textContent.replace(/\s+/g, ' ').trim()))
+      .toEqual(['Time in08:02', 'Afternoon out Next–', 'Afternoon in–', 'Time out–']);
+    expect(tile(view, 'lunchOut').classList.contains('is-next')).toBe(true);
   });
 
-  it('time clock: ordinary staff get no "Clock in here" button, and are told location is checked when locked', async () => {
-    const { view } = await bootClock({ location_required: true, can_clock_anywhere: false });
-    expect(view.textContent).not.toContain('Clock in here');
+  it('time clock: one tap on a slot scans the office QR, then the selfie records that slot', async () => {
+    const { view, punches, selfies, scans } = await bootClock({ location_required: false });
+    tile(view, 'in').click();
+    await settle();
+    expect(scans).toEqual(['Scan the office screen — Time in']);
+    expect(punches).toEqual([{ code: 'ABCDEFGHIJ' }]);
+    expect(selfies).toHaveLength(1);
+    expect(selfies[0]).toMatchObject({ hold_id: '41', slot: 'in' });
+    expect(selfies[0]!.photo).toBeTruthy();
+    expect(view.textContent).toContain('Time in recorded');
+  });
+
+  it('time clock: with the location lock, the QR scan is sent with the GPS fetched meanwhile', async () => {
+    const { view, punches } = await bootClock({ location_required: true });
     expect(view.textContent).toContain('time-in only works at the office');
-    expect(view.textContent).toContain('Review & confirm');
+    expect(view.textContent).not.toContain('Outside the office'); // only for staff who may clock in anywhere
+    tile(view, 'in').click();
+    await settle();
+    expect(punches).toEqual([{ code: 'ABCDEFGHIJ', location: { lat: 14.65, lng: 120.98, accuracy_m: 12 } }]);
+  });
+
+  it('time clock: staff who may clock in anywhere can choose "Outside the office" — GPS, no QR, then the selfie', async () => {
+    const { view, punches, selfies, scans } = await bootClock({ location_required: false, can_clock_anywhere: true });
+    view.querySelector('[data-where="outside"]').click();
+    tile(view, 'in').click();
+    await settle();
+    expect(scans).toEqual([]);
+    expect(punches).toEqual([{ location: { lat: 14.65, lng: 120.98, accuracy_m: 12 } }]);
+    expect(selfies[0]).toMatchObject({ slot: 'in' });
+  });
+
+  it('time clock: a filled slot asks before replacing its time and selfie', async () => {
+    const { view, punches, selfies } = await bootClock({ slots: { in: '08:02', lunchOut: null, lunchIn: null, out: null }, next_slot: 'out' });
+    tile(view, 'in').click();
+    await settle();
+    expect(punches).toEqual([]); // nothing started yet
+    expect(view.textContent).toContain('Replace your time in at 08:02?');
+    view.querySelector('[data-keep]').click();
+    expect(view.querySelector('.v2-clock-replace').hidden).toBe(true);
+    tile(view, 'in').click();
+    view.querySelector('[data-replace]').click();
+    await settle();
+    expect(selfies[0]).toMatchObject({ slot: 'in' });
+  });
+
+  it('time clock: a cancelled selfie records nothing and says so', async () => {
+    const { win, view, selfies } = await bootClock({ location_required: false }, { selfie: false });
+    tile(view, 'in').click();
+    await settle();
+    expect(selfies).toHaveLength(0);
+    expect(view.textContent).not.toContain('recorded');
+    expect(win.document.body.textContent).toContain('a selfie is needed to finish');
   });
 
   it('maps the Schedule route to approved Figma node 46:606 and keeps its live API/request flow', () => {

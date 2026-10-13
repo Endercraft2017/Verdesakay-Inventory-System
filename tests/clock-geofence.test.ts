@@ -2,7 +2,7 @@
  *  site list + radius, the per-employee "can time in outside the office" exemption, and the
  *  location stored on each phone punch. */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, phonePunch, type TestContext } from './helpers';
 // Dynamic imports after setupApp() — see the note at the top of tests/clock.test.ts.
 let queryOne: typeof import('../src/shared/db').queryOne;
 let setSetting: typeof import('../src/shared/db').setSetting;
@@ -54,12 +54,12 @@ describe('lock off (the default) — phones punch as before', () => {
   it('a QR punch needs no location; a sent location is still stored', async () => {
     setSetting('clock_geofence', { enabled: false, sites: [OFFICE], max_accuracy_m: 100 });
     const a = await linkedEmployee();
-    const r = await ctx.api.post('/api/hr/clock/punch').set(a.h).send({ code: code() });
+    const r = await phonePunch(ctx.api, a.h, { code: code() });
     expect(r.status).toBe(200);
     expect(punchRow(r.body.id).lat).toBeNull();
 
     const b = await linkedEmployee();
-    const r2 = await ctx.api.post('/api/hr/clock/punch').set(b.h).send({ code: code(), location: FAR });
+    const r2 = await phonePunch(ctx.api, b.h, { code: code(), location: FAR });
     expect(r2.status).toBe(200);
     expect(punchRow(r2.body.id)).toMatchObject({ source: 'phone', geo_site: null });
     expect(punchRow(r2.body.id).distance_m).toBeGreaterThan(5000);
@@ -69,15 +69,15 @@ describe('lock off (the default) — phones punch as before', () => {
 describe('lock on', () => {
   it('refuses a QR punch with no location, from far away, or with an imprecise fix', async () => {
     const e = await linkedEmployee();
-    const none = await ctx.api.post('/api/hr/clock/punch').set(e.h).send({ code: code() });
+    const none = await phonePunch(ctx.api, e.h, { code: code() });
     expect(none.status).toBe(400);
     expect(none.body.error).toMatch(/Turn on location/);
 
-    const far = await ctx.api.post('/api/hr/clock/punch').set(e.h).send({ code: code(), location: FAR });
+    const far = await phonePunch(ctx.api, e.h, { code: code(), location: FAR });
     expect(far.status).toBe(403);
     expect(far.body.error).toMatch(/5\.\d km from Main office/);
 
-    const fuzzy = await ctx.api.post('/api/hr/clock/punch').set(e.h).send({ code: code(), location: { ...NEAR, accuracy_m: 400 } });
+    const fuzzy = await phonePunch(ctx.api, e.h, { code: code(), location: { ...NEAR, accuracy_m: 400 } });
     expect(fuzzy.status).toBe(400);
     expect(fuzzy.body.error).toMatch(/too imprecise/);
     expect(queryOne('SELECT id FROM time_punches WHERE employee_id = ?', e.employeeId)).toBeUndefined();
@@ -85,7 +85,7 @@ describe('lock on', () => {
 
   it('accepts a QR punch on-site and records where it came from', async () => {
     const e = await linkedEmployee();
-    const r = await ctx.api.post('/api/hr/clock/punch').set(e.h).send({ code: code(), location: NEAR });
+    const r = await phonePunch(ctx.api, e.h, { code: code(), location: NEAR });
     expect(r.status).toBe(200);
     const row = punchRow(r.body.id);
     expect(row).toMatchObject({ source: 'phone', geo_site: 'Main office', lat: NEAR.lat, accuracy_m: 20 });
@@ -94,7 +94,7 @@ describe('lock on', () => {
 
   it('a non-exempt employee cannot skip the QR, even on-site', async () => {
     const e = await linkedEmployee();
-    const r = await ctx.api.post('/api/hr/clock/punch').set(e.h).send({ location: NEAR });
+    const r = await phonePunch(ctx.api, e.h, { location: NEAR });
     expect(r.status).toBe(400);
     expect(r.body.error).toMatch(/Scan the code/);
   });
@@ -118,7 +118,7 @@ describe('"can time in outside the office" exemption', () => {
     const s = await ctx.api.get('/api/hr/clock/my-status').set(e.h);
     expect(s.body).toMatchObject({ location_required: false, can_clock_anywhere: true });
 
-    const r = await ctx.api.post('/api/hr/clock/punch').set(e.h).send({ location: FAR });
+    const r = await phonePunch(ctx.api, e.h, { location: FAR });
     expect(r.status).toBe(200);
     expect(r.body.source).toBe('remote');
     expect(punchRow(r.body.id)).toMatchObject({ source: 'remote', lat: FAR.lat, geo_site: null });
@@ -126,14 +126,14 @@ describe('"can time in outside the office" exemption', () => {
 
   it('still needs a location for a no-QR punch (its only evidence)', async () => {
     const e = await linkedEmployee({ clock_anywhere: true });
-    const r = await ctx.api.post('/api/hr/clock/punch').set(e.h).send({});
+    const r = await phonePunch(ctx.api, e.h, {});
     expect(r.status).toBe(400);
     expect(r.body.error).toMatch(/Turn on location/);
   });
 
   it('may still use the QR, from anywhere, without sending a location', async () => {
     const e = await linkedEmployee({ clock_anywhere: true });
-    const r = await ctx.api.post('/api/hr/clock/punch').set(e.h).send({ code: code() });
+    const r = await phonePunch(ctx.api, e.h, { code: code() });
     expect(r.status).toBe(200);
     expect(r.body.source).toBe('phone');
   });
@@ -154,8 +154,8 @@ describe('Punch Log', () => {
   it('lists punches in a date range with where each phone punch came from, filterable by source', async () => {
     const onsite = await linkedEmployee();
     const field = await linkedEmployee({ clock_anywhere: true });
-    const a = await ctx.api.post('/api/hr/clock/punch').set(onsite.h).send({ code: code(), location: NEAR });
-    const b = await ctx.api.post('/api/hr/clock/punch').set(field.h).send({ location: FAR });
+    const a = await phonePunch(ctx.api, onsite.h, { code: code(), location: NEAR });
+    const b = await phonePunch(ctx.api, field.h, { location: FAR });
     const day = a.body.work_date;
 
     const all = await ctx.api.get(`/api/hr/clock/punches?from=${day}&to=${day}`).set(A());

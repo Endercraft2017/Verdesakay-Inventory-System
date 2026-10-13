@@ -13,6 +13,7 @@ const NO_CLASS_NEEDED: Record<string, string> = {
   // Writes only node-local tables (sessions, push subscriptions, tickets, the activity log, the AI
   // search index), which never sync, or writes nothing at all.
   'src/core/auth.routes.ts:post /login': 'sessions are node-local',
+  'src/modules/hr/clock.routes.ts:post /punch': 'retired one-step phone punch: always 410, writes nothing (punch-holds.ts)',
   'src/core/auth.routes.ts:post /logout': 'sessions / push subscriptions are node-local',
   'src/core/auth.routes.ts:post /sessions/revoke-others': 'sessions are node-local',
   'src/core/auth.routes.ts:post /sessions/:sid/revoke': 'sessions are node-local',

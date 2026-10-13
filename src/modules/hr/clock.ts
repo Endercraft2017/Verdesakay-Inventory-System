@@ -82,14 +82,20 @@ function policy(): ClockPolicy {
   return { lunch_start: '11:00', lunch_end: '14:00', first_punch_out_after: '17:00', ...(getSetting<Partial<ClockPolicy>>('clock_policy') || {}) };
 }
 
-function localParts(): { date: string; hm: string; hour: number } {
-  const d = now(); // office-local time (the server runs on-site / TZ is the office's)
+function localParts(d: Date = now()): { date: string; hm: string; hour: number } {
+  // office-local time (the server runs on-site / TZ is the office's)
   const p = (n: number) => String(n).padStart(2, '0');
   return {
     date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
     hm: `${p(d.getHours())}:${p(d.getMinutes())}`,
     hour: d.getHours(),
   };
+}
+
+/** Office-local 'YYYY-MM-DD HH:MM:SS' -- the format time_punches.ts and time_punch_holds.scanned_at use. */
+export function localStamp(d: Date = now()): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${localParts(d).date} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 export interface PunchRow {
@@ -201,8 +207,8 @@ export function recordedBrackets(employeeId: number, date: string): { in: string
  *  day is normally an in — except at/after `outAfter` (see firstPunchOutAfter): that's someone
  *  who forgot to time in and is now leaving, so it's recorded as the day's time-out, leaving
  *  time-in blank for HR to follow up. */
-function classify(priorToday: PunchRow[], outAfter: string | null): { kind: 'in' | 'out'; segment: string } {
-  const { hm, hour } = localParts();
+function classify(priorToday: PunchRow[], outAfter: string | null, at: Date): { kind: 'in' | 'out'; segment: string } {
+  const { hm, hour } = localParts(at);
   const pol = policy();
   const prevPunch = priorToday[priorToday.length - 1];
   if (!prevPunch && outAfter != null && hm >= outAfter) return { kind: 'out', segment: 'afternoon_out' };
@@ -272,15 +278,19 @@ export interface PunchDevice {
  *  and resolved the employee. De-dupes a repeat within 45s. Once the day's final
  *  ('afternoon_out') punch has happened, refuses to start a new in/out cycle -- e.g. an
  *  employee called back for overtime doesn't get a fresh "morning in" here; the kiosk's
- *  click-to-correct flow (see correctPunch) is the only way to log more time that day. */
+ *  click-to-correct flow (see correctPunch) is the only way to log more time that day.
+ *  `at` is when the punch happened if not now: a phone punch is recorded at its QR scan, not at
+ *  the selfie that confirms it a minute later (see punch-holds.ts). */
 export function recordPunch(
   employee: { id: number; name: string },
   source: 'phone' | 'kiosk' | 'remote',
   userId: number | null,
   geo: PunchGeo | null = null,
-  device: PunchDevice | null = null
+  device: PunchDevice | null = null,
+  at: Date | null = null
 ): PunchResult {
-  const { date: today, hm } = localParts();
+  const when = at ?? now();
+  const { date: today, hm } = localParts(when);
   const dayPunches = (date: string) => queryAll<PunchRow>(
     'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id', employee.id, date
   );
@@ -289,7 +299,7 @@ export function recordPunch(
   // yesterday's shift (see openShiftToClose) is still caught as the same punch.
   const last = queryOne<PunchRow>('SELECT * FROM time_punches WHERE employee_id = ? ORDER BY id DESC LIMIT 1', employee.id);
   if (last) {
-    const gap = now().getTime() - new Date(last.ts.replace(' ', 'T')).getTime();
+    const gap = when.getTime() - new Date(last.ts.replace(' ', 'T')).getTime();
     if (gap >= 0 && gap < 45_000) {
       return {
         ok: true, duplicate: true, id: last.id, employee_id: employee.id, employee_name: employee.name,
@@ -316,12 +326,12 @@ export function recordPunch(
   const context = closing ? closing.context : prior.length ? prior : manualBracketsAsPunches(employee.id, date);
   const { kind, segment } = closing
     ? { kind: 'out' as const, segment: 'afternoon_out' }
-    : classify(context, firstPunchOutAfter(employee.id, date));
+    : classify(context, firstPunchOutAfter(employee.id, date), when);
   const info = run(
-    `INSERT INTO time_punches (employee_id, user_id, work_date, kind, segment, source, lat, lng, accuracy_m, distance_m, geo_site,
+    `INSERT INTO time_punches (employee_id, user_id, ts, work_date, kind, segment, source, lat, lng, accuracy_m, distance_m, geo_site,
                                device_id, device_flag, device_user_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    employee.id, userId, date, kind, segment, source,
+     VALUES (?, ?, COALESCE(?, datetime('now','localtime')), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    employee.id, userId, at ? localStamp(at) : null, date, kind, segment, source,
     geo?.lat ?? null, geo?.lng ?? null, geo?.accuracy_m ?? null, geo?.distance_m ?? null, geo?.site ?? null,
     device?.device_id ?? null, device?.flag ?? null, device?.usual_user_id ?? null
   );
@@ -408,29 +418,81 @@ export function correctPunch(
   slot: CorrectionSlot,
   source: 'kiosk'
 ): PunchResult {
-  const { date, hour } = localParts();
-  const prior = queryAll<PunchRow>(
-    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id',
-    employee.id, date
+  return setSlotPunch(employee, slot, source);
+}
+
+/** A phone punch's extras (see setSlotPunch): when it happened, who, where, on which device. */
+export interface SlotPunchOpts {
+  at?: Date | null;
+  userId?: number | null;
+  geo?: PunchGeo | null;
+  device?: PunchDevice | null;
+}
+
+/** Record one of the day's four slots -- the kiosk's click-to-fix (correctPunch) and every phone
+ *  punch, where the employee picks the slot themselves (In / Afternoon Out / Afternoon In / Out).
+ *  Re-doing a slot moves that slot's punch to the new time (and, for a phone, its new location
+ *  and device) rather than adding another -- the caller then replaces its photo, which
+ *  savePunchPhoto keys by punch id. A phone punch lands at `at` (its QR scan, punch-holds.ts).
+ *  An Out with nothing yet today, before today's time-in time, closes yesterday's still-open
+ *  shift (openShiftToClose), the same as an auto-classified punch. */
+export function setSlotPunch(
+  employee: { id: number; name: string },
+  slot: CorrectionSlot,
+  source: 'kiosk' | 'phone' | 'remote',
+  opts: SlotPunchOpts = {}
+): PunchResult & { replaced: boolean } {
+  const when = opts.at ?? now();
+  const { date: today, hm, hour } = localParts(when);
+  const dayPunches = (d: string) => queryAll<PunchRow>(
+    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id', employee.id, d
   );
+  let date = today;
+  let prior = dayPunches(today);
+  if (slot === 'out' && !prior.length) {
+    const closing = openShiftToClose(employee.id, today, hm);
+    if (closing) { date = closing.date; prior = dayPunches(date); }
+  }
   const { kind, segment } = segmentAndKindFor(slot, hour);
   const existing = findSlotPunch(prior, slot);
+  const ts = opts.at ? localStamp(opts.at) : null;
+  const phone = source !== 'kiosk';
+  const g = opts.geo, d = opts.device;
+  const extras = [
+    opts.userId ?? null, g?.lat ?? null, g?.lng ?? null, g?.accuracy_m ?? null, g?.distance_m ?? null, g?.site ?? null,
+    d?.device_id ?? null, d?.flag ?? null, d?.usual_user_id ?? null,
+  ];
 
   let row: PunchRow;
   let finalPunches: PunchRow[];
   if (existing) {
-    run("UPDATE time_punches SET ts = datetime('now','localtime'), segment = ? WHERE id = ?", segment, existing.id);
+    if (phone) {
+      run(
+        `UPDATE time_punches SET ts = COALESCE(?, datetime('now','localtime')), segment = ?, source = ?,
+           user_id = ?, lat = ?, lng = ?, accuracy_m = ?, distance_m = ?, geo_site = ?,
+           device_id = ?, device_flag = ?, device_user_id = ?
+         WHERE id = ?`,
+        ts, segment, source, ...extras, existing.id
+      );
+    } else {
+      run("UPDATE time_punches SET ts = COALESCE(?, datetime('now','localtime')), segment = ? WHERE id = ?", ts, segment, existing.id);
+    }
     row = queryOne<PunchRow>('SELECT * FROM time_punches WHERE id = ?', existing.id)!;
     finalPunches = prior.map((p) => (p.id === existing.id ? row : p));
   } else {
     const info = run(
-      'INSERT INTO time_punches (employee_id, user_id, work_date, kind, segment, source) VALUES (?, NULL, ?, ?, ?, ?)',
-      employee.id, date, kind, segment, source
+      `INSERT INTO time_punches (employee_id, ts, work_date, kind, segment, source,
+                                 user_id, lat, lng, accuracy_m, distance_m, geo_site, device_id, device_flag, device_user_id)
+       VALUES (?, COALESCE(?, datetime('now','localtime')), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      employee.id, ts, date, kind, segment, source, ...extras
     );
     row = queryOne<PunchRow>('SELECT * FROM time_punches WHERE id = ?', Number(info.lastInsertRowid))!;
     finalPunches = [...prior, row];
   }
 
+  // A phone punch also starts the day's attendance row if the roster has one waiting (as an
+  // auto-classified punch does); the explicit slot then always wins over what was there.
+  if (phone) applyPunchToAttendance(employee.id, date);
   const periods = queryAll<{ period_id: number }>('SELECT DISTINCT period_id FROM attendance_records WHERE employee_id = ? AND work_date = ?', employee.id, date);
   for (const period of periods) {
     if (cutoffIsPaid(period.period_id)) continue;
@@ -440,8 +502,49 @@ export function correctPunch(
   return {
     ok: true, id: row.id, employee_id: employee.id, employee_name: employee.name,
     kind: row.kind as 'in' | 'out', segment: row.segment, at: row.ts.slice(11, 16),
-    work_date: date, hours_today: hoursToday(finalPunches), source,
+    work_date: date, hours_today: hoursToday(finalPunches), source, replaced: !!existing,
+    recorded: recordedBrackets(employee.id, date),
   };
+}
+
+/** The phone Clock screen's four tiles: each slot's time on the employee's current work day (a
+ *  still-open yesterday shift counts, see openShiftToClose), filled in from HR-typed brackets
+ *  where there's no punch, plus the slot an automatic punch would fill now -- shown as "next" so
+ *  the usual tap is the obvious one. next_slot is null once the day's Out is recorded. */
+export function phoneSlots(employeeId: number): {
+  slot_date: string;
+  slots: Record<CorrectionSlot, string | null>;
+  next_slot: CorrectionSlot | null;
+} {
+  const at = now();
+  const { date: today, hm } = localParts(at);
+  const dayPunches = (d: string) => queryAll<PunchRow>(
+    'SELECT * FROM time_punches WHERE employee_id = ? AND work_date = ? ORDER BY id', employeeId, d
+  );
+  let date = today;
+  let prior = dayPunches(today);
+  const closing = prior.length ? null : openShiftToClose(employeeId, today, hm);
+  if (closing) { date = closing.date; prior = dayPunches(date); }
+  const hhmm = (p: PunchRow | null) => (p ? p.ts.slice(11, 16) : null);
+  const typed = recordedBrackets(employeeId, date);
+  const slots: Record<CorrectionSlot, string | null> = {
+    in: hhmm(findSlotPunch(prior, 'in')) ?? typed?.in ?? null,
+    lunchOut: hhmm(findSlotPunch(prior, 'lunchOut')) ?? typed?.lunchOut ?? null,
+    lunchIn: hhmm(findSlotPunch(prior, 'lunchIn')) ?? typed?.lunchIn ?? null,
+    out: hhmm(findSlotPunch(prior, 'out')),
+  };
+  let next: CorrectionSlot | null;
+  if (slots.out) next = null;
+  else if (closing) next = 'out';
+  else {
+    const context = prior.length ? prior : manualBracketsAsPunches(employeeId, date);
+    const { segment } = classify(context, firstPunchOutAfter(employeeId, date), at);
+    next = segment === 'lunch_out' ? 'lunchOut'
+      : segment === 'afternoon_out' ? 'out'
+      : segment === 'afternoon_in' && slots.in ? 'lunchIn'
+      : 'in';
+  }
+  return { slot_date: date, slots, next_slot: next };
 }
 
 /** The employee's clock state today — for the mobile "my clock" screen. */

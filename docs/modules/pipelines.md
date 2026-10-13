@@ -495,7 +495,12 @@ for the internet (it uses the company's mail server, which only the cloud has).
    outside every office radius → refused; employee marked "can time in outside the office"
    → may punch without the QR from anywhere (`source = remote`), location required and
    stored. Employee status `suspended` (or resigned/terminated) → every punch refused
-   (`punchBlockedReason`). Lands in `time_punches` with its location. A phone punch from a
+   (`punchBlockedReason`). A phone punch: the employee picks the slot (Time in / Afternoon out /
+   Afternoon in / Time out — the kiosk's four), then the scan passes those checks and is held at
+   its own time (`punch-holds.ts`, 5-minute expiry); the auto-captured selfie then records that
+   slot at the scan time with the photo kept beside it. Re-doing a slot replaces its time and
+   photo (`setSlotPunch`). No selfie, or an expired scan → nothing recorded. Kiosk punches stay
+   automatic (in/out decided by the day's punches). Lands in `time_punches` with its location. A phone punch from a
    borrowed-phone sign-in, or from a phone another account usually uses, is recorded with a
    `device_flag` for HR to review in the Punch Log — never refused (a forgotten phone is a real
    reason; see "Account session" above).

@@ -177,6 +177,16 @@ const uploadTmp = multer({
   fileFilter: (_req, file, cb) => cb(null, file.mimetype === 'image/jpeg'),
 });
 
+/** Multipart field "photo" (JPEG only, 2 MB cap) into a temp file for savePunchPhoto; the file
+ *  travels with a synced command. Also used by the phone's selfie step (clock.routes.ts). */
+export const punchPhotoUpload = syncUpload(uploadTmp.single('photo'));
+
+/** Multer errors (file too large, wrong field) -> 400, same as attachments.routes.ts. */
+export function punchPhotoUploadErrors(err: unknown, _req: Request, res: Response, next: NextFunction): void {
+  if (err instanceof multer.MulterError) { res.status(400).json({ error: `Upload failed: ${err.message}` }); return; }
+  next(err);
+}
+
 /** Builds the two routes a kiosk punch-photo feature needs: POST /:punchId (upload/replace,
  *  multipart field "photo") and GET /:id (serve). Both `/api/hr/clock/photo` (attendance) and
  *  `/api/hr/field/photo` (field work) mount one of these, differing only in which table
@@ -190,7 +200,7 @@ export function punchPhotoRoutes(
 
   // A punch photo records something that happened at the kiosk: `physical`, and the photo
   // travels with the command (docs/OFFLINE-FIRST.md §18, §20).
-  router.post('/:punchId', requirePermission('hr.view'), syncClass('physical'), syncUpload(uploadTmp.single('photo')), (req, res) => {
+  router.post('/:punchId', requirePermission('hr.view'), syncClass('physical'), punchPhotoUpload, (req, res) => {
     const punchId = Number(req.params.punchId);
     const punch = Number.isInteger(punchId) ? lookupPunch(punchId) : undefined;
     if (!punch) {
@@ -213,11 +223,7 @@ export function punchPhotoRoutes(
     res.sendFile(file);
   });
 
-  // Multer errors (file too large, wrong field) -> 400, same as attachments.routes.ts.
-  router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
-    if (err instanceof multer.MulterError) { res.status(400).json({ error: `Upload failed: ${err.message}` }); return; }
-    next(err);
-  });
+  router.use(punchPhotoUploadErrors);
 
   return router;
 }

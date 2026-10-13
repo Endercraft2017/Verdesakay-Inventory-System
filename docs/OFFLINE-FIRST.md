@@ -813,7 +813,7 @@ with real DPAPI (`pc-secret.bin` holds only ciphertext).
 
 | Route | Class | Offline behaviour |
 |---|---|---|
-| `POST /api/hr/clock/kiosk-punch`, `/correct`, `POST /api/hr/clock/punch` (phone), `POST /api/hr/field/kiosk-punch`, punch photos (`POST …/photo/:punchId`) | `physical` | Always work offline: a punch records something that happened |
+| `POST /api/hr/clock/kiosk-punch`, `/correct`, `POST /api/hr/clock/punch/scan` + `/punch/selfie` (phone, 2026-10-10: two commands, each replayed at its own time; the hold row links them and the selfie travels with its command), `POST /api/hr/field/kiosk-punch`, punch photos (`POST …/photo/:punchId`) | `physical` | Always work offline: a punch records something that happened |
 | kiosk approval / revoke, kiosk lock, office location lock, punch import | `claim` | Company-wide: decided offline at the main site |
 
 **A punch keeps its own time.** All time logic in `clock.ts` uses `now()`: the QR code's window, the

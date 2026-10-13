@@ -385,7 +385,7 @@ function punchLogModal() {
               : '';
           list.innerHTML = rows.length ? `
             <table class="line-table">
-              <thead><tr><th>Time</th><th>Employee</th><th>In/Out</th><th>Source</th><th>Where</th><th>Device</th></tr></thead>
+              <thead><tr><th>Time</th><th>Employee</th><th>In/Out</th><th>Source</th><th>Where</th><th>Device</th><th>Photo</th></tr></thead>
               <tbody>${rows.map((r) => `<tr>
                 <td>${UI.esc((r.ts || '').slice(0, 16))}</td>
                 <td>${UI.esc(r.name)}${r.employee_no ? ` <span class="muted">${UI.esc(r.employee_no)}</span>` : ''}</td>
@@ -393,10 +393,20 @@ function punchLogModal() {
                 <td>${UI.esc(SOURCE[r.source] || r.source)}</td>
                 <td>${where(r)}</td>
                 <td>${device(r)}</td>
+                <td>${r.photo_id ? `<button type="button" class="btn secondary small" data-pl-photo="${r.photo_id}">View</button>` : ''}</td>
               </tr>`).join('')}</tbody>
             </table>
             ${rows.length >= 1000 ? '<p class="muted" style="font-size:12px">Showing the latest 1000 — narrow the dates to see more.</p>' : ''}`
             : '<p class="muted">No punches in this range.</p>';
+          // The phone's time-in selfie, or the kiosk camera's photo (src/modules/hr/punch-photos.ts).
+          list.querySelectorAll('[data-pl-photo]').forEach((b) => b.onclick = () => {
+            const m = UI.modal({ title: 'Punch Photo', cancelText: 'Close', bodyHTML: '<div id="pl-photo-body" class="muted" style="text-align:center">Loading…</div>' });
+            const box = m.overlay.querySelector('#pl-photo-body');
+            API.blobUrl(`/hr/clock/photo/${b.dataset.plPhoto}`).then((objUrl) => {
+              box.className = '';
+              box.innerHTML = `<img src="${objUrl}" alt="Punch photo" style="max-width:100%;border-radius:10px;display:block;margin:0 auto" />`;
+            }).catch(() => { box.textContent = 'Could not load the photo.'; });
+          });
         } catch (e) { list.innerHTML = `<p class="form-error">${UI.esc(e.message || 'Could not load punches')}</p>`; }
       };
       ov.querySelector('#pl-go').onclick = load;
@@ -2228,10 +2238,10 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         // slot (see the `photos` object GET /periods/:id/attendance now attaches to each day —
         // src/routes/hr.routes.ts). `url` is /api-relative, per API.blobUrl's convention.
         function photoBtnHtml(url) {
-          return url ? `<button type="button" class="tk-photo-btn" data-photo-url="${UI.esc(url)}" title="View kiosk photo">${UI.icon('camera', 12)}</button>` : '';
+          return url ? `<button type="button" class="tk-photo-btn" data-photo-url="${UI.esc(url)}" title="View punch photo (kiosk camera or phone selfie)">${UI.icon('camera', 12)}</button>` : '';
         }
         function openPunchPhoto(url) {
-          const m = UI.modal({ title: 'Kiosk Photo', cancelText: 'Close', bodyHTML: '<div id="tk-photo-body" class="muted" style="text-align:center">Loading…</div>' });
+          const m = UI.modal({ title: 'Punch Photo', cancelText: 'Close', bodyHTML: '<div id="tk-photo-body" class="muted" style="text-align:center">Loading…</div>' });
           const body = m.overlay.querySelector('#tk-photo-body');
           API.blobUrl(url).then((objUrl) => {
             body.className = '';

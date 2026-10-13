@@ -2,7 +2,7 @@
  *  keeps history, borrowed-phone sessions, remote sign-out, device on activity rows and on
  *  phone punches. See src/shared/auth.ts + src/shared/device.ts. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, phonePunch, type TestContext } from './helpers';
 // DB-touching modules are imported inside beforeAll, after setupApp() sets DB_PATH (helpers.ts).
 let run: typeof import('../src/shared/db').run;
 let queryOne: typeof import('../src/shared/db').queryOne;
@@ -262,19 +262,19 @@ describe('punch device flag', () => {
 
     // Ben on his own phone: no flag.
     const benTok = await signIn(ben.username, ben.password, benPhone);
-    expect((await ctx.api.post('/api/hr/clock/punch').set(B(benTok, benPhone)).send({ code: currentKioskCode().code })).status).toBe(200);
+    expect((await phonePunch(ctx.api, B(benTok, benPhone), { code: currentKioskCode().code })).status).toBe(200);
     expect(lastPunch(ben.employeeId)).toMatchObject({ device_id: benPhone, device_flag: null });
 
     // Ana signs in normally on Ben's phone.
     const ana = await linkedEmployee();
     const anaTok = await signIn(ana.username, ana.password, benPhone);
-    expect((await ctx.api.post('/api/hr/clock/punch').set(B(anaTok, benPhone)).send({ code: currentKioskCode().code })).status).toBe(200);
+    expect((await phonePunch(ctx.api, B(anaTok, benPhone), { code: currentKioskCode().code })).status).toBe(200);
     expect(lastPunch(ana.employeeId)).toMatchObject({ device_flag: 'other_user', device_user_id: ben.id });
 
     // Cara uses the borrowed-phone option.
     const cara = await linkedEmployee();
     const caraTok = await signIn(cara.username, cara.password, benPhone, ANDROID_UA, true);
-    expect((await ctx.api.post('/api/hr/clock/punch').set(B(caraTok, benPhone)).send({ code: currentKioskCode().code })).status).toBe(200);
+    expect((await phonePunch(ctx.api, B(caraTok, benPhone), { code: currentKioskCode().code })).status).toBe(200);
     expect(lastPunch(cara.employeeId)).toMatchObject({ device_flag: 'borrowed', device_user_id: ben.id });
 
     const today = new Date().toLocaleDateString('en-CA');

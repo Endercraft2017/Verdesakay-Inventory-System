@@ -1661,6 +1661,14 @@ export const phonePunchSchema = z.object({
   }).optional().nullable(),
 });
 
+/** Phone punch step 2 (POST /api/hr/clock/punch/selfie, multipart): the hold from step 1's scan
+ *  and the slot the employee picked (the kiosk's four: In / Afternoon Out / Afternoon In / Out);
+ *  the selfie itself is the "photo" file. */
+export const phoneSelfieSchema = z.object({
+  hold_id: z.coerce.number().int().positive('Scan the office code first'),
+  slot: z.enum(['in', 'lunchOut', 'lunchIn', 'out'], { message: 'Choose time in, afternoon out, afternoon in or time out' }),
+});
+
 /** Approve this browser as a time-in kiosk (src/modules/hr/kiosk-devices.ts). */
 export const kioskDeviceSchema = z.object({
   name: trimmed.min(1, 'Name this kiosk, e.g. "Front desk PC"').max(60),

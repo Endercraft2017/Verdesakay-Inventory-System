@@ -592,7 +592,8 @@ computation itself is `modules/payroll`.
 `clock_geofence` setting + `employees.clock_anywhere` exemption + per-punch location,
 SCHEMA_VERSION 46), `kiosk-devices.ts` (approved time-in kiosk PCs + the `kiosk_lock`
 setting; locked by default when internet-facing, SCHEMA_VERSION 47), `field.ts`, `hr-daily-report.ts`,
-`hr-employee-numbering.ts`, `punch-photos.ts`, routes: `hr.routes.ts` (also owns the
+`hr-employee-numbering.ts`, `punch-photos.ts`, `punch-holds.ts` (phone punch scan → selfie
+holds), routes: `hr.routes.ts` (also owns the
 `asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
 doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with still-out /
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
@@ -652,6 +653,31 @@ for review only (never blocked), `device_flag` — `borrowed` (borrowed-phone si
 `other_user` (a device another account usually signs in on, per `shared/auth.ts`
 `deviceUsualUserId`) — with `device_user_id` = that usual account. Shown in the Punch Log
 (`GET /api/hr/clock/punches`). Tests: `tests/sessions-devices.test.ts`.
+**Phone time-in selfie** (built 2026-10-10 on the v51 `time_punch_holds` table, no version bump):
+a phone punch is two steps. `POST /api/hr/clock/punch/scan` runs every punch check (kiosk QR,
+location lock, linked/active employee) and parks a hold stamped with the scan time;
+`POST /api/hr/clock/punch/selfie` (multipart `hold_id` + `slot` + JPEG `photo`) records the
+**slot the employee picked** — the kiosk's four: `in` / `lunchOut` (Afternoon out) / `lunchIn`
+(Afternoon in) / `out` — **at the scan time**, via `clock.ts` `setSlotPunch` (shared with the
+kiosk's click-to-fix `correctPunch`), and saves the photo through `punch-photos.ts` as an
+`attendance` punch photo. **Re-doing a slot moves that slot's punch** (time, location, device)
+and replaces its photo (same punch id → same `punch_photos` row, new file) instead of adding a
+punch. The phone has no automatic in/out classification, 45 s de-dupe or "already timed out"
+refusal — those stay on the kiosk's `POST /kiosk-punch` (`recordPunch`). `GET /my-status` adds
+`slots` (each slot's HH:MM, HR-typed brackets filling gaps) and `next_slot` (what an automatic
+punch would fill now; null once Out is recorded) for the phone's tiles. Holds: one per employee,
+5-minute expiry, used once, someone else's refused. No selfie → no punch. The old one-step
+`POST /punch` answers 410 ("update the app"). The selfie shows in the attendance grid's camera
+badge and the Punch Log's Photo column (desktop `hr-timekeeping.js`).
+**Phone Clock screen** (`public/mobile/modules/hr/clock.js`, reworked 2026-10-10 with Kyle's
+approval — departs from Figma 46:577's dropdown + Review & confirm): four slot tiles (suggested
+one marked Next); one tap starts the scan with GPS fetched meanwhile (clock_anywhere staff get an
+"At the office / Outside the office" toggle, remembered per phone); a filled tile asks "Replace?"
+first; the selfie auto-captures after a 2 s countdown (`public/mobile/lib/selfie.js` `auto`,
+live front camera only, tap to take sooner); the result returns to Home after 2.5 s unless it
+offers "Request OT". Tests: `tests/clock.test.ts` ("phone punch: scan, then selfie"),
+`tests/sync-clock.test.ts`, `tests/frontend-mobile.test.ts`; helper `phonePunch()` in
+`tests/helpers.ts` (defaults to `next_slot`).
 **Dependencies:** `modules/payroll` (pay computation + statutory tables),
 `modules/accounting` (`accounting-autopost.ts`, to post payroll to the ledger),
 `platform/` (photo-retention settings).
