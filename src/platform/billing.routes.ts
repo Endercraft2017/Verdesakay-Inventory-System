@@ -5,8 +5,6 @@
  * owner console (billing-console.routes.ts). Allowed while the workspace is past due (src/app.ts),
  * since paying is how they get out of it. The single-tenant `default` install has no billing.
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import { Router, type Request } from 'express';
 import multer from 'multer';
 import { requireAuth, requirePermission } from '../shared/auth';
@@ -17,7 +15,7 @@ import { currentSlug } from './quota';
 import { getTenant } from './platform';
 import {
   listInvoices, getInvoice, getPayment, invoiceView, getBillingSettings, submitPayment, paymentInstructions,
-  billingFilesDir, fileType, toCentavos, BillingError, BILLING_FILE_MAX_BYTES, type UploadedFile,
+  resolveBillingFile, fileType, toCentavos, BillingError, BILLING_FILE_MAX_BYTES, type UploadedFile,
 } from './billing';
 
 const router = Router();
@@ -43,8 +41,8 @@ router.get('/', (_req, res) => {
 // GET /api/tenant/billing/gcash-qr — the GCash QR image customers scan to pay.
 router.get('/gcash-qr', (_req, res) => {
   const name = getBillingSettings().gcash_qr;
-  const file = name ? path.join(billingFilesDir('_settings'), name) : '';
-  if (!file || !fs.existsSync(file)) { res.status(404).json({ error: 'Not found' }); return; }
+  const file = name ? resolveBillingFile('_settings', name) : null;
+  if (!file) { res.status(404).json({ error: 'Not found' }); return; }
   res.type(fileType(name)).sendFile(file);
 });
 
@@ -81,8 +79,8 @@ router.get('/payments/:id/files/:kind', (req, res) => {
   const inv = p ? getInvoice(p.invoice_id) : null;
   const name = req.params.kind === 'proof' ? p?.proof_file : req.params.kind === 'form_2307' ? p?.form_2307_file : null;
   if (!p || !inv || inv.tenant_slug !== slug || !name) { res.status(404).json({ error: 'Not found' }); return; }
-  const file = path.join(billingFilesDir(slug), name);
-  if (!fs.existsSync(file)) { res.status(404).json({ error: 'Not found' }); return; }
+  const file = resolveBillingFile(slug, name);
+  if (!file) { res.status(404).json({ error: 'Not found' }); return; }
   res.type(fileType(name)).sendFile(file);
 });
 

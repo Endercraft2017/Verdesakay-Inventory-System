@@ -1265,7 +1265,7 @@ router.post('/:id/units', recordGate, syncClass('physical'), syncUpload(imageUpl
     fail(400, { error: `That exceeds the ${jo.qty_ordered} ordered (${accounted} already produced).` });
     return;
   }
-  try { enforceQuota('storage_mb', file.size); } catch (e) { unlink(file.filename); throw e; }
+  try { enforceQuota('storage_mb'); } catch (e) { unlink(file.filename); throw e; }
   const outputLoc = jo.output_location_id ?? getDefaultLocationId();
 
   db.exec('BEGIN');

@@ -13,8 +13,7 @@
  * sessions/reloads (saved as a side effect of each successful /chat turn) until they clear
  * it via DELETE. Each user has exactly one running conversation, no multi-thread history.
  */
-import fs from 'node:fs';
-import path from 'node:path';
+import { resolveDurableUpload } from '../../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -22,7 +21,7 @@ import { requireAuth, requirePermission } from '../../shared/auth';
 import { getToolsForUser, executeTool } from './ai-tools';
 import { REPORT_FILE_RE } from './ai-reporting';
 import { reindex } from './rag';
-import { uploadDir, queryAll, queryOne, run } from '../../shared/db';
+import { queryAll, queryOne, run } from '../../shared/db';
 import { getAiConfig, activeAiConfig, saveAiConfig, addTokenUsage, tokenCapReached, resetTokenUsage } from './ai-config';
 import { enforceQuota, recordAiCall } from '../../platform/quota';
 import { parseBody, aiConfigSchema } from '../../shared/validation';
@@ -89,8 +88,8 @@ router.get('/reports/:name', (req, res) => {
     res.status(404).json({ error: 'Report not found — it may have been cleared.' });
     return;
   }
-  const file = path.join(uploadDir(), name);
-  if (!fs.existsSync(file)) {
+  const file = resolveDurableUpload(name);
+  if (!file) {
     res.status(404).json({ error: 'Report not found — it may have been cleared.' });
     return;
   }

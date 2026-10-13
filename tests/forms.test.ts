@@ -1,5 +1,7 @@
 /** Integration tests: form upload, download round-trip, department visibility, delete. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 
 let ctx: TestContext;
@@ -22,11 +24,17 @@ describe('forms', () => {
       .attach('file', Buffer.from(content), 'leave.txt');
     expect(up.status).toBe(201);
 
+    const { queryOne } = await import('../src/shared/db');
+    const stored = queryOne<{ stored_name: string }>('SELECT stored_name FROM forms WHERE id = ?', up.body.id)!;
+    const diskFile = path.join(ctx.tmpDir, 'uploads', stored.stored_name);
+    fs.unlinkSync(diskFile); // simulate a container replacing its upload folder
+
     const dl = await ctx.api
       .get(`/api/forms/${up.body.id}/download`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(dl.status).toBe(200);
     expect(dl.text).toBe(content);
+    expect(fs.existsSync(diskFile)).toBe(true);
   });
 
   it('rejects an upload with no file', async () => {
@@ -35,6 +43,36 @@ describe('forms', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .field('title', 'No File');
     expect(res.status).toBe(400);
+  });
+
+  it('recovers an older file from the upload backup when it has no database copy', async () => {
+    const content = Buffer.from('legacy form');
+    const up = await ctx.api.post('/api/forms').set('Authorization', `Bearer ${adminToken}`)
+      .attach('file', content, 'legacy.txt');
+    const { queryOne, run } = await import('../src/shared/db');
+    const { backupDir } = await import('../src/shared/backup');
+    const name = queryOne<{ stored_name: string }>('SELECT stored_name FROM forms WHERE id = ?', up.body.id)!.stored_name;
+    const primary = path.join(ctx.tmpDir, 'uploads', name);
+    const backup = path.join(backupDir(), 'uploads', name);
+    fs.mkdirSync(path.dirname(backup), { recursive: true });
+    fs.copyFileSync(primary, backup);
+    run('DELETE FROM durable_uploads WHERE name = ?', name);
+    fs.unlinkSync(primary);
+    const response = await ctx.api.get(`/api/forms/${up.body.id}/download`).set('Authorization', `Bearer ${adminToken}`);
+    expect(response.status).toBe(200);
+    expect(response.text).toBe(content.toString());
+    expect(queryOne<{ size_bytes: number }>('SELECT size_bytes FROM durable_uploads WHERE name = ?', name)?.size_bytes).toBe(content.length);
+  });
+
+  it('backfills surviving pre-upgrade files into durable storage', async () => {
+    const up = await ctx.api.post('/api/forms').set('Authorization', `Bearer ${adminToken}`)
+      .attach('file', Buffer.from('older form'), 'older.txt');
+    const { queryOne, run, forceMigrate, setSetting } = await import('../src/shared/db');
+    const name = queryOne<{ stored_name: string }>('SELECT stored_name FROM forms WHERE id = ?', up.body.id)!.stored_name;
+    run('DELETE FROM durable_uploads WHERE name = ?', name);
+    setSetting('schema_version', 65);
+    forceMigrate('default');
+    expect(Buffer.from(queryOne<{ data: Uint8Array }>('SELECT data FROM durable_uploads WHERE name = ?', name)!.data).toString()).toBe('older form');
   });
 
   it('enforces department visibility for employees', async () => {
@@ -86,8 +124,11 @@ describe('forms', () => {
     const empDel = await ctx.api.delete(`/api/forms/${up.body.id}`).set('Authorization', `Bearer ${emp.token}`);
     expect(empDel.status).toBe(403);
 
+    const { queryOne } = await import('../src/shared/db');
+    const stored = queryOne<{ stored_name: string }>('SELECT stored_name FROM forms WHERE id = ?', up.body.id)!;
     const adminDel = await ctx.api.delete(`/api/forms/${up.body.id}`).set('Authorization', `Bearer ${adminToken}`);
     expect(adminDel.status).toBe(200);
+    expect(queryOne('SELECT 1 FROM durable_uploads WHERE name = ?', stored.stored_name)).toBeUndefined();
   });
 });
 

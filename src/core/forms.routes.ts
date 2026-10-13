@@ -1,6 +1,7 @@
 /** Forms & files: upload, list (with department visibility), download, delete. */
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -57,7 +58,7 @@ router.post('/', requirePermission('forms.upload'), syncClass('merge'), syncUplo
     res.status(400).json({ error: 'A file is required' });
     return;
   }
-  try { enforceQuota('storage_mb', req.file.size); }
+  try { enforceQuota('storage_mb'); }
   catch (e) { fs.promises.unlink(path.join(uploadDir(), req.file.filename)).catch(() => {}); throw e; }
   const body = req.body as Record<string, string>;
   const title = (body.title || '').trim() || req.file.originalname;
@@ -80,6 +81,7 @@ router.post('/', requirePermission('forms.upload'), syncClass('merge'), syncUplo
     departmentId,
     req.user!.id
   );
+  storeDurableUpload(req.file.filename);
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
@@ -98,8 +100,8 @@ router.get('/:id/download', requirePermission('forms.view'), (req, res) => {
     res.status(403).json({ error: 'You do not have access to this file' });
     return;
   }
-  const filePath = path.join(uploadDir(), form.stored_name);
-  if (!fs.existsSync(filePath)) {
+  const filePath = resolveDurableUpload(form.stored_name);
+  if (!filePath) {
     res.status(410).json({ error: 'File is missing on disk' });
     return;
   }
@@ -119,7 +121,10 @@ router.delete('/:id', syncClass('claim'), (req, res) => {
   }
   run('DELETE FROM forms WHERE id = ?', form.id);
   // An installed PC keeps the file until the cloud confirms: a refused delete brings the row back.
-  if (!sideEffectsSuppressed('unlink')) fs.promises.unlink(path.join(uploadDir(), form.stored_name)).catch(() => {});
+  if (!sideEffectsSuppressed('unlink')) {
+    forgetDurableUpload(form.stored_name);
+    fs.promises.unlink(path.join(uploadDir(), form.stored_name)).catch(() => {});
+  }
   res.json({ ok: true });
 });
 

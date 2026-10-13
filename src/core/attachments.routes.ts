@@ -6,6 +6,7 @@
  *  with only `delivery.run` can attach a POD photo without holding `inventory.*`. */
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -106,8 +107,8 @@ router.get('/:id/image', (req, res) => {
   const row = queryOne<Row>('SELECT kind, image_path FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
   if (!allows(req, READ_PERMS[row.kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
-  const file = path.join(uploadDir(), row.image_path);
-  if (!fs.existsSync(file)) { res.status(404).json({ error: 'File missing' }); return; }
+  const file = resolveDurableUpload(row.image_path);
+  if (!file) { res.status(410).json({ error: 'File is no longer available' }); return; }
   res.sendFile(file);
 });
 
@@ -132,7 +133,7 @@ router.post('/', syncClass('physical'), syncUpload(imageUpload.single('image')),
     return;
   }
   try {
-    enforceQuota('storage_mb', req.file.size);
+    enforceQuota('storage_mb');
   } catch (e) {
     unlink(req.file.filename);
     throw e;
@@ -149,6 +150,7 @@ export function saveAttachment(kind: string, refId: number, filename: string, ca
     'INSERT INTO attachments (kind, ref_id, image_path, caption, uploaded_by) VALUES (?, ?, ?, ?, ?)',
     kind, refId, filename, caption, userId
   );
+  storeDurableUpload(filename);
   return Number(info.lastInsertRowid);
 }
 
@@ -159,7 +161,10 @@ router.delete('/:id', syncClass('claim'), (req, res) => {
   if (!allows(req, WRITE_PERMS[row.kind] ?? ['inventory.adjust'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   run('DELETE FROM attachments WHERE id = ?', Number(req.params.id));
   // An installed PC keeps the file until the cloud confirms: a refused delete brings the row back.
-  if (!sideEffectsSuppressed('unlink')) unlink(row.image_path);
+  if (!sideEffectsSuppressed('unlink')) {
+    forgetDurableUpload(row.image_path);
+    unlink(row.image_path);
+  }
   res.json({ ok: true });
 });
 

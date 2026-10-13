@@ -70,6 +70,12 @@ What each variable does:
   and the kiosk rules use the server's local time. Without `TZ`, the server refuses to start.
 - `DB_PATH` / `DATA_DIR` / `PLATFORM_DB_PATH` / `UPLOAD_DIR` put every file on the volume.
   Backups land in `/data/db/backups` automatically.
+- Accepted uploads and offline sync blobs also keep a recoverable copy in the tenant database
+  (billing proofs and the GCash QR in `platform.db`). If an upload file disappears, the
+  authorized download restores it from the database or upload backup. The v66 migration copies surviving
+  older files into those databases; bytes missing from both the upload folder and backups
+  cannot be reconstructed. Budget volume and backup capacity for both file and database
+  copies, and keep the database backup schedule enabled.
 - `APP_SECRET` encrypts saved SMTP/AI keys. Changing it later makes them unreadable.
 - `ADMIN_PASSWORD` protects the unused `default` workspace, which is still reachable on the
   `*.up.railway.app` URL. Make it strong.

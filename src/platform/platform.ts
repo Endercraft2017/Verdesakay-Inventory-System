@@ -110,6 +110,13 @@ function pdb(): DatabaseSync {
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS platform_durable_files (
+      slug       TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      data       BLOB NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      PRIMARY KEY (slug, name)
+    );
   `);
   ensureColumn(d, 'tenants', 'subscription', 'TEXT');
   ensureColumn(d, 'tenants', 'is_sandbox', 'INTEGER NOT NULL DEFAULT 0');

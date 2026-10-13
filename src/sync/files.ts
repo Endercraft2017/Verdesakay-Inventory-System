@@ -24,7 +24,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express, { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import type { DatabaseSync } from 'node:sqlite';
-import { activeDb, tenantStore, uploadDir } from '../shared/db';
+import { activeDb, tenantStore, uploadDir, withTenant } from '../shared/db';
+import { storeDurableUpload, resolveDurableUpload } from '../shared/durable-uploads';
 import { syncContext } from '../shared/sync-context';
 import { isAuthority, syncConfigOf } from './node';
 import { keepRequestContext } from '../shared/request-context';
@@ -39,7 +40,8 @@ export const sha256File = (file: string) => crypto.createHash('sha256').update(f
 const isHash = (h: string) => /^[0-9a-f]{64}$/.test(h);
 
 export function blobPath(slug: string, hash: string): string {
-  return path.join(uploadDir(slug), BLOB_DIR, hash);
+  const name = `${BLOB_DIR}/${hash}`;
+  return withTenant(slug, () => resolveDurableUpload(name) || path.join(uploadDir(slug), BLOB_DIR, hash));
 }
 
 /** Put bytes into this copy's blob store (idempotent). */
@@ -50,6 +52,7 @@ export function storeBlob(slug: string, bytes: Buffer): string {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, bytes);
   }
+  withTenant(slug, () => storeDurableUpload(`${BLOB_DIR}/${hash}`));
   return hash;
 }
 
@@ -192,6 +195,7 @@ export function registerFile(conn: DatabaseSync, name: string, size: number): vo
 
 /** Where a listed file lives, refusing anything that would leave the uploads folder. */
 export function filePath(slug: string, name: string): string | null {
+  if (name.includes('\\') || name.split('/').some((part) => !part || part === '.' || part === '..' || part.startsWith('.'))) return null;
   const root = path.resolve(uploadDir(slug));
   const full = path.resolve(root, name);
   return full.startsWith(root + path.sep) ? full : null;
@@ -235,7 +239,7 @@ export function fileRoutes(nodeAuth: RequestHandler): Router {
   router.get('/files/:seq', nodeAuth, authorityOnly, (req, res) => {
     const row = activeDb().prepare('SELECT name FROM sync_files WHERE seq = ?').get(Number(req.params.seq)) as { name: string } | undefined;
     const full = row ? filePath(slugOf(), row.name) : null;
-    if (!full || !fs.existsSync(full)) {
+    if (!full || !withTenant(slugOf(), () => resolveDurableUpload(row!.name))) {
       res.status(404).json({ error: 'No such file' });
       return;
     }

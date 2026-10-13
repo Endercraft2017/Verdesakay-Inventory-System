@@ -15,6 +15,7 @@
  * amount net of VAT, so each invoice stores its VAT and EWT rates and exposes the net it expects.
  */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { platformDb, getTenant, setTenantStatus, setAwaitingPayment, logProvisioning, PLATFORM_DB_PATH } from './platform';
@@ -121,6 +122,22 @@ function db(): DatabaseSync {
       value TEXT NOT NULL
     );
   `);
+  // Backfill surviving proof files and the QR image from installations that stored
+  // them only beside platform.db before the durable copy was introduced.
+  const keep = d.prepare('INSERT OR IGNORE INTO platform_durable_files (slug, name, data, size_bytes) VALUES (?, ?, ?, ?)');
+  const legacy = d.prepare(
+    `SELECT i.tenant_slug AS slug, p.proof_file, p.form_2307_file
+     FROM billing_payments p JOIN billing_invoices i ON i.id = p.invoice_id`
+  ).all() as Array<{ slug: string; proof_file: string | null; form_2307_file: string | null }>;
+  const qr = d.prepare("SELECT value FROM billing_settings WHERE key = 'gcash_qr'").get() as { value: string } | undefined;
+  const references = legacy.flatMap((row) => [row.proof_file, row.form_2307_file]
+    .filter((name): name is string => !!name).map((name) => ({ slug: row.slug, name })));
+  if (qr?.value) references.push({ slug: '_settings', name: qr.value });
+  for (const { slug, name } of references) {
+    if (path.basename(name) !== name) continue;
+    const file = path.join(billingFilesDir(slug), name);
+    if (fs.existsSync(file)) { const bytes = fs.readFileSync(file); keep.run(slug, name, bytes, bytes.length); }
+  }
   ready.add(d);
   return d;
 }
@@ -199,12 +216,24 @@ export function setGcashQr(f: UploadedFile | null): BillingSettings {
   const old = getBillingSettings().gcash_qr;
   const ext = f ? ALLOWED_TYPES[f.mimetype] : null;
   if (f && (!ext || ext === '.pdf')) throw new BillingError('Upload the QR code as a JPG, PNG or WebP image.');
-  if (old) fs.rmSync(path.join(dir, old), { force: true }); // only once the replacement is known good
-  if (!f) return setBillingSettings({ gcash_qr: '' });
+  if (!f) {
+    const settings = setBillingSettings({ gcash_qr: '' });
+    if (old) {
+      fs.rmSync(path.join(dir, old), { force: true });
+      platformDb().prepare('DELETE FROM platform_durable_files WHERE slug = ? AND name = ?').run('_settings', old);
+    }
+    return settings;
+  }
   fs.mkdirSync(dir, { recursive: true });
   const name = `gcash-qr-${Date.now().toString(36)}${ext}`;
   fs.writeFileSync(path.join(dir, name), f.buffer);
-  return setBillingSettings({ gcash_qr: name });
+  keepBillingFile('_settings', name, f.buffer);
+  const settings = setBillingSettings({ gcash_qr: name });
+  if (old) {
+    fs.rmSync(path.join(dir, old), { force: true });
+    platformDb().prepare('DELETE FROM platform_durable_files WHERE slug = ? AND name = ?').run('_settings', old);
+  }
+  return settings;
 }
 
 /** The monthly total the price list gives for these modules and seats, or null when a chosen
@@ -414,6 +443,32 @@ export function billingFilesDir(slug: string): string {
   return path.join(path.dirname(PLATFORM_DB_PATH), 'billing-files', slug);
 }
 
+function billingFileName(name: string): string {
+  if (!name || path.basename(name) !== name || name.startsWith('.')) throw new BillingError('Invalid billing file name');
+  return name;
+}
+
+function keepBillingFile(slug: string, name: string, bytes: Buffer): void {
+  platformDb().prepare(
+    `INSERT INTO platform_durable_files (slug, name, data, size_bytes) VALUES (?, ?, ?, ?)
+     ON CONFLICT(slug, name) DO UPDATE SET data = excluded.data, size_bytes = excluded.size_bytes`
+  ).run(slug, billingFileName(name), bytes, bytes.length);
+}
+
+export function resolveBillingFile(slug: string, name: string): string | null {
+  const safe = billingFileName(name);
+  const file = path.join(billingFilesDir(slug), safe);
+  if (fs.existsSync(file)) return file;
+  const row = platformDb().prepare('SELECT data FROM platform_durable_files WHERE slug = ? AND name = ?')
+    .get(slug, safe) as { data: Uint8Array } | undefined;
+  if (!row) return null;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  try { fs.writeFileSync(temp, Buffer.from(row.data), { flag: 'wx' }); fs.renameSync(temp, file); }
+  finally { try { fs.unlinkSync(temp); } catch { /* already moved */ } }
+  return file;
+}
+
 export interface UploadedFile { buffer: Buffer; originalname: string; mimetype: string }
 
 const ALLOWED_TYPES: Record<string, string> = {
@@ -428,6 +483,7 @@ function saveFile(slug: string, paymentTag: string, kind: FileKind, f: UploadedF
   fs.mkdirSync(dir, { recursive: true });
   const name = `${paymentTag}-${kind}${ext}`;
   fs.writeFileSync(path.join(dir, name), f.buffer);
+  keepBillingFile(slug, name, f.buffer);
   return name;
 }
 

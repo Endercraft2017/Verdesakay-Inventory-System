@@ -318,6 +318,12 @@ describe('hr', () => {
     expect(list.body).toHaveLength(1);
     expect(list.body[0].title).toBe('Employment Contract');
 
+    const { queryOne } = await import('../src/shared/db');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const stored = queryOne<{ stored_name: string }>('SELECT stored_name FROM employee_documents WHERE id = ?', upload.body.id)!;
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', stored.stored_name));
+
     const dl = await ctx.api.get(`/api/hr/employees/${emp.body.id}/documents/${upload.body.id}/download`).set(hdr());
     expect(dl.status).toBe(200);
     expect(Buffer.from(dl.body).toString()).toBe('dummy pdf bytes');

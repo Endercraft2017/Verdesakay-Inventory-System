@@ -5,6 +5,7 @@
  * served (auth-checked) by GET /api/ai/reports/:name.
  */
 import fs from 'node:fs';
+import { storeDurableUpload } from '../../shared/durable-uploads';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { uploadDir } from '../../shared/db';
@@ -62,12 +63,14 @@ export async function executeReportingTool(name: string, args: unknown, user: Au
       const fn = `ai-report-${stamp}.html`;
       const buf = Buffer.from(renderHtml(title, blocks), 'utf8');
       await fs.promises.writeFile(path.join(uploadDir(), fn), buf);
+      storeDurableUpload(fn);
       files.push({ name: fn, url: `/api/ai/reports/${fn}`, format: 'html', bytes: buf.length });
     }
     if (fmt === 'docx' || fmt === 'both') {
       const fn = `ai-report-${stamp}.docx`;
       const buf = await renderDocx(title, blocks);
       await fs.promises.writeFile(path.join(uploadDir(), fn), buf);
+      storeDurableUpload(fn);
       files.push({ name: fn, url: `/api/ai/reports/${fn}`, format: 'docx', bytes: buf.length });
     }
   } catch (e) {

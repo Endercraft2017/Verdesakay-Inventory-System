@@ -394,6 +394,10 @@ describe('inventory: item image', () => {
     const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
     expect(detail.body.image_path).toBe(up.body.image_path);
 
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', up.body.image_path));
+
     const img = await ctx.api.get(`/api/inventory/${body.id}/image`).set(authHdr());
     expect(img.status).toBe(200);
     expect(img.headers['content-type']).toContain('image/png');

@@ -394,6 +394,13 @@ export interface DocumentDefaults {
   template_id: number | null;
 }
 
+export interface DurableUploads {
+  name: string;
+  data: Uint8Array;
+  size_bytes: number;
+  saved_at: Generated<string>;
+}
+
 export interface EmployeeDocuments {
   id: Generated<number>;
   employee_id: number;
@@ -1540,6 +1547,7 @@ export interface DB {
   doc_templates: DocTemplates;
   doc_variables: DocVariables;
   document_defaults: DocumentDefaults;
+  durable_uploads: DurableUploads;
   employee_documents: EmployeeDocuments;
   employee_profile_changes: EmployeeProfileChanges;
   employee_profiles: EmployeeProfiles;

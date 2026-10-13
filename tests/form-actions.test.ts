@@ -74,6 +74,12 @@ describe('actions fire on record creation', () => {
     const docs = (await ctx.api.get(`/api/hr/employees/${employeeId}/documents`).set(hdr())).body;
     expect(docs.length).toBe(before + 1);
     expect(docs[0].title).toMatch(/Notice to Explain/);
+    const { queryOne } = await import('../src/shared/db');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const name = queryOne<{ stored_name: string }>('SELECT stored_name FROM employee_documents WHERE id = ?', docs[0].id)!.stored_name;
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', name));
+    expect((await ctx.api.get(`/api/hr/employees/${employeeId}/documents/${docs[0].id}/download`).set(hdr())).status).toBe(200);
   });
 
   it('warns (but still creates) when the target employee has no login account', async () => {

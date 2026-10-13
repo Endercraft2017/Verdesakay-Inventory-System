@@ -52,6 +52,11 @@ describe('punch photos: upload, serve, replace', () => {
     expect(up.status).toBe(201);
     expect(up.body.url).toBe(`/hr/clock/photo/${up.body.id}`);
 
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const stored = queryOne<{ file_name: string }>('SELECT file_name FROM punch_photos WHERE id = ?', up.body.id)!;
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', 'kiosk-punches', stored.file_name));
+
     const img = await ctx.api.get(fetchable(up.body.url)).set(A());
     expect(img.status).toBe(200);
     expect(img.headers['content-type']).toContain('image/jpeg');

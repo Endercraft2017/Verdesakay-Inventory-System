@@ -1,6 +1,7 @@
 /** Inventory: items, search/filter, stock adjustments with history, dashboard stats. */
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -58,7 +59,10 @@ const imageUpload = multer({
 
 /** Delete a stored image file, ignoring "already gone". */
 function unlinkImage(name: string | null | undefined): void {
-  if (name) fs.promises.unlink(path.join(uploadDir(), name)).catch(() => {});
+  if (name) {
+    forgetDurableUpload(name);
+    fs.promises.unlink(path.join(uploadDir(), name)).catch(() => {});
+  }
 }
 
 const ITEM_SELECT = `
@@ -908,8 +912,8 @@ router.get('/:id/image', viewGate, (req, res) => {
     res.status(404).json({ error: 'No image for this item' });
     return;
   }
-  const file = path.join(uploadDir(), item.image_path);
-  if (!fs.existsSync(file)) {
+  const file = resolveDurableUpload(item.image_path);
+  if (!file) {
     res.status(404).json({ error: 'Image file missing' });
     return;
   }
@@ -932,7 +936,7 @@ router.post('/:id/image', requirePermission('inventory.edit'), syncClass('claim'
     return;
   }
   try {
-    enforceQuota('storage_mb', req.file.size);
+    enforceQuota('storage_mb');
   } catch (e) {
     unlinkImage(req.file.filename);
     throw e;
@@ -942,6 +946,7 @@ router.post('/:id/image', requirePermission('inventory.edit'), syncClass('claim'
     req.file.filename,
     id
   );
+  storeDurableUpload(req.file.filename);
   unlinkImage(item.image_path); // drop the previous file, if any
   res.json({ ok: true, image_path: req.file.filename });
 });

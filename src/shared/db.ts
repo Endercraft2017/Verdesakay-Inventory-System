@@ -20,7 +20,7 @@ import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
 import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from '../modules/payroll/ph-statutory';
 import { DEFAULT_COA } from '../modules/accounting/ledger';
-import { preMigrationSnapshot } from './backup';
+import { preMigrationSnapshot, backupDir, mirrorDir } from './backup';
 import { BUILTIN_ROLES, ADMIN_ROLE, roleDefaults } from './permissions';
 import { syncHooks } from './sync-context';
 
@@ -63,9 +63,10 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 66: recoverable file bytes for all tenant upload modules.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 65; // 65: durable message attachment bytes; 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 66; // 65: durable message attachment bytes; 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -1000,6 +1001,15 @@ function createSchema(): void {
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
+
+    -- Recoverable bytes for files owned by the other tenant modules. The filename is
+    -- relative to this tenant's uploadDir; deleted files are removed from this table.
+    CREATE TABLE IF NOT EXISTS durable_uploads (
+      name       TEXT PRIMARY KEY,
+      data       BLOB NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      saved_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
 
     -- One emoji reaction per user per message (SCHEMA_VERSION 44). Re-reacting with the
     -- same emoji toggles it off; a different emoji replaces it (see UNIQUE below).
@@ -3001,6 +3011,55 @@ function migrate(): void {
   grantOnce('migrated_purchasing_split', [
     ['orders.view', 'purchasing.view'], ['orders.create', 'purchasing.manage'], ['orders.edit', 'purchasing.manage'],
   ]);
+
+  // (SCHEMA_VERSION 66) Preserve surviving older uploads before the next filesystem
+  // replacement. Only files still referenced by a record enter the durable store.
+  if ((getSetting<number>('schema_version') ?? 0) < 66) {
+    const slug = tenantStore.getStore()?.slug ?? DEFAULT_TENANT;
+    const tenantPart = slug === DEFAULT_TENANT ? '' : slug;
+    const roots = [backupDir(), mirrorDir()].filter((root): root is string => !!root);
+    const source = (name: string): string | null => {
+      if (!name || path.basename(name) !== name || name.startsWith('.')) return null;
+      const primary = path.join(uploadDir(), name);
+      if (fs.existsSync(primary)) return primary;
+      for (const root of roots) {
+        const candidate = path.join(root, 'uploads', tenantPart, name);
+        if (fs.existsSync(candidate)) return candidate;
+      }
+      return null;
+    };
+    const keep = db.prepare('INSERT OR IGNORE INTO durable_uploads (name, data, size_bytes) VALUES (?, ?, ?)');
+    for (const [table, column, prefix] of [
+      ['forms', 'stored_name', ''], ['employee_documents', 'stored_name', ''],
+      ['attachments', 'image_path', ''], ['inventory_items', 'image_path', ''],
+      ['bug_report_attachments', 'stored_name', ''], ['punch_photos', 'file_name', 'kiosk-punches/'],
+    ]) {
+      for (const row of db.prepare(`SELECT ${column} AS name FROM ${table} WHERE ${column} IS NOT NULL`).all() as Array<{ name: string }>) {
+        if (!row.name || path.basename(row.name) !== row.name || row.name.startsWith('.')) continue;
+        const fileName = `${prefix}${row.name}`;
+        const rootName = prefix ? row.name : fileName;
+        const file = prefix ? [path.join(uploadDir(), prefix, rootName), ...roots.map((root) => path.join(root, 'uploads', tenantPart, prefix, rootName))].find((p) => fs.existsSync(p)) : source(rootName);
+        if (file) { const bytes = fs.readFileSync(file); keep.run(fileName, bytes, bytes.length); }
+      }
+    }
+    for (const row of db.prepare('SELECT id, stored_name FROM message_attachments WHERE data IS NULL').all() as Array<{ id: number; stored_name: string }>) {
+      const file = source(row.stored_name);
+      if (file) db.prepare('UPDATE message_attachments SET data = ? WHERE id = ?').run(fs.readFileSync(file), row.id);
+    }
+    const aiDirs = [uploadDir(), ...roots.map((root) => path.join(root, 'uploads', tenantPart))];
+    for (const name of new Set(aiDirs.filter((dir) => fs.existsSync(dir)).flatMap((dir) => fs.readdirSync(dir)))) {
+      if (!/^ai-report-[A-Za-z0-9-]+\.(html|docx)$/.test(name)) continue;
+      const file = source(name);
+      if (file) { const bytes = fs.readFileSync(file); keep.run(name, bytes, bytes.length); }
+    }
+    // Pending offline commands can still reference blobs created before this upgrade.
+    const blobDirs = aiDirs.map((dir) => path.join(dir, '.sync-blobs'));
+    for (const name of new Set(blobDirs.filter((dir) => fs.existsSync(dir)).flatMap((dir) => fs.readdirSync(dir)))) {
+      if (!/^[0-9a-f]{64}$/.test(name)) continue;
+      const file = blobDirs.map((dir) => path.join(dir, name)).find((candidate) => fs.existsSync(candidate));
+      if (file) { const bytes = fs.readFileSync(file); keep.run(`.sync-blobs/${name}`, bytes, bytes.length); }
+    }
+  }
 }
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.

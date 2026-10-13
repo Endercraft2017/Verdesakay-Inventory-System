@@ -5,7 +5,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { tenantStore, queryOne, getSetting, setSetting, uploadDir, DEFAULT_TENANT } from '../shared/db';
+import { tenantStore, queryOne, getSetting, setSetting, uploadDir, getDb, DEFAULT_TENANT } from '../shared/db';
 import { getTenant } from './platform';
 import { storedSubscription } from './subscription';
 import { PLANS, planLimitsFor, type PlanLimits } from './plans';
@@ -47,6 +47,21 @@ export function dirSizeBytes(dir: string): number {
   return total;
 }
 
+/** Logical upload usage: count working files once, plus database-held files whose
+ * working copy has vanished. A lost upload folder must not reset a tenant's quota. */
+function storageUsageBytes(slug: string): number {
+  const root = uploadDir(slug);
+  let bytes = dirSizeBytes(root);
+  const conn = getDb(slug);
+  for (const row of conn.prepare('SELECT name, size_bytes FROM durable_uploads').all() as Array<{ name: string; size_bytes: number }>) {
+    if (!fs.existsSync(path.join(root, row.name))) bytes += row.size_bytes;
+  }
+  for (const row of conn.prepare('SELECT stored_name, size_bytes FROM message_attachments WHERE data IS NOT NULL').all() as Array<{ stored_name: string; size_bytes: number }>) {
+    if (!fs.existsSync(path.join(root, row.stored_name))) bytes += row.size_bytes;
+  }
+  return bytes;
+}
+
 const AI_KEY = () => `ai_calls_${new Date().toISOString().slice(0, 7)}`; // ai_calls_YYYY-MM
 
 /** Record one AI Assistant chat call against this month's counter. */
@@ -62,14 +77,15 @@ export function tenantUsage(slug = currentSlug()): Record<QuotaKind, number> {
     inventory_items: queryOne<{ c: number }>(
       "SELECT COUNT(*) AS c FROM inventory_items WHERE IFNULL(category,'') <> 'Damage'"
     )?.c ?? 0,
-    storage_mb: Math.round(dirSizeBytes(uploadDir(slug)) / (1024 * 1024) * 10) / 10,
+    storage_mb: Math.round(storageUsageBytes(slug) / (1024 * 1024) * 10) / 10,
     ai_calls_month: getSetting<number>(AI_KEY()) || 0,
   };
 }
 
 /**
  * Throw a 402 if adding one more of `kind` would exceed the tenant's plan.
- * `addingBytes` is only used for `storage_mb`.
+ * `addingBytes` is only used for `storage_mb`. Pass zero after multer has already
+ * written a file into uploadDir(), since dirSizeBytes includes those bytes.
  */
 export function enforceQuota(kind: QuotaKind, addingBytes = 0): void {
   const slug = currentSlug();
@@ -78,7 +94,7 @@ export function enforceQuota(kind: QuotaKind, addingBytes = 0): void {
   const cap = limits[kind];
   if (!Number.isFinite(cap)) return;
 
-  const used = kind === 'storage_mb' ? dirSizeBytes(uploadDir(slug)) / (1024 * 1024) : tenantUsage(slug)[kind];
+  const used = kind === 'storage_mb' ? storageUsageBytes(slug) / (1024 * 1024) : tenantUsage(slug)[kind];
   const willBe = kind === 'storage_mb' ? used + addingBytes / (1024 * 1024) : used + 1;
   if (willBe > cap) {
     throw Object.assign(

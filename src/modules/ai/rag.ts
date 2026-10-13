@@ -8,8 +8,9 @@
  * see. Indexing is lazy: `retrieve()` rebuilds if the index is older than 5 min.
  */
 import fs from 'node:fs';
+import { resolveDurableUpload } from '../../shared/durable-uploads';
 import path from 'node:path';
-import { db, run, queryAll, queryOne, getSetting, setSetting, uploadDir } from '../../shared/db';
+import { db, run, queryAll, queryOne, getSetting, setSetting } from '../../shared/db';
 import type { AuthUser } from '../../shared/types';
 import { PAYROLL_FORM_SLUG } from '../payroll/pay-access';
 
@@ -71,7 +72,7 @@ export function reindex(): number {
       let body = [f.title, f.category, f.description, f.original_name].filter(Boolean).join('\n');
       const ext = path.extname(f.original_name || '').toLowerCase();
       if (TEXT_EXT.has(ext)) {
-        try { body += '\n' + fs.readFileSync(path.join(uploadDir(), f.stored_name), 'utf8').slice(0, 20000); } catch { /* unreadable */ }
+        try { const file = resolveDurableUpload(f.stored_name); if (file) body += '\n' + fs.readFileSync(file, 'utf8').slice(0, 20000); } catch { /* unreadable */ }
       }
       push(rows, { ref_label: `File · ${f.title || f.original_name}`, source_type: 'form', source_id: String(f.id), acl: 'forms.view', dept_id: f.department_id ?? null }, body);
     }

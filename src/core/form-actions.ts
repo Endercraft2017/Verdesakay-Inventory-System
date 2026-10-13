@@ -12,6 +12,7 @@
 import { renderDocument } from '../shared/doc-render';
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { db, queryOne, queryAll, run, uploadDir } from '../shared/db';
 import { notifyUser } from '../shared/push';
@@ -137,6 +138,7 @@ export function runFormActions(args: RunArgs): { warnings: string[] } {
           // Offline, named after the command: the PC's file and the cloud's are the same file.
           const stored = commandFileName('mm', '.html') ?? `mm-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.html`;
           fs.writeFileSync(path.join(uploadDir(), stored), html, 'utf8');
+          storeDurableUpload(stored);
           const title = `${args.formDef.name} ${args.recordNumber}`;
           const info = run(
             `INSERT INTO employee_documents (employee_id, title, stored_name, original_name, mime_type, size_bytes, uploaded_by)

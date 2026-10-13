@@ -87,6 +87,21 @@ describe('issuing', () => {
 });
 
 describe('the workspace side', () => {
+  it('restores the GCash QR from the platform database and forgets it when removed', async () => {
+    const upload = await ctx.api.post('/_platform/api/billing/settings/gcash-qr').set(opHdr())
+      .attach('qr', PNG, { filename: 'qr.png', contentType: 'image/png' });
+    expect(upload.status).toBe(200);
+    const name = upload.body.gcash_qr as string;
+    const { billingFilesDir } = await import('../src/platform/billing');
+    const { platformDb } = await import('../src/platform/platform');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    fs.unlinkSync(path.join(billingFilesDir('_settings'), name));
+    expect((await ctx.api.get('/api/tenant/billing/gcash-qr').set(tHdr('billco'))).status).toBe(200);
+    expect((await ctx.api.delete('/_platform/api/billing/settings/gcash-qr').set(opHdr())).status).toBe(200);
+    expect(platformDb().prepare('SELECT 1 FROM platform_durable_files WHERE slug = ? AND name = ?').get('_settings', name)).toBeUndefined();
+  });
+
   it('shows its own invoices and our bank details; the banner gets a summary', async () => {
     const r = await ctx.api.get('/api/tenant/billing').set(tHdr('billco'));
     expect(r.status).toBe(200);
@@ -134,6 +149,11 @@ describe('bank transfer → review', () => {
     expect(r.body.status).toBe('payment_submitted');
     paymentId = r.body.payments[0].id;
     expect(r.body.payments[0]).toMatchObject({ status: 'pending', has_proof: true, has_2307: false, submitted_by: 'owner' });
+
+    const { getPayment, billingFilesDir } = await import('../src/platform/billing');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    fs.unlinkSync(path.join(billingFilesDir('billco'), getPayment(paymentId)!.proof_file!));
 
     const own = await ctx.api.get(`/api/tenant/billing/payments/${paymentId}/files/proof`).set(tHdr('billco'));
     expect(own.status).toBe(200);

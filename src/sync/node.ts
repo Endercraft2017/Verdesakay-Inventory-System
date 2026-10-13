@@ -49,6 +49,7 @@ export function isNodeLocalTable(table: string): boolean {
     table === 'sessions' ||
     table === 'idempotency_keys' ||
     table === 'activity_log' || // the authority writes its own row when it replays a command
+    table === 'durable_uploads' || // each node keeps its own recoverable copy of transferred files
     table === 'anonymous_report_tickets' ||
     table === 'push_subscriptions'
   );

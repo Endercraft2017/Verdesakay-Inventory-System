@@ -13,6 +13,7 @@
  * checks inline on every upload rather than via a cron sweep.
  */
 import fs from 'node:fs';
+import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../../shared/durable-uploads';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
@@ -41,6 +42,7 @@ function photoDir(): string {
 }
 
 function unlinkQuiet(fileName: string): void {
+  forgetDurableUpload(`${PUNCH_PHOTOS_SUBDIR}/${fileName}`);
   try { fs.unlinkSync(path.join(photoDir(), fileName)); } catch { /* already gone */ }
 }
 
@@ -118,6 +120,7 @@ export function savePunchPhoto(
     ? `p-${punchKind}-${punchId}-${cmd}.jpg`
     : `p-${punchKind}-${punchId}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.jpg`;
   fs.renameSync(sourcePath, path.join(photoDir(), fileName));
+  storeDurableUpload(`${PUNCH_PHOTOS_SUBDIR}/${fileName}`);
 
   const existing = queryOne<PhotoRow>(
     'SELECT id, file_name FROM punch_photos WHERE punch_kind = ? AND punch_id = ?',
@@ -218,8 +221,8 @@ export function punchPhotoRoutes(
   router.get('/:id', requirePermission('hr.view'), (req, res) => {
     const row = getPunchPhotoFile(Number(req.params.id));
     if (!row) { res.status(404).json({ error: 'Photo not found.' }); return; }
-    const file = punchPhotoPath(row.file_name);
-    if (!fs.existsSync(file)) { res.status(404).json({ error: 'File missing' }); return; }
+    const file = resolveDurableUpload(`${PUNCH_PHOTOS_SUBDIR}/${row.file_name}`);
+    if (!file) { res.status(410).json({ error: 'File is no longer available' }); return; }
     res.sendFile(file);
   });
 

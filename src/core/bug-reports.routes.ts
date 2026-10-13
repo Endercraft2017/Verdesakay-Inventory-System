@@ -4,6 +4,7 @@
  *  `bug_reports` / `bug_report_attachments`. Mounted at /api/bug-reports. */
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload, resolveDurableUpload } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -94,8 +95,8 @@ router.get('/:id/screenshots/:attId', requirePermission('users.manage'), (req, r
     Number(req.params.id)
   );
   if (!att) { res.status(404).json({ error: 'Screenshot not found' }); return; }
-  const filePath = path.join(uploadDir(), att.stored_name);
-  if (!fs.existsSync(filePath)) { res.status(410).json({ error: 'File is missing on disk' }); return; }
+  const filePath = resolveDurableUpload(att.stored_name);
+  if (!filePath) { res.status(410).json({ error: 'File is no longer available' }); return; }
   if (att.mime_type) res.type(att.mime_type);
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.original_name)}"`);
   res.sendFile(filePath);
@@ -114,7 +115,7 @@ router.post('/', syncClass('merge'), syncUpload(upload.array('screenshots', MAX_
   const addingBytes = files.reduce((sum, f) => sum + f.size, 0);
   if (addingBytes > 0) {
     try {
-      enforceQuota('storage_mb', addingBytes);
+      enforceQuota('storage_mb');
     } catch (e) {
       unlinkAll(files);
       throw e;
@@ -138,6 +139,7 @@ router.post('/', syncClass('merge'), syncUpload(upload.array('screenshots', MAX_
       f.mimetype,
       f.size
     );
+    storeDurableUpload(f.filename);
   }
   res.status(201).json({ id: reportId, screenshots: files.length });
 });

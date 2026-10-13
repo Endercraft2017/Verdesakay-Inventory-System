@@ -8,6 +8,8 @@ import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { cleanup } from './helpers';
 import { setupSiteTrio, type SiteTrio } from './sync-helpers';
+import { blobPath, storeBlob } from '../src/sync/files';
+import { resolveDurableUpload } from '../src/shared/durable-uploads';
 
 let T: SiteTrio;
 let itemA: number; // photo added on the LAN PC
@@ -95,6 +97,19 @@ describe('a photo uploaded on the website', () => {
 });
 
 describe('the file endpoints', () => {
+  it('restores an offline command blob and a downloaded file after their working copies disappear', () => {
+    const bytes = Buffer.from('offline command bytes');
+    const hash = storeBlob(T.lanSlug, bytes);
+    fs.unlinkSync(blobPath(T.lanSlug, hash));
+    expect(fs.readFileSync(blobPath(T.lanSlug, hash))).toEqual(bytes);
+
+    const downloaded = path.join(uploads(T.lanSlug), oldImage);
+    fs.unlinkSync(downloaded);
+    const restored = T.dbmod.withTenant(T.lanSlug, () => resolveDurableUpload(oldImage));
+    expect(restored).toBe(downloaded);
+    expect(fs.readFileSync(downloaded)).toEqual(png('old'));
+  });
+
   it('refuse a blob that does not match its hash, and anything outside the uploads folder', async () => {
     const token = T.sync.remoteOf(T.hostDb())!.nodeToken;
     const bad = await api().put(`/api/sync/blobs/${'a'.repeat(64)}`).set('X-Sync-Node-Token', token)

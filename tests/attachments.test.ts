@@ -28,6 +28,12 @@ describe('attachments', () => {
     expect(list.body[0]).toMatchObject({ caption: 'left corner scratch', url: up.body.url });
     expect(list.body[0].uploaded_by_name).toBeTruthy();
 
+    const { queryOne } = await import('../src/shared/db');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const stored = queryOne<{ image_path: string }>('SELECT image_path FROM attachments WHERE id = ?', up.body.id)!;
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', stored.image_path));
+
     const img = await ctx.api.get(up.body.url).set(H());
     expect(img.status).toBe(200);
     expect(img.headers['content-type']).toContain('image/png');
@@ -37,6 +43,7 @@ describe('attachments', () => {
     expect((await ctx.api.get('/api/attachments?kind=damage&ref_id=42').set(H())).body).toHaveLength(0);
 
     expect((await ctx.api.delete('/api/attachments/' + up.body.id).set(H())).status).toBe(200);
+    expect(queryOne('SELECT 1 FROM durable_uploads WHERE name = ?', stored.image_path)).toBeUndefined();
     expect((await ctx.api.get('/api/attachments?kind=qc_unit&ref_id=42').set(H())).body).toHaveLength(0);
     expect((await ctx.api.get(up.body.url).set(H())).status).toBe(404);
   });

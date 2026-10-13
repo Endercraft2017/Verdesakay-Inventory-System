@@ -4,15 +4,13 @@
  * apex-host-only rule and operator auth. Issue invoices, review the transfers customers report,
  * record payments seen directly, void, and keep the bank details customers are shown.
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import { MODULES } from '../shared/modules';
 import {
   createInvoice, listInvoices, getInvoice, getPayment, invoiceView, voidInvoice, confirmPayment,
   rejectPayment, recordPayment, setBirInvoiceNo, getBillingSettings, setBillingSettings,
-  billingFilesDir, fileType, toCentavos, BillingError, INVOICE_KINDS, setGcashQr, BILLING_FILE_MAX_BYTES,
+  resolveBillingFile, fileType, toCentavos, BillingError, INVOICE_KINDS, setGcashQr, BILLING_FILE_MAX_BYTES,
   type InvoiceKind,
 } from './billing';
 import type { PlatformAuthedRequest } from './platform-users';
@@ -87,8 +85,8 @@ router.post('/billing/settings/gcash-qr', qrUpload, handle((req, res) => {
 router.delete('/billing/settings/gcash-qr', handle((_req, res) => { res.json(setGcashQr(null)); }));
 router.get('/billing/settings/gcash-qr', (_req, res) => {
   const name = getBillingSettings().gcash_qr;
-  const file = name ? path.join(billingFilesDir('_settings'), name) : '';
-  if (!file || !fs.existsSync(file)) { res.status(404).json({ error: 'Not found' }); return; }
+  const file = name ? resolveBillingFile('_settings', name) : null;
+  if (!file) { res.status(404).json({ error: 'Not found' }); return; }
   res.type(fileType(name)).sendFile(file);
 });
 
@@ -170,8 +168,8 @@ router.get('/billing/payments/:id/files/:kind', (req, res) => {
   const inv = p ? getInvoice(p.invoice_id) : null;
   const name = req.params.kind === 'proof' ? p?.proof_file : req.params.kind === 'form_2307' ? p?.form_2307_file : null;
   if (!p || !inv || !name) { res.status(404).json({ error: 'Not found' }); return; }
-  const file = path.join(billingFilesDir(inv.tenant_slug), name);
-  if (!fs.existsSync(file)) { res.status(404).json({ error: 'Not found' }); return; }
+  const file = resolveBillingFile(inv.tenant_slug, name);
+  if (!file) { res.status(404).json({ error: 'Not found' }); return; }
   res.type(fileType(name)).sendFile(file);
 });
 

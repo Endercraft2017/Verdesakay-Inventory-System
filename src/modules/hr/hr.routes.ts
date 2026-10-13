@@ -9,6 +9,7 @@ import { logEvent } from '../../shared/activity';
 import { z } from 'zod';
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { templateVariables } from '../../shared/doc-render';
 import { createRequire } from 'node:module';
@@ -738,7 +739,7 @@ router.post('/employees/:id/documents', requirePermission('hr.manage'), syncClas
     res.status(404).json({ error: 'Employee not found' }); return;
   }
   if (!req.file) { res.status(400).json({ error: 'A file is required' }); return; }
-  try { enforceQuota('storage_mb', req.file.size); }
+  try { enforceQuota('storage_mb'); }
   catch (e) { fs.promises.unlink(path.join(uploadDir(), req.file.filename)).catch(() => {}); throw e; }
   const title = (req.body?.title || '').trim() || req.file.originalname;
   const info = run(
@@ -747,6 +748,7 @@ router.post('/employees/:id/documents', requirePermission('hr.manage'), syncClas
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     employeeId, title, req.file.filename, req.file.originalname, req.file.mimetype, req.file.size, req.user!.id
   );
+  storeDurableUpload(req.file.filename);
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
@@ -757,8 +759,8 @@ router.get('/employees/:id/documents/:docId/download', requirePermission('hr.vie
     Number(req.params.docId), Number(req.params.id)
   );
   if (!doc) { res.status(404).json({ error: 'Document not found' }); return; }
-  const filePath = path.join(uploadDir(), doc.stored_name);
-  if (!fs.existsSync(filePath)) { res.status(410).json({ error: 'File is missing on disk' }); return; }
+  const filePath = resolveDurableUpload(doc.stored_name);
+  if (!filePath) { res.status(410).json({ error: 'File is no longer available' }); return; }
   res.download(filePath, doc.original_name);
 });
 
@@ -771,7 +773,10 @@ router.delete('/employees/:id/documents/:docId', requirePermission('hr.manage'),
   if (!doc) { res.status(404).json({ error: 'Document not found' }); return; }
   run('DELETE FROM employee_documents WHERE id = ?', doc.id);
   // An installed PC keeps the file until the cloud confirms: a refused delete brings the row back.
-  if (!sideEffectsSuppressed('unlink')) fs.promises.unlink(path.join(uploadDir(), doc.stored_name)).catch(() => {});
+  if (!sideEffectsSuppressed('unlink')) {
+    forgetDurableUpload(doc.stored_name);
+    fs.promises.unlink(path.join(uploadDir(), doc.stored_name)).catch(() => {});
+  }
   res.json({ ok: true });
 });
 
