@@ -797,6 +797,7 @@ export interface MessageAttachments {
   original_name: string;
   mime_type: string | null;
   size_bytes: Generated<number>;
+  data: Uint8Array | null;
   created_at: Generated<string>;
 }
 
