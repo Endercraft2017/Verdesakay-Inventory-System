@@ -79,7 +79,7 @@
     return b;
   }
   function employeeTasks(host) {
-    API.get('/personal/tasks').then(function (rows) {
+    API.get('/tasks').then(function (rows) {
       var open = (rows || []).filter(function (x) { return !x.done; }).slice(0, 3);
       host.innerHTML = '';
       if (!open.length) {
@@ -92,7 +92,7 @@
           '<small>' + mEsc(x.due_date ? 'Due ' + x.due_date : 'No due date') + '</small></span>' +
           '<em>TO DO</em><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>'
         );
-        r.onclick = function () { MApp.go('tasks'); };
+        r.onclick = function () { MApp.go('tasks', { id: x.id }); };
         host.appendChild(r);
       });
     }).catch(function () { host.innerHTML = '<div class="v2-work-empty">Tasks are unavailable offline.</div>'; });
@@ -136,6 +136,8 @@
     page.appendChild(mEl('<div class="v2-work-title tools"><h2>My tools</h2></div>'));
     var tools = mEl('<div class="v2-work-tools"></div>');
     tools.appendChild(commonTool('Tasks', 'tasks'));
+    tools.appendChild(commonTool('Notes / checklists', 'notes'));
+    tools.appendChild(commonTool('Guides', 'guides'));
     tools.appendChild(commonTool('Schedule', 'schedule'));
     tools.appendChild(commonTool('Announcements', 'announcements'));
     if (ops.length > 4) tools.appendChild(commonTool('All role queues', 'production'));

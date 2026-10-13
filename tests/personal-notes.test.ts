@@ -45,3 +45,18 @@ it('old note edits preserve checklist progress and scheduled reminders fire once
   const count = queryOne<any>("SELECT COUNT(*) AS n FROM notifications WHERE title = 'Reminder'").n;
   await sendDueTaskReminders(); expect(queryOne<any>("SELECT COUNT(*) AS n FROM notifications WHERE title = 'Reminder'").n).toBe(count);
 });
+it('unscheduling preserves the note and future scheduling creates exactly one replacement task', async () => {
+  const id = await make();
+  const scheduled = await ctx.api.post(`/api/notes/${id}/schedule`).set(hdr()).send({due_date:'2026-11-05T10:00'});
+  expect((await ctx.api.delete(`/api/tasks/${scheduled.body.id}`).set(hdr())).status).toBe(200);
+  let n=(await ctx.api.get('/api/notes').set(hdr())).body.find((n:any)=>n.id===id);
+  expect(n.checklist).toEqual(items);expect(n.scheduled_task).toBeNull();
+  const again=await ctx.api.post(`/api/notes/${id}/schedule`).set(hdr()).send({due_date:'2026-11-06T10:00'});
+  expect(again.status).toBe(200);expect((await ctx.api.get('/api/tasks').set(hdr())).body.filter((t:any)=>t.note_id===id)).toHaveLength(1);
+});
+it('reminder notifications open the exact task and retain its desktop link', async () => {
+  const task=await ctx.api.post('/api/tasks').set(hdr()).send({title:'Open this exact task',remind_at:new Date(Date.now()-60000).toISOString()});
+  const {sendDueTaskReminders}=await import('../src/shared/push');await sendDueTaskReminders();
+  const notification=(await ctx.api.get('/api/notifications').set(hdr())).body.items.find((n:any)=>n.link?.route==='tasks'&&n.link.params?.id===task.body.id);
+  expect(notification.url).toBe('#/tasks?id='+task.body.id);expect(notification.link).toEqual({route:'tasks',params:{id:task.body.id}});
+});

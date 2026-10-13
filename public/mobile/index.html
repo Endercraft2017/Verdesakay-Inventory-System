@@ -23,6 +23,7 @@
   </script>
   <link rel="stylesheet" href="/mobile/mobile.css" />
   <link rel="stylesheet" href="/mobile/mobile-v2.css" />
+  <link rel="stylesheet" href="/mobile/guides.css" />
   <link rel="stylesheet" href="/mobile/role-kit.css" />
 </head>
 <body>
@@ -62,6 +63,7 @@
         </div>
         <div class="m-title" id="m-title">Home</div>
       </div>
+      <button type="button" class="m-icbtn" id="m-guide-start" aria-label="Start guide for this screen">Guide</button>
       <button class="m-icbtn m-top-notifications" id="m-notifications-top" aria-label="Notifications">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
         <span class="m-notification-dot hidden" id="m-notification-dot"></span>
@@ -125,6 +127,10 @@
   <script src="/mobile/vendor/zxing.js"></script>
   <script src="/mobile/app.js"></script>
   <script src="/mobile/lib/dom.js"></script>
+  <script src="/mobile/lib/personal.js"></script>
+  <script src="/js/guide-data.js"></script>
+  <script src="/mobile/lib/guides.js"></script>
+  <script src="/js/guide-tour.js"></script>
   <script src="/mobile/lib/quick-orbit.js"></script>
   <script src="/mobile/lib/role-ui.js"></script>
   <script src="/mobile/lib/locations.js"></script>
@@ -177,6 +183,8 @@
   <script src="/mobile/modules/hr/requests.js"></script>
   <script src="/js/leave-dates.js"></script>
   <script src="/mobile/modules/core/tasks.js"></script>
+  <script src="/mobile/modules/core/notes.js"></script>
+  <script src="/mobile/modules/core/guides.js"></script>
   <script src="/mobile/modules/core/announcements.js"></script>
   <script src="/mobile/modules/hr/time-fix.js"></script>
   <script src="/mobile/modules/hr/approvals.js"></script>

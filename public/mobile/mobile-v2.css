@@ -734,3 +734,16 @@ button.m-thumb{padding:0;cursor:pointer}
 .v2-clock-replace .m-btn { margin: 0; flex: 1; }
 .v2-clock-notice p { margin: 0; }
 .v2-clock-fix { display: block; margin: 12px auto 0; padding: 8px; border: 0; background: none; color: var(--v2-green); font: inherit; font-size: 12px; font-weight: 650; text-decoration: underline; }
+
+/* Personal notes share the phone surface and field spacing. */
+.m-note-card { margin-bottom: 12px; }
+.m-note-open { display: block; width: 100%; border: 0; padding: 0; background: transparent; color: var(--v2-text); text-align: left; overflow-wrap: anywhere; }
+.m-note-open p { color: var(--v2-muted); white-space: pre-wrap; }
+.m-note-open small { color: var(--v2-muted); }
+.m-note-item-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.m-note-item-row .m-input { flex: 1; min-width: 0; }
+.m-note-item-row > input[type=checkbox] { width: 24px; height: 24px; flex-shrink: 0; }
+.m-note-schedule { margin-top: 20px; }
+
+.m-task-main { border: 0; background: transparent; color: inherit; text-align: left; padding: 0; font: inherit; min-height: 44px; overflow-wrap: anywhere; }
+.m-task-check { width: 44px; height: 44px; }

@@ -45,7 +45,7 @@ window.MApp = (function () {
     }
     return '#/' + name + q;
   }
-  function go(name, params) { location.hash = hashFor(name, params); }
+  function go(name, params) { if(window.mPersonalDraft && !mPersonalDraft.allow()) return; location.hash = hashFor(name, params); }
   function back() { if (history.length > 1) history.back(); else go('home'); }
 
   function parseHash() {
@@ -78,7 +78,7 @@ window.MApp = (function () {
     inbox: 'inbox', directory: 'inbox',
     settings: 'profile', queue: 'profile',
     clock: 'clock', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home', notifications: 'home',
-    tasks: 'work', approvals: 'home', announcements: 'home', 'report-problem': 'home', 'anonymous-report': 'home',
+    tasks: 'work', notes: 'work', guides: 'work', approvals: 'home', announcements: 'home', 'report-problem': 'home', 'anonymous-report': 'home',
     'confidential-reports': 'work',
   };
   var SEGMENTS = ['me', 'approvals', 'people', 'warehouse'];
@@ -155,6 +155,8 @@ window.MApp = (function () {
   };
 
   function render() {
+    if(window.mPersonalDraft && !mPersonalDraft.allow()) return;
+    window.GuideTour?.close();
     if (me && me.password_change_required) return;
     if (!me) return;
     if (!hasAccess()) { showBlocked(); return; }
@@ -169,6 +171,7 @@ window.MApp = (function () {
     Array.prototype.slice.call(v.attributes).forEach(function (a) {
       if (a.name.indexOf('data-') === 0) v.removeAttribute(a.name);
     });
+    v.dataset.route=parsed.name;
     document.documentElement.removeAttribute('data-role-accent'); // set again by role screens (role-ui.js)
     var needs = routes[parsed.name] && ROUTE_NEEDS[parsed.name];
     if (needs && !needs.some(function (p) { return can(p); })) {
@@ -184,6 +187,7 @@ window.MApp = (function () {
 
   /* ---------- auth ---------- */
   function showLogin() {
+    window.mPersonalDraft?.clear();window.GuideTour?.close();
     me = null;
     API.clearToken();
     if (window.mQueue) mQueue.clearToken();
@@ -538,7 +542,7 @@ window.MApp = (function () {
     route: route, go: go, back: back, nav: hashFor,
     getMe: getMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse,
     hasProductionAccess: hasProductionAccess, canApprove: canApprove,
-    seg: seg, setTitle: setTitle, render: render, refreshInboxBadge: refreshInboxBadge,
+    seg: seg, setTitle: setTitle, render: render, currentLocation: parseHash, refreshInboxBadge: refreshInboxBadge,
     signOut: signOut, isSharedSession: function () { return API.isSharedSession(); },
     routes: function () { return Object.keys(routes); },
   };

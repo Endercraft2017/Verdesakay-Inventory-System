@@ -160,7 +160,7 @@ export async function sendDueTaskReminders(): Promise<void> {
   for (const t of due) {
     run('UPDATE tasks SET remind_sent = 1 WHERE id = ?', t.id);
     await notifyUser(t.user_id, {
-      title: 'Reminder', body: t.title, url: '#/tasks', link: { route: 'tasks' }, tag: 'task-' + t.id,
+      title: 'Reminder', body: t.title, url: '#/tasks?id=' + t.id, link: { route: 'tasks', params: { id: t.id } }, tag: 'task-' + t.id,
     });
   }
 }

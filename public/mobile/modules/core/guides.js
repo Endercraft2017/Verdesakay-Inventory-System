@@ -1,0 +1,16 @@
+/* Read-only task library shared with the webapp. Screen guides remain contextual. */
+(function(){
+  var modules={production:'manufacturing',sales:'inventory',purchasing:'purchasing',payroll:'hr',inventory:'inventory',accounting:'accounting','qc-repair':'manufacturing'};
+  MApp.route('guides',function(view){
+    MApp.setTitle('Guides');
+    var items=GUIDE.pipelines.filter(function(p){var module=p.module||modules[p.id]||'home';return module==='home'||MApp.hasModule(module);});
+    items.sort(function(a,b){return Number(b.id==='notes-scheduler')-Number(a.id==='notes-scheduler');});
+    view.innerHTML='<h1>Task guides</h1><p class="m-hint">Find the workflow you need. Steps that require webapp screens name those screens. The Guide button walks through controls on your current phone screen.</p><label class="m-field"><span class="m-label">Search guides</span><input class="m-input" type="search" id="m-guide-search" placeholder="Checklist, leave, payroll…"></label><div id="m-guide-results" aria-live="polite"></div>';
+    var host=view.querySelector('#m-guide-results');
+    function draw(){var q=view.querySelector('#m-guide-search').value.toLowerCase().trim();var shown=items.filter(function(p){var el=document.createElement('div');el.innerHTML=[p.title,p.tagline,...p.steps.map(function(s){return s.body+' '+(s.tip||'');})].join(' ');return el.textContent.toLowerCase().includes(q);});
+      host.innerHTML=shown.length?'':'<div class="m-empty">No matching guides. Try a feature name or clear your search.</div>';
+      shown.forEach(function(p){var steps=p.steps; if(p.id==='notes-scheduler')steps=p.steps.map(function(step,index){return {...step,body:index===0?'Open Work → My tools → Notes / checklists.':index===1?'Press New note / checklist, add a title and body text or checklist items. Enter in the item field adds an item without saving.':index===3?'Save checked checklist items to update the shared task. Open Tasks from Work to complete or reopen the linked task, or use View in Scheduler from the note.':step.body};}); var detail=mEl('<details class="m-card m-guide-reference"><summary><strong>'+mEsc(p.title)+'</strong><small>'+mEsc(p.tagline)+'</small></summary><ol>'+steps.map(function(s){return '<li><strong>'+mEsc(s.title)+'</strong>'+(s.to?.label?'<p class="m-hint">'+mEsc(s.to.label)+'</p>':'')+'<div>'+s.body+'</div>'+(s.tip?'<p class="m-hint">'+s.tip+'</p>':'')+'</li>';}).join('')+'</ol>'+(p.id==='notes-scheduler'?'<button type="button" class="m-btn" data-open-notes>Open Notes / checklists</button>':'')+'</details>');detail.querySelector('[data-open-notes]')?.addEventListener('click',function(){MApp.go('notes');});host.appendChild(detail);});
+    }
+    view.querySelector('#m-guide-search').oninput=draw;draw();
+  });
+})();
