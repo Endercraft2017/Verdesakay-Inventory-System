@@ -1023,3 +1023,6 @@ The ribbon can be hidden while retaining its tabs; the tool rail collapses to la
 icons and the inspector has an explicit Collapse action. Workspace changes recalculate fit.
 Inspector colors use native swatch pickers and an explicit No fill background action.
 Typography/spacing use presets plus a custom-value dialog, preserving nonpreset values.
+Variables opens the searchable/category-filtered variable bank with Copy and Insert.
+Whole-chip click selection enables Delete/Backspace for optional starter fields, with
+existing atomic commands, lock checks, undo and HTML serialization.

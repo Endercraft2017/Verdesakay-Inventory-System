@@ -148,7 +148,13 @@ Inspector text/background colors use swatch pickers, with No fill for background
 size, line height, padding and spacing use preset dropdowns that preserve existing custom
 values; Custom opens an optional precise-value dialog. Opening these controls preserves
 existing color transparency and creates no document change.
-A labelled rail opens Inspect, Pages, Layers, Outline, Styles, Fields, Library, Review,
+Clicking a variable chip selects the whole token; Delete/Backspace removes it through
+the undo/save pipeline. Starter company/date fields remain optional. Variables opens a
+searchable bank of available catalog/custom fields and fields already in the document,
+with category filters, Insert at the remembered caret, and Copy of the full {{token}}.
+Data blocks and preview tools remain available beneath the bank. Clipboard denial offers
+a selected readonly token for manual copy; locked content and review restrictions remain.
+A labelled rail opens Inspect, Pages, Layers, Outline, Styles, Variables, Library, Review,
 History and Shared on demand. The inspector starts closed and can be dismissed without
 losing selection. The page fits available width initially; footer Fit/zoom controls are
 always available while editing. Phone formatting wraps without horizontal overflow, and

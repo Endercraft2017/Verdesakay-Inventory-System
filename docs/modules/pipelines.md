@@ -815,6 +815,10 @@ Ribbon and sidebar collapse also remain UI state, recalculate page fit, and keep
 reachable. Selecting a ribbon tab expands its controls; inspector collapse returns focus.
 Inspector color/spacing pickers write validated CSS through the existing history/save
 pipeline. Color swatches normalize their display only; existing alpha remains until edited.
+Variable bank → search/category → Insert restores the remembered editor range and inserts
+the canonical chip through the command registry; Copy writes the full template token and
+does not edit the document. Click a chip → select its outer boundaries → Delete/Backspace
+uses atomic deletion and an undo snapshot. Starter fields are not regenerated on save.
 The selected font/style/point-size readout follows current text rather than field-label
 chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
 the existing change/history path. Find/replace mounts above the workspace; source editing,

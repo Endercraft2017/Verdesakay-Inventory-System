@@ -163,6 +163,13 @@ describe('model paragraph commands',()=>{
 });
 
 describe('simplified editor workspace',()=>{
+ it('selects starter chips on click and deletes them as whole tokens with undo',()=>{
+  const {w,doc,root,ed}=setup('<header><h1>{{company.name}}</h1><div>{{company.address}}</div><div>{{company.phone}} · {{company.email}}</div><div>{{today}}</div></header><p>Body</p>',true);
+  const first=root.querySelector('.doc-chip');first.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));expect(w.getSelection().isCollapsed).toBe(false);expect(ed.commands.state('edit.deleteAtomic').enabled).toBe(true);
+  root.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Delete',bubbles:true,cancelable:true}));expect(root.querySelectorAll('.doc-chip')).toHaveLength(4);ed._history.undo();expect(root.querySelectorAll('.doc-chip')).toHaveLength(5);
+  for(const chip of [...root.querySelectorAll('.doc-chip')]){chip.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));root.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));}
+  expect(root.querySelector('.doc-chip')).toBeNull();expect(w.DocEditor.serializeEditor(root)).not.toContain('{{company.');expect(root.querySelector('p').textContent).toBe('Body');
+ });
  it('uses color pickers and no-fill controls while preserving existing colors until changed',()=>{
   const {w,doc,root,select}=setup('<p style="color:rgb(17, 34, 51);background-color:rgba(70, 80, 90, 0.4)">Text</p>',true);const p=root.querySelector('p');select(p.firstChild,0,0);p.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));doc.querySelector('[data-studio-tab=Properties]').click();
   const color=doc.querySelector('[data-prop=color]'),bg=doc.querySelector('[data-prop=backgroundColor]');expect(color.type).toBe('color');expect(color.value).toBe('#112233');expect(bg.type).toBe('color');expect(bg.value).toBe('#46505a');expect(p.style.backgroundColor).toBe('rgba(70, 80, 90, 0.4)');

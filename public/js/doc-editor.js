@@ -739,6 +739,7 @@ function ensureStyles() {
   `;
   const viewCss=`.doc-fs[data-editor-mode=pages] .doc-tool-rail,.doc-fs[data-editor-mode=pages] .doc-studio-side,.doc-fs:not([data-editor-mode=visual]) .doc-view-tools{display:none!important}.doc-tool-rail>[data-help]{margin-top:auto}.doc-find{flex-shrink:0}@media(max-width:760px){.doc-find{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:6px;padding:8px}.doc-find input{width:100%;min-width:0;box-sizing:border-box}}.doc-view-tools{display:flex;align-items:center;gap:5px}.doc-view-tools button{border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);font:12px var(--font,system-ui);height:25px;min-width:25px;cursor:pointer}.doc-view-tools button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent)}.doc-view-tools button:hover{background:var(--surface-2);color:var(--text)}.doc-view-tools button:focus-visible{outline:2px solid var(--accent)}.doc-zoom-info{min-width:60px;text-align:center}.doc-panel[data-panel=home] .doc-group-row{flex-wrap:nowrap}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]) .doc-group-row{max-width:700px}@media(max-width:760px){.doc-panel[data-panel=home]{overflow:visible;flex-wrap:wrap;gap:4px;min-height:0}.doc-panel[data-panel=home] .doc-group{padding:2px 4px;gap:3px}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]){flex:1;min-width:0}.doc-panel[data-panel=home] .doc-group-row{justify-content:flex-start;gap:3px;flex-wrap:wrap}.doc-panel[data-panel=home] select[data-cmd=formatBlock]{width:85px}.doc-panel[data-panel=home] select[data-cmd=fontName]{width:102px}.doc-panel[data-panel=home] .doc-group-cap{display:none}.doc-panel[data-panel=home] .doc-group:has([data-find]){display:none}.doc-view-tools{gap:1px}.doc-view-tools button{min-width:20px;padding:0 3px}.doc-statusbar>.doc-word-count{display:none}}` ;
   const compactCss = `
+    .doc-variable-list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto}.doc-variable-card{border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px;display:flex;flex-direction:column;gap:6px}.doc-variable-card code{font-size:11px;overflow-wrap:anywhere;user-select:text;color:var(--accent)}.doc-variable-card strong{font-size:12px}.doc-variable-card .doc-variable-actions{display:flex;gap:6px}.doc-variable-actions button{flex:1;padding:5px!important;font-size:11px}.doc-data-tools summary{cursor:pointer;padding:8px 0;font-weight:600}.doc-data-tools[open]{display:flex;flex-direction:column;gap:10px}
     .doc-color-picker{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;background:var(--surface)}.doc-studio-body .doc-color-picker input[type=color]{width:44px;height:32px;min-height:32px;padding:2px;flex-shrink:0;cursor:pointer}.doc-color-picker [data-color-label]{flex:1;font-size:11px;color:var(--text-muted)}.doc-studio-body .doc-color-picker button{font-size:11px;padding:5px 8px}
     .doc-fs:not([data-editor-mode=visual]) .doc-ribbon-controls{display:none}
     .doc-panel .doc-tile{height:32px;min-width:0;flex-direction:row;gap:5px;padding:4px 6px}.doc-panel .doc-tile svg{width:18px;height:18px}
@@ -1421,7 +1422,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       surface.querySelectorAll('font[size="7"]').forEach(f=>{f.removeAttribute('size');f.style.fontSize=size+'pt';});
     },
     deleteAtomic:target=>{
-      if(!surface.contains(target) || !target.matches?.('.doc-chip,.doc-checkbox') || target.closest('[data-doc-locked="true"]'))return false;
+      if(!surface.contains(target) || !target.matches?.('.doc-chip,.doc-checkbox') || target.closest('[data-doc-locked="true"],del[data-doc-change]'))return false;
       clearPending();const range=document.createRange();range.setStartBefore(target);let parent=target.parentElement;target.remove();
       while(parent?.matches('span[data-doc-run="inline"]')&&!parent.textContent&&!parent.children.length){const outer=parent.parentElement;parent.remove();parent=outer;}range.collapse(true);
       const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
@@ -1754,7 +1755,8 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   // Tab in lists changes level; Tab in tables traverses physical cells once, including spans.
   surface.addEventListener('keydown', e => {
     if(e.defaultPrevented || e.isComposing || commandContext.isComposing?.() || e.ctrlKey || e.metaKey || e.altKey)return;
-    const sel=window.getSelection();if(!sel?.rangeCount || !sel.isCollapsed || !surface.contains(sel.anchorNode))return;
+    const sel=window.getSelection();if(!sel?.rangeCount || !surface.contains(sel.anchorNode))return;
+    if(!sel.isCollapsed){const r=sel.getRangeAt(0),chip=r.startContainer===r.endContainer&&r.startContainer.nodeType===1&&r.endOffset===r.startOffset+1?r.startContainer.childNodes[r.startOffset]:null;if(['Backspace','Delete'].includes(e.key)&&chip?.matches?.('.doc-chip')){e.preventDefault();if(trackingText()){UI.toast('Turn tracking off to remove a field token','error');return;}saveSel();commands.run('edit.deleteAtomic',chip);}return;}
     const node=sel.anchorNode.nodeType===3?sel.anchorNode.parentElement:sel.anchorNode;
     if(e.key==='Tab'){
       saveSel();if(!editableSelection(false)){e.preventDefault();return;}
@@ -1792,6 +1794,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     saveSel();commands.run('edit.deleteAtomic',adjacent);
   });
   surface.addEventListener('input', onChange);
+  surface.addEventListener('click',e=>{const chip=e.target.closest?.('.doc-chip');if(!chip||chip.closest('[data-doc-locked="true"],del[data-doc-change]'))return;const r=document.createRange();r.selectNode(chip);surface.focus();const sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);saveSel();reflect();});
 
   // Toolbar and keyboard share command enabled/active state.
   const reflect = () => {
@@ -2702,7 +2705,7 @@ function mountStudio(fs, surface, opts, api) {
   const desk = document.createElement('div'); desk.className = 'doc-workspace';
   const canvas = fs.querySelector('.doc-canvas'); canvas.before(desk); desk.append(canvas);
   const side = document.createElement('aside'); side.className = 'doc-studio-side'; side.setAttribute('aria-label', 'Document tools'); desk.append(side);
-  const toolNames={Properties:'Inspect',Layers:'Layers',Outline:'Outline',Data:'Fields',Pages:'Pages',Styles:'Styles',Review:'Review',Library:'Library',History:'History',Shared:'Shared'};
+  const toolNames={Properties:'Inspect',Layers:'Layers',Outline:'Outline',Data:'Variables',Pages:'Pages',Styles:'Styles',Review:'Review',Library:'Library',History:'History',Shared:'Shared'};
   const toolIcons={Properties:'settings',Layers:'layers',Outline:'justifyLeft',Data:'variable',Pages:'document',Styles:'styles',Review:'signature',Library:'image',History:'undo',Shared:'shared'};
   const rail=document.createElement('nav');rail.className='doc-tool-rail';rail.setAttribute('aria-label','Document tools');desk.prepend(rail);
   rail.innerHTML=['Properties','Pages','Layers','Outline','Styles','Data','Library','Review','History',...(opts.sharedStudio?['Shared']:[])].map(x=>`<button type="button" data-studio-tab="${x}" aria-pressed="false" title="${toolNames[x]}" aria-label="Open ${toolNames[x].toLowerCase()} panel">${docIcon(toolIcons[x])}<span>${toolNames[x]}</span></button>`).join('');
@@ -2737,6 +2740,11 @@ function mountStudio(fs, surface, opts, api) {
     return `<label>${label}<input data-prop="${prop}" type="${type}" value="${esc(value)}" ${type==='number'?'step="0.5"':''}></label>`;
   }
   const advanced=DocAdvanced.mount(fs,surface,opts,api,target,restoreRange);
+  let variableSearch='',variableCategory='';
+  function bankVariables(){const list=[...(opts.getVariables?.()||[])];surface.querySelectorAll('.doc-chip').forEach(chip=>{const ref=chip.dataset.token;if(ref&&!/^[#/]/.test(ref))list.push({key:ref,label:ref,category:'In this document'});});const seen=new Set();return list.map(v=>{const ref=String(v.token||v.key||'').replace(/^\{\{\s*|\s*\}\}$/g,'').trim();return {...v,ref,category:v.category||'Other'};}).filter(v=>v.ref&&!/^[#/]/.test(v.ref)&&!seen.has(v.ref)&&seen.add(v.ref));}
+  function renderVariableBank(){const list=panel.querySelector('[data-variable-list]');if(!list)return;const query=variableSearch.toLowerCase();const shown=bankVariables().filter(v=>(!variableCategory||v.category===variableCategory)&&(!query||`${v.label||''} ${v.ref} ${v.category}`.toLowerCase().includes(query)));list.innerHTML=shown.length?shown.map(v=>`<div class="doc-variable-card"><strong>${esc(v.label||v.ref)}</strong><code>{{${esc(v.ref)}}}</code><div class="doc-variable-actions"><button type="button" data-variable-insert="${esc(v.ref)}" aria-label="Insert ${esc(v.label||v.ref)}">Insert</button><button type="button" data-variable-copy="${esc(v.ref)}" aria-label="Copy ${esc(v.label||v.ref)}">Copy</button></div></div>`).join(''):'<p>No matching variables.</p>';panel.querySelector('[data-variable-count]').textContent=shown.length+' variables';}
+  panel.addEventListener('pointerdown',remember,true);
+  panel.addEventListener('input',e=>{if(e.target.hasAttribute('data-variable-search')){variableSearch=e.target.value;renderVariableBank();}});
   function render() {
     rail.querySelectorAll('[data-studio-tab]').forEach(b=>b.setAttribute('aria-pressed',String(!side.hidden&&b.dataset.studioTab===tab)));side.querySelector('[data-inspector-title]').textContent=toolNames[tab] || tab;
     if(advanced.render(tab,panel))return;
@@ -2755,6 +2763,10 @@ function mountStudio(fs, surface, opts, api) {
       const vars = (opts.getVariables?.() || []).filter(v=>!/^\{\{[#/]/.test(v.token||''));
       panel.innerHTML = `<h3>Data blocks</h3><label>Field<select data-data-field>${vars.map(v=>`<option value="${esc(String(v.token||v.key).replace(/^\{\{|\}\}$/g,''))}">${esc(v.label||v.key)}</option>`).join('')}</select></label><div class="doc-prop-grid"><button data-do="variable">Insert field</button><button data-do="conditional">Conditional block</button></div><label>Repeat collection<input data-collection placeholder="items" value="items"></label><button data-do="repeat">Insert repeating table</button><button data-do="validate">Check fields and formulas</button>${opts.loadPreviewRecord ? '<label>Real record ID<input data-record-id type="number" min="1" placeholder="Record ID"></label><button data-do="loadRecord">Load real record</button>' : ''}<label>Preview scenario<select data-scenario><option value="sample">Sample data</option><option value="long">Long text</option><option value="empty">Missing values / empty tables</option><option value="large">Large tables (50 rows)</option><option value="custom">Custom / real record JSON</option></select></label><label>Record context (JSON)<textarea data-context placeholder='{"order":{"customer_name":"..."},"items":[]}'></textarea></label><button data-do="context">Apply preview data</button><p>Paste a real record’s template context here. This data is used only for preview and is not saved in the template.</p><div data-issues role="status"></div>`;
       panel.querySelector('[data-scenario]').value = api.scenario();
+      panel.innerHTML='<details class="doc-data-tools"><summary>Data blocks & preview</summary>'+panel.innerHTML+'</details>';
+      const categories=[...new Set(bankVariables().map(v=>v.category))];
+      panel.insertAdjacentHTML('afterbegin',`<h3>Variable bank</h3><p>Click a variable in the document and press Delete to remove it. Insert uses your last editing position; Copy copies the full token.</p><label>Search variables<input type="search" data-variable-search placeholder="Search name, token or category" value="${esc(variableSearch)}"></label><label>Category<select data-variable-category><option value="">All categories</option>${categories.map(c=>`<option value="${esc(c)}" ${c===variableCategory?'selected':''}>${esc(c)}</option>`).join('')}</select></label><span data-variable-count role="status"></span><div class="doc-variable-list" data-variable-list></div>`);
+      panel.querySelector('[data-scenario]').value=api.scenario();renderVariableBank();
     } else if (tab === 'Pages') {
       panel.innerHTML = '<h3>Page layout</h3><p>Dashed guides estimate paper boundaries. Preview checks actual printed flow. Table headers repeat across printed pages.</p><button data-do="pageview">Open measured page view</button><button data-do="pagebreak">Insert page break</button><button data-do="header">Insert repeating header</button><button data-do="footer">Insert repeating footer</button><button data-do="pagenumber">Insert page number</button><button data-do="overflow">Check overflow</button><div data-issues role="status"></div>';
     } else if (tab === 'History') {
@@ -2795,6 +2807,7 @@ function mountStudio(fs, surface, opts, api) {
   panel.addEventListener('change',e=>{
     advanced.input(e);
     const el=target(), input=e.target;
+    if(input.hasAttribute('data-variable-category')){variableCategory=input.value;renderVariableBank();return;}
     if(input.dataset.visible!==undefined||input.dataset.lock!==undefined) { const f=floats()[+(input.dataset.visible??input.dataset.lock)];if(!f)return;if(input.dataset.visible!==undefined)f.dataset.docHidden=String(!input.checked);else { f.dataset.docLocked=String(input.checked);api.normalize(); }changed();return; }
     if(input.dataset.scenario!==undefined) {api.setScenario(input.value);return;}
     const prop=input.dataset.prop;if(!prop||!el||elLocked(el))return;
@@ -2804,6 +2817,8 @@ function mountStudio(fs, surface, opts, api) {
   });
   panel.addEventListener('click', async e=>{
     const b=e.target.closest('button');if(!b)return;if(b.dataset.adv){await advanced.action(b);render();return;}const el=target();
+    if(b.hasAttribute('data-variable-insert')){insert(tokenChip(b.dataset.variableInsert));return;}
+    if(b.hasAttribute('data-variable-copy')){const token='{{'+b.dataset.variableCopy+'}}';try{if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(token);note.textContent='Copied '+token;}catch{UI.modal({guide:false,title:'Copy variable',bodyHTML:`<label>Variable token<input data-copy-variable readonly value="${esc(token)}"></label><p>Select and copy this token with Ctrl / ⌘ C.</p>`,cancelText:'Close',onOpen:ov=>ov.querySelector('[data-copy-variable]').select()});}return;}
     if(b.hasAttribute('data-clear-fill')){if(el&&!elLocked(el)){el.style.backgroundColor='transparent';changed();render();}return;}
     if(b.dataset.outline!==undefined){const h=surface.querySelectorAll('h1,h2,h3,h4,h5,h6')[Number(b.dataset.outline)];if(h){h.scrollIntoView?.({block:'center',behavior:'smooth'});surface.focus();const r=document.createRange();r.selectNodeContents(h);r.collapse(true);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);}return;}
     if(b.dataset.layer!==undefined){selected=floats()[+b.dataset.layer];if(selected){api.select(selected);selected.scrollIntoView?.({block:'nearest'});}render();return;}

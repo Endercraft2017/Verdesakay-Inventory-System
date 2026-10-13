@@ -20,6 +20,13 @@ function setup(extra: any = {}) {
   return {w,doc,opts,editor,tab,click,change,select,reopen(){editor=w.DocEditor.open(opts);return editor;}};
 }
 describe('document studio workflows',()=>{
+  it('searches the variable bank, filters categories and copies or inserts complete tokens',async()=>{
+    const {w,doc,tab,editor}=setup({getVariables:()=>[{label:'Company name',token:'{{company.name}}',category:'Company'},{label:'Customer',token:'{{order.customer_name}}',category:'Order'}]});
+    const writeText=vi.fn(async()=>{});Object.defineProperty(w.navigator,'clipboard',{value:{writeText},configurable:true});tab('Data');
+    expect(doc.querySelectorAll('[data-variable-insert]')).toHaveLength(2);const category=doc.querySelector('[data-variable-category]');category.value='Order';category.dispatchEvent(new w.Event('change',{bubbles:true}));expect(doc.querySelectorAll('[data-variable-insert]')).toHaveLength(1);category.value='';category.dispatchEvent(new w.Event('change',{bubbles:true}));const root=doc.querySelector('.doc-surface');const before=w.DocEditor.serializeEditor(root);doc.querySelector('[data-variable-copy]').click();await new Promise(r=>setTimeout(r,0));expect(writeText).toHaveBeenCalledWith('{{company.name}}');expect(w.DocEditor.serializeEditor(root)).toBe(before);
+    const search=doc.querySelector('[data-variable-search]');search.value='customer';search.dispatchEvent(new w.Event('input',{bubbles:true}));expect(doc.querySelectorAll('[data-variable-insert]')).toHaveLength(1);expect(doc.querySelector('[data-variable-insert]').dataset.variableInsert).toBe('order.customer_name');
+    const range=doc.createRange();range.selectNodeContents(root.querySelector('p'));range.collapse(false);w.getSelection().removeAllRanges();w.getSelection().addRange(range);doc.dispatchEvent(new w.Event('selectionchange'));doc.querySelector('[data-variable-insert]').click();expect(w.DocEditor.serializeEditor(root)).toContain('{{order.customer_name}}');editor._history.undo();expect(w.DocEditor.serializeEditor(root)).toBe(before);
+  });
   it('recovers body, metadata and paper settings after closing without saving, with undo',async()=>{
     const {w,doc,editor,change,tab,click,reopen}=setup();
     change('.doc-fs-name','Recovered');change('.doc-pagesize','custom');change('.doc-custom-w','180');change('.doc-custom-h','250');
