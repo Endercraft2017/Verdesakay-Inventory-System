@@ -80,3 +80,22 @@ describe('screen help assignment', () => {
     dom.window.close();
   });
 });
+
+describe('guide reference integrity', () => {
+  it('all explicit modal help topics and workflow references resolve', () => {
+    const dom = setup();
+    const ids = new Set(dom.window.Help.topics.map((t: any) => t.id));
+    const root = path.join(import.meta.dirname, '..', 'public/js');
+    for (const file of fs.readdirSync(root, { recursive: true }) as string[]) {
+      if (!file.endsWith('.js')) continue;
+      const text = fs.readFileSync(path.join(root, file), 'utf8');
+      for (const match of text.matchAll(/(?:helpTopic\s*:\s*|Help\.open\(\s*)['"]([^'"]+)['"]/g)) {
+        expect(ids.has(match[1]), `${file}: unknown help topic ${match[1]}`).toBe(true);
+      }
+    }
+    for (const topic of dom.window.Help.topics) {
+      if (topic.workflow) expect(dom.window.GUIDE.byId[topic.workflow], topic.id).toBeTruthy();
+    }
+    dom.window.close();
+  });
+});

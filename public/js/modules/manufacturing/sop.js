@@ -7,6 +7,8 @@
    filter.tour=1 auto-starts its walkthrough. */
 App.register('sop', (view, filter) => {
   const PIPELINES = window.GuideCenter ? GuideCenter.catalog() : ((window.GUIDE && GUIDE.pipelines) || []);
+  const topics = (window.Help && Help.topics) || [];
+  topics.forEach(t => PIPELINES.push({id:'help:'+t.id, title:t.title, tagline:t.group, module:'home', steps:[], gotchas:[], helpTopic:t}));
   const byId = Object.fromEntries(PIPELINES.map(p=>[p.id,p]));
 
   if (!PIPELINES.length) {
@@ -14,7 +16,7 @@ App.register('sop', (view, filter) => {
     return;
   }
 
-  let active = (filter && filter.topic && byId[filter.topic]) ? filter.topic : (byId['getting-started'] ? 'getting-started' : PIPELINES[0].id);
+  let active = filter && byId['help:'+filter.helpTopic] ? 'help:'+filter.helpTopic : (filter && filter.topic && byId[filter.topic]) ? filter.topic : (byId['getting-started'] ? 'getting-started' : PIPELINES[0].id);
 
   view.innerHTML = `
     <div class="topbar">
@@ -70,6 +72,11 @@ App.register('sop', (view, filter) => {
       b.classList.toggle('active', b.dataset.id === active));
 
     const p = byId[active];
+    if (p.helpTopic) {
+      mainEl.innerHTML = `<div class="guide-hero"><h3>${UI.esc(p.title)}</h3><div class="help-content">${p.helpTopic.html}</div></div>${Help.feedbackHTML()}`;
+      Help.wireFeedback(mainEl, p.helpTopic);
+      mainEl.scrollTop = 0; return;
+    }
     const saved = (window.GuideTour && GuideTour.savedStep(p.id)) || 0;
     const canResume = saved > 0 && saved < p.steps.length;
 
@@ -117,6 +124,8 @@ App.register('sop', (view, filter) => {
         Guide buttons in headers provide help for the current screen or dialog.
       </p>`;
 
+    mainEl.insertAdjacentHTML('beforeend', Help.feedbackHTML());
+    Help.wireFeedback(mainEl, p);
     mainEl.querySelector('#guide-tour-start').onclick = () => window.GuideTour && GuideTour.start(p, 0);
     const resumeBtn = mainEl.querySelector('#guide-tour-resume');
     if (resumeBtn) resumeBtn.onclick = () => window.GuideTour && GuideTour.start(p, saved);

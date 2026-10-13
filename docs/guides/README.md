@@ -47,3 +47,19 @@ When a feature ships, add a guide here **in the same change**. Keep to this shap
 5. **If something goes wrong** — the common errors and the fix.
 
 Then add a row to the table above.
+
+### Improving a guide
+
+Help and the Guide Center include **Was this guide helpful?**. Choose **Yes** or
+**Needs improvement**, add comments, and click **Send feedback**. Nothing is sent
+until you submit. Improvement requests need a description of the unclear or
+incorrect instruction. Feedback includes the selected guide and the screen where
+it was opened. Administrators review it through the bug tool's **View reports**;
+guide submissions have a **Guide feedback:** title. If sending fails, the comments
+remain in the dialog so you can retry.
+
+When changing a screen, update its guide's labels and prerequisites, check the
+expected result in the rendered app, and run `npm run check`. Automated checks
+validate registered routes, explicit help-topic references, workflow references,
+and feedback behavior; they do not prove that every instruction matches a deployed
+screen or that physical devices work.

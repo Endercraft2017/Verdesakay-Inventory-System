@@ -793,6 +793,50 @@
     },
   ];
 
+  // Task checkpoints shared by the drawer and Guide Center.
+  const CHECKPOINTS = {
+    'barcode-labels': ['Select the items and confirm the printer label size.', 'Review the print sheet, then print one test label before the full batch.', 'If labels are clipped, match paper size and scale in the print dialog.'],
+    'products-in': ['Confirm QC/QA is complete, or that the order requires no inspection.', 'Posted output appears in Receipt History and stock at the selected location.', 'If output is missing, check inspection status and whether it was already received.'],
+    'cutoff': ['Check the date range and identify the employees to include.', 'The saved cutoff appears in Time Keeping; its roster must be added separately.', 'An empty attendance grid can mean the cutoff has no employees yet.'],
+    'payments': ['Set up Books and the cash/bank account; check the outstanding documents.', 'The saved payment appears in Payments; review allocations and remaining balances.', 'If an invoice is still open, check whether the payment was recorded on account.'],
+    'site-map': ['Use an account with access to the screen you want to open.', 'Selecting a screen closes the map and opens the matching view.', 'If a screen is missing, ask an administrator to check role and workspace access.'],
+    'mobile-app': ['Use HTTPS for scanning and sign in with access to the intended action.', 'A queued action becomes final only after Pending sync confirms server acceptance.', 'Check Pending sync for errors; keep site data until pending actions have synced.'],
+  };
+  TOPICS.forEach(t => {
+    const c = CHECKPOINTS[t.id];
+    if (c) t.html += `<div class="guide-checkpoints"><p><b>Before you start:</b> ${c[0]}</p><p><b>Check the result:</b> ${c[1]}</p><p><b>If it does not work:</b> ${c[2]}</p></div>`;
+  });
+
+  function feedbackHTML() {
+    return `<div class="guide-feedback"><p>Was this guide helpful?</p><button type="button" class="btn secondary small" data-guide-feedback="yes">Yes</button> <button type="button" class="btn secondary small" data-guide-feedback="no">Needs improvement</button></div>`;
+  }
+
+  function wireFeedback(el, topic) {
+    el.querySelectorAll('[data-guide-feedback]').forEach(button => {
+      button.onclick = () => {
+        const helpful = button.dataset.guideFeedback === 'yes';
+        const loc = (window.App && App.currentLocation && App.currentLocation()) || {};
+        // Capture the source screen now, before any later navigation or topic change.
+        const context = `${loc.label || loc.route || 'Guide'} | Guide: ${topic.id}`.slice(0, 200);
+        UI.modal({ title: 'Guide feedback', confirmText: 'Send feedback',
+          onOpen: ov => ov.classList.add('guide-feedback-modal'),
+          bodyHTML: `<p><b>${UI.esc(topic.title)}</b> — ${helpful ? 'Helpful' : 'Needs improvement'}</p><label for="guide-feedback-note">${helpful ? 'What helped? (optional)' : 'What should we improve?'}</label><textarea id="guide-feedback-note" maxlength="3500" placeholder="Describe the unclear step, missing detail, or incorrect instruction."></textarea><p class="muted">Your feedback will be saved for administrators to review in View reports.</p>`,
+          onConfirm: async ov => {
+            const note = ov.querySelector('#guide-feedback-note').value.trim();
+            if (!helpful && !note) throw new Error('Please describe what needs improvement.');
+            const fd = new FormData();
+            fd.append('title', `Guide feedback: ${topic.title}`.slice(0, 200));
+            fd.append('steps_to_reproduce', `Read guide: ${topic.title} (${topic.id}).\nRating: ${helpful ? 'Helpful' : 'Needs improvement'}.`);
+            fd.append('description', note || 'This guide was helpful.');
+            fd.append('page_context', context);
+            await API.upload('/bug-reports', fd);
+            UI.toast('Guide feedback sent — thank you!');
+          },
+        });
+      };
+    });
+  }
+
   const byId = Object.fromEntries(TOPICS.map((t) => [t.id, t]));
   const routeIndex = {};
   TOPICS.forEach((t) => (t.routes || []).forEach((r) => (routeIndex[r] = t.id)));
@@ -838,10 +882,12 @@
         ${t.html}
         ${pipe ? `<p style="margin-top:10px"><a href="#" id="help-sop">Full workflow — ${UI.esc(pipe.title)}, end to end &rarr;</a></p>` : ''}
       </div>
+      ${feedbackHTML()}
       <p class="muted" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px">
         Trainers: full written guides are in <code>docs/guides/</code>.
       </p>`;
 
+    wireFeedback(el, t);
     const pick = el.querySelector('#help-pick');
     if (pick) pick.addEventListener('change', () => renderBody(el, pick.value, close));
 
@@ -896,5 +942,5 @@
     if (d) { d.el.classList.add('help-drawer'); renderBody(d.el, id, d.close); }
   }
 
-  window.Help = { open, topics: TOPICS, forLocation, rememberForm };
+  window.Help = { open, topics: TOPICS, forLocation, rememberForm, feedbackHTML, wireFeedback };
 })();
