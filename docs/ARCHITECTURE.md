@@ -16,6 +16,19 @@
 
 ## 1. Overview
 
+Sales intake refinement (2026-10-13): `modules/inventory/orders.routes.ts` validates
+linked records and prevents repeated stock items on a sale; `shared/validation.ts`
+requires positive order-line quantities and valid optional dates. The desktop
+`inventory/orders.js` editor saves new sales as open, uses explicit stock links,
+shows field errors and approved-line locks, respects mutation permissions, and adapts
+to phone widths. See `tests/orders-ui.test.ts`, `tests/orders.test.ts`, and
+[the intake guide](guides/sales-order-intake.md). API direct-to-firm creation remains
+available to existing integrations.
+Intake audit adds revision-aware browser saves, preserved partial headers, read gates,
+numeric/currency limits, warehouse-only release status, and dirty/pending-save controls.
+Order-save idempotency runs after authorization; cached responses require a matching
+authenticated user, HTTP method, and endpoint. No schema migration is required.
+
 A LAN office system: **inventory**, **forms/files**, **user accounts with roles &
 departments**, and **internal messaging**. One PC runs the server; other PCs use it in a
 browser.

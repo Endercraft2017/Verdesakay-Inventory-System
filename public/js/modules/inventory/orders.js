@@ -4,6 +4,9 @@ App.register('orders', async (view, filter) => {
   const type = filter && filter.type === 'job' ? 'job' : filter && filter.type === 'purchase' ? 'purchase' : 'sale';
   const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Job Order' : 'Purchase Request';
   const state = { q: '', backorder: false };
+  const canCreate = App.hasPermission('orders.create');
+  const canEdit = App.hasPermission('orders.edit');
+  const canDelete = App.hasPermission('orders.delete');
   const qbDoc = type === 'purchase' ? 'Bill' : 'Invoice';
   let qb = { connected: false };
   try { qb = await API.get('/quickbooks/status'); } catch { /* not configured */ }
@@ -13,13 +16,11 @@ App.register('orders', async (view, filter) => {
   if (type === 'purchase') { try { suppliers = await API.get('/suppliers'); } catch { /* optional */ } }
   let customers = [];
   let locations = [];
-  let finishedProducts = [];
+  const lookupWarnings = [];
   if (type === 'sale') {
-    try { customers = await API.get('/customers'); } catch { /* optional */ }
-    try { locations = await API.get('/locations'); } catch { /* optional */ }
-    try { finishedProducts = await API.get('/finished-products'); } catch { /* optional */ }
+    try { customers = await API.get('/customers'); } catch { lookupWarnings.push('Customer records could not be loaded. You can enter walk-in details manually.'); }
+    try { locations = await API.get('/locations'); } catch { lookupWarnings.push('Stock locations could not be loaded. The existing or default ship-from location will be kept.'); }
   }
-  const fpIds = new Set(finishedProducts.map((p) => p.id));
   let taxCodes = [];
   if (type !== 'job') { try { taxCodes = await API.get('/accounting/tax-codes?active=1'); } catch { /* needs accounting.view */ } }
   const partyLabel = type === 'purchase' ? 'Vendor' : 'Customer';
@@ -28,10 +29,10 @@ App.register('orders', async (view, filter) => {
     <div class="topbar">
       <h2>${noun}s</h2>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" placeholder="Search number, customer…" /></div>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" aria-label="Search orders by number or ${partyLabel.toLowerCase()}" placeholder="Search number, ${partyLabel.toLowerCase()}…" /></div>
       ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show only approved/released orders with an unfulfilled line">${UI.icon('alert', 15)} Backorders</button>` : ''}
       ${App.hasPermission('users.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
-      <button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>
+      ${canCreate ? `<button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>` : ''}
     </div>
     <div class="panel"><div id="ord-table"></div></div>`;
 
@@ -47,14 +48,22 @@ App.register('orders', async (view, filter) => {
 
   const tableEl = view.querySelector('#ord-table');
   const money = UI.money;
+  let loadRequest = 0;
 
   async function load() {
+    const current = ++loadRequest;
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     const params = new URLSearchParams({ type });
     if (state.q) params.set('q', state.q);
     if (state.backorder) params.set('backorder', '1');
-    const list = await API.get('/orders?' + params.toString());
-    render(list);
+    try {
+      const list = await API.get('/orders?' + params.toString());
+      if (current === loadRequest && params.get('q') === (state.q || null) && params.has('backorder') === state.backorder) render(list);
+    } catch (e) {
+      if (current !== loadRequest) return;
+      tableEl.innerHTML = `<div class="empty" role="alert">${UI.esc(e.message)}<p><button class="btn secondary" id="ord-retry">Try again</button></p></div>`;
+      tableEl.querySelector('#ord-retry').onclick = load;
+    }
   }
 
   function render(list) {
@@ -63,8 +72,8 @@ App.register('orders', async (view, filter) => {
         icon: 'forms',
         title: state.backorder ? 'No backorders' : state.q ? 'No matching orders' : `No ${noun.toLowerCase()}s yet`,
         hint: state.backorder ? 'Every approved order is fully covered by stock or released units.'
-          : state.q ? 'Try a different search.' : `Create your first ${noun.toLowerCase()} to start.`,
-        action: (state.q || state.backorder) ? '' : `<button class="btn" id="ord-empty-new">${UI.icon('plus')} New ${noun}</button>`,
+          : state.q ? 'Try a different search.' : canCreate ? `Create your first ${noun.toLowerCase()} to start.` : 'No orders have been recorded yet.',
+        action: (state.q || state.backorder || !canCreate) ? '' : `<button class="btn" id="ord-empty-new">${UI.icon('plus')} New ${noun}</button>`,
       });
       const en = tableEl.querySelector('#ord-empty-new');
       if (en) en.onclick = () => orderModal(null);
@@ -72,7 +81,7 @@ App.register('orders', async (view, filter) => {
     }
     tableEl.innerHTML = `
       <table>
-        <thead><tr><th>Number</th><th>Customer</th><th>Date</th><th class="right">Total</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Number</th><th>${partyLabel}</th><th>Date</th><th class="right">Total</th><th>Status</th><th></th></tr></thead>
         <tbody>${list.map((o) => `
           <tr class="clickable" data-open="${o.id}">
             <td><strong>${UI.esc(o.number)}</strong>${type === 'job' && o.job_order_number ? `<div class="muted" style="font-size:11px">${UI.esc(o.job_order_number)} · ${UI.esc((o.job_order_status || '').replace('_', ' '))}</div>` : ''}</td>
@@ -89,8 +98,8 @@ App.register('orders', async (view, filter) => {
               ${type === 'purchase' ? `<button class="icon-btn" title="Receiving & bills" data-purch="${o.id}">${UI.icon('inbox')}</button>` : ''}
               ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
-              <button class="icon-btn" title="Edit" data-edit="${o.id}">${UI.icon('edit')}</button>
-              <button class="icon-btn danger" title="Delete" data-del="${o.id}">${UI.icon('trash')}</button>
+              ${canEdit ? `<button class="icon-btn" title="Edit" data-edit="${o.id}">${UI.icon('edit')}</button>` : ''}
+              ${canDelete ? `<button class="icon-btn danger" title="Delete" data-del="${o.id}">${UI.icon('trash')}</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
@@ -116,8 +125,14 @@ App.register('orders', async (view, filter) => {
   }
 
   async function openOrder(id) {
-    const order = await API.get('/orders/' + id);
-    orderModal(order);
+    try {
+      const order = await API.get('/orders/' + id);
+      if (type === 'sale' && order.customer_id && !customers.some((c) => c.id === order.customer_id)) {
+        customers.push(await API.get('/customers/' + order.customer_id));
+      }
+      orderModal(order);
+    }
+    catch (e) { UI.toast(e.message, 'error'); }
   }
 
   /* ---------- Stock shortfall on approve/confirm: trim, produce, or backorder ---------- */
@@ -222,61 +237,6 @@ App.register('orders', async (view, filter) => {
     });
   }
 
-  /* ---------- Allocate finished (built) units to this sale order ---------- */
-  async function allocateUnitsModal(order) {
-    const fpLines = (order.items || []).filter((li) => fpIds.has(li.item_id));
-    if (!fpLines.length) { UI.toast('No finished-product lines on this order', 'error'); return; }
-    // For each finished-product line, load its units once.
-    const perLine = await Promise.all(fpLines.map(async (li) => {
-      const units = await API.get(`/finished-products/${li.item_id}/units?status=all`).catch(() => []);
-      const inStock = units.filter((u) => u.status === 'in_stock');
-      const serial = inStock.filter((u) => u.identifier && u.identifier.trim());
-      const bulk = inStock.length - serial.length;
-      const allocated = units.filter((u) => u.status === 'sold' && String(u.order_id) === String(order.id)).length;
-      return { li, serial, bulk, allocated, ordered: Number(li.quantity) || 0 };
-    }));
-
-    UI.modal({
-      title: `Allocate finished units — ${order.number}`,
-      size: 'lg',
-      bodyHTML: `
-        <p class="muted" style="margin-top:0">Reserve built units for this order. Allocating removes them from finished-goods stock and stamps this order.</p>
-        ${perLine.map((row, i) => `
-          <div style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px" data-row="${i}">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-              <strong>${UI.esc(row.li.name)}</strong>
-              <span class="muted">ordered ${row.ordered} · allocated ${row.allocated} · in stock ${row.serial.length + row.bulk}</span>
-            </div>
-            ${row.serial.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">
-              ${row.serial.map((u) => `<label class="check"><input type="checkbox" class="al-u" data-line="${i}" value="${u.id}" /> <span class="mono">${UI.esc(u.identifier)}</span></label>`).join('')}
-            </div>` : ''}
-            ${row.bulk ? `<div class="field-row" style="margin-top:6px"><div><label>Bulk / untracked units</label>
-              <input class="al-q" data-line="${i}" type="number" min="0" max="${row.bulk}" value="0" style="width:90px" /></div></div>` : ''}
-            ${!row.serial.length && !row.bulk ? '<div class="muted" style="margin-top:4px">No units in stock — build some first.</div>' : ''}
-          </div>`).join('')}`,
-      confirmText: 'Allocate',
-      onConfirm: async (ov, showErr) => {
-        let done = 0;
-        for (let i = 0; i < perLine.length; i++) {
-          const itemId = perLine[i].li.item_id;
-          const unit_ids = [...ov.querySelectorAll(`.al-u[data-line="${i}"]:checked`)].map((c) => Number(c.value));
-          const qEl = ov.querySelector(`.al-q[data-line="${i}"]`);
-          const qty = qEl ? (parseInt(qEl.value, 10) || 0) : 0;
-          if (unit_ids.length) {
-            await API.post(`/finished-products/${itemId}/units/allocate`, { action: 'sell', order_id: order.id, unit_ids });
-            done += unit_ids.length;
-          }
-          if (qty > 0) {
-            await API.post(`/finished-products/${itemId}/units/allocate`, { action: 'sell', order_id: order.id, quantity: qty });
-            done += qty;
-          }
-        }
-        if (!done) { showErr('Pick units or enter a quantity on at least one line'); return false; }
-        UI.toast(`${done} unit${done === 1 ? '' : 's'} allocated to ${order.number}`);
-      },
-    });
-  }
-
   /* ---------- Start a production run linked to this job order ---------- */
   async function startProduction(orderId) {
     const [order, products, locations] = await Promise.all([
@@ -321,26 +281,42 @@ App.register('orders', async (view, filter) => {
   /* ---------- Create / edit ---------- */
   function orderModal(order) {
     const editing = !!order;
+    const readOnly = editing && !canEdit;
+    const lockLines = readOnly || (editing && type === 'sale' && !['open', 'cancelled'].includes(String(order.status).toLowerCase()));
     const lines = editing ? (order.items || []).map((it) => ({ ...it })) : [];
     const get = (k, d) => (editing && order[k] != null ? order[k] : d);
+    let initialSnapshot;
+    let saving = false;
+    let saveAttempt;
+    const snapshot = (ov) => JSON.stringify([
+      [...ov.querySelectorAll('[data-f], [data-k]')].map((el) => [el.dataset.f || el.dataset.k, el.value]),
+      lines.map((l) => [l.item_id || null, l.description || null]),
+    ]);
+    const preservedOption = (value, choices, label) => value && !choices.some((c) => String(c.id) === String(value))
+      ? `<option value="${UI.esc(value)}" selected>${UI.esc(label)} (#${UI.esc(value)})</option>` : '';
 
     // Sale orders get the release lifecycle: open → approved (unlocks warehouse
     // release) → released (auto once fully picked) → confirmed/completed (stock out).
     const STATUS_VALUES = type === 'sale'
-      ? ['open', 'approved', 'released', 'confirmed', 'completed', 'cancelled']
+      ? (editing ? ['open', 'approved', 'confirmed', 'completed', 'cancelled'] : ['open'])
       : ['open', 'confirmed', 'completed', 'cancelled'];
     const curStatus = get('status', 'open');
     const statusOpts = (STATUS_VALUES.includes(curStatus) ? STATUS_VALUES : STATUS_VALUES.concat(curStatus))
       .map((s) => `<option value="${s}" ${curStatus === s ? 'selected' : ''}>${s}</option>`).join('');
 
     const m = UI.modal({
-      title: editing ? `Edit ${order.number}` : `New ${noun}`,
+      title: editing ? `${readOnly ? 'View' : 'Edit'} ${order.number}` : `New ${noun}`,
       size: 'lg',
       bodyHTML: `
+        <div class="order-editor-intro"><strong>${editing ? 'Order details' : '1. Capture the order'}</strong>
+          <p>${readOnly ? 'You have view access to this order.' : !editing && type === 'sale' ? 'Save an open order first. Approval checks stock and hands the order to the warehouse.' : 'Review the customer, stock links, quantities, and totals before saving.'}</p></div>
+        ${lookupWarnings.length ? `<p class="order-notice" role="status">${lookupWarnings.map(UI.esc).join(' ')}</p>` : ''}
+        <section class="order-section"><h4>${partyLabel} &amp; order details</h4>
         ${type === 'sale' ? `<div class="field-row">
           <div><label>Customer (on file)</label><select data-f="customer_id"><option value="">— none / walk-in —</option>
             ${customers.map((c) => `<option value="${c.id}" ${String(get('customer_id', '')) === String(c.id) ? 'selected' : ''}>${UI.esc(c.name)}</option>`).join('')}</select></div>
           ${taxCodes.length ? `<div><label>Tax code</label><select data-f="tax_code_id"><option value="">— unclassified —</option>
+            ${preservedOption(get('tax_code_id', null), taxCodes, 'Existing tax code')}
             ${taxCodes.map((t) => `<option value="${t.id}" ${String(get('tax_code_id', '')) === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)} — ${UI.esc(t.name)}</option>`).join('')}</select></div>` : ''}
           ${locations.length ? `<div><label>Ship from</label><select data-f="location_id"><option value="">— default —</option>
             ${locations.map((l) => `<option value="${l.id}" ${String(get('location_id', '')) === String(l.id) ? 'selected' : ''}>${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('')}</select></div>` : ''}
@@ -351,58 +327,100 @@ App.register('orders', async (view, filter) => {
         </div>
         ${type === 'purchase' ? `<div class="field-row">
           <div><label>Supplier (on file)</label><select data-f="supplier_id"><option value="">— none —</option>
+            ${preservedOption(get('supplier_id', null), suppliers, get('customer_name', 'Existing supplier'))}
             ${suppliers.map((s) => `<option value="${s.id}" ${String(get('supplier_id', '')) === String(s.id) ? 'selected' : ''}>${UI.esc(s.name)}</option>`).join('')}</select></div>
           <div><label>Expected delivery</label><input data-f="expected_date" type="date" value="${UI.esc(get('expected_date', ''))}" /></div>
         </div>` : ''}
         <div class="field-row">
           <div><label>Order date</label><input data-f="order_date" type="date" value="${UI.esc(get('order_date', ''))}" /></div>
           <div><label>Status</label><select data-f="status">${statusOpts}</select></div>
-          <div><label>Currency</label><input data-f="currency" value="${UI.esc(get('currency', 'PHP'))}" /></div>
+          <div><label>Currency</label><input data-f="currency" maxlength="3" placeholder="PHP" value="${UI.esc(get('currency', 'PHP'))}" /></div>
         </div>
-        <label style="margin-top:14px">Line items</label>
+        </section><section class="order-section"><h4>Items to supply</h4>
+        ${lockLines ? `<p class="order-notice">${readOnly ? 'Line items are read-only.' : 'Line items and tax are locked after approval. Reopen the order before changing them; reopening clears warehouse reservations.'}</p>` : '<p class="muted">Choose inventory for goods to supply. Use a non-stock line for services or charges; it does not reserve, produce, or deduct stock.</p>'}
         <div class="line-items"><table class="line-table"><thead><tr>
           <th>Item</th><th>SKU</th><th class="right">Qty</th><th>Unit</th><th class="right">Unit Price</th>${taxCodes.length ? '<th>Tax code</th>' : ''}<th class="right">Total</th><th></th>
         </tr></thead><tbody id="ord-lines"></tbody></table></div>
         <div class="line-actions">
-          <button type="button" class="btn secondary small" id="ord-add-inv">${UI.icon('inventory', 15)} Add inventory item</button>
-          <button type="button" class="btn secondary small" id="ord-add-blank">${UI.icon('plus', 15)} Add blank line</button>
-          ${editing && type === 'sale' && (order.items || []).some((li) => fpIds.has(li.item_id))
-            ? `<button type="button" class="btn secondary small" id="ord-allocate">${UI.icon('sparkles', 15)} Allocate finished units</button>` : ''}
+          ${!lockLines ? `<button type="button" class="btn secondary small" id="ord-add-inv">${UI.icon('inventory', 15)} Add inventory item</button>
+          <button type="button" class="btn secondary small" id="ord-add-blank">${UI.icon('plus', 15)} Add non-stock line</button>` : ''}
+
         </div>
+        <div id="ord-line-summary" class="muted" aria-live="polite"></div></section>
+        <section class="order-section"><h4>Charges &amp; notes</h4>
         <div class="order-totals">
           <div class="row"><span>Subtotal</span><strong id="ord-subtotal">0.00</strong></div>
-          <div class="row"><span>Tax %</span><input data-f="tax_percent" type="number" step="0.01" value="${UI.esc(String(get('tax_percent', 0)))}" style="width:90px" /></div>
+          <div class="row"><label for="ord-tax-percent">Tax %</label><input id="ord-tax-percent" data-f="tax_percent" type="number" min="0" max="100" step="0.01" value="${UI.esc(String(get('tax_percent', 0)))}" style="width:90px" /></div>
           <div class="row"><span>Tax amount</span><span id="ord-tax">0.00</span></div>
           <div class="row grand"><span>Total</span><strong id="ord-total">0.00</strong></div>
         </div>
         <label style="margin-top:6px">Notes</label>
-        <textarea data-f="notes">${UI.esc(get('notes', ''))}</textarea>`,
-      confirmText: editing ? 'Save order' : 'Create order',
+        <textarea data-f="notes" placeholder="Customer requirements, delivery instructions, or internal notes">${UI.esc(get('notes', ''))}</textarea></section>`,
+      confirmText: readOnly ? null : editing ? 'Save order' : type === 'sale' ? 'Save open order' : 'Create order',
+      cancelText: readOnly ? 'Close' : 'Cancel',
       onOpen: (ov) => {
         const body = ov.querySelector('#ord-lines');
         const taxEl = ov.querySelector('[data-f="tax_percent"]');
+        ov.classList.add('order-editor');
+        accessibleDialog(ov);
+        const guardClose = async (e) => {
+          const closing = e.type === 'click' ? e.target.closest('[data-close]') : e.target === ov;
+          if (!closing || readOnly || (!saving && snapshot(ov) === initialSnapshot)) return;
+          e.preventDefault(); e.stopImmediatePropagation();
+          if (saving) { UI.toast('Wait for the save to finish.'); return; }
+          if (await UI.confirmDialog('Discard your unsaved order changes?', 'Discard changes')) m.close();
+        };
+        ov.addEventListener('click', guardClose, true);
+        ov.addEventListener('mousedown', guardClose, true);
+        // Associate visible labels with their controls, including keyboard/screen-reader use.
+        ov.querySelectorAll('[data-f]').forEach((el) => {
+          el.id = el.id || 'ord-' + el.dataset.f;
+          const label = el.parentElement.querySelector('label');
+          if (label) label.htmlFor = el.id;
+        });
+        const notes = ov.querySelector('[data-f="notes"]');
+        notes.previousElementSibling.htmlFor = notes.id;
+        if (readOnly) ov.querySelectorAll('[data-f]').forEach((el) => el.disabled = true);
+        taxEl.disabled = lockLines;
+        if (lockLines) {
+          ov.querySelector('[data-f="currency"]').disabled = true;
+          const taxCode = ov.querySelector('[data-f="tax_code_id"]');
+          if (taxCode) taxCode.disabled = true;
+        }
+        const shipFrom = ov.querySelector('[data-f="location_id"]');
+        if (shipFrom && editing && (order.released_at || order.fulfilled_at)) shipFrom.disabled = true;
+        const customerEl = ov.querySelector('[data-f="customer_id"]');
+        if (customerEl && !readOnly) customerEl.onchange = () => {
+          const customer = customers.find((c) => String(c.id) === customerEl.value);
+          ov.querySelector('[data-f="customer_name"]').value = customer ? customer.name : '';
+          ov.querySelector('[data-f="customer_contact"]').value = customer ? customer.contact_person || customer.phone || '' : '';
+        };
 
         function recompute() {
           let subtotal = 0;
           lines.forEach((l, i) => {
-            l.line_total = (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
+            l.line_total = Math.round(((Number(l.quantity) || 0) * (Number(l.unit_price) || 0) + Number.EPSILON) * 100) / 100;
             subtotal += l.line_total;
             const cell = body.querySelector(`[data-total="${i}"]`);
             if (cell) cell.textContent = money(l.line_total);
           });
           const taxPct = Number(taxEl.value) || 0;
-          const tax = subtotal * taxPct / 100;
+          subtotal = Math.round((subtotal + Number.EPSILON) * 100) / 100;
+          const tax = Math.round((subtotal * taxPct / 100 + Number.EPSILON) * 100) / 100;
           ov.querySelector('#ord-subtotal').textContent = money(subtotal);
           ov.querySelector('#ord-tax').textContent = money(tax);
           ov.querySelector('#ord-total').textContent = money(subtotal + tax);
+          const stockLines = lines.filter((l) => l.item_id).length;
+          ov.querySelector('#ord-line-summary').textContent = `${lines.length} line${lines.length === 1 ? '' : 's'} · ${stockLines} linked to inventory · ${lines.length - stockLines} non-stock`;
         }
 
         const taxCell = (l) => {
           if (!taxCodes.length) return '';
           const opts = ['<option value="">— doc default —</option>'].concat(
+            preservedOption(l.tax_code_id, taxCodes, 'Existing tax code'),
             taxCodes.map((t) => `<option value="${t.id}" ${String(l.tax_code_id || '') === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)}</option>`)
           ).join('');
-          return `<td><select data-k="tax_code_id" style="width:120px">${opts}</select></td>`;
+          return `<td data-label="Tax code"><select data-k="tax_code_id" style="width:120px">${opts}</select></td>`;
         };
 
         function renderLines() {
@@ -413,79 +431,116 @@ App.register('orders', async (view, filter) => {
           }
           body.innerHTML = lines.map((l, i) => `
             <tr data-row="${i}">
-              <td><input data-k="name" value="${UI.esc(l.name || '')}" placeholder="Item name" />${
+              <td data-label="Item"><input data-k="name" value="${UI.esc(l.name || '')}" placeholder="Item name" maxlength="200" /><div class="order-link-hint">${l.item_id ? `${UI.icon('inventory', 12)} Linked inventory item · #${l.item_id}` : 'Non-stock · service or charge'}</div>${!lockLines ? `<button type="button" class="order-link-btn" data-link="${i}">${l.item_id ? 'Change inventory item' : 'Link inventory item'}</button>${l.item_id ? ` <button type="button" class="order-link-btn" data-unlink="${i}">Make non-stock</button>` : ''}` : ''}${
                 type === 'sale' && (l.allocated_qty || l.reserved_qty || l.released_qty)
                   ? `<div class="muted" style="font-size:11px">${
                       Math.max(Number(l.allocated_qty || 0) + Number(l.reserved_qty || 0), Number(l.released_qty || 0))
                     } / ${Number(l.quantity) || 0} released${Number(l.allocated_qty || 0) ? ` (${l.allocated_qty} shipped)` : ''}</div>` : ''}</td>
-              <td><input data-k="sku" value="${UI.esc(l.sku || '')}" style="width:90px" /></td>
-              <td><input data-k="quantity" type="number" step="any" value="${UI.esc(String(l.quantity ?? 1))}" class="right" style="width:70px" /></td>
-              <td><input data-k="unit" value="${UI.esc(l.unit || '')}" style="width:60px" /></td>
-              <td><input data-k="unit_price" type="number" step="0.01" value="${UI.esc(String(l.unit_price ?? 0))}" class="right" style="width:90px" /></td>
+              <td data-label="SKU"><input data-k="sku" value="${UI.esc(l.sku || '')}" style="width:90px" /></td>
+              <td data-label="Quantity"><input data-k="quantity" type="number" min="0" step="any" inputmode="decimal" value="${UI.esc(String(l.quantity ?? 1))}" class="right" style="width:70px" /></td>
+              <td data-label="Unit"><input data-k="unit" value="${UI.esc(l.unit || '')}" maxlength="40" style="width:60px" /></td>
+              <td data-label="Unit price"><input data-k="unit_price" type="number" min="0" step="0.01" inputmode="decimal" value="${UI.esc(String(l.unit_price ?? 0))}" class="right" style="width:90px" /></td>
               ${taxCell(l)}
-              <td class="right" data-total="${i}">0.00</td>
-              <td><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 15)}</button></td>
+              <td data-label="Line total" class="right" data-total="${i}">0.00</td>
+              <td>${!lockLines ? `<button type="button" class="icon-btn danger" data-rm="${i}" title="Remove line ${i + 1}" aria-label="Remove line ${i + 1}">${UI.icon('trash', 15)}</button>` : ''}</td>
             </tr>`).join('');
           body.querySelectorAll('[data-k]').forEach((inp) => {
+            const row = Number(inp.closest('[data-row]').dataset.row);
+            inp.setAttribute('aria-label', `Line ${row + 1} ${inp.dataset.k.replace(/_/g, ' ')}`);
+            inp.disabled = lockLines;
             const ev = inp.tagName === 'SELECT' ? 'change' : 'input';
             inp.addEventListener(ev, () => {
               const row = Number(inp.closest('[data-row]').dataset.row);
               lines[row][inp.dataset.k] = inp.value;
+              inp.removeAttribute('aria-invalid');
+              inp.removeAttribute('aria-describedby');
+              inp.parentElement.querySelector('.order-field-error')?.remove();
               recompute();
             });
           });
           body.querySelectorAll('[data-rm]').forEach((b) =>
             b.onclick = () => { lines.splice(Number(b.dataset.rm), 1); renderLines(); });
+          body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => pickInventory((it) => {
+            const i = Number(b.dataset.link);
+            if (type === 'sale' && lines.some((l, j) => j !== i && l.item_id === it.id)) {
+              UI.toast('That item is already on the order. Update its existing quantity.', 'error'); return;
+            }
+            Object.assign(lines[i], { item_id: it.id, name: it.name, sku: it.sku || '', unit: it.unit || '' });
+            renderLines();
+            body.querySelector(`[data-row="${i}"] [data-k="quantity"]`).focus();
+          }));
+          body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = () => {
+            const i = Number(b.dataset.unlink);
+            lines[i].item_id = null;
+            renderLines();
+            body.querySelector(`[data-row="${i}"] [data-k="name"]`).focus();
+          });
           recompute();
         }
 
         taxEl.addEventListener('input', recompute);
-        ov.querySelector('#ord-add-blank').onclick = () => {
+        const addBlank = ov.querySelector('#ord-add-blank');
+        if (addBlank) addBlank.onclick = () => {
           lines.push({ name: '', sku: '', quantity: 1, unit: '', unit_price: 0 });
           renderLines();
+          body.querySelector(`[data-row="${lines.length - 1}"] [data-k="name"]`).focus();
         };
-        ov.querySelector('#ord-add-inv').onclick = () => pickInventory((it) => {
+        const addInventory = ov.querySelector('#ord-add-inv');
+        if (addInventory) addInventory.onclick = () => pickInventory((it) => {
+          const existing = type === 'sale' ? lines.findIndex((l) => l.item_id === it.id) : -1;
+          if (existing >= 0) {
+            const input = body.querySelector(`[data-row="${existing}"] [data-k="quantity"]`);
+            input.focus();
+            UI.toast('Already on this order. Update the quantity on the existing line.');
+            return;
+          }
           const sale = it.attributes && it.attributes.sale_price;
           lines.push({
             item_id: it.id, name: it.name, sku: it.sku || '', quantity: 1,
             unit: it.unit || '', unit_price: Number(sale) || 0,
           });
           renderLines();
+          body.querySelector(`[data-row="${lines.length - 1}"] [data-k="quantity"]`).focus();
         });
-        const allocBtn = ov.querySelector('#ord-allocate');
-        if (allocBtn) allocBtn.onclick = () => allocateUnitsModal(order);
         renderLines();
+        initialSnapshot = snapshot(ov);
+        if (readOnly) ov.querySelector('[data-close]').focus();
       },
       onConfirm: async (ov, showErr) => {
+        if (readOnly) return false;
         const f = (k) => ov.querySelector(`[data-f="${k}"]`).value;
+        ov.querySelectorAll('[aria-invalid]').forEach((el) => { el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); });
+        ov.querySelectorAll('.order-field-error').forEach((el) => el.remove());
+        function invalid(el, message) {
+          el.setAttribute('aria-invalid', 'true');
+          const hint = document.createElement('div');
+          hint.className = 'order-field-error'; hint.textContent = message;
+          hint.id = 'ord-field-error';
+          el.setAttribute('aria-describedby', hint.id);
+          el.parentElement.appendChild(hint);
+          el.focus(); showErr(message); return false;
+        }
+        if (!lines.length) { showErr('Add at least one inventory item or non-stock line.'); ov.querySelector('#ord-add-inv')?.focus(); return false; }
+        if (!lockLines) {
+          for (const [i, l] of lines.entries()) {
+            const field = (k) => ov.querySelector(`[data-row="${i}"] [data-k="${k}"]`);
+            if (!String(l.name || '').trim()) return invalid(field('name'), `Line ${i + 1}: enter an item name.`);
+            if (!Number.isFinite(Number(l.quantity)) || Number(l.quantity) <= 0) return invalid(field('quantity'), `Line ${i + 1}: quantity must be greater than zero.`);
+            if (String(l.unit_price).trim() === '' || !Number.isFinite(Number(l.unit_price)) || Number(l.unit_price) < 0) return invalid(field('unit_price'), `Line ${i + 1}: enter a price of zero or more.`);
+          }
+        }
+        if (!lockLines && (!Number.isFinite(Number(f('tax_percent'))) || Number(f('tax_percent')) < 0 || Number(f('tax_percent')) > 100)) {
+          return invalid(ov.querySelector('[data-f="tax_percent"]'), 'Tax must be between 0 and 100%.');
+        }
+        if (!lockLines && !/^[A-Za-z]{3}$/.test(f('currency').trim())) return invalid(ov.querySelector('[data-f="currency"]'), 'Use a three-letter currency code, such as PHP.');
         const cleaned = lines
           .map((l) => ({
             item_id: l.item_id || null, name: (l.name || '').trim(), sku: l.sku || null,
             description: l.description || null, quantity: Number(l.quantity) || 0,
             unit: l.unit || null, unit_price: Number(l.unit_price) || 0,
             tax_code_id: l.tax_code_id ? Number(l.tax_code_id) : null,
-          }))
-          .filter((l) => l.name);
+          }));
         if (!cleaned.length) { showErr('Add at least one line item (with a name)'); return false; }
-
-        // Any line item typed by hand (not picked via "Add from Inventory") that doesn't
-        // match a real item by name gets offered for creation — one at a time, in order,
-        // before the order itself is saved. Matching by name is confirmed on the next line
-        // item; a matched one gets silently linked (item_id) rather than prompted again.
-        for (const line of cleaned) {
-          if (line.item_id) continue;
-          let existing = [];
-          try { existing = await API.get('/inventory?q=' + encodeURIComponent(line.name)); } catch { /* search optional */ }
-          const exact = existing.find((it) => it.name.trim().toLowerCase() === line.name.toLowerCase());
-          if (exact) { line.item_id = exact.id; continue; }
-          const wantsCreate = await UI.confirmDialog(
-            `"${line.name}" isn't in inventory yet. Create it now, so this line links to real stock?`,
-            'Create item'
-          );
-          if (!wantsCreate) continue; // keep it as a plain text line, no inventory link
-          const created = await quickCreateItemModal(line.name);
-          if (created) line.item_id = created.id;
-        }
 
         const fOpt = (k) => { const el = ov.querySelector(`[data-f="${k}"]`); return el ? el.value : null; };
         const body = {
@@ -493,6 +548,7 @@ App.register('orders', async (view, filter) => {
           order_date: f('order_date'), status: f('status'), currency: f('currency'),
           tax_percent: Number(f('tax_percent')) || 0, notes: f('notes'), items: cleaned,
         };
+        if (editing && order.revision) body.expected_revision = order.revision;
         if (type === 'purchase') {
           body.supplier_id = fOpt('supplier_id') || null;
           body.expected_date = fOpt('expected_date') || null;
@@ -501,12 +557,31 @@ App.register('orders', async (view, filter) => {
           body.customer_id = fOpt('customer_id') || null;
           if (locations.length) body.location_id = fOpt('location_id') || null;
         }
-        if (taxCodes.length) body.tax_code_id = fOpt('tax_code_id') || null;
+        body.tax_code_id = taxCodes.length ? fOpt('tax_code_id') || null : get('tax_code_id', null);
 
+        const payload = editing ? body : { type, ...body };
+        const signature = JSON.stringify(payload);
+        if (!saveAttempt || saveAttempt.signature !== signature) saveAttempt = { signature, key: 'order:' + crypto.randomUUID() };
+        saving = true;
+        const saveControls = [...ov.querySelectorAll('[data-f], [data-k], .line-actions button, [data-link], [data-unlink], [data-rm]')].filter((el) => !el.disabled);
+        saveControls.forEach((el) => el.disabled = true);
         try {
-          if (editing) await API.put('/orders/' + order.id, body);
-          else await API.post('/orders', { type, ...body });
+          if (editing) await API.put('/orders/' + order.id, payload, { idempotencyKey: saveAttempt.key });
+          else await API.post('/orders', payload, { idempotencyKey: saveAttempt.key });
         } catch (e) {
+          if (e.status >= 400 && e.status < 500) saveAttempt = null;
+          if (e.data?.code === 'stale_order') {
+            showErr(e.message);
+            const errBox = ov.querySelector('[data-modal-error]');
+            const latest = document.createElement('button');
+            latest.type = 'button'; latest.className = 'btn secondary small'; latest.textContent = 'Review latest order';
+            latest.onclick = async () => {
+              if (!(await UI.confirmDialog('Your unsaved changes will be discarded when you open the latest order. Continue?', 'Review latest order'))) return;
+              try { const current = await API.get('/orders/' + order.id); m.close(); orderModal(current); }
+              catch (error) { UI.toast(error.message, 'error'); }
+            };
+            errBox.appendChild(latest); return false;
+          }
           if (e && e.status === 409 && e.data && e.data.availability) {
             shortfallModal({
               orderId: editing ? order.id : null, body, lines, cleaned,
@@ -515,6 +590,9 @@ App.register('orders', async (view, filter) => {
             return false;   // keep this modal open behind the shortfall prompt
           }
           throw e;
+        } finally {
+          saving = false;
+          saveControls.forEach((el) => el.disabled = false);
         }
         UI.toast(editing ? 'Order saved' : 'Order created');
         load();
@@ -523,89 +601,71 @@ App.register('orders', async (view, filter) => {
     return m;
   }
 
-  /* ---------- Quick "this line item isn't in inventory yet" create ---------- */
-  // A lean standalone form (name/SKU/category/unit/starting qty — the same minimal set the
-  // AI assistant's create_inventory_item tool accepts) rather than reusing inventory.js's
-  // full itemModal(), which is closure-scoped to that view's own App.register callback and
-  // not reachable from here. Resolves the created item (or null if the user closes without
-  // saving) so orderModal()'s save flow can link it and move on to the next missing line.
-  function quickCreateItemModal(name) {
-    return new Promise((resolve) => {
-      let groups = [];
-      API.get('/inventory/product-groups').then((g) => {
-        groups = g;
-        const dl = document.getElementById('qi-groups-dl');
-        if (dl) dl.innerHTML = groups.map((x) => `<option value="${UI.esc(x)}"></option>`).join('');
-      }).catch(() => { /* suggestions optional */ });
-      const m = UI.modal({
-        title: 'New inventory item',
-        bodyHTML: `
-          <div class="field-row">
-            <div style="flex:1"><label>Name <span class="req">*</span></label><input data-f="qi-name" value="${UI.esc(name)}" /></div>
-            <div><label>SKU</label><input data-f="qi-sku" style="width:130px" /></div>
-          </div>
-          <div class="field-row">
-            <div><label>Category</label><input data-f="qi-category" /></div>
-            <div><label>Unit</label><input data-f="qi-unit" placeholder="pcs" style="width:100px" /></div>
-            <div><label>Starting quantity</label><input data-f="qi-qty" type="number" min="0" value="0" style="width:130px" /></div>
-          </div>
-          <div class="field-row">
-            <div style="flex:1"><label>Product group <span class="muted">(same model, different variant?)</span></label>
-              <input data-f="qi-group" list="qi-groups-dl" placeholder="e.g. Office Chair" />
-              <datalist id="qi-groups-dl"></datalist></div>
-            <div style="flex:1"><label>Spec / variant</label><input data-f="qi-spec" placeholder="e.g. Red / Large" /></div>
-          </div>
-          <p class="muted" style="font-size:12px;margin:10px 0 0">Everything else (photo, supplier, location, min stock…)
-            can be filled in later from Inventory.</p>`,
-        confirmText: 'Create item',
-        onConfirm: async (ov, showErr) => {
-          const g = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
-          const itemName = g('qi-name');
-          if (!itemName) { showErr('Name is required'); return false; }
-          const spec = g('qi-spec');
-          const created = await API.post('/inventory', {
-            name: itemName,
-            sku: g('qi-sku') || undefined,
-            category: g('qi-category') || undefined,
-            unit: g('qi-unit') || undefined,
-            quantity: Number(g('qi-qty')) || 0,
-            product_group: g('qi-group') || undefined,
-            attributes: spec ? { spec } : undefined,
-          });
-          resolve({ id: created.id, name: itemName });
-        },
-      });
-      m.overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => resolve(null)));
+  // Keep keyboard focus inside the active dialog and return it to its opener.
+  function accessibleDialog(ov) {
+    const opener = document.activeElement;
+    const dialog = ov.querySelector('.modal');
+    const title = ov.querySelector('.modal-head h3');
+    title.id = 'order-dialog-' + document.querySelectorAll('.modal-overlay').length;
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', title.id);
+    ov.addEventListener('keydown', (e) => {
+      if (ov !== ov.parentElement?.lastElementChild) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ov.querySelector('[data-close]').click(); }
+      if (e.key !== 'Tab') return;
+      const focusable = [...ov.querySelectorAll('button, input, select, textarea, [tabindex="0"]')].filter((el) => !el.disabled);
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     });
+    const observer = new MutationObserver(() => {
+      if (!ov.isConnected) {
+        observer.disconnect();
+        if (opener?.isConnected) opener.focus();
+      }
+    });
+    observer.observe(ov.parentElement, { childList: true });
   }
 
-  /* ---------- Inventory picker ---------- */
   function pickInventory(onPick) {
     const m = UI.modal({
       title: 'Add inventory item',
-      bodyHTML: `<div class="search-box">${UI.icon('search', 16)}<input id="pick-q" placeholder="Search items…" autofocus /></div>
-        <div id="pick-results" style="margin-top:12px"><div class="empty">Type to search…</div></div>`,
+      bodyHTML: `<div class="search-box">${UI.icon('search', 16)}<input id="pick-q" aria-label="Search inventory by name or SKU" placeholder="Search name or SKU…" autofocus /></div>
+        <p class="muted">Quantities shown are on hand across locations. Approval checks commitments to other orders. Zero-stock items can be ordered for production or purchasing.</p>
+        <div id="pick-results" style="margin-top:12px" aria-live="polite"></div>`,
       cancelText: 'Close',
       onOpen: (ov) => {
+        accessibleDialog(ov);
         const q = ov.querySelector('#pick-q');
         const out = ov.querySelector('#pick-results');
         let timer;
+        let request = 0;
         async function search() {
-          const items = await API.get('/inventory?q=' + encodeURIComponent(q.value.trim()));
-          if (!items.length) { out.innerHTML = '<div class="empty">No items found</div>'; return; }
+          const current = ++request;
+          out.innerHTML = '<div class="empty">Searching inventory…</div>';
+          let items;
+          try { items = await API.get('/inventory?q=' + encodeURIComponent(q.value.trim())); }
+          catch (e) {
+            if (current !== request || !ov.isConnected) return;
+            out.innerHTML = `<div class="empty" role="alert">${UI.esc(e.message)}<p><button type="button" class="btn secondary" data-retry>Try again</button></p></div>`;
+            out.querySelector('[data-retry]').onclick = search; return;
+          }
+          if (current !== request || !ov.isConnected) return;
+          if (!items.length) { out.innerHTML = '<div class="empty">No items found. Try a different name or SKU.</div>'; return; }
           out.innerHTML = items.slice(0, 20).map((it) => {
             const spec = it.attributes && typeof it.attributes === 'object' ? it.attributes.spec : null;
             const variant = [it.product_group, spec].filter(Boolean).map(String).join(' · ');
             return `
-            <div class="pick-row" data-id="${it.id}">
-              <div><strong>${UI.esc(it.name)}</strong> <span class="muted mono">${UI.esc(it.sku || '')}</span>${variant ? ` <span class="muted">${UI.esc(variant)}</span>` : ''}</div>
-              <div class="muted">${it.quantity} ${UI.esc(it.unit || '')}</div>
-            </div>`;
-          }).join('');
+            <button type="button" class="pick-row order-pick-row" data-id="${it.id}">
+              <span><strong>${UI.esc(it.name)}</strong> <span class="muted mono">${UI.esc(it.sku || '')}</span>${variant ? ` <span class="muted">${UI.esc(variant)}</span>` : ''}</span>
+              <span class="muted">${it.quantity} ${UI.esc(it.unit || '')} on hand</span>
+            </button>`;
+          }).join('') + (items.length > 20 ? '<p class="muted">Showing the first 20 matches. Refine your search to find another item.</p>' : '');
           out.querySelectorAll('[data-id]').forEach((row) =>
-            row.onclick = () => { onPick(items.find((x) => x.id == row.dataset.id)); m.close(); });
+            row.onclick = () => { m.close(); queueMicrotask(() => onPick(items.find((x) => x.id == row.dataset.id))); });
         }
-        q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 250); });
+        q.addEventListener('input', () => { ++request; clearTimeout(timer); timer = setTimeout(search, 250); });
         search();
       },
     });
@@ -733,7 +793,7 @@ App.register('orders', async (view, filter) => {
     state.q = e.target.value.trim();
     searchTimer = setTimeout(load, 250);
   });
-  view.querySelector('#ord-new').addEventListener('click', () => orderModal(null));
+  view.querySelector('#ord-new')?.addEventListener('click', () => orderModal(null));
 
   await load();
   // filter.id deep-links straight into one order's edit modal (used by the AI assistant's

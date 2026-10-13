@@ -250,6 +250,22 @@
         <p>Numbers (SO-#####, JO-#####, PR-#####) are assigned automatically. Totals and
         tax are computed for you. Use <b>Templates</b> to control how the printed
         document looks.</p>
+        <h4>Capture the order</h4>
+        <p>New sale orders use <b>Save open order</b>. Choose a customer on file to fill
+        their name/contact, or enter walk-in details. Use <b>Add inventory item</b> for
+        goods and <b>Add non-stock line</b> for services or charges. A typed name never
+        links to stock automatically; use <b>Link inventory item</b> to make that choice.
+        Each stock item appears once per sale order — update its quantity instead of
+        adding a second line. Quantities must be positive; zero-priced lines are allowed.
+        The picker shows <b>on-hand</b> stock; availability is checked at approval.</p>
+        <p>After approval, lines, tax, and currency are visibly locked. Save the order as
+        <b>open</b> first if you need to change them; this clears warehouse reservations.
+        View-only users can inspect the order without save/delete controls. On smaller
+        screens the editor displays line items as cards.</p>
+        <p>If someone else edits the order, your save is blocked and your changes stay
+        visible. <b>Review latest order</b> loads their version after asking whether to
+        discard yours. Closing also asks before discarding unsaved changes. Warehouse
+        picking sets <b>released</b> automatically; it is not a manual intake status.</p>
         <h4>Sale-order release</h4>
         <p>A sale order runs <b>open → approved → released → confirmed/completed</b>.
         <b>Approving is blocked if a line can't be met from stock</b> — you're prompted to

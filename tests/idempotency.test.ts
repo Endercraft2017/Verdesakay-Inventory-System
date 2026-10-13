@@ -70,4 +70,19 @@ describe('idempotency', () => {
     const detail = await ctx.api.get(`/api/inventory/${id}`).set(hdr());
     expect(detail.body.quantity).toBe(16);
   });
+  it('never serves a cached private response without authentication', async () => {
+    const id = await makeItem(20);
+    const key = 'idem-private-0001';
+    await ctx.api.post(`/api/inventory/${id}/adjust`).set(hdr()).set('Idempotency-Key', key).send({ change: -2 });
+    const res = await ctx.api.post(`/api/inventory/${id}/adjust`).set('Idempotency-Key', key).send({ change: -2 });
+    expect(res.status).toBe(401);
+    expect(res.headers['idempotency-replayed']).toBeUndefined();
+  });
+  it('does not reuse a key for a different resource', async () => {
+    const first = await makeItem(20), second = await makeItem(20);
+    const key = 'idem-resource-0001';
+    await ctx.api.post(`/api/inventory/${first}/adjust`).set(hdr()).set('Idempotency-Key', key).send({ change: -2 });
+    expect((await ctx.api.post(`/api/inventory/${second}/adjust`).set(hdr()).set('Idempotency-Key', key).send({ change: -2 })).status).toBe(409);
+    expect((await ctx.api.get(`/api/inventory/${second}`).set(hdr())).body.quantity).toBe(20);
+  });
 });
