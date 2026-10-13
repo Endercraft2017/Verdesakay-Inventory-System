@@ -63,9 +63,9 @@ export async function exportDocx(input: {
         if (['em', 'i'].includes(n.name) || s['font-style'] === 'italic')
             format.italics = true;
         if (s['font-style'] === 'normal') format.italics = false;
-        if (n.name === 'u' || s['text-decoration']?.includes('underline'))
+        if (n.name === 'u' || (s['text-decoration-line'] || s['text-decoration'])?.includes('underline'))
             format.underline = {};
-        if (['s', 'strike'].includes(n.name) || (n.name === 'del' && !n.attribs['data-doc-change']) || (s['text-decoration'] || s['text-decoration-line'])?.includes('line-through'))
+        if (['s', 'strike'].includes(n.name) || (n.name === 'del' && !n.attribs['data-doc-change']) || (s['text-decoration-line'] || s['text-decoration'])?.includes('line-through'))
             format.strike = true;
         if (n.name === 'sup')
             format.superScript = true;

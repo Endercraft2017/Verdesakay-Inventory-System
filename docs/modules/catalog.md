@@ -954,3 +954,11 @@ highlight. Temporary bookmarks restore selection and are removed before snapshot
 Immutable run operations preserve annotations/atomic nodes; owned runs are reused.
 Word conversion shares run-format inheritance and exports explicit resets/highlights and
 formatted revision text. No persistence-schema change is introduced.
+
+Phase-2 caret marks now own bold/italic/font/size/color/highlight state without writing
+empty formatting runs or creating undo entries. Marked text insertion and committed IME
+formatting use the model helpers; tracked typing keeps revision attribution. Whole-field
+marks preserve actual chip nodes and raw bindings. Selected underline/strike removal
+splits inline paint wrappers while preserving other marks, links and atoms; block/caret
+decorations and general typing/deletion remain on the native adapter. Word export and
+sanitized paste retain text-decoration-line. No database or mobile-shell change is needed.

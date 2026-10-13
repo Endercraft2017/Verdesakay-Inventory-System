@@ -230,3 +230,53 @@ Limits and next slice:
 
 Next: phase 2, slice 3 — pending marks and selected-run normalization, atomic-field marks,
 then inherited decoration handling and model-owned insertion/deletion commands.
+
+### Phase 2, slice 3 — caret marks, atomic fields and inline decorations
+
+Implemented:
+- Bold/italic, font family, point size, text color and highlight choices at a caret are
+  explicit, ephemeral editor marks. Choosing them changes toolbar state without changing
+  saved HTML, dirty status or undo history. Moving the caret/selection, restoring history,
+  changing editor modes and replacing the document clear these marks.
+- Ordinary marked typing uses an owned text-insertion operation, rather than browser
+  pending formatting. Identical adjacent/nested owned runs are coalesced without losing
+  the caret, attributes or field nodes. Marked runs preserve typed spacing through saved
+  white-space styling. The inserted text and formatting undo together.
+- Composition stays native until commit. Committed text is resolved backwards from the
+  final caret across inline boundaries, then marked once. Intermediate composition
+  selections do not clear the marks. Existing revision-aware typing retains its handler
+  and attribution; only the newly inserted text receives pending marks.
+- Field positions use atomic offsets 0/1. Whole selected field/formula chips receive a
+  surrounding owned run, retaining their actual DOM node and canonical raw binding.
+  Mixed text/field selections format both. Control tokens, derived objects, hidden content,
+  review deletions and opaque SVG remain protected. Styled chips display inherited marks.
+- Selected underline/strike use owned runs. Removing inherited inline decorations splits
+  the affected wrappers and removes their own paint only around selected content, rather
+  than trying to cancel an ancestor with a child CSS reset. Other decorations, surrounding
+  text, link attributes, review attribution and field identity remain; split clones do not
+  duplicate element ids or block ids. Default hyperlink underlines are supported.
+- Paste retains text-decoration-line; Word export recognizes that property, including
+  formatted field bindings and revisions. No schema/runtime/dependency change is added.
+
+Verification: model/command/composition/template-corpus/Word-export tests cover partial and
+backwards ranges, atomic identity, locks, combined decorations, unchanged content/history
+when choosing caret marks, committed composition, and formatting with undo/redo. Chromium
+checks disable native inline commands, then verify marked typing/run normalization, IME,
+tracked typing, whole fields, partial inherited decorations and real shared API saves.
+Existing measured multipage/grid printing remains in the release acceptance set.
+
+Limits: HTML snapshots remain authoritative. Structural decoration removal is a bounded
+live adapter, not yet an immutable full-tree rewrite. Block-level decoration removal,
+collapsed-caret underline/strike, superscript/subscript and Clear Formatting retain the
+browser adapter. Unmarked typing, paragraph structure, general deletion and replacement
+are not yet owned by the document model. Composition with tracking remains unsupported.
+
+Next: phase 2, slice 4 — model-owned general text insertion/deletion and selection
+replacement, caret decorations/clear formatting, and broader run normalization. Complete
+phase 2 acceptance before starting the table/page-layout phase.
+
+Release verification: TypeScript passes. The integrated full suite passed 2,280 tests;
+its only failure was the newly added cloud owner-password route missing its documented
+sync-audit exception. That exception is corrected, and all 31 sync-audit/owner-console/MFA
+checks pass on rerun. Final model/editor/reliability checks: 71 tests pass. Chromium editor
+and measured-print checks pass with the incoming password-change policy enabled.

@@ -64,3 +64,10 @@ it('exports explicit bold/italic resets, highlight and formatted revision runs',
  const result=await exportDocx({...options,body}),zip=await JSZip.loadAsync(result.buffer),xml=await zip.file('word/document.xml')!.async('string');
  expect(xml).toContain('<w:b w:val="false"');expect(xml).toContain('<w:i w:val="false"');expect(xml).toContain('w:fill="ffff00"');expect(xml).toContain('w:author="Reviewer"');expect(xml).toMatch(/<w:ins[^>]*>[\s\S]*?<w:b\/>[\s\S]*?Reviewed/);expect(xml).toContain('w:ascii="Georgia"');expect(xml).toContain('w:sz w:val="36"');expect(xml).toContain('ff0000');const deletion=xml.match(/<w:del\b[\s\S]*?<\/w:del>/)![0];expect(deletion).toContain('Removed');expect(deletion).not.toContain('<w:strike');
 });
+
+it('exports model decoration lines and structurally removed decorations without changing field bindings',async()=>{
+ const body='<p><u><s>Before </s></u><span data-keep="yes"><s><span data-doc-run="inline">middle</span></s></span><u><s> after</s></u><span data-doc-run="inline" style="text-decoration-line:underline line-through">{{employee.name}}</span></p>';
+ const result=await exportDocx({...options,body}),zip=await JSZip.loadAsync(result.buffer),xml=await zip.file('word/document.xml')!.async('string');
+ const runs=xml.match(/<w:r>[\s\S]*?<\/w:r>/g)!;const middle=runs.find(run=>run.includes('middle'))!,field=runs.find(run=>run.includes('{{employee.name}}'))!;
+ expect(middle).toContain('<w:strike');expect(middle).not.toContain('<w:u ');expect(field).toContain('<w:u ');expect(field).toContain('<w:strike');expect(xml).toContain('Before ');expect(xml).toContain(' after');
+});

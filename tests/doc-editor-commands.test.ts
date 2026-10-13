@@ -118,8 +118,30 @@ describe('document command dispatch',()=>{
   expect(doc.execCommand).not.toHaveBeenCalled();expect(root.querySelectorAll('[data-doc-run]')).toHaveLength(1);expect(root.querySelector('[data-doc-run]').style.fontSize).toBe('18pt');expect(root.querySelector('[data-doc-run]').style.fontFamily).toBe('Georgia');
   ed._history.undo();expect(root.querySelector('[data-doc-run]').style.color).toBe('');ed._history.redo();expect(root.querySelector('[data-doc-run]').style.color).toBe('rgb(255, 0, 0)');expect(w.getSelection().toString()).toBe('Original');
  });
- it('retains native pending-format behavior for a collapsed caret',()=>{
-  const {doc,root,ed,select}=setup('<p>Text</p>',true);select(root.querySelector('p').firstChild,2,2);doc.execCommand.mockClear();expect(ed.commands.run('format.bold')).toBe(true);expect(doc.execCommand).toHaveBeenCalledWith('bold',false,undefined);
+ it('owns caret marks without dirtying content, then applies them to typing as one undo step',()=>{
+  const {w,doc,root,ed,select}=setup('<p>Text</p>',true);select(root.querySelector('p').firstChild,2,2);doc.execCommand.mockClear();const before=root.innerHTML;
+  expect(ed.commands.run('format.bold')).toBe(true);ed.commands.run('format.size',18);expect(doc.execCommand).not.toHaveBeenCalled();expect(root.innerHTML).toBe(before);expect(ed.commands.state('edit.undo').enabled).toBe(false);expect(ed.commands.state('format.bold').active).toBe(true);
+  const input=new w.InputEvent('beforeinput',{inputType:'insertText',data:'X',bubbles:true,cancelable:true});root.dispatchEvent(input);expect(input.defaultPrevented).toBe(true);
+  expect(root.querySelector('[data-doc-run]').textContent).toBe('X');expect(root.querySelector('[data-doc-run]').style.fontWeight).toBe('bold');expect(root.querySelector('[data-doc-run]').style.fontSize).toBe('18pt');ed._history.undo();expect(root.innerHTML).toBe(before);ed._history.redo();expect(root.querySelector('[data-doc-run]').textContent).toBe('X');
+ });
+ it('clears pending marks when the caret moves and allows a toggle back off',()=>{
+  const {root,ed,select}=setup('<p>Text</p>',true);select(root.querySelector('p').firstChild,2,2);ed.commands.run('format.bold');ed.commands.run('format.bold');expect(ed.commands.state('format.bold').active).toBe(false);ed.commands.run('format.bold');select(root.querySelector('p').firstChild,0,0);expect(ed.commands.state('format.bold').active).toBe(false);expect(ed.commands.state('edit.undo').enabled).toBe(false);
+ });
+
+ it('applies caret marks after a committed composition and keeps it in one history step',async()=>{
+  const {w,doc,root,ed,select}=setup('<p><ins data-doc-change="r" data-doc-author="Reviewer">Added</ins></p>',true);const p=root.querySelector('p');select(p,p.childNodes.length,p.childNodes.length);ed.commands.run('format.italic');const before=root.innerHTML;
+  root.dispatchEvent(new w.CompositionEvent('compositionstart',{bubbles:true}));root.dispatchEvent(new w.InputEvent('beforeinput',{inputType:'insertCompositionText',data:'日本',bubbles:true,isComposing:true}));const text=p.querySelector('ins').firstChild;text.appendData('日本');w.getSelection().setBaseAndExtent(text,7,text,7);root.dispatchEvent(new w.InputEvent('input',{inputType:'insertCompositionText',bubbles:true,isComposing:true}));expect(root.querySelector('[data-doc-run]')).toBeNull();
+  w.getSelection().setBaseAndExtent(text,5,text,7);root.dispatchEvent(new w.InputEvent('beforeinput',{inputType:'insertCompositionText',data:'日本',bubbles:true,isComposing:true}));w.getSelection().collapse(text,7);root.dispatchEvent(new w.CompositionEvent('compositionend',{data:'日本',bubbles:true}));await Promise.resolve();
+  expect(root.querySelector('[data-doc-run]').textContent).toBe('日本');expect(root.querySelector('[data-doc-run]').style.fontStyle).toBe('italic');expect(root.querySelector('ins').dataset.docAuthor).toBe('Reviewer');ed._history.undo();expect(root.innerHTML).toBe(before);ed._history.redo();expect(root.querySelector('[data-doc-run]').textContent).toBe('日本');
+ });
+ it('formats inherited underline through the registered command and preserves undo',()=>{
+  const {doc,root,ed,select}=setup('<p><u><s>Before middle after</s></u></p>',true);select(root.querySelector('s').firstChild,13,7);doc.execCommand.mockClear();expect(ed.commands.run('format.underline')).toBe(true);expect(doc.execCommand).not.toHaveBeenCalled();expect(ed.commands.state('format.underline').active).toBe(false);expect(ed.commands.state('format.strike').active).toBe(true);ed._history.undo();expect(root.querySelector('u').textContent).toBe('Before middle after');ed._history.redo();expect(ed.commands.state('format.underline').active).toBe(false);
+ });
+
+ it('keeps styled field tokens atomic for keyboard navigation, deletion and undo',()=>{
+  const {w,doc,root,ed,select}=setup('<p>Before {{name}}after</p>',true);const chip=root.querySelector('.doc-chip'),range=doc.createRange();range.selectNode(chip);w.getSelection().removeAllRanges();w.getSelection().addRange(range);doc.dispatchEvent(new w.Event('selectionchange'));ed.commands.run('format.bold');
+  let p=root.querySelector('p');select(p.lastChild,0,0);root.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true}));expect(w.getSelection().anchorNode).toBe(chip.parentElement);expect(w.getSelection().anchorOffset).toBe(0);
+  select(p.lastChild,0,0);root.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));expect(root.querySelector('.doc-chip')).toBeNull();expect(root.querySelector('[data-doc-run]')).toBeNull();ed._history.undo();p=root.querySelector('p');expect(p.querySelector('.doc-chip').dataset.token).toBe('name');expect(p.querySelector('[data-doc-run]').style.fontWeight).toBe('bold');expect(w.getSelection().anchorNode).toBe(p.lastChild);
  });
 
 });

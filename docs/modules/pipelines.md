@@ -763,3 +763,13 @@ with ephemeral selection bookmarks, produces immutable run changes and patches s
 text/attributes. It then restores anchor/focus and removes bookmarks before history/shared
 publish snapshots. Atomic/derived/review-deleted content stays unchanged. Word conversion
 keeps explicit inherited-format resets and emits per-run formatting inside revisions.
+
+Caret formatting choices store ephemeral marks and update toolbar state only. Captured
+beforeinput starts the existing history transaction; marked ordinary text inserts an owned
+run, while native composition is marked after commit using its final text range. Tracked
+text first creates attributed revisions, then applies marks only to the inserted text.
+Normalization coalesces identical owned runs and restores the caret before snapshots.
+Whole-field formatting wraps the live chip; serialization replaces only the chip with its
+raw binding. Selected inline decoration removal isolates the selected wrapper fragments,
+keeps unselected paint and other marks, and removes all temporary bookmarks before history,
+shared saves and Word export. General deletion and block/caret decorations remain native.

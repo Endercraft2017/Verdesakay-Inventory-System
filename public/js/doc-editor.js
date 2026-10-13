@@ -183,8 +183,8 @@ function createDocCommandRegistry(context) {
     if(def.history){def.run();return true;}
     context.before();
     try {
-      if(def.run(value)===false)return false;
-      context.changed();return true;
+      const result=def.run(value);if(result===false)return false;
+      if(result?.pending)context.pending?.();else context.changed();return true;
     } catch(err) {context.error(err);return false;}
     finally {context.after();}
   }
@@ -195,7 +195,7 @@ function createDocCommandRegistry(context) {
 /* ---- paste sanitizer (allowlist; keeps our chips/tables, strips Word/web cruft) ---- */
 const SANITIZE_TAGS = new Set(['P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUP', 'SUB', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'FIGURE', 'FIGCAPTION', 'UL', 'OL', 'LI', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'SPAN', 'DIV', 'A', 'IMG', 'HR', 'FONT', 'BLOCKQUOTE', 'INS', 'DEL']);
 const SANITIZE_ATTR = { A: ['href'], IMG: ['src', 'alt'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
-const SANITIZE_STYLE = ['color', 'background-color', 'background', 'text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'width', 'page-break-after', 'break-after',
+const SANITIZE_STYLE = ['color', 'background-color', 'background', 'text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'white-space', 'width', 'page-break-after', 'break-after',
   'position', 'left', 'top', 'right', 'bottom', 'height', 'z-index', 'border', 'border-color', 'border-radius', 'padding', 'margin-bottom', 'line-height', 'display', 'visibility', 'object-fit', 'object-position', 'clip-path', 'filter', 'rotate', 'opacity', 'margin-top', 'margin-left', 'margin-right', 'text-indent', 'vertical-align', 'table-layout', 'border-collapse', 'border-width', 'border-style', 'break-inside', 'page-break-inside','column-count','column-gap','break-before','page-break-before','box-shadow'];
 const SANITIZE_DATA = ['data-token', 'data-repeat', 'data-checked', 'data-var-src', 'data-float-kind', 'data-doc-name', 'data-doc-locked', 'data-doc-hidden', 'data-doc-run','data-doc-node', 'data-doc-toc','data-doc-toc-page','data-doc-settings','data-doc-config','data-doc-style','data-doc-style-version','data-doc-design-page','data-doc-page-name','data-doc-page-bg','data-doc-section','data-doc-section-name','data-doc-section-break','data-doc-section-bg','data-doc-section-width','data-doc-section-height','data-doc-section-margin','data-doc-footnote','data-doc-note-ref','data-doc-note-number','data-doc-note-text','data-doc-notes','data-doc-change','data-doc-author','data-doc-date','data-doc-numbering'];
 
@@ -566,6 +566,7 @@ function ensureStyles() {
     .doc-find button:hover{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff)}
     .doc-page img{max-width:100%}
     .doc-chip{display:inline-block;background:#f0f5fb;color:#45678e;border:1px solid #d2dfed;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;font-family:Consolas,ui-monospace,monospace;white-space:nowrap;line-height:1.5}
+    [data-doc-run="inline"]>.doc-chip{font-size:inherit;font-weight:inherit;font-style:inherit;font-family:inherit;color:inherit}
     .doc-chip-ctrl{background:#f0e6ff;color:#7a3cff;border-color:#cbb3ff}
     .doc-chip-fx{background:#eafaf0;color:#15803d;border-color:#86d3a6}
     .doc-chip::before{content:'{ }';font-size:9px;font-weight:800;opacity:.55;margin-right:5px;letter-spacing:-1px}
@@ -1280,6 +1281,41 @@ function formulaDialog(insertHtml, saveSel, getVariables, initial, sampleContext
 function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext, tabApi, getZoom, onUndo, onRedo, commandContext = {}) {
   const zoomNow = () => (typeof getZoom === 'function' ? Number(getZoom()) : 1) || 1;
   let savedRange = null, savedBackwards = false;
+  // Caret marks are ephemeral editor state. Choosing a mark creates no saved markup/history.
+  let pendingMarks = {}, pendingCaret = null, insertionStart = null, insertionText = null;
+  const clearPending = () => { pendingMarks = {}; pendingCaret = null; insertionStart = null; insertionText = null; };
+  const setPending = (property,value) => {
+    window.DocModel.validateInline(property,value);
+    pendingMarks[property]=value;pendingCaret=window.getSelection().getRangeAt(0).cloneRange();
+    return {pending:true};
+  };
+  function beforeInput(e) {
+    if(!window.DocModel||!Object.keys(pendingMarks).length)return;
+    if(commandContext.isComposing?.()&&insertionStart)return;
+    if(!e.isComposing&&typeof e.data==='string'&&/[\r\n]/.test(e.data)){clearPending();return;}
+    const sel=window.getSelection();if(!sel?.isCollapsed||!surface.contains(sel.anchorNode)){clearPending();return;}
+    if(e.cancelable&&e.inputType==='insertText'&&!e.isComposing&&!commandContext.isComposing?.()&&!trackingText()&&typeof e.data==='string'){
+      if(window.DocModel.insertMarkedText(surface,sel,e.data,pendingMarks)){
+        e.preventDefault();e.stopImmediatePropagation();insertionStart=null;pendingCaret=sel.getRangeAt(0).cloneRange();saveSel();onChange();reflect();return;
+      }
+    }
+    if(/^insert(Text|ReplacementText|CompositionText)$/.test(e.inputType)){
+      if(!insertionStart)insertionStart=sel.getRangeAt(0).cloneRange();
+      if(!commandContext.isComposing?.()&&typeof e.data==='string')insertionText=e.data;
+    }else if(!e.isComposing){clearPending();}
+  }
+  function applyPending(committedText=null) {
+    if(!insertionStart||commandContext.isComposing?.())return;
+    const start=insertionStart;insertionStart=null;committedText ??= insertionText;insertionText=null;
+    const sel=window.getSelection();if(!sel?.isCollapsed||!surface.contains(start.startContainer)||!surface.contains(sel.anchorNode)){clearPending();return;}
+    const range=typeof committedText==='string'&&committedText.length?window.DocModel.rangeBeforeCaret(surface,sel,committedText.length):document.createRange();if(!range)return;
+    if(committedText===null){range.setStart(start.startContainer,start.startOffset);range.setEnd(sel.anchorNode,sel.anchorOffset);}
+    if(range.collapsed)return;
+    sel.removeAllRanges();sel.addRange(range);
+    try{for(const [property,value] of Object.entries(pendingMarks))window.DocModel.formatSelection(surface,sel,property,value);}
+    finally{sel.collapseToEnd();window.DocModel.normalizeRuns(surface,sel);pendingCaret=sel.getRangeAt(0).cloneRange();saveSel();}
+  }
+
   const saveSel = () => {
     const sel = window.getSelection();
     if (sel?.rangeCount && surface.contains(sel.anchorNode) && surface.contains(sel.focusNode)) {
@@ -1309,29 +1345,36 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     native:(cmd,val)=>{
       const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];
       if(align && window.DocModel){const result=window.DocModel.alignSelection(surface,window.getSelection(),align);if(result!==null)return result;}
+      const decoration={underline:'underline',strikeThrough:'line-through'}[cmd];if(decoration&&window.DocModel){const sel=window.getSelection();const result=window.DocModel.formatDecoration(surface,sel,decoration,!window.DocModel.decorationActive(surface,sel,decoration));if(result!==null)return result;}
       const property={bold:'font-weight',italic:'font-style',fontName:'font-family',foreColor:'color',hiliteColor:'background-color'}[cmd];
-      if(property&&window.DocModel){const sel=window.getSelection();const value=cmd==='bold'?(window.DocModel.inlineActive(surface,sel,property)?'normal':'bold'):cmd==='italic'?(window.DocModel.inlineActive(surface,sel,property)?'normal':'italic'):val;const result=window.DocModel.formatSelection(surface,sel,property,value);if(result!==null)return result;}
+      if(property&&window.DocModel){const sel=window.getSelection();const value=cmd==='bold'?(window.DocModel.inlineActive(surface,sel,property)?'normal':'bold'):cmd==='italic'?(window.DocModel.inlineActive(surface,sel,property)?'normal':'italic'):val;const pending=sel?.isCollapsed?pendingMarks[property]:undefined;const desired=pending!==undefined&&cmd==='bold'?(pending==='bold'?'normal':'bold'):pending!==undefined&&cmd==='italic'?(pending==='italic'?'normal':'italic'):value;if(sel?.isCollapsed)return setPending(property,desired);const result=window.DocModel.formatSelection(surface,sel,property,desired);if(result!==null)return result;}
       return document.execCommand(cmd,false,val);
     },
-    active:cmd=>{const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];if(align&&window.DocModel)return window.DocModel.alignmentActive(surface,window.getSelection(),align);const property={bold:'font-weight',italic:'font-style'}[cmd];if(property&&window.DocModel){const active=window.DocModel.inlineActive(surface,window.getSelection(),property);if(active!==null)return active;}try{return document.queryCommandState(cmd);}catch{return false;}},
+    active:cmd=>{const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];if(align&&window.DocModel)return window.DocModel.alignmentActive(surface,window.getSelection(),align);const decoration={underline:'underline',strikeThrough:'line-through'}[cmd];if(decoration&&window.DocModel&&!window.getSelection()?.isCollapsed){const active=window.DocModel.decorationActive(surface,window.getSelection(),decoration);if(active!==null)return active;}const property={bold:'font-weight',italic:'font-style'}[cmd];if(property&&window.DocModel){if(window.getSelection()?.isCollapsed&&pendingMarks[property]!==undefined)return pendingMarks[property]===(cmd==='bold'?'bold':'italic');const active=window.DocModel.inlineActive(surface,window.getSelection(),property);if(active!==null)return active;}try{return document.queryCommandState(cmd);}catch{return false;}},
     size:value=>{
       const size=Number(value);if(!Number.isFinite(size)||size<1||size>400)return false;
-      if(window.DocModel){const result=window.DocModel.formatSelection(surface,window.getSelection(),'font-size',size+'pt');if(result!==null)return result;}
+      if(window.DocModel){if(window.getSelection()?.isCollapsed)return setPending('font-size',size+'pt');const result=window.DocModel.formatSelection(surface,window.getSelection(),'font-size',size+'pt');if(result!==null)return result;}
       if(document.execCommand('fontSize',false,'7')===false)return false;
       surface.querySelectorAll('font[size="7"]').forEach(f=>{f.removeAttribute('size');f.style.fontSize=size+'pt';});
     },
     deleteAtomic:target=>{
       if(!surface.contains(target) || !target.matches?.('.doc-chip,.doc-checkbox') || target.closest('[data-doc-locked="true"]'))return false;
-      const range=document.createRange();range.setStartBefore(target);target.remove();range.collapse(true);
+      clearPending();const range=document.createRange();range.setStartBefore(target);let parent=target.parentElement;target.remove();
+      while(parent?.matches('span[data-doc-run="inline"]')&&!parent.textContent&&!parent.children.length){const outer=parent.parentElement;parent.remove();parent=outer;}range.collapse(true);
       const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
     },
     undo:()=>onUndo?.(),redo:()=>onRedo?.(),canUndo:()=>commandContext.canUndo?.() ?? true,canRedo:()=>commandContext.canRedo?.() ?? true,before:()=>commandContext.before?.(),after:()=>commandContext.after?.(),
-    changed:()=>{saveSel();onChange();reflect();},error:err=>UI.toast(err.message || 'Formatting could not be applied','error'),
+    pending:()=>{saveSel();reflect();},changed:()=>{saveSel();onChange();reflect();},error:err=>UI.toast(err.message || 'Formatting could not be applied','error'),
   });
   const exec = (cmd, val) => commands.run(commands.idForNative(cmd),val);
   const insertHtml = html => commands.run('insert.html',html);
   const editorModal = options => {saveSel();return UI.modal({...options,onClose:()=>{options.onClose?.();if(surface.isConnected)restoreSel();}});};
-  const rememberSelection = () => {saveSel();};
+  const rememberSelection = () => {
+    const sel=window.getSelection();
+    if(pendingCaret&&!insertionStart&&!commandContext.isComposing?.()&&sel?.rangeCount&&surface.contains(sel.anchorNode)&&
+      (!sel.isCollapsed||sel.anchorNode!==pendingCaret.startContainer||sel.anchorOffset!==pendingCaret.startOffset))clearPending();
+    saveSel();
+  };
   document.addEventListener('selectionchange',rememberSelection);
   surface.addEventListener('input',rememberSelection);
   surface.addEventListener('focusout',rememberSelection);
@@ -1678,6 +1721,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     if(container.nodeType===3){if(back?offset!==0:offset!==container.length)return;adjacent=back?container.previousSibling:container.nextSibling;}
     else adjacent=container.childNodes[offset+(back?-1:0)];
     while(adjacent?.nodeType===3 && !adjacent.textContent)adjacent=back?adjacent.previousSibling:adjacent.nextSibling;
+    while(adjacent?.matches?.('span[data-doc-run="inline"]')){adjacent=back?adjacent.lastChild:adjacent.firstChild;while(adjacent?.nodeType===3&&!adjacent.textContent)adjacent=back?adjacent.previousSibling:adjacent.nextSibling;}
     if(!adjacent?.matches?.('.doc-chip,.doc-checkbox'))return;
     e.preventDefault();
     if(e.key.startsWith('Arrow')){commandContext.before?.();if(back)range.setStartBefore(adjacent);else range.setStartAfter(adjacent);range.collapse(true);sel.removeAllRanges();sel.addRange(range);saveSel();return;}
@@ -2219,7 +2263,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       document.removeEventListener('keydown', onFloatKeydown);
       clearSnapGuides();
     },
-    commands, normalizeFloats, selectFloat, insertHtml,
+    commands, normalizeFloats, selectFloat, insertHtml, beforeInput, applyPending, clearPending,
     blurFloats, // drop any float selection / promote bar (used for click-outside + Escape)
   };
 }
@@ -2870,7 +2914,7 @@ function open(opts = {}) {
     },onConfirm:(ov,showErr)=>{
       if(!imported){showErr('Choose a DOCX file, then convert and preview it first');return false;}
       const replace=ov.querySelector('[data-import-mode]').value==='replace';if(replace&&changeVersion!==importVersion){showErr('The document changed during conversion. Convert again or append to preserve those edits.');return false;}
-      if(mode!=='visual')setMode('visual');history.flush();const html=bodyToEditorHtml(sanitizeHtml(imported.body));if(replace)surface.innerHTML=html;else surface.insertAdjacentHTML('beforeend',html);wired.normalizeFloats();onChange();history.flush();applyZoom();UI.toast('Word content imported. Review it before saving.');
+      if(mode!=='visual')setMode('visual');history.flush();const html=bodyToEditorHtml(sanitizeHtml(imported.body));if(replace){wired.clearPending();surface.innerHTML=html;}else surface.insertAdjacentHTML('beforeend',html);wired.normalizeFloats();onChange();history.flush();applyZoom();UI.toast('Word content imported. Review it before saving.');
     }});
   });
 
@@ -2977,7 +3021,7 @@ function open(opts = {}) {
   const setStatus = (text, state = '') => { if (status) { status.textContent = text; status.dataset.state = state; } };
   function updateWordCount(){const counter=fs.querySelector('.doc-word-count');if(!counter)return;const root=surface.cloneNode(true);root.querySelectorAll('.doc-chip,.doc-float-toolbar,.doc-float-handle,.doc-page-guide,.doc-snap-guide,[data-doc-hidden="true"]').forEach(el=>el.remove());root.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,td,th,div').forEach(el=>el.append(root.ownerDocument.createTextNode(' ')));const text=(root.textContent||'').trim();const count=text?text.split(/\s+/u).length:0;counter.textContent=count+' word'+(count===1?'':'s');}
   let syncGrid=()=>{};
-  const onChange = () => { if (composing) { changeVersion++; dirty = true; setStatus('Unsaved changes', 'dirty'); return; } DocAdvanced.refresh(surface);syncGrid();refreshContents(surface);updateWordCount();markBlocks(); changeVersion++; dirty = true; setStatus('Unsaved changes', 'dirty'); clearTimeout(previewTimer); if(previewEl||pageView) previewTimer=setTimeout(refreshPreview,150); if (history) history.scheduleRecord(); if (studio) studio.change(); if(shared) shared.changed(); };
+  const onChange = () => { if (composing) { changeVersion++; dirty = true; setStatus('Unsaved changes', 'dirty'); return; } wired.applyPending();DocAdvanced.refresh(surface);syncGrid();refreshContents(surface);updateWordCount();markBlocks(); changeVersion++; dirty = true; setStatus('Unsaved changes', 'dirty'); clearTimeout(previewTimer); if(previewEl||pageView) previewTimer=setTimeout(refreshPreview,150); if (history) history.scheduleRecord(); if (studio) studio.change(); if(shared) shared.changed(); };
   [nameInp, typeSel, periodInp].filter(Boolean).forEach((el) => {
     el.addEventListener('input', onChange); el.addEventListener('change', onChange);
   });
@@ -3202,7 +3246,7 @@ function open(opts = {}) {
       restoring = true;
       try {
         nameInp.value = s.metadata.name; typeSel.value = s.metadata.type; if (periodInp) periodInp.value = s.metadata.period;
-        surface.innerHTML = bodyToEditorHtml(s.body);
+        wired.clearPending();surface.innerHTML = bodyToEditorHtml(s.body);
         wired.normalizeFloats();
         sizeSel.value = s.page.size; orientSel.value = s.page.orient;
         customWInp.value = s.page.w; customHInp.value = s.page.h; marginInp.value = s.page.margin;
@@ -3245,12 +3289,12 @@ function open(opts = {}) {
       e.preventDefault(); e.stopImmediatePropagation();
       wired.commands.run(e.inputType === 'historyUndo' ? 'edit.undo' : 'edit.redo'); return;
     }
-    history.beforeInput(e.inputType || 'input');
+    history.beforeInput(e.inputType || 'input');wired.beforeInput(e);
   }, true);
   fs.addEventListener('paste', e => { if (surface.contains(e.target)) history.boundary(); }, true);
   surface.addEventListener('compositionstart', () => { history.boundary(); composing = true; });
-  surface.addEventListener('compositionend', () => {
-    composing = false;
+  surface.addEventListener('compositionend', e => {
+    composing = false;wired.applyPending(e.data || null);
     queueMicrotask(() => { if (!closed && !composing) { onChange(); history.flush(); } });
   });
   panelsRoot.addEventListener('pointerdown', () => history.boundary(), true);
@@ -3282,6 +3326,7 @@ function open(opts = {}) {
   else mvBtn.style.display = 'none';
 
   function setMode(next) {
+    if(next!==mode)wired.clearPending();
     if (next === mode) return;
     if(next==='pages'){
       if(mode==='code')setMode('visual');
@@ -3393,6 +3438,7 @@ function open(opts = {}) {
     return { body: pageStyleTag(currentPageMm().widthMm, currentPageMm().heightMm, Number(marginInp.value) || 0) + currentBody().replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,''), name: nameInp.value, type: typeSel.value, period: periodInp?.value || '', copiesPerRecord: Number(copiesInp.value), recordsPerPage: Number(perPageInp.value), tileFill: tileFillSel.value, continuous: continuousChk.checked, repeatCount: Number(repeatInp.value),gapXmm:Number(gapXInp.value),gapYmm:Number(gapYInp.value) };
   }
   function restoreStudio(value, remote = false) {
+      wired.clearPending();
       const wasCode=mode==='code';
       const focused=document.activeElement;const selection=window.getSelection();const oldRange=selection?.rangeCount?selection.getRangeAt(0):null;
       const anchor=oldRange?.startContainer?.nodeType===3?oldRange.startContainer.parentElement:oldRange?.startContainer;

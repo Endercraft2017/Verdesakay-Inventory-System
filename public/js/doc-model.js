@@ -120,8 +120,8 @@ const DocModel = (() => {
   function validatePosition(document,point){
     if(!point||!Array.isArray(point.path)||!point.path.every(i=>Number.isInteger(i)&&i>=0))throw new Error('Invalid text position');
     const node=at(document,point.path),offset=point.offset;
-    if(node?.kind!=='text'||!Number.isInteger(offset)||offset<0||offset>node.text.length)throw new Error('Invalid text position');
-    if(offset>0&&offset<node.text.length&&/[\uD800-\uDBFF]/.test(node.text[offset-1])&&/[\uDC00-\uDFFF]/.test(node.text[offset]))throw new Error('Text position splits a Unicode character');
+    if(!['text','field'].includes(node?.kind)||!Number.isInteger(offset)||offset<0||offset>(node.kind==='field'?1:node.text.length))throw new Error('Invalid text position');
+    if(node.kind==='text'&&offset>0&&offset<node.text.length&&/[\uD800-\uDBFF]/.test(node.text[offset-1])&&/[\uDC00-\uDFFF]/.test(node.text[offset]))throw new Error('Text position splits a Unicode character');
   }
   function validateInline(property,value){
     if(property==='font-weight'&&!['bold','normal'].includes(value))throw new Error('Invalid font weight');
@@ -129,7 +129,8 @@ const DocModel = (() => {
     if(property==='font-family'&&(!/^[\p{L}\p{N}\s,'"._-]{1,150}$/u.test(value)))throw new Error('Invalid font family');
     if(property==='font-size'&&(!/^\d+(\.\d+)?pt$/.test(value)||parseFloat(value)<1||parseFloat(value)>400))throw new Error('Invalid font size');
     if(['color','background-color'].includes(property)&&!/^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i.test(value))throw new Error('Invalid text color');
-    if(!['font-weight','font-style','font-family','font-size','color','background-color'].includes(property))throw new Error('Unsupported inline format');
+    if(property==='text-decoration-line'&&!['underline','line-through','underline line-through'].includes(value))throw new Error('Invalid text decoration');
+    if(!['font-weight','font-style','font-family','font-size','color','background-color','text-decoration-line'].includes(property))throw new Error('Unsupported inline format');
   }
   /** Immutable selected-run command. Existing inline ancestors/attributes are retained. */
   function formatTextRange(document,range,property,value){
@@ -139,19 +140,21 @@ const DocModel = (() => {
     function walk(node,path,locked=false,skip=false){
       const attrs=node.attrs || [],attribute=name=>attrs.find(a=>a[0]===name)?.[1];
       locked ||= attribute('data-doc-locked')==='true';
-      skip ||= DERIVED.some(key=>attrs.some(([k])=>k===key))||attribute('data-doc-hidden')==='true'||RAW.has(node.tag)||node.kind==='field'||node.kind==='opaque'||(node.tag==='del'&&attribute('data-doc-change'))||/\bdoc-checkbox\b/.test(attribute('class') || '');
+      skip ||= DERIVED.some(key=>attrs.some(([k])=>k===key))||attribute('data-doc-hidden')==='true'||RAW.has(node.tag)||node.kind==='opaque'||(node.tag==='del'&&attribute('data-doc-change'))||/\bdoc-checkbox\b/.test(attribute('class') || '');
       if(skip)return;
-      if(node.kind==='text'){
-        const a=path.join(',')===start.path.join(',')?start.offset:0,b=path.join(',')===end.path.join(',')?end.offset:node.text.length;
-        if(comparePosition({path,offset:node.text.length},start)<=0||comparePosition({path,offset:0},end)>=0||b<=a)return;
+      if(node.kind==='text'||node.kind==='field'){
+        if(node.kind==='field'&&/^[#/]/.test(node.token))return;
+        const length=node.kind==='field'?1:node.text.length;
+        const a=path.join(',')===start.path.join(',')?start.offset:0,b=path.join(',')===end.path.join(',')?end.offset:length;
+        if(comparePosition({path,offset:length},start)<=0||comparePosition({path,offset:0},end)>=0||b<=a)return;
         if(locked)throw new Error('Selected text is locked');
         const parentPath=path.slice(0,-1),parent=at(next,parentPath),owned=parent?.tag==='span'&&parent.attrs.some(([k,v])=>k==='data-doc-run'&&v==='inline')&&parent.children.length===1;
-        if(owned&&a===0&&b===node.text.length){
-          let style=parent.attrs.find(a=>a[0]==='style');if(!style){style=['style',''];parent.attrs.push(style);}style[1]=setStyleProperty(style[1],property,value);
+        if(owned&&a===0&&b===length){
+          let style=parent.attrs.find(a=>a[0]==='style');if(!style){style=['style',''];parent.attrs.push(style);}let desired=value;if(property==='text-decoration-line'){const previous=style[1].match(/(?:^|;)\s*text-decoration(?:-line)?\s*:\s*([^;]+)/i)?.[1] || '';desired=[...new Set((previous+' '+value).trim().split(/\s+/))].filter(t=>['underline','line-through','overline'].includes(t)).join(' ');}style[1]=setStyleProperty(style[1],property,desired);
           changes.push({type:'attributes',path:parentPath,attrs:parent.attrs});return;
         }
-        const run={kind:'run',tag:'span',attrs:[['data-doc-run','inline'],['style',property+':'+value]],children:[{kind:'text',text:node.text.slice(a,b)}]};
-        const parts=[];if(a)parts.push({kind:'text',text:node.text.slice(0,a)});parts.push(run);if(b<node.text.length)parts.push({kind:'text',text:node.text.slice(b)});
+        const run={kind:'run',tag:'span',attrs:[['data-doc-run','inline'],['style',property+':'+value]],children:[node.kind==='field'?node:{kind:'text',text:node.text.slice(a,b)}]};
+        const parts=[];if(a)parts.push({kind:'text',text:node.text.slice(0,a)});parts.push(run);if(b<length)parts.push({kind:'text',text:node.text.slice(b)});
         changes.push({type:'text',path,parts});return;
       }
       node.children?.forEach((child,i)=>walk(child,[...path,i],locked,skip));
@@ -162,8 +165,14 @@ const DocModel = (() => {
     return {document:next,changes};
   }
   function editableText(root,range){
-    const texts=[],walker=root.ownerDocument.createTreeWalker(root,4);let node;
+    const texts=[],walker=root.ownerDocument.createTreeWalker(root,5);let node;
     while((node=walker.nextNode())){
+      if(node.nodeType===1){
+        if(!node.matches('.doc-chip')||/^[#/]/.test(node.dataset.token || '')||node.namespaceURI!=='http://www.w3.org/1999/xhtml'||node.closest(CHROME+',svg,math,.doc-checkbox,[data-doc-toc],[data-doc-toc-page],[data-doc-note-ref],[data-doc-note-number],.doc-page-number,[data-doc-hidden="true"],del[data-doc-change]'))continue;
+        const bounds=root.ownerDocument.createRange();bounds.selectNode(node);
+        if(range.compareBoundaryPoints(0,bounds)<=0&&range.compareBoundaryPoints(2,bounds)>=0)texts.push({node,start:0,end:1,atomic:true});
+        continue;
+      }
       if(!node.length||node.parentElement.closest('svg,math')||node.parentElement.namespaceURI!=='http://www.w3.org/1999/xhtml'||node.parentElement.closest(CHROME+',.doc-chip,.doc-checkbox,[data-doc-toc],[data-doc-toc-page],[data-doc-note-ref],[data-doc-note-number],.doc-page-number,style,script,textarea,title,del[data-doc-change],[data-doc-hidden="true"]'))continue;
       if(!range.intersectsNode(node))continue;
       const start=range.startContainer===node?range.startOffset:0,end=range.endContainer===node?range.endOffset:node.length;
@@ -175,7 +184,7 @@ const DocModel = (() => {
   function inlineActive(root,selection,property){
     if(!['font-weight','font-style'].includes(property))return null;
     if(!selection?.rangeCount||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return null;
-    const range=selection.getRangeAt(0);if(range.collapsed)return null;
+    const range=selection.getRangeAt(0);if(range.collapsed){const el=range.startContainer.nodeType===3?range.startContainer.parentElement:range.startContainer;const css=root.ownerDocument.defaultView.getComputedStyle(el);return property==='font-weight'?css.fontWeight==='bold'||Number(css.fontWeight)>=600:css.fontStyle==='italic';}
     const texts=editableText(root,range);if(!texts.length)return false;
     return texts.every(({node})=>{const css=root.ownerDocument.defaultView.getComputedStyle(node.parentElement);return property==='font-weight'?css.fontWeight==='bold'||Number(css.fontWeight)>=600:css.fontStyle==='italic';});
   }
@@ -200,8 +209,8 @@ const DocModel = (() => {
         const node=captured.refs.get(JSON.stringify(change.path));
         if(change.type==='attributes'){node.setAttribute('style',change.attrs.find(a=>a[0]==='style')[1]);continue;}
         const fragment=root.ownerDocument.createDocumentFragment();
-        for(const part of change.parts){if(part.kind==='text')fragment.append(root.ownerDocument.createTextNode(part.text));else{const span=root.ownerDocument.createElement('span');part.attrs.forEach(([k,v])=>span.setAttribute(k,v));span.textContent=part.children[0].text;fragment.append(span);}}
-        node.replaceWith(fragment);
+        for(const part of change.parts){if(part.kind==='text')fragment.append(root.ownerDocument.createTextNode(part.text));else{const span=root.ownerDocument.createElement('span');part.attrs.forEach(([k,v])=>span.setAttribute(k,v));if(part.children[0].kind!=='field')span.textContent=part.children[0].text;fragment.append(span);}}
+        if(node.nodeType===1){const span=fragment.firstChild;node.before(fragment);span.append(node);}else node.replaceWith(fragment);
       }
       return result.changes.length>0;
     }finally{
@@ -210,7 +219,117 @@ const DocModel = (() => {
       end.remove();start.remove();markerParents.forEach(parent=>parent?.normalize());
     }
   }
-  return {capture,fromHtml,toHtml,at,alignParagraphs,alignSelection,alignmentActive,comparePosition,formatTextRange,formatSelection,inlineActive};
+  function ownDecoration(el,token){
+    if(el.matches('ins[data-doc-change],del[data-doc-change]'))return false;
+    const explicit=el.style.textDecorationLine||el.style.textDecoration;
+    if(explicit)return explicit.split(/\s+/).includes(token);
+    if(token==='underline'?el.tagName==='U':['S','STRIKE','DEL'].includes(el.tagName))return true;
+    const css=el.ownerDocument.defaultView.getComputedStyle(el);return (css.textDecorationLine||css.textDecoration).split(/\s+/).includes(token);
+  }
+  function decorationAt(root,node,token){
+    for(let el=node.nodeType===3?node.parentElement:node;el&&el!==root;el=el.parentElement){
+      if(el.matches('ins[data-doc-change],del[data-doc-change]'))continue;
+      const css=root.ownerDocument.defaultView.getComputedStyle(el);
+      if(ownDecoration(el,token)||(css.textDecorationLine||css.textDecoration).split(/\s+/).includes(token))return true;
+    }
+    return false;
+  }
+  function decorationActive(root,selection,token){
+    if(!selection?.rangeCount||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return null;
+    if(selection.isCollapsed)return decorationAt(root,selection.anchorNode,token);
+    const units=editableText(root,selection.getRangeAt(0));return !!units.length&&units.every(item=>decorationAt(root,item.node,token));
+  }
+  /** Remove inline decoration structurally: descendants cannot cancel ancestor paint with CSS. */
+  function formatDecoration(root,selection,token,on){
+    if(!['underline','line-through'].includes(token))throw new Error('Invalid decoration');
+    if(!selection?.rangeCount||selection.isCollapsed||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return null;
+    if(on)return formatSelection(root,selection,'text-decoration-line',token);
+    const original=selection.getRangeAt(0).cloneRange(),initial=editableText(root,original);
+    if(!initial.length)return false;
+    for(const [node,offset] of [[original.startContainer,original.startOffset],[original.endContainer,original.endOffset]])if(node.nodeType===3&&offset>0&&offset<node.length&&/[\uD800-\uDBFF]/.test(node.data[offset-1])&&/[\uDC00-\uDFFF]/.test(node.data[offset]))throw new Error('Text position splits a Unicode character');
+    // Keep the native adapter for block decorations until block-run projection exists.
+    for(const {node} of initial){
+      if(node.parentElement.closest('[data-doc-locked="true"]'))throw new Error('Selected text is locked');
+      for(let el=node.parentElement;el&&el!==root;el=el.parentElement){
+        if(el.matches('ins[data-doc-change],del[data-doc-change]'))continue;
+        const css=root.ownerDocument.defaultView.getComputedStyle(el),paint=(css.textDecorationLine||css.textDecoration).split(/\s+/).includes(token);
+        if((ownDecoration(el,token)||paint)&&el.matches(PARAGRAPHS+',div,section,td,th'))return null;
+      }
+    }
+    const backwards=selection.anchorNode===original.endContainer&&selection.anchorOffset===original.endOffset;
+    const start=root.ownerDocument.createComment('doc-decor-start'),end=root.ownerDocument.createComment('doc-decor-end');
+    const tail=original.cloneRange();tail.collapse(false);tail.insertNode(end);const head=original.cloneRange();head.collapse(true);head.insertNode(start);
+    const clones=[],parents=new Set([start.parentNode,end.parentNode]);let changed=false;
+    try{
+      const range=root.ownerDocument.createRange();range.setStartAfter(start);range.setEndBefore(end);
+      for(const {node} of editableText(root,range)){
+        let highest=null;for(let el=node.parentElement;el&&el!==root&&!el.matches(PARAGRAPHS+',div,section,td,th');el=el.parentElement)if(ownDecoration(el,token))highest=el;
+        if(!highest)continue;
+        const stop=highest.parentNode,focus=root.ownerDocument.createElement('span');focus.dataset.docRun='inline';node.before(focus);focus.append(node);let child=focus;
+        while(child.parentNode!==stop){
+          let parent=child.parentElement;
+          const side=()=>{const clone=parent.cloneNode(false);clone.removeAttribute('id');clone.removeAttribute('data-doc-node');clones.push(clone);return clone;};
+          if(child.previousSibling){const before=side();while(parent.firstChild!==child)before.append(parent.firstChild);parent.before(before);}
+          if(child.nextSibling){const after=side();while(child.nextSibling)after.append(child.nextSibling);parent.after(after);}
+          if(ownDecoration(parent,token)){
+            const computed=parent.ownerDocument.defaultView.getComputedStyle(parent),remaining=(parent.style.textDecorationLine||parent.style.textDecoration||computed.textDecorationLine||computed.textDecoration).split(/\s+/).filter(word=>word!==token&&['underline','line-through','overline'].includes(word)).join(' ');
+            const semantic=token==='underline'?parent.tagName==='U':['S','STRIKE','DEL'].includes(parent.tagName);
+            if(semantic){const replacement=root.ownerDocument.createElement('span');for(const attr of parent.attributes)replacement.setAttribute(attr.name,attr.value);replacement.append(...parent.childNodes);parent.replaceWith(replacement);parent=replacement;}
+            for(const property of ['text-decoration','text-decoration-line']){
+              const value=parent.style.getPropertyValue(property);if(value){const next=value.split(/\s+/).filter(word=>word!==token).join(' ');parent.style.setProperty(property,next||'none');}
+            }
+            parent.style.textDecorationLine=remaining||'none';
+          }
+          child=parent;
+        }
+        changed=true;
+      }
+      return changed;
+    }finally{
+      const range=root.ownerDocument.createRange();range.setStartAfter(start);range.setEndBefore(end);if(backwards)selection.setBaseAndExtent(range.endContainer,range.endOffset,range.startContainer,range.startOffset);else{selection.removeAllRanges();selection.addRange(range);}
+      end.remove();start.remove();for(const clone of clones)if(!clone.hasChildNodes())clone.remove();parents.forEach(parent=>parent?.normalize());
+    }
+  }
+  /** Resolve committed composition text backwards from its final caret, across inline boundaries. */
+  function rangeBeforeCaret(root,selection,length){
+    if(!selection?.isCollapsed||!Number.isInteger(length)||length<=0||!root.contains(selection.anchorNode))return null;
+    const el=selection.anchorNode.nodeType===3?selection.anchorNode.parentElement:selection.anchorNode;
+    const block=el.closest(PARAGRAPHS)||root,prefix=root.ownerDocument.createRange();prefix.selectNodeContents(block);prefix.setEnd(selection.anchorNode,selection.anchorOffset);
+    const texts=editableText(root,prefix).filter(item=>block.contains(item.node)&&!item.atomic);let remaining=length;
+    for(const item of texts.reverse()){
+      const available=item.end-item.start;if(remaining>available){remaining-=available;continue;}
+      const range=prefix.cloneRange();range.setStart(item.node,item.end-remaining);return range;
+    }
+    return null;
+  }
+  /** Insert marked text at an editable caret without browser pending-format state. */
+  function insertMarkedText(root,selection,text,marks){
+    if(typeof text!=='string'||!text.length||/[\r\n]/.test(text))return false;
+    if(!selection?.isCollapsed||!selection.rangeCount||!root.contains(selection.anchorNode))return false;
+    const range=selection.getRangeAt(0),el=range.startContainer.nodeType===3?range.startContainer.parentElement:range.startContainer;
+    if(el.closest('[data-doc-locked="true"],.doc-chip,.doc-checkbox,del[data-doc-change]')||el.closest('[contenteditable]')?.getAttribute('contenteditable')==='false')return false;
+    for(const [property,value] of Object.entries(marks))validateInline(property,value);
+    const span=root.ownerDocument.createElement('span');span.dataset.docRun='inline';span.style.whiteSpace='pre-wrap';for(const [property,value] of Object.entries(marks))span.style.setProperty(property,value);
+    span.textContent=text;range.insertNode(span);const caret=root.ownerDocument.createRange();caret.selectNodeContents(span);caret.collapse(false);selection.removeAllRanges();selection.addRange(caret);normalizeRuns(root,selection);return true;
+  }
+  /** Coalesce adjacent owned runs only when every attribute agrees; keep caret and atoms live. */
+  function normalizeRuns(root,selection){
+    if(!selection?.isCollapsed||!root.contains(selection.anchorNode))return;
+    const marker=root.ownerDocument.createComment('doc-run-caret'),range=selection.getRangeAt(0).cloneRange();range.insertNode(marker);
+    try{
+      for(const run of root.querySelectorAll('span[data-doc-run="inline"]')){
+        if(run.id||!run.isConnected)continue;
+        const attrs=el=>JSON.stringify([...el.attributes].map(a=>[a.name,a.value]).sort());
+        if(run.parentElement.matches('span[data-doc-run="inline"]')&&attrs(run)===attrs(run.parentElement)){run.replaceWith(...run.childNodes);continue;}
+        let next=run.nextSibling;
+        while(next?.nodeType===1&&next.matches('span[data-doc-run="inline"]')&&!next.id&&attrs(run)===attrs(next)){
+          run.append(...next.childNodes);next.remove();next=run.nextSibling;
+        }
+      }
+      const caret=root.ownerDocument.createRange();caret.setStartBefore(marker);caret.collapse(true);selection.removeAllRanges();selection.addRange(caret);
+    }finally{const parent=marker.parentNode;marker.remove();parent?.normalize();}
+  }
+  return {formatDecoration,decorationActive,rangeBeforeCaret,insertMarkedText,normalizeRuns,validateInline,capture,fromHtml,toHtml,at,alignParagraphs,alignSelection,alignmentActive,comparePosition,formatTextRange,formatSelection,inlineActive};
 })();
 if(typeof window!=='undefined')window.DocModel=DocModel;
 if(typeof module!=='undefined'&&module.exports)module.exports=DocModel;

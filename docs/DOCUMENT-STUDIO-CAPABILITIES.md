@@ -108,3 +108,14 @@ fields are preserved; undo/redo and shared save use the existing HTML contract. 
 respects normal bold/italic overrides, highlights and formatting within text revisions.
 Collapsed-caret pending formats and decoration/structural run commands remain on the
 browser adapter until their planned model operations are implemented.
+
+### Caret and field formatting
+
+Choose bold/italic, font, size, color or highlight at the caret, then type: the choice
+applies to new text without changing existing content or creating an empty undo step.
+Moving the caret clears pending choices. Marked typing and committed composition undo
+with their formatting; tracked typing retains its reviewer attribution. Whole selected
+field tokens can be formatted without changing their bindings. Selected underline/strike
+can be removed from inherited inline wrappers while retaining surrounding formatting.
+Block-level and caret underline/strike still use the browser adapter; composition with
+tracking, general model-owned deletion and complete Word layout fidelity remain pending.
