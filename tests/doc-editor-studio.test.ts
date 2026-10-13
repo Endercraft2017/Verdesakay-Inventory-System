@@ -34,6 +34,16 @@ describe('document studio workflows',()=>{
     editor.close(true);reopen();doc.querySelector('[data-editor-assistant]').click();expect(open).toHaveBeenCalledOnce();
     doc.querySelector('[data-rail-toggle]').click();expect(doc.querySelector('[data-editor-assistant]').dataset.tip).toBe('Assistant');
   });
+  it('closes untouched picture settings without a discard prompt, while protecting actual edits',()=>{
+    const {w,doc,tab,click}=setup({body:'<p><img src="https://example.test/image.png" alt="Logo" style="width:80px;height:60px"></p>'});
+    const confirm=vi.fn(()=>true);w.confirm=confirm;
+    doc.querySelector('.doc-surface img').click();tab('Properties');click('picture');
+    doc.querySelector('[role=dialog] .modal-foot [data-close]').click();
+    expect(confirm).not.toHaveBeenCalled();expect(doc.querySelector('[role=dialog]')).toBeNull();
+    click('picture');const alt=doc.querySelector('#pic-alt');alt.value='Updated logo';alt.dispatchEvent(new w.Event('input',{bubbles:true}));
+    doc.querySelector('[role=dialog] .modal-foot [data-close]').click();expect(confirm).toHaveBeenCalledOnce();
+    expect(doc.querySelector('.doc-surface img').alt).toBe('Logo');
+  });
   it('opens existing field management from the variable bank',()=>{
     let vars=[{label:'Customer',token:'{{order.customer_name}}'}];
     const manage=vi.fn(({refresh})=>{vars=[...vars,{label:'New field',token:'{{new_field}}'}];refresh();});

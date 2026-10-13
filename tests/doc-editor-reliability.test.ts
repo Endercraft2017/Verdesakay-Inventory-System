@@ -5,13 +5,13 @@ const source = fs.readFileSync(new URL('../public/js/doc-editor.js', import.meta
 const uiSource = fs.readFileSync(new URL('../public/js/ui.js', import.meta.url), 'utf8');
 const windows: JSDOM[] = [];
 afterEach(() => { windows.splice(0).forEach((dom) => dom.window.close()); });
-function setup(onSave: (value: any) => any = () => 'keep open') {
+function setup(onSave: (value: any) => any = () => 'keep open', shared?: any) {
   const dom = new JSDOM('<html><body></body></html>', { runScripts: 'dangerously', pretendToBeVisual: true });
   windows.push(dom);
   const w = dom.window as any;
   const ui = { esc: String, toast: vi.fn(), confirmDialog: vi.fn(async () => true), modal: vi.fn() };
-  w.UI = ui; w.eval(source);
-  const ed = w.DocEditor.open({ name: 'Original', body: '<p>Original content</p>', periodLabel: 'Period', typeOptions: ['sale','generic'], getVariables: () => [], onSave });
+  w.UI = ui; if(shared) w.DocStudio = {mount:()=>shared}; w.eval(source);
+  const ed = w.DocEditor.open({ name: 'Original', body: '<p>Original content</p>', periodLabel: 'Period', typeOptions: ['sale','generic'], getVariables: () => [], onSave, sharedStudio: !!shared });
   const doc = w.document;
   const change = (selector: string, value: string | boolean) => {
     const el = doc.querySelector(selector);
@@ -71,6 +71,18 @@ describe('editor preservation and saving', () => {
     doc.querySelector('.doc-surface').innerHTML = '<p>Content</p>';
     change('.doc-copies','6'); change('.doc-records-per-page','6');
     doc.querySelector('[data-save]').click(); expect(saved).not.toHaveBeenCalled();
+  });
+  it('resumes shared syncing after rejecting an empty document before publication', async () => {
+    let paused = false;
+    const shared = { prepareSave: vi.fn(async () => { paused = true; }), failed: vi.fn(() => { paused = false; }), changed() {}, renderInto() {}, close() {} };
+    const save = vi.fn(() => true); const {w,doc,ui} = setup(save,shared);
+    doc.querySelector('.doc-surface').innerHTML = '<p><br></p>';
+    doc.querySelector('[data-save]').click(); await new Promise(resolve=>setTimeout(resolve,0));
+    expect(ui.toast).toHaveBeenCalledWith('Add document content before saving','error');
+    expect(save).not.toHaveBeenCalled(); expect(paused).toBe(false);
+    doc.querySelector('.doc-surface').innerHTML = '<p>Recovered content</p>';
+    doc.querySelector('.doc-surface').dispatchEvent(new w.Event('input',{bubbles:true}));
+    expect(doc.querySelector('.doc-save-status').textContent).toBe('Unsaved changes');
   });
   it('keeps native undo in metadata inputs while allowing Ctrl+S there', async () => {
     const save = vi.fn(() => 'keep open'); const {w,doc,change} = setup(save); change('.doc-fs-name','Renamed');

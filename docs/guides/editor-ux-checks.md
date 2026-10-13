@@ -24,7 +24,9 @@ The complete run scans editor Text/Insert/Page & print, ten panels in both deskt
 phone ribbons in both themes, modal dialogs and the contextual table toolbar. Task checks
 cover reachable Save/Close, assistant access, ribbon overflow, variable copy/field management,
 keyboard dialog focus/Escape return, Payroll/default layout preservation, page size swap,
-real dragging/undo and multipage grid restrictions.
+real dragging/undo, repeated saves with delayed shared polling and clean reopen, and
+multipage grid restrictions. Advanced image/link/symbol/variable/formula, picture, paragraph,
+named-style and section dialogs plus Find are scanned at desktop/phone widths in both themes.
 
 The default command fails for any automated WCAG A/AA violation, failed task, or runtime
 page error. It records axe incomplete results for manual review rather than claiming them

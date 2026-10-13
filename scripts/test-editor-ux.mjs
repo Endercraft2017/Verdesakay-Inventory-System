@@ -18,7 +18,7 @@ const backend = spawn(process.execPath, ['--import', 'tsx', 'scripts/browser/edi
 });
 backend.stderr.on('data', data => fs.appendFileSync(path.join(output, 'server.log'), data));
 let browser, context, page, base, token;
-const deadline = setTimeout(() => { console.error('Editor UX audit timed out'); backend.kill(); process.exit(1); }, 360000);
+const deadline = setTimeout(() => { console.error('Editor UX audit timed out'); backend.kill(); process.exit(1); }, 600000);
 async function api(method, resource, body) {
   const response = await fetch(base + '/api' + resource, {
     method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
@@ -44,7 +44,7 @@ async function check(name, action) {
   catch (error) { report.checks.push({ name, passed: false, error: error.message }); console.error('FAIL ' + name + ': ' + error.message); }
 }
 function editorButton(attribute) { return page.locator('.doc-fs [' + attribute + ']'); }
-async function closeDialog(title) { await page.getByRole('dialog', { name: title, exact: true }).locator('.modal-foot [data-close]').click(); }
+async function closeDialog(title) { const dialog = page.getByRole('dialog', { name: title, exact: true }); await dialog.locator('.modal-foot [data-close]').click(); await dialog.waitFor({state:'hidden'}); }
 
 try {
   base = 'http://127.0.0.1:' + await new Promise((resolve, reject) => {
@@ -161,6 +161,28 @@ try {
   await page.locator('.doc-surface td').first().click(); await page.locator('[data-tab=table]').click();
   await scan('desktop-dark-table');
   await editorButton('data-tbl=properties').click(); await scan('dialog-table-properties', '[role=dialog]'); await closeDialog('Table properties');
+  await page.locator('[data-tab=insert]').click(); await editorButton('data-ins=image').click();
+  const imageDialog = page.getByRole('dialog', {name:'Insert image',exact:true});
+  await imageDialog.locator('#img-file').setInputFiles({name:'audit.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAFAAAAA8CAIAAAB+RarbAAAAY0lEQVR4nO3PQRHAIADAMEAhbxQjay62uy5R0M597viT9XXA2wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znDdAxr5Aepp8UDGAAAAAElFTkSuQmCC','base64')});
+  await imageDialog.locator('[data-confirm]').click(); await imageDialog.waitFor({state:'hidden'});
+  for(const theme of ['light','dark']) for(const width of [1440,390]){
+    await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+    await page.setViewportSize({width,height:width===390?844:1000});
+    await page.locator('[data-tab=insert]').click();
+    for(const [action,title] of [['image','Insert image'],['link','Insert link'],['symbol','Insert symbol'],['variable','Insert variable'],['formula','Insert a formula']]){
+      await editorButton('data-ins='+action).click();await page.getByRole('dialog',{name:title,exact:true}).waitFor();
+      await scan('dialog-'+action+'-'+theme+'-'+width,'[role=dialog]');await closeDialog(title);
+    }
+    await page.locator('.doc-surface img').click(); await editorButton('data-studio-tab=Properties').click();
+    await editorButton('data-do=picture').click(); await scan('dialog-picture-'+theme+'-'+width,'[role=dialog]'); await closeDialog('Picture settings'); await editorButton('data-inspector-close').click();
+    await page.keyboard.press('Control+f'); await page.locator('.doc-find').waitFor(); await scan('find-'+theme+'-'+width); await page.keyboard.press('Escape');
+    await page.locator('[data-tab=home]').click();await page.locator('.doc-surface p').first().click();
+    await editorButton('data-paragraph').click();await scan('dialog-paragraph-'+theme+'-'+width,'[role=dialog]');await closeDialog('Paragraph spacing');
+    await editorButton('data-studio-tab=Styles').click();await editorButton('data-adv=style-edit').first().click();await scan('dialog-style-'+theme+'-'+width,'[role=dialog]');
+    const styleTitle=await page.getByRole('dialog').getAttribute('aria-label');await closeDialog(styleTitle);await editorButton('data-inspector-close').click();
+    await editorButton('data-studio-tab=Pages').click();await editorButton('data-adv=section').click();await scan('dialog-section-'+theme+'-'+width,'[role=dialog]');await closeDialog('Insert section');await editorButton('data-inspector-close').click();
+  }
+  await page.setViewportSize({width:1440,height:1000});
   await check('Page size swaps and undo restores both dimensions', async () => {
     await page.locator('[data-tab=layout]').click();
     await page.locator('.doc-custom-w').fill('180'); await page.locator('.doc-custom-w').press('Tab');
@@ -178,6 +200,32 @@ try {
     assert.equal(await page.locator('.doc-custom-w').inputValue(),'190');assert.equal(await page.locator('.doc-custom-h').inputValue(),'260');
     await editorButton('data-ex=undo').click();assert.equal(await page.locator('.doc-custom-w').inputValue(),'180');assert.equal(await page.locator('.doc-custom-h').inputValue(),'250');
   });
+  await check('Repeated saves with delayed shared polling persist text and reopen cleanly', async () => {
+    await page.route('**/api/templates/studio/documents/**/room', async route => {
+      const response = await route.fetch();
+      if (route.request().method() === 'GET') await new Promise(resolve => setTimeout(resolve, 250));
+      await route.fulfill({ response });
+    });
+    try {
+      await page.locator('[data-tab=home]').click();
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const paragraph = page.locator('.doc-surface p').first();
+        await paragraph.click(); await page.keyboard.press('End');
+        const text = ` Verified save ${attempt}.`;
+        await page.keyboard.type(text);
+        const published = page.waitForResponse(response => response.url() === `${base}/api/templates/${template.id}` && response.request().method() === 'PUT');
+        await editorButton('data-save').click();
+        assert.equal((await published).status(), 200);
+        await page.waitForFunction(() => document.querySelector('.doc-save-status')?.textContent === 'Saved');
+        assert((await api('GET', `/templates/${template.id}`)).body.includes(text.trim()));
+        assert(!/overlap|need review/i.test(await page.locator('.doc-shared-status').textContent()));
+      }
+      await editorButton('data-close').click(); await page.locator('.doc-fs').waitFor({state:'hidden'});
+      await page.locator(`[data-edit="${template.id}"]`).click();
+      await page.waitForFunction(() => document.querySelector('.doc-shared-status')?.textContent.includes('Connected'));
+      assert((await page.locator('.doc-surface').textContent()).includes('Verified save 2.'));
+    } finally { await page.unroute('**/api/templates/studio/documents/**/room'); }
+  });
   await check('A multipage design disables grid printing', async () => {
     await editorButton('data-studio-tab=Pages').click();
     await editorButton('data-adv=page-add').click(); await editorButton('data-adv=page-add').click();
@@ -185,7 +233,7 @@ try {
     assert.equal(await page.locator('.doc-copies').inputValue(), '1');
     await editorButton('data-inspector-close').click();
   });
-} catch (error) { report.errors.push(error.stack || error.message); console.error(error.message); }
+} catch (error) { report.errors.push(error.stack || error.message); console.error(error.message); if(page) await page.screenshot({path:path.join(output,'failure.png')}).catch(()=>{}); }
 finally {
   clearTimeout(deadline);
   const violations = report.scans.reduce((sum, item) => sum + item.violations.length, 0);

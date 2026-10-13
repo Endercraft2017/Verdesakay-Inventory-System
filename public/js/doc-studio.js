@@ -25,7 +25,7 @@ const DocStudio = (() => {
   }
   function mount(fs,opts,api) {
     const clientId=crypto.randomUUID();
-    let closed=false,paused=false,applying=false,busy=false,initializing=true,connected=false,conflict=null;
+    let closed=false,paused=false,applying=false,busy=false,initializing=true,connected=false,conflict=null,pendingSync=null;
     let documentKey=opts.getDocumentKey?.()||opts.documentKey;
     let base=null,version=0,draftVersion=0,draft=null,peers=[],comments=[],library=[],history=[];
     let timer=null,heartbeat=null,chain=Promise.resolve(),sharedEnabled=/^(template|form):/.test(documentKey);
@@ -34,12 +34,26 @@ const DocStudio = (() => {
     const url=()=>'/templates/studio/documents/'+encodeURIComponent(documentKey);
     const say=text=>{status=text;if(!closed)badge.textContent=text;};
     say(status);
+    function enqueue(task){const pending=chain.then(task);chain=pending.catch(()=>{});return pending;}
     const safely=(task)=>task.catch(err=>{if(!closed)say(err.message+' · local recovery remains available');});
     const formatDate=value=>new Date(value.replace(' ','T')+'Z').toLocaleString();
     const safeBody=body=>{const root=document.createElement('div');root.innerHTML=body;root.querySelectorAll('script,iframe,object,embed,link,meta,base').forEach(n=>n.remove());root.querySelectorAll('*').forEach(el=>{[...el.attributes].forEach(a=>{if(/^on/i.test(a.name))el.removeAttribute(a.name);if(['href','src'].includes(a.name)&&!api.safeUrl(a.value,el.tagName==='IMG'))el.removeAttribute(a.name);});});return root.innerHTML;};
     function apply(value) {applying=true;try{const copy=clone(value);copy.body=safeBody(copy.body);api.apply(copy);api.markBlocks();}finally{applying=false;}}
-    function showConflict(value,remoteVersion,message) {
-      conflict={snapshot:value,version:remoteVersion,base:base?clone(base):null};say(message||'Overlapping edits need review · your local draft is safe');api.render();
+    function showConflict(value,remoteVersion,message,mergeBase=base) {
+      conflict={snapshot:value,version:remoteVersion,base:mergeBase?clone(mergeBase):null};say(message||'Overlapping edits need review · your local draft is safe');api.render();
+    }
+    function acknowledgeSync(sent,response){
+      if(response.version<version)return;
+      const merged=merge(sent,api.snapshot(),response.snapshot);
+      base=clone(response.snapshot);version=response.version;
+      if(merged.conflicts.length){showConflict(response.snapshot,response.version,undefined,sent);return;}
+      if(!equal(api.snapshot(),merged.snapshot))apply(merged.snapshot);
+      say(peers.length>1?`${peers.length} editors · changes synced`:'Shared changes synced');
+    }
+    function reconcilePendingSync(){
+      if(!pendingSync||api.isComposing?.())return;
+      const pending=pendingSync;pendingSync=null;
+      acknowledgeSync(pending.sent,pending.response);
     }
     async function privateDraft() {
       if(closed||api.isComposing?.()||!draftDirty||draftConflict)return;
@@ -49,6 +63,10 @@ const DocStudio = (() => {
     }
     async function acceptRoom(room) {
       if(api.isComposing?.())return;
+      reconcilePendingSync();if(conflict)return;
+      // Versions are monotonic within a document key. A delayed response cannot
+      // roll the client back behind a newer write from this same session.
+      if(room.version<version)return;
       peers=room.presence||peers;
       if(room.room_saved_revision && room.saved_revision!==room.room_saved_revision){showConflict(room.snapshot,room.version,'Saved template changed outside this session · review Shared');return;}
       if(!room.snapshot){base=api.snapshot();version=0;return;}
@@ -66,21 +84,21 @@ const DocStudio = (() => {
       if(room.saved_revision && (!room.room_saved_revision||room.saved_revision===room.room_saved_revision))opts.onSharedRevision?.(room.saved_revision);
     }
     async function sync() {
+      reconcilePendingSync();
       if(!sharedEnabled||closed||paused||conflict||api.isComposing?.())return;
       const local=api.snapshot();if(base&&equal(local,base)&&version>0)return;
       const sent=clone(local);
       try {
         const response=await API.put(url()+'/room',{snapshot:sent,base:base||sent,expected_version:version,client_id:clientId});
-        if(closed||api.isComposing?.())return;
-        const merged=merge(sent,api.snapshot(),response.snapshot);
-        base=clone(response.snapshot);version=response.version;
-        if(merged.conflicts.length){showConflict(response.snapshot,response.version);return;}
-        if(!equal(api.snapshot(),merged.snapshot))apply(merged.snapshot);
-        say(peers.length>1?`${peers.length} editors · changes synced`:'Shared changes synced');
+        if(closed)return;
+        // Do not replace DOM while text composition or a page drag is active, but
+        // retain the successful write so our next poll does not mistake it for a peer.
+        if(api.isComposing?.()){pendingSync={sent,response};return;}
+        acknowledgeSync(sent,response);
       }catch(err){if(err.status===409)showConflict(err.data?.snapshot||null,err.data?.version||version,err.message);else throw err;}
     }
     async function tick() {
-      if(closed||busy||initializing||api.isComposing?.())return;busy=true;
+      if(closed||paused||busy||initializing||api.isComposing?.())return;busy=true;
       try {
         if(!connected)await connect();
         if(draftDirty)await privateDraft();
@@ -100,12 +118,12 @@ const DocStudio = (() => {
     const ready=(async()=>{
       try {await connect();}
       catch(err){say(err.message+' · using local recovery');throw err;}
-      finally{initializing=false;if(!closed){api.render();heartbeat=setInterval(()=>{chain=chain.then(tick).catch(err=>say(err.message+' · retrying; local edits preserved'));},2000);}}
+      finally{initializing=false;if(!closed){api.render();heartbeat=setInterval(()=>{enqueue(tick).catch(err=>say(err.message+' · retrying; local edits preserved'));},2000);}}
     })();
     ready.catch(()=>{});
-    function changed(){if(applying||closed)return;generation++;draftDirty=true;clearTimeout(timer);timer=setTimeout(()=>{chain=chain.then(async()=>{await ready.catch(()=>{});await tick();}).catch(err=>say(err.message+' · local edits preserved'));},900);}
+    function changed(){if(applying||closed)return;generation++;draftDirty=true;clearTimeout(timer);timer=setTimeout(()=>{enqueue(async()=>{await ready.catch(()=>{});await tick();}).catch(err=>say(err.message+' · local edits preserved'));},900);}
     function blockId(){const sel=window.getSelection();const el=sel?.anchorNode?.nodeType===3?sel.anchorNode.parentElement:sel?.anchorNode;return el?.closest?.('[data-doc-node]')?.dataset.docNode||'';}
-    function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=()=>safely(Promise.resolve().then(fn));return b;}
+    function button(text,fn){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=()=>safely(enqueue(fn));return b;}
     function paragraph(text){const p=document.createElement('p');p.textContent=text;return p;}
     function renderInto(panel,tab) {
       if(!['History','Library','Shared'].includes(tab))return;
@@ -145,11 +163,11 @@ const DocStudio = (() => {
       }
     }
     return {changed,renderInto,ready,get version(){return sharedEnabled?version:undefined;},
-      async prepareSave(){await ready.catch(()=>{});await chain;if(!connected)await tick();if(conflict)throw Error('Resolve overlapping edits in Shared before saving');if(sharedEnabled){await acceptRoom(await API.get(url()+'/room'));await sync();if(conflict)throw Error('Resolve overlapping edits in Shared before saving');}paused=true;},
-      async saved(unchanged){const oldKey=documentKey;documentKey=opts.getDocumentKey?.()||opts.documentKey;sharedEnabled=/^(template|form):/.test(documentKey);paused=false;
-        if(oldKey!==documentKey){try{if(draftVersion)await API.del('/templates/studio/documents/'+encodeURIComponent(oldKey)+'/draft?version='+draftVersion);}catch{/* retain old draft if a newer device wrote it */}draftVersion=0;draft=null;base=null;version=0;}
+      prepareSave(){return enqueue(async()=>{await ready.catch(()=>{});if(closed)throw Error('This editor session is closed');if(!connected)await tick();if(conflict)throw Error('Resolve overlapping edits in Shared before saving');if(sharedEnabled){await acceptRoom(await API.get(url()+'/room'));await sync();if(conflict)throw Error('Resolve overlapping edits in Shared before saving');}paused=true;});},
+      saved(unchanged){return enqueue(async()=>{try{const oldKey=documentKey;documentKey=opts.getDocumentKey?.()||opts.documentKey;sharedEnabled=/^(template|form):/.test(documentKey);
+        if(oldKey!==documentKey){try{if(draftVersion)await API.del('/templates/studio/documents/'+encodeURIComponent(oldKey)+'/draft?version='+draftVersion);}catch{/* retain old draft if a newer device wrote it */}draftVersion=0;draft=null;base=null;version=0;pendingSync=null;}
         if(unchanged&&draftVersion){try{await API.del(url()+'/draft?version='+draftVersion);draftVersion=0;draft=null;draftDirty=false;clearTimeout(timer);}catch(err){say(err.message);}}
-        if(sharedEnabled)await acceptRoom(await API.get(url()+'/room'));api.render();return unchanged && (!sharedEnabled || equal(api.snapshot(),base));},
+        if(sharedEnabled)await acceptRoom(await API.get(url()+'/room'));api.render();return unchanged && (!sharedEnabled || equal(api.snapshot(),base));}finally{paused=false;}});},
       failed(){paused=false;},
       close(){if(closed)return;clearTimeout(timer);clearInterval(heartbeat);if(draftDirty)privateDraft().catch(()=>{});if(sharedEnabled)API.del(url()+'/presence/'+clientId).catch(()=>{});closed=true;badge.remove();}
     };

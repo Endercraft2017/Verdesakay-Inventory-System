@@ -1091,3 +1091,15 @@ inputs. Resize handles retain their small visual square with larger hit areas, p
 controls meet minimum target sizing, and the enabled assistant moves into the editor rail
 rather than obscuring the paper. Mode buttons expose selection; word-count semantics avoid
 announcing every keystroke. None of these changes alter stored document content.
+
+Shared-save operations, polling and Shared-panel actions now share one queue. Successful
+room writes received during text composition/page resizing retain their acknowledgment
+until DOM reconciliation is safe. Room versions cannot regress; genuine overlapping peer
+edits still require review. Save holds background writes through publication/draft cleanup.
+Advanced dialog scans include image-upload labels, variable/formula search, picture settings,
+paragraph/styles/sections and Find in both themes at desktop/phone widths. Formula code
+examples and section color swatches reuse app tokens/picker sizing.
+Save validation releases the shared-sync pause; initializing Picture settings updates its
+preview directly and does not create a dirty dialog. Real picture edits retain discard protection.
+Transient promotion chrome dismisses when focus leaves the canvas, preserving its own
+action while preventing stale overlays after tool/viewport changes.

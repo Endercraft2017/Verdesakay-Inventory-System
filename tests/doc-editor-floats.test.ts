@@ -264,6 +264,16 @@ describe('DocEditor floating objects', () => {
     void fs;
   });
 
+  it('dismisses transient promotion chrome when focus leaves the canvas while keeping its own action reachable', () => {
+    const {fs,surface}=openEditor('<p>text <img src="data:image/png;base64,x" alt="pic"></p>');
+    surface.focus();click(surface.querySelector('img')!);
+    const make=surface.querySelector('.doc-promote-bar button') as HTMLButtonElement;
+    make.focus();expect(surface.querySelector('.doc-promote-bar')).toBeTruthy();
+    (fs.querySelector('.doc-fs-name') as HTMLInputElement).focus();
+    expect(surface.querySelector('.doc-promote-bar')).toBeNull();
+    click(surface.querySelector('img')!);expect(surface.querySelector('.doc-promote-bar')).toBeTruthy();
+  });
+
   it('promotes a plain table and keeps it editable via the contenteditable island pattern', () => {
     const { surface } = openEditor('<table class="doc-table"><tbody><tr><td>a</td></tr></tbody></table>');
     const table = surface.querySelector('table')!;

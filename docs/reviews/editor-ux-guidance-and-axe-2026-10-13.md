@@ -37,3 +37,6 @@ full assistive-technology review and full ARIA toolbar navigation remain separat
 The previously reported intermittent shared-save conflict is not changed or claimed resolved.
 The harness uses a freshly seeded template; arbitrary authored document content can introduce
 its own accessibility issues. This is a repeatable regression aid, not a full compliance claim.
+
+Follow-up: the reproduced shared-save races and additional editor findings are addressed in
+[the 14 October full scan](editor-full-scan-2026-10-14.md). The statement above records the earlier audit status.

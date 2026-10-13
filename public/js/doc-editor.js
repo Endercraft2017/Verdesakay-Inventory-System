@@ -596,7 +596,7 @@ function ensureStyles() {
     .fx-funcs button{border:1px solid var(--border-strong,#c6d4e6);background:var(--surface-2,#eef4fb);border-radius:6px;padding:4px 9px;cursor:pointer;font-family:Consolas,monospace;font-size:12px;color:var(--text,#16243d)}
     .fx-funcs button:hover{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff)}
     .fx-tip{background:var(--accent-weak,#e7f1ff);color:var(--text,#16243d);border-radius:8px;padding:9px 11px;font-size:12.5px;line-height:1.5;margin-bottom:12px}
-    .fx-tip code{background:#fff;border:1px solid var(--border,#ccc);border-radius:4px;padding:0 4px;font-size:12px;color:#168f54}
+    .fx-tip code{background:var(--surface);border:1px solid var(--border,#ccc);border-radius:4px;padding:0 4px;font-size:12px;color:var(--success)}
     .fx-section{border:1px solid var(--border,#dce6f2);border-radius:8px;padding:10px 12px;margin-bottom:10px}
     .fx-h{font-size:12.5px;font-weight:700;color:var(--text,#16243d);margin-bottom:8px}
     .fx-sub{font-weight:400;color:var(--text-faint,#8a97ad);font-size:11.5px;margin-left:6px}
@@ -967,8 +967,8 @@ function imageDialog(insertHtml, saveSel, modal = UI.modal) {
   saveSel();
   modal({
     title: 'Insert image',
-    bodyHTML: `<label>Image URL</label><input id="img-url" placeholder="https://…">
-      <label>…or upload a file</label><input type="file" id="img-file" accept="image/*">
+    bodyHTML: `<label for="img-url">Image URL</label><input id="img-url" placeholder="https://…">
+      <label for="img-file">…or upload a file</label><input type="file" id="img-file" accept="image/*">
       <p class="muted" style="font-size:12px">Tip: you can also drag an image onto the page, or paste one.</p>`,
     confirmText: 'Insert',
     onConfirm: async (ov, showErr) => {
@@ -1000,7 +1000,7 @@ function editPicture(img,onChange) {
     <label>Replace image URL (optional)<input id="pic-url" placeholder="https://…"></label><label>Or replace with a file<input id="pic-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"></label>
     <p class="muted">Crop to fill uses the frame size and focal point. The original image is retained. Changes apply after you select Apply.</p>`,onOpen:ov=>{
       const preview=ov.querySelector('[data-picture-preview]');
-      ov.addEventListener('input',()=>{const val=id=>ov.querySelector('#pic-'+id)?.value;const w=Number(val('width'))||parseFloat(getComputedStyle(img).width)||300,h=Number(val('height'))||parseFloat(getComputedStyle(img).height)||200;if(w>0&&h>0){const scale=Math.min(240/w,240/h);preview.style.width=w*scale+'px';preview.style.height=h*scale+'px';}ov.querySelectorAll('[data-picture-value]').forEach(output=>output.textContent=val(output.dataset.pictureValue)+'%');preview.style.objectFit=val('fit');preview.style.objectPosition=val('x')+'% '+val('y')+'%';preview.style.borderRadius=val('radius')+'px';preview.style.clipPath={none:'none',circle:'circle(closest-side at 50% 50%)',ellipse:'ellipse(50% 40% at 50% 50%)',diamond:'polygon(50% 0%,100% 50%,50% 100%,0% 50%)'}[val('mask')];preview.style.filter=['brightness','contrast','saturate','grayscale'].map(k=>k+'('+val(k)+'%)').join(' ');});ov.querySelector('#pic-x').dispatchEvent(new Event('input',{bubbles:true}));
+      const updatePreview=()=>{const val=id=>ov.querySelector('#pic-'+id)?.value;const w=Number(val('width'))||parseFloat(getComputedStyle(img).width)||300,h=Number(val('height'))||parseFloat(getComputedStyle(img).height)||200;if(w>0&&h>0){const scale=Math.min(240/w,240/h);preview.style.width=w*scale+'px';preview.style.height=h*scale+'px';}ov.querySelectorAll('[data-picture-value]').forEach(output=>output.textContent=val(output.dataset.pictureValue)+'%');preview.style.objectFit=val('fit');preview.style.objectPosition=val('x')+'% '+val('y')+'%';preview.style.borderRadius=val('radius')+'px';preview.style.clipPath={none:'none',circle:'circle(closest-side at 50% 50%)',ellipse:'ellipse(50% 40% at 50% 50%)',diamond:'polygon(50% 0%,100% 50%,50% 100%,0% 50%)'}[val('mask')];preview.style.filter=['brightness','contrast','saturate','grayscale'].map(k=>k+'('+val(k)+'%)').join(' ');};ov.addEventListener('input',updatePreview);updatePreview();
     },onConfirm:async(ov,showErr)=>{
       const val=id=>ov.querySelector('#pic-'+id)?.value;
       const limits=[['radius',0,200],['x',0,100],['y',0,100],['brightness',0,200],['contrast',0,200],['saturate',0,200],['grayscale',0,100],...(ov.querySelector('#pic-width')?[['width',1,4000],['height',1,4000]]:[])];
@@ -1224,7 +1224,7 @@ function variableDialog(saveSel, getVariables, insertFn, opts = {}) {
   const rowHtml = (v) => `<button type="button" class="var-pick" data-token="${escAttr(v.token || v.key)}">${UI.esc(v.label || v.key)} <span class="muted mono">${escAttr(v.token || ('{{' + v.key + '}}'))}</span></button>`;
   const m = (opts.modal || UI.modal)({
     title: opts.title || 'Insert variable',
-    bodyHTML: `<input class="var-search" id="var-search" placeholder="Search variables…" autocomplete="off">
+    bodyHTML: `<input class="var-search" id="var-search" aria-label="Search variables" placeholder="Search variables…" autocomplete="off">
       <div class="var-tabs" id="var-tabs">${cats.map((c, i) => `<button type="button" class="var-tab ${i === 0 ? 'active' : ''}" data-cat="${escAttr(c)}">${UI.esc(c)}</button>`).join('')}</div>
       <div class="var-pick-list" id="var-list"></div>`,
     cancelText: 'Close',
@@ -1268,7 +1268,7 @@ function formulaDialog(insertHtml, saveSel, getVariables, initial, sampleContext
       <div class="fx-tip">A formula calculates a value that shows on the printed document. <b>On each row</b> of an Item row, use fields like <code>quantity * unit_price</code>. For a <b>grand total</b>, <b>sum a column</b> — it stays correct whether there are 3 rows or 300.</div>
 
       <div class="fx-section">
-        <div class="fx-h">1 · Your formula</div>
+        <label class="fx-h" for="fx-expr">1 · Your formula</label>
         <input class="fx-input" id="fx-expr" placeholder="e.g. sum(items.line_total) * 1.12" value="${escAttr(initial || '')}">
         <div class="fx-result">Result on sample data: <b id="fx-out">—</b></div>
       </div>
@@ -1289,7 +1289,7 @@ function formulaDialog(insertHtml, saveSel, getVariables, initial, sampleContext
 
       <div class="fx-section">
         <div class="fx-h">4 · Insert a value or per-row field <span class="fx-sub">e.g. unit_price, order.subtotal</span></div>
-        <input class="var-search" id="var-search" placeholder="Search variables…" autocomplete="off">
+        <input class="var-search" id="var-search" aria-label="Search variables" placeholder="Search variables…" autocomplete="off">
         <div class="var-tabs" id="var-tabs">${cats.map((c, i) => `<button type="button" class="var-tab ${i === 0 ? 'active' : ''}" data-cat="${escAttr(c)}">${UI.esc(c)}</button>`).join('')}</div>
         <div class="var-pick-list" id="var-list"></div>
       </div>`,
@@ -1509,7 +1509,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   });
 
   // inserts
-  panelsRoot.querySelector('[data-ins="link"]').addEventListener('click', () => { saveSel(); editorModal({ title: 'Insert link', bodyHTML: `<label>URL</label><input id="lnk" placeholder="https://…">`, confirmText: 'Insert', onConfirm: (ov) => { const u = ov.querySelector('#lnk').value.trim(); if (!safeDocumentUrl(u)) { UI.toast('Enter a valid web, email or telephone link', 'error'); return false; } return exec('createLink', u); } }); });
+  panelsRoot.querySelector('[data-ins="link"]').addEventListener('click', () => { saveSel(); editorModal({ title: 'Insert link', bodyHTML: `<label for="lnk">URL</label><input id="lnk" placeholder="https://…">`, confirmText: 'Insert', onConfirm: (ov) => { const u = ov.querySelector('#lnk').value.trim(); if (!safeDocumentUrl(u)) { UI.toast('Enter a valid web, email or telephone link', 'error'); return false; } return exec('createLink', u); } }); });
   panelsRoot.querySelector('[data-ins="hr"]').addEventListener('click', () => insertHtml('<hr>'));
   panelsRoot.querySelector('[data-ins="pagebreak"]').addEventListener('click', () => insertHtml('<div class="doc-pagebreak" style="page-break-after:always"></div><p><br></p>'));
   panelsRoot.querySelector('[data-ins="table"]').addEventListener('click', () => insertTableDialog(insertHtml, saveSel, editorModal));
@@ -1564,7 +1564,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     mergeRight() { const c = currentCell(); if (!c) return; const m = tableGrid(c.closest('table')), p = m.positions.get(c); const next = m.grid[p.r]?.[p.c + p.w]; if (next && !mergeTableCells([c, next])) UI.toast('Select a complete rectangle to merge', 'error'); },
     mergeDown() { const c = currentCell(); if (!c) return; const m = tableGrid(c.closest('table')), p = m.positions.get(c); const next = m.grid[p.r + p.h]?.[p.c]; if (next && !mergeTableCells([c, next])) UI.toast('Select a complete rectangle to merge', 'error'); },
     split() { const c = currentCell(); if (c) splitTableCell(c); },
-    width() { const c = currentCell(); if (!c) return; const cur = parseInt(c.style.width) || ''; UI.modal({ title: 'Column width', bodyHTML: `<label>Width in pixels (blank = auto)</label><input id="cw" type="number" min="24" value="${cur}" placeholder="e.g. 120">`, confirmText: 'Apply', onConfirm: (ov) => { const w = ov.querySelector('#cw').value; if (w && (!Number.isFinite(Number(w)) || Number(w) < 24)) { UI.toast('Width must be at least 24 pixels', 'error'); return false; } const m = tableGrid(c.closest('table')), p = m.positions.get(c); new Set(m.grid.map((row) => row[p.c]).filter(Boolean)).forEach((cell) => { cell.style.width = w ? Number(w) + 'px' : ''; }); onChange(); } }); },
+    width() { const c = currentCell(); if (!c) return; const cur = parseInt(c.style.width) || ''; UI.modal({ title: 'Column width', bodyHTML: `<label for="cw">Width in pixels (blank = auto)</label><input id="cw" type="number" min="24" value="${cur}" placeholder="e.g. 120">`, confirmText: 'Apply', onConfirm: (ov) => { const w = ov.querySelector('#cw').value; if (w && (!Number.isFinite(Number(w)) || Number(w) < 24)) { UI.toast('Width must be at least 24 pixels', 'error'); return false; } const m = tableGrid(c.closest('table')), p = m.positions.get(c); new Set(m.grid.map((row) => row[p.c]).filter(Boolean)).forEach((cell) => { cell.style.width = w ? Number(w) + 'px' : ''; }); onChange(); } }); },
     repeat() { const c = currentCell(); if (!c) return; const tr = c.parentNode; if (tr.hasAttribute('data-repeat')) { tr.removeAttribute('data-repeat'); tr.classList.remove('is-repeat'); UI.toast('Row no longer repeats'); } else { tr.setAttribute('data-repeat', 'items'); tr.classList.add('is-repeat'); UI.toast('This row will repeat for every line item when printed'); } },
     fxcell() { const c = currentCell(); if (!c) return; formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext, editorModal); },
     delTable() { const c = currentCell(); if (!c) return; const t = c.closest('table'); UI.confirmDialog('Delete this whole table?', 'Delete').then((ok) => { if (ok) { t.remove(); updateTableBar(); onChange(); } }); },
@@ -1961,6 +1961,8 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   const PROMOTE_EXCLUDE_TAGS = new Set(['BR', 'HR', 'TD', 'TH', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SUP', 'SUB', 'A', 'FONT']);
 
   function clearPromoteBar() { if (promoteBar) { promoteBar.remove(); promoteBar = null; } promoteTarget = null; }
+  const dismissPromoteOnBlur = e => { if (!surface.contains(e.relatedTarget)) clearPromoteBar(); };
+  surface.addEventListener('focusout', dismissPromoteOnBlur);
 
   function deselectFloat() {
     if (!selectedFloat) return;
@@ -2373,6 +2375,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   updateTableBar();
   return {
     teardown() {
+      surface.removeEventListener('focusout', dismissPromoteOnBlur);
       document.removeEventListener('mouseup', endTableDrag);
       closeAC();
       document.removeEventListener('selectionchange', reflect);
@@ -2456,7 +2459,7 @@ const DocAdvanced = (() => {
         } block.dataset.docStyle = key; changed(); }
         function styleDialog(key) { const config = settings(root).value, s = { ...defaults, ...config.styles }[key]; UI.modal({ title: 'Edit ' + s.name + ' style', bodyHTML: `<label>Font<select id="ds-font">${FONTS.map(f => `<option ${s.font === f ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select></label><div class="field-row"><label>Size (px)<input id="ds-size" type="number" min="6" max="200" value="${s.size}"></label><label>Color<input id="ds-color" class="doc-dialog-color" type="color" value="${s.color}"></label></div><div class="field-row"><label>Line height<input id="ds-line" type="number" min="0.8" max="4" step="0.05" value="${s.line}"></label><label>Space after (px)<input id="ds-after" type="number" min="0" max="200" value="${s.after}"></label></div><p class="muted">Updates every paragraph using this named style in this document.</p>`, confirmText: 'Update style', onConfirm: ov => { const num = id => Number(ov.querySelector('#ds-' + id).value), size = num('size'), line = num('line'), after = num('after'); if (!Number.isFinite(size + line + after) || size < 6 || size > 200 || line < .8 || line > 4 || after < 0 || after > 200)
                 return false; config.styles = { ...config.styles, [key]: { ...s, font: ov.querySelector('#ds-font').value, size, line, after, color: ov.querySelector('#ds-color').value } }; write(root, config); changed(); } }); }
-        function sectionDialog() { const existing = section(); UI.modal({ title: existing ? 'Section settings' : 'Insert section', bodyHTML: `<label>Section name<input id="sec-name" maxlength="100" value="${esc(existing?.dataset.docSectionName || 'Section')}"></label><div class="field-row"><label>Columns<select id="sec-cols">${[1, 2, 3].map(n => `<option ${Number(existing?.style.columnCount || 1) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label>Column gap (mm)<input id="sec-gap" type="number" min="0" max="30" value="${parseFloat(existing?.style.columnGap) || 8}"></label></div><label>Start<select id="sec-break"><option value="continuous">Continue on current page</option><option value="page" ${existing?.dataset.docSectionBreak === 'page' ? 'selected' : ''}>New page</option></select></label><div class="field-row"><label>Page width (mm)<input id="sec-w" type="number" min="50" max="1000" value="${existing?.dataset.docSectionWidth || parsePageStyle(api.snapshot().body).widthMm}"></label><label>Page height (mm)<input id="sec-h" type="number" min="50" max="1000" value="${existing?.dataset.docSectionHeight || parsePageStyle(api.snapshot().body).heightMm}"></label></div><label>Margin (mm)<input id="sec-m" type="number" min="0" max="100" value="${existing?.dataset.docSectionMargin ?? parsePageStyle(api.snapshot().body).marginMm}"></label><label>Background<input id="sec-bg" type="color" value="${existing?.dataset.docSectionBg || '#ffffff'}"></label><p class="muted">Columns flow together. A new-page section disables print grids.</p>`, confirmText: existing ? 'Apply' : 'Insert', onConfirm: ov => { const gap = Number(ov.querySelector('#sec-gap').value), w = Number(ov.querySelector('#sec-w').value), h = Number(ov.querySelector('#sec-h').value), m = Number(ov.querySelector('#sec-m').value); if (!Number.isFinite(gap + w + h + m) || gap < 0 || gap > 30 || w < 50 || w > 1000 || h < 50 || h > 1000 || m < 0 || m > 100 || m * 2 >= Math.min(w, h))
+        function sectionDialog() { const existing = section(); UI.modal({ title: existing ? 'Section settings' : 'Insert section', bodyHTML: `<label>Section name<input id="sec-name" maxlength="100" value="${esc(existing?.dataset.docSectionName || 'Section')}"></label><div class="field-row"><label>Columns<select id="sec-cols">${[1, 2, 3].map(n => `<option ${Number(existing?.style.columnCount || 1) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label>Column gap (mm)<input id="sec-gap" type="number" min="0" max="30" value="${parseFloat(existing?.style.columnGap) || 8}"></label></div><label>Start<select id="sec-break"><option value="continuous">Continue on current page</option><option value="page" ${existing?.dataset.docSectionBreak === 'page' ? 'selected' : ''}>New page</option></select></label><div class="field-row"><label>Page width (mm)<input id="sec-w" type="number" min="50" max="1000" value="${existing?.dataset.docSectionWidth || parsePageStyle(api.snapshot().body).widthMm}"></label><label>Page height (mm)<input id="sec-h" type="number" min="50" max="1000" value="${existing?.dataset.docSectionHeight || parsePageStyle(api.snapshot().body).heightMm}"></label></div><label>Margin (mm)<input id="sec-m" type="number" min="0" max="100" value="${existing?.dataset.docSectionMargin ?? parsePageStyle(api.snapshot().body).marginMm}"></label><label>Background<input id="sec-bg" class="doc-dialog-color" type="color" value="${existing?.dataset.docSectionBg || '#ffffff'}"></label><p class="muted">Columns flow together. A new-page section disables print grids.</p>`, confirmText: existing ? 'Apply' : 'Insert', onConfirm: ov => { const gap = Number(ov.querySelector('#sec-gap').value), w = Number(ov.querySelector('#sec-w').value), h = Number(ov.querySelector('#sec-h').value), m = Number(ov.querySelector('#sec-m').value); if (!Number.isFinite(gap + w + h + m) || gap < 0 || gap > 30 || w < 50 || w > 1000 || h < 50 || h > 1000 || m < 0 || m > 100 || m * 2 >= Math.min(w, h))
                 return false; let el = existing; if (!el) {
                 restoreRange();
                 const sel = getSelection(), r = sel?.rangeCount ? sel.getRangeAt(0) : null;
@@ -3709,10 +3712,10 @@ function open(opts = {}) {
     if (history) history.flush();
     let body = mode === 'code' ? getCode() : serializeEditor(surface);
     const meaningful = body.replace(/<!--[\s\S]*?-->/g, '').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, '').replace(/&nbsp;|\s/g, '');
-    if (!meaningful && !/<(?:img|table|hr)\b|class=["'][^"']*doc-float/i.test(body)) { UI.toast('Add document content before saving', 'error'); return; }
+    if (!meaningful && !/<(?:img|table|hr)\b|class=["'][^"']*doc-float/i.test(body)) { shared?.failed(); UI.toast('Add document content before saving', 'error'); return; }
     const { widthMm, heightMm } = currentPageMm();
     const marginMm = Number(marginInp.value);
-    if (widthMm < 10 || heightMm < 10 || widthMm > 2000 || heightMm > 2000 || !Number.isFinite(marginMm) || marginMm < 0 || marginMm * 2 >= Math.min(widthMm, heightMm)) { UI.toast('Choose valid page dimensions and margins that leave room for content', 'error'); return; }
+    if (widthMm < 10 || heightMm < 10 || widthMm > 2000 || heightMm > 2000 || !Number.isFinite(marginMm) || marginMm < 0 || marginMm * 2 >= Math.min(widthMm, heightMm)) { shared?.failed(); UI.toast('Choose valid page dimensions and margins that leave room for content', 'error'); return; }
     body = pageStyleTag(widthMm, heightMm, Number(marginInp.value) || 0) + body.replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i, '');
     const savedVersion = changeVersion;
     const savedSnapshot = studioSnapshot();

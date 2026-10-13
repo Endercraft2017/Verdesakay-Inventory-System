@@ -869,3 +869,15 @@ A report-only baseline can collect violations but is not the delivery gate. Inco
 results, keyboard behavior and actual-user task understanding require separate judgment.
 The editor rail delegates Assistant to the existing enabled-module launcher; opening/closing
 the editor controls where the launcher is exposed, without changing AI requests or permissions.
+
+Shared polling/change ticks and explicit panel actions → serialized room queue. Save joins
+that queue → accept latest room → sync local snapshot → pause background writes → publish
+with existing room-version/revision checks → accept publication/draft cleanup → resume.
+An in-flight successful PUT received during composition/resize stores sent/response snapshots;
+afterward merge from the sent base to preserve newer local input and independent peer blocks.
+Delayed older versions are ignored. Real conflicts retain local content and the actual merge
+base for review; server CAS, private-draft protection and publication checks are unchanged.
+Pre-publication empty/page validation → shared failed/unpause → local editing can resume.
+Picture initialization → direct preview update; real input → preview plus modal dirty tracking.
+Canvas focus → transient promotion action; focus outside canvas → dismiss promotion chrome.
+Its own button remains inside the canvas; teardown removes the focus handler.
