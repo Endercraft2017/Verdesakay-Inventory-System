@@ -20,7 +20,7 @@ it('filters catalog by access and supports search, empty results, recovery and m
 });
 it('opens contextual modal guides without discarding draft values or navigating, and Escape closes only coaching',async()=>{
   const {dom,w,navigations}=await boot();w.__UI.modal({title:'Draft form',bodyHTML:'<label for="draft-name">Name</label><input id="draft-name">',confirmText:'Save',onConfirm:()=>false});await flush();const draft=w.document.querySelector('.modal-overlay');draft.querySelector('input').value='Unsaved draft';draft.querySelector('input').dispatchEvent(new w.Event('input',{bubbles:true}));
-  draft.querySelector('[data-guide-open]').click();await flush();w.document.querySelector('#guide-context-start').click();await flush();expect(w.document.querySelector('#draft-name').value).toBe('Unsaved draft');expect(navigations).toEqual([]);expect(w.document.querySelector('.guide-coach')).not.toBeNull();
+  draft.querySelector('[data-guide-open]').click();await flush();expect(w.document.querySelector('#guide-context-start')).toBeNull();expect(w.document.querySelector('#draft-name').value).toBe('Unsaved draft');expect(navigations).toEqual([]);expect(w.document.querySelector('.guide-coach')).not.toBeNull();
   w.document.querySelector('#draft-name').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));expect(w.document.querySelector('.guide-coach')).toBeNull();expect(w.document.querySelector('#draft-name').value).toBe('Unsaved draft');dom.window.close();
 });
 it('does not auto-navigate, waits for asynchronous controls, preserves progress on exit, and isolates users',async()=>{
@@ -34,7 +34,7 @@ it('does not steal arrows from inputs and advances only after the expected dialo
   button.click();await flush();expect(w.document.querySelector('.guide-coach-count').textContent).toBe('1 / 2');const input=w.document.createElement('input');input.id='new-input';w.document.querySelector('#view').append(input);await flush();expect(w.document.querySelector('.guide-coach-count').textContent).toBe('2 / 2');input.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true}));expect(w.document.querySelector('.guide-coach-count').textContent).toBe('2 / 2');dom.window.close();
 });
 it('Alt+Shift+G opens contextual guides and exposes only supported shortcut tips',async()=>{
-  const {dom,w}=await boot();w.document.dispatchEvent(new w.KeyboardEvent('keydown',{code:'KeyG',key:'G',altKey:true,shiftKey:true,bubbles:true,cancelable:true}));expect(w.document.querySelector('#guide-context-start')).not.toBeNull();expect(w.document.querySelector('.guide-shortcuts').textContent).toContain('Alt + Shift + G');expect(w.document.querySelector('.guide-shortcuts').textContent).not.toContain('Ctrl / Cmd + S, Z, Y');dom.window.close();
+  const {dom,w}=await boot();w.document.dispatchEvent(new w.KeyboardEvent('keydown',{code:'KeyG',key:'G',altKey:true,shiftKey:true,bubbles:true,cancelable:true}));expect(w.document.querySelector('.guide-coach')).not.toBeNull();expect(w.document.querySelector('#guide-context-start')).toBeNull();expect(w.GuideCenter.shortcutHTML(w.document.querySelector('#view'))).toContain('Alt + Shift + G');dom.window.close();
 });
 it('keeps contextual suggestions specific to the current form type and limits their number',async()=>{
   const {dom,w}=await boot();
@@ -52,4 +52,12 @@ it('keeps contextual suggestions specific to the current form type and limits th
   expect(w.GuideCenter.suggestions(items,{route:'hr-approvals'}).some((p:any)=>p.id==='review-requests')).toBe(true);
   const root=w.document.createElement('div');root.innerHTML='<input id="note-title">';expect(w.GuideCenter.suggestions(items,{route:'form-records',filter:{slug:'hr_payroll'}},root).map((p:any)=>p.id)).toEqual(['notes-scheduler']);
   dom.window.close();
+});
+it('starts payroll coaching directly and replaces an on-screen feature reference with real control steps',async()=>{
+  const {dom,w,navigations}=await boot();w.App.currentLocation=()=>({route:'form-records',filter:{slug:'hr_payroll'}});
+  const view=w.document.querySelector('#view');view.innerHTML='<div class="topbar"><h2>HR Payroll</h2></div><input id="fr-search"><select id="fr-status"></select><select id="fr-period"></select><button id="fr-print-summary">Print Summary</button><button id="fr-download-csv">Download Excel</button>';await flush();
+  view.querySelector('[data-guide-open]').click();
+  expect(navigations).toEqual([]);expect(w.document.querySelector('#guide-context-results')).toBeNull();expect(w.document.querySelector('.guide-coach-body').textContent).toContain('Find an employee');expect(w.document.querySelector('.guide-coach-count').textContent).toBe('1 / 5');expect(w.document.querySelector('[data-act="open"]')).toBeNull();
+  w.GuideTour.start({id:'feature:payroll',kind:'feature',route:'form-records',filter:{slug:'hr_payroll'},steps:[{title:'Open Payroll',body:'Open the guide again'}]});
+  expect(w.document.querySelector('.guide-coach-body').textContent).not.toContain('Open the guide again');expect(w.document.querySelector('.guide-coach-body').textContent).toContain('Find an employee');expect(navigations).toEqual([]);dom.window.close();
 });

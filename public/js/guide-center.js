@@ -17,7 +17,7 @@
       const help = window.Help?.topics.find(t => (t.routes || []).includes(leaf.route));
       features.push({ id: 'feature:' + key, title: leaf.label, module: sub.requiredModule || primary.requiredModule || primary.id, kind: 'feature', icon: leaf.icon || 'help', audience: primary.label + ' · ' + sub.label,
         tagline: help ? text(help.html).trim().slice(0, 170) : `Find and use ${leaf.label} in ${primary.label}.`, intro: help ? help.html : '', route: leaf.route, filter: leaf.filter,
-        steps: [{ title: 'Open ' + leaf.label, to: { route: leaf.route, filter: leaf.filter, label: leaf.label }, body: 'Open this screen, then use its Guide button for a walkthrough of the controls available to you.' }], gotchas: [] });
+        steps: [{ title: 'Open ' + leaf.label, to: { route: leaf.route, filter: leaf.filter, label: leaf.label }, body: 'Review the records and available actions on this screen. Choose a record to inspect its details; check filters and permissions before making changes.' }], gotchas: [] });
     })));
     const tools=[
       {id:'email',title:'Compose an email',icon:'mail',description:'Open Email, fill in the recipient, subject and message, then review before Send. Sending requires mail.send; mailbox configuration requires administrator access.',spot:'#em-to'},
@@ -53,7 +53,14 @@
     const title = isDialog ? (root.querySelector('.modal-head h3, .drawer-head h3, .doc-fs-title')?.textContent || 'This dialog') : (root?.querySelector('.topbar h2, h2')?.textContent || route);
     const steps = [];
     const add = (title, body, target, tip) => { if (target) steps.push({ title, body, target, tip }); };
-    if (root?.querySelector('.fb-editor')) {
+    if (!isDialog && route === 'form-records' && App.currentLocation?.().filter?.slug === 'hr_payroll') {
+      add('Find an employee’s payslips', 'Search by employee name to narrow the payslips shown.', root.querySelector('#fr-search'));
+      add('Filter by status', 'Show the payroll status you need to review. Filtering does not change any payslip.', root.querySelector('#fr-status'));
+      add('Choose the payroll period', 'Select a cutoff to focus your review on its payslips and totals.', root.querySelector('#fr-period'));
+      add('Review the cutoff', 'Expand the cutoff and open a payslip to check its earnings, deductions and net pay.', root.querySelector('[data-bundle-toggle]') || root.querySelector('[data-bundle-summary]'));
+      add('Print a payroll summary', 'Preview totals and department subtotals for the payslips currently in view before printing.', root.querySelector('#fr-print-summary'));
+      add('Export the filtered payroll', 'Download Excel exports the payslips currently in view. Check your filters first.', root.querySelector('#fr-download-csv'));
+    } else if (root?.querySelector('.fb-editor')) {
       add('Name the form', 'Use a recognizable name. The internal ID is generated from it.', root.querySelector('#fb-name'));
       add('Build the fields', 'Add the information people need to provide. Mark essential fields required and keep keys stable for templates.', root.querySelector('#fb-add-field'));
       add('Use advanced settings when needed', 'The form ID, numbering prefix and icon live here. Use the question marks for details.', root.querySelector('.fb-advanced summary'));
@@ -98,7 +105,7 @@
       host.querySelectorAll('[data-guide-id]').forEach(b => b.onclick = () => {
         const p = shown.find(p=>p.id===b.dataset.guideId);
         if (root?.matches('.modal-overlay,.drawer,.doc-fs')) { UI.modal({ title: p.title, guide: false, size: 'lg', cancelText: 'Back to guides', bodyHTML: `<p class="muted">Reference only — your current draft remains open. Start this workflow from the Guide Center after finishing your draft.</p>${p.intro || ''}<ol class="guide-reference-steps">${p.steps.map(s=>`<li><strong>${UI.esc(s.title)}</strong><div>${s.body || ''}</div>${s.tip?`<p class="guide-tip">${s.tip}</p>`:''}</li>`).join('')}</ol>` }); return; }
-        modal.close(); if (p.kind === 'feature') App.navigate('sop',{topic:p.id}); else GuideTour.start(p,0);
+        modal.close(); if (p.kind === 'feature') start({root}); else GuideTour.start(p,0);
       });
     }
     modal.overlay.querySelector('#guide-context-search').oninput = draw;
@@ -110,6 +117,11 @@
     };
     draw();
   }
+  function start(options = {}) {
+    const root = options.root || [...document.querySelectorAll('.modal-overlay:not([data-guide-off])')].at(-1) || document.querySelector('.doc-fs') || document.querySelector('.drawer.open') || document.querySelector('#view');
+    const guide = contextual(root);
+    GuideTour.start(guide, GuideTour.savedStep(guide.id), {root});
+  }
   function wireHeaders() {
     const view=document.querySelector('#view');
     const headers=[...document.querySelectorAll('.modal-head, .drawer-head, .doc-fs-bar')];
@@ -120,14 +132,14 @@
     headers.forEach(header => {
       if (header.closest('[data-guide-off]') || header.querySelector('[data-guide-open]')) return;
       const button = document.createElement('button'); button.type='button'; button.className='btn secondary small guide-entry'; button.dataset.guideOpen=''; button.innerHTML=UI.icon('help',14)+' Guide'; button.title='Guides and shortcuts (Alt + Shift + G)';
-      button.onclick=()=>open({root:header.closest('.modal-overlay,.drawer,.doc-fs') || document.querySelector('#view')});
+      button.onclick=()=>start({root:header.closest('.modal-overlay,.drawer,.doc-fs') || document.querySelector('#view')});
       const actions=header.querySelector('.modal-head-actions, .doc-fs-bar-actions, .tk-cutoff-actions'); if(actions)actions.prepend(button);else if(header.matches('.drawer-head'))header.insertBefore(button,header.querySelector('[data-close]'));else header.append(button);
     });
   }
   function init() {
     wireHeaders(); const observer = new MutationObserver(wireHeaders); observer.observe(document.body,{childList:true,subtree:true});
-    document.addEventListener('keydown',e=>{if(!e.isComposing&&!e.repeat&&e.altKey&&e.shiftKey&&!e.ctrlKey&&!e.metaKey&&e.code==='KeyG'){e.preventDefault();open({root:[...document.querySelectorAll('.modal-overlay:not([data-guide-off])')].at(-1) || document.querySelector('.doc-fs') || document.querySelector('.drawer.open') || document.querySelector('#view')});}});
+    document.addEventListener('keydown',e=>{if(!e.isComposing&&!e.repeat&&e.altKey&&e.shiftKey&&!e.ctrlKey&&!e.metaKey&&e.code==='KeyG'){e.preventDefault();start({root:[...document.querySelectorAll('.modal-overlay:not([data-guide-off])')].at(-1) || document.querySelector('.doc-fs') || document.querySelector('.drawer.open') || document.querySelector('#view')});}});
   }
-  window.GuideCenter={catalog,suggestions,open,contextual,shortcutHTML,shortcuts,moduleLabels};
+  window.GuideCenter={catalog,suggestions,open,start,contextual,shortcutHTML,shortcuts,moduleLabels};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();

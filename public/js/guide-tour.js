@@ -44,7 +44,7 @@
     coach.classList.remove('minimized');if(restoreCoachFocus)coach.querySelector('[data-act="next"]').focus();requestAnimationFrame(position);
   }
   function start(id,index=0,options={}) {
-    const p=typeof id==='object'?id:window.GUIDE?.byId[id];if(!p?.steps.length)return;close(false);
+    let p=typeof id==='object'?id:window.GUIDE?.byId[id];if(!p?.steps.length)return;const loc=App.currentLocation?.();if(p.kind==='feature'&&loc?.route===p.route&&Object.entries(p.filter||{}).every(([k,v])=>String(loc.filter?.[k])===String(v))&&window.GuideCenter){p=GuideCenter.contextual(document.querySelector('#view'));options={...options,root:document.querySelector('#view')};}close(false);
     const coach=document.createElement('section'),ring=document.createElement('div');coach.className='guide-coach open';coach.tabIndex=-1;coach.setAttribute('role','dialog');coach.setAttribute('aria-label',p.title+' walkthrough');ring.className='guide-focus-ring';ring.setAttribute('aria-hidden','true');document.body.append(ring,coach);
     const onKey=e=>{if(e.defaultPrevented||e.isComposing)return;if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(false);return;}if(/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName)||e.target?.isContentEditable||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key==='ArrowRight'){e.preventDefault();go(1);}else if(e.key==='ArrowLeft'){e.preventDefault();go(-1);}};
     const onClick=e=>{if(!state)return;const step=state.p.steps[state.i];if(step.advanceOn==='click'&&state.target?.contains(e.target)){state.pendingAdvance=true;}};
