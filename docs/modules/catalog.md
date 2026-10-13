@@ -1026,3 +1026,5 @@ Typography/spacing use presets plus a custom-value dialog, preserving nonpreset 
 Variables opens the searchable/category-filtered variable bank with Copy and Insert.
 Whole-chip click selection enables Delete/Backspace for optional starter fields, with
 existing atomic commands, lock checks, undo and HTML serialization.
+Floating-object toolbars use compact SVG buttons with tooltips and accessible labels for
+move, stacking, inline placement, fill/border and delete; action selectors are unchanged.

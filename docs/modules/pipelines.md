@@ -819,6 +819,8 @@ Variable bank → search/category → Insert restores the remembered editor rang
 the canonical chip through the command registry; Copy writes the full template token and
 does not edit the document. Click a chip → select its outer boundaries → Delete/Backspace
 uses atomic deletion and an undo snapshot. Starter fields are not regenerated on save.
+Floating-object toolbar icons retain the existing drag/action pipeline and are stripped
+from saved HTML with the rest of the editor chrome.
 The selected font/style/point-size readout follows current text rather than field-label
 chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
 the existing change/history path. Find/replace mounts above the workspace; source editing,

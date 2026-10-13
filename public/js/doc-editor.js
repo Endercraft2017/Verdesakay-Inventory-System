@@ -469,6 +469,11 @@ function docIcon(name) {
     search: '<circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/>',
     preview: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
     layers:'<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/>',
+    moveObject:'<path d="M12 3v18M3 12h18m-12-6 3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3m12-6 3 3-3 3"/>',
+    bringForward:'<rect x="8" y="3" width="13" height="13" rx="1"/><path d="M5 8H3v13h13v-2M12 11l3-3 3 3m-3-3v6"/>',
+    sendBackward:'<rect x="3" y="8" width="13" height="13" rx="1"/><path d="M8 5V3h13v13h-2M6 14l3 3 3-3m-3 3v-6"/>',
+    objectFill:'<path d="m7 3 10 10-7 7-9-9 7-7M4 14h12m3 0s-3 3-3 5a3 3 0 0 0 6 0c0-2-3-5-3-5Z"/>',
+    objectBorder:'<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 4h16v16" stroke-width="3"/>',
     styles:'<path d="m5 20 7-16 7 16M8 14h8M4 22h16"/>',
     shared:'<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m1 4a5 5 0 0 1 4 5"/>',
     settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--surface,#fff)"/><circle cx="15" cy="17" r="3" fill="var(--surface,#fff)"/>',
@@ -649,6 +654,7 @@ function ensureStyles() {
     .doc-float-handle[data-h="w"]{left:calc(-5px / var(--zoom,1));top:50%;margin-top:calc(-5px / var(--zoom,1));cursor:ew-resize}
     .doc-float-toolbar,.doc-promote-bar{position:absolute;left:0;top:0;display:flex;gap:1px;background:var(--surface,#fff);border:1px solid var(--border,#dce6f2);border-radius:9px;padding:3px 4px;box-shadow:0 6px 22px rgba(15,30,60,.18),0 1px 3px rgba(15,30,60,.1);z-index:1001;white-space:nowrap;transform:translateY(calc(-100% - 6px)) scale(calc(1 / var(--zoom,1)));transform-origin:left bottom}
     .doc-float-toolbar button,.doc-promote-bar button{border:none;background:transparent;cursor:pointer;font-size:12px;padding:4px 7px;border-radius:6px;color:var(--text,#16243d);font-family:inherit;transition:background .1s}
+    .doc-float-toolbar button{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:5px}.doc-float-toolbar button svg{width:18px;height:18px;pointer-events:none}.doc-float-toolbar button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
     .doc-float-toolbar button:hover,.doc-promote-bar button:hover{background:var(--surface-2,#eef4fb)}
     /* snap alignment guides drawn during a float drag/resize — transient, %-positioned children of
        the page so they scale with it; stripped by serializeEditor as a belt-and-braces measure */
@@ -1971,11 +1977,11 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
 
   function wrapToolbarHTML(floatEl) {
     const kind = floatEl.getAttribute('data-float-kind');
-    let html = `<button type="button" data-float-move title="Drag to move object" style="cursor:grab;touch-action:none">Move</button><button type="button" data-float-act="z-up" title="Bring forward">Forward</button>`
-      + `<button type="button" data-float-act="z-down" title="Send backward (past the text)">Backward</button>`;
-    if (kind === 'image' || kind === 'table' || kind === 'text') html += `<button type="button" data-float-act="inline" title="Put back in the text (stop floating)">↩</button>`;
-    if (kind.startsWith('shape-')) html += `<button type="button" data-float-act="fill" title="Fill color">Fill</button><button type="button" data-float-act="border" title="Border color">Stroke</button>`;
-    html += `<button type="button" data-float-act="delete" title="Delete">${docIcon('trash')}</button>`;
+    const button=(action,label,icon)=>`<button type="button" data-float-act="${action}" title="${label}" aria-label="${label}">${docIcon(icon)}</button>`;
+    let html = `<button type="button" data-float-move title="Drag to move object" aria-label="Move object" style="cursor:grab;touch-action:none">${docIcon('moveObject')}</button>`+button('z-up','Bring forward','bringForward')+button('z-down','Send backward (past the text)','sendBackward');
+    if (kind === 'image' || kind === 'table' || kind === 'text') html += button('inline','Put back in the text (stop floating)','undo');
+    if (kind.startsWith('shape-')) html += button('fill','Fill color','objectFill')+button('border','Border color','objectBorder');
+    html += button('delete','Delete object','trash');
     return html;
   }
 
