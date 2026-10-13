@@ -293,17 +293,6 @@ const NAV = [
     ],
   },
   {
-    id: 'messages', label: 'Messages', icon: 'messages', requiredPermission: 'messages.view',
-    subtabs: [
-      {
-        id: 'chat', label: 'Messages',
-        tree: [
-          { label: 'Messages', icon: 'messages', route: 'messages' },
-        ],
-      },
-    ],
-  },
-  {
     id: 'admin', label: 'Admin', icon: 'users', requiredPermission: 'users.manage',
     subtabs: [
       {
