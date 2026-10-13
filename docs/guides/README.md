@@ -6,7 +6,10 @@ session.
 
 > **In the app:** users don't need these files day to day — the **Help** button on the
 > right-hand icon rail opens an explainer for whatever screen they're on, plus an index
-> to every other topic. That content lives in [`public/js/help.js`](../../public/js/help.js).
+> to every other topic. Shared screens choose the guide for their active filter (for example,
+> Sale Orders versus Purchase Orders, or Payroll versus other Data Forms). Assigned dialog
+> **Guide** buttons open instructions for that dialog while preserving its inputs. The Guide
+> Center includes every screen/tool topic as well as the end-to-end workflows. That content lives in [`public/js/help.js`](../../public/js/help.js).
 > These markdown guides are the longer-form version for trainers and onboarding packs;
 > keep the two in step when a feature changes.
 
@@ -17,7 +20,7 @@ session.
 |---|---|---|
 | [Capturing a sales order](sales-order-intake.md) | Sales / CSR / order entry | Record customer details, choose explicit inventory or non-stock lines, correct validation errors, and save an open order before approval |
 | [Bulk import & export (CSV)](csv-import-export.md) | Inventory / HR staff | Load or update many items, suppliers, or employees from a spreadsheet; export data back out. Fill-in [templates/](templates/) included. |
-| [SOP — Production, end to end](production-sop.md) | Production / shop floor / QA/QC / warehouse | The full flow: BOM → job order + team + schedule → release → progress → QA/QC → repair/rework → batch → finished stock → labels/QR/dossier → sale-order allocation. Mirrors Home → Help / SOP. |
+| [SOP — Production, end to end](production-sop.md) | Production / shop floor / QA/QC / warehouse | The full flow: BOM → job order + team + schedule → release → accept kit → progress → QC/QA → repair/rework → Products In → batch → finished stock → labels/QR/dossier → sale-order allocation. Mirrors Home → Help / SOP. |
 | [SOP — Parts release to delivery (shop-floor roles)](shop-floor-to-delivery-sop.md) | Warehouse, production leads, QC, QA, product clerks, releasing clerks, drivers | Role-by-role steps from releasing parts to a job order through recording units (serial + photo), QC → QA, repair parts requests, Products In / RTS, SO release by QR scan, and delivery with proof of delivery. Includes a photos/scans checklist. |
 | [Multi-level BOMs, costing & where-used](multi-level-bom.md) | Production / purchasing | Explode a product through sub-assemblies to raw materials, roll up standard cost, find where a part is used |
 | [Purchasing: receiving & vendor bills](purchasing.md) | Warehouse / purchasing / AP | Record goods receipts against a PO (posts stock), enter vendor bills, and the 3-way match that gates approval |
@@ -31,7 +34,7 @@ session.
 | [BIR Form 1601-C](bir-1601c.md) | Payroll admin | The monthly withholding-tax remittance worksheet; how it reconciles to 1604-C |
 | [BIR 1604-C Alphalist](bir-alphalist.md) | Payroll admin | Generating the Schedule 1 Alphalist of Employees CSV, and how to turn it into the `.DAT` |
 | [Tax & compliance (BIR + agency forms)](final-pay-and-contributions.md) | Accounting / payroll admin | Accounting → Tax & Compliance (1601-C, 1604-C + reconciliation, Alphalist, 2316, 0619-E, 2550M, SSS/PhilHealth/Pag-IBIG schedules) and HR's final-pay / 13th-month worksheets |
-| [Books — the general ledger](general-ledger.md) | Bookkeeper / accountant | Setting up the chart of accounts, recording & posting journal entries, closing periods, and the Trial Balance / P&L / Balance Sheet / GL reports (Phase 0) |
+| [Books — the general ledger](general-ledger.md) | Bookkeeper / accountant | Setting up the chart of accounts, recording & posting journal entries, closing periods, and the Trial Balance / P&L / Balance Sheet / GL reports, automatic posting rules and explicit payroll posting |
 
 ## Writing a new guide
 

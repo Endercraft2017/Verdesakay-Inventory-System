@@ -177,6 +177,7 @@ App.register('finished-products', async (view, filter) => {
 
     UI.modal({
       title: existing ? `Bill of materials — ${existing.name}` : 'New finished product',
+      helpTopic: 'finished-products',
       size: 'lg',
       bodyHTML: `
         ${pickerHTML}

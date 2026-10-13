@@ -523,8 +523,12 @@ const App = (() => {
 
     const m = UI.modal({
       title: 'Site Map',
+      headActionHTML: '<button type="button" class="btn secondary small" data-sitemap-guide>Guide</button>',
       bodyHTML: `<div class="sitemap-grid">${sections}</div>`,
       cancelText: 'Close',
+    });
+    m.overlay.querySelector('[data-sitemap-guide]').addEventListener('click', () => {
+      if (window.Help) Help.open('site-map');
     });
     m.overlay.querySelectorAll('[data-route]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -679,5 +683,9 @@ const App = (() => {
     _routeNames: () => Object.keys(routes), // test/debug seam
   };
 })();
+
+// Consumers such as Help and API intentionally probe window.App before using it.
+// A top-level const is visible to scripts but is not a property of window.
+window.App = App;
 
 document.addEventListener('DOMContentLoaded', () => App.boot());

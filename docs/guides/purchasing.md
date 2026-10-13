@@ -63,9 +63,16 @@ and **Delete** — the stock it posted is reversed.
 
 ## Match tolerance
 
-The default allows the billed price to differ from the PO price by **2%**. An operator can
-change it (price %, absolute amount, quantity %) — currently via
-`PUT /api/purchasing/tolerance` (a settings screen is planned).
+Open **Match tolerance** from Goods Receipts or Vendor Bills. The price percentage
+starts at **2%**; the dialog also sets an absolute peso allowance and quantity percentage.
+A price exception occurs only when both price allowances are exceeded (the looser one wins).
+Changing the settings and clicking **Save** requires **orders.edit**.
+
+## Phone receiving
+
+**Work → Receive PR** is a quick stock movement, not a desktop goods receipt. It does
+not create GRN coverage for the three-way bill match. Use **Record receipt** on the PO
+when matching and approving vendor bills, and avoid recording the same delivery twice.
 
 ## Tips & gotchas
 

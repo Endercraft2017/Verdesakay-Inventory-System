@@ -4,9 +4,10 @@
 **In the app:** Accounting → **General Ledger → Books** (read: *Accounting: view*; set up,
 post, close: *Accounting: manage*)
 
-This is a **double-entry** ledger — the BIR "Books of Accounts" kept in the system. It's
-**Phase 0**: manual journal entries + the core financial statements. Auto-posting from
-invoices, bills and payslips comes later (see `docs/ACCOUNTING-SYSTEM-PLAN.md`).
+This is a **double-entry** ledger — the BIR "Books of Accounts" kept in the system. It supports manual journals, automatic document postings and financial statements.
+Confirmed sale orders and approved vendor bills post using **Posting Rules**. Payroll
+requires an explicit **Post to GL** after the cutoff has been reviewed; generating
+payslips alone does not post it.
 
 ---
 
@@ -30,7 +31,7 @@ The account tree. Two kinds of account:
 
 Each account has a **root type** (asset / liability / equity / income / expense) and an
 optional **type tag** (`cash`, `bank`, `receivable`, `payable`, `tax`, `cogs`, …) that the
-reports and later the auto-posting use to find the right account.
+reports and automatic posting use to find the right account.
 
 Rules: an account **with entries** can be renamed or **archived** but **not deleted** and
 **not re-typed**. A group with sub-accounts can't become a leaf.
@@ -100,5 +101,5 @@ for you.
 - The reports read **posted** entries only — a draft doesn't move any balance.
 - If the Balance Sheet says **⚠**, something posted with an unusual sign — check the
   offending account in the General Ledger.
-- Keep the **type tags** on cash/AR/AP/VAT/tax accounts accurate — Phase 1's automatic
-  posting from sales orders / vendor bills / payslips will rely on them.
+- Keep the **type tags** on cash/AR/AP/VAT/tax accounts accurate — automatic
+  posting and financial reports use them. Review the account mappings in Posting Rules.

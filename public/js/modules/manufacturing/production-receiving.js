@@ -59,6 +59,7 @@ App.register('production-receiving', async (view, filter) => {
 
     const m = UI.modal({
       title: 'Record Products In',
+      helpTopic: 'products-in',
       size: 'lg',
       bodyHTML: `
         <div class="field-row">

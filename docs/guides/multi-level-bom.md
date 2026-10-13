@@ -1,7 +1,7 @@
 # Multi-level BOMs, costing & where-used
 
 **For:** production planners, purchasing, estimators
-**In the app:** Inventory → **Finished Products** → click a product
+**In the app:** Production → **Product Setup → Products & BOM** → click a product
 
 ---
 
@@ -31,7 +31,7 @@ This feature lets you:
 
 ### See the rolled-up cost of one unit
 
-1. Open **Finished Products** and click the product.
+1. Open **Production → Product Setup → Products & BOM** and click the product.
 2. The detail panel shows **Std. material cost / unit**. Each direct BOM line also shows
    its **Std. cost** contribution — for a sub-assembly line this is the fully rolled-up
    figure (its own parts, recursively).

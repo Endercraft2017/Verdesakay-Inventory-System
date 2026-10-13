@@ -213,6 +213,7 @@ function periodModal(existing, onSaved) {
   const editing = !!existing;
   UI.modal({
     title: editing ? `Edit ${existing.label}` : 'New Cutoff',
+      helpTopic: 'cutoff',
     bodyHTML: `
       <div><label>Label *</label><input data-f="label" placeholder="e.g. Aug 1-15, 2026" value="${UI.esc(editing ? existing.label : '')}" autofocus /></div>
       <div class="field-row" style="margin-top:10px">
@@ -536,6 +537,7 @@ async function policySettingsModal() {
 
   UI.modal({
     title: 'Policy Settings',
+      helpTopic: 'payroll-policy',
     size: 'lg',
     bodyHTML: `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
