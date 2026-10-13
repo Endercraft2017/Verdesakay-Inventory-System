@@ -166,6 +166,7 @@ Automatic (src/shared/backup.ts + src/platform/backups.ts). Nothing to set up fo
 | What | When | Where (under `BACKUP_DIR`) | Kept |
 |---|---|---|---|
 | Every tenant DB (`default` = data.db) + `platform.db` (`_platform`) | Daily: at boot, then the first hourly check after midnight | `<name>/daily/<name>-YYYY-MM-DD.db` | Newest `BACKUP_KEEP_DAILY` (14) + the last one of each month for `BACKUP_KEEP_MONTHLY` (12) months |
+| Same | Hourly, when the DB changed since the last one (also copied off-site) | `<name>/hourly/<name>-YYYY-MM-DD-HH.db` | Newest `BACKUP_KEEP_HOURLY` (48); `0` turns them off |
 | Same | Right before a schema migration | `<name>/pre-migrate/` | `BACKUP_KEEP_PREMIGRATE` (10) per DB |
 | Same | `npm run backup` (manual) | `<name>/manual/` | 20 per DB |
 | `UPLOAD_DIR` (images, attachments, photos) | With each daily/manual run | `uploads/` | Additive mirror; files deleted in the app are **not** deleted here, **except kiosk punch photos** (`kiosk-punches/`): when the app's photo retention deletes one, the backup copy goes too, locally and off-site, so employee photos never outlive the retention policy |

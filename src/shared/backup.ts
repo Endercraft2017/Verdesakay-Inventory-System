@@ -9,6 +9,8 @@
  *  - `daily/` — taken by the daily job (src/platform/backups.ts). Retention keeps the newest
  *    `BACKUP_KEEP_DAILY` days plus one per month for `BACKUP_KEEP_MONTHLY` months, so a
  *    problem noticed weeks late still has a clean copy to go back to.
+ *  - `hourly/` — taken every hour while the database is changing (src/platform/backups.ts),
+ *    newest `BACKUP_KEEP_HOURLY` kept, so a bad day loses at most an hour of work.
  *
  * Snapshots use `VACUUM INTO`, which is transactionally consistent even while the server
  * is writing (WAL mode) — unlike copying the .db file, which can catch it mid-write and
@@ -22,6 +24,7 @@
  *                         drive, a NAS share, or a cloud-synced folder for off-disk redundancy
  *   BACKUP_KEEP_DAILY     daily snapshots kept (default 14)
  *   BACKUP_KEEP_MONTHLY   older month-end snapshots kept (default 12)
+ *   BACKUP_KEEP_HOURLY    hourly snapshots kept per database (default 48; 0 turns them off)
  *   BACKUP_KEEP_PREMIGRATE pre-migration snapshots kept per database (default 10)
  *   BACKUP_BEFORE_MIGRATE set to `off` to skip the pre-migration snapshot (not recommended)
  */
@@ -59,7 +62,7 @@ export function mirrorDir(): string | null {
   return process.env.BACKUP_MIRROR_DIR || null;
 }
 
-export type BackupKind = 'daily' | 'pre-migrate' | 'pre-restore' | 'manual';
+export type BackupKind = 'daily' | 'hourly' | 'pre-migrate' | 'pre-restore' | 'manual';
 
 /** `YYYYMMDD-HHMMSS` in local time — sortable, filename-safe. */
 export function stamp(d = new Date()): string {
@@ -71,6 +74,11 @@ export function stamp(d = new Date()): string {
 export function localDate(d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** `YYYY-MM-DD-HH` in local time — the hourly snapshot's key. */
+export function localHour(d = new Date()): string {
+  return `${localDate(d)}-${String(d.getHours()).padStart(2, '0')}`;
 }
 
 export function kindDir(name: string, kind: BackupKind, root = backupDir()): string {
@@ -151,6 +159,7 @@ export function pruneDaily(dir: string, keepDaily: number, keepMonthly: number):
 export const retention = {
   daily: () => envInt('BACKUP_KEEP_DAILY', 14),
   monthly: () => envInt('BACKUP_KEEP_MONTHLY', 12),
+  hourly: () => envInt('BACKUP_KEEP_HOURLY', 48),
   preMigrate: () => envInt('BACKUP_KEEP_PREMIGRATE', 10),
 };
 

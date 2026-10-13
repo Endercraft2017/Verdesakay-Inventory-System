@@ -19,6 +19,9 @@
  * Object layout per bucket:
  *   db/<name>/<name>-YYYY-MM-DD.db.gz.enc   one per daily snapshot (name = tenant slug,
  *                                           `default`, or `_platform`)
+ *   db/<name>/hourly/<name>-YYYY-MM-DD-HH.db.gz.enc
+ *                                           one per hourly snapshot; removed here once the
+ *                                           local copy ages out (BACKUP_KEEP_HOURLY)
  *   uploads/<relative path>.gz.enc          mirror of UPLOAD_DIR: additive (never pruned),
  *                                           EXCEPT kiosk punch photos — when the app's photo
  *                                           retention deletes one, it's deleted here too
@@ -149,6 +152,24 @@ function localDailySnapshots(): Map<string, string> {
   return out;
 }
 
+const HOUR_RE = /-\d{4}-\d{2}-\d{2}-\d{2}\.db$/;
+
+/** Local hourly snapshot files, as object key → path. */
+function localHourlySnapshots(): Map<string, string> {
+  const out = new Map<string, string>();
+  const root = backupDir();
+  if (!fs.existsSync(root)) return out;
+  for (const name of fs.readdirSync(root)) {
+    if (name === 'uploads' || name === 'offsite') continue;
+    const dir = kindDir(name, 'hourly');
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir).filter((x) => HOUR_RE.test(x))) {
+      out.set(`db/${name}/hourly/${f}.gz.enc`, path.join(dir, f));
+    }
+  }
+  return out;
+}
+
 function walk(dir: string, rel = ''): Array<{ rel: string; abs: string; sig: string }> {
   if (!fs.existsSync(dir)) return [];
   const out: Array<{ rel: string; abs: string; sig: string }> = [];
@@ -169,13 +190,22 @@ async function pushTarget(t: OffsiteTarget, now: Date): Promise<OffsiteResult> {
   const m = readManifest(t.name);
   const cutoff = t.keepDays ? now.getTime() - t.keepDays * 86_400_000 : null;
   try {
-    for (const [key, file] of localDailySnapshots()) {
+    const hourly = localHourlySnapshots();
+    for (const [key, file] of [...localDailySnapshots(), ...hourly]) {
       if (m.db[key]) continue;
       const day = dayOf(file);
       if (cutoff !== null && day !== null && day < cutoff) continue; // would be pruned right away
       await t.client.put(key, pack(fs.readFileSync(file)));
       m.db[key] = true;
       r.dbSent++;
+      writeManifest(t.name, m);
+    }
+    // Hourly copies follow local retention: once one ages out here, remove it off-site too.
+    for (const key of Object.keys(m.db)) {
+      if (!key.includes('/hourly/') || hourly.has(key)) continue;
+      await t.client.delete(key);
+      delete m.db[key];
+      r.pruned++;
       writeManifest(t.name, m);
     }
     const local = walk(UPLOAD_DIR);

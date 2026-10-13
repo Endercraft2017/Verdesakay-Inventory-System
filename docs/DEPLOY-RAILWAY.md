@@ -373,6 +373,8 @@ still hold your old password in plain text.
 | `BACKUP_ALERT_WEBHOOK` | none | Where problem / recovery alerts go (ntfy, Discord, Slack) |
 | `BACKUP_DRILL_DAYS` | 30 | Days between restore drills (a failed drill retries the next day) |
 | `BACKUP_STALE_HOURS` | 26 | Alert when a database has no snapshot / no off-site copy for this long |
+| `BACKUP_KEEP_HOURLY` | 48 | Hourly snapshots kept per database (also off-site); `0` turns them off |
+| `BACKUP_HOURLY_STALE_HOURS` | 3 | Alert when hourly snapshots haven't succeeded for this long |
 | `BACKUP_ALERT_REPEAT_HOURS` | 12 | Repeat an unresolved alert this often |
 | `ACTIVITY_LOG_RETENTION_DAYS` | 1827 (5 years) | How long the audit trail is kept (minimum 31) |
 | `CLIENT_IP_HEADER` | `x-real-ip` on Railway, none elsewhere | Header holding the visitor's IP (rate limits, sign-in history). Only set it to a header your edge proxy overwrites |

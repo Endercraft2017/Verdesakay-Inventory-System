@@ -3,11 +3,13 @@
  * any backup step fails or goes stale. Called after every hourly backup check (server.ts) and by
  * `npm run backup:drill` / `npm run backup:health`.
  *
- *  - Restore drill: for every off-site target, download the newest snapshot of every database,
- *    decrypt it into a temp file, run SQLite's integrity check, then delete it. Runs every
+ *  - Restore drill: for every off-site target, download the newest daily (and newest hourly)
+ *    snapshot of every database, decrypt it into a temp file, run SQLite's integrity check, then
+ *    delete it. Runs every
  *    BACKUP_DRILL_DAYS (default 30) days, and again the next day after a failed drill.
  *  - Health check: the last daily run or off-site run failed, a database has no daily snapshot in
- *    BACKUP_STALE_HOURS (default 26), no off-site success in that time, or the drill failed.
+ *    BACKUP_STALE_HOURS (default 26), no off-site success in that time, hourly snapshots failed or
+ *    stopped for BACKUP_HOURLY_STALE_HOURS (default 3), or the drill failed.
  *  - Alerts: problems are POSTed to BACKUP_ALERT_WEBHOOK (ntfy, Discord, Slack / Google Chat
  *    style) once, repeated every BACKUP_ALERT_REPEAT_HOURS (default 12) while unresolved, plus one
  *    "recovered" message. Every result is also kept in status.json for the owner console.
@@ -17,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { backupDir } from '../shared/backup';
+import { backupDir, retention } from '../shared/backup';
 import { offsiteTargets, unpack, type OffsiteTarget } from './offsite';
 import { backupNames } from './backups';
 
@@ -71,11 +73,13 @@ export async function runRestoreDrill(now = new Date()): Promise<DrillRun> {
   for (const t of offsiteTargets()) {
     for (const name of backupNames()) {
       try {
-        const objects = await t.client.list(`db/${name}/`);
-        const newest = objects.map((o) => o.key).filter((k) => k.endsWith('.db.gz.enc')).sort().pop();
+        const keys = (await t.client.list(`db/${name}/`)).map((o) => o.key).filter((k) => k.endsWith('.db.gz.enc'));
+        const newest = keys.filter((k) => !k.includes('/hourly/')).sort().pop();
+        const newestHourly = keys.filter((k) => k.includes('/hourly/')).sort().pop();
         results.push(newest
           ? await drillOne(t, name, newest)
           : { target: t.name, name, key: null, ok: false, error: 'no off-site snapshot found' });
+        if (newestHourly) results.push(await drillOne(t, name, newestHourly));
       } catch (e) {
         results.push({ target: t.name, name, key: null, ok: false, error: (e as Error).message });
       }
@@ -113,6 +117,7 @@ export function backupProblems(now = new Date()): string[] {
   const status = readStatus() as {
     last_run?: { kind?: string; results?: Array<{ name: string; ok: boolean; error?: string; mirrorError?: string }> };
     offsite?: { last_run?: { ok: boolean; results?: Array<{ target: string; ok: boolean; error?: string }> }; last_success_at?: string };
+    hourly?: { last_run?: { results?: Array<{ name: string; ok: boolean; error?: string }> }; last_success_at?: string };
     restore_drill?: DrillRun;
   };
   const problems: string[] = [];
@@ -121,6 +126,16 @@ export function backupProblems(now = new Date()): string[] {
   for (const r of status.last_run?.results ?? []) {
     if (!r.ok) problems.push(`Snapshot of "${r.name}" failed: ${r.error ?? 'unknown error'}`);
     else if (r.mirrorError) problems.push(`Snapshot of "${r.name}" was not mirrored: ${r.mirrorError}`);
+  }
+  if (retention.hourly() > 0) {
+    for (const r of status.hourly?.last_run?.results ?? []) {
+      if (!r.ok) problems.push(`Hourly snapshot of "${r.name}" failed: ${r.error ?? 'unknown error'}`);
+    }
+    const hourlyMs = hours('BACKUP_HOURLY_STALE_HOURS', 3) * 3_600_000;
+    const lastOk = status.hourly?.last_success_at ? Date.parse(status.hourly.last_success_at) : null;
+    if (lastOk === null || now.getTime() - lastOk > hourlyMs) {
+      problems.push(`Hourly snapshots have not succeeded in the last ${Math.round(hourlyMs / 3_600_000)} hours`);
+    }
   }
   for (const name of backupNames()) {
     const t = newestDaily(name);

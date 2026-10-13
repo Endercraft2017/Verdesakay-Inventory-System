@@ -15,6 +15,10 @@
  * yet. The last run's result is written to `backupDir()/status.json` so there's always a
  * file saying when backups last succeeded and what failed.
  *
+ * `runHourlyBackups()` runs on the same hourly tick: `hourly/<name>-<YYYY-MM-DD-HH>.db`, but
+ * only for a database written to since its last hourly snapshot (a quiet night adds no
+ * copies), newest BACKUP_KEEP_HOURLY kept. Its result goes to status.json's `hourly` entry.
+ *
  *   npm run backup            snapshot everything now (manual/)
  *   npm run backup:list       what's on disk
  *   npm run backup:restore -- <name> <backup-file> --yes   (server must be stopped)
@@ -25,7 +29,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { getDb, DB_PATH, DATA_DIR, UPLOAD_DIR, DEFAULT_TENANT } from '../shared/db';
 import { retiredDefaultTenant } from './platform';
 import {
-  backupDir, mirrorDir, kindDir, snapshotTo, pruneDaily, pruneNewest, retention, localDate, stamp,
+  backupDir, mirrorDir, kindDir, snapshotTo, pruneDaily, pruneNewest, retention, localDate, localHour, stamp,
   isRetentionManagedUpload, type BackupKind,
 } from '../shared/backup';
 import { listTenants, platformDb, PLATFORM_DB_PATH } from './platform';
@@ -37,7 +41,7 @@ export interface BackupResult {
   ok: boolean;
   file?: string;
   bytes?: number;
-  skipped?: boolean; // today's daily already exists
+  skipped?: boolean; // today's daily (or this hour's hourly) already exists, or nothing changed
   copied?: number;   // uploads: files copied this run
   error?: string;
   mirrorError?: string;
@@ -163,6 +167,62 @@ export function runDailyBackups(now = new Date()): BackupResult[] {
     if (made) console.log(`[backup] daily snapshot for ${day}: ${made} database(s) → ${backupDir()}`);
   }
   return results;
+}
+
+/** Newest modification time of a live database (its file and its -wal), or null if absent. */
+function lastWrite(file: string): number | null {
+  let newest: number | null = null;
+  for (const f of [file, `${file}-wal`]) {
+    try { newest = Math.max(newest ?? 0, fs.statSync(f).mtimeMs); } catch { /* not there */ }
+  }
+  return newest;
+}
+
+/** Take this hour's snapshot of every database written to since its last hourly one, then
+ *  keep the newest BACKUP_KEEP_HOURLY. Each snapshot's mtime is set to when it STARTED, so a
+ *  write that lands while it runs still counts as a change next hour. */
+export function runHourlyBackups(now = new Date()): BackupResult[] {
+  const keep = retention.hourly();
+  if (keep === 0) return [];
+  const hour = localHour(now);
+  const results: BackupResult[] = [];
+  for (const t of targets()) {
+    const dir = kindDir(t.name, 'hourly');
+    const file = path.join(dir, `${t.name}-${hour}.db`);
+    if (fs.existsSync(file)) { results.push({ name: t.name, ok: true, file, skipped: true }); continue; }
+    try {
+      const previous = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.db')).sort().pop() : undefined;
+      const written = lastWrite(liveFileFor(t.name));
+      if (previous && written !== null && written < fs.statSync(path.join(dir, previous)).mtimeMs) {
+        results.push({ name: t.name, ok: true, skipped: true });
+        continue;
+      }
+      const started = new Date();
+      const r = snapshotTo(t.conn(), file);
+      fs.utimesSync(file, started, started);
+      pruneNewest(dir, keep);
+      results.push({ name: t.name, ok: true, ...r });
+    } catch (e) {
+      results.push({ name: t.name, ok: false, error: (e as Error).message });
+    }
+  }
+  writeHourlyStatus(results);
+  report(results);
+  return results;
+}
+
+function writeHourlyStatus(results: BackupResult[]): void {
+  try {
+    const statusFile = path.join(backupDir(), 'status.json');
+    fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+    const prev = fs.existsSync(statusFile) ? JSON.parse(fs.readFileSync(statusFile, 'utf8')) : {};
+    const at = new Date().toISOString();
+    const allOk = results.every((r) => r.ok && !r.mirrorError);
+    fs.writeFileSync(statusFile, JSON.stringify({
+      ...prev,
+      hourly: { ...(prev.hourly || {}), last_run: { at, ok: allOk, results }, ...(allOk ? { last_success_at: at } : {}) },
+    }, null, 2));
+  } catch { /* status is informational; never fail a backup over it */ }
 }
 
 /** Snapshot everything right now into `manual/` (keeps the newest 20 per database). */

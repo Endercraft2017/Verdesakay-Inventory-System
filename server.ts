@@ -17,7 +17,7 @@ import { createApp, BEHIND_PROXY } from './src/app';
 import { sendDueTaskReminders } from './src/shared/push';
 import { cleanupPlatformSessions } from './src/platform/platform-users';
 import { attachWebSocket } from './src/shared/ws';
-import { runDailyBackups } from './src/platform/backups';
+import { runDailyBackups, runHourlyBackups } from './src/platform/backups';
 import { pushOffsite } from './src/platform/offsite';
 import { backupHealthTick } from './src/platform/backup-health';
 import { DEPLOY_MODE, startSyncLoop, syncConfigOf } from './src/sync';
@@ -67,10 +67,12 @@ if (DEPLOY_MODE === 'node') {
   // Sites with 3+ voting PCs elect a new host by themselves when theirs is lost (§31).
   startSiteElection('default');
 }
-// Daily DB snapshots: at boot, then an hourly check that takes today's once the date rolls
-// over (a no-op for any DB that already has one). Never let a backup error crash the server.
+// DB snapshots: at boot, then hourly — today's daily once the date rolls over (a no-op for
+// any DB that already has one) and this hour's snapshot of every DB that changed since the
+// last one. Never let a backup error crash the server.
 const dailyBackup = () => {
   try { runDailyBackups(); } catch (e) { console.error(`[backup] daily run failed: ${(e as Error).message}`); }
+  try { runHourlyBackups(); } catch (e) { console.error(`[backup] hourly run failed: ${(e as Error).message}`); }
   // Then copy anything new (or previously failed) to the off-site buckets, if configured, and
   // check the result: restore drill when due, alert on failures (src/platform/backup-health.ts).
   void pushOffsite().catch(() => [] as unknown[]).then(() => backupHealthTick());
