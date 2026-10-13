@@ -7,6 +7,23 @@
 **Functional design record:** `Verdesakay_Mobile_Design_Progress.md`  
 **Supporting specifications:** `docs/guides/mobile-role-ux-spec.md` and `docs/guides/shop-floor-to-delivery-sop.md`
 
+## Current-branch reconciliation (2026-10-13)
+
+This handoff was prepared against `main` on 2026-09-26. Its "current" and "gap" tables below
+are historical; check this branch's code and tests before treating an item as unbuilt. The
+five-item dock, notification history, movable Quick Orbit, anonymous channel, profile editor,
+paid-only payslip download, manager permission, separate QC/QA desks, RTS workflow and releasing
+workflow now have implementations. Schedule change is a seeded employee request tied to a future
+published roster date; approval updates that day's shift and rejects a stale or paid cutoff.
+HR requests and attendance corrections can wait in the account-scoped mobile sync queue; approvals
+remain online-only. Chat text is retained as an account-scoped draft on a failed send.
+
+Remaining work from this handoff needs a separate acceptance pass: identified reports still use
+Messages as their follow-up channel rather than a dedicated case lifecycle, and each shop-floor
+exception path needs end-to-end checks on physical phones, including camera, GPS, poor connectivity,
+reconnect, 390×844 layout, accessibility and the precise Figma frames. The planned-vs-built
+details in sections 6–16 should be reconciled per screen during that pass.
+
 ## 1. What this handoff is for
 
 Use this document as the implementation bridge between the approved mobile Figma design and the existing Verdesakay codebase. It tells Claude Code what to inspect, what already exists, what must change, which Figma nodes are canonical, how the permissions map to the product pipeline, and how to verify the result.
@@ -61,7 +78,7 @@ Do not install Tailwind merely because Figma returns React/Tailwind reference co
 3. Work is the execution hub. Home is a short “what matters today” overview.
 4. All configured request types are universal, subject to server validation and approval rules.
 5. Identified and anonymous reports are separate entry points, storage/queues, and management views.
-6. Payslips may be downloaded only after payroll is finalized. Draft/in-progress records may be shown with a clear wait message, but cannot produce a downloadable file.
+6. Employees see payslip details and may download them only after HR marks payroll Paid. Draft/in-progress records remain visible to HR only (updated 2026-10-13 per owner decision).
 7. Operational directories and role screens do not expose personal phone numbers or unnecessary personal data.
 8. Employees may directly edit only permitted profile/preferences fields. Legal name, birthdate, salary, position, department, employment classification, and other authoritative HR data require an approval request.
 9. One employee may hold multiple permissions and sees the union of authorized queues. Completion does not automatically navigate into the next role’s screen unless the same user has that permission.

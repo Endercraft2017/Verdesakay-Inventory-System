@@ -33,9 +33,9 @@
             created_at: r.created_at,
             // An information change is shown as a before/after so HR sees exactly what approving
             // writes to the employee record (the server applies it on approval).
-            data: r.slug === 'information_change'
+            data: r.display_data || (r.slug === 'information_change'
               ? { Change: d.field, 'On record now': d.current_value || '—', 'Correct value': d.requested_value, Reason: d.reason }
-              : d,
+              : d),
           });
         });
         (res.time_corrections || []).forEach(function (r) {
@@ -184,7 +184,7 @@
         : p.decision === 'approved' ? 'Approved' : 'Rejected');
       MApp.refreshInboxBadge && MApp.refreshInboxBadge();
     } catch (ex) {
-      mToast(ex.message || 'Could not save — restored', 'err');
+      mToast(ex.offline ? 'Approval was not sent. Reconnect, then review it again.' : (ex.message || 'Could not save — restored'), 'err');
       state.items.splice(Math.min(p.at, state.items.length), 0, p.it);
       state.idx = p.at;
       if (location.hash.indexOf('approvals') !== -1) draw();

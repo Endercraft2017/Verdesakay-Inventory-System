@@ -16,8 +16,8 @@ import {
 import { parsePayrollSummaryCsv } from '../modules/payroll/hr-payroll-import';
 import { PAYROLL_FORM_SLUG } from '../modules/payroll/pay-access';
 import { runFormActions } from './form-actions';
-import { notifyApprovers } from '../modules/hr/workflow';
-import { normalizeRequest, attachLeave, leaveWarnings, requestEmployeeId } from '../modules/hr/request-data';
+import { cutoffIsPaid, notifyApprovers } from '../modules/hr/workflow';
+import { normalizeRequest, attachLeave, leaveWarnings, requestEmployeeId, scheduledLeaveDates } from '../modules/hr/request-data';
 import { REQUEST_SLUGS } from './me.routes';
 import { INFO_CHANGE_SLUG, prepareInfoChange } from '../modules/hr/info-change';
 import type { DocTemplate, FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../shared/types';
@@ -409,6 +409,22 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
     for (const key of ['approved_by', 'decided_by', 'decided_at', 'decision_note']) delete input.data[key];
     if (selfFile && form.slug === 'overtime_request') delete input.data.approved_hours;
     input.data = normalizeRequest(form.slug, parseFields(form.fields as string) as any, input.data, Number(input.data.employee_id)) as typeof input.data;
+    if (form.slug === 'schedule_change') {
+      const date = String(input.data.work_date);
+      const row = queryOne<{ shift_id: number | null; period_id: number }>(
+        'SELECT shift_id, period_id FROM attendance_records WHERE employee_id = ? AND work_date = ?', Number(input.data.employee_id), date);
+      if (!row || date <= new Date().toISOString().slice(0, 10)) {
+        res.status(400).json({ error: 'Choose a future date already on your published roster.' }); return;
+      }
+      if (!scheduledLeaveDates(Number(input.data.employee_id), [date]).length) {
+        res.status(400).json({ error: 'Schedule changes apply to working days. Use Change of Rest Day for a rest-day swap.' }); return;
+      }
+      if (row.shift_id === Number(input.data.requested_shift_id)) {
+        res.status(400).json({ error: 'Choose a shift different from the one already assigned.' }); return;
+      }
+      if (cutoffIsPaid(row.period_id)) { res.status(423).json({ error: 'This payroll cutoff is locked after payment.' }); return; }
+      input.data.current_shift_id = row.shift_id;
+    }
   }
 
   let recordId: number;
@@ -505,6 +521,12 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
     const definition = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', existing.form_def_id)!;
     Object.assign(recordData, normalizeRequest(existing.slug, parseFields(definition.fields as string) as any, recordData, Number(recordData.employee_id)));
     for (const key of ['approved_by', 'decided_by', 'decided_at', 'decision_note', 'charged_dates', 'leave_days_charged', 'leave_warnings']) delete recordData[key];
+    if (existing.slug === 'schedule_change') {
+      if (String(recordData.work_date) !== String(previousData.work_date) || Number(recordData.employee_id) !== Number(previousData.employee_id)) {
+        res.status(400).json({ error: 'The employee and date cannot be changed on a filed schedule request. File a new request instead.' }); return;
+      }
+      recordData.current_shift_id = previousData.current_shift_id as number | null;
+    }
   }
   run(
     `UPDATE form_records

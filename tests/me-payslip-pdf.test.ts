@@ -64,11 +64,11 @@ beforeAll(async () => {
 afterAll(() => cleanup(ctx));
 
 describe('payslip list contract', () => {
-  it('marks only Paid payslips finalized and gives only those a download_url', async () => {
+  it('releases only Paid payslips and their details to the employee', async () => {
     const r = await ctx.api.get('/api/me/payslips').set(bearer(mine.token));
     expect(r.status).toBe(200);
     const byId = Object.fromEntries(r.body.map((p: { id: number }) => [p.id, p]));
-    expect(byId[draftId]).toMatchObject({ finalized: false, finalized_at: null, download_url: null });
+    expect(byId[draftId]).toBeUndefined();
     expect(byId[paidId]).toMatchObject({ finalized: true, download_url: `/me/payslips/${paidId}/pdf` });
     expect(byId[paidId].finalized_at).toBeTruthy();
     expect(byId[othersPaidId]).toBeUndefined();
@@ -104,7 +104,7 @@ describe('payslip PDF download', () => {
 
   it('refuses a draft (not finalized) payslip', async () => {
     const r = await ctx.api.get(`/api/me/payslips/${draftId}/pdf`).set(bearer(mine.token));
-    expect(r.status).toBe(409);
+    expect(r.status).toBe(404);
   });
 
   it("answers another employee's payslip exactly like a missing one", async () => {
@@ -117,9 +117,9 @@ describe('payslip PDF download', () => {
 
   it('re-checks finalization at download time (un-marking Paid blocks it again)', async () => {
     expect((await ctx.api.post(`/api/hr/payroll/${paidId}/unmark-paid`).set(bearer(adminToken))).status).toBe(200);
-    expect((await ctx.api.get(`/api/me/payslips/${paidId}/pdf`).set(bearer(mine.token))).status).toBe(409);
+    expect((await ctx.api.get(`/api/me/payslips/${paidId}/pdf`).set(bearer(mine.token))).status).toBe(404);
     const list = await ctx.api.get('/api/me/payslips').set(bearer(mine.token));
-    expect(list.body.find((p: { id: number }) => p.id === paidId)).toMatchObject({ finalized: false, download_url: null });
+    expect(list.body.find((p: { id: number }) => p.id === paidId)).toBeUndefined();
     await ctx.api.post(`/api/hr/payroll/${paidId}/mark-paid`).set(bearer(adminToken));
   });
 

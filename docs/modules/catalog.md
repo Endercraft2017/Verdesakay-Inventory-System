@@ -667,6 +667,12 @@ approved one linked. Both forms are seeded in `seedHrRequestForms`, self-fileabl
 count only once approved, and are linkable/creatable from the grid's Linked Form column
 (`public/js/modules/hr/hr-timekeeping.js`, which also shows "Rest Day (moved)" / "Rest Day Moved"
 tags and a "Needs Rest Day form" nudge). Tests: `tests/rest-day-forms.test.ts`.
+**Schedule-change requests:** `schedule_change` is seeded alongside HR request forms. The
+employee selects a future published roster date and a configured shift; the department head
+or HR decides it through the shared approval endpoint. Approval updates that attendance day's
+`shift_id` in the decision transaction and refuses a changed roster, elapsed date or paid
+cutoff. `GET /api/me/schedule` then shows the approved shift. Tests:
+`tests/mobile-schedule-change.test.ts`.
 **Employee status `suspended`** (SCHEMA_VERSION 53, table rebuilt to widen the CHECK): still
 employed — stays on rosters, payroll and the HR lists — but `clock.ts`'s `punchBlockedReason`
 refuses kiosk, phone and field punches, and production team pickers exclude them. HR lifts it by

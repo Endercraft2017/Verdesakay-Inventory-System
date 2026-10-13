@@ -352,7 +352,7 @@ describe('mobile bootstrap', () => {
     const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/schedule.js'), 'utf8');
     expect(source).toContain("view.setAttribute('data-figma-node', '46:606')");
     expect(source).toContain("API.get('/me/schedule')");
-    expect(source).toContain("MApp.go('requests')");
+    expect(source).toContain("MApp.go('requests', { type: 'schedule_change', date: target })");
     expect(source).toContain('Request schedule change');
   });
 
@@ -364,9 +364,10 @@ describe('mobile bootstrap', () => {
     expect(source).toContain("shell(view, '46:692'");
     expect(source).toContain("API.get('/me/request-types')");
     expect(source).toContain("API.get('/me/requests')");
-    expect(source).toContain("API.post('/form-records'");
-    expect(source).toContain('Half-day · Undertime');
-    expect(source).toContain('Offset · Time correction · Schedule change');
+    expect(source).toContain("mSubmit('/form-records'");
+    expect(source).toContain('Forms available now');
+    expect(source).toContain('halfday_request:');
+    expect(source).toContain('offset_form:');
   });
 
 

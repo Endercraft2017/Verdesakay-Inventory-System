@@ -120,7 +120,7 @@ App.register('hr-approvals', async (view, filter) => {
           requested_out: r.requested_out,
           reason: r.reason,
         }
-      : r.data || {};
+      : r.display_data || r.data || {};
     const pending = r.status === 'pending';
     const entries = Object.entries(data).filter(
       ([k, v]) =>
@@ -130,7 +130,7 @@ App.register('hr-approvals', async (view, filter) => {
       title: `${r.form_name} — ${r.employee_name || r.filed_by || r.number || ''}`,
       cancelText: 'Close',
       bodyHTML: `${entries.map(([k, v]) => `<div class="tool-row"><strong>${UI.esc(k.replace(/_/g, ' '))}</strong><span>${UI.esc(typeof v === 'object' ? JSON.stringify(v) : String(v))}</span></div>`).join('')}
-        ${pending ? '<label for="ap-note">Decision note (include the reason if rejecting)</label><textarea id="ap-note" maxlength="1000" rows="3"></textarea><label for="ap-decision">Decision</label><select id="ap-decision"><option value="approved">Approve</option><option value="rejected">Reject</option></select>' : `<p>Status: ${UI.esc(r.status)}</p><p>Decided by: ${UI.esc(data.decided_by || r.decided_by_name || '—')}</p><p>${UI.esc(data.decided_at || r.decided_at || '')}</p><p>Note: ${UI.esc(data.decision_note || r.decision_note || 'No note recorded')}</p>`}`,
+        ${pending ? '<label for="ap-note">Decision note (include the reason if rejecting)</label><textarea id="ap-note" maxlength="1000" rows="3"></textarea><label for="ap-decision">Decision</label><select id="ap-decision"><option value="approved">Approve</option><option value="rejected">Reject</option></select>' : `<p>Status: ${UI.esc(r.status)}</p><p>Decided by: ${UI.esc(r.data?.decided_by || r.decided_by_name || '—')}</p><p>${UI.esc(r.data?.decided_at || r.decided_at || '')}</p><p>Note: ${UI.esc(r.data?.decision_note || r.decision_note || 'No note recorded')}</p>`}`,
       confirmText: pending ? 'Save decision' : null,
       onConfirm: async (ov, showErr) => {
         const decision = ov.querySelector('#ap-decision').value,

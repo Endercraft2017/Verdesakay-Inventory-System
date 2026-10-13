@@ -3521,6 +3521,15 @@ function seedHrRequestForms(): void {
       ],
     },
     {
+      name: 'Schedule Change Request', slug: 'schedule_change', prefix: 'SCH', icon: 'calendar',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Published work date'),
+        { key: 'requested_shift_id', label: 'Requested shift', type: 'select', required: true, options: [], default: '' },
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
       // Correction to an authoritative HR field (legal name, gov IDs, …) — applied only when an
       // hr.manage approver approves it (src/modules/hr/info-change.ts). Options must match
       // INFO_CHANGE_FIELDS there (pinned by tests/info-change.test.ts). Keys avoid position/

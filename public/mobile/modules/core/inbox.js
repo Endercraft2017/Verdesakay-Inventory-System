@@ -526,6 +526,16 @@
     var fileInput = state.view.querySelector('#m-chat-file');
     var filePreview = state.view.querySelector('#m-chat-files');
     var selectedFiles = [];
+    // Keep an unsent text draft through navigation or a dropped connection. Shared-phone
+    // sessions keep it only in this tab; account and recipient are both part of the key.
+    var me = MApp.getMe() || {};
+    var draftKey = 'vds-chat-draft:' + me.id + ':' + state.otherId;
+    var draftStore = API.isSharedSession() ? sessionStorage : localStorage;
+    try { input.value = draftStore.getItem(draftKey) || ''; } catch (e) {}
+    if (input.value) input.style.height = Math.min(112, Math.max(44, input.scrollHeight)) + 'px';
+    function saveDraft() {
+      try { if (input.value.trim()) draftStore.setItem(draftKey, input.value); else draftStore.removeItem(draftKey); } catch (e) {}
+    }
 
     function renderFiles() {
       filePreview.classList.toggle('hidden', !selectedFiles.length);
@@ -553,6 +563,7 @@
       input.style.height = Math.min(112, Math.max(44, input.scrollHeight)) + 'px';
     }
     input.addEventListener('input', function () {
+      if (!state.editingId) saveDraft();
       growInput();
       if (isNearBottom()) requestAnimationFrame(scrollToBottom);
       var now = Date.now();
@@ -601,6 +612,7 @@
       }
       send.then(function () {
         input.value = '';
+        saveDraft();
         growInput();
         selectedFiles = [];
         renderFiles();
@@ -608,7 +620,7 @@
         renderReplyStrip();
         if (!(window.ChatWS && ChatWS.connected)) reloadThread();
       }).catch(function (e) {
-        mToast(e.message || 'Failed', 'err');
+        mToast(e.offline ? 'Offline — message not sent. Your text stays as a draft; reconnect and tap Send.' : (e.message || 'Failed'), 'err');
       }).finally(function () {
         sendBtn.disabled = false;
         attachBtn.disabled = false;

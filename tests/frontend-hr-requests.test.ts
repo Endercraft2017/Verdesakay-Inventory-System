@@ -18,6 +18,7 @@ function boot(mobile: boolean, type: typeof types[number], linked = true) {
   w.eval(fs.readFileSync(path.join(root, 'js/leave-dates.js'), 'utf8'));
   w.API = { get: async (p: string) => p === '/me' ? { employee } : p === '/me/request-types' ? [type] : [], post: async (...args: any[]) => { if (args[0] === '/me/leave-preview') return { days: 1, remaining: 8, warnings: [] }; posts.push(args);return { id: 1 }; } };
   if (mobile) {
+    w.mSubmit = async (...args: any[]) => ({ ok: true, response: await w.API.post(...args) });
     w.MApp = { route: (k: string, fn: any) => routes[k] = fn, setTitle() {}, getMe: () => ({ employee }) };
     w.mEsc = (x: unknown) => String(x ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
     w.mEl = (html: string) => { const box = w.document.createElement('div');box.innerHTML = html;return box.firstElementChild; };

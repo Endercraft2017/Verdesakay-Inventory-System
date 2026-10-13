@@ -83,10 +83,13 @@
       if (!ti && !to) { mToast('Enter a time-in or a time-out', 'err'); return; }
       if (reason.length < 3) { mToast('A short reason is required', 'err'); return; }
       var btn = f.querySelector('button[type=submit]'); btn.disabled = true;
-      API.post('/me/time-corrections', {
+      mSubmit('/me/time-corrections', {
         work_date: wd, requested_in: ti || null, requested_out: to || null, reason: reason,
-      })
-        .then(function () { mToast('Submitted'); view0(view); })
+      }, { label: 'Attendance correction · ' + wd })
+        .then(function (sent) {
+          if (sent.queued) { mToast('Saved on this phone. It will be sent when you reconnect.'); MApp.go('queue'); }
+          else { mToast('Submitted'); view0(view); }
+        })
         .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); btn.disabled = false; });
     };
     view.appendChild(f);

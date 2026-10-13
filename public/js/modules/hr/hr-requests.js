@@ -114,7 +114,7 @@ App.register('hr-requests', async (view, filter) => {
           decided_by: r.decided_by_name,
           decision_note: r.decision_note,
         }
-      : r.data || {};
+      : r.display_data || r.data || {};
     UI.modal({
       title: fixes ? 'Attendance correction' : r.form_name,
       cancelText: 'Close',

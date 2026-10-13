@@ -61,14 +61,14 @@
     MApp.setTitle('Payslips');
     var host = shell(view, '46:895', 'Payslips', 'Available after payroll is finalized', function () { MApp.go('settings'); });
     host.innerHTML =
-      '<aside class="m-payslip-rule">Draft payroll may still change. Download appears only after HR explicitly finalizes and releases the payroll.</aside>' +
+      '<aside class="m-payslip-rule">Payslips appear here after HR marks them Paid.</aside>' +
       '<div id="m-payslip-list"><div class="m-hint">Loading…</div></div>' +
       '<p class="m-payslip-access-note">Open Profile → Pay & documents anytime.</p>';
     var rowsHost = host.querySelector('#m-payslip-list');
 
     API.get('/me/payslips').then(function (rows) {
       if (!rows || !rows.length) {
-        rowsHost.innerHTML = '<div class="m-empty">No payroll records are available yet.</div>';
+        rowsHost.innerHTML = '<div class="m-empty">No paid payslips are available yet.</div>';
         return;
       }
       rowsHost.innerHTML = '';

@@ -8,9 +8,9 @@ import { noWorkFormIds } from '../../core/form-actions';
 
 export const ATTENDANCE_REQUESTS = ['leave_request', 'overtime_request', 'undertime_request',
   'halfday_request', 'offset_form', 'lunch_offset_form', 'holiday_work_request',
-  'rest_day_work_request', 'rest_day_change', 'reported_absence'];
+  'rest_day_work_request', 'rest_day_change', 'reported_absence', 'schedule_change'];
 const internal = ['employee_id', 'approved_by', 'decided_by', 'decided_at', 'decision_note',
-  'leave_days_charged', 'charged_dates', 'leave_warnings'];
+  'leave_days_charged', 'charged_dates', 'leave_warnings', 'current_shift_id'];
 
 /** Stable IDs take precedence; legacy names must identify exactly one employee. */
 export const requestEmployeeJoin = `e.id = CASE WHEN json_valid(fr.data) THEN
@@ -106,6 +106,9 @@ export function normalizeRequest(slug: string, fields: FieldDef[], raw: Record<s
   if (ATTENDANCE_REQUESTS.includes(slug) && slug !== 'leave_request') {
     const date = requestDate(slug, data);
     if (!realDate(date)) throw new ValidationError('A valid request date is required.');
+  }
+  if (slug === 'schedule_change' && !queryOne('SELECT id FROM shifts WHERE id = ?', Number(data.requested_shift_id))) {
+    throw new ValidationError('Choose an available shift for this schedule change.');
   }
   return data;
 }

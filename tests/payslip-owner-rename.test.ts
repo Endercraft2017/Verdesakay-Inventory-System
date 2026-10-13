@@ -72,7 +72,7 @@ describe('payslip ownership across renames', () => {
     expect(detail.body.error ?? '').not.toMatch(/No employee record/);
     const mine = await ctx.api.get('/api/me/payslips').set({ Authorization: `Bearer ${acct.token}` });
     expect(mine.body.map((p: { number: string }) => p.number).sort()).toContain('PAY-LEG-1');
-    expect(mine.body).toHaveLength(2);
+    expect(mine.body).toHaveLength(1); // the regenerated cutoff is still draft
   });
 
   it("never attributes a former name to a different employee who currently holds it", async () => {

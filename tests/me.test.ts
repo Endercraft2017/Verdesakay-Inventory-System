@@ -59,8 +59,10 @@ describe('employee self-service', () => {
     const a = await linked();
     const b = await linked();
     const formId = await formBySlug('hr_payroll');
-    await ctx.api.post('/api/form-records').set(A()).send({ form_def_id: formId, data: { employee_name: a.name, net_pay: 9000 } });
-    await ctx.api.post('/api/form-records').set(A()).send({ form_def_id: formId, data: { employee_name: b.name, net_pay: 7000 } });
+    const own = await ctx.api.post('/api/form-records').set(A()).send({ form_def_id: formId, data: { employee_name: a.name, net_pay: 9000 } });
+    const theirs = await ctx.api.post('/api/form-records').set(A()).send({ form_def_id: formId, data: { employee_name: b.name, net_pay: 7000 } });
+    await ctx.api.post(`/api/hr/payroll/${own.body.id}/mark-paid`).set(A());
+    await ctx.api.post(`/api/hr/payroll/${theirs.body.id}/mark-paid`).set(A());
 
     const mine = await ctx.api.get('/api/me/payslips').set({ Authorization: `Bearer ${a.token}` });
     expect(mine.status).toBe(200);

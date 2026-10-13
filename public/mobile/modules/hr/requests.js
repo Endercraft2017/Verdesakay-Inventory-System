@@ -5,11 +5,11 @@
   var TYPE_META = {
     overtime_request: { icon: '◷', guide: 'Requires supervisor approval and attendance verification.' },
     leave_request: { icon: '☼', guide: 'Your available leave balance is checked during approval.' },
-    half_day_request: { icon: '◐', guide: 'Choose the date and which half of the shift is affected.' },
+    halfday_request: { icon: '◐', guide: 'Choose the date and which half of the shift is affected.' },
     undertime_request: { icon: '↙', guide: 'State the planned departure time and operational reason.' },
-    offset_request: { icon: '⇄', guide: 'Identify the earned time and the date you plan to use it.' },
+    offset_form: { icon: '⇄', guide: 'Identify the earned time and the date you plan to use it.' },
     time_correction: { icon: '⟳', guide: 'Give the correct punch details so HR can verify attendance.' },
-    schedule_change: { icon: '▦', guide: 'Your current roster remains active until this request is approved.' },
+    schedule_change: { icon: '▦', guide: 'Choose a published future work date and a shift. Your roster changes only after approval.' },
     information_change: { icon: '✎', guide: 'Authoritative employee information changes only after approval.' }
   };
 
@@ -74,10 +74,7 @@
         }).join('') +
       '</div><div id="m-req-list"><div class="m-hint">Loading…</div></div>' +
       '<div id="m-req-balance"></div>' +
-      '<aside class="m-request-types-note"><b>Available to every employee</b>' +
-        '<span>Overtime · Leave · Half-day · Undertime</span>' +
-        '<span>Offset · Time correction · Schedule change</span>' +
-        '<span>Information change · Documents · Other</span></aside>';
+      '<aside class="m-request-types-note" id="m-req-available" hidden></aside>';
 
     host.querySelector('#m-req-new').onclick = function () { pickType(view); };
     Array.prototype.forEach.call(host.querySelectorAll('[data-filter]'), function (button) {
@@ -87,6 +84,13 @@
     API.get('/me').then(function (r) {
       var balance = host.querySelector('#m-req-balance');
       if (balance) balance.innerHTML = leaveBalanceStrip(r.employee);
+    }).catch(function () {});
+
+    API.get('/me/request-types').then(function (types) {
+      var note = host.querySelector('#m-req-available');
+      if (!note || !types || !types.length) return;
+      note.innerHTML = '<b>Forms available now</b><span>' + types.map(function (type) { return mEsc(type.name); }).join(' · ') + '</span>';
+      note.hidden = false;
     }).catch(function () {});
 
     var rowsHost = host.querySelector('#m-req-list');
@@ -118,7 +122,8 @@
   function detail(view, r) {
     MApp.setTitle(r.form_name);
     var host = shell(view, '46:692', r.form_name, r.number || 'Request details', function () { list(view); });
-    var data = r.data || {};
+    var data = r.display_data || r.data || {};
+    var decisionNote = r.data && r.data.decision_note;
     var fields = Object.keys(data).filter(function (key) {
       return data[key] != null && String(data[key]).trim() !== '' && typeof data[key] !== 'object' && ['decision_note', 'employee_id', 'decided_by'].indexOf(key) < 0;
     });
@@ -134,7 +139,7 @@
           return '<div class="m-request-detail-row"><b>' + mEsc(titleCase(key)) + '</b><span>' + mEsc(String(data[key])) + '</span></div>';
         }).join('') : '<div class="m-empty">No additional details were recorded.</div>') +
       '</div>' +
-      (data.decision_note ? '<aside class="m-request-decision"><b>Decision note</b><span>' + mEsc(String(data.decision_note)) + '</span></aside>' : '') +
+      (decisionNote ? '<aside class="m-request-decision"><b>Decision note</b><span>' + mEsc(String(decisionNote)) + '</span></aside>' : '') +
       '<section class="m-request-timeline"><h2>Approval timeline</h2><div>' +
         '<span class="done">✓ Submitted · ' + mEsc(dateText(r.created_at)) + '</span>' +
         '<span class="' + (r.status === 'approved' || r.status === 'completed' || r.status === 'rejected' ? 'done' : '') + '">○ Review · ' + mEsc(isPending ? 'Waiting' : current) + '</span>' +
@@ -236,6 +241,13 @@
       '<div id="m-req-form-balance"></div>';
     host.querySelector('.m-request-selected-type').onclick = function () { pickType(view); };
     var formEl = host.querySelector('form');
+    if (type.slug === 'schedule_change') {
+      var shiftField = (type.fields || []).filter(function (field) { return field.key === 'requested_shift_id'; })[0];
+      if (!shiftField || !shiftField.options || !shiftField.options.length) {
+        formEl.insertAdjacentHTML('afterbegin', '<aside class="m-request-guidance">HR needs to configure work shifts before you can request a change.</aside>');
+        formEl.querySelector('button[type="submit"]').disabled = true;
+      }
+    }
     var leavePicker = type.slug === 'leave_request' ? LeaveDates.mount(formEl, { data: draft || (prefillDate ? { date_from: prefillDate, date_to: prefillDate } : {}), preview: function (data) { return API.post('/me/leave-preview', data); } }) : null;
 
     (type.fields || []).forEach(function (field) {
@@ -283,7 +295,13 @@
       var button = this;
       button.disabled = true;
       button.textContent = 'Submitting…';
-      API.post('/form-records', { form_def_id: type.id, data: data, status: 'pending' }).then(function (result) {
+      mSubmit('/form-records', { form_def_id: type.id, data: data, status: 'pending' }, { label: type.name + ' request' }).then(function (sent) {
+        if (sent.queued) {
+          mToast('Saved on this phone. It will be sent when you reconnect; check Pending sync.');
+          MApp.go('queue');
+          return;
+        }
+        var result = sent.response;
         if (result.action_warnings && result.action_warnings.length) window.alert(result.action_warnings.join('\n\n'));
         mToast('Request submitted');
         list(view, 'pending');

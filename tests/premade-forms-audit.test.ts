@@ -33,8 +33,19 @@ describe('all premade forms',()=>{
    if(form.slug==='rest_day_change'){data.original_rest_day='2026-11-08';data.new_rest_day='2026-11-10';}
    if(form.slug==='rest_day_work_request')data.work_date='2026-11-08';
    if(form.slug==='information_change')data.requested_value='Corrected Legal Name';
+   if(form.slug==='schedule_change'){
+    data.work_date='2026-12-17';
+    const current=await ctx.api.post('/api/hr/shifts').set(h()).send({name:'Audit morning',start_time:'08:00',end_time:'17:00'});
+    const requested=await ctx.api.post('/api/hr/shifts').set(h()).send({name:'Audit late',start_time:'10:00',end_time:'19:00'});
+    const cutoff=await ctx.api.post('/api/hr/periods').set(h()).send({label:'Audit schedule',start_date:data.work_date,end_date:data.work_date});
+    expect(cutoff.status).toBe(201);
+    await ctx.api.post(`/api/hr/periods/${cutoff.body.id}/employees`).set(h()).send({employee_id:employeeId});
+    const roster=await ctx.api.put(`/api/hr/periods/${cutoff.body.id}/attendance`).set(h()).send({employee_id:employeeId,days:[{work_date:data.work_date,shift_id:current.body.id,time_in:'',time_out:'',notes:''}]});
+    expect(roster.status).toBe(200);
+    data.requested_shift_id=String(requested.body.id);
+   }
    const recordAuth=form.slug==='information_change'?{Authorization:'Bearer '+employeeToken}:h();
-   const created=await ctx.api.post('/api/form-records').set(recordAuth).send({form_def_id:form.id,data,status:'submitted'});expect(created.status,form.slug).toBe(201);expect(Array.isArray(created.body.action_warnings),form.slug).toBe(true);
+   const created=await ctx.api.post('/api/form-records').set(recordAuth).send({form_def_id:form.id,data,status:'submitted'});expect(created.status,form.slug+' '+JSON.stringify(created.body)).toBe(201);expect(Array.isArray(created.body.action_warnings),form.slug).toBe(true);
    const record=(await ctx.api.get('/api/form-records/'+created.body.id).set(h())).body;
    expect(record.form_def_id).toBe(form.id);const entered=Object.fromEntries(Object.entries(data).filter(([key])=>!['employee_id','employee_name','department','position','employee_no','name','current_value','approved_hours','approved_by'].includes(key)).map(([key,value])=>[key,REQUEST_SLUGS.includes(form.slug)&&typeof value==='boolean'?(value?'Yes':'No'):value]));expect(record.data,form.slug).toMatchObject(entered);
    const html=renderDocument(tpl.body,{...record.data,number:record.number,today:'2026-11-10',record:{number:record.number,status:record.status,created_at:record.created_at},company:{name:'Audit Company'}},tpl.id);
