@@ -1282,28 +1282,53 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   const zoomNow = () => (typeof getZoom === 'function' ? Number(getZoom()) : 1) || 1;
   let savedRange = null, savedBackwards = false;
   // Caret marks are ephemeral editor state. Choosing a mark creates no saved markup/history.
+  let pendingDecorations = {}, pendingScript = null, pendingClear = false;
   let pendingMarks = {}, pendingCaret = null, insertionStart = null, insertionText = null;
-  const clearPending = () => { pendingMarks = {}; pendingCaret = null; insertionStart = null; insertionText = null; };
+  const clearPending = () => { pendingDecorations={};pendingScript=null;pendingClear=false;pendingMarks = {}; pendingCaret = null; insertionStart = null; insertionText = null; };
   const setPending = (property,value) => {
     window.DocModel.validateInline(property,value);
     pendingMarks[property]=value;pendingCaret=window.getSelection().getRangeAt(0).cloneRange();
     return {pending:true};
   };
+  const hasPending = () => pendingClear||pendingScript!==null||Object.keys(pendingMarks).length||Object.keys(pendingDecorations).length;
+  const markCaret = () => {pendingCaret=window.getSelection().getRangeAt(0).cloneRange();return {pending:true};};
+  function finishInsertion(sel){
+    if(!sel.isCollapsed){
+      if(pendingClear)window.DocModel.clearSelection(surface,sel);
+      for(const [property,value] of Object.entries(pendingMarks))window.DocModel.formatSelection(surface,sel,property,value);
+      if(pendingScript!==null)window.DocModel.formatScript(surface,sel,pendingScript);
+      for(const [token,on] of Object.entries(pendingDecorations))window.DocModel.formatDecoration(surface,sel,token,on);
+      sel.collapseToEnd();window.DocModel.normalizeRuns(surface,sel);
+    }
+    if(hasPending())pendingCaret=sel.getRangeAt(0).cloneRange();saveSel();
+  }
+  function editText(text='',direction=null){
+    const sel=window.getSelection();if(!sel?.isCollapsed&&pendingCaret)clearPending();const result=window.DocModel.editText(surface,sel,text,direction,{});
+    if(result===true){if(text)finishInsertion(sel);else{clearPending();saveSel();}}return result;
+  }
   function beforeInput(e) {
-    if(!window.DocModel||!Object.keys(pendingMarks).length)return;
+    if(!window.DocModel)return;
     if(commandContext.isComposing?.()&&insertionStart)return;
-    if(!e.isComposing&&typeof e.data==='string'&&/[\r\n]/.test(e.data)){clearPending();return;}
-    const sel=window.getSelection();if(!sel?.isCollapsed||!surface.contains(sel.anchorNode)){clearPending();return;}
-    if(e.cancelable&&e.inputType==='insertText'&&!e.isComposing&&!commandContext.isComposing?.()&&!trackingText()&&typeof e.data==='string'){
-      if(window.DocModel.insertMarkedText(surface,sel,e.data,pendingMarks)){
-        e.preventDefault();e.stopImmediatePropagation();insertionStart=null;pendingCaret=sel.getRangeAt(0).cloneRange();saveSel();onChange();reflect();return;
+    const structuralInsert=!e.isComposing&&typeof e.data==='string'&&/[\r\n]/.test(e.data);
+    const sel=window.getSelection();if(!sel?.rangeCount||!surface.contains(sel.anchorNode)||!surface.contains(sel.focusNode))return;
+    if(e.cancelable&&!e.isComposing&&!commandContext.isComposing?.()&&!trackingText()){saveSel();if(!editableSelection(false)){e.preventDefault();e.stopImmediatePropagation();return;}}
+    if(structuralInsert){clearPending();return;}
+    if(e.cancelable&&!e.isComposing&&!commandContext.isComposing?.()&&!trackingText()){
+      const inserting=/^(insertText|insertReplacementText)$/.test(e.inputType)&&typeof e.data==='string',deleting=/^(deleteContentBackward|deleteContentForward|deleteByCut)$/.test(e.inputType);
+      if(inserting||deleting){
+        const direction=sel.isCollapsed&&deleting?(e.inputType==='deleteContentBackward'?'backward':'forward'):null;
+        const result=editText(inserting?e.data:'',direction);
+        if(result!==null){e.preventDefault();e.stopImmediatePropagation();if(result){insertionStart=null;onChange();reflect();}return;}
       }
     }
+    if(!hasPending())return;
+    if(!sel.isCollapsed){clearPending();return;}
     if(/^insert(Text|ReplacementText|CompositionText)$/.test(e.inputType)){
       if(!insertionStart)insertionStart=sel.getRangeAt(0).cloneRange();
       if(!commandContext.isComposing?.()&&typeof e.data==='string')insertionText=e.data;
     }else if(!e.isComposing){clearPending();}
   }
+
   function applyPending(committedText=null) {
     if(!insertionStart||commandContext.isComposing?.())return;
     const start=insertionStart;insertionStart=null;committedText ??= insertionText;insertionText=null;
@@ -1312,8 +1337,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     if(committedText===null){range.setStart(start.startContainer,start.startOffset);range.setEnd(sel.anchorNode,sel.anchorOffset);}
     if(range.collapsed)return;
     sel.removeAllRanges();sel.addRange(range);
-    try{for(const [property,value] of Object.entries(pendingMarks))window.DocModel.formatSelection(surface,sel,property,value);}
-    finally{sel.collapseToEnd();window.DocModel.normalizeRuns(surface,sel);pendingCaret=sel.getRangeAt(0).cloneRange();saveSel();}
+    finishInsertion(sel);
   }
 
   const saveSel = () => {
@@ -1343,14 +1367,20 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   const commands = createDocCommandRegistry({
     prepare:restoreSel,enabled:editableSelection,
     native:(cmd,val)=>{
+      if(window.DocModel){
+        const sel=window.getSelection();
+        if((cmd==='insertText'||cmd==='delete')&&!trackingText()){const result=editText(cmd==='insertText'?String(val ?? ''):'');if(result!==null)return result;}
+        if(cmd==='removeFormat'){if(sel.isCollapsed){pendingClear=true;pendingMarks=window.DocModel.defaultCharacterMarks(surface,sel);pendingDecorations={underline:false,'line-through':false};pendingScript='baseline';return markCaret();}return window.DocModel.clearSelection(surface,sel) ?? document.execCommand(cmd,false,val);}
+        const script={superscript:'super',subscript:'sub'}[cmd];if(script){const active=sel.isCollapsed&&pendingScript!==null?pendingScript===script:window.DocModel.scriptActive(surface,sel,script);const value=active?'baseline':script;if(sel.isCollapsed){pendingScript=value;return markCaret();}const result=window.DocModel.formatScript(surface,sel,value);if(result!==null)return result;}
+      }
       const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];
       if(align && window.DocModel){const result=window.DocModel.alignSelection(surface,window.getSelection(),align);if(result!==null)return result;}
-      const decoration={underline:'underline',strikeThrough:'line-through'}[cmd];if(decoration&&window.DocModel){const sel=window.getSelection();const result=window.DocModel.formatDecoration(surface,sel,decoration,!window.DocModel.decorationActive(surface,sel,decoration));if(result!==null)return result;}
+      const decoration={underline:'underline',strikeThrough:'line-through'}[cmd];if(decoration&&window.DocModel){const sel=window.getSelection();const active=sel.isCollapsed&&pendingDecorations[decoration]!==undefined?pendingDecorations[decoration]:window.DocModel.decorationActive(surface,sel,decoration);if(sel.isCollapsed){pendingDecorations[decoration]=!active;return markCaret();}const result=window.DocModel.formatDecoration(surface,sel,decoration,!active);if(result!==null)return result;}
       const property={bold:'font-weight',italic:'font-style',fontName:'font-family',foreColor:'color',hiliteColor:'background-color'}[cmd];
       if(property&&window.DocModel){const sel=window.getSelection();const value=cmd==='bold'?(window.DocModel.inlineActive(surface,sel,property)?'normal':'bold'):cmd==='italic'?(window.DocModel.inlineActive(surface,sel,property)?'normal':'italic'):val;const pending=sel?.isCollapsed?pendingMarks[property]:undefined;const desired=pending!==undefined&&cmd==='bold'?(pending==='bold'?'normal':'bold'):pending!==undefined&&cmd==='italic'?(pending==='italic'?'normal':'italic'):value;if(sel?.isCollapsed)return setPending(property,desired);const result=window.DocModel.formatSelection(surface,sel,property,desired);if(result!==null)return result;}
       return document.execCommand(cmd,false,val);
     },
-    active:cmd=>{const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];if(align&&window.DocModel)return window.DocModel.alignmentActive(surface,window.getSelection(),align);const decoration={underline:'underline',strikeThrough:'line-through'}[cmd];if(decoration&&window.DocModel&&!window.getSelection()?.isCollapsed){const active=window.DocModel.decorationActive(surface,window.getSelection(),decoration);if(active!==null)return active;}const property={bold:'font-weight',italic:'font-style'}[cmd];if(property&&window.DocModel){if(window.getSelection()?.isCollapsed&&pendingMarks[property]!==undefined)return pendingMarks[property]===(cmd==='bold'?'bold':'italic');const active=window.DocModel.inlineActive(surface,window.getSelection(),property);if(active!==null)return active;}try{return document.queryCommandState(cmd);}catch{return false;}},
+    active:cmd=>{const align={justifyLeft:'left',justifyCenter:'center',justifyRight:'right',justifyFull:'justify'}[cmd];if(align&&window.DocModel)return window.DocModel.alignmentActive(surface,window.getSelection(),align);const decoration={underline:'underline',strikeThrough:'line-through'}[cmd];if(decoration&&window.DocModel){if(window.getSelection()?.isCollapsed&&pendingDecorations[decoration]!==undefined)return pendingDecorations[decoration];const active=window.DocModel.decorationActive(surface,window.getSelection(),decoration);if(active!==null)return active;}const script={superscript:'super',subscript:'sub'}[cmd];if(script&&window.DocModel){if(window.getSelection()?.isCollapsed&&pendingScript!==null)return pendingScript===script;const active=window.DocModel.scriptActive(surface,window.getSelection(),script);if(active!==null)return active;}const property={bold:'font-weight',italic:'font-style'}[cmd];if(property&&window.DocModel){if(window.getSelection()?.isCollapsed&&pendingMarks[property]!==undefined)return pendingMarks[property]===(cmd==='bold'?'bold':'italic');const active=window.DocModel.inlineActive(surface,window.getSelection(),property);if(active!==null)return active;}try{return document.queryCommandState(cmd);}catch{return false;}},
     size:value=>{
       const size=Number(value);if(!Number.isFinite(size)||size<1||size>400)return false;
       if(window.DocModel){if(window.getSelection()?.isCollapsed)return setPending('font-size',size+'pt');const result=window.DocModel.formatSelection(surface,window.getSelection(),'font-size',size+'pt');if(result!==null)return result;}

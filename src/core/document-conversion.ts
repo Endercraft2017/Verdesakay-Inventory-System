@@ -67,10 +67,9 @@ export async function exportDocx(input: {
             format.underline = {};
         if (['s', 'strike'].includes(n.name) || (n.name === 'del' && !n.attribs['data-doc-change']) || (s['text-decoration-line'] || s['text-decoration'])?.includes('line-through'))
             format.strike = true;
-        if (n.name === 'sup')
-            format.superScript = true;
-        if (n.name === 'sub')
-            format.subScript = true;
+        if (n.name === 'sup' || s['vertical-align'] === 'super') { format.superScript = true; format.subScript = false; }
+        if (n.name === 'sub' || s['vertical-align'] === 'sub') { format.subScript = true; format.superScript = false; }
+        if (s['vertical-align'] === 'baseline') { format.superScript = false; format.subScript = false; }
         const size = px(s['font-size']);
         if (size)
             format.size = Math.round(size * 1.5);

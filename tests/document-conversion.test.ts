@@ -71,3 +71,10 @@ it('exports model decoration lines and structurally removed decorations without 
  const runs=xml.match(/<w:r>[\s\S]*?<\/w:r>/g)!;const middle=runs.find(run=>run.includes('middle'))!,field=runs.find(run=>run.includes('{{employee.name}}'))!;
  expect(middle).toContain('<w:strike');expect(middle).not.toContain('<w:u ');expect(field).toContain('<w:u ');expect(field).toContain('<w:strike');expect(xml).toContain('Before ');expect(xml).toContain(' after');
 });
+
+it('exports script overrides without leaving both super/sub flags and retains cleared character defaults',async()=>{
+ const body='<p style="font-size:18pt"><sup>Raised<sub>Lowered</sub><span style="vertical-align:baseline">Baseline</span></sup><span data-doc-run="inline" style="font-weight:normal;font-style:normal;font-size:18pt;background-color:#00000000">Clear</span></p>';
+ const result=await exportDocx({...options,body}),zip=await JSZip.loadAsync(result.buffer),xml=await zip.file('word/document.xml')!.async('string'),runs=xml.match(/<w:r>[\s\S]*?<\/w:r>/g)!;
+ const raised=runs.find(run=>run.includes('Raised'))!,lowered=runs.find(run=>run.includes('Lowered'))!,baseline=runs.find(run=>run.includes('Baseline'))!,clear=runs.find(run=>run.includes('Clear'))!;
+ expect(raised).toContain('superscript');expect(lowered).toContain('subscript');expect(lowered).not.toContain('superscript');expect(baseline).not.toContain('superscript');expect(baseline).not.toContain('subscript');expect(clear).toContain('w:sz w:val="36"');expect(clear).toContain('<w:b w:val="false"');expect(clear).not.toContain('w:shd');
+});

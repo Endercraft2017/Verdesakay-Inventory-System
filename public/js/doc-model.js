@@ -129,8 +129,9 @@ const DocModel = (() => {
     if(property==='font-family'&&(!/^[\p{L}\p{N}\s,'"._-]{1,150}$/u.test(value)))throw new Error('Invalid font family');
     if(property==='font-size'&&(!/^\d+(\.\d+)?pt$/.test(value)||parseFloat(value)<1||parseFloat(value)>400))throw new Error('Invalid font size');
     if(['color','background-color'].includes(property)&&!/^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i.test(value))throw new Error('Invalid text color');
+    if(property==='vertical-align'&&!['super','sub'].includes(value))throw new Error('Invalid script');
     if(property==='text-decoration-line'&&!['underline','line-through','underline line-through'].includes(value))throw new Error('Invalid text decoration');
-    if(!['font-weight','font-style','font-family','font-size','color','background-color','text-decoration-line'].includes(property))throw new Error('Unsupported inline format');
+    if(!['font-weight','font-style','font-family','font-size','color','background-color','text-decoration-line','vertical-align'].includes(property))throw new Error('Unsupported inline format');
   }
   /** Immutable selected-run command. Existing inline ancestors/attributes are retained. */
   function formatTextRange(document,range,property,value){
@@ -149,11 +150,11 @@ const DocModel = (() => {
         if(comparePosition({path,offset:length},start)<=0||comparePosition({path,offset:0},end)>=0||b<=a)return;
         if(locked)throw new Error('Selected text is locked');
         const parentPath=path.slice(0,-1),parent=at(next,parentPath),owned=parent?.tag==='span'&&parent.attrs.some(([k,v])=>k==='data-doc-run'&&v==='inline')&&parent.children.length===1;
-        if(owned&&a===0&&b===length){
+        if(property!=='vertical-align'&&owned&&a===0&&b===length){
           let style=parent.attrs.find(a=>a[0]==='style');if(!style){style=['style',''];parent.attrs.push(style);}let desired=value;if(property==='text-decoration-line'){const previous=style[1].match(/(?:^|;)\s*text-decoration(?:-line)?\s*:\s*([^;]+)/i)?.[1] || '';desired=[...new Set((previous+' '+value).trim().split(/\s+/))].filter(t=>['underline','line-through','overline'].includes(t)).join(' ');}style[1]=setStyleProperty(style[1],property,desired);
           changes.push({type:'attributes',path:parentPath,attrs:parent.attrs});return;
         }
-        const run={kind:'run',tag:'span',attrs:[['data-doc-run','inline'],['style',property+':'+value]],children:[node.kind==='field'?node:{kind:'text',text:node.text.slice(a,b)}]};
+        const run={kind:'run',tag:property==='vertical-align'?(value==='super'?'sup':'sub'):'span',attrs:[['data-doc-run','inline'],['style',property+':'+value]],children:[node.kind==='field'?node:{kind:'text',text:node.text.slice(a,b)}]};
         const parts=[];if(a)parts.push({kind:'text',text:node.text.slice(0,a)});parts.push(run);if(b<length)parts.push({kind:'text',text:node.text.slice(b)});
         changes.push({type:'text',path,parts});return;
       }
@@ -197,7 +198,7 @@ const DocModel = (() => {
     validateInline(property,value);
     const backwards=selection.anchorNode===original.endContainer&&selection.anchorOffset===original.endOffset;
     const start=root.ownerDocument.createComment('doc-inline-start'),end=root.ownerDocument.createComment('doc-inline-end');
-    const endRange=original.cloneRange();endRange.collapse(false);endRange.insertNode(end);const startRange=original.cloneRange();startRange.collapse(true);startRange.insertNode(start);
+    const startNode=original.startContainer,startOffset=original.startOffset;const endRange=original.cloneRange();endRange.collapse(false);endRange.insertNode(end);const startRange=root.ownerDocument.createRange();startRange.setStart(startNode,startOffset);startRange.collapse(true);startRange.insertNode(start);
     const markerParents=new Set([start.parentNode,end.parentNode]);
     try{
       const range=root.ownerDocument.createRange();range.setStartAfter(start);range.setEndBefore(end);
@@ -209,7 +210,7 @@ const DocModel = (() => {
         const node=captured.refs.get(JSON.stringify(change.path));
         if(change.type==='attributes'){node.setAttribute('style',change.attrs.find(a=>a[0]==='style')[1]);continue;}
         const fragment=root.ownerDocument.createDocumentFragment();
-        for(const part of change.parts){if(part.kind==='text')fragment.append(root.ownerDocument.createTextNode(part.text));else{const span=root.ownerDocument.createElement('span');part.attrs.forEach(([k,v])=>span.setAttribute(k,v));if(part.children[0].kind!=='field')span.textContent=part.children[0].text;fragment.append(span);}}
+        for(const part of change.parts){if(part.kind==='text')fragment.append(root.ownerDocument.createTextNode(part.text));else{const span=root.ownerDocument.createElement(part.tag);part.attrs.forEach(([k,v])=>span.setAttribute(k,v));if(part.children[0].kind!=='field')span.textContent=part.children[0].text;fragment.append(span);}}
         if(node.nodeType===1){const span=fragment.firstChild;node.before(fragment);span.append(node);}else node.replaceWith(fragment);
       }
       return result.changes.length>0;
@@ -258,7 +259,7 @@ const DocModel = (() => {
     }
     const backwards=selection.anchorNode===original.endContainer&&selection.anchorOffset===original.endOffset;
     const start=root.ownerDocument.createComment('doc-decor-start'),end=root.ownerDocument.createComment('doc-decor-end');
-    const tail=original.cloneRange();tail.collapse(false);tail.insertNode(end);const head=original.cloneRange();head.collapse(true);head.insertNode(start);
+    const startNode=original.startContainer,startOffset=original.startOffset;const tail=original.cloneRange();tail.collapse(false);tail.insertNode(end);const head=root.ownerDocument.createRange();head.setStart(startNode,startOffset);head.collapse(true);head.insertNode(start);
     const clones=[],parents=new Set([start.parentNode,end.parentNode]);let changed=false;
     try{
       const range=root.ownerDocument.createRange();range.setStartAfter(start);range.setEndBefore(end);
@@ -302,6 +303,100 @@ const DocModel = (() => {
     }
     return null;
   }
+  const TEXT_BLOCKS=PARAGRAPHS+',td,th,.doc-float-body';
+  const PROTECTED=CHROME+',.doc-checkbox,.doc-chip-ctrl,.doc-chip[data-token^="#"],.doc-chip[data-token^="/"],[data-doc-locked="true"],[data-doc-hidden="true"],[data-doc-toc],[data-doc-toc-page],[data-doc-note-ref],[data-doc-note-number],.doc-page-number,del[data-doc-change],svg,math,style,script';
+  const CHARACTER_STYLE=['font-weight','font-style','font-family','font-size','color','background-color','background','text-decoration','text-decoration-line','vertical-align'];
+  function element(node){return node.nodeType===3?node.parentElement:node;}
+  function validateLivePoint(node,offset){if(node.nodeType===3&&offset>0&&offset<node.length&&/[\uD800-\uDBFF]/.test(node.data[offset-1])&&/[\uDC00-\uDFFF]/.test(node.data[offset]))throw new Error('Text position splits a Unicode character');}
+  function overlaps(range,node){const a=range.cloneRange(),b=range.cloneRange();a.selectNode(node);a.collapse(false);b.selectNode(node);b.collapse(true);return range.compareBoundaryPoints(0,a)<0&&range.compareBoundaryPoints(2,b)>0;}
+  /** A conservative paragraph text transaction. null delegates structural edits to the browser. */
+  function editText(root,selection,text='',direction=null,marks={}){
+    if(typeof text!=='string'||!selection?.rangeCount||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return false;
+    if(/[\r\n]/.test(text))return null;
+    for(const [property,value] of Object.entries(marks))validateInline(property,value);
+    let range=selection.getRangeAt(0).cloneRange();
+    for(const [node,offset] of [[range.startContainer,range.startOffset],[range.endContainer,range.endOffset]]){
+      validateLivePoint(node,offset);const el=element(node);if(el.closest(PROTECTED+',.doc-chip')||el.closest('[contenteditable]')?.getAttribute('contenteditable')==='false')return false;
+    }
+    const block=element(range.startContainer).closest(TEXT_BLOCKS)||root,endBlock=element(range.endContainer).closest(TEXT_BLOCKS)||root;
+    for(const node of (block===endBlock?block:root).querySelectorAll(PROTECTED))if(overlaps(range,node))return false;
+    if(block!==endBlock)return null;
+    if(range.collapsed&&direction){
+      const all=root.ownerDocument.createRange();all.selectNodeContents(block);const units=editableText(root,all),prefix=all.cloneRange();prefix.setEnd(range.startContainer,range.startOffset);
+      const point=editableText(root,prefix).reduce((n,item)=>n+(item.atomic?1:item.end-item.start),0),value=units.map(item=>item.atomic?'\uFFFC':item.node.data).join('');
+      const segments=[...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(value)];
+      const segment=direction==='backward'?segments.findLast(item=>item.index<point):segments.find(item=>item.index+item.segment.length>point);
+      if(!segment)return null;
+      const a=segment.index,b=a+segment.segment.length;
+      function locate(offset,end=false){let count=0;for(const item of units){const length=item.atomic?1:item.node.length;if(offset<count+length||end&&offset===count+length){if(item.atomic){const r=root.ownerDocument.createRange();offset===count?r.setStartBefore(item.node):r.setStartAfter(item.node);return [r.startContainer,r.startOffset];}return [item.node,offset-count];}count+=length;}return [block,block.childNodes.length];}
+      range=root.ownerDocument.createRange();range.setStart(...locate(a));range.setEnd(...locate(b,true));
+      // Do not skip an intervening protected atom just because it contributes no editable text.
+      const gap=root.ownerDocument.createRange();if(direction==='backward'){gap.setStart(range.endContainer,range.endOffset);gap.setEnd(selection.anchorNode,selection.anchorOffset);}else{gap.setStart(selection.anchorNode,selection.anchorOffset);gap.setEnd(range.startContainer,range.startOffset);}
+      if(gap.cloneContents().querySelector(PROTECTED+',.doc-chip,br,img,hr'))return false;
+    }
+    const fragment=range.cloneContents();
+    if(fragment.querySelector(PROTECTED))return false;
+    const comments=root.ownerDocument.createTreeWalker(fragment,128);let comment;while((comment=comments.nextNode()))if(comment.data.startsWith('doc-block:'))return false;
+    for(const node of block.querySelectorAll(PROTECTED))if(overlaps(range,node))return false;
+    if(fragment.querySelector(TEXT_BLOCKS+',br,img,hr,table,section,[data-doc-design-page]'))return null;
+    if(range.collapsed&&!text)return false;
+    if(text&&range.collapsed){const visible=[...block.childNodes].filter(n=>n.nodeType===1||n.nodeType===3&&n.textContent.trim());if(visible.length===1&&visible[0].nodeName==='BR'){range.setStartBefore(visible[0]);range.collapse(true);visible[0].remove();}}
+    range.deleteContents();range.collapse(true);selection.removeAllRanges();selection.addRange(range);
+    if(text){const span=root.ownerDocument.createElement('span');span.dataset.docRun='inline';span.style.whiteSpace='pre-wrap';for(const [property,value] of Object.entries(marks))span.style.setProperty(property,value);span.textContent=text;range.insertNode(span);const inserted=root.ownerDocument.createRange();inserted.selectNodeContents(span);selection.removeAllRanges();selection.addRange(inserted);}
+    else {const marker=root.ownerDocument.createComment('doc-edit-caret');range.insertNode(marker);for(const run of block.querySelectorAll('[data-doc-run="inline"]'))if(!run.textContent&&!run.querySelector('.doc-chip,img,br')&&!run.contains(marker))run.remove();const caret=root.ownerDocument.createRange();caret.setStartBefore(marker);caret.collapse(true);selection.removeAllRanges();selection.addRange(caret);marker.remove();}
+    return true;
+  }
+  /** Split inline ancestors around selected leaf islands, retaining attributes and live atoms. */
+  function stripInline(root,selection,kind){
+    if(!selection?.rangeCount||selection.isCollapsed||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return null;
+    const original=selection.getRangeAt(0).cloneRange(),units=editableText(root,original);
+    const match=el=>(kind==='script'?(el.matches('sup,sub')||['super','sub'].includes(el.style.verticalAlign)):(el.matches('b,strong,i,em,u,s,strike,sup,sub,font,del:not([data-doc-change])')||CHARACTER_STYLE.some(key=>el.style.getPropertyValue(key))||ownDecoration(el,'underline')||ownDecoration(el,'line-through')));
+    for(const item of units){if(item.node.parentElement.closest('[data-doc-locked="true"]'))throw new Error('Selected text is locked');for(let el=item.node.parentElement;el&&el!==root;el=el.parentElement)if(el.matches(TEXT_BLOCKS+',div,section')&&(kind==='script'?match(el):ownDecoration(el,'underline')||ownDecoration(el,'line-through')))return null;}
+    validateLivePoint(original.startContainer,original.startOffset);validateLivePoint(original.endContainer,original.endOffset);
+    const backwards=selection.anchorNode===original.endContainer&&selection.anchorOffset===original.endOffset,start=root.ownerDocument.createComment('doc-strip-start'),end=root.ownerDocument.createComment('doc-strip-end');
+    const startNode=original.startContainer,startOffset=original.startOffset;const tail=original.cloneRange();tail.collapse(false);tail.insertNode(end);const head=root.ownerDocument.createRange();head.setStart(startNode,startOffset);head.collapse(true);head.insertNode(start);const clones=[];let changed=false;
+    try{
+      const selected=root.ownerDocument.createRange();selected.setStartAfter(start);selected.setEndBefore(end);
+      for(const {node} of editableText(root,selected)){
+        let highest=null;for(let el=node.parentElement;el&&el!==root&&!el.matches(TEXT_BLOCKS+',div,section');el=el.parentElement)if(match(el))highest=el;if(!highest)continue;
+        const stop=highest.parentNode,focus=root.ownerDocument.createElement('span');focus.dataset.docRun='inline';node.before(focus);focus.append(node);let child=focus;
+        while(child.parentNode!==stop){let parent=child.parentElement;
+          const side=()=>{const clone=parent.cloneNode(false);clone.removeAttribute('id');clone.removeAttribute('data-doc-node');clones.push(clone);return clone;};
+          if(child.previousSibling){const before=side();while(parent.firstChild!==child)before.append(parent.firstChild);parent.before(before);}if(child.nextSibling){const after=side();while(child.nextSibling)after.append(child.nextSibling);parent.after(after);}
+          if(match(parent)){
+            if(parent.matches(kind==='script'?'sup,sub':'b,strong,i,em,u,s,strike,sup,sub,font,del:not([data-doc-change])')){const span=root.ownerDocument.createElement('span');for(const attr of parent.attributes)span.setAttribute(attr.name,attr.value);span.dataset.docRun='inline';if(parent.tagName==='FONT')for(const attr of ['size','face','color'])span.removeAttribute(attr);span.append(...parent.childNodes);parent.replaceWith(span);parent=span;}
+            if(kind==='script')parent.style.removeProperty('vertical-align');else{CHARACTER_STYLE.forEach(key=>parent.style.removeProperty(key));parent.style.textDecorationLine='none';}
+          }
+          child=parent;
+        }changed=true;
+      }
+      for(const run of root.querySelectorAll('span[data-doc-run="inline"]'))if(!run.getAttribute('style')&&!run.id&&[...run.attributes].every(a=>['data-doc-run','style'].includes(a.name)))run.replaceWith(...run.childNodes);
+      return changed;
+    }finally{const range=root.ownerDocument.createRange();range.setStartAfter(start);range.setEndBefore(end);end.remove();start.remove();for(const clone of clones)if(!clone.hasChildNodes())clone.remove();if(backwards)selection.setBaseAndExtent(range.endContainer,range.endOffset,range.startContainer,range.startOffset);else{selection.removeAllRanges();selection.addRange(range);}}
+  }
+  function scriptActive(root,selection,value){
+    if(!selection?.rangeCount||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return null;
+    const active=node=>{for(let el=element(node);el&&el!==root;el=el.parentElement){if(el.tagName==='SUP'||el.style.verticalAlign==='super')return value==='super';if(el.tagName==='SUB'||el.style.verticalAlign==='sub')return value==='sub';}return false;};
+    const units=selection.isCollapsed?[{node:selection.anchorNode}]:editableText(root,selection.getRangeAt(0));return !!units.length&&units.every(item=>active(item.node));
+  }
+  function formatScript(root,selection,value){
+    if(!['super','sub','baseline'].includes(value))throw new Error('Invalid script');
+    const result=stripInline(root,selection,'script');if(result===null)return null;
+    if(value==='baseline')return result;
+    return formatSelection(root,selection,'vertical-align',value);
+  }
+  function defaultCharacterMarks(root,selection){
+    const block=element(selection.anchorNode).closest(TEXT_BLOCKS)||root,css=root.ownerDocument.defaultView.getComputedStyle(block);
+    const rgb=css.color.match(/^rgba?\(\s*(\d+)[, ]+\s*(\d+)[, ]+\s*(\d+)/),color=rgb?'#'+rgb.slice(1,4).map(n=>Number(n).toString(16).padStart(2,'0')).join(''):'#111827';
+    const size=Math.max(1,Math.min(400,(parseFloat(css.fontSize)||16)*(css.fontSize.endsWith('pt')?1:.75)));
+    return {'font-weight':css.fontWeight==='bold'||Number(css.fontWeight)>=600?'bold':'normal','font-style':css.fontStyle==='italic'?'italic':'normal','font-family':css.fontFamily||'Arial','font-size':Number(size.toFixed(3))+'pt',color,'background-color':'#00000000'};
+  }
+  function clearSelection(root,selection){
+    if(!selection?.rangeCount||selection.isCollapsed)return null;
+    const blocks=new Set(editableText(root,selection.getRangeAt(0)).map(item=>element(item.node).closest(TEXT_BLOCKS)||root));if(blocks.size>1)return null;
+    const marks=defaultCharacterMarks(root,selection);for(const [property,value] of Object.entries(marks))validateInline(property,value);const result=stripInline(root,selection,'clear');if(result===null)return null;
+    for(const [property,value] of Object.entries(marks))formatSelection(root,selection,property,value);return true;
+  }
   /** Insert marked text at an editable caret without browser pending-format state. */
   function insertMarkedText(root,selection,text,marks){
     if(typeof text!=='string'||!text.length||/[\r\n]/.test(text))return false;
@@ -317,19 +412,22 @@ const DocModel = (() => {
     if(!selection?.isCollapsed||!root.contains(selection.anchorNode))return;
     const marker=root.ownerDocument.createComment('doc-run-caret'),range=selection.getRangeAt(0).cloneRange();range.insertNode(marker);
     try{
-      for(const run of root.querySelectorAll('span[data-doc-run="inline"]')){
+      const scope=element(selection.anchorNode).closest(TEXT_BLOCKS)||root,selector='span[data-doc-run="inline"],sup[data-doc-run="inline"],sub[data-doc-run="inline"]';
+      const attrs=el=>el.tagName+JSON.stringify([...el.attributes].map(a=>[a.name,a.value]).sort());
+      // Unwrap first, then merge. Otherwise unwrapping a child can expose siblings already visited.
+      for(const run of scope.querySelectorAll(selector)){
         if(run.id||!run.isConnected)continue;
-        const attrs=el=>JSON.stringify([...el.attributes].map(a=>[a.name,a.value]).sort());
-        if(run.parentElement.matches('span[data-doc-run="inline"]')&&attrs(run)===attrs(run.parentElement)){run.replaceWith(...run.childNodes);continue;}
-        let next=run.nextSibling;
-        while(next?.nodeType===1&&next.matches('span[data-doc-run="inline"]')&&!next.id&&attrs(run)===attrs(next)){
-          run.append(...next.childNodes);next.remove();next=run.nextSibling;
-        }
+        if(run.tagName==='SPAN'&&!run.getAttribute('style')&&[...run.attributes].every(a=>['data-doc-run','style'].includes(a.name))){run.replaceWith(...run.childNodes);continue;}
+        if(run.parentElement.matches('[data-doc-run="inline"]')&&attrs(run)===attrs(run.parentElement))run.replaceWith(...run.childNodes);
+      }
+      for(const run of scope.querySelectorAll(selector)){
+        if(run.id||!run.isConnected)continue;let next=run.nextSibling;
+        while(next?.nodeType===1&&next.matches(selector)&&!next.id&&attrs(run)===attrs(next)){run.append(...next.childNodes);next.remove();next=run.nextSibling;}
       }
       const caret=root.ownerDocument.createRange();caret.setStartBefore(marker);caret.collapse(true);selection.removeAllRanges();selection.addRange(caret);
     }finally{const parent=marker.parentNode;marker.remove();parent?.normalize();}
   }
-  return {formatDecoration,decorationActive,rangeBeforeCaret,insertMarkedText,normalizeRuns,validateInline,capture,fromHtml,toHtml,at,alignParagraphs,alignSelection,alignmentActive,comparePosition,formatTextRange,formatSelection,inlineActive};
+  return {defaultCharacterMarks,editText,formatScript,scriptActive,clearSelection,formatDecoration,decorationActive,rangeBeforeCaret,insertMarkedText,normalizeRuns,validateInline,capture,fromHtml,toHtml,at,alignParagraphs,alignSelection,alignmentActive,comparePosition,formatTextRange,formatSelection,inlineActive};
 })();
 if(typeof window!=='undefined')window.DocModel=DocModel;
 if(typeof module!=='undefined'&&module.exports)module.exports=DocModel;

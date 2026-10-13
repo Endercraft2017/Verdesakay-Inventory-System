@@ -127,3 +127,37 @@ it('preserves typed spacing in marked runs and leaves paragraph insertion to its
  const root=doc.querySelector('#root')!;root.innerHTML='<p>Text</p>';const sel=doc.defaultView!.getSelection()!;sel.collapse(root.querySelector('p')!.firstChild!,4);
  expect(model.insertMarkedText(root,sel,'  spaced',{ 'font-weight':'bold'})).toBe(true);expect(root.querySelector('[data-doc-run]')!.textContent).toBe('  spaced');expect((root.querySelector('[data-doc-run]') as HTMLElement).style.whiteSpace).toBe('pre-wrap');const before=root.innerHTML;expect(model.insertMarkedText(root,sel,'one\ntwo',{'font-weight':'bold'})).toBe(false);expect(root.innerHTML).toBe(before);
 }));
+
+describe('paragraph text transactions',()=>{
+ it('replaces a backwards selection across inline text and a whole field, retaining unrelated live nodes and attributes',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><a id="link" href="#target">Before middle</a><span class="doc-chip" data-token="name">Name</span><em> after</em><span class="doc-chip" data-token="other">Other</span></p>';
+  const link=root.querySelector('a')!,em=root.querySelector('em')!,other=root.querySelectorAll('.doc-chip')[1]!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(em.firstChild!,1,link.firstChild!,7);
+  expect(model.editText(root,sel,'Replacement')).toBe(true);expect(sel.toString()).toBe('Replacement');expect(root.textContent).toBe('Before ReplacementafterOther');expect(root.querySelector('#link')).toBe(link);expect(link.getAttribute('href')).toBe('#target');expect(root.querySelector('.doc-chip')).toBe(other);expect(root.querySelectorAll('.doc-chip')).toHaveLength(1);
+ }));
+ it('deletes complete Unicode graphemes across formatting boundaries and removes whole atoms',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>A👩‍<b>💻</b><span class="doc-chip" data-token="name">Name</span>Z</p>';const sel=doc.defaultView!.getSelection()!,b=root.querySelector('b')!;sel.collapse(b.firstChild!,2);
+  expect(model.editText(root,sel,'','backward')).toBe(true);expect(root.textContent).toBe('ANameZ');sel.collapse(root.querySelector('p')!.lastChild!,0);expect(model.editText(root,sel,'','backward')).toBe(true);expect(root.querySelector('.doc-chip')).toBeNull();expect(root.textContent).toBe('AZ');
+ }));
+ it('rejects protected content and leaves paragraph joins and breaks to the structural adapter',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>Before</p><p data-doc-locked="true">Locked</p><p>After</p>';const sel=doc.defaultView!.getSelection()!,p=root.querySelectorAll('p');sel.setBaseAndExtent(p[0]!.firstChild!,2,p[2]!.firstChild!,2);const before=root.innerHTML;expect(model.editText(root,sel,'X')).toBe(false);expect(root.innerHTML).toBe(before);
+  root.innerHTML='<p>One</p><p>Two</p>';sel.setBaseAndExtent(root.querySelectorAll('p')[0]!.firstChild!,1,root.querySelectorAll('p')[1]!.firstChild!,1);expect(model.editText(root,sel,'X')).toBeNull();sel.collapse(root.querySelector('p')!.firstChild!,0);expect(model.editText(root,sel,'','backward')).toBeNull();expect(model.editText(root,sel,'one\ntwo')).toBeNull();
+ }));
+ it('does not jump over control tokens, hidden text, review deletions or objects while deleting',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!,sel=doc.defaultView!.getSelection()!;
+  for(const atom of ['<span class="doc-chip doc-chip-ctrl" data-token="#items">Loop</span>','<del data-doc-change="r">Old</del>','<span data-doc-hidden="true">Hidden</span>','<img src="x">']){root.innerHTML='<p>Before'+atom+'after</p>';sel.collapse(root.querySelector('p')!.lastChild!,0);const before=root.innerHTML;expect(model.editText(root,sel,'','backward')).toBe(false);expect(root.innerHTML).toBe(before);}
+ }));
+});
+describe('script and direct-format clearing',()=>{
+ it('toggles selected superscript/subscript without losing fields, links or other fonts',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><a href="#keep"><sup>Before middle after</sup></a><span class="doc-chip" data-token="name">Name</span></p>';const sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(root.querySelector('sup')!.firstChild!,13,root.querySelector('sup')!.firstChild!,7);const chip=root.querySelector('.doc-chip');
+  expect(model.formatScript(root,sel,'sub')).toBe(true);expect(sel.toString()).toBe('middle');expect(model.scriptActive(root,sel,'super')).toBe(false);expect(model.scriptActive(root,sel,'sub')).toBe(true);expect([...root.querySelectorAll('sup')].map(n=>n.textContent).join('')).toBe('Before  after');expect(root.querySelector('.doc-chip')).toBe(chip);expect([...root.querySelectorAll('a')].every(n=>n.getAttribute('href')==='#keep')).toBe(true);model.formatScript(root,sel,'baseline');expect(model.scriptActive(root,sel,'sub')).toBe(false);
+ }));
+ it('clears only selected direct character formatting and keeps paragraph styles and revisions',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p style="font-size:18pt;text-align:center"><b><i><u><sup>Before middle after</sup></u></i></b><ins data-doc-change="r" data-doc-author="Reviewer">Reviewed</ins></p>';const p=root.querySelector('p')!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(root.querySelector('sup')!.firstChild!,7,root.querySelector('sup')!.firstChild!,13);
+  expect(model.clearSelection(root,sel)).toBe(true);expect(sel.toString()).toBe('middle');expect(model.decorationActive(root,sel,'underline')).toBe(false);expect(model.scriptActive(root,sel,'super')).toBe(false);expect(p.style.fontSize).toBe('18pt');expect(p.style.textAlign).toBe('center');expect(root.querySelector('ins')!.dataset.docAuthor).toBe('Reviewer');expect(root.textContent).toBe('Before middle afterReviewed');expect([...root.querySelectorAll('b')].map(n=>n.textContent).join('')).toBe('Before  after');
+ }));
+});
+
+it('leaves multi-paragraph Clear Formatting to the structural adapter without changing heading defaults',()=>withDocument(doc=>{
+ const root=doc.querySelector('#root')!;root.innerHTML='<p style="font-size:12pt"><b>Body</b></p><h1 style="font-size:24pt"><i>Title</i></h1>';const sel=doc.defaultView!.getSelection()!;sel.selectAllChildren(root);const before=root.innerHTML;expect(model.clearSelection(root,sel)).toBeNull();expect(root.innerHTML).toBe(before);expect(sel.toString()).toBe('BodyTitle');
+}));

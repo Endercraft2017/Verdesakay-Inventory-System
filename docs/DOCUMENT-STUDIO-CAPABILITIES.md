@@ -119,3 +119,15 @@ field tokens can be formatted without changing their bindings. Selected underlin
 can be removed from inherited inline wrappers while retaining surrounding formatting.
 Block-level and caret underline/strike still use the browser adapter; composition with
 tracking, general model-owned deletion and complete Word layout fidelity remain pending.
+
+### Paragraph text commands and caret character tools
+
+Normal typing, replacement and Backspace/Delete within a paragraph use shared text commands.
+Unicode graphemes (including combined emoji across formatting) delete as a unit; field tokens
+remain atomic and protected/derived content cannot be skipped. Plain-text paste and Cut
+use the same selection transaction. Underline, strike, superscript/subscript and Clear
+Formatting can be chosen at a caret without changing current content or undo history.
+Clear restores paragraph character defaults while retaining its layout and linked fields.
+Selected script toggles and paragraph-scoped character clearing preserve other text.
+Paragraph breaks/joins, multiline/cross-structure editing, multi-paragraph clearing and
+block decoration removal still use existing handlers or remain outside inline projection.

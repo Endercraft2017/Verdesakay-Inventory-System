@@ -778,3 +778,13 @@ Whole-field formatting wraps the live chip; serialization replaces only the chip
 raw binding. Selected inline decoration removal isolates the selected wrapper fragments,
 keeps unselected paint and other marks, and removes all temporary bookmarks before history,
 shared saves and Word export. General deletion and block/caret decorations remain native.
+
+Paragraph text editing now follows: capture history boundary → validate editable endpoints,
+protected atoms and paragraph scope → replace/insert text or resolve one Unicode grapheme
+for deletion → apply pending character/script/decoration marks → unwrap/coalesce owned runs
+within the block → restore the caret → record the existing HTML snapshot/shared change.
+Field chips delete/replace atomically; unaffected chips retain live identity. Structural
+boundaries delegate after lock checks. Composition and tracked text keep their handlers,
+with pending formats applied to committed/new revision text. Clear Formatting restores
+paragraph character defaults without changing paragraph layout; selections across differing
+paragraph defaults delegate rather than forcing one font/size onto all blocks.

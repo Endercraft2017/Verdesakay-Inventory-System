@@ -280,3 +280,49 @@ its only failure was the newly added cloud owner-password route missing its docu
 sync-audit exception. That exception is corrected, and all 31 sync-audit/owner-console/MFA
 checks pass on rerun. Final model/editor/reliability checks: 71 tests pass. Chromium editor
 and measured-print checks pass with the incoming password-change policy enabled.
+
+### Phase 2, slice 4 — paragraph text transactions and remaining caret formats
+
+Implemented:
+- A bounded text-edit operation replaces selections within a paragraph/text island,
+  including backwards selections across inline wrappers and whole field chips. It retains
+  unaffected live nodes, attributes, bindings and review metadata. Plain-text insertion
+  and selected Cut share this path. Paragraph/cell/page transitions delegate structurally.
+- Untracked insertText/insertReplacementText and normal backward/forward deletion route
+  through that operation at beforeinput, using the existing history boundaries. Deletion
+  uses Unicode grapheme segmentation across inline boundaries, including emoji sequences;
+  fields remain one atom. Protected/control/derived/hidden/deleted-review/opaque content
+  cannot be skipped or removed accidentally. Locked selections are checked before native
+  structural delegation too. IME remains native until commit; tracked edits keep their
+  revision handler and attribution.
+- Caret underline/strike, superscript/subscript and Clear Formatting are ephemeral choices.
+  New text receives them in its insertion transaction. Switching scripts or removing them
+  isolates the affected inline wrappers, preserving the other text and marks. Clearing
+  character formatting restores the containing paragraph's font defaults, keeps paragraph
+  layout, links and revision attribution, and updates pending toolbar state.
+- Selected script toggles and within-paragraph Clear Formatting use the same isolated-run
+  helpers. Endpoint bookmarks capture the start before inserting the end marker, fixing
+  element-boundary selection drift during successive formatting commands.
+- Run normalization unwraps before merging, coalesces matching span/sup/sub runs, preserves
+  attributes/atoms/caret, and limits typing-time scans to the containing text block.
+- Word export makes super/sub mutually exclusive and recognizes explicit baseline resets.
+  Transparent character defaults do not become Word highlights. No schema/dependency change.
+
+Limits: these are bounded live model adapters; HTML still owns persistence/history, not a
+fully immutable authoritative editing session. Paragraph breaks/joins, multiline insertion,
+selection edits across structural boundaries and multi-paragraph Clear Formatting retain
+native handling. Multi-paragraph clearing deliberately avoids flattening each paragraph's
+font/heading defaults. Block-level decoration removal remains outside inline projection.
+Composition with tracked changes remains unsupported. Tables/pages and review continue
+through their existing specialized commands.
+
+Next: phase 2, slice 5 — paragraph breaks/joins, multi-paragraph replacement and per-paragraph
+character resets, followed by broader model acceptance before the table/page-layout phase.
+
+Slice-4 release verification: TypeScript and the complete integrated suite pass — 2,309
+tests across 224 files. Chromium verifies paragraph replacement/deletion with native text
+commands disabled, caret underline/script/clear choices, repeated-script run coalescing,
+undo/redo, IME, tracked attribution and shared saves. Clipboard fields, atomic deletion,
+list Enter/Tab, merged-table Tab/row insertion and ordinary composition also pass. Measured
+print checks preserve independent design pages/backgrounds, exact page counts, section
+sizes, contents-page references, multipage grid guards and mobile Save visibility.

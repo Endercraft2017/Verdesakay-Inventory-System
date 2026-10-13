@@ -988,3 +988,12 @@ marks preserve actual chip nodes and raw bindings. Selected underline/strike rem
 splits inline paint wrappers while preserving other marks, links and atoms; block/caret
 decorations and general typing/deletion remain on the native adapter. Word export and
 sanitized paste retain text-decoration-line. No database or mobile-shell change is needed.
+
+Phase-2 paragraph text transactions now own ordinary untracked insertion/replacement,
+within-paragraph grapheme deletion and selected plain-text/Cut commands. They preserve
+unaffected bindings/markup and refuse protected islands. Caret underline/strike, super/sub
+and Clear Formatting apply to the next inserted/committed text without empty undo entries.
+Selected scripts and paragraph-scoped character resets isolate wrappers; normalization
+handles matching span/sup/sub runs. Structural transitions and multi-paragraph clearing
+retain existing handlers; HTML remains authoritative. Word export prevents conflicting
+script flags and preserves baseline resets. No schema or mobile-loader changes are added.

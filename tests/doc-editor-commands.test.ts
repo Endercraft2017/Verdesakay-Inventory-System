@@ -145,3 +145,19 @@ describe('document command dispatch',()=>{
  });
 
 });
+
+describe('model paragraph commands',()=>{
+ it('replaces selected text and deletes a Unicode grapheme without native commands, with undo/redo',()=>{
+  const {w,doc,root,ed,select}=setup('<p><b>Original</b> 👩‍💻 after {{name}}</p>',true);select(root.querySelector('b').firstChild,8,0);doc.execCommand.mockClear();const before=root.innerHTML;
+  const input=new w.InputEvent('beforeinput',{inputType:'insertReplacementText',data:'Changed',bubbles:true,cancelable:true});root.dispatchEvent(input);expect(input.defaultPrevented).toBe(true);expect(doc.execCommand).not.toHaveBeenCalled();expect(root.textContent).toBe('Changed 👩‍💻 after name');ed._history.undo();expect(root.innerHTML).toBe(before);ed._history.redo();
+  const text=root.querySelector('p').childNodes[1];select(text,6,6);const deletion=new w.InputEvent('beforeinput',{inputType:'deleteContentBackward',bubbles:true,cancelable:true});root.dispatchEvent(deletion);expect(deletion.defaultPrevented).toBe(true);expect(root.textContent).toBe('Changed  after name');ed._history.undo();expect(root.textContent).toBe('Changed 👩‍💻 after name');
+ });
+ it('keeps caret underline/script/clear choices ephemeral and applies them to the next typing transaction',()=>{
+  const {w,doc,root,ed,select}=setup('<p><b>Before</b> after</p>',true);select(root.querySelector('b').firstChild,6,6);const before=root.innerHTML;doc.execCommand.mockClear();ed.commands.run('format.underline');ed.commands.run('format.superscript');expect(root.innerHTML).toBe(before);expect(ed.commands.state('edit.undo').enabled).toBe(false);expect(ed.commands.state('format.superscript').active).toBe(true);
+  root.dispatchEvent(new w.InputEvent('beforeinput',{inputType:'insertText',data:'Raised',bubbles:true,cancelable:true}));expect(root.querySelector('sup').textContent).toBe('Raised');expect(root.textContent).toBe('BeforeRaised after');ed.commands.run('format.clear');expect(ed.commands.state('format.bold').active).toBe(false);expect(ed.commands.state('format.underline').active).toBe(false);expect(ed.commands.state('format.superscript').active).toBe(false);
+  root.dispatchEvent(new w.InputEvent('beforeinput',{inputType:'insertText',data:'Plain',bubbles:true,cancelable:true}));expect([...root.querySelectorAll('[data-doc-run]')].some((n:any)=>n.textContent==='Plain'&&n.style.fontWeight==='normal'&&!n.closest('sup'))).toBe(true);expect(doc.execCommand).not.toHaveBeenCalled();ed._history.undo();expect(root.textContent).toBe('BeforeRaised after');ed._history.redo();expect(root.textContent).toBe('BeforeRaisedPlain after');
+ });
+ it('routes plain text insertion and selected Cut deletion through model commands',()=>{
+  const {doc,root,ed,select}=setup('<p>Before middle after {{name}}</p>',true);select(root.querySelector('p').firstChild,13,7);doc.execCommand.mockClear();expect(ed.commands.run('insert.text','New')).toBe(true);expect(root.textContent).toBe('Before New after name');expect(doc.execCommand).not.toHaveBeenCalled();ed._history.undo();select(root.querySelector('p').firstChild,7,13);expect(ed.commands.run('edit.deleteSelection')).toBe(true);expect(root.textContent).toBe('Before  after name');ed._history.undo();expect(root.textContent).toBe('Before middle after name');
+ });
+});
