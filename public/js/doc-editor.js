@@ -888,9 +888,7 @@ function layoutPanelHTML() {
       <option value="3">300%</option>
     </select>
     <button type="button" data-zoom="in" title="Zoom in (Ctrl +)">+</button>`);
-  const previewGroup = groupHTML('Preview', `
-    <button type="button" class="doc-tile" data-preview title="Open a movable preview"><span class="doc-tile-ic">${docIcon('preview')}</span><span class="doc-tile-lbl">Preview</span></button>`);
-  return pageSetup + copies + spacing + zoom + previewGroup;
+  return pageSetup + copies + spacing + zoom;
 }
 
 function tablePanelHTML() {
