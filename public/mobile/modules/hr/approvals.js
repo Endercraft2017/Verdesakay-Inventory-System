@@ -157,26 +157,38 @@
 
   function flushOnLeave() { flushPending(); }
 
-  function flushPending() {
+  async function flushPending() {
     var p = state.pending;
     if (!p) return;
     state.pending = null;
     clearTimeout(p.timer);
     window.removeEventListener('hashchange', flushOnLeave);
     hideUndo();
-    API.post(p.it.path, { decision: p.decision, note: p.note || null })
-      .then(function (res) {
-        if (res && res.warnings && res.warnings.length) window.alert(res.warnings.join('\n\n'));
-        mToast(res && res.applied_note ? 'Approved — ' + res.applied_note
-          : res && res.applied ? 'Approved — employee record updated'
-          : p.decision === 'approved' ? 'Approved' : 'Rejected');
-        MApp.refreshInboxBadge && MApp.refreshInboxBadge();
-      })
-      .catch(function (ex) {
-        mToast(ex.message || 'Could not save — restored', 'err');
-        state.items.splice(Math.min(p.at, state.items.length), 0, p.it);
-        if (location.hash.indexOf('approvals') !== -1) draw();
-      });
+    var body = { decision: p.decision, note: p.note || null };
+    try {
+      var res;
+      try {
+        res = await API.post(p.it.path, body);
+      } catch (ex) {
+        // The server checks the current balance at decision time. Never silently
+        // overdraw it: ask the approver before retrying with the explicit override.
+        if (p.decision !== 'approved' || !/approve anyway to override/i.test(ex.message || '')) throw ex;
+        if (!window.confirm(ex.message + '\n\nApprove this paid leave and let the balance go below zero?')) {
+          throw new Error('Approval cancelled. The request is still pending.');
+        }
+        res = await API.post(p.it.path, { decision: 'approved', note: p.note || null, override_balance: true });
+      }
+      if (res && res.warnings && res.warnings.length) window.alert(res.warnings.join('\n\n'));
+      mToast(res && res.applied_note ? 'Approved — ' + res.applied_note
+        : res && res.applied ? 'Approved — employee record updated'
+        : p.decision === 'approved' ? 'Approved' : 'Rejected');
+      MApp.refreshInboxBadge && MApp.refreshInboxBadge();
+    } catch (ex) {
+      mToast(ex.message || 'Could not save — restored', 'err');
+      state.items.splice(Math.min(p.at, state.items.length), 0, p.it);
+      state.idx = p.at;
+      if (location.hash.indexOf('approvals') !== -1) draw();
+    }
   }
 
   function showUndo(decision) {
