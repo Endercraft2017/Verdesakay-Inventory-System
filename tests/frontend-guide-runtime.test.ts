@@ -36,3 +36,20 @@ it('does not steal arrows from inputs and advances only after the expected dialo
 it('Alt+Shift+G opens contextual guides and exposes only supported shortcut tips',async()=>{
   const {dom,w}=await boot();w.document.dispatchEvent(new w.KeyboardEvent('keydown',{code:'KeyG',key:'G',altKey:true,shiftKey:true,bubbles:true,cancelable:true}));expect(w.document.querySelector('#guide-context-start')).not.toBeNull();expect(w.document.querySelector('.guide-shortcuts').textContent).toContain('Alt + Shift + G');expect(w.document.querySelector('.guide-shortcuts').textContent).not.toContain('Ctrl / Cmd + S, Z, Y');dom.window.close();
 });
+it('keeps contextual suggestions specific to the current form type and limits their number',async()=>{
+  const {dom,w}=await boot();
+  w.App.canAccessRoute=()=>true;w.App.hasModule=()=>true;
+  w.NAV.push({id:'hr',label:'HR',subtabs:[{label:'Payroll',requiredModule:'hr',tree:[{label:'Payroll',route:'form-records',filter:{slug:'hr_payroll'}},{label:'Leave',route:'form-records',filter:{slug:'hr_leave'}}]}]});
+  w.App.currentLocation=()=>({route:'form-records',filter:{slug:'hr_payroll'}});
+  w.GuideCenter.open();
+  const results=w.document.querySelector('#guide-context-results');
+  expect(results.textContent).toContain('Payroll');expect(results.textContent).not.toContain('Production');expect(results.textContent).not.toContain('Sales orders');expect(results.textContent).not.toContain('Leave');
+  expect(results.querySelectorAll('[data-guide-id]').length).toBeLessThanOrEqual(4);
+  const search=w.document.querySelector('#guide-context-search');search.value='production';search.dispatchEvent(new w.Event('input'));
+  expect(results.textContent).toContain('No related guides match');search.value='';search.dispatchEvent(new w.Event('input'));expect(results.textContent).toContain('Payroll');
+  expect(w.document.querySelector('#guide-center-open')).not.toBeNull();
+  const items=w.GuideCenter.catalog();expect(w.GuideCenter.suggestions(items,{route:'form-builder'}).some((p:any)=>p.id==='build-form')).toBe(true);
+  expect(w.GuideCenter.suggestions(items,{route:'hr-approvals'}).some((p:any)=>p.id==='review-requests')).toBe(true);
+  const root=w.document.createElement('div');root.innerHTML='<input id="note-title">';expect(w.GuideCenter.suggestions(items,{route:'form-records',filter:{slug:'hr_payroll'}},root).map((p:any)=>p.id)).toEqual(['notes-scheduler']);
+  dom.window.close();
+});

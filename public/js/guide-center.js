@@ -27,6 +27,17 @@
     ].map(t=>({id:'tool:'+t.id,title:t.title,icon:t.icon,module:'home',kind:'workflow',audience:'Personal tools',tagline:t.description,intro:window.Help?.topics.find(p=>p.id===t.id)?.html||'',steps:[{title:'Open the tool',spot:'[data-tool="'+t.id+'"]',advanceOn:'click',nextSpot:t.spot,body:t.description},{title:'Review the details',spot:t.spot,body:'Use the Guide button in this panel to walk through its controls. Saving, sending and submitting remain your explicit actions.'}],gotchas:[]}));
     return workflows.concat(tools,features);
   }
+  function suggestions(items, location, root) {
+    const route = location?.route, filter = location?.filter || {};
+    const matches = (to) => to?.route === route && Object.entries(to.filter || {}).every(([key,value]) => String(filter[key]) === String(value)) && (Object.keys(to.filter || {}).length > 0 || Object.keys(filter).length === 0);
+    const tool = root?.matches('.doc-fs') ? 'document-editing' : root?.querySelector('.fb-editor') ? 'build-form' : root?.querySelector('#note-title') ? 'notes-scheduler' : root?.querySelector('#em-to') ? 'tool:email' : root?.querySelector('#task-title') ? 'tool:scheduler' : root?.querySelector('#bm-add') ? 'tool:bookmarks' : root?.querySelector('#bug-title') ? 'tool:bug' : null;
+    const exact = items.filter(p => p.id === tool || (p.kind === 'feature' ? matches(p) : p.steps.some(s => matches(s.to))));
+    if (tool) return exact.filter(p => p.id === tool).slice(0, 4);
+    const related = GUIDE.forRoute(route);
+    const ranked = exact.sort((a,b) => Number(b.kind === 'feature') - Number(a.kind === 'feature') || Number(b.id === related?.id) - Number(a.id === related?.id));
+    if (ranked.length) return ranked.slice(0, 4);
+    return items.filter(p => p.id === related?.id).slice(0, 4);
+  }
   function shortcuts(root) {
     const tips = [{ keys: 'Alt + Shift + G', text: 'Open guides for the current screen or dialog.' }, { keys: 'Tab / Shift + Tab', text: 'Move between controls.' }];
     if (root?.matches('.modal-overlay, .drawer')) tips.push({ keys: 'Escape', text: 'Close help first; otherwise close the dialog or panel. Unsaved changes may require confirmation.' });
@@ -76,14 +87,14 @@
     window.GuideTour?.close();
     const root = options.root || [...document.querySelectorAll('.modal-overlay:not([data-guide-off])')].at(-1) || document.querySelector('.doc-fs') || document.querySelector('.drawer.open') || document.querySelector('#view');
     const route = App.currentLocation?.().route || document.querySelector('#view')?.dataset.route;
-    const related = GUIDE.forRoute(route), local = contextual(root);
-    const items = catalog();
-    const modal = UI.modal({ title: 'Guides for ' + local.title, size: 'lg', guide: false, protectChanges: false, cancelText: 'Back to my work', bodyHTML: `<div class="guide-context-actions"><button class="btn" id="guide-context-start">${UI.icon('sparkles', 15)} ${GuideTour.savedStep(local.id)>0?'Resume guide for this':'Guide this'} ${root?.matches('.modal-overlay,.drawer,.doc-fs') ? 'dialog' : 'screen'}</button>${GuideTour.savedStep(local.id)>0?'<button class="btn secondary" id="guide-context-restart">Start over</button>':''}<button class="btn secondary" id="guide-center-open">Browse Guide Center</button></div>${shortcutHTML(root)}<label class="sr-only" for="guide-context-search">Find a task or feature</label><input type="search" id="guide-context-search" placeholder="What would you like to do? e.g. leave, payroll, checklist…"><div id="guide-context-results"></div>` });
+    const local = contextual(root);
+    const items = suggestions(catalog(), { ...App.currentLocation?.(), route }, root);
+    const modal = UI.modal({ title: 'Guides for ' + local.title, size: 'lg', guide: false, protectChanges: false, cancelText: 'Back to my work', bodyHTML: `<div class="guide-context-actions"><button class="btn" id="guide-context-start">${UI.icon('sparkles', 15)} ${GuideTour.savedStep(local.id)>0?'Resume guide for this':'Guide this'} ${root?.matches('.modal-overlay,.drawer,.doc-fs') ? 'dialog' : 'screen'}</button>${GuideTour.savedStep(local.id)>0?'<button class="btn secondary" id="guide-context-restart">Start over</button>':''}<button class="btn secondary" id="guide-center-open">Browse Guide Center</button></div>${shortcutHTML(root)}<label class="sr-only" for="guide-context-search">Search guides for this screen</label><input type="search" id="guide-context-search" placeholder="Search guides for this screen…"><div id="guide-context-results"></div>` });
     const host = modal.overlay.querySelector('#guide-context-results');
     function draw() {
       const q = modal.overlay.querySelector('#guide-context-search').value.toLowerCase().trim();
-      const shown = items.filter(p => [p.title,p.tagline,p.audience,...p.steps.map(s=>text((s.body||'')+' '+(s.tip||'')))].join(' ').toLowerCase().includes(q)).sort((a,b) => Number(b.id === related?.id) - Number(a.id === related?.id)).slice(0, 16);
-      host.innerHTML = shown.map(p => `<button type="button" class="guide-result" data-guide-id="${UI.esc(p.id)}"><span>${UI.icon(p.icon,16)} <strong>${UI.esc(p.title)}</strong></span><small>${UI.esc(moduleLabels[p.module] || p.module)} · ${p.kind === 'workflow' ? p.steps.length + ' steps' : 'Feature reference'}</small><p>${UI.esc(p.tagline)}</p></button>`).join('') || '<p class="empty">No matching guides. Try a feature or task name.</p>';
+      const shown = items.filter(p => [p.title,p.tagline,p.audience,...p.steps.map(s=>text((s.body||'')+' '+(s.tip||'')))].join(' ').toLowerCase().includes(q));
+      host.innerHTML = shown.map(p => `<button type="button" class="guide-result" data-guide-id="${UI.esc(p.id)}"><span>${UI.icon(p.icon,16)} <strong>${UI.esc(p.title)}</strong></span><small>${UI.esc(moduleLabels[p.module] || p.module)} · ${p.kind === 'workflow' ? p.steps.length + ' steps' : 'Feature reference'}</small><p>${UI.esc(p.tagline)}</p></button>`).join('') || '<p class="empty">No related guides match. Clear your search or browse the Guide Center for other tasks.</p>';
       host.querySelectorAll('[data-guide-id]').forEach(b => b.onclick = () => {
         const p = shown.find(p=>p.id===b.dataset.guideId);
         if (root?.matches('.modal-overlay,.drawer,.doc-fs')) { UI.modal({ title: p.title, guide: false, size: 'lg', cancelText: 'Back to guides', bodyHTML: `<p class="muted">Reference only — your current draft remains open. Start this workflow from the Guide Center after finishing your draft.</p>${p.intro || ''}<ol class="guide-reference-steps">${p.steps.map(s=>`<li><strong>${UI.esc(s.title)}</strong><div>${s.body || ''}</div>${s.tip?`<p class="guide-tip">${s.tip}</p>`:''}</li>`).join('')}</ol>` }); return; }
@@ -117,6 +128,6 @@
     wireHeaders(); const observer = new MutationObserver(wireHeaders); observer.observe(document.body,{childList:true,subtree:true});
     document.addEventListener('keydown',e=>{if(!e.isComposing&&!e.repeat&&e.altKey&&e.shiftKey&&!e.ctrlKey&&!e.metaKey&&e.code==='KeyG'){e.preventDefault();open({root:[...document.querySelectorAll('.modal-overlay:not([data-guide-off])')].at(-1) || document.querySelector('.doc-fs') || document.querySelector('.drawer.open') || document.querySelector('#view')});}});
   }
-  window.GuideCenter={catalog,open,contextual,shortcutHTML,shortcuts,moduleLabels};
+  window.GuideCenter={catalog,suggestions,open,contextual,shortcutHTML,shortcuts,moduleLabels};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
