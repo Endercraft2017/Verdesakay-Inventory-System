@@ -252,7 +252,7 @@ it('restores editor preferences on reopen and supports preview shortcuts and dis
 
 describe('linked forms inside the editor',()=>{
  const settle=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
- function runtime(){return {App:{hasPermission:(p:string)=>p==='forms.manage.hr'},API:{get:vi.fn(async(path:string):Promise<Array<{id:number;name?:string;scope?:string;is_default?:boolean;fields?:Array<{key:string;label:string;type:string}>}>>=>path==='/form-definitions'?[{id:1,name:'Leave request',scope:'hr'},{id:2,name:'Inventory',scope:'inventory'}]:[]),post:vi.fn(async()=>({ok:true})),put:vi.fn(async()=>({ok:true})),del:vi.fn(async()=>({ok:true}))}};}
+ function runtime(){return {App:{hasPermission:(p:string):boolean=>p==='forms.manage.hr'},API:{get:vi.fn(async(path:string):Promise<Array<{id:number;name?:string;scope?:string;is_default?:boolean;fields?:Array<{key:string;label:string;type?:string}>}>>=>path==='/form-definitions'?[{id:1,name:'Leave request',scope:'hr'},{id:2,name:'Inventory',scope:'inventory'}]:[]),post:vi.fn(async()=>({ok:true})),put:vi.fn(async()=>({ok:true})),del:vi.fn(async()=>({ok:true}))}};}
  it('links a managed form and supports setting defaults and unlinking',async()=>{
   const env=runtime();let linked=false,isDefault=false;
   env.API.get.mockImplementation(async(path:string)=>path==='/form-definitions'?[{id:1,name:'Leave <request>',scope:'hr'},{id:2,name:'Restricted',scope:'inventory'}]:linked?[{id:10,is_default:isDefault}]:[]);
@@ -262,6 +262,14 @@ describe('linked forms inside the editor',()=>{
   doc.querySelector('[data-link-form]').value='1';doc.querySelector('[data-link-form-action]').click();await settle();expect(env.API.post).toHaveBeenCalledWith('/form-definitions/1/templates',{template_id:10,make_default:false});
   doc.querySelector('[data-link-make-default]').click();await settle();expect(env.API.put).toHaveBeenCalledWith('/form-definitions/1/template',{template_id:10});expect(doc.querySelector('[data-form-links]').textContent).toContain('Default');
   doc.querySelector('[data-link-unlink]').click();await settle();expect(env.API.del).toHaveBeenCalledWith('/form-definitions/1/templates/10');expect(root.innerHTML).toBe('<p>Template stays intact</p>');
+ });
+ it('offers admin-scoped forms to admin form managers',async()=>{
+  const env=runtime();env.App.hasPermission=(permission:string)=>permission==='forms.manage.admin';
+  env.API.get.mockImplementation(async(path:string)=>path==='/form-definitions'?[{id:3,name:'Admin request',scope:'admin'}]:[]);
+  const {doc}=setup('<p>Template</p>',true,{getTemplateId:()=>10},env);
+  expect(doc.querySelector('[data-linked-forms]').hidden).toBe(false);
+  doc.querySelector('[data-linked-forms]').click();await settle();
+  expect(doc.querySelector('[data-link-form]').textContent).toContain('Admin request');
  });
  it('saves a new template before presenting the linking controls',async()=>{
   const env=runtime();let id:number|null=null;const save=vi.fn(async()=>{id=12;return true;});const {doc}=setup('<p>Draft</p>',true,{getTemplateId:()=>id,onSave:save},env);
@@ -284,6 +292,6 @@ describe('field chip interaction',()=>{
   const {doc,w,root}=setup('<p>{{= 2 + 3}}</p><p data-doc-locked="true">{{company.name}}</p>',true);root.querySelector('.doc-chip-fx').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));expect(doc.querySelector('#fx-expr').value).toBe('2 + 3');doc.querySelector('.modal-overlay [data-close]').click();root.querySelector('[data-doc-locked] .doc-chip').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));expect(doc.querySelector('.modal-overlay')).toBeNull();
  });
  it('loads saved linked-form fields before opening Linked forms',async()=>{
-  const API={get:vi.fn(async(path:string):Promise<Array<{id:number;name?:string;scope?:string;is_default?:boolean;fields?:Array<{key:string;label:string;type:string}>}>>=>path==='/form-definitions'?[{id:1,name:'Leave request',scope:'hr',fields:[{key:'reason',label:'Reason',type:'text'}]}]:[{id:10,is_default:true}])};const {doc}=setup('<p>Template</p>',true,{getTemplateId:()=>10},{App:{hasPermission:(p:string)=>p==='forms.manage.hr'},API});for(let i=0;i<12;i++)await Promise.resolve();doc.querySelector('[data-ins=variable]').click();doc.querySelector('[data-cat="Form: Leave request"]').click();expect(doc.querySelector('.var-pick').dataset.token).toBe('{{reason}}');
+  const API={get:vi.fn(async(path:string):Promise<Array<{id:number;name?:string;scope?:string;is_default?:boolean;fields?:Array<{key:string;label:string;type?:string}>}>>=>path==='/form-definitions'?[{id:1,name:'Leave request',scope:'hr',fields:[{key:'reason',label:'Reason',type:'text'}]}]:[{id:10,is_default:true}])};const {doc}=setup('<p>Template</p>',true,{getTemplateId:()=>10},{App:{hasPermission:(p:string):boolean=>p==='forms.manage.hr'},API});for(let i=0;i<12;i++)await Promise.resolve();doc.querySelector('[data-ins=variable]').click();doc.querySelector('[data-cat="Form: Leave request"]').click();expect(doc.querySelector('.var-pick').dataset.token).toBe('{{reason}}');
  });
 });

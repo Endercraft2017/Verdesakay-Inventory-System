@@ -1622,3 +1622,7 @@ textarea { resize: vertical; min-height: 84px; }
 @media print { .guide-feedback { display: none; } }
 
 .modal-overlay.guide-feedback-modal { z-index: 124; }
+
+/* Native option menus follow the shared app theme. */
+select, input { color-scheme: inherit; }
+select option, select optgroup { background-color: var(--surface); color: var(--text); }

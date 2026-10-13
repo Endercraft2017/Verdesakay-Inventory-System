@@ -1043,3 +1043,11 @@ rail tools follow app theme tokens; compact ribbon tiles size to their labels wi
 The Playwright audit (reviews/document-editor-playwright-audit-2026-10-13.md) covers the real
 app route and responsive themes. Single variable insertion stays inside paragraph boundaries,
 Undo/Redo remain available across ribbon tabs, and phone text controls wrap at full width.
+
+The editor exposes Linked forms for saved document and form templates.
+The linking dialog lists only forms the user can manage, reusing scoped link/default/
+unlink APIs; several layouts remain available while one is the default. Unsaved templates
+offer Save template and continue. Workspace isolation keeps resize/guide chrome beneath header menus.
+Page & print wraps whole control groups, keeps empty-cell/zoom labels readable, and uses
+compact themed checkboxes. Global desktop native select options follow shared theme tokens;
+printed paper keeps its independent light appearance.

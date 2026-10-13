@@ -842,3 +842,10 @@ The selected font/style/point-size readout follows current text rather than fiel
 chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
 the existing change/history path. Find/replace mounts above the workspace; source editing,
 print preview, fields, drafts and shared rooms retain their existing command/save pipelines.
+
+Linked forms → load saved template identity → filter forms by existing
+forms.manage scope permissions → read linked layouts → link, make default or unlink through
+form-definition APIs → reload current status. Linking preserves other layouts; removing the
+default uses the backend's existing fallback. No template content or editor draft is changed.
+The workspace forms a lower stacking context than editor menus; page resizing stays inside
+it. Native desktop options inherit app surface/text tokens in light and dark themes.
