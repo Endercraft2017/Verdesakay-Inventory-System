@@ -6,9 +6,10 @@
    manuals for trainers live in docs/guides/. filter.topic deep-links to a pipeline,
    filter.tour=1 auto-starts its walkthrough. */
 App.register('sop', (view, filter) => {
-  const PIPELINES = window.GuideCenter ? GuideCenter.catalog() : ((window.GUIDE && GUIDE.pipelines) || []);
+  const PIPELINES = window.GuideCenter ? GuideCenter.catalog() : [...((window.GUIDE && GUIDE.pipelines) || [])];
   const topics = (window.Help && Help.topics) || [];
-  topics.forEach(t => PIPELINES.push({id:'help:'+t.id, title:t.title, tagline:t.group, module:'home', steps:[], gotchas:[], helpTopic:t}));
+  const moduleForGroup = {HR:'hr', Manufacturing:'production', Inventory:'inventory', Orders:'inventory', Accounting:'accounting', Documents:'documents', Admin:'admin', Basics:'home', Tools:'home'};
+  topics.filter(t => !t.routes.length || !App.canAccessRoute || t.routes.some(r => App.canAccessRoute(r))).forEach(t => PIPELINES.push({id:'help:'+t.id, title:t.title, tagline:t.group, module:moduleForGroup[t.group] || 'home', steps:[], gotchas:[], helpTopic:t}));
   const byId = Object.fromEntries(PIPELINES.map(p=>[p.id,p]));
 
   if (!PIPELINES.length) {
@@ -124,8 +125,8 @@ App.register('sop', (view, filter) => {
         Guide buttons in headers provide help for the current screen or dialog.
       </p>`;
 
-    mainEl.insertAdjacentHTML('beforeend', Help.feedbackHTML());
-    Help.wireFeedback(mainEl, p);
+    if (window.Help) { mainEl.insertAdjacentHTML('beforeend', Help.feedbackHTML());
+    Help.wireFeedback(mainEl, p); }
     mainEl.querySelector('#guide-tour-start').onclick = () => window.GuideTour && GuideTour.start(p, 0);
     const resumeBtn = mainEl.querySelector('#guide-tour-resume');
     if (resumeBtn) resumeBtn.onclick = () => window.GuideTour && GuideTour.start(p, saved);

@@ -794,6 +794,18 @@
   ];
 
   // Task checkpoints shared by the drawer and Guide Center.
+  TOPICS.push(
+    {id:'release-orders',title:'Release Sale Orders',group:'Orders',routes:['releasing'],html:'<p>Review sale orders waiting for release and open an order to check its items, quantities and locations. Confirm the actual release using the available actions. Reserving stock and confirming its release are separate steps.</p>'},
+    {id:'contact-verification',title:'Contact Verification',group:'HR',routes:['hr-contact-verification'],html:'<p>Review employee contact verification status. Open the relevant employee and follow the available verification actions. Check the employee record before correcting contact details.</p>'},
+    {id:'company-assets',title:'Company Assets',group:'HR',routes:['hr-assets'],html:'<p>Review company assets and their employee assignments. Use the available actions to record changes and check the saved assignment before handing over an asset.</p>'},
+    {id:'hr-approvals',title:'HR Approvals',group:'HR',routes:['hr-approvals'],html:'<p>Open a pending request and review its dates, details and attachments before approving or rejecting it. Follow the available actions for your role; a request must complete its approval process before it is treated as approved.</p>'},
+    {id:'sync',title:'Sync',group:'Admin',routes:['sync'],html:'<p>Review synchronization status and connection details. Check reported errors before retrying. Synchronization configuration affects this installation; ask the administrator responsible for its connected systems before changing it.</p>'},
+    {id:'hr-requests',title:'My HR requests',group:'HR',routes:['hr-requests'],html:'<p>Review your HR requests and their approval status. Open the request you need to inspect, or create a request using an available form. Access depends on your linked employee account and the forms enabled for your workspace.</p>'},
+    {id:'confidential-reports',title:'Confidential reports',group:'HR',routes:['confidential-reports'],html:'<p>Use the available filters to find a confidential report and open its details. This screen requires confidential-report access; ask an administrator if you cannot open it.</p>'},
+    {id:'stock-discrepancies',title:'Stock discrepancies',group:'Inventory',routes:['stock-discrepancies'],html:'<p>Review stock-count differences before posting an adjustment. Open the relevant discrepancy and check the counted quantity, system quantity and location. Follow the available review actions for your role.</p>'},
+    {id:'support',title:'Contact OTOM',group:'Tools',routes:['support'],html:'<p>Use Contact OTOM to review support requests and contact the service team. Include the affected screen, what you expected and what happened. Review the request before submitting.</p>'},
+    {id:'billing',title:'Workspace billing',group:'Admin',routes:['billing'],html:'<p>Review the invoices and payment instructions for this workspace. Report a payment with the requested reference and supporting receipt. A reported payment must be verified before it is treated as settled. Self-hosted installations may have no workspace billing.</p>'}
+  );
   const CHECKPOINTS = {
     'barcode-labels': ['Select the items and confirm the printer label size.', 'Review the print sheet, then print one test label before the full batch.', 'If labels are clipped, match paper size and scale in the print dialog.'],
     'products-in': ['Confirm QC/QA is complete, or that the order requires no inspection.', 'Posted output appears in Receipt History and stock at the selected location.', 'If output is missing, check inspection status and whether it was already received.'],

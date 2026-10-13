@@ -571,6 +571,7 @@ GUIDE_PIPELINES.push(
 /* route (+ optional sub-tab hint) → pipeline id, so the per-screen Help drawer can
    offer "walk me through this". Screens not listed just link to the guide index. */
 const GUIDE_ROUTE_MAP = {
+  'production-overview': 'production',
   'finished-products': 'production',
   'finished-goods': 'production',
   'job-orders': 'production',
@@ -610,7 +611,10 @@ const GUIDE = {
   byId: Object.fromEntries(GUIDE_PIPELINES.map((p) => [p.id, p])),
   routeMap: GUIDE_ROUTE_MAP,
   /** Pipeline for a route name (or null). */
-  forRoute(route) {
+  forRoute(route, filter) {
+    if (route === 'orders' && filter?.type === 'purchase') return this.byId.purchasing;
+    if (route === 'orders' && filter?.type === 'job') return null;
+    if (route === 'form-records' && (filter?.slug === 'hr_payroll' || filter?.scope === 'hr')) return this.byId.payroll;
     const id = GUIDE_ROUTE_MAP[route];
     return id ? this.byId[id] : null;
   },

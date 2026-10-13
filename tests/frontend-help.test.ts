@@ -47,7 +47,8 @@ describe('screen help assignment', () => {
     const picker = dom.window.document.querySelector<HTMLSelectElement>('#help-pick')!;
     picker.value = 'templates';
     picker.dispatchEvent(new dom.window.Event('change'));
-    expect(dom.window.document.querySelector('#help-walk')).toBeNull();
+    dom.window.document.querySelector<HTMLButtonElement>('#help-walk')?.click();
+    expect(dom.window.started).toBe('document-editing');
     dom.window.close();
   });
 

@@ -14,7 +14,7 @@
     if (typeof NAV !== 'undefined') NAV.forEach(primary => primary.subtabs.forEach(sub => sub.tree.forEach(leaf => {
       if (!leaf.route || leaf.route === 'sop' || !access(leaf.route, leaf.filter)) return;
       const key = leaf.route + ':' + JSON.stringify(leaf.filter || {}); if (seen.has(key)) return; seen.add(key);
-      const help = window.Help?.topics.find(t => (t.routes || []).includes(leaf.route));
+      const help = window.Help?.forLocation?.(leaf.route, leaf.filter) || window.Help?.topics.find(t => (t.routes || []).includes(leaf.route));
       features.push({ id: 'feature:' + key, title: leaf.label, module: sub.requiredModule || primary.requiredModule || primary.id, kind: 'feature', icon: leaf.icon || 'help', audience: primary.label + ' · ' + sub.label,
         tagline: help ? text(help.html).trim().slice(0, 170) : `Find and use ${leaf.label} in ${primary.label}.`, intro: help ? help.html : '', route: leaf.route, filter: leaf.filter,
         steps: [{ title: 'Open ' + leaf.label, to: { route: leaf.route, filter: leaf.filter, label: leaf.label }, body: help ? text(help.html).trim().slice(0, 450) : `Open ${primary.label} → ${sub.label} → ${leaf.label}. The walkthrough on that screen explains the available controls.` }], gotchas: [] });
@@ -165,7 +165,7 @@
     else if(view && !view.querySelector('.guide-screen-anchor')) { const anchor=document.createElement('div');anchor.className='guide-screen-anchor';view.prepend(anchor);headers.push(anchor); }
     else if(view)headers.push(view.querySelector('.guide-screen-anchor'));
     headers.forEach(header => {
-      if (header.closest('[data-guide-off]') || header.querySelector('[data-guide-open], [data-help]')) return;
+      if (header.closest('[data-guide-off]') || header.querySelector('[data-guide-open], [data-help], [data-modal-help], [data-sitemap-guide]')) return;
       const button = document.createElement('button'); button.type='button'; button.className='btn secondary small guide-entry'; button.dataset.guideOpen=''; button.innerHTML=UI.icon('help',14)+' Guide'; button.title='Guides and shortcuts (Alt + Shift + G)';
       button.onclick=()=>start({root:header.closest('.modal-overlay,.drawer,.doc-fs') || document.querySelector('#view')});
       const actions=header.querySelector('.modal-head-actions, .doc-fs-bar-actions, .tk-cutoff-actions, [data-page-actions]'); if(actions)actions.prepend(button);else if(header.matches('.drawer-head'))header.insertBefore(button,header.querySelector('[data-close]'));else header.append(button);
