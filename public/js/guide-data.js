@@ -698,6 +698,49 @@ const GUIDE_PIPELINES = [
   },
 ];
 
+// Task-focused workflows complement the existing operational playbooks.
+GUIDE_PIPELINES.push(
+  { id: 'getting-started', title: 'Find your way around', icon: 'help', audience: 'Everyone', module: 'home', tagline: 'Find a feature, read its guide, and keep useful shortcuts nearby', intro: 'Start from the task you want to accomplish. Your menus and guides follow your role and enabled modules.', steps: [
+    { title: 'Search for a screen', body: 'Type a feature name in Search Menu. Press Enter to open the first match; Escape closes the suggestions.', spot: '#menu-search', tip: 'Alt + Shift + G opens guides for your current screen or dialog.' },
+    { title: 'Open contextual guidance', body: 'Use the Guide button in a screen, side panel, or dialog header. A dialog guide keeps the current draft open.', spot: '[data-guide-open]' },
+    { title: 'Track work that matters', body: 'Notes support checklists and linked Scheduler tasks. Add a due time and reminder when you need to come back to something.', spot: '[data-tool="notes"]' },
+  ], gotchas: ['Guides explain actions; they never save, approve, delete, or pay on your behalf.'] },
+  { id: 'keyboard-tips', title: 'Keyboard shortcuts and navigation tips', icon: 'help', module: 'home', tagline: 'Hotkeys that work here, with their exact context', audience: 'Everyone', intro: 'Shortcuts help when you know where they apply. These are implemented in the app.', steps: [
+    { title: 'Open a guide', body: '<kbd>Alt + Shift + G</kbd> opens guides for the current screen or dialog. Tab and Shift + Tab move between controls. Escape closes a tooltip or walkthrough before closing its parent dialog.' },
+    { title: 'Find a screen', spot: '#menu-search', body: 'Type in Search Menu. Enter opens the first match; Escape closes suggestions.' },
+    { title: 'Add checklist items', body: 'In Notes, Enter in the checklist item box adds the item without saving the entire note.' },
+    { title: 'Work in the document editor', body: 'Inside the editor: Ctrl/Cmd + S saves; Ctrl/Cmd + Z undoes; Ctrl/Cmd + Y or Shift + Z redoes; Ctrl/Cmd + F opens Find. Ctrl/Cmd + plus, minus, and zero control zoom.', tip: 'These editor commands apply while editing a document. Ordinary dialogs have their own Save or Confirm buttons.' },
+  ], gotchas: [] },
+  { id: 'file-request', title: 'File an employee request', icon: 'calendar', module: 'hr', tagline: 'Leave, half-day, overtime, offset, and other requests', audience: 'Employees', intro: 'Submit a complete request and track its review.', steps: [
+    { title: 'Choose a request type', to: { route: 'hr-requests', label: 'My HR' }, spot: '#myhr-new', nextSpot: '.modal-overlay [data-field], .modal-overlay .leave-date-picker', advanceOn: 'click', body: 'Open New request and choose the type you need.' },
+    { title: 'Provide the details', body: 'Give a clear reason and complete the required fields. For leave, select a range, separate dates, or both. The preview counts scheduled working days only.', spot: '.modal-overlay:last-child .modal-body' },
+    { title: 'Submit and track', body: 'Review the dates and details before submitting. A submitted request stays pending until an authorized approver decides it. Open it from My HR to inspect its status.', to: { route: 'hr-requests', label: 'My HR' }, spot: '#myhr-content', tip: 'Submitting a form is separate from approval. Warnings are advisory; read them before proceeding.' },
+  ], gotchas: ['Only scheduled working days consume paid leave. An approved multi-day leave attaches to every selected covered date.'] },
+  { id: 'review-requests', title: 'Review employee requests', icon: 'check', module: 'hr', tagline: 'Inspect details, warnings and authority before deciding', audience: 'Department approvers and HR', intro: 'Make informed decisions without missing the employee’s reason or date coverage.', steps: [
+    { title: 'Open approvals', to: { route: 'hr-approvals', label: 'Approvals' }, spot: '#ap-search', body: 'Find the request in your approvals inbox. Your authority determines which decisions you can make.' },
+    { title: 'Inspect the complete request', spot: '.modal-overlay:last-child .modal-body', body: 'Open the request. Review its reason, dates, existing attendance, balance and any overlap warnings. Ask for clarification when information is missing.' },
+    { title: 'Record the decision', body: 'Approve or reject only when ready. Department approvers or HR may approve according to their authority. Read any balance override message before confirming.', tip: 'Approval is an explicit decision; a walkthrough never presses its confirmation button.' },
+  ], gotchas: ['Overlapping requests warn rather than block. Approved paid leave must not charge the same date twice.'] },
+  { id: 'build-form', title: 'Build a request form', icon: 'forms', module: 'hr', tagline: 'Name → fields → optional automation → review', audience: 'Form administrators', intro: 'Create a useful form without getting lost in its technical settings.', steps: [
+    { title: 'Create a form', to: { route: 'form-builder', filter: { scope: 'hr' }, label: 'HR Form Builder' }, spot: '#fb-new-form', advanceOn: 'click', nextSpot: '#fb-name', body: 'Choose New Form or a Quick Add starting point.' },
+    { title: 'Name the form', spot: '#fb-name', body: 'Use a name people recognize. The internal form ID is generated automatically. Advanced settings contain the ID, numbering prefix and icon.' },
+    { title: 'Add useful fields', spot: '#fb-add-field', body: 'Add the information reviewers need, including a reason where appropriate. Choose each field’s type and whether it is required. Each key becomes a print-template variable.' },
+    { title: 'Choose optional automation', spot: '.fb-actions summary', body: 'Expand Automated actions only if the form should notify someone, file information or trigger a follow-up. Check the action type and when it runs.' },
+    { title: 'Review before creating', spot: '.modal-overlay:last-child [data-confirm]', body: 'Review fields and automation before choosing Create form. Saving is your action, not the guide’s.', tip: 'Question-mark icons provide detailed explanations without leaving this dialog.' },
+  ], gotchas: ['Changing an existing form ID or field key can affect templates and workflows that refer to it.'] },
+  { id: 'notes-scheduler', title: 'Turn a note into scheduled work', icon: 'note', module: 'home', tagline: 'Note → checklist → schedule → complete', audience: 'Everyone', intro: 'Keep personal notes, to-dos and reminders connected.', steps: [
+    { title: 'Open Notes', spot: '[data-tool="notes"]', advanceOn: 'click', nextSpot: '#note-new', body: 'Choose Notes in the side toolbar.' },
+    { title: 'Create a note or checklist', spot: '#note-new', advanceOn: 'click', nextSpot: '#note-title', body: 'Choose New note / checklist. Add text, checklist items, or both.', tip: 'Enter in the checklist item box adds an item rather than saving the note.' },
+    { title: 'Schedule the note', spot: '#note-scheduled', body: 'Enable Schedule this note, choose its due date/time, and optionally set a reminder. Save when the details are correct.' },
+    { title: 'Keep progress in sync', body: 'Completing all checklist items completes the linked task. Reopening the task leaves an item unfinished. Use View in Scheduler or Open linked note to move between them.', tip: 'Rescheduling updates the same task. Push delivery requires notifications enabled on your device.' },
+  ], gotchas: ['Notes are private to your account. Deleting a note preserves the existing scheduled task and its captured context.'] },
+  { id: 'document-editing', title: 'Create and edit a document', icon: 'file', module: 'home', tagline: 'Choose a document → edit → preview → save', audience: 'Document users', intro: 'Use the document editor without confusing editing, saving and issuing.', steps: [
+    { title: 'Choose the document', to: { route: 'forms', label: 'Documents' }, body: 'Open or create the document you need. Your permissions determine what you can edit or issue.' },
+    { title: 'Edit the content', spot: '.doc-editor', body: 'Enter content, insert fields and adjust the layout. Preview with a real record when working on a template.', tip: 'In the document editor: Ctrl/Cmd + S saves, Ctrl/Cmd + Z undoes, and Ctrl/Cmd + Y redoes.' },
+    { title: 'Preview and save', body: 'Check page breaks, required information and output before saving or issuing. Saving an edit is separate from issuing a business record.', tip: 'Use the editor’s Find control for search. Editor shortcuts apply inside the editor, not every screen.' },
+  ], gotchas: [] },
+);
+
 /* route (+ optional sub-tab hint) → pipeline id, so the per-screen Help drawer can
    offer "walk me through this". Screens not listed just link to the guide index. */
 const GUIDE_ROUTE_MAP = {
@@ -727,6 +770,12 @@ const GUIDE_ROUTE_MAP = {
   'accounting-receivables': 'accounting',
   'accounting-petty-cash': 'accounting',
   'analytics': 'accounting',
+  'dashboard': 'getting-started',
+  'hr-requests': 'file-request',
+  'hr-approvals': 'review-requests',
+  'form-builder': 'build-form',
+  'forms': 'document-editing',
+  'templates': 'document-editing',
 };
 
 const GUIDE = {

@@ -74,6 +74,7 @@ const UI = (() => {
     let saving = false;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
+    if (opts.guide === false) overlay.dataset.guideOff = 'true';
     // Keep visual styling attached to the section when dialogs render outside #view.
     const view = document.getElementById('view');
     if (view && (view.dataset.section === 'hr' || /^hr(?:-|$)/.test(view.dataset.route || ''))) {

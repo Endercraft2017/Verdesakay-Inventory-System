@@ -282,6 +282,12 @@ const App = (() => {
     return ak.every((k) => String(ax[k]) === String(bx[k]));
   }
 
+  function canAccessRoute(route, filter) {
+    const loc = findLeaf(route, filter);
+    if (!loc) return !!routes[route];
+    return visiblePrimaries().includes(loc.primary) && visibleSubtabs(loc.primary).includes(loc.subtab);
+  }
+
   /** Find the first {primary, subtab, leaf} matching a route (+ optional filter). */
   function findLeaf(route, filter) {
     let routeFallback = null;
@@ -657,7 +663,7 @@ const App = (() => {
   }
 
   return {
-    register, navigate, getMe, getDepartments, isAdmin, hasPermission, hasModule, showLogin, refreshUnread,
+    register, navigate, canAccessRoute, getMe, getDepartments, isAdmin, hasPermission, hasModule, showLogin, refreshUnread,
     logout, boot, reloadDepartments, setMe, currentLocation,
     _routeNames: () => Object.keys(routes), // test/debug seam
   };

@@ -33,7 +33,7 @@ const NAV = [
         tree: [
           { label: 'Dashboard', icon: 'dashboard', route: 'dashboard' },
           { label: 'Reports', icon: 'sheet', route: 'analytics' },
-          { label: 'Help / SOP', icon: 'help', route: 'sop' },
+          { label: 'Guide Center', icon: 'help', route: 'sop' },
           { label: 'Announcements', icon: 'messages', route: 'announcements' },
         ],
       },
