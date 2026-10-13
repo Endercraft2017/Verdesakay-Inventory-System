@@ -80,6 +80,24 @@ afterAll(() => {
   cleanup(T.ctx);
 });
 
+describe('revision-checked intake edits at the owning site', () => {
+  it('keeps a validated offline edit when the cloud copy changes before replay', async () => {
+    const order = await newOrder(T.hostHdr(), 1);
+    await T.hostRound();
+    T.cutOff('host');
+    const detail = (await ok(api().get(`/api/orders/${order.id}`).set(T.hostHdr()))).body;
+    T.cloudDb().prepare("UPDATE orders SET notes = 'Cloud changed meanwhile' WHERE id = ?").run(order.id);
+    await ok(api().put(`/api/orders/${order.id}`).set(T.hostHdr()).send({
+      notes: 'Validated at the owning site', expected_revision: detail.revision,
+    }));
+    T.reconnect('host');
+    await T.hostRound();
+    const row = T.cloudDb().prepare('SELECT notes FROM orders WHERE id = ?').get(order.id) as { notes: string };
+    expect(row.notes).toBe('Validated at the owning site');
+    expect((await clashes()).some((c) => c.includes('revision-checked site edit'))).toBe(true);
+  });
+});
+
 describe('a sale while the internet is down', () => {
   let order: { id: number; number: string };
   let slip: number;

@@ -344,7 +344,13 @@ export function createApp() {
 
   // De-duplicate retried mutating requests that carry an Idempotency-Key header
   // (used by the mobile offline queue). No-op for requests without the header.
-  app.use('/api', (req, res, next) => (isAnonymousReportPath(req.originalUrl.split('?')[0] ?? '') ? next() : idempotency(req, res, next)));
+  app.use('/api', (req, res, next) => {
+    if (isAnonymousReportPath(req.originalUrl.split('?')[0] ?? '')) return next();
+    // Order saves check authentication + the current mutation permission before replay.
+    // Their middleware is mounted directly on POST / and PUT /:id in orders.routes.ts.
+    if ((req.method === 'POST' && /^\/orders\/?$/.test(req.path)) || (req.method === 'PUT' && /^\/orders\/[^/]+\/?$/.test(req.path))) return next();
+    idempotency(req, res, next);
+  });
 
   // Unauthenticated liveness probe (Railway healthcheck). Must precede the routers mounted
   // on bare '/api' (personal, form builder), whose blanket auth would otherwise 401 it.

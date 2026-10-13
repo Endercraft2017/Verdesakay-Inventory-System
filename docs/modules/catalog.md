@@ -484,6 +484,20 @@ stock-out takes a location below zero (decision D1); `GET /api/inventory/discrep
 `POST /api/inventory/discrepancies/:id/resolve`. `overdrawAllowed()` in `inventory-stock.ts`.
 UI: Inventory → Stock Movements → Discrepancies (`public/js/modules/inventory/stock-discrepancies.js`,
 route `stock-discrepancies`).
+
+Order intake is handled by `orders.routes.ts` and `public/js/modules/inventory/orders.js`:
+explicit stock links, positive line quantities, date/reference validation, one stock
+line per sale item, customer defaults, permission-aware controls, visible approved-line
+locks, and a responsive editor with inline errors and keyboard dialog handling.
+Validation/interaction coverage: `tests/orders.test.ts`, `tests/orders-ui.test.ts`;
+availability/release compatibility: `tests/order-availability.test.ts`,
+`tests/order-release.test.ts`. Existing records are not migrated; locked legacy lines
+are retained when a header is saved.
+Audit additions: `orders.view` read gates, preserved partial headers/line IDs,
+content revision checks, warehouse-only released transitions, financial/location
+locks, inactive reference preservation, unsaved-change protection, and retry-safe
+editor saves. `src/app.ts` mounts order-save idempotency after mutation permissions;
+`shared/idempotency.ts` scopes cached responses to authenticated users and endpoints.
 **Status:** working.
 
 ## modules/manufacturing

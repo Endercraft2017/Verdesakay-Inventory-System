@@ -1,4 +1,4 @@
-# `public/js/views/orders.js`
+# `public/js/modules/inventory/orders.js`
 
 ## Purpose
 One view serving three order types — Sale Orders, Job Orders, and Purchase Requests — with
@@ -21,7 +21,7 @@ App.register('orders', async (view, filter) => { ... })
 ## Structure / key functions
 - **`state.q`** — search box text, debounced 250ms before reload.
 - **`money(n)`** — `toLocaleString` with 2 decimal places; used for all currency display.
-- **`load()`** — `GET /orders?type=<type>&q=<state.q>`, then `render()`.
+- **`load()`** — `GET /orders?type=<type>&q=<state.q>`, then `render()`. Request generations prevent stale responses from replacing newer results; errors provide a retry action.
 - **`render(list)`** — table (Number/Customer/Date/Total/Status/actions); empty state
   differs for "no orders yet" vs "no matching orders" (search-active). Row actions: Print,
   Edit, Delete; whole row click opens edit (guarded against `.actions` clicks).
@@ -42,16 +42,25 @@ App.register('orders', async (view, filter) => { ... })
   - "Add inventory item" button → `pickInventory(cb)`, which appends a line pre-filled from
     the picked item (`item_id`, `name`, `sku`, `unit`, and `unit_price` seeded from
     `it.attributes.sale_price` if present, else `0`).
-  - "Add blank line" button → pushes an empty editable line.
-  - `onConfirm` — builds `cleaned` by mapping+filtering `lines` to only those with a
-    non-empty trimmed `name`, coercing `quantity`/`unit_price` to numbers; rejects with
-    `showErr` if no valid line remains. Then `PUT /orders/:id` (editing) or
-    `POST /orders` with `{ type, ...body }` (creating, `type` from the outer closure, not
-    editable in the form — an order's type is fixed by which nav tab created it).
+  - "Add non-stock line" button → pushes an empty service/charge line. Typing a name does not link inventory; a per-line link button opens the picker for an explicit selection. Sale orders allow one line per linked stock item; selecting it again focuses its existing quantity.
+  - `onConfirm` — validates every line before mapping it into the request. Empty names,
+    non-positive quantities, negative/blank prices, and out-of-range tax produce an inline
+    error and focus the affected field; no lines are discarded. New sales save as `open`.
+    Approved sale lines/tax are disabled to match the server lock. Controls follow
+    per-type permissions (`orders.*` for sales/jobs, `purchasing.manage` for purchases), and users without edit access get a view-only dialog.
+    Customer selection fills name/contact; missing or inactive lookup entries preserve an existing
+    order's classification. Totals round each line and tax to match the server.
+- Saving uses a stable idempotency key for an unchanged payload on network retry, regenerated after a definite 4xx or payload change. Browser edits submit `expected_revision`; stale-order errors retain input and offer Review latest order. Pending saves disable fields and block close; dirty close/Escape/backdrop actions require discard confirmation. Manual released status is absent except when displaying an already-released order.
+- **Shared `UI.modal` safeguards** — the editor/picker reuse the architecture branch's
+  dialog naming, Tab trap, Escape handling, unsaved-change and before-unload protection,
+  pending-save close guard, and opener focus restoration. Adding/removing/linking lines
+  explicitly marks the shared dialog dirty; input changes use its normal listeners.
 - **`pickInventory(onPick)`** — a lightweight search modal (`UI.modal` with `cancelText:
   'Close'`, no confirm button) that queries `GET /inventory?q=` on input (250ms debounce),
-  shows up to 20 results, and calls `onPick(item)` then closes the picker (`m.close()`) on
-  row click. Reused by both the "Add inventory item" flow above and structurally mirrored
+  shows up to 20 keyboard-accessible result buttons with on-hand quantities, protects
+  against stale responses, and provides retry on errors. Selection closes the picker then
+  calls `onPick(item)` so focus moves to the resulting line. Cards replace the line table
+  at widths up to 680px; modal header/footer stay visible during scrolling. Reused by both the "Add inventory item" flow above and structurally mirrored
   (not shared code) by `pickInventory()` in `hr-timekeeping.js` for employee picking.
 - **`printOrder(id)`** *(fixed 2026-08-25 — see Notes)* — fetches the order, the matching
   template list for `order.type` (`GET /templates?type=`), and the company profile in

@@ -885,6 +885,8 @@ export interface BugReport {
 export type OrderType = 'sale' | 'job' | 'purchase';
 
 export interface Order {
+  /** Edit token computed from stored header/lines; optional for legacy integrations. */
+  revision?: string;
   id: number;
   type: OrderType;
   number: string;

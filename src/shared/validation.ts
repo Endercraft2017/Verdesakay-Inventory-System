@@ -836,11 +836,16 @@ const orderItemSchema = z.object({
   name: trimmed.min(1, 'Line item name is required').max(200),
   sku: optionalText,
   description: optionalText,
-  quantity: numCoerce.min(0, 'Quantity cannot be negative').default(1),
+  quantity: numCoerce.positive('Quantity must be greater than zero').max(Number.MAX_SAFE_INTEGER, 'Quantity is too large').default(1),
   unit: trimmed.max(40).optional().nullable(),
   unit_price: numCoerce.min(0, 'Price cannot be negative').default(0),
   tax_code_id: optionalId,   // per-line VAT classification for mixed-rate documents
 });
+
+const orderDate = z.preprocess(
+  (v) => v === '' ? null : v,
+  z.iso.date('Enter a valid date (YYYY-MM-DD)').optional().nullable()
+);
 
 const orderFields = {
   customer_name: optionalText,
@@ -848,15 +853,16 @@ const orderFields = {
   customer_id: optionalId,
   location_id: optionalId,   // sale orders: ship-from location for stock draw-down + COGS
   tax_code_id: optionalId,
-  order_date: trimmed.max(40).optional().nullable(),
+  order_date: orderDate,
   status: trimmed.max(40).optional().nullable(),
   notes: optionalText,
-  currency: trimmed.max(10).optional().nullable(),
+  currency: z.preprocess((v) => typeof v === 'string' && !v.trim() ? null : v,
+    trimmed.regex(/^[A-Za-z]{3}$/, 'Use a three-letter currency code, such as PHP').transform((v) => v.toUpperCase()).optional().nullable()),
   tax_percent: numCoerce.min(0).max(100).default(0),
   items: z.array(orderItemSchema).min(1, 'Add at least one line item').max(300),
   // Purchase orders: which supplier + expected delivery date.
   supplier_id: optionalId,
-  expected_date: trimmed.max(40).optional().nullable(),
+  expected_date: orderDate,
   // Sale orders: override the stock-availability gate when moving to a firm status
   // (approve / confirm / complete) — creates an explicit backorder.
   force: boolish.optional(),
@@ -867,7 +873,10 @@ export const createOrderSchema = z.object({
   ...orderFields,
 });
 
-export const updateOrderSchema = z.object(orderFields);
+export const updateOrderSchema = z.object(orderFields).extend({
+  items: z.array(orderItemSchema).min(1, 'Add at least one line item').max(300).optional(),
+  expected_revision: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid order revision').optional(),
+});
 
 // ---- Sale-order status-only change (no line-item body) — used by the delivery→fulfil
 // prompt and any "just advance the order" action. Runs the same availability gate. ----

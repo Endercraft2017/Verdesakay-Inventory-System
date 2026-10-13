@@ -37,7 +37,27 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
 
 **Trigger:** a sale order is created (`modules/inventory`, `orders.routes.ts`).
 
-1. **Intake** (`inventory`) — order created in `open` status.
+1. **Intake** (`inventory`) — the desktop order editor (also responsive at phone
+   widths) saves new sales in `open` status; approval is a subsequent action.
+   Inventory links are explicit selections, while services/charges remain non-stock
+   even when their name matches an inventory item. Positive quantities, valid dates,
+   existing linked records, and one line per stock item are validated before saving.
+   The editor identifies stock/non-stock lines, reports field errors without dropping
+   unnamed lines, and visibly locks lines/tax after approval. New/edit/delete controls
+   follow their respective permissions; view-only users can still inspect orders.
+   The legacy direct-to-sale unit allocation shortcut is removed from intake; use the
+   warehouse release stage for stock handoff.
+   The API retains existing direct-to-firm creation behavior for integrations; normal
+   intake UI does not offer it. Dedicated mobile warehouse screens begin at release;
+   they do not create sales orders.
+   **Audit hardening:** sales/job reads require `orders.view` (purchase access retains
+   `purchasing.view`/`purchasing.manage`); partial edits preserve omitted
+   fields and line IDs; explicit null resets an unpicked ship-from location. Browser
+   saves carry a content revision and use authenticated, permission-checked retry
+   keys. Stale interactive edits return 409 without replacing another person's changes.
+   Already validated owning-site decisions retain D6 on cloud replay, with a clash recorded. Tax/currency
+   lock with approved lines; ship-from locks once picking/fulfilment starts. Released
+   status is assigned by warehouse picking, not manual intake/status edits.
 2. **Availability check** (`inventory`) — on approve, an ATP (available-to-promise)
    gate runs (`GET /orders/:id/availability`); short of stock returns 409 unless
    forced.
