@@ -156,7 +156,7 @@ window.MApp = (function () {
 
   function render() {
     if(window.mPersonalDraft && !mPersonalDraft.allow()) return;
-    window.GuideTour?.close();
+    window.GuideTour?.close();window.PersonalUX?.release();
     if (me && me.password_change_required) return;
     if (!me) return;
     if (!hasAccess()) { showBlocked(); return; }
@@ -187,7 +187,7 @@ window.MApp = (function () {
 
   /* ---------- auth ---------- */
   function showLogin() {
-    window.mPersonalDraft?.clear();window.GuideTour?.close();
+    window.mPersonalDraft?.clear();window.GuideTour?.close();window.PersonalUX?.release();
     me = null;
     API.clearToken();
     if (window.mQueue) mQueue.clearToken();

@@ -2,7 +2,7 @@
    reminder (fires a push). Backed by /api/tasks. */
 (function () {
   var toStore = function (v) { return v ? v.replace('T', ' ') : null; };   // input → "YYYY-MM-DD HH:MM"
-  var toInput = function (v) { if (!v) return ''; if (/Z$|[+-]\d\d:\d\d$/.test(v)) { var d = new Date(v); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); } return String(v).replace(' ', 'T').slice(0, 16); };
+  var toInput = function(v){return PersonalUX.input(v);};
 
   function bucket(t, todayStr) {
     if (t.done) return 'Done';
@@ -15,7 +15,7 @@
   var ORDER = ['Overdue', 'Today', 'Upcoming', 'No date', 'Done'];
 
   function load(view, params) {
-    MApp.setTitle('My Tasks');
+    MApp.setTitle('Tasks & reminders');
     view.innerHTML = '<div class="m-actions"><button class="m-btn" id="m-task-add">＋ Add task</button></div><div id="m-task-list"><div class="m-hint">Loading…</div></div>';
     view.querySelector('#m-task-add').onclick = function () { MApp.go('tasks',{new:1}); };
     if(params && params.new){editor(view,null);return;}
@@ -35,12 +35,12 @@
           host.appendChild(mEl('<h3 class="m-sec">' + name + ' · ' + g.length + '</h3>'));
           var ul = mEl('<ul class="m-list"></ul>');
           g.forEach(function (t) {
-            var when = t.due_date ? String(t.due_date).slice(0, 16).replace('T', ' ') : '';
+            var when = PersonalUX.format(t.due_date);
             var li = mEl(
               '<li class="m-task-row' + (t.done ? ' done' : '') + '">' +
               '<button class="m-task-check" aria-label="' + (t.done ? 'Reopen task' : 'Complete task') + '">' + (t.done ? '✓' : '') + '</button>' +
               '<button type="button" class="m-task-main" aria-label="Open task '+mEsc(t.title)+'"><b>' + mEsc(t.title) + '</b>' +
-              (when || t.remind_at ? '<span>' + mEsc(when) + (t.remind_at ? ' · 🔔' : '') + '</span>' : '') + '</button></li>'
+              (when || t.remind_at ? '<span>' + mEsc(when) + (t.remind_at ? ' · Reminder '+mEsc(PersonalUX.format(t.remind_at)) : '') + '</span>' : '') + '</button></li>'
             );
             li.querySelector('.m-task-check').onclick = function (e) {
               e.stopPropagation();
@@ -66,11 +66,12 @@
       '<label class="m-field"><span class="m-label">Remind me</span><input class="m-input" type="datetime-local" data-remind value="' + (t ? toInput(t.remind_at) : '') + '" /></label>' +
       '<label class="m-field"><span class="m-label">Notes</span><textarea class="m-input" data-notes rows="3" ' + (linked ? 'readonly' : '') + '>' + mEsc(t && t.notes ? t.notes : '') + '</textarea></label>' +
       (linked ? '<p class="m-hint">This task is linked to a note. Edit its title and checklist in the note.</p><button type="button" class="m-btn m-btn-secondary" data-open-note>Open linked note</button>' : '') +
-      '<div class="m-actions"><button class="m-btn" type="submit">' + (t ? 'Save' : 'Add') + '</button>' +
-      (t ? '<button class="m-btn m-btn-warn" type="button" data-del>Delete</button>' : '') +
-      '<button class="m-btn m-btn-secondary" type="button" data-cancel>Cancel</button></div></form>'
+      '<div class="personal-editor-actions"><span class="personal-save-status" data-save-status aria-live="polite"></span><div class="m-actions"><button class="m-btn" type="submit">' + (t ? 'Save' : 'Add') + '</button>' +
+      '<button class="m-btn m-btn-secondary" type="button" data-cancel>Cancel</button></div></div>'+
+      (t ? '<details class="personal-secondary-actions"><summary>More actions</summary><button class="m-btn m-btn-warn" type="button" data-del>Delete task</button></details>' : '')+'</form>'
     );
-    var snapshot=function(){return JSON.stringify([...f.querySelectorAll('input,textarea')].map(function(el){return el.value;}));};var initial=snapshot();mPersonalDraft.arm(function(){return snapshot()!==initial;},function(){return busy;});
+    view.appendChild(f);PersonalUX.footer(f);PersonalUX.schedule(f,'[data-due]','[data-remind]',t?.due_date);
+    var snapshot=function(){return JSON.stringify([...f.querySelectorAll('input,textarea')].map(function(el){return {value:el.value,edited:el.dataset.edited||''};}));};var initial=snapshot();var saveStatus=PersonalUX.status(f,f.querySelector('[data-save-status]'),()=>snapshot()!==initial,!!t);mPersonalDraft.arm(function(){return snapshot()!==initial;},function(){return busy;});
     f.querySelector('[data-cancel]').onclick = function () { if(mPersonalDraft.allow()) {MApp.go('tasks');MApp.render();} };
     if(linked) f.querySelector('[data-open-note]').onclick=function(){MApp.go('notes',{id:t.note_id});};
     var del = f.querySelector('[data-del]');
@@ -82,18 +83,17 @@
     f.onsubmit = function (e) {
       e.preventDefault();if(busy)return;
       var title = f.querySelector('[data-title]').value.trim();
-      if (!title) { mToast('Task title required', 'err'); return; }
+      if (!title) { saveStatus.failed('Enter a task title');mToast('Task title required', 'err'); return; }
       var body = {
         title: title,
-        due_date: toStore(f.querySelector('[data-due]').value),
-        remind_at: f.querySelector('[data-remind]').value ? new Date(f.querySelector('[data-remind]').value).toISOString() : null,
+        due_date: toStore(PersonalUX.dueValue(f.querySelector('[data-due]'),t?.due_date)),
+        remind_at: PersonalUX.reminderValue(f.querySelector('[data-remind]'),t?.remind_at),
         notes: f.querySelector('[data-notes]').value.trim() || null,
       };
-      if(linked){delete body.title;delete body.notes;}busy=true;f.inert=true;f.querySelector('[type=submit]').disabled=true;
+      if(linked){delete body.title;delete body.notes;}saveStatus.saving();busy=true;f.inert=true;f.querySelector('[type=submit]').disabled=true;
       var p = t ? API.put('/tasks/' + t.id, body) : API.post('/tasks', body);
-      p.then(function () { mPersonalDraft.clear();if(f.isConnected){mToast('Saved');MApp.go('tasks');MApp.render();} }).catch(function (ex) { mToast(ex.message || 'Failed', 'err'); }).finally(function(){busy=false;f.inert=false;f.querySelector('[type=submit]').disabled=false;});
+      p.then(function () { saveStatus.saved();mPersonalDraft.clear();if(f.isConnected){mToast('Saved');MApp.go('tasks');MApp.render();} }).catch(function (ex) { saveStatus.failed();mToast(ex.message || 'Failed', 'err'); }).finally(function(){busy=false;f.inert=false;f.querySelector('[type=submit]').disabled=false;});
     };
-    view.appendChild(f);
   }
 
   MApp.route('tasks', function (view,params) { load(view,params); });

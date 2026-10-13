@@ -1,7 +1,7 @@
 /* Shared local date handling and draft protection for personal tools. */
 (function () {
   window.mPersonalTime = {
-    input: function (value) { if(!value) return ''; if(/Z$|[+-]\d\d:\d\d$/.test(value)) { var d=new Date(value); return Number.isNaN(d.getTime())?'':new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16); } return String(value).replace(' ','T').slice(0,16); },
+    input: function (value) { return PersonalUX.input(value); },
     today: function () { var d=new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
   };
   var active=null;

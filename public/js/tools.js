@@ -1,4 +1,4 @@
-/* Right-rail personal tools: AI assistant, Notes, Email, Scheduler, Bookmarks.
+/* Right-rail personal tools: AI assistant, Notes, Email, Tasks & reminders, Bookmarks.
    Notes / tasks / bookmarks persist per-user via /api/notes|tasks|bookmarks.
    AI talks to the real POST /api/ai/chat agentic backend (src/routes/ai.routes.ts +
    src/ai-tools.ts) — see docs/AI-AGENT.md. Email sends for real via BYO-SMTP
@@ -555,8 +555,8 @@
   }
 
   /* ---------------- Notes + linked scheduler tasks ---------------- */
-  const noteDate = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString([], { dateStyle: 'medium', ...(String(value).length > 10 ? { timeStyle: 'short' } : {}) }) : '';
-  const localDateTime = value => { if (!value) return ''; const d = new Date(value); if (String(value).includes('Z') || /[+-]\d\d:\d\d$/.test(value)) return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); return String(value).replace(' ', 'T').slice(0, 16); };
+  const noteDate = value => PersonalUX.format(value);
+  const localDateTime = value => PersonalUX.input(value);
   function openNotes(noteId) {
     const d = UI.drawer({ key: 'notes', icon: 'note', title: 'Notes', bodyHTML: '<label class="sr-only" for="notes-search">Search notes</label><input id="notes-search" type="search" placeholder="Search notes and checklist items…"><div id="notes-list" aria-live="polite"><div class="empty">Loading…</div></div>', footHTML: `<button class="btn" id="note-new">${UI.icon('plus', 16)} New note / checklist</button>` });
     if (!d) return;
@@ -567,11 +567,11 @@
       if (!shown.length) { list.innerHTML = UI.emptyState({ icon: 'note', title: query ? 'No matching notes' : 'Your ideas and to-dos, together', hint: query ? 'Try a different search.' : 'Add a note, build a checklist, and schedule it when you need a reminder.' }); return; }
       list.innerHTML = shown.map(n => {
         const items = n.checklist || [], task = n.scheduled_task;
-        return `<article class="note-card"><div class="note-card-head"><button class="note-open" data-edit="${n.id}">${UI.esc(n.title || 'Untitled note')}</button><button class="icon-btn danger" data-del="${n.id}" aria-label="Delete ${UI.esc(n.title || 'note')}">${UI.icon('trash', 16)}</button></div>${n.body ? `<p class="note-excerpt">${UI.esc(n.body)}</p>` : ''}${items.length ? `<div class="note-progress">${items.filter(i => i.done).length} of ${items.length} completed</div><div class="note-checklist">${items.slice(0, 5).map((item, index) => `<label class="note-check ${item.done ? 'done' : ''}"><input type="checkbox" data-note="${n.id}" data-item="${index}" ${item.done ? 'checked' : ''}><span>${UI.esc(item.text)}</span></label>`).join('')}</div>${items.length > 5 ? `<button class="btn secondary small" data-edit="${n.id}">View ${items.length - 5} more items</button>` : ''}` : ''}<div class="note-card-foot"><button class="btn secondary small" data-schedule="${n.id}">${UI.icon('calendar', 14)} ${task ? UI.esc((task.done ? 'Completed · ' : 'Due · ') + noteDate(task.due_date)) : 'Schedule note'}</button>${task ? `<button class="btn secondary small" data-agenda="${task.id}">View in Scheduler</button>` : ''}</div></article>`;
+        return `<article class="note-card"><div class="note-card-head"><button class="note-open" data-edit="${n.id}">${UI.esc(n.title || 'Untitled note')}</button><details class="personal-card-menu"><summary aria-label="More note actions">⋯</summary><button class="btn secondary small" data-del="${n.id}">Delete note</button></details></div>${n.body ? `<p class="note-excerpt">${UI.esc(n.body)}</p>` : ''}${items.length ? `<div class="note-progress">${items.filter(i => i.done).length} of ${items.length} completed</div><small class="note-save-hint">Checklist ticks save immediately</small><div class="note-checklist">${items.slice(0, 5).map((item, index) => `<label class="note-check ${item.done ? 'done' : ''}"><input type="checkbox" data-note="${n.id}" data-item="${index}" ${item.done ? 'checked' : ''}><span>${UI.esc(item.text)}</span></label>`).join('')}</div>${items.length > 5 ? `<button class="btn secondary small" data-edit="${n.id}">View ${items.length - 5} more items</button>` : ''}` : ''}${task?.remind_at ? `<small class="note-save-hint">Reminder ${UI.esc(noteDate(task.remind_at))}</small>` : ''}<div class="note-card-foot"><button class="btn secondary small" data-schedule="${n.id}">${UI.icon('calendar', 14)} ${task ? UI.esc((task.done ? 'Completed · ' : 'Due · ') + noteDate(task.due_date)) : 'Schedule note'}</button>${task ? `<button class="btn secondary small" data-agenda="${task.id}">View in Tasks & reminders</button>` : ''}</div></article>`;
       }).join('');
       list.querySelectorAll('[data-edit], [data-schedule]').forEach(b => b.onclick = () => noteModal(notes.find(n => n.id === Number(b.dataset.edit || b.dataset.schedule)), refresh, !!b.dataset.schedule));
       list.querySelectorAll('[data-agenda]').forEach(b => b.onclick = () => openScheduler());
-      list.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (await UI.confirmDialog('Delete this note? Its scheduled task will remain in Scheduler.', 'Delete')) { try { await API.del('/notes/' + b.dataset.del); await refresh(); } catch (e) { UI.toast(e.message, 'error'); } } });
+      list.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (await UI.confirmDialog('Delete this note? Its scheduled task will remain in Tasks & reminders.', 'Delete')) { try { await API.del('/notes/' + b.dataset.del); await refresh(); } catch (e) { UI.toast(e.message, 'error'); } } });
       list.querySelectorAll('[data-item]').forEach(input => input.onchange = async () => {
         const note = notes.find(n => n.id === Number(input.dataset.note)), items = note.checklist.map(i => ({ ...i }));
         items[Number(input.dataset.item)].done = input.checked; pendingNotes.add(note.id);
@@ -590,44 +590,47 @@
     let savedId = note && note.id, items = (note && note.checklist || []).map(i => ({ ...i }));
     const task = note && note.scheduled_task;
     UI.modal({ title: note ? 'Edit note' : 'New note', size: 'lg',
-      bodyHTML: `<div class="note-editor"><label for="note-title">Title</label><input id="note-title" maxlength="200" value="${UI.esc(note && note.title || '')}" placeholder="What would you like to remember?"><label for="note-body">Note</label><textarea id="note-body" rows="4" maxlength="20000" placeholder="Details, ideas, or context…">${UI.esc(note && note.body || '')}</textarea><div class="note-section-heading"><h4>Checklist</h4><span class="muted">Optional · up to 200 items</span></div><div id="note-items"></div><div class="note-item-add"><input id="note-item-text" data-no-submit maxlength="500" aria-label="New checklist item" placeholder="Add something to do…"><button type="button" class="btn secondary" id="note-item-add">Add item</button></div><section class="note-schedule"><label class="check-opt"><input type="checkbox" id="note-scheduled" ${task || scheduleFirst ? 'checked' : ''}> Schedule this note ${UI.helpIcon('Creates one linked Scheduler task. Checklist completion updates the task, and rescheduling updates the existing task rather than creating another.')}</label><div id="note-schedule-fields" ${task || scheduleFirst ? '' : 'hidden'}><label for="note-due">Due date and time *</label><input type="datetime-local" id="note-due" value="${UI.esc(localDateTime(task && task.due_date))}"><label for="note-remind">Remind me <span class="muted">(optional)</span> ${UI.helpIcon('Reminders appear in your notifications. Enable push notifications on your device to receive them outside the app.')}</label><input type="datetime-local" id="note-remind" value="${UI.esc(localDateTime(task && task.remind_at))}"></div></section></div>`,
+      bodyHTML: `<div class="note-editor"><label for="note-title">Title</label><input id="note-title" maxlength="200" value="${UI.esc(note && note.title || '')}" placeholder="What would you like to remember?"><label for="note-body">Note</label><textarea id="note-body" rows="4" maxlength="20000" placeholder="Details, ideas, or context…">${UI.esc(note && note.body || '')}</textarea><div class="note-section-heading"><h4>Checklist</h4><span class="muted">Save applies checklist edits here</span></div><div id="note-items"></div><div class="note-item-add"><input id="note-item-text" data-no-submit maxlength="500" aria-label="New checklist item" placeholder="Add something to do…"><button type="button" class="btn secondary" id="note-item-add">Add item</button></div><section class="note-schedule"><label class="check-opt"><input type="checkbox" id="note-scheduled" ${task || scheduleFirst ? 'checked' : ''}> Schedule this note ${UI.helpIcon('Creates one linked task in Tasks & reminders. Checklist completion updates the task, and rescheduling updates the existing task rather than creating another.')}</label><div id="note-schedule-fields" ${task || scheduleFirst ? '' : 'hidden'}><label for="note-due">Due date and time *</label><input type="datetime-local" id="note-due" value="${UI.esc(localDateTime(task && task.due_date))}"><label for="note-remind">Remind me <span class="muted">(optional)</span> ${UI.helpIcon('Reminders appear in your notifications. Enable push notifications on your device to receive them outside the app.')}</label><input type="datetime-local" id="note-remind" value="${UI.esc(localDateTime(task && task.remind_at))}"></div></section></div>`,
       confirmText: 'Save note',
       onOpen: ov => {
-        const host = ov.querySelector('#note-items');
+        ov.classList.add('personal-tool-editor');const host = ov.querySelector('#note-items');
         function renderItems() {
           host.innerHTML = items.map((item, index) => `<div class="note-item-editor"><input type="checkbox" data-check="${index}" aria-label="Complete item ${index + 1}" ${item.done ? 'checked' : ''}><input data-text="${index}" maxlength="500" aria-label="Checklist item ${index + 1}" value="${UI.esc(item.text)}"><button type="button" class="icon-btn danger" data-remove="${index}" aria-label="Remove item ${index + 1}">${UI.icon('trash', 16)}</button></div>`).join('');
           host.querySelectorAll('[data-check]').forEach(el => el.onchange = () => items[Number(el.dataset.check)].done = el.checked);
           host.querySelectorAll('[data-text]').forEach(el => el.oninput = () => items[Number(el.dataset.text)].text = el.value);
-          host.querySelectorAll('[data-remove]').forEach(el => el.onclick = () => { items.splice(Number(el.dataset.remove), 1); ov.__markDirty?.(); renderItems(); });
+          host.querySelectorAll('[data-remove]').forEach(el => el.onclick = () => { items.splice(Number(el.dataset.remove), 1); ov.__markDirty?.(); renderItems();ov.__noteStatus?.update(); });
         }
-        const add = () => { const input = ov.querySelector('#note-item-text'); if (!input.value.trim()) { input.focus(); return; } if (items.length >= 200) { UI.toast('A checklist can have up to 200 items.', 'error'); return; } items.push({ id: crypto.randomUUID(), text: input.value.trim(), done: false }); input.value = ''; ov.__markDirty?.(); renderItems(); input.focus(); };
+        const add = () => { const input = ov.querySelector('#note-item-text'); if (!input.value.trim()) { input.focus(); return; } if (items.length >= 200) { UI.toast('A checklist can have up to 200 items.', 'error'); return; } items.push({ id: crypto.randomUUID(), text: input.value.trim(), done: false }); input.value = ''; ov.__markDirty?.(); renderItems();ov.__noteStatus?.update(); input.focus(); };
         ov.querySelector('#note-item-add').onclick = add;
         ov.querySelector('#note-item-text').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
-        ov.querySelector('#note-scheduled').onchange = e => ov.querySelector('#note-schedule-fields').hidden = !e.target.checked;
-        renderItems(); if (scheduleFirst) ov.querySelector('#note-due').focus();
+        ov.querySelector('#note-scheduled').onchange = e => {ov.querySelector('#note-schedule-fields').hidden = !e.target.checked;let hint=ov.querySelector('[data-unschedule-note]');if(!hint){hint=document.createElement('small');hint.dataset.unscheduleNote='';e.target.closest('label').after(hint);}hint.textContent=task&&!e.target.checked?'Saving removes the task and reminder, but keeps this note.':'';};
+        renderItems();PersonalUX.schedule(ov,'#note-due','#note-remind',task?.due_date);const status=document.createElement('span');status.className='personal-save-status';status.setAttribute('aria-live','polite');ov.querySelector('.modal-foot').prepend(status);const snapshot=()=>JSON.stringify({items,fields:[...ov.querySelectorAll('input,textarea')].map(el=>({value:el.type==='checkbox'?el.checked:el.value,edited:el.dataset.edited||''}))});const initial=snapshot();ov.__noteStatus=PersonalUX.status(ov,status,()=>snapshot()!==initial,!!note); if (scheduleFirst) ov.querySelector('#note-due').focus();
       },
       onConfirm: async (ov, showErr) => {
         const title = ov.querySelector('#note-title').value.trim(), body = ov.querySelector('#note-body').value.trim(), scheduled = ov.querySelector('#note-scheduled').checked;
         // Include the item currently being typed, even if Add item was not pressed.
         if (ov.querySelector('#note-item-text').value.trim()) ov.querySelector('#note-item-add').click();
-        if ((!body && !items.length) || items.some(i => !i.text.trim())) { showErr('Add note text or a checklist, and give every item a label.'); return false; }
+        if ((!body && !items.length) || items.some(i => !i.text.trim())) { ov.__noteStatus.failed('Add note text or complete the checklist');showErr('Add note text or a checklist, and give every item a label.'); return false; }
         const due = ov.querySelector('#note-due').value, reminder = ov.querySelector('#note-remind').value;
-        if (scheduled && !due) { showErr('Choose when this note is due.'); ov.querySelector('#note-due').focus(); return false; }
+        if (scheduled && !due) { ov.__noteStatus.failed('Choose a due date and time');showErr('Choose when this note is due.'); ov.querySelector('#note-due').focus(); return false; }
+        if(!scheduled&&task&&!(await UI.confirmDialog('Remove this task and reminder? Your note and checklist will stay.','Remove schedule')))return false;
+        let stored=false;ov.__noteStatus.saving();ov.querySelector('.modal-body').inert=true;
         try {
           const data = { title, body, checklist: items.map(i => ({ ...i, text: i.text.trim() })) };
           if (savedId) await API.put('/notes/' + savedId, data); else savedId = (await API.post('/notes', data)).id;
-          if (scheduled) await API.post('/notes/' + savedId + '/schedule', { due_date: due, remind_at: reminder ? new Date(reminder).toISOString() : null });
+          stored=true;
+          if (scheduled) await API.post('/notes/' + savedId + '/schedule', { due_date: PersonalUX.dueValue(ov.querySelector('#note-due'),task?.due_date), remind_at: PersonalUX.reminderValue(ov.querySelector('#note-remind'),task?.remind_at) });
           else if (task) await API.del('/tasks/' + task.id);
-          UI.toast(scheduled ? 'Note saved and scheduled' : 'Note saved'); await after();
-        } catch (e) { showErr((savedId ? 'Note saved. ' : '') + e.message); return false; }
+          ov.__noteStatus.saved();UI.toast(scheduled ? 'Note saved and scheduled' : 'Note saved'); await after();
+        } catch (e) { ov.__noteStatus.failed(stored?'Note saved · schedule needs retry':'Changes not saved');showErr((stored ? 'Note saved. ' : '') + e.message); return false; }finally{ov.querySelector('.modal-body').inert=false;}
       },
     });
   }
 
-  /* ---------------- Scheduler (personal tasks) ---------------- */
+  /* ---------------- Tasks & reminders (personal tasks) ---------------- */
   function openScheduler() {
     const d = UI.drawer({
-      key: 'scheduler', icon: 'calendar', title: 'Scheduler',
+      key: 'scheduler', icon: 'calendar', title: 'Tasks & reminders',
       bodyHTML: `
         <form class="task-add" id="task-add">
           <input id="task-title" placeholder="New task…" autocomplete="off" />
@@ -658,15 +661,15 @@
             <button class="btn secondary small" data-task-edit="${t.id}">Schedule / edit</button>
             ${t.note_id ? `<button class="btn secondary small" data-task-note="${t.note_id}">Open linked note</button>` : ''}
           </div>
-          <button class="icon-btn danger" data-del="${t.id}" title="Delete">${UI.icon('trash', 16)}</button>
+          <details class="personal-card-menu"><summary aria-label="More task actions">⋯</summary><button class="btn secondary small" data-del="${t.id}">Delete task</button></details>
         </div>`;
       }).join('');
       listEl.querySelectorAll('[data-task-edit]').forEach(b => b.onclick = () => taskModal(tasks.find(t => t.id === Number(b.dataset.taskEdit)), refresh));
       listEl.querySelectorAll('[data-task-note]').forEach(b => b.onclick = () => openNotes(Number(b.dataset.taskNote)));
       listEl.querySelectorAll('[data-toggle]').forEach((c) =>
-        c.onchange = async () => { await API.put('/tasks/' + c.dataset.toggle, { done: c.checked }); refresh(); });
+        c.onchange = async () => {c.disabled=true;try{await API.put('/tasks/' + c.dataset.toggle,{done:c.checked});await refresh();}catch(e){c.checked=!!tasks.find(t=>t.id===Number(c.dataset.toggle))?.done;UI.toast(e.message,'error');}finally{c.disabled=false;} });
       listEl.querySelectorAll('[data-del]').forEach((b) =>
-        b.onclick = async () => { await API.del('/tasks/' + b.dataset.del); refresh(); });
+        b.onclick = async () => {if(!(await UI.confirmDialog('Delete this task? Its linked note will remain.','Delete task')))return;try{await API.del('/tasks/' + b.dataset.del);refresh();}catch(e){UI.toast(e.message,'error');} });
     }
     d.el.querySelector('#task-title').setAttribute('aria-label', 'Task title');
     d.el.querySelector('#task-add').addEventListener('submit', async (e) => {
@@ -683,9 +686,11 @@
   }
 
   function taskModal(task, after) {
-    UI.modal({ title: 'Schedule task', bodyHTML: `<label for="task-edit-title">Task</label><input id="task-edit-title" maxlength="300" value="${UI.esc(task.title)}" ${task.note_id ? 'readonly' : ''}><label for="task-edit-due">Due date and time</label><input type="datetime-local" id="task-edit-due" value="${UI.esc(localDateTime(task.due_date))}"><label for="task-edit-remind">Remind me</label><input type="datetime-local" id="task-edit-remind" value="${UI.esc(localDateTime(task.remind_at))}">${task.note_id ? '<p class="muted">Edit the linked note to change its title or checklist.</p>' : ''}`, confirmText: 'Save schedule', onConfirm: async ov => {
-      await API.put('/tasks/' + task.id, { title: ov.querySelector('#task-edit-title').value.trim(), due_date: ov.querySelector('#task-edit-due').value.replace('T', ' ') || null, remind_at: ov.querySelector('#task-edit-remind').value ? new Date(ov.querySelector('#task-edit-remind').value).toISOString() : null });
-      await after(); UI.toast('Schedule saved');
+    UI.modal({ title: 'Schedule task', bodyHTML: `<label for="task-edit-title">Task</label><input id="task-edit-title" maxlength="300" value="${UI.esc(task.title)}" ${task.note_id ? 'readonly' : ''}><label for="task-edit-due">Due date and time</label><input type="datetime-local" id="task-edit-due" value="${UI.esc(localDateTime(task.due_date))}"><label for="task-edit-remind">Remind me</label><input type="datetime-local" id="task-edit-remind" value="${UI.esc(localDateTime(task.remind_at))}">${task.note_id ? '<p class="muted">Edit the linked note to change its title or checklist.</p>' : ''}`, confirmText: 'Save schedule',onOpen:ov=>{ov.classList.add('personal-tool-editor');PersonalUX.schedule(ov,'#task-edit-due','#task-edit-remind',task.due_date);const status=document.createElement('span');status.className='personal-save-status';status.setAttribute('aria-live','polite');ov.querySelector('.modal-foot').prepend(status);const snapshot=()=>JSON.stringify([...ov.querySelectorAll('input')].map(el=>({value:el.value,edited:el.dataset.edited||''})));const initial=snapshot();ov.__taskStatus=PersonalUX.status(ov,status,()=>snapshot()!==initial);}, onConfirm: async (ov,showErr) => {
+      ov.__taskStatus.saving();ov.querySelector('.modal-body').inert=true;try{
+      await API.put('/tasks/' + task.id, { title: ov.querySelector('#task-edit-title').value.trim(), due_date: PersonalUX.dueValue(ov.querySelector('#task-edit-due'),task.due_date).replace('T',' ') || null, remind_at: PersonalUX.reminderValue(ov.querySelector('#task-edit-remind'),task.remind_at) });
+      ov.__taskStatus.saved();await after(); UI.toast('Schedule saved');
+      }catch(e){ov.__taskStatus.failed();showErr(e.message);return false;}finally{ov.querySelector('.modal-body').inert=false;}
     } });
   }
 

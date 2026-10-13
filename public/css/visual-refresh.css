@@ -394,3 +394,23 @@
 .guide-nav { max-height: calc(100dvh - 280px); overflow: auto; min-height: 160px; }
 .guide-main { min-width: 0; }
 @media (max-width: 900px) { .guide-nav { max-height: 40dvh; } }
+/* Personal scheduling and save feedback share the web theme. */
+.personal-date-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
+.personal-date-shortcuts button { border: 1px solid var(--border); border-radius: 999px; padding: 7px 12px; background: var(--surface-2); color: var(--text); }
+.personal-schedule-summary { flex-basis: 100%; color: var(--text-muted); font-size: 12px; }
+.personal-reminder-choice { margin: 12px 0; display: grid; gap: 6px; }
+.personal-save-status { font-size: 12px; color: var(--text-muted); margin-right: auto; }
+.personal-save-status[data-state=dirty] { color: var(--warning, #b8860b); }
+.personal-save-status[data-state=error] { color: var(--danger, #c44); }
+.personal-secondary-actions { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.personal-secondary-actions summary { cursor: pointer; color: var(--text-muted); }
+.personal-secondary-actions .btn { margin-top: 8px; }
+.note-card small.note-save-hint { display: block; margin-top: 5px; color: var(--text-muted); font-size: 11px; }
+.guide-depth { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font-size: 12px; color: var(--text-muted); }
+.guide-depth select { padding: 5px 8px; width: auto; min-height: 32px; font-size: 12px; }
+.guide-coach .guide-coach-body { max-height: 26dvh; }
+.personal-card-menu summary { cursor: pointer; padding: 6px 10px; list-style: none; }
+.personal-card-menu .btn { margin-top: 4px; }
+.personal-tool-editor [hidden] { display: none !important; }
+.guide-coach .guide-coach-body { min-height: 0; }
+:root[data-theme=dark] .personal-tool-editor { color-scheme: dark; }

@@ -21,7 +21,7 @@
     })));
     const tools=[
       {id:'email',title:'Compose an email',icon:'mail',description:'Open Email, fill in the recipient, subject and message, then review before Send. Sending requires email access; only administrators can configure the outbound mailbox.',spot:'#em-to'},
-      {id:'scheduler',title:'Plan a task or reminder',icon:'calendar',description:'Open Scheduler to add a task with a due date. Use Schedule / edit to set a time or reminder; linked notes open directly from their tasks.',spot:'#task-title'},
+      {id:'scheduler',title:'Plan a task or reminder',icon:'calendar',description:'Open Tasks & reminders to add a task with a due date. Use Schedule / edit to set a time or reminder; linked notes open directly from their tasks.',spot:'#task-title'},
       {id:'bookmarks',title:'Bookmark useful screens',icon:'bookmark',description:'Save the current screen for quick access. You can also right-click a menu item to bookmark it.',spot:'#bm-add'},
       {id:'bug',title:'Report a problem',icon:'bug',description:'Give a clear title, steps to reproduce, and optional screenshots. Review the report before submitting it.',spot:'#bug-title'},
     ].map(t=>({id:'tool:'+t.id,title:t.title,icon:t.icon,module:'home',kind:'workflow',audience:'Personal tools',tagline:t.description,intro:window.Help?.topics.find(p=>p.id===t.id)?.html||'',steps:[{title:'Open the tool',spot:'[data-tool="'+t.id+'"]',advanceOn:'click',nextSpot:t.spot,body:t.description},...({email:['#em-to','#em-subj','#em-body','#em-send'],scheduler:['#task-title','#task-date','#task-list'],bookmarks:['#bm-add','#bm-list'],bug:['#bug-title','#bug-steps','#bug-desc','#bug-shots-input','#bug-submit']}[t.id] || [t.spot]).map(spot=>{const row=window.GuideInstructions?.find(row=>row[0]===spot);return {title:row?.[1] || t.title,spot,body:row?.[2] || t.description};})],gotchas:[]}));
@@ -100,10 +100,12 @@
       add('Preview the output', 'Press Preview and choose a record. Inspect the filled values and page breaks, then return to the editor to correct any missing or misplaced information.', root.querySelector('[data-preview]'));
       add('Save deliberately', 'Press Save to store the template content and layout after reviewing the preview. Saving the template does not issue a business record.', root.querySelector('[data-save]'), 'Ctrl/Cmd + S saves in this editor.');
     } else if (root?.querySelector('#note-title')) {
-      add('Give the note a clear title', 'Enter a short action-oriented title, such as Review October payroll. The linked Scheduler task uses this title.', root.querySelector('#note-title'));
+      add('Give the note a clear title', 'Enter a short action-oriented title, such as Review October payroll. The linked Tasks & reminders task uses this title.', root.querySelector('#note-title'));
       add('Add text or a checklist', 'Write the details or context you need to remember. Add checklist items below if the work has several steps; a checklist can also be saved without body text.', root.querySelector('#note-body'));
       add('Build a checklist', 'Type one action, then press Add item or Enter. Repeat for each step. Check items as you finish them; completing the checklist completes its linked task.', root.querySelector('#note-item-text'), 'Enter here adds an item; it does not save the note.');
       add('Schedule it if needed', 'Check Schedule this note to reveal Due date and time and Remind me. Enter the deadline and optional reminder, then Save. Editing the schedule updates the existing linked task.', root.querySelector('#note-scheduled'));
+      add('Choose the deadline', 'Use Today, Tomorrow or Pick date, then check the due date and time shown.',root.querySelector('#note-due'));
+      add('Choose a reminder', 'Select a reminder relative to the deadline, or Custom date and time. Relative choices update while editing this schedule. Review the reminder date before saving.',root.querySelector('.personal-reminder-choice select'));
     } else {
       const covered = new Set();
       (window.GuideInstructions || []).forEach(([selector,name,body]) => { const target = root?.querySelector(selector); if(available(target)) { add(name, body, target); covered.add(target); } });
@@ -120,7 +122,8 @@
     }
     if (isDialog) { const confirm = root.querySelector('.modal-foot [data-confirm]'); if(confirm) { const action = confirm.textContent.trim(); add(action, 'Check the information above, then press ' + UI.esc(action) + ' when ready. If validation shows an error, correct the highlighted field and try again. Exit the walkthrough or use the dialog’s Cancel/Close action to leave without confirming.', confirm); } }
     if (!steps.length) { const help = window.Help?.topics.find(t => (t.routes || []).includes(route)); const summary = help ? text(help.html).trim().slice(0, 450) : root?.querySelector('.empty, .tool-note')?.textContent?.trim(); add(title, UI.esc(summary || 'No editable controls are available in this view right now. Check the screen’s loading or access message before proceeding.'), root?.querySelector('.panel, h2, h3') || root); }
-    return { id: 'context:' + route + ':' + title, title, icon: 'help', steps, gotchas: [], context: root };
+    const brief=steps.filter((_,i)=>i===0 || i===Math.floor(steps.length/2) || i===steps.length-1);
+    return { id: 'context:' + route + ':' + title, title, icon: 'help', steps, variants:steps.length>3?{detailed:steps,brief}:null,gotchas: [], context: root };
   }
   function open(options = {}) {
     window.GuideTour?.close();
@@ -132,7 +135,7 @@
     const host = modal.overlay.querySelector('#guide-context-results');
     function draw() {
       const q = modal.overlay.querySelector('#guide-context-search').value.toLowerCase().trim();
-      const shown = items.filter(p => [p.title,p.tagline,p.audience,...p.steps.map(s=>text((s.body||'')+' '+(s.tip||'')))].join(' ').toLowerCase().includes(q));
+      const shown = items.filter(p => [p.id,p.title,p.tagline,p.audience,...p.steps.map(s=>text((s.body||'')+' '+(s.tip||'')))].join(' ').toLowerCase().includes(q));
       host.innerHTML = shown.map(p => `<button type="button" class="guide-result" data-guide-id="${UI.esc(p.id)}"><span>${UI.icon(p.icon,16)} <strong>${UI.esc(p.title)}</strong></span><small>${UI.esc(moduleLabels[p.module] || p.module)} · ${p.kind === 'workflow' ? p.steps.length + ' steps' : 'Feature reference'}</small><p>${UI.esc(p.tagline)}</p></button>`).join('') || '<p class="empty">No related guides match. Clear your search or browse the Guide Center for other tasks.</p>';
       host.querySelectorAll('[data-guide-id]').forEach(b => b.onclick = () => {
         const p = shown.find(p=>p.id===b.dataset.guideId);

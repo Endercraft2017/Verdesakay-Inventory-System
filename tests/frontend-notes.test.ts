@@ -8,7 +8,7 @@ it('creates a checklist-only note, schedules it, and retries scheduling without 
   const calls: Array<{ method: string; path: string; body: any }> = []; let failSchedule = true;
   w.API = { get: async () => [], post: async (p: string, body: any) => { calls.push({ method: 'POST', path: p, body }); if (p.endsWith('/schedule') && failSchedule) { failSchedule = false; throw Error('Network issue'); } return { id: 12 }; }, put: async (p: string, body: any) => { calls.push({ method: 'PUT', path: p, body }); return { ok: true }; } };
   w.App = { hasPermission: () => true }; w.requestAnimationFrame = (cb: any) => { cb(); return 1; }; w.crypto.randomUUID = () => 'check-one';
-  w.eval(['ui.js', 'tools.js'].map(s => fs.readFileSync(path.join(import.meta.dirname, '../public/js', s), 'utf8')).join('\n;\n'));
+  w.eval(['ui.js', 'personal-ux.js', 'tools.js'].map(s => fs.readFileSync(path.join(import.meta.dirname, '../public/js', s), 'utf8')).join('\n;\n'));
   w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
   const click = (s: string) => w.document.querySelector(s).click(); const fill = (s: string, value: string) => { w.document.querySelector(s).value = value; };
   const flush = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0)); };
@@ -31,7 +31,7 @@ it('prevents rapid checklist clicks from overwriting another in-flight change', 
   let resolveSave: () => void = () => {}; let writes = 0;
   w.API = { get: async () => [note], put: async (_p: string, data: any) => { writes++; await new Promise<void>(r => { resolveSave = r; }); note = { ...note, ...data }; } };
   w.App = { hasPermission: () => true }; w.requestAnimationFrame = (cb: any) => { cb(); return 1; };
-  w.eval(['ui.js', 'tools.js'].map(s => fs.readFileSync(path.join(import.meta.dirname, '../public/js', s), 'utf8')).join('\n;\n'));
+  w.eval(['ui.js', 'personal-ux.js', 'tools.js'].map(s => fs.readFileSync(path.join(import.meta.dirname, '../public/js', s), 'utf8')).join('\n;\n'));
   w.document.dispatchEvent(new w.Event('DOMContentLoaded')); w.document.querySelector('[data-tool]').click();
   const flush = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0)); }; await flush();
   w.document.querySelector('[data-item="0"]').click(); expect(w.document.querySelector('[data-item="1"]').disabled).toBe(true); w.document.querySelector('[data-item="1"]').click(); expect(writes).toBe(1);

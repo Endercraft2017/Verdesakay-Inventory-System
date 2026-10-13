@@ -136,7 +136,7 @@ App.register('sop', (view, filter) => {
     b.addEventListener('click', () => { active = b.dataset.id; draw(); }));
   function filterGuides() {
     const q=view.querySelector('#guide-search').value.trim().toLowerCase(), module=view.querySelector('#guide-module').value;let count=0;
-    navEl.querySelectorAll('.guide-nav-item').forEach(b=>{const p=byId[b.dataset.id];const el=document.createElement('div');el.innerHTML=[p.title,p.tagline,p.audience,...p.steps.map(s=>(s.body||'')+' '+(s.tip||''))].join(' ');b.hidden=!!((module && (p.module||'home')!==module) || (q && !el.textContent.toLowerCase().includes(q)));if(!b.hidden)count++;});
+    navEl.querySelectorAll('.guide-nav-item').forEach(b=>{const p=byId[b.dataset.id];const el=document.createElement('div');el.innerHTML=[p.id,p.title,p.tagline,p.audience,...p.steps.map(s=>(s.body||'')+' '+(s.tip||''))].join(' ');b.hidden=!!((module && (p.module||'home')!==module) || (q && !el.textContent.toLowerCase().includes(q)));if(!b.hidden)count++;});
     view.querySelector('#guide-match-count').textContent=count+' matching guide'+(count===1?'':'s');
     const first=[...navEl.querySelectorAll('.guide-nav-item')].find(b=>!b.hidden);if(first){if(!navEl.querySelector('.active:not([hidden])') || mainEl.querySelector('.empty-state')){active=first.dataset.id;draw();}}else mainEl.innerHTML=UI.emptyState({icon:'search',title:'No matching guides',hint:'Try a different task name or module.'});
   }

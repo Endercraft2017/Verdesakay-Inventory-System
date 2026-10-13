@@ -135,7 +135,7 @@
 
     page.appendChild(mEl('<div class="v2-work-title tools"><h2>My tools</h2></div>'));
     var tools = mEl('<div class="v2-work-tools"></div>');
-    tools.appendChild(commonTool('Tasks', 'tasks'));
+    tools.appendChild(commonTool('Tasks & reminders', 'tasks'));
     tools.appendChild(commonTool('Notes / checklists', 'notes'));
     tools.appendChild(commonTool('Guides', 'guides'));
     tools.appendChild(commonTool('Schedule', 'schedule'));

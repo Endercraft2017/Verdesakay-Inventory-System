@@ -15,3 +15,7 @@
 @media (prefers-reduced-motion: reduce) { .guide-coach { transition: none; } }
 
 .m-guide-reference { margin-bottom: 12px; }.m-guide-reference summary { cursor: pointer; }.m-guide-reference summary small { display: block; padding-top: 4px; color: var(--v2-muted); }.m-guide-reference ol { padding-left: 22px; }.m-guide-reference li { margin: 14px 0; line-height: 1.5; }
+.guide-depth { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-basis: 100%; font-size: 12px; color: var(--v2-muted); }
+.guide-depth select { max-width: 210px; min-height: 36px; border: 1px solid var(--v2-line); background: var(--v2-surface); color: var(--v2-text); border-radius: 10px; font-size: 12px; padding: 5px; }
+.guide-coach-body { max-height: 20dvh; }
+.guide-coach-body { min-height: 0; flex: 1 1 auto; }

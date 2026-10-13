@@ -12,7 +12,7 @@ it('rail tools open visible drawers and close by button, Escape, backdrop, and r
   win.addEventListener('error', event => errors.push(event.message));
   win.requestAnimationFrame = cb => { cb(0); return 1; };
   const stubs = `const API = { get: async () => [], post: async () => ({}) }; const App = { hasPermission: () => true, currentLocation: () => ({route:'dashboard',label:'Dashboard'}), navigate() {} };`;
-  win.eval(stubs + ['ui.js', 'help.js', 'tools.js'].map(script => fs.readFileSync(path.join(import.meta.dirname, '../public/js', script), 'utf8')).join('\n;\n'));
+  win.eval(stubs + ['ui.js', 'help.js', 'personal-ux.js', 'tools.js'].map(script => fs.readFileSync(path.join(import.meta.dirname, '../public/js', script), 'utf8')).join('\n;\n'));
   win.document.dispatchEvent(new win.Event('DOMContentLoaded'));
   const click = (tool: string) => { const b = win.document.querySelector(`[data-tool="${tool}"]`) as HTMLElement; b.focus(); b.click(); };
   for (const tool of tools) {

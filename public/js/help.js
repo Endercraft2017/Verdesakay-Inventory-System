@@ -14,7 +14,7 @@
           <li><b>Search Menu</b> (top-left) jumps to any screen by name.</li>
           <li><b>Site Map</b> shows everything you can open, at a glance.</li>
           <li>The <b>icon rail</b> on the right holds your personal tools — AI Assistant,
-              Notes, Email, Scheduler, Bookmarks — and this <b>Help</b> button.</li>
+              Notes, Email, Tasks & reminders, Bookmarks — and this <b>Help</b> button.</li>
           <li>You only see what your <b>role</b> allows. If a screen or button is missing,
               it's a permission — ask an admin.</li>
         </ul>
