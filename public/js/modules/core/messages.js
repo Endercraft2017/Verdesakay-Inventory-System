@@ -167,7 +167,7 @@ App.register('messages', async (view, filter) => {
   function attachmentHTML(a) {
     const isImage = (a.mime_type || '').startsWith('image/');
     if (isImage) {
-      return `<button type="button" class="chat-attach-img-wrap" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" data-photo="1" aria-label="Enlarge ${UI.esc(a.name)}"><img class="chat-attach-img" alt="${UI.esc(a.name)}" /></button>`;
+      return `<button type="button" class="chat-attach-img-wrap" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" data-photo="1" aria-label="Enlarge ${UI.esc(a.name)}"><img class="chat-attach-img" alt="" /><span class="chat-photo-error" hidden>Photo unavailable. Ask the sender to resend it.</span></button>`;
     }
     return `<div class="msg-attach" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" style="cursor:pointer">
       <span class="msg-attach-icon">${UI.icon(UI.fileIconName(a.name), 16)}</span>
@@ -227,7 +227,14 @@ App.register('messages', async (view, filter) => {
     if (!row) return;
     row.querySelectorAll('.chat-attach-img-wrap img').forEach((img) => {
       const wrap = img.closest('.chat-attach-img-wrap');
-      API.blobUrl(wrap.dataset.attUrl).then((u) => { img.src = u; }).catch(() => {});
+      const unavailable = () => {
+        img.hidden = true;
+        wrap.querySelector('.chat-photo-error').hidden = false;
+        wrap.dataset.unavailable = '1';
+        wrap.setAttribute('aria-label', 'Photo unavailable. Ask the sender to resend it.');
+      };
+      img.onerror = unavailable;
+      API.blobUrl(wrap.dataset.attUrl).then((u) => { img.src = u; }).catch(unavailable);
     });
     if (m.deleted_at || !m.body) return;
     const match = m.body.match(URL_RE);
@@ -388,6 +395,7 @@ App.register('messages', async (view, filter) => {
       const att = e.target.closest('[data-att-url]');
       if (att) {
         e.stopPropagation();
+        if (att.dataset.unavailable) return;
         if (att.dataset.photo) PhotoViewer.open(att.dataset.attUrl, att.dataset.attName);
         else API.download(att.dataset.attUrl, att.dataset.attName).catch((err) => UI.toast(err.message, 'error'));
         return;

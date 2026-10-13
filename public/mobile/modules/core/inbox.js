@@ -222,7 +222,7 @@
   function attachmentHTML(a) {
     var isImage = (a.mime_type || '').indexOf('image/') === 0;
     if (isImage) {
-      return '<div class="m-chat-attach-img-wrap" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '"><img class="m-chat-attach-img" alt="' + mEsc(a.name) + '" /></div>';
+      return '<div class="m-chat-attach-img-wrap" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '"><img class="m-chat-attach-img" alt="" /><span class="m-chat-photo-error" hidden>Photo unavailable. Ask the sender to resend it.</span></div>';
     }
     return '<div class="m-msg-attach" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '">' +
       '<span>' + mEsc(a.name) + '</span><span class="m-muted">' + mFmtBytes(a.size_bytes) + '</span></div>';
@@ -273,7 +273,13 @@
     if (!row) return;
     row.querySelectorAll('.m-chat-attach-img-wrap img').forEach(function (img) {
       var wrap = img.closest('.m-chat-attach-img-wrap');
-      API.blobUrl(wrap.dataset.attUrl).then(function (u) { img.src = u; }).catch(function () {});
+      var unavailable = function () {
+        img.hidden = true;
+        wrap.querySelector('.m-chat-photo-error').hidden = false;
+        wrap.dataset.unavailable = '1';
+      };
+      img.onerror = unavailable;
+      API.blobUrl(wrap.dataset.attUrl).then(function (u) { img.src = u; }).catch(unavailable);
     });
     if (m.deleted_at || !m.body) return;
     var match = m.body.match(URL_RE);
@@ -319,6 +325,7 @@
       el.dataset.wired = '1';
       el.addEventListener('click', function (event) {
         event.stopPropagation();
+        if (el.dataset.unavailable) return;
         if (el.classList.contains('m-chat-attach-img-wrap')) PhotoViewer.open(el.dataset.attUrl, el.dataset.attName);
         else API.download(el.dataset.attUrl, el.dataset.attName).catch(function (e) { mToast(e.message || 'Download failed', 'err'); });
       });

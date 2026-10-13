@@ -65,7 +65,7 @@ function openConnection(slug: string): DatabaseSync {
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 64; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 65; // 65: durable message attachment bytes; 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -996,6 +996,7 @@ function createSchema(): void {
       original_name TEXT NOT NULL,
       mime_type     TEXT,
       size_bytes    INTEGER NOT NULL DEFAULT 0,
+      data          BLOB,
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
@@ -2670,6 +2671,13 @@ function migrate(): void {
   }
   if (!msgCols.some((c) => c.name === 'deleted_by')) {
     db.exec('ALTER TABLE messages ADD COLUMN deleted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+
+  // (SCHEMA_VERSION 65) Keep attachment bytes with the message so a replaced app
+  // filesystem cannot silently break photos that still appear in a conversation.
+  const attachmentCols = db.prepare('PRAGMA table_info(message_attachments)').all() as { name: string }[];
+  if (!attachmentCols.some((c) => c.name === 'data')) {
+    db.exec('ALTER TABLE message_attachments ADD COLUMN data BLOB');
   }
 
   // (SCHEMA_VERSION 45) Production lead accepts a released job order's parts kit.

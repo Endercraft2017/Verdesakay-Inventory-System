@@ -6,10 +6,15 @@
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', name || 'Photo');
-    overlay.innerHTML = '<div class="attachment-photo-viewer-bar"><span></span><button type="button" aria-label="Close photo">×</button></div><img alt="" />';
+    overlay.innerHTML = '<div class="attachment-photo-viewer-bar"><span></span><button type="button" aria-label="Close photo">×</button></div><img alt="" /><p class="attachment-photo-viewer-error" hidden>Photo unavailable. Ask the sender to resend it.</p>';
     overlay.querySelector('span').textContent = name || 'Photo';
     var image = overlay.querySelector('img');
     image.alt = name || 'Photo';
+    function unavailable() {
+      image.hidden = true;
+      overlay.querySelector('.attachment-photo-viewer-error').hidden = false;
+    }
+    image.onerror = unavailable;
     var ownedUrl = null;
     var previousFocus = document.activeElement;
     function close() {
@@ -29,7 +34,7 @@
       if (!overlay.isConnected) { URL.revokeObjectURL(url); return; }
       ownedUrl = url;
       image.src = url;
-    }).catch(function () { if (overlay.isConnected) image.alt = 'Photo could not be loaded'; });
+    }).catch(function () { if (overlay.isConnected) unavailable(); });
   }
   window.PhotoViewer = { open: open };
 })();

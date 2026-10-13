@@ -1,5 +1,7 @@
 /** Integration tests: messaging — send, inbox/sent, unread count, mark read, delete. */
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { WebSocket } from 'ws';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
@@ -236,6 +238,49 @@ describe('messages: attachments', () => {
     const stranger = await createEmployee(ctx.api, adminToken, { username: 'dave_stranger' });
     const blocked = await ctx.api.get(`/api${msg.attachments[0].url}`).set(bearer(stranger.token));
     expect(blocked.status).toBe(403);
+  });
+
+  it('serves a photo from its database copy after the upload folder loses the file', async () => {
+    const { queryOne } = await import('../src/shared/db');
+    const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
+      .field('recipient_id', String(alice.id))
+      .attach('files', Buffer.from('durable-photo'), 'durable.jpg');
+    expect(send.status).toBe(201);
+    const row = queryOne<{ id: number; stored_name: string; data: Uint8Array }>(
+      'SELECT id, stored_name, data FROM message_attachments WHERE message_id = ?', send.body.id
+    )!;
+    expect(Buffer.from(row.data).toString()).toBe('durable-photo');
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', row.stored_name));
+    const response = await ctx.api.get(`/api/messages/${send.body.id}/attachments/${row.id}`)
+      .set(bearer(alice.token)).buffer(true)
+      .parse((res, done) => { const parts: Buffer[] = []; res.on('data', (c: Buffer) => parts.push(c)); res.on('end', () => done(null, Buffer.concat(parts))); });
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toMatch(/^image\/jpeg/);
+    expect(response.body.toString()).toBe('durable-photo');
+  });
+
+  it('recovers a legacy attachment from the upload backup, or reports it missing', async () => {
+    const { queryOne, run } = await import('../src/shared/db');
+    const { backupDir } = await import('../src/shared/backup');
+    const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
+      .field('recipient_id', String(alice.id))
+      .attach('files', Buffer.from('legacy-photo'), 'legacy.jpg');
+    const row = queryOne<{ id: number; stored_name: string }>(
+      'SELECT id, stored_name FROM message_attachments WHERE message_id = ?', send.body.id
+    )!;
+    const primary = path.join(ctx.tmpDir, 'uploads', row.stored_name);
+    const backup = path.join(backupDir(), 'uploads', row.stored_name);
+    fs.mkdirSync(path.dirname(backup), { recursive: true });
+    fs.copyFileSync(primary, backup);
+    run('UPDATE message_attachments SET data = NULL WHERE id = ?', row.id);
+    fs.unlinkSync(primary);
+    const url = `/api/messages/${send.body.id}/attachments/${row.id}`;
+    const recovered = await ctx.api.get(url).set(bearer(alice.token));
+    expect(recovered.status).toBe(200);
+    fs.unlinkSync(backup);
+    const missing = await ctx.api.get(url).set(bearer(alice.token));
+    expect(missing.status).toBe(410);
+    expect(missing.body.error).toMatch(/resend/);
   });
 
   it('rejects a file over 10 MB', async () => {

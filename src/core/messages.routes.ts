@@ -15,6 +15,7 @@ import { broadcast } from '../shared/ws';
 import { syncClass } from '../sync';
 import { syncUpload } from '../sync/files';
 import { sideEffectsSuppressed } from '../shared/sync-context';
+import { backupDir, mirrorDir } from '../shared/backup';
 
 const router = Router();
 router.use(requireAuth);
@@ -365,12 +366,13 @@ router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpl
   const messageId = Number(info.lastInsertRowid);
   for (const f of files) {
     run(
-      'INSERT INTO message_attachments (message_id, stored_name, original_name, mime_type, size_bytes) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO message_attachments (message_id, stored_name, original_name, mime_type, size_bytes, data) VALUES (?, ?, ?, ?, ?, ?)',
       messageId,
       f.filename,
       f.originalname,
       f.mimetype,
-      f.size
+      f.size,
+      fs.readFileSync(f.path)
     );
   }
   broadcast(currentSlug(), [recipient_id, req.user!.id], { type: 'message:new', data: hydrateMessageForBroadcast(messageId) });
@@ -472,8 +474,8 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
     res.status(403).json({ error: 'Forbidden' });
     return;
   }
-  const att = queryOne<{ stored_name: string; original_name: string; mime_type: string | null }>(
-    'SELECT stored_name, original_name, mime_type FROM message_attachments WHERE id = ? AND message_id = ?',
+  const att = queryOne<{ stored_name: string; original_name: string; mime_type: string | null; data: Buffer | null }>(
+    'SELECT stored_name, original_name, mime_type, data FROM message_attachments WHERE id = ? AND message_id = ?',
     Number(req.params.attId),
     messageId
   );
@@ -481,9 +483,15 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
     res.status(404).json({ error: 'Attachment not found' });
     return;
   }
-  const filePath = path.join(uploadDir(), att.stored_name);
-  if (!fs.existsSync(filePath)) {
-    res.status(410).json({ error: 'File is missing on disk' });
+  // Older messages may predate the database copy. Their additive upload backups can
+  // still hold a copy after an app container's local upload folder disappears.
+  const safeName = path.basename(att.stored_name);
+  const tenantPart = currentSlug() === DEFAULT_TENANT ? '' : currentSlug();
+  const backupPaths = [backupDir(), mirrorDir()].filter((dir): dir is string => !!dir)
+    .map((dir) => path.join(dir, 'uploads', tenantPart, safeName));
+  const filePath = [path.join(uploadDir(), safeName), ...backupPaths].find((candidate) => fs.existsSync(candidate));
+  if (!filePath && !att.data) {
+    res.status(410).json({ error: 'Photo or file is no longer available. Ask the sender to resend it.' });
     return;
   }
   // The type is whatever the uploader's browser claimed. Only plain raster images may render in
@@ -492,7 +500,8 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
   const inlineImage = !!att.mime_type && /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(att.mime_type);
   res.type(inlineImage ? att.mime_type! : 'application/octet-stream');
   res.setHeader('Content-Disposition', `${inlineImage ? 'inline' : 'attachment'}; filename="${encodeURIComponent(att.original_name)}"`);
-  res.sendFile(filePath);
+  if (filePath) res.sendFile(filePath);
+  else if (att.data) res.send(Buffer.from(att.data));
 });
 
 // POST /api/messages/:id/read — mark a single received message read (kept alongside the

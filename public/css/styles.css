@@ -1262,6 +1262,10 @@ textarea { resize: vertical; min-height: 84px; }
 .chat-attach-img-wrap { margin-top: 6px; }
 .chat-attach-img-wrap { display:block; padding:0; border:0; background:transparent; cursor:zoom-in; }
 .chat-attach-img { max-width: 100%; max-height: 280px; border-radius: 10px; display: block; cursor: pointer; }
+.chat-attach-img[hidden] { display: none; }
+.chat-photo-error { display: block; max-width: 240px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-muted); background: var(--surface-2); text-align: left; font-size: 13px; }
+.chat-photo-error[hidden] { display: none; }
+.chat-attach-img-wrap[data-unavailable] { cursor: default; }
 
 .chat-link-preview { display: block; margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; text-decoration: none; color: inherit; background: var(--surface); }
 .chat-row.mine .chat-link-preview { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.3); }

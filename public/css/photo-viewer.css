@@ -1,5 +1,7 @@
 .attachment-photo-viewer{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:64px 16px 20px;background:rgba(6,8,17,.94);cursor:zoom-out}
 .attachment-photo-viewer img{display:block;max-width:100%;max-height:calc(100dvh - 90px);object-fit:contain;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.35);cursor:default}
+.attachment-photo-viewer img[hidden],.attachment-photo-viewer-error[hidden]{display:none}
+.attachment-photo-viewer-error{max-width:22rem;padding:1rem 1.25rem;border-radius:12px;background:#272538;color:#fff;text-align:center;cursor:default}
 .attachment-photo-viewer-bar{position:absolute;inset:0 0 auto;min-height:54px;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:16px;color:#fff;background:linear-gradient(rgba(0,0,0,.72),transparent);cursor:default}
 .attachment-photo-viewer-bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .attachment-photo-viewer-bar button{min-width:44px;min-height:44px;border:0;border-radius:12px;color:#fff;background:rgba(255,255,255,.17);font-size:28px;line-height:1;cursor:pointer}
