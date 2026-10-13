@@ -1071,3 +1071,6 @@ ribbons have bounded scroll height plus a visible overflow action to preserve ca
 Paper dimension inputs have explicit accessible names. Variable bank field management
 reuses the existing callback and refreshes the bank after catalog changes; linked forms
 supports local search within the existing permission-filtered form list.
+
+Table and named-style dialog color pickers use full swatches with explicit height/padding,
+matching the existing inspector pickers rather than generic text-input padding.

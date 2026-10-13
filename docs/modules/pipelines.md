@@ -859,3 +859,5 @@ and preview. Linked-form search filters the already authorized form catalog and 
 selection when it no longer matches, while link/default/unlink APIs remain unchanged.
 Responsive ribbon ResizeObserver/scroll events update the overflow action; closure disconnects
 its observer. Keyboard users can focus and scroll the toolbar, reaching all its controls.
+
+Dialog color swatch sizing preserves native picker and existing color-application handlers.

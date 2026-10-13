@@ -29,6 +29,11 @@ variables, tables, images, review, export/import, proportional grid PDF, save/re
 multipage grid restrictions. The follow-up screen inventory found no viewport overflows
 or unnamed visible fields in the inspected editor states. Typecheck and 114 focused command, studio and reliability tests passed.
 
+A further eight table-toolbar states and eight table-properties dialogs were checked across
+the same widths/themes. Toolbars stayed within the viewport. The dialog color swatches were
+too thin because generic text-input padding consumed their interior; table and named-style
+pickers now use explicit 36px height and 3px padding.
+
 ## Remaining priorities
 
 - The intermittent shared-save conflict recorded in the previous audit remains unresolved;
