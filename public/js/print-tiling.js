@@ -13,9 +13,8 @@
                 duplicate of the wrong person).
      'repeat' — cycle back through the printed records to fill every cell (right for
                 repeating ONE design across its whole grid: print one record as a 1x2 /
-                2x2 / 3x3 / etc. sheet of itself). The page always auto-fits whatever grid
-                is picked; for the CONTENT to look clean at a smaller cell size, design it
-                with relative sizing rather than fixed full-page dimensions.
+                2x2 / 3x3 / etc. sheet of itself). Each tile lays out at the original page
+                size, then scales uniformly into its cell without responsive reflow.
 
    Two modes for how the grid relates to "how many copies of each record" (opts.continuous,
    default false — every existing template keeps its exact current output):
@@ -55,6 +54,14 @@ function pageContentHeightMm(body) {
 function _tileNum(v, def) {
   const n = parseInt(v, 10);
   return Number.isFinite(n) && n > 0 ? n : def;
+}
+
+/** The source paper, including margins, is the invariant coordinate space of a tile. */
+function tileSourcePage(body) {
+  const setup=String(body||'').match(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>([\s\S]*?)<\/style>/i);
+  const size=setup?.[1].match(/size:\s*([\d.]+)mm\s+([\d.]+)mm/i),margin=setup?.[1].match(/margin:\s*([\d.]+)mm/i);
+  const width=size?Number(size[1]):210,height=size?Number(size[2]):297,m=margin?Number(margin[1]):14;
+  return {widthMm:width>0?width:210,heightMm:height>0?height:297,marginMm:Number.isFinite(m)&&m>=0&&m*2<Math.min(width,height)?m:0};
 }
 
 /** records: array of opaque record values (whatever renderRecord needs).
@@ -98,17 +105,14 @@ function buildTiledPagesHtml(records, renderRecord, opts) {
       display: grid; grid-template-columns: repeat(${perPage}, minmax(0, 1fr)); grid-template-rows: repeat(${copies}, minmax(0, 1fr));
       grid-auto-flow: column; column-gap: ${gapX}mm; row-gap: ${gapY}mm; height: ${heightMm}mm;
     }
-    /* position:relative scopes any floating object (.doc-float, position:absolute — an image/
-       textbox/shape "made movable" in the template editor) to ITS OWN cell instead of the
-       shared <body> (the print stylesheet's only other positioned ancestor — see PRINT_CSS in
-       ui.js), which every cell on the page would otherwise share, landing every copy's float at
-       the same page-relative spot instead of scoped to its own cell. A float now scales to the
-       size of its own cell — the correct, expected behavior for something repeating on a tiled
-       page, same as any responsive design. */
+    /* Clip only the fitted result; lay out text, tables and percentage floats at source size. */
     .tiled-grid > div { position: relative; overflow: hidden; }
+    .tiled-cell-inner { position:relative; isolation:isolate; box-sizing:border-box; display:flow-root;
+      width:var(--tile-page-width); height:var(--tile-page-height); padding:var(--tile-page-margin);
+      transform-origin:top left; }
   `;
 
-  // Outer (fixed-size grid item, clips overflow) / inner .tiled-cell-inner (naturally sized,
+  // Outer (fixed-size grid item, clips overflow) / inner .tiled-cell-inner (source paper size,
   // what fitTiledCells() measures/scales) pair — same split hr-payroll-print.js's _cell() uses
   // and for the same reason (see PAGE_CSS's comment there): a record's rendered HTML isn't
   // guaranteed to be exactly one element (a template body is typically a <style> tag followed
@@ -119,7 +123,8 @@ function buildTiledPagesHtml(records, renderRecord, opts) {
   const cell = (html) => {
     const suffix='_tile_'+(++cellIndex);
     const content=String(html??'').replace(/\bid=(["'])(doc-heading-[\w-]+)\1/g,(_m,q,id)=>`id=${q}${id}${suffix}${q}`).replace(/\bhref=(["'])#(doc-heading-[\w-]+)\1/g,(_m,q,id)=>`href=${q}#${id}${suffix}${q}`);
-    return `<div><div class="tiled-cell-inner">${content}</div></div>`;
+    const page=tileSourcePage(html);
+    return `<div style="--tile-page-width:${page.widthMm}mm;--tile-page-height:${page.heightMm}mm;--tile-page-margin:${page.marginMm}mm"><div class="tiled-cell-inner">${content}</div></div>`;
   };
 
   const pages = [];
@@ -165,11 +170,10 @@ function buildTiledPagesHtml(records, renderRecord, opts) {
   return `<style>${css}</style>${pages.join('')}`;
 }
 
-/** Same shrink-to-fit behavior as hr-payroll-print.js's fitPayslipCells(), generalized for any
-    .tiled-grid built by buildTiledPagesHtml() above — a design that overflows its own cell
-    (a template customized with a big header image, or just more content than the grid's cell
-    size leaves room for) gets shrunk down instead of silently losing whatever the cell's
-    `overflow: hidden` clips off. Needs real layout (`scrollHeight`/`clientHeight`), so call this
+/** Fit the entire source-paper layout using one scale factor for both axes. Source width,
+    height and margin stay fixed, so text and objects never reflow into the smaller cell.
+    Overflow is included in measurement so additional record content is not silently clipped.
+    Needs real layout (`scrollHeight`/`clientHeight`), so call this
     against a live DOM after the print HTML has actually rendered — e.g. the preview iframe's
     `load` event in form-records.js's printRecordsViaTemplate() — not against the HTML string
     buildTiledPagesHtml() returns. `root` defaults to `document`; pass an iframe's
@@ -180,7 +184,7 @@ function fitTiledCells(root) {
     const inner = cell.querySelector('.tiled-cell-inner');
     if (!inner) return;
     inner.style.transform = "";
-    const scale = Math.min(_fitScale(inner.scrollHeight, cell.clientHeight) || 1, _fitScale(inner.scrollWidth, cell.clientWidth) || 1);
+    const scale = Math.min(_fitScale(Math.max(inner.offsetHeight||0,inner.scrollHeight), cell.clientHeight) || 1, _fitScale(Math.max(inner.offsetWidth||0,inner.scrollWidth), cell.clientWidth) || 1);
     if (scale < 1) {
       inner.style.transformOrigin = 'top left';
       inner.style.transform = `scale(${scale})`;
@@ -194,5 +198,5 @@ function _fitScale(contentHeight, boxHeight) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { buildTiledPagesHtml, pageContentHeightMm, fitTiledCells, _fitScale, isMultiPageDocument };
+  module.exports = { buildTiledPagesHtml, pageContentHeightMm, fitTiledCells, _fitScale, isMultiPageDocument, tileSourcePage };
 }

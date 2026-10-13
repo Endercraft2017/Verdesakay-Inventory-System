@@ -1028,3 +1028,6 @@ Whole-chip click selection enables Delete/Backspace for optional starter fields,
 existing atomic commands, lock checks, undo and HTML serialization.
 Floating-object toolbars use compact SVG buttons with tooltips and accessible labels for
 move, stacking, inline placement, fill/border and delete; action selectors are unchanged.
+Print tiling fixes each source page's paper dimensions/margins before applying a uniform
+fit scale. Text wrapping, table layout and percentage floats stay in their original space;
+configured cell gaps remain physical sheet spacing. Preview and browser PDFs share this path.

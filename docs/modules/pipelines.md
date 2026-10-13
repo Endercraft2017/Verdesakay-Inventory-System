@@ -821,6 +821,10 @@ does not edit the document. Click a chip → select its outer boundaries → Del
 uses atomic deletion and an undo snapshot. Starter fields are not regenerated on save.
 Floating-object toolbar icons retain the existing drag/action pipeline and are stripped
 from saved HTML with the rest of the editor chrome.
+Grid print → render each record at its source paper size/margins → measure the complete
+inner page → apply one proportional scale into its fixed cell. The grid width never becomes
+the source design width. Preview and print share fitting, including custom page dimensions;
+record ordering, repeat/blank cells, gaps and multipage guards retain their existing behavior.
 The selected font/style/point-size readout follows current text rather than field-label
 chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
 the existing change/history path. Find/replace mounts above the workspace; source editing,

@@ -18,6 +18,7 @@ function loadModule() {
     pageContentHeightMm: (body: string) => number;
     fitTiledCells: (root: unknown) => void;
     _fitScale: (contentHeight: number, boxHeight: number) => number | null;
+    tileSourcePage: (body: string) => {widthMm:number;heightMm:number;marginMm:number};
   };
 }
 
@@ -42,6 +43,13 @@ describe('pageContentHeightMm', () => {
 
 describe('buildTiledPagesHtml', () => {
   const render = (r: unknown) => `<div class="slip">${String(r)}</div>`;
+  it('keeps source paper dimensions and margins independent of the number of grid cells',()=>{
+    const body='<style data-docpage>@page{size:148mm 210mm;margin:8mm}</style><p>Original layout</p>';
+    const html=buildTiledPagesHtml([1],()=>body,{copiesPerRecord:3,recordsPerPage:2});
+    expect(html).toContain('--tile-page-width:148mm;--tile-page-height:210mm;--tile-page-margin:8mm');
+    expect(html).toContain('width:var(--tile-page-width); height:var(--tile-page-height)');
+    expect(loadModule().tileSourcePage('')).toEqual({widthMm:210,heightMm:297,marginMm:14});
+  });
 
   it('returns empty when neither copies nor records-per-page is above 1 (caller falls back to its own plain path)', () => {
     expect(buildTiledPagesHtml(['a', 'b'], render, { copiesPerRecord: 1, recordsPerPage: 1 })).toBe('');

@@ -134,6 +134,11 @@ block decoration removal still use existing handlers or remain outside inline pr
 
 ### Simplified editor workspace
 
+Grid tiles preserve the original page layout: each copy lays out at the source paper size
+and margins, then scales uniformly into the cell. Fonts, text wrapping, table columns and
+floating-object proportions are preserved. Extra space stays blank; the design is never
+stretched to fill a differently shaped cell. Grid gaps and multipage restrictions still apply.
+
 The document name lives in the header beside Save. Settings opens document type/period;
 advanced source editing, Find and replace and the guide sit under Advanced. Edit and
 Print preview are separate modes; Preview data remains the filled-record preview.
