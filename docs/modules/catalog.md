@@ -1037,3 +1037,6 @@ previous page; completed drags enter the existing history/save path once. Chrome
 the serialized surface, and shared polling defers replacement until the drag ends.
 Expanded sidebar tooltips explain each tool; collapsed tooltips show its name. Both use
 the shared hover/focus tooltip controller and retain accessible button labels.
+Editor settings use compact 16px checkboxes with inline labels, including tracking, grid
+continuous mode, layer visibility/locking and table dialogs. Inputs, actions and selected
+rail tools follow app theme tokens; compact ribbon tiles size to their labels without overlap.

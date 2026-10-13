@@ -831,6 +831,9 @@ change and updates preview/shared/save; cancel restores dimensions without an un
 Visible mm inputs and keyboard handles share page sizing, including safe margin adjustment.
 Sidebar collapse updates tooltip text from purpose descriptions to tool names; it leaves
 the selected panel, document history and editing pipeline unchanged.
+Control styling scopes checkbox sizing to editor settings, preserving native label/keyboard
+behavior and all existing change handlers. Document checkboxes and printed content keep
+their own styles; settings fields/actions use the app's shared theme conventions.
 The selected font/style/point-size readout follows current text rather than field-label
 chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
 the existing change/history path. Find/replace mounts above the workspace; source editing,
