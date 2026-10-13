@@ -793,6 +793,8 @@ Editor workspace controls are UI state: metadata settings visibility, active rib
 inspector panel, menus and fit/zoom do not alter saved document HTML or dirty/history state.
 Ribbon and sidebar collapse also remain UI state, recalculate page fit, and keep tools
 reachable. Selecting a ribbon tab expands its controls; inspector collapse returns focus.
+Inspector color/spacing pickers write validated CSS through the existing history/save
+pipeline. Color swatches normalize their display only; existing alpha remains until edited.
 The selected font/style/point-size readout follows current text rather than field-label
 chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
 the existing change/history path. Find/replace mounts above the workspace; source editing,

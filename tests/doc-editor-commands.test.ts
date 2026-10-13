@@ -163,6 +163,20 @@ describe('model paragraph commands',()=>{
 });
 
 describe('simplified editor workspace',()=>{
+ it('uses color pickers and no-fill controls while preserving existing colors until changed',()=>{
+  const {w,doc,root,select}=setup('<p style="color:rgb(17, 34, 51);background-color:rgba(70, 80, 90, 0.4)">Text</p>',true);const p=root.querySelector('p');select(p.firstChild,0,0);p.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));doc.querySelector('[data-studio-tab=Properties]').click();
+  const color=doc.querySelector('[data-prop=color]'),bg=doc.querySelector('[data-prop=backgroundColor]');expect(color.type).toBe('color');expect(color.value).toBe('#112233');expect(bg.type).toBe('color');expect(bg.value).toBe('#46505a');expect(p.style.backgroundColor).toBe('rgba(70, 80, 90, 0.4)');
+  color.value='#ff6600';color.dispatchEvent(new w.Event('change',{bubbles:true}));expect(p.style.color).toBe('rgb(255, 102, 0)');
+  doc.querySelector('[data-clear-fill]').click();expect(p.style.backgroundColor).toBe('transparent');expect(doc.querySelector('[data-clear-fill]').getAttribute('aria-pressed')).toBe('true');
+ });
+ it('offers size and spacing presets and retains precise existing values',()=>{
+  const {w,doc,root,select}=setup('<p style="font-size:17pt;line-height:1.42;padding:7px;margin-bottom:5px">Text</p>',true);const p=root.querySelector('p');select(p.firstChild,0,0);p.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));doc.querySelector('[data-studio-tab=Properties]').click();
+  for(const prop of ['fontSize','lineHeight','padding','marginBottom'])expect(doc.querySelector(`[data-prop=${prop}]`).tagName).toBe('SELECT');
+  expect(doc.querySelector('[data-prop=fontSize]').value).toBe('17');expect(doc.querySelector('[data-prop=padding]').value).toBe('7');
+  const line=doc.querySelector('[data-prop=lineHeight]');line.value='2';line.dispatchEvent(new w.Event('change',{bubbles:true}));expect(p.style.lineHeight).toBe('2');
+  const padding=doc.querySelector('[data-prop=padding]');padding.value='16';padding.dispatchEvent(new w.Event('change',{bubbles:true}));expect(p.style.padding).toBe('16px');
+  const size=doc.querySelector('[data-prop=fontSize]');size.value='custom';size.dispatchEvent(new w.Event('change',{bubbles:true}));expect(doc.querySelector('[data-custom-property]').value).toBe('17');
+ });
  it('collapses the ribbon and tool sidebar without changing document content',()=>{
   const {doc,root}=setup('<p>Text</p>',true);const ribbon=doc.querySelector('[data-ribbon-toggle]'),rail=doc.querySelector('[data-rail-toggle]');
   ribbon.click();expect(ribbon.getAttribute('aria-expanded')).toBe('false');expect(doc.querySelector('.doc-fs').classList.contains('ribbon-collapsed')).toBe(true);

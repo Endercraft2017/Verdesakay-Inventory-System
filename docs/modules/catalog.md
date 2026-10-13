@@ -1007,3 +1007,5 @@ above the workspace, and keyboard tab/menu behavior is covered alongside the edi
 Compact header/ribbon spacing and reduced canvas padding reserve room for the document.
 The ribbon can be hidden while retaining its tabs; the tool rail collapses to labelled
 icons and the inspector has an explicit Collapse action. Workspace changes recalculate fit.
+Inspector colors use native swatch pickers and an explicit No fill background action.
+Typography/spacing use presets plus a custom-value dialog, preserving nonpreset values.
