@@ -825,6 +825,10 @@ Grid print → render each record at its source paper size/margins → measure t
 inner page → apply one proportional scale into its fixed cell. The grid width never becomes
 the source design width. Preview and print share fitting, including custom page dimensions;
 record ordering, repeat/blank cells, gaps and multipage guards retain their existing behavior.
+Page resizing → flush pending typing → freeze display zoom → adjust custom width/height →
+update page/handle geometry → release/cancel → restore zoom. Release records one history
+change and updates preview/shared/save; cancel restores dimensions without an undo entry.
+Visible mm inputs and keyboard handles share page sizing, including safe margin adjustment.
 The selected font/style/point-size readout follows current text rather than field-label
 chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
 the existing change/history path. Find/replace mounts above the workspace; source editing,

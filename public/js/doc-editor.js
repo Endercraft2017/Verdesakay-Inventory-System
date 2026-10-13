@@ -745,6 +745,7 @@ function ensureStyles() {
   `;
   const viewCss=`.doc-fs[data-editor-mode=pages] .doc-tool-rail,.doc-fs[data-editor-mode=pages] .doc-studio-side,.doc-fs:not([data-editor-mode=visual]) .doc-view-tools{display:none!important}.doc-tool-rail>[data-help]{margin-top:auto}.doc-find{flex-shrink:0}@media(max-width:760px){.doc-find{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:6px;padding:8px}.doc-find input{width:100%;min-width:0;box-sizing:border-box}}.doc-view-tools{display:flex;align-items:center;gap:5px}.doc-view-tools button{border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);font:12px var(--font,system-ui);height:25px;min-width:25px;cursor:pointer}.doc-view-tools button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent)}.doc-view-tools button:hover{background:var(--surface-2);color:var(--text)}.doc-view-tools button:focus-visible{outline:2px solid var(--accent)}.doc-zoom-info{min-width:60px;text-align:center}.doc-panel[data-panel=home] .doc-group-row{flex-wrap:nowrap}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]) .doc-group-row{max-width:700px}@media(max-width:760px){.doc-panel[data-panel=home]{overflow:visible;flex-wrap:wrap;gap:4px;min-height:0}.doc-panel[data-panel=home] .doc-group{padding:2px 4px;gap:3px}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]){flex:1;min-width:0}.doc-panel[data-panel=home] .doc-group-row{justify-content:flex-start;gap:3px;flex-wrap:wrap}.doc-panel[data-panel=home] select[data-cmd=formatBlock]{width:85px}.doc-panel[data-panel=home] select[data-cmd=fontName]{width:102px}.doc-panel[data-panel=home] .doc-group-cap{display:none}.doc-panel[data-panel=home] .doc-group:has([data-find]){display:none}.doc-view-tools{gap:1px}.doc-view-tools button{min-width:20px;padding:0 3px}.doc-statusbar>.doc-word-count{display:none}}` ;
   const compactCss = `
+    .doc-page-resize{position:absolute;z-index:5;width:14px;height:14px;box-sizing:border-box;padding:0;border:2px solid var(--accent);border-radius:2px;background:var(--surface);transform:translate(-50%,-50%);touch-action:none;cursor:nwse-resize}.doc-page-resize[data-page-resize=ne],.doc-page-resize[data-page-resize=sw]{cursor:nesw-resize}.doc-page-resize:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.doc-fs:not([data-editor-mode=visual]) .doc-page-resize{display:none}.doc-page-resize-note{position:absolute;left:50%;top:-26px;transform:translateX(-50%);font:11px var(--font,system-ui);white-space:nowrap;background:var(--surface);color:var(--text);border:1px solid var(--border);padding:3px 7px;border-radius:var(--radius-sm);pointer-events:none}.doc-page-resize-note[hidden]{display:none}
     .doc-variable-list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto}.doc-variable-card{border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px;display:flex;flex-direction:column;gap:6px}.doc-variable-card code{font-size:11px;overflow-wrap:anywhere;user-select:text;color:var(--accent)}.doc-variable-card strong{font-size:12px}.doc-variable-card .doc-variable-actions{display:flex;gap:6px}.doc-variable-actions button{flex:1;padding:5px!important;font-size:11px}.doc-data-tools summary{cursor:pointer;padding:8px 0;font-weight:600}.doc-data-tools[open]{display:flex;flex-direction:column;gap:10px}
     .doc-color-picker{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;background:var(--surface)}.doc-studio-body .doc-color-picker input[type=color]{width:44px;height:32px;min-height:32px;padding:2px;flex-shrink:0;cursor:pointer}.doc-color-picker [data-color-label]{flex:1;font-size:11px;color:var(--text-muted)}.doc-studio-body .doc-color-picker button{font-size:11px;padding:5px 8px}
     .doc-fs:not([data-editor-mode=visual]) .doc-ribbon-controls{display:none}
@@ -3218,10 +3219,13 @@ function open(opts = {}) {
   function syncSizeUI() {
     const isCustom = sizeSel.value === 'custom';
     orientWrap.style.display = isCustom ? 'none' : '';
-    customWraps.forEach((w) => { w.style.display = isCustom ? '' : 'none'; });
+    customWraps.forEach((w) => { w.style.display = ''; });
+    if(!isCustom){const page=currentPageMm();customWInp.value=page.widthMm;customHInp.value=page.heightMm;}
   }
+  let lastCanvasPage={widthMm:pg.widthMm,heightMm:pg.heightMm};
   const applyCanvas = () => {
     const { widthMm, heightMm } = currentPageMm();
+    lastCanvasPage={widthMm,heightMm};
     const [w, h] = pageDims(widthMm, heightMm);
     surface.style.width = w + 'px'; surface.style.minHeight = h + 'px';
     surface.style.padding = ((Number(marginInp.value) || 0) * PX_PER_MM) + 'px';
@@ -3229,15 +3233,17 @@ function open(opts = {}) {
     const info = fs.querySelector('.doc-page-info');
     if (info) info.textContent = `${sizeSel.value === 'custom' ? 'Custom' : sizeSel.value.toUpperCase()} · ${widthMm} × ${heightMm} mm`;
   };
-  [sizeSel, orientSel, customWInp, customHInp, marginInp].forEach((el) =>
+  [sizeSel, orientSel, marginInp].forEach((el) =>
     el.addEventListener('change', () => { syncSizeUI(); applyCanvas(); applyZoom(); onChange(); }));
+  function setCustomPageSize(w,h){if(!Number.isFinite(w+h)||w<10||h<10||w>2000||h>2000)return false;sizeSel.value='custom';customWInp.value=Math.round(w*10)/10;customHInp.value=Math.round(h*10)/10;marginInp.value=Math.max(0,Math.min(Number(marginInp.value)||0,Math.max(0,Math.min(w,h)/2-1)));syncSizeUI();applyCanvas();return true;}
+  [customWInp,customHInp].forEach(input=>input.addEventListener('change',()=>{if(!setCustomPageSize(Number(customWInp.value),Number(customHInp.value))){UI.toast('Choose a size between 10 and 2000 mm.','error');const page=lastCanvasPage;customWInp.value=page.widthMm;customHInp.value=page.heightMm;return;}applyZoom();onChange();}));
   // Print Grid controls don't touch the editing canvas — just the tiled preview (see
   // refreshPreview above) and what gets saved.
   [copiesInp, perPageInp, tileFillSel, repeatInp, gapXInp, gapYInp].forEach((el) =>
     el.addEventListener('change', () => { onChange(); }));
   continuousChk.addEventListener('change', () => { syncContinuousUI(); onChange(); });
   fs.querySelector('[data-swap-wh]').addEventListener('click', () => {
-    const w = customWInp.value; customWInp.value = customHInp.value; customHInp.value = w;
+    const page=currentPageMm();setCustomPageSize(page.heightMm,page.widthMm);
     applyCanvas(); applyZoom(); onChange();
   });
   syncSizeUI();
@@ -3248,6 +3254,9 @@ function open(opts = {}) {
 
   // ---- canvas zoom: Zoom group in the Layout tab, Ctrl+wheel (zoom-to-cursor), Ctrl +/-/0 ----
   const zoomWrap = fs.querySelector('.doc-zoom');
+  let pageResize=null;
+  const resizeNote=document.createElement('span');resizeNote.className='doc-page-resize-note';resizeNote.hidden=true;zoomWrap.append(resizeNote);
+  ['nw','ne','sw','se'].forEach(corner=>{const button=document.createElement('button');button.type='button';button.className='doc-page-resize';button.dataset.pageResize=corner;button.title='Drag to resize page · Shift keeps proportions';button.setAttribute('aria-label','Resize page '+({nw:'top left',ne:'top right',sw:'bottom left',se:'bottom right'}[corner])+' corner');zoomWrap.append(button);});
   const zoomSel = fs.querySelector('.doc-zoomsel');
   const ZOOM_LADDER = [0.25, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2, 3, 4];
   let zoomMode = 'fit'; // 'manual' | 'fit'; start with the entire page visible.
@@ -3273,6 +3282,7 @@ function open(opts = {}) {
     zoomWrap.style.width = Math.round(w * z) + 'px';
     zoomWrap.style.height = Math.round(h * z) + 'px';
     zoomWrap.style.setProperty('--zoom', String(z));
+    const page=currentPageMm(),[pageW,pageH]=pageDims(page.widthMm,page.heightMm);zoomWrap.querySelectorAll('[data-page-resize]').forEach(handle=>{handle.style.left=(handle.dataset.pageResize.includes('e')?pageW*z:0)+'px';handle.style.top=(handle.dataset.pageResize.includes('s')?pageH*z:0)+'px';});
   }
   function syncZoomSel() {
     if (!zoomSel) return;
@@ -3286,6 +3296,13 @@ function open(opts = {}) {
     currentZoom = Math.max(0.2, Math.min(4, z));
     applyZoom(); syncZoomSel();
   }
+  function finishPageResize(cancel=false){if(!pageResize)return;const drag=pageResize;const unchanged=currentPageMm().widthMm===drag.widthMm&&currentPageMm().heightMm===drag.heightMm;pageResize=null;if(cancel||unchanged){sizeSel.value=drag.size;orientSel.value=drag.orient;customWInp.value=drag.w;customHInp.value=drag.h;marginInp.value=drag.margin;syncSizeUI();applyCanvas();}zoomMode=drag.zoomMode;currentZoom=drag.zoom;canvas.style.justifyContent=drag.justify;zoomWrap.style.marginLeft='';zoomWrap.style.marginRight='';zoomWrap.style.marginTop='';resizeNote.hidden=true;try{drag.handle.releasePointerCapture(drag.id);}catch{}applyZoom();syncZoomSel();if(!cancel&&!unchanged){onChange();history.flush();}else refreshPreview();}
+  zoomWrap.addEventListener('pointerdown',e=>{const handle=e.target.closest?.('[data-page-resize]');if(!handle||e.button!==0||mode!=='visual'||composing)return;e.preventDefault();history.boundary();const page=currentPageMm(),rect=zoomWrap.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();pageResize={handle,id:e.pointerId,x:e.clientX,y:e.clientY,corner:handle.dataset.pageResize,widthMm:page.widthMm,heightMm:page.heightMm,size:sizeSel.value,orient:orientSel.value,w:customWInp.value,h:customHInp.value,margin:marginInp.value,zoom:currentZoom,zoomMode,justify:canvas.style.justifyContent,left:rect.left-canvasRect.left-(parseFloat(getComputedStyle(canvas).paddingLeft)||0)+canvas.scrollLeft};zoomMode='manual';canvas.style.justifyContent='flex-start';zoomWrap.style.marginLeft=pageResize.left+'px';zoomWrap.style.marginRight='0';resizeNote.hidden=false;resizeNote.textContent=page.widthMm+' × '+page.heightMm+' mm';try{handle.setPointerCapture(e.pointerId);}catch{}syncZoomSel();});
+  zoomWrap.addEventListener('pointermove',e=>{const drag=pageResize;if(!drag||e.pointerId!==drag.id)return;e.preventDefault();const dx=(e.clientX-drag.x)/(drag.zoom*PX_PER_MM),dy=(e.clientY-drag.y)/(drag.zoom*PX_PER_MM);let w=drag.widthMm+(drag.corner.includes('w')?-dx:dx),h=drag.heightMm+(drag.corner.includes('n')?-dy:dy);if(e.shiftKey){const factor=Math.max(.001,Math.abs(w/drag.widthMm-1)>=Math.abs(h/drag.heightMm-1)?w/drag.widthMm:h/drag.heightMm);const bounded=Math.max(10/Math.min(drag.widthMm,drag.heightMm),Math.min(2000/Math.max(drag.widthMm,drag.heightMm),factor));w=drag.widthMm*bounded;h=drag.heightMm*bounded;}else{w=Math.max(10,Math.min(2000,w));h=Math.max(10,Math.min(2000,h));}setCustomPageSize(w,h);const page=currentPageMm();zoomWrap.style.marginLeft=(drag.left-(drag.corner.includes('w')?(page.widthMm-drag.widthMm)*PX_PER_MM*drag.zoom:0))+'px';zoomWrap.style.marginTop=(drag.corner.includes('n')?-(page.heightMm-drag.heightMm)*PX_PER_MM*drag.zoom:0)+'px';applyZoom();resizeNote.textContent=page.widthMm+' × '+page.heightMm+' mm';});
+  zoomWrap.addEventListener('pointerup',e=>{if(pageResize?.id===e.pointerId)finishPageResize();});
+  zoomWrap.addEventListener('pointercancel',e=>{if(pageResize?.id===e.pointerId)finishPageResize(true);});
+  zoomWrap.addEventListener('lostpointercapture',()=>{if(pageResize)finishPageResize(true);});
+  zoomWrap.addEventListener('keydown',e=>{const handle=e.target.closest?.('[data-page-resize]');if(!handle||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)||pageResize)return;e.preventDefault();history.boundary();const page=currentPageMm(),step=e.shiftKey?10:1,corner=handle.dataset.pageResize;const dx=(e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0)*(corner.includes('w')?-1:1),dy=(e.key==='ArrowDown'?step:e.key==='ArrowUp'?-step:0)*(corner.includes('n')?-1:1);if(setCustomPageSize(page.widthMm+dx,page.heightMm+dy)){applyZoom();onChange();history.flush();}});
   function ladderStep(dir) {
     let i = 0; let bd = Infinity;
     ZOOM_LADDER.forEach((v, k) => { const d = Math.abs(v - currentZoom); if (d < bd) { bd = d; i = k; } });
@@ -3481,6 +3498,7 @@ function open(opts = {}) {
   fs.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
   async function close(force) {
+    finishPageResize(true);
     if (closed || saving) return;
     if (dirty && !force) { const ok = await UI.confirmDialog('Discard unsaved changes to this template?', 'Discard'); if (!ok) return; }
     closed = true;
@@ -3498,6 +3516,8 @@ function open(opts = {}) {
     document.removeEventListener('keydown', onKey);
   }
   const onKey = (e) => {
+    if(pageResize&&e.key==='Escape'){e.preventDefault();finishPageResize(true);return;}
+    if(pageResize&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s')finishPageResize();
     if(e.key==='Escape'&&fs.querySelector('.doc-more-menu[open],.doc-format-extra[open]')){e.preventDefault();const menu=fs.querySelector('.doc-more-menu[open],.doc-format-extra[open]');menu.open=false;menu.querySelector('summary').focus();return;}
 
     if (e.isComposing || composing || e.keyCode === 229) return;
@@ -3593,7 +3613,7 @@ function open(opts = {}) {
   if (opts.sharedStudio && window.DocStudio) {
     markBlocks();
     shared=window.DocStudio.mount(fs,opts,{
-      surface, snapshot: studioSnapshot, dirty:()=>dirty, isComposing:()=>composing, markBlocks,
+      surface, snapshot: studioSnapshot, dirty:()=>dirty, isComposing:()=>composing||!!pageResize, markBlocks,
       apply:value=>restoreStudio(value,true),change:onChange,render:()=>studio.render(),
       selected:()=>{const node=window.getSelection()?.anchorNode;const el=node?.nodeType===3?node.parentElement:node;return surface.querySelector('.doc-float.selected') || el?.closest?.('[data-doc-node]');},
       serialize:serializeEditor,sanitize:sanitizeHtml,safeUrl:safeDocumentUrl,

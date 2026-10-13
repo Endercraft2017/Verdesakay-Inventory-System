@@ -134,6 +134,12 @@ block decoration removal still use existing handlers or remain outside inline pr
 
 ### Simplified editor workspace
 
+Page & print always exposes Width and Height in millimeters. Editing either selects Custom;
+corner handles outside the page also resize it at the current zoom. Shift preserves the
+aspect ratio, Escape/pointer cancellation restores the previous size, and a completed drag
+is one undo step. Handles support arrow keys (1 mm; Shift 10 mm) and stay out of saved HTML.
+Custom dimensions flow into saved page setup, measured preview, PDF and proportional grids.
+
 Grid tiles preserve the original page layout: each copy lays out at the source paper size
 and margins, then scales uniformly into the cell. Fonts, text wrapping, table columns and
 floating-object proportions are preserved. Extra space stays blank; the design is never

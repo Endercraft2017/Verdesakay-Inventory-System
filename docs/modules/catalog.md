@@ -1031,3 +1031,7 @@ move, stacking, inline placement, fill/border and delete; action selectors are u
 Print tiling fixes each source page's paper dimensions/margins before applying a uniform
 fit scale. Text wrapping, table layout and percentage floats stay in their original space;
 configured cell gaps remain physical sheet spacing. Preview and browser PDFs share this path.
+Page dimensions are always exposed; corner resize handles edit custom mm dimensions with
+zoom-aware pointer math, Shift aspect locking and keyboard increments. Cancel restores the
+previous page; completed drags enter the existing history/save path once. Chrome stays outside
+the serialized surface, and shared polling defers replacement until the drag ends.

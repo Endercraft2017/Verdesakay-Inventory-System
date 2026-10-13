@@ -20,6 +20,15 @@ function setup(extra: any = {}) {
   return {w,doc,opts,editor,tab,click,change,select,reopen(){editor=w.DocEditor.open(opts);return editor;}};
 }
 describe('document studio workflows',()=>{
+  it('exposes page dimensions for presets and switches direct width edits to custom with undo',()=>{
+    const {doc,w,change,editor}=setup();expect([...doc.querySelectorAll('.doc-custom-wrap')].every((el:any)=>el.style.display!=='none')).toBe(true);expect(doc.querySelector('.doc-custom-w').value).toBe('210');change('.doc-custom-w','180');expect(doc.querySelector('.doc-pagesize').value).toBe('custom');expect(doc.querySelector('.doc-page-info').textContent).toContain('180 × 297');editor._history.undo();expect(doc.querySelector('.doc-pagesize').value).toBe('a4');expect(doc.querySelector('.doc-custom-w').value).toBe('210');
+    change('.doc-custom-w','-20');expect(doc.querySelector('.doc-custom-w').value).toBe('210');expect(doc.querySelector('.doc-pagesize').value).toBe('a4');
+  });
+  it('resizes a page with corner pointers as one undoable action and cancels with Escape',()=>{
+    const {doc,w,editor}=setup();const handle=doc.querySelector('[data-page-resize=se]');const pointer=(type:string,x:number,y:number,shift=false)=>{const e=new w.MouseEvent(type,{bubbles:true,cancelable:true,clientX:x,clientY:y,button:0,shiftKey:shift});Object.defineProperty(e,'pointerId',{value:7});handle.dispatchEvent(e);};
+    pointer('pointerdown',100,100);pointer('pointermove',100+96/25.4*20,100+96/25.4*10);pointer('pointerup',180,140);expect(doc.querySelector('.doc-custom-w').value).toBe('230');expect(doc.querySelector('.doc-custom-h').value).toBe('307');editor._history.undo();expect(doc.querySelector('.doc-pagesize').value).toBe('a4');editor._history.redo();expect(doc.querySelector('.doc-custom-w').value).toBe('230');
+    pointer('pointerdown',100,100);pointer('pointermove',180,160);handle.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));expect(doc.querySelector('.doc-custom-w').value).toBe('230');expect(doc.querySelector('.doc-custom-h').value).toBe('307');expect(doc.querySelector('.doc-fs')).not.toBeNull();
+  });
   it('searches the variable bank, filters categories and copies or inserts complete tokens',async()=>{
     const {w,doc,tab,editor}=setup({getVariables:()=>[{label:'Company name',token:'{{company.name}}',category:'Company'},{label:'Customer',token:'{{order.customer_name}}',category:'Order'}]});
     const writeText=vi.fn(async()=>{});Object.defineProperty(w.navigator,'clipboard',{value:{writeText},configurable:true});tab('Data');
