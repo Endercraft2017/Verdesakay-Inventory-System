@@ -71,10 +71,8 @@ describe('validation: inventory', () => {
 });
 
 describe('validation: messages', () => {
-  it('requires a non-empty body', () => {
-    expect(() => parseBody(sendMessageSchema, { recipient_id: 2, body: '' })).toThrow(
-      ValidationError
-    );
+  it('allows empty text for attachment messages; the route requires text or files', () => {
+    expect(parseBody(sendMessageSchema, { recipient_id: 2, body: '' }).body).toBe('');
   });
 });
 

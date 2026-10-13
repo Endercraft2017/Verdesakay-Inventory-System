@@ -1040,3 +1040,6 @@ the shared hover/focus tooltip controller and retain accessible button labels.
 Editor settings use compact 16px checkboxes with inline labels, including tracking, grid
 continuous mode, layer visibility/locking and table dialogs. Inputs, actions and selected
 rail tools follow app theme tokens; compact ribbon tiles size to their labels without overlap.
+The Playwright audit (reviews/document-editor-playwright-audit-2026-10-13.md) covers the real
+app route and responsive themes. Single variable insertion stays inside paragraph boundaries,
+Undo/Redo remain available across ribbon tabs, and phone text controls wrap at full width.

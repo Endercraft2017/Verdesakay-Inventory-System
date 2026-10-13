@@ -163,6 +163,12 @@ describe('model paragraph commands',()=>{
 });
 
 describe('simplified editor workspace',()=>{
+ it('keeps sidebar insertion in its paragraph after the live DOM is refreshed',()=>{
+  const {w,doc,root}=setup('<p>Before {{name}} after</p><p>Other paragraph</p>',true);const range=doc.createRange();range.selectNodeContents(root.querySelector('p'));range.collapse(false);w.getSelection().removeAllRanges();w.getSelection().addRange(range);doc.dispatchEvent(new w.Event('selectionchange'));doc.querySelector('[data-studio-tab=Data]').click();doc.querySelector('[data-variable-search]').focus();root.innerHTML=root.innerHTML;doc.querySelector('[data-variable-insert]').click();expect(root.querySelectorAll('p')[0].querySelectorAll('.doc-chip')).toHaveLength(2);expect(root.querySelectorAll('p')[1].textContent).toBe('Other paragraph');
+ });
+ it('inserts a variable inside the paragraph at a formatted end boundary with undo',()=>{
+  const {w,doc,root,ed}=setup('<p><b>End of paragraph</b></p>',true);const p=root.querySelector('p'),range=doc.createRange();range.selectNodeContents(p);range.collapse(false);w.getSelection().removeAllRanges();w.getSelection().addRange(range);doc.dispatchEvent(new w.Event('selectionchange'));doc.execCommand.mockClear();ed.commands.run('insert.html',w.DocEditor.bodyToEditorHtml('{{company.name}}'));expect(p.querySelector('.doc-chip').dataset.token).toBe('company.name');expect(doc.execCommand).not.toHaveBeenCalled();ed._history.undo();expect(root.querySelector('.doc-chip')).toBeNull();
+ });
  it('selects starter chips on click and deletes them as whole tokens with undo',()=>{
   const {w,doc,root,ed}=setup('<header><h1>{{company.name}}</h1><div>{{company.address}}</div><div>{{company.phone}} · {{company.email}}</div><div>{{today}}</div></header><p>Body</p>',true);
   const first=root.querySelector('.doc-chip');first.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));expect(w.getSelection().isCollapsed).toBe(false);expect(ed.commands.state('edit.deleteAtomic').enabled).toBe(true);

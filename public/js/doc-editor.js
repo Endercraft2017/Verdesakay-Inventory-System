@@ -745,6 +745,9 @@ function ensureStyles() {
   `;
   const viewCss=`.doc-fs[data-editor-mode=pages] .doc-tool-rail,.doc-fs[data-editor-mode=pages] .doc-studio-side,.doc-fs:not([data-editor-mode=visual]) .doc-view-tools{display:none!important}.doc-tool-rail>[data-help]{margin-top:auto}.doc-find{flex-shrink:0}@media(max-width:760px){.doc-find{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:6px;padding:8px}.doc-find input{width:100%;min-width:0;box-sizing:border-box}}.doc-view-tools{display:flex;align-items:center;gap:5px}.doc-view-tools button{border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);font:12px var(--font,system-ui);height:25px;min-width:25px;cursor:pointer}.doc-view-tools button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent)}.doc-view-tools button:hover{background:var(--surface-2);color:var(--text)}.doc-view-tools button:focus-visible{outline:2px solid var(--accent)}.doc-zoom-info{min-width:60px;text-align:center}.doc-panel[data-panel=home] .doc-group-row{flex-wrap:nowrap}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]) .doc-group-row{max-width:700px}@media(max-width:760px){.doc-panel[data-panel=home]{overflow:visible;flex-wrap:wrap;gap:4px;min-height:0}.doc-panel[data-panel=home] .doc-group{padding:2px 4px;gap:3px}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]){flex:1;min-width:0}.doc-panel[data-panel=home] .doc-group-row{justify-content:flex-start;gap:3px;flex-wrap:wrap}.doc-panel[data-panel=home] select[data-cmd=formatBlock]{width:85px}.doc-panel[data-panel=home] select[data-cmd=fontName]{width:102px}.doc-panel[data-panel=home] .doc-group-cap{display:none}.doc-panel[data-panel=home] .doc-group:has([data-find]){display:none}.doc-view-tools{gap:1px}.doc-view-tools button{min-width:20px;padding:0 3px}.doc-statusbar>.doc-word-count{display:none}}` ;
   const compactCss = `
+    body:has(.doc-fs .doc-studio-side:not([hidden])) .ai-fab{opacity:0;pointer-events:none}
+    @media(max-width:760px){.doc-fs-bar{gap:4px}.doc-more-menu summary{font-size:11px;padding:0 6px}.doc-fs-bar [data-guide-open]{order:4;width:30px;height:32px;padding:0;font-size:0;gap:0}.doc-modes button{font-size:11px;padding:4px 8px}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]){flex:1 0 100%;box-sizing:border-box}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]) .doc-group-row{width:100%;max-width:100%;min-width:0}.doc-panel[data-panel=home] .doc-group-row{max-width:100%;min-width:0}}
+    .doc-ribbon-history{display:flex;gap:2px;align-items:center;padding-left:10px;flex-shrink:0}.doc-ribbon-history button{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);cursor:pointer}.doc-ribbon-history button:hover:not(:disabled){background:var(--surface-2);color:var(--text)}.doc-ribbon-history button:disabled{opacity:.4;cursor:not-allowed}.doc-ribbon-history button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
     .doc-fs-bar .btn{appearance:none}.doc-fs-bar .btn.secondary{background:var(--surface);color:var(--text);border-color:var(--border-strong);box-shadow:none}.doc-fs-bar .btn.secondary:hover{background:var(--surface-2)}.doc-fs-bar [data-save]{background:var(--accent);color:var(--accent-contrast);border-color:transparent}.doc-fs-bar [data-save]:hover{background:var(--accent-hover)}
     .doc-check,.doc-studio-body label:has(>input[type=checkbox]){display:flex;flex-direction:row;align-items:center;gap:8px;margin:0;min-height:30px;font-size:12px;font-weight:500;line-height:1.4;cursor:pointer}.doc-check input[type=checkbox],.doc-studio-body input[type=checkbox],.doc-panel input[type=checkbox]{appearance:auto;box-sizing:border-box;width:16px!important;height:16px!important;min-width:16px;min-height:16px;max-width:16px;max-height:16px;flex:0 0 16px;padding:0!important;margin:0;border-radius:3px;accent-color:var(--accent);cursor:pointer}.doc-panel .doc-grid-toggle{padding:0 8px;white-space:nowrap;color:var(--text-muted)}
     .doc-studio-body input:not([type=checkbox]):not([type=color]),.doc-studio-body select{height:34px;min-width:0;border-color:var(--border-strong);border-radius:var(--radius-sm);font-size:12px;background:var(--surface);color:var(--text)}.doc-fs .doc-studio-body textarea{min-height:96px;border-color:var(--border-strong);border-radius:var(--radius-sm);font-size:12px;resize:vertical}.doc-studio-body label{font-size:12px;font-weight:600}.doc-fs .doc-studio-body button{border-color:var(--border-strong);border-radius:var(--radius-sm);padding:7px 10px;font-weight:600;transition:background-color .15s,border-color .15s}.doc-studio-body button:hover:not(:disabled){background:var(--surface-2)}.doc-studio-body button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.doc-studio-body button:disabled{opacity:.55;cursor:not-allowed}.doc-studio-body .doc-variable-actions [data-variable-insert]{background:var(--accent);border-color:transparent;color:var(--accent-contrast)}.doc-studio-body .doc-variable-actions [data-variable-insert]:hover{background:var(--accent-hover)}
@@ -781,9 +784,6 @@ function tabsHTML() {
 }
 
 function homePanelHTML() {
-  const undo = groupHTML('Undo', `
-    <button type="button" data-ex="undo" title="Undo (Ctrl+Z)" disabled>${docIcon('undo')}</button>
-    <button type="button" data-ex="redo" title="Redo (Ctrl+Y)" disabled>${docIcon('redo')}</button>`);
   const font = groupHTML('Font', `
     <select data-cmd="formatBlock" title="Paragraph style">
       <option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="h4">Heading 4</option><option value="h5">Heading 5</option><option value="h6">Heading 6</option>
@@ -812,7 +812,7 @@ function homePanelHTML() {
     <button type="button" data-paragraph title="Paragraph spacing and indentation">Spacing</button>`);
   const editing = groupHTML('Editing', `
     <button type="button" class="doc-tile" data-find title="Find &amp; replace (Ctrl+F)"><span class="doc-tile-ic">${docIcon('search')}</span><span class="doc-tile-lbl">Find</span></button>`);
-  return undo + font + paragraph + editing;
+  return font + paragraph + editing;
 }
 
 function tile(kind, value, icon, label, extraClass) {
@@ -1409,6 +1409,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   const commands = createDocCommandRegistry({
     prepare:restoreSel,enabled:editableSelection,
     native:(cmd,val)=>{
+      if(cmd==='insertHTML'&&typeof val==='string'){const fragment=document.createElement('template');fragment.innerHTML=val;const chip=fragment.content.childNodes.length===1?fragment.content.firstChild:null;if(chip?.matches?.('.doc-chip')){const sel=window.getSelection(),r=sel.getRangeAt(0);clearPending();r.deleteContents();r.insertNode(chip);r.setStartAfter(chip);r.collapse(true);sel.removeAllRanges();sel.addRange(r);return true;}}
       if(window.DocModel){
         const sel=window.getSelection();
         if((cmd==='insertText'||cmd==='delete')&&!trackingText()){const result=editText(cmd==='insertText'?String(val ?? ''):'');if(result!==null)return result;}
@@ -2735,9 +2736,10 @@ function mountStudio(fs, surface, opts, api) {
   const esc = (x) => escAttr(String(x ?? ''));
   const floats = () => [...surface.querySelectorAll('.doc-float')];
   const target = () => selected?.isConnected ? selected : null;
-  function remember() { const s = window.getSelection(); if (s?.rangeCount && surface.contains(s.anchorNode)) range = s.getRangeAt(0).cloneRange(); }
+  let rememberedSelection=null,rememberedNode=null;
+  function remember() { if(side.contains(document.activeElement)||rail.contains(document.activeElement))return;const s = window.getSelection(); if (s?.rangeCount && surface.contains(s.anchorNode)) {range = s.getRangeAt(0).cloneRange();rememberedNode=range.startContainer;rememberedSelection=captureEditorSelection(surface);} }
   function selection() { remember(); const s = window.getSelection(); let node = s?.anchorNode; if (node?.nodeType === 3) node = node.parentElement; if (node && node !== surface && surface.contains(node)) selected = node.closest('.doc-float') || node.closest('img,p,h1,h2,h3,h4,h5,h6,td,th,li,div') || node; }
-  function restoreRange() { surface.focus(); if (range && surface.contains(range.startContainer)) { const s = window.getSelection(); s.removeAllRanges(); s.addRange(range); } }
+  function restoreRange() { const saved=range?.cloneRange(),bookmark=rememberedSelection,live=rememberedNode&&surface.contains(rememberedNode);surface.focus();if(!live&&bookmark){restoreEditorSelection(surface,bookmark);return;} if (saved && surface.contains(saved.startContainer)&&surface.contains(saved.endContainer)) { const s = window.getSelection(); s.removeAllRanges(); s.addRange(saved); } }
   function insert(html) { restoreRange(); api.insert(html); }
   function changed() { api.change(); guides(); }
   function colorHex(value,fallback){const probe=document.createElement('span');probe.style.color=value;probe.style.display='none';document.body.append(probe);const color=getComputedStyle(probe).color;probe.remove();const rgb=color.match(/^rgba?\(\s*([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)/i);return rgb?'#'+rgb.slice(1,4).map(v=>Math.round(Math.max(0,Math.min(255,Number(v)))).toString(16).padStart(2,'0')).join(''):fallback;}
@@ -2862,16 +2864,19 @@ function mountStudio(fs, surface, opts, api) {
     if(action==='saveStyle'||action==='saveAsset'){const name=panel.querySelector('[data-library-name]').value.trim();if(!name){note.textContent='Enter a name first.';return;}if(action==='saveStyle'){const css=getComputedStyle(el),values={};['fontFamily','fontSize','fontWeight','color','backgroundColor','lineHeight','textAlign','padding','marginBottom'].forEach(k=>values[k]=css[k]);library.styles.push({name,values});library.styles=library.styles.slice(-30);}else{const root=document.createElement('div');root.append(el.cloneNode(true));library.assets.push({name,html:serializeEditor(root)});library.assets=library.assets.slice(-30);}write(libraryKey,library);render();}
   });
   rail.addEventListener('click',e=>{const b=e.target.closest('[data-studio-tab]');if(b){remember();const close=!side.hidden&&tab===b.dataset.studioTab;tab=b.dataset.studioTab;render();showInspector(!close);}});
+  rail.addEventListener('pointerdown',remember,true);
+  rail.addEventListener('mousedown',e=>{if(e.target.closest('button'))e.preventDefault();});
+  surface.addEventListener('focusout',remember);
   // Keep the caret when tool buttons are clicked; inputs remain editable.
   side.addEventListener('mousedown',e=>{if(e.target.closest('button'))e.preventDefault();});
-  const onSelect=()=>{if(side.contains(document.activeElement))return;if(surface.contains(window.getSelection()?.anchorNode)){selection();if(tab==='Properties')render();}};
+  const onSelect=()=>{if(side.contains(document.activeElement)||rail.contains(document.activeElement))return;if(surface.contains(window.getSelection()?.anchorNode)){selection();if(tab==='Properties')render();}};
   document.addEventListener('selectionchange',onSelect);
   surface.addEventListener('click',e=>{selected=e.target.closest('.doc-float')||e.target.closest('img,p,h1,h2,h3,h4,h5,h6,td,th,li');remember();if(tab==='Properties'||tab==='Layers')render();});
   function guides(){surface.querySelectorAll('.doc-page-guide').forEach(n=>n.remove());if(surface.querySelector('[data-doc-design-page]'))return;const h=parseFloat(surface.style.minHeight);if(!h)return;const count=Math.min(100,Math.ceil(surface.scrollHeight/h));for(let i=1;i<count;i++){const g=document.createElement('div');g.className='doc-page-guide';g.contentEditable='false';g.style.top=i*h+'px';g.textContent='Page '+(i+1)+' · approximate flow';surface.append(g);}}
   const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(guides):null;observer?.observe(surface);
   if (opts.body && store.versions.at(-1)?.body.replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim() !== api.body().replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim()) checkpoint('Opened template');
   render();guides();if(store.draft){note.textContent='An unsaved draft is available in History.';tab='History';render();showInspector(true);}
-  return { change(){clearTimeout(timer);timer=setTimeout(()=>{if(disposed)return;store.draft={...api.snapshot(),at:Date.now()};if(write(key,store))note.textContent='Draft saved on this browser · '+new Date().toLocaleTimeString();guides();},700);}, saved(value,unchanged){checkpoint('Saved template',value);if(unchanged){clearTimeout(timer);delete store.draft;}const oldKey=key;key=prefix+(opts.getDocumentKey?.() || opts.documentKey || opts.name || 'new');if(write(key,store)&&oldKey!==key){try{localStorage.removeItem(oldKey);}catch{/* the migrated checkpoint is already stored */}}}, close(){advanced.close();disposed=true;clearTimeout(timer);if(api.dirty()){store.draft={...api.snapshot(),at:Date.now()};write(key,store);}observer?.disconnect();document.removeEventListener('selectionchange',onSelect);}, render, guides };
+  return { change(){clearTimeout(timer);timer=setTimeout(()=>{if(disposed)return;store.draft={...api.snapshot(),at:Date.now()};if(write(key,store))note.textContent='Draft saved on this browser · '+new Date().toLocaleTimeString();guides();},700);}, saved(value,unchanged){checkpoint('Saved template',value);if(unchanged){clearTimeout(timer);delete store.draft;}const oldKey=key;key=prefix+(opts.getDocumentKey?.() || opts.documentKey || opts.name || 'new');if(write(key,store)&&oldKey!==key){try{localStorage.removeItem(oldKey);}catch{/* the migrated checkpoint is already stored */}}}, close(){advanced.close();disposed=true;clearTimeout(timer);surface.removeEventListener('focusout',remember);if(api.dirty()){store.draft={...api.snapshot(),at:Date.now()};write(key,store);}observer?.disconnect();document.removeEventListener('selectionchange',onSelect);}, render, guides };
 }
 
 function open(opts = {}) {
@@ -2901,7 +2906,7 @@ function open(opts = {}) {
       <label class="doc-secondary-details"><span>Document type</span><select class="doc-fs-type doc-fs-type-top">${typeOptions.map((t) => `<option value="${escAttr(t)}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${escAttr(t.charAt(0).toUpperCase() + t.slice(1))}</option>`).join('')}</select></label>
       ${opts.periodLabel ? `<label class="doc-secondary-details"><span>${escAttr(opts.periodLabel)}</span><input class="doc-fs-period" placeholder="e.g. October 2026" value="${escAttr(opts.period || '')}"></label>` : ''}
     </div>
-    <div class="doc-ribbon-controls"><div class="doc-tabs" role="tablist">${tabsHTML()}</div><button type="button" class="doc-ribbon-toggle" data-ribbon-toggle aria-expanded="true" aria-label="Collapse ribbon">Hide ribbon</button></div>
+    <div class="doc-ribbon-controls"><div class="doc-ribbon-history" role="toolbar" aria-label="Document history"><button type="button" data-ex="undo" title="Undo (Ctrl+Z)" disabled>${docIcon('undo')}</button><button type="button" data-ex="redo" title="Redo (Ctrl+Y)" disabled>${docIcon('redo')}</button></div><div class="doc-tabs" role="tablist">${tabsHTML()}</div><button type="button" class="doc-ribbon-toggle" data-ribbon-toggle aria-expanded="true" aria-label="Collapse ribbon">Hide ribbon</button></div>
     <div class="doc-panel" data-panel="home" role="toolbar" aria-label="Text formatting">${homePanelHTML()}</div>
     <div class="doc-panel" data-panel="insert" role="toolbar" aria-label="Insert" style="display:none">${insertPanelHTML()}</div>
     <div class="doc-panel" data-panel="layout" role="toolbar" aria-label="Layout" style="display:none">${layoutPanelHTML()}</div>

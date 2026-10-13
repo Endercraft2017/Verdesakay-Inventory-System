@@ -834,6 +834,10 @@ the selected panel, document history and editing pipeline unchanged.
 Control styling scopes checkbox sizing to editor settings, preserving native label/keyboard
 behavior and all existing change handlers. Document checkboxes and printed content keep
 their own styles; settings fields/actions use the app's shared theme conventions.
+Single-chip insertion validates the existing command selection, replaces its range and
+places the caret after the chip without native insertHTML boundary relocation. Existing
+history/shared/save snapshots still own persistence. Sidebar memory retains a structural
+selection bookmark when live nodes are replaced; history controls stay outside tab panels.
 The selected font/style/point-size readout follows current text rather than field-label
 chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
 the existing change/history path. Find/replace mounts above the workspace; source editing,
