@@ -851,3 +851,9 @@ The workspace forms a lower stacking context than editor menus; page resizing st
 it. Native desktop options inherit app surface/text tokens in light and dark themes.
 
 The dimension swap remains between its two mm inputs; margin has a separate divider. Page sizing and history handlers are unchanged.
+
+Variable bank → Manage fields → existing variable manager → reload catalog → refresh bank
+and preview. Linked-form search filters the already authorized form catalog and clears
+selection when it no longer matches, while link/default/unlink APIs remain unchanged.
+Responsive ribbon ResizeObserver/scroll events update the overflow action; closure disconnects
+its observer. Keyboard users can focus and scroll the toolbar, reaching all its controls.

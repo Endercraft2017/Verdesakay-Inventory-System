@@ -263,6 +263,13 @@ describe('linked forms inside the editor',()=>{
   doc.querySelector('[data-link-make-default]').click();await settle();expect(env.API.put).toHaveBeenCalledWith('/form-definitions/1/template',{template_id:10});expect(doc.querySelector('[data-form-links]').textContent).toContain('Default');
   doc.querySelector('[data-link-unlink]').click();await settle();expect(env.API.del).toHaveBeenCalledWith('/form-definitions/1/templates/10');expect(root.innerHTML).toBe('<p>Template stays intact</p>');
  });
+ it('filters available forms without exposing restricted scopes or stale selection',async()=>{
+  const env=runtime();const {doc,w}=setup('<p>Template</p>',true,{getTemplateId:()=>10},env);
+  doc.querySelector('[data-linked-forms]').click();await settle();const search=doc.querySelector('[data-link-search]'),select=doc.querySelector('[data-link-form]');select.value='1';
+  search.value='hr';search.dispatchEvent(new w.Event('input',{bubbles:true}));expect(select.value).toBe('1');
+  search.value='Inventory';search.dispatchEvent(new w.Event('input',{bubbles:true}));expect(select.options).toHaveLength(1);expect(select.value).toBe('');expect(select.textContent).toContain('No matching forms');
+  search.value='leave';search.dispatchEvent(new w.Event('input',{bubbles:true}));expect(select.options).toHaveLength(2);expect(select.textContent).toContain('Leave request');
+ });
  it('offers admin-scoped forms to admin form managers',async()=>{
   const env=runtime();env.App.hasPermission=(permission:string)=>permission==='forms.manage.admin';
   env.API.get.mockImplementation(async(path:string)=>path==='/form-definitions'?[{id:3,name:'Admin request',scope:'admin'}]:[]);

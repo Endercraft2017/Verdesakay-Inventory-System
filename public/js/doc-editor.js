@@ -768,7 +768,18 @@ function ensureStyles() {
   `;
   const contentCss = typeof UI !== 'undefined' && UI.documentCss ? UI.documentCss : '';
   const el = document.createElement('style'); el.id = 'doc-editor-styles'; el.textContent = css + themeCss + contentCss + workspaceCss + clarityCss + viewCss + `.doc-grid-note{font:11px var(--font);color:var(--text-muted);margin:6px}.doc-studio-body input[type=color]{height:36px;min-height:36px;padding:3px}.doc-review-card{padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm)}.doc-page [data-doc-design-page]{margin-bottom:24px;box-shadow:0 0 0 1px var(--border);padding:0;display:flow-root}.doc-page ins[data-doc-change]{background:#dcfce7;color:#166534;text-decoration:underline}.doc-page del[data-doc-change]{background:#fee2e2;color:#991b1b;text-decoration:line-through}.doc-page [data-doc-settings]{display:none!important}.doc-page [data-doc-section]{display:flow-root}.doc-page ol[data-doc-numbering="hierarchical"],.doc-page ol[data-doc-numbering="hierarchical"] ol{counter-reset:doc-list;list-style:none}.doc-page ol[data-doc-numbering="hierarchical"] li::before{counter-increment:doc-list;content:counters(doc-list,".") ". "}`;
-  el.textContent += compactCss;
+  el.textContent += compactCss + `
+    .doc-ribbon-hint{padding:3px 12px;background:var(--surface-2);border-bottom:1px solid var(--border);text-align:right;flex-shrink:0}.doc-ribbon-hint button{border:0;background:transparent;color:var(--accent);font:11px var(--font,system-ui);cursor:pointer;padding:0}.doc-ribbon-hint button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    .doc-brand>div{min-width:0}.doc-brand .doc-fs-name{min-width:0;width:100%;box-sizing:border-box}.doc-panel:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+    @media(max-width:1200px){
+      .doc-fs-bar{gap:8px;padding:10px 12px}.doc-brand{min-width:130px;flex:1;gap:8px}.doc-brand .doc-fs-title{max-width:180px}.doc-modes{flex-shrink:0}.doc-fs-bar-actions{gap:4px}.doc-fs-bar-actions .btn.secondary span{display:none}.doc-fs-bar-actions .btn.secondary{width:34px;padding:0}.doc-more-menu summary{font-size:0;width:32px;padding:0;justify-content:center;gap:0}.doc-more-menu summary svg{display:block}.doc-fs-bar-actions .doc-save-status{display:none}
+      .doc-panel[data-panel=home],.doc-panel[data-panel=insert],.doc-panel[data-panel=table]{flex-wrap:wrap;overflow:auto;gap:6px 0}.doc-panel .doc-group-row{flex-wrap:wrap;max-width:100%;min-width:0}.doc-panel .doc-group{max-width:100%;box-sizing:border-box}.doc-panel[data-panel=insert] .doc-group{padding:0 8px}.doc-panel[data-panel=insert] .doc-tile{min-width:56px;padding:4px 6px;gap:4px}
+    }
+    @media(max-width:760px){
+      .doc-fs-bar{gap:4px;min-height:0;padding:8px 10px}.doc-brand{flex:0 0 calc(100% - 80px);min-width:0;order:0}.doc-brand .doc-fs-title{max-width:100%}.doc-fs-bar-actions{display:contents}.doc-fs-bar-actions .btn,.doc-more-menu{order:4}.doc-fs-bar-actions [data-save]{order:1;width:34px;padding:0}.doc-fs-bar-actions [data-close]{order:2;width:30px}.doc-fs-bar-actions .btn.secondary{width:30px;height:32px}.doc-modes{order:3;margin-right:auto}.doc-modes button{padding:4px 6px}.doc-more-menu summary{width:28px;height:30px}.doc-more-menu summary svg{display:block;width:16px}.doc-more-popover{width:min(230px,calc(100vw - 20px));box-sizing:border-box;right:10px;top:100px}
+      .doc-panel{max-height:min(220px,28vh);overflow:auto!important;scrollbar-width:thin;align-content:flex-start}.doc-panel[data-panel=insert] .doc-group{padding:2px 4px}.doc-panel[data-panel=insert] .doc-group-row{gap:3px}.doc-panel[data-panel=insert] .doc-tile{min-width:52px;font-size:11px;padding:4px;gap:4px}.doc-panel[data-panel=layout] .doc-group{flex:0 1 auto}.doc-panel[data-panel=layout] .doc-group-row{gap:6px}.doc-panel[data-panel=layout] .doc-tile-lbl{font-size:10px}
+    }
+  `;
   document.head.appendChild(el);
 }
 
@@ -847,14 +858,14 @@ function layoutPanelHTML() {
       <select class="doc-fs-type doc-orient" title="Page orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></div>
     <div class="doc-dimensions" role="group" aria-label="Page dimensions">
       <div class="doc-tile-select doc-custom-wrap" style="display:none"><span class="doc-tile-lbl">Width (mm)</span>
-        <input type="number" class="doc-fs-type doc-custom-w" min="10" max="2000" step="0.1"></div>
+        <input type="number" class="doc-fs-type doc-custom-w" aria-label="Page width (mm)" min="10" max="2000" step="0.1"></div>
       <div class="doc-tile-select doc-custom-wrap" style="display:none"><span class="doc-tile-lbl" aria-hidden="true">&nbsp;</span>
         <button type="button" class="icon-btn" data-swap-wh title="Swap width and height">${docIcon('swap')}</button></div>
       <div class="doc-tile-select doc-custom-wrap" style="display:none"><span class="doc-tile-lbl">Height (mm)</span>
-        <input type="number" class="doc-fs-type doc-custom-h" min="10" max="2000" step="0.1"></div>
+        <input type="number" class="doc-fs-type doc-custom-h" aria-label="Page height (mm)" min="10" max="2000" step="0.1"></div>
     </div>
     <div class="doc-tile-select doc-margin-control"><span class="doc-tile-lbl">Margin (mm)</span>
-      <input type="number" class="doc-fs-type doc-margin" min="0" max="100" step="0.5"></div>`);
+      <input type="number" class="doc-fs-type doc-margin" aria-label="Page margin (mm)" min="0" max="100" step="0.5"></div>`);
   // Print tiling — repeat this design as a Rows x Columns grid on one printed page (e.g. HR
   // Payroll Slip's "2 employees x 2 copies each" = 2 columns x 2 rows). Doesn't affect the
   // canvas — it's consulted only when this template's records are printed in bulk
@@ -2802,7 +2813,7 @@ function mountStudio(fs, surface, opts, api) {
       panel.querySelector('[data-scenario]').value = api.scenario();
       panel.innerHTML='<details class="doc-data-tools"><summary>Data blocks & preview</summary>'+panel.innerHTML+'</details>';
       const categories=[...new Set(bankVariables().map(v=>v.category))];
-      panel.insertAdjacentHTML('afterbegin',`<h3>Variable bank</h3><p>Click a variable in the document and press Delete to remove it. Insert uses your last editing position; Copy copies the full token.</p><label>Search variables<input type="search" data-variable-search placeholder="Search name, token or category" value="${esc(variableSearch)}"></label><label>Category<select data-variable-category><option value="">All categories</option>${categories.map(c=>`<option value="${esc(c)}" ${c===variableCategory?'selected':''}>${esc(c)}</option>`).join('')}</select></label><span data-variable-count role="status"></span><div class="doc-variable-list" data-variable-list></div>`);
+      panel.insertAdjacentHTML('afterbegin',`<h3>Variable bank</h3>${opts.onManageVars ? '<button type="button" data-do="manage-fields">Manage fields</button>' : ''}<p>Click a variable in the document and press Delete to remove it. Insert uses your last editing position; Copy copies the full token.</p><label>Search variables<input type="search" data-variable-search placeholder="Search name, token or category" value="${esc(variableSearch)}"></label><label>Category<select data-variable-category><option value="">All categories</option>${categories.map(c=>`<option value="${esc(c)}" ${c===variableCategory?'selected':''}>${esc(c)}</option>`).join('')}</select></label><span data-variable-count role="status"></span><div class="doc-variable-list" data-variable-list></div>`);
       panel.querySelector('[data-scenario]').value=api.scenario();renderVariableBank();
     } else if (tab === 'Pages') {
       panel.innerHTML = '<h3>Page layout</h3><p>Dashed guides estimate paper boundaries. Preview checks actual printed flow. Table headers repeat across printed pages.</p><button data-do="pageview">Open measured page view</button><button data-do="pagebreak">Insert page break</button><button data-do="header">Insert repeating header</button><button data-do="footer">Insert repeating footer</button><button data-do="pagenumber">Insert page number</button><button data-do="overflow">Check overflow</button><div data-issues role="status"></div>';
@@ -2864,6 +2875,7 @@ function mountStudio(fs, surface, opts, api) {
     if(b.dataset.style!==undefined){if(el&&!elLocked(el)){const s=library.styles[+b.dataset.style];Object.entries(s.values).forEach(([k,v])=>el.style[k]=v);changed();}return;}
     if(b.dataset.asset!==undefined){insert(library.assets[+b.dataset.asset].html);return;}
     const action=b.dataset.do;
+    if(action==='manage-fields'){fs.querySelector('[data-managevars]')?.click();return;}
     if(action==='recover')return recover(store.draft);
     if(action==='discardDraft'){delete store.draft;write(key,store);render();return;}
     if(action==='checkpoint'){checkpoint();render();return;}
@@ -2929,10 +2941,11 @@ function open(opts = {}) {
       ${opts.periodLabel ? `<label class="doc-secondary-details"><span>${escAttr(opts.periodLabel)}</span><input class="doc-fs-period" placeholder="e.g. October 2026" value="${escAttr(opts.period || '')}"></label>` : ''}
     </div>
     <div class="doc-ribbon-controls"><div class="doc-ribbon-history" role="toolbar" aria-label="Document history"><button type="button" data-ex="undo" title="Undo (Ctrl+Z)" disabled>${docIcon('undo')}</button><button type="button" data-ex="redo" title="Redo (Ctrl+Y)" disabled>${docIcon('redo')}</button></div><div class="doc-tabs" role="tablist">${tabsHTML()}</div><button type="button" class="doc-ribbon-toggle" data-ribbon-toggle aria-expanded="true" aria-label="Collapse ribbon">Hide ribbon</button></div>
-    <div class="doc-panel" data-panel="home" role="toolbar" aria-label="Text formatting">${homePanelHTML()}</div>
-    <div class="doc-panel" data-panel="insert" role="toolbar" aria-label="Insert" style="display:none">${insertPanelHTML()}</div>
-    <div class="doc-panel" data-panel="layout" role="toolbar" aria-label="Layout" style="display:none">${layoutPanelHTML()}</div>
-    <div class="doc-panel table-panel" data-panel="table" role="toolbar" aria-label="Table tools" style="display:none">${tablePanelHTML()}</div>
+    <div class="doc-panel" data-panel="home" tabindex="0" role="toolbar" aria-label="Text formatting">${homePanelHTML()}</div>
+    <div class="doc-panel" data-panel="insert" tabindex="0" role="toolbar" aria-label="Insert" style="display:none">${insertPanelHTML()}</div>
+    <div class="doc-panel" data-panel="layout" tabindex="0" role="toolbar" aria-label="Layout" style="display:none">${layoutPanelHTML()}</div>
+    <div class="doc-panel table-panel" data-panel="table" tabindex="0" role="toolbar" aria-label="Table tools" style="display:none">${tablePanelHTML()}</div>
+    <div class="doc-ribbon-hint" hidden><button type="button" data-ribbon-more>More controls below ↓</button></div>
     <div class="doc-canvas"><div class="doc-zoom"><div class="doc-page doc-surface doc-content" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document body"></div></div></div>
     <div class="doc-code doc-code-cm" style="display:none"></div>
     <footer class="doc-statusbar"><span>${docIcon('document')}<span class="doc-page-info"></span></span><span class="doc-word-count" aria-label="Document word count"></span><span class="doc-workspace-hint">Select an object to move or resize · Ctrl / ⌘ S to save</span><div class="doc-view-tools"><button type="button" data-zoom="out" title="Zoom out">−</button><button type="button" data-zoom="fit" title="Fit page to available width">Fit width</button><span class="doc-zoom-info">100%</span><button type="button" data-zoom="in" title="Zoom in">+</button></div></footer>`;
@@ -2953,6 +2966,12 @@ function open(opts = {}) {
   const panelsRoot = fs; // wireToolbar's data-ex/data-ins/etc lookups span every panel at once
   const tableTabBtn = tabsEl.querySelector('[data-tab="table"]');
   let activeTab = 'home';
+  const ribbonHint=fs.querySelector('.doc-ribbon-hint');
+  function updateRibbonHint(){const panel=panels[activeTab];ribbonHint.hidden=fs.dataset.editorMode!=='visual'||!panel.clientHeight||panel.scrollTop+panel.clientHeight>=panel.scrollHeight-2;}
+  const ribbonRO=typeof ResizeObserver!=='undefined'?new ResizeObserver(updateRibbonHint):null;
+  Object.values(panels).forEach(panel=>{ribbonRO?.observe(panel);panel.addEventListener('scroll',updateRibbonHint);});
+  fs.querySelector('[data-ribbon-more]').addEventListener('click',()=>panels[activeTab].scrollBy({top:Math.max(80,panels[activeTab].clientHeight*.75),behavior:'smooth'}));
+
   function setRibbonCollapsed(collapsed){fs.classList.toggle('ribbon-collapsed',collapsed);const button=fs.querySelector('[data-ribbon-toggle]');button.setAttribute('aria-expanded',String(!collapsed));button.setAttribute('aria-label',collapsed?'Expand ribbon':'Collapse ribbon');button.textContent=collapsed?'Show ribbon':'Hide ribbon';applyZoom();}
   fs.querySelector('[data-ribbon-toggle]').addEventListener('click',()=>setRibbonCollapsed(!fs.classList.contains('ribbon-collapsed')));
   function switchTab(name) {
@@ -3094,8 +3113,15 @@ function open(opts = {}) {
       const linked=forms.filter(form=>form.layouts.some(t=>Number(t.id)===Number(templateId)));
       linkedFormVariables=linked.flatMap(form=>(form.fields||[]).map(field=>({category:'Form: '+form.name,label:field.label||field.key,token:'{{'+field.key+'}}'})));
       const unlinked=forms.filter(form=>!linked.includes(form));
-      container.innerHTML=`<p>Link this template to forms you manage. Each form can have several print layouts and one default.</p><p class="muted">Links apply immediately. Save template edits to update the printed content for every linked form. Use Insert → Field to insert fields from linked forms. Match field keys before printing; linking does not rewrite existing fields.</p>${unlinked.length?`<label>Form<select data-link-form><option value="">Choose a form…</option>${unlinked.map(f=>`<option value="${f.id}">${escAttr(f.name)} (${escAttr(f.scope||'General')})</option>`).join('')}</select></label><label class="doc-check"><input type="checkbox" data-link-default> Use as this form's default print layout</label><button type="button" class="btn" data-link-form-action>Link form</button>`:''}<h3>Currently linked</h3>${linked.length?`<table><thead><tr><th>Form</th><th>Print layout</th><th>Actions</th></tr></thead><tbody>${linked.map(f=>{const current=f.layouts.find(t=>Number(t.id)===Number(templateId));return `<tr><td>${escAttr(f.name)}<div class="muted">${escAttr(f.scope||'General')}</div></td><td>${current.is_default?'Default':'Alternative'}</td><td>${current.is_default?'':`<button type="button" class="btn secondary small" data-link-make-default="${f.id}">Make default</button>`}<button type="button" class="btn secondary small" data-link-unlink="${f.id}">Unlink</button></td></tr>`;}).join('')}</tbody></table>`:'<p>This template is not linked to any forms you manage.</p>'}${!forms.length?'<p>No forms are available. Create a form in Form Builder first.</p>':''}<div data-links-error role="alert" class="form-error hidden"></div>`;
+      container.innerHTML=`<p>Link this template to forms you manage. Each form can have several print layouts and one default.</p><p class="muted">Links apply immediately. Save template edits to update the printed content for every linked form. Use Insert → Field to insert fields from linked forms. Match field keys before printing; linking does not rewrite existing fields.</p>${unlinked.length?`<label>Find a form<input type="search" data-link-search placeholder="Search name or section…"></label><label>Form<select data-link-form><option value="">Choose a form…</option>${unlinked.map(f=>`<option value="${f.id}">${escAttr(f.name)} (${escAttr(f.scope||'General')})</option>`).join('')}</select></label><label class="doc-check"><input type="checkbox" data-link-default> Use as this form's default print layout</label><button type="button" class="btn" data-link-form-action>Link form</button>`:''}<h3>Currently linked</h3>${linked.length?`<table><thead><tr><th>Form</th><th>Print layout</th><th>Actions</th></tr></thead><tbody>${linked.map(f=>{const current=f.layouts.find(t=>Number(t.id)===Number(templateId));return `<tr><td>${escAttr(f.name)}<div class="muted">${escAttr(f.scope||'General')}</div></td><td>${current.is_default?'Default':'Alternative'}</td><td>${current.is_default?'':`<button type="button" class="btn secondary small" data-link-make-default="${f.id}">Make default</button>`}<button type="button" class="btn secondary small" data-link-unlink="${f.id}">Unlink</button></td></tr>`;}).join('')}</tbody></table>`:'<p>This template is not linked to any forms you manage.</p>'}${!forms.length?'<p>No forms are available with your current form-management permissions.</p>':''}<div data-links-error role="alert" class="form-error hidden"></div>`;
     }
+    container.addEventListener('input',e=>{
+      if(!e.target.matches('[data-link-search]'))return;
+      const query=e.target.value.trim().toLowerCase(),select=container.querySelector('[data-link-form]'),selected=select.value;
+      const matches=forms.filter(f=>!f.layouts.some(t=>Number(t.id)===Number(templateId)) && `${f.name} ${f.scope||'General'}`.toLowerCase().includes(query));
+      select.innerHTML=`<option value="">${matches.length?'Choose a form…':'No matching forms'}</option>`+matches.map(f=>`<option value="${f.id}">${escAttr(f.name)} (${escAttr(f.scope||'General')})</option>`).join('');
+      if(matches.some(f=>String(f.id)===selected))select.value=selected;
+    });
     function showError(error){let box=container.querySelector('[data-links-error]');if(!box){container.innerHTML='<p>Could not load form links.</p><div data-links-error role="alert"></div><button type="button" class="btn secondary" data-links-retry>Retry</button>';box=container.querySelector('[data-links-error]');}box.classList.remove('hidden');box.textContent=error.message||'Could not update form links';}
     let busy=false;
     container.addEventListener('click',async e=>{
@@ -3575,7 +3601,7 @@ function open(opts = {}) {
   fs.querySelectorAll('[data-preview]').forEach((b) => b.addEventListener('click', togglePreview));
   fs.querySelectorAll('[data-help]').forEach(button=>button.addEventListener('click',docEditorHelpDialog));
   const mvBtn = fs.querySelector('[data-managevars]');
-  if (opts.onManageVars) mvBtn.addEventListener('click', () => opts.onManageVars({ refresh: () => { refreshPreview(); } }));
+  if (opts.onManageVars) mvBtn.addEventListener('click', () => opts.onManageVars({ refresh: () => { refreshPreview(); studio?.render(); } }));
   else mvBtn.style.display = 'none';
 
   function setMode(next) {
@@ -3623,6 +3649,7 @@ function open(opts = {}) {
     clearTimeout(previewTimer);
     if (previewEl) previewEl.remove();
     if (zoomRO) zoomRO.disconnect();
+    ribbonRO?.disconnect();
     if (roRaf) cancelAnimationFrame(roRaf);
     fs.remove();
     document.removeEventListener('keydown', onKey);

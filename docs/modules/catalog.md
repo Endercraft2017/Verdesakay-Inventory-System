@@ -1053,3 +1053,11 @@ compact themed checkboxes. Global desktop native select options follow shared th
 printed paper keeps its independent light appearance.
 
 Page dimensions keep Width → Swap → Height together, with a theme divider before Margin.
+
+The editor UX audit covers ribbon tabs, all ten tool panels and primary dialogs across
+1440/1024/768/390px viewports and both themes. Compact header actions retain accessible
+names; Save/Close stay inside the viewport. Ribbon groups wrap at tablet widths, and phone
+ribbons have bounded scroll height plus a visible overflow action to preserve canvas space.
+Paper dimension inputs have explicit accessible names. Variable bank field management
+reuses the existing callback and refreshes the bank after catalog changes; linked forms
+supports local search within the existing permission-filtered form list.

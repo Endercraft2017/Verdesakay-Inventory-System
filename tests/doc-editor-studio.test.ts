@@ -29,6 +29,12 @@ describe('document studio workflows',()=>{
     pointer('pointerdown',100,100);pointer('pointermove',100+96/25.4*20,100+96/25.4*10);pointer('pointerup',180,140);expect(doc.querySelector('.doc-custom-w').value).toBe('230');expect(doc.querySelector('.doc-custom-h').value).toBe('307');editor._history.undo();expect(doc.querySelector('.doc-pagesize').value).toBe('a4');editor._history.redo();expect(doc.querySelector('.doc-custom-w').value).toBe('230');
     pointer('pointerdown',100,100);pointer('pointermove',180,160);handle.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));expect(doc.querySelector('.doc-custom-w').value).toBe('230');expect(doc.querySelector('.doc-custom-h').value).toBe('307');expect(doc.querySelector('.doc-fs')).not.toBeNull();
   });
+  it('opens existing field management from the variable bank',()=>{
+    let vars=[{label:'Customer',token:'{{order.customer_name}}'}];
+    const manage=vi.fn(({refresh})=>{vars=[...vars,{label:'New field',token:'{{new_field}}'}];refresh();});
+    const {doc,tab,click}=setup({onManageVars:manage,getVariables:()=>vars});tab('Data');click('manage-fields');
+    expect(manage).toHaveBeenCalledOnce();expect(doc.querySelector('[data-variable-insert="new_field"]')).not.toBeNull();
+  });
   it('searches the variable bank, filters categories and copies or inserts complete tokens',async()=>{
     const {w,doc,tab,editor}=setup({getVariables:()=>[{label:'Company name',token:'{{company.name}}',category:'Company'},{label:'Customer',token:'{{order.customer_name}}',category:'Order'}]});
     const writeText=vi.fn(async()=>{});Object.defineProperty(w.navigator,'clipboard',{value:{writeText},configurable:true});tab('Data');
