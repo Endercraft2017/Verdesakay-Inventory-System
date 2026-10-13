@@ -1,7 +1,7 @@
 {
-  "name": "verdesakay-office-system",
+  "name": "otom",
   "version": "1.0.0",
-  "description": "Verdesakay local office system: inventory, forms, accounts, messaging",
+  "description": "Otom by AFKcube: office system: inventory, forms, accounts, messaging",
   "type": "module",
   "main": "server.ts",
   "scripts": {
@@ -35,9 +35,9 @@
     "test:node24": "node scripts/test-node24.mjs"
   },
   "build": {
-    "appId": "com.verdesakay.desktop",
-    "productName": "Verdesakay",
-    "copyright": "Verdesakay",
+    "appId": "com.afkcube.otom.desktop",
+    "productName": "Otom",
+    "copyright": "AFKcube",
     "directories": { "output": "dist-desktop" },
     "asar": false,
     "extraMetadata": { "main": "electron/main.cjs" },
@@ -56,7 +56,7 @@
       "perMachine": false,
       "allowElevation": false,
       "createDesktopShortcut": true,
-      "shortcutName": "Verdesakay"
+      "shortcutName": "Otom"
     }
   },
   "engines": {

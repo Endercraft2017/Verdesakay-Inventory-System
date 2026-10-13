@@ -336,7 +336,7 @@ provisioning? Findings and the pick for this codebase.
 
 ### Tenant identification → **subdomain, resolved in middleware, + a dev-only fallback**
 
-Industry standard for B2B SaaS is **subdomain per tenant** (`acme.verdesakay.app`),
+Industry standard for B2B SaaS is **subdomain per tenant** (`acme.app.afkcube.com`),
 resolved as early as possible in middleware, with the tenant then carried in the
 session/JWT for the rest of the request. Path-based (`/acme/…`) is the fallback when
 wildcard DNS/TLS isn't practical (e.g. Vercel); header-based (`X-Tenant`) is for pure
@@ -348,7 +348,7 @@ API products. ([zenn.dev SaaS 2025](https://zenn.dev/shineos/articles/saas-multi
 `slug` from `Host` (first label; reject reserved: `www app api admin static _platform`).
 Also accept `X-Tenant` / `?tenant=` **when `NODE_ENV !== 'production'`** so tests and
 `localhost` dev work with no DNS. Custom domains (`inventory.acme.com`) come in Phase 7
-as a `tenant_domains` lookup feeding the *same* resolver. Wildcard TLS (`*.verdesakay.app`)
+as a `tenant_domains` lookup feeding the *same* resolver. Wildcard TLS (`*.app.afkcube.com`)
 is an ops task, not code.
 
 ### Control plane → **a dedicated `platform.db`, off the request path**
@@ -366,7 +366,7 @@ fine until you need status/plan/billing, which we do.
 `tenantStore`), wrapped by a new `src/platform/platform.ts`. Tables now: `tenants`
 (`id, slug UNIQUE, name, status, plan, created_at, trial_ends_at`), `provisioning_log`.
 Later: `platform_users`, `tenant_domains`, `subscriptions`. Control-plane routes live
-under `/_platform` (later `admin.verdesakay.app`), guarded separately. The tenant
+under `/_platform` (later `admin.app.afkcube.com`), guarded separately. The tenant
 resolver reads `tenants` on each request and fast-rejects unknown / `suspended` /
 `purged` before opening any tenant DB.
 
@@ -407,7 +407,7 @@ writer ("all tenants fighting each other to get the single write lock")
 
 ### Open questions for the owner
 
-- Root domain for tenant subdomains? (`*.verdesakay.app`? something else?)
+- Root domain for tenant subdomains? (`*.app.afkcube.com`? something else?)
 - Self-serve signup **open** at launch, or **flag-off** and you provision each tenant?
 - Control-plane admin: a `/_platform` page in this same app now, or just the CLI script
   until it's needed?

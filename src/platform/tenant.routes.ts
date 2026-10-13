@@ -7,7 +7,7 @@ import { getTenant } from './platform';
 import { tenantBillingSummary } from './billing';
 import { planFor, tenantUsage, currentSlug } from './quota';
 import { enabledModules } from '../shared/modules';
-import { DEFAULT_TENANT } from '../shared/db';
+import { getSetting, DEFAULT_TENANT } from '../shared/db';
 
 const router = Router();
 router.use(requireAuth);
@@ -25,7 +25,7 @@ router.get('/', (req, res) => {
 
   const body: Record<string, unknown> = {
     slug,
-    name: t?.name ?? 'Workspace',
+    name: t?.name ?? (getSetting<{ name?: string }>('company_profile')?.name || 'Workspace'),
     plan,
     status: lapsedTrial ? 'past_due' : (t?.status ?? 'active'),
     trial_ends_at: t?.trial_ends_at ?? null,

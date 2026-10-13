@@ -63,7 +63,7 @@ export function startMfaSetup(userId: number, accountLabel: string): { secret: s
   run(`INSERT INTO user_mfa (user_id, secret, enabled_at, last_step) VALUES (?, ?, NULL, 0)
        ON CONFLICT(user_id) DO UPDATE SET secret = excluded.secret, enabled_at = NULL, last_step = 0`,
     userId, encryptSecret(secret));
-  return { secret, otpauth_url: otpauthUrl('Verdesakay', accountLabel, secret) };
+  return { secret, otpauth_url: otpauthUrl('Otom', accountLabel, secret) };
 }
 
 function newRecoveryCodes(userId: number): string[] {

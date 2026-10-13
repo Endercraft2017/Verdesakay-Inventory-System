@@ -465,7 +465,7 @@
             <option value="smtp" ${s.transport === 'smtp' ? 'selected' : ''}>SMTP — your company mailbox</option>
           </select></div>
         <div class="form-field"><div class="field-label"><label>From name</label></div>
-          <input data-f="from_name" value="${UI.esc(s.from_name || '')}" placeholder="Verdesakay Office" /></div>
+          <input data-f="from_name" value="${UI.esc(s.from_name || '')}" placeholder="Otom" /></div>
         <div class="form-field"><div class="field-label"><label>From email <span class="req">*</span></label></div>
           <input data-f="from_email" type="email" value="${UI.esc(s.from_email || '')}" placeholder="office@yourcompany.com" /></div>
         <div class="form-field span2"><div class="field-label"><label>Reply-to (optional)</label></div>

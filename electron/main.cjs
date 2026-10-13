@@ -1,4 +1,4 @@
-/* Verdesakay desktop app — the installed, offline-capable PC (docs/OFFLINE-FIRST.md §17, phase 3d).
+/* Otom desktop app — the installed, offline-capable PC (docs/OFFLINE-FIRST.md §17, phase 3d).
 
    This is only a shell. The real app is the same server the cloud runs (server.ts), started as a
    child process on Electron's bundled Node (ELECTRON_RUN_AS_NODE, TypeScript via tsx — proven in
@@ -109,13 +109,13 @@ async function startServer(isHost) {
       try { next = JSON.parse(fs.readFileSync(ROLE_FILE, 'utf8')).isHost === true; } catch { /* keep the flip */ }
       fs.writeFileSync(CONFIG_FILE, JSON.stringify({ ...(readConfig() || {}), isHost: next }));
       startServer(next).then((url) => { if (win) win.loadURL(url); }).catch((e) => {
-        require('electron').dialog.showErrorBox('Verdesakay stopped', String(e && e.message || e));
+        require('electron').dialog.showErrorBox('Otom stopped', String(e && e.message || e));
         app.quit();
       });
       return;
     }
     if (!app.isQuitting && !SMOKE) {
-      require('electron').dialog.showErrorBox('Verdesakay stopped', `The app stopped (code ${code}). See ${path.join(DATA, 'logs', 'server.log')}.`);
+      require('electron').dialog.showErrorBox('Otom stopped', `The app stopped (code ${code}). See ${path.join(DATA, 'logs', 'server.log')}.`);
       app.quit();
     }
   });
@@ -157,7 +157,7 @@ ipcMain.handle('autostart:set', (_e, on) => { setAutostart(!!on); return getAuto
 function openWindow(url) {
   if (!win) {
     win = new BrowserWindow({
-      width: 1400, height: 900, title: 'Verdesakay', show: false,
+      width: 1400, height: 900, title: 'Otom', show: false,
       webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') },
     });
     // Started by Windows at sign-in: stay out of the way (minimized) until someone needs it.
@@ -255,7 +255,7 @@ app.whenReady().then(async () => {
   if (cfg) openWindow(await startServer(cfg.isHost));
   else {
     win = new BrowserWindow({
-      width: 640, height: 760, title: 'Set up Verdesakay',
+      width: 640, height: 760, title: 'Set up Otom',
       webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') },
     });
     win.loadFile(path.join(__dirname, 'setup.html'));

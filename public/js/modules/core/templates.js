@@ -9,7 +9,7 @@ App.register('templates', async (view) => {
 
   // Sample data so the editor preview shows realistic output.
   const SAMPLE = {
-    company: { name: 'Verdesakay Inc.', address: '123 Main St, Cebu City', phone: '(032) 555-1234', email: 'hello@verdesakay.com' },
+    company: { name: 'Example Company', address: '123 Main St, Cebu City', phone: '(032) 555-1234', email: 'hello@example.com' },
     order: {
       no: 'SO-00001', type: 'Sale Order', date: '2026-06-27', status: 'open',
       customer_name: 'ACME Corporation', customer_contact: 'orders@acme.com', notes: 'Deliver by Friday.',

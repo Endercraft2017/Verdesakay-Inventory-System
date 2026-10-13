@@ -63,7 +63,7 @@ export function phoneSetupHandler(o: { caCert: string; fingerprint: string; http
     const url = (req.url || '/').split('?')[0];
     if (req.method === 'GET' && (url === '/' || url === '/phone-setup')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(page({ httpsUrl, fingerprint: o.fingerprint, org: o.org ?? 'Verdesakay' }));
+      res.end(page({ httpsUrl, fingerprint: o.fingerprint, org: o.org ?? 'Otom' }));
       return;
     }
     if (req.method === 'GET' && url === '/site-certificate.crt') {

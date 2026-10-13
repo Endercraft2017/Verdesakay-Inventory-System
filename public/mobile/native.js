@@ -22,13 +22,13 @@
     }
   }
 
-  /** Is `base` a Verdesakay server? Resolves to null when it is, or a reason when it isn't. */
+  /** Is `base` a Otom server? Resolves to null when it is, or a reason when it isn't. */
   function check(base) {
     var ctl = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 8000);
     return fetch(base + '/api/health', ctl ? { signal: ctl.signal } : {})
       .then(function (res) { return res.ok ? res.json() : null; })
-      .then(function (body) { return body && body.ok === true ? null : 'That address answered, but it is not a Verdesakay server.'; })
+      .then(function (body) { return body && body.ok === true ? null : 'That address answered, but it is not a Otom server.'; })
       .catch(function () { return 'Could not reach that address. Check it, and that this phone is on the right network.'; })
       .then(function (why) { clearTimeout(timer); return why; });
   }
@@ -41,7 +41,7 @@
       screen.className = 'm-screen m-login';
       screen.innerHTML =
         '<form class="m-card" id="m-connect-form" novalidate>' +
-          '<div class="m-brand"><div class="m-mark">V</div><h1>Verdesakay</h1><div class="m-sub">Connect to your company</div></div>' +
+          '<div class="m-brand"><div class="m-mark">O</div><h1>Otom</h1><div class="m-sub">Connect to your company</div></div>' +
           '<div id="m-connect-error" class="m-error hidden"></div>' +
           '<label for="m-connect-url">Server address</label>' +
           '<input id="m-connect-url" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" ' +

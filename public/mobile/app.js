@@ -206,7 +206,7 @@ window.MApp = (function () {
     document.getElementById('m-back').classList.add('hidden');
     document.getElementById('m-segments').classList.add('hidden');
     document.getElementById('m-tabbar').classList.add('hidden');
-    setTitle('Verdesakay');
+    setTitle('Otom');
     viewEl().innerHTML =
       '<div class="m-blocked">' +
       '<div class="m-blocked-icon">&#128683;</div>' +

@@ -66,7 +66,7 @@ router.get('/status', (req, res) => {
 // POST /api/push/test — send a test notification to the caller's devices.
 router.post('/test', async (req, res) => {
   await notifyUser(req.user!.id, {
-    title: 'Verdesakay Warehouse',
+    title: 'Otom Warehouse',
     body: 'Notifications are working. 🎉',
     url: '#/home',
     tag: 'push-test',

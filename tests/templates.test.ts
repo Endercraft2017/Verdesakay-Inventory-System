@@ -120,6 +120,8 @@ describe('company profile', () => {
     expect(def.body).toHaveProperty('name');
     // image compression defaults on for a fresh workspace
     expect(def.body.compress_images).toBe(true);
+    const workspace = await ctx.api.get('/api/tenant').set(hdr(admin));
+    expect(workspace.body.name).toBe('Workspace');
 
     const put = await ctx.api.put('/api/templates/company').set(hdr(admin))
       .send({ name: 'Verdesakay Inc.', address: 'Cebu', phone: '123', email: 'a@b.c', logo_url: '' });
@@ -127,6 +129,8 @@ describe('company profile', () => {
 
     const got = await ctx.api.get('/api/templates/company').set(hdr(admin));
     expect(got.body.name).toBe('Verdesakay Inc.');
+    const namedWorkspace = await ctx.api.get('/api/tenant').set(hdr(admin));
+    expect(namedWorkspace.body.name).toBe('Verdesakay Inc.');
     // omitting the field on save keeps the default rather than clearing it
     expect(got.body.compress_images).toBe(true);
   });

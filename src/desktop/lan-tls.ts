@@ -148,7 +148,7 @@ function serverCertCurrent(dir: string, names: string[], ips: string[]): boolean
 export function ensureLanTls(dir: string, opts: { org?: string; ips?: string[]; names?: string[] } = {}): LanTls {
   fs.mkdirSync(dir, { recursive: true });
   if (!fs.existsSync(path.join(dir, 'ca.key')) || !fs.existsSync(path.join(dir, 'ca.crt'))) {
-    createAuthority(dir, opts.org ?? 'Verdesakay');
+    createAuthority(dir, opts.org ?? 'Otom');
   }
   const names = [...new Set(['localhost', os.hostname().toLowerCase(), ...(opts.names ?? [])])];
   const ips = [...new Set(['127.0.0.1', ...(opts.ips ?? lanAddresses())])];

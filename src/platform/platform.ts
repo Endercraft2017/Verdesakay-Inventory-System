@@ -15,7 +15,7 @@ import { DEFAULT_TENANT, hashLegacySessionTokens } from '../shared/db';
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
 export const PLATFORM_DB_PATH = process.env.PLATFORM_DB_PATH || path.join(ROOT, 'db', 'platform.db');
-/** Root domain for tenant subdomains, e.g. `verdesakay.app`. Empty ⇒ single-tenant. */
+/** Root domain for tenant subdomains, e.g. `app.afkcube.com`. Empty ⇒ single-tenant. */
 export const APP_DOMAIN = (process.env.APP_DOMAIN || '').toLowerCase().trim();
 /** Customer entry URL, shared by provisioning responses and the owner console. */
 export function tenantPublicUrl(slug: string): string {

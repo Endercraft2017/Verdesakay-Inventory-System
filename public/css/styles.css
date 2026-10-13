@@ -1,5 +1,5 @@
 /* ============================================================================
-   Verdesakay Office System — theme tokens + components
+   Otom — theme tokens + components
    Light (white + light blue) and dark (purple-black + gray) themes, switched
    via [data-theme] on <html>. Components reference tokens only.
    ============================================================================ */
@@ -215,7 +215,13 @@ a { color: var(--accent); }
 .primary-item.active { color: var(--accent); border-bottom-color: var(--accent); }
 .primary-item.active .ic { color: var(--accent); }
 
-.topnav-user { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.topnav-user {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  border: none; background: none; padding: 0; color: var(--text); font: inherit;
+  border-radius: 9px; cursor: pointer;
+}
+.topnav-user:hover .name { color: var(--accent); }
+.topnav-user:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 /* Sync status pill — installed PCs only (lib/sync-status.js, docs/OFFLINE-FIRST.md §2.4). */
 .sync-pill {
   display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; flex-shrink: 0;
@@ -232,8 +238,8 @@ a { color: var(--accent); }
 .check-row { display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; }
 .check-row input { width: auto; margin: 0; }
 .topnav-user .who { text-align: right; line-height: 1.25; }
-.topnav-user .name { font-weight: 600; font-size: 13px; }
-.topnav-user .role { color: var(--text-faint); font-size: 11px; text-transform: capitalize; }
+.topnav-user .name { display: block; font-weight: 600; font-size: 13px; }
+.topnav-user .role { display: block; color: var(--text-faint); font-size: 11px; text-transform: capitalize; }
 .topnav-user .avatar {
   width: 36px; height: 36px; border-radius: 50%;
   background: var(--accent-weak); color: var(--accent);
@@ -317,11 +323,6 @@ a { color: var(--accent); }
   background: var(--danger); color: #fff; border-radius: 999px;
   font-size: 10px; font-weight: 700; display: grid; place-items: center;
 }
-.rail-avatar {
-  border: 1px solid var(--border-strong); border-radius: 50%;
-  background: var(--accent-weak); color: var(--accent);
-}
-.rail-avatar:hover { background: var(--accent-weak); color: var(--accent-hover); }
 .acc-avatar {
   width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
   background: var(--accent-weak); color: var(--accent);
@@ -373,7 +374,7 @@ a { color: var(--accent); }
    compact anchored footprint instead of a full-height sidebar. */
 .ai-fab {
   /* right offset clears the --rail-w icon rail (52px) so the bubble doesn't sit on top of
-     its bottom buttons (theme/logout/account) — the rail only occupies this edge above the
+     its bottom buttons (theme/logout) — the rail only occupies this edge above the
      900px breakpoint, where the mobile override below resets it to a plain 14px. */
   position: fixed; right: calc(var(--rail-w) + 22px); bottom: 22px; z-index: 120;
   width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;

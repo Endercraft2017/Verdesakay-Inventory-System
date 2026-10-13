@@ -60,6 +60,8 @@ const App = (() => {
 
   function showLogin() {
     me = null;
+    document.getElementById('tenant-name').textContent = 'Workspace';
+    document.title = 'Otom';
     if (window.ChatWS) ChatWS.disconnect();
     if (window.SyncStatus) SyncStatus.stop();
     appScreen().classList.add('hidden');
@@ -116,6 +118,10 @@ const App = (() => {
     // show just the Billing screen until the first payment is confirmed (src/platform/billing.ts).
     let ws = null;
     try { ws = await API.get('/tenant'); } catch { /* no workspace info: carry on normally */ }
+    if (ws) {
+      document.getElementById('tenant-name').textContent = ws.name || 'Workspace';
+      document.title = `${ws.name || 'Workspace'} · Otom`;
+    }
     appScreen().classList.toggle('awaiting-payment', !!(ws && ws.awaiting_payment));
     if (ws && ws.awaiting_payment) { showAwaitingPayment(ws); return; }
 
@@ -125,7 +131,7 @@ const App = (() => {
     // The AI Assistant bubble is a per-tenant feature module.
     const aiFab = document.getElementById('ai-fab');
     if (aiFab) aiFab.classList.toggle('hidden', !hasModule('ai'));
-    showWorkspaceBanner();
+    await showWorkspaceBanner();
 
     refreshUnread();
     // Installed PCs only: the sync status pill (lib/sync-status.js hides itself elsewhere).
@@ -159,6 +165,9 @@ const App = (() => {
   async function showWorkspaceBanner() {
     let t;
     try { t = await API.get('/tenant'); } catch { return; }
+    const tenantName = t.name || 'Workspace';
+    document.getElementById('tenant-name').textContent = tenantName;
+    document.title = `${tenantName} · Otom`;
     let msg = '', tone = 'warn';
     if (t.read_only) { msg = `${t.name} is past due — the workspace is read-only until billing is resolved.`; tone = 'danger'; }
     else if (t.status === 'suspended') { msg = `${t.name} is suspended.`; tone = 'danger'; }
@@ -417,6 +426,9 @@ const App = (() => {
     if (loc) {
       activePrimaryId = loc.primary.id;
       activeSubtabId = loc.subtab.id;
+    } else {
+      activePrimaryId = null;
+      activeSubtabId = null;
     }
 
     renderedLocation = { name, filter };
@@ -622,9 +634,8 @@ const App = (() => {
       railNotif.insertAdjacentHTML('afterbegin', UI.icon('bell'));
       railNotif.addEventListener('click', openNotifications);
     }
-    const railAcct = document.getElementById('rail-account');
-    railAcct.innerHTML = UI.icon('user'); // default profile image icon
-    railAcct.addEventListener('click', () => navigate('account'));
+    // The header profile is the entry point for My Account.
+    document.getElementById('account-btn').addEventListener('click', () => navigate('account'));
     const logoutBtn = document.getElementById('logout-btn');
     logoutBtn.innerHTML = UI.icon('logout');
     logoutBtn.addEventListener('click', logout);

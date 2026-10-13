@@ -324,7 +324,7 @@ export async function exportDocx(input: {
         if (!customStyles.some(s => s.id === 'Studio_' + id))
             customStyles.push({ id: 'Studio_' + id, name: id!, basedOn: 'Normal', next: 'Normal', run: { font: 'Arial', size: 20, color: '111111' }, paragraph: { spacing: { line: 360, after: 180 } } });
     }
-    const doc = new Document({ creator: 'Verdesakay Document Studio', title: input.name, features: { trackRevisions: !!studioConfig.trackChanges, updateFields: true }, styles: { paragraphStyles: customStyles }, footnotes, numbering: { config: [{ reference: 'ordered', levels: Array.from({ length: 9 }, (_, level) => ({ level, format: LevelFormat.DECIMAL, text: Array.from({ length: level + 1 }, (_, i) => '%' + (i + 1)).join('.') + '.', alignment: AlignmentType.LEFT, start: 1 })) }] }, sections });
+    const doc = new Document({ creator: 'Otom Document Studio', title: input.name, features: { trackRevisions: !!studioConfig.trackChanges, updateFields: true }, styles: { paragraphStyles: customStyles }, footnotes, numbering: { config: [{ reference: 'ordered', levels: Array.from({ length: 9 }, (_, level) => ({ level, format: LevelFormat.DECIMAL, text: Array.from({ length: level + 1 }, (_, i) => '%' + (i + 1)).join('.') + '.', alignment: AlignmentType.LEFT, start: 1 })) }] }, sections });
     return { buffer: await Packer.toBuffer(doc), warnings: [...warnings] };
 }
 export async function importDocx(buffer: Buffer) {

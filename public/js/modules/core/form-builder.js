@@ -391,7 +391,7 @@ App.register('form-builder', async (view, filter) => {
     const ctx = {};
     form.fields.forEach((f) => { ctx[f.key] = sampleFieldValue(f); });
     ctx.record = { number: form.number_prefix + '-00001', status: 'submitted', created_at: new Date().toLocaleDateString() };
-    ctx.company = { name: 'Verdesakay Inc.', address: '123 Main St, Cebu City', phone: '(032) 555-1234' };
+    ctx.company = { name: 'Example Company', address: '123 Main St, Cebu City', phone: '(032) 555-1234' };
     return ctx;
   }
 
