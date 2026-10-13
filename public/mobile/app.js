@@ -157,6 +157,7 @@ window.MApp = (function () {
   function render() {
     if(window.mPersonalDraft && !mPersonalDraft.allow()) return;
     window.GuideTour?.close();window.PersonalUX?.release();
+    window.mChatViewport?.release();
     if (me && me.password_change_required) return;
     if (!me) return;
     if (!hasAccess()) { showBlocked(); return; }

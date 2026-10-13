@@ -111,12 +111,13 @@
       view: view, otherId: otherId, otherName: knownName || '',
       messages: [], replyTo: null, editingId: null, linkPreviewCache: {},
     };
-    MApp.setTitle(state.otherName || 'Conversation');
+    MApp.setTitle('Messages');
     view.setAttribute('data-figma-node', '46:837');
     view.innerHTML =
       '<section class="m-v2-page m-chat-v2"><header class="m-v2-heading m-chat-heading">' +
-      '<button class="m-chat-back" data-back type="button" aria-label="Back">‹</button><div><h1>' +
-      mEsc(state.otherName || 'Conversation') + '</h1><p>Private work conversation</p></div></header>' +
+      '<button class="m-chat-back" data-back type="button" aria-label="Back to conversations">‹</button>' +
+      '<span class="m-chat-person-avatar" aria-hidden="true">' + mEsc((state.otherName || '?').slice(0, 1).toUpperCase()) + '</span><div><h1>' +
+      mEsc(state.otherName || 'Conversation') + '</h1><p>Private conversation</p></div></header>' +
       '<div id="m-chat-typing" class="m-chat-typing hidden">typing…</div>' +
       '<div id="m-chat-load-older" class="m-chat-load-older hidden"><button class="m-v2-secondary" type="button">Load earlier</button></div>' +
       '<div id="m-chat-messages" class="m-chat-messages"><div class="m-hint">Loading…</div></div>' +
@@ -130,6 +131,7 @@
       '</div></section>';
     view.querySelector('[data-back]').onclick = function () { MApp.go('inbox'); };
     wireComposer();
+    fitThreadToViewport();
     view.querySelector('#m-chat-load-older button').onclick = loadOlder;
 
     API.get('/messages/with/' + otherId + '?limit=50').then(function (rows) {
@@ -161,6 +163,45 @@
   function scrollToBottom() {
     var c = state.view.querySelector('#m-chat-messages');
     if (c) c.scrollTop = c.scrollHeight;
+  }
+
+  function fitThreadToViewport() {
+    document.body.classList.add('m-chat-thread-active');
+    var viewport = window.visualViewport;
+    var input = state.view.querySelector('#m-chat-input');
+    function update() {
+      var height = viewport ? viewport.height : window.innerHeight;
+      var top = viewport ? viewport.offsetTop : 0;
+      document.documentElement.style.setProperty('--chat-viewport-height', Math.round(height) + 'px');
+      document.documentElement.style.setProperty('--chat-viewport-top', Math.round(top) + 'px');
+      document.body.classList.toggle('m-chat-keyboard-open', !!viewport && viewport.height < window.innerHeight - 100);
+      if (document.activeElement === input) requestAnimationFrame(scrollToBottom);
+    }
+    function focus() {
+      update();
+      scrollToBottom();
+      setTimeout(scrollToBottom, 120);
+      setTimeout(scrollToBottom, 320);
+    }
+    input.addEventListener('focus', focus);
+    if (viewport) {
+      viewport.addEventListener('resize', update);
+      viewport.addEventListener('scroll', update);
+    }
+    window.addEventListener('resize', update);
+    update();
+    window.mChatViewport = { release: function () {
+      input.removeEventListener('focus', focus);
+      if (viewport) {
+        viewport.removeEventListener('resize', update);
+        viewport.removeEventListener('scroll', update);
+      }
+      window.removeEventListener('resize', update);
+      document.body.classList.remove('m-chat-thread-active', 'm-chat-keyboard-open');
+      document.documentElement.style.removeProperty('--chat-viewport-height');
+      document.documentElement.style.removeProperty('--chat-viewport-top');
+      window.mChatViewport = null;
+    } };
   }
 
   function isNearBottom() {
@@ -500,7 +541,13 @@
     sendBtn.onclick = sendOrSave;
 
     var lastTypingSentAt = 0;
+    function growInput() {
+      input.style.height = 'auto';
+      input.style.height = Math.min(112, Math.max(44, input.scrollHeight)) + 'px';
+    }
     input.addEventListener('input', function () {
+      growInput();
+      if (isNearBottom()) requestAnimationFrame(scrollToBottom);
       var now = Date.now();
       if (window.ChatWS && state.otherId && now - lastTypingSentAt > 2500) {
         lastTypingSentAt = now;
@@ -518,6 +565,7 @@
           applyEdited(id, body, res.edited_at);
           state.editingId = null;
           input.value = '';
+          growInput();
           renderReplyStrip();
         }).catch(function (e) { mToast(e.message || 'Failed', 'err'); });
         return;
@@ -546,6 +594,7 @@
       }
       send.then(function () {
         input.value = '';
+        growInput();
         selectedFiles = [];
         renderFiles();
         state.replyTo = null;
