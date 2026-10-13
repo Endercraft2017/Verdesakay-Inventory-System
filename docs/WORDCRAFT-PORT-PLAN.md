@@ -326,3 +326,26 @@ undo/redo, IME, tracked attribution and shared saves. Clipboard fields, atomic d
 list Enter/Tab, merged-table Tab/row insertion and ordinary composition also pass. Measured
 print checks preserve independent design pages/backgrounds, exact page counts, section
 sizes, contents-page references, multipage grid guards and mobile Save visibility.
+
+### UI usability pass after slice 4
+
+User priority temporarily moves to editor clarity before paragraph-engine work resumes.
+The header now holds the editable document name and primary actions, with secondary metadata
+under Settings and source/other advanced actions grouped. Text, Insert and Page & print
+replace ambiguous ribbon naming. The labelled tool rail opens one inspector panel on demand;
+it starts closed, rather than presenting ten panel tabs beside the document. Print preview
+uses a focused view. Common text tools stay visible, with character effects in a menu.
+Font/style/point-size readouts follow the selection (including mixed/custom values), field
+labels do not masquerade as their document font, and inspector sizes use points too.
+Fit-to-width and footer zoom make the initial page visible on phones; phone controls wrap.
+Keyboard navigation, menu Escape, source-mode access and direct Help remain accessible.
+Find/replace now mounts before the workspace instead of attempting to insert beside a
+nested canvas. Its Advanced entry and responsive bar preserve phone access.
+The next engine step remains slice 5; this pass does not advance that phase.
+
+UI release verification: TypeScript and the integrated full suite pass — 2,322 tests across
+224 files. Final command/reliability checks pass (57 tests). Chromium covers desktop/phone
+layout, on-demand inspector, settings, native-menu Escape, actual CodeMirror source access,
+repaired Find, footer zoom, visible Save/common formatting and measured preview navigation.
+Existing editing/IME/field/shared-save and measured multipage/grid/section/mobile-print
+checks pass. UI visibility/navigation remain separate from saved document content.

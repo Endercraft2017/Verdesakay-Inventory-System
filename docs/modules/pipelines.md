@@ -788,3 +788,10 @@ boundaries delegate after lock checks. Composition and tracked text keep their h
 with pending formats applied to committed/new revision text. Clear Formatting restores
 paragraph character defaults without changing paragraph layout; selections across differing
 paragraph defaults delegate rather than forcing one font/size onto all blocks.
+
+Editor workspace controls are UI state: metadata settings visibility, active ribbon tab,
+inspector panel, menus and fit/zoom do not alter saved document HTML or dirty/history state.
+The selected font/style/point-size readout follows current text rather than field-label
+chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
+the existing change/history path. Find/replace mounts above the workspace; source editing,
+print preview, fields, drafts and shared rooms retain their existing command/save pipelines.

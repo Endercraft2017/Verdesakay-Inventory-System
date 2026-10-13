@@ -131,3 +131,18 @@ Clear restores paragraph character defaults while retaining its layout and linke
 Selected script toggles and paragraph-scoped character clearing preserve other text.
 Paragraph breaks/joins, multiline/cross-structure editing, multi-paragraph clearing and
 block decoration removal still use existing handlers or remain outside inline projection.
+
+### Simplified editor workspace
+
+The document name lives in the header beside Save. Settings opens document type/period;
+advanced source editing, Find and replace and the guide sit under Advanced. Edit and
+Print preview are separate modes; Preview data remains the filled-record preview.
+The Text, Insert and Page & print tabs organize the ribbon. Less-used character effects
+are in More text formatting. Font/style/size readouts follow the selection and show Mixed
+when necessary; inspector sizes use points consistently.
+A labelled rail opens Inspect, Pages, Layers, Outline, Styles, Fields, Library, Review,
+History and Shared on demand. The inspector starts closed and can be dismissed without
+losing selection. The page fits available width initially; footer Fit/zoom controls are
+always available while editing. Phone formatting wraps without horizontal overflow, and
+Save remains visible. Keyboard tab navigation and Escape dismiss menus without closing
+the document. The guide and existing form/field, recovery and print tools remain available.

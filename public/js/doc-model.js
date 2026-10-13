@@ -189,6 +189,16 @@ const DocModel = (() => {
     const texts=editableText(root,range);if(!texts.length)return false;
     return texts.every(({node})=>{const css=root.ownerDocument.defaultView.getComputedStyle(node.parentElement);return property==='font-weight'?css.fontWeight==='bold'||Number(css.fontWeight)>=600:css.fontStyle==='italic';});
   }
+  /** Toolbar readout. null means mixed values; field labels use their containing text style. */
+  function inlineValue(root,selection,property){
+    if(!selection?.rangeCount||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return '';
+    if(property==='paragraph-style'){const values=(selectedParagraphs(root,selection)||[]).map(block=>/^h[1-6]$/.test(block.localName)?block.localName:'p');return values.length&&values.every(value=>value===values[0])?values[0]:values.length?null:'p';}
+    const range=selection.getRangeAt(0);let nodes;
+    if(range.collapsed){let node=range.startContainer;if(node.nodeType===1){const child=node.childNodes[Math.min(range.startOffset,node.childNodes.length-1)];if(child)node=child;}const el=node.nodeType===3?node.parentElement:node;nodes=[el.closest('.doc-chip')?.parentElement || el];}
+    else nodes=editableText(root,range).map(item=>item.node.parentElement);
+    const values=nodes.map(el=>{const css=root.ownerDocument.defaultView.getComputedStyle(el);if(property==='font-size'){const value=css.fontSize;return value?Number((parseFloat(value)*(value.endsWith('pt')?1:.75)).toFixed(2))+'pt':'';}return css.getPropertyValue(property);});
+    return values.length&&values.every(value=>value===values[0])?values[0]:null;
+  }
   /** Marker bookmarks restore exact range boundaries/direction after selected text is split. */
   function formatSelection(root,selection,property,value){
     if(!selection?.rangeCount||!root.contains(selection.anchorNode)||!root.contains(selection.focusNode))return null;
@@ -427,7 +437,7 @@ const DocModel = (() => {
       const caret=root.ownerDocument.createRange();caret.setStartBefore(marker);caret.collapse(true);selection.removeAllRanges();selection.addRange(caret);
     }finally{const parent=marker.parentNode;marker.remove();parent?.normalize();}
   }
-  return {defaultCharacterMarks,editText,formatScript,scriptActive,clearSelection,formatDecoration,decorationActive,rangeBeforeCaret,insertMarkedText,normalizeRuns,validateInline,capture,fromHtml,toHtml,at,alignParagraphs,alignSelection,alignmentActive,comparePosition,formatTextRange,formatSelection,inlineActive};
+  return {inlineValue,defaultCharacterMarks,editText,formatScript,scriptActive,clearSelection,formatDecoration,decorationActive,rangeBeforeCaret,insertMarkedText,normalizeRuns,validateInline,capture,fromHtml,toHtml,at,alignParagraphs,alignSelection,alignmentActive,comparePosition,formatTextRange,formatSelection,inlineActive};
 })();
 if(typeof window!=='undefined')window.DocModel=DocModel;
 if(typeof module!=='undefined'&&module.exports)module.exports=DocModel;

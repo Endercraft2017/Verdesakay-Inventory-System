@@ -997,3 +997,10 @@ Selected scripts and paragraph-scoped character resets isolate wrappers; normali
 handles matching span/sup/sub runs. Structural transitions and multi-paragraph clearing
 retain existing handlers; HTML remains authoritative. Word export prevents conflicting
 script flags and preserves baseline resets. No schema or mobile-loader changes are added.
+
+The studio UI now separates primary editing from secondary configuration: editable title
+and Save in the header, metadata under Settings, source/tools under Advanced, and Text /
+Insert / Page & print ribbon tabs. A labelled rail opens a closed-by-default inspector;
+font/style/size readouts reflect the selection and inspector sizes use points. Initial
+fit-to-width/footer zoom and wrapped phone controls preserve usable page space. Find mounts
+above the workspace, and keyboard tab/menu behavior is covered alongside the editor tests.

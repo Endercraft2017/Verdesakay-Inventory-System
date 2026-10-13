@@ -468,6 +468,9 @@ function docIcon(name) {
     symbol: '<path d="M3 20h5v-2a8 8 0 1 1 8 0v2h5"/>',
     search: '<circle cx="10.5" cy="10.5" r="7.5"/><path d="m16 16 5 5"/>',
     preview: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+    layers:'<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/>',
+    styles:'<path d="m5 20 7-16 7 16M8 14h8M4 22h16"/>',
+    shared:'<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m1 4a5 5 0 0 1 4 5"/>',
     settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--surface,#fff)"/><circle cx="15" cy="17" r="3" fill="var(--surface,#fff)"/>',
     help: '<circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 5 2c-2 1-2 2-2 3m0 3h.01"/>',
     close: '<path d="m6 6 12 12M6 18 18 6"/>',
@@ -714,8 +717,29 @@ function ensureStyles() {
     .doc-fs input:focus-visible,.doc-fs select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     @media(max-width:760px){.doc-details-toggle{display:inline-flex;float:right;border:0;background:var(--surface-2);color:var(--accent);border-radius:var(--radius-sm);padding:3px 8px;font:inherit;cursor:pointer}.doc-details:not(.details-expanded) .doc-secondary-details{display:none}.doc-fs-bar{padding:10px 12px}.doc-details{padding:10px 12px}.doc-tabs{padding:6px 8px}.doc-canvas{padding:16px 10px}}
   `;
+  const workspaceCss = `
+    .doc-fs{--doc-desk:var(--bg);font-family:var(--font,system-ui);isolation:isolate}
+    .doc-fs-bar{gap:16px;padding:12px 18px;box-shadow:none;min-height:66px;box-sizing:border-box}
+    .doc-brand{min-width:160px;flex:1}.doc-brand>div{min-width:0;flex:1}.doc-brand .doc-fs-name{width:100%;max-width:460px;border:1px solid transparent;background:transparent;padding:2px 4px;font-size:16px;letter-spacing:-.025em;font-weight:650;height:28px}.doc-brand .doc-fs-name:hover{border-color:var(--border)}.doc-brand .doc-fs-name:focus{background:var(--surface);border-color:var(--accent)}.doc-fs-title{padding-left:4px;max-width:100%;font-size:11px}
+    .doc-details{display:none;padding:12px 20px;align-items:center;background:var(--surface-2)}.doc-details.details-expanded{display:flex}.doc-settings-caption{font-size:12px;font-weight:650;color:var(--text)}
+    .doc-tabs{background:var(--surface);padding:6px 18px;gap:8px}.doc-tab{padding:8px 14px;font-size:12px}.doc-tab.active{background:var(--accent-weak);box-shadow:none}
+    .doc-panel{min-height:70px;box-sizing:border-box;padding:8px 18px;gap:6px}.doc-group{padding:0 10px;justify-content:center;gap:6px}.doc-group-cap{font-size:10px;font-weight:500}.doc-group-row{gap:4px}.doc-panel button{height:32px;min-width:32px}.doc-panel select{font-size:12px}
+    .doc-panel select[data-fontsize]{width:62px}.doc-panel select[data-cmd="fontName"]{width:130px}
+    .doc-more-menu{position:relative;font-size:12px;flex-shrink:0}.doc-more-menu summary{list-style:none;display:flex;align-items:center;gap:7px;height:34px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;color:var(--text)}.doc-more-menu summary::-webkit-details-marker{display:none}.doc-more-menu[open] summary{background:var(--accent-weak);color:var(--accent)}.doc-more-popover{position:absolute;right:0;top:42px;width:215px;padding:6px;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);background:var(--surface);z-index:20;display:flex;flex-direction:column;gap:4px}.doc-more-popover button{width:100%!important;justify-content:flex-start!important;gap:8px!important;display:flex;align-items:center;height:34px;border:0!important;background:transparent;color:var(--text);padding:6px 10px;font:12px var(--font,system-ui);border-radius:var(--radius-sm)}.doc-more-popover button:hover{background:var(--surface-2)}.doc-more-popover [data-managevars]::after{content:'Manage fields'}.doc-more-popover [data-help]::after{content:'Editor guide'}
+    .doc-workspace{position:relative}.doc-tool-rail{width:74px;flex-shrink:0;border-right:1px solid var(--border);background:var(--surface);padding:8px 5px;display:flex;flex-direction:column;gap:4px;overflow:auto;scrollbar-width:thin;box-sizing:border-box}.doc-tool-rail button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:50px;padding:7px 3px;flex-shrink:0;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);font:11px var(--font,system-ui);cursor:pointer}.doc-tool-rail button:hover{background:var(--surface-2);color:var(--text)}.doc-tool-rail button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent)}.doc-tool-rail svg{width:18px;height:18px}.doc-tool-rail button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+    .doc-studio-side[hidden]{display:none!important}.doc-studio-side{width:296px!important;display:flex;flex-direction:column;overflow:hidden!important}.doc-inspector-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0}.doc-inspector-head button{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:0;background:transparent}.doc-studio-body{flex:1;min-height:0;overflow:auto;padding:16px!important}.doc-studio-note{border-top:1px solid var(--border);font-size:10px!important;padding:10px 16px!important;flex-shrink:0}.doc-studio-note:empty{display:none}
+    .doc-canvas{background:var(--bg);padding:28px 32px}.doc-page{box-shadow:var(--shadow-md),0 0 0 1px var(--border);border-radius:2px}.doc-statusbar{padding:7px 18px;font-size:11px}.doc-workspace-hint{font-size:10px}
+    @media(max-width:1200px){.doc-fs-bar{gap:10px}.doc-fs-bar-actions{gap:5px}.doc-fs-bar-actions [data-preview] span,.doc-fs-bar-actions [data-details] span{display:none}.doc-fs-bar-actions [data-preview],.doc-fs-bar-actions [data-details]{width:34px;padding:0}.doc-brand .doc-fs-name{font-size:14px}.doc-tool-rail{width:64px}}
+    @media(max-width:760px){.doc-fs-bar{padding:8px 10px;gap:8px;flex-wrap:wrap;min-height:100px}.doc-brand{min-width:0;flex-basis:calc(100% - 140px);order:0}.doc-brand>svg{display:none}.doc-fs-bar-actions{display:contents}.doc-fs-bar-actions [data-save]{order:1;height:32px}.doc-fs-bar-actions [data-close]{order:2;height:32px;width:30px}.doc-modes{order:3;margin-right:auto}.doc-fs-bar-actions [data-file],.doc-fs-bar-actions [data-preview],.doc-fs-bar-actions [data-details],.doc-more-menu{order:4;height:32px}.doc-fs-bar-actions [data-tools]{display:none}.doc-more-menu summary{height:30px;padding:0 7px}.doc-more-menu summary svg{display:none}.doc-fs-bar-actions .doc-save-status{display:none}.doc-details{flex-wrap:wrap;gap:12px}.doc-details.details-expanded .doc-secondary-details{display:flex}.doc-settings-caption{flex-basis:100%}.doc-tabs{padding:4px 8px}.doc-panel{padding:6px 8px;min-height:66px}.doc-tool-rail{width:54px;padding:5px 3px;gap:2px}.doc-tool-rail button{min-height:46px;font-size:9px}.doc-workspace{flex-direction:row!important}.doc-canvas{padding:18px 12px}.doc-studio-side{position:absolute;right:0;top:0;bottom:0;width:min(296px,calc(100% - 56px))!important;max-height:none!important;z-index:6;border-top:0!important;box-shadow:var(--shadow-md)}.doc-studio-body .doc-prop-grid{grid-template-columns:1fr 1fr!important}.doc-statusbar{padding:7px 10px;gap:8px}.doc-statusbar .doc-workspace-hint{display:none}.doc-more-popover{position:fixed;top:100px;right:10px}}
+  `;
+  const clarityCss = `
+    .doc-fs-bar-actions [data-tools]{display:none}.doc-brand{min-width:230px}.doc-fs-bar-actions{gap:6px}.doc-brand .doc-fs-name{max-width:none}.doc-shared-status{max-width:240px;overflow:hidden;text-overflow:ellipsis}.doc-statusbar .doc-shared-status{font-size:10px;padding:0}.doc-statusbar .doc-shared-status[data-state=error]{display:block;color:var(--danger)}
+    .doc-format-extra{position:relative;flex-shrink:0}.doc-format-extra summary{cursor:pointer;list-style:none;font:12px var(--font,system-ui);padding:8px;color:var(--text-muted);border-radius:var(--radius-sm)}.doc-format-extra summary::-webkit-details-marker{display:none}.doc-format-extra[open] summary{background:var(--accent-weak);color:var(--accent)}.doc-format-popover{position:fixed;width:170px;z-index:20;background:var(--surface);padding:6px;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md)}.doc-format-popover button{display:flex;justify-content:flex-start;width:100%;padding:0 10px;font-size:12px}
+    @media(max-width:760px){.doc-brand{min-width:0}.doc-statusbar .doc-shared-status{display:none}.doc-statusbar .doc-shared-status[data-state=error]{flex-basis:100%;max-width:none;white-space:normal}.doc-statusbar:has(.doc-shared-status[data-state=error]){flex-wrap:wrap}}
+  `;
+  const viewCss=`.doc-fs[data-editor-mode=pages] .doc-tool-rail,.doc-fs[data-editor-mode=pages] .doc-studio-side,.doc-fs:not([data-editor-mode=visual]) .doc-view-tools{display:none!important}.doc-tool-rail>[data-help]{margin-top:auto}.doc-find{flex-shrink:0}@media(max-width:760px){.doc-find{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:6px;padding:8px}.doc-find input{width:100%;min-width:0;box-sizing:border-box}}.doc-view-tools{display:flex;align-items:center;gap:5px}.doc-view-tools button{border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);font:12px var(--font,system-ui);height:25px;min-width:25px;cursor:pointer}.doc-view-tools button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent)}.doc-view-tools button:hover{background:var(--surface-2);color:var(--text)}.doc-view-tools button:focus-visible{outline:2px solid var(--accent)}.doc-zoom-info{min-width:60px;text-align:center}.doc-panel[data-panel=home] .doc-group-row{flex-wrap:nowrap}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]) .doc-group-row{max-width:700px}@media(max-width:760px){.doc-panel[data-panel=home]{overflow:visible;flex-wrap:wrap;gap:4px;min-height:0}.doc-panel[data-panel=home] .doc-group{padding:2px 4px;gap:3px}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]){flex:1;min-width:0}.doc-panel[data-panel=home] .doc-group-row{justify-content:flex-start;gap:3px;flex-wrap:wrap}.doc-panel[data-panel=home] select[data-cmd=formatBlock]{width:85px}.doc-panel[data-panel=home] select[data-cmd=fontName]{width:102px}.doc-panel[data-panel=home] .doc-group-cap{display:none}.doc-panel[data-panel=home] .doc-group:has([data-find]){display:none}.doc-view-tools{gap:1px}.doc-view-tools button{min-width:20px;padding:0 3px}.doc-statusbar>.doc-word-count{display:none}}` ;
   const contentCss = typeof UI !== 'undefined' && UI.documentCss ? UI.documentCss : '';
-  const el = document.createElement('style'); el.id = 'doc-editor-styles'; el.textContent = css + themeCss + contentCss + `.doc-grid-note{font:11px var(--font);color:var(--text-muted);margin:6px}.doc-studio-body input[type=color]{height:36px;min-height:36px;padding:3px}.doc-review-card{padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm)}.doc-page [data-doc-design-page]{margin-bottom:24px;box-shadow:0 0 0 1px var(--border);padding:0;display:flow-root}.doc-page ins[data-doc-change]{background:#dcfce7;color:#166534;text-decoration:underline}.doc-page del[data-doc-change]{background:#fee2e2;color:#991b1b;text-decoration:line-through}.doc-page [data-doc-settings]{display:none!important}.doc-page [data-doc-section]{display:flow-root}.doc-page ol[data-doc-numbering="hierarchical"],.doc-page ol[data-doc-numbering="hierarchical"] ol{counter-reset:doc-list;list-style:none}.doc-page ol[data-doc-numbering="hierarchical"] li::before{counter-increment:doc-list;content:counters(doc-list,".") ". "}`;
+  const el = document.createElement('style'); el.id = 'doc-editor-styles'; el.textContent = css + themeCss + contentCss + workspaceCss + clarityCss + viewCss + `.doc-grid-note{font:11px var(--font);color:var(--text-muted);margin:6px}.doc-studio-body input[type=color]{height:36px;min-height:36px;padding:3px}.doc-review-card{padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm)}.doc-page [data-doc-design-page]{margin-bottom:24px;box-shadow:0 0 0 1px var(--border);padding:0;display:flow-root}.doc-page ins[data-doc-change]{background:#dcfce7;color:#166534;text-decoration:underline}.doc-page del[data-doc-change]{background:#fee2e2;color:#991b1b;text-decoration:line-through}.doc-page [data-doc-settings]{display:none!important}.doc-page [data-doc-section]{display:flow-root}.doc-page ol[data-doc-numbering="hierarchical"],.doc-page ol[data-doc-numbering="hierarchical"] ol{counter-reset:doc-list;list-style:none}.doc-page ol[data-doc-numbering="hierarchical"] li::before{counter-increment:doc-list;content:counters(doc-list,".") ". "}`;
   document.head.appendChild(el);
 }
 
@@ -729,9 +753,9 @@ function groupHTML(caption, innerHtml) {
 
 function tabsHTML() {
   return `
-    <button type="button" class="doc-tab active" data-tab="home">Home</button>
+    <button type="button" class="doc-tab active" data-tab="home">Text</button>
     <button type="button" class="doc-tab" data-tab="insert">Insert</button>
-    <button type="button" class="doc-tab" data-tab="layout">Layout</button>
+    <button type="button" class="doc-tab" data-tab="layout">Page & print</button>
     <button type="button" class="doc-tab" data-tab="table" style="display:none">Table</button>`;
 }
 
@@ -749,12 +773,12 @@ function homePanelHTML() {
     <button type="button" data-ex="bold" title="Bold"><b>B</b></button>
     <button type="button" data-ex="italic" title="Italic"><i>I</i></button>
     <button type="button" data-ex="underline" title="Underline"><u>U</u></button>
-    <button type="button" data-ex="strikeThrough" title="Strikethrough"><s>S</s></button>
-    <button type="button" data-ex="superscript" title="Superscript">x²</button>
-    <button type="button" data-ex="subscript" title="Subscript">x₂</button>
     <label class="tb-color" title="Text color"><b>A</b><input type="color" data-color="foreColor" value="#16243d"></label>
     <label class="tb-color" title="Highlight">▣<input type="color" data-color="hiliteColor" value="#fff3b0"></label>
-    <button type="button" data-ex="removeFormat" title="Clear formatting">⌫</button>`);
+    <details class="doc-format-extra"><summary aria-label="More text formatting" title="More text formatting">More</summary><div class="doc-format-popover">    <button type="button" data-ex="strikeThrough" title="Strikethrough">Strikethrough</button>
+    <button type="button" data-ex="superscript" title="Superscript">Superscript</button>
+    <button type="button" data-ex="subscript" title="Subscript">Subscript</button>
+<button type="button" data-ex="removeFormat" title="Clear formatting">Clear formatting</button></div></details>`);
   const paragraph = groupHTML('Paragraph', `
     <button type="button" data-ex="justifyLeft" title="Align left">${docIcon('justifyLeft')}</button>
     <button type="button" data-ex="justifyCenter" title="Align center">${docIcon('justifyCenter')}</button>
@@ -783,7 +807,7 @@ function insertPanelHTML() {
   const text = groupHTML('Text', tile('ins', 'checkbox', '☐', 'Checkbox') + tile('ins', 'hr', '―', 'Line')
     + tile('ins', 'pagebreak', '⤓', 'Page Break') + tile('ins', 'textbox', '▭', 'Text Box') + tile('ins', 'signature', '✒', 'Signature Line'));
   const symbols = groupHTML('Symbols', tile('ins', 'symbol', 'Ω', 'Symbol'));
-  const template = groupHTML('Template', tile('ins', 'variable', '{ }', 'Variable', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Formula', 'btn-fx'));
+  const template = groupHTML('Template', tile('ins', 'variable', '{ }', 'Field', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Formula', 'btn-fx'));
   return illustrations + shapes + tables + links + text + symbols + template;
 }
 
@@ -836,7 +860,7 @@ function layoutPanelHTML() {
   const zoom = groupHTML('Zoom', `
     <button type="button" data-zoom="out" title="Zoom out (Ctrl -)">−</button>
     <select class="doc-fs-type doc-zoomsel" title="Zoom level">
-      <option value="fit">Fit</option>
+      <option value="fit">Fit width</option>
       <option value="0.5">50%</option>
       <option value="0.67">67%</option>
       <option value="0.75">75%</option>
@@ -1053,17 +1077,17 @@ function docEditorHelpDialog() {
 
   const PANES = {
     basics: lead('It behaves like a normal document — type, format, and drop in tables or pictures.')
-      + bullet('Switch between the page and its raw code with <b>Design</b> / <b>HTML&nbsp;/&nbsp;CSS</b> in the top bar.', SHOT_MODES)
+      + bullet('Use <b>Edit</b> to work on the document and <b>Print preview</b> to check measured sheets. Advanced source editing is under <b>More → HTML / CSS source</b>.', SHOT_MODES)
       + bullet(`${kbd('Ctrl')}+${kbd('S')} saves. ${kbd('Ctrl')}+${kbd('Z')} / ${kbd('Ctrl')}+${kbd('Y')} undo and redo <i>everything</i> — text, tables, moved objects.`)
-      + bullet('<b>Preview</b> (Layout tab) opens a movable preview filled with realistic sample data.')
-      + bullet('<b>⚙</b> makes your own named variables. This <b>?</b> guide is always one click away.')
+      + bullet('<b>Preview data</b> in the top bar opens a movable preview filled with realistic sample data.')
+      + bullet('Open <b>Fields</b> on the left for template data. <b>More → Editor guide</b> opens this guide.')
       + note('Nothing on the page is “live” — variables and formulas only turn into real values when the document is printed.'),
 
     variables: lead('A variable is a blank the system fills in at print time — a name, a number, a date.')
-      + step(1, 'Open <b>Insert</b> → <b>{ } Variable</b> — or just type <code>{{ }}</code> right on the page.')
+      + step(1, 'Open <b>Insert</b> → <b>Field</b> — or just type <code>{{ }}</code> right on the page.')
       + step(2, "Pick a field: company name, order number, customer, today's date…")
       + step(3, 'It drops in as a blue pill. On the printed page it becomes the real value.', SHOT_VARFLOW)
-      + bullet('Want your own? <b>⚙</b> in the top bar — a fixed value, a bound field, or a saved formula.')
+      + bullet('Want your own? <b>More → Manage fields</b> — a fixed value, a bound field, or a saved formula.')
       + bullet('Hide a block when its value is empty: <code>{{#if order.notes}} … {{/if}}</code> (HTML&nbsp;/&nbsp;CSS mode).'),
 
     repeat: lead('One table row can print once for every line item — 3 of them, or 300.')
@@ -1764,6 +1788,15 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   const reflect = () => {
     if (!surface.isConnected) return;
     saveSel();
+    const sel=window.getSelection();
+    if(sel?.rangeCount&&surface.contains(sel.anchorNode)&&window.DocModel){
+      const font=panelsRoot.querySelector('[data-cmd="fontName"]'),size=panelsRoot.querySelector('[data-fontsize]'),style=panelsRoot.querySelector('[data-cmd="formatBlock"]');
+      const read=(property)=>sel.isCollapsed&&pendingMarks[property]!==undefined?pendingMarks[property]:window.DocModel.inlineValue(surface,sel,property);
+      const set=(control,value,label=value)=>{if(document.activeElement===control)return;control.querySelectorAll('[data-current-value]').forEach(option=>option.remove());if(![...control.options].some(option=>option.value===value)){const option=document.createElement('option');option.dataset.currentValue='';option.value=value;option.textContent=label||'Mixed';control.append(option);}control.value=value;};
+      const family=read('font-family');set(font,family===null?'':String(family||'').split(',')[0].trim().replace(/^['"]|['"]$/g,''));
+      const pt=read('font-size');set(size,pt===null?'':String(pt||'').replace('pt',''));
+      set(style,window.DocModel.inlineValue(surface,sel,'paragraph-style') || '');
+    }
     panelsRoot.querySelectorAll('[data-ex]').forEach(b=>{
       const id=commands.idForNative(b.dataset.ex);if(id?.startsWith('edit.'))return;
       const state=commands.state(id);b.disabled=!state.enabled;
@@ -2660,11 +2693,17 @@ function mountStudio(fs, surface, opts, api) {
   const desk = document.createElement('div'); desk.className = 'doc-workspace';
   const canvas = fs.querySelector('.doc-canvas'); canvas.before(desk); desk.append(canvas);
   const side = document.createElement('aside'); side.className = 'doc-studio-side'; side.setAttribute('aria-label', 'Document tools'); desk.append(side);
-  side.innerHTML = `<nav>${['Properties','Layers','Outline','Data','Pages','Styles','Review','Library','History',...(opts.sharedStudio?['Shared']:[])].map((x,i)=>`<button type="button" data-studio-tab="${x}" aria-pressed="${!i}">${x}</button>`).join('')}</nav><div class="doc-studio-body"></div><p class="doc-studio-note" role="status"></p>`;
+  const toolNames={Properties:'Inspect',Layers:'Layers',Outline:'Outline',Data:'Fields',Pages:'Pages',Styles:'Styles',Review:'Review',Library:'Library',History:'History',Shared:'Shared'};
+  const toolIcons={Properties:'settings',Layers:'layers',Outline:'justifyLeft',Data:'variable',Pages:'document',Styles:'styles',Review:'signature',Library:'image',History:'undo',Shared:'shared'};
+  const rail=document.createElement('nav');rail.className='doc-tool-rail';rail.setAttribute('aria-label','Document tools');desk.prepend(rail);
+  rail.innerHTML=['Properties','Pages','Layers','Outline','Styles','Data','Library','Review','History',...(opts.sharedStudio?['Shared']:[])].map(x=>`<button type="button" data-studio-tab="${x}" aria-pressed="false" title="${toolNames[x]}" aria-label="Open ${toolNames[x].toLowerCase()} panel">${docIcon(toolIcons[x])}<span>${toolNames[x]}</span></button>`).join('');
+  rail.insertAdjacentHTML('beforeend','<button type="button" data-help title="Editor guide" aria-label="Editor guide">'+docIcon('help')+'<span>Help</span></button>');
+  side.innerHTML='<header class="doc-inspector-head"><strong data-inspector-title>Inspect</strong><button type="button" data-inspector-close aria-label="Close inspector">'+docIcon('close')+'</button></header><div class="doc-studio-body"></div><p class="doc-studio-note" role="status"></p>';
   const toggle = fs.querySelector('[data-tools]');
-  side.hidden = !!window.matchMedia?.('(max-width:760px)').matches;
-  toggle.setAttribute('aria-expanded',String(!side.hidden));
-  toggle.addEventListener('click',()=>{side.hidden=!side.hidden;toggle.setAttribute('aria-expanded',String(!side.hidden));api.layout();});
+  side.hidden=true;
+  function showInspector(open){side.hidden=!open;toggle.setAttribute('aria-expanded',String(open));rail.querySelectorAll('[data-studio-tab]').forEach(b=>b.setAttribute('aria-pressed',String(open&&b.dataset.studioTab===tab)));api.layout();}
+  toggle.addEventListener('click',()=>showInspector(side.hidden));
+  side.querySelector('[data-inspector-close]').addEventListener('click',()=>{showInspector(false);rail.querySelector(`[data-studio-tab="${tab}"]`)?.focus();});
   const panel = side.querySelector('.doc-studio-body'), note = side.querySelector('.doc-studio-note'); let tab = 'Properties';
   const style = document.createElement('style'); style.textContent = `.doc-workspace{display:flex;flex:1;min-height:0;overflow:hidden}.doc-workspace>.doc-canvas{min-width:0;flex:1}.doc-studio-side{width:280px;flex-shrink:0;background:var(--surface,#fff);border-left:1px solid var(--border,#ddd);overflow:auto;font-size:12px;color:var(--text,#222)}.doc-studio-side nav{display:grid;grid-template-columns:repeat(3,1fr);padding:8px;gap:4px;position:sticky;top:0;background:var(--surface,#fff);z-index:2}.doc-studio-side button{font:inherit;cursor:pointer;border:1px solid var(--border,#ddd);background:var(--surface,#fff);color:inherit;border-radius:var(--radius-sm,8px);padding:8px}.doc-studio-side button[aria-pressed=true]{background:var(--accent-weak,#edf3fc);color:var(--accent,#2765aa)}.doc-studio-body{padding:14px;display:flex;flex-direction:column;gap:10px}.doc-studio-body h3{font-size:14px;margin:4px 0}.doc-studio-body p{margin:0;line-height:1.6}.doc-studio-body label{display:flex;flex-direction:column;gap:5px;margin:0}.doc-studio-body input,.doc-studio-body textarea{font-weight:400!important}.doc-studio-body input,.doc-studio-body select,.doc-studio-body textarea{box-sizing:border-box;width:100%;padding:7px;border:1px solid var(--border,#ddd);border-radius:var(--radius-sm,8px);color:inherit;background:var(--surface,#fff);font:inherit}.doc-studio-body textarea{min-height:130px}.doc-prop-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.doc-layer{display:flex;gap:4px;align-items:center}.doc-layer>button{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis}.doc-layer input{width:auto}.doc-studio-note{padding:12px;margin:0;font-size:11px;color:var(--text-muted,#666)}.doc-page [data-doc-locked=true]{cursor:default}.doc-page-guide{position:absolute;left:0;right:0;border-top:1px dashed #91a4bb;pointer-events:none;z-index:1002;font:11px system-ui;color:#60718a}.doc-page .doc-pagebreak{border-top:1px dashed #91a4bb;height:20px;margin:12px 0}.doc-page .doc-pagebreak:after{content:'Page break';font:11px system-ui;color:#60718a}.doc-page [data-doc-hidden=true]{display:none!important}@media(max-width:1000px){.doc-studio-side{width:230px}}@media(max-width:760px){.doc-workspace{flex-direction:column}.doc-studio-side{width:100%;max-height:220px;border-left:0;border-top:1px solid var(--border,#ddd)}.doc-studio-side nav{grid-template-columns:repeat(6,1fr)}.doc-studio-body{padding:10px}.doc-studio-body .doc-prop-grid{grid-template-columns:repeat(4,1fr)}}`;
   fs.append(style);
@@ -2676,20 +2715,20 @@ function mountStudio(fs, surface, opts, api) {
   function restoreRange() { surface.focus(); if (range && surface.contains(range.startContainer)) { const s = window.getSelection(); s.removeAllRanges(); s.addRange(range); } }
   function insert(html) { restoreRange(); api.insert(html); }
   function changed() { api.change(); guides(); }
-  function field(label, prop, value, type='number') { if(type==='number'&&Number.isFinite(Number(value)))value=Math.round(Number(value)*100)/100; return `<label>${label}<input data-prop="${prop}" type="${type}" value="${esc(value)}" ${type==='number'?'step="0.5"':''}></label>`; }
+  function field(label, prop, value, type='number') { if(prop==='fontSize'){label='Text size (pt)';value=Number(value)*.75;}if(type==='number'&&Number.isFinite(Number(value)))value=Math.round(Number(value)*100)/100; return `<label>${label}<input ${prop==='fontSize'?'data-unit="pt"':''} data-prop="${prop}" type="${type}" value="${esc(value)}" ${type==='number'?`step="${prop==='fontSize'?'0.25':'0.5'}"`:''}></label>`; }
   const advanced=DocAdvanced.mount(fs,surface,opts,api,target,restoreRange);
   function render() {
-    side.querySelectorAll('[data-studio-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.studioTab===tab)));
+    rail.querySelectorAll('[data-studio-tab]').forEach(b=>b.setAttribute('aria-pressed',String(!side.hidden&&b.dataset.studioTab===tab)));side.querySelector('[data-inspector-title]').textContent=toolNames[tab] || tab;
     if(advanced.render(tab,panel))return;
     const el = target();
     if (tab === 'Properties') {
-      panel.innerHTML = `<h3>${el ? 'Selected '+(el.dataset.floatKind || el.tagName.toLowerCase()) : 'Select text or an object'}</h3><p>Click text to edit it. Use Layers to select an object without moving it.</p>`;
+      panel.innerHTML = `<h3>${el ? ({P:'Paragraph',H1:'Heading',H2:'Heading',H3:'Heading',TD:'Table cell',TH:'Table heading',IMG:'Image',LI:'List item'}[el.tagName] || el.dataset.floatKind || 'Text settings') : 'Select text or an object'}</h3><p>Settings for the selected text or object. Use the top toolbar to format a text selection.</p>`;
       if (!el) return;
       const css = getComputedStyle(el), isFloat = el.classList.contains('doc-float');
       const font = ['Segoe UI','Arial','Georgia','Times New Roman','Courier New'].find(f=>css.fontFamily.includes(f));
-      panel.innerHTML += `<div class="doc-prop-grid">${isFloat ? field('X (%)','left',parseFloat(el.style.left)||0)+field('Y (%)','top',parseFloat(el.style.top)||0)+field('Width (%)','width',parseFloat(el.style.width)||20)+field('Height (%)','height',parseFloat(el.style.height)||10)+field('Rotation (°)','rotate',parseFloat(el.style.rotate)||0)+field('Opacity (0–1)','opacity',el.style.opacity===''?1:Number(el.style.opacity))+field('Corner radius (px)','borderRadius',parseFloat(el.style.borderRadius)||0) : ''}${field('Font (px)','fontSize',parseFloat(css.fontSize)||13)+field('Line height','lineHeight',parseFloat(css.lineHeight)/parseFloat(css.fontSize)||1.55)+field('Padding (px)','padding',parseFloat(css.padding)||0)+field('Spacing below (px)','marginBottom',parseFloat(css.marginBottom)||0)}</div>${field('Text color','color',css.color,'text')}${field('Background','backgroundColor',el.style.backgroundColor || 'transparent','text')}<label>Font<select data-prop="fontFamily">${['Segoe UI','Arial','Georgia','Times New Roman','Courier New'].map(f=>`<option ${font===f?'selected':''}>${f}</option>`).join('')}</select></label><label>Alignment<select data-prop="textAlign">${['left','center','right','justify'].map(f=>`<option ${css.textAlign===f?'selected':''}>${f}</option>`).join('')}</select></label>${el.tagName==='IMG'||el.dataset.floatKind==='image'?'<button data-do="picture">Picture settings</button>':''}<button data-do="duplicate">Duplicate object / block</button>${isFloat?'<h3>Align to page</h3><div class="doc-prop-grid"><button data-do="align-left">Left</button><button data-do="align-center">Center</button><button data-do="align-right">Right</button><button data-do="align-top">Top</button><button data-do="align-middle">Middle</button><button data-do="align-bottom">Bottom</button><button data-do="distribute-x">Space horizontally</button><button data-do="distribute-y">Space vertically</button></div>':''}`;
+      panel.innerHTML += `<div class="doc-prop-grid">${isFloat ? field('X (%)','left',parseFloat(el.style.left)||0)+field('Y (%)','top',parseFloat(el.style.top)||0)+field('Width (%)','width',parseFloat(el.style.width)||20)+field('Height (%)','height',parseFloat(el.style.height)||10)+field('Rotation (°)','rotate',parseFloat(el.style.rotate)||0)+field('Opacity (0–1)','opacity',el.style.opacity===''?1:Number(el.style.opacity))+field('Corner radius (px)','borderRadius',parseFloat(el.style.borderRadius)||0) : ''}${field('Font (px)','fontSize',(parseFloat(css.fontSize)||13)*(css.fontSize.endsWith('pt')?4/3:1))+field('Line height','lineHeight',parseFloat(css.lineHeight)/parseFloat(css.fontSize)||1.55)+field('Padding (px)','padding',parseFloat(css.padding)||0)+field('Spacing below (px)','marginBottom',parseFloat(css.marginBottom)||0)}</div>${field('Text color','color',css.color,'text')}${field('Background','backgroundColor',el.style.backgroundColor || 'transparent','text')}<label>Font<select data-prop="fontFamily">${['Segoe UI','Arial','Georgia','Times New Roman','Courier New'].map(f=>`<option ${font===f?'selected':''}>${f}</option>`).join('')}</select></label><label>Alignment<select data-prop="textAlign">${['left','center','right','justify'].map(f=>`<option ${css.textAlign===f?'selected':''}>${f}</option>`).join('')}</select></label>${el.tagName==='IMG'||el.dataset.floatKind==='image'?'<button data-do="picture">Picture settings</button>':''}<button data-do="duplicate">Duplicate object / block</button>${isFloat?'<h3>Align to page</h3><div class="doc-prop-grid"><button data-do="align-left">Left</button><button data-do="align-center">Center</button><button data-do="align-right">Right</button><button data-do="align-top">Top</button><button data-do="align-middle">Middle</button><button data-do="align-bottom">Bottom</button><button data-do="distribute-x">Space horizontally</button><button data-do="distribute-y">Space vertically</button></div>':''}`;
     } else if (tab === 'Outline') {
-      panel.innerHTML='<h3>Document outline</h3><p>Use heading styles to organize your document.</p><button data-do="contents">Insert contents list</button><p>Contents links update with headings. Page numbers appear after measured pagination in Preview / print.</p>'+[...surface.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((h,i)=>`<button data-outline="${i}" style="text-align:left;margin-left:${(Number(h.tagName.slice(1))-1)*8}px">${esc(h.textContent||'Untitled heading')}</button>`).join('');
+      panel.innerHTML='<h3>Document outline</h3><p>Use heading styles to organize your document.</p><button data-do="contents">Insert contents list</button><p>Contents links update with headings. Page numbers appear after measured pagination in Print preview.</p>'+[...surface.querySelectorAll('h1,h2,h3,h4,h5,h6')].map((h,i)=>`<button data-outline="${i}" style="text-align:left;margin-left:${(Number(h.tagName.slice(1))-1)*8}px">${esc(h.textContent||'Untitled heading')}</button>`).join('');
     } else if (tab === 'Layers') {
       panel.innerHTML = '<h3>Objects</h3><p>Highest layer first. Hidden objects are also hidden when printed.</p>'+floats().sort((a,b)=>(+b.style.zIndex||0)-(+a.style.zIndex||0)).map((f)=>`<div class="doc-layer"><button data-layer="${floats().indexOf(f)}" aria-pressed="${f===el}">${esc(f.dataset.docName || f.dataset.floatKind || 'Object')}</button><label title="Visible"><input type="checkbox" data-visible="${floats().indexOf(f)}" ${f.dataset.docHidden!=='true'?'checked':''}>Show</label><label title="Locked"><input type="checkbox" data-lock="${floats().indexOf(f)}" ${f.dataset.docLocked==='true'?'checked':''}>Lock</label></div>`).join('') + (el?.classList.contains('doc-float') ? `${field('Object name','docName',el.dataset.docName || '', 'text')}<div class="doc-prop-grid"><button data-do="forward">Forward</button><button data-do="back">Backward</button><button data-do="group">Group selected</button><button data-do="ungroup">Ungroup</button></div>`:'');
     } else if (tab === 'Data') {
@@ -2740,7 +2779,7 @@ function mountStudio(fs, surface, opts, api) {
     if(input.dataset.scenario!==undefined) {api.setScenario(input.value);return;}
     const prop=input.dataset.prop;if(!prop||!el||elLocked(el))return;
     if(prop==='docName')el.dataset.docName=input.value.slice(0,100);
-    else { let value=input.value;if(input.type==='number') {const n=Number(value);if(!Number.isFinite(n)||( ['width','height','fontSize','lineHeight'].includes(prop)&&n<=0))return;if(prop==='opacity'&&(n<0||n>1))return;if(prop==='rotate'&&(n< -360||n>360))return;value=n+(['left','top','width','height'].includes(prop)?'%':prop==='rotate'?'deg':['lineHeight','opacity'].includes(prop)?'':'px');}if(typeof CSS !== 'undefined' && CSS.supports && !CSS.supports(prop.replace(/[A-Z]/g,x=>'-'+x.toLowerCase()),value)) {note.textContent='Enter a valid value.';return;}el.style[prop]=value;if(prop==='borderRadius'&&['image','shape-rect','shape-oval','shape-line'].includes(el.dataset.floatKind)&&el.firstElementChild)el.firstElementChild.style.borderRadius='inherit'; }changed();
+    else { let value=input.value;if(input.type==='number') {const n=Number(value);if(!Number.isFinite(n)||( ['width','height','fontSize','lineHeight'].includes(prop)&&n<=0))return;if(prop==='opacity'&&(n<0||n>1))return;if(prop==='rotate'&&(n< -360||n>360))return;value=n+(['left','top','width','height'].includes(prop)?'%':prop==='rotate'?'deg':['lineHeight','opacity'].includes(prop)?'':input.dataset.unit || 'px');}if(typeof CSS !== 'undefined' && CSS.supports && !CSS.supports(prop.replace(/[A-Z]/g,x=>'-'+x.toLowerCase()),value)) {note.textContent='Enter a valid value.';return;}el.style[prop]=value;if(prop==='borderRadius'&&['image','shape-rect','shape-oval','shape-line'].includes(el.dataset.floatKind)&&el.firstElementChild)el.firstElementChild.style.borderRadius='inherit'; }changed();
   });
   panel.addEventListener('click', async e=>{
     const b=e.target.closest('button');if(!b)return;if(b.dataset.adv){await advanced.action(b);render();return;}const el=target();
@@ -2774,7 +2813,7 @@ function mountStudio(fs, surface, opts, api) {
     if(action==='forward'||action==='back'){el.style.zIndex=String((+el.style.zIndex||0)+(action==='forward'?1:-1));changed();render();}
     if(action==='saveStyle'||action==='saveAsset'){const name=panel.querySelector('[data-library-name]').value.trim();if(!name){note.textContent='Enter a name first.';return;}if(action==='saveStyle'){const css=getComputedStyle(el),values={};['fontFamily','fontSize','fontWeight','color','backgroundColor','lineHeight','textAlign','padding','marginBottom'].forEach(k=>values[k]=css[k]);library.styles.push({name,values});library.styles=library.styles.slice(-30);}else{const root=document.createElement('div');root.append(el.cloneNode(true));library.assets.push({name,html:serializeEditor(root)});library.assets=library.assets.slice(-30);}write(libraryKey,library);render();}
   });
-  side.querySelector('nav').addEventListener('click',e=>{const b=e.target.closest('[data-studio-tab]');if(b){remember();tab=b.dataset.studioTab;render();}});
+  rail.addEventListener('click',e=>{const b=e.target.closest('[data-studio-tab]');if(b){remember();const close=!side.hidden&&tab===b.dataset.studioTab;tab=b.dataset.studioTab;render();showInspector(!close);}});
   // Keep the caret when tool buttons are clicked; inputs remain editable.
   side.addEventListener('mousedown',e=>{if(e.target.closest('button'))e.preventDefault();});
   const onSelect=()=>{if(side.contains(document.activeElement))return;if(surface.contains(window.getSelection()?.anchorNode)){selection();if(tab==='Properties')render();}};
@@ -2783,7 +2822,7 @@ function mountStudio(fs, surface, opts, api) {
   function guides(){surface.querySelectorAll('.doc-page-guide').forEach(n=>n.remove());if(surface.querySelector('[data-doc-design-page]'))return;const h=parseFloat(surface.style.minHeight);if(!h)return;const count=Math.min(100,Math.ceil(surface.scrollHeight/h));for(let i=1;i<count;i++){const g=document.createElement('div');g.className='doc-page-guide';g.contentEditable='false';g.style.top=i*h+'px';g.textContent='Page '+(i+1)+' · approximate flow';surface.append(g);}}
   const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(guides):null;observer?.observe(surface);
   if (opts.body && store.versions.at(-1)?.body.replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim() !== api.body().replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim()) checkpoint('Opened template');
-  render();guides();if(store.draft){note.textContent='An unsaved draft is available in History.';tab='History';render();}
+  render();guides();if(store.draft){note.textContent='An unsaved draft is available in History.';tab='History';render();showInspector(true);}
   return { change(){clearTimeout(timer);timer=setTimeout(()=>{if(disposed)return;store.draft={...api.snapshot(),at:Date.now()};if(write(key,store))note.textContent='Draft saved on this browser · '+new Date().toLocaleTimeString();guides();},700);}, saved(value,unchanged){checkpoint('Saved template',value);if(unchanged){clearTimeout(timer);delete store.draft;}const oldKey=key;key=prefix+(opts.getDocumentKey?.() || opts.documentKey || opts.name || 'new');if(write(key,store)&&oldKey!==key){try{localStorage.removeItem(oldKey);}catch{/* the migrated checkpoint is already stored */}}}, close(){advanced.close();disposed=true;clearTimeout(timer);if(api.dirty()){store.draft={...api.snapshot(),at:Date.now()};write(key,store);}observer?.disconnect();document.removeEventListener('selectionchange',onSelect);}, render, guides };
 }
 
@@ -2791,38 +2830,43 @@ function open(opts = {}) {
   ensureStyles();
   const typeOptions = opts.typeOptions || ['sale', 'job', 'generic'];
   const fs = document.createElement('div');
-  fs.className = 'doc-fs';
+  fs.className = 'doc-fs';fs.dataset.editorMode='visual';
   fs.innerHTML = `
     <header class="doc-fs-bar">
-      <div class="doc-brand">${docIcon('document')}<div><span class="doc-brand-label">Document studio</span><span class="doc-fs-title">${UI.esc(opts.title || 'Template')}</span></div></div>
-      <div class="doc-modes" aria-label="Editing mode"><button type="button" data-mode="visual" class="active">Design</button><button type="button" data-mode="pages">Pages</button><button type="button" data-mode="code">HTML / CSS</button></div>
+      <div class="doc-brand">${docIcon('document')}<div><input class="doc-fs-name" aria-label="Template name" placeholder="Untitled template" value="${escAttr(opts.name || '')}"><span class="doc-fs-title">Document editor · ${UI.esc(opts.title || 'Template')}</span></div></div>
+      <div class="doc-modes" aria-label="Editing mode"><button type="button" data-mode="visual" class="active">Edit</button><button type="button" data-mode="pages">Print preview</button></div>
       <div class="doc-fs-bar-actions">
         <span class="doc-save-status" role="status" aria-live="polite">No unsaved changes</span>
         <button type="button" class="btn secondary" data-file title="Import and export document" aria-label="Import and export document">${docIcon('document')}<span>File</span></button>
-        <button type="button" class="btn secondary" data-preview title="Preview document">${docIcon('preview')}<span>Preview</span></button>
-        <button type="button" class="btn secondary" data-tools aria-expanded="true">Tools</button>
+        <button type="button" class="btn secondary" data-preview title="Preview document">${docIcon('preview')}<span>Preview data</span></button>
+        <button type="button" class="btn secondary" data-details aria-expanded="false" aria-controls="doc-document-settings">${docIcon('settings')}<span>Settings</span></button>
+        <button type="button" class="btn secondary" data-tools aria-expanded="false">Inspector</button>
+        <details class="doc-more-menu"><summary title="Advanced editor tools" aria-label="Advanced editor tools">Advanced ${docIcon('settings')}</summary><div class="doc-more-popover"><button type="button" data-find-launch>${docIcon('search')}Find and replace</button><button type="button" data-mode="code">HTML / CSS source</button>
         <button type="button" class="btn secondary doc-icon-button" data-managevars title="Manage variables" aria-label="Manage variables">${docIcon('settings')}</button>
         <button type="button" class="btn secondary doc-icon-button" data-help title="Editor guide" aria-label="Editor guide">${docIcon('help')}</button>
-        <button type="button" class="btn" data-save>${docIcon('save')}<span>Save template</span></button>
+        </div></details><button type="button" class="btn" data-save>${docIcon('save')}<span>Save template</span></button>
         <button type="button" class="btn secondary doc-icon-button" data-close title="Close editor (Esc)" aria-label="Close editor">${docIcon('close')}</button>
       </div>
     </header>
-    <div class="doc-details">
-      <label class="doc-name-field"><span>Template name <button type="button" class="doc-details-toggle" data-details aria-expanded="false" aria-label="Show document type and period">Details</button></span><input class="doc-fs-name" placeholder="Untitled template" value="${escAttr(opts.name || '')}"></label>
+    <div class="doc-details" id="doc-document-settings">
+      <span class="doc-settings-caption">Document settings</span>
       <label class="doc-secondary-details"><span>Document type</span><select class="doc-fs-type doc-fs-type-top">${typeOptions.map((t) => `<option value="${escAttr(t)}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${escAttr(t.charAt(0).toUpperCase() + t.slice(1))}</option>`).join('')}</select></label>
       ${opts.periodLabel ? `<label class="doc-secondary-details"><span>${escAttr(opts.periodLabel)}</span><input class="doc-fs-period" placeholder="e.g. October 2026" value="${escAttr(opts.period || '')}"></label>` : ''}
     </div>
     <div class="doc-tabs" role="tablist">${tabsHTML()}</div>
-    <div class="doc-panel" data-panel="home" role="toolbar" aria-label="Home">${homePanelHTML()}</div>
+    <div class="doc-panel" data-panel="home" role="toolbar" aria-label="Text formatting">${homePanelHTML()}</div>
     <div class="doc-panel" data-panel="insert" role="toolbar" aria-label="Insert" style="display:none">${insertPanelHTML()}</div>
     <div class="doc-panel" data-panel="layout" role="toolbar" aria-label="Layout" style="display:none">${layoutPanelHTML()}</div>
     <div class="doc-panel table-panel" data-panel="table" role="toolbar" aria-label="Table tools" style="display:none">${tablePanelHTML()}</div>
     <div class="doc-canvas"><div class="doc-zoom"><div class="doc-page doc-surface doc-content" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document body"></div></div></div>
     <div class="doc-code doc-code-cm" style="display:none"></div>
-    <footer class="doc-statusbar"><span>${docIcon('document')}<span class="doc-page-info"></span></span><span class="doc-word-count" aria-label="Document word count"></span><span class="doc-workspace-hint">Select an object to move or resize · Ctrl / ⌘ S to save</span><span class="doc-zoom-info">100%</span></footer>`;
+    <footer class="doc-statusbar"><span>${docIcon('document')}<span class="doc-page-info"></span></span><span class="doc-word-count" aria-label="Document word count"></span><span class="doc-workspace-hint">Select an object to move or resize · Ctrl / ⌘ S to save</span><div class="doc-view-tools"><button type="button" data-zoom="out" title="Zoom out">−</button><button type="button" data-zoom="fit" title="Fit page to available width">Fit width</button><span class="doc-zoom-info">100%</span><button type="button" data-zoom="in" title="Zoom in">+</button></div></footer>`;
   fs.querySelectorAll('button[title],select[title],input[title]').forEach((el) => { if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', el.title); });
   document.body.appendChild(fs);
 
+  fs.querySelector('.doc-format-extra').addEventListener('toggle',e=>{if(!e.target.open)return;const rect=e.target.getBoundingClientRect(),popover=e.target.querySelector('.doc-format-popover');popover.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-190))+'px';popover.style.top=rect.bottom+6+'px';});
+  fs.addEventListener('pointerdown',e=>{if(!e.target.closest('.doc-more-menu,.doc-format-extra'))fs.querySelectorAll('.doc-more-menu[open],.doc-format-extra[open]').forEach(menu=>menu.open=false);});
+  fs.addEventListener('click',e=>{const menu=e.target.closest('.doc-more-menu,.doc-format-extra');if(menu&&e.target.closest('button'))menu.open=false;});
   fs.querySelector('[data-details]').addEventListener('click',e=>{e.preventDefault();const expanded=fs.querySelector('.doc-details').classList.toggle('details-expanded');e.currentTarget.setAttribute('aria-expanded',String(expanded));});
   const tabsEl = fs.querySelector('.doc-tabs');
   const panels = {
@@ -2839,8 +2883,10 @@ function open(opts = {}) {
     activeTab = name;
     tabsEl.querySelectorAll('.doc-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
     Object.keys(panels).forEach((k) => { panels[k].style.display = k === name ? '' : 'none'; });
+    tabsEl.querySelectorAll('.doc-tab').forEach(b=>{b.setAttribute('aria-selected',String(b.dataset.tab===name));b.tabIndex=b.dataset.tab===name?0:-1;});
   }
-  tabsEl.querySelectorAll('.doc-tab').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+  tabsEl.querySelectorAll('.doc-tab').forEach((b) => {b.setAttribute('role','tab');b.setAttribute('aria-selected',String(b.dataset.tab==='home'));b.tabIndex=b.dataset.tab==='home'?0:-1;b.addEventListener('click', () => switchTab(b.dataset.tab));});
+  tabsEl.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||!e.target.matches('.doc-tab'))return;const buttons=[...tabsEl.querySelectorAll('.doc-tab')].filter(b=>b.style.display!=='none');let i=buttons.indexOf(e.target);i=e.key==='Home'?0:e.key==='End'?buttons.length-1:(i+(e.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;e.preventDefault();switchTab(buttons[i].dataset.tab);buttons[i].focus();});
   const tabApi = {
     setTableTabVisible(visible) {
       tableTabBtn.style.display = visible ? '' : 'none';
@@ -3012,7 +3058,7 @@ function open(opts = {}) {
         if(UI.loadPrintFrame) UI.loadPrintFrame(frame,html,isTiled&&typeof fitTiledCells==='function'?fitTiledCells:undefined).then(result=>{
           if(!frame.isConnected)return;
           if(pageView?.contains(frame)){
-            pageView.querySelector('[data-pages-status]').textContent=result.warnings.length?result.warnings.join(' '):`${result.pages || 1} measured page(s) · click a block to edit in Design`;
+            pageView.querySelector('[data-pages-status]').textContent=result.warnings.length?result.warnings.join(' '):`${result.pages || 1} measured page(s) · click a block to return to Edit`;
             frame.contentDocument.addEventListener('click',event=>{const id=event.target.closest('[data-doc-node]')?.dataset.docNode;if(!id)return;setMode('visual');const target=surface.querySelector('[data-doc-node="'+id+'"]');if(target){target.scrollIntoView({block:'center'});const range=document.createRange();range.selectNodeContents(target);range.collapse(true);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);surface.focus();}});
           }
         }).catch(err=>{if(pageView?.contains(frame))pageView.querySelector('[data-pages-status]').textContent=err.message;});
@@ -3158,7 +3204,7 @@ function open(opts = {}) {
   const zoomWrap = fs.querySelector('.doc-zoom');
   const zoomSel = fs.querySelector('.doc-zoomsel');
   const ZOOM_LADDER = [0.25, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2, 3, 4];
-  let zoomMode = 'manual'; // 'manual' | 'fit'
+  let zoomMode = 'fit'; // 'manual' | 'fit'; start with the entire page visible.
 
   function naturalPageSize() {
     const w = parseFloat(surface.style.width) || surface.offsetWidth || 816;
@@ -3167,7 +3213,7 @@ function open(opts = {}) {
     return { w, h };
   }
   function computeFit() {
-    const availW = (canvas.clientWidth || 0) - 52; // 26px canvas padding each side
+    const availW = (canvas.clientWidth || 0) - ((parseFloat(getComputedStyle(canvas).paddingLeft)||0)+(parseFloat(getComputedStyle(canvas).paddingRight)||0)+4); // Respect the current responsive canvas padding.
     const { w } = naturalPageSize();
     if (w <= 0 || availW <= 0) return 1;
     return Math.max(0.2, Math.min(1, availW / w)); // never auto-zoom past 100%
@@ -3184,6 +3230,7 @@ function open(opts = {}) {
   }
   function syncZoomSel() {
     if (!zoomSel) return;
+    fs.querySelector('[data-zoom=fit]')?.setAttribute('aria-pressed',String(zoomMode==='fit'));
     if (zoomMode === 'fit') { zoomSel.value = 'fit'; return; }
     const near = ZOOM_LADDER.reduce((a, b) => (Math.abs(b - currentZoom) < Math.abs(a - currentZoom) ? b : a), 1);
     zoomSel.value = String(near);
@@ -3203,7 +3250,7 @@ function open(opts = {}) {
     else setZoom(Number(zoomSel.value));
   });
   fs.querySelectorAll('[data-zoom]').forEach((b) =>
-    b.addEventListener('click', () => setZoom(ladderStep(b.dataset.zoom === 'in' ? 1 : -1))));
+    b.addEventListener('click', () => {if(b.dataset.zoom==='fit'){zoomMode='fit';applyZoom();syncZoomSel();}else setZoom(ladderStep(b.dataset.zoom === 'in' ? 1 : -1));}));
   canvas.addEventListener('wheel', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
@@ -3340,8 +3387,8 @@ function open(opts = {}) {
     if (findBar) { findBar.remove(); findBar = null; return; }
     findBar = document.createElement('div');
     findBar.className = 'doc-find';
-    findBar.innerHTML = `<input class="doc-find-q" placeholder="Find"><input class="doc-find-r" placeholder="Replace with"><button data-f="next">Find next</button><button data-f="all">Replace all</button><button data-f="x" title="Close">✕</button>`;
-    fs.insertBefore(findBar, canvas);
+    findBar.innerHTML = `<input class="doc-find-q" aria-label="Find text" placeholder="Find"><input class="doc-find-r" aria-label="Replacement text" placeholder="Replace with"><button data-f="next">Find next</button><button data-f="all">Replace all</button><button data-f="x" title="Close">✕</button>`;
+    fs.insertBefore(findBar,fs.querySelector('.doc-workspace') || canvas);
     const q = () => findBar.querySelector('.doc-find-q').value;
     findBar.querySelector('[data-f="next"]').onclick = () => { try { if (!(window.find && window.find(q()))) UI.toast('No more matches'); } catch (e) { UI.toast('Find not supported here', 'error'); } };
     findBar.querySelector('[data-f="all"]').onclick = () => { const n = replaceAllInSurface(surface, q(), findBar.querySelector('.doc-find-r').value); UI.toast(n ? `Replaced ${n}` : 'No matches'); if (n) onChange(); };
@@ -3349,8 +3396,9 @@ function open(opts = {}) {
     findBar.querySelector('.doc-find-q').focus();
   }
   fs.querySelector('[data-find]').addEventListener('click', toggleFind);
+  fs.querySelector('[data-find-launch]').addEventListener('click',toggleFind);
   fs.querySelectorAll('[data-preview]').forEach((b) => b.addEventListener('click', togglePreview));
-  fs.querySelector('[data-help]').addEventListener('click', docEditorHelpDialog);
+  fs.querySelectorAll('[data-help]').forEach(button=>button.addEventListener('click',docEditorHelpDialog));
   const mvBtn = fs.querySelector('[data-managevars]');
   if (opts.onManageVars) mvBtn.addEventListener('click', () => opts.onManageVars({ refresh: () => { refreshPreview(); } }));
   else mvBtn.style.display = 'none';
@@ -3361,7 +3409,7 @@ function open(opts = {}) {
     if(next==='pages'){
       if(mode==='code')setMode('visual');
       if(!pageView){pageView=document.createElement('div');pageView.className='doc-pageview';pageView.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column';pageView.innerHTML='<div style="padding:10px;background:var(--surface,#fff);font-size:12px" data-pages-status>Measuring pages…</div><iframe title="Measured document pages" sandbox="allow-same-origin allow-modals" style="flex:1;width:100%;border:0;background:#eef0f3"></iframe>';canvas.after(pageView);}
-      pageView.style.display='flex';canvas.parentElement.style.display='';canvas.style.display='none';tabsEl.style.display='none';Object.values(panels).forEach(p=>p.style.display='none');mode='pages';fs.querySelectorAll('.doc-modes button').forEach(b=>b.classList.toggle('active',b.dataset.mode===next));refreshPreview();return;
+      pageView.style.display='flex';canvas.parentElement.style.display='';canvas.style.display='none';tabsEl.style.display='none';Object.values(panels).forEach(p=>p.style.display='none');mode='pages';fs.dataset.editorMode='pages';fs.querySelector('[data-find-launch]').disabled=true;fs.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===next));refreshPreview();return;
     }
     if(pageView){pageView.remove();pageView=null;}
 
@@ -3380,11 +3428,11 @@ function open(opts = {}) {
       applyZoom(); // content height may have changed → resize the zoom sizer
       if (history) history.record(); // the code-mode result becomes an undo step
     }
-    mode = next;
-    fs.querySelectorAll('.doc-modes button').forEach((b) => b.classList.toggle('active', b.dataset.mode === next));
+    mode = next;fs.dataset.editorMode=next;fs.querySelector('[data-find-launch]').disabled=next!=='visual';
+    fs.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === next));
     refreshPreview();
   }
-  fs.querySelectorAll('.doc-modes button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  fs.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
   async function close(force) {
     if (closed || saving) return;
@@ -3404,10 +3452,13 @@ function open(opts = {}) {
     document.removeEventListener('keydown', onKey);
   }
   const onKey = (e) => {
+    if(e.key==='Escape'&&fs.querySelector('.doc-more-menu[open],.doc-format-extra[open]')){e.preventDefault();const menu=fs.querySelector('.doc-more-menu[open],.doc-format-extra[open]');menu.open=false;menu.querySelector('summary').focus();return;}
+
     if (e.isComposing || composing || e.keyCode === 229) return;
     // wireToolbar's own keydown handler already swallows Escape (via stopImmediatePropagation)
     // when a float is selected; this guard is a backstop so Escape can't close the editor while
     // an object selection is up.
+    if(e.key==='Escape'&&findBar){e.preventDefault();findBar.remove();findBar=null;surface.focus();return;}
     if (e.key === 'Escape' && e.target.closest?.('.doc-studio-side input,.doc-studio-side textarea,.doc-studio-side select')) return;
     if (e.key === 'Escape' && !document.querySelector('.modal-overlay')) { if (!wired.blurFloats()) close(); }
     if (e.target.closest && e.target.closest('.modal-overlay')) return;
@@ -3425,7 +3476,7 @@ function open(opts = {}) {
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); fs.querySelector('[data-save]').click(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFind(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && mode==='visual' && !e.defaultPrevented) { e.preventDefault(); toggleFind(); }
     if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=')) { e.preventDefault(); setZoom(ladderStep(1)); }
     else if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); setZoom(ladderStep(-1)); }
     else if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); setZoom(1); }
@@ -3501,7 +3552,7 @@ function open(opts = {}) {
       selected:()=>{const node=window.getSelection()?.anchorNode;const el=node?.nodeType===3?node.parentElement:node;return surface.querySelector('.doc-float.selected') || el?.closest?.('[data-doc-node]');},
       serialize:serializeEditor,sanitize:sanitizeHtml,safeUrl:safeDocumentUrl,
       insert:html=>{wired.insertHtml(bodyToEditorHtml(html));wired.normalizeFloats();}
-    });studio.render();
+    });studio.render();const sharedStatus=fs.querySelector('.doc-shared-status');if(sharedStatus)fs.querySelector('.doc-statusbar').append(sharedStatus);
   }
   surface.focus();
   return { close, commands: wired.commands, _history: history }; // _history exposed for tests (undo/redo without waiting on the debounce)

@@ -161,3 +161,27 @@ describe('model paragraph commands',()=>{
   const {doc,root,ed,select}=setup('<p>Before middle after {{name}}</p>',true);select(root.querySelector('p').firstChild,13,7);doc.execCommand.mockClear();expect(ed.commands.run('insert.text','New')).toBe(true);expect(root.textContent).toBe('Before New after name');expect(doc.execCommand).not.toHaveBeenCalled();ed._history.undo();select(root.querySelector('p').firstChild,7,13);expect(ed.commands.run('edit.deleteSelection')).toBe(true);expect(root.textContent).toBe('Before  after name');ed._history.undo();expect(root.textContent).toBe('Before middle after name');
  });
 });
+
+describe('simplified editor workspace',()=>{
+ it('keeps settings and inspector out of the initial workspace, with direct panel navigation and close focus',()=>{
+  const {doc,root}=setup('<p>Text</p>',true);const side=doc.querySelector('.doc-studio-side');expect(side.hidden).toBe(true);expect(doc.querySelector('.doc-tool-rail')).not.toBeNull();
+  const settings=doc.querySelector('[data-details]');settings.click();expect(settings.getAttribute('aria-expanded')).toBe('true');expect(doc.querySelector('.doc-details').classList.contains('details-expanded')).toBe(true);
+  const pages=doc.querySelector('[data-studio-tab=Pages]');pages.click();expect(side.hidden).toBe(false);expect(side.querySelector('[data-inspector-title]').textContent).toBe('Pages');expect(pages.getAttribute('aria-pressed')).toBe('true');side.querySelector('[data-inspector-close]').click();expect(side.hidden).toBe(true);expect(doc.activeElement).toBe(pages);expect(root.textContent).toBe('Text');
+ });
+ it('closes advanced formatting with Escape without closing the document and supports keyboard ribbon tabs',()=>{
+  const {w,doc}=setup();const menu=doc.querySelector('.doc-format-extra');menu.open=true;menu.querySelector('summary').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));expect(menu.open).toBe(false);expect(doc.querySelector('.doc-fs')).not.toBeNull();
+  const tab=doc.querySelector('[data-tab=home]');tab.focus();tab.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));expect(doc.activeElement).toBe(doc.querySelector('[data-tab=insert]'));expect(doc.activeElement.getAttribute('aria-selected')).toBe('true');
+ });
+ it('shows the selected font/point size and mixed selections instead of stale toolbar defaults',()=>{
+  const {w,doc,root,select}=setup('<p style="font-family:Georgia;font-size:18pt">Text</p><h1 style="font-size:24pt">Title</h1>',true);select(root.querySelector('p').firstChild,0,4);expect(doc.querySelector('[data-cmd=fontName]').value).toBe('Georgia');expect(doc.querySelector('[data-fontsize]').value).toBe('18');
+  w.getSelection().setBaseAndExtent(root.querySelector('p').firstChild,0,root.querySelector('h1').firstChild,5);doc.dispatchEvent(new w.Event('selectionchange'));expect(doc.querySelector('[data-fontsize]').selectedOptions[0].textContent).toBe('Mixed');expect(doc.querySelector('[data-cmd=formatBlock]').selectedOptions[0].textContent).toBe('Mixed');
+ });
+ it('uses point sizes consistently in the inspector and retains source editing in Advanced',()=>{
+  const {w,doc,root,select}=setup('<p style="font-size:16px">Text</p>',true);select(root.querySelector('p').firstChild,1,1);root.querySelector('p').dispatchEvent(new w.MouseEvent('click',{bubbles:true}));doc.querySelector('[data-studio-tab=Properties]').click();const size=doc.querySelector('[data-prop=fontSize]');expect(size.value).toBe('12');size.value='18';size.dispatchEvent(new w.Event('change',{bubbles:true}));expect(root.querySelector('p').style.fontSize).toBe('18pt');
+  expect(doc.querySelector('[data-mode=code]').closest('.doc-more-menu')).not.toBeNull();w.CMBundle={mount(){let text='';return {setValue(value:string){text=value;},getValue(){return text;},focus(){},destroy(){}};}};doc.querySelector('[data-mode=code]').click();expect(doc.querySelector('.doc-code').style.display).not.toBe('none');doc.querySelector('[data-mode=visual]').click();expect(doc.querySelector('.doc-canvas').style.display).not.toBe('none');
+ });
+});
+
+it('opens Find and replace from the ribbon and Advanced without disrupting the workspace',()=>{
+ const {doc,root}=setup('<p>Find this text</p>',true);doc.querySelector('[data-find]').click();expect(doc.querySelector('.doc-find')).not.toBeNull();expect(root.textContent).toBe('Find this text');doc.querySelector('[data-find]').click();expect(doc.querySelector('.doc-find')).toBeNull();doc.querySelector('[data-find-launch]').click();expect(doc.querySelector('.doc-find')).not.toBeNull();
+});
