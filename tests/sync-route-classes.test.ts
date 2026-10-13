@@ -29,6 +29,7 @@ const NO_CLASS_NEEDED: Record<string, string> = {
   // The platform console and sign-up run only on the cloud, outside any workspace.
   'src/platform/platform.routes.ts:post /login': 'cloud console',
   'src/platform/platform.routes.ts:post /logout': 'cloud console',
+  'src/platform/platform.routes.ts:post /password': 'cloud-only owner-console password in platform.db, outside workspace sync',
   'src/platform/platform.routes.ts:post /tenants': 'cloud console',
   'src/platform/platform.routes.ts:post /tenants/import': 'cloud console',
   'src/platform/platform.routes.ts:patch /tenants/:slug': 'cloud console',
