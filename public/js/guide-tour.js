@@ -8,6 +8,8 @@
   function position() {
     if (!state) return;
     const step=state.p.steps[state.i], loc=App.currentLocation?.(), correctScreen=step.to?.route && loc?.route===step.to.route && Object.entries(step.to.filter||{}).every(([k,v])=>String(loc.filter?.[k])===String(v));
+    const view=document.querySelector('#view');
+    if(state.p.kind==='feature' && correctScreen && view?.dataset.route===step.to.route && !/Loading…/.test(view.textContent) && window.GuideCenter) { start(GuideCenter.contextual(view),0,{root:view}); return; }
     const selector=step.spot||(correctScreen?'#view .topbar h2':null);
     const el=step.target?.isConnected ? step.target : selector ? query(selector) : null;
     if(el && state.lastScrolledTarget!==el){state.lastScrolledTarget=el;try{el.scrollIntoView({block:'nearest',inline:'nearest',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?'auto':'smooth'});}catch{}}

@@ -17,14 +17,14 @@
       const help = window.Help?.topics.find(t => (t.routes || []).includes(leaf.route));
       features.push({ id: 'feature:' + key, title: leaf.label, module: sub.requiredModule || primary.requiredModule || primary.id, kind: 'feature', icon: leaf.icon || 'help', audience: primary.label + ' · ' + sub.label,
         tagline: help ? text(help.html).trim().slice(0, 170) : `Find and use ${leaf.label} in ${primary.label}.`, intro: help ? help.html : '', route: leaf.route, filter: leaf.filter,
-        steps: [{ title: 'Open ' + leaf.label, to: { route: leaf.route, filter: leaf.filter, label: leaf.label }, body: 'Review the records and available actions on this screen. Choose a record to inspect its details; check filters and permissions before making changes.' }], gotchas: [] });
+        steps: [{ title: 'Open ' + leaf.label, to: { route: leaf.route, filter: leaf.filter, label: leaf.label }, body: help ? text(help.html).trim().slice(0, 450) : `Open ${primary.label} → ${sub.label} → ${leaf.label}. The walkthrough on that screen explains the available controls.` }], gotchas: [] });
     })));
     const tools=[
-      {id:'email',title:'Compose an email',icon:'mail',description:'Open Email, fill in the recipient, subject and message, then review before Send. Sending requires mail.send; mailbox configuration requires administrator access.',spot:'#em-to'},
+      {id:'email',title:'Compose an email',icon:'mail',description:'Open Email, fill in the recipient, subject and message, then review before Send. Sending requires email access; only administrators can configure the outbound mailbox.',spot:'#em-to'},
       {id:'scheduler',title:'Plan a task or reminder',icon:'calendar',description:'Open Scheduler to add a task with a due date. Use Schedule / edit to set a time or reminder; linked notes open directly from their tasks.',spot:'#task-title'},
       {id:'bookmarks',title:'Bookmark useful screens',icon:'bookmark',description:'Save the current screen for quick access. You can also right-click a menu item to bookmark it.',spot:'#bm-add'},
       {id:'bug',title:'Report a problem',icon:'bug',description:'Give a clear title, steps to reproduce, and optional screenshots. Review the report before submitting it.',spot:'#bug-title'},
-    ].map(t=>({id:'tool:'+t.id,title:t.title,icon:t.icon,module:'home',kind:'workflow',audience:'Personal tools',tagline:t.description,intro:window.Help?.topics.find(p=>p.id===t.id)?.html||'',steps:[{title:'Open the tool',spot:'[data-tool="'+t.id+'"]',advanceOn:'click',nextSpot:t.spot,body:t.description},{title:'Review the details',spot:t.spot,body:'Use the Guide button in this panel to walk through its controls. Saving, sending and submitting remain your explicit actions.'}],gotchas:[]}));
+    ].map(t=>({id:'tool:'+t.id,title:t.title,icon:t.icon,module:'home',kind:'workflow',audience:'Personal tools',tagline:t.description,intro:window.Help?.topics.find(p=>p.id===t.id)?.html||'',steps:[{title:'Open the tool',spot:'[data-tool="'+t.id+'"]',advanceOn:'click',nextSpot:t.spot,body:t.description},...({email:['#em-to','#em-subj','#em-body','#em-send'],scheduler:['#task-title','#task-date','#task-list'],bookmarks:['#bm-add','#bm-list'],bug:['#bug-title','#bug-steps','#bug-desc','#bug-shots-input','#bug-submit']}[t.id] || [t.spot]).map(spot=>{const row=window.GuideInstructions?.find(row=>row[0]===spot);return {title:row?.[1] || t.title,spot,body:row?.[2] || t.description};})],gotchas:[]}));
     return workflows.concat(tools,features);
   }
   function suggestions(items, location, root) {
@@ -39,7 +39,7 @@
     return items.filter(p => p.id === related?.id).slice(0, 4);
   }
   function shortcuts(root) {
-    const tips = [{ keys: 'Alt + Shift + G', text: 'Open guides for the current screen or dialog.' }, { keys: 'Tab / Shift + Tab', text: 'Move between controls.' }];
+    const tips = [{ keys: 'Alt + Shift + G', text: 'Start the highlighted walkthrough for this screen or dialog.' }, { keys: 'Tab / Shift + Tab', text: 'Move between controls.' }];
     if (root?.matches('.modal-overlay, .drawer')) tips.push({ keys: 'Escape', text: 'Close help first; otherwise close the dialog or panel. Unsaved changes may require confirmation.' });
     else tips.push({ keys: 'Enter in Search Menu', text: 'Open the first matching screen. Escape closes suggestions.' });
     if (root?.querySelector('#note-item-text')) tips.push({ keys: 'Enter in checklist item', text: 'Add the item without saving the note.' });
@@ -52,7 +52,8 @@
     const isDialog = root?.matches('.modal-overlay, .drawer, .doc-fs');
     const title = isDialog ? (root.querySelector('.modal-head h3, .drawer-head h3, .doc-fs-title')?.textContent || 'This dialog') : (root?.querySelector('.topbar h2, h2')?.textContent || route);
     const steps = [];
-    const add = (title, body, target, tip) => { if (target) { const token = target.id || 'guide-control-' + Math.random().toString(36).slice(2); target.dataset.guideTarget = token; steps.push({ title, body, target, spot: '[data-guide-target="' + token + '"]', tip }); } };
+    const available = target => { if(!target || target.disabled || target.closest('[hidden], .hidden, details:not([open])')) return false; for(let el=target;el;el=el.parentElement) { if(el.style.display==='none' || el.style.visibility==='hidden') return false; if(el===root) break; } return true; };
+    const add = (title, body, target, tip) => { if (available(target)) { const token = target.id || 'guide-control-' + Math.random().toString(36).slice(2); target.dataset.guideTarget = token; steps.push({ title, body, target, spot: target.id && /^[a-zA-Z][\w-]*$/.test(target.id) ? '#' + target.id : '[data-guide-target="' + token + '"]', tip }); } };
     if (!isDialog && route === 'hr-employees') {
       [
         ['#emp-search','Find an employee','Type part of an employee’s name to narrow the employee list. Clear the search to show everyone again.'],
@@ -68,6 +69,7 @@
         ['[data-p="prefix"]','Choose a prefix','Enter the letters that should precede suggested employee numbers, such as EMP. Leave this blank if you do not want a prefix.'],
         ['[data-p="mode"]','Choose the numbering method','Select Increasing number for a sequence, or Based on hire date to use the employee’s start date.'],
         ['[data-p="pad"]','Set the number of digits','Enter how many digits to use, from 1 to 8. Short numbers are padded with leading zeroes.'],
+        ['[data-p="date_format"]','Choose the hire-date format','When using hire-date numbering, choose YYYYMMDD or YYMMDD. Check the preview to confirm the date appears as intended.'],
         ['#emp-no-preview','Check the example','Review the suggested-number preview before saving. This policy changes suggestions, not existing employee numbers.'],
         ['#emp-no-save','Save the numbering policy','Press Save to apply this format to future suggested employee numbers.'],
       ].forEach(([selector,name,body])=>add(name,body,root.querySelector(selector)));
@@ -88,33 +90,36 @@
       add('Print a payroll summary', 'Preview totals and department subtotals for the payslips currently in view before printing.', root.querySelector('#fr-print-summary'));
       add('Export the filtered payroll', 'Download Excel exports the payslips currently in view. Check your filters first.', root.querySelector('#fr-download-csv'));
     } else if (root?.querySelector('.fb-editor')) {
-      add('Name the form', 'Use a recognizable name. The internal ID is generated from it.', root.querySelector('#fb-name'));
-      add('Build the fields', 'Add the information people need to provide. Mark essential fields required and keep keys stable for templates.', root.querySelector('#fb-add-field'));
-      add('Use advanced settings when needed', 'The form ID, numbering prefix and icon live here. Use the question marks for details.', root.querySelector('.fb-advanced summary'));
-      add('Choose optional automation', 'Review what the action does and when it runs. Existing automation is shown when editing.', root.querySelector('.fb-actions summary'));
+      add('Name the form', 'Enter the name employees will see, such as Leave Request. The internal form ID is generated from this name.', root.querySelector('#fb-name'));
+      add('Build the fields', 'Press Add field. Enter its label and key, choose its type and mark it required if reviewers need it. Include a Reason field for requests. Saved field keys are used by print templates.', root.querySelector('#fb-add-field'));
+      add('Use advanced settings when needed', 'Expand Advanced settings to review the internal form ID, record-number prefix and icon. Keep an existing form ID stable so links continue to work.', root.querySelector('.fb-advanced summary'));
+      add('Choose optional automation', 'Expand Automated actions and press Add action if a saved or approved record should trigger a follow-up. Choose its action type and trigger, then check the recipient and message before creating the form.', root.querySelector('.fb-actions summary'));
     } else if (root?.matches('.doc-fs')) {
-      add('Name the document', 'Use a clear name so people can find the saved template.', root.querySelector('.doc-fs-name'));
-      add('Edit the content', 'Write and format the document. Editing is separate from saving or issuing.', root.querySelector('.doc-surface'), 'Ctrl/Cmd + Z undoes; Ctrl/Cmd + Y redoes inside the editor.');
-      add('Preview the output', 'Check real-record data, page breaks and missing fields before saving.', root.querySelector('[data-preview]'));
-      add('Save deliberately', 'Save when the content and layout are correct. The guide never presses Save.', root.querySelector('[data-save]'), 'Ctrl/Cmd + S saves in this editor.');
+      add('Name the document', 'Enter a recognizable template name, such as Employee payslip. Check its associated form before saving.', root.querySelector('.doc-fs-name'));
+      add('Edit the content', 'Click the document canvas to write. Select text before applying formatting; insert form fields where record values should appear.', root.querySelector('.doc-surface'), 'Ctrl/Cmd + Z undoes; Ctrl/Cmd + Y redoes inside the editor.');
+      add('Preview the output', 'Press Preview and choose a record. Inspect the filled values and page breaks, then return to the editor to correct any missing or misplaced information.', root.querySelector('[data-preview]'));
+      add('Save deliberately', 'Press Save to store the template content and layout after reviewing the preview. Saving the template does not issue a business record.', root.querySelector('[data-save]'), 'Ctrl/Cmd + S saves in this editor.');
     } else if (root?.querySelector('#note-title')) {
-      add('Give the note a clear title', 'A good title helps you find this note and recognize its Scheduler task.', root.querySelector('#note-title'));
-      add('Add text or a checklist', 'You can save a note, a checklist, or both.', root.querySelector('#note-body'));
-      add('Build a checklist', 'Type an item and press Add item or Enter. Completed items update the linked task.', root.querySelector('#note-item-text'), 'Enter here adds an item; it does not save the note.');
-      add('Schedule it if needed', 'Enable scheduling to choose a due time and an optional reminder. Rescheduling keeps one task.', root.querySelector('#note-scheduled'));
+      add('Give the note a clear title', 'Enter a short action-oriented title, such as Review October payroll. The linked Scheduler task uses this title.', root.querySelector('#note-title'));
+      add('Add text or a checklist', 'Write the details or context you need to remember. Add checklist items below if the work has several steps; a checklist can also be saved without body text.', root.querySelector('#note-body'));
+      add('Build a checklist', 'Type one action, then press Add item or Enter. Repeat for each step. Check items as you finish them; completing the checklist completes its linked task.', root.querySelector('#note-item-text'), 'Enter here adds an item; it does not save the note.');
+      add('Schedule it if needed', 'Check Schedule this note to reveal Due date and time and Remind me. Enter the deadline and optional reminder, then Save. Editing the schedule updates the existing linked task.', root.querySelector('#note-scheduled'));
     } else {
-      const controls = [...(root?.querySelectorAll('input:not([type="hidden"]), select, textarea') || [])].filter(el => !el.disabled && !el.closest('[hidden], .hidden') && !el.closest('details:not([open])')).slice(0, 6);
+      const covered = new Set();
+      (window.GuideInstructions || []).forEach(([selector,name,body]) => { const target = root?.querySelector(selector); if(available(target)) { add(name, body, target); covered.add(target); } });
+      const controls = [...(root?.querySelectorAll('input:not([type="hidden"]), select, textarea') || [])].filter(el => !covered.has(el) && available(el)).slice(0, 6);
       controls.forEach(el => {
-        const label = (el.id ? [...root.querySelectorAll('label')].find(l => l.htmlFor === el.id) : null) || el.closest('.fld, .field, .field-row > div')?.querySelector('label');
-        const name = (label?.textContent || el.getAttribute('aria-label') || el.placeholder || el.title || el.getAttribute('data-f') || 'This field').replace(/\s+/g, ' ').trim();
-        const help = el.getAttribute('data-guide-help') || el.getAttribute('aria-description') || el.title; const described = (el.getAttribute('aria-describedby') || '').split(/\s+/).map(id=>document.getElementById(id)?.textContent || '').join(' ').trim(); const instruction = help || described || (el.tagName === 'SELECT' ? 'Choose an option in ' + name + '. This screen uses your selection when filtering or saving.' : el.type === 'checkbox' ? 'Turn ' + name + ' on or off for this record.' : 'Enter ' + name + (el.required ? '. This field is required.' : '.')); add(name, UI.esc(instruction), el);
+        let label = (el.id ? [...root.querySelectorAll('label')].find(l => l.htmlFor === el.id) : null); if(!label) { for(let parent=el.parentElement; parent && parent!==root; parent=parent.parentElement) { const candidate=parent.querySelector('label'); if(candidate) { label=candidate; break; } } }
+        const name = (label?.textContent || el.getAttribute('aria-label') || el.placeholder || el.title || el.getAttribute('data-f') || 'Field').replace(/_/g, ' ').replace(/\s+/g, ' ').replace(/\s*\*$/, '').trim();
+        if(name === 'Field') return;
+        const help = el.getAttribute('data-guide-help') || el.getAttribute('aria-description') || el.title; const described = (el.getAttribute('aria-describedby') || '').split(/\s+/).map(id=>document.getElementById(id)?.textContent || '').join(' ').trim(); const instruction = help || described || (el.type === 'search' || (!isDialog && /search/i.test(name)) ? 'Type a search term to narrow ' + title + '. Clear the search to show the list again.' : el.tagName === 'SELECT' ? (isDialog ? 'Select ' + name + ' for this record. Review the selection before saving.' : 'Select ' + name + ' to change which results are shown or how they are arranged.') : el.type === 'checkbox' ? 'Check ' + name + ' to enable this option; uncheck it to disable it.' : el.type === 'file' ? 'Choose the file to upload. Check its filename and contents before confirming.' : 'Enter ' + name + (el.required ? '. This field is required before saving.' : '.')); add(name, UI.esc(instruction), el);
       });
       if (!isDialog) {
-        [...(root?.querySelectorAll('.topbar .btn, .panel-head .btn') || [])].filter(el => !el.matches('[data-guide-open]') && !el.closest('[hidden],.hidden') && !el.disabled).slice(0, 5).forEach(el => { const name = el.getAttribute('aria-label') || el.title || el.textContent.trim(); const help = el.getAttribute('data-guide-help') || el.getAttribute('aria-description') || el.title; if(name && help) add(name, UI.esc(help), el); });
+        [...(root?.querySelectorAll('.topbar .btn, .panel-head .btn') || [])].filter(el => !covered.has(el) && !el.matches('[data-guide-open]') && available(el)).slice(0, 5).forEach(el => { const name = el.getAttribute('aria-label') || el.title || el.textContent.trim(); const help = el.getAttribute('data-guide-help') || el.getAttribute('aria-description') || el.title; if(name && help) add(name, UI.esc(help), el); });
       }
     }
-    if (isDialog) add('Review before confirming', 'Check the information and warnings first. Confirming, saving, approving, deleting or paying is always your explicit action.', root.querySelector('.modal-foot [data-confirm], .drawer-foot .btn, .doc-btn-save'));
-    if (!steps.length) add('Explore this screen', 'Use the task guides and feature reference to find what you need. Search Menu can take you to another screen.', root?.querySelector('h2,h3') || root);
+    if (isDialog) { const confirm = root.querySelector('.modal-foot [data-confirm]'); if(confirm) { const action = confirm.textContent.trim(); add(action, 'Check the information above, then press ' + UI.esc(action) + ' when ready. If validation shows an error, correct the highlighted field and try again. Exit the walkthrough or use the dialog’s Cancel/Close action to leave without confirming.', confirm); } }
+    if (!steps.length) { const help = window.Help?.topics.find(t => (t.routes || []).includes(route)); const summary = help ? text(help.html).trim().slice(0, 450) : root?.querySelector('.empty, .tool-note')?.textContent?.trim(); add(title, UI.esc(summary || 'No editable controls are available in this view right now. Check the screen’s loading or access message before proceeding.'), root?.querySelector('.panel, h2, h3') || root); }
     return { id: 'context:' + route + ':' + title, title, icon: 'help', steps, gotchas: [], context: root };
   }
   function open(options = {}) {

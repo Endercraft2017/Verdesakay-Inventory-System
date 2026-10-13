@@ -4,7 +4,7 @@ The Guide Center adds searchable task guides, references for accessible navigati
 
 ## Using the guides
 
-- Open **Guide Center** from Home, use the **Guide** button in a screen or dialog header, or press **Alt+Shift+G**.
+- Open **Guide Center** from Home to browse. The **Guide** button in a screen or dialog header, or **Alt+Shift+G**, starts its highlighted walkthrough directly.
 - Search by task or feature, or narrow the catalog by module.
 - Start a walkthrough to highlight relevant controls. Use Back, Next, Skip, or minimize the coach while working.
 - Exit preserves progress for that tenant and user. Resume returns to the saved step; Start over resets it. Finish clears completed progress.
@@ -25,3 +25,5 @@ Tips describe existing contextual shortcuts: Tab/Shift+Tab for focus, Escape for
 - Light and dark desktop views and a 390px phone viewport checked; no horizontal page overflow or browser runtime exceptions observed.
 
 Live testing used only the sandbox. A local unsaved Form Builder draft was discarded without saving; no business records were changed and the real tenant was untouched. Inventory and manufacturing workflows were reviewed in source and tests, but were not exercised as business workflows in the sandbox because those modules were unavailable there. Mobile checks used a browser viewport, not a physical device.
+
+The subsequent [instruction audit](guide-instruction-audit-2026-10-13.md) documents refined wording, authored control guidance and updated verification.
