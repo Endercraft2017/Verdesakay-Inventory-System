@@ -40,7 +40,6 @@ App.register('templates', async (view) => {
       </header>
       <div class="tpl-library-toolbar">
         <div class="tpl-library-count"><span id="tpl-count">—</span> templates</div>
-        <label class="tpl-period-label"><span>Period</span><select id="tpl-period-filter" title="Filter by accounting period"><option value="">All periods</option></select></label>
         <div class="grow"></div>
         ${admin ? `<button class="btn secondary" id="tpl-defaults">${UI.icon('file')} Built-in defaults</button><button class="btn secondary" id="tpl-vars">${UI.icon('settings')} Variables</button>` : ''}
         <button class="btn secondary" id="tpl-company">${UI.icon('building')} Company profile</button>
@@ -50,22 +49,14 @@ App.register('templates', async (view) => {
     </section>`;
 
   const tableEl = view.querySelector('#tpl-table');
-  const periodFilter = view.querySelector('#tpl-period-filter');
   let fullList = [];
 
   async function load() {
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     fullList = await API.get('/templates');
     view.querySelector('#tpl-count').textContent = fullList.length;
-    // Populate period filter from unique periods in the list.
-    const periods = [...new Set(fullList.map((t) => t.period || '').filter(Boolean))].sort((a, b) => b.localeCompare(a));
-    const cur = periodFilter.value;
-    periodFilter.innerHTML = '<option value="">All periods</option>' + periods.map((p) => `<option value="${UI.esc(p)}" ${p === cur ? 'selected' : ''}>${UI.esc(p)}</option>`).join('');
-    render(periodFilter.value ? fullList.filter((t) => t.period === periodFilter.value) : fullList);
+    render(fullList);
   }
-  periodFilter.addEventListener('change', () => {
-    render(periodFilter.value ? fullList.filter((t) => t.period === periodFilter.value) : fullList);
-  });
 
   function render(list) {
     if (!list.length) {
