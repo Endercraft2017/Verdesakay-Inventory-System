@@ -1,5 +1,7 @@
 # Inventory and production: mobile integration gaps
 
+**Sharing status:** The `handoff/mobile-production-kit-2026-10-14` GitHub branch contains this document only. The backend and desktop changes described below are committed locally on `restructure/module-architecture` but have not been pushed to GitHub. Coordinate against those changes before implementing or testing API-dependent mobile work.
+
 ## Production kit: mobile handoff (approval → pick → release → lead acceptance)
 
 **Owner:** mobile developer. **Checked against code:** 2026-10-14 on `restructure/module-architecture`. **Status:** handoff documented; mobile fixes remain open. Desktop supports partial picks and corrections. No `public/mobile/` files were changed.
