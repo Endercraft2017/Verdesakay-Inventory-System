@@ -38,11 +38,16 @@ callers only ever use indirectly through `DocEditor.open()`.
   `<style data-docpage>` page-setup tag).
 - `getVariables()` → `[{ category, label, token|key }]` — variable catalog for the
   Insert-Variable picker, the formula builder's field list, and `{{` autocomplete.
+- `getTemplateId()` → the current saved template ID (or null for a draft). Enables
+  **Linked forms** for accounts with form-management permissions. The dialog links
+  existing forms, assigns default print layouts, and unlinks without deleting the
+  template, using the existing scoped form APIs. Drafts offer **Save template and
+  continue**. Fields from linked forms join the Insert → Field catalog automatically when opening a saved template and after changing links. Form links apply immediately; document edits still require saving.
 - `sampleContext` — a context object used to live-evaluate formulas in the formula
   builder's preview and to drive `renderPreview`.
 - `renderPreview(body)` → HTML string — used by the movable preview panel; if omitted, the
   preview shows `<p>No preview</p>`.
-- `onManageVars({ refresh })` — if provided, shows a `⚙` button in the top bar; clicking it
+- `onManageVars({ refresh })` — if provided, shows **Manage fields** in Insert; clicking it
   hands control to the caller (e.g. opens a "manage variables" modal), and the editor
   expects the caller to call `refresh()` when done so the live preview updates.
 - The top bar also has an always-present `?` button (`[data-help]`) → `docEditorHelpDialog()`,
@@ -98,6 +103,11 @@ callers only ever use indirectly through `DocEditor.open()`.
 ## Internal structure
 
 ### 1. Body ↔ canvas conversion
+- Field chips support click to select, double-click or Enter to change the field
+  or edit a formula, and formatting/deletion through the normal editor controls.
+  Replacing a chip preserves its inline styling and participates in undo/redo; locked
+  and tracked content remains protected. Repetition/condition tokens explain their
+  purpose and direct users to Source for paired edits.
 - **`tokenChip(token)`** — builds one `<span class="doc-chip ...">` for a `{{token}}`.
   Control tokens (`#items`, `/items`, …) get `doc-chip-ctrl`; formula tokens (`=expr`) get
   `doc-chip-fx` and have their `=` sigil stripped from the *displayed* text (the sigil is

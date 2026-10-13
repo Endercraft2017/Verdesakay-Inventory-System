@@ -468,6 +468,7 @@ App.register('form-builder', async (view, filter) => {
     const custom=await API.get('/templates/variables'+(tpl.id?'?template_id='+tpl.id:''));
     const sample = applyVariables(sampleContextFor(form),custom);
     window.DocEditor.open({
+      getTemplateId: () => savedId,
       sharedStudio: true,
       getSavedRevision: () => tpl.revision,
       onSharedRevision: revision => { tpl.revision=revision; },

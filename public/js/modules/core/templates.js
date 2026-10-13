@@ -34,9 +34,9 @@ App.register('templates', async (view) => {
 
   view.innerHTML = `
     <section class="tpl-library">
-      <header class="tpl-library-header">
+      <header class="tpl-library-header" data-page-header>
         <div><span class="tpl-eyebrow">DOCUMENTS</span><h2>Template library</h2><p>Design consistent documents for your everyday work.</p></div>
-        ${admin ? `<button class="btn" id="tpl-new">${UI.icon('plus')} Create template</button>` : ''}
+        <div class="tpl-library-actions" data-page-actions>${admin ? `<button class="btn" id="tpl-new">${UI.icon('plus')} Create template</button>` : ''}</div>
       </header>
       <div class="tpl-library-toolbar">
         <div class="tpl-library-count"><span id="tpl-count">—</span> templates</div>
@@ -423,6 +423,7 @@ App.register('templates', async (view) => {
     const reloadVars = async () => { custom = await API.get(varsUrl); vars = buildVarList(catalog, custom); };
 
     window.DocEditor.open({
+      getTemplateId: () => savedId,
       sharedStudio: true,
       getSavedRevision: () => savedRevision,
       onSharedRevision: revision => { savedRevision=revision; },

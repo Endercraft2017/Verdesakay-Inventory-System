@@ -26,7 +26,7 @@ function tokenChip(token) {
   const isFormula = t[0] === '=';
   const cls = 'doc-chip' + (isCtrl ? ' doc-chip-ctrl' : '') + (isFormula ? ' doc-chip-fx' : '');
   const shown = isFormula ? t.replace(/^=\s*/, '') : t; // type marker is added via CSS ::before
-  return `<span class="${cls}" data-token="${escAttr(t)}" contenteditable="false">${escAttr(shown)}</span>`;
+  return `<span class="${cls}" data-token="${escAttr(t)}" contenteditable="false" tabindex="0" role="button" title="${isCtrl ? 'Template control — edit in Source' : 'Click to select; double-click or press Enter to edit'}" aria-label="${escAttr((isFormula?'Edit formula: ':isCtrl?'Template control: ':'Change field: ')+shown)}">${escAttr(shown)}</span>`;
 }
 
 // Neutral placeholder shown in the editor canvas for an <img src="{{var}}">, since the real
@@ -171,6 +171,7 @@ function createDocCommandRegistry(context) {
   });
   definitions.set('format.size', {run:value=>context.size(value)});
   definitions.set('edit.deleteAtomic', {run:target=>context.deleteAtomic(target)});
+  definitions.set('edit.replaceField', {run:value=>context.replaceField(value)});
   definitions.set('edit.undo', {run:()=>context.undo(),history:true,enabled:()=>context.canUndo?.() ?? true});
   definitions.set('edit.redo', {run:()=>context.redo(),history:true,enabled:()=>context.canRedo?.() ?? true});
   function state(id) {
@@ -575,6 +576,7 @@ function ensureStyles() {
     .doc-page img{max-width:100%}
     .doc-chip{display:inline-block;background:#f0f5fb;color:#45678e;border:1px solid #d2dfed;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;font-family:Consolas,ui-monospace,monospace;white-space:nowrap;line-height:1.5}
     [data-doc-run="inline"]>.doc-chip{font-size:inherit;font-weight:inherit;font-style:inherit;font-family:inherit;color:inherit}
+    .doc-chip[role="button"]{cursor:pointer}.doc-chip:focus-visible{outline:2px solid var(--accent,#2b7fff);outline-offset:2px}
     .doc-chip-ctrl{background:#f0e6ff;color:#7a3cff;border-color:#cbb3ff}
     .doc-chip-fx{background:#eafaf0;color:#15803d;border-color:#86d3a6}
     .doc-chip::before{content:'{ }';font-size:9px;font-weight:800;opacity:.55;margin-right:5px;letter-spacing:-1px}
@@ -828,7 +830,7 @@ function insertPanelHTML() {
   const text = groupHTML('Text', tile('ins', 'checkbox', '☐', 'Checkbox') + tile('ins', 'hr', '―', 'Line')
     + tile('ins', 'pagebreak', '⤓', 'Page Break') + tile('ins', 'textbox', '▭', 'Text Box') + tile('ins', 'signature', '✒', 'Signature Line'));
   const symbols = groupHTML('Symbols', tile('ins', 'symbol', 'Ω', 'Symbol'));
-  const template = groupHTML('Template', tile('ins', 'variable', '{ }', 'Field', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Formula', 'btn-fx'));
+  const template = groupHTML('Template', tile('ins', 'variable', '{ }', 'Field', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Formula', 'btn-fx') + `<button type="button" data-managevars title="Create, rename or remove template fields">${docIcon('variable')}Manage fields</button>`);
   return illustrations + shapes + tables + links + text + symbols + template;
 }
 
@@ -1095,17 +1097,17 @@ function docEditorHelpDialog() {
 
   const PANES = {
     basics: lead('It behaves like a normal document — type, format, and drop in tables or pictures.')
-      + bullet('Use <b>Edit</b> to work on the document and <b>Print preview</b> to check measured sheets. Advanced source editing is under <b>More → HTML / CSS source</b>.', SHOT_MODES)
-      + bullet(`${kbd('Ctrl')}+${kbd('S')} saves. ${kbd('Ctrl')}+${kbd('Z')} / ${kbd('Ctrl')}+${kbd('Y')} undo and redo <i>everything</i> — text, tables, moved objects.`)
+      + bullet('Use <b>Edit</b> to work on the document and <b>Print preview</b> to check measured sheets. Advanced source editing is under <b>Source → Edit HTML / CSS</b>.', SHOT_MODES)
+      + bullet(`By default, ${kbd('Ctrl')} / ${kbd('⌘')}+${kbd('S')} saves. Customize Save, Find and Preview shortcuts in <b>Settings</b>. ${kbd('Ctrl')} / ${kbd('⌘')}+${kbd('Z')} undoes document edits.`)
       + bullet('<b>Preview data</b> in the top bar opens a movable preview filled with realistic sample data.')
-      + bullet('Open <b>Fields</b> on the left for template data. <b>More → Editor guide</b> opens this guide.')
+      + bullet('Open <b>Fields</b> on the left for template data. <b>Guide in the top bar</b> opens this guide.')
       + note('Nothing on the page is “live” — variables and formulas only turn into real values when the document is printed.'),
 
     variables: lead('A variable is a blank the system fills in at print time — a name, a number, a date.')
       + step(1, 'Open <b>Insert</b> → <b>Field</b> — or just type <code>{{ }}</code> right on the page.')
       + step(2, "Pick a field: company name, order number, customer, today's date…")
       + step(3, 'It drops in as a blue pill. On the printed page it becomes the real value.', SHOT_VARFLOW)
-      + bullet('Want your own? <b>More → Manage fields</b> — a fixed value, a bound field, or a saved formula.')
+      + bullet('Want your own? <b>Insert → Manage fields</b> — a fixed value, a bound field, or a saved formula.')
       + bullet('Hide a block when its value is empty: <code>{{#if order.notes}} … {{/if}}</code> (HTML&nbsp;/&nbsp;CSS mode).'),
 
     repeat: lead('One table row can print once for every line item — 3 of them, or 300.')
@@ -1429,6 +1431,11 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       if(window.DocModel){if(window.getSelection()?.isCollapsed)return setPending('font-size',size+'pt');const result=window.DocModel.formatSelection(surface,window.getSelection(),'font-size',size+'pt');if(result!==null)return result;}
       if(document.execCommand('fontSize',false,'7')===false)return false;
       surface.querySelectorAll('font[size="7"]').forEach(f=>{f.removeAttribute('size');f.style.fontSize=size+'pt';});
+    },
+    replaceField:({target,html})=>{
+      if(!surface.contains(target)||!target.matches('.doc-chip')||target.closest('[data-doc-locked="true"],del[data-doc-change]')||trackingText())return false;
+      const box=document.createElement('div');box.innerHTML=html;const replacement=box.querySelector('.doc-chip');if(!replacement)return false;
+      replacement.style.cssText=target.style.cssText;clearPending();target.replaceWith(replacement);const range=document.createRange();range.selectNode(replacement);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);
     },
     deleteAtomic:target=>{
       if(!surface.contains(target) || !target.matches?.('.doc-chip,.doc-checkbox') || target.closest('[data-doc-locked="true"],del[data-doc-change]'))return false;
@@ -1804,6 +1811,19 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   });
   surface.addEventListener('input', onChange);
   surface.addEventListener('click',e=>{const chip=e.target.closest?.('.doc-chip');if(!chip||chip.closest('[data-doc-locked="true"],del[data-doc-change]'))return;const r=document.createRange();r.selectNode(chip);surface.focus();const sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);saveSel();reflect();});
+
+  function editChip(chip) {
+    if(!chip || chip.closest('[data-doc-locked="true"],del[data-doc-change]'))return;
+    if(trackingText()){UI.toast('Turn tracking off to change a field token','error');return;}
+    const token=chip.dataset.token;
+    if(/^[#/]/.test(token)){UI.modal({title:'Template control',cancelText:'Close',bodyHTML:`<p>This token controls repeated rows or conditional content: <code>${escAttr(token)}</code>.</p><p>Edit matching opening and closing controls together in Source → Edit HTML / CSS.</p>`});return;}
+    const range=document.createRange();range.selectNode(chip);surface.focus();const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);saveSel();
+    const replace=html=>commands.run('edit.replaceField',{target:chip,html});
+    if(token.startsWith('='))formulaDialog(replace,saveSel,getVariables,token.replace(/^=\s*/,''),sampleContext,editorModal);
+    else variableDialog(saveSel,getVariables,tok=>replace(tokenChip(tok.replace(/^\{\{|\}\}$/g,''))),{title:'Change field',modal:editorModal});
+  }
+  surface.addEventListener('dblclick',e=>{const chip=e.target.closest?.('.doc-chip');if(chip){e.preventDefault();editChip(chip);}});
+  surface.addEventListener('keydown',e=>{if(e.key==='Enter' && e.target.matches?.('.doc-chip')){e.preventDefault();editChip(e.target);}});
 
   // Toolbar and keyboard share command enabled/active state.
   const reflect = () => {
@@ -2891,17 +2911,15 @@ function open(opts = {}) {
       <div class="doc-fs-bar-actions">
         <span class="doc-save-status" role="status" aria-live="polite">No unsaved changes</span>
         <button type="button" class="btn secondary" data-file title="Import and export document" aria-label="Import and export document">${docIcon('document')}<span>File</span></button>
+        <button type="button" class="btn secondary" data-linked-forms title="Connect this template to forms and choose default print layouts" aria-haspopup="dialog">${docIcon('shared')}<span>Linked forms</span></button>
         <button type="button" class="btn secondary" data-preview title="Preview document">${docIcon('preview')}<span>Preview data</span></button>
-        <button type="button" class="btn secondary" data-details aria-expanded="false" aria-controls="doc-document-settings">${docIcon('settings')}<span>Settings</span></button>
+        <button type="button" class="btn secondary" data-details title="Editor preferences and keyboard shortcuts" aria-haspopup="dialog">${docIcon('settings')}<span>Settings</span></button>
         <button type="button" class="btn secondary" data-tools aria-expanded="false">Inspector</button>
-        <details class="doc-more-menu"><summary title="Advanced editor tools" aria-label="Advanced editor tools">Advanced ${docIcon('settings')}</summary><div class="doc-more-popover"><button type="button" data-find-launch>${docIcon('search')}Find and replace</button><button type="button" data-mode="code">HTML / CSS source</button>
-        <button type="button" class="btn secondary doc-icon-button" data-managevars title="Manage variables" aria-label="Manage variables">${docIcon('settings')}</button>
-        <button type="button" class="btn secondary doc-icon-button" data-help title="Editor guide" aria-label="Editor guide">${docIcon('help')}</button>
-        </div></details><button type="button" class="btn" data-save>${docIcon('save')}<span>Save template</span></button>
+        <details class="doc-more-menu"><summary title="Edit template HTML and CSS" aria-label="Template source tools">Source ${docIcon('document')}</summary><div class="doc-more-popover"><p class="muted" style="margin:6px 10px;line-height:1.5">Edit the template markup and styles directly. Changes also appear in Edit mode.</p><button type="button" data-mode="code">${docIcon('document')}Edit HTML / CSS</button></div></details><button type="button" class="btn secondary" data-help title="Editing, fields, layout and printing instructions">${docIcon('help')}<span>Guide</span></button><button type="button" class="btn" data-save>${docIcon('save')}<span>Save template</span></button>
         <button type="button" class="btn secondary doc-icon-button" data-close title="Close editor (Esc)" aria-label="Close editor">${docIcon('close')}</button>
       </div>
     </header>
-    <div class="doc-details" id="doc-document-settings">
+    <div class="doc-details" id="doc-document-settings" hidden>
       <span class="doc-settings-caption">Document settings</span>
       <label class="doc-secondary-details"><span>Document type</span><select class="doc-fs-type doc-fs-type-top">${typeOptions.map((t) => `<option value="${escAttr(t)}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${escAttr(t.charAt(0).toUpperCase() + t.slice(1))}</option>`).join('')}</select></label>
       ${opts.periodLabel ? `<label class="doc-secondary-details"><span>${escAttr(opts.periodLabel)}</span><input class="doc-fs-period" placeholder="e.g. October 2026" value="${escAttr(opts.period || '')}"></label>` : ''}
@@ -2920,7 +2938,7 @@ function open(opts = {}) {
   fs.querySelector('.doc-format-extra').addEventListener('toggle',e=>{if(!e.target.open)return;const rect=e.target.getBoundingClientRect(),popover=e.target.querySelector('.doc-format-popover');popover.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-190))+'px';popover.style.top=rect.bottom+6+'px';});
   fs.addEventListener('pointerdown',e=>{if(!e.target.closest('.doc-more-menu,.doc-format-extra'))fs.querySelectorAll('.doc-more-menu[open],.doc-format-extra[open]').forEach(menu=>menu.open=false);});
   fs.addEventListener('click',e=>{const menu=e.target.closest('.doc-more-menu,.doc-format-extra');if(menu&&e.target.closest('button'))menu.open=false;});
-  fs.querySelector('[data-details]').addEventListener('click',e=>{e.preventDefault();const expanded=fs.querySelector('.doc-details').classList.toggle('details-expanded');e.currentTarget.setAttribute('aria-expanded',String(expanded));});
+
   const tabsEl = fs.querySelector('.doc-tabs');
   const panels = {
     home: fs.querySelector('[data-panel="home"]'),
@@ -2957,6 +2975,32 @@ function open(opts = {}) {
   const typeSel = fs.querySelector('.doc-fs-type');
   const periodInp = fs.querySelector('.doc-fs-period');
   let mode = 'visual';
+  const preferenceKey = 'doc-editor-preferences-v1';
+  const preferenceDefaults = { spellcheck: true, wheelZoom: true, compactRibbon: false, save: 's', find: 'f', preview: 'shift+p' };
+  let preferences = { ...preferenceDefaults };
+  try { const saved = JSON.parse(localStorage.getItem(preferenceKey) || '{}');
+    for (const key of ['spellcheck','wheelZoom','compactRibbon']) if(typeof saved[key]==='boolean') preferences[key]=saved[key];
+    for (const key of ['save','find','preview']) if(['s','f','shift+s','shift+f','shift+p','shift+k','off'].includes(saved[key])) preferences[key]=saved[key];
+  } catch { /* Defaults work when browser storage is unavailable. */ }
+  function applyPreferences() { surface.spellcheck=preferences.spellcheck; setRibbonCollapsed(preferences.compactRibbon);
+    fs.querySelector('[data-save]').title = shortcutLabel(preferences.save);
+    fs.querySelector('.doc-workspace-hint').textContent = 'Select an object to move or resize · Save: '+shortcutLabel(preferences.save);
+  }
+  function shortcutLabel(value) { return value==='off'?'Button only':'Ctrl / ⌘ + '+value.split('+').map(k=>k==='shift'?'Shift':k.toUpperCase()).join(' + '); }
+  function openDocumentDetails() { UI.modal({title:'Document details',confirmText:'Apply',bodyHTML:`<label>Document type<select data-detail-type>${typeOptions.map(t=>`<option value="${escAttr(t)}" ${typeSel.value===t?'selected':''}>${escAttr(t.charAt(0).toUpperCase()+t.slice(1))}</option>`).join('')}</select></label>${periodInp?`<label>${escAttr(opts.periodLabel)}<input data-detail-period value="${escAttr(periodInp.value)}"></label>`:''}<p class="muted">These values are saved with this template. Page size, margins and print layout are in the Layout tab.</p>`,onConfirm:ov=>{typeSel.value=ov.querySelector('[data-detail-type]').value;typeSel.dispatchEvent(new Event('change',{bubbles:true}));if(periodInp){periodInp.value=ov.querySelector('[data-detail-period]').value;periodInp.dispatchEvent(new Event('input',{bubbles:true}));}}}); }
+  document.addEventListener('click', onDocumentDetails);
+  function onDocumentDetails(e) { if(fs.isConnected && e.target.closest('[data-document-details]')) openDocumentDetails(); }
+  fs.querySelector('[data-details]').addEventListener('click',()=>{
+    const shortcuts = ['s','f','shift+s','shift+f','shift+p','shift+k','off'];
+    const body = `<p class="muted">Preferences apply to this browser across templates. Document details are under File; page and print settings are under Layout.</p><h3>Editing and workspace</h3>`+[['spellcheck','Check spelling'],['wheelZoom','Ctrl / ⌘ + scroll zooms the page'],['compactRibbon','Start with the ribbon collapsed']].map(([key,label])=>`<label><input type="checkbox" data-pref="${key}" ${preferences[key]?'checked':''}> ${label}</label>`).join('')+`<h3>Keyboard shortcuts</h3><p class="muted">Choose distinct shortcuts. Ctrl on Windows / Linux, ⌘ on Mac. Button only disables that shortcut.</p>`+[['save','Save template'],['find','Find and replace'],['preview','Preview data']].map(([key,label])=>`<label>${label}<select data-pref="${key}">${shortcuts.map(v=>`<option value="${v}" ${preferences[key]===v?'selected':''}>${shortcutLabel(v)}</option>`).join('')}</select></label>`).join('')+`<p class="muted">Standard shortcuts: Ctrl / ⌘ B, I, U for formatting; Z to undo; Shift Z or Y to redo; +, − and 0 for zoom. Escape closes the active tool first.</p><button type="button" class="btn secondary" data-reset-preferences>Restore defaults</button>`;
+    const modal=UI.modal({title:'Editor settings',confirmText:'Apply',bodyHTML:body,onConfirm:(ov,showErr)=>{
+      const next={}; for(const key of Object.keys(preferenceDefaults)){const el=ov.querySelector('[data-pref="'+key+'"]');next[key]=el.type==='checkbox'?el.checked:el.value;}
+      const keys=[next.save,next.find,next.preview].filter(v=>v!=='off');if(new Set(keys).size!==keys.length){showErr('Choose a different shortcut for each action.');return false;}
+      preferences=next;applyPreferences();try{localStorage.setItem(preferenceKey,JSON.stringify(preferences));}catch{UI.toast('Preferences applied for this session. Browser storage is unavailable.');}
+    }});
+    modal.overlay.querySelector('[data-reset-preferences]').onclick=()=>{for(const [key,value] of Object.entries(preferenceDefaults)){const el=modal.overlay.querySelector('[data-pref="'+key+'"]');if(el.type==='checkbox')el.checked=value;else el.value=value;}};
+  });
+
 
   // Canvas zoom — the page is CSS-scaled; `.doc-zoom` is a real-px sizer so scrollbars stay right.
   // Declared here (a getter, not the value) so wireToolbar's drag/snap code can read it live.
@@ -3010,6 +3054,61 @@ function open(opts = {}) {
     }); } catch (err) { cmEditor = null; UI.toast('Code editor failed to initialize. Your document is preserved.', 'error'); }
     return cmEditor;
   }
+
+  let linkedFormVariables = [];
+  const originalVariables = opts.getVariables;
+  opts.getVariables = () => { const existing=originalVariables?.() || [];return [...existing,...linkedFormVariables.filter(v=>!existing.some(item=>item.token===v.token))]; };
+  const linkedFormsButton = fs.querySelector('[data-linked-forms]');
+  const formScopes = ['hr','inventory','production','accounting'];
+  const canManageForm = form => form.scope ? App.hasPermission('forms.manage.'+form.scope) : formScopes.every(scope=>App.hasPermission('forms.manage.'+scope));
+  linkedFormsButton.hidden = !opts.getTemplateId || typeof App === 'undefined' || !formScopes.some(scope=>App.hasPermission('forms.manage.'+scope));
+  if(linkedFormsButton.hidden)linkedFormsButton.style.display='none';
+  linkedFormsButton.addEventListener('click',openLinkedForms);
+  async function loadLinkedFormCatalog() {
+    const templateId=opts.getTemplateId?.();
+    if(!templateId || linkedFormsButton.hidden)return [];
+    const available=(await API.get('/form-definitions')).filter(canManageForm);
+    const forms=await Promise.all(available.map(async form=>({...form,layouts:await API.get('/form-definitions/'+form.id+'/templates')})));
+    const linked=forms.filter(form=>form.layouts.some(t=>Number(t.id)===Number(templateId)));
+    linkedFormVariables=linked.flatMap(form=>(form.fields||[]).map(field=>({category:'Form: '+form.name,label:field.label||field.key,token:'{{'+field.key+'}}'})));
+    return forms;
+  }
+  function refreshLinkedFormCatalog(){return loadLinkedFormCatalog().catch(error=>{if(fs.isConnected)UI.toast('Could not load linked form fields: '+error.message,'error');});}
+  async function openLinkedForms() {
+    const templateId = opts.getTemplateId?.();
+    if (!templateId) {
+      const dialog=UI.modal({title:'Linked forms',cancelText:'Close',bodyHTML:'<p>Save this template before linking it to a form.</p><button type="button" class="btn" data-save-link>Save template and continue</button>'});
+      dialog.overlay.querySelector('[data-save-link]').onclick=async e=>{e.currentTarget.disabled=true;try{const saved=await saveTemplate({currentTarget:fs.querySelector('[data-save]')});if(saved && opts.getTemplateId?.() && fs.isConnected){dialog.close();await openLinkedForms();}}finally{if(dialog.overlay.isConnected)dialog.overlay.querySelector('[data-save-link]').disabled=false;}};
+      return;
+    }
+    const dialog=UI.modal({title:'Linked forms',size:'lg',cancelText:'Close',bodyHTML:'<div data-form-links role="status">Loading forms…</div>'});
+    const container=dialog.overlay.querySelector('[data-form-links]');
+    let forms=[];
+    async function render() {
+      forms=await loadLinkedFormCatalog();
+      if(!dialog.overlay.isConnected)return;
+      const linked=forms.filter(form=>form.layouts.some(t=>Number(t.id)===Number(templateId)));
+      linkedFormVariables=linked.flatMap(form=>(form.fields||[]).map(field=>({category:'Form: '+form.name,label:field.label||field.key,token:'{{'+field.key+'}}'})));
+      const unlinked=forms.filter(form=>!linked.includes(form));
+      container.innerHTML=`<p>Link this template to forms you manage. Each form can have several print layouts and one default.</p><p class="muted">Links apply immediately. Save template edits to update the printed content for every linked form. Use Insert → Field to insert fields from linked forms. Match field keys before printing; linking does not rewrite existing fields.</p>${unlinked.length?`<label>Form<select data-link-form><option value="">Choose a form…</option>${unlinked.map(f=>`<option value="${f.id}">${escAttr(f.name)} (${escAttr(f.scope||'General')})</option>`).join('')}</select></label><label><input type="checkbox" data-link-default> Use as this form's default print layout</label><button type="button" class="btn" data-link-form-action>Link form</button>`:''}<h3>Currently linked</h3>${linked.length?`<table><thead><tr><th>Form</th><th>Print layout</th><th>Actions</th></tr></thead><tbody>${linked.map(f=>{const current=f.layouts.find(t=>Number(t.id)===Number(templateId));return `<tr><td>${escAttr(f.name)}<div class="muted">${escAttr(f.scope||'General')}</div></td><td>${current.is_default?'Default':'Alternative'}</td><td>${current.is_default?'':`<button type="button" class="btn secondary small" data-link-make-default="${f.id}">Make default</button>`}<button type="button" class="btn secondary small" data-link-unlink="${f.id}">Unlink</button></td></tr>`;}).join('')}</tbody></table>`:'<p>This template is not linked to any forms you manage.</p>'}${!forms.length?'<p>No forms are available. Create a form in Form Builder first.</p>':''}<div data-links-error role="alert" class="form-error hidden"></div>`;
+    }
+    function showError(error){let box=container.querySelector('[data-links-error]');if(!box){container.innerHTML='<p>Could not load form links.</p><div data-links-error role="alert"></div><button type="button" class="btn secondary" data-links-retry>Retry</button>';box=container.querySelector('[data-links-error]');}box.classList.remove('hidden');box.textContent=error.message||'Could not update form links';}
+    let busy=false;
+    container.addEventListener('click',async e=>{
+      const button=e.target.closest('button');if(!button||busy)return;
+      if(button.hasAttribute('data-link-unlink') && !await UI.confirmDialog('Unlink this template from the form? The template remains saved. If it is the default, another linked layout becomes the default when available.','Unlink'))return;
+      busy=true;container.querySelectorAll('button,input,select').forEach(el=>el.disabled=true);
+      try {
+        if(button.hasAttribute('data-link-form-action')){const id=Number(container.querySelector('[data-link-form]').value);if(!id)throw new Error('Choose a form first.');await API.post('/form-definitions/'+id+'/templates',{template_id:Number(templateId),make_default:container.querySelector('[data-link-default]').checked});}
+        else if(button.dataset.linkMakeDefault)await API.put('/form-definitions/'+button.dataset.linkMakeDefault+'/template',{template_id:Number(templateId)});
+        else if(button.dataset.linkUnlink)await API.del('/form-definitions/'+button.dataset.linkUnlink+'/templates/'+templateId);
+        await render();
+        if(dialog.overlay.isConnected && !button.hasAttribute('data-links-retry'))UI.toast('Form links updated');
+      }catch(error){if(dialog.overlay.isConnected)showError(error);}finally{busy=false;container.querySelectorAll('button,input,select').forEach(el=>el.disabled=false);}
+    });
+    try{await render();}catch(error){if(dialog.overlay.isConnected)showError(error);}
+  }
+
   const getCode = () => (cmEditor ? cmEditor.getValue() : '');
   const setCode = (text) => { const ed = ensureCodeEditor(); if (!ed) return false; settingCode = true; try { ed.setValue(text || ''); return true; } catch { UI.toast('Could not open code mode. Your document is preserved.', 'error'); return false; } finally { settingCode = false; } };
 
@@ -3019,7 +3118,7 @@ function open(opts = {}) {
     const identity=()=>opts.getDocumentKey?.()||opts.documentKey||'new-template:export';
     const endpoint=suffix=>'/templates/studio/documents/'+encodeURIComponent(identity())+'/'+suffix;
     UI.modal({title:'Import and export',size:'lg',cancelText:'Close',confirmText:'Apply import',bodyHTML:`
-      <h3>Export current document</h3><p class="muted">Exports include unsaved content. Word exports document content; print-grid settings remain in this template.</p><label>Export content<select data-export-content><option value="template">Editable template fields</option><option value="preview">Current preview data</option></select></label>
+      <button type="button" class="btn secondary" data-document-details>Document details</button><p class="muted">Set document type and accounting period. Page size and print layout are in Layout.</p><hr><h3>Export current document</h3><p class="muted">Exports include unsaved content. Word exports document content; print-grid settings remain in this template.</p><label>Export content<select data-export-content><option value="template">Editable template fields</option><option value="preview">Current preview data</option></select></label>
       <div class="field-row"><button type="button" class="btn secondary" data-export-word>Word (.docx)</button><button type="button" class="btn secondary" data-export-html>HTML document</button><button type="button" class="btn secondary" data-export-pdf>Print / PDF preview</button></div>
       <div data-export-result role="status"></div><hr><h3>Import a Word document</h3><label>DOCX file (up to 8 MB)<input data-import-file type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label>
       <label>Import mode<select data-import-mode><option value="append">Append to this document</option><option value="replace">Replace document content</option></select></label>
@@ -3324,7 +3423,7 @@ function open(opts = {}) {
   fs.querySelectorAll('[data-zoom]').forEach((b) =>
     b.addEventListener('click', () => {if(b.dataset.zoom==='fit'){zoomMode='fit';applyZoom();syncZoomSel();}else setZoom(ladderStep(b.dataset.zoom === 'in' ? 1 : -1));}));
   canvas.addEventListener('wheel', (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
+    if (!preferences.wheelZoom || !(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     const prev = currentZoom;
     const next = ladderStep(e.deltaY < 0 ? 1 : -1);
@@ -3468,7 +3567,7 @@ function open(opts = {}) {
     findBar.querySelector('.doc-find-q').focus();
   }
   fs.querySelector('[data-find]').addEventListener('click', toggleFind);
-  fs.querySelector('[data-find-launch]').addEventListener('click',toggleFind);
+
   fs.querySelectorAll('[data-preview]').forEach((b) => b.addEventListener('click', togglePreview));
   fs.querySelectorAll('[data-help]').forEach(button=>button.addEventListener('click',docEditorHelpDialog));
   const mvBtn = fs.querySelector('[data-managevars]');
@@ -3481,7 +3580,7 @@ function open(opts = {}) {
     if(next==='pages'){
       if(mode==='code')setMode('visual');
       if(!pageView){pageView=document.createElement('div');pageView.className='doc-pageview';pageView.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column';pageView.innerHTML='<div style="padding:10px;background:var(--surface,#fff);font-size:12px" data-pages-status>Measuring pages…</div><iframe title="Measured document pages" sandbox="allow-same-origin allow-modals" style="flex:1;width:100%;border:0;background:#eef0f3"></iframe>';canvas.after(pageView);}
-      pageView.style.display='flex';canvas.parentElement.style.display='';canvas.style.display='none';tabsEl.style.display='none';Object.values(panels).forEach(p=>p.style.display='none');mode='pages';fs.dataset.editorMode='pages';fs.querySelector('[data-find-launch]').disabled=true;fs.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===next));refreshPreview();return;
+      pageView.style.display='flex';canvas.parentElement.style.display='';canvas.style.display='none';tabsEl.style.display='none';Object.values(panels).forEach(p=>p.style.display='none');mode='pages';fs.dataset.editorMode='pages';fs.querySelector('[data-find]').disabled=true;fs.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===next));refreshPreview();return;
     }
     if(pageView){pageView.remove();pageView=null;}
 
@@ -3500,7 +3599,7 @@ function open(opts = {}) {
       applyZoom(); // content height may have changed → resize the zoom sizer
       if (history) history.record(); // the code-mode result becomes an undo step
     }
-    mode = next;fs.dataset.editorMode=next;fs.querySelector('[data-find-launch]').disabled=next!=='visual';
+    mode = next;fs.dataset.editorMode=next;fs.querySelector('[data-find]').disabled=next!=='visual';
     fs.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === next));
     refreshPreview();
   }
@@ -3523,6 +3622,7 @@ function open(opts = {}) {
     if (roRaf) cancelAnimationFrame(roRaf);
     fs.remove();
     document.removeEventListener('keydown', onKey);
+    document.removeEventListener('click', onDocumentDetails);
   }
   const onKey = (e) => {
     if(pageResize&&e.key==='Escape'){e.preventDefault();finishPageResize(true);return;}
@@ -3550,16 +3650,21 @@ function open(opts = {}) {
       if (mode === 'visual' && !e.defaultPrevented) { e.preventDefault(); wired.commands.run('edit.redo'); }
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); fs.querySelector('[data-save]').click(); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && mode==='visual' && !e.defaultPrevented) { e.preventDefault(); toggleFind(); }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.defaultPrevented) {
+      const chord=(e.shiftKey?'shift+':'')+k;
+      if(chord===preferences.save){e.preventDefault();fs.querySelector('[data-save]').click();return;}
+      if(chord===preferences.find && mode==='visual'){e.preventDefault();toggleFind();return;}
+      if(chord===preferences.preview){e.preventDefault();togglePreview();return;}
+    }
     if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=')) { e.preventDefault(); setZoom(ladderStep(1)); }
     else if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); setZoom(ladderStep(-1)); }
     else if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); setZoom(1); }
   };
+  applyPreferences();
   document.addEventListener('keydown', onKey);
   fs.querySelector('[data-close]').addEventListener('click', () => close());
 
-  fs.querySelector('[data-save]').addEventListener('click', async (e) => {
+  async function saveTemplate(e) {
     const btn = e.currentTarget;
     if (saving) return;
     if (shared) { saving=true;btn.disabled=true;try { await shared.prepareSave(); } catch(err) { shared.failed();UI.toast(err.message,'error');return; } finally { saving=false;btn.disabled=false; } }
@@ -3585,10 +3690,11 @@ function open(opts = {}) {
       if (![gapXmm,gapYmm].every(v=>Number.isFinite(v)&&v>=0&&v<=30)) throw new Error('Grid gaps must be between 0 and 30 mm');
       const res = opts.onSave ? await opts.onSave({ name: nameInp.value, type: typeSel.value, period: periodInp ? periodInp.value : undefined, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount, gapXmm, gapYmm, studioVersion: shared?.version }) : true;
       saving = false;
-      if (res === true || res === undefined) { const completedUnchanged=shared?await shared.saved(changeVersion===savedVersion):changeVersion===savedVersion; studio.saved(savedSnapshot, completedUnchanged); if (completedUnchanged) { dirty = false; setStatus('Saved'); studio.render(); } else { setStatus('Unsaved changes', 'dirty'); } }
+      if (res === true || res === undefined) { const completedUnchanged=shared?await shared.saved(changeVersion===savedVersion):changeVersion===savedVersion; studio.saved(savedSnapshot, completedUnchanged); if (completedUnchanged) { dirty = false; setStatus('Saved'); studio.render(); } else { setStatus('Unsaved changes', 'dirty'); } refreshLinkedFormCatalog();return true; }
       else if (typeof res === 'string') { setStatus('Save failed', 'error'); UI.toast(res, 'error'); }
     } catch (err) { setStatus('Save failed', 'error'); UI.toast(err.message, 'error'); } finally { shared?.failed();saving = false; btn.disabled = false; }
-  });
+  }
+  fs.querySelector('[data-save]').addEventListener('click', saveTemplate);
 
   function studioSnapshot() {
     return { body: pageStyleTag(currentPageMm().widthMm, currentPageMm().heightMm, Number(marginInp.value) || 0) + currentBody().replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,''), name: nameInp.value, type: typeSel.value, period: periodInp?.value || '', copiesPerRecord: Number(copiesInp.value), recordsPerPage: Number(perPageInp.value), tileFill: tileFillSel.value, continuous: continuousChk.checked, repeatCount: Number(repeatInp.value),gapXmm:Number(gapXInp.value),gapYmm:Number(gapYInp.value) };
@@ -3629,6 +3735,7 @@ function open(opts = {}) {
       insert:html=>{wired.insertHtml(bodyToEditorHtml(html));wired.normalizeFloats();}
     });studio.render();const sharedStatus=fs.querySelector('.doc-shared-status');if(sharedStatus)fs.querySelector('.doc-statusbar').append(sharedStatus);
   }
+  refreshLinkedFormCatalog();
   surface.focus();
   return { close, commands: wired.commands, _history: history }; // _history exposed for tests (undo/redo without waiting on the debounce)
 }

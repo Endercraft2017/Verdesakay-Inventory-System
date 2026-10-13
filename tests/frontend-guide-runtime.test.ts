@@ -91,3 +91,11 @@ it('hands a feature walkthrough to its actual controls only after explicit navig
 it('switches contextual guide depth without navigation or changing the underlying inputs',async()=>{
   const {dom,w,navigations}=await boot();const root=w.document.querySelector('#view');root.innerHTML='<h2>Example</h2><input aria-label="First"><input aria-label="Second"><input aria-label="Third"><input aria-label="Fourth"><input aria-label="Fifth">';root.querySelector('input').value='Draft';w.GuideCenter.start({root});let select=w.document.querySelector('[data-act=depth]');select.value='brief';select.dispatchEvent(new w.Event('change'));expect(w.document.querySelector('.guide-coach-count').textContent).toBe('1 / 3');select=w.document.querySelector('[data-act=depth]');select.value='detailed';select.dispatchEvent(new w.Event('change'));expect(w.document.querySelector('.guide-coach-count').textContent).toBe('1 / 5');expect(root.querySelector('input').value).toBe('Draft');expect(navigations).toEqual([]);dom.window.close();
 });
+
+it('places Guide in a custom page header without a separate spacer row',async()=>{
+ const {dom,w}=await boot();const view=w.document.querySelector('#view');view.innerHTML='<section><header data-page-header><h2>Library</h2><div data-page-actions><button>Create template</button></div></header></section>';await flush();expect(view.querySelector('.guide-screen-anchor')).toBeNull();expect(view.querySelector('[data-page-actions] [data-guide-open]')).not.toBeNull();dom.window.close();
+});
+
+it('does not duplicate an editor toolbar guide',async()=>{
+ const {dom,w}=await boot();const editor=w.document.createElement('div');editor.className='doc-fs';editor.innerHTML='<header class="doc-fs-bar"><button data-help>Guide</button></header>';w.document.body.append(editor);await flush();expect(editor.querySelector('[data-guide-open]')).toBeNull();expect(editor.querySelectorAll('[data-help]').length).toBe(1);dom.window.close();
+});

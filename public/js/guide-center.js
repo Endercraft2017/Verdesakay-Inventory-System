@@ -160,15 +160,15 @@
   function wireHeaders() {
     const view=document.querySelector('#view');
     const headers=[...document.querySelectorAll('.modal-head, .drawer-head, .doc-fs-bar')];
-    const screenHeader=view?.querySelector('.topbar');
-    if(screenHeader)headers.push(screenHeader);
+    const screenHeader=view?.querySelector('.topbar, [data-page-header]');
+    if(screenHeader){view.querySelector('.guide-screen-anchor')?.remove();headers.push(screenHeader);}
     else if(view && !view.querySelector('.guide-screen-anchor')) { const anchor=document.createElement('div');anchor.className='guide-screen-anchor';view.prepend(anchor);headers.push(anchor); }
     else if(view)headers.push(view.querySelector('.guide-screen-anchor'));
     headers.forEach(header => {
-      if (header.closest('[data-guide-off]') || header.querySelector('[data-guide-open]')) return;
+      if (header.closest('[data-guide-off]') || header.querySelector('[data-guide-open], [data-help]')) return;
       const button = document.createElement('button'); button.type='button'; button.className='btn secondary small guide-entry'; button.dataset.guideOpen=''; button.innerHTML=UI.icon('help',14)+' Guide'; button.title='Guides and shortcuts (Alt + Shift + G)';
       button.onclick=()=>start({root:header.closest('.modal-overlay,.drawer,.doc-fs') || document.querySelector('#view')});
-      const actions=header.querySelector('.modal-head-actions, .doc-fs-bar-actions, .tk-cutoff-actions'); if(actions)actions.prepend(button);else if(header.matches('.drawer-head'))header.insertBefore(button,header.querySelector('[data-close]'));else header.append(button);
+      const actions=header.querySelector('.modal-head-actions, .doc-fs-bar-actions, .tk-cutoff-actions, [data-page-actions]'); if(actions)actions.prepend(button);else if(header.matches('.drawer-head'))header.insertBefore(button,header.querySelector('[data-close]'));else header.append(button);
     });
   }
   function init() {

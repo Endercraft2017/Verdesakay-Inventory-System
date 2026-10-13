@@ -6,12 +6,12 @@ const modelSource=fs.readFileSync(new URL('../public/js/doc-model.js',import.met
 const uiSource=fs.readFileSync(new URL('../public/js/ui.js',import.meta.url),'utf8');
 const windows:JSDOM[]=[];
 afterEach(()=>windows.splice(0).forEach(dom=>dom.window.close()));
-function setup(body='<p>Original content</p>',withModel=false){
+function setup(body='<p>Original content</p>',withModel=false,options:any={},runtime:any={}){
  const dom=new JSDOM('<div id="view"></div><div id="modal-root"></div><div id="toasts"></div>',{url:'https://studio.test',runScripts:'dangerously',pretendToBeVisual:true});windows.push(dom);
- const w=dom.window as any;w.eval(uiSource+';window.UI=UI;');w.UI.confirmDialog=vi.fn(async()=>true);
+ const w=dom.window as any;Object.assign(w,runtime);w.eval(uiSource+';window.UI=UI;');w.UI.confirmDialog=vi.fn(async()=>true);
  if(withModel)w.eval(modelSource);
  w.document.execCommand=vi.fn(()=>true);w.document.queryCommandState=vi.fn(()=>false);w.eval(source);
- const ed=w.DocEditor.open({name:'Commands',body,getVariables:()=>[],onSave:()=>true});
+ const ed=w.DocEditor.open({name:'Commands',body,getVariables:()=>[],onSave:()=>true,...options});
  const root=w.document.querySelector('.doc-surface');
  function select(node:Node,start=0,end=4){w.getSelection().setBaseAndExtent(node,start,node,end);w.document.dispatchEvent(new w.Event('selectionchange'));}
  return {w,ed,root,doc:w.document,select};
@@ -200,7 +200,7 @@ describe('simplified editor workspace',()=>{
  });
  it('keeps settings and inspector out of the initial workspace, with direct panel navigation and close focus',()=>{
   const {doc,root}=setup('<p>Text</p>',true);const side=doc.querySelector('.doc-studio-side');expect(side.hidden).toBe(true);expect(doc.querySelector('.doc-tool-rail')).not.toBeNull();
-  const settings=doc.querySelector('[data-details]');settings.click();expect(settings.getAttribute('aria-expanded')).toBe('true');expect(doc.querySelector('.doc-details').classList.contains('details-expanded')).toBe(true);
+  const settings=doc.querySelector('[data-details]');settings.click();expect(doc.querySelector('[role=dialog]').getAttribute('aria-label')).toBe('Editor settings');expect(doc.querySelector('.doc-details').classList.contains('details-expanded')).toBe(false);doc.querySelector('.modal-overlay [data-close]').click();
   const pages=doc.querySelector('[data-studio-tab=Pages]');pages.click();expect(side.hidden).toBe(false);expect(side.querySelector('[data-inspector-title]').textContent).toBe('Pages');expect(pages.getAttribute('aria-pressed')).toBe('true');side.querySelector('[data-inspector-close]').click();expect(side.hidden).toBe(true);expect(doc.activeElement).toBe(pages);expect(root.textContent).toBe('Text');
  });
  it('closes advanced formatting with Escape without closing the document and supports keyboard ribbon tabs',()=>{
@@ -211,12 +211,79 @@ describe('simplified editor workspace',()=>{
   const {w,doc,root,select}=setup('<p style="font-family:Georgia;font-size:18pt">Text</p><h1 style="font-size:24pt">Title</h1>',true);select(root.querySelector('p').firstChild,0,4);expect(doc.querySelector('[data-cmd=fontName]').value).toBe('Georgia');expect(doc.querySelector('[data-fontsize]').value).toBe('18');
   w.getSelection().setBaseAndExtent(root.querySelector('p').firstChild,0,root.querySelector('h1').firstChild,5);doc.dispatchEvent(new w.Event('selectionchange'));expect(doc.querySelector('[data-fontsize]').selectedOptions[0].textContent).toBe('Mixed');expect(doc.querySelector('[data-cmd=formatBlock]').selectedOptions[0].textContent).toBe('Mixed');
  });
- it('uses point sizes consistently in the inspector and retains source editing in Advanced',()=>{
+ it('uses point sizes consistently in the inspector and retains explained source editing in Source',()=>{
   const {w,doc,root,select}=setup('<p style="font-size:16px">Text</p>',true);select(root.querySelector('p').firstChild,1,1);root.querySelector('p').dispatchEvent(new w.MouseEvent('click',{bubbles:true}));doc.querySelector('[data-studio-tab=Properties]').click();const size=doc.querySelector('[data-prop=fontSize]');expect(size.value).toBe('12');size.value='18';size.dispatchEvent(new w.Event('change',{bubbles:true}));expect(root.querySelector('p').style.fontSize).toBe('18pt');
   expect(doc.querySelector('[data-mode=code]').closest('.doc-more-menu')).not.toBeNull();w.CMBundle={mount(){let text='';return {setValue(value:string){text=value;},getValue(){return text;},focus(){},destroy(){}};}};doc.querySelector('[data-mode=code]').click();expect(doc.querySelector('.doc-code').style.display).not.toBe('none');doc.querySelector('[data-mode=visual]').click();expect(doc.querySelector('.doc-canvas').style.display).not.toBe('none');
  });
 });
 
-it('opens Find and replace from the ribbon and Advanced without disrupting the workspace',()=>{
- const {doc,root}=setup('<p>Find this text</p>',true);doc.querySelector('[data-find]').click();expect(doc.querySelector('.doc-find')).not.toBeNull();expect(root.textContent).toBe('Find this text');doc.querySelector('[data-find]').click();expect(doc.querySelector('.doc-find')).toBeNull();doc.querySelector('[data-find-launch]').click();expect(doc.querySelector('.doc-find')).not.toBeNull();
+it('opens Find and replace from the ribbon without disrupting the workspace',()=>{
+ const {doc,root}=setup('<p>Find this text</p>',true);doc.querySelector('[data-find]').click();expect(doc.querySelector('.doc-find')).not.toBeNull();expect(root.textContent).toBe('Find this text');doc.querySelector('[data-find]').click();expect(doc.querySelector('.doc-find')).toBeNull();expect(doc.querySelector('[data-find-launch]')).toBeNull();
+});
+
+describe('editor preferences',()=>{
+ it('applies and persists shortcuts and spelling preferences without changing the document',async()=>{
+  const {w,doc,root}=setup('<p>Keep this content</p>',true);
+  doc.querySelector('[data-details]').click();const dialog=doc.querySelector('.modal-overlay');
+  dialog.querySelector('[data-pref=save]').value='shift+s';dialog.querySelector('[data-pref=find]').value='shift+f';dialog.querySelector('[data-pref=spellcheck]').checked=false;dialog.querySelector('[data-pref=compactRibbon]').checked=true;
+  dialog.querySelector('[data-confirm]').click();await Promise.resolve();await Promise.resolve();
+  expect(root.spellcheck).toBe(false);expect(root.textContent).toBe('Keep this content');expect(doc.querySelector('.doc-fs').classList.contains('ribbon-collapsed')).toBe(true);
+  expect(JSON.parse(w.localStorage.getItem('doc-editor-preferences-v1')).save).toBe('shift+s');
+  root.dispatchEvent(new w.KeyboardEvent('keydown',{key:'f',ctrlKey:true,bubbles:true,cancelable:true}));expect(doc.querySelector('.doc-find')).toBeNull();
+  root.dispatchEvent(new w.KeyboardEvent('keydown',{key:'F',ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true}));expect(doc.querySelector('.doc-find')).not.toBeNull();
+ });
+ it('rejects duplicate shortcuts and allows restoring defaults before applying',async()=>{
+  const {doc,w}=setup();doc.querySelector('[data-details]').click();const dialog=doc.querySelector('.modal-overlay');dialog.querySelector('[data-pref=find]').value='s';dialog.querySelector('[data-confirm]').click();await Promise.resolve();await Promise.resolve();
+  expect(dialog.querySelector('[data-modal-error]').textContent).toContain('different shortcut');expect(w.localStorage.getItem('doc-editor-preferences-v1')).toBeNull();
+  dialog.querySelector('[data-reset-preferences]').click();expect(dialog.querySelector('[data-pref=find]').value).toBe('f');
+ });
+ it('opens document details under File and applies metadata without revealing a workspace row',async()=>{
+  const {doc,ed}=setup();doc.querySelector('[data-file]').click();doc.querySelector('[data-document-details]').click();const dialogs=doc.querySelectorAll('.modal-overlay');const dialog=dialogs[dialogs.length-1];expect(dialog.querySelector('[role=dialog]').getAttribute('aria-label')).toBe('Document details');dialog.querySelector('[data-detail-type]').value='generic';dialog.querySelector('[data-confirm]').click();await Promise.resolve();await Promise.resolve();
+  expect(doc.querySelector('.doc-fs-type-top').value).toBe('generic');expect(doc.querySelector('.doc-details').classList.contains('details-expanded')).toBe(false);
+ });
+});
+
+it('restores editor preferences on reopen and supports preview shortcuts and disabled scroll zoom',async()=>{
+ const {w,doc,ed}=setup();doc.querySelector('[data-details]').click();const dialog=doc.querySelector('.modal-overlay');dialog.querySelector('[data-pref=wheelZoom]').checked=false;dialog.querySelector('[data-pref=spellcheck]').checked=false;dialog.querySelector('[data-confirm]').click();await Promise.resolve();await Promise.resolve();
+ const wheel=new w.WheelEvent('wheel',{ctrlKey:true,deltaY:-100,bubbles:true,cancelable:true});doc.querySelector('.doc-canvas').dispatchEvent(wheel);expect(wheel.defaultPrevented).toBe(false);
+ doc.querySelector('.doc-surface').dispatchEvent(new w.KeyboardEvent('keydown',{key:'P',metaKey:true,shiftKey:true,bubbles:true,cancelable:true}));expect(doc.querySelector('.doc-preview-float')).not.toBeNull();
+ ed.close();w.DocEditor.open({name:'Reopened',body:'<p>Text</p>',getVariables:()=>[]});expect(doc.querySelector('.doc-surface').spellcheck).toBe(false);
+});
+
+describe('linked forms inside the editor',()=>{
+ const settle=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
+ function runtime(){return {App:{hasPermission:(p:string)=>p==='forms.manage.hr'},API:{get:vi.fn(async(path:string)=>path==='/form-definitions'?[{id:1,name:'Leave request',scope:'hr'},{id:2,name:'Inventory',scope:'inventory'}]:[]),post:vi.fn(async()=>({ok:true})),put:vi.fn(async()=>({ok:true})),del:vi.fn(async()=>({ok:true}))}};}
+ it('links a managed form and supports setting defaults and unlinking',async()=>{
+  const env=runtime();let linked=false,isDefault=false;
+  env.API.get.mockImplementation(async(path:string)=>path==='/form-definitions'?[{id:1,name:'Leave <request>',scope:'hr'},{id:2,name:'Restricted',scope:'inventory'}]:linked?[{id:10,is_default:isDefault}]:[]);
+  env.API.post.mockImplementation(async()=>{linked=true;return {ok:true};});env.API.put.mockImplementation(async()=>{isDefault=true;return {ok:true};});env.API.del.mockImplementation(async()=>{linked=false;return {ok:true};});
+  const {doc,root}=setup('<p>Template stays intact</p>',true,{getTemplateId:()=>10},env);
+  doc.querySelector('[data-linked-forms]').click();await settle();expect(doc.querySelector('[data-link-form]').textContent).toContain('Leave <request>');expect(doc.querySelector('[data-link-form]').textContent).not.toContain('Restricted');expect(env.API.get).not.toHaveBeenCalledWith('/form-definitions/2/templates');
+  doc.querySelector('[data-link-form]').value='1';doc.querySelector('[data-link-form-action]').click();await settle();expect(env.API.post).toHaveBeenCalledWith('/form-definitions/1/templates',{template_id:10,make_default:false});
+  doc.querySelector('[data-link-make-default]').click();await settle();expect(env.API.put).toHaveBeenCalledWith('/form-definitions/1/template',{template_id:10});expect(doc.querySelector('[data-form-links]').textContent).toContain('Default');
+  doc.querySelector('[data-link-unlink]').click();await settle();expect(env.API.del).toHaveBeenCalledWith('/form-definitions/1/templates/10');expect(root.innerHTML).toBe('<p>Template stays intact</p>');
+ });
+ it('saves a new template before presenting the linking controls',async()=>{
+  const env=runtime();let id:number|null=null;const save=vi.fn(async()=>{id=12;return true;});const {doc}=setup('<p>Draft</p>',true,{getTemplateId:()=>id,onSave:save},env);
+  doc.querySelector('[data-linked-forms]').click();expect(env.API.get).not.toHaveBeenCalled();doc.querySelector('[data-save-link]').click();await settle();expect(save).toHaveBeenCalledOnce();expect(doc.querySelector('[data-link-form]')).not.toBeNull();
+ });
+ it('keeps failed saves unlinked and hides linking without form permissions',async()=>{
+  const env=runtime();const {doc}=setup('<p>Draft</p>',true,{getTemplateId:()=>null,onSave:()=> 'Save failed'},env);doc.querySelector('[data-linked-forms]').click();doc.querySelector('[data-save-link]').click();await settle();expect(env.API.post).not.toHaveBeenCalled();expect(doc.querySelector('[data-save-link]').disabled).toBe(false);
+  const other=setup('<p>Draft</p>',true,{getTemplateId:()=>10},{App:{hasPermission:()=>false}});expect(other.doc.querySelector('[data-linked-forms]').hidden).toBe(true);
+ });
+ it('shows load failures and allows retry',async()=>{
+  const env=runtime();env.API.get.mockRejectedValueOnce(new Error('Connection unavailable')).mockRejectedValueOnce(new Error('Connection unavailable'));const {doc}=setup('<p>Template</p>',true,{getTemplateId:()=>10},env);doc.querySelector('[data-linked-forms]').click();await settle();expect(doc.querySelector('[data-links-error]').textContent).toContain('Connection unavailable');doc.querySelector('[data-links-retry]').click();await settle();expect(doc.querySelector('[data-link-form]')).not.toBeNull();
+ });
+});
+
+describe('field chip interaction',()=>{
+ it('replaces a field on double-click and allows undo',()=>{
+  const {doc,w,root,ed}=setup('<p>Hello {{company.name}}</p>',true,{getVariables:()=>[{category:'Company',label:'Address',token:'{{company.address}}'}]});const chip=root.querySelector('.doc-chip');chip.dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true,cancelable:true}));expect(doc.querySelector('[role=dialog]').getAttribute('aria-label')).toBe('Change field');doc.querySelector('.var-pick').click();expect(root.querySelector('.doc-chip').dataset.token).toBe('company.address');expect(root.textContent).toContain('Hello');ed._history.undo();expect(root.querySelector('.doc-chip').dataset.token).toBe('company.name');
+ });
+ it('opens an existing formula with Enter and protects locked fields',()=>{
+  const {doc,w,root}=setup('<p>{{= 2 + 3}}</p><p data-doc-locked="true">{{company.name}}</p>',true);root.querySelector('.doc-chip-fx').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));expect(doc.querySelector('#fx-expr').value).toBe('2 + 3');doc.querySelector('.modal-overlay [data-close]').click();root.querySelector('[data-doc-locked] .doc-chip').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));expect(doc.querySelector('.modal-overlay')).toBeNull();
+ });
+ it('loads saved linked-form fields before opening Linked forms',async()=>{
+  const API={get:vi.fn(async(path:string)=>path==='/form-definitions'?[{id:1,name:'Leave request',scope:'hr',fields:[{key:'reason',label:'Reason',type:'text'}]}]:[{id:10,is_default:true}])};const {doc}=setup('<p>Template</p>',true,{getTemplateId:()=>10},{App:{hasPermission:(p:string)=>p==='forms.manage.hr'},API});for(let i=0;i<12;i++)await Promise.resolve();doc.querySelector('[data-ins=variable]').click();doc.querySelector('[data-cat="Form: Leave request"]').click();expect(doc.querySelector('.var-pick').dataset.token).toBe('{{reason}}');
+ });
 });
