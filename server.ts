@@ -20,6 +20,8 @@ import { attachWebSocket } from './src/shared/ws';
 import { runDailyBackups, runHourlyBackups } from './src/platform/backups';
 import { pushOffsite } from './src/platform/offsite';
 import { backupHealthTick } from './src/platform/backup-health';
+import { startFileStore } from './src/shared/file-store';
+import { offloadAllDatabaseCopies } from './src/platform/upload-offload';
 import { DEPLOY_MODE, startSyncLoop, syncConfigOf } from './src/sync';
 import { roleChange } from './src/sync/failover';
 import { startSiteElection } from './src/sync/site-election';
@@ -79,6 +81,8 @@ const dailyBackup = () => {
 };
 dailyBackup();
 setInterval(dailyBackup, 60 * 60 * 1000).unref();
+// With a bucket configured (FILES_S3_*), uploads live there and the disk is a cache.
+startFileStore(offloadAllDatabaseCopies);
 
 const app = createApp();
 const PORT = Number(process.env.PORT) || 3000;

@@ -13,7 +13,7 @@
  * sessions/reloads (saved as a side effect of each successful /chat turn) until they clear
  * it via DELETE. Each user has exactly one running conversation, no multi-thread history.
  */
-import { resolveDurableUpload } from '../../shared/durable-uploads';
+import { resolveDurableUploadAsync } from '../../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -75,7 +75,7 @@ router.post('/reindex', requirePermission('audit.view'), (_req, res) => {
 });
 
 // GET /api/ai/reports/:name — download a report the assistant generated
-router.get('/reports/:name', (req, res) => {
+router.get('/reports/:name', async (req, res) => {
   const name = req.params.name;
   if (!REPORT_FILE_RE.test(name)) {
     res.status(400).json({ error: 'Bad report name' });
@@ -88,7 +88,7 @@ router.get('/reports/:name', (req, res) => {
     res.status(404).json({ error: 'Report not found — it may have been cleared.' });
     return;
   }
-  const file = resolveDurableUpload(name);
+  const file = await resolveDurableUploadAsync(name);
   if (!file) {
     res.status(404).json({ error: 'Report not found — it may have been cleared.' });
     return;

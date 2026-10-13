@@ -10,6 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
 import { withTenant, run, DATA_DIR, UPLOAD_DIR } from '../shared/db';
 import { PASSWORD_MIN, isCommonPassword } from '../shared/password-policy';
+import { removeUploadFolder } from '../shared/file-store';
 import {
   createTenantRow, getTenant, isValidSlug, logProvisioning, setTenantStatus,
   retiredDefaultTenant,
@@ -146,10 +147,7 @@ export function purgeTenant(slug: string): boolean {
     const f = path.join(DATA_DIR, `${slug}.db${suffix}`);
     try { if (fs.existsSync(f)) fs.rmSync(f); } catch { /* best effort */ }
   }
-  try {
-    const up = path.join(UPLOAD_DIR, slug);
-    if (fs.existsSync(up)) fs.rmSync(up, { recursive: true, force: true });
-  } catch { /* best effort */ }
+  void removeUploadFolder(path.join(UPLOAD_DIR, slug)); // and its copies in the file bucket
   logProvisioning(slug, 'purge');
   return true;
 }

@@ -69,13 +69,15 @@ What each variable does:
 - `TZ` is **required**. Railway servers run on UTC, but punches, late checks, payroll dates
   and the kiosk rules use the server's local time. Without `TZ`, the server refuses to start.
 - `DB_PATH` / `DATA_DIR` / `PLATFORM_DB_PATH` / `UPLOAD_DIR` put every file on the volume.
-  Backups land in `/data/db/backups` automatically.
+  Backups land in `/data/db/backups` automatically. Part 6 moves uploads into a bucket, with
+  `UPLOAD_DIR` as a cache.
 - Accepted uploads and offline sync blobs also keep a recoverable copy in the tenant database
   (billing proofs and the GCash QR in `platform.db`). If an upload file disappears, the
   authorized download restores it from the database or upload backup. The v66 migration copies surviving
   older files into those databases; bytes missing from both the upload folder and backups
   cannot be reconstructed. Budget volume and backup capacity for both file and database
-  copies, and keep the database backup schedule enabled.
+  copies, and keep the database backup schedule enabled — or turn on the file bucket (Part 6),
+  which holds that copy instead and moves the existing ones out of the databases.
 - `APP_SECRET` encrypts saved SMTP/AI keys. Changing it later makes them unreadable.
 - `ADMIN_PASSWORD` protects the unused `default` workspace, which is still reachable on the
   `*.up.railway.app` URL. Make it strong.
@@ -385,3 +387,51 @@ still hold your old password in plain text.
 | `ACTIVITY_LOG_RETENTION_DAYS` | 1827 (5 years) | How long the audit trail is kept (minimum 31) |
 | `CLIENT_IP_HEADER` | `x-real-ip` on Railway, none elsewhere | Header holding the visitor's IP (rate limits, sign-in history). Only set it to a header your edge proxy overwrites |
 | `CSP_MODE` | `enforce` | Content-Security-Policy: `report` only logs violations in the browser, `off` removes it. Emergency switch if a screen ever breaks |
+
+---
+
+## Part 6 — Uploaded files in the Railway bucket
+
+Without this, every uploaded file (item photos, punch photos, 201 documents, attachments, chat
+files) is on the volume twice: the file itself, and a recoverable copy inside the company's
+database (which every hourly backup then copies again). With it, the bucket holds the
+recoverable copy instead, and the volume only keeps a short-term cache.
+
+- New uploads go to the bucket straight away, encrypted. Their bytes no longer go into the
+  database.
+- Copies the databases already hold move to the bucket in batches, a minute apart. Then each
+  database is compacted once, so the volume and the backups get smaller. Installed PCs keep
+  their own copies.
+- A file nobody opened for `FILES_CACHE_DAYS` (default 7) is removed from the volume. The next
+  time someone opens it, the server fetches it back from the bucket. The same applies if a
+  file disappears from the volume for any other reason: the bucket copy is kept.
+- Deleting a file in the app deletes it from the bucket too.
+- Punch photos always stay on the volume as well: their retention (60 days / 300 MB per
+  company) needs them there. When retention deletes one, the bucket copy goes too.
+- Plain-text files (`.txt`, `.md`, `.csv`, `.json`, `.log`) also stay on the volume, so the AI
+  assistant can always search their contents. They're small.
+
+### 22. Variables on the app service
+This reuses the Railway bucket from step 12:
+```
+FILES_S3_FROM=railway
+```
+- That's all you need. It uses the `BACKUP_S3_RAILWAY_*` credentials. Files go under `files/`
+  in that bucket, apart from the backups' `db/` and `uploads/`.
+- Files are encrypted with `BACKUP_KEY`. To use a separate key, set
+  `FILES_KEY=<long random string>`, and keep it in your password manager like `BACKUP_KEY`.
+  **If the key is lost, the files in the bucket can't be read.**
+- To use a different bucket instead, set `FILES_S3_BUCKET`, `FILES_S3_ENDPOINT`,
+  `FILES_S3_KEY_ID`, `FILES_S3_SECRET` (and `FILES_S3_REGION` if needed) in place of
+  `FILES_S3_FROM`.
+- With this on, the daily backup stops copying uploads to `/data/db/backups/uploads`, which
+  would only fill the volume again. The off-site copies (`uploads/` in each backup bucket) keep
+  files deleted in the app recoverable.
+
+### 23. Check it works
+After the redeploy, the deploy log shows
+`[files] uploads are stored in the bucket under "files/", cached on disk for 7 day(s)`.
+Within a minute you should also see `[files] N sent, …` (the first run copies every existing
+upload), then `[files] <company>: moved N file(s) (… MB) from the database to the bucket` until
+it's done, and `[files] <company>: database compacted`. If it says `[files] sync FAILED`, the
+message says why (usually a credential), and the next minute retries.

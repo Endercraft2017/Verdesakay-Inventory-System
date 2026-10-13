@@ -13,7 +13,7 @@
  * checks inline on every upload rather than via a cron sweep.
  */
 import fs from 'node:fs';
-import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../../shared/durable-uploads';
+import { storeDurableUpload, resolveDurableUploadAsync, forgetDurableUpload } from '../../shared/durable-uploads';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
@@ -218,10 +218,10 @@ export function punchPhotoRoutes(
     res.status(201).json({ id, url: `${req.baseUrl.replace(/^\/api/, '')}/${id}` });
   });
 
-  router.get('/:id', requirePermission('hr.view'), (req, res) => {
+  router.get('/:id', requirePermission('hr.view'), async (req, res) => {
     const row = getPunchPhotoFile(Number(req.params.id));
     if (!row) { res.status(404).json({ error: 'Photo not found.' }); return; }
-    const file = resolveDurableUpload(`${PUNCH_PHOTOS_SUBDIR}/${row.file_name}`);
+    const file = await resolveDurableUploadAsync(`${PUNCH_PHOTOS_SUBDIR}/${row.file_name}`);
     if (!file) { res.status(410).json({ error: 'File is no longer available' }); return; }
     res.sendFile(file);
   });

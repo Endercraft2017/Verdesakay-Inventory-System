@@ -9,6 +9,8 @@
  */
 import fs from 'node:fs';
 import { resolveDurableUpload } from '../../shared/durable-uploads';
+// Plain-text uploads the index reads; the file bucket keeps exactly these on disk.
+import { TEXT_EXT } from '../../shared/file-store';
 import path from 'node:path';
 import { db, run, queryAll, queryOne, getSetting, setSetting } from '../../shared/db';
 import type { AuthUser } from '../../shared/types';
@@ -19,7 +21,6 @@ const KB_FILES = [
   'README.md', 'docs/README.md', 'docs/DECISIONS.md', 'docs/AI-AGENT.md', 'docs/ARCHITECTURE.md',
   'docs/guides/production-sop.md',
 ];
-const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.json', '.log']);
 
 interface ChunkRow {
   body: string; ref_label: string; source_type: string; source_id: string;

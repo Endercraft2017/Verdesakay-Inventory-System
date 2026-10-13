@@ -8,6 +8,7 @@ import path from 'node:path';
 import { tenantStore, queryOne, getSetting, setSetting, uploadDir, getDb, DEFAULT_TENANT } from '../shared/db';
 import { getTenant } from './platform';
 import { storedSubscription } from './subscription';
+import { bucketOnlyBytes, hasBucketCopy } from '../shared/file-store';
 import { PLANS, planLimitsFor, type PlanLimits } from './plans';
 
 export type QuotaKind = keyof PlanLimits | 'employees';
@@ -47,17 +48,19 @@ export function dirSizeBytes(dir: string): number {
   return total;
 }
 
-/** Logical upload usage: count working files once, plus database-held files whose
- * working copy has vanished. A lost upload folder must not reset a tenant's quota. */
+/** Logical upload usage: count working files once, plus files held only in the file bucket or
+ * the database (each counted once, wherever it is). A lost upload folder must not reset a
+ * tenant's quota. */
 function storageUsageBytes(slug: string): number {
   const root = uploadDir(slug);
-  let bytes = dirSizeBytes(root);
+  let bytes = dirSizeBytes(root) + bucketOnlyBytes(root);
+  const elsewhere = (file: string) => !fs.existsSync(file) && !hasBucketCopy(file);
   const conn = getDb(slug);
   for (const row of conn.prepare('SELECT name, size_bytes FROM durable_uploads').all() as Array<{ name: string; size_bytes: number }>) {
-    if (!fs.existsSync(path.join(root, row.name))) bytes += row.size_bytes;
+    if (elsewhere(path.join(root, row.name))) bytes += row.size_bytes;
   }
   for (const row of conn.prepare('SELECT stored_name, size_bytes FROM message_attachments WHERE data IS NOT NULL').all() as Array<{ stored_name: string; size_bytes: number }>) {
-    if (!fs.existsSync(path.join(root, row.stored_name))) bytes += row.size_bytes;
+    if (elsewhere(path.join(root, row.stored_name))) bytes += row.size_bytes;
   }
   return bytes;
 }

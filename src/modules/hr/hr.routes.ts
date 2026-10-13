@@ -9,7 +9,7 @@ import { logEvent } from '../../shared/activity';
 import { z } from 'zod';
 import path from 'node:path';
 import fs from 'node:fs';
-import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../../shared/durable-uploads';
+import { storeDurableUpload, resolveDurableUploadAsync, forgetDurableUpload } from '../../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { templateVariables } from '../../shared/doc-render';
 import { createRequire } from 'node:module';
@@ -775,13 +775,13 @@ router.post('/employees/:id/documents', requirePermission('hr.manage'), syncClas
 });
 
 // GET /api/hr/employees/:id/documents/:docId/download
-router.get('/employees/:id/documents/:docId/download', requirePermission('hr.view'), (req, res) => {
+router.get('/employees/:id/documents/:docId/download', requirePermission('hr.view'), async (req, res) => {
   const doc = queryOne<EmployeeDocument>(
     'SELECT * FROM employee_documents WHERE id = ? AND employee_id = ?',
     Number(req.params.docId), Number(req.params.id)
   );
   if (!doc) { res.status(404).json({ error: 'Document not found' }); return; }
-  const filePath = resolveDurableUpload(doc.stored_name);
+  const filePath = await resolveDurableUploadAsync(doc.stored_name);
   if (!filePath) { res.status(410).json({ error: 'File is no longer available' }); return; }
   res.download(filePath, doc.original_name);
 });

@@ -39,6 +39,20 @@ export function flushEffects(conn: DatabaseSync, commandId: string | null): numb
   return row.authority_seq;
 }
 
+/** Run local housekeeping writes that must not replicate (e.g. dropping a database copy of file
+ *  bytes the cloud now keeps in its file bucket — PCs keep their own copies). Flushes what was
+ *  recorded before, runs `fn` (synchronous, so nothing else interleaves), then discards what `fn`
+ *  recorded. On a DB without a recorder it just runs `fn`. Refuses inside a transaction. */
+export function withoutReplicating<T>(conn: DatabaseSync, fn: () => T): T {
+  if (conn.isTransaction) throw new Error('withoutReplicating cannot run inside a transaction');
+  flushEffects(conn, null);
+  try {
+    return fn();
+  } finally {
+    drainRecorder(conn);
+  }
+}
+
 function requireAuthority(slug: string): { conn: DatabaseSync; cfg: SyncConfig } {
   const conn = getDb(slug);
   const cfg = syncConfigOf(conn);

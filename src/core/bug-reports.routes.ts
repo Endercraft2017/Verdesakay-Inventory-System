@@ -4,7 +4,7 @@
  *  `bug_reports` / `bug_report_attachments`. Mounted at /api/bug-reports. */
 import path from 'node:path';
 import fs from 'node:fs';
-import { storeDurableUpload, resolveDurableUpload } from '../shared/durable-uploads';
+import { storeDurableUpload, resolveDurableUploadAsync } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -88,14 +88,14 @@ router.get('/:id', requirePermission('users.manage'), (req, res) => {
 });
 
 // GET /api/bug-reports/:id/screenshots/:attId — stream a screenshot, admin only
-router.get('/:id/screenshots/:attId', requirePermission('users.manage'), (req, res) => {
+router.get('/:id/screenshots/:attId', requirePermission('users.manage'), async (req, res) => {
   const att = queryOne<{ stored_name: string; original_name: string; mime_type: string | null }>(
     'SELECT stored_name, original_name, mime_type FROM bug_report_attachments WHERE id = ? AND bug_report_id = ?',
     Number(req.params.attId),
     Number(req.params.id)
   );
   if (!att) { res.status(404).json({ error: 'Screenshot not found' }); return; }
-  const filePath = resolveDurableUpload(att.stored_name);
+  const filePath = await resolveDurableUploadAsync(att.stored_name);
   if (!filePath) { res.status(410).json({ error: 'File is no longer available' }); return; }
   if (att.mime_type) res.type(att.mime_type);
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.original_name)}"`);

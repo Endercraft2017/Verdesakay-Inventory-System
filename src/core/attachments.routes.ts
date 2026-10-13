@@ -6,7 +6,7 @@
  *  with only `delivery.run` can attach a POD photo without holding `inventory.*`. */
 import path from 'node:path';
 import fs from 'node:fs';
-import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../shared/durable-uploads';
+import { storeDurableUpload, resolveDurableUploadAsync, forgetDurableUpload } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -103,11 +103,11 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/attachments/:id/image — stream the file
-router.get('/:id/image', (req, res) => {
+router.get('/:id/image', async (req, res) => {
   const row = queryOne<Row>('SELECT kind, image_path FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
   if (!allows(req, READ_PERMS[row.kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
-  const file = resolveDurableUpload(row.image_path);
+  const file = await resolveDurableUploadAsync(row.image_path);
   if (!file) { res.status(410).json({ error: 'File is no longer available' }); return; }
   res.sendFile(file);
 });

@@ -15,7 +15,8 @@ import { broadcast } from '../shared/ws';
 import { syncClass } from '../sync';
 import { syncUpload } from '../sync/files';
 import { sideEffectsSuppressed } from '../shared/sync-context';
-import { backupDir, mirrorDir } from '../shared/backup';
+import { messageBytesToKeep, resolveDurableUploadAsync } from '../shared/durable-uploads';
+import { removeUpload } from '../shared/file-store';
 import { previewMessageFile } from './message-preview';
 import { enforceQuota } from '../platform/quota';
 
@@ -375,15 +376,20 @@ router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpl
   );
   const messageId = Number(info.lastInsertRowid);
   for (const f of files) {
-    run(
+    // The bytes stay with the row, unless the file bucket keeps them (durable-uploads.ts).
+    let attId = 0;
+    const keep = messageBytesToKeep(f.path, (bytes) => {
+      if (attId) run('UPDATE message_attachments SET data = ? WHERE id = ?', bytes, attId);
+    });
+    attId = Number(run(
       'INSERT INTO message_attachments (message_id, stored_name, original_name, mime_type, size_bytes, data) VALUES (?, ?, ?, ?, ?, ?)',
       messageId,
       f.filename,
       f.originalname,
       f.mimetype,
       f.size,
-      fs.readFileSync(f.path)
-    );
+      keep
+    ).lastInsertRowid);
   }
   broadcast(currentSlug(), [recipient_id, req.user!.id], { type: 'message:new', data: hydrateMessageForBroadcast(messageId) });
   void notifyUser(recipient_id, {
@@ -469,7 +475,7 @@ router.post('/:id/react', requirePermission('messages.view'), syncClass('merge')
 });
 
 // GET /api/messages/:id/attachments/:attId — stream a message's attached file
-router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, res) => {
+router.get('/:id/attachments/:attId', requirePermission('messages.view'), async (req, res) => {
   const messageId = Number(req.params.id);
   const uid = req.user!.id;
   const msg = queryOne<{ sender_id: number; recipient_id: number }>(
@@ -493,13 +499,9 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
     res.status(404).json({ error: 'Attachment not found' });
     return;
   }
-  // Older messages may predate the database copy. Their additive upload backups can
-  // still hold a copy after an app container's local upload folder disappears.
-  const safeName = path.basename(att.stored_name);
-  const tenantPart = currentSlug() === DEFAULT_TENANT ? '' : currentSlug();
-  const backupPaths = [backupDir(), mirrorDir()].filter((dir): dir is string => !!dir)
-    .map((dir) => path.join(dir, 'uploads', tenantPart, safeName));
-  const filePath = [path.join(uploadDir(), safeName), ...backupPaths].find((candidate) => fs.existsSync(candidate));
+  // The file on disk, fetched back from the file bucket, this PC's durable copy, or a backup
+  // (older messages predate the database copy) — else the bytes kept with the row.
+  const filePath = await resolveDurableUploadAsync(path.basename(att.stored_name));
   if (!filePath && !att.data) {
     res.status(410).json({ error: 'Photo or file is no longer available. Ask the sender to resend it.' });
     return;
@@ -534,11 +536,7 @@ router.get('/:id/attachments/:attId/preview', requirePermission('messages.view')
   if (!['.txt', '.log', '.md', '.csv', '.tsv', '.json', '.docx', '.xlsx'].includes(ext)) {
     res.status(415).json({ error: 'Preview is not available for this file type. Download it to view.' }); return;
   }
-  const safeName = path.basename(att.stored_name);
-  const tenantPart = currentSlug() === DEFAULT_TENANT ? '' : currentSlug();
-  const locations = [path.join(uploadDir(), safeName), ...[backupDir(), mirrorDir()]
-    .filter((dir): dir is string => !!dir).map((dir) => path.join(dir, 'uploads', tenantPart, safeName))];
-  const location = locations.find((candidate) => fs.existsSync(candidate));
+  const location = await resolveDurableUploadAsync(path.basename(att.stored_name));
   if (!location && !att.data) {
     res.status(410).json({ error: 'File is no longer available. Ask the sender to resend it.' }); return;
   }
@@ -589,7 +587,7 @@ router.delete('/:id', requirePermission('messages.send'), syncClass('merge'), (r
   run('DELETE FROM message_attachments WHERE message_id = ?', id);
   run('DELETE FROM message_reactions WHERE message_id = ?', id);
   // An installed PC keeps the files until the cloud confirms: a refused delete brings the rows back.
-  if (!sideEffectsSuppressed('unlink')) atts.forEach((a) => fs.promises.unlink(path.join(uploadDir(), a.stored_name)).catch(() => {}));
+  if (!sideEffectsSuppressed('unlink')) atts.forEach((a) => void removeUpload(path.join(uploadDir(), a.stored_name))); // and its bucket copy
   broadcast(currentSlug(), [msg.sender_id, msg.recipient_id], { type: 'message:deleted', data: { id } });
   res.json({ ok: true });
 });

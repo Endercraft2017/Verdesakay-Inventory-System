@@ -43,7 +43,8 @@ compiler over the sync db helpers; `qb`/`all`/`first`/`exec`), `db-types.ts` (GE
 schema types, via `npm run db:types` / `db-types-codegen.ts`; drift-checked by
 `tests/db-types.test.ts`), `backup.ts` (`VACUUM INTO` snapshot +
 retention primitives; `preMigrationSnapshot()` is called by `db.ts`'s `getDb()` before
-`migrate()` and blocks the migration if it fails), `modules.ts` (the `requireModule()` gate
+`migrate()` and blocks the migration if it fails), `durable-uploads.ts` + `file-store.ts`
+(recoverable upload copies — see "Upload copies" below), `modules.ts` (the `requireModule()` gate
 every business module below is mounted behind), `ws.ts` (WebSocket real-time push —
 the app's one live channel; everything else is REST + polling. `attachWebSocket(server)`
 is wired from `server.ts`; `broadcast(tenantSlug, userIds, event)` is exported for a
@@ -62,6 +63,20 @@ history; test pushes). Rows older than 120 days are trimmed. `core/notifications
 `/api/notifications`: `GET /` (own rows + unread), `GET /unread-count`, `POST /:id/read`,
 `POST /read-all` (merge). UI: phone `#/notifications` leads with it; desktop rail bell (badge +
 panel opening `link`). Tests: `tests/notifications.test.ts`.
+**Upload copies (`shared/durable-uploads.ts`, `shared/file-store.ts`, `platform/upload-offload.ts`):**
+every accepted upload keeps a recoverable copy — `storeDurableUpload` / `resolveDurableUpload`
+(sync) / `resolveDurableUploadAsync` (routes) / `forgetDurableUpload`. Without a file bucket the
+copy is in the tenant DB (`durable_uploads`, chat files in `message_attachments.data`, schema
+65/66). With one (`FILES_S3_FROM` / `FILES_S3_*`, 2026-10-13) the bucket holds it instead: new
+uploads are sent at once (AES-256-GCM, `FILES_KEY` → `BACKUP_KEY`, key `files/<path under
+UPLOAD_DIR>`), `UPLOAD_DIR` is a cache trimmed after `FILES_CACHE_DAYS` (7) and refilled on
+demand, a file gone from disk outside the app stays in the bucket (only `forgetDurableUpload` /
+message unsend / tenant purge delete there), and `upload-offload.ts` moves the bytes a DB
+already holds into the bucket after each minute sweep — deletes under `withoutReplicating`
+(`sync/authority.ts`) so PCs keep their copies — then VACUUMs once. Never in the bucket:
+`.sync-blobs/` (keep DB copies), and kept on disk: `kiosk-punches/`, plain-text files
+(`TEXT_EXT`, the AI index reads them synchronously). Quota counts each file once wherever it is.
+Tests: `tests/file-store.test.ts`, `tests/upload-offload.test.ts` (fake S3).
 **Desk-scoped reads (`shared/desk-access.ts`):** the one list of which shop-floor desks (LINE,
 INSPECT, PARTS, RTS, RELEASE) may read which shared data — user decision 2026-10-06, "a floor role
 sees only its own desk". The broad `inventory.view` / `production.view` still open everything; a
@@ -95,7 +110,8 @@ verified adoption of the original company, preserving source DB/uploads; CLI
 catalog in `platform.db`), `platform-users.ts` (operator accounts, separate auth from
 `shared/auth.ts`; self-service password change `POST /_platform/api/password`), `backups.ts` (daily + hourly backup jobs over every tenant DB + `platform.db` +
 uploads, run from `server.ts`; manual backup/list/restore behind `npm run backup*` /
-`scripts/backup.ts`. Also runs for single-tenant installs, covering only `default` + `platform.db`), `offsite.ts` (encrypted copies of daily snapshots + uploads to S3-compatible buckets, e.g. Backblaze B2 / Railway Buckets, via `shared/s3.ts`; CLI `scripts/offsite.ts`), `backup-health.ts` (hourly after the backup run:
+`scripts/backup.ts`. Also runs for single-tenant installs, covering only `default` + `platform.db`;
+skips the local uploads mirror when a file bucket and an off-site target are both set), `offsite.ts` (encrypted copies of daily snapshots + uploads to S3-compatible buckets, e.g. Backblaze B2 / Railway Buckets, via `shared/s3.ts`; CLI `scripts/offsite.ts`), `backup-health.ts` (hourly after the backup run:
 restore drill every 30 days — newest off-site copy of every DB decrypted into a temp file and
 integrity-checked — plus failed/stale-backup checks, alerts to `BACKUP_ALERT_WEBHOOK`, results in
 `status.json` for the owner console; CLI `npm run backup:drill` / `backup:health`), routes: `signup.routes.ts`, `tenant.routes.ts`, `platform.routes.ts`.

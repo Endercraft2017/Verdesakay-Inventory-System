@@ -33,6 +33,8 @@ import {
   isRetentionManagedUpload, type BackupKind,
 } from '../shared/backup';
 import { listTenants, platformDb, PLATFORM_DB_PATH } from './platform';
+import { offsiteTargets } from './offsite';
+import { fileStore } from '../shared/file-store';
 
 export const PLATFORM_BACKUP_NAME = '_platform';
 
@@ -47,11 +49,15 @@ export interface BackupResult {
   mirrorError?: string;
 }
 
+/** Every tenant database in use: `default` (unless retired) and each non-purged workspace. */
+export function liveTenantSlugs(): string[] {
+  return [...(retiredDefaultTenant() ? [] : [DEFAULT_TENANT]), ...listTenants().filter((t) => t.status !== 'purged').map((t) => t.slug)];
+}
+
 /** Every database to back up, as name → live connection (opened lazily). */
 function targets(): Array<{ name: string; conn: () => DatabaseSync }> {
-  const slugs = [...(retiredDefaultTenant() ? [] : [DEFAULT_TENANT]), ...listTenants().filter((t) => t.status !== 'purged').map((t) => t.slug)];
   return [
-    ...slugs.map((slug) => ({ name: slug, conn: () => getDb(slug) })),
+    ...liveTenantSlugs().map((slug) => ({ name: slug, conn: () => getDb(slug) })),
     { name: PLATFORM_BACKUP_NAME, conn: () => platformDb() },
   ];
 }
@@ -108,7 +114,15 @@ function dropDeletedPhotos(dest: string, rel: string, present: Set<string> = new
   }
 }
 
+/** With a file bucket and an off-site target, a local copy of the uploads would only refill the
+ *  volume the bucket is emptying: the bucket holds the live files, and the off-site copies keep
+ *  ones deleted in the app recoverable. */
+function uploadsLiveInBucket(): boolean {
+  try { return !!fileStore() && offsiteTargets().length > 0; } catch { return false; }
+}
+
 function backupUploads(): BackupResult {
+  if (uploadsLiveInBucket()) return { name: 'uploads', ok: true, skipped: true, copied: 0 };
   try {
     let copied = mirrorFolder(UPLOAD_DIR, path.join(backupDir(), 'uploads'));
     let mirrorError: string | undefined;

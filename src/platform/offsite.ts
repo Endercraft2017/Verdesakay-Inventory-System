@@ -174,6 +174,7 @@ function walk(dir: string, rel = ''): Array<{ rel: string; abs: string; sig: str
   if (!fs.existsSync(dir)) return [];
   const out: Array<{ rel: string; abs: string; sig: string }> = [];
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name.startsWith('.file-store.json')) continue; // the file bucket's own bookkeeping
     const abs = path.join(dir, e.name);
     const r = rel ? `${rel}/${e.name}` : e.name;
     if (e.isDirectory()) out.push(...walk(abs, r));

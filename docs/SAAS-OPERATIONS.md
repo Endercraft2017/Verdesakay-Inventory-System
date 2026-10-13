@@ -14,7 +14,10 @@ one `default` tenant, exactly as before.
   tenant-facing request code.
 - Uploaded files: `UPLOAD_DIR` for `default`; `UPLOAD_DIR/<slug>/` per tenant (item images,
   form files, 201-file documents, AI reports — all resolved through `db.uploadDir()`).
-  `tenant:purge` deletes the folder.
+  `tenant:purge` deletes the folder. With a file bucket (`FILES_S3_*`, below) the bucket holds
+  them under `files/<same path>` (encrypted) in place of the database copies, and `UPLOAD_DIR`
+  is a cache; purge deletes the bucket copies too. See `src/shared/file-store.ts` and
+  [DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md) Part 6.
 
 ## Environment
 
@@ -24,7 +27,10 @@ one `default` tenant, exactly as before.
 | `PLATFORM_DB_PATH` | The control-plane DB file. | `<root>/db/platform.db` |
 | `DATA_DIR` | Where non-`default` tenant DB files live. | `<root>/db/tenants` |
 | `DB_PATH` | The `default` tenant's DB file. | `<root>/db/data.db` |
-| `UPLOAD_DIR` | Uploaded files. | `<root>/uploads` |
+| `UPLOAD_DIR` | Uploaded files (a cache when a file bucket is set). | `<root>/uploads` |
+| `FILES_S3_FROM` | Store uploads in the bucket of this off-site backup target (e.g. `railway` ⇒ `BACKUP_S3_RAILWAY_*`). Or set `FILES_S3_BUCKET` / `_ENDPOINT` / `_KEY_ID` / `_SECRET` (+ `_REGION`, `_PATH_STYLE`). The bucket replaces the in-database upload copies. | *(unset: disk + database copies)* |
+| `FILES_KEY` | Encrypts the bucket copies. **Required with a file bucket; lose it and they're unreadable.** | `BACKUP_KEY` |
+| `FILES_S3_PREFIX` / `FILES_CACHE_DAYS` | Key prefix in the bucket / drop local copies unused this many days (`0` keeps all). Punch photos always stay on disk. | `files` / `7` |
 | `SIGNUPS_OPEN` | `"true"` makes `POST /api/signup` live (self-serve tenant creation). Anything else ⇒ 404; you provision manually. | *(off)* |
 | `PLATFORM_CONSOLE` | `"true"` mounts the owner console at `/_platform`. Anything else ⇒ the whole path 404s. | *(off)* |
 | `PLATFORM_HOST` | Dedicated console host, e.g. `admin.app.example.com`. When set, `/_platform` answers **only** there and every other path on that host redirects to `/_platform/` (no tenant app is served on it). | *(unset: apex/default host)* |

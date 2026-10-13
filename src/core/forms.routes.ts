@@ -1,7 +1,7 @@
 /** Forms & files: upload, list (with department visibility), download, delete. */
 import path from 'node:path';
 import fs from 'node:fs';
-import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../shared/durable-uploads';
+import { storeDurableUpload, resolveDurableUploadAsync, forgetDurableUpload } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -86,7 +86,7 @@ router.post('/', requirePermission('forms.upload'), syncClass('merge'), syncUplo
 });
 
 // GET /api/forms/:id/download
-router.get('/:id/download', requirePermission('forms.view'), (req, res) => {
+router.get('/:id/download', requirePermission('forms.view'), async (req, res) => {
   const form = queryOne<FormRow>('SELECT * FROM forms WHERE id = ?', Number(req.params.id));
   if (!form) {
     res.status(404).json({ error: 'Form not found' });
@@ -100,7 +100,7 @@ router.get('/:id/download', requirePermission('forms.view'), (req, res) => {
     res.status(403).json({ error: 'You do not have access to this file' });
     return;
   }
-  const filePath = resolveDurableUpload(form.stored_name);
+  const filePath = await resolveDurableUploadAsync(form.stored_name);
   if (!filePath) {
     res.status(410).json({ error: 'File is missing on disk' });
     return;

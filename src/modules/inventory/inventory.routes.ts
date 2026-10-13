@@ -1,7 +1,7 @@
 /** Inventory: items, search/filter, stock adjustments with history, dashboard stats. */
 import path from 'node:path';
 import fs from 'node:fs';
-import { storeDurableUpload, resolveDurableUpload, forgetDurableUpload } from '../../shared/durable-uploads';
+import { storeDurableUpload, resolveDurableUploadAsync, forgetDurableUpload } from '../../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -903,7 +903,7 @@ router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim'),
 });
 
 // GET /api/inventory/:id/image — stream the item's photo (auth via the shared client)
-router.get('/:id/image', viewGate, (req, res) => {
+router.get('/:id/image', viewGate, async (req, res) => {
   const item = queryOne<InventoryItem>(
     'SELECT image_path FROM inventory_items WHERE id = ?',
     Number(req.params.id)
@@ -912,7 +912,7 @@ router.get('/:id/image', viewGate, (req, res) => {
     res.status(404).json({ error: 'No image for this item' });
     return;
   }
-  const file = resolveDurableUpload(item.image_path);
+  const file = await resolveDurableUploadAsync(item.image_path);
   if (!file) {
     res.status(404).json({ error: 'Image file missing' });
     return;

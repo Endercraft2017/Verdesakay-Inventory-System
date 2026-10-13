@@ -277,7 +277,11 @@ describe('messages: attachments', () => {
     const url = `/api/messages/${send.body.id}/attachments/${row.id}`;
     const recovered = await ctx.api.get(url).set(bearer(alice.token));
     expect(recovered.status).toBe(200);
+    // Recovery puts it back (durable-uploads.ts resolveDurableUpload): on disk, with a durable copy.
+    expect(fs.existsSync(primary)).toBe(true);
     fs.unlinkSync(backup);
+    fs.unlinkSync(primary);
+    run('DELETE FROM durable_uploads WHERE name = ?', row.stored_name);
     const missing = await ctx.api.get(url).set(bearer(alice.token));
     expect(missing.status).toBe(410);
     expect(missing.body.error).toMatch(/resend/);
