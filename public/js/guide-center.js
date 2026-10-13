@@ -52,12 +52,12 @@
     const isDialog = root?.matches('.modal-overlay, .drawer, .doc-fs');
     const title = isDialog ? (root.querySelector('.modal-head h3, .drawer-head h3, .doc-fs-title')?.textContent || 'This dialog') : (root?.querySelector('.topbar h2, h2')?.textContent || route);
     const steps = [];
-    const add = (title, body, target, tip) => { if (target) steps.push({ title, body, target, tip }); };
+    const add = (title, body, target, tip) => { if (target) { const token = target.id || 'guide-control-' + Math.random().toString(36).slice(2); target.dataset.guideTarget = token; steps.push({ title, body, target, spot: '[data-guide-target="' + token + '"]', tip }); } };
     if (!isDialog && route === 'form-records' && App.currentLocation?.().filter?.slug === 'hr_payroll') {
       add('Find an employee’s payslips', 'Search by employee name to narrow the payslips shown.', root.querySelector('#fr-search'));
       add('Filter by status', 'Show the payroll status you need to review. Filtering does not change any payslip.', root.querySelector('#fr-status'));
       add('Choose the payroll period', 'Select a cutoff to focus your review on its payslips and totals.', root.querySelector('#fr-period'));
-      add('Review the cutoff', 'Expand the cutoff and open a payslip to check its earnings, deductions and net pay.', root.querySelector('[data-bundle-toggle]') || root.querySelector('[data-bundle-summary]'));
+      add('Review the cutoff', 'Expand the cutoff and open a payslip to check its earnings, deductions and net pay.', root.querySelector('[data-bundle-toggle]') || root.querySelector('#fr-table'));
       add('Print a payroll summary', 'Preview totals and department subtotals for the payslips currently in view before printing.', root.querySelector('#fr-print-summary'));
       add('Export the filtered payroll', 'Download Excel exports the payslips currently in view. Check your filters first.', root.querySelector('#fr-download-csv'));
     } else if (root?.querySelector('.fb-editor')) {

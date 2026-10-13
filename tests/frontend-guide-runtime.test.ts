@@ -61,3 +61,10 @@ it('starts payroll coaching directly and replaces an on-screen feature reference
   w.GuideTour.start({id:'feature:payroll',kind:'feature',route:'form-records',filter:{slug:'hr_payroll'},steps:[{title:'Open Payroll',body:'Open the guide again'}]});
   expect(w.document.querySelector('.guide-coach-body').textContent).not.toContain('Open the guide again');expect(w.document.querySelector('.guide-coach-body').textContent).toContain('Find an employee');expect(navigations).toEqual([]);dom.window.close();
 });
+it('highlights and numbers every payroll step without changing the page or submitting actions',async()=>{
+  const {dom,w,navigations}=await boot();w.App.currentLocation=()=>({route:'form-records',filter:{slug:'hr_payroll'}});
+  const view=w.document.querySelector('#view');view.innerHTML='<div class="topbar"><h2>HR Payroll</h2></div><input id="fr-search"><select id="fr-status"></select><select id="fr-period"></select><div id="fr-table"></div><button id="fr-print-summary">Print Summary</button><button id="fr-download-csv">Download Excel</button>';
+  const guide=w.GuideCenter.contextual(view);expect(guide.steps).toHaveLength(6);w.GuideCenter.start({root:view});
+  for(let i=0;i<guide.steps.length;i++){const ring=w.document.querySelector('.guide-focus-ring');expect(ring.hidden).toBe(false);expect(ring.dataset.step).toBe(String(i+1));expect(ring.style.width).toBe('210px');if(i+1<guide.steps.length)w.document.querySelector('[data-act="next"]').click();}
+  expect(navigations).toEqual([]);dom.window.close();
+});

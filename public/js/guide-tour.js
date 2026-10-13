@@ -11,13 +11,13 @@
     const selector=step.spot||(correctScreen?'#view .topbar h2':null);
     const el=step.target?.isConnected ? step.target : selector ? query(selector) : null;
     if(el && state.lastScrolledTarget!==el){state.lastScrolledTarget=el;try{el.scrollIntoView({block:'nearest',inline:'nearest',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?'auto':'smooth'});}catch{}}
-    const rect=el?.getBoundingClientRect(), visible=!!rect && rect.width>0 && rect.height>0;
+    const rect=el?.getBoundingClientRect(), visible=!!rect && rect.width>0 && rect.height>0 && !el.closest('[hidden], .hidden');
     state.target=visible?el:null;
     const locator=state.coach.querySelector('.guide-locator');
     if(state.ring.hidden===visible)state.ring.hidden=!visible;
     const message=!visible&&(step.spot||step.to?.route)?(step.to?.route?'Choose Open screen to show the relevant screen, or skip this step.':'Open the relevant dialog or section to find this control. You can also skip this step.'):'';
     if(locator.textContent!==message)locator.textContent=message;
-    if(visible)Object.assign(state.ring.style,{left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px'});
+    if(visible){const pad=5;Object.assign(state.ring.style,{left:(rect.left-pad)+'px',top:(rect.top-pad)+'px',width:(rect.width+pad*2)+'px',height:(rect.height+pad*2)+'px'});state.ring.dataset.step=String(state.i+1);}
     const r=visible?rect:{left:-1000,right:-999,top:-1000,bottom:-999};
     const box=state.coach.getBoundingClientRect(), gap=12, width=innerWidth, height=innerHeight;
     const spots=[{left:Math.max(gap,width-box.width-gap),top:Math.max(gap,height-box.height-gap)},{left:gap,top:Math.max(gap,height-box.height-gap)},{left:Math.max(gap,width-box.width-gap),top:gap},{left:gap,top:gap}];

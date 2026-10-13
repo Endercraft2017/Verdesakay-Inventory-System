@@ -385,7 +385,8 @@
 .guide-coach .guide-coach-foot { flex-wrap: wrap; }
 .guide-coach-keys { margin: 0; padding: 8px 14px; font-size: 10px; color: var(--text-muted); background: var(--surface-2); }
 .guide-coach.minimized :is(.guide-coach-body,.guide-coach-foot,.guide-coach-keys,.guide-coach-bar) { display: none; }
-.guide-focus-ring { position: fixed; pointer-events: none; z-index: 199; border: 2px solid var(--accent); outline: 3px solid var(--accent-weak); border-radius: 8px; box-sizing: border-box; }
+.guide-focus-ring { position: fixed; pointer-events: none; z-index: 199; border: 2px solid var(--accent); outline: 3px solid var(--accent-weak); border-radius: 8px; box-sizing: border-box; box-shadow: 0 0 0 9999px rgba(8, 12, 24, .34), 0 0 20px var(--accent-weak); }
+.guide-focus-ring::before { content: attr(data-step); position: absolute; top: -12px; left: 8px; min-width: 24px; height: 24px; padding: 0 5px; display: grid; place-items: center; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
 .guide-focus-ring[hidden] { display: none; }
 @media print { .guide-entry, .guide-coach, .guide-focus-ring, .guide-catalog-filters { display: none !important; } }
 @media (prefers-reduced-motion: reduce) { .guide-coach { transition: none; } }
