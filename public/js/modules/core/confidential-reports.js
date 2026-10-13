@@ -93,7 +93,7 @@ App.register('confidential-reports', async (view) => {
         ov.querySelectorAll('.cr-photo').forEach((b) => {
           API.blobUrl(b.dataset.url).then((u) => {
             b.querySelector('img').src = u;
-            b.onclick = () => window.open(u, '_blank', 'noopener');
+            b.onclick = (event) => { event.stopPropagation(); PhotoViewer.open(u, 'Report photo'); };
           }).catch(() => { b.title = 'Photo could not be loaded'; });
         });
         ov.querySelector('#cr-save-status').onclick = async (e) => {

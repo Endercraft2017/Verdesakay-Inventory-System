@@ -249,11 +249,14 @@ router.get('/conversations', requirePermission('messages.view'), (req, res) => {
       p.other_id,
       uid
     )!.c;
+    const attachment = !last.body && !last.deleted_at
+      ? queryOne<{ original_name: string }>('SELECT original_name FROM message_attachments WHERE message_id = ? ORDER BY id LIMIT 1', p.last_id)
+      : null;
     return {
       other_id: p.other_id,
       other_name: other?.full_name ?? '(deleted user)',
       other_username: other?.username ?? '',
-      last_message: last.deleted_at ? 'Message was removed' : last.body,
+      last_message: last.deleted_at ? 'Message was removed' : (last.body || (attachment ? `Attachment: ${attachment.original_name}` : '')),
       last_message_at: last.created_at,
       last_message_mine: last.sender_id === uid,
       unread_count: unread,
@@ -311,6 +314,11 @@ router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpl
     throw e;
   }
   const { recipient_id, subject, body, reply_to_id } = parsed;
+  if (!body && !files.length) {
+    unlinkAll(files);
+    res.status(400).json({ error: 'Write a message or attach a file' });
+    return;
+  }
   if (recipient_id === req.user!.id) {
     unlinkAll(files);
     res.status(400).json({ error: 'You cannot message yourself' });
@@ -368,7 +376,7 @@ router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpl
   broadcast(currentSlug(), [recipient_id, req.user!.id], { type: 'message:new', data: hydrateMessageForBroadcast(messageId) });
   void notifyUser(recipient_id, {
     title: subject ? `Message: ${subject}` : `New message from ${req.user!.full_name}`,
-    body: body.length > 140 ? body.slice(0, 137) + '…' : body,
+    body: body ? (body.length > 140 ? body.slice(0, 137) + '…' : body) : (files.length === 1 ? `Sent ${files[0]!.originalname}` : `Sent ${files.length} attachments`),
     url: '#/inbox',
     tag: 'msg',
     record: false, // the inbox is the history for messages

@@ -121,9 +121,10 @@
       '<div id="m-chat-load-older" class="m-chat-load-older hidden"><button class="m-v2-secondary" type="button">Load earlier</button></div>' +
       '<div id="m-chat-messages" class="m-chat-messages"><div class="m-hint">Loading…</div></div>' +
       '<div id="m-chat-reply-strip" class="m-chat-reply-strip hidden"></div>' +
+      '<div id="m-chat-files" class="m-chat-files hidden" aria-live="polite"></div>' +
       '<div class="m-chat-compose">' +
       '<button class="m-chat-attach-button" id="m-chat-attach" type="button" aria-label="Attach files">＋</button>' +
-      '<input type="file" id="m-chat-file" multiple class="hidden" />' +
+      '<input type="file" id="m-chat-file" multiple aria-label="Choose files to attach" />' +
       '<textarea id="m-chat-input" rows="1" placeholder="Write a message…" aria-label="Message"></textarea>' +
       '<button class="m-chat-send-button" id="m-chat-send" type="button" aria-label="Send message">➤</button>' +
       '</div></section>';
@@ -275,8 +276,10 @@
     });
     container.querySelectorAll('[data-att-url]:not([data-wired])').forEach(function (el) {
       el.dataset.wired = '1';
-      el.addEventListener('click', function () {
-        API.download(el.dataset.attUrl, el.dataset.attName).catch(function (e) { mToast(e.message || 'Download failed', 'err'); });
+      el.addEventListener('click', function (event) {
+        event.stopPropagation();
+        if (el.classList.contains('m-chat-attach-img-wrap')) PhotoViewer.open(el.dataset.attUrl, el.dataset.attName);
+        else API.download(el.dataset.attUrl, el.dataset.attName).catch(function (e) { mToast(e.message || 'Download failed', 'err'); });
       });
     });
     container.querySelectorAll('.m-chat-reaction:not([data-wired])').forEach(function (el) {
@@ -473,9 +476,27 @@
     var sendBtn = state.view.querySelector('#m-chat-send');
     var attachBtn = state.view.querySelector('#m-chat-attach');
     var fileInput = state.view.querySelector('#m-chat-file');
+    var filePreview = state.view.querySelector('#m-chat-files');
+    var selectedFiles = [];
+
+    function renderFiles() {
+      filePreview.classList.toggle('hidden', !selectedFiles.length);
+      filePreview.innerHTML = selectedFiles.map(function (file, index) {
+        return '<span class="m-chat-file-chip">' + mEsc(file.name) + '<button type="button" data-remove="' + index + '" aria-label="Remove ' + mEsc(file.name) + '">×</button></span>';
+      }).join('');
+      filePreview.querySelectorAll('[data-remove]').forEach(function (button) {
+        button.onclick = function () { selectedFiles.splice(Number(button.dataset.remove), 1); renderFiles(); };
+      });
+    }
 
     attachBtn.onclick = function () { fileInput.click(); };
-    fileInput.onchange = function () { if (fileInput.files.length) sendOrSave(); };
+    fileInput.onchange = function () {
+      if (selectedFiles.length + (fileInput.files || []).length > 10) mToast('Up to 10 files per message', 'err');
+      selectedFiles = selectedFiles.concat(Array.prototype.slice.call(fileInput.files || [])).slice(0, 10);
+      fileInput.value = '';
+      renderFiles();
+      if (selectedFiles.length) mToast('Files ready. Tap send when you are ready.');
+    };
     sendBtn.onclick = sendOrSave;
 
     var lastTypingSentAt = 0;
@@ -489,7 +510,7 @@
 
     function sendOrSave() {
       var body = input.value.trim();
-      var files = fileInput.files;
+      var files = selectedFiles.slice();
       if (state.editingId) {
         if (!body) { mToast('Message cannot be empty', 'err'); return; }
         var id = state.editingId;
@@ -501,17 +522,23 @@
         }).catch(function (e) { mToast(e.message || 'Failed', 'err'); });
         return;
       }
-      if (!body && !(files && files.length)) return;
+      if (!body && !files.length) return;
       sendBtn.disabled = true;
+      attachBtn.disabled = true;
+      sendBtn.setAttribute('aria-label', 'Sending message');
       var replyToId = state.replyTo ? state.replyTo.id : null;
       var send;
-      if (files && files.length) {
+      if (files.length) {
+        send = Promise.all(files.map(function (file) {
+          return window.ImageCompress ? ImageCompress.maybeCompress(file, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 }) : file;
+        })).then(function (ready) {
         var fd = new FormData();
         fd.append('recipient_id', state.otherId);
         fd.append('body', body);
         if (replyToId) fd.append('reply_to_id', replyToId);
-        for (var i = 0; i < files.length; i++) fd.append('files', files[i]);
-        send = API.upload('/messages', fd);
+        ready.forEach(function (file) { fd.append('files', file, file.name); });
+        return API.upload('/messages', fd);
+        });
       } else {
         var payload = { recipient_id: state.otherId, body: body };
         if (replyToId) payload.reply_to_id = replyToId;
@@ -519,7 +546,8 @@
       }
       send.then(function () {
         input.value = '';
-        fileInput.value = '';
+        selectedFiles = [];
+        renderFiles();
         state.replyTo = null;
         renderReplyStrip();
         if (!(window.ChatWS && ChatWS.connected)) reloadThread();
@@ -527,6 +555,8 @@
         mToast(e.message || 'Failed', 'err');
       }).finally(function () {
         sendBtn.disabled = false;
+        attachBtn.disabled = false;
+        sendBtn.setAttribute('aria-label', 'Send message');
       });
     }
   }

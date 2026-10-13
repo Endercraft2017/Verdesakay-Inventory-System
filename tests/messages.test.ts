@@ -202,6 +202,16 @@ describe('messages: link preview SSRF guard', () => {
 describe('messages: attachments', () => {
   const FILE = Buffer.from('a'.repeat(1000));
 
+  it('accepts an attachment without a text caption and shows it in conversation previews', async () => {
+    const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
+      .field('recipient_id', String(alice.id)).attach('files', FILE, 'receipt.txt');
+    expect(send.status).toBe(201);
+    const thread = await ctx.api.get(`/api/messages/with/${alice.id}`).set(bearer(adminToken));
+    expect(thread.body.find((m: { id: number }) => m.id === send.body.id)).toMatchObject({ body: '', attachments: [{ name: 'receipt.txt' }] });
+    const conversations = await ctx.api.get('/api/messages/conversations').set(bearer(alice.token));
+    expect(conversations.body.find((c: { other_id: number }) => c.other_id === adminId).last_message).toBe('Attachment: receipt.txt');
+  });
+
   it('sends files with a message, lists and downloads them, and blocks a non-participant', async () => {
     const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
       .field('recipient_id', String(alice.id)).field('body', 'see attached')

@@ -631,15 +631,14 @@ App.register('templates', async (view) => {
           <div><label>Email</label><input data-f="email" value="${UI.esc(c.email)}" ${companyEdit ? '' : 'disabled'} /></div>
         </div>
         <label>Logo URL</label><input data-f="logo_url" value="${UI.esc(c.logo_url)}" ${companyEdit ? '' : 'disabled'} />
-        <label class="check" style="margin-top:14px"><input type="checkbox" data-f="compress_images" ${c.compress_images !== false ? 'checked' : ''} ${companyEdit ? '' : 'disabled'} /> Compress image attachments over 1&nbsp;MB before upload (Messages)</label>
-        <p class="muted" style="font-size:12px;margin:4px 0 0">Large photos are downscaled to 1920&nbsp;px and re-saved as JPEG in the browser, so they take far less storage. Other file types are never touched.</p>`,
+        <p class="muted" style="font-size:12px;margin:14px 0 0">Supported photos in messages and reports are compressed before upload. Documents are kept in their original format.</p>`,
       confirmText: companyEdit ? 'Save' : null,
       cancelText: companyEdit ? 'Cancel' : 'Close',
       onConfirm: companyEdit ? async (ov) => {
         const g = (k) => ov.querySelector(`[data-f="${k}"]`).value;
         await API.put('/templates/company', {
           name: g('name'), address: g('address'), phone: g('phone'), email: g('email'), logo_url: g('logo_url'),
-          compress_images: ov.querySelector('[data-f="compress_images"]').checked,
+          compress_images: true,
         });
         UI.toast('Company profile saved');
       } : null,

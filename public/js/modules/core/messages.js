@@ -88,6 +88,7 @@ App.register('messages', async (view, filter) => {
       <div class="chat-load-older hidden" id="chat-load-older"><button class="btn secondary small">Load earlier messages</button></div>
       <div class="chat-messages" id="chat-messages"><div class="empty">Loading…</div></div>
       <div class="chat-reply-strip hidden" id="chat-reply-strip"></div>
+      <div class="chat-file-preview hidden" id="chat-file-preview" aria-live="polite"></div>
       <div class="chat-compose">
         <button class="icon-btn" id="chat-attach-btn" title="Attach a file">${UI.icon('upload', 18)}</button>
         <input type="file" id="chat-file-input" multiple class="hidden" />
@@ -166,7 +167,7 @@ App.register('messages', async (view, filter) => {
   function attachmentHTML(a) {
     const isImage = (a.mime_type || '').startsWith('image/');
     if (isImage) {
-      return `<div class="chat-attach-img-wrap" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}"><img class="chat-attach-img" alt="${UI.esc(a.name)}" /></div>`;
+      return `<button type="button" class="chat-attach-img-wrap" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" data-photo="1" aria-label="Enlarge ${UI.esc(a.name)}"><img class="chat-attach-img" alt="${UI.esc(a.name)}" /></button>`;
     }
     return `<div class="msg-attach" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" style="cursor:pointer">
       <span class="msg-attach-icon">${UI.icon(UI.fileIconName(a.name), 16)}</span>
@@ -385,7 +386,12 @@ App.register('messages', async (view, filter) => {
         return;
       }
       const att = e.target.closest('[data-att-url]');
-      if (att) { API.download(att.dataset.attUrl, att.dataset.attName).catch((err) => UI.toast(err.message, 'error')); return; }
+      if (att) {
+        e.stopPropagation();
+        if (att.dataset.photo) PhotoViewer.open(att.dataset.attUrl, att.dataset.attName);
+        else API.download(att.dataset.attUrl, att.dataset.attName).catch((err) => UI.toast(err.message, 'error'));
+        return;
+      }
       const chip = e.target.closest('.chat-reaction');
       if (chip) { react(Number(chip.closest('.chat-row').dataset.id), chip.dataset.emoji); return; }
       const actBtn = e.target.closest('[data-act]');
@@ -411,6 +417,15 @@ App.register('messages', async (view, filter) => {
     const sendBtn = threadEl.querySelector('#chat-send-btn');
     const attachBtn = threadEl.querySelector('#chat-attach-btn');
     const fileInput = threadEl.querySelector('#chat-file-input');
+    const filePreview = threadEl.querySelector('#chat-file-preview');
+    let selectedFiles = [];
+    function renderFiles() {
+      filePreview.classList.toggle('hidden', !selectedFiles.length);
+      filePreview.innerHTML = selectedFiles.map((file, index) => `<span class="chat-file-chip">${UI.esc(file.name)}<button type="button" data-remove="${index}" aria-label="Remove ${UI.esc(file.name)}">×</button></span>`).join('');
+      filePreview.querySelectorAll('[data-remove]').forEach((button) => {
+        button.onclick = () => { selectedFiles.splice(Number(button.dataset.remove), 1); renderFiles(); };
+      });
+    }
 
     input.addEventListener('input', () => {
       autoGrow(input);
@@ -425,11 +440,17 @@ App.register('messages', async (view, filter) => {
     });
     sendBtn.addEventListener('click', sendOrSave);
     attachBtn.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', () => { if (fileInput.files.length) sendOrSave(); });
+    fileInput.addEventListener('change', () => {
+      const picked = [...fileInput.files];
+      if (selectedFiles.length + picked.length > 10) UI.toast('Up to 10 files per message', 'error');
+      selectedFiles = selectedFiles.concat(picked).slice(0, 10);
+      fileInput.value = '';
+      renderFiles();
+    });
 
     async function sendOrSave() {
       const body = input.value.trim();
-      const files = fileInput.files;
+      const files = selectedFiles.slice();
       if (editingId) {
         if (!body) { UI.toast('Message cannot be empty', 'error'); return; }
         const id = editingId;
@@ -447,13 +468,12 @@ App.register('messages', async (view, filter) => {
       }
       if (!body && !(files && files.length)) return;
       sendBtn.disabled = true;
+      attachBtn.disabled = true;
       try {
-        const [company] = await Promise.all([API.get('/templates/company').catch(() => ({}))]);
-        const compressImages = company.compress_images !== false;
         if (files && files.length) {
-          let outFiles = [...files];
-          if (compressImages && window.ImageCompress) {
-            outFiles = await Promise.all(outFiles.map((f) => window.ImageCompress.maybeCompress(f)));
+          let outFiles = files;
+          if (window.ImageCompress) {
+            outFiles = await Promise.all(outFiles.map((f) => window.ImageCompress.maybeCompress(f, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 })));
           }
           const fd = new FormData();
           fd.append('recipient_id', activeOtherId);
@@ -465,7 +485,8 @@ App.register('messages', async (view, filter) => {
           await API.post('/messages', { recipient_id: activeOtherId, body, reply_to_id: replyTo ? replyTo.id : undefined });
         }
         input.value = '';
-        fileInput.value = '';
+        selectedFiles = [];
+        renderFiles();
         autoGrow(input);
         replyTo = null;
         renderReplyStrip();
@@ -478,6 +499,7 @@ App.register('messages', async (view, filter) => {
         UI.toast(e.message, 'error');
       } finally {
         sendBtn.disabled = false;
+        attachBtn.disabled = false;
       }
     }
   }

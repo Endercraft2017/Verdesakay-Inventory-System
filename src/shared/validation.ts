@@ -696,7 +696,7 @@ export const reorderPoSchema = z.object({
 export const sendMessageSchema = z.object({
   recipient_id: z.coerce.number().int().positive('Recipient is required'),
   subject: trimmed.max(200).optional().nullable(),
-  body: trimmed.min(1, 'Message body is required').max(5000),
+  body: trimmed.max(5000).default(''),
   reply_to_id: z.coerce.number().int().positive().optional(),
 });
 

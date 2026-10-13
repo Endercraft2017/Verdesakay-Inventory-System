@@ -151,8 +151,13 @@
       formData.append('recipient_id', data.recipient_id);
       formData.append('subject', '[EMPLOYEE REPORT] ' + data.category + ' — ' + data.subject);
       formData.append('body', body);
-      for (var i = 0; data.files && i < data.files.length; i += 1) formData.append('files', data.files[i], data.files[i].name);
-      API.upload('/messages', formData).then(function () {
+      var selected = Array.prototype.slice.call(data.files || []);
+      Promise.all(selected.map(function (file) {
+        return window.ImageCompress ? ImageCompress.maybeCompress(file, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 }) : file;
+      })).then(function (files) {
+        files.forEach(function (file) { formData.append('files', file, file.name); });
+        return API.upload('/messages', formData);
+      }).then(function () {
         clearDraft(DRAFT_KEY);
         mSuccess(view, {
           title: 'Report sent',
@@ -219,7 +224,7 @@
     var name = function (k) { return 'photo-' + (i + k + 1) + '.jpg'; };
     if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')) {
       if (!window.PdfPages) return Promise.reject(new Error('PDFs can’t be prepared on this device.'));
-      return PdfPages.toJpegs(file, { maxPages: room || 1, maxDim: 2048, quality: 0.85, name: name }).then(function (r) {
+      return PdfPages.toJpegs(file, { maxPages: room || 1, maxDim: 1600, quality: 0.8, name: name }).then(function (r) {
         if (r.totalPages > r.files.length) {
           mToast('Only the first ' + r.files.length + ' of ' + r.totalPages + ' pages fit — photos of the rest can go in a follow-up.', 'err');
         }
@@ -227,7 +232,7 @@
       });
     }
     if (!window.ImageCompress || !ImageCompress.reencode) return Promise.reject(new Error('Photos can’t be prepared on this device.'));
-    return ImageCompress.reencode(file, { maxDim: 2048, quality: 0.85, name: name(0) });
+    return ImageCompress.reencode(file, { maxDim: 1600, quality: 0.8, name: name(0) });
   }
   var PHOTO_NOTE = 'Location, device and time details are removed on this phone before sending, and again on the server. ' +
     'A PDF is sent as a photo of each page (one photo per page), without its file details. ' +
