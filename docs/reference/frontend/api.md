@@ -34,10 +34,15 @@ unit-tested directly).
   failed (<status>)')` — so callers can just `catch (e) { UI.toast(e.message, 'error') }`.
 - Returns the parsed JSON body (or `null`) on success.
 
+- **`API.get(path, { remember: true })`** keeps that response in memory, and
+  **`API.peek(path)`** returns it (or `null`) so a screen can draw what it showed last time
+  while the fresh copy loads (first user: `hr-employees.js`). Memory only (never storage), at
+  most 30 paths, emptied by `setToken`/`clearToken` and by any POST/PUT/PATCH/DELETE.
+
 ## Internal structure
-Single IIFE closure. `TOKEN_KEY = 'vds_token'` is the only piece of module state (besides
-`localStorage`, which is the actual persistence). No caching, no request queue, no retry
-logic — every call hits the network directly.
+Single IIFE closure. `TOKEN_KEY = 'vds_token'` plus the `remembered` Map (above) are the module
+state. No request queue or retry logic — every call still hits the network; `peek` only lets a
+screen show the previous answer meanwhile. Tests: `tests/frontend-api-client.test.ts`.
 
 ## Dependencies
 - `window.App.showLogin` (soft dependency, checked with `if (window.App)` — API can be used

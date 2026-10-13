@@ -260,7 +260,23 @@ describe('hr', () => {
     const detail = (await ctx.api.get('/api/hr/employees').set(hdr())).body.find((e: { id: number }) => e.id === ok.body.id);
     expect(detail.status).toBe('regular');
     expect(detail.sss_no).toBe('01-2345678-9');
-    expect(detail.photo).toMatch(/^data:image\//);
+    // The list carries a fingerprint, not the photo; the photo is its own cacheable image.
+    expect(detail.photo).toBeUndefined();
+    expect(detail.photo_rev).toMatch(/^[0-9a-f]{12}$/);
+    const img = await ctx.api.get(`/api/hr/employees/${ok.body.id}/photo?v=${detail.photo_rev}`).set(hdr());
+    expect(img.status).toBe(200);
+    expect(img.headers['content-type']).toMatch(/^image\/png/);
+    expect(img.headers['cache-control']).toBe('private, max-age=31536000, immutable');
+    expect(Buffer.isBuffer(img.body) && img.body.subarray(1, 4).toString()).toBe('PNG');
+
+    // A save that leaves `photo` out keeps it (the form only sends it when changed); '' removes it.
+    const { photo_rev: _rev, id: _id, ...fields } = detail;
+    const rowOf = async () => (await ctx.api.get('/api/hr/employees').set(hdr())).body.find((e: { id: number }) => e.id === ok.body.id);
+    expect((await ctx.api.put(`/api/hr/employees/${ok.body.id}`).set(hdr()).send({ ...fields, position: 'Lead' })).status).toBe(200);
+    expect((await rowOf()).photo_rev).toBe(detail.photo_rev);
+    expect((await ctx.api.put(`/api/hr/employees/${ok.body.id}`).set(hdr()).send({ ...fields, photo: '' })).status).toBe(200);
+    expect((await rowOf()).photo_rev).toBeNull();
+    expect((await ctx.api.get(`/api/hr/employees/${ok.body.id}/photo`).set(hdr())).status).toBe(404);
 
     const bad = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-BADPHOTO', name: 'Bad Photo', photo: 'not-an-image' });

@@ -189,10 +189,29 @@ router.get('/employees', requirePermission('hr.view'), (req, res) => {
   );
   // rest_days is stored as a JSON-text column (see db.ts migration) — parse it back to an
   // array (or null) for callers, same shape employeeSchema accepts on save.
-  for (const r of rows) {
+  // The photo (a data URI, ~20-40 KB each) stays out of the list — sending every one made the
+  // list megabytes on the hosted app. `photo_rev` fingerprints it instead: null = no photo, and
+  // the screen fetches GET /employees/:id/photo?v=<rev>, which the browser then keeps.
+  const out = rows.map(({ photo, ...r }) => {
     r.rest_days = r.rest_days ? (() => { try { return JSON.parse(r.rest_days as unknown as string); } catch { return null; } })() : null;
-  }
-  res.json(redactPay(rows, req.user)); // rates only for payroll.view (payroll/pay-access.ts)
+    return { ...r, photo_rev: photoRev(photo) };
+  });
+  res.json(redactPay(out, req.user)); // rates only for payroll.view (payroll/pay-access.ts)
+});
+
+function photoRev(photo: string | null): string | null {
+  return photo ? crypto.createHash('sha1').update(photo).digest('hex').slice(0, 12) : null;
+}
+
+// GET /api/hr/employees/:id/photo — the employee's photo as an image. The list links it with
+// ?v=<photo_rev>, so a new photo is a new URL and the old response can be kept for a year.
+// `private`: the browser may keep it, Cloudflare must not (the request carries a sign-in).
+router.get('/employees/:id/photo', requirePermission('hr.view'), (req, res) => {
+  const row = queryOne<{ photo: string | null }>('SELECT photo FROM employees WHERE id = ?', Number(req.params.id));
+  const m = row?.photo ? /^data:(image\/[\w.+-]+);base64,(.*)$/s.exec(row.photo) : null;
+  if (!m) { res.status(404).json({ error: 'No photo' }); return; }
+  res.set('Cache-Control', 'private, max-age=31536000, immutable');
+  res.type(m[1]!).send(Buffer.from(m[2]!, 'base64'));
 });
 
 // GET /api/hr/employees/export — 201-file master data as CSV (round-trips with import)
@@ -567,7 +586,8 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
        monthly_rate = ?, status = ?, start_date = ?, sss_no = ?, philhealth_no = ?, pagibig_no = ?, tin_no = ?,
        rest_days = ?, default_shift_id = ?, late_exempt = ?,
        ot_exempt = ?, deduct_sss = ?, deduct_philhealth = ?, deduct_pagibig = ?, deduct_withholding_tax = ?, withholding_tax_override = ?,
-       sss_override = ?, philhealth_override = ?, pagibig_override = ?, photo = ?,
+       sss_override = ?, philhealth_override = ?, pagibig_override = ?,
+       photo = CASE WHEN ? THEN ? ELSE photo END,
        clock_anywhere = COALESCE(?, clock_anywhere),
        always_whole_day = COALESCE(?, always_whole_day),
        contribution_basis = COALESCE(?, contribution_basis),
@@ -582,7 +602,9 @@ router.put('/employees/:id', requirePermission('hr.manage'), syncClass('claim'),
     input.ot_exempt ? 1 : 0, input.deduct_sss === false ? 0 : 1, input.deduct_philhealth === false ? 0 : 1,
     input.deduct_pagibig === false ? 0 : 1, input.deduct_withholding_tax === false ? 0 : 1,
     input.withholding_tax_override ?? null,
-    input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null, input.photo ?? null,
+    input.sss_override ?? null, input.philhealth_override ?? null, input.pagibig_override ?? null,
+    // Omitted = keep the stored photo (the list no longer carries it); '' or null = remove it.
+    input.photo === undefined ? 0 : 1, input.photo ?? null,
     input.clock_anywhere === undefined ? null : (input.clock_anywhere ? 1 : 0),
     input.always_whole_day === undefined ? null : (input.always_whole_day ? 1 : 0),
     input.contribution_basis ?? null,

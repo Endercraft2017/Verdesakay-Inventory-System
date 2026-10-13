@@ -117,6 +117,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // (see hr.routes.ts), so a match isn't guaranteed. A bundle with no match still shows its
   // stats, just without the id-dependent quick actions (Export CSV, Post to GL).
   let periodsMeta = [];
+  let periodCombo = null; // payroll's Period filter (UI.combo); load() refreshes its options
+  const periodOptions = (labels) => [{ value: '', label: 'All periods' }, ...labels.map((p) => ({ value: p, label: p }))];
   const expandedBundles = new Set(); // period labels the user has toggled open
   // Defaults the most-recent bundle open exactly once, on the very first render — without
   // this flag, collapsing that same bundle empties the set again, and the "default open"
@@ -208,7 +210,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         <input type="search" id="fr-search" placeholder="Search employee name…" autocomplete="off" />
       </div>
       <div class="fld"><label for="fr-status">Status</label><select id="fr-status">${statusOptions}</select></div>
-      <div class="fld"><label for="fr-period">Period</label><select id="fr-period"><option value="">All periods</option></select></div>
+      <div class="fld"><label for="fr-period">Period</label><div id="fr-period-combo"></div></div>
       <button type="button" class="btn secondary small" id="fr-filter-reset" hidden>Reset</button>
       <div class="grow"></div>
       <div class="hr-tools-group" role="group" aria-label="Print and export the payslips in view">
@@ -269,10 +271,18 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     view.querySelector('#fr-print-slips').onclick = () => printSlips();
     view.querySelector('#fr-print-summary').onclick = () => printSummary();
     view.querySelector('#fr-bulk-print').onclick = () => printSelected();
-    view.querySelector('#fr-period').addEventListener('change', (e) => {
-      state.period = e.target.value;
-      load();
+    // Type-to-search instead of a <select>: the cutoff list only grows (two a month).
+    periodCombo = UI.combo(view.querySelector('#fr-period-combo'), periodOptions([]), {
+      selected: state.period,
+      placeholder: 'Type a period…',
+      emptyText: 'No matching period',
+      onSelect: (value) => {
+        if ((value || '') === state.period) return;
+        state.period = value || '';
+        load();
+      },
     });
+    view.querySelector('#fr-period-combo .combo-input').id = 'fr-period';
     view.querySelector('#fr-filter-reset').onclick = () => clearPayrollFilters();
   }
   if (canBulkPrint) {
@@ -296,7 +306,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     state.q = ''; state.status = ''; state.period = '';
     view.querySelector('#fr-search').value = '';
     view.querySelector('#fr-status').value = '';
-    view.querySelector('#fr-period').value = '';
+    periodCombo.setSelected('');
     load();
     view.querySelector('#fr-search').focus();
   }
@@ -903,8 +913,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     if (state.period) params.set('period', state.period);
     if (isPayroll) view.querySelector('#fr-filter-reset').hidden = !(state.q || state.status || state.period);
     // Payroll's two side lists don't depend on the records, so all three go out together.
-    const periodSel = isPayroll ? view.querySelector('#fr-period') : null;
-    const periodsReq = periodSel
+    const periodsReq = isPayroll && periodCombo
       ? API.get('/form-definitions/' + formId + '/periods').catch(() => null) // non-critical
       : null;
     // Only needed for the grouped "All periods" bundle view below — skip the extra request
@@ -928,12 +937,11 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     currentRecords = records;
     selectedIds.clear();
     updateBulkBar();
-    // Refresh the period dropdown with known periods (preserving selection).
+    // Refresh the period picker with known periods (preserving selection).
     const periods = await periodsReq;
-    if (periodSel && periods) {
-      const cur = state.period;
-      periodSel.innerHTML = '<option value="">All periods</option>' +
-        periods.map((p) => `<option value="${UI.esc(p)}" ${p === cur ? 'selected' : ''}>${UI.esc(p)}</option>`).join('');
+    if (periodCombo && periods) {
+      periodCombo.setOptions(periodOptions(periods));
+      periodCombo.setSelected(state.period);
     }
     if (periodsMetaReq) periodsMeta = await periodsMetaReq;
     renderRecords(records);

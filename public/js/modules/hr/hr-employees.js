@@ -77,6 +77,9 @@ App.register('hr-employees', async (view, filter) => {
 
   async function ensureDepts() {
     if (depts.length) return depts;
+    // The shell already loaded the list at sign-in (app.js) — reuse it instead of another trip.
+    const shell = App.getDepartments ? App.getDepartments() : null;
+    if (shell && shell.length) { depts = shell.slice(); return depts; }
     try { depts = await API.get('/users/departments/list'); } catch { depts = []; }
     return depts;
   }
@@ -108,6 +111,7 @@ App.register('hr-employees', async (view, filter) => {
         const deptFilter = view.querySelector('#emp-dept-filter');
         if (deptFilter) deptFilter.innerHTML = '<option value="">All departments</option>' + optsHTML;
         UI.toast('Department added');
+        if (App.reloadDepartments) App.reloadDepartments(); // keep the shell's copy (ensureDepts) current
       },
     });
   }
@@ -194,31 +198,80 @@ App.register('hr-employees', async (view, filter) => {
     const deptFilter = view.querySelector('#emp-dept-filter');
     if (deptFilter) deptFilter.innerHTML = '<option value="">All departments</option>' + optsHTML;
     UI.toast('Department deleted');
+    if (App.reloadDepartments) App.reloadDepartments();
   }
 
   let displayedEmployees = [];
   let loadVersion = 0;
-  async function load() {
-    const version = ++loadVersion;
-    tableEl.innerHTML = '<div class="empty">Loading…</div>';
+  async function fillDeptFilter() {
     await ensureDepts();
     const deptFilter = view.querySelector('#emp-dept-filter');
     if (deptFilter.options.length <= 1) {
       deptFilter.innerHTML = '<option value="">All departments</option>' +
         depts.map((d) => `<option value="${d.id}">${UI.esc(d.name)}</option>`).join('');
     }
+  }
+
+  /* Draws the list this screen showed last time straight away (API.peek), then swaps in the
+     fresh copy if it differs. The department filter loads alongside, not before. */
+  async function load() {
+    const version = ++loadVersion;
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.department_id) params.set('department_id', state.department_id);
     if (state.status) params.set('status', state.status);
+    const path = '/hr/employees?' + params.toString();
+    const seen = API.peek ? API.peek(path) : null;
+    if (seen) render(seen);
+    else tableEl.innerHTML = '<div class="empty">Loading…</div>';
+    let list;
     try {
-      const list = await API.get('/hr/employees?' + params.toString());
-      if (version === loadVersion) render(list);
+      [list] = await Promise.all([API.get(path, { remember: true }), fillDeptFilter()]);
     } catch (e) {
       if (version !== loadVersion) return;
+      if (seen) { UI.toast(e.message, 'error'); return; } // keep showing the last list
       tableEl.innerHTML = UI.emptyState({icon:'alert',title:'Couldn’t load employees',hint:e.message,action:'<button class="btn secondary" id="emp-retry">Try again</button>'});
       tableEl.querySelector('#emp-retry').onclick=load;
+      return;
     }
+    if (version !== loadVersion) return; // a newer search/filter started meanwhile
+    if (!seen || JSON.stringify(list) !== JSON.stringify(seen)) render(list);
+  }
+
+  /* Photos load after the table, one small cached image each (GET /hr/employees/:id/photo). The
+     ?v=<photo_rev> URL changes with the photo, so the browser keeps each one until it does. */
+  const photoUrls = new Map(); // "<id>:<rev>" -> Promise<object URL>, for this visit
+  function photoUrl(id, rev) {
+    const key = id + ':' + rev;
+    if (!photoUrls.has(key)) {
+      photoUrls.set(key, API.blobUrl(`/hr/employees/${id}/photo?v=${encodeURIComponent(rev)}`)
+        .catch(() => { photoUrls.delete(key); return PLACEHOLDER_PHOTO; }));
+    }
+    return photoUrls.get(key);
+  }
+  function showPhoto(img) {
+    photoUrl(img.dataset.photoId, img.dataset.photoRev).then((u) => { img.src = u; });
+  }
+  function loadPhotos(root) {
+    const imgs = root.querySelectorAll('img[data-photo-rev]');
+    if (!('IntersectionObserver' in window)) { imgs.forEach(showPhoto); return; }
+    const io = new IntersectionObserver((entries) => entries.forEach((en) => {
+      if (en.isIntersecting) { io.unobserve(en.target); showPhoto(en.target); }
+    }), { rootMargin: '200px' });
+    imgs.forEach((img) => io.observe(img));
+  }
+  /** The photo as a data: URI (the ID card template embeds it), or the placeholder. */
+  async function photoDataUrl(emp) {
+    if (!emp.photo_rev) return PLACEHOLDER_PHOTO;
+    const u = await photoUrl(emp.id, emp.photo_rev);
+    if (u === PLACEHOLDER_PHOTO) return u;
+    const blob = await (await fetch(u)).blob();
+    return new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => resolve(PLACEHOLDER_PHOTO);
+      r.readAsDataURL(blob);
+    });
   }
 
   function render(list) {
@@ -240,7 +293,7 @@ App.register('hr-employees', async (view, filter) => {
         <tbody>${list.map((e) => `
           <tr class="clickable" data-open="${e.id}">
             ${canManage ? `<td><input type="checkbox" class="emp-chk" data-emp="${e.id}" data-name="${UI.esc(e.name)}" /></td>` : ''}
-            <td><img src="${UI.esc(e.photo || PLACEHOLDER_PHOTO)}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle" /></td>
+            <td><img src="${UI.esc(PLACEHOLDER_PHOTO)}"${e.photo_rev ? ` data-photo-id="${e.id}" data-photo-rev="${UI.esc(e.photo_rev)}"` : ''} alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle" /></td>
             <td><strong>${UI.esc(e.name)}</strong>${e.user_id ? ` <span class="muted" title="Linked to account: ${UI.esc(e.linked_username || '')}" style="vertical-align:middle">${UI.icon('key', 13)}</span>` : ''}</td>
             <td class="mono muted">${UI.esc(e.employee_no || '—')}</td>
             <td>${UI.esc(e.department_name || '—')}</td>
@@ -257,6 +310,7 @@ App.register('hr-employees', async (view, filter) => {
           </tr>`).join('')}
         </tbody>
       </table>`;
+    loadPhotos(tableEl);
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openEmployee(b.dataset.edit, list); });
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); del(b.dataset.del, list); });
     tableEl.querySelectorAll('[data-id-card]').forEach((b) => b.onclick = (e) => {
@@ -356,7 +410,10 @@ App.register('hr-employees', async (view, filter) => {
 
   function employeeModal(existing) {
     const editing = !!existing;
-    let photoData = editing ? (existing.photo || '') : '';
+    // The list carries no photo (photo_rev only): the preview loads it, and the save sends
+    // `photo` only when it was changed here — omitted, the server keeps the stored one.
+    let photoData = '';
+    let photoChanged = false;
 
     Promise.all([
       ensureDepts(),
@@ -471,7 +528,7 @@ App.register('hr-employees', async (view, filter) => {
                 <option value="monthly" ${rateType === 'monthly' ? 'selected' : ''}>Monthly</option>
               </select></div>
               <div><label id="emp-rate-label">${rateType === 'monthly' ? 'Monthly rate' : 'Daily rate'}</label>
-                <input data-f="rate_amount" type="number" step="0.01" min="0" value="${UI.esc(String(rateAmount || 0))}" ${editing ? 'readonly' : ''} />
+                <input data-f="rate_amount" type="number" step="0.01" min="0" value="${UI.esc(String(rateAmount || 0))}" ${editing ? `readonly${canChangePay ? ' title="Click to change the rate" style="cursor:pointer"' : ''}` : ''} />
                 <div class="muted" id="emp-rate-hint" style="font-size:12px;margin-top:3px"></div>
               </div>
             </div>
@@ -627,16 +684,19 @@ App.register('hr-employees', async (view, filter) => {
           const rateLabel = ov.querySelector('#emp-rate-label');
           const rateHint = ov.querySelector('#emp-rate-hint');
           const rateAmountInp = ov.querySelector('[data-f="rate_amount"]');
+          // Editing: the rate box is read-only (see the Change rate note below), so say how to set it.
+          const lockedNote = !editing ? ''
+            : canChangePay ? 'Set or change it with Change rate.' : 'Only payroll managers can change the rate.';
           function updateRateUI() {
             if (rateTypeSel.value === 'monthly') {
               rateLabel.textContent = 'Monthly rate';
               const amt = Number(rateAmountInp.value) || 0;
-              rateHint.textContent = amt
+              rateHint.textContent = (amt
                 ? `≈ ${money(amt / monthlyRateDivisor)} / day (monthly ÷ ${monthlyRateDivisor})`
-                : `Divided by ${monthlyRateDivisor} to get the daily rate used in payroll.`;
+                : `Divided by ${monthlyRateDivisor} to get the daily rate used in payroll.`) + (lockedNote ? ' ' + lockedNote : '');
             } else {
               rateLabel.textContent = 'Daily rate';
-              rateHint.textContent = '';
+              rateHint.textContent = lockedNote;
             }
           }
           rateTypeSel.addEventListener('change', updateRateUI);
@@ -656,6 +716,7 @@ App.register('hr-employees', async (view, filter) => {
             // dialog, which logs it and recomputes the affected payslips straight away. The
             // fields then show the rate in force today, so Save here never re-sends an old rate.
             const rateChangeBtn = ov.querySelector('#emp-rate-change');
+            if (rateChangeBtn) rateAmountInp.addEventListener('click', () => rateChangeBtn.click());
             if (rateChangeBtn) rateChangeBtn.onclick = () => rateChangeModal(existing, (r) => {
               existing.rate_type = r.rate_type;
               existing.daily_rate = r.daily_rate;
@@ -715,17 +776,21 @@ App.register('hr-employees', async (view, filter) => {
 
           const fileInp = ov.querySelector('#emp-photo-file');
           const preview = ov.querySelector('#emp-photo-preview');
+          if (editing && existing.photo_rev) {
+            photoUrl(existing.id, existing.photo_rev).then((u) => { if (!photoChanged) preview.src = u; });
+          }
           ov.querySelector('#emp-photo-pick').onclick = () => fileInp.click();
           fileInp.addEventListener('change', async () => {
             if (!fileInp.files.length) return;
             try {
               photoData = await resizeImageToDataUrl(fileInp.files[0], 320, 0.82);
+              photoChanged = true;
               preview.src = photoData;
             } catch (e) {
               UI.toast(e.message, 'error');
             }
           });
-          ov.querySelector('#emp-photo-clear').onclick = () => { photoData = ''; preview.src = PLACEHOLDER_PHOTO; };
+          ov.querySelector('#emp-photo-clear').onclick = () => { photoData = ''; photoChanged = true; preview.src = PLACEHOLDER_PHOTO; };
 
           if (!editing) return;
           ov.dataset.employeeId = existing.id;
@@ -853,7 +918,7 @@ App.register('hr-employees', async (view, filter) => {
             philhealth_override: ov.querySelector('[data-f="philhealth_override"]').value.trim() || null,
             pagibig_override: ov.querySelector('[data-f="pagibig_override"]').value.trim() || null,
             contribution_basis: ov.querySelector('[data-f="contribution_basis_fixed"]').checked ? 'fixed' : 'actual',
-            photo: photoData,
+            photo: photoChanged ? photoData : undefined, // undefined is left out of the JSON
           };
           if (editing) await API.put('/hr/employees/' + existing.id, body);
           else await API.post('/hr/employees', body);
@@ -1205,9 +1270,10 @@ App.register('hr-employees', async (view, filter) => {
   // new window, so there's nothing for a popup blocker to block.
   async function generateId(emp) {
     try {
-      const [tpl, company] = await Promise.all([
+      const [tpl, company, photo] = await Promise.all([
         API.get('/templates/defaults/employee_id'),
         API.get('/templates/company'),
+        photoDataUrl(emp),
       ]);
       const variables=await API.get('/templates/variables?template_id='+tpl.id);
       const tplBody = tpl ? tpl.body : FALLBACK_ID_TEMPLATE;
@@ -1215,7 +1281,7 @@ App.register('hr-employees', async (view, filter) => {
         company,
         employee: {
           name: emp.name, employee_no: emp.employee_no || '', position: emp.position || '',
-          department: emp.department_name || '', photo: emp.photo || PLACEHOLDER_PHOTO,
+          department: emp.department_name || '', photo,
         },
         today: new Date().toLocaleDateString(),
       };

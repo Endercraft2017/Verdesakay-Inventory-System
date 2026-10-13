@@ -377,8 +377,28 @@ describe('Payroll records list', () => {
     await flush();
     expect(gets.filter((p) => p.startsWith('/form-definitions/40/records')).pop()).toBe('/form-definitions/40/records?');
     expect((q(view, '#fr-status') as HTMLSelectElement).value).toBe('');
-    expect((q(view, '#fr-period') as HTMLSelectElement).value).toBe('');
+    expect((q(view, '#fr-period') as HTMLInputElement).value).toBe('All periods');
     expect(q(view, '#fr-filter-reset')!.hidden).toBe(true);
+  });
+
+  it('Period is a type-to-search box: typing filters the list, picking one reloads that period', async () => {
+    const { view, routes, gets } = boot(FR_SRC, ['payroll.view'], payrollGet(() => PAYSLIPS));
+    await routes['form-records']!(view, { form_id: 40 });
+    await flush();
+    const input = q(view, '#fr-period') as HTMLInputElement;
+    expect(input.tagName).toBe('INPUT');
+    expect(input.value).toBe('All periods');
+    const win = input.ownerDocument.defaultView!;
+    input.dispatchEvent(new win.Event('focus'));
+    setValue(input, 'feb', 'input');
+    const options = qa(view, '#fr-period-combo .combo-option');
+    expect(options.map((o) => o.textContent)).toEqual(['February 16-28']);
+    options[0]!.dispatchEvent(new win.MouseEvent('mousedown', { bubbles: true }));
+    await flush();
+    expect(gets.filter((p) => p.startsWith('/form-definitions/40/records')).pop())
+      .toBe('/form-definitions/40/records?period=February+16-28');
+    expect(input.value).toBe('February 16-28');
+    expect(q(view, '#fr-filter-reset')!.hidden).toBe(false);
   });
 
   it('opens a payslip from a focusable row button and toggles period bundles from a real disclosure button', async () => {

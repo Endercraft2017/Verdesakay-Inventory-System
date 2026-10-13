@@ -616,6 +616,13 @@ doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
 Company Assets, tests `tests/hr-assets.test.ts`), `clock.routes.ts`, `field.routes.ts`,
 `employee-profile.ts` + `employee-profile.routes.ts` (self-service profile, below).
+**Employee photos (2026-10-13):** `GET /api/hr/employees` leaves `employees.photo` (a data URI)
+out and sends `photo_rev` (12-hex fingerprint, null = none) instead; the image itself is
+`GET /api/hr/employees/:id/photo?v=<rev>` (hr.view, `Cache-Control: private, max-age=31536000,
+immutable` — the browser keeps it, Cloudflare doesn't). `PUT /hr/employees/:id` with `photo`
+omitted keeps the stored photo; `''`/null removes it. The Employees screen draws its last list
+at once via `API.peek` (memory-only, `public/js/api.js`). Tests: `tests/hr.test.ts`,
+`tests/frontend-api-client.test.ts`.
 **Self-service profile:** `employee_profiles` / `employee_profile_changes` (createSchema, no
 version bump) hold the preferred name and personal contact/emergency details the employee edits
 themselves via `GET/PUT /api/me/profile` (`core/me.routes.ts`) — re-authenticated with the

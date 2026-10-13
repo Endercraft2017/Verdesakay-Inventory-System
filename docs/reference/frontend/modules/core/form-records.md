@@ -22,8 +22,9 @@ App.register('form-records', async (view, filter) => {
 - `filter.period` — only meaningful together with `form_id`; pre-selects the payroll
   period filter (`state.period`) on load. Used when navigating here from Time Keeping's
   "Generate Payslips" flow (`hr-timekeeping.js`) so the newly-generated period is
-  immediately visible. Only rendered as a UI control (`#fr-period` select) when the form is
-  the payroll form (`isPayroll`); otherwise the value is accepted but has no `<select>` to
+  immediately visible. Only rendered as a UI control (`#fr-period`, a type-to-search
+  `UI.combo` inside `#fr-period-combo`) when the form is the payroll form (`isPayroll`);
+  otherwise the value is accepted but has no control to
   reflect it — filtering by period could still occur server-side via the query string on
   `load()`, but there is no way for a non-payroll form to set it from the UI.
 

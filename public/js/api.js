@@ -14,11 +14,20 @@ const API = (() => {
   function getToken() {
     try { return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
   }
+  /* The last response of a GET made with { remember: true }, so a screen can draw what it showed
+     last time while the fresh copy loads (API.peek). Memory only — never written to storage, so
+     nothing personal stays on a shared PC — and emptied on sign-in/out and after any change
+     (POST/PUT/PATCH/DELETE), which may have made it out of date. */
+  const remembered = new Map();
+  const REMEMBER_MAX = 30;
+  function peek(path) { return remembered.has(path) ? remembered.get(path) : null; }
+
   function setToken(t, opts) {
     clearToken();
     try { ((opts && opts.shared) ? sessionStorage : localStorage).setItem(TOKEN_KEY, t); } catch (e) { /* storage blocked */ }
   }
   function clearToken() {
+    remembered.clear();
     try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
   }
@@ -54,6 +63,7 @@ const API = (() => {
   }
 
   async function request(method, path, body, isForm, opts) {
+    if (method !== 'GET') remembered.clear();
     const headers = {};
     const token = getToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
@@ -118,6 +128,11 @@ const API = (() => {
       err.data = data;   // full parsed body — callers can inspect extra fields (e.g. a 409's details)
       throw err;
     }
+    if (method === 'GET' && opts && opts.remember) {
+      remembered.delete(path); // re-insert at the end: the Map's order is oldest first
+      remembered.set(path, data);
+      if (remembered.size > REMEMBER_MAX) remembered.delete(remembered.keys().next().value);
+    }
     return data;
   }
 
@@ -149,7 +164,9 @@ const API = (() => {
 
   return {
     getToken, setToken, clearToken, isSharedSession, deviceId, base,
-    get: (p) => request('GET', p),
+    /** opts.remember: keep the response for API.peek(p) (see `remembered`). */
+    get: (p, opts) => request('GET', p, undefined, false, opts),
+    peek,
     post: (p, b, opts) => request('POST', p, b, false, opts),
     put: (p, b, opts) => request('PUT', p, b, false, opts),
     patch: (p, b, opts) => request('PATCH', p, b, false, opts),
