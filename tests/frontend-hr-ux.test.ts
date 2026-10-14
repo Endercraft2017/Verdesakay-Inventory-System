@@ -39,7 +39,7 @@ function boot(src: string, perms: string[], get: GetHandler) {
     download: () => Promise.resolve(),
   };
   // One script, as in frontend-mobile.test.ts: top-level `const UI` isn't shared across evals.
-  win.eval(`${UI_SRC}\n${fs.readFileSync(path.join(PUBLIC, "js/lib/data-forms.js"), "utf8")}\nwindow.__UI = UI;\n${fs.readFileSync(path.join(PUBLIC, "js/leave-dates.js"), "utf8")}\n${src}`);
+  win.eval(`${UI_SRC}\n${fs.readFileSync(path.join(PUBLIC, "js/lib/form-validation.js"), "utf8")}\n${fs.readFileSync(path.join(PUBLIC, "js/lib/data-forms.js"), "utf8")}\nwindow.__UI = UI;\n${fs.readFileSync(path.join(PUBLIC, "js/leave-dates.js"), "utf8")}\n${src}`);
   const UI = win.__UI;
   UI.toast = (msg: string) => { toasts.push(msg); };
   UI.confirmDialog = () => Promise.resolve(false);

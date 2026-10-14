@@ -207,7 +207,7 @@ App.register('hr-requests', async (view, filter) => {
       bodyHTML: `<p class="muted">Submitted requests go to your department approvers or HR. Leave is deducted only when approved.</p>${type.slug === 'leave_request' ? LeaveDates.markup() : ''}${fields
         .map((f, i) => {
           let input;
-          const attrs = `data-field="${i}" id="myhr-f-${i}"`;
+          const attrs = `data-field="${i}" id="myhr-f-${i}" ${f.required ? 'aria-required="true"' : ''}`;
           if (f.type === 'textarea')
             input = `<textarea ${attrs} rows="3">${UI.esc(f.default || '')}</textarea>`;
           else if (f.type === 'select' || f.type === 'employee')
@@ -222,24 +222,24 @@ App.register('hr-requests', async (view, filter) => {
             input = `<input ${attrs} type="checkbox" style="width:auto" />`;
           else
             input = `<input ${attrs} type="${['number', 'date', 'time'].includes(f.type) ? f.type : 'text'}" ${f.type === 'number' ? 'step="any"' : ''} value="${UI.esc(f.default || '')}" />`;
-          return `<div style="margin:12px 0"><label for="myhr-f-${i}">${UI.esc(f.label)}${f.required ? ' *' : ''}</label>${input}</div>`;
+          return `<div data-validation-field style="margin:12px 0"><label for="myhr-f-${i}">${UI.esc(f.label)}${f.required ? ' *' : ''}</label>${input}</div>`;
         })
         .join('')}`,
       confirmText: 'Submit request',
       onOpen: ov => { if (type.slug === 'leave_request') leavePicker = LeaveDates.mount(ov, { preview: data => API.post('/me/leave-preview', data) }); },
       onConfirm: async (ov, showErr) => {
         const data = Object.fromEntries(Object.entries(autofill).filter(([, v]) => v));
-        if (leavePicker) { Object.assign(data, leavePicker.value()); if (!data.leave_dates) { showErr('Select at least one leave date.'); return false; } }
+        const errors = [];
+        if (leavePicker) { Object.assign(data, leavePicker.value()); if (!data.leave_dates) errors.push({ control: ov.querySelector('[data-leave-single]'), message: 'Select at least one leave date.', isValid: () => !!leavePicker.value().leave_dates }); }
         for (const [i, f] of fields.entries()) {
           const el = ov.querySelector(`[data-field="${i}"]`),
             value = el.type === 'checkbox' ? (el.checked ? 'Yes' : 'No') : el.value.trim();
-          if (f.required && !value) {
-            showErr(`${f.label} is required`);
-            el.focus();
-            return false;
-          }
+          if (f.required && (el.type === 'checkbox' ? !el.checked : !value)) {
+            errors.push({ control: el, message: `${f.label} is required` });
+          } else if (!el.validity.valid) errors.push({ control: el, message: `${f.label}: ${el.validationMessage}` });
           if (value) data[f.key] = value;
         }
+        if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
         const result = await API.post('/form-records', { form_def_id: type.id, data, status: 'pending' });
         UI.toast('Request submitted for approval');
         if (result.action_warnings && result.action_warnings.length) UI.modal({ title: 'Request review notes', bodyHTML: `<ul>${result.action_warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul>`, cancelText: 'Close' });

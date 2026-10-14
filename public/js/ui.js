@@ -158,7 +158,7 @@ const UI = (() => {
 
     const errBox = overlay.querySelector('[data-modal-error]');
     errBox.setAttribute('role', 'alert'); errBox.tabIndex = -1;
-    const showErr = (msg) => { errBox.textContent = msg; errBox.classList.remove('hidden'); if (!overlay.contains(document.activeElement) || document.activeElement?.getAttribute('aria-invalid') !== 'true') errBox.focus(); };
+    const showErr = (msg) => { errBox.hidden = false; errBox.textContent = msg; errBox.classList.remove('hidden'); if (!overlay.contains(document.activeElement) || document.activeElement?.getAttribute('aria-invalid') !== 'true') errBox.focus(); };
 
     const confirmBtn = overlay.querySelector('[data-confirm]');
     if (confirmBtn && opts.onConfirm) {

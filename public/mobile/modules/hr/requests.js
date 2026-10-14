@@ -191,11 +191,12 @@
   function fieldMarkup(field) {
     var label = mEsc(field.label) + (field.required ? ' *' : '');
     var key = mEsc(field.key);
+    var required = field.required ? ' aria-required="true"' : '';
     if (field.type === 'checkbox') {
-      return '<label class="m-request-check"><input type="checkbox" data-k="' + key + '"><span>' + label + '</span></label>';
+      return '<label data-validation-field class="m-request-check"><input type="checkbox" data-k="' + key + '"' + required + '><span>' + label + '</span></label>';
     }
     if (field.type === 'textarea') {
-      return '<label class="m-request-field"><span>' + label + '</span><textarea data-k="' + key + '" rows="3"></textarea></label>';
+      return '<label data-validation-field class="m-request-field"><span>' + label + '</span><textarea data-k="' + key + '"' + required + ' rows="3"></textarea></label>';
     }
     if (field.type === 'select' || field.type === 'employee') {
       var options = (field.options || []).map(function (option) {
@@ -203,25 +204,29 @@
         var text = typeof option === 'object' ? (option.label || option.name || value) : option;
         return '<option value="' + mEsc(String(value)) + '">' + mEsc(String(text)) + '</option>';
       }).join('');
-      return '<label class="m-request-field"><span>' + label + '</span><select data-k="' + key + '"><option value="">Choose one</option>' + options + '</select></label>';
+      return '<label data-validation-field class="m-request-field"><span>' + label + '</span><select data-k="' + key + '"' + required + '><option value="">Choose one</option>' + options + '</select></label>';
     }
     var inputType = field.type === 'number' ? 'number' : (field.type === 'date' ? 'date' : (field.type === 'time' ? 'time' : 'text'));
-    return '<label class="m-request-field"><span>' + label + '</span><input type="' + inputType + '" data-k="' + key + '"></label>';
+    return '<label data-validation-field class="m-request-field"><span>' + label + '</span><input type="' + inputType + '"' + (inputType === 'number' ? ' step="any"' : '') + ' data-k="' + key + '"' + required + '></label>';
   }
 
   function collect(formEl, type, autofill) {
     var data = {};
     var missing = null;
+    var errors = [];
     Object.keys(autofill).forEach(function (key) { if (autofill[key]) data[key] = autofill[key]; });
     (type.fields || []).forEach(function (field) {
       if (autofill[field.key]) return;
       var input = formEl.querySelector('[data-k="' + field.key + '"]');
       if (!input) return;
       var value = input.type === 'checkbox' ? (input.checked ? 'Yes' : 'No') : String(input.value || '').trim();
-      if (field.required && (input.type === 'checkbox' ? !input.checked : !value)) missing = missing || field.label;
+      if (field.required && (input.type === 'checkbox' ? !input.checked : !value)) {
+        missing = missing || field.label;
+        errors.push({ control: input, message: field.label + ' is required' });
+      } else if (!input.validity.valid) errors.push({ control: input, message: field.label + ': ' + input.validationMessage });
       if (value) data[field.key] = value;
     });
-    return { data: data, missing: missing };
+    return { data: data, missing: missing, errors: errors };
   }
 
   function form(view, type, prefillDate, draft) {
@@ -235,7 +240,7 @@
 
     host.innerHTML =
       '<button class="m-request-selected-type" type="button"><span><small>Request type</small><b>' + mEsc(type.name) + '</b></span><i aria-hidden="true">›</i></button>' +
-      '<form class="m-request-form">' + (type.slug === 'leave_request' ? LeaveDates.markup() : '') + fields.map(fieldMarkup).join('') +
+      '<form class="m-request-form" novalidate><div data-validation-summary class="m-error" role="alert" tabindex="-1" hidden></div>' + (type.slug === 'leave_request' ? LeaveDates.markup() : '') + fields.map(fieldMarkup).join('') +
         '<aside class="m-request-guidance">' + mEsc(meta.guide) + '</aside>' +
         '<button class="m-v2-primary" type="submit">Review request</button></form>' +
       '<div id="m-req-form-balance"></div>';
@@ -269,14 +274,8 @@
     formEl.onsubmit = function (event) {
       event.preventDefault();
       var result = collect(formEl, type, autofill);
-      if (leavePicker) { Object.assign(result.data, leavePicker.value()); if (!result.data.leave_dates) result.missing = 'Inclusive leave dates'; }
-      if (result.missing) {
-        mToast(result.missing + ' is required', 'err');
-        var missingField = (type.fields || []).filter(function (field) { return field.label === result.missing; })[0];
-        var input = missingField && formEl.querySelector('[data-k="' + missingField.key + '"]');
-        if (input) input.focus();
-        return;
-      }
+      if (leavePicker) { Object.assign(result.data, leavePicker.value()); if (!result.data.leave_dates) result.errors.push({ control: formEl.querySelector('[data-leave-single]'), message: 'Select at least one leave date.', isValid: function () { return !!leavePicker.value().leave_dates; } }); }
+      if (!FormValidation.show(formEl, result.errors, formEl.querySelector('[data-validation-summary]'))) return;
       review(view, type, result.data, function () { form(view, type, prefillDate, result.data); });
     };
   }

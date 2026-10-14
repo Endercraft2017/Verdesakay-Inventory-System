@@ -535,12 +535,12 @@ App.register('form-builder', async (view, filter) => {
           <section class="fb-section fb-basics">
             <div class="fb-section-title"><h3>Form details</h3><span class="fb-scope">${UI.esc(FORM_SCOPE_LABELS[scope])}</span></div>
             <label for="fb-name">Form name *</label>
-            <input id="fb-name" data-f="name" value="${UI.esc(seed ? seed.name : '')}" placeholder="e.g. Leave Request" />
+            <input id="fb-name" aria-required="true" maxlength="120" data-f="name" value="${UI.esc(seed ? seed.name : '')}" placeholder="e.g. Leave Request" />
             <details class="fb-advanced"><summary>Advanced settings ${UI.helpIcon('The form ID is generated from its name. Change the ID, numbering prefix, or icon only when needed.')}</summary>
               <div class="fb-settings-grid">
-                <div><label for="fb-slug">Form ID ${UI.helpIcon('A unique ID using lowercase letters, numbers, and underscores. Templates and workflows may refer to this ID, so take care when changing an existing form.')}</label><input id="fb-slug" data-f="slug" value="${UI.esc(seed ? seed.slug : '')}" placeholder="leave_request" class="mono" /></div>
-                <div><label for="fb-prefix">Number prefix ${UI.helpIcon('The letters at the start of issued record numbers, such as LV in LV-00001. Use uppercase letters or numbers.')}</label><input id="fb-prefix" data-f="number_prefix" value="${UI.esc(seed ? seed.number_prefix : 'FM')}" placeholder="FM" class="mono" /></div>
-                <div><label for="fb-icon">Icon ${UI.helpIcon('The icon name used for this form in menus, for example file, calendar, or users.')}</label><input id="fb-icon" data-f="icon" value="${UI.esc(seed ? seed.icon : 'file')}" placeholder="file" /></div>
+                <div><label for="fb-slug">Form ID ${UI.helpIcon('A unique ID using lowercase letters, numbers, and underscores. Templates and workflows may refer to this ID, so take care when changing an existing form.')}</label><input id="fb-slug" aria-required="true" maxlength="60" data-f="slug" value="${UI.esc(seed ? seed.slug : '')}" placeholder="leave_request" class="mono" /></div>
+                <div><label for="fb-prefix">Number prefix ${UI.helpIcon('The letters at the start of issued record numbers, such as LV in LV-00001. Use uppercase letters or numbers.')}</label><input id="fb-prefix" aria-required="true" maxlength="10" data-f="number_prefix" value="${UI.esc(seed ? seed.number_prefix : 'FM')}" placeholder="FM" class="mono" /></div>
+                <div><label for="fb-icon">Icon ${UI.helpIcon('The icon name used for this form in menus, for example file, calendar, or users.')}</label><input id="fb-icon" maxlength="40" data-f="icon" value="${UI.esc(seed ? seed.icon : 'file')}" placeholder="file" /></div>
               </div>
             </details>
           </section>
@@ -564,7 +564,7 @@ App.register('form-builder', async (view, filter) => {
         if (!editing && !prefill) {
           nameEl.addEventListener('input', () => {
             slugEl.value = nameEl.value.toLowerCase()
-              .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+              .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60);
           });
         }
 
@@ -596,6 +596,7 @@ App.register('form-builder', async (view, filter) => {
           editor.querySelectorAll('[data-setup-tab]').forEach(tab => { const selected = tab.dataset.setupTab === name; tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1; tab.classList.toggle('active', selected); });
           editor.querySelectorAll('[role=tabpanel]').forEach(panel => { panel.hidden = panel.id !== `fb-panel-${name}`; });
         }
+        ov.addEventListener('validationfocus', event => { const panel = event.target.closest('[role=tabpanel]'); if (panel) switchSetup(panel.id.replace('fb-panel-', '')); });
         editor.querySelectorAll('[data-setup-tab]').forEach(tab => tab.onclick = () => switchSetup(tab.dataset.setupTab));
         editor.querySelector('[role=tablist]').addEventListener('keydown', event => {
           if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
@@ -619,19 +620,18 @@ App.register('form-builder', async (view, filter) => {
       },
       onConfirm: async (ov, showErr) => {
         const f = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
-        if (!f('name')) { showErr('Form name is required'); return false; }
-        const advancedError = (message, key) => { ov.querySelector('.fb-advanced').open = true; showErr(message); ov.querySelector(`[data-f="${key}"]`).focus(); return false; };
-        if (!f('slug')) return advancedError('Form ID is required', 'slug');
-        if (!/^[a-z0-9_]+$/.test(f('slug'))) return advancedError('Form ID must use lowercase letters, numbers, or underscores', 'slug');
-        if (!f('number_prefix') || !/^[A-Z0-9]+$/.test(f('number_prefix'))) {
-          return advancedError('Prefix must be uppercase letters or numbers (e.g. FM, LR)', 'number_prefix');
-        }
-        for (const field of fields) {
-          if (!field.key) { showErr('All fields must have a key'); return false; }
-          if (!field.label) { showErr(`Field "${field.key}" is missing a label`); return false; }
-        }
-        const keys = fields.map((f) => f.key);
-        if (new Set(keys).size !== keys.length) { showErr('Field keys must be unique'); return false; }
+        const errors = [];
+        const addError = (selector, message, isValid) => errors.push({ control: ov.querySelector(selector), message, isValid });
+        if (!f('name')) addError('[data-f="name"]', 'Form name is required');
+        if (!f('slug') || !/^[a-z0-9_]+$/.test(f('slug'))) addError('[data-f="slug"]', 'Form ID must use lowercase letters, numbers, or underscores', () => /^[a-z0-9_]+$/.test(f('slug')));
+        if (!f('number_prefix') || !/^[A-Z0-9]+$/.test(f('number_prefix'))) addError('[data-f="number_prefix"]', 'Prefix must be uppercase letters or numbers (e.g. FM, LR)', () => /^[A-Z0-9]+$/.test(f('number_prefix')));
+        fields.forEach((field, index) => {
+          if (!field.key) addError(`[data-fi="${index}"] [data-k=key]`, `Field ${index + 1} needs a key`);
+          else if (!/^[a-z0-9_]+$/.test(field.key)) addError(`[data-fi="${index}"] [data-k=key]`, `Field ${index + 1} key must use lowercase letters, numbers, or underscores`, () => /^[a-z0-9_]+$/.test(field.key));
+          else if (fields.filter(candidate => candidate.key === field.key).length > 1) addError(`[data-fi="${index}"] [data-k=key]`, `Field key "${field.key}" must be unique`, () => fields.filter(candidate => candidate.key === field.key).length === 1);
+          if (!field.label) addError(`[data-fi="${index}"] [data-k=label]`, `Field ${index + 1} needs a label`);
+        });
+        if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
 
         const body = {
           name: f('name'), slug: f('slug'),
@@ -658,6 +658,7 @@ App.register('form-builder', async (view, filter) => {
   }
 
   function renderFields(ov, fields) {
+    FormValidation.clear(ov.closest('.modal-overlay') || ov);
     const el = ov.querySelector('#fb-fields-list');
     if (!fields.length) {
       el.innerHTML = `<div class="fb-empty muted">No fields yet — add one above.</div>`;
@@ -671,15 +672,15 @@ App.register('form-builder', async (view, filter) => {
       <th>Label</th><th>Type</th><th>Required</th><th>Default / Options</th><th></th>
     </tr></thead><tbody id="fb-field-rows">${fields.map((f, i) => `
       <tr data-fi="${i}">
-        <td><input class="mono" data-k="key" value="${UI.esc(f.key)}" placeholder="field_key" style="width:120px" /></td>
-        <td><input data-k="label" value="${UI.esc(f.label)}" placeholder="Field Label" /></td>
+        <td><input class="mono" data-k="key" aria-required="true" maxlength="64" value="${UI.esc(f.key)}" placeholder="field_key" style="width:120px" /></td>
+        <td><input data-k="label" aria-required="true" maxlength="120" value="${UI.esc(f.label)}" placeholder="Field Label" /></td>
         <td><select data-k="type">${typeOptions.replace(`"${f.type}"`, `"${f.type}" selected`)}</select></td>
         <td style="text-align:center"><input type="checkbox" data-k="required" ${f.required ? 'checked' : ''} /></td>
         <td>${f.type === 'select'
           ? `<input data-k="options" value="${UI.esc((f.options || []).join(', '))}" placeholder="Option 1, Option 2, …" />`
           : f.type === 'employee'
             ? `<span class="muted" style="font-size:12px">Live employee list — no options needed</span>`
-            : `<input data-k="default" value="${UI.esc(f.default || '')}" placeholder="default value" />`}
+            : `<input data-k="default" maxlength="500" value="${UI.esc(f.default || '')}" placeholder="default value" />`}
         </td>
         <td><button type="button" class="icon-btn" data-move-field="${i}" data-direction="-1" title="Move field up" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="icon-btn" data-move-field="${i}" data-direction="1" title="Move field down" ${i === fields.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
       </tr>`).join('')}

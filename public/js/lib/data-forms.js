@@ -7,5 +7,8 @@ window.DataForms = (() => {
       ? scopes.includes(scope) && App.hasPermission('forms.manage.' + scope)
       : scopes.every((s) => App.hasPermission('forms.manage.' + s));
   }
-  return { scopes, labels, canManage };
+  function canBrowseScope(scope) {
+    return canManage(scope) || (scope === 'hr' && App.hasPermission('payroll.view'));
+  }
+  return { scopes, labels, canManage, canBrowseScope };
 })();

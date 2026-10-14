@@ -323,6 +323,11 @@ kept, flagged; a leave approval past the cloud's balance stands, flagged). The f
 **Offline (sync/, phase 4c):** `POST /api/attachments` is `physical`, and the photo travels with the
 command via `syncUpload`. Deleting one is a company-wide `claim`; an installed PC keeps the file until
 the cloud confirms. The other core routes are not classed yet.
+**Form validation (`public/js/lib/form-validation.js`):** shared by Data Forms, Form Builder,
+desktop HR requests and mobile requests. Inline errors are linked through `aria-describedby`; a
+summary focuses the affected control and reveals hidden setup panels. Required checkboxes mean
+checked, not merely present. The mobile shell precaches the helper. Actual-app browser coverage:
+`npm run test:forms:ux` (disposable database, reports/screenshots under `work/forms-ux`).
 **Public interface:** standard REST routes mounted with no `requireModule()` gate.
 `messages.routes.ts` also calls `shared/ws.ts`'s `broadcast()` after each mutation for
 live chat updates — VOIP/calling is explicitly out of scope for this feature (deferred as

@@ -63,17 +63,18 @@ function formCardHTML(f) {
 
 /* ── Form index: pick which form to open, grouped by the section that owns it ────── */
 async function renderIndex(view, onlyScope, initialQuery) {
-  formRecordViews.delete(view);
-  if (onlyScope && !DataForms.canManage(onlyScope === 'general' ? null : onlyScope)) {
+  const owner = {};
+  formRecordViews.set(view, owner);
+  if (onlyScope && !DataForms.canBrowseScope(onlyScope === 'general' ? null : onlyScope)) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
   const heading = 'Data Forms';
-  const manageableScope = (onlyScope !== 'general' && onlyScope) || DataForms.scopes.find((scope) => DataForms.canManage(scope));
+  const manageableScope = (onlyScope !== 'general' && DataForms.canManage(onlyScope) && onlyScope) || DataForms.scopes.find((scope) => DataForms.canManage(scope));
   view.innerHTML = `
     <div class="topbar"><h2>${UI.esc(heading)}</h2><div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="fr-index-search" placeholder="Search forms…" aria-label="Search forms" /></div>
-      <select id="fr-index-scope" aria-label="Form section"><option value="">All sections</option>${FORM_RECORDS_SCOPE_ORDER.filter((scope) => DataForms.canManage(scope)).map((scope) => `<option value="${scope || 'general'}">${FORM_RECORDS_SCOPE_LABELS[scope || 'general']}</option>`).join('')}</select>
+      <select id="fr-index-scope" aria-label="Form section"><option value="">All sections</option>${FORM_RECORDS_SCOPE_ORDER.filter((scope) => DataForms.canBrowseScope(scope)).map((scope) => `<option value="${scope || 'general'}">${FORM_RECORDS_SCOPE_LABELS[scope || 'general']}</option>`).join('')}</select>
       ${manageableScope ? `<button class="btn secondary" id="fr-goto-builder">${UI.icon('edit')} Form Builder</button>` : ''}
     </div>
     <div class="panel"><div id="fr-index"></div></div>`;
@@ -84,15 +85,26 @@ async function renderIndex(view, onlyScope, initialQuery) {
     const chosen = view.querySelector('#fr-index-scope').value;
     App.navigate('form-builder', { scope: chosen || manageableScope });
   };
-  const forms = (await API.get('/form-definitions')).filter((form) =>
-    (form.slug === 'hr_payroll' ? App.hasPermission('payroll.view') : DataForms.canManage(form.scope)));
   const search = view.querySelector('#fr-index-search');
   const section = view.querySelector('#fr-index-scope');
   search.value = initialQuery || '';
   section.value = onlyScope || '';
+  if (builder) builder.hidden = !!onlyScope && !DataForms.canManage(onlyScope === 'general' ? null : onlyScope);
+  let forms;
+  try {
+    forms = (await API.get('/form-definitions')).filter((form) =>
+      (form.slug === 'hr_payroll' ? App.hasPermission('payroll.view') : DataForms.canManage(form.scope)));
+  } catch (error) {
+    if (formRecordViews.get(view) !== owner) return;
+    el.innerHTML = UI.emptyState({ icon: 'alert', title: 'Could not load forms', hint: error.message || 'Please try again.', action: '<button class="btn secondary" type="button" id="fr-index-retry">Retry</button>' });
+    el.querySelector('#fr-index-retry').onclick = () => App.navigate('form-records', { ...(onlyScope ? { scope: onlyScope } : {}), ...(initialQuery ? { q: initialQuery } : {}) });
+    return;
+  }
+  if (formRecordViews.get(view) !== owner) return;
   function render() {
     const q = search.value.trim().toLowerCase();
     const chosenScope = section ? section.value : '';
+    if (builder) builder.hidden = !!chosenScope && !DataForms.canManage(chosenScope === 'general' ? null : chosenScope);
     const matches = forms.filter((form) =>
       (!chosenScope || (form.scope || 'general') === chosenScope) &&
       (!q || `${form.name} ${form.slug} ${form.number_prefix}`.toLowerCase().includes(q)));
@@ -146,6 +158,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
 
   try { formDef = await API.get('/form-definitions/' + formId); }
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }
+  if (formRecordViews.get(view) !== owner) return;
   if (window.Help) Help.rememberForm(formDef);
 
   // Browsing a section's records needs the same forms.manage.<scope> permission as managing
@@ -554,7 +567,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     UI.modal({
       title: 'Payslip Preview',
       size: 'xl',
-      bodyHTML: `<iframe id="payslip-preview-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+      bodyHTML: `<iframe title="Payslip print preview" id="payslip-preview-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
       cancelText: 'Close',
       confirmText: 'Print…',
       onOpen: (ov) => {
@@ -680,7 +693,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         <div><strong>Statutory Deductions</strong>
         <p class="muted">Adjust deductions for this payslip only. Enter an amount to override automatic calculation; leave it blank to use automatic calculation. Zero is a valid override. Employee deductions only; employer contributions remain automatic. Totals update in the preview; click Save Deductions to persist changes.</p>
         <div class="statutory-adjustments">${Object.keys(DED_LABELS).map((k) => `
-          <div class="statutory-adjustment">
+          <div data-validation-field class="statutory-adjustment">
             <label><input type="checkbox" data-ded="${k}" ${r.data[k + '_applied'] !== false ? 'checked' : ''} ${locked ? 'disabled' : ''}> ${DED_LABELS[k]}</label>
             <label for="pd-override-${k}">Override amount</label>
             <input id="pd-override-${k}" data-ded-override="${k}" type="number" min="0" max="10000000" step="0.01" placeholder="Automatic" value="${r.data.statutory_overrides?.[k] != null ? UI.esc(String(r.data.statutory_overrides[k])) : ''}" ${locked ? 'disabled' : ''}>
@@ -734,7 +747,13 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         ov.addEventListener('change', () => { deductionsDirty = true; });
         ov.querySelector('#pd-edit-imported')?.addEventListener('click', () => { payslipModal.close(); recordModal(r); });
         const btn = ov.querySelector('#pd-print');
-        if (btn) btn.onclick = () => printSlips([{...payrollPrintData(r),...liveData}]);
+        if (btn) btn.onclick = async () => {
+          btn.disabled = true;
+          try {
+            if (deductionsDirty && dedCheckboxes.length && !await refreshPreview()) return;
+            if (ov.isConnected) await printSlips([{...payrollPrintData(r),...liveData}]);
+          } finally { btn.disabled = false; }
+        };
 
         const dedCheckboxes = ov.querySelectorAll('[data-ded]');
         if (!dedCheckboxes.length) return;
@@ -779,11 +798,16 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
 
         const currentApplied = () => {
           const applied = { other_deductions: otherDeductions, statutory_overrides: {} };
+          const errors = [];
           ov.querySelectorAll('[data-ded-override]').forEach(input => {
-            input.removeAttribute('aria-invalid');
-            if (input.value !== '' && (!input.validity.valid || !Number.isFinite(Number(input.value)))) { input.setAttribute('aria-invalid', 'true'); throw new Error(DED_LABELS[input.dataset.dedOverride] + ' must be a non-negative amount with at most two decimal places.'); }
+            if (input.validity.badInput || (input.value !== '' && (!input.validity.valid || !Number.isFinite(Number(input.value))))) {
+              errors.push({ control: input, message: DED_LABELS[input.dataset.dedOverride] + ' must be between 0 and 10,000,000 with at most two decimal places.' });
+            }
             applied.statutory_overrides[input.dataset.dedOverride] = input.value === '' ? null : Number(input.value);
           });
+          if (!FormValidation.show(ov, errors, ov.querySelector('#pd-ded-error'))) {
+            const error = new Error('Correct the deduction amounts before continuing.'); error.fieldValidation = true; throw error;
+          }
           dedCheckboxes.forEach((cb) => { applied[cb.dataset.ded + '_applied'] = cb.checked; });
           return applied;
         };
@@ -804,9 +828,10 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           dedCheckboxes.forEach((cb) => { cb.disabled = locked; });
           try {
             const values = await API.post(`/hr/payroll/${r.id}/preview-deductions`, currentApplied());
-            if (generation === previewGeneration && ov.isConnected) applyPreview(values);
+            if (generation === previewGeneration && ov.isConnected) { applyPreview(values); return true; }
+            return false;
           }
-          catch (err) { const error = ov.querySelector('#pd-ded-error'); error.textContent = err.message; error.classList.remove('hidden'); }
+          catch (err) { if (!err.fieldValidation) { const error = ov.querySelector('#pd-ded-error'); error.hidden = false; error.textContent = err.message; error.classList.remove('hidden'); } return false; }
         };
         dedCheckboxes.forEach((cb) => cb.addEventListener('change', refreshPreview));
         ov.querySelectorAll('[data-ded-override]').forEach(input => input.addEventListener('change', refreshPreview));
@@ -818,20 +843,28 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         if (saveBtn) {
           saveBtn.onclick = async () => {
             ov.querySelector('#pd-ded-error').classList.add('hidden');
+            let applied;
+            try { applied = currentApplied(); } catch { return; }
             ++previewGeneration;
             const editControls = [...ov.querySelectorAll('[data-ded], [data-ded-override], [data-ded-reset], [data-other-ded-del], #pd-other-ded-label, #pd-other-ded-amount, #pd-other-ded-add')];
             editControls.forEach(control => { control.disabled = true; });
             saveBtn.disabled = true;
+            ov.__setSaving(true);
+            let finishSave;
+            ov.__whenSaved = new Promise(resolve => { finishSave = resolve; });
             try {
-              const vals = await API.put(`/hr/payroll/${r.id}/deductions`, currentApplied());
+              const vals = await API.put(`/hr/payroll/${r.id}/deductions`, applied);
               applyPreview(vals);
               r.data = liveData; // so the row behind this modal reflects it once it closes
               deductionsDirty = false;
               payslipModal.markSaved();
               UI.toast('Deductions saved');
               load();
-            } catch (err) { const error = ov.querySelector('#pd-ded-error'); error.textContent = err.message; error.classList.remove('hidden'); }
-            finally { saveBtn.disabled = false; editControls.forEach(control => { control.disabled = locked; }); }
+            } catch (err) { const error = ov.querySelector('#pd-ded-error'); error.hidden = false; error.textContent = err.message; error.classList.remove('hidden'); }
+            finally {
+              saveBtn.disabled = false; editControls.forEach(control => { control.disabled = locked; });
+              ov.__setSaving(false); ov.__whenSaved = null; finishSave();
+            }
           };
         }
       },
@@ -1429,6 +1462,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         // Collect field values from the modal.
         // Keep generated values and metadata that are not represented by editable fields.
         const collected = { ...data };
+        const errors = [];
         for (const field of formDef.fields) {
           const inp = ov.querySelector(`[data-field="${field.key}"]`);
           if (!inp) continue;
@@ -1438,9 +1472,12 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             collected[field.key] = inp.value;
           }
           if (field.required && (field.type === 'checkbox' ? !inp.checked : !String(collected[field.key] ?? '').trim())) {
-            showErr(`"${field.label}" is required`); return false;
+            errors.push({ control: inp, message: `${field.label} is required` });
+          } else if (!inp.validity.valid) {
+            errors.push({ control: inp, message: `${field.label}: ${inp.validationMessage}` });
           }
         }
+        if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
         // For payroll forms, also capture the net_pay value.
         if (isPayroll) {
           const netPayInp = ov.querySelector('[data-field="net_pay"]');
@@ -1465,18 +1502,18 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     const req = field.required ? '<span class="req">*</span>' : '';
     let input = '';
     if (field.type === 'textarea') {
-      input = `<textarea data-field="${UI.esc(field.key)}" id="${id}" rows="3">${UI.esc(String(val))}</textarea>`;
+      input = `<textarea data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''} rows="3">${UI.esc(String(val))}</textarea>`;
     } else if (field.type === 'checkbox') {
       input = `<label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" data-field="${UI.esc(field.key)}" id="${id}" ${val === true || val === 'Yes' ? 'checked' : ''} />
+        <input type="checkbox" data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''} ${val === true || val === 'Yes' ? 'checked' : ''} />
         <span>${UI.esc(field.label)}${req}</span>
       </label>`;
-      return `<div style="margin-bottom:12px">${input}</div>`;
+      return `<div data-validation-field style="margin-bottom:12px">${input}</div>`;
     } else if (field.type === 'select') {
       const opts = (field.options || []).map((o) =>
         `<option value="${UI.esc(o)}" ${String(val) === o ? 'selected' : ''}>${UI.esc(o)}</option>`
       ).join('');
-      input = `<select data-field="${UI.esc(field.key)}" id="${id}">
+      input = `<select data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''}>
         <option value="">— select —</option>${opts}
       </select>`;
     } else if (field.type === 'employee') {
@@ -1485,14 +1522,14 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       const opts = (employees || []).map((e) =>
         `<option value="${UI.esc(e.name)}" ${String(val) === e.name ? 'selected' : ''}>${UI.esc(e.name)}</option>`
       ).join('');
-      input = `<select data-field="${UI.esc(field.key)}" id="${id}">
+      input = `<select data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''}>
         <option value="">— select employee —</option>${opts}
       </select>`;
     } else {
-      input = `<input data-field="${UI.esc(field.key)}" id="${id}" type="${field.type}"
+      input = `<input data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''} type="${field.type}" ${field.type === 'number' ? 'step="any"' : ''}
         value="${UI.esc(String(val))}" />`;
     }
-    return `<div style="margin-bottom:12px">
+    return `<div data-validation-field style="margin-bottom:12px">
       <label for="${id}">${UI.esc(field.label)}${req}</label>
       ${input}
     </div>`;

@@ -12,7 +12,7 @@ async function setup(permissions: string[], forms: unknown[], filter = {}) {
     replaceFilters: (route, filter) => window.savedFilters = { route, filter },
     navigate: (route, filter) => window.destination = { route, filter }
   }; window.API = { get: async () => (${JSON.stringify(forms)}) };
-  window.UI = { esc: s => String(s), icon: () => '', emptyState: s => s.title + ' ' + s.hint };`);
+  window.UI = { esc: s => String(s), icon: () => '', emptyState: s => s.title + ' ' + s.hint + (s.action || '') };`);
   for (const file of ['lib/data-forms.js', 'modules/core/form-records.js']) {
     w.eval(fs.readFileSync(path.join(import.meta.dirname, '../public/js', file), 'utf8'));
   }
@@ -66,6 +66,38 @@ describe('Data Forms section workflow', () => {
     expect(w.document.querySelector('.form-card-name')?.textContent).toBe('Leave');
     w.document.querySelector<HTMLElement>('#fr-goto-builder')!.click();
     expect((w as any).destination).toEqual({ route: 'form-builder', filter: { scope: 'hr' } });
+    dom.window.close();
+  });
+
+
+  it('lets payroll readers browse the HR hub without granting the form builder', async () => {
+    const payroll = { ...form(1, 'hr', 'Payroll'), slug: 'hr_payroll' };
+    const dom = await setup(['payroll.view'], [payroll, form(2, 'hr', 'Leave')], { scope: 'hr' });
+    expect(dom.window.document.querySelectorAll('.form-card')).toHaveLength(1);
+    expect(dom.window.document.querySelector('.form-card-name')?.textContent).toBe('Payroll');
+    expect(dom.window.document.querySelector('#fr-goto-builder')).toBeNull();
+    expect(dom.window.document.querySelector<HTMLSelectElement>('#fr-index-scope')!.value).toBe('hr');
+    dom.window.close();
+  });
+
+  it('hides the builder for a payroll-only section even when another section is manageable', async () => {
+    const dom = await setup(['payroll.view', 'forms.manage.inventory'], [form(1, 'hr', 'Payroll')]);
+    const select = dom.window.document.querySelector<HTMLSelectElement>('#fr-index-scope')!;
+    select.value = 'hr'; select.dispatchEvent(new dom.window.Event('change'));
+    expect(dom.window.document.querySelector<HTMLButtonElement>('#fr-goto-builder')!.hidden).toBe(true);
+    select.value = 'inventory'; select.dispatchEvent(new dom.window.Event('change'));
+    expect(dom.window.document.querySelector<HTMLButtonElement>('#fr-goto-builder')!.hidden).toBe(false);
+    dom.window.close();
+  });
+
+  it('offers a retry that retains the requested section and query when loading fails', async () => {
+    const dom = await setup(['forms.manage.inventory'], []);
+    const w = dom.window as any;
+    w.API.get = async () => { throw new Error('Network down'); };
+    await w.routes['form-records'](w.document.querySelector('main'), { scope: 'inventory', q: 'Stock' });
+    expect(w.document.body.textContent).toContain('Could not load forms');
+    w.document.querySelector('#fr-index-retry').click();
+    expect(w.destination).toEqual({ route: 'form-records', filter: { scope: 'inventory', q: 'Stock' } });
     dom.window.close();
   });
 

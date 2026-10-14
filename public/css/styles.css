@@ -1784,3 +1784,6 @@ select option, select optgroup { background-color: var(--surface); color: var(--
 
 .payroll-edit-group { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 14px; }
 .payroll-edit-group legend { font-weight: 700; padding: 0 6px; }
+.validation-field-error { color: var(--danger); font-size: 12px; margin: 6px 0 0; }
+[aria-invalid="true"] { border-color: var(--danger); }
+.validation-error-link { border: 0; background: transparent; padding: 4px 0; color: inherit; font: inherit; text-align: left; text-decoration: underline; cursor: pointer; }
