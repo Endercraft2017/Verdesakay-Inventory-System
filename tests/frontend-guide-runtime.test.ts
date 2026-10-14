@@ -99,3 +99,24 @@ it('places Guide in a custom page header without a separate spacer row',async()=
 it('does not duplicate an editor toolbar guide',async()=>{
  const {dom,w}=await boot();const editor=w.document.createElement('div');editor.className='doc-fs';editor.innerHTML='<header class="doc-fs-bar"><button data-help>Guide</button></header>';w.document.body.append(editor);await flush();expect(editor.querySelector('[data-guide-open]')).toBeNull();expect(editor.querySelectorAll('[data-help]').length).toBe(1);dom.window.close();
 });
+
+it('shows cross-module pipelines with prerequisites, handoffs and access-aware screen links', async () => {
+  const {dom,w,routes,navigations}=await boot();
+  const view=w.document.querySelector('#view');
+  w.App.canAccessRoute=(r:string)=>r==='hr-timekeeping' || r==='sop';
+  routes.sop(view,{section:'pipelines'});
+  const buttons=[...view.querySelectorAll('.guide-nav-item:not([hidden])')];
+  expect(buttons.length).toBeGreaterThan(0);
+  expect(buttons.every((b:any)=>w.GUIDE.byId[b.dataset.id]?.pipeline)).toBe(true);
+  expect(view.querySelector('[data-guide-section="pipelines"]').getAttribute('aria-pressed')).toBe('true');
+  for(const guide of w.GUIDE.pipelines.filter((p:any)=>p.pipeline)) {
+    expect(guide.steps.every((s:any)=>s.before && s.result && s.role && s.module)).toBe(true);
+  }
+  expect(view.querySelectorAll('.pipeline-roadmap a').length).toBeGreaterThan(0);
+  expect(view.textContent).toContain('Before you start:');
+  expect(view.textContent).toContain('Result / handoff:');
+  expect(navigations).toEqual([]);
+  view.querySelector('[data-guide-section="all"]').click();
+  expect(view.querySelector('[data-guide-section="all"]').getAttribute('aria-pressed')).toBe('true');
+  dom.window.close();
+});

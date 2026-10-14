@@ -28,6 +28,7 @@ App.register('sop', (view, filter) => {
       <div class="grow"></div>
       <button class="btn secondary" id="guide-print">${UI.icon('printer')} Print</button>
     </div>
+    <div class="guide-section-tabs" role="group" aria-label="Guide sections"><button class="btn secondary" data-guide-section="all">All guides</button><button class="btn secondary" data-guide-section="pipelines">Workflows &amp; Pipelines</button></div>
     <div class="guide-catalog-filters"><label class="sr-only" for="guide-search">Search guides</label><input id="guide-search" type="search" placeholder="What would you like to do? e.g. payroll, leave, checklist…"><label for="guide-module">Module</label><select id="guide-module"><option value="">All available modules</option>${[...new Set(PIPELINES.map(p=>p.module || 'home'))].map(m=>`<option value="${UI.esc(m)}">${UI.esc(window.GuideCenter?.moduleLabels[m]||m)}</option>`).join('')}</select><span id="guide-match-count" aria-live="polite"></span></div>
     <div class="guide-layout">
       <nav class="guide-nav" id="guide-nav">
@@ -98,16 +99,19 @@ App.register('sop', (view, filter) => {
         </div>
       </div>
 
+      ${p.pipeline ? `<nav class="pipeline-roadmap" aria-label="Pipeline roadmap">${p.steps.map((s,i)=>`<a href="#pipeline-step-${i}" data-pipeline-step="${i}"><span>${i+1}</span>${UI.esc(s.title)}<small>${UI.esc(s.module)}</small></a>`).join('')}</nav><p class="muted">Select a checkpoint to read its prerequisites, action and handoff. Screen links respect your access.</p>` : ''}
       <ol class="guide-steps">
         ${p.steps.map((s, idx) => `
-          <li class="guide-step">
+          <li class="guide-step" id="pipeline-step-${idx}">
             <div class="guide-step-num">${idx + 1}</div>
             <div class="guide-step-main">
               <div class="guide-step-head">
                 <h4>${UI.esc(s.title)}</h4>
                 ${s.role ? `<span class="guide-step-role">${UI.esc(s.role)}</span>` : ''}
               </div>
+              ${s.before ? `<p class="pipeline-check"><b>Before you start:</b> ${UI.esc(s.before)}</p>` : ''}
               <div class="guide-step-body">${s.body || ''}</div>
+              ${s.result ? `<p class="pipeline-check"><b>Result / handoff:</b> ${UI.esc(s.result)}</p>` : ''}
               ${stepLinkHTML(s)}
               ${s.tip ? `<div class="guide-tip">${UI.icon('sparkles', 13)} <div>${s.tip}</div></div>` : ''}
             </div>
@@ -125,6 +129,7 @@ App.register('sop', (view, filter) => {
         Guide buttons in headers provide help for the current screen or dialog.
       </p>`;
 
+    mainEl.querySelectorAll('[data-pipeline-step]').forEach(a => a.onclick = e => { e.preventDefault(); mainEl.querySelector('#pipeline-step-'+a.dataset.pipelineStep).scrollIntoView({behavior:'smooth',block:'start'}); });
     if (window.Help) { mainEl.insertAdjacentHTML('beforeend', Help.feedbackHTML());
     Help.wireFeedback(mainEl, p); }
     mainEl.querySelector('#guide-tour-start').onclick = () => window.GuideTour && GuideTour.start(p, 0);
@@ -144,9 +149,12 @@ App.register('sop', (view, filter) => {
 
   navEl.querySelectorAll('.guide-nav-item').forEach((b) =>
     b.addEventListener('click', () => { active = b.dataset.id; draw(); }));
+  let section = filter?.section === 'pipelines' || byId[active]?.pipeline ? 'pipelines' : 'all';
+  view.querySelectorAll('[data-guide-section]').forEach(b=>b.onclick=()=>{section=b.dataset.guideSection;filterGuides();});
   function filterGuides() {
+    view.querySelectorAll('[data-guide-section]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.guideSection===section)));
     const q=view.querySelector('#guide-search').value.trim().toLowerCase(), module=view.querySelector('#guide-module').value;let count=0;
-    navEl.querySelectorAll('.guide-nav-item').forEach(b=>{const p=byId[b.dataset.id];const el=document.createElement('div');el.innerHTML=[p.id,p.title,p.tagline,p.audience,...p.steps.map(s=>(s.body||'')+' '+(s.tip||''))].join(' ');b.hidden=!!((module && (p.module||'home')!==module) || (q && !el.textContent.toLowerCase().includes(q)));if(!b.hidden)count++;});
+    navEl.querySelectorAll('.guide-nav-item').forEach(b=>{const p=byId[b.dataset.id];const el=document.createElement('div');el.innerHTML=[p.id,p.title,p.tagline,p.audience,...p.steps.map(s=>(s.body||'')+' '+(s.tip||''))].join(' ');b.hidden=!!((section==='pipelines' && !p.pipeline) || (module && (p.module||'home')!==module) || (q && !el.textContent.toLowerCase().includes(q)));if(!b.hidden)count++;});
     view.querySelector('#guide-match-count').textContent=count+' matching guide'+(count===1?'':'s');
     const first=[...navEl.querySelectorAll('.guide-nav-item')].find(b=>!b.hidden);if(first){if(!navEl.querySelector('.active:not([hidden])') || mainEl.querySelector('.empty-state')){active=first.dataset.id;draw();}}else mainEl.innerHTML=UI.emptyState({icon:'search',title:'No matching guides',hint:'Try a different task name or module.'});
   }

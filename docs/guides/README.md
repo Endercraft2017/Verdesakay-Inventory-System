@@ -64,3 +64,23 @@ expected result in the rendered app, and run `npm run check`. Automated checks
 validate registered routes, explicit help-topic references, workflow references,
 and feedback behavior; they do not prove that every instruction matches a deployed
 screen or that physical devices work.
+
+### Workflows & Pipelines
+
+In **Guide Center → Workflows & Pipelines**, follow a roadmap across modules:
+
+- **Sales → parts → production → delivery → payment** covers stock review,
+  production approval, warehouse parts-kit picking and release, production
+  acceptance, output recording, inspections, Products In, customer release,
+  delivery and customer payment. Existing stock skips the build. Repairs and
+  additional/replacement parts requests branch from inspection failures.
+- **Purchasing → stock → bill → payment → ledger** connects purchase planning,
+  receipts, invoice matching, supplier settlement and ledger review.
+- **Attendance → approvals → payroll → accounting** connects the cutoff roster,
+  attendance and approved forms, payslip review, actual payment, explicit ledger
+  posting and compliance worksheets.
+
+Each checkpoint lists the responsible team, prerequisites, action and result
+handed to the next team. Select a roadmap checkpoint to read its details. Screen
+links respect your account's access; the roadmap explains other teams' work even
+when you cannot open their screens. Reading a guide never posts a transaction.

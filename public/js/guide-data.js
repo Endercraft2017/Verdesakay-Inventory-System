@@ -568,6 +568,347 @@ GUIDE_PIPELINES.push(
   ], gotchas: [] },
 );
 
+// Cross-module roadmaps: inputs, actions and handoffs verified against the app.
+GUIDE_PIPELINES.push(...[
+  {
+    "id": "sales-to-cash",
+    "title": "Sales \u2192 parts \u2192 production \u2192 delivery \u2192 payment",
+    "module": "inventory",
+    "icon": "send",
+    "tagline": "Follow the module connections and team handoffs.",
+    "audience": "Everyone involved in the process",
+    "pipeline": true,
+    "intro": "Follow the business process across modules. Each checkpoint names the responsible team, required inputs and result passed to the next team. Your role may only have access to some screens.",
+    "steps": [
+      {
+        "title": "Sales order",
+        "module": "Sales",
+        "role": "Sales / CSR",
+        "to": {
+          "route": "orders",
+          "filter": {
+            "type": "sale"
+          },
+          "label": "Inventory → Orders"
+        },
+        "before": "Customer, stock-linked order lines and ship-from location.",
+        "body": "Save the order, then open Review stock & approval. Check local availability and commitments.",
+        "result": "An open order and stock review show what must be supplied."
+      },
+      {
+        "title": "Plan missing supply",
+        "module": "Sales \u2192 Production / Purchasing",
+        "role": "Sales / planner",
+        "to": {
+          "route": "orders",
+          "filter": {
+            "type": "sale"
+          },
+          "label": "Inventory → Orders"
+        },
+        "before": "A stock review showing a shortage.",
+        "body": "Use the offered production or purchase drafting action. Review linked drafts before creating more. Stock elsewhere needs a transfer. Approve or backorder using the available actions.",
+        "result": "Linked production jobs or purchase drafts cover the outstanding plan; they are not received stock."
+      },
+      {
+        "title": "Approve the production job",
+        "module": "Production",
+        "role": "Production approver",
+        "to": {
+          "route": "job-orders",
+          "filter": {},
+          "label": "Production → Job Orders"
+        },
+        "before": "A draft production job, a valid product BOM and planned source/output locations.",
+        "body": "Review components and quantity, then Approve. Warehouse must accept the approved job.",
+        "result": "An approved job is ready for warehouse kit preparation."
+      },
+      {
+        "title": "Parts request / pick the kit",
+        "module": "Production \u2192 Warehouse",
+        "role": "Parts clerk / warehouse",
+        "to": {
+          "route": "job-orders",
+          "filter": {},
+          "label": "Production → Job Orders"
+        },
+        "before": "Approved job accepted by warehouse; components available at the source.",
+        "body": "Open Pick / review kit and record physically picked quantities. Partial picks can be saved. Replenish shortages through purchasing or transfers.",
+        "result": "Picked parts are held for this kit. A fully prepared kit is ready for its parts slip."
+      },
+      {
+        "title": "Release parts and accept the kit",
+        "module": "Warehouse \u2192 Production",
+        "role": "Warehouse / production lead",
+        "to": {
+          "route": "job-orders",
+          "filter": {},
+          "label": "Production → Job Orders"
+        },
+        "before": "A fully prepared kit and the physical handover.",
+        "body": "Use Release & issue slip. Production counts the kit and accepts the job; report missing or damaged parts.",
+        "result": "The parts slip deducts components; acceptance allows production recording."
+      },
+      {
+        "title": "Record production",
+        "module": "Production",
+        "role": "Shop floor",
+        "to": {
+          "route": "job-orders",
+          "filter": {},
+          "label": "Production → Job Orders"
+        },
+        "before": "Released, accepted job and actual completed output.",
+        "body": "Record the output using the job\u2019s unit or batch controls. Supply identifiers and photos where required.",
+        "result": "Output enters configured inspection stages, or Products In when no inspection is required. It is not yet sellable stock."
+      },
+      {
+        "title": "QC / QA and repair branch",
+        "module": "Production \u2192 Quality",
+        "role": "QC / QA inspector",
+        "to": {
+          "route": "production-qc",
+          "filter": {},
+          "label": "Production → QC / QA"
+        },
+        "before": "Recorded output and the required checklist.",
+        "body": "Inspect and record results. Failed output needing repair goes to Repairs & Parts Requests: request added/replacement parts, have warehouse issue them, settle requests, then re-inspect. Resolve QA holds using authorized actions.",
+        "result": "Output that completes required inspections becomes ready for receiving."
+      },
+      {
+        "title": "Receive finished goods",
+        "module": "Quality \u2192 Warehouse",
+        "role": "Receiving clerk",
+        "to": {
+          "route": "production-receiving",
+          "filter": {},
+          "label": "Production → Products In"
+        },
+        "before": "Output ready to receive and physical counts.",
+        "body": "Post Products In to the destination location and review Receipt History. Transfer goods if the sales ship-from location differs.",
+        "result": "Received finished goods become stock available for the sales order."
+      },
+      {
+        "title": "Authorize and pick the sales release",
+        "module": "Sales \u2192 Warehouse",
+        "role": "Sales / releaser",
+        "to": {
+          "route": "releasing",
+          "filter": {
+            "tab": "queue"
+          },
+          "label": "Inventory → Releasing"
+        },
+        "before": "Approved sales order, stock coverage and release authorization from the order.",
+        "body": "Warehouse accepts the order, scans serialized units or enters bulk quantities, then reviews the picked lines.",
+        "result": "Goods are reserved for the order; picking alone does not deduct stock."
+      },
+      {
+        "title": "Issue release slip and deliver",
+        "module": "Warehouse \u2192 Delivery",
+        "role": "Releaser / driver",
+        "to": {
+          "route": "releasing",
+          "filter": {
+            "tab": "slips"
+          },
+          "label": "Inventory → Releasing"
+        },
+        "before": "Picked goods, authorization token and required handover evidence.",
+        "body": "Issue the release slip at handover. For deliveries use Phone \u2192 Work \u2192 Deliveries to record recipient proof and delivery status.",
+        "result": "The issued slip records stock-out; delivery evidence records the customer handoff."
+      },
+      {
+        "title": "Complete order and collect payment",
+        "module": "Sales \u2192 Accounting",
+        "role": "CSR / accountant",
+        "to": {
+          "route": "accounting-receivables",
+          "filter": {},
+          "label": "Accounting → Receivables & Payables"
+        },
+        "before": "Delivered order, reviewed completion/invoice and customer balance.",
+        "body": "Complete the sale order when appropriate. Open the customer in AR aging to record a receipt allocated to its open documents.",
+        "result": "Posted allocations reduce the outstanding balance. An on-account receipt may leave an invoice open."
+      }
+    ],
+    "gotchas": [
+      "Follow only the branches that apply. Existing stock can skip production; purchased goods use goods receipts.",
+      "Draft orders, picked kits and QC passes have different effects. Check the result at each handoff before proceeding."
+    ]
+  },
+  {
+    "id": "purchase-to-pay",
+    "title": "Purchasing \u2192 stock \u2192 bill \u2192 payment \u2192 ledger",
+    "module": "purchasing",
+    "icon": "send",
+    "tagline": "Follow the module connections and team handoffs.",
+    "audience": "Everyone involved in the process",
+    "pipeline": true,
+    "intro": "Follow the business process across modules. Each checkpoint names the responsible team, required inputs and result passed to the next team. Your role may only have access to some screens.",
+    "steps": [
+      {
+        "title": "Purchase order",
+        "module": "Purchasing",
+        "role": "Purchaser",
+        "to": {
+          "route": "orders",
+          "filter": {
+            "type": "purchase"
+          },
+          "label": "Inventory → Orders"
+        },
+        "before": "Supplier, required items and approved quantities/prices.",
+        "body": "Create or review the purchase draft generated by a sales or parts shortage.",
+        "result": "A purchase order records expected supply; stock is unchanged."
+      },
+      {
+        "title": "Goods receipt",
+        "module": "Purchasing \u2192 Warehouse",
+        "role": "Receiver",
+        "to": {
+          "route": "purchasing",
+          "filter": {
+            "tab": "receipts"
+          },
+          "label": "Inventory → Purchasing"
+        },
+        "before": "Supplier delivery and purchase order.",
+        "body": "Record receipt against the PO with actual quantities and destination.",
+        "result": "Posted receipt adds stock for kits or sales."
+      },
+      {
+        "title": "Vendor bill and match",
+        "module": "Warehouse \u2192 Accounting",
+        "role": "Accountant",
+        "to": {
+          "route": "purchasing",
+          "filter": {
+            "tab": "bills"
+          },
+          "label": "Inventory → Purchasing"
+        },
+        "before": "Supplier invoice and posted receipts.",
+        "body": "Enter and review the bill against PO prices and received quantities. Resolve matching differences before approval.",
+        "result": "Approved bill is ready for payable review."
+      },
+      {
+        "title": "Supplier payment",
+        "module": "Accounting",
+        "role": "Accountant",
+        "to": {
+          "route": "accounting-receivables",
+          "filter": {},
+          "label": "Accounting → Receivables & Payables"
+        },
+        "before": "Reviewed supplier balance and configured cash/bank account.",
+        "body": "Open the supplier in AP aging and record the payment with document allocations.",
+        "result": "The posted payment and allocations record settlement."
+      },
+      {
+        "title": "Check the ledger",
+        "module": "Accounting",
+        "role": "Accountant",
+        "to": {
+          "route": "accounting-ledger",
+          "filter": {
+            "tab": "journal"
+          },
+          "label": "Accounting → General Ledger"
+        },
+        "before": "General Ledger configured and applicable transactions posted.",
+        "body": "Review generated journal entries and source references; resolve posting errors or unposted sources.",
+        "result": "Source documents and ledger entries reconcile; viewing this guide never posts them."
+      }
+    ],
+    "gotchas": [
+      "Follow only the branches that apply. Existing stock can skip production; purchased goods use goods receipts.",
+      "Draft orders, picked kits and QC passes have different effects. Check the result at each handoff before proceeding."
+    ]
+  },
+  {
+    "id": "attendance-to-payroll",
+    "title": "Attendance \u2192 approvals \u2192 payroll \u2192 accounting",
+    "module": "hr",
+    "icon": "send",
+    "tagline": "Follow the module connections and team handoffs.",
+    "audience": "Everyone involved in the process",
+    "pipeline": true,
+    "intro": "Follow the business process across modules. Each checkpoint names the responsible team, required inputs and result passed to the next team. Your role may only have access to some screens.",
+    "steps": [
+      {
+        "title": "Cutoff and roster",
+        "module": "HR",
+        "role": "HR staff",
+        "to": {
+          "route": "hr-timekeeping",
+          "filter": {},
+          "label": "HR → Time Keeping"
+        },
+        "before": "Employees, payroll policy and effective rate tables.",
+        "body": "Create the cutoff and add its employees.",
+        "result": "A dated roster is ready for attendance."
+      },
+      {
+        "title": "Attendance and approved forms",
+        "module": "HR \u2192 Approvals",
+        "role": "Employees / approvers / HR",
+        "to": {
+          "route": "hr-timekeeping",
+          "filter": {},
+          "label": "HR → Time Keeping"
+        },
+        "before": "Cutoff roster and attendance sources.",
+        "body": "Review punches and attendance; reconcile approved leave, overtime and offset forms.",
+        "result": "Verified inputs are ready for payroll computation."
+      },
+      {
+        "title": "Generate and review payroll",
+        "module": "HR",
+        "role": "Payroll staff",
+        "to": {
+          "route": "hr-timekeeping",
+          "filter": {},
+          "label": "HR → Time Keeping"
+        },
+        "before": "Verified attendance and adjustments.",
+        "body": "Generate Payslips, read review notes and compare earnings, deductions and net pay.",
+        "result": "Reviewed payroll records are ready for payment and printing."
+      },
+      {
+        "title": "Pay and post to GL",
+        "module": "HR \u2192 Accounting",
+        "role": "Payroll / accountant",
+        "to": {
+          "route": "hr-timekeeping",
+          "filter": {},
+          "label": "HR → Time Keeping"
+        },
+        "before": "Reviewed payslips, actual payment and configured ledger.",
+        "body": "Mark paid only after payment; use Post to GL explicitly and review its result.",
+        "result": "Paid payroll locks the cutoff; posted payroll can be checked in the ledger."
+      },
+      {
+        "title": "Compliance worksheets",
+        "module": "Accounting",
+        "role": "Tax / accounting staff",
+        "to": {
+          "route": "accounting",
+          "filter": {},
+          "label": "Accounting → Tax & Compliance"
+        },
+        "before": "Reviewed payroll and the reporting period.",
+        "body": "Generate and reconcile the supported government worksheets before agency submission.",
+        "result": "Exported worksheets are prepared; generating them does not file a return."
+      }
+    ],
+    "gotchas": [
+      "Follow only the branches that apply. Existing stock can skip production; purchased goods use goods receipts.",
+      "Draft orders, picked kits and QC passes have different effects. Check the result at each handoff before proceeding."
+    ]
+  }
+]);
+
 /* route (+ optional sub-tab hint) → pipeline id, so the per-screen Help drawer can
    offer "walk me through this". Screens not listed just link to the guide index. */
 const GUIDE_ROUTE_MAP = {

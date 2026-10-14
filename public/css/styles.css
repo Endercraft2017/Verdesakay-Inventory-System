@@ -1658,3 +1658,13 @@ textarea { resize: vertical; min-height: 84px; }
 /* Native option menus follow the shared app theme. */
 select, input { color-scheme: inherit; }
 select option, select optgroup { background-color: var(--surface); color: var(--text); }
+
+.guide-section-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.guide-section-tabs [aria-pressed="true"] { border-color:var(--accent); background:var(--accent-weak); }
+.pipeline-roadmap { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
+.pipeline-roadmap a { flex:1 1 170px; border:1px solid var(--border); border-radius:10px; padding:12px; color:var(--text); text-decoration:none; }
+.pipeline-roadmap a:hover { border-color:var(--accent); }
+.pipeline-roadmap span { color:var(--accent); font-weight:700; margin-right:8px; }
+.pipeline-roadmap small { display:block; color:var(--muted); margin-top:6px; }
+.pipeline-check { padding:8px 10px; background:var(--surface-2); border-radius:6px; }
+@media print { .guide-section-tabs { display:none; } }
