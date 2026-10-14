@@ -355,6 +355,13 @@ raised by the sales-order shortfall flow.
    /:id/products-in` desktop uses, plus a continuous QR-scan-to-receive mode and a
    unit dossier (`record.js`: photo, QR, printable label) reachable from either
    platform.
+   - **Desktop receipt:** the clerk can combine selected passed units and whole-number
+     quantities from multiple open batches into one receipt at one exact storage
+     location. The API validates all lines and the *total* location capacity before
+     writing, then posts all lines and stock changes in one transaction. A stable
+     `Idempotency-Key` safely replays a lost response. Legacy single-batch phone
+     requests remain accepted. A receipt at a different warehouse does not fill a
+     sale's ship-from location; transfer stock before warehouse release.
    - **Mobile (RTS clerk, Figma 74:*)** — `#/receiving`, fed by `GET /api/rts/queue` (units
      across job orders): identify → verify (final-pass record, SKU) → stock details (storage
      location) → optional group of same-SKU units → review → final duplicate check (`POST

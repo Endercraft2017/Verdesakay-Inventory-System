@@ -124,6 +124,56 @@ describe('serialized (QC-gated) job orders', () => {
 });
 
 describe('non-serialized (0 QC stages) job orders', () => {
+  it('posts selected batches in one receipt, validates all lines and total location capacity first, and replays a retry', async () => {
+    const { mo, product } = await releasedMO('PR-MULTI', 5, 0);
+    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2 });
+    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 3 });
+    const rec = (await ctx.api.get(`/api/job-orders/${mo}/receivable`).set(H())).body;
+    expect(rec.batches).toHaveLength(2);
+    const batches = rec.batches.map((b: { id: number; remaining_qty: number }) => ({ batch_id: b.id, quantity: b.remaining_qty }));
+    const bay = (await ctx.api.post('/api/locations').set(H()).send({ name: 'PR-MULTI Bay', type: 'warehouse', capacity: 4 })).body.id;
+    const body = { location_id: bay, batches };
+    const full = await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H()).send(body);
+    expect(full.status).toBe(400);
+    expect(await onHand(product)).toBe(0);
+
+    await ctx.api.put(`/api/locations/${bay}`).set(H()).send({ capacity: 5 });
+    const over = await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H())
+      .send({ location_id: bay, batches: [batches[0], { ...batches[1], quantity: 4 }] });
+    expect(over.status).toBe(400);
+    expect(await onHand(product)).toBe(0);
+    const key = 'products-in-multi-retry-1';
+    const first = await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H()).set('Idempotency-Key', key).send(body);
+    expect(first.status).toBe(201);
+    const retry = await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H()).set('Idempotency-Key', key).send(body);
+    expect(retry.status).toBe(201);
+    expect(retry.headers['idempotency-replayed']).toBe('true');
+    expect(retry.body.id).toBe(first.body.id);
+    expect(await onHand(product)).toBe(5);
+    const history = (await ctx.api.get('/api/job-orders/production-receipts?job_order_id=' + mo).set(H())).body;
+    expect(history).toHaveLength(1);
+    expect(history[0].line_count).toBe(2);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H())
+      .send({ location_id: bay, batches: [batches[0], batches[0]] })).status).toBe(400);
+  });
+
+  it('rejects fractional batch quantities and incomplete legacy batch fields', async () => {
+    const { mo, product } = await releasedMO('PR-INT', 2, 0);
+    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2 });
+    const rec = (await ctx.api.get(`/api/job-orders/${mo}/receivable`).set(H())).body;
+    const batch_id = rec.batches[0].id;
+    for (const payload of [
+      { batch_id, quantity: 1.5 },
+      { batches: [{ batch_id, quantity: 1.5 }] },
+      { batch_id },
+      { quantity: 1 },
+    ]) {
+      expect((await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H())
+        .send({ location_id: rec.output_location_id, ...payload })).status).toBe(400);
+    }
+    expect(await onHand(product)).toBe(0);
+  });
+
   it('progress does not post stock; a batch can be received partially then fully', async () => {
     const { mo, product } = await releasedMO('PR5', 5, 0);
     await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 5 });

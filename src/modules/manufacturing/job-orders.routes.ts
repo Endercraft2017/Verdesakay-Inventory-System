@@ -1951,7 +1951,9 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
   const input = parseBody(productsInSchema, req.body);
   // Ready-to-sell storage only (rts.ts): a missing or transit (truck) location, or one without
   // room for what is coming in, is refused.
-  const locErr = locationError(input.location_id, (input.unit_ids ?? []).length || input.quantity || 0);
+  const batchLines = input.batches ?? (input.batch_id == null ? [] : [{ batch_id: input.batch_id, quantity: input.quantity! }]);
+  const receivedQty = (input.unit_ids ?? []).length + batchLines.reduce((sum, line) => sum + line.quantity, 0);
+  const locErr = locationError(input.location_id, receivedQty);
   if (locErr) {
     res.status(400).json({ error: locErr, location_error: true });
     return;
@@ -1982,10 +1984,9 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
     }
   }
 
-  let batch: { id: number; qty: number; remaining_qty: number } | null = null;
-  if (input.batch_id != null) {
+  for (const line of batchLines) {
     const b = queryOne<{ id: number; qty: number; job_order_id: number | null }>(
-      'SELECT * FROM production_batches WHERE id = ?', input.batch_id
+      'SELECT * FROM production_batches WHERE id = ?', line.batch_id
     );
     if (!b || b.job_order_id !== id) { res.status(400).json({ error: 'Batch not found on this job order' }); return; }
     const hasUnits = (queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM job_order_units WHERE batch_id = ?', b.id)?.n ?? 0) > 0;
@@ -1999,17 +2000,12 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
       'SELECT COALESCE(SUM(quantity), 0) AS n FROM production_receipt_items WHERE batch_id = ?', b.id
     )?.n ?? 0;
     const remaining = b.qty - receivedSoFar;
-    const qty = input.quantity ?? 0;
     if (remaining <= 0) { res.status(409).json({ error: 'This batch has already been fully received' }); return; }
-    if (qty > remaining) {
+    if (line.quantity > remaining) {
       res.status(400).json({ error: `Only ${remaining} of this batch remains to receive` });
       return;
     }
-    batch = { id: b.id, qty: b.qty, remaining_qty: remaining };
   }
-
-  const receivedQty = unitIds.length + (input.batch_id != null ? (input.quantity ?? 0) : 0);
-  if (receivedQty <= 0) { res.status(400).json({ error: 'Nothing to receive' }); return; }
 
   db.exec('BEGIN');
   let receiptId: number;
@@ -2039,11 +2035,11 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
         });
       }
     }
-    if (batch && input.quantity) {
-      run('INSERT INTO production_receipt_items (receipt_id, batch_id, quantity) VALUES (?, ?, ?)', receiptId, batch.id, input.quantity);
+    for (const line of batchLines) {
+      run('INSERT INTO production_receipt_items (receipt_id, batch_id, quantity) VALUES (?, ?, ?)', receiptId, line.batch_id, line.quantity);
       if (jo.product_item_id != null) {
         applyStockChange({
-          itemId: jo.product_item_id, locationId: input.location_id, change: input.quantity,
+          itemId: jo.product_item_id, locationId: input.location_id, change: line.quantity,
           reason: `${jo.number}: received (Products In ${number})`, userId: req.user!.id, unitCost,
         });
       }

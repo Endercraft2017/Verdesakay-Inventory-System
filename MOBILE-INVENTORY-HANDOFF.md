@@ -1,5 +1,18 @@
 # Inventory and production: mobile integration gaps
 
+## Products In → finished stock → sales: 2026-10-14 handoff
+
+**Owner:** mobile developer. **Backend/desktop status:** one `POST /api/job-orders/:id/products-in` now accepts `unit_ids` and `batches: [{batch_id, quantity}]` together, creating one atomic receipt and checking total location capacity before any line posts. The existing singular `batch_id` + `quantity` request remains supported. Batch quantities must be positive whole numbers; duplicate unit or batch IDs in one receipt are rejected. `Idempotency-Key` on this endpoint replays the same result for a lost response. Desktop uses one key per unchanged receipt attempt and shows the full location path and direct remaining capacity. No `public/mobile/` source was edited.
+
+| Priority | Mobile evidence | Follow-up for mobile owner |
+|---|---|---|
+| **High** | `public/mobile/modules/manufacturing/receiving.js` batch `rts-post` uses `clamp(parseInt(input.value, 10))`. `1.5`, an empty value, or an over-remaining value silently changes to another quantity. | Parse the entire entry and reject invalid/decimal/over-remaining values with a clear correction message. Keep the server's integer and remaining-quantity checks authoritative. |
+| **High** | The batch flow creates a retry key during view rendering; after navigation or restart an uncertain post can get a new key. Unit group keys and result state are held in the module's in-memory `draft`. | Persist the exact pending payload and key until confirmed, or reload receipt/receivable state before any retry. A lost response may mean stock already posted. Show **confirmation unknown** rather than “nothing saved,” and do not generate a new key for an uncertain unchanged request. |
+| **Medium** | `locName()` and the stock/location screens show `l.name`, which is ambiguous when two shelves share a name under different roots. | Use the `path` from `/api/locations` for every receipt picker, review, and result; retain `location_id` for requests. Show direct room from `capacity - total_units`, and refresh on a capacity conflict. |
+| **Medium** | Mobile unit grouping posts one request per job order; a group spanning jobs can partially succeed. | Show each job's confirmed receipt number and unresolved units separately. Retry only the unresolved job with its original key. Do not call a cross-job group “all recorded” if any request is pending or refused. |
+
+**Mobile acceptance cases:** decimal, blank and over-remaining batch entries; one batch partially received then retried; timeout after server receipt commit; full location after review; same-name shelves in separate roots; grouped units from two jobs where one post fails; receipt at the wrong warehouse leaving a sale short at its ship-from location. The backend and desktop tests cover atomic multi-line posting, capacity, retry replay, and finished stock becoming available for sale at the receipt location; phone route tests and narrow-screen verification remain with the mobile owner.
+
 **Sharing status:** This handoff and its backend/desktop implementation belong on `restructure/module-architecture`. The mobile fixes listed below remain open for the mobile developer.
 
 ## QC/QA: mobile handoff (recorded unit → inspection → hold or final pass)

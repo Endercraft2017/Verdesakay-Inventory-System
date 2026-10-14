@@ -543,10 +543,8 @@ export const holdDecisionSchema = z.object({
   }).optional(),
 });
 
-/** POST /job-orders/:id/products-in — receive finished output into stock. Either
-    serialized `unit_ids` (units at status 'passed'), or a non-serialized `batch_id` +
-    the `quantity` of it being received (a batch's un-received qty may be received across
-    more than one receipt). */
+/** POST /job-orders/:id/products-in — one receipt can combine passed units and bulk batches.
+    The singular batch fields remain supported for existing mobile clients. */
 export const productsInSchema = z
   .object({
     received_date: trimmed.max(40).optional().nullable(),
@@ -554,12 +552,16 @@ export const productsInSchema = z
     notes: optionalText,
     unit_ids: z.array(z.coerce.number().int().positive()).max(500).optional(),
     batch_id: z.coerce.number().int().positive().optional(),
-    quantity: z.coerce.number().min(0).optional(),
+    quantity: z.coerce.number().int().positive().optional(),
+    batches: z.array(z.object({ batch_id: z.coerce.number().int().positive(), quantity: z.coerce.number().int().positive() })).max(500).optional(),
   })
-  .refine(
-    (v) => (v.unit_ids && v.unit_ids.length > 0) || (v.batch_id != null && (v.quantity || 0) > 0),
-    'Select at least one unit, or a batch and a received quantity'
-  );
+  .superRefine((v, ctx) => {
+    if ((v.batch_id == null) !== (v.quantity == null)) ctx.addIssue({ code: 'custom', message: 'Batch and quantity must be supplied together' });
+    if (v.batch_id != null && v.batches?.length) ctx.addIssue({ code: 'custom', message: 'Use either batch_id or batches' });
+    if (!v.unit_ids?.length && v.batch_id == null && !v.batches?.length) ctx.addIssue({ code: 'custom', message: 'Select at least one unit or batch' });
+    if (new Set(v.unit_ids ?? []).size !== (v.unit_ids ?? []).length) ctx.addIssue({ code: 'custom', message: 'A unit can only appear once in a receipt' });
+    if (new Set((v.batches ?? []).map(b => b.batch_id)).size !== (v.batches ?? []).length) ctx.addIssue({ code: 'custom', message: 'A batch can only appear once in a receipt' });
+  });
 
 // ---- Repair / rework parts requests (src/routes/production.routes.ts) ----
 const repairFault = z.enum(['assembler', 'production', 'supplier', 'wear', 'other']);
