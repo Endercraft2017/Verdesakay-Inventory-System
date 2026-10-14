@@ -892,6 +892,12 @@ function ensureStyles() {
     .doc-symbol-glyph{display:block;line-height:1}
     @media(max-width:480px){.doc-symbol-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}}
 `;
+  el.textContent += `
+    .doc-header-divider{border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin:0 0 12px;min-width:0;display:flex;flex-direction:column;gap:8px}
+    .doc-header-divider legend{padding:0 5px;font-size:12px;font-weight:600;color:var(--text)}
+    .doc-studio-side .doc-header-divider p{font-size:12px;color:var(--text-muted)}
+    .doc-header-divider label{margin:0}
+`;
   document.head.appendChild(el);
 }
 
@@ -2984,6 +2990,11 @@ function mountStudio(fs, surface, opts, api) {
     if(presets){const values=[...new Set([...presets,Number(value)])].sort((a,b)=>a-b);return `<label>${label}<select data-prop="${prop}" data-numeric="true" data-current="${value}" ${prop==='fontSize'?'data-unit="pt"':''}>${values.map(n=>`<option value="${n}" ${n===Number(value)?'selected':''}>${n}${prop==='lineHeight'?' ×':''}</option>`).join('')}<option value="custom">Custom…</option></select></label>`;}
     return `<label>${label}<input data-prop="${prop}" type="${type}" value="${esc(value)}" ${type==='number'?'step="0.5"':''}></label>`;
   }
+  function dividerControls(header){
+    if(!header)return '';const css=getComputedStyle(header),width=parseFloat(header.style.borderBottomWidth)||parseFloat(css.borderBottomWidth)||2;
+    const widths=[...new Set([.5,1,2,3,4,6,8,width])].sort((a,b)=>a-b),style=css.borderBottomStyle||'none';
+    return `<fieldset class="doc-header-divider" ${elLocked(header)?'disabled':''}><legend>Company header divider</legend><p>Change the line below the company details.</p><div class="doc-prop-grid"><label>Line style<select data-header-border="style">${['none','solid','dashed','dotted','double'].map(s=>`<option value="${s}" ${s===style?'selected':''}>${s==='none'?'No divider':s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('')}</select></label><label>Thickness (px)<select data-header-border="width">${widths.map(n=>`<option value="${n}" ${n===width?'selected':''}>${n}</option>`).join('')}</select></label></div><label>Line color<div class="doc-color-picker"><input type="color" data-header-border="color" aria-label="Header divider color" value="${colorHex(css.borderBottomColor,'#222222')}"><span>Choose color</span></div></label><button type="button" data-header-divider-remove ${style==='none'?'disabled':''}>Remove divider</button></fieldset>`;
+  }
   const advanced=DocAdvanced.mount(fs,surface,opts,api,target,restoreRange);
   let variableSearch='',variableCategory='';
   function bankVariables(){const list=[...(opts.getVariables?.()||[])];surface.querySelectorAll('.doc-chip').forEach(chip=>{const ref=chip.dataset.token;if(ref&&!/^[#/]/.test(ref))list.push({key:ref,label:ref,category:'In this document'});});const seen=new Set();return list.map(v=>{const ref=String(v.token||v.key||'').replace(/^\{\{\s*|\s*\}\}$/g,'').trim();return {...v,ref,category:v.category||'Other'};}).filter(v=>v.ref&&!/^[#/]/.test(v.ref)&&!seen.has(v.ref)&&seen.add(v.ref));}
@@ -3001,8 +3012,9 @@ function mountStudio(fs, surface, opts, api) {
     if(advanced.render(tab,panel))return;
     const el = target();
     if (tab === 'Properties') {
-      panel.innerHTML = `<h3>${el ? ({P:'Paragraph',H1:'Heading',H2:'Heading',H3:'Heading',TD:'Table cell',TH:'Table heading',IMG:'Image',LI:'List item'}[el.tagName] || el.dataset.floatKind || 'Text settings') : 'Select text or an object'}</h3>`;
+      panel.innerHTML = `<h3>${el ? ({HEADER:'Company header',P:'Paragraph',H1:'Heading',H2:'Heading',H3:'Heading',TD:'Table cell',TH:'Table heading',IMG:'Image',LI:'List item'}[el.tagName] || el.dataset.floatKind || 'Text settings') : 'Select text or an object'}</h3>`;
       if (!el) return;
+      panel.innerHTML += dividerControls(el.closest('.doc-head'));
       const css = getComputedStyle(el), isFloat = el.classList.contains('doc-float');
       const font = ['Segoe UI','Arial','Georgia','Times New Roman','Courier New'].find(f=>css.fontFamily.includes(f));
       panel.innerHTML += `<div class="doc-prop-grid">${isFloat ? field('X (%)','left',parseFloat(el.style.left)||0)+field('Y (%)','top',parseFloat(el.style.top)||0)+field('Width (%)','width',parseFloat(el.style.width)||20)+field('Height (%)','height',parseFloat(el.style.height)||10)+field('Rotation (°)','rotate',parseFloat(el.style.rotate)||0)+field('Opacity (0–1)','opacity',el.style.opacity===''?1:Number(el.style.opacity))+field('Corner radius (px)','borderRadius',parseFloat(el.style.borderRadius)||0) : ''}${field('Font (px)','fontSize',(parseFloat(css.fontSize)||13)*(css.fontSize.endsWith('pt')?4/3:1))+field('Line height','lineHeight',(parseFloat(css.lineHeight)*(css.lineHeight.endsWith('pt')?4/3:1)/( /(?:px|pt)$/.test(css.lineHeight)?(parseFloat(css.fontSize)||13)*(css.fontSize.endsWith('pt')?4/3:1):1))||1.55)+field('Padding (px)','padding',parseFloat(css.padding)||0)+field('Spacing below (px)','marginBottom',parseFloat(css.marginBottom)||0)}</div>${field('Text color','color',css.color,'text')}${field('Background','backgroundColor',el.style.backgroundColor || 'transparent','text')}<label>Font<select data-prop="fontFamily">${['Segoe UI','Arial','Georgia','Times New Roman','Courier New'].map(f=>`<option ${font===f?'selected':''}>${f}</option>`).join('')}</select></label><label>Alignment<select data-prop="textAlign">${['left','center','right','justify'].map(f=>`<option ${css.textAlign===f?'selected':''}>${f}</option>`).join('')}</select></label>${el.tagName==='IMG'||el.dataset.floatKind==='image'?'<button data-do="picture">Picture settings</button>':''}<button data-do="duplicate">Duplicate object / block</button>${isFloat?'<h3>Align to page</h3><div class="doc-prop-grid"><button data-do="align-left">Left</button><button data-do="align-center">Center</button><button data-do="align-right">Right</button><button data-do="align-top">Top</button><button data-do="align-middle">Middle</button><button data-do="align-bottom">Bottom</button><button data-do="distribute-x">Space horizontally</button><button data-do="distribute-y">Space vertically</button></div>':''}`;
@@ -3058,6 +3070,12 @@ function mountStudio(fs, surface, opts, api) {
   panel.addEventListener('change',e=>{
     advanced.input(e);
     const el=target(), input=e.target;
+    if(input.hasAttribute('data-header-border')){
+      const header=el?.closest('.doc-head');if(!header||elLocked(header))return;
+      const style=panel.querySelector('[data-header-border="style"]').value,width=Number(panel.querySelector('[data-header-border="width"]').value),color=panel.querySelector('[data-header-border="color"]').value;
+      if(!['none','solid','dashed','dotted','double'].includes(style)||!Number.isFinite(width)||width<=0||width>100||!/^#[0-9a-f]{6}$/i.test(color))return;
+      api.beforeEdit();header.style.borderBottomWidth=width+'px';header.style.borderBottomStyle=style;header.style.borderBottomColor=color;changed();render();return;
+    }
     if(input.hasAttribute('data-variable-category')){variableCategory=input.value;renderVariableBank();return;}
     if(input.dataset.visible!==undefined||input.dataset.lock!==undefined) { const f=floats()[+(input.dataset.visible??input.dataset.lock)];if(!f)return;if(input.dataset.visible!==undefined)f.dataset.docHidden=String(!input.checked);else { f.dataset.docLocked=String(input.checked);api.normalize(); }changed();return; }
     if(input.dataset.scenario!==undefined) {api.setScenario(input.value);return;}
@@ -3070,6 +3088,7 @@ function mountStudio(fs, surface, opts, api) {
     const b=e.target.closest('button');if(!b)return;if(b.dataset.adv){await advanced.action(b);render();return;}const el=target();
     if(b.hasAttribute('data-variable-insert')){insert(tokenChip(b.dataset.variableInsert));return;}
     if(b.hasAttribute('data-variable-copy')){const token='{{'+b.dataset.variableCopy+'}}';try{if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(token);note.textContent='Copied '+token;}catch{UI.modal({guide:false,title:'Copy variable',bodyHTML:`<label>Variable token<input data-copy-variable readonly value="${esc(token)}"></label><p>Select and copy this token with Ctrl / ⌘ C.</p>`,cancelText:'Close',onOpen:ov=>ov.querySelector('[data-copy-variable]').select()});}return;}
+    if(b.hasAttribute('data-header-divider-remove')){const input=panel.querySelector('[data-header-border=style]');if(input){input.value='none';input.dispatchEvent(new Event('change',{bubbles:true}));}return;}
     if(b.hasAttribute('data-clear-fill')){if(el&&!elLocked(el)){el.style.backgroundColor='transparent';changed();render();}return;}
     if(b.dataset.outline!==undefined){const h=surface.querySelectorAll('h1,h2,h3,h4,h5,h6')[Number(b.dataset.outline)];if(h){h.scrollIntoView?.({block:'center',behavior:'smooth'});surface.focus();const r=document.createRange();r.selectNodeContents(h);r.collapse(true);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);}return;}
     if(b.dataset.layer!==undefined){selected=floats()[+b.dataset.layer];if(selected){api.select(selected);selected.scrollIntoView?.({block:'nearest'});}render();return;}
@@ -3114,7 +3133,9 @@ function mountStudio(fs, surface, opts, api) {
   side.addEventListener('mousedown',e=>{if(e.target.closest('button'))e.preventDefault();});
   const onSelect=()=>{if(side.contains(document.activeElement)||rail.contains(document.activeElement))return;if(surface.contains(window.getSelection()?.anchorNode)){selection();if(tab==='Properties')render();}};
   document.addEventListener('selectionchange',onSelect);
-  surface.addEventListener('click',e=>{selected=e.target.closest('.doc-float')||e.target.closest('img,p,h1,h2,h3,h4,h5,h6,td,th,li');remember();if(tab==='Properties'||tab==='Layers')render();});
+  function dividerHit(e){const header=e.target.closest?.('.doc-head');if(!header||!surface.contains(header))return null;const box=header.getBoundingClientRect();return e.clientY>=box.bottom-12&&e.clientY<=box.bottom&&e.clientX>=box.left&&e.clientX<=box.right?header:null;}
+  surface.addEventListener('mousedown',e=>{if(dividerHit(e))e.preventDefault();});
+  surface.addEventListener('click',e=>{const header=dividerHit(e);if(header){selected=header;remember();openPanel('Properties');return;}selected=e.target.closest('.doc-float')||e.target.closest('img,p,h1,h2,h3,h4,h5,h6,td,th,li');remember();if(tab==='Properties'||tab==='Layers')render();});
   function guides(){surface.querySelectorAll('.doc-page-guide').forEach(n=>n.remove());if(surface.querySelector('[data-doc-design-page]'))return;const h=parseFloat(surface.style.minHeight);if(!h)return;const count=Math.min(100,Math.ceil(surface.scrollHeight/h));for(let i=1;i<count;i++){const g=document.createElement('div');g.className='doc-page-guide';g.contentEditable='false';g.style.top=i*h+'px';g.textContent='Page '+(i+1)+' · approximate flow';surface.append(g);}}
   const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(guides):null;observer?.observe(surface);
   if (opts.body && store.versions.at(-1)?.body.replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim() !== api.body().replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim()) checkpoint('Opened template');

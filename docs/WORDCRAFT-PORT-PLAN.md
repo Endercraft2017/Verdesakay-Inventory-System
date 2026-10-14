@@ -377,3 +377,6 @@ Wide desktop Home uses one horizontal command row with accessible clipboard/edit
 
 ### Heading/style discoverability — 14 October 2026
 The compact ribbon uses role-based heading labels; Style gallery provides previews, purpose descriptions and separate edit actions. Existing paragraph/style commands, outline semantics and stored templates are preserved. This is UI guidance; phase 2 slice 5 is unchanged.
+
+### Company header divider — 14 October 2026
+Direct header-edge selection and Inspect controls expose border removal, width, style and color while preserving company fields. Locked ancestors, Undo and saved/reopened border properties are verified. Existing templates keep their letterhead layout; phase 2 slice 5 remains pending.

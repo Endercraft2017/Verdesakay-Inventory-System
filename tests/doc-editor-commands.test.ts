@@ -17,6 +17,19 @@ function setup(body='<p>Original content</p>',withModel=false,options:any={},run
  return {w,ed,root,doc:w.document,select};
 }
 describe('document command dispatch',()=>{
+ it('edits/removes a company header divider without removing fields and restores it with Undo',()=>{
+  const {doc,w,root,ed,select}=setup('<header class="doc-head" style="border-bottom:2px solid #222"><h1>{{company.name}}</h1><p>Company address</p></header><p>Body</p>',true);
+  select(root.querySelector('header p').firstChild,0,4);doc.querySelector('[data-studio-tab=Properties]').click();
+  const input=doc.querySelector('[data-header-border=style]');input.value='dashed';input.dispatchEvent(new w.Event('change',{bubbles:true}));ed._history.flush();
+  expect(root.querySelector('header').style.borderBottomStyle).toBe('dashed');expect(root.querySelector('[data-token="company.name"]')).not.toBeNull();
+  doc.querySelector('[data-header-divider-remove]').click();ed._history.flush();expect(root.querySelector('header').style.borderBottomStyle).toBe('none');expect(root.textContent).toContain('Company address');
+  ed._history.undo();expect(root.querySelector('header').style.borderBottomStyle).toBe('dashed');ed._history.undo();expect(root.querySelector('header').style.borderBottomStyle).toBe('solid');
+ });
+ it('does not modify a locked company header divider',()=>{
+  const {doc,w,root,select}=setup('<header class="doc-head" data-doc-locked="true" style="border-bottom:2px solid #222"><p>Company details</p></header><p>Body</p>',true);
+  select(root.querySelector('header p').firstChild,0,4);doc.querySelector('[data-studio-tab=Properties]').click();const input=doc.querySelector('[data-header-border=style]');input.value='none';input.dispatchEvent(new w.Event('change',{bubbles:true}));expect(root.querySelector('header').style.borderBottomStyle).toBe('solid');expect(doc.querySelector('.doc-header-divider').disabled).toBe(true);
+ });
+
  it('routes keyboard and toolbar formatting through the same registered native adapter',()=>{
   const {w,doc,root,ed,select}=setup();select(root.querySelector('p').firstChild);
   doc.execCommand.mockClear();doc.querySelector('[data-ex=bold]').click();

@@ -927,3 +927,5 @@ Editor select theme → fixed single-arrow image, no-repeat, right placement and
 Descriptive text-type options retain p/h1–h6 command values → existing formatBlock command/history/outline pipeline. Style preview cards retain style-apply/style-edit keys → existing named-style apply/update pipeline; display role descriptions and px-to-pt font metadata without editing content when opened.
 
 Symbol picker → named native button (pointer or keyboard Enter) → existing insertHtml command at remembered selection → close modal → existing Undo/save pipeline. Presentation uses scoped grid centering instead of shared generic button alignment.
+
+Company-header edge click → select header → Inspect divider controls. Divider change/removal → validate choices and ancestor lock → beforeEdit history boundary → update inline border-bottom width/style/color only → existing change/save/shared/print pipeline. Removing the divider changes style to none; its fields and geometry remain, and Undo restores the previous border.

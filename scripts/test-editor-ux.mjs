@@ -56,7 +56,7 @@ try {
   token = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123' })).token;
   await api('POST', '/auth/change-password', { current_password: 'admin123', new_password: 'EditorAudit!73952' });
   const template = await api('POST', '/templates', { name: 'Editor UX audit', type: 'generic',
-    body: '<style data-docpage>@page{size:210mm 297mm;margin:14mm}</style><h1>{{company.name}}</h1><p>Employee payslip layout.</p>' });
+    body: '<style data-docpage>@page{size:210mm 297mm;margin:14mm}</style><header class="doc-head"><h1>{{company.name}}</h1></header><p>Employee payslip layout.</p>' });
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/lib/chromium/chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(fs.existsSync);
   browser = await chromium.launch({ ...(executablePath ? { executablePath } : {}), headless: true });
   context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce', permissions: ['clipboard-read','clipboard-write'] });
@@ -126,6 +126,18 @@ try {
     assert.equal(await page.locator('.doc-fs-bar .doc-save-status').textContent(),'No unsaved changes');
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await check('Company header divider supports direct selection, styling, removal and Undo',async()=>{
+    const header=page.locator('.doc-surface .doc-head');const box=await header.boundingBox();assert(box);await header.click({position:{x:box.width/2,y:box.height-2}});
+    assert(await page.locator('.doc-header-divider').isVisible());
+    await page.locator('[data-header-border=width]').selectOption('4');await page.locator('[data-header-border=style]').selectOption('dashed');
+    await page.locator('[data-header-border=color]').evaluate(el=>{el.value='#334455';el.dispatchEvent(new Event('change',{bubbles:true}));});
+    const fields=await page.locator('.doc-surface [data-token]').count();
+    const border=()=>header.evaluate(el=>({width:getComputedStyle(el).borderBottomWidth,style:getComputedStyle(el).borderBottomStyle,color:getComputedStyle(el).borderBottomColor}));
+    assert.deepEqual(await border(),{width:'4px',style:'dashed',color:'rgb(51, 68, 85)'});
+    for(const theme of ['light','dark']){await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);await scan('header-divider-'+theme);}
+    await page.locator('[data-header-divider-remove]').click();assert.equal((await border()).style,'none');assert.equal(await page.locator('.doc-surface [data-token]').count(),fields);
+    await editorButton('data-ex=undo').click();assert.deepEqual(await border(),{width:'4px',style:'dashed',color:'rgb(51, 68, 85)'});await editorButton('data-inspector-close').click();
+  });
   await check('Variable bank copies complete tokens and field management returns to the editor', async () => {
     await editorButton('data-studio-tab=Data').click();
     await page.locator('[data-variable-search]').fill('company.name');
@@ -289,6 +301,7 @@ try {
       await page.locator(`[data-edit="${template.id}"]`).click();
       await page.waitForFunction(() => document.querySelector('.doc-shared-status')?.textContent.includes('Connected'));
       assert((await page.locator('.doc-surface').textContent()).includes('Verified save 2.'));
+      assert.equal(await page.locator('.doc-surface .doc-head').evaluate(el=>getComputedStyle(el).borderBottomStyle),'dashed');assert.equal(await page.locator('.doc-surface .doc-head').evaluate(el=>getComputedStyle(el).borderBottomWidth),'4px');
     } finally { await page.unroute('**/api/templates/studio/documents/**/room'); }
   });
   await check('A multipage design disables grid printing', async () => {
