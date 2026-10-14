@@ -23,13 +23,14 @@ const readGate = requireAnyPermission(['production.view']);
 // product-data mismatch, which holds the unit out of stock — see rts.ts), the warehouse, managers.
 const reportGate = requireAnyPermission([
   'inventory.adjust', 'production.record', 'production.inspect_qc', 'production.inspect_qa', 'production.approve',
-  'production.receive',
+  'production.receive', 'production.manage',
 ]);
 
 /** Managers may edit / resolve anyone's report; others only their own. */
 function canManage(req: Request, issue: ProductionIssue): boolean {
   const p = req.user!.permissions;
-  return issue.reported_by === req.user!.id || p.includes('inventory.adjust') || p.includes('production.approve');
+  return issue.reported_by === req.user!.id || p.includes('inventory.adjust')
+    || p.includes('production.approve') || p.includes('production.manage');
 }
 
 const ISSUE_SELECT = `

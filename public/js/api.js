@@ -176,7 +176,7 @@ const API = (() => {
     put: (p, b, opts) => request('PUT', p, b, false, opts),
     patch: (p, b, opts) => request('PATCH', p, b, false, opts),
     del: (p) => request('DELETE', p),
-    upload: (p, formData) => request('POST', p, formData, true),
+    upload: (p, formData, opts) => request('POST', p, formData, true, opts),
     /** The installed-PC command id when `result` was only saved on that PC (not final yet), else null. */
     syncLocal: (result) => (result && result.__syncCommand) || null,
     blobUrl, download,

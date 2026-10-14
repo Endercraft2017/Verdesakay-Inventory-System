@@ -15,6 +15,9 @@ App.register('job-orders', async (view, filter) => {
   const canRecord = canWrite || App.hasPermission('production.record');
   // Approval is its own permission (production.approve), not implied by inventory.adjust.
   const canApprove = App.hasPermission('production.approve');
+  const canReportIssue = canRecord || canApprove || App.hasPermission('production.manage')
+    || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa')
+    || App.hasPermission('production.receive');
   const canInspectHere = canWrite || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa');
   // Line decisions without the warehouse's inventory.adjust: a Production Manager may pause /
   // resume (production.pause or .manage) and close early (production.manage) — each with a reason
@@ -172,6 +175,8 @@ App.register('job-orders', async (view, filter) => {
     let repairs = [];
     let batches = [];
     let events = [];
+    let issues = [];
+    let issuesLoadFailed = false;
 
     const m = UI.modal({ title: `Job order ${jo.number}`, size: 'lg', cancelText: 'Close', bodyHTML: '<div id="jo-body"></div>' });
     const host = () => m.overlay ? m.overlay.querySelector('#jo-body') : document.querySelector('#jo-body');
@@ -184,22 +189,35 @@ App.register('job-orders', async (view, filter) => {
       }
       try { batches = await API.get('/production/batches?job_order=' + id); } catch { batches = []; }
       try { events = await API.get('/job-orders/' + id + '/events'); } catch { events = []; }
+      try { issues = await API.get('/production-issues?job_order_id=' + id); issuesLoadFailed = false; }
+      catch { issues = []; issuesLoadFailed = true; }
     }
 
+    const actionKeys = new Map();
+    const busyActions = new Set();
     const act = async (path, body) => {
+      const signature = path + JSON.stringify(body || {});
+      if (busyActions.has(signature)) return;
+      busyActions.add(signature);
+      if (!actionKeys.has(signature)) actionKeys.set(signature,
+        'jo-action-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now()));
       try {
-        const r = await API.post('/job-orders/' + id + path, body || {});
+        const r = await API.post('/job-orders/' + id + path, body || {}, { idempotencyKey: actionKeys.get(signature) });
+        actionKeys.delete(signature);
         jo = r.job_order || (await API.get('/job-orders/' + id));
         await refreshUnits();
-        UI.toast('Done');
+        UI.toast(API.syncLocal?.(r) ? 'Saved on this PC — confirmation pending' : 'Done');
         draw();
         load();
       } catch (e) {
+        if (e.status && e.status < 500) actionKeys.delete(signature);
         if (path === '/release' && e && e.status === 400 && e.data && Array.isArray(e.data.shortfalls) && e.data.shortfalls.length) {
           releaseShortfallModal(e.data.shortfalls);
           return;
         }
         UI.toast(e.message, 'error');
+      } finally {
+        busyActions.delete(signature);
       }
     };
 
@@ -272,6 +290,8 @@ App.register('job-orders', async (view, filter) => {
       const running = (jo.status === 'released' || jo.status === 'in_progress') && !awaitingAccept;
       const comps = jo.components || [];
       const sum = jo.units_summary || { pending: 0, passed: 0, in_stock: 0, failed: 0, scrapped: 0, rework: 0 };
+      const unresolved = (sum.pending || 0) + (sum.rework || 0) + (sum.hold || 0);
+      const availableToRecord = Math.max(0, jo.qty_ordered - jo.qty_done - jo.qty_scrapped - unresolved);
       const qc = jo.qc_stages > 0;
       const rework = units.filter((u) => u.status === 'rework');
       const held = units.filter((u) => u.status === 'hold');
@@ -289,7 +309,7 @@ App.register('job-orders', async (view, filter) => {
             <div><span class="muted">Ordered</span><div>${jo.qty_ordered}</div></div>
             <div><span class="muted">Done</span><div>${jo.qty_done}</div></div>
             <div><span class="muted">Scrapped</span><div>${jo.qty_scrapped}</div></div>
-            <div><span class="muted">Remaining</span><div>${jo.qty_ordered - jo.qty_done - jo.qty_scrapped}</div></div>
+            <div><span class="muted">Still to record</span><div>${availableToRecord}</div></div>
             <div><span class="muted">Inspection</span><div>${qc ? `${jo.qc_stages}-step` : 'none'}</div></div>
             ${qc ? `<div><span class="muted">Under inspection</span><div>${sum.pending}</div></div>` : ''}
             ${qc && sum.rework ? `<div><span class="muted">In repair</span><div>${sum.rework}</div></div>` : ''}
@@ -347,6 +367,16 @@ App.register('job-orders', async (view, filter) => {
               <div style="display:flex;align-items:flex-end"><button type="button" class="btn" id="jo-accept">Accept job order</button></div>
             </div>` : ''}`) : ''}
 
+        ${box(`${boxTitle(`Production issues${issues.filter((i) => i.status === 'open').length ? ` · ${issues.filter((i) => i.status === 'open').length} open` : ''}`)}
+          <p class="muted" style="font-size:12px;margin:0 0 8px">Report a kit mismatch, line interruption, or product problem here. An issue is a record; it does not pause production or block output automatically.</p>
+          ${issuesLoadFailed ? '<p class="muted">Issue list unavailable. Reopen this job order to retry.</p>' : issues.length ? `<div class="table-scroll"><table><thead><tr><th>Status</th><th>Category</th><th>Severity</th><th>Details</th><th>Reported by</th><th></th></tr></thead><tbody>${issues.map((i) => `<tr>
+            <td>${UI.esc(i.status)}</td><td>${UI.esc(i.category)}</td><td>${UI.esc(i.severity)}</td>
+            <td>${UI.esc(i.description)}${i.resolution ? `<div class="muted">Resolution: ${UI.esc(i.resolution)}</div>` : ''}</td>
+            <td>${UI.esc(i.reported_by_name || '—')}</td>
+            <td>${canReportIssue ? `<button type="button" class="btn secondary small" data-issue="${i.id}">Review</button>` : ''}</td>
+          </tr>`).join('')}</tbody></table></div>` : '<p class="muted">No issues reported.</p>'}
+          ${canReportIssue ? '<button type="button" class="btn secondary small" id="jo-issue-new">Report issue</button>' : ''}`)}
+
         ${running && canRecord && !qc ? box(`
           ${boxTitle('Record production')}
           <div class="field-row">
@@ -356,7 +386,7 @@ App.register('job-orders', async (view, filter) => {
             <div style="display:flex;align-items:flex-end"><button type="button" class="btn" id="jo-progress">Apply</button></div>
           </div>`) : ''}
 
-        ${running && canRecord && qc ? box(`
+        ${running && canRecord && qc && availableToRecord > 0 ? box(`
           ${boxTitle('Record production')}
           <div class="field-row">
             <div><label>Scrapped now</label><input id="jo-scrap" type="number" min="0" value="0" /></div>
@@ -367,7 +397,7 @@ App.register('job-orders', async (view, filter) => {
             <p class="muted" style="font-size:12px;margin:4px 0 8px">Each unit needs its own identifier (motor/serial no.) and a photo. Use the +/− (or type a number) for several at once.</p>
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
               <button type="button" class="btn secondary small" id="jo-unit-dec">−</button>
-              <input id="jo-unit-count" type="number" min="1" value="1" style="width:64px;text-align:center" />
+              <input id="jo-unit-count" type="number" min="1" max="${Math.max(1, availableToRecord)}" value="1" style="width:64px;text-align:center" />
               <button type="button" class="btn secondary small" id="jo-unit-inc">+</button>
               <span class="muted" style="font-size:12px">unit(s) to add</span>
             </div>
@@ -482,6 +512,61 @@ App.register('job-orders', async (view, filter) => {
       if (slipPrint) slipPrint.onclick = () => API.blobUrl('/parts-slips/' + jo.parts_slip_id + '/print')
         .then((u) => window.open(u, '_blank')).catch((e) => UI.toast(e.message, 'error'));
 
+      const newIssue = el.querySelector('#jo-issue-new');
+      if (newIssue) newIssue.onclick = () => UI.modal({
+        title: `Report production issue · ${jo.number}`,
+        bodyHTML: `<p class="muted">This report alerts the team to a problem; pause the job separately if work must stop.</p>
+          <div class="form-field"><label>Category</label><select data-f="category">
+            <option value="kit">Kit mismatch / damage</option><option value="machine">Machine / line</option>
+            <option value="quality">Quality</option><option value="material">Material</option><option value="other">Other</option>
+          </select></div>
+          <div class="form-field"><label>Severity</label><select data-f="severity">
+            <option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option><option value="low">Low</option>
+          </select></div>
+          <div class="form-field"><label>What happened?</label><textarea data-f="description" rows="4" maxlength="4000"></textarea></div>`,
+        confirmText: 'Report issue',
+        onConfirm: async (ov, showErr) => {
+          const description = ov.querySelector('[data-f="description"]').value.trim();
+          if (!description) { showErr('Describe the issue'); return false; }
+          await API.post('/production-issues', { job_order_id: Number(id),
+            category: ov.querySelector('[data-f="category"]').value,
+            severity: ov.querySelector('[data-f="severity"]').value, description });
+          await refreshUnits(); draw(); UI.toast('Issue reported'); return true;
+        },
+      });
+      el.querySelectorAll('[data-issue]').forEach((button) => button.onclick = () => {
+        const issue = issues.find((i) => String(i.id) === button.dataset.issue);
+        if (!issue) return;
+        UI.modal({
+          title: `Production issue #${issue.id}`,
+          bodyHTML: `<p class="muted">Reported by ${UI.esc(issue.reported_by_name || '—')} · ${UI.esc(issue.status)}</p>
+            <div class="form-field"><label>Description</label><textarea data-f="description" rows="4" maxlength="4000">${UI.esc(issue.description)}</textarea></div>
+            ${issue.status === 'open' ? '<div class="form-field"><label>Resolution (optional)</label><textarea data-f="resolution" rows="3" maxlength="2000"></textarea></div>' : ''}
+            <p class="muted">Save changes to the report, or use the status action below. Only its reporter or a manager may change it.</p>
+            <button type="button" class="btn secondary" data-issue-status>${issue.status === 'open' ? 'Resolve issue' : 'Reopen issue'}</button>`,
+          confirmText: 'Save description',
+          onOpen: (ov) => {
+            ov.querySelector('[data-issue-status]').onclick = async () => {
+              try {
+                if (issue.status === 'open') await API.post(`/production-issues/${issue.id}/resolve`, {
+                  resolution: ov.querySelector('[data-f="resolution"]').value.trim() || null,
+                });
+                else await API.post(`/production-issues/${issue.id}/reopen`, {});
+                ov.__close();
+                await refreshUnits(); draw(); UI.toast('Issue status updated');
+              } catch (e) { UI.toast(e.message, 'error'); }
+            };
+          },
+          onConfirm: async (ov, showErr) => {
+            if (issue.status !== 'open') { showErr('Reopen the issue before editing it'); return false; }
+            const description = ov.querySelector('[data-f="description"]').value.trim();
+            if (!description) { showErr('Describe the issue'); return false; }
+            await API.put(`/production-issues/${issue.id}`, { description });
+            await refreshUnits(); draw(); UI.toast('Issue updated'); return true;
+          },
+        });
+      });
+
       const rs = el.querySelector('#jo-resched');
       if (rs) rs.onclick = () => {
         UI.modal({
@@ -560,15 +645,21 @@ App.register('job-orders', async (view, filter) => {
       };
       const pg = el.querySelector('#jo-progress');
       if (pg) pg.onclick = () => {
-        const done_delta = parseInt(el.querySelector('#jo-done').value, 10) || 0;
-        const scrapped_delta = parseInt(el.querySelector('#jo-scrap').value, 10) || 0;
+        const done_delta = Number(el.querySelector('#jo-done').value);
+        const scrapped_delta = Number(el.querySelector('#jo-scrap').value);
+        if (![done_delta, scrapped_delta].every((n) => Number.isInteger(n) && n >= 0)) {
+          UI.toast('Use whole, non-negative quantities', 'error'); return;
+        }
         if (done_delta + scrapped_delta <= 0) { UI.toast('Enter a finished or scrapped quantity', 'error'); return; }
         const batch_label = (el.querySelector('#jo-batch') || {}).value;
         act('/progress', { done_delta, scrapped_delta, batch_label: (batch_label || '').trim() || null });
       };
       const scrapApply = el.querySelector('#jo-scrap-apply');
       if (scrapApply) scrapApply.onclick = () => {
-        const scrapped_delta = parseInt(el.querySelector('#jo-scrap').value, 10) || 0;
+        const scrapped_delta = Number(el.querySelector('#jo-scrap').value);
+        if (!Number.isInteger(scrapped_delta) || scrapped_delta < 0) {
+          UI.toast('Use a whole, non-negative quantity', 'error'); return;
+        }
         if (scrapped_delta <= 0) { UI.toast('Enter a scrapped quantity', 'error'); return; }
         act('/progress', { scrapped_delta });
       };
@@ -598,8 +689,9 @@ App.register('job-orders', async (view, filter) => {
         };
         const countEl = el.querySelector('#jo-unit-count');
         const syncUnitRows = () => {
-          let n = parseInt(countEl.value, 10) || 1;
-          if (n < 1) n = 1;
+          let n = Number(countEl.value);
+          if (!Number.isInteger(n) || n < 1) n = 1;
+          n = Math.min(n, 100, Math.max(1, availableToRecord));
           countEl.value = n;
           const existingRows = [...unitRowsEl.querySelectorAll('[data-unit-row]')];
           if (n > existingRows.length) {
@@ -618,29 +710,46 @@ App.register('job-orders', async (view, filter) => {
 
         const unitsSubmit = el.querySelector('#jo-units-submit');
         const progressEl = el.querySelector('#jo-unit-progress');
+        // Keep a row's retry key through a network failure. The server may have
+        // saved that physical unit even when its response never reached this PC.
+        const retryKeys = new WeakMap();
+        let uncertainRow = null;
         unitsSubmit.onclick = async () => {
           const rowEls = [...unitRowsEl.querySelectorAll('[data-unit-row]')];
-          const batch_label = (el.querySelector('#jo-unit-batch').value || '').trim() || null;
+          const batchInput = el.querySelector('#jo-unit-batch');
+          const batch_label = (batchInput.value || '').trim() || null;
           const pending = [];
           for (const row of rowEls) {
+            if (row.dataset.saved === 'true') continue;
             const identifier = row.querySelector('.jo-unit-ident').value.trim();
             const file = row.querySelector('.jo-unit-photo').files[0];
             if (!identifier) { UI.toast('Every unit needs an identifier', 'error'); return; }
             if (!file) { UI.toast('Every unit needs a photo', 'error'); return; }
-            pending.push({ identifier, file });
+            pending.push({ row, identifier, file });
           }
+          if (!pending.length) return;
           unitsSubmit.disabled = true;
           let done = 0;
           try {
             for (const p of pending) {
+              uncertainRow = p.row;
               progressEl.textContent = `Recording unit ${done + 1} of ${pending.length}…`;
               // Identifier + photo in one request — the server refuses a unit without its photo.
               const fd = new FormData();
               fd.append('identifier', p.identifier);
               if (batch_label) fd.append('batch_label', batch_label);
               fd.append('image', p.file, p.file.name || 'unit.jpg');
-              const r = await API.upload('/job-orders/' + id + '/units', fd);
+              let key = retryKeys.get(p.row);
+              if (!key) {
+                key = 'jo-unit-' + (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now());
+                retryKeys.set(p.row, key);
+              }
+              const r = await API.upload('/job-orders/' + id + '/units', fd, { idempotencyKey: key });
               jo = r.job_order;
+              p.row.dataset.saved = 'true';
+              p.row.querySelectorAll('input').forEach((input) => { input.disabled = true; });
+              p.row.insertAdjacentHTML('beforeend', `<span class="muted">${API.syncLocal?.(r) ? 'Saved on this PC · pending sync' : 'Saved'}</span>`);
+              uncertainRow = null;
               done++;
             }
             progressEl.textContent = '';
@@ -648,8 +757,17 @@ App.register('job-orders', async (view, filter) => {
             await refreshUnits();
             draw(); load();
           } catch (e) {
-            progressEl.textContent = '';
-            UI.toast(`Recorded ${done} of ${pending.length} — ${e.message}`, 'error');
+            countEl.disabled = true;
+            el.querySelector('#jo-unit-dec').disabled = true;
+            el.querySelector('#jo-unit-inc').disabled = true;
+            if (uncertainRow && e.status && e.status < 500) retryKeys.delete(uncertainRow);
+            if (uncertainRow && !e.status) {
+              uncertainRow.querySelectorAll('input').forEach((input) => { input.disabled = true; });
+              batchInput.disabled = true;
+            }
+            progressEl.textContent = `${done} of ${pending.length} confirmed in this attempt. Saved rows are locked. ${uncertainRow && !e.status ? 'The interrupted row may have saved; retry that row with the same key and values.' : 'Correct the remaining row, then retry.'}`;
+            UI.toast(`Stopped after ${done} of ${pending.length}: ${e.message}`, 'error');
+            try { jo = await API.get('/job-orders/' + id); } catch { /* keep entered rows for retry */ }
             unitsSubmit.disabled = false;
           }
         };

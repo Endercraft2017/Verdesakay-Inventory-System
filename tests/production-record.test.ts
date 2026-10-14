@@ -17,6 +17,30 @@ const mkItem = async (name: string, quantity = 0) =>
 const PNG = Buffer.from('fake-png-bytes');
 
 describe('production record — unit dossier', () => {
+  it('replays a bulk progress save without consuming parts or creating a second batch', async () => {
+    const product = await mkItem('Progress Retry Product');
+    const part = await mkItem('Progress Retry Part', 100);
+    await ctx.api.put(`/api/finished-products/${product}`).set(H())
+      .send({ components: [{ component_item_id: part, quantity: 2 }] });
+    const mo = (await ctx.api.post('/api/job-orders').set(H())
+      .send({ product_item_id: product, qty_ordered: 4, qc_stages: 0 })).body.id;
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: mo }] });
+    await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+    await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
+    const save = () => ctx.api.post(`/api/job-orders/${mo}/progress`)
+      .set({ ...H(), 'Idempotency-Key': 'production-progress-retry-001' })
+      .send({ done_delta: 2, batch_label: 'RETRY-LOT' });
+    expect((await save()).status).toBe(200);
+    const replay = await save();
+    expect(replay.status).toBe(200);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+    const jo = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
+    expect(jo.qty_done).toBe(2);
+    expect(jo.components[0].qty_consumed).toBe(4);
+    expect((await ctx.api.get(`/api/production/batches?job_order=${mo}`).set(H())).body).toHaveLength(1);
+  });
   it('assembles product, job order, QC, repairs and movements for a produced unit', async () => {
     const product = await mkItem('Dossier Bike');
     const frame = await mkItem('Dossier Frame', 100);

@@ -37,6 +37,19 @@ async function mo(prefix: string, release = true) {
 }
 
 describe('production_manager role', () => {
+  it('can create and resolve a floor issue reported by another worker', async () => {
+    const id = await mo('PMIssue');
+    const created = await ctx.api.post('/api/production-issues').set(bearer(lead.token))
+      .send({ job_order_id: id, category: 'Machine', description: 'Press jammed' });
+    expect(created.status).toBe(201);
+    const resolved = await ctx.api.post(`/api/production-issues/${created.body.id}/resolve`)
+      .set(bearer(manager.token)).send({ resolution: 'Press repaired' });
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.status).toBe('resolved');
+    const own = await ctx.api.post('/api/production-issues').set(bearer(manager.token))
+      .send({ job_order_id: id, category: 'Material', description: 'Wrong bolts supplied' });
+    expect(own.status).toBe(201);
+  });
   it('carries lead + line-decision permissions but not inventory.adjust, and HR may assign it', async () => {
     const { roleDefaults, HR_ASSIGNABLE_ROLES, HR_GRANTABLE_PERMISSIONS } = await import('../src/shared/permissions');
     const perms = roleDefaults('production_manager');

@@ -54,6 +54,23 @@ describe('POST /api/job-orders/:id/units', () => {
     expect(jo.components[0].qty_consumed).toBe(1);
   });
 
+  it('replays an uncertain unit upload without creating a second unit, photo, or component use', async () => {
+    const { mo } = await releasedMO('AddUnitRetry', 3, 1);
+    const path = `/api/job-orders/${mo}/units`;
+    const key = 'production-unit-retry-001';
+    const first = await ctx.api.post(path).set({ ...H(), 'Idempotency-Key': key })
+      .field('identifier', 'RETRY-1').attach('image', PNG, 'unit.png');
+    expect(first.status).toBe(201);
+    const replay = await ctx.api.post(path).set({ ...H(), 'Idempotency-Key': key })
+      .field('identifier', 'RETRY-1').attach('image', PNG, 'unit.png');
+    expect(replay.status).toBe(201);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+    expect(replay.body.id).toBe(first.body.id);
+    expect((await ctx.api.get(`${path}`).set(H())).body).toHaveLength(1);
+    expect((await ctx.api.get(`/api/attachments?kind=qc_unit&ref_id=${first.body.id}`).set(H())).body).toHaveLength(1);
+    expect((await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body.components[0].qty_consumed).toBe(1);
+  });
+
   it('requires a non-empty identifier', async () => {
     const { mo } = await releasedMO('AddUnitNoId', 2, 1);
     const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', '  ').attach('image', Buffer.from('unit-photo'), 'unit.png');
