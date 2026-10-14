@@ -579,7 +579,8 @@ for the internet (it uses the company's mail server, which only the cloud has).
    Always-whole-day branch (2026-10-05): an employee with "Always paid a whole day" gets a
    full day for any day with both a time-in and a time-out — no half day, late or undertime.
 3. **Payslip** (`hr`) — generated per employee as a `draft`; Other Deductions itemized.
-   Employees see payroll details only after HR marks the payslip Paid; drafts remain HR-only.
+   Employees see their own draft payroll figures and current timekeeping as watermarked previews;
+   the figures may change until HR marks the payslip Paid.
    HR reviews the cutoff on Forms → HR Payroll: **Print All** (slips), **Print Summary** (A4
    landscape register — totals, department subtotals, every payslip, Prepared/Checked/Approved
    lines; 2026-10-05) and **Download Excel** read the same totals (`public/js/hr-payroll-export.js`).
@@ -594,7 +595,8 @@ for the internet (it uses the company's mail server, which only the cloud has).
    and regenerate. A recomputed cutoff whose payroll was already posted to the GL is flagged for
    re-posting (stage 4). Cutoffs with no payslip yet just use the new rate when generated.
 3a. **Finalize & release** (`hr` → `payroll` → `core/me`) — HR marks the payslip Paid (locks
-   it). Only then does the record enter the employee's list with `finalized` + `download_url`, and
+   it). Draft and Paid records both appear in the employee's list, but only Paid records receive
+   `finalized: true` and a `download_url`, and
    `GET /api/me/payslips/:id/pdf` render it (`payroll/payslip-pdf.ts`), re-checking ownership
    and Paid at download time and logging each download. Branch: HR un-marks Paid to correct
    it → download hidden (404) until re-marked.

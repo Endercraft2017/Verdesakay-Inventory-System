@@ -81,8 +81,11 @@ App.register('hr-requests', async (view, filter) => {
         host.innerHTML = `<p>Default shift: ${UI.esc(result.default_shift ? `${result.default_shift.name} (${result.default_shift.start_time}–${result.default_shift.end_time})` : 'Not assigned')}</p><div class="table-wrap"><table><thead><tr><th>Date</th><th>Cutoff</th><th>Shift</th><th>In</th><th>Out</th></tr></thead><tbody>${result.days.map((d) => `<tr><td>${UI.esc(d.work_date)}</td><td>${UI.esc(d.period_label)}</td><td>${UI.esc(d.shift_name || 'Default shift')}</td><td>${UI.esc(d.time_in || '—')}</td><td>${UI.esc(d.time_out || '—')}</td></tr>`).join('')}</tbody></table></div>`;
       } else {
         host.innerHTML = result.length
-          ? `<div class="table-wrap"><table><thead><tr><th>Period</th><th>Status</th><th>Net pay</th><th></th></tr></thead><tbody>${result.map((r) => `<tr><td>${UI.esc(r.period)}</td><td>${r.finalized ? 'Paid' : 'Draft — subject to review'}</td><td>${UI.money(r.data.net_pay || 0)}</td><td>${r.download_url ? `<button class="btn secondary small" data-pdf="${r.id}">Download payslip</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+          ? `<p class="muted">Draft payslips and timekeeping are visible for review. Figures may change until payment; only paid payslips can be downloaded.</p><div class="table-wrap"><table><thead><tr><th>Period</th><th>Status</th><th>Net pay</th><th></th></tr></thead><tbody>${result.map((r, i) => `<tr><td>${UI.esc(r.period || r.data?.payroll_period || r.number || 'Payroll period')}</td><td>${r.finalized ? 'Paid' : 'Draft — not finalized'}</td><td>${UI.money(r.data?.net_pay || 0)}</td><td><button class="btn secondary small" data-view-slip="${i}">View</button> ${r.finalized && r.download_url ? `<button class="btn secondary small" data-pdf="${r.id}">Download payslip</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
           : UI.emptyState({ icon: 'sheet', title: 'No payslips yet' });
+        host.querySelectorAll('[data-view-slip]').forEach(
+          (b) => (b.onclick = () => payslipPreview(result[Number(b.dataset.viewSlip)])),
+        );
         host.querySelectorAll('[data-pdf]').forEach(
           (b) =>
             (b.onclick = async () => {
@@ -103,6 +106,36 @@ App.register('hr-requests', async (view, filter) => {
         host.querySelector('#myhr-tab-retry').onclick = renderContent;
       }
     }
+  }
+  function payslipPreview(record) {
+    const paid = record.finalized === true;
+    const data = record.data || {};
+    const period = record.period || data.payroll_period || record.number || 'Payroll period';
+    const excluded = new Set(['employee_id', 'employee_name', 'name', 'period', 'payroll_period', '_calculation_snapshot', 'cutoff_id']);
+    const lines = Object.entries(data).filter(([key, value]) => !excluded.has(key) && value != null && value !== '' && typeof value !== 'object');
+    const { overlay: ov } = UI.modal({
+      title: `Payslip · ${period}`,
+      size: 'lg',
+      cancelText: 'Close',
+      bodyHTML: `<div class="myhr-payslip-preview${paid ? '' : ' is-draft'}">${paid ? '' : '<div class="myhr-draft-notice"><strong>DRAFT · NOT FINALIZED</strong><span>Payroll and timekeeping can change before payment. Download is available after HR marks this Paid.</span></div>'}<h4>${paid ? 'Net pay' : 'Estimated net pay'}: ${UI.money(data.net_pay || 0)}</h4><div class="myhr-payslip-lines">${lines.map(([key, value]) => `<div><span>${UI.esc(key.replace(/_/g, ' '))}</span><strong>${UI.esc(String(value))}</strong></div>`).join('')}</div><button class="btn secondary" type="button" data-myhr-time>View timekeeping records</button> ${paid && record.download_url ? '<button class="btn secondary" type="button" data-myhr-pdf>Download payslip</button>' : ''}<div data-myhr-time-content hidden></div></div>`,
+    });
+    ov.querySelector('[data-myhr-time]').onclick = async () => {
+      const content = ov.querySelector('[data-myhr-time-content]');
+      content.hidden = false;
+      content.textContent = 'Loading timekeeping…';
+      try {
+        const result = await API.get(`/me/payslips/${record.id}/timekeeping`);
+        if (!ov.isConnected) return;
+        content.innerHTML = `${result.finalized ? '' : '<p class="myhr-draft-notice"><strong>DRAFT · NOT FINALIZED</strong> · Current punches may change.</p>'}<p class="muted">${UI.esc(result.notice || '')}</p>${(result.days || []).length ? `<div class="table-wrap"><table><thead><tr><th>Date</th><th>In</th><th>Lunch out</th><th>Lunch in</th><th>Out</th></tr></thead><tbody>${result.days.map((d) => `<tr><td>${UI.esc(d.work_date || '')}</td><td>${UI.esc(d.time_in || '—')}</td><td>${UI.esc(d.lunch_out || '—')}</td><td>${UI.esc(d.lunch_in || '—')}</td><td>${UI.esc(d.time_out || '—')}</td></tr>`).join('')}</tbody></table></div>` : '<p>No timekeeping rows are available for this cutoff.</p>'}`;
+      } catch (error) { if (ov.isConnected) content.textContent = error.message || 'Could not load timekeeping.'; }
+    };
+    const download = ov.querySelector('[data-myhr-pdf]');
+    if (download) download.onclick = async () => {
+      download.disabled = true;
+      try { await API.download(record.download_url, `payslip-${record.id}.pdf`); }
+      catch (error) { UI.toast(error.message, 'error'); }
+      finally { download.disabled = false; }
+    };
   }
   function detail(r, fixes) {
     const data = fixes

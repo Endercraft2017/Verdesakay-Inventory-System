@@ -140,11 +140,13 @@ function myPayslips(emp: Emp, id?: number): FormRecord[] {
   );
 }
 
-// GET /api/me/payslips — release payroll details to employees only after payment.
+// GET /api/me/payslips — employees can inspect their own current payroll previews.
+// Only a paid/locked record receives a PDF download URL.
 router.get('/payslips', (req, res) => {
   const emp = me(req.user!.id);
   if (!needEmp(res, emp)) return;
-  res.json(myPayslips(emp).filter((r) => isFinalPayslip(r.status)).map((r) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.json(myPayslips(emp).map((r) => {
     const finalized = isFinalPayslip(r.status);
     return {
       ...r, data: parse(r.data), finalized,
@@ -154,19 +156,20 @@ router.get('/payslips', (req, res) => {
   }));
 });
 
-// The payroll calculation is frozen in each generated slip. A paid slip exposes only its
-// owner's saved day breakdown; older paid slips without a snapshot get raw cutoff punches.
+// Paid slips show their frozen payroll-day snapshot. An unpaid preview shows current recorded
+// punches instead, because its saved calculation can be superseded before HR marks it Paid.
 router.get('/payslips/:id/timekeeping', (req, res) => {
   const emp = me(req.user!.id);
   if (!needEmp(res, emp)) return;
   const rec = myPayslips(emp, Number(req.params.id))[0];
-  if (!rec || !isFinalPayslip(rec.status)) { res.status(404).json({ error: 'Payslip not found' }); return; }
+  if (!rec) { res.status(404).json({ error: 'Payslip not found' }); return; }
+  const finalized = isFinalPayslip(rec.status);
   const data = parse(rec.data);
   const cutoffId = Number(data.cutoff_id);
   const cutoff = Number.isSafeInteger(cutoffId) && cutoffId > 0
     ? queryOne<{ id: number; label: string; start_date: string; end_date: string }>('SELECT id, label, start_date, end_date FROM attendance_periods WHERE id = ?', cutoffId)
     : queryOne<{ id: number; label: string; start_date: string; end_date: string }>('SELECT id, label, start_date, end_date FROM attendance_periods WHERE label = ?', rec.period);
-  if (!cutoff) { res.json({ days: [], notice: 'Timekeeping detail is unavailable for this older payslip.' }); return; }
+  if (!cutoff) { res.set('Cache-Control', 'private, no-store'); res.json({ finalized, days: [], notice: 'Timekeeping detail is unavailable for this payslip.' }); return; }
   let calculated: Array<Record<string, unknown>> = [];
   try {
     const snapshot = JSON.parse(String(data._calculation_snapshot || ''));
@@ -177,14 +180,16 @@ router.get('/payslips/:id/timekeeping', (req, res) => {
     cutoff.id, emp.id
   );
   const byDate = new Map(punches.map((p) => [p.work_date, p]));
-  const days = calculated.length ? calculated.map((day) => ({
+  const useSnapshot = finalized && calculated.length > 0;
+  const days = useSnapshot ? calculated.map((day) => ({
     ...day, lunch_out: byDate.get(String(day.work_date))?.lunch_out ?? null,
     lunch_in: byDate.get(String(day.work_date))?.lunch_in ?? null,
   })) : punches;
   res.set('Cache-Control', 'private, no-store');
-  res.json({ period_label: cutoff.label, start_date: cutoff.start_date, end_date: cutoff.end_date,
-    days, source: calculated.length ? 'saved_calculation' : 'attendance_record',
-    notice: calculated.length ? null : 'This older payslip has no saved payroll calculation. These are the recorded punches; later corrections may differ from what payroll used.' });
+  res.json({ finalized, period_label: cutoff.label, start_date: cutoff.start_date, end_date: cutoff.end_date,
+    days, source: useSnapshot ? 'saved_calculation' : 'attendance_record',
+    notice: !finalized ? 'Draft timekeeping preview. These are the current recorded punches; HR corrections and payroll figures may change before payment.'
+      : useSnapshot ? null : 'This older payslip has no saved payroll calculation. These are the recorded punches; later corrections may differ from what payroll used.' });
 });
 
 // GET /api/me/payslips/:id/pdf — download one of YOUR finalized payslips. Ownership and

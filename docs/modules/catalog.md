@@ -884,9 +884,10 @@ and hour blocks = 3 h). Same for lunch lateness, the HR Daily Report board and t
 assistant's lateness report. Before, only the minutes past the grace counted.
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
-list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for
-those; the PDF route re-checks ownership (own `employee_name`, 404 otherwise) and Paid status
-(409) at download time and logs `payslip-download` to the activity log.
+list (`GET /api/me/payslips`) returns both draft and Paid records. Drafts have `finalized: false`,
+no `download_url`, and a watermarked mobile preview with current timekeeping punches; Paid slips
+have `finalized: true` and a `download_url`. The PDF route re-checks ownership and Paid status
+(404 otherwise) at download time and logs `payslip-download` to the activity log.
 **Dependencies:** `shared/` only.
 **Licensing note:** not a separately-sold SaaS module — still bundled under the
 existing `hr` entry in `shared/modules.ts`'s `MODULES` list. This is an internal

@@ -253,6 +253,13 @@
 .main[data-section='hr'] .hr-workflow-notice p:last-child { margin-bottom: 0; }
 .main[data-section='hr'] #tk-warnings { border-left: 4px solid var(--warn); }
 .main[data-section='hr'] #myhr-content > :is(.topbar, p, .empty) { margin-left: 16px; margin-right: 16px; }
+.modal-overlay[data-section='hr'] .myhr-payslip-preview { position: relative; isolation: isolate; }
+.modal-overlay[data-section='hr'] .myhr-payslip-preview.is-draft::after { content: 'DRAFT · NOT FINALIZED'; position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-24deg); width: max-content; max-width: 90%; color: var(--warn); opacity: .32; font-size: clamp(1.4rem, 5vw, 2.7rem); font-weight: 900; letter-spacing: .06em; text-align: center; pointer-events: none; }
+.modal-overlay[data-section='hr'] .myhr-draft-notice { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 14px; margin: 0 0 16px; border: 1px solid var(--warn); border-radius: 12px; color: var(--text); background: var(--surface-highlight); }
+.modal-overlay[data-section='hr'] .myhr-payslip-lines { display: grid; gap: 0; margin-bottom: 16px; }
+.modal-overlay[data-section='hr'] .myhr-payslip-lines > div { display: flex; justify-content: space-between; gap: 16px; padding: 9px 2px; border-bottom: 1px solid var(--border); }
+.modal-overlay[data-section='hr'] .myhr-payslip-lines span { text-transform: capitalize; }
+.modal-overlay[data-section='hr'] [data-myhr-time-content] { margin-top: 20px; }
 
 /* Personal tools: spacious, themed panels with stationary actions. */
 .drawer-catch { background: rgb(10 18 35 / .28); backdrop-filter: blur(2px); }

@@ -78,7 +78,7 @@ Do not install Tailwind merely because Figma returns React/Tailwind reference co
 3. Work is the execution hub. Home is a short “what matters today” overview.
 4. All configured request types are universal, subject to server validation and approval rules.
 5. Identified and anonymous reports are separate entry points, storage/queues, and management views.
-6. Employees see payslip details and may download them only after HR marks payroll Paid. Draft/in-progress records remain visible to HR only (updated 2026-10-13 per owner decision).
+6. Employees can view their own draft payslips and current timekeeping as watermarked previews. Draft amounts and punches may change; PDF download is available only after HR marks the payslip Paid (updated 2026-10-14 per owner decision).
 7. Operational directories and role screens do not expose personal phone numbers or unnecessary personal data.
 8. Employees may directly edit only permitted profile/preferences fields. Legal name, birthdate, salary, position, department, employment classification, and other authoritative HR data require an approval request.
 9. One employee may hold multiple permissions and sees the union of authorized queues. Completion does not automatically navigate into the next role’s screen unless the same user has that permission.

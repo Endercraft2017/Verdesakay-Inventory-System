@@ -1317,6 +1317,12 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
     expect(source).toContain("typeof record.download_url === 'string'");
     expect(source).toContain('API.download(record.download_url');
     expect(source).toContain('Payroll is still being finalized');
+    expect(source).toContain('DRAFT · NOT FINALIZED');
+    expect(source).toContain("classList.add('is-draft')");
+    expect(source).toContain("API.get('/me/payslips/' + record.id + '/timekeeping')");
+    const css = fs.readFileSync(path.join(ROOT, 'public/mobile/mobile-v2.css'), 'utf8');
+    expect(css).toContain('.m-payslip-v2.is-draft::after');
+    expect(css).toContain('.m-payslip-time-panel.is-draft::after');
   });
 
 

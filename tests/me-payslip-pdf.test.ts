@@ -1,4 +1,4 @@
-/** Employee payslip download — GET /api/me/payslips (finalized/download_url contract) and
+/** Employee payslip preview and download — GET /api/me/payslips (drafts visible, paid-only URL) and
  *  GET /api/me/payslips/:id/pdf (own payslip only, finalized = marked Paid, re-checked at
  *  download time, every download logged). */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -58,6 +58,12 @@ beforeAll(async () => {
   draftId = slip('Pay Tester', 'Sep 16-30, 2026', 'draft', 'PAY-T-2');
   paidId = slip('Pay Tester', 'Sep 1-15, 2026', 'draft', 'PAY-T-1');
   const employeeId = queryOne<{ id: number }>('SELECT id FROM employees WHERE user_id = ?', mine.id)!.id;
+  const draftCutoffId = Number(run("INSERT INTO attendance_periods (label, start_date, end_date) VALUES ('Sep 16-30, 2026', '2026-09-16', '2026-09-30')").lastInsertRowid);
+  run("INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, lunch_out, lunch_in, time_out) VALUES (?, ?, '2026-09-17', '08:10', '12:05', '13:00', '17:00')", draftCutoffId, employeeId);
+  const draftData = JSON.parse(queryOne<{ data: string }>('SELECT data FROM form_records WHERE id = ?', draftId)!.data);
+  draftData.cutoff_id = draftCutoffId;
+  draftData._calculation_snapshot = JSON.stringify({ version: 1, days: [{ work_date: '2026-09-17', time_in: '09:00', time_out: '16:00' }] });
+  run('UPDATE form_records SET data = ? WHERE id = ?', JSON.stringify(draftData), draftId);
   const cutoffId = Number(run("INSERT INTO attendance_periods (label, start_date, end_date) VALUES ('Sep 1-15, 2026', '2026-09-01', '2026-09-15')").lastInsertRowid);
   run("INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, lunch_out, lunch_in, time_out) VALUES (?, ?, '2026-09-03', '08:02', '12:00', '13:00', '17:05')", cutoffId, employeeId);
   const saved = JSON.parse(queryOne<{ data: string }>('SELECT data FROM form_records WHERE id = ?', paidId)!.data);
@@ -71,11 +77,12 @@ beforeAll(async () => {
 afterAll(() => cleanup(ctx));
 
 describe('payslip list contract', () => {
-  it('releases only Paid payslips and their details to the employee', async () => {
+  it('shows own draft and paid payslips, but issues a download URL only after payment', async () => {
     const r = await ctx.api.get('/api/me/payslips').set(bearer(mine.token));
     expect(r.status).toBe(200);
+    expect(r.headers['cache-control']).toContain('no-store');
     const byId = Object.fromEntries(r.body.map((p: { id: number }) => [p.id, p]));
-    expect(byId[draftId]).toBeUndefined();
+    expect(byId[draftId]).toMatchObject({ status: 'draft', finalized: false, finalized_at: null, download_url: null });
     expect(byId[paidId]).toMatchObject({ finalized: true, download_url: `/me/payslips/${paidId}/pdf` });
     expect(byId[paidId].finalized_at).toBeTruthy();
     expect(byId[othersPaidId]).toBeUndefined();
@@ -83,12 +90,16 @@ describe('payslip list contract', () => {
 });
 
 describe('payslip PDF download', () => {
-  it('shows only the owner’s saved timekeeping for a paid payslip', async () => {
+  it('shows current punches for a draft and the saved payroll calculation for a paid payslip', async () => {
     const mineDetail = await ctx.api.get(`/api/me/payslips/${paidId}/timekeeping`).set(bearer(mine.token));
     expect(mineDetail.status).toBe(200);
     expect(mineDetail.body.source).toBe('saved_calculation');
     expect(mineDetail.body.days).toMatchObject([{ work_date: '2026-09-03', time_in: '08:02', lunch_out: '12:00', lunch_in: '13:00', late_minutes: 2 }]);
-    expect((await ctx.api.get(`/api/me/payslips/${draftId}/timekeeping`).set(bearer(mine.token))).status).toBe(404);
+    const draftDetail = await ctx.api.get(`/api/me/payslips/${draftId}/timekeeping`).set(bearer(mine.token));
+    expect(draftDetail.status).toBe(200);
+    expect(draftDetail.body).toMatchObject({ finalized: false, source: 'attendance_record' });
+    expect(draftDetail.body.notice).toContain('Draft');
+    expect(draftDetail.body.days).toMatchObject([{ work_date: '2026-09-17', time_in: '08:10', lunch_out: '12:05', lunch_in: '13:00', time_out: '17:00' }]);
     expect((await ctx.api.get(`/api/me/payslips/${othersPaidId}/timekeeping`).set(bearer(mine.token))).status).toBe(404);
   });
   it('serves a well-formed PDF of your finalized payslip and logs the download', async () => {
@@ -134,7 +145,7 @@ describe('payslip PDF download', () => {
     expect((await ctx.api.post(`/api/hr/payroll/${paidId}/unmark-paid`).set(bearer(adminToken))).status).toBe(200);
     expect((await ctx.api.get(`/api/me/payslips/${paidId}/pdf`).set(bearer(mine.token))).status).toBe(404);
     const list = await ctx.api.get('/api/me/payslips').set(bearer(mine.token));
-    expect(list.body.find((p: { id: number }) => p.id === paidId)).toBeUndefined();
+    expect(list.body.find((p: { id: number }) => p.id === paidId)).toMatchObject({ finalized: false, download_url: null });
     await ctx.api.post(`/api/hr/payroll/${paidId}/mark-paid`).set(bearer(adminToken));
   });
 

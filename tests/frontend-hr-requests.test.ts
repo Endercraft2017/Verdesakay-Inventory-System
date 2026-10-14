@@ -65,3 +65,24 @@ it('mobile explains an unlinked account instead of presenting an empty employee 
   const { routes, view, posts } = boot(true, types[0]!, false);routes.requests(view, { type: 'leave_request' });await flush();
   expect(view.textContent).toContain('not linked');expect(view.querySelector('form')).toBeNull();expect(posts).toHaveLength(0);
 });
+it('desktop previews unpaid payslip and timekeeping with a watermark, without download', async () => {
+  const { w, routes, view } = boot(false, types[0]!);
+  const originalGet = w.API.get;
+  w.API.get = async (url: string) => {
+    if (url === '/me/payslips') return [{ id: 42, period: 'October', finalized: false, download_url: null, data: { net_pay: 9000, basic_pay: 10000 } }];
+    if (url === '/me/payslips/42/timekeeping') return { finalized: false, notice: 'Current punches.', days: [{ work_date: '2026-10-02', time_in: '08:00', time_out: '17:00' }] };
+    return originalGet(url);
+  };
+  await routes['hr-requests'](view);
+  view.querySelector('[data-tab="payslips"]').click(); await flush();
+  expect(view.textContent).toContain('Draft — not finalized');
+  expect(view.querySelector('[data-pdf]')).toBeNull();
+  view.querySelector('[data-view-slip]').click();
+  const modal = w.document.querySelector('.modal-overlay');
+  expect(modal.querySelector('.myhr-payslip-preview.is-draft')).not.toBeNull();
+  expect(modal.textContent).toContain('DRAFT · NOT FINALIZED');
+  expect(modal.querySelector('[data-myhr-pdf]')).toBeNull();
+  modal.querySelector('[data-myhr-time]').click(); await flush();
+  expect(modal.textContent).toContain('2026-10-02');
+  expect(modal.textContent).toContain('Current punches.');
+});
