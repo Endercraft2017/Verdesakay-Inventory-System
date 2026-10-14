@@ -594,6 +594,7 @@ export interface IdempotencyKeys {
   path: string;
   status_code: number;
   response: string;
+  request_hash: string | null;
   created_at: Generated<string>;
 }
 
@@ -723,6 +724,8 @@ export interface JobOrders {
   source_location_id: number | null;
   output_location_id: number | null;
   qc_stages: Generated<number>;
+  qc_checklist_qc_snapshot: string | null;
+  qc_checklist_qa_snapshot: string | null;
   team_id: number | null;
   planned_start: string | null;
   due_date: string | null;

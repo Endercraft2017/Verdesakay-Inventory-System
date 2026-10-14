@@ -63,13 +63,15 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 70: bind JSON idempotency keys to the original request payload.
+// 69: freeze job-order QC/QA checklists when the parts kit is released.
 // 68: rejected-return disposition and reinspection.
 // 67: slip-linked sales returns and the shipped unit-cost snapshot.
 // 66: recoverable file bytes for all tenant upload modules.
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 68; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 70; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -408,6 +410,7 @@ function createSchema(): void {
       path        TEXT NOT NULL,
       status_code INTEGER NOT NULL,
       response    TEXT NOT NULL,
+      request_hash TEXT,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -704,6 +707,8 @@ function createSchema(): void {
       source_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       output_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       qc_stages          INTEGER NOT NULL DEFAULT 0,
+      qc_checklist_qc_snapshot TEXT,
+      qc_checklist_qa_snapshot TEXT,
       team_id            INTEGER REFERENCES production_teams(id) ON DELETE SET NULL,
       planned_start      TEXT,
       due_date           TEXT,
@@ -3177,6 +3182,15 @@ function migrate(): void {
       if (file) { const bytes = fs.readFileSync(file); keep.run(`.sync-blobs/${name}`, bytes, bytes.length); }
     }
   }
+  // (SCHEMA_VERSION 69) New releases snapshot the exact QC and QA requirements. Older
+  // released jobs have no reliable historical checklist version, so their null snapshots
+  // keep the previous live-resolution behavior until completed.
+  const joChecklistCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  for (const col of ['qc_checklist_qc_snapshot', 'qc_checklist_qa_snapshot']) {
+    if (!joChecklistCols.some((c) => c.name === col)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${col} TEXT`);
+  }
+  const idemCols = db.prepare('PRAGMA table_info(idempotency_keys)').all() as Array<{ name: string }>;
+  if (!idemCols.some((c) => c.name === 'request_hash')) db.exec('ALTER TABLE idempotency_keys ADD COLUMN request_hash TEXT');
 }
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.

@@ -399,6 +399,9 @@ export interface JobOrder {
    *  that stage's default, else null). */
   qc_checklist_qa?: { id: number; name: string; items: QcChecklistItem[] } | null;
   qc_checklist_qc?: { id: number; name: string; items: QcChecklistItem[] } | null;
+  /** JSON captured at release; null on legacy jobs. */
+  qc_checklist_qc_snapshot?: string | null;
+  qc_checklist_qa_snapshot?: string | null;
 }
 
 /** One configurable QA/QC checklist line. */

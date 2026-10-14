@@ -19,7 +19,7 @@ describe('schema v66 to v68 upgrade', () => {
 
       db.init();
 
-      expect(db.getSetting<number>('schema_version')).toBe(68);
+      expect(db.getSetting<number>('schema_version')).toBe(db.SCHEMA_VERSION);
       for (const name of [
         'durable_uploads',
         'sales_returns',

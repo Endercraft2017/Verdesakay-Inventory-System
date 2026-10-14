@@ -1,6 +1,15 @@
 # QC/QA stage audit — implementation plan
 
-**Branch:** `restructure/module-architecture`. **Reviewed:** 2026-10-14. **Scope:** recorded unit → QC → QA → pass, rework, reject or hold → Products In eligibility. Backend, desktop and mobile source were inspected; this is a review, not a behavior change. Mobile source is owned separately; its actions are in the root `MOBILE-INVENTORY-HANDOFF.md`.
+**Branch:** `restructure/module-architecture`. **Reviewed:** 2026-10-14. **Scope:** recorded unit → QC → QA → pass, rework, reject or hold → Products In eligibility. This file records the original findings; backend and desktop fixes followed in the same stage. Mobile source is owned separately; its actions are in the root `MOBILE-INVENTORY-HANDOFF.md`.
+
+## Resolution status
+
+- Fixed: duplicate labels are refused on checklist save; colliding QC/QA labels block a new single-stage kit release and legacy collisions block inspection. Mixed-stage inspection calls are refused. Stable item IDs remain a later contract migration for mobile and historical records.
+- Fixed: desktop false-empty inspection loading, caller-specific ready counts, QA hold queue and checklist input parity; server-required readings for passed measured checks.
+- Fixed: new kit releases freeze QC/QA checklist snapshots. Older released jobs have no recoverable historical snapshot and retain live checklist resolution.
+- Fixed: inspector accounts require evidence even without an app header; privileged `inventory.adjust` integrations without an app header retain an audited correction path. Changed-body JSON idempotency-key reuse now returns 409, protecting the current phone hold workflow until its key generation is fixed.
+- Improved: hold records appear in findings and the displayed percentage is labeled per recorded outcome; it is not a unit-level yield metric.
+- Still open: mobile UI changes, unit-level quality yield metrics, queue pagination/batched reads, and abandoned evidence cleanup.
 
 ## Controls already present
 

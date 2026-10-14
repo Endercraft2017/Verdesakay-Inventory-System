@@ -150,6 +150,7 @@ const NAV = [
         id: 'qc', label: 'QC / QA',
         tree: [
           { label: 'Inspection Queue', icon: 'check', route: 'production-qc', filter: { tab: 'queue' } },
+          { label: 'On Hold', icon: 'alert', route: 'production-qc', filter: { tab: 'holds' } },
           { label: 'Findings & Reports', icon: 'sheet', route: 'production-qc', filter: { tab: 'findings' } },
         ],
       },

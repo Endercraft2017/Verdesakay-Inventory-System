@@ -68,7 +68,7 @@ describe('phone evidence', () => {
     expect((await unit(u)).status).toBe('rework');
   });
 
-  it('holds the desktop app to the same rule; passes and scripted API calls need no photo', async () => {
+  it('holds the desktop app to the same rule; passes need no photo', async () => {
     const desk = { ...bearer(qc.token), 'X-Client': 'desktop' };
     const r = await inspect(desk, { unit_ids: [units[1]], result: 'fail', disposition: 'scrap', remarks: 'Bent frame' });
     expect(r.status).toBe(409);
@@ -94,6 +94,9 @@ describe('QA hold for review', () => {
     expect((await unit(u)).status).toBe('hold');
     const holds = (await ctx.api.get('/api/qc/holds').set(bearer(pm.token))).body;
     expect(holds.find((h: { id: number }) => h.id === u)).toMatchObject({ remarks: 'Paint shade differs from sample', evidence: 1 });
+    const findings = (await ctx.api.get('/api/qc/records?result=hold').set(H())).body;
+    expect(findings.rows.some((r: { unit_id: number }) => r.unit_id === u)).toBe(true);
+    expect(findings.summary.hold).toBeGreaterThanOrEqual(1);
     expect(__sentPush.some((p) => p.userId === pm.id && /^QA hold/.test(p.payload.title))).toBe(true);
     expect(__sentPush.some((p) => p.userId === qa.id)).toBe(false); // not the one who held it
     // The job order can't complete with a unit on hold.
@@ -102,15 +105,22 @@ describe('QA hold for review', () => {
     expect((await decide(qc.token, u, { outcome: 'pass', remarks: 'ok' })).status).toBe(403);
     expect((await decide(pm.token, u, { outcome: 'pass', remarks: 'x' })).status).toBe(400); // reason too short
     __sentPush.length = 0;
-    const ok = await decide(pm.token, u, { outcome: 'pass', remarks: 'Within the colour tolerance' });
+    const decisionKey = `qa-hold-${u}-decision`;
+    const ok = await ctx.api.post(`/api/job-orders/${jo}/units/${u}/hold-decision`).set(bearer(pm.token)).set('Idempotency-Key', decisionKey)
+      .send({ outcome: 'pass', remarks: 'Within the colour tolerance' });
     expect(ok.status).toBe(200);
+    const changed = await ctx.api.post(`/api/job-orders/${jo}/units/${u}/hold-decision`).set(bearer(pm.token)).set('Idempotency-Key', decisionKey)
+      .send({ outcome: 'fail', remarks: 'Changed after saving', disposition: 'scrap' });
+    expect(changed.status).toBe(409);
+    expect(changed.body.error).toMatch(/different request body/i);
     expect((await unit(u)).status).toBe('passed');
     expect(__sentPush.some((p) => p.userId === qa.id && /^QA hold decided/.test(p.payload.title))).toBe(true);
     expect((await decide(pm.token, u, { outcome: 'pass', remarks: 'again' })).status).toBe(409);
   });
 
   it('another QA inspector can send a held unit to rectification or fail it', async () => {
-    await inspect(bearer(qa.token), { unit_ids: [units[2], units[3]], result: 'fail', disposition: 'hold', remarks: 'Scratch on the fender' });
+    const photos = await Promise.all([photo(qa.token, units[2]!), photo(qa.token, units[3]!)]);
+    await inspect(bearer(qa.token), { unit_ids: [units[2], units[3]], result: 'fail', disposition: 'hold', remarks: 'Scratch on the fender', evidence_ids: photos });
     const r = await decide(qa2.token, units[2]!, { outcome: 'rectify', remarks: 'Repaint the fender', repair: { station: 'Paint' } });
     expect(r.status).toBe(200);
     expect((await unit(units[2]!)).status).toBe('rework');

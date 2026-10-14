@@ -213,8 +213,11 @@ function loadJobOrder(id: number): JobOrder | null {
   const summary: Record<string, number> = { pending: 0, in_stock: 0, failed: 0, scrapped: 0, rework: 0, sold: 0 };
   for (const c of counts) summary[c.status] = c.n;
   (jo as JobOrder & { units_summary: Record<string, number> }).units_summary = summary;
-  jo.qc_checklist_qc = jo.qc_stages > 0 ? checklistForProduct(jo.product_item_id, 1) : null;
-  jo.qc_checklist_qa = jo.qc_stages > 0 ? checklistForProduct(jo.product_item_id, 2) : null;
+  const snapshot = (raw: string | null | undefined) => {
+    try { return raw ? JSON.parse(raw) as NonNullable<JobOrder['qc_checklist_qc']> : null; } catch { return null; }
+  };
+  jo.qc_checklist_qc = jo.qc_stages > 0 ? (jo.qc_checklist_qc_snapshot ? snapshot(jo.qc_checklist_qc_snapshot) : checklistForProduct(jo.product_item_id, 1)) : null;
+  jo.qc_checklist_qa = jo.qc_stages > 0 ? (jo.qc_checklist_qa_snapshot ? snapshot(jo.qc_checklist_qa_snapshot) : checklistForProduct(jo.product_item_id, 2)) : null;
   return jo;
 }
 
@@ -1063,6 +1066,14 @@ router.post('/:id/release', writeGate, syncClass('physical'), (req, res) => {
     res.status(409).json({ error: 'Prepare (pick) the whole parts kit before releasing it', needs_prepare: true });
     return;
   }
+  if (jo.qc_stages === 1) {
+    const checks = [...(jo.qc_checklist_qc?.items ?? []), ...(jo.qc_checklist_qa?.items ?? [])];
+    const labels = checks.map((item) => item.label.trim().toLocaleLowerCase());
+    if (new Set(labels).size !== labels.length) {
+      res.status(409).json({ error: 'QC and QA checklists contain the same check label. Give each check a distinct label before releasing this kit.', blocked: 'checklist' });
+      return;
+    }
+  }
   const input = parseBody(releaseJobOrderSchema, req.body ?? {});
   const shortfalls = jobOrderComponentAvailability(id).filter((line) => line.short > 0);
   // Offline (D1): the kit physically left the warehouse — accepted, and any location that goes
@@ -1103,8 +1114,8 @@ router.post('/:id/release', writeGate, syncClass('physical'), (req, res) => {
       );
     }
     run(
-      "UPDATE job_orders SET status = 'released', released_by = ?, released_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-      req.user!.id, id
+      "UPDATE job_orders SET status = 'released', released_by = ?, released_at = datetime('now'), qc_checklist_qc_snapshot = ?, qc_checklist_qa_snapshot = ?, updated_at = datetime('now') WHERE id = ?",
+      req.user!.id, JSON.stringify(jo.qc_checklist_qc), JSON.stringify(jo.qc_checklist_qa), id
     );
     db.exec('COMMIT');
   } catch (e) {
@@ -1565,6 +1576,11 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   }
   const outputLoc = jo.output_location_id ?? getDefaultLocationId();
   const stages = Math.max(1, jo.qc_stages || 1);
+  const passStages = new Set(units.map((u) => u.stage + 1));
+  if (passStages.size > 1) {
+    res.status(400).json({ error: 'Inspect units from one QC/QA stage at a time.' });
+    return;
+  }
 
   // Which checklist(s) apply to this pass: the QC checklist on the first pass, the QA
   // checklist on the final one. On a single-stage MO the one inspection is both first
@@ -1593,18 +1609,44 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
 
   // A unit can only become finished stock once its checklist is complete — every
   // configured *required* check that applies to this pass must be ticked OK.
-  if (result === 'pass') {
+  {
     const activeItems = [
-      ...(isFirstPass ? checklistForProduct(jo.product_item_id, 1)?.items ?? [] : []),
-      ...(isFinalPass ? checklistForProduct(jo.product_item_id, 2)?.items ?? [] : []),
+      ...(isFirstPass ? jo.qc_checklist_qc?.items ?? [] : []),
+      ...(isFinalPass ? jo.qc_checklist_qa?.items ?? [] : []),
     ];
-    const required = [...new Map(activeItems.filter((it) => it.required).map((it) => [it.label, it])).values()];
-    if (required.length) {
-      // With a per-item status (mobile V2) only 'pass' satisfies a required check — not N/A.
-      const ticked = new Map((checklist ?? []).map((c) => [c.label, c.status ? c.status === 'pass' : c.ok]));
-      const missing = required.filter((it) => ticked.get(it.label) !== true).map((it) => it.label);
+    const labels = new Set<string>();
+    for (const item of activeItems) {
+      const key = item.label.trim().toLocaleLowerCase();
+      if (labels.has(key)) {
+        res.status(409).json({ error: `Checklist label "${item.label}" appears more than once on this pass. Configure distinct labels before inspecting.`, blocked: 'checklist' });
+        return;
+      }
+      labels.add(key);
+    }
+    const submitted = new Map<string, NonNullable<typeof checklist>[number]>();
+    for (const item of checklist ?? []) {
+      const key = item.label.trim().toLocaleLowerCase();
+      if (submitted.has(key)) {
+        res.status(400).json({ error: `Checklist answer "${item.label}" was submitted twice.` });
+        return;
+      }
+      submitted.set(key, item);
+    }
+    if (result === 'pass') {
+      // A required check needs an explicit pass. Measurements need a recorded reading.
+      const missing = activeItems.filter((it) => it.required && !(submitted.get(it.label.trim().toLocaleLowerCase())?.status
+        ? submitted.get(it.label.trim().toLocaleLowerCase())?.status === 'pass'
+        : submitted.get(it.label.trim().toLocaleLowerCase())?.ok === true)).map((it) => it.label);
       if (missing.length) {
         res.status(400).json({ error: `Complete the required QC/QA checks before passing: ${missing.join(', ')}` });
+        return;
+      }
+      const noReading = activeItems.filter((it) => {
+        const answer = submitted.get(it.label.trim().toLocaleLowerCase());
+        return it.measure && answer && (answer.status ? answer.status === 'pass' : answer.ok === true) && !answer.value?.trim();
+      });
+      if (noReading.length) {
+        res.status(400).json({ error: `Record a reading for: ${noReading.map((it) => it.label).join(', ')}` });
         return;
       }
     }
@@ -1626,7 +1668,10 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
          AND id NOT IN (SELECT attachment_id FROM qc_evidence)`, req.user!.id, ...evidence_ids!
     )) evidence.set(a.ref_id, [...(evidence.get(a.ref_id) ?? []), a.id]);
   }
-  if (result === 'fail' && isAppClient(req) && units.some((u) => !evidence.has(u.id))) {
+  // Inspectors always need evidence, even when a direct API caller omits X-Client.
+  // An inventory.adjust integration without an app header retains the existing
+  // audited import/correction path; desktop and phone users still need photos.
+  if (result === 'fail' && (isAppClient(req) || !req.user!.permissions.includes('inventory.adjust')) && units.some((u) => !evidence.has(u.id))) {
     res.status(409).json({ error: 'Attach at least one evidence photo of the unit before recording this result.', blocked: 'evidence' });
     return;
   }

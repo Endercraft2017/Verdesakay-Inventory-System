@@ -511,7 +511,8 @@ export const inspectUnitsSchema = z
     // 'hold' (final / QA pass only): held for review; decided later via /units/:unitId/hold-decision.
     disposition: z.enum(['scrap', 'dispose', 'recycle', 'repair', 'hold']).optional(),
     // Evidence photos already uploaded as `attachments` kind 'qc_unit' on the unit(s); the phone app
-    // and the desktop must send at least one per unit with a failing result (shared/device.ts isAppClient).
+    // and desktop must send at least one per failed unit; dedicated inspectors need this
+    // even when an API caller omits X-Client.
     evidence_ids: z.array(z.coerce.number().int().positive()).max(60).optional(),
     // With disposition 'repair': the structured repair / rectification order (the remarks
     // carry the instruction). Kept per QC record in qc_repair_details.
@@ -625,8 +626,8 @@ export const batchInspectSchema = z
     path: ['disposition'],
   });
 
-/** POST/PUT /api/qc/checklists/:id — one named, reusable QA/QC checklist. Belongs to one
-    stage as a whole: 1 = QA (first pass), 2 = QC (final pass). */
+/** POST/PUT /api/qc/checklists/:id — one named, reusable QC/QA checklist. Belongs to one
+    stage as a whole: 1 = QC (first pass), 2 = QA (final pass). */
 export const qcChecklistSchema = z.object({
   name: trimmed.min(1, 'Give the checklist a name').max(120),
   stage: z.coerce.number().int().min(1).max(2).default(1),
@@ -644,6 +645,13 @@ export const qcChecklistSchema = z.object({
       })
     )
     .max(60, 'Keep the checklist under 60 items'),
+}).superRefine((value, ctx) => {
+  const seen = new Set<string>();
+  value.items.forEach((item, index) => {
+    const key = item.label.trim().toLocaleLowerCase();
+    if (seen.has(key)) ctx.addIssue({ code: 'custom', path: ['items', index, 'label'], message: 'Checklist labels must be unique within a stage' });
+    seen.add(key);
+  });
 });
 
 export const setUnitIdentifierSchema = z.object({

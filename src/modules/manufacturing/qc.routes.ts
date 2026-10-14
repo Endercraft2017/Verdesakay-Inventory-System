@@ -120,16 +120,16 @@ router.delete('/checklists/:id', requirePermission('qc.configure'), syncClass('c
   res.json({ ok: true });
 });
 
-// GET /api/qc/records — every pass/fail finding across every job order (unit- and
+// GET /api/qc/records — every pass/fail/hold finding across every job order (unit- and
 // batch-level), for the Production → QA/QC "Reports & Findings" screen. Filters:
-// result (pass|fail), disposition, job_order_id, from/to (created_at), q (job order
+// result (pass|fail|hold), disposition, job_order_id, from/to (created_at), q (job order
 // number / product name).
 router.get('/records', requirePermission('production.view'), (req, res) => {
   const { result, disposition, job_order_id, from, to, q } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
 
-  if (result === 'pass' || result === 'fail') { where.push('q.result = ?'); params.push(result); }
+  if (result === 'pass' || result === 'fail' || result === 'hold') { where.push('q.result = ?'); params.push(result); }
   if (typeof disposition === 'string' && disposition.trim()) { where.push('q.disposition = ?'); params.push(disposition.trim()); }
   if (job_order_id) { where.push('q.job_order_id = ?'); params.push(Number(job_order_id)); }
   if (typeof from === 'string' && from.trim()) { where.push('q.created_at >= ?'); params.push(from.trim()); }
@@ -148,9 +148,10 @@ router.get('/records', requirePermission('production.view'), (req, res) => {
       `SELECT COUNT(*) AS n FROM qc_records q JOIN job_orders j ON j.id = q.job_order_id${whereSql}`,
       ...params
     )?.n ?? 0;
-  const summary = queryOne<{ pass: number; fail: number }>(
+  const summary = queryOne<{ pass: number; fail: number; hold: number }>(
     `SELECT SUM(CASE WHEN q.result = 'pass' THEN 1 ELSE 0 END) AS pass,
-            SUM(CASE WHEN q.result = 'fail' THEN 1 ELSE 0 END) AS fail
+            SUM(CASE WHEN q.result = 'fail' THEN 1 ELSE 0 END) AS fail,
+            SUM(CASE WHEN q.result = 'hold' THEN 1 ELSE 0 END) AS hold
      FROM qc_records q JOIN job_orders j ON j.id = q.job_order_id${whereSql}`,
     ...params
   );
@@ -178,7 +179,7 @@ router.get('/records', requirePermission('production.view'), (req, res) => {
     total,
     limit,
     offset,
-    summary: { pass: summary?.pass || 0, fail: summary?.fail || 0 },
+    summary: { pass: summary?.pass || 0, fail: summary?.fail || 0, hold: summary?.hold || 0 },
   });
 });
 
