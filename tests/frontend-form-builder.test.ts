@@ -3,7 +3,7 @@ import { JSDOM } from 'jsdom';
 import fs from 'node:fs';
 import path from 'node:path';
 async function setup(scope = 'hr') {
-  const dom = new JSDOM('<main></main><div id="modal-root"></div>', { runScripts: 'outside-only', url: 'http://localhost' });
+  const dom = new JSDOM('<main></main><div id="modal-root"></div><div id="toasts"></div>', { runScripts: 'outside-only', url: 'http://localhost' });
   const w = dom.window;
   w.eval(`window.calls=[];window.routes={};window.App={hasPermission:()=>true,register:(name,handler)=>routes[name]=handler,navigate:()=>{}};window.API={get:async()=>[],post:async(url,body)=>{calls.push({url,body});return {id:77}},put:async(url,body)=>{calls.push({url,body});return {id:88}}};`);
   const files = ['ui.js', 'lib/data-forms.js', 'modules/core/form-builder.js'];
@@ -27,6 +27,7 @@ describe('tabbed form setup', () => {
     await vi.waitFor(() => expect((w as any).calls).toHaveLength(2));
     expect((w as any).calls[0].body.fields.map((field: any) => field.key)).toEqual(['item', 'reason']);
     expect((w as any).calls[1].url).toBe('/form-definitions/77/template-body');
+    await vi.waitFor(() => expect(doc.querySelector('.modal-overlay')).toBeNull());
     dom.window.close();
   });
   it('limits HR starters to HR and keeps General forms manageable by authorized users', async () => {
@@ -38,6 +39,8 @@ describe('tabbed form setup', () => {
     name.value = 'General request'; name.dispatchEvent(new w.Event('input', { bubbles: true }));
     w.document.querySelector<HTMLElement>('.modal [data-confirm]')!.click();
     await vi.waitFor(() => expect((w as any).calls.length).toBe(1));
-    expect((w as any).calls[0].body.scope).toBeNull(); general.window.close();
+    expect((w as any).calls[0].body.scope).toBeNull();
+    await vi.waitFor(() => expect(w.document.querySelector('.modal-overlay')).toBeNull());
+    general.window.close();
   });
 });
