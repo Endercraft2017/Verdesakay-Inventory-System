@@ -209,9 +209,17 @@ raised by the sales-order shortfall flow.
       Desktop can save a partial pick or correct a prepared kit before slip issuance. The
       pick list and availability response show stock held elsewhere and the free amount.
       **Branch — short:**
-      the pick returns 400 with `shortfalls`, and
-      `POST /:id/purchase-shortfall` drafts POs for the missing parts. No stock moves at
-      this step.
+      the pick returns 400 with `shortfalls`. `GET /:id/availability` shows free stock,
+      holds, linked PO outstanding quantities and only the remaining quantity to
+      purchase. `POST /:id/purchase-shortfall` drafts POs only for that uncovered demand,
+      links them durably to the draft job order, and is safe to repeat after PO edits,
+      cancellation or partial receipts. Desktop opens this supply review from the
+      blocked pick or job detail. A PO is planning only: receive it at the job's source
+      location, finish the pick and then issue the parts slip. No stock moves when the
+      PO is drafted.
+      For a sale-linked job, the sale's stock review owns aggregate component purchasing;
+      the job supply review links there and job-level PO drafting returns
+      `409 sale_supply_owner` to prevent two purchase plans for the same parts.
    3. **Release = parts release slip** — `POST /:id/release {received_by?, notes?}`
       needs approved + accepted + prepared. It issues the numbered slip `PRS-#####`
       (`parts_release_slips` / `_items` store a copy of the lines), deducts the components

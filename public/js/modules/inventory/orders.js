@@ -769,6 +769,7 @@ App.register('orders', async (view, filter) => {
   view.querySelector('#ord-new')?.addEventListener('click', () => orderModal(null));
 
   await load();
+  if (filter && filter.review && type === 'sale') reviewStock(filter.review);
   // filter.id deep-links straight into one order's edit modal (used by the AI assistant's
   // created-record links) — openOrder() only needs the id, it fetches the rest itself.
   if (filter && filter.id) openOrder(filter.id);

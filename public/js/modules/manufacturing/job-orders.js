@@ -212,7 +212,7 @@ App.register('job-orders', async (view, filter) => {
       } catch (e) {
         if (e.status && e.status < 500) actionKeys.delete(signature);
         if (path === '/release' && e && e.status === 400 && e.data && Array.isArray(e.data.shortfalls) && e.data.shortfalls.length) {
-          releaseShortfallModal(e.data.shortfalls);
+          purchaseShortfallModal();
           return;
         }
         UI.toast(e.message, 'error');
@@ -221,29 +221,72 @@ App.register('job-orders', async (view, filter) => {
       }
     };
 
-    // Release blocked: components short at the source location. Offer to draft POs for them.
-    function releaseShortfallModal(shortfalls) {
-      const physicallyShort = shortfalls.some((s) => s.have < s.need);
-      UI.modal({
-        title: `Can't release ${jo.number} — components unavailable`,
-        bodyHTML: `
-          <p class="muted" style="margin-top:0">At ${UI.esc(jo.source_location_name || 'the source location')}, other kits or repair requests may now hold part of the on-hand stock. This kit stays prepared; release it after the stock is free or replenished.</p>
-          <div class="table-scroll"><table><thead><tr><th>Component</th><th class="right">Need</th><th class="right">On hand</th><th class="right">Held elsewhere</th><th class="right">Free</th><th class="right">Short</th></tr></thead>
-            <tbody>${shortfalls.map((s) => `<tr><td>${UI.esc(s.component_name)}</td><td class="right">${s.need}</td><td class="right">${s.have}</td><td class="right">${s.held_elsewhere || 0}</td><td class="right">${s.available ?? s.have}</td><td class="right danger">${s.short}</td></tr>`).join('')}</tbody></table></div>
-          <div id="jo-sf-result" class="muted" style="font-size:12px;margin-top:8px"></div>`,
-        confirmText: physicallyShort ? 'Draft purchase orders' : undefined,
+    // Reach procurement from the shortage at pick time, before the kit can be prepared.
+    async function purchaseShortfallModal() {
+      let availability;
+      try { availability = await API.get('/job-orders/' + id + '/availability'); }
+      catch (e) { UI.toast(e.message, 'error'); return; }
+      if (availability.supply_planning_order) {
+        const sale = availability.supply_planning_order;
+        const modal = UI.modal({
+          title: `Component supply · ${jo.number}`, size: 'lg',
+          bodyHTML: `<p>Purchase planning for this kit belongs to sale <strong>${UI.esc(sale.number)}</strong>. Its stock review combines demand from all linked jobs, so use that review before drafting a PO.</p>
+            <p class="muted">Receive parts at ${UI.esc(availability.source_location_name || 'the job source location')}, then refresh and finish the pick.</p>
+            <div class="jo-supply-cards">${(availability.shortfalls || []).map((line) => `<section class="jo-supply-card"><strong>${UI.esc(line.component_name)}</strong><dl>
+              <div><dt>Need</dt><dd>${line.need}</dd></div><div><dt>Free here</dt><dd>${line.available}</dd></div><div><dt>Uncovered here</dt><dd>${line.short}</dd></div></dl></section>`).join('')}</div>`,
+          confirmText: 'Review sale supply', cancelText: 'Close',
+          onConfirm: () => { modal.close(); App.navigate('orders', { type: 'sale', review: sale.id }); return false; },
+        });
+        return;
+      }
+      const supplyBody = (av, message) => {
+        const requirements = av.purchase_requirements || [];
+        const toBuy = requirements.some((r) => r.to_purchase > 0);
+        return `<p class="muted" style="margin-top:0">Parts must be received at ${UI.esc(av.source_location_name || 'the job source location')} before this kit can be fully picked. Open purchase orders are plans, not stock. Stock held by other kits or repairs must be freed or replenished separately.</p>
+          <div class="table-scroll jo-supply-table"><table><thead><tr><th>Component</th><th class="right">Need</th><th class="right">On hand</th><th class="right">Held elsewhere</th><th class="right">Free</th><th class="right">Uncovered</th><th class="right">PO pending</th><th class="right">To purchase</th></tr></thead>
+            <tbody>${(av.lines || []).map((line) => {
+              const req = requirements.find((r) => r.component_item_id === line.component_item_id);
+              return `<tr><td>${UI.esc(line.component_name)}</td><td class="right">${line.need}</td><td class="right">${line.have}</td><td class="right">${line.held_elsewhere}</td><td class="right">${line.available}</td><td class="right">${line.short}</td><td class="right">${req?.pending_purchase || 0}</td><td class="right">${req?.to_purchase || 0}</td></tr>`;
+            }).join('')}</tbody></table></div>
+          <div class="jo-supply-cards">${(av.lines || []).map((line) => {
+            const req = requirements.find((r) => r.component_item_id === line.component_item_id);
+            return `<section class="jo-supply-card"><strong>${UI.esc(line.component_name)}</strong><dl>
+              <div><dt>Need</dt><dd>${line.need}</dd></div><div><dt>On hand</dt><dd>${line.have}</dd></div>
+              <div><dt>Held elsewhere</dt><dd>${line.held_elsewhere}</dd></div><div><dt>Free</dt><dd>${line.available}</dd></div>
+              <div><dt>Uncovered</dt><dd>${line.short}</dd></div><div><dt>PO pending</dt><dd>${req?.pending_purchase || 0}</dd></div>
+              <div><dt>To purchase</dt><dd><strong>${req?.to_purchase || 0}</strong></dd></div></dl></section>`;
+          }).join('')}</div>
+          ${(av.linked_purchase_orders || []).length ? `<p>Existing purchase orders: ${av.linked_purchase_orders.map((po) => `<button type="button" class="btn secondary small" data-supply-po="${po.id}">${UI.esc(po.number)} · ${po.outstanding} pending</button>`).join(' ')}</p>` : ''}
+          <div id="jo-sf-result" class="muted" style="font-size:12px;margin-top:8px">${message || (!requirements.length ? 'No component shortage for this kit.' : toBuy ? 'Draft only the uncovered component shortage.' : 'Existing purchase orders cover the shortage. Receive them at the job source location, then complete the pick.')}</div>`;
+      };
+      const toBuy = (availability.purchase_requirements || []).some((r) => r.to_purchase > 0);
+      const modal = UI.modal({
+        title: `Component supply · ${jo.number}`,
+        size: 'lg',
+        bodyHTML: `<div id="jo-supply-body">${supplyBody(availability)}</div>`,
+        confirmText: toBuy ? 'Draft missing purchase orders' : null,
         cancelText: 'Close',
         onConfirm: async (ov, showErr) => {
           try {
             const r = await API.post('/job-orders/' + id + '/purchase-shortfall', {});
-            const made = (r.created || []).map((c) => `${UI.esc(c.number)} → ${UI.esc(c.supplier_name || 'no supplier on the items')} (${c.lines} line${c.lines === 1 ? '' : 's'})`);
-            ov.querySelector('#jo-sf-result').innerHTML = made.length
+            const made = (r.created || []).map((c) => `<button type="button" class="btn secondary small" data-supply-po="${c.id}">${UI.esc(c.number)}</button> → ${UI.esc(c.supplier_name || 'supplier not set')} (${c.lines} line${c.lines === 1 ? '' : 's'})`);
+            const message = made.length
               ? '<b>Draft POs:</b><br>' + made.join('<br>') + '<br>Review &amp; send them from Purchasing, then receive the stock and release again.'
               : UI.esc(r.note || 'Nothing to draft.');
+            availability = await API.get('/job-orders/' + id + '/availability');
+            ov.querySelector('#jo-supply-body').innerHTML = supplyBody(availability, message);
+            ov.querySelector('[data-confirm]').hidden = !(availability.purchase_requirements || []).some((req) => req.to_purchase > 0);
+            wirePurchaseLinks(ov);
             return false; // keep the modal so the result is readable
           } catch (e) { showErr(e.message); return false; }
         },
       });
+      function wirePurchaseLinks(root) {
+        root.querySelectorAll('[data-supply-po]').forEach((button) => button.onclick = () => {
+          modal.close(); App.navigate('purchasing', { order: Number(button.dataset.supplyPo) });
+        });
+      }
+      wirePurchaseLinks(modal.overlay);
     }
 
     async function prepareKitModal() {
@@ -251,9 +294,10 @@ App.register('job-orders', async (view, filter) => {
       try { availability = await API.get('/job-orders/' + id + '/availability'); }
       catch (e) { UI.toast(e.message, 'error'); return; }
       const lines = availability.lines || [];
-      UI.modal({
+      const pickModal = UI.modal({
         title: `Pick parts kit · ${jo.number}`, size: 'lg', confirmText: 'Save picked quantities',
         bodyHTML: `<p class="order-notice">Count what is physically set aside at ${UI.esc(availability.source_location_name || 'the source location')}. Saving a pick holds stock for this kit; issuing the parts slip deducts it. A partial pick can be saved and completed later.</p>
+          ${lines.some((line) => line.short > 0) ? '<p class="order-notice">Some parts are unavailable. Save a partial pick, or <button type="button" class="btn secondary small" id="jo-pick-supply">check component supply</button>.</p>' : ''}
           ${lines.length ? `<div class="table-scroll"><table><thead><tr><th>Component</th><th class="right">Planned</th><th class="right">On hand</th><th class="right">Held elsewhere</th><th class="right">Free for this kit</th><th class="right">Picked for this kit</th></tr></thead><tbody>
           ${lines.map((l) => `<tr><td>${UI.esc(l.component_name)}</td><td class="right">${l.need}</td><td class="right">${l.have}</td><td class="right">${l.held_elsewhere}</td><td class="right">${l.available}</td><td class="right"><input type="number" data-pick="${l.component_item_id}" min="0" max="${l.need}" step="1" value="${l.picked}" style="width:88px" /></td></tr>`).join('')}
           </tbody></table></div>` : '<p class="muted">This job order has no components. Save to mark its empty kit ready for handoff.</p>'}`,
@@ -275,6 +319,8 @@ App.register('job-orders', async (view, filter) => {
           } catch (e) { showErr(e.message); return false; }
         },
       });
+      const supply = pickModal.overlay.querySelector('#jo-pick-supply');
+      if (supply) supply.onclick = () => { pickModal.close(); purchaseShortfallModal(); };
     }
 
     function draw() {
@@ -499,6 +545,7 @@ App.register('job-orders', async (view, filter) => {
         ${canWrite ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           ${jo.status !== 'completed' && jo.status !== 'cancelled' ? `<button type="button" class="btn secondary" id="jo-resched">Team / schedule…</button>` : ''}
           ${isDraft ? `${jo.approved_at && !jo.warehouse_accepted_at ? `<button type="button" class="btn" data-do="_wh_accept">Accept (warehouse)</button>` : ''}
+                       ${comps.length ? '<button type="button" class="btn secondary" data-do="_supply">Check component supply</button>' : ''}
                        ${jo.warehouse_accepted_at ? `<button type="button" class="btn secondary" data-do="_prepare">${jo.prepared_at ? 'Review / adjust picked kit' : 'Pick / review kit'}</button>` : ''}
                        ${jo.prepared_at ? `<button type="button" class="btn" data-do="_release">Release &amp; issue slip</button>` : ''}
                        <button type="button" class="btn secondary danger" data-do="_delete">Delete</button>` : ''}
@@ -847,6 +894,7 @@ App.register('job-orders', async (view, filter) => {
           .then(async () => { jo = await API.get('/job-orders/' + id); UI.toast('Done'); draw(); load(); })
           .catch((e) => UI.toast(e.message, 'error'));
         if (d === '_wh_accept') { bulk('warehouse-accept', { job_order_ids: [Number(id)] }); return; }
+        if (d === '_supply') { purchaseShortfallModal(); return; }
         if (d === '_prepare') { prepareKitModal(); return; }
         if (d === '_release') {
           const who = window.prompt('Received by (production) — optional', jo.team_name || '');

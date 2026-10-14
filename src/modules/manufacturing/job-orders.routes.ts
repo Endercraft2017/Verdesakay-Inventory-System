@@ -823,6 +823,33 @@ function jobOrderComponentAvailability(joId: number): Array<{
   return out;
 }
 
+/** Outstanding linked procurement covers only planning demand; receipts must still put
+ * physical stock at the job's source before its kit can be picked. */
+function jobOrderPurchaseCoverage(joId: number, joNumber: string, shortfalls: ReturnType<typeof jobOrderComponentAvailability>) {
+  const linked = queryAll<{ id: number; number: string; status: string; item_id: number; outstanding: number }>(
+    `SELECT o.id, o.number, o.status, oi.item_id,
+       MAX(0, SUM(oi.quantity) - COALESCE((SELECT SUM(gi.quantity) FROM goods_receipt_items gi
+         JOIN goods_receipts gr ON gr.id = gi.receipt_id WHERE gr.order_id = o.id AND gi.item_id = oi.item_id), 0)) AS outstanding
+     FROM orders o JOIN order_items oi ON oi.order_id = o.id
+     WHERE o.type = 'purchase' AND LOWER(o.status) NOT IN ('cancelled', 'closed') AND oi.item_id IS NOT NULL
+       AND (EXISTS (SELECT 1 FROM job_shortfall_purchases jp WHERE jp.job_order_id = ? AND jp.purchase_order_id = o.id)
+         OR (o.notes = ? AND NOT EXISTS (SELECT 1 FROM job_shortfall_purchases jp WHERE jp.purchase_order_id = o.id)))
+     GROUP BY o.id, oi.item_id ORDER BY o.id`,
+    joId, `Components for ${joNumber}`
+  ).filter((p) => p.outstanding > 0);
+  const requirements = shortfalls.map((s) => {
+    const pending = linked.filter((p) => p.item_id === s.component_item_id).reduce((n, p) => n + p.outstanding, 0);
+    return { ...s, pending_purchase: pending, to_purchase: Math.max(0, Number((s.short - pending).toPrecision(15))) };
+  });
+  return { linked_purchase_orders: linked, purchase_requirements: requirements };
+}
+
+/** Sale-linked jobs share component demand with the sale's aggregate supply plan. */
+function saleSupplyOwner(orderId: number | null | undefined) {
+  if (!orderId) return null;
+  return queryOne<{ id: number; number: string }>("SELECT id, number FROM orders WHERE id = ? AND type = 'sale'", orderId) ?? null;
+}
+
 /** Quantity of `itemId` already set aside at `locationId`: picked for other not-yet-released job
  *  orders' kits, or held for open repair-parts requests (stock-holds.ts) — so they can't both claim it. */
 function pickedElsewhere(itemId: number, locationId: number, excludeJoIds: number[]): number {
@@ -958,6 +985,10 @@ router.get('/:id/availability', readGate, (req, res) => {
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
   const lines = jobOrderComponentAvailability(id);
   const shortfalls = lines.filter((l) => l.short > 0);
+  const supply_planning_order = saleSupplyOwner(jo.order_id);
+  const purchasing = supply_planning_order
+    ? { linked_purchase_orders: [], purchase_requirements: [] }
+    : jobOrderPurchaseCoverage(id, jo.number, shortfalls);
   const approved = !!jo.approved_at;
   const warehouseAccepted = !!jo.warehouse_accepted_at;
   const prepared = !!jo.prepared_at;
@@ -968,6 +999,8 @@ router.get('/:id/availability', readGate, (req, res) => {
     source_location_name: jo.source_location_name ?? null,
     lines,
     shortfalls,
+    ...purchasing,
+    supply_planning_order,
     in_stock: shortfalls.length === 0,
     approved,
     warehouse_accepted: warehouseAccepted,
@@ -1026,16 +1059,27 @@ router.post('/:id/unapprove', approveGate, syncClass('claim', joSite), (req, res
 // this job order can't cover from its source location, grouped by supplier.
 router.post('/:id/purchase-shortfall', writeGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
-  const jo = queryOne<JobOrder>('SELECT number FROM job_orders WHERE id = ?', id);
+  const jo = queryOne<JobOrder>('SELECT number, status, order_id FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
-  const short = jobOrderComponentShortfalls(id);
-  if (!short.length) { res.json({ created: [], note: 'All components are in stock.' }); return; }
-  const created = createDraftPurchaseOrders(
-    short.map((s) => ({ item_id: s.component_item_id, quantity: s.short })),
-    `Components for ${jo.number}`,
-    req.user!.id
-  );
-  res.json({ created, shortfalls: short });
+  if (jo.status !== 'draft') { res.status(409).json({ error: 'Only a draft job order can plan component purchases.' }); return; }
+  const supplyOrder = saleSupplyOwner(jo.order_id);
+  if (supplyOrder) {
+    res.status(409).json({ error: `Plan components from sale ${supplyOrder.number}'s stock review so its jobs share one purchase plan.`,
+      code: 'sale_supply_owner', supply_planning_order: supplyOrder });
+    return;
+  }
+  db.exec('BEGIN');
+  try {
+    const short = jobOrderComponentAvailability(id).filter((line) => line.short > 0);
+    const coverage = jobOrderPurchaseCoverage(id, jo.number, short);
+    const wants = coverage.purchase_requirements.filter((s) => s.to_purchase > 0)
+      .map((s) => ({ item_id: s.component_item_id, quantity: s.to_purchase }));
+    const created = createDraftPurchaseOrders(wants, `Components for ${jo.number}`, req.user!.id);
+    for (const po of created) run('INSERT INTO job_shortfall_purchases (job_order_id, purchase_order_id) VALUES (?, ?)', id, po.id);
+    db.exec('COMMIT');
+    res.json({ created, shortfalls: short, ...jobOrderPurchaseCoverage(id, jo.number, short),
+      note: !short.length ? 'All components are available for this kit.' : wants.length ? undefined : 'Existing purchase orders cover this shortage; receive them into the job source location.' });
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
 // POST /api/job-orders/:id/release — issue the parts release slip for a prepared kit: the

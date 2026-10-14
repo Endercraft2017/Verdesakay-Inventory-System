@@ -63,6 +63,8 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 71: link job-order component-shortage purchase drafts so retries and partial receipts
+//     create only remaining procurement demand.
 // 70: bind JSON idempotency keys to the original request payload.
 // 69: freeze job-order QC/QA checklists when the parts kit is released.
 // 68: rejected-return disposition and reinspection.
@@ -71,7 +73,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 70; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 71; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -728,6 +730,15 @@ function createSchema(): void {
       created_at         TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Durable manufacturing → procurement planning links. A draft PO is pending supply,
+    -- never component stock; receipts at the job's source location close the shortage.
+    CREATE TABLE IF NOT EXISTS job_shortfall_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      purchase_order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_shortfall_purchase_job ON job_shortfall_purchases(job_order_id);
 
     CREATE TABLE IF NOT EXISTS job_order_components (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,

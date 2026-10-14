@@ -421,3 +421,12 @@
 .personal-tool-editor [hidden] { display: none !important; }
 .guide-coach .guide-coach-body { min-height: 0; }
 :root[data-theme=dark] .personal-tool-editor { color-scheme: dark; }
+.jo-supply-cards { display: none; }
+@media (max-width: 600px) {
+  .jo-supply-table { display: none; }
+  .jo-supply-cards { display: grid; gap: 10px; }
+  .jo-supply-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .jo-supply-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 10px 0 0; }
+  .jo-supply-card dt { color: var(--text-muted); font-size: 12px; }
+  .jo-supply-card dd { margin: 2px 0 0; font-weight: 600; }
+}
