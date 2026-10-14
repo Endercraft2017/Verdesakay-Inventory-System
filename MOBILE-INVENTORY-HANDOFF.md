@@ -2,6 +2,19 @@
 
 **Sharing status:** This handoff and its backend/desktop implementation belong on `restructure/module-architecture`. The mobile fixes listed below remain open for the mobile developer.
 
+## QC/QA: mobile handoff (recorded unit → inspection → hold or final pass)
+
+**Owner:** mobile developer. **Checked against code:** 2026-10-14. **Status:** open; no `public/mobile/` source was edited. See `docs/reviews/qc-qa-stage-audit.md` for the full backend/desktop audit. A final QA pass leaves a unit awaiting Products In; it does not add sellable stock.
+
+| Priority | Mobile evidence | Handoff to mobile owner |
+|---|---|---|
+| **Critical** | `public/mobile/modules/manufacturing/qc.js` sends every QA hold decision with `idempotencyKey: 'hold-' + h.record_id`. The server's idempotency lookup does not compare the body. | Bind a retry key to the exact immutable hold decision (pass, rectify or fail, reason and related fields). Reuse it only for that same payload after an uncertain result. If the decision changes after a definitive response, require a fresh review and key. Read the hold/unit state back after a timeout before claiming the selected outcome was saved. Coordinate with the backend owner on replay/conflict semantics. |
+| **High** | The mobile QC queue turns a failed `GET /qc/holds` into `[]`, then shows zero holds. | Show an **Unable to load holds / Retry** state and unknown count on 403, offline, timeout or server failure. Do not tell a hold reviewer that the queue is empty unless the fetch succeeded. |
+| **High** | Checklist answers in `qc.js` use item labels as keys. Distinct QC and QA requirements may share a label, especially on a single-stage job. | When the backend introduces stable stage-qualified checklist item IDs, key answers and saved drafts by those IDs. Keep old QC records readable. Confirm duplicate labels cannot cause one answer to satisfy two required checks. |
+| **Medium** | The ordinary inspection flow distinguishes queued from recorded submissions, but some result copy still says “Recorded by” for a queued action. | Use **Queued on this device**, **Saved on site PC**, and **Confirmed by site authority** according to the actual response. Show final pass and Products In eligibility only after authority confirmation. |
+
+**Mobile acceptance cases:** QC and QA checks with the same visible label; hold decision response lost after the server commits; reviewer changes a hold decision after a definitive response; hold fetch returns 403/500 or times out; queued inspection later conflicts or fails; final QA pass remains outside stock until Products In. Exercise inspector and hold-review roles on narrow phone screens and through offline/reconnect transitions. Backend checklist identity and evidence rules are still being refined, so align the phone contract with the finalized API before closing this handoff.
+
 ## Production recording: mobile handoff (accepted kit → output and line issues)
 
 **Owner:** mobile developer. **Checked against code:** 2026-10-14. **Status:** open. Backend and desktop recording were audited and refined; no `public/mobile/` source was edited. The current server accepts a stable `Idempotency-Key` for `POST /api/job-orders/:id/accept`, `/progress`, and multipart `/units`. Retrying the *same request with the same key* replays its result without consuming parts or creating a second unit. `API.upload(path, formData, { idempotencyKey })` now supports that header on desktop; check the mobile API wrapper's equivalent before wiring it there. A finished unit still needs one identifier and photo in the same multipart request. Bulk output and scrap still use `/progress`, and neither path adds finished stock until Products In.
