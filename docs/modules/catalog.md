@@ -1161,3 +1161,5 @@ Header/footer creation preserves selected body text, reuses existing elements an
 Wide desktop Home now uses one command row with stroke icons for Clipboard and Editing, keeping labeled group dividers. The paragraph selector is labeled Paragraph type; Text styles explains body text, heading levels and shared formatting. Editor select arrow image/repeat/position/size are protected from later background shorthands, including sidebar Empty cells.
 
 Heading controls now say Body text, Main heading (H1), Subheading (H2), with deeper levels grouped separately. Headings & styles opens a Style gallery: preview cards explain paragraph roles and show font/size metadata; separate named pencil controls edit reusable formatting. Existing command/style keys and saved markup are unchanged.
+
+Insert symbol uses a scoped responsive grid with centered glyphs, consistent 48px-high buttons, descriptive names/tooltips and themed hover/focus. Narrow screens use five columns. Symbol insertion keeps the existing selection/history path.

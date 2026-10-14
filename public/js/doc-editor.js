@@ -884,6 +884,14 @@ function ensureStyles() {
     .doc-style-meta{font-size:11px;line-height:1.4;color:var(--text-muted)}
     .doc-studio-side .doc-style-edit{padding:6px;min-height:32px;display:flex;justify-content:center}
 `;
+  el.textContent += `
+    .doc-symbol-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px}
+    .modal-overlay .doc-symbol-grid .doc-symbol-choice{display:grid;place-items:center;text-align:center;width:100%;height:48px;min-width:0;padding:0;font-size:22px;line-height:1;border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:var(--radius-sm)}
+    .modal-overlay .doc-symbol-choice:hover{background:var(--accent-weak);border-color:var(--accent)}
+    .modal-overlay .doc-symbol-choice:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    .doc-symbol-glyph{display:block;line-height:1}
+    @media(max-width:480px){.doc-symbol-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}}
+`;
   document.head.appendChild(el);
 }
 
@@ -1122,14 +1130,15 @@ function editPicture(img,onChange) {
     }});
 }
 
+const SYMBOL_NAMES = ['Philippine peso','Dollar','Euro','Pound','Yen','Copyright','Registered trademark','Trademark','Degree','Section','Paragraph','Bullet','Star','Check mark','Cross mark','One half','One quarter','Three quarters','Multiplication','Division','Plus or minus','Number sign'];
 const SYMBOLS = ['₱', '$', '€', '£', '¥', '©', '®', '™', '°', '§', '¶', '•', '★', '✓', '✗', '½', '¼', '¾', '×', '÷', '±', '№'];
 
 function symbolDialog(insertHtml, saveSel, modal = UI.modal) {
   saveSel();
   const m = modal({
     title: 'Insert symbol',
-    bodyHTML: `<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px">
-      ${SYMBOLS.map((s) => `<button type="button" class="btn secondary" data-sym="${escAttr(s)}" style="font-size:16px;padding:8px 0">${s}</button>`).join('')}
+    bodyHTML: `<div class="doc-symbol-grid">
+      ${SYMBOLS.map((s,i) => `<button type="button" class="btn secondary doc-symbol-choice" data-sym="${escAttr(s)}" title="Insert ${SYMBOL_NAMES[i]} (${s})" aria-label="Insert ${SYMBOL_NAMES[i]} (${s})"><span class="doc-symbol-glyph" aria-hidden="true">${s}</span></button>`).join('')}
     </div>`,
     cancelText: 'Close',
     onOpen: (ov) => {

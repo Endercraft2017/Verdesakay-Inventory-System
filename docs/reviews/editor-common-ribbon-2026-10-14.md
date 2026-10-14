@@ -39,3 +39,6 @@ wide desktop ribbon height limit of 76px in the full Playwright gate.
 
 ## Heading/style clarity follow-up
 Body text, Main heading (H1) and Subheading (H2) replace bare role labels in the ribbon; deeper levels are grouped separately. Style gallery previews show the role and font/size metadata, with separate named pencil actions. A preview applies formatting and a pencil edits the reusable style. All existing style/paragraph keys and markup remain. Visual review covers gallery in both themes; the full editor Playwright gate and focused command/studio regressions verify continued behavior.
+
+## Symbol picker alignment correction
+A scoped symbol grid centers glyphs and preserves theme hover/focus states, with consistent 48px button heights and five columns on phones. Buttons have descriptive names. Playwright checks every glyph position/target at 1440 and 390px in both themes and verifies keyboard insertion plus Undo through the existing command path.

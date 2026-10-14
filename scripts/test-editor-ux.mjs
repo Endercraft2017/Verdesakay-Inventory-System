@@ -185,6 +185,7 @@ try {
     for(const [action,title] of [['image','Insert image'],['link','Insert link'],['symbol','Insert symbol'],['variable','Insert variable'],['formula','Insert a formula']]){
       if(['variable','formula'].includes(action)) await editorButton('data-studio-tab=Data').click();
       await editorButton('data-ins='+action).click();await page.getByRole('dialog',{name:title,exact:true}).waitFor();
+      if(action==='symbol'){const cells=await page.locator('.doc-symbol-choice').evaluateAll(buttons=>buttons.map(button=>{const b=button.getBoundingClientRect(),g=button.querySelector('.doc-symbol-glyph').getBoundingClientRect();return {dx:Math.abs((b.left+b.right-g.left-g.right)/2),dy:Math.abs((b.top+b.bottom-g.top-g.bottom)/2),w:b.width,h:b.height};}));assert.equal(cells.length,22);for(const cell of cells){assert(cell.dx<1.5&&cell.dy<1.5,'Symbols must be centered');assert(cell.w>=24&&cell.h>=44,'Symbol buttons must have usable targets');}}
       await scan('dialog-'+action+'-'+theme+'-'+width,'[role=dialog]');await closeDialog(title);if(['variable','formula'].includes(action)) await editorButton('data-inspector-close').click();
     }
     await page.locator('.doc-surface img').click(); await editorButton('data-studio-tab=Properties').click();
@@ -197,6 +198,12 @@ try {
     await editorButton('data-studio-tab=Pages').click();await editorButton('data-adv=section').click();await scan('dialog-section-'+theme+'-'+width,'[role=dialog]');await closeDialog('Insert section');await editorButton('data-inspector-close').click();
   }
   await page.setViewportSize({width:1440,height:1000});
+  await check('Symbol picker inserts by keyboard and Undo restores writing',async()=>{
+    await page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).first().click();await page.keyboard.press('End');
+    const authoredText=()=>page.locator('.doc-surface').evaluate(el=>{const clone=el.cloneNode(true);clone.querySelectorAll('.doc-float-handle,.doc-float-toolbar,.doc-promote-bar,.doc-snap-guide,.doc-page-guide').forEach(node=>node.remove());return clone.textContent;});const before=await authoredText();await page.locator('[data-tab=insert]').click();await editorButton('data-ins=symbol').click();
+    const dialog=page.getByRole('dialog',{name:'Insert symbol',exact:true});await dialog.getByRole('button',{name:'Insert Philippine peso (₱)',exact:true}).focus();await page.keyboard.press('Enter');await dialog.waitFor({state:'hidden'});
+    assert((await page.locator('.doc-surface').textContent()).includes('₱'));await editorButton('data-ex=undo').click();assert.equal(await authoredText(),before);
+  });
   await check('Everyday ribbon tools format, copy/cut/paste fields, replace and insert page furniture', async () => {
     await page.locator('[data-tab=home]').click();
     await page.evaluate(()=>{const p=[...document.querySelectorAll('.doc-surface p')].find(p=>p.textContent.includes('Employee payslip layout.')),r=document.createRange();r.selectNodeContents(p);r.collapse(false);document.querySelector('.doc-surface').focus();getSelection().removeAllRanges();getSelection().addRange(r);});await page.keyboard.type('Ribbon audit text.');

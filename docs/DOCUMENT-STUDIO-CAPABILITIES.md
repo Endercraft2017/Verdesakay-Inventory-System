@@ -187,3 +187,5 @@ Themed select arrows avoid native white hover patches, including editor dialogs 
 Wide desktop Home places its controls horizontally to reserve canvas height. Clipboard and Editing buttons use icons with names/tooltips. Normal means body text; Heading 1 marks a main section and Heading 2 a subsection. Text styles applies consistent paragraph formatting; editing a named style updates paragraphs using it.
 
 The heading selector uses Body text, Main heading (H1), and Subheading (H2), with deeper heading levels grouped separately. Style gallery shows previews and short role descriptions. Click a preview to apply that style to the paragraph; use its pencil to edit shared formatting.
+
+Insert symbol shows centered symbols with descriptive tooltips and keyboard-accessible buttons. Its grid adapts to narrow screens; symbol insertion is undoable.
