@@ -1165,3 +1165,7 @@ Heading controls now say Body text, Main heading (H1), Subheading (H2), with dee
 Insert symbol uses a scoped responsive grid with centered glyphs, consistent 48px-high buttons, descriptive names/tooltips and themed hover/focus. Narrow screens use five columns. Symbol insertion keeps the existing selection/history path.
 
 Company header divider controls appear in Inspect for the header or text inside it. Clicking the bottom 12px of a .doc-head opens Inspect without moving the caret. Users can remove the border or change thickness, style and color while preserving company fields. Locked header controls are disabled and handlers reject edits.
+
+Insert includes a quick Variable button in a Fields group. It and the persistent Variables sidebar action share the same picker/insert command; the shortcut remembers the caret and does not clone sidebar controls.
+
+Variable chips with trailing whitespace now insert as a DOM fragment through the existing atomic command adapter, keeping them inside the selected paragraph at its end. The shared fix applies to both picker launchers and preserves Undo.

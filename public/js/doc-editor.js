@@ -959,6 +959,7 @@ function tile(kind, value, icon, label, extraClass) {
 
 function insertPanelHTML() {
   const tables = groupHTML('Tables', tile('ins', 'table', '▦', 'Table'));
+  const fields = groupHTML('Fields', `<button type="button" data-variable-shortcut class="doc-tile btn-variable" title="Insert a live variable at the cursor"><span class="doc-tile-ic">${docIcon('variable')}</span><span class="doc-tile-lbl">Variable</span></button>`);
   const illustrations = groupHTML('Illustrations', tile('ins', 'image', '🖼', 'Picture') + tile('ins', 'shape-rect', '▭', 'Rectangle') + tile('ins', 'shape-oval', '⬭', 'Oval') + tile('ins', 'shape-line', '—', 'Line shape'));
   const text = groupHTML('Text & links', tile('ins', 'textbox', '▭', 'Text box') + tile('ins', 'signature', '✒', 'Signature line') + tile('ins', 'link', '🔗', 'Link'));
   const symbols = groupHTML('Symbols & breaks', tile('ins', 'symbol', 'Ω', 'Symbol') + tile('ins', 'checkbox', '☐', 'Checkbox') + tile('ins', 'hr', '―', 'Horizontal rule') + tile('ins', 'pagebreak', '⤓', 'Page break'));
@@ -966,7 +967,7 @@ function insertPanelHTML() {
   // are wired. Moving their live nodes preserves selection and avoids duplicate commands.
   const template = `<div data-template-actions hidden>${groupHTML('Template fields', tile('ins', 'variable', '{ }', 'Insert variable', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Insert formula', 'btn-fx') + `<button type="button" data-managevars title="Create, rename or remove template fields">${docIcon('variable')}Manage fields</button>`)}</div>`;
   const running = groupHTML('Header &amp; footer', ['header','footer','pagenumber'].map((action,index)=>`<button type="button" data-open-page-tool="${action}" title="Insert ${['a repeating header','a repeating footer','a page number'][index]}">${['Header','Footer','Page number'][index]}</button>`).join(''));
-  return tables + illustrations + text + running + symbols + template;
+  return tables + fields + illustrations + text + running + symbols + template;
 }
 
 function layoutPanelHTML() {
@@ -1243,7 +1244,7 @@ function docEditorHelpDialog() {
       + note('Nothing on the page is “live” — variables and formulas only turn into real values when the document is printed.'),
 
     variables: lead('A variable is a blank the system fills in at print time — a name, a number, a date.')
-      + step(1, 'Open <b>Variables</b> → <b>Insert variable</b> — or just type <code>{{ }}</code> right on the page.')
+      + step(1, 'Use <b>Insert → Variable</b> for quick access, or <b>Variables → Insert variable</b> in the sidebar — or just type <code>{{ }}</code> right on the page.')
       + step(2, "Pick a field: company name, order number, customer, today's date…")
       + step(3, 'It drops in as a blue pill. On the printed page it becomes the real value.', SHOT_VARFLOW)
       + bullet('Want your own? <b>Variables → Manage fields</b> — a fixed value, a bound field, or a saved formula.')
@@ -1555,7 +1556,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   const commands = createDocCommandRegistry({
     prepare:restoreSel,enabled:editableSelection,
     native:(cmd,val)=>{
-      if(cmd==='insertHTML'&&typeof val==='string'){const fragment=document.createElement('template');fragment.innerHTML=val;const chip=fragment.content.childNodes.length===1?fragment.content.firstChild:null;if(chip?.matches?.('.doc-chip')){const sel=window.getSelection(),r=sel.getRangeAt(0);clearPending();r.deleteContents();r.insertNode(chip);r.setStartAfter(chip);r.collapse(true);sel.removeAllRanges();sel.addRange(r);return true;}}
+      if(cmd==='insertHTML'&&typeof val==='string'){const fragment=document.createElement('template');fragment.innerHTML=val;const nodes=[...fragment.content.childNodes],chip=nodes[0];if(chip?.matches?.('.doc-chip')&&nodes.slice(1).every(node=>node.nodeType===3&&!node.textContent.trim())){const sel=window.getSelection(),r=sel.getRangeAt(0),last=nodes.at(-1);clearPending();r.deleteContents();r.insertNode(fragment.content);r.setStartAfter(last);r.collapse(true);sel.removeAllRanges();sel.addRange(r);return true;}}
       if(window.DocModel){
         const sel=window.getSelection();
         if((cmd==='insertText'||cmd==='delete')&&!trackingText()){const result=editText(cmd==='insertText'?String(val ?? ''):'');if(result!==null)return result;}
@@ -1655,7 +1656,8 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   panelsRoot.querySelector('[data-ins="table"]').addEventListener('click', () => insertTableDialog(insertHtml, saveSel, editorModal));
   panelsRoot.querySelector('[data-ins="image"]').addEventListener('click', () => imageDialog(insertHtml, saveSel, editorModal));
   panelsRoot.querySelector('[data-ins="checkbox"]').addEventListener('click', () => insertHtml('<span class="doc-checkbox" data-checked="0">&#9744;</span>&nbsp;'));
-  panelsRoot.querySelector('[data-ins="variable"]').addEventListener('click', () => variableDialog(saveSel, getVariables, (tok) => insertHtml(tokenChip(tok.replace(/^\{\{|\}\}$/g, '')) + '&nbsp;'), {modal:editorModal}));
+  panelsRoot.querySelector('[data-variable-shortcut]').addEventListener('mousedown',e=>{saveSel();e.preventDefault();});
+  panelsRoot.querySelectorAll('[data-ins="variable"],[data-variable-shortcut]').forEach(button=>button.addEventListener('click', () => variableDialog(saveSel, getVariables, (tok) => insertHtml(tokenChip(tok.replace(/^\{\{|\}\}$/g, '')) + '&nbsp;'), {modal:editorModal})));
   panelsRoot.querySelector('[data-ins="formula"]').addEventListener('click', () => formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext, editorModal));
   panelsRoot.querySelector('[data-ins="symbol"]').addEventListener('click', () => symbolDialog(insertHtml, saveSel, editorModal));
   panelsRoot.querySelector('[data-ins="textbox"]').addEventListener('click', () => insertFloat('textbox'));

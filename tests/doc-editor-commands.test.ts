@@ -17,6 +17,12 @@ function setup(body='<p>Original content</p>',withModel=false,options:any={},run
  return {w,ed,root,doc:w.document,select};
 }
 describe('document command dispatch',()=>{
+ it('inserts a ribbon variable with its trailing space inside the remembered paragraph and undoes it',()=>{
+  const {doc,root,ed,select}=setup('<header class="doc-head"><h1>Company</h1></header><p>Body text</p>',true,{getVariables:()=>[{key:'company.name',label:'Company name',category:'Company'}]});
+  select(root.querySelector('p').firstChild,9,9);doc.querySelector('[data-variable-shortcut]').click();doc.querySelector('.var-pick').click();
+  expect(root.querySelector('p .doc-chip').dataset.token).toBe('company.name');expect(root.querySelector('header').textContent).toBe('Company');expect(root.querySelector('p').textContent).toBe('Body textcompany.name\u00a0');ed._history.flush();ed._history.undo();expect(root.querySelector('.doc-chip')).toBeNull();expect(root.querySelector('p').textContent).toBe('Body text');
+ });
+
  it('edits/removes a company header divider without removing fields and restores it with Undo',()=>{
   const {doc,w,root,ed,select}=setup('<header class="doc-head" style="border-bottom:2px solid #222"><h1>{{company.name}}</h1><p>Company address</p></header><p>Body</p>',true);
   select(root.querySelector('header p').firstChild,0,4);doc.querySelector('[data-studio-tab=Properties]').click();

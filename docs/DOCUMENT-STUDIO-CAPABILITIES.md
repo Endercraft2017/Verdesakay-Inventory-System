@@ -191,3 +191,5 @@ The heading selector uses Body text, Main heading (H1), and Subheading (H2), wit
 Insert symbol shows centered symbols with descriptive tooltips and keyboard-accessible buttons. Its grid adapts to narrow screens; symbol insertion is undoable.
 
 Click the company header divider, or select company-header text and open Inspect, to change its line style, thickness or color. Remove divider hides the line while keeping company information; choose a visible line style to restore it. Changes support Undo and persist with the template.
+
+Insert → Variable opens the existing searchable picker for quick insertion at the cursor. The Variables sidebar remains the full bank for search, copy, formulas and field management.

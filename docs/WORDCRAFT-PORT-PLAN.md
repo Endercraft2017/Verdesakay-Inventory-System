@@ -380,3 +380,6 @@ The compact ribbon uses role-based heading labels; Style gallery provides previe
 
 ### Company header divider — 14 October 2026
 Direct header-edge selection and Inspect controls expose border removal, width, style and color while preserving company fields. Locked ancestors, Undo and saved/reopened border properties are verified. Existing templates keep their letterhead layout; phase 2 slice 5 remains pending.
+
+### Insert variable shortcut — 14 October 2026
+The Insert ribbon has a quick Variable action using the existing picker/command and caret bookmark. The full bank remains in the sidebar. Keyboard insertion at the body caret and Undo are checked in Playwright; this does not advance engine phase 2 slice 5.

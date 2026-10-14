@@ -149,6 +149,13 @@ try {
     assert(await page.locator('[data-variable-insert]').first().isVisible());
     await page.locator('[data-inspector-close]').click();
   });
+  await check('Insert ribbon Variable shortcut inserts at the remembered caret and supports Undo',async()=>{
+    await page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).first().click();await page.keyboard.press('End');
+    const count=await page.locator('.doc-surface [data-token="company.name"]').count();await page.locator('[data-tab=insert]').click();
+    await editorButton('data-variable-shortcut').focus();await page.keyboard.press('Enter');const dialog=page.getByRole('dialog',{name:'Insert variable',exact:true});await dialog.locator('.var-search').fill('company.name');await dialog.locator('.var-pick').first().focus();await page.keyboard.press('Enter');await dialog.waitFor({state:'hidden'});
+    assert.equal(await page.locator('.doc-surface [data-token="company.name"]').count(),count+1);assert.equal(await page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).locator('[data-token="company.name"]').count(),1);
+    await editorButton('data-ex=undo').click();assert.equal(await page.locator('.doc-surface [data-token="company.name"]').count(),count);
+  });
   await check('Settings opens by keyboard, traps focus, and returns to its invoker', async () => {
     await page.locator('.doc-more-menu summary').focus();await page.keyboard.press('Enter');
     await editorButton('data-details').focus();await page.keyboard.press('Enter');
@@ -218,13 +225,13 @@ try {
   });
   await check('Everyday ribbon tools format, copy/cut/paste fields, replace and insert page furniture', async () => {
     await page.locator('[data-tab=home]').click();
-    await page.evaluate(()=>{const p=[...document.querySelectorAll('.doc-surface p')].find(p=>p.textContent.includes('Employee payslip layout.')),r=document.createRange();r.selectNodeContents(p);r.collapse(false);document.querySelector('.doc-surface').focus();getSelection().removeAllRanges();getSelection().addRange(r);});await page.keyboard.type('Ribbon audit text.');
-    const selectParagraph=()=>page.evaluate(()=>{const p=[...document.querySelectorAll('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3')].find(p=>p.textContent.includes('Ribbon audit text.')),r=document.createRange();if(!p)throw Error('The ribbon test paragraph was not found');r.selectNodeContents(p);document.querySelector('.doc-surface').focus();getSelection().removeAllRanges();getSelection().addRange(r);document.dispatchEvent(new Event('selectionchange'));});
+    await page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).first().click();await page.keyboard.press('End');await page.keyboard.type('Ribbon audit text.');
+    const selectParagraph=()=>page.evaluate(()=>{const p=[...document.querySelectorAll('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3,.doc-surface span[data-doc-run=inline]')].find(p=>p.textContent.includes('Ribbon audit text.')),r=document.createRange();if(!p)throw Error('The ribbon test writing was not found');r.selectNodeContents(p);document.querySelector('.doc-surface').focus();getSelection().removeAllRanges();getSelection().addRange(r);document.dispatchEvent(new Event('selectionchange'));});
     await selectParagraph();await page.locator('[data-fontsize]').selectOption('12');await editorButton('data-size-step=up').click();assert.equal(await page.locator('[data-fontsize]').inputValue(),'14');
     await editorButton('data-ex=removeFormat').click();assert.notEqual(await page.locator('[data-fontsize]').inputValue(),'14');await editorButton('data-ex=undo').click();
     await editorButton('data-select-all').click();await editorButton('data-clipboard=copy').click();
     await page.waitForFunction(async()=> (await navigator.clipboard.readText()).includes('{{company.name}}'));
-    await selectParagraph();const text=await page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3').filter({hasText:'Ribbon audit text.'}).first().textContent();
+    await selectParagraph();const text=await page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3,.doc-surface span[data-doc-run=inline]').filter({hasText:'Ribbon audit text.'}).first().textContent();
     await editorButton('data-clipboard=cut').click();await page.waitForFunction(text=>!document.querySelector('.doc-surface').textContent.includes(text),text);
     await editorButton('data-clipboard=paste').click();await page.waitForFunction(text=>document.querySelector('.doc-surface').textContent.includes(text),text);
     await page.evaluate(()=>navigator.clipboard.writeText('Plain {{company.name}}'));
@@ -286,7 +293,7 @@ try {
     try {
       await page.locator('[data-tab=home]').click();
       for (let attempt = 0; attempt < 3; attempt++) {
-        const paragraph = page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3').filter({hasText:/Employee payslip layout\.|Ribbon audit text\./}).first();
+        const paragraph = page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3,.doc-surface span[data-doc-run=inline]').filter({hasText:/Employee payslip layout\.|Ribbon audit text\./}).first();
         await paragraph.click(); await page.keyboard.press('End');
         const text = ` Verified save ${attempt}.`;
         await page.keyboard.type(text);

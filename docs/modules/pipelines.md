@@ -929,3 +929,7 @@ Descriptive text-type options retain p/h1–h6 command values → existing forma
 Symbol picker → named native button (pointer or keyboard Enter) → existing insertHtml command at remembered selection → close modal → existing Undo/save pipeline. Presentation uses scoped grid centering instead of shared generic button alignment.
 
 Company-header edge click → select header → Inspect divider controls. Divider change/removal → validate choices and ancestor lock → beforeEdit history boundary → update inline border-bottom width/style/color only → existing change/save/shared/print pipeline. Removing the divider changes style to none; its fields and geometry remain, and Undo restores the previous border.
+
+Insert → Variable and sidebar Insert variable → shared variableDialog → existing catalog/token chip insertion at the remembered selection → existing undo/save/lock pipeline. Sidebar search/copy/formula/field management stays in its persistent panel.
+
+Single chip plus whitespace → direct range insertion of the complete fragment → caret after the trailing text node → existing command history/change. Other HTML retains its existing adapter; no catalog/permission/state duplication is introduced.
