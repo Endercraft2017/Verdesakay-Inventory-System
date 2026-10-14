@@ -120,3 +120,20 @@ it('shows cross-module pipelines with prerequisites, handoffs and access-aware s
   expect(view.querySelector('[data-guide-section="all"]').getAttribute('aria-pressed')).toBe('true');
   dom.window.close();
 });
+
+it('renders direction arrows and conditional sales branches without running business actions', async () => {
+  const {dom,w,routes,navigations}=await boot();
+  w.App.hasModule=()=>true;w.App.canAccessRoute=()=>true;
+  const view=w.document.querySelector('#view');
+  routes.sop(view,{topic:'sales-to-cash'});
+  expect(view.querySelectorAll('.workflow-stop')).toHaveLength(11);
+  expect(view.querySelectorAll('.workflow-connector')).toHaveLength(10);
+  expect(view.querySelectorAll('.workflow-branch')).toHaveLength(3);
+  expect(view.querySelector('.workflow-terminal')?.textContent).toContain('START');
+  expect(view.querySelector('.workflow-finish')?.textContent).toContain('FINISH');
+  expect(view.textContent).toContain('Already in stock?');
+  expect(view.textContent).toContain('Inspection failed?');
+  expect(view.querySelector('.workflow-branch button').dataset.pipelineStep).toBe('8');
+  expect(navigations).toEqual([]);
+  dom.window.close();
+});

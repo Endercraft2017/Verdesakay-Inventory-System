@@ -1661,11 +1661,35 @@ select option, select optgroup { background-color: var(--surface); color: var(--
 
 .guide-section-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
 .guide-section-tabs [aria-pressed="true"] { border-color:var(--accent); background:var(--accent-weak); }
-.pipeline-roadmap { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
-.pipeline-roadmap a { flex:1 1 170px; border:1px solid var(--border); border-radius:10px; padding:12px; color:var(--text); text-decoration:none; }
-.pipeline-roadmap a:hover { border-color:var(--accent); }
-.pipeline-roadmap span { color:var(--accent); font-weight:700; margin-right:8px; }
-.pipeline-roadmap small { display:block; color:var(--muted); margin-top:6px; }
+/* Connected workflow path: arrows show sequence, dashed branches show exceptions. */
+.workflow-map { margin:20px 0; padding:24px; border:1px solid var(--border); border-radius:16px; background:var(--surface); }
+.workflow-eyebrow { font-size:11px; font-weight:800; letter-spacing:.12em; color:var(--accent); }
+.workflow-map-head h4 { margin:6px 0; font-size:22px; }
+.workflow-map-head p, .workflow-map-note { color:var(--muted); font-size:13px; line-height:1.6; }
+.pipeline-roadmap { margin-top:22px; }
+.workflow-terminal { width:calc(65% - 18px); padding:10px 16px; border-radius:24px; background:var(--accent-weak); color:var(--accent); text-align:center; font-size:12px; font-weight:800; }
+.workflow-path { list-style:none; padding:16px 0; margin:0; }
+.workflow-stop { display:grid; grid-template-columns:minmax(0,65%) minmax(0,35%); align-items:start; }
+.workflow-main-stop { padding-right:18px; }
+.pipeline-roadmap a { display:flex; align-items:center; gap:14px; padding:16px; border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:12px; color:var(--text); background:var(--surface-2); text-decoration:none; }
+.pipeline-roadmap a:hover, .pipeline-roadmap a:focus-visible { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-weak); }
+.workflow-number { display:grid; place-items:center; width:34px; height:34px; flex-shrink:0; border-radius:50%; background:var(--accent-weak); color:var(--accent); font-weight:800; }
+.workflow-module { display:block; font-size:11px; color:var(--accent); margin-bottom:4px; }
+.pipeline-roadmap strong { display:block; font-size:15px; line-height:1.4; }
+.workflow-owner { display:block; font-size:12px; color:var(--muted); margin-top:5px; }
+.workflow-detail { margin-left:auto; font-size:11px; white-space:nowrap; color:var(--muted); }
+.workflow-connector { display:flex; align-items:center; justify-content:center; gap:8px; height:42px; color:var(--accent); }
+.workflow-connector span { font-size:30px; line-height:1; }
+.workflow-connector small { color:var(--muted); font-size:11px; }
+.workflow-branch { position:relative; margin:10px 0 20px 14px; padding:14px; border:1px dashed var(--accent); border-radius:10px; }
+.workflow-branch::before { content:'→'; position:absolute; right:100%; top:18px; width:32px; text-align:center; color:var(--accent); }
+.workflow-branch-label { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); }
+.workflow-branch h5 { margin:6px 0; font-size:14px; }
+.workflow-branch p { margin:0 0 8px; font-size:12px; line-height:1.6; color:var(--muted); }
+.workflow-branch button { border:0; padding:0; background:transparent; color:var(--accent); font:inherit; font-size:12px; cursor:pointer; text-align:left; }
+.workflow-finish { border:1px solid var(--accent); }
+@media(max-width:850px) { .workflow-map { padding:16px; } .workflow-stop { grid-template-columns:1fr; } .workflow-main-stop { padding-right:0; } .workflow-terminal { width:100%; box-sizing:border-box; } .workflow-branch { margin:0 0 18px 36px; } .workflow-branch::before { content:'↳'; } .workflow-detail { display:none; } }
+@media print { .workflow-map,.workflow-stop { break-inside:avoid; } .workflow-detail { display:none; } }
 .pipeline-check { padding:8px 10px; background:var(--surface-2); border-radius:6px; }
 @media print { .guide-section-tabs { display:none; } }
 

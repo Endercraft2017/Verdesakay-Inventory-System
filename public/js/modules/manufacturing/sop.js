@@ -69,6 +69,26 @@ App.register('sop', (view, filter) => {
     return '';
   }
 
+  function roadmapHTML(p) {
+    const branches = p.id === 'sales-to-cash' ? {
+      1: {label:'Already in stock?', body:'Skip the build. Ensure stock is at the ship-from location, then continue to sales release.', target:8, action:'Go to sales release', direction:'Shortcut'},
+      3: {label:'Parts missing?', body:'Purchase the missing components → receive goods → return to kit picking. A purchase draft alone does not add stock.', target:3, action:'Return to kit picking after receipt', direction:'Replenishment branch'},
+      6: {label:'Inspection failed?', body:'Repair → request added / replacement parts → warehouse issues parts → settle requests → re-inspect. Passed output continues down to receiving.', target:6, action:'Return to inspection after repair', direction:'Repair loop'},
+    } : {};
+    return `<section class="workflow-map" aria-label="Workflow roadmap">
+      <header class="workflow-map-head"><span class="workflow-eyebrow">WORKFLOW ROADMAP</span><h4>From start to finish</h4><p>Follow the arrows down. Each team hands the result to the next. Dashed branches apply only when needed.</p></header>
+      <nav class="pipeline-roadmap" aria-label="Pipeline roadmap">
+        <div class="workflow-terminal">START · ${UI.esc(p.steps[0].module)}</div>
+        <ol class="workflow-path">${p.steps.map((s,i)=>`<li class="workflow-stop">
+          <div class="workflow-main-stop"><a href="#pipeline-step-${i}" data-pipeline-step="${i}"><span class="workflow-number">${i+1}</span><div><small class="workflow-module">${UI.esc(s.module)}</small><strong>${UI.esc(s.title)}</strong><span class="workflow-owner">${UI.esc(s.role)}</span></div><span class="workflow-detail">Details ↗</span></a>
+          ${i<p.steps.length-1 ? `<div class="workflow-connector" aria-label="Next: ${UI.esc(p.steps[i+1].title)}"><span aria-hidden="true">↓</span><small>${s.module===p.steps[i+1].module ? 'Continue' : 'Team handoff'}</small></div>`:''}</div>
+          ${branches[i] ? `<aside class="workflow-branch"><span class="workflow-branch-label">${branches[i].direction}</span><h5>${branches[i].label}</h5><p>${branches[i].body}</p><button type="button" data-pipeline-step="${branches[i].target}">${branches[i].action} ↗</button></aside>`:''}
+        </li>`).join('')}</ol>
+        <div class="workflow-terminal workflow-finish">FINISH · ${UI.esc(p.steps.at(-1).title)}</div>
+      </nav><p class="workflow-map-note">This is the process sequence, not a live status tracker. Select a checkpoint for its instructions.</p>
+    </section>`;
+  }
+
   function draw() {
     navEl.querySelectorAll('.guide-nav-item').forEach((b) =>
       b.classList.toggle('active', b.dataset.id === active));
@@ -99,7 +119,7 @@ App.register('sop', (view, filter) => {
         </div>
       </div>
 
-      ${p.pipeline ? `<nav class="pipeline-roadmap" aria-label="Pipeline roadmap">${p.steps.map((s,i)=>`<a href="#pipeline-step-${i}" data-pipeline-step="${i}"><span>${i+1}</span>${UI.esc(s.title)}<small>${UI.esc(s.module)}</small></a>`).join('')}</nav><p class="muted">Select a checkpoint to read its prerequisites, action and handoff. Screen links respect your access.</p>` : ''}
+      ${p.pipeline ? roadmapHTML(p) : ''}
       <ol class="guide-steps">
         ${p.steps.map((s, idx) => `
           <li class="guide-step" id="pipeline-step-${idx}">
