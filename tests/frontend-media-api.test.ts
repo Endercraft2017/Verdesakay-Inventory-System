@@ -42,3 +42,32 @@ describe('authenticated attachment downloads', () => {
     dom.window.close();
   });
 });
+
+describe('attachment upload progress', () => {
+  it('reports actual bytes and preserves authentication and response handling', async () => {
+    const { dom, api, win } = client(vi.fn());
+    let xhr: any;
+    class FakeXHR {
+      upload: any = {};
+      status = 201;
+      responseText = '{"id":42}';
+      headers: any = {};
+      open = vi.fn();
+      setRequestHeader(key: string, value: string) { this.headers[key] = value; }
+      getResponseHeader(key: string) { return key.toLowerCase() === 'content-type' ? 'application/json' : null; }
+      send = vi.fn();
+      onload!: () => void;
+      constructor() { xhr = this; }
+    }
+    Object.assign(win, { XMLHttpRequest: FakeXHR });
+    const progress = vi.fn();
+    const pending = api.upload('/messages', new win.FormData(), { onProgress: progress });
+    xhr.upload.onprogress({ loaded: 500, total: 1000, lengthComputable: true });
+    expect(progress).toHaveBeenCalledWith({ loaded: 500, total: 1000 });
+    expect(xhr.headers.Authorization).toBe('Bearer test-token');
+    expect(xhr.headers['Content-Type']).toBeUndefined();
+    xhr.onload();
+    await expect(pending).resolves.toEqual({ id: 42 });
+    dom.window.close();
+  });
+});

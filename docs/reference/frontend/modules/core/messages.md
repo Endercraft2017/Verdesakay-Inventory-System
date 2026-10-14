@@ -103,3 +103,8 @@ animations respect reduced-motion preferences.
 Full-screen `PhotoViewer` and `AttachmentViewer` also keep media hidden until load
 completion and use a light-sweep loading tile. Download errors appear separately
 without replacing an existing preview.
+
+Desktop and mobile composers show preparing, actual upload percentage, and server
+saving phases through `MessageUpload`. Controls are disabled until the send finishes;
+failed sends retain the selected files for retry. Chat attachments keep a temporary
+database copy until the file bucket confirms durable storage.

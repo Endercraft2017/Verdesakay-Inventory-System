@@ -51,6 +51,33 @@
   }
   window.PhotoViewer = { open: open };
 
+  // Shared desktop/mobile composer feedback, with real bytes sent rather than a timer.
+  window.MessageUpload = {
+    create: function (host) {
+      var panel = document.createElement('div');
+      panel.className = 'message-upload';
+      panel.hidden = true;
+      panel.innerHTML = '<div class="message-upload-copy" role="status" aria-live="polite">Preparing files…</div><div class="message-upload-track" role="progressbar" aria-label="File upload" aria-valuemin="0" aria-valuemax="100"><span></span></div>';
+      host.after(panel);
+      var label = panel.querySelector('.message-upload-copy');
+      var track = panel.querySelector('.message-upload-track');
+      var fill = track.querySelector('span');
+      return {
+        start: function () { panel.hidden = false; panel.classList.add('is-indeterminate'); label.textContent = 'Preparing files…'; track.removeAttribute('aria-valuenow'); fill.style.width = ''; },
+        progress: function (event) {
+          if (!event.total) { label.textContent = 'Uploading files…'; return; }
+          var percent = Math.min(100, Math.floor(event.loaded / event.total * 100));
+          panel.classList.remove('is-indeterminate');
+          track.setAttribute('aria-valuenow', percent);
+          fill.style.width = percent + '%';
+          label.textContent = percent === 100 ? 'Upload complete · saving message…' : 'Uploading files · ' + percent + '%';
+          if (percent === 100) panel.classList.add('is-saving');
+        },
+        stop: function () { panel.hidden = true; panel.classList.remove('is-saving'); },
+      };
+    },
+  };
+
   function openAttachment(source, name, mime) {
     var ext = (name || '').split('.').pop().toLowerCase();
     var kind = ext === 'pdf' ? 'pdf' : (mime || '').startsWith('video/') || /^(mp4|webm|mov|m4v)$/i.test(ext) ? 'video'

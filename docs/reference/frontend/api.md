@@ -71,3 +71,7 @@ Binary attachments use `blobUrl(path)` with bearer authentication; paths may be
 API-relative or already prefixed with `/api/`. Server error messages are preserved.
 `download(path, filename)` clicks an attached save link and keeps its blob URL alive
 for 60 seconds so the browser has time to start saving.
+
+`upload(path, formData, { onProgress })` uses authenticated XMLHttpRequest upload
+events to report `{ loaded, total }` (total is null when unknown). Uploads without
+the callback continue using fetch; both share session and response handling.

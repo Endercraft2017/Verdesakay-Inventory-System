@@ -52,3 +52,21 @@ describe('full-screen attachment previews', () => {
     dom.window.close();
   });
 });
+
+it('shows upload progress and a saving phase, then clears the indicator', () => {
+  const dom = viewer({});
+  const host = dom.window.document.createElement('div');
+  dom.window.document.body.appendChild(host);
+  const status = (dom.window as any).MessageUpload.create(host);
+  status.start();
+  const panel = dom.window.document.querySelector('.message-upload') as HTMLElement;
+  expect(panel.hidden).toBe(false);
+  expect(panel.textContent).toContain('Preparing files');
+  status.progress({ loaded: 50, total: 100 });
+  expect(panel.querySelector('[role=progressbar]')?.getAttribute('aria-valuenow')).toBe('50');
+  status.progress({ loaded: 100, total: 100 });
+  expect(panel.textContent).toContain('saving message');
+  status.stop();
+  expect(panel.hidden).toBe(true);
+  dom.window.close();
+});

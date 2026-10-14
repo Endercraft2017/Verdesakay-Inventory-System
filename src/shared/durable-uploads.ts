@@ -4,8 +4,8 @@
  *
  * Where the recoverable copy lives: in the file bucket when one is configured
  * (src/shared/file-store.ts, FILES_S3_*), otherwise in the tenant database (`durable_uploads`,
- * and `message_attachments.data` for chat files). With a bucket the database holds no file
- * bytes, so it — and every hourly snapshot of it — stays small; src/platform/upload-offload.ts
+ * and `message_attachments.data` for chat files). Chat bytes remain in the database until
+ * the bucket confirms its copy; src/platform/upload-offload.ts
  * moves the bytes a database already held into the bucket. `.sync-blobs/` always keep a database copy
  * (they're transient and node-local). */
 import fs from 'node:fs';
@@ -47,15 +47,17 @@ function storeDurableBytes(safe: string, bytes: Buffer): void {
   );
 }
 
-/** For a chat attachment just written to disk: the bytes to keep in `message_attachments.data`,
- *  or null when the bucket keeps them instead. `onFallback` stores them after all if the send to
- *  the bucket fails. */
-export function messageBytesToKeep(file: string, onFallback: (bytes: Buffer) => void): Buffer | null {
-  if (!bucketManages(file)) return fs.readFileSync(file);
-  void sendNow(file).then((ok) => {
-    if (!ok && fs.existsSync(file)) onFallback(fs.readFileSync(file));
-  }).catch(() => { /* logged by sendNow */ });
-  return null;
+/** Keep chat bytes in the row until the bucket confirms its copy. The callback clears
+ *  the temporary database copy only after success; readers on another instance can
+ *  use the row immediately even while a large file is still reaching the bucket. */
+export function messageBytesToKeep(file: string, onStored: (bytes: null) => void): Buffer {
+  const bytes = fs.readFileSync(file);
+  if (bucketManages(file)) {
+    void sendNow(file).then((ok) => {
+      if (ok) onStored(null);
+    }).catch(() => { /* Keep the database copy on any failure. */ });
+  }
+  return bytes;
 }
 
 function restoreBytes(primary: string, bytes: Buffer): void {
