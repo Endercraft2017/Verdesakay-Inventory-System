@@ -753,6 +753,12 @@ export interface JobOrders {
   pause_reason: string | null;
 }
 
+export interface JobShortfallPurchases {
+  id: Generated<number>;
+  job_order_id: number;
+  purchase_order_id: number;
+}
+
 export interface JournalEntries {
   id: Generated<number>;
   number: string;
@@ -816,6 +822,7 @@ export interface LocationSites {
 export interface Locations {
   id: Generated<number>;
   name: string;
+  parent_id: number | null;
   type: Generated<string>;
   address: string | null;
   notes: string | null;
@@ -1668,6 +1675,7 @@ export interface DB {
   job_order_events: JobOrderEvents;
   job_order_units: JobOrderUnits;
   job_orders: JobOrders;
+  job_shortfall_purchases: JobShortfallPurchases;
   journal_entries: JournalEntries;
   journal_lines: JournalLines;
   kiosk_devices: KioskDevices;

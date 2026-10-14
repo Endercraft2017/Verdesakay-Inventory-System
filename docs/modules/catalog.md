@@ -76,7 +76,9 @@ already holds into the bucket after each minute sweep — deletes under `without
 (`sync/authority.ts`) so PCs keep their copies — then VACUUMs once. Never in the bucket:
 `.sync-blobs/` (keep DB copies), and kept on disk: `kiosk-punches/`, plain-text files
 (`TEXT_EXT`, the AI index reads them synchronously). Quota counts each file once wherever it is.
-Tests: `tests/file-store.test.ts`, `tests/upload-offload.test.ts` (fake S3).
+Chat attachments retain their database bytes until the bucket confirms storage; a failed upload
+keeps the recoverable database copy. Tests: `tests/file-store.test.ts`,
+`tests/upload-offload.test.ts` (fake S3), `tests/message-upload-durability.test.ts`.
 **Desk-scoped reads (`shared/desk-access.ts`):** the one list of which shop-floor desks (LINE,
 INSPECT, PARTS, RTS, RELEASE) may read which shared data — user decision 2026-10-06, "a floor role
 sees only its own desk". The broad `inventory.view` / `production.view` still open everything; a
