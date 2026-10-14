@@ -1148,3 +1148,12 @@ metadata, and Print grid are sidebar tools; grid controls remain available in me
 Zoom is in the footer, and More groups preferences/help/source editing. Live control nodes are
 moved rather than cloned, preserving selection handlers, undo, draft/shared and save state.
 The browser fixture sets an explicit test-only admin bootstrap for the current secure seed.
+
+The common Word ribbon pass adds Clipboard (Paste, Cut, Copy, Paste text), font-size
+steps, direct Clear formatting, Replace and Select all to Home. Insert exposes existing
+Header/Footer/Page number tools through the Pages sidebar. Ribbon groups use compact rows;
+custom select arrows avoid white native arrow areas while keeping native keyboard behavior.
+Clipboard text/HTML passes through existing canonical field serialization and sanitized paste.
+Denied access leaves content intact and offers keyboard fallback; delayed Cut/Paste aborts if
+the document or selection changes. Ribbon Cut is disabled while tracking text changes.
+Header/footer creation preserves selected body text, reuses existing elements and is undoable.

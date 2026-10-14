@@ -327,3 +327,29 @@ describe('field chip interaction',()=>{
   const API={get:vi.fn(async(path:string):Promise<Array<{id:number;name?:string;scope?:string;is_default?:boolean;fields?:Array<{key:string;label:string;type?:string}>}>>=>path==='/form-definitions'?[{id:1,name:'Leave request',scope:'hr',fields:[{key:'reason',label:'Reason',type:'text'}]}]:[{id:10,is_default:true}])};const {doc}=setup('<p>Template</p>',true,{getTemplateId:()=>10},{App:{hasPermission:(p:string):boolean=>p==='forms.manage.hr'},API});for(let i=0;i<12;i++)await Promise.resolve();doc.querySelector('[data-ins=variable]').click();doc.querySelector('[data-cat="Form: Leave request"]').click();expect(doc.querySelector('.var-pick').dataset.token).toBe('{{reason}}');
  });
 });
+
+
+describe('everyday Word-style ribbon commands',()=>{
+ it('steps font sizes through the existing model and undo history',()=>{
+  const {doc,root,ed,select}=setup('<p style="font-size:12pt">Text</p>',true);select(root.querySelector('p').firstChild,0,4);
+  doc.querySelector('[data-size-step=up]').click();expect(root.querySelector('p').innerHTML).toContain('14pt');ed._history.flush();ed._history.undo();expect(root.innerHTML).not.toContain('14pt');
+ });
+ it('applies font-size choices to an empty placeholder paragraph as pending typing format',()=>{
+  const {doc,w,root}=setup('<p><br></p>',true);const r=doc.createRange();r.selectNodeContents(root.querySelector('p'));w.getSelection().removeAllRanges();w.getSelection().addRange(r);doc.dispatchEvent(new w.Event('selectionchange'));
+  const size=doc.querySelector('[data-fontsize]');size.value='12';size.dispatchEvent(new w.Event('change',{bubbles:true}));doc.querySelector('[data-size-step=up]').click();expect(size.value).toBe('14');expect(root.innerHTML).toContain('<br>');expect(doc.querySelector('.doc-save-status').textContent).toBe('No unsaved changes');
+ });
+ it('selects the document without creating an edit, and disables editing tools for locked content',()=>{
+  const {doc,w,root}=setup('<p>Text</p><p data-doc-locked="true">Protected</p>',true);doc.querySelector('[data-select-all]').click();
+  expect(w.getSelection().toString()).toContain('Protected');expect(doc.querySelector('.doc-save-status').textContent).toBe('No unsaved changes');expect(doc.querySelector('[data-size-step=up]').disabled).toBe(true);expect(doc.querySelector('[data-clipboard=cut]').disabled).toBe(true);expect(doc.querySelector('[data-clipboard=copy]').disabled).toBe(false);
+ });
+ it('never deletes a selection when clipboard Cut is denied',async()=>{
+  const {doc,w,root,select}=setup('<p>Text</p>',true);Object.defineProperty(w.navigator,'clipboard',{value:{writeText:vi.fn(async()=>{throw Error('Denied');})},configurable:true});select(root.querySelector('p').firstChild,0,4);doc.querySelector('[data-clipboard=cut]').click();await new Promise(r=>setTimeout(r,0));expect(root.textContent).toBe('Text');expect(doc.querySelector('.doc-save-status').textContent).toBe('No unsaved changes');
+ });
+ it('does not cut at a changed selection while clipboard permission is pending',async()=>{
+  const {doc,w,root,select}=setup('<p>First Second</p>',true);let finish!:()=>void;Object.defineProperty(w.navigator,'clipboard',{value:{writeText:vi.fn(()=>new Promise<void>(r=>{finish=r;}))},configurable:true});select(root.querySelector('p').firstChild,0,5);doc.querySelector('[data-clipboard=cut]').click();select(root.querySelector('p').firstChild,6,12);finish();await new Promise(r=>setTimeout(r,0));expect(root.textContent).toBe('First Second');expect(doc.querySelector('.doc-save-status').textContent).toBe('No unsaved changes');
+ });
+ it('adds reusable headers/footers without replacing selected writing, with undo',()=>{
+  const {doc,root,ed,select}=setup('<p>Text</p>');select(root.querySelector('p').firstChild,0,4);doc.querySelector('[data-open-page-tool=header]').click();expect(root.querySelector('.doc-running-header').textContent).toBe('Document header');expect(root.querySelector('p').textContent).toBe('Text');ed._history.flush();ed._history.undo();expect(root.querySelector('.doc-running-header')).toBeNull();
+  select(root.querySelector('p').firstChild,0,4);doc.querySelector('[data-open-page-tool=footer]').click();expect(root.querySelector('.doc-running-footer').textContent).toBe('Document footer');expect(root.querySelector('p').textContent).toBe('Text');doc.querySelector('[data-open-page-tool=footer]').click();expect(root.querySelectorAll('.doc-running-footer')).toHaveLength(1);
+ });
+});

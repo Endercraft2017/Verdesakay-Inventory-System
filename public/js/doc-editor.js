@@ -843,6 +843,18 @@ function ensureStyles() {
       .doc-fs .doc-view-tools select{width:90px}.doc-view-tools .doc-zoom-info{display:none}
     }
 `;
+  el.textContent += `
+    .doc-font-controls{display:flex;flex-direction:column;gap:4px}.doc-font-pickers,.doc-font-effects{display:flex;align-items:center;gap:3px;flex-wrap:nowrap}.doc-font-pickers button,.doc-font-effects button{min-width:28px;padding:3px 5px}.doc-font-pickers select[data-cmd=fontName]{width:130px}
+    .doc-panel[data-panel=home] .doc-group-row{flex-wrap:wrap}.doc-panel[data-panel=home] .doc-group[aria-label=Font]{min-width:0;flex:0 1 325px}
+    .doc-clipboard-controls{display:grid;grid-template-columns:1fr 1fr;gap:3px}.doc-clipboard-controls button{padding:3px 7px}
+    .doc-paragraph-controls{display:grid;grid-template-columns:repeat(5,auto);gap:3px;align-items:center}
+    .doc-panel[data-panel=home] .doc-group[aria-label=Styles] .doc-group-row,.doc-panel[data-panel=home] .doc-group[aria-label=Editing] .doc-group-row{flex-direction:column;gap:3px}
+    .doc-panel[data-panel=home] select[data-fontsize]{width:80px}
+    .doc-fs select,.doc-fs .doc-view-tools select,.modal-overlay select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' fill='none' stroke='%235d6b84' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:27px!important}
+    [data-theme=dark] .doc-fs select,[data-theme=dark] .doc-fs .doc-view-tools select,[data-theme=dark] .modal-overlay select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' fill='none' stroke='%23b8b5cc' stroke-width='1.5'/%3E%3C/svg%3E")}
+    .doc-fs select:hover,.modal-overlay select:hover{background-color:var(--surface-2);border-color:var(--accent)}
+    @media(max-width:760px){.doc-panel[data-panel=home] .doc-group[aria-label=Font]{flex:1 1 100%}.doc-font-controls{width:100%}.doc-font-pickers,.doc-font-effects{flex-wrap:wrap}.doc-paragraph-controls{grid-template-columns:repeat(5,auto)}}
+`;
   document.head.appendChild(el);
 }
 
@@ -863,11 +875,13 @@ function tabsHTML() {
 }
 
 function homePanelHTML() {
-  const font = groupHTML('Font', `
+  const clipboard = groupHTML('Clipboard', `<div class="doc-clipboard-controls"><button type="button" data-clipboard="paste" title="Paste from clipboard (Ctrl+V)">Paste</button><button type="button" data-clipboard="cut" title="Cut selected content (Ctrl+X)">Cut</button><button type="button" data-clipboard="copy" title="Copy selected content (Ctrl+C)">Copy</button><button type="button" data-clipboard="plain" title="Paste text without formatting">Paste text</button></div>`);
+  const font = groupHTML('Font', `<div class="doc-font-controls"><div class="doc-font-pickers">
 
     <select data-cmd="fontName" title="Font">${FONTS.map((f) => `<option value="${f}">${f}</option>`).join('')}</select>
     <select data-fontsize title="Font size (pt)">${SIZES.map((s) => `<option value="${s}" ${s === 12 ? 'selected' : ''}>${s}</option>`).join('')}</select>
-    <span class="tb-sep"></span>
+    <button type="button" data-size-step="up" title="Increase font size">A↑</button><button type="button" data-size-step="down" title="Decrease font size">A↓</button>
+    </div><div class="doc-font-effects">
     <button type="button" data-ex="bold" title="Bold"><b>B</b></button>
     <button type="button" data-ex="italic" title="Italic"><i>I</i></button>
     <button type="button" data-ex="underline" title="Underline"><u>U</u></button>
@@ -876,8 +890,8 @@ function homePanelHTML() {
     <details class="doc-format-extra"><summary aria-label="More text formatting" title="More text formatting">More</summary><div class="doc-format-popover">    <button type="button" data-ex="strikeThrough" title="Strikethrough">Strikethrough</button>
     <button type="button" data-ex="superscript" title="Superscript">Superscript</button>
     <button type="button" data-ex="subscript" title="Subscript">Subscript</button>
-<button type="button" data-ex="removeFormat" title="Clear formatting">Clear formatting</button></div></details>`);
-  const paragraph = groupHTML('Paragraph', `
+</div></details><button type="button" data-ex="removeFormat" title="Clear formatting">T×</button></div></div>`);
+  const paragraph = groupHTML('Paragraph', `<div class="doc-paragraph-controls">
     <button type="button" data-ex="justifyLeft" title="Align left">${docIcon('justifyLeft')}</button>
     <button type="button" data-ex="justifyCenter" title="Align center">${docIcon('justifyCenter')}</button>
     <button type="button" data-ex="justifyRight" title="Align right">${docIcon('justifyRight')}</button>
@@ -886,13 +900,13 @@ function homePanelHTML() {
     <button type="button" data-ex="insertOrderedList" title="Numbered list">1≣</button>
     <button type="button" data-ex="outdent" title="Decrease indent">⇤</button>
     <button type="button" data-ex="indent" title="Increase indent">⇥</button>
-    <button type="button" data-paragraph title="Paragraph spacing and indentation">Spacing</button>`);
+    <button type="button" data-paragraph title="Paragraph spacing and indentation">Spacing</button></div>`);
   const styles = groupHTML('Styles', `    <select data-cmd="formatBlock" title="Paragraph style">
       <option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="h4">Heading 4</option><option value="h5">Heading 5</option><option value="h6">Heading 6</option>
     </select><button type="button" data-open-panel="Styles" title="Apply or customize named paragraph styles">Manage styles</button>`);
   const editing = groupHTML('Editing', `
-    <button type="button" class="doc-tile" data-find title="Find &amp; replace (Ctrl+F)"><span class="doc-tile-ic">${docIcon('search')}</span><span class="doc-tile-lbl">Find</span></button>`);
-  return font + paragraph + styles + editing;
+    <button type="button" class="doc-tile" data-find title="Find &amp; replace (Ctrl+F)"><span class="doc-tile-ic">${docIcon('search')}</span><span class="doc-tile-lbl">Find</span></button><button type="button" data-replace title="Find and replace text">Replace</button><button type="button" data-select-all title="Select all document content (Ctrl+A)">Select all</button>`);
+  return clipboard + font + paragraph + styles + editing;
 }
 
 function tile(kind, value, icon, label, extraClass) {
@@ -908,7 +922,8 @@ function insertPanelHTML() {
   // These are mounted in the Variables sidebar after the existing command listeners
   // are wired. Moving their live nodes preserves selection and avoids duplicate commands.
   const template = `<div data-template-actions hidden>${groupHTML('Template fields', tile('ins', 'variable', '{ }', 'Insert variable', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Insert formula', 'btn-fx') + `<button type="button" data-managevars title="Create, rename or remove template fields">${docIcon('variable')}Manage fields</button>`)}</div>`;
-  return tables + illustrations + text + symbols + template;
+  const running = groupHTML('Header &amp; footer', ['header','footer','pagenumber'].map((action,index)=>`<button type="button" data-open-page-tool="${action}" title="Insert ${['a repeating header','a repeating footer','a page number'][index]}">${['Header','Footer','Page number'][index]}</button>`).join(''));
+  return tables + illustrations + text + running + symbols + template;
 }
 
 function layoutPanelHTML() {
@@ -1478,6 +1493,10 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     const sel = window.getSelection();
     if (savedBackwards) sel.setBaseAndExtent(savedRange.endContainer,savedRange.endOffset,savedRange.startContainer,savedRange.startOffset);
     else { sel.removeAllRanges(); sel.addRange(savedRange); }
+    const range=sel.getRangeAt(0),node=range.startContainer;
+    // Selecting the lone placeholder break in an empty paragraph is still a typing position.
+    // Collapsing it lets the existing pending-format path handle ribbon font choices.
+    if(!range.collapsed&&node===range.endContainer&&node.nodeType===1&&node.matches('p,h1,h2,h3,h4,h5,h6,li')&&[...node.childNodes].every(child=>child.nodeType===8||(child.nodeType===3&&!child.textContent.trim())||(child.nodeType===1&&child.tagName==='BR')))range.collapse(true);
     return true;
   };
   const editableSelection = history => {
@@ -1550,6 +1569,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
 
   ['mouseup', 'keyup'].forEach((ev) => surface.addEventListener(ev, () => { saveSel(); updateTableBar(); }));
 
+  panelsRoot.querySelectorAll('[data-size-step],[data-select-all],[data-clipboard]').forEach(button=>button.addEventListener('mousedown',e=>{saveSel();e.preventDefault();}));
   panelsRoot.querySelectorAll('[data-ex]').forEach((b) => {
     b.addEventListener('mousedown', (e) => { saveSel(); e.preventDefault(); });
     b.addEventListener('click', () => {
@@ -1560,6 +1580,18 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   panelsRoot.querySelectorAll('[data-color]').forEach((inp) => inp.addEventListener('input', () => exec(inp.dataset.color, inp.value)));
 
   panelsRoot.querySelector('[data-fontsize]').addEventListener('change', e => commands.run('format.size',e.target.value));
+  panelsRoot.querySelectorAll('[data-size-step]').forEach(button=>button.addEventListener('click',()=>{
+    restoreSel();reflect();const current=Number(panelsRoot.querySelector('[data-fontsize]').value);
+    if(!current){UI.toast('Choose a common font size for mixed text first');return;}
+    const steps=[...SIZES,80,90,100,120,144,180,200,240,300,360,400];
+    const next=button.dataset.sizeStep==='up'?(steps.find(size=>size>current)||400):([...steps].reverse().find(size=>size<current)||1);
+    commands.run('format.size',next);
+  }));
+  panelsRoot.querySelector('[data-select-all]').addEventListener('click',()=>{
+    if(commandContext.isComposing?.()||commandContext.isVisual?.()===false)return;
+    surface.focus();const range=document.createRange();range.selectNodeContents(surface);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);saveSel();reflect();
+  });
+
 
   panelsRoot.querySelector('[data-paragraph]').addEventListener('mousedown',e=>{saveSel();e.preventDefault();});
   panelsRoot.querySelector('[data-paragraph]').addEventListener('click',()=>{
@@ -1827,6 +1859,32 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     box.querySelectorAll('td,th').forEach(el=>el.append(document.createTextNode('\t')));
     return {html,text:(box.textContent || '').replace(/[\t\n]+$/,'')};
   };
+  panelsRoot.querySelectorAll('[data-clipboard]').forEach(button=>button.addEventListener('click',async()=>{
+    const action=button.dataset.clipboard;restoreSel();
+    if(commandContext.isComposing?.()||commandContext.isVisual?.()===false)return;
+    const bookmark=JSON.stringify(captureEditorSelection(surface)),body=serializeEditor(surface);
+    const unchanged=()=>surface.isConnected&&serializeEditor(surface)===body&&JSON.stringify(captureEditorSelection(surface))===bookmark;
+    try{
+      if(action==='copy'||action==='cut'){
+        const value=clipboardSelection();if(!value){UI.toast('Select content to '+action);return;}
+        if(action==='cut'&&(!commands.state('edit.deleteSelection').enabled||trackingText())){UI.toast('Select unlocked content and turn tracking off to use ribbon Cut','error');return;}
+        if(navigator.clipboard?.write&&window.ClipboardItem)await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([value.html],{type:'text/html'}),'text/plain':new Blob([value.text],{type:'text/plain'})})]);
+        else if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(value.text);
+        else throw Error('Clipboard unavailable');
+        if(action==='cut'){if(!unchanged()){UI.toast('Copied. The selection changed, so nothing was cut.');return;}commands.run('edit.deleteSelection');}
+        else UI.toast('Copied to clipboard');
+      }else{
+        if(!commands.state('insert.text').enabled){UI.toast('Select an unlocked editing position','error');return;}
+        let html='',text='';
+        if(action==='paste'&&navigator.clipboard?.read){const items=await navigator.clipboard.read();for(const item of items){if(item.types.includes('text/html'))html=await (await item.getType('text/html')).text();if(item.types.includes('text/plain'))text=await (await item.getType('text/plain')).text();if(html||text)break;}}
+        else if(navigator.clipboard?.readText)text=await navigator.clipboard.readText();else throw Error('Clipboard unavailable');
+        if(!unchanged()){UI.toast('The editing position changed. Select where to paste and try again.');return;}
+        if(!html&&!text){UI.toast('Clipboard has no text. Use Ctrl / ⌘ V to paste an image.');return;}
+        const transfer=new DataTransfer();if(html)transfer.setData('text/html',html);transfer.setData('text/plain',text);
+        surface.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:transfer}));
+      }
+    }catch{UI.toast('Clipboard access unavailable. Use Ctrl / ⌘ '+(action==='copy'?'C':action==='cut'?'X':'V')+' instead.','error');}
+  }));
   surface.addEventListener('copy', e => {
     const value=clipboardSelection();if(!value || !e.clipboardData)return;
     e.clipboardData.setData('text/html',value.html);e.clipboardData.setData('text/plain',value.text);e.preventDefault();
@@ -1925,6 +1983,8 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
       b.classList.toggle('active',state.active);b.setAttribute('aria-pressed',String(state.active));
     });
     panelsRoot.querySelectorAll('[data-cmd],[data-color],[data-fontsize]').forEach(control=>{control.disabled=!commands.state(control.hasAttribute('data-fontsize')?'format.size':commands.idForNative(control.dataset.cmd||control.dataset.color)).enabled;});
+    panelsRoot.querySelectorAll('[data-size-step]').forEach(button=>button.disabled=!commands.state('format.size').enabled);
+    const selected=!!sel?.rangeCount&&!sel.isCollapsed&&surface.contains(sel.anchorNode)&&surface.contains(sel.focusNode);panelsRoot.querySelectorAll('[data-clipboard]').forEach(button=>{const action=button.dataset.clipboard;button.disabled=action==='copy'?!selected:action==='cut'?(!selected||trackingText()||!commands.state('edit.deleteSelection').enabled):!commands.state('insert.text').enabled;});
   };
   document.addEventListener('selectionchange', reflect);
 
@@ -2861,7 +2921,7 @@ function mountStudio(fs, surface, opts, api) {
   printTools.addEventListener('change',printSummary);
   const utility=fs.querySelector('[data-tools]');utility.hidden=true;utility.style.display='none';
   function openPanel(name){if(!toolNames[name])return;remember();tab=name;render();showInspector(true);}
-  const onOpenPanel=e=>{const button=e.target.closest('[data-open-panel]');if(button)openPanel(button.dataset.openPanel);};
+  const onOpenPanel=e=>{const button=e.target.closest('[data-open-panel],[data-open-page-tool]');if(!button)return;if(button.dataset.openPageTool){openPanel('Pages');panel.querySelector('[data-do='+button.dataset.openPageTool+']')?.click();}else openPanel(button.dataset.openPanel);};
   fs.addEventListener('click',onOpenPanel);
 
   const style = document.createElement('style'); style.textContent = `.doc-workspace{display:flex;flex:1;min-height:0;overflow:hidden}.doc-workspace>.doc-canvas{min-width:0;flex:1}.doc-studio-side{width:280px;flex-shrink:0;background:var(--surface,#fff);border-left:1px solid var(--border,#ddd);overflow:auto;font-size:12px;color:var(--text,#222)}.doc-studio-side nav{display:grid;grid-template-columns:repeat(3,1fr);padding:8px;gap:4px;position:sticky;top:0;background:var(--surface,#fff);z-index:2}.doc-studio-side button{font:inherit;cursor:pointer;border:1px solid var(--border,#ddd);background:var(--surface,#fff);color:inherit;border-radius:var(--radius-sm,8px);padding:8px}.doc-studio-side button[aria-pressed=true]{background:var(--accent-weak,#edf3fc);color:var(--accent,#2765aa)}.doc-studio-body{padding:14px;display:flex;flex-direction:column;gap:10px}.doc-studio-body h3{font-size:14px;margin:4px 0}.doc-studio-body p{margin:0;line-height:1.6}.doc-studio-body label{display:flex;flex-direction:column;gap:5px;margin:0}.doc-studio-body input,.doc-studio-body textarea{font-weight:400!important}.doc-studio-body input,.doc-studio-body select,.doc-studio-body textarea{box-sizing:border-box;width:100%;padding:7px;border:1px solid var(--border,#ddd);border-radius:var(--radius-sm,8px);color:inherit;background:var(--surface,#fff);font:inherit}.doc-studio-body textarea{min-height:130px}.doc-prop-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.doc-layer{display:flex;gap:4px;align-items:center}.doc-layer>button{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis}.doc-layer input{width:auto}.doc-studio-note{padding:12px;margin:0;font-size:11px;color:var(--text-muted,#666)}.doc-page [data-doc-locked=true]{cursor:default}.doc-page-guide{position:absolute;left:0;right:0;border-top:1px dashed #91a4bb;pointer-events:none;z-index:1002;font:11px system-ui;color:#60718a}.doc-page .doc-pagebreak{border-top:1px dashed #91a4bb;height:20px;margin:12px 0}.doc-page .doc-pagebreak:after{content:'Page break';font:11px system-ui;color:#60718a}.doc-page [data-doc-hidden=true]{display:none!important}@media(max-width:1000px){.doc-studio-side{width:230px}}@media(max-width:760px){.doc-workspace{flex-direction:column}.doc-studio-side{width:100%;max-height:220px;border-left:0;border-top:1px solid var(--border,#ddd)}.doc-studio-side nav{grid-template-columns:repeat(6,1fr)}.doc-studio-body{padding:10px}.doc-studio-body .doc-prop-grid{grid-template-columns:repeat(4,1fr)}}`;
@@ -2995,9 +3055,13 @@ function mountStudio(fs, surface, opts, api) {
     if(action==='picture'){const img=el?.tagName==='IMG'?el:el?.dataset.floatKind==='image'?el.querySelector('img'):null;editPicture(img,()=>{changed();render();});return;}
     if(action==='pageview'){api.pageView();return;}
     if(action==='pagebreak')insert('<div class="doc-pagebreak" style="break-after:page"></div><p><br></p>');
-    if(action==='header')insert('<div class="doc-running-header">Document header</div>');
-    if(action==='footer')insert('<div class="doc-running-footer">Document footer</div>');
-    if(action==='pagenumber')insert('<span class="doc-page-number"></span>');
+    if(['header','footer','pagenumber'].includes(action)){
+      if(elLocked(el)||surface.closest('[data-doc-locked="true"]')){note.textContent='Select an unlocked editing position first.';return;}
+      const cls=action==='pagenumber'?'doc-page-number':'doc-running-'+action;
+      let node=surface.querySelector('.'+cls);
+      if(!node){api.beforeEdit();node=document.createElement(action==='pagenumber'?'span':'div');node.className=cls;node.textContent=action==='pagenumber'?'':'Document '+action;if(action==='header')surface.prepend(node);else surface.append(node);changed();}
+      surface.focus();const range=document.createRange();range.selectNodeContents(node);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);node.scrollIntoView?.({block:'nearest'});return;
+    }
     if(['duplicate','forward','back','saveStyle','saveAsset'].includes(action)&&(!el||elLocked(el))){note.textContent='Select an unlocked object or text block first.';return;}
     if(action==='duplicate'){const root=document.createElement('div');root.append(el.cloneNode(true));insert(serializeEditor(root));}
     if(action==='forward'||action==='back'){el.style.zIndex=String((+el.style.zIndex||0)+(action==='forward'?1:-1));changed();render();}
@@ -3712,6 +3776,7 @@ function open(opts = {}) {
     findBar.querySelector('.doc-find-q').focus();
   }
   fs.querySelector('[data-find]').addEventListener('click', toggleFind);
+  fs.querySelector('[data-replace]').addEventListener('click',()=>{if(!findBar)toggleFind();findBar?.querySelector('.doc-find-r').focus();});
 
   fs.querySelectorAll('[data-preview]').forEach((b) => b.addEventListener('click', togglePreview));
   fs.querySelectorAll('[data-help]').forEach(button=>button.addEventListener('click',docEditorHelpDialog));

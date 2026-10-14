@@ -360,3 +360,13 @@ sidebar groups; fields/formulas, form links and print grids no longer compete wi
 writing controls in the header/ribbon. Grid settings remain usable in measured preview.
 This is UI organization; the engine's next step remains phase 2 slice 5. See the layout
 review under `docs/reviews/editor-layout-wordcraft-2026-10-14.md` for validation and limits.
+
+### Common Word ribbon commands — 14 October 2026
+
+Using the same Wordcraft ribbon reference, Home adds Clipboard, font-size steps, direct Clear
+formatting, Replace and Select all; Insert adds Header/Footer/Page number entry points.
+Commands reuse our selection/model/history/paste/print pipelines. Clipboard errors and async
+selection changes preserve content. Header/footer insertion no longer replaces selected writing.
+Compact groups and themed custom select arrows retain the app design convention.
+This is a ribbon usability slice; phase 2 slice 5 and broader Word feature parity remain pending.
+See `docs/reviews/editor-common-ribbon-2026-10-14.md` for checks and browser clipboard limits.

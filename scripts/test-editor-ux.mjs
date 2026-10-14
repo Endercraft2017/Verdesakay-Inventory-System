@@ -190,13 +190,40 @@ try {
     await page.locator('.doc-surface img').click(); await editorButton('data-studio-tab=Properties').click();
     await editorButton('data-do=picture').click(); await scan('dialog-picture-'+theme+'-'+width,'[role=dialog]'); await closeDialog('Picture settings'); await editorButton('data-inspector-close').click();
     await page.keyboard.press('Control+f'); await page.locator('.doc-find').waitFor(); await scan('find-'+theme+'-'+width); await page.keyboard.press('Escape');
-    await page.locator('[data-tab=home]').click();await page.locator('.doc-surface p').first().click();
+    await page.locator('[data-tab=home]').click();await page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).first().click();
     await editorButton('data-paragraph').click();await scan('dialog-paragraph-'+theme+'-'+width,'[role=dialog]');await closeDialog('Paragraph spacing');
     await editorButton('data-studio-tab=Styles').click();await editorButton('data-adv=style-edit').first().click();await scan('dialog-style-'+theme+'-'+width,'[role=dialog]');
     const styleTitle=await page.getByRole('dialog').getAttribute('aria-label');await closeDialog(styleTitle);await editorButton('data-inspector-close').click();
     await editorButton('data-studio-tab=Pages').click();await editorButton('data-adv=section').click();await scan('dialog-section-'+theme+'-'+width,'[role=dialog]');await closeDialog('Insert section');await editorButton('data-inspector-close').click();
   }
   await page.setViewportSize({width:1440,height:1000});
+  await check('Everyday ribbon tools format, copy/cut/paste fields, replace and insert page furniture', async () => {
+    await page.locator('[data-tab=home]').click();
+    await page.evaluate(()=>{const p=[...document.querySelectorAll('.doc-surface p')].find(p=>p.textContent.includes('Employee payslip layout.')),r=document.createRange();r.selectNodeContents(p);r.collapse(false);document.querySelector('.doc-surface').focus();getSelection().removeAllRanges();getSelection().addRange(r);});await page.keyboard.type('Ribbon audit text.');
+    const selectParagraph=()=>page.evaluate(()=>{const p=[...document.querySelectorAll('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3')].find(p=>p.textContent.includes('Ribbon audit text.')),r=document.createRange();if(!p)throw Error('The ribbon test paragraph was not found');r.selectNodeContents(p);document.querySelector('.doc-surface').focus();getSelection().removeAllRanges();getSelection().addRange(r);document.dispatchEvent(new Event('selectionchange'));});
+    await selectParagraph();await page.locator('[data-fontsize]').selectOption('12');await editorButton('data-size-step=up').click();assert.equal(await page.locator('[data-fontsize]').inputValue(),'14');
+    await editorButton('data-ex=removeFormat').click();assert.notEqual(await page.locator('[data-fontsize]').inputValue(),'14');await editorButton('data-ex=undo').click();
+    await editorButton('data-select-all').click();await editorButton('data-clipboard=copy').click();
+    await page.waitForFunction(async()=> (await navigator.clipboard.readText()).includes('{{company.name}}'));
+    await selectParagraph();const text=await page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3').filter({hasText:'Ribbon audit text.'}).first().textContent();
+    await editorButton('data-clipboard=cut').click();await page.waitForFunction(text=>!document.querySelector('.doc-surface').textContent.includes(text),text);
+    await editorButton('data-clipboard=paste').click();await page.waitForFunction(text=>document.querySelector('.doc-surface').textContent.includes(text),text);
+    await page.evaluate(()=>navigator.clipboard.writeText('Plain {{company.name}}'));
+    const count=await page.locator('.doc-surface [data-token="company.name"]').count();
+    await editorButton('data-clipboard=plain').click();await page.waitForFunction(count=>document.querySelectorAll('.doc-surface [data-token="company.name"]').length===count+1,count);await editorButton('data-ex=undo').click();
+    await editorButton('data-replace').click();assert(await page.locator('.doc-find-r').evaluate(el=>el===document.activeElement));await page.keyboard.press('Escape');
+    await page.locator('[data-tab=insert]').click();
+    for(const [action,selector] of [['header','.doc-running-header'],['footer','.doc-running-footer'],['pagenumber','.doc-page-number']]){await selectParagraph();await editorButton('data-open-page-tool='+action).click();assert(await page.locator('.doc-surface '+selector).count());assert((await page.locator('.doc-surface').textContent()).includes('Ribbon audit text.'));await editorButton('data-ex=undo').click();await editorButton('data-inspector-close').click();}
+  });
+  await check('Dark select hover keeps a themed surface and a custom arrow', async()=>{
+    await page.evaluate(()=>document.documentElement.dataset.theme='dark');await page.locator('[data-tab=home]').click();
+    const select=page.locator('[data-cmd=formatBlock]');await select.hover();
+    const style=await select.evaluate(el=>({appearance:getComputedStyle(el).appearance,background:getComputedStyle(el).backgroundColor,image:getComputedStyle(el).backgroundImage}));
+    assert.equal(style.appearance,'none');assert.notEqual(style.background,'rgb(255, 255, 255)');assert.notEqual(style.image,'none');
+    assert((await page.locator('.doc-panel[data-panel=home]').boundingBox()).height<140,'Desktop Home ribbon should stay compact');
+    const zoom=await page.locator('.doc-view-tools select').evaluate(el=>({repeat:getComputedStyle(el).backgroundRepeat,image:getComputedStyle(el).backgroundImage}));assert.equal(zoom.repeat,'no-repeat');assert.notEqual(zoom.image,'none');
+    await page.screenshot({path:path.join(output,'dark-select-hover.png')});
+  });
   await check('Page size swaps and undo restores both dimensions', async () => {
     await page.locator('[data-tab=layout]').click();
     await page.locator('.doc-custom-w').fill('180'); await page.locator('.doc-custom-w').press('Tab');
@@ -236,7 +263,7 @@ try {
     try {
       await page.locator('[data-tab=home]').click();
       for (let attempt = 0; attempt < 3; attempt++) {
-        const paragraph = page.locator('.doc-surface p').first();
+        const paragraph = page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3').filter({hasText:/Employee payslip layout\.|Ribbon audit text\./}).first();
         await paragraph.click(); await page.keyboard.press('End');
         const text = ` Verified save ${attempt}.`;
         await page.keyboard.type(text);

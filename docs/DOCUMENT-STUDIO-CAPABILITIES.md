@@ -175,3 +175,11 @@ losing selection. The page fits available width initially; footer Fit/zoom contr
 always available while editing. Phone formatting wraps without horizontal overflow, and
 Save remains visible. Keyboard tab navigation and Escape dismiss menus without closing
 the document. The guide and existing form/field, recovery and print tools remain available.
+
+Home also provides Clipboard (Paste, Cut, Copy, Paste text), increase/decrease font size,
+Clear formatting, Replace and Select all. Paste text strips clipboard formatting and restores
+recognized field tokens. Browser clipboard denial offers Ctrl/Command keyboard alternatives;
+image paste continues through Ctrl/Command+V. Ribbon Cut requires tracking to be off.
+Insert exposes Header, Footer and Page number; these preserve selected writing, select/reuse
+existing running elements and can be undone. They use the existing repeating print elements.
+Themed select arrows avoid native white hover patches, including editor dialogs and zoom.

@@ -911,3 +911,13 @@ pipeline; measured preview keeps these controls visible and source design scalin
 More-menu action → focus visible summary before opening dialog → modal returns focus to summary.
 The Sidebar Help action uses the same editor guide; new-template and guide wording follow the
 new tool locations. Existing authored template HTML is unchanged by navigation/layout changes.
+
+Ribbon Clipboard → restore remembered document selection → capture document/bookmark →
+async browser clipboard permission/read/write → compare current document/bookmark →
+Cut through command deleteSelection, or Paste through existing sanitized paste event.
+Copy serializes chips to canonical {{tokens}} in plain text and retains editor HTML.
+Clipboard failure never deletes text; selection/content changes cancel destructive completion.
+Font-size steps → selected size/readout → existing format.size command and history; empty
+placeholder selection becomes a caret for pending formatting rather than a fabricated edit.
+Insert header/footer/page number → Pages panel's existing action → append/prepend missing
+running element without replacing the selected body → existing history/save/print pipeline.
