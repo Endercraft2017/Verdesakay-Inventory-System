@@ -644,6 +644,7 @@ export interface InventoryItems {
   unit: Generated<string | null>;
   min_quantity: Generated<number>;
   location: string | null;
+  preferred_location_id: number | null;
   notes: string | null;
   attributes: string | null;
   image_path: string | null;
