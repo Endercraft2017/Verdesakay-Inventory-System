@@ -875,6 +875,15 @@ function ensureStyles() {
       .doc-fs .doc-panel[data-panel=home] .doc-group-cap{font-size:9px}
     }
 `;
+  el.textContent += `
+    .doc-fs .doc-panel[data-panel=home] [data-cmd=formatBlock]{width:155px}
+    .doc-style-card{display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:6px}
+    .doc-studio-side .doc-style-apply{display:flex;flex-direction:column;align-items:flex-start;gap:5px;text-align:left;padding:10px;background:var(--surface-2)}
+    .doc-style-preview{line-height:1.25;color:var(--text)}
+    .doc-style-meaning{font-size:12px;line-height:1.4;color:var(--text)}
+    .doc-style-meta{font-size:11px;line-height:1.4;color:var(--text-muted)}
+    .doc-studio-side .doc-style-edit{padding:6px;min-height:32px;display:flex;justify-content:center}
+`;
   document.head.appendChild(el);
 }
 
@@ -921,9 +930,9 @@ function homePanelHTML() {
     <button type="button" data-ex="outdent" title="Decrease indent">⇤</button>
     <button type="button" data-ex="indent" title="Increase indent">⇥</button>
     <button type="button" data-paragraph title="Paragraph spacing and indentation">Spacing</button></div>`);
-  const styles = groupHTML('Text styles', `    <select data-cmd="formatBlock" title="Paragraph type: Normal for body text; Heading 1 for main sections; Heading 2 for subsections" aria-label="Paragraph type">
-      <option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="h4">Heading 4</option><option value="h5">Heading 5</option><option value="h6">Heading 6</option>
-    </select><button type="button" data-open-panel="Styles" title="Text styles: apply consistent formatting to headings and body text" aria-label="Manage text styles">${docIcon('styles')}</button>`);
+  const styles = groupHTML('Headings &amp; styles', `    <select data-cmd="formatBlock" title="Choose the role of this paragraph. Headings also appear in the document outline." aria-label="Text type">
+      <option value="p">Body text</option><optgroup label="Section headings"><option value="h1">Main heading (H1)</option><option value="h2">Subheading (H2)</option></optgroup><optgroup label="Deeper sections"><option value="h3">Level 3 heading</option><option value="h4">Level 4 heading</option><option value="h5">Level 5 heading</option><option value="h6">Level 6 heading</option></optgroup>
+    </select><button type="button" data-open-panel="Styles" title="Style gallery: preview and apply reusable text formatting" aria-label="Open style gallery">${docIcon('styles')}</button>`);
   const editing = groupHTML('Editing', `
     <button type="button" data-find title="Find text (Ctrl+F)" aria-label="Find text">${docIcon('search')}</button><button type="button" data-replace title="Find and replace text" aria-label="Replace text">${docIcon('replace')}</button><button type="button" data-select-all title="Select all document content (Ctrl+A)" aria-label="Select all document content">${docIcon('selectAll')}</button>`);
   return clipboard + font + paragraph + styles + editing;
@@ -2744,7 +2753,8 @@ const DocAdvanced = (() => {
             const cfg = settings(root).value;
             if (tab === 'Styles') {
                 const styles = { ...defaults, ...cfg.styles };
-                panel.innerHTML = '<h3>Document styles</h3><p>Choose a style to format the current paragraph. Normal is body text; Heading 1 is a main section; Heading 2 is a subsection. Edit a style to update every paragraph using it.</p>' + Object.entries(styles).map(([key, s]) => `<div class="doc-prop-grid"><button data-adv="style-apply" data-style-key="${key}">${esc(s.name)}</button><button data-adv="style-edit" data-style-key="${key}">Edit</button></div>`).join('') + '<h3>Numbering</h3><p>Use numbered lists and Indent / Outdent for nested levels.</p><button data-adv="multilevel">Hierarchical numbering</button>';
+                const roles={normal:['Body text','Everyday paragraphs'],title:['Document title','The title at the start of a document'],heading1:['Main heading','Starts a main section · H1'],heading2:['Subheading','Starts a subsection · H2'],heading3:['Smaller heading','A section within a subsection · H3'],caption:['Caption','A label below an image or table']};
+                panel.innerHTML = '<h3>Choose a text style</h3>' + Object.entries(styles).map(([key, s]) => {const [name,meaning]=roles[key]||[s.name,'Reusable paragraph formatting'];return `<div class="doc-style-card"><button class="doc-style-apply" data-adv="style-apply" data-style-key="${esc(key)}" aria-label="Apply ${esc(name)} style" title="Apply ${esc(name)} to the current paragraph"><span class="doc-style-preview" style="font-family:${esc(s.font)};font-size:${Math.min(22,Math.max(14,Number(s.size)||14))}px;font-weight:${s.tag==='p'?400:600}">${esc(name)}</span><span class="doc-style-meaning">${esc(meaning)}</span><span class="doc-style-meta">${esc(s.font)} · ${Math.round(Number(s.size)*.75*10)/10} pt</span></button><button class="doc-style-edit" data-adv="style-edit" data-style-key="${esc(key)}" aria-label="Edit ${esc(name)} style" title="Edit ${esc(name)}; updates all paragraphs using it">${docIcon('signature')}</button></div>`;}).join('') + '<h3>Numbering</h3><p>Use numbered lists and Indent / Outdent for nested levels.</p><button data-adv="multilevel">Hierarchical numbering</button>';
                 return true;
             }
             if (tab === 'Review') {
@@ -2898,8 +2908,8 @@ function mountStudio(fs, surface, opts, api) {
   const desk = document.createElement('div'); desk.className = 'doc-workspace';
   const canvas = fs.querySelector('.doc-canvas'); canvas.before(desk); desk.append(canvas);
   const side = document.createElement('aside'); side.className = 'doc-studio-side'; side.setAttribute('aria-label', 'Document tools'); desk.append(side);
-  const toolNames={Print:'Print grid',Template:'Form links',Properties:'Inspect',Layers:'Layers',Outline:'Outline',Data:'Variables',Pages:'Pages',Styles:'Styles',Review:'Review',Library:'Library',History:'History',Shared:'Shared'};
-  const toolDescriptions={Print:'Scale this design into a print grid, set copies and gaps, and preview the printed sheets.',Template:'Set template details, connect forms and choose their default print layouts.',Properties:'Edit the selected text or object’s size, colors, spacing and alignment.',Pages:'Add, duplicate and reorder design pages; manage headers, footers and page breaks.',Layers:'Select objects and manage their visibility, locking and stacking order.',Outline:'Navigate document headings and insert a table of contents.',Styles:'Normal is body text. Heading 1 marks main sections; Heading 2 marks subsections. Named styles keep their font, size, color and spacing consistent.',Data:'Search, copy and insert live variables; configure data blocks and preview values.',Library:'Save and reuse styles and objects on this device.',Review:'Track text changes, review edits and manage comments.',History:'Recover drafts and restore saved versions of this document.',Shared:'Manage shared editing, server drafts and document revisions.'};
+  const toolNames={Print:'Print grid',Template:'Form links',Properties:'Inspect',Layers:'Layers',Outline:'Outline',Data:'Variables',Pages:'Pages',Styles:'Style gallery',Review:'Review',Library:'Library',History:'History',Shared:'Shared'};
+  const toolDescriptions={Print:'Scale this design into a print grid, set copies and gaps, and preview the printed sheets.',Template:'Set template details, connect forms and choose their default print layouts.',Properties:'Edit the selected text or object’s size, colors, spacing and alignment.',Pages:'Add, duplicate and reorder design pages; manage headers, footers and page breaks.',Layers:'Select objects and manage their visibility, locking and stacking order.',Outline:'Navigate document headings and insert a table of contents.',Styles:'Click a preview to format the current paragraph. Use the pencil to change a saved style; every paragraph using that style will update.',Data:'Search, copy and insert live variables; configure data blocks and preview values.',Library:'Save and reuse styles and objects on this device.',Review:'Track text changes, review edits and manage comments.',History:'Recover drafts and restore saved versions of this document.',Shared:'Manage shared editing, server drafts and document revisions.'};
   const toolIcons={Print:'table',Template:'link',Properties:'settings',Layers:'layers',Outline:'justifyLeft',Data:'variable',Pages:'document',Styles:'styles',Review:'signature',Library:'image',History:'undo',Shared:'shared'};
   const rail=document.createElement('nav');rail.className='doc-tool-rail';rail.setAttribute('aria-label','Document tools');desk.prepend(rail);
   const toolGroups=[['Document',['Pages','Outline','Styles']],['Design',['Properties','Layers','Library']],['Template',['Data','Template','Print']],['Review',['Review','History',...(opts.sharedStudio?['Shared']:[])]]];

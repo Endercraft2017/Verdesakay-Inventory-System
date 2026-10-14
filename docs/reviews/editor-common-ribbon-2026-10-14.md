@@ -36,3 +36,6 @@ form-label margins. Text styles and sidebar guidance explain body text, heading 
 and updating paragraphs that share a named style. Smaller screens retain bounded wrapping.
 Validation includes 95 command/studio tests and an actual Empty cells hover check, plus a
 wide desktop ribbon height limit of 76px in the full Playwright gate.
+
+## Heading/style clarity follow-up
+Body text, Main heading (H1) and Subheading (H2) replace bare role labels in the ribbon; deeper levels are grouped separately. Style gallery previews show the role and font/size metadata, with separate named pencil actions. A preview applies formatting and a pencil edits the reusable style. All existing style/paragraph keys and markup remain. Visual review covers gallery in both themes; the full editor Playwright gate and focused command/studio regressions verify continued behavior.

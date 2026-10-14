@@ -923,3 +923,5 @@ Insert header/footer/page number → Pages panel's existing action → append/pr
 running element without replacing the selected body → existing history/save/print pipeline.
 
 Editor select theme → fixed single-arrow image, no-repeat, right placement and size longhands → survive mounted sidebar background shorthand. Wide desktop media rule → horizontal command wrappers → unchanged command listeners and selection/history. Smaller screens retain bounded wrapping and keyboard access.
+
+Descriptive text-type options retain p/h1–h6 command values → existing formatBlock command/history/outline pipeline. Style preview cards retain style-apply/style-edit keys → existing named-style apply/update pipeline; display role descriptions and px-to-pt font metadata without editing content when opened.

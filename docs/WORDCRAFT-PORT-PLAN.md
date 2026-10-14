@@ -374,3 +374,6 @@ See `docs/reviews/editor-common-ribbon-2026-10-14.md` for checks and browser cli
 
 ### Ribbon density correction — 14 October 2026
 Wide desktop Home uses one horizontal command row with accessible clipboard/editing icons. Sidebar dropdown arrows survive later background resets; Text styles and heading descriptions explain their purpose. This remains UI refinement; engine phase 2 slice 5 is unchanged.
+
+### Heading/style discoverability — 14 October 2026
+The compact ribbon uses role-based heading labels; Style gallery provides previews, purpose descriptions and separate edit actions. Existing paragraph/style commands, outline semantics and stored templates are preserved. This is UI guidance; phase 2 slice 5 is unchanged.
