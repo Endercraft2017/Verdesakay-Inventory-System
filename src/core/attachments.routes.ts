@@ -22,7 +22,7 @@ import { sideEffectsSuppressed } from '../shared/sync-context';
 const router = Router();
 router.use(requireAuth);
 
-const KINDS = new Set(['qc_unit', 'damage', 'problem', 'delivery', 'signature', 'release', 'release_proof', 'parts_release', 'production_issue']);
+const KINDS = new Set(['qc_unit', 'damage', 'problem', 'delivery', 'signature', 'release', 'release_proof', 'sales_return_proof', 'sales_return', 'parts_release', 'production_issue']);
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 /** Which permission(s) a kind needs. `[]` = any authenticated user. */
@@ -37,6 +37,8 @@ const READ_PERMS: Record<string, Permission[]> = {
   release: ['inventory.adjust', 'orders.release', 'orders.view'],
   // Handoff photos taken before the slip exists (ref_id = orders.id); the slip takes them over as 'release'.
   release_proof: ['inventory.adjust', 'orders.release', 'orders.view'],
+  sales_return_proof: ['inventory.adjust', 'orders.release', 'orders.view'],
+  sales_return: ['inventory.adjust', 'orders.release', 'orders.view'],
   // Photos of the parts kit on a job order's parts release slip (ref_id = parts_release_slips.id).
   parts_release: ['inventory.view', 'production.view', ...LINE],
   // Photos on a production issue report (ref_id = production_issues.id).
@@ -55,6 +57,8 @@ const WRITE_PERMS: Record<string, Permission[]> = {
   signature: ['delivery.run', 'delivery.manage'],
   release: ['inventory.adjust', 'orders.release'],
   release_proof: ['inventory.adjust', 'orders.release'],
+  sales_return_proof: ['inventory.adjust', 'orders.release'],
+  sales_return: ['inventory.adjust', 'orders.release'],
   parts_release: ['inventory.adjust'],
   production_issue: [...FLOOR_PERMS, 'production.approve'],
 };

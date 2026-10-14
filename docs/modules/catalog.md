@@ -448,14 +448,22 @@ UPLOAD_DIR; deliberately not enforced so a plan limit can't block a report).
 **Responsibility:** items, stock levels, suppliers, customers, locations, sale/purchase
 orders (the order shell — 3-way-match purchase logic lives in `purchasing/`),
 sale-order releasing (warehouse acceptance → pick → release slip), deliveries.
-**Owned files:** `inventory-stock.ts`, routes: `inventory.routes.ts`,
+**Owned files:** `inventory-stock.ts`, `order-availability.ts`, routes: `inventory.routes.ts`,
 `suppliers.routes.ts`, `customers.routes.ts`, `locations.routes.ts`,
-`deliveries.routes.ts`, `orders.routes.ts`, `release-slips.routes.ts`.
+`deliveries.routes.ts`, `orders.routes.ts`, `release-slips.routes.ts`,
+`sales-returns.routes.ts`.
 UI: desktop Inventory → Releasing (`public/js/modules/inventory/releasing.js`),
 mobile `so` view (`public/mobile/modules/inventory/so.js`).
 **Owned data (releasing):** `orders.warehouse_accepted_by/_at`, `release_slips`,
 `release_slip_items` (snapshot of lines + unit serials); photos are core `attachments`
 kind `release` (ref = slip id).
+**After shipment:** `sales-returns.routes.ts` records photo-backed customer receipts against a
+slip line, with a shipped-quantity cap and exact sold serial for serialized goods. Receipt
+does not move stock. Inspection records restock (stock-in and an idempotent COGS reversal at
+the slip's captured cost) or reject (no stock-in); the issued sale and slip stay intact.
+Finance separately issues and links a customer credit note, with link history retained.
+Desktop users work from the issued slip in Releasing; mobile implementation is assigned in
+`MOBILE-INVENTORY-HANDOFF.md`. See `docs/reviews/sales-return-workflow.md` for the full contract.
 **Warehouse-out rules (`release-auth.ts`, createSchema tables, no version bump):**
 `release_authorizations` (Sales, `orders.edit`: pickup/delivery, approved recipient, only the last 4
 of an ID reference, a `PICKUP-XXXX`/`DELIV-XXXX` token, validity, handoff area, partial allowed;
@@ -518,6 +526,17 @@ locks, inactive reference preservation, unsaved-change protection, and retry-saf
 editor saves. `src/app.ts` mounts order-save idempotency after mutation permissions;
 `shared/idempotency.ts` scopes cached responses to authenticated users and endpoints.
 **Status:** working.
+
+**Sales stock approval refinement:** `order-availability.ts` is the shared warehouse ATP
+and supply-planning calculation; `orders.routes.ts` re-exports it. Desktop saved orders have
+an explicit stock review with local/elsewhere stock, commitments and kit/repair holds.
+Approval and shortage actions use optional revision checks; drafting supply never clears ATP.
+Existing job snapshots and unreceived output cover planned production. Purchase cover is tracked
+by `sale_shortfall_purchases`, current PO lines and receipts; repeated actions draft incremental
+requirements only, atomically across suppliers/jobs. Mobile implementation remains unchanged;
+its prioritized gaps and contract checklist are in [MOBILE-INVENTORY-HANDOFF.md](../../MOBILE-INVENTORY-HANDOFF.md).
+Coverage: `order-planning.test.ts`, `sync-order-planning.test.ts`, `orders-ui.test.ts` plus
+existing availability, release, permissions and sync regressions.
 
 ## modules/manufacturing
 

@@ -1201,6 +1201,7 @@ export interface ReleaseSlipItems {
   unit: string | null;
   quantity: number;
   unit_identifiers: string | null;
+  unit_cost: number | null;
 }
 
 export interface ReleaseSlips {
@@ -1256,6 +1257,7 @@ export interface RepairPartRequests {
   created_at: Generated<string>;
   updated_at: Generated<string>;
   decided_at: string | null;
+  sales_return_id: number | null;
 }
 
 export interface RepairRequestEvents {
@@ -1290,6 +1292,61 @@ export interface Roles {
   sort_order: Generated<number>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+}
+
+export interface SaleShortfallPurchases {
+  id: Generated<number>;
+  source_order_id: number;
+  purchase_order_id: number;
+}
+
+export interface SalesReturnCreditLinks {
+  id: Generated<number>;
+  return_id: number;
+  credit_note_id: number;
+  linked_by: number | null;
+  linked_at: Generated<string>;
+}
+
+export interface SalesReturnDispositionEvents {
+  id: Generated<number>;
+  return_id: number;
+  action: string;
+  note: string;
+  actor_id: number | null;
+  created_at: Generated<string>;
+}
+
+export interface SalesReturnDispositions {
+  return_id: Generated<number>;
+  state: string;
+  decision_note: string;
+  repair_note: string | null;
+  location_id: number | null;
+  decided_by: number | null;
+  decided_at: Generated<string>;
+  completed_by: number | null;
+  completed_at: string | null;
+}
+
+export interface SalesReturns {
+  id: Generated<number>;
+  number: string;
+  slip_id: number;
+  slip_item_id: number;
+  item_id: number;
+  quantity: number;
+  unit_id: number | null;
+  unit_cost: number | null;
+  status: Generated<string>;
+  reason: string;
+  condition_note: string | null;
+  location_id: number | null;
+  credit_note_id: number | null;
+  received_by: number | null;
+  received_at: Generated<string>;
+  inspected_by: number | null;
+  inspected_at: string | null;
 }
 
 export interface Sessions {
@@ -1620,6 +1677,11 @@ export interface DB {
   repair_request_events: RepairRequestEvents;
   repair_revisions: RepairRevisions;
   roles: Roles;
+  sale_shortfall_purchases: SaleShortfallPurchases;
+  sales_return_credit_links: SalesReturnCreditLinks;
+  sales_return_disposition_events: SalesReturnDispositionEvents;
+  sales_return_dispositions: SalesReturnDispositions;
+  sales_returns: SalesReturns;
   sessions: Sessions;
   settings: Settings;
   shifts: Shifts;

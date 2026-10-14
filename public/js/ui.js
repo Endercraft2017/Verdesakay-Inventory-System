@@ -112,6 +112,8 @@ const UI = (() => {
     };
     const canDismiss = () => !saving && (!dirty || window.confirm('Discard your unsaved changes?'));
     overlay.__canDismiss = canDismiss;
+    // Dialog actions outside the primary confirm button share the dismissal guard.
+    overlay.__setSaving = (value) => { saving = !!value; };
     overlay.__markDirty = () => { dirty = true; };
     overlay.__close = close;
     const dismiss = () => { if (canDismiss()) close(); };

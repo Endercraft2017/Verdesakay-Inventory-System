@@ -585,6 +585,7 @@ export type JobOrderUnitStatus =
    *  POST /job-orders/:id/products-in. Not sellable/reservable until it becomes 'in_stock'. */
   | 'passed'
   | 'in_stock' | 'failed' | 'scrapped' | 'sold' | 'rework'
+  | 'returned_rejected' | 'returned_rework' | 'returned_salvaged' | 'returned_disposed'
   /** Held by QA for review (final pass); decided by QA / production.qa_review — pass, rectify or fail. */
   | 'hold'
   /** Earmarked for a sale order by a warehouse release; still physical on-hand stock
@@ -710,6 +711,7 @@ export interface RepairPartRequest {
   number: string;
   unit_id: number;
   job_order_id: number | null;
+  sales_return_id?: number | null;
   kind: RepairRequestKind;
   component_item_id: number | null;
   component_name: string;

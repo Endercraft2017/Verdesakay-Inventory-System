@@ -33,7 +33,7 @@ App.register('orders', async (view, filter) => {
       <h2>${noun}s</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" aria-label="Search orders by number or ${partyLabel.toLowerCase()}" placeholder="Search number, ${partyLabel.toLowerCase()}…" /></div>
-      ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show only approved/released orders with an unfulfilled line">${UI.icon('alert', 15)} Backorders</button>` : ''}
+      ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show firm orders with stock lines still awaiting picking">${UI.icon('alert', 15)} Awaiting release</button>` : ''}
       ${App.hasPermission('users.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
       ${canCreate ? `<button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>` : ''}
     </div>
@@ -73,8 +73,8 @@ App.register('orders', async (view, filter) => {
     if (!list.length) {
       tableEl.innerHTML = UI.emptyState({
         icon: 'forms',
-        title: state.backorder ? 'No backorders' : state.q ? 'No matching orders' : `No ${noun.toLowerCase()}s yet`,
-        hint: state.backorder ? 'Every approved order is fully covered by stock or released units.'
+        title: state.backorder ? 'No orders awaiting release' : state.q ? 'No matching orders' : `No ${noun.toLowerCase()}s yet`,
+        hint: state.backorder ? 'Every approved order has its stock lines picked or shipped.'
           : state.q ? 'Try a different search.' : canCreate ? `Create your first ${noun.toLowerCase()} to start.` : 'No orders have been recorded yet.',
         action: (state.q || state.backorder || !canCreate) ? '' : `<button class="btn" id="ord-empty-new">${UI.icon('plus')} New ${noun}</button>`,
       });
@@ -91,7 +91,7 @@ App.register('orders', async (view, filter) => {
             <td>${UI.esc(o.customer_name || '—')}</td>
             <td>${UI.esc(o.order_date || UI.fmtDateShort(o.created_at))}</td>
             <td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>
-            <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span>${o.backordered ? ' <span class="badge-pill low" title="A line is not yet fully released from stock">⚠ backorder</span>' : ''}</td>
+            <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span>${o.release_slip_number ? ` <span class="badge-pill" title="Goods left on release slip ${UI.esc(o.release_slip_number)}">Shipped · ${UI.esc(o.release_slip_number)}</span>` : ''}${o.backordered ? ' <span class="badge-pill low" title="Stock lines still await picking">⚠ awaiting pick</span>' : ''}</td>
             <td class="actions">
               ${type === 'job' && App.hasPermission('inventory.adjust')
                 ? (o.job_order_id
@@ -103,12 +103,14 @@ App.register('orders', async (view, filter) => {
                 ? `<button class="icon-btn" title="Release authorization (who may collect)" data-relauth="${o.id}" data-num="${UI.esc(o.number)}">${UI.icon('key')}</button>` : ''}
               ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
+              ${type === 'sale' ? `<button class="icon-btn" title="Review stock & approval" aria-label="Review stock and approval for ${UI.esc(o.number)}" data-stock="${o.id}">${UI.icon('inventory')}</button>` : ''}
               ${canEdit ? `<button class="icon-btn" title="Edit" data-edit="${o.id}">${UI.icon('edit')}</button>` : ''}
-              ${canDelete ? `<button class="icon-btn danger" title="Delete" data-del="${o.id}">${UI.icon('trash')}</button>` : ''}
+              ${canDelete && !(type === 'sale' && o.release_slip_number) ? `<button class="icon-btn danger" title="Delete" data-del="${o.id}">${UI.icon('trash')}</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
       </table>`;
+    tableEl.querySelectorAll('[data-stock]').forEach((b) => b.onclick = () => reviewStock(b.dataset.stock));
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => openOrder(b.dataset.edit));
     tableEl.querySelectorAll('[data-print]').forEach((b) => b.onclick = () => printOrder(b.dataset.print));
     tableEl.querySelectorAll('[data-qbpush]').forEach((b) => b.onclick = async () => {
@@ -141,109 +143,118 @@ App.register('orders', async (view, filter) => {
     catch (e) { UI.toast(e.message, 'error'); }
   }
 
-  /* ---------- Stock shortfall on approve/confirm: trim, produce, or backorder ---------- */
-  function shortfallModal(opts) {
-    const av = opts.availability || { lines: [] };
-    const short = (av.lines || []).filter((l) => l.shortfall > 0);
-    const finishUp = () => { try { sfm.close(); } catch (e) {} try { opts.closeParent && opts.closeParent(); } catch (e) {} load(); };
-
-    async function ensureOrder() {
-      if (opts.orderId) return opts.orderId;
-      const r = await API.post('/orders', { type, ...opts.body, status: 'open' });
-      opts.orderId = r.id;
-      return r.id;
-    }
-    async function resave(extra) {
-      const oid = await ensureOrder();
-      await API.put('/orders/' + oid, Object.assign({}, opts.body, extra || {}));
-    }
-
-    const sfm = UI.modal({
-      title: 'Not enough stock',
-      size: 'lg',
-      bodyHTML: `
-        <p class="muted" style="margin-top:0">${short.length} line${short.length === 1 ? '' : 's'} can't be met from stock. Choose how to proceed.</p>
-        <table>
-          <thead><tr><th>Line</th><th class="right">Ordered</th><th class="right">Available</th><th class="right">Short</th><th>Make it?</th></tr></thead>
-          <tbody>${short.map((l) => `<tr>
-            <td>${UI.esc(l.name)}</td>
-            <td class="right">${l.ordered}</td>
-            <td class="right">${l.available}</td>
-            <td class="right danger">${l.shortfall}</td>
-            <td>${!l.is_finished_product ? '<span class="muted">not built here</span>'
-              : !l.has_bom ? '<span class="muted">no BOM</span>'
-              : l.buildable ? '<span class="badge-pill ok">components on hand</span>'
-              : `<span class="badge-pill low">short: ${l.component_shortfalls.map((c) => `${UI.esc(c.name)} (need ${c.need}, have ${c.have})`).join('; ')}</span>`}${
-              l.linked_job_orders.length ? `<div class="muted" style="font-size:11px">MO: ${l.linked_job_orders.map((j) => UI.esc(j.number) + ' (' + j.remaining + ' left)').join(', ')}</div>` : ''}</td>
-          </tr>`).join('')}</tbody>
-        </table>
-        <div id="sf-result" class="muted" style="font-size:12px;margin-top:8px"></div>`,
-      confirmText: null,
-      cancelText: 'Back',
-      onOpen: (ov) => {
-        const result = ov.querySelector('#sf-result');
-        const actions = document.createElement('div');
-        actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
-        actions.innerHTML = `
-          <button type="button" class="btn secondary" id="sf-trim">Trim order to available</button>
-          <button type="button" class="btn secondary" id="sf-produce">Create job orders for the shortfall</button>
-          <button type="button" class="btn secondary" id="sf-purchase">Draft purchase orders for the shortfall</button>
-          <button type="button" class="btn secondary danger" id="sf-force">Approve as a backorder</button>`;
-        ov.querySelector('#sf-result').before(actions);
-
-        ov.querySelector('#sf-trim').onclick = async () => {
-          opts.cleaned.forEach((c) => {
-            const s = short.find((x) => x.name === c.name && x.item_id === (c.item_id || null));
-            if (s) c.quantity = Math.max(0, c.quantity - s.shortfall);
-          });
-          const trimmed = opts.cleaned.filter((c) => c.quantity > 0);
-          if (!trimmed.length) { result.textContent = 'Every short line would drop to zero — adjust manually.'; return; }
-          try {
-            const oid = await ensureOrder();
-            await API.put('/orders/' + oid, Object.assign({}, opts.body, { items: trimmed }));
-            UI.toast('Order trimmed to available stock'); finishUp();
-          } catch (e) { result.textContent = e.message; }
-        };
-
-        ov.querySelector('#sf-produce').onclick = async (ev) => {
-          ev.target.disabled = true;
-          try {
-            const oid = await ensureOrder();
-            const r = await API.post('/orders/' + oid + '/produce-shortfall', {});
-            const made = (r.created || []).map((c) => `${c.number} — ${c.line} ×${c.qty}${c.buildable ? '' : ' ⚠ components short'}`);
-            const skip = (r.skipped || []).map((s) => `${s.line}: ${s.reason}`);
-            result.innerHTML = (made.length ? '<b>Created:</b> ' + made.map(UI.esc).join('<br>') : 'No job orders created.')
-              + (skip.length ? '<br><b>Skipped:</b> ' + skip.map(UI.esc).join('<br>') : '')
-              + '<br>The shortfall is now on the production line. Approve as a backorder to lock the order.';
-          } catch (e) { result.textContent = e.message; ev.target.disabled = false; }
-        };
-
-        ov.querySelector('#sf-purchase').onclick = async (ev) => {
-          ev.target.disabled = true;
-          try {
-            const oid = await ensureOrder();
-            const r = await API.post('/orders/' + oid + '/purchase-shortfall', {});
-            const made = (r.created || []).map((c) =>
-              `${UI.esc(c.number)} → ${UI.esc(c.supplier_name || 'no supplier on the items')} (${c.lines} line${c.lines === 1 ? '' : 's'})`);
-            result.innerHTML = made.length
-              ? '<b>Draft POs:</b><br>' + made.join('<br>') + '<br>Review &amp; send them from Purchasing, then approve this order as a backorder.'
-              : UI.esc(r.note || 'Nothing to buy — the shortfall is all built here, not purchased.');
-          } catch (e) { result.textContent = e.message; ev.target.disabled = false; }
-        };
-
-        ov.querySelector('#sf-force').onclick = async (ev) => {
-          if (!(await UI.confirmDialog('Approve this order even though stock is short? It becomes a backorder — stock may go negative when it ships.', 'Approve backorder'))) return;
-          ev.target.disabled = true;
-          try {
-            await resave({ force: true });
-            UI.toast('Approved (backorder)'); finishUp();
-          } catch (e) { result.textContent = e.message; ev.target.disabled = false; }
-        };
-      },
+  /* ---------- Stock review: approval is a decision after an open order is saved ---------- */
+  async function reviewStock(id) {
+    let snapshot;
+    let order;
+    let busy = false;
+    let request = 0;
+    const review = UI.modal({ title: '2. Review stock & approval', size: 'lg', confirmText: null, cancelText: 'Close',
+      bodyHTML: '<div id="stock-review" aria-live="polite">Loading stock and commitments…</div>',
+      onOpen: (ov) => { ov.classList.add('order-review'); },
     });
+    const ov = review.overlay;
+    const panel = ov.querySelector('#stock-review');
+    function controls(disabled) {
+      panel.querySelectorAll('button').forEach((b) => b.disabled = disabled);
+      ov.__setSaving?.(disabled);
+    }
+    function restoreReviewFocus() {
+      if (ov !== document.getElementById('modal-root').lastElementChild) return;
+      const active = document.activeElement;
+      if (!ov.contains(active) || active === ov.querySelector('.modal') || panel.contains(active)) {
+        panel.querySelector('[data-refresh]')?.focus();
+      }
+    }
+    async function refresh(message) {
+      const current = ++request;
+      panel.innerHTML = '<p class="muted">Checking stock and commitments…</p>';
+      try {
+        const detail = await API.get('/orders/' + id);
+        const av = await API.get('/orders/' + id + '/availability');
+        if (current !== request || !ov.isConnected) return;
+        order = detail; snapshot = av;
+        render(message);
+        restoreReviewFocus();
+      } catch (e) {
+        if (current !== request || !ov.isConnected) return;
+        panel.innerHTML = `<p role="alert">${UI.esc(e.message)}</p><button type="button" class="btn secondary" data-refresh>Try again</button>`;
+        panel.querySelector('[data-refresh]').onclick = () => refresh();
+        restoreReviewFocus();
+      }
+    }
+    function render(message) {
+      const av = snapshot;
+      const status = av.order_status || order.status;
+      const open = status === 'open';
+      const plannable = !order.fulfilled_at && ['open', 'approved', 'released'].includes(status);
+      const make = plannable && App.hasPermission('inventory.adjust') && (!App.hasModule || App.hasModule('manufacturing'));
+      const buy = plannable && App.hasPermission('purchasing.manage') && (!App.hasModule || App.hasModule('purchasing'));
+      const short = av.lines.filter((l) => l.shortfall > 0);
+      const toBuy = (av.purchase_requirements || []).filter((r) => r.to_purchase > 0);
+      panel.innerHTML = `
+        <div class="order-review-summary"><div><strong>${UI.esc(order.number)}</strong> · ${UI.esc(status)}
+          <p>Ship from <strong>${UI.esc(av.location_name || 'No stock location')}</strong>${av.uses_default_location ? ' (default)' : ''}</p></div>
+          <span class="badge-pill ${av.ok ? 'ok' : 'low'}">${av.ok ? 'Stock covers this order' : av.short_lines + ' stock line(s) short'}</span></div>
+        <p class="muted">Stock at other locations needs a transfer. Production and purchase drafts are planning only; they become available after receipt. ${av.non_stock_lines || 0} non-stock line(s) have no stock requirement.</p>
+        <div class="order-review-lines">${av.lines.map((l) => `<article class="order-stock-line">
+          <div><strong>${UI.esc(l.name)}</strong><span class="badge-pill ${l.shortfall > 0 ? 'low' : 'ok'}">${l.shortfall > 0 ? 'Short ' + l.shortfall : 'Covered'}</span></div>
+          <dl><div><dt>Ordered</dt><dd>${l.ordered}</dd></div><div><dt>On hand here</dt><dd>${l.on_hand}</dd></div><div><dt>Other orders</dt><dd>${l.committed_orders ?? l.committed_elsewhere}</dd></div><div><dt>Kit / repair holds</dt><dd>${l.kit_held || 0} / ${l.repair_held || 0}</dd></div><div><dt>Picked / shipped here</dt><dd>${l.covered_here}</dd></div><div><dt>Available to order</dt><dd>${l.available}</dd></div></dl>
+          ${l.elsewhere_on_hand > 0 ? `<p class="muted">${l.elsewhere_on_hand} on hand at other locations.</p>` : ''}
+          ${l.shortfall > 0 && l.is_finished_product ? `<p>${!l.has_bom ? 'No BOM: define the product recipe before planning production.' : l.buildable ? 'Outstanding production materials are covered; approval and kit release are still required.' : 'Materials short: ' + (l.component_shortfalls || []).map((c) => `${UI.esc(c.name)} (need ${c.need}, free ${c.have})`).join('; ')}</p>` : ''}
+          ${(l.linked_job_orders || []).reduce((n, j) => n + j.remaining, 0) > l.shortfall ? '<p class="order-notice">Planned production exceeds this shortage. Review existing job quantities before buying more materials.</p>' : ''}
+          ${(l.linked_job_orders || []).length ? `<p class="muted">Production planned: ${l.linked_job_orders.map((j) => `${UI.esc(j.number)} · ${UI.esc(j.status)} · ${j.remaining} not yet received`).join('; ')}</p>` : ''}
+        </article>`).join('') || '<p class="muted">This order has only non-stock lines.</p>'}</div>
+        ${(av.linked_purchase_orders || []).length ? `<div class="order-notice">Linked purchase supply: ${av.linked_purchase_orders.map((p) => `${UI.esc(p.number)} · ${p.outstanding} outstanding`).join('; ')}. Receipt is still required.</div>` : ''}
+        ${toBuy.length ? `<p>Still to purchase: ${toBuy.map((p) => `${UI.esc(p.name)} × ${p.to_purchase}`).join('; ')}</p>` : ''}
+        <div id="stock-review-result" role="status">${UI.esc(message || '')}</div>
+        <div class="order-review-actions">
+          <button type="button" class="btn secondary" data-refresh>Refresh stock</button>
+          ${open && canEdit ? '<button type="button" class="btn secondary" data-edit-order>Edit quantities or ship-from</button>' : ''}
+          ${make && short.some((l) => l.is_finished_product && l.has_bom) ? '<button type="button" class="btn secondary" data-make>Draft missing production</button>' : ''}
+          ${buy && toBuy.length ? '<button type="button" class="btn secondary" data-buy>Draft missing purchases</button>' : ''}
+          ${open && canEdit && (av.location_id != null || !av.lines.length) ? `<button type="button" class="btn${av.ok ? '' : ' secondary danger'}" data-approve>${av.ok ? 'Approve for warehouse' : 'Review backorder approval'}</button>` : ''}
+        </div>
+        ${open ? '<p class="muted">Approval locks quantities and prices and sends the order to warehouse acceptance. It does not pick or ship goods.</p>' : '<p class="muted">This review does not change an existing approval, release or delivery.</p>'}`;
+      panel.querySelector('[data-refresh]').onclick = () => refresh();
+      panel.querySelector('[data-edit-order]')?.addEventListener('click', async () => {
+        if (busy) return; busy = true; controls(true);
+        try { const latest = await API.get('/orders/' + id); review.close(); orderModal(latest); }
+        catch (e) { await refresh(e.message); }
+        finally { busy = false; controls(false); }
+      });
+      panel.querySelector('[data-make]')?.addEventListener('click', () => action('produce-shortfall'));
+      panel.querySelector('[data-buy]')?.addEventListener('click', () => action('purchase-shortfall'));
+      panel.querySelector('[data-approve]')?.addEventListener('click', approve);
+    }
+    async function action(path) {
+      if (busy) return;
+      busy = true; controls(true);
+      try {
+        const result = await API.post(`/orders/${id}/${path}`, { expected_revision: snapshot.revision || order.revision });
+        const created = result.created || [];
+        const local = API.syncLocal ? API.syncLocal(result) : result.__syncCommand;
+        const summary = (local ? 'Saved on this PC; sync confirmation pending. ' : '') + (created.length ? 'Drafts created: ' + created.map((c) => c.number).join(', ') + '. Review their approval and release/receiving steps.' : result.note || 'No additional production needed; linked jobs already cover the demand.');
+        await refresh(summary + ((result.skipped || []).length ? ' ' + result.skipped.map((s) => s.line + ': ' + s.reason).join('; ') : ''));
+      } catch (e) { await refresh(e.message + (e.data?.code === 'stale_order' ? ' Review the refreshed order before retrying.' : '')); }
+      finally { busy = false; controls(false); }
+    }
+    async function approve() {
+      if (busy) return;
+      busy = true; controls(true);
+      try {
+        const force = !snapshot.ok;
+        if (force && !(await UI.confirmDialog('Approve with ' + snapshot.short_lines + ' stock line(s) short? The warehouse must still accept, pick and release goods. Draft supply does not remove the shortage.', 'Approve backorder'))) return;
+        const result = await API.post(`/orders/${id}/status`, { status: 'approved', force, expected_revision: snapshot.revision || order.revision });
+        const local = API.syncLocal ? API.syncLocal(result) : result.__syncCommand;
+        UI.toast(local ? 'Approval saved on this PC; sync confirmation pending' : force ? 'Approved with a stock shortage' : 'Approved for warehouse acceptance');
+        review.close(); load();
+      } catch (e) { await refresh(e.message + ' Review the refreshed stock before deciding.'); }
+      finally { busy = false; controls(false); }
+    }
+    await refresh();
   }
 
-  /* ---------- Start a production run linked to this job order ---------- */
   async function startProduction(orderId) {
     const [order, products, locations] = await Promise.all([
       API.get('/orders/' + orderId),
@@ -288,6 +299,7 @@ App.register('orders', async (view, filter) => {
   function orderModal(order) {
     const editing = !!order;
     const readOnly = editing && !canEdit;
+    const shipped = editing && type === 'sale' && !!order.release_slip_number;
     const lockLines = readOnly || (editing && type === 'sale' && !['open', 'cancelled'].includes(String(order.status).toLowerCase()));
     const lines = editing ? (order.items || []).map((it) => ({ ...it })) : [];
     const get = (k, d) => (editing && order[k] != null ? order[k] : d);
@@ -299,7 +311,7 @@ App.register('orders', async (view, filter) => {
     // Sale orders get the release lifecycle: open → approved (unlocks warehouse
     // release) → released (auto once fully picked) → confirmed/completed (stock out).
     const STATUS_VALUES = type === 'sale'
-      ? (editing ? ['open', 'approved', 'confirmed', 'completed', 'cancelled'] : ['open'])
+      ? (editing ? (shipped ? ['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'] : ['open', 'cancelled'].includes(String(order.status).toLowerCase()) ? ['open', 'approved', 'cancelled'] : ['open', 'approved', 'confirmed', 'completed', 'cancelled']) : ['open'])
       : ['open', 'confirmed', 'completed', 'cancelled'];
     const curStatus = get('status', 'open');
     const statusOpts = (STATUS_VALUES.includes(curStatus) ? STATUS_VALUES : STATUS_VALUES.concat(curStatus))
@@ -312,6 +324,7 @@ App.register('orders', async (view, filter) => {
         <div class="order-editor-intro"><strong>${editing ? 'Order details' : '1. Capture the order'}</strong>
           <p>${readOnly ? 'You have view access to this order.' : !editing && type === 'sale' ? 'Save an open order first. Approval checks stock and hands the order to the warehouse.' : 'Review the customer, stock links, quantities, and totals before saving.'}</p></div>
         ${lookupWarnings.length ? `<p class="order-notice" role="status">${lookupWarnings.map(UI.esc).join(' ')}</p>` : ''}
+        ${shipped ? `<p class="order-notice" role="status">Goods left on release slip ${UI.esc(order.release_slip_number)}. Reopening, cancelling or deleting this sale cannot restore physical stock. Record a return or correction separately.</p>` : ''}
         <section class="order-section"><h4>${partyLabel} &amp; order details</h4>
         ${type === 'sale' ? `<div class="field-row">
           <div><label>Customer (on file)</label><select data-f="customer_id"><option value="">— none / walk-in —</option>
@@ -338,7 +351,7 @@ App.register('orders', async (view, filter) => {
           <div><label>Currency</label><input data-f="currency" maxlength="3" placeholder="PHP" value="${UI.esc(get('currency', 'PHP'))}" /></div>
         </div>
         </section><section class="order-section"><h4>Items to supply</h4>
-        ${lockLines ? `<p class="order-notice">${readOnly ? 'Line items are read-only.' : 'Line items and tax are locked after approval. Reopen the order before changing them; reopening clears warehouse reservations.'}</p>` : '<p class="muted">Choose inventory for goods to supply. Use a non-stock line for services or charges; it does not reserve, produce, or deduct stock.</p>'}
+        ${lockLines ? `<p class="order-notice">${readOnly ? 'Line items are read-only.' : shipped ? 'Line items and tax are locked after shipment. Use a separate return or correction for goods already handed off.' : 'Line items and tax are locked after approval. Reopen the order before changing them; reopening clears warehouse reservations.'}</p>` : '<p class="muted">Choose inventory for goods to supply. Use a non-stock line for services or charges; it does not reserve, produce, or deduct stock.</p>'}
         <div class="line-items"><table class="line-table"><thead><tr>
           <th>Item</th><th>SKU</th><th class="right">Qty</th><th>Unit</th><th class="right">Unit Price</th>${taxCodes.length ? '<th>Tax code</th>' : ''}<th class="right">Total</th><th></th>
         </tr></thead><tbody id="ord-lines"></tbody></table></div>
@@ -551,9 +564,11 @@ App.register('orders', async (view, filter) => {
         }
         body.tax_code_id = taxCodes.length ? fOpt('tax_code_id') || null : get('tax_code_id', null);
 
+        const needsApprovalReview = type === 'sale' && editing && ['open', 'cancelled'].includes(String(order.status).toLowerCase()) && body.status === 'approved';
+        if (needsApprovalReview) body.status = 'open';
         const payload = editing ? body : { type, ...body };
         const signature = JSON.stringify(payload);
-        if (!saveAttempt || saveAttempt.signature !== signature) saveAttempt = { signature, key: 'order:' + crypto.randomUUID() };
+        if (!saveAttempt || saveAttempt.signature !== signature) saveAttempt = { signature, key: 'order:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)) };
         const saveControls = [...ov.querySelectorAll('[data-f], [data-k], .line-actions button, [data-link], [data-unlink], [data-rm]')].filter((el) => !el.disabled);
         saveControls.forEach((el) => el.disabled = true);
         try {
@@ -574,16 +589,14 @@ App.register('orders', async (view, filter) => {
             errBox.appendChild(latest); return false;
           }
           if (e && e.status === 409 && e.data && e.data.availability) {
-            shortfallModal({
-              orderId: editing ? order.id : null, body, lines, cleaned,
-              availability: e.data.availability, closeParent: () => m.close && m.close(),
-            });
+            showErr(e.message + ' Use Review stock & approval from the order list to plan missing supply.');
             return false;   // keep this modal open behind the shortfall prompt
           }
           throw e;
         } finally {
           saveControls.forEach((el) => el.disabled = false);
         }
+        if (needsApprovalReview) { m.close(); await reviewStock(order.id); load(); return true; }
         UI.toast(editing ? 'Order saved' : 'Order created');
         load();
       },
@@ -595,7 +608,7 @@ App.register('orders', async (view, filter) => {
     const m = UI.modal({
       title: 'Add inventory item',
       bodyHTML: `<div class="search-box">${UI.icon('search', 16)}<input id="pick-q" aria-label="Search inventory by name or SKU" placeholder="Search name or SKU…" autofocus /></div>
-        <p class="muted">Quantities shown are on hand across locations. Approval checks commitments to other orders. Zero-stock items can be ordered for production or purchasing.</p>
+        <p class="muted">Quantities shown are on hand across locations. Approval checks stock at the ship-from location, other orders and stock holds. Zero-stock items can be ordered for production or purchasing.</p>
         <div id="pick-results" style="margin-top:12px" aria-live="polite"></div>`,
       cancelText: 'Close',
       onOpen: (ov) => {

@@ -285,10 +285,11 @@ App.register('accounting-receivables', async (view, filter) => {
   }
 
   async function creditNoteModal() {
-    const [customers, suppliers, allCodes] = await Promise.all([
+    const [customers, suppliers, allCodes, saleOrders] = await Promise.all([
       API.get('/customers').catch(() => []),
       API.get('/suppliers').catch(() => []),
       API.get('/accounting/tax-codes?active=1').catch(() => []),
+      API.get('/orders?type=sale').catch(() => []),
     ]);
     let kind = 'customer';
     const render = () => {
@@ -306,6 +307,9 @@ App.register('accounting-receivables', async (view, filter) => {
         <div class="form-field span2"><div class="field-label"><label>${kind === 'customer' ? 'Customer' : 'Supplier'}</label></div>
           <select data-f="party_id"><option value="">— name only —</option>
             ${parties.map((p) => `<option value="${p.id}">${UI.esc(p.name)}</option>`).join('')}</select></div>
+        ${kind === 'customer' ? `<div class="form-field span2"><div class="field-label"><label>Related sale order</label></div>
+          <select data-f="source_doc_id"><option value="">— allowance without a sale link —</option>
+            ${saleOrders.map((o) => `<option value="${o.id}">${UI.esc(o.number)} · ${UI.esc(o.customer_name || 'Walk-in')}</option>`).join('')}</select></div>` : ''}
         <div class="form-field"><div class="field-label"><label>Net amount <span class="req">*</span></label></div>
           <input data-f="subtotal" type="number" step="0.01" min="0" value="" /></div>
         <div class="form-field"><div class="field-label"><label>VAT amount</label></div>
@@ -341,6 +345,8 @@ App.register('accounting-receivables', async (view, filter) => {
           subtotal: Number(g('subtotal').value) || 0,
           tax_amount: Number(g('tax_amount').value) || 0,
           tax_code_id: tc && tc.value ? Number(tc.value) : null,
+          source_doc_type: g('source_doc_id')?.value ? 'sale_order' : null,
+          source_doc_id: g('source_doc_id')?.value ? Number(g('source_doc_id').value) : null,
           reason: g('reason').value.trim() || null,
         };
         if (b.subtotal + b.tax_amount <= 0) { showErr('Enter an amount'); return false; }

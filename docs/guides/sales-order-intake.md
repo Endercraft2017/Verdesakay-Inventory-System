@@ -63,3 +63,6 @@ picking. API edits may omit unchanged fields; browser edits carry an edit revisi
 while legacy integrations can continue without one. Offline edits validated at the
 owning site keep the existing site-decision sync rules when replayed to the cloud. Existing dates and currency
 must satisfy validation when saving; unsupported historic values require correction.
+
+Continue with [stock review and approval](sales-stock-approval.md). The root
+[mobile integration handoff](../../MOBILE-INVENTORY-HANDOFF.md) tracks mobile follow-ups separately.

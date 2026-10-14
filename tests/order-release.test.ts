@@ -119,6 +119,51 @@ describe('sale-order release', () => {
     expect(await onHand(raw)).toBe(100);                     // still records only
   });
 
+  it('refuses allocation beyond warehouse stock or another approved sale commitment', async () => {
+    const raw = await mkItem({ name: 'R3 Scarce Widget', quantity: 3 });
+    const first = await saleOrder([{ name: 'R3 Scarce Widget', item_id: raw, quantity: 2, unit_price: 8 }], 'approved');
+    const second = await saleOrder([{ name: 'R3 Scarce Widget', item_id: raw, quantity: 2, unit_price: 8 }]);
+    await ctx.api.post(`/api/orders/${second}/status`).set(H()).send({ status: 'approved', force: true });
+    await ctx.api.post(`/api/orders/${second}/accept-release`).set(H());
+    expect((await ctx.api.post(`/api/orders/${second}/release`).set(H())
+      .send({ bulk: [{ item_id: raw, quantity: 2 }] })).status).toBe(409);
+    expect((await ctx.api.post(`/api/orders/${first}/release`).set(H())
+      .send({ bulk: [{ item_id: raw, quantity: 1 }] })).status).toBe(200);
+    expect((await ctx.api.post(`/api/orders/${second}/release`).set(H())
+      .send({ bulk: [{ item_id: raw, quantity: 2 }] })).status).toBe(409);
+    expect((await getOrder(second)).items[0].released_qty).toBe(0);
+  });
+
+  it('aggregates repeated bulk entries before validating stock and ordered quantity', async () => {
+    const raw = await mkItem({ name: 'R3 Repeated Widget', quantity: 3 });
+    const so = await saleOrder([{ name: 'R3 Repeated Widget', item_id: raw, quantity: 5, unit_price: 8 }]);
+    await ctx.api.post(`/api/orders/${so}/status`).set(H()).send({ status: 'approved', force: true });
+    await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
+    const r = await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ bulk: [
+      { item_id: raw, quantity: 2 }, { item_id: raw, quantity: 2 },
+    ] });
+    expect(r.status).toBe(409);
+    expect((await getOrder(so)).items[0].released_qty).toBe(0);
+  });
+
+  it('requires scanning serialized stock rather than counting it as bulk', async () => {
+    const { product, codes } = await productWithUnits('R3SER', 1);
+    const so = await saleOrder([{ name: 'R3SER Product', item_id: product, quantity: 1, unit_price: 80 }], 'approved');
+    const bulk = await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ bulk: [{ item_id: product, quantity: 1 }] });
+    expect(bulk.status).toBe(409);
+    expect((await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ codes })).status).toBe(200);
+  });
+
+  it('refuses ambiguous duplicate-item sales at intake', async () => {
+    const raw = await mkItem({ name: 'R3 Duplicate Widget', quantity: 10 });
+    const created = await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', status: 'approved', items: [
+      { name: 'R3 Duplicate Widget', item_id: raw, quantity: 1, unit_price: 8 },
+      { name: 'R3 Duplicate Widget', item_id: raw, quantity: 2, unit_price: 9 },
+    ] });
+    expect(created.status).toBe(400);
+    expect(created.body.error).toMatch(/one line|same stock item|duplicate/i);
+  });
+
   it('unreserve returns units to stock-available and drops status back from released', async () => {
     const { product, codes } = await productWithUnits('R4', 2);
     const so = await saleOrder([{ name: 'R4 Product', item_id: product, quantity: 2, unit_price: 50 }], 'approved');
@@ -133,6 +178,22 @@ describe('sale-order release', () => {
     expect((await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body).toHaveLength(1);
   });
 
+  it('refuses an undo that exceeds the allocation or names an unallocated unit', async () => {
+    const raw = await mkItem({ name: 'Undo guard widget', quantity: 5 });
+    const so = await saleOrder([{ name: 'Undo guard widget', item_id: raw, quantity: 3, unit_price: 10 }], 'approved');
+    await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ bulk: [{ item_id: raw, quantity: 2 }] });
+    const excessive = await ctx.api.post(`/api/orders/${so}/release/unreserve`).set(H()).send({ bulk: [
+      { item_id: raw, quantity: 1.5 }, { item_id: raw, quantity: 1.5 },
+    ] });
+    expect(excessive.status).toBe(409);
+    expect((await getOrder(so)).items[0].released_qty).toBe(2);
+    const missing = await ctx.api.post(`/api/orders/${so}/release/unreserve`).set(H()).send({ unit_ids: [999999] });
+    expect(missing.status).toBe(409);
+    expect((await ctx.api.post(`/api/orders/${so}/release/unreserve`).set(H())
+      .send({ bulk: [{ item_id: raw, quantity: 1 }] })).status).toBe(200);
+    expect((await getOrder(so)).items[0].released_qty).toBe(1);
+  });
+
   it("line items lock once the order is approved", async () => {
     const raw = await mkItem({ name: 'R5 Widget', quantity: 50 });
     const so = await saleOrder([{ name: 'R5 Widget', item_id: raw, quantity: 4, unit_price: 10 }], 'approved');
@@ -144,30 +205,27 @@ describe('sale-order release', () => {
     expect((await getOrder(so)).items[0].quantity).toBe(4); // ...but the line is unchanged
   });
 
-  it('confirming the order draws stock down and flips reserved units to sold (GL on)', async () => {
+  it('a slipped order draws stock down and flips reserved units to sold (GL on)', async () => {
     await ctx.api.post('/api/accounting/ledger/setup').set(H()).send({ fiscal_year_start: '2026-01-01' });
+    await ctx.api.put('/api/release-slips/policy').set(H()).send({ authorization_required: false });
     const { product, codes } = await productWithUnits('R6', 2, 25);
     const before = await onHand(product);
     const so = await saleOrder([{ name: 'R6 Product', item_id: product, quantity: 2, unit_price: 100 }], 'approved');
     await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ codes });
     expect(await onHand(product)).toBe(before);             // released, not yet shipped
 
-    await ctx.api.put(`/api/orders/${so}`).set(H()).send({
-      customer_name: 'ACME', status: 'completed',
-      items: [{ name: 'R6 Product', item_id: product, quantity: 2, unit_price: 100 }],
-    });
-    expect(await onHand(product)).toBe(before - 2);         // stock out on confirm
+    const bypass = await ctx.api.post(`/api/orders/${so}/status`).set(H()).send({ status: 'completed', force: true });
+    expect(bypass.status).toBe(409);
+    expect(bypass.body.code).toBe('release_required');
+    expect((await ctx.api.post(`/api/orders/${so}/release-slip`).set(H())
+      .send({ collected_by: 'Customer' })).status).toBe(201);
+    expect(await onHand(product)).toBe(before - 2);         // stock out on slip
     const units = (await ctx.api.get(`/api/finished-products/${product}/units?status=all`).set(H())).body;
     expect(units.every((u: { status: string }) => u.status === 'sold')).toBe(true);
 
-    // cancelling brings it all back
-    await ctx.api.put(`/api/orders/${so}`).set(H()).send({
-      customer_name: 'ACME', status: 'cancelled',
-      items: [{ name: 'R6 Product', item_id: product, quantity: 2, unit_price: 100 }],
-    });
-    expect(await onHand(product)).toBe(before);
-    const back = (await ctx.api.get(`/api/finished-products/${product}/units?status=all`).set(H())).body;
-    expect(back.every((u: { status: string; order_id: number | null }) => u.status === 'in_stock' && u.order_id === null)).toBe(true);
+    const cancel = await ctx.api.put(`/api/orders/${so}`).set(H()).send({ status: 'cancelled' });
+    expect(cancel.status).toBe(409);
+    expect(await onHand(product)).toBe(before - 2);
   });
 });
 

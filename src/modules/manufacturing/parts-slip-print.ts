@@ -38,7 +38,7 @@ export interface PickListData {
   job_orders: Array<{ id: number; number: string; product_name: string | null; qty_ordered: number;
     source_location_name: string | null; team_name: string | null }>;
   lines: Array<{ component_name: string; sku: string | null; unit: string | null; location_name: string | null;
-    need: number; picked: number; on_hand: number;
+    need: number; picked: number; on_hand: number; held_elsewhere: number; free_for_list: number;
     job_orders: Array<{ number: string; need: number }> }>;
 }
 
@@ -49,13 +49,14 @@ export function pickListHtml(d: PickListData): string {
   const lines = d.lines.map((l) =>
     `<tr><td>${esc(l.location_name || '—')}</td><td>${esc(l.component_name)}${l.sku ? `<div class="muted">${esc(l.sku)}</div>` : ''}</td>` +
     `<td class="num">${l.need} ${esc(l.unit || '')}</td><td class="num">${l.on_hand}</td>` +
+    `<td class="num">${l.held_elsewhere}</td><td class="num">${l.free_for_list}</td>` +
     `<td>${l.job_orders.map((j) => `${esc(j.number)}: ${j.need}`).join('<br>')}</td><td class="box"></td></tr>`).join('');
   return page('Pick list', `
     <h1>Pick list</h1>
     <p class="sub">${d.job_orders.length} job order${d.job_orders.length === 1 ? '' : 's'} · printed ${esc(new Date().toISOString().slice(0, 16).replace('T', ' '))}</p>
     <table><thead><tr><th>Job order</th><th>Product</th><th class="num">Qty</th><th>Pull from</th><th>Team</th></tr></thead><tbody>${jos}</tbody></table>
-    <table><thead><tr><th>Location</th><th>Component</th><th class="num">Pick</th><th class="num">On hand</th><th>Per job order</th><th>Picked ✓</th></tr></thead>
-      <tbody>${lines || '<tr><td colspan="6" class="muted">No components to pick.</td></tr>'}</tbody></table>
+    <table><thead><tr><th>Location</th><th>Component</th><th class="num">Pick</th><th class="num">On hand</th><th class="num">Held elsewhere</th><th class="num">Free for this list</th><th>Per job order</th><th>Picked ✓</th></tr></thead>
+      <tbody>${lines || '<tr><td colspan="8" class="muted">No components to pick.</td></tr>'}</tbody></table>
     <div class="sign"><div>Picked by</div><div>Checked by</div></div>`);
 }
 

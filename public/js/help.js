@@ -409,13 +409,15 @@
         the order after delivery to post stock out.</li></ol>
         <h4>Sale-order release</h4>
         <p>A sale order runs <b>open → approved → released → confirmed/completed</b>.
-        <b>Approving is blocked if a line can't be met from stock</b> — you're prompted to
-        <i>trim the order to what's available</i>, <i>create job orders for the shortfall</i>
-        (which also checks whether the components are on hand to build it),
-        <i>draft purchase orders for the shortfall</i> (one per supplier, for the parts that
-        have to be bought), or <i>approve as a backorder</i>. The toolbar's <b>Backorders</b>
-        toggle lists every approved order still waiting on stock, and those rows carry a
-        ⚠ badge. Moving it to <b>approved</b> unlocks the warehouse: on the phone
+        <b>Review stock &amp; approval</b> opens a saved order's stock picture: the ship-from
+        location, other orders, kit/repair holds and shortage quantities. Choosing approved
+        in an open order's editor saves it open first, then opens this review. Stock elsewhere
+        needs a transfer. Draft missing production or purchases with the relevant permission;
+        repeat requests cover only additional demand. Draft supply does not become stock until
+        receipt. Approve for warehouse when covered, or explicitly confirm backorder approval.
+        Approval does not pick or ship goods. The <b>Awaiting release</b> filter lists firm
+        orders with stock lines still unpicked; it does not imply every listed order is short.
+ Moving it to <b>approved</b> unlocks the warehouse: on the phone
         (<i>Work → Release SOs</i>) the releaser opens the order and <b>scans every
         unit's printed QR label</b> to add it (and types a quantity for non-serialized
         lines). Scanned units go to <b>reserved</b> — earmarked for the order but still

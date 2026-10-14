@@ -880,7 +880,10 @@ export const updateOrderSchema = z.object(orderFields).extend({
 
 // ---- Sale-order status-only change (no line-item body) — used by the delivery→fulfil
 // prompt and any "just advance the order" action. Runs the same availability gate. ----
-export const orderStatusSchema = z.object({
+export const shortfallActionSchema = z.object({
+  expected_revision: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid order revision').optional(),
+});
+export const orderStatusSchema = shortfallActionSchema.extend({
   status: trimmed.min(1).max(40),
   force: boolish.optional(),
 });
@@ -907,6 +910,8 @@ export const unreserveOrderSchema = z.object({
     item_id: z.coerce.number().int().positive(),
     quantity: numCoerce.positive().max(1_000_000),
   })).max(300).optional(),
+}).refine((v) => (v.unit_ids?.length || v.bulk?.length), {
+  message: 'Choose an allocated unit or quantity to undo',
 });
 
 // Issuing a release slip — who physically collected the goods, and the vehicle they left in.
@@ -1135,6 +1140,34 @@ export const creditNoteSchema = z.object({
   reason: optionalText,
   subtotal: numCoerce.min(0).default(0),
   tax_amount: numCoerce.min(0).default(0),
+});
+
+// A physical customer return is one slip line per receipt. Serialised receipts
+// identify the exact shipped unit; inspection alone can put it back on hand.
+export const salesReturnReceiveSchema = z.object({
+  slip_id: z.coerce.number().int().positive(),
+  slip_item_id: z.coerce.number().int().positive(),
+  quantity: numCoerce.positive(),
+  unit_id: optionalId,
+  reason: trimmed.min(5).max(500),
+  evidence_ids: z.array(z.coerce.number().int().positive()).min(1).max(12),
+});
+export const salesReturnInspectSchema = z.object({
+  decision: z.enum(['restock', 'reject']),
+  condition_note: trimmed.min(5).max(500),
+  location_id: optionalId,
+});
+export const salesReturnDispositionSchema = z.object({
+  decision: z.enum(['repair', 'salvage', 'dispose']),
+  note: trimmed.min(5).max(500),
+  location_id: optionalId,
+});
+export const salesReturnRepairCompleteSchema = z.object({
+  note: trimmed.min(5).max(500),
+});
+export const salesReturnReinspectSchema = salesReturnInspectSchema;
+export const salesReturnCreditLinkSchema = z.object({
+  credit_note_id: z.coerce.number().int().positive(),
 });
 
 // ---- Tax codes (Phase 2): VAT / withholding classifications ----

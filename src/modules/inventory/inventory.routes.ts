@@ -10,7 +10,7 @@ import { requireAuth, requirePermission, requireAnyPermission } from '../../shar
 import { ITEM_PICKER, UNIT_RECORD } from '../../shared/desk-access';
 import { recordSiteClash, syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
-import { siteDecisionStands } from '../../shared/sync-context';
+import { siteDecisionStands, syncContext } from '../../shared/sync-context';
 import {
   parseBody,
   createItemSchema,
@@ -747,6 +747,19 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
     return;
   }
   const { change, reason, location_id } = parseBody(adjustStockSchema, req.body);
+  // The legacy phone Pick screen uses this exact adjustment reason for sale/job
+  // fulfilment. A generic adjustment has no order allocation or slip, so accepting
+  // it can deduct the same goods twice. Existing offline commands already recorded
+  // at a site still replay as physical decisions; new Pick requests must use the
+  // order release or production kit workflow.
+  if (change < 0 && /^Picked for order\s+/i.test(reason ?? '')
+    && !['replay', 'rebase'].includes(syncContext()?.mode ?? '')) {
+    res.status(409).json({
+      error: 'Legacy Pick cannot adjust stock for an order. Use its warehouse release or production kit workflow.',
+      code: 'use_release_workflow',
+    });
+    return;
+  }
   const locId = location_id ?? getDefaultLocationId();
   const loc = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', locId);
   if (!loc) {

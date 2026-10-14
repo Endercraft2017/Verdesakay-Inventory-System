@@ -122,6 +122,68 @@ describe('warehouse accept → prepare → release slip', () => {
     expect(r.body.shortfalls[0]).toMatchObject({ picking: 4, available: 2 });
   });
 
+  it('rechecks other kit picks at parts release after stock changes', async () => {
+    const { product, part } = await productWithPart('PRSFinalFree', 10);
+    const a = await approvedMO(product, 2); // 4 parts each
+    const b = await approvedMO(product, 2);
+    await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [a, b] });
+    expect((await ctx.api.post('/api/job-orders/prepare').set(H())
+      .send({ job_orders: [{ id: a }, { id: b }] })).status).toBe(200);
+    // Physical stock changed after both kits were picked. On-hand still covers either
+    // kit alone, but releasing A would take parts held for B.
+    await ctx.api.post(`/api/inventory/${part}/adjust`).set(H()).send({ change: -3, reason: 'Count correction' });
+    const available = (await ctx.api.get(`/api/job-orders/${a}/availability`).set(H())).body;
+    expect(available.lines[0]).toMatchObject({ need: 4, have: 7, held_elsewhere: 4, available: 3, short: 1 });
+    expect(available.releasable).toBe(false);
+    const blocked = await ctx.api.post(`/api/job-orders/${a}/release`).set(H());
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.blocked).toBe('components_unavailable');
+    expect(blocked.body.shortfalls[0].held_elsewhere).toBe(4);
+    expect(await qtyOf(part)).toBe(7);
+    expect((await ctx.api.get(`/api/job-orders/${a}`).set(H())).body.status).toBe('draft');
+    expect((await ctx.api.get(`/api/parts-slips?job_order_id=${a}`).set(H())).body).toHaveLength(0);
+    // The warehouse can correct B's pick, making A's kit releasable without a new MO.
+    expect((await ctx.api.post('/api/job-orders/prepare').set(H())
+      .send({ job_orders: [{ id: b, lines: [{ component_item_id: part, qty_picked: 3 }] }] })).status).toBe(200);
+    expect((await ctx.api.post(`/api/job-orders/${a}/release`).set(H())).status).toBe(200);
+    expect(await qtyOf(part)).toBe(3);
+  });
+
+  it('rolls a multi-job warehouse acceptance back if one update fails', async () => {
+    const { product } = await productWithPart('PRSAcceptAtomic', 10);
+    const a = await approvedMO(product, 1);
+    const b = await approvedMO(product, 1);
+    const { db } = await import('../src/shared/db');
+    db.exec(`CREATE TRIGGER fail_second_kit_accept BEFORE UPDATE OF warehouse_accepted_at ON job_orders
+      WHEN NEW.id = ${b} BEGIN SELECT RAISE(ABORT, 'accept fault'); END`);
+    const failed = await ctx.api.post('/api/job-orders/warehouse-accept').set(H())
+      .send({ job_order_ids: [a, b] });
+    expect(failed.status).toBeGreaterThanOrEqual(500);
+    expect((await ctx.api.get(`/api/job-orders/${a}`).set(H())).body.warehouse_accepted_at).toBeNull();
+    expect((await ctx.api.get(`/api/job-orders/${b}`).set(H())).body.warehouse_accepted_at).toBeNull();
+    db.exec('DROP TRIGGER fail_second_kit_accept');
+    expect((await ctx.api.post('/api/job-orders/warehouse-accept').set(H())
+      .send({ job_order_ids: [a, b] })).status).toBe(200);
+  });
+
+  it('keeps the prepared kit and stock unchanged if parts-slip posting fails', async () => {
+    const { product, part } = await productWithPart('PRSAtomicRelease', 8);
+    const mo = await approvedMO(product, 2);
+    await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: mo }] });
+    const { db } = await import('../src/shared/db');
+    db.exec(`CREATE TRIGGER stop_parts_issue BEFORE INSERT ON inventory_transactions
+      WHEN NEW.reason LIKE '%released to production%' BEGIN SELECT RAISE(ABORT, 'issue fault'); END`);
+    const failed = await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+    expect(failed.status).toBeGreaterThanOrEqual(500);
+    expect(await qtyOf(part)).toBe(8);
+    expect((await ctx.api.get(`/api/parts-slips?job_order_id=${mo}`).set(H())).body).toHaveLength(0);
+    expect((await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body).toMatchObject({ status: 'draft', prepared_at: expect.any(String) });
+    db.exec('DROP TRIGGER stop_parts_issue');
+    expect((await ctx.api.post(`/api/job-orders/${mo}/release`).set(H())).status).toBe(200);
+    expect(await qtyOf(part)).toBe(4);
+  });
+
   it('editing the draft sends it back through approval and clears the picks', async () => {
     const { product } = await productWithPart('PRSReset', 100);
     const mo = await approvedMO(product, 2);

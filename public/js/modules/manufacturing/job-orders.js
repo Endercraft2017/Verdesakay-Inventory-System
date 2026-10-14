@@ -144,9 +144,9 @@ App.register('job-orders', async (view, filter) => {
       confirmText: 'Create draft',
       onConfirm: async (ov, showErr) => {
         const g = (k) => ov.querySelector(`[data-f="${k}"]`).value;
-        const qty = parseInt(g('qty'), 10);
+        const qty = Number(g('qty'));
         if (!g('product')) { showErr('Pick a product'); return false; }
-        if (!qty || qty < 1) { showErr('Quantity must be at least 1'); return false; }
+        if (!Number.isInteger(qty) || qty < 1) { showErr('Quantity must be a whole number of at least 1'); return false; }
         await API.post('/job-orders', {
           product_item_id: Number(g('product')), qty_ordered: qty,
           source_location_id: Number(g('source')) || null,
@@ -205,14 +205,15 @@ App.register('job-orders', async (view, filter) => {
 
     // Release blocked: components short at the source location. Offer to draft POs for them.
     function releaseShortfallModal(shortfalls) {
+      const physicallyShort = shortfalls.some((s) => s.have < s.need);
       UI.modal({
-        title: `Can't release ${jo.number} — components short`,
+        title: `Can't release ${jo.number} — components unavailable`,
         bodyHTML: `
-          <p class="muted" style="margin-top:0">These components aren't on hand at ${UI.esc(jo.source_location_name || 'the source location')}:</p>
-          <table><thead><tr><th>Component</th><th class="right">Need</th><th class="right">Have</th><th class="right">Short</th></tr></thead>
-            <tbody>${shortfalls.map((s) => `<tr><td>${UI.esc(s.component_name)}</td><td class="right">${s.need}</td><td class="right">${s.have}</td><td class="right danger">${s.short}</td></tr>`).join('')}</tbody></table>
+          <p class="muted" style="margin-top:0">At ${UI.esc(jo.source_location_name || 'the source location')}, other kits or repair requests may now hold part of the on-hand stock. This kit stays prepared; release it after the stock is free or replenished.</p>
+          <div class="table-scroll"><table><thead><tr><th>Component</th><th class="right">Need</th><th class="right">On hand</th><th class="right">Held elsewhere</th><th class="right">Free</th><th class="right">Short</th></tr></thead>
+            <tbody>${shortfalls.map((s) => `<tr><td>${UI.esc(s.component_name)}</td><td class="right">${s.need}</td><td class="right">${s.have}</td><td class="right">${s.held_elsewhere || 0}</td><td class="right">${s.available ?? s.have}</td><td class="right danger">${s.short}</td></tr>`).join('')}</tbody></table></div>
           <div id="jo-sf-result" class="muted" style="font-size:12px;margin-top:8px"></div>`,
-        confirmText: 'Draft purchase orders',
+        confirmText: physicallyShort ? 'Draft purchase orders' : undefined,
         cancelText: 'Close',
         onConfirm: async (ov, showErr) => {
           try {
@@ -222,6 +223,37 @@ App.register('job-orders', async (view, filter) => {
               ? '<b>Draft POs:</b><br>' + made.join('<br>') + '<br>Review &amp; send them from Purchasing, then receive the stock and release again.'
               : UI.esc(r.note || 'Nothing to draft.');
             return false; // keep the modal so the result is readable
+          } catch (e) { showErr(e.message); return false; }
+        },
+      });
+    }
+
+    async function prepareKitModal() {
+      let availability;
+      try { availability = await API.get('/job-orders/' + id + '/availability'); }
+      catch (e) { UI.toast(e.message, 'error'); return; }
+      const lines = availability.lines || [];
+      UI.modal({
+        title: `Pick parts kit · ${jo.number}`, size: 'lg', confirmText: 'Save picked quantities',
+        bodyHTML: `<p class="order-notice">Count what is physically set aside at ${UI.esc(availability.source_location_name || 'the source location')}. Saving a pick holds stock for this kit; issuing the parts slip deducts it. A partial pick can be saved and completed later.</p>
+          ${lines.length ? `<div class="table-scroll"><table><thead><tr><th>Component</th><th class="right">Planned</th><th class="right">On hand</th><th class="right">Held elsewhere</th><th class="right">Free for this kit</th><th class="right">Picked for this kit</th></tr></thead><tbody>
+          ${lines.map((l) => `<tr><td>${UI.esc(l.component_name)}</td><td class="right">${l.need}</td><td class="right">${l.have}</td><td class="right">${l.held_elsewhere}</td><td class="right">${l.available}</td><td class="right"><input type="number" data-pick="${l.component_item_id}" min="0" max="${l.need}" step="1" value="${l.picked}" style="width:88px" /></td></tr>`).join('')}
+          </tbody></table></div>` : '<p class="muted">This job order has no components. Save to mark its empty kit ready for handoff.</p>'}`,
+        onConfirm: async (ov, showErr) => {
+          const picks = [...ov.querySelectorAll('[data-pick]')].map((input) => ({
+            component_item_id: Number(input.dataset.pick), qty_picked: Number(input.value),
+          }));
+          if (picks.some((p) => !Number.isInteger(p.qty_picked) || p.qty_picked < 0
+            || p.qty_picked > lines.find((l) => l.component_item_id === p.component_item_id).need)) {
+            showErr('Each picked quantity must be a whole number from zero to the planned amount.'); return false;
+          }
+          try {
+            const body = lines.length ? { job_orders: [{ id: Number(id), lines: picks }] }
+              : { job_orders: [{ id: Number(id) }] };
+            await API.post('/job-orders/prepare', body);
+            jo = await API.get('/job-orders/' + id);
+            UI.toast(jo.prepared_at ? 'Kit fully picked — ready for parts slip' : 'Partial pick saved');
+            draw(); load(); return true;
           } catch (e) { showErr(e.message); return false; }
         },
       });
@@ -437,7 +469,7 @@ App.register('job-orders', async (view, filter) => {
         ${canWrite ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           ${jo.status !== 'completed' && jo.status !== 'cancelled' ? `<button type="button" class="btn secondary" id="jo-resched">Team / schedule…</button>` : ''}
           ${isDraft ? `${jo.approved_at && !jo.warehouse_accepted_at ? `<button type="button" class="btn" data-do="_wh_accept">Accept (warehouse)</button>` : ''}
-                       ${jo.warehouse_accepted_at && !jo.prepared_at ? `<button type="button" class="btn" data-do="_prepare">Mark kit picked</button>` : ''}
+                       ${jo.warehouse_accepted_at ? `<button type="button" class="btn secondary" data-do="_prepare">${jo.prepared_at ? 'Review / adjust picked kit' : 'Pick / review kit'}</button>` : ''}
                        ${jo.prepared_at ? `<button type="button" class="btn" data-do="_release">Release &amp; issue slip</button>` : ''}
                        <button type="button" class="btn secondary danger" data-do="_delete">Delete</button>` : ''}
           ${running ? `<button type="button" class="btn secondary" data-do="pause">Pause</button>` : ''}
@@ -490,7 +522,8 @@ App.register('job-orders', async (view, filter) => {
         if (!itemId) { UI.toast('Pick an item', 'error'); return; }
         if (el.querySelector(`[data-plan="${itemId}"]`)) { UI.toast('That component is already listed', 'error'); return; }
         const it = items.find((x) => String(x.id) === String(itemId));
-        const qty = parseInt(qtyEl.value, 10) || 0;
+        const qty = Number(qtyEl.value);
+        if (!Number.isInteger(qty) || qty <= 0) { UI.toast('Enter a positive whole planned quantity', 'error'); return; }
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${UI.esc(it ? it.name : '#' + itemId)}</td>
@@ -509,8 +542,11 @@ App.register('job-orders', async (view, filter) => {
       const sp = el.querySelector('#jo-save-plan');
       if (sp) sp.onclick = async () => {
         const components = [...el.querySelectorAll('[data-plan]')].map((i) => ({
-          component_item_id: Number(i.dataset.plan), qty_planned: parseInt(i.value, 10) || 0,
+          component_item_id: Number(i.dataset.plan), qty_planned: Number(i.value),
         }));
+        if (components.some((c) => !Number.isInteger(c.qty_planned) || c.qty_planned < 0)) {
+          UI.toast('Planned quantities must be whole numbers of zero or more', 'error'); return;
+        }
         try {
           const r = await API.put('/job-orders/' + id + '/components', { components });
           jo = r.job_order; UI.toast('Planned quantities saved'); draw();
@@ -693,7 +729,7 @@ App.register('job-orders', async (view, filter) => {
           .then(async () => { jo = await API.get('/job-orders/' + id); UI.toast('Done'); draw(); load(); })
           .catch((e) => UI.toast(e.message, 'error'));
         if (d === '_wh_accept') { bulk('warehouse-accept', { job_order_ids: [Number(id)] }); return; }
-        if (d === '_prepare') { bulk('prepare', { job_orders: [{ id: Number(id) }] }); return; }
+        if (d === '_prepare') { prepareKitModal(); return; }
         if (d === '_release') {
           const who = window.prompt('Received by (production) — optional', jo.team_name || '');
           if (who === null) return;

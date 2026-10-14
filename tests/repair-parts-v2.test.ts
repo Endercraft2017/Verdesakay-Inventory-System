@@ -3,6 +3,7 @@
  *  the proposing clerk can't approve, and the searchable history. Refusals move no stock. Open
  *  requests hold their part at an approved source; the requester is pushed on every outcome. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import crypto from 'node:crypto';
 import { setupApp, cleanup, login, createEmployee, addSerializedUnits, type TestContext } from './helpers';
 
 let ctx: TestContext;
@@ -43,7 +44,7 @@ beforeAll(async () => {
   unit = (await addSerializedUnits(ctx.api, token, jo, 1, 'RP'))[0]!;
   ({ __sentPush } = await import('../src/shared/push'));
   await ctx.api.post('/api/push/subscribe').set(bearer(qc.token))
-    .send({ endpoint: 'https://push.example.com/sub/qc-rp', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+    .send({ endpoint: 'https://push.example.com/sub/qc-rp', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: crypto.randomBytes(12).toString('base64url') } });
   await ctx.api.post(`/api/job-orders/${jo}/units/inspect`).set(H()).send({ unit_ids: [unit], result: 'fail', disposition: 'repair',
     remarks: 'Intermittent signal failure', repair: { category: 'Electrical · signal system', station: 'Wiring', priority: 'Urgent' } });
 });
@@ -139,7 +140,7 @@ describe('holding parts for open requests', () => {
     const seat = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Seat', quantity: 0 })).body.id as number;
     await ctx.api.post(`/api/inventory/${seat}/adjust`).set(H()).send({ change: 2, location_id: wh, reason: 'stock' });
     await raise(2, seat);
-    const so = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', items: [{ name: 'Seat', item_id: seat, quantity: 1, unit_price: 5 }] })).body.id;
+    const so = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', location_id: wh, items: [{ name: 'Seat', item_id: seat, quantity: 1, unit_price: 5 }] })).body.id;
     const av = (await ctx.api.get(`/api/orders/${so}/availability`).set(H())).body;
     expect(av.lines[0]).toMatchObject({ on_hand: 2, available: 0, shortfall: 1 });
   });

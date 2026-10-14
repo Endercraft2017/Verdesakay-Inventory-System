@@ -30,6 +30,7 @@ import employeeProfileRoutes from './modules/hr/employee-profile.routes';
 import { reporterRouter as anonymousReportRoutes, staffRouter as confidentialReportRoutes, isAnonymousReportPath } from './core/confidential-reports.routes';
 import deliveriesRoutes from './modules/inventory/deliveries.routes';
 import releaseSlipsRoutes from './modules/inventory/release-slips.routes';
+import salesReturnsRoutes from './modules/inventory/sales-returns.routes';
 import formsRoutes from './core/forms.routes';
 import messagesRoutes from './core/messages.routes';
 import personalRoutes from './core/personal.routes';
@@ -402,6 +403,7 @@ export function createApp() {
   app.use('/api/bug-reports', bugReportsRoutes);
   app.use('/api/deliveries', requireModule('inventory'), deliveriesRoutes);
   app.use('/api/release-slips', requireModule('inventory'), releaseSlipsRoutes);
+  app.use('/api/sales-returns', requireModule('inventory'), salesReturnsRoutes);
   app.use('/api/forms', formsRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks

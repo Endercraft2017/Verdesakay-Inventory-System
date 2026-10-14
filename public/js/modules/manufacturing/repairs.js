@@ -50,7 +50,7 @@ App.register('repairs', async (view, filter) => {
         <tbody>${rows.map((r) => `
           <tr>
             <td class="mono">${UI.esc(r.number)}</td>
-            <td>${UI.esc(r.job_order_number || '—')}<div class="muted" style="font-size:11px">${UI.esc(r.product_name || '')}</div></td>
+            <td>${UI.esc(r.job_order_number || '—')}${r.sales_return_number ? `<div class="muted">Customer return ${UI.esc(r.sales_return_number)}</div>` : ''}<div class="muted" style="font-size:11px">${UI.esc(r.product_name || '')}</div></td>
             <td>#${r.unit_id}${r.unit_identifier ? `<div class="muted mono" style="font-size:11px">${UI.esc(r.unit_identifier)}</div>` : ''}</td>
             <td>${r.kind === 'replace' ? 'Replace' : 'Add'}${r.kind === 'replace' ? `<div class="muted" style="font-size:11px">${r.return_to_damage ? 'old → damage' : 'old discarded'}</div>` : ''}</td>
             <td>${UI.esc(r.component_name)}</td>

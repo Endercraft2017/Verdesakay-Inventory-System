@@ -419,6 +419,7 @@ router.get('/pick-list', readGate, (req, res) => {
   type Line = {
     component_item_id: number; component_name: string; sku: string | null; unit: string | null;
     location_id: number; location_name: string | null; need: number; picked: number; on_hand: number;
+    held_elsewhere: number; free_for_list: number;
     job_orders: Array<{ job_order_id: number; number: string; need: number; picked: number }>;
   };
   const lines = new Map<string, Line>();
@@ -433,7 +434,9 @@ router.get('/pick-list', readGate, (req, res) => {
         l = {
           component_item_id: c.component_item_id, component_name: c.component_name, sku: it?.sku ?? null, unit: it?.unit ?? null,
           location_id: loc, location_name: jo.source_location_name ?? null, need: 0, picked: 0,
-          on_hand: stockAt(c.component_item_id, loc), job_orders: [],
+          on_hand: stockAt(c.component_item_id, loc),
+          held_elsewhere: pickedElsewhere(c.component_item_id, loc, ids),
+          free_for_list: 0, job_orders: [],
         };
         lines.set(key, l);
       }
@@ -442,6 +445,7 @@ router.get('/pick-list', readGate, (req, res) => {
       l.job_orders.push({ job_order_id: jo.id, number: jo.number, need: c.qty_planned, picked: c.qty_picked ?? 0 });
     }
   }
+  for (const line of lines.values()) line.free_for_list = Math.max(0, line.on_hand - line.held_elsewhere);
   const out = {
     job_orders: (jos as JobOrder[]).map((j) => ({
       id: j.id, number: j.number, product_name: j.product_name, qty_ordered: j.qty_ordered,
@@ -536,7 +540,7 @@ export function createDraftJobOrder(opts: {
      WHERE b.product_item_id = ? ORDER BY b.sort, b.id`,
     opts.productId
   );
-  db.exec('BEGIN');
+  db.exec('SAVEPOINT draft_job_order');
   let id: number;
   try {
     const number = nextSequence('mo_seq', 'MO');
@@ -560,9 +564,9 @@ export function createDraftJobOrder(opts: {
         id, c.component_item_id, c.component_name, c.quantity, c.quantity * opts.qty
       );
     }
-    db.exec('COMMIT');
+    db.exec('RELEASE draft_job_order');
   } catch (e) {
-    db.exec('ROLLBACK');
+    db.exec('ROLLBACK TO draft_job_order'); db.exec('RELEASE draft_job_order');
     throw e;
   }
   return { id, number: loadJobOrder(id)!.number };
@@ -794,18 +798,23 @@ function jobOrderComponentShortfalls(joId: number): Array<{
 /** Every planned component vs. what's on hand at the source location, for the pre-release
  *  stock check. `short` is 0 when covered. */
 function jobOrderComponentAvailability(joId: number): Array<{
-  component_item_id: number; component_name: string; need: number; have: number; short: number; picked: number;
+  component_item_id: number; component_name: string; need: number; have: number;
+  held_elsewhere: number; available: number; short: number; picked: number;
 }> {
   const jo = loadJobOrder(joId);
   if (!jo) return [];
   const sourceLoc = jo.source_location_id ?? getDefaultLocationId();
-  const out: Array<{ component_item_id: number; component_name: string; need: number; have: number; short: number; picked: number }> = [];
+  const out: Array<{ component_item_id: number; component_name: string; need: number; have: number;
+    held_elsewhere: number; available: number; short: number; picked: number }> = [];
   for (const c of jo.components ?? []) {
     if (c.qty_planned <= 0 || c.component_item_id == null) continue;
     const have = stockAt(c.component_item_id, sourceLoc);
+    const heldElsewhere = pickedElsewhere(c.component_item_id, sourceLoc, [joId]);
+    const available = Math.max(0, have - heldElsewhere);
     out.push({
       component_item_id: c.component_item_id, component_name: c.component_name,
-      need: c.qty_planned, have, short: Math.max(0, c.qty_planned - have), picked: c.qty_picked ?? 0,
+      need: c.qty_planned, have, held_elsewhere: heldElsewhere, available,
+      short: Math.max(0, c.qty_planned - available), picked: c.qty_picked ?? 0,
     });
   }
   return out;
@@ -835,13 +844,17 @@ router.post('/warehouse-accept', writeGate, syncClass('claim'), (req, res) => {
     const err = warehouseStepError(loadJobOrder(id), false);
     if (err) { res.status(err.status).json({ error: err.error, job_order_id: id }); return; }
   }
-  for (const id of ids) {
-    run(
-      `UPDATE job_orders SET warehouse_accepted_by = ?, warehouse_accepted_at = datetime('now'), updated_at = datetime('now')
-       WHERE id = ? AND warehouse_accepted_at IS NULL`,
-      req.user!.id, id
-    );
-  }
+  db.exec('BEGIN');
+  try {
+    for (const id of ids) {
+      run(
+        `UPDATE job_orders SET warehouse_accepted_by = ?, warehouse_accepted_at = datetime('now'), updated_at = datetime('now')
+         WHERE id = ? AND warehouse_accepted_at IS NULL`,
+        req.user!.id, id
+      );
+    }
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
   res.json({ ok: true, job_orders: ids.map((id) => loadJobOrder(id)) });
 });
 
@@ -866,7 +879,10 @@ router.post('/prepare', writeGate, syncClass('claim'), (req, res) => {
     if (!req0.lines) {
       for (const c of comps) picks.set(c.component_item_id!, c.qty_planned);
     } else {
+      const seen = new Set<number>();
       for (const l of req0.lines) {
+        if (seen.has(l.component_item_id)) { res.status(400).json({ error: `Component #${l.component_item_id} is listed twice for ${jo!.number}` }); return; }
+        seen.add(l.component_item_id);
         const c = comps.find((x) => x.component_item_id === l.component_item_id);
         if (!c) { res.status(400).json({ error: `Component #${l.component_item_id} is not on ${jo!.number}` }); return; }
         if (l.qty_picked > c.qty_planned) {
@@ -1048,13 +1064,14 @@ router.post('/:id/release', writeGate, syncClass('physical'), (req, res) => {
     return;
   }
   const input = parseBody(releaseJobOrderSchema, req.body ?? {});
-  const shortfalls = jobOrderComponentShortfalls(id);
+  const shortfalls = jobOrderComponentAvailability(id).filter((line) => line.short > 0);
   // Offline (D1): the kit physically left the warehouse — accepted, and any location that goes
   // below zero is flagged as a stock discrepancy by applyStockChange.
   if (shortfalls.length && !overdrawAllowed()) {
     res.status(400).json({
       error: `Not enough stock at ${jo.source_location_name ?? 'the source location'} — `
-        + shortfalls.map((s) => `${s.component_name}: need ${s.need}, have ${s.have}`).join('; '),
+        + shortfalls.map((s) => `${s.component_name}: need ${s.need}, ${s.available} free (${s.have} on hand, ${s.held_elsewhere} held elsewhere)`).join('; '),
+      blocked: 'components_unavailable',
       shortfalls,
     });
     return;

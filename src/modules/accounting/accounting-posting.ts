@@ -64,7 +64,7 @@ export interface BuiltEntry {
   entry_date: string;
   memo: string;
   reference: string;
-  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note' | 'payroll_run' | 'job_order' | 'goods_receipt' | 'sale_cogs';
+  source_type: 'sale_order' | 'vendor_bill' | 'payment' | 'credit_note' | 'payroll_run' | 'job_order' | 'goods_receipt' | 'sale_cogs' | 'sales_return_cogs';
   source_id: number;
   lines: JournalLineInput[];
 }

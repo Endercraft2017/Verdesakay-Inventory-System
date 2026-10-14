@@ -63,10 +63,13 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 68: rejected-return disposition and reinspection.
+// 67: slip-linked sales returns and the shipped unit-cost snapshot.
 // 66: recoverable file bytes for all tenant upload modules.
+// 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 66; // 65: durable message attachment bytes; 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 68; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -678,6 +681,14 @@ function createSchema(): void {
       line_total  REAL NOT NULL DEFAULT 0,
       sort        INTEGER NOT NULL DEFAULT 0
     );
+
+    -- Durable sales → procurement planning links; drafts are never stock or fulfilment.
+    CREATE TABLE IF NOT EXISTS sale_shortfall_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      purchase_order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_shortfall_purchase_source ON sale_shortfall_purchases(source_order_id);
 
     -- Manufacturing job orders (Phase B). Consume a product's BOM to build N units.
     CREATE TABLE IF NOT EXISTS job_orders (
@@ -2776,6 +2787,73 @@ function migrate(): void {
     CREATE INDEX IF NOT EXISTS idx_release_slip_items_slip ON release_slip_items(slip_id);
   `);
 
+  // v67: a return is a physical receiving/inspection record. Credit notes remain a
+  // separate accounting decision; neither a receipt nor a rejected item changes stock.
+  const slipItemCols = db.prepare('PRAGMA table_info(release_slip_items)').all() as { name: string }[];
+  if (!slipItemCols.some((c) => c.name === 'unit_cost')) db.exec('ALTER TABLE release_slip_items ADD COLUMN unit_cost REAL');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_returns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number TEXT NOT NULL UNIQUE,
+      slip_id INTEGER NOT NULL REFERENCES release_slips(id) ON DELETE RESTRICT,
+      slip_item_id INTEGER NOT NULL REFERENCES release_slip_items(id) ON DELETE RESTRICT,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE RESTRICT,
+      quantity REAL NOT NULL CHECK (quantity > 0),
+      unit_id INTEGER UNIQUE REFERENCES job_order_units(id) ON DELETE RESTRICT,
+      unit_cost REAL,
+      status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','restocked','rejected')),
+      reason TEXT NOT NULL,
+      condition_note TEXT,
+      location_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
+      credit_note_id INTEGER UNIQUE REFERENCES credit_notes(id) ON DELETE RESTRICT,
+      received_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      received_at TEXT NOT NULL DEFAULT (datetime('now')),
+      inspected_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      inspected_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_returns_slip_item ON sales_returns(slip_item_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_returns_slip ON sales_returns(slip_id);
+    CREATE TABLE IF NOT EXISTS sales_return_credit_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE RESTRICT,
+      credit_note_id INTEGER NOT NULL REFERENCES credit_notes(id) ON DELETE RESTRICT,
+      linked_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(return_id, credit_note_id)
+    );
+  `);
+
+  // v68: rejected customer goods stay outside sellable stock while they are repaired,
+  // salvaged, or disposed. This lifecycle is separate from the original job-order receipt.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_return_dispositions (
+      return_id INTEGER PRIMARY KEY REFERENCES sales_returns(id) ON DELETE RESTRICT,
+      state TEXT NOT NULL CHECK (state IN ('repair','awaiting_inspection','completed','salvaged','disposed')),
+      decision_note TEXT NOT NULL,
+      repair_note TEXT,
+      location_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
+      decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sales_return_disposition_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE RESTRICT,
+      action TEXT NOT NULL,
+      note TEXT NOT NULL,
+      actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_return_disposition_events_return
+      ON sales_return_disposition_events(return_id, id);
+  `);
+  const repairReturnCols = db.prepare('PRAGMA table_info(repair_part_requests)').all() as { name: string }[];
+  if (!repairReturnCols.some((c) => c.name === 'sales_return_id')) {
+    db.exec('ALTER TABLE repair_part_requests ADD COLUMN sales_return_id INTEGER REFERENCES sales_returns(id) ON DELETE RESTRICT');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_repair_part_requests_sales_return ON repair_part_requests(sales_return_id)');
+
   // (SCHEMA_VERSION 49) Job-order approval before the warehouse releases parts.
   const joApvCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
   for (const [col, decl] of [
@@ -3148,11 +3226,11 @@ function seed(): void {
     const adminDept = db
       .prepare('SELECT id FROM departments WHERE name = ?')
       .get('Administration') as { id: number } | undefined;
-    const password = process.env.ADMIN_PASSWORD || 'admin123';
+    const password = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'test' ? process.env.VDS_TEST_ADMIN_PASSWORD : undefined);
+    if (!password) throw new Error('ADMIN_PASSWORD is required before creating the default admin account');
     const hash = bcrypt.hashSync(password, 10);
-    // A default / bootstrap password is known to whoever installed the server, so the first
-    // sign-in must replace it (the server allows nothing else until then — shared/auth.ts).
-    // Tests sign in as this account directly. Provisioning clears the flag when the operator
+    // The configured first-boot password must be replaced at first sign-in (shared/auth.ts).
+    // Tests use a separate fixture variable. Provisioning clears the flag when the operator
     // sets the owner's own password (platform/provisioning.ts).
     db.prepare(
       `INSERT INTO users (username, full_name, password_hash, role, department_id, password_change_required)
@@ -3160,12 +3238,10 @@ function seed(): void {
     ).run('admin', 'System Administrator', hash, adminDept ? adminDept.id : null, process.env.NODE_ENV === 'test' ? 0 : 1);
 
     if (!process.env.DB_PATH) {
-      // Only print credentials for a real server start, not during tests.
       console.log('========================================================');
       console.log('  Default admin account created:');
       console.log('     username: admin');
-      console.log(`     password: ${password}`);
-      console.log('  >> You will be asked to choose a new password at first sign-in. <<');
+      console.log('  Use the configured ADMIN_PASSWORD and change it at first sign-in.');
       console.log('========================================================');
     }
   }

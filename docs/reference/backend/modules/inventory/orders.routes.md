@@ -46,3 +46,14 @@ All routes are mounted at `/api/orders` (`src/app.ts`) and require authenticatio
 - Intake validates positive quantities, valid optional dates, and linked inventory/customer/location/supplier/tax records before writes. Repeated linked stock items on a sale return 400 with instructions to combine quantities; locked legacy lines are retained on header saves. Amounts beyond safe cent precision and invalid currency codes are rejected. Supported sale statuses are normalized; new manual transitions to `released` are blocked in create, PUT, and status-only handlers. Free-text non-stock lines are never linked by name. `resolveCustomer` treats blank name/contact as a request for customer defaults.
 - `type` and `number` cannot be changed via `PUT` — `updateOrderSchema` has no `type` field, and the `UPDATE orders` statement never touches `number`.
 - UI coverage for the corresponding intake editor lives in `tests/orders-ui.test.ts`; route validation and permission coverage lives in `tests/orders.test.ts`.
+
+## Stock review and repeat-safe shortage planning
+
+ATP implementation now lives in [order-availability.ts](order-availability.md) and is
+re-exported here. Approval, production-shortfall and purchase-shortfall accept optional review
+revisions. Status-only approval rechecks live stock and preserves legacy mobile bodies.
+Shortfall drafts are restricted to open/approved/released unfulfilled sales. Production accounts
+for completed output awaiting receipt; procurement uses aggregate materials and durable source
+links. Shared create helpers use savepoints inside atomic sale actions; PO responses include
+`id`. Replay-only audit rows are inserted after planned records to preserve allocated IDs.
+See the linked reference for response fields, source semantics, legacy PO recognition and tests.

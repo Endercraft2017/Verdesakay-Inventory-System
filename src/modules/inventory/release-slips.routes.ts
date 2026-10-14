@@ -13,6 +13,7 @@ import {
 import { notifyPermission, notifyUser } from '../../shared/push';
 import type { ReleaseSlip, ReleaseSlipItem } from '../../shared/types';
 import { syncClass } from '../../sync';
+import { orderAvailability } from './order-availability';
 import {
   authorizationRequired, currentAuthorization, latestOverride, newToken, packageItemsFor, publicAuthorization, tokenError,
 } from './release-auth';
@@ -49,10 +50,14 @@ router.get('/queue', viewGate, (req, res) => {
   const rows = queryAll<Record<string, unknown>>(
     `SELECT o.id, o.number, o.status, o.customer_name, o.order_date, o.expected_date,
             o.warehouse_accepted_at, wa.full_name AS warehouse_accepted_by_name,
+            COALESCE(ship.name, fallback.name) AS location_name,
             ${PROGRESS_SQL}
      FROM orders o
      LEFT JOIN users wa ON wa.id = o.warehouse_accepted_by
+     LEFT JOIN locations ship ON ship.id = o.location_id
+     LEFT JOIN locations fallback ON fallback.is_default = 1 AND o.location_id IS NULL
      WHERE o.type = 'sale' AND LOWER(o.status) IN ('approved', 'released')
+       AND EXISTS (SELECT 1 FROM order_items physical WHERE physical.order_id = o.id AND physical.item_id IS NOT NULL)
        AND NOT EXISTS (SELECT 1 FROM release_slips rs WHERE rs.order_id = o.id)
      ORDER BY COALESCE(o.expected_date, '9999-12-31'), o.id`
   );
@@ -103,10 +108,14 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
      WHERE u.order_id = ? AND u.status IN ('reserved', 'sold') ORDER BY u.id`, id
   );
   const accepted = queryOne<{ warehouse_accepted_at: string | null }>('SELECT warehouse_accepted_at FROM orders WHERE id = ?', id);
+  const availability = orderAvailability(id);
   res.json({
     order: { id, number: order.number, status: order.status, customer_name: order.customer_name,
-      warehouse_accepted_at: accepted?.warehouse_accepted_at ?? null, location_id: order.location_id },
+      warehouse_accepted_at: accepted?.warehouse_accepted_at ?? null, location_id: availability.location_id,
+      location_name: availability.location_name },
     lines, units,
+    availability: availability.lines.map((l) => ({ item_id: l.item_id, free_to_allocate: Math.max(0, l.available - l.covered_here),
+      on_hand: l.on_hand, committed_elsewhere: l.committed_elsewhere, kit_held: l.kit_held, repair_held: l.repair_held })),
     authorization: publicAuthorization(id),
     package: packageItemsFor(id),
     reports: queryAll("SELECT id, kind, description, unit_identifier, created_at FROM release_reports WHERE order_id = ? AND status = 'open' ORDER BY id", id),

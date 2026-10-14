@@ -133,7 +133,7 @@ function writePosted(built: BuiltEntry, userId: number | null): { id: number; nu
 
 export interface AutoPostOutcome {
   posted: boolean;
-  skipped?: 'ledger_off' | 'already_posted' | 'period_closed' | 'nothing_to_post';
+  skipped?: 'ledger_off' | 'already_posted' | 'period_closed' | 'nothing_to_post' | 'cost_missing';
   error?: string;
   entry?: { id: number; number: string };
 }
@@ -300,63 +300,107 @@ function saleLines(orderId: number): FulfilLine[] {
   );
 }
 
-/** Move a firm sale's goods out of stock (and reverse the move when pulled back), keeping
- *  perpetual inventory + COGS in step. Acts while the general ledger is on (turning the GL on
- *  opts a tenant into perpetual inventory), and also — without COGS — for any sale whose goods
- *  left on a release slip, since that slip is the physical stock-out. `force` = 'release' runs the
- *  restore branch regardless of status (used just before a sale is deleted). Best-effort. */
+/** Apply the inventory portion of a sale transition inside the caller's transaction.
+ * A release slip uses this directly so the slip and physical stock-out commit together. */
+function changeSaleStockInTransaction(orderId: number, userId: number | null, force?: 'release'):
+  { wantFulfilled: boolean; ledger: boolean } | null {
+  const o = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
+  if (!o || o.type !== 'sale') return null;
+  const ledger = ledgerEnabled();
+  if (!ledger && !queryOne('SELECT id FROM release_slips WHERE order_id = ?', orderId)) return null;
+  const wantFulfilled = force === 'release' ? false : CONFIRMED_SALE.has(String(o.status || '').toLowerCase());
+  if (wantFulfilled === !!o.fulfilled_at) return null;
+  const lines = saleLines(orderId).filter((l) => l.item_id != null && (l.quantity || 0) > 0);
+  const loc = o.location_id ?? getDefaultLocationId();
+  const sign = wantFulfilled ? -1 : 1;
+  const reason = wantFulfilled ? `Sold — ${o.number}` : `Sale reversed — ${o.number}`;
+  for (const l of lines) {
+    applyStockChange({ itemId: l.item_id!, locationId: loc, change: sign * l.quantity, userId, reason });
+    // Serialized units already sit inside the line's stock quantity; do not move them twice.
+    run(
+      `UPDATE job_order_units SET status = ?, updated_at = datetime('now')
+       WHERE order_id = ? AND product_item_id = ? AND status = ?`,
+      wantFulfilled ? 'sold' : 'reserved', orderId, l.item_id,
+      wantFulfilled ? 'reserved' : 'sold'
+    );
+  }
+  run(`UPDATE orders SET fulfilled_at = ${wantFulfilled ? "datetime('now')" : 'NULL'} WHERE id = ?`, orderId);
+  return { wantFulfilled, ledger };
+}
+
+/** Strict physical handoff: the caller owns BEGIN/COMMIT and must roll back on failure. */
+export function fulfillSaleStockInTransaction(orderId: number, userId: number | null): boolean {
+  return !!changeSaleStockInTransaction(orderId, userId)?.wantFulfilled;
+}
+
+/** Accounting follows the committed stock-out. A posting error remains recoverable without
+ * undoing a physical handoff; stock and slip themselves were committed atomically. */
+export function postFulfilledSaleCogs(orderId: number, userId: number | null): void {
+  try {
+    if (!ledgerEnabled()) return;
+    const o = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
+    if (!o || !o.fulfilled_at) return;
+    // Reversal entries carry the same source type/id; only an unreversed original
+    // counts as current COGS for this sale.
+    if (queryOne(`SELECT 1 FROM journal_entries je WHERE je.source_type = 'sale_cogs'
+      AND je.source_id = ? AND je.status = 'posted' AND je.reverses_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reverses_id = je.id) LIMIT 1`, orderId)) return;
+    const lines = saleLines(orderId).filter((l) => l.item_id != null && (l.quantity || 0) > 0);
+    const amount = round2(lines.reduce((s, l) => s + l.quantity * (l.cost || 0), 0));
+    const date = o.order_date || o.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+    if (amount <= 0 || periodClosedOn(date)) return;
+    const built = buildCogsEntry({ number: o.number, date, amount }, getPostingRules(), orderId);
+    if (built.ok) writePosted(built.entry, userId);
+  } catch (e) {
+    console.warn(`[gl] COGS ${orderId}: ${(e as Error).message}`);
+  }
+}
+
+/** Restocked customer returns reverse the shipped unit's COGS at its slip cost.
+ * The physical receipt has already committed; a skipped/error result stays visible for
+ * accounting reconciliation and this helper can be retried without moving stock. */
+export function postSalesReturnCogs(returnId: number, userId: number | null): AutoPostOutcome {
+  try {
+    if (!ledgerEnabled()) return { posted: false, skipped: 'ledger_off' };
+    const r = queryOne<{ number: string; quantity: number; unit_cost: number | null; status: string; inspected_at: string | null }>(
+      'SELECT number, quantity, unit_cost, status, inspected_at FROM sales_returns WHERE id = ?', returnId);
+    if (!r || r.status !== 'restocked') return { posted: false, skipped: 'nothing_to_post' };
+    if (postedEntryForSource('sales_return_cogs', returnId)) return { posted: false, skipped: 'already_posted' };
+    if (r.unit_cost == null) return { posted: false, skipped: 'cost_missing' };
+    const amount = round2(r.quantity * r.unit_cost);
+    if (amount <= 0) return { posted: false, skipped: 'nothing_to_post' };
+    const date = r.inspected_at?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+    if (periodClosedOn(date)) return { posted: false, skipped: 'period_closed' };
+    const built = buildCogsEntry({ number: r.number, date, amount }, getPostingRules(), returnId);
+    if (!built.ok) return { posted: false, error: built.error };
+    const entry: BuiltEntry = { ...built.entry, memo: `Inventory returned ${r.number}`,
+      source_type: 'sales_return_cogs', lines: built.entry.lines.map(l => ({
+        ...l, debit: l.credit, credit: l.debit,
+      })) };
+    return { posted: true, entry: writePosted(entry, userId) };
+  } catch (e) {
+    console.warn(`[gl] sales return COGS ${returnId}: ${(e as Error).message}`);
+    return { posted: false, error: (e as Error).message };
+  }
+}
+
+/** Best-effort hook for legacy status actions; physical release slips use the strict helper
+ * above. `force = 'release'` restores stock before deleting a fulfilled sale. */
 export function maybeFulfillSale(orderId: number, userId: number | null, force?: 'release'): void {
   try {
-    const o = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
-    if (!o || o.type !== 'sale') return;
-    // Stock follows the sale when the ledger is on (perpetual inventory), or — ledger or not —
-    // once a release slip recorded the goods physically leaving. COGS only posts with the ledger.
-    const ledger = ledgerEnabled();
-    if (!ledger && !queryOne('SELECT id FROM release_slips WHERE order_id = ?', orderId)) return;
-    const wantFulfilled = force === 'release' ? false : CONFIRMED_SALE.has(String(o.status || '').toLowerCase());
-    if (wantFulfilled === !!o.fulfilled_at) return;   // already in the right state
-
-    const lines = saleLines(orderId).filter((l) => l.item_id != null && (l.quantity || 0) > 0);
-    let loc: number;
-    try { loc = o.location_id ?? getDefaultLocationId(); } catch { return; }  // no locations → skip
-    const date = o.order_date || o.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10);
-    const sign = wantFulfilled ? -1 : 1;
-    const reason = wantFulfilled ? `Sold — ${o.number}` : `Sale reversed — ${o.number}`;
-
     db.exec('BEGIN');
-    try {
-      for (const l of lines) {
-        applyStockChange({ itemId: l.item_id!, locationId: loc, change: sign * l.quantity, userId, reason });
-        // Serialized units a warehouse releaser earmarked for this order follow the line:
-        // `reserved` → `sold` as the goods leave, and back on a reversal. (No extra stock
-        // move — the unit's quantity is already inside the line total handled above.)
-        run(
-          `UPDATE job_order_units SET status = ?, updated_at = datetime('now')
-           WHERE order_id = ? AND product_item_id = ? AND status = ?`,
-          wantFulfilled ? 'sold' : 'reserved',
-          orderId,
-          l.item_id,
-          wantFulfilled ? 'reserved' : 'sold'
-        );
-      }
-      run(`UPDATE orders SET fulfilled_at = ${wantFulfilled ? "datetime('now')" : 'NULL'} WHERE id = ?`, orderId);
-      db.exec('COMMIT');
-    } catch (e) { db.exec('ROLLBACK'); throw e; }
-
-    if (!ledger) return;
-    if (wantFulfilled) {
-      // `fulfilled_at` (just set above) is the idempotency guard — this block only runs on
-      // the not-fulfilled → fulfilled transition, so post unconditionally. A stale reversal
-      // from an earlier confirm/reopen cycle is left in place; the fresh entry stands beside
-      // it and the pair nets to zero (CAS rule — nothing is edited or removed).
-      const amount = round2(lines.reduce((s, l) => s + l.quantity * (l.cost || 0), 0));
-      if (amount > 0 && !periodClosedOn(date)) {
-        const built = buildCogsEntry({ number: o.number, date, amount }, getPostingRules(), orderId);
-        if (built.ok) { try { writePosted(built.entry, userId); } catch (e) { console.warn(`[gl] COGS ${orderId}: ${(e as Error).message}`); } }
-      }
-    } else {
-      unpostSource('sale_cogs', orderId, userId);
+    let changed: { wantFulfilled: boolean; ledger: boolean } | null;
+    try { changed = changeSaleStockInTransaction(orderId, userId, force); db.exec('COMMIT'); }
+    catch (e) { db.exec('ROLLBACK'); throw e; }
+    if (!changed) {
+      // A retry after a committed slip can repair a missing accounting entry
+      // without moving stock again or creating a duplicate COGS journal.
+      postFulfilledSaleCogs(orderId, userId);
+      return;
     }
+    if (!changed.ledger) return;
+    if (changed.wantFulfilled) postFulfilledSaleCogs(orderId, userId);
+    else unpostSource('sale_cogs', orderId, userId);
   } catch (e) {
     console.warn(`[inv] fulfil sale ${orderId} failed: ${(e as Error).message}`);
   }

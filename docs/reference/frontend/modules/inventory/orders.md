@@ -138,3 +138,25 @@ server-side (all `/orders` routes require only 🔑 any logged-in user, per
   everything-else-is-"Sale Order", which this file's now-removed local copy already handled
   correctly but the shared helper didn't — would have silently mislabeled Purchase Requests
   had it been adopted without that fix).
+
+## Saved-order stock review
+
+`reviewStock(id)` loads a saved sale's detail and warehouse availability. The list exposes a
+stock review action to view users; edits, production and purchase drafts are permission-gated.
+Open→approved editor saves persist open details first, then require the explicit review decision.
+The review shows current source/commitments/holds, other-location stock, planned MOs/POs and
+additional purchasing needs. Draft supply never implies stock readiness or started production.
+An open sale's manual status dropdown no longer offers direct confirmation/completion.
+
+Approval submits `/orders/:id/status` with `status:'approved'` and the review revision; shortages
+require a separate backorder confirmation. Stale/stock-conflict actions refresh the review.
+Supply actions also submit the revision and use durable server coverage for safe retries.
+Requests freeze review controls and use the shared modal saving/dismissal guard. Local sync
+results are labelled confirmation pending. Responsive cards use two columns at phone widths;
+secondary danger buttons have explicit contrast in both themes.
+
+The former automatic trim/force-to-original-status shortfall dialog is removed: corrections go
+through the open order editor, retaining control over customer demand. **Awaiting release** is
+the existing `backorder=1` unpicked-demand filter with an accurate label. See
+[operator guide](../../../../guides/sales-stock-approval.md) and
+[root mobile handoff](../../../../../MOBILE-INVENTORY-HANDOFF.md).

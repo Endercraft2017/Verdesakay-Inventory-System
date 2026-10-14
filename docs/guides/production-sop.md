@@ -44,9 +44,13 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
    order, for monitoring at a glance — schedule/team fields live on the job order itself,
    Scheduling isn't where you set them, just where you watch them.
 
-4. **Release (parts out)** — reserves + deducts the planned components from the source
-   location (fails with a shortfall list, no partial release). With the GL on, material
-   value moves Inventory → Work in Process. Records who released it.
+4. **Approve, pick, and release the parts kit** — a production approver signs off the
+   draft. The warehouse accepts it, then records component quantities picked. A partial
+   pick is saved without moving stock; staff can correct the count before release. When
+   the whole kit is prepared, **Release & issue slip** rechecks free stock at the source
+   after other kit picks and repair holds, deducts the planned components, and creates
+   a numbered parts release slip. A shortage blocks the slip and stock movement. With
+   the GL on, material value moves Inventory → Work in Process.
 
 4a. **Accept the parts kit (production lead)** — on the job order (desktop or phone), the
    production lead counts the released kit against the **Components** list, ticks *I

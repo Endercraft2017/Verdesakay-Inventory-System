@@ -58,13 +58,27 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    Already validated owning-site decisions retain D6 on cloud replay, with a clash recorded. Tax/currency
    lock with approved lines; ship-from locks once picking/fulfilment starts. Released
    status is assigned by warehouse picking, not manual intake/status edits.
-2. **Availability check** (`inventory`) — on approve, an ATP (available-to-promise)
-   gate runs (`GET /orders/:id/availability`); short of stock returns 409 unless
-   forced.
-   - **Branch — shortfall:** `POST /orders/:id/produce-shortfall` raises a linked
-     draft MO in `manufacturing` (BOM-checked first), or
-     `POST /orders/:id/purchase-shortfall` raises draft POs in `purchasing`
-     (one per supplier).
+2. **Stock review and approval** (`inventory`, `order-availability.ts`) — the desktop row's
+   stock review shows the ship-from warehouse, stock elsewhere, other sale commitments,
+   draft kit/repair holds, own coverage and shortages. Choosing approved in an open editor
+   first saves open details, then opens this review; the approval decision is separate.
+   `GET /orders/:id/availability` retains the ATP contract and adds source/planning fields.
+   Approval rechecks current stock and accepts an optional review revision; stale interactive
+   decisions return 409, while validated owning-site decisions retain D6 on replay.
+   - **Branch — shortfall:** `POST /orders/:id/produce-shortfall` creates only additional
+     linked draft MOs; completed output awaiting receipt still covers planned demand.
+     Components follow direct BOM/job snapshots, use each job's source and share one free pool.
+     `POST /orders/:id/purchase-shortfall` creates only purchasing demand not already covered
+     by live linked POs, factoring receipts/cancellations/edited quantities. Durable
+     `sale_shortfall_purchases` links survive PO edits. Each sale action is atomic; replay
+     conflict auditing happens after allocated business inserts to preserve site-issued IDs.
+   - Drafts remain shortages until receipt. Permission-gated actions describe drafts and
+     pending sync explicitly. Backorder approval is a separate confirmation and only sets
+     `approved`; it never picks or ships. Cancelled/fulfilled demand cannot draft supply.
+   - The desktop **Awaiting release** filter preserves `?backorder=1` API compatibility but
+     labels unpicked firm demand accurately; it is not a stock-shortage-only filter.
+   - Operator guide: [sales stock approval](../guides/sales-stock-approval.md).
+     Mobile audit (read only): [root handoff](../../MOBILE-INVENTORY-HANDOFF.md).
 3. **Warehouse acceptance** (`inventory`) — the approved SO waits in Inventory →
    Releasing → Release Queue ("waiting for warehouse acceptance") until a releaser
    accepts it (`POST /orders/:id/accept-release`, stamps `warehouse_accepted_by/_at`).
@@ -191,7 +205,10 @@ raised by the sales-order shortfall flow.
       `&format=html` returns a printable version. A fully picked kit gets
       `prepared_by/_at`; a partial pick is saved but stays in `preparing`. Picks are
       checked against on-hand stock minus what other unreleased kits already picked
-      (`pickedElsewhere()`), so two kits can't claim the same parts. **Branch — short:**
+      and open repair-part holds (`pickedElsewhere()`), so two kits can't claim the same parts.
+      Desktop can save a partial pick or correct a prepared kit before slip issuance. The
+      pick list and availability response show stock held elsewhere and the free amount.
+      **Branch — short:**
       the pick returns 400 with `shortfalls`, and
       `POST /:id/purchase-shortfall` drafts POs for the missing parts. No stock moves at
       this step.
@@ -201,7 +218,9 @@ raised by the sales-order shortfall flow.
       from the source location (GL: Raw Materials → WIP), and moves the job order to
       `released`. The slip is kept in the app (paperless): `GET /parts-slips`,
       `/parts-slips/:id`, `/parts-slips/:id/print` (printable HTML). Photos of the kit
-      are attachments of kind `parts_release` on the slip.
+      are attachments of kind `parts_release` on the slip. The final release rechecks
+      free stock after other kit picks and repair holds; a changed commitment blocks the
+      slip before any stock movement.
    - **Mobile (warehouse, Figma 62:*)** — `#/kit-release` walks the same three server steps as
      one guided flow: queue (Ready / Blocked by availability / Released awaiting acceptance) →
      verify kit (`GET /:id/availability`) → confirm with a "picked and counted" acknowledgement

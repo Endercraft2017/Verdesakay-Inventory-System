@@ -8,13 +8,13 @@ import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
   parseBody, ValidationError, createOrderSchema, updateOrderSchema, orderStatusSchema,
-  releaseOrderSchema, unreserveOrderSchema, releaseSlipSchema,
+  releaseOrderSchema, unreserveOrderSchema, releaseSlipSchema, shortfallActionSchema,
 } from '../../shared/validation';
 import { getQboStatus, pushOrder } from '../quickbooks/quickbooks';
-import { maybeAutoPostSale, maybeFulfillSale, unpostSource } from '../accounting/accounting-autopost';
-import { getDefaultLocationId } from './inventory-stock';
+import { fulfillSaleStockInTransaction, maybeAutoPostSale, maybeFulfillSale, postFulfilledSaleCogs, unpostSource } from '../accounting/accounting-autopost';
+import { getDefaultLocationId, locationName, overdrawAllowed, stockAt } from './inventory-stock';
 import { createDraftJobOrder } from '../manufacturing/job-orders.routes';
-import { repairHeld } from '../manufacturing/stock-holds';
+import { orderAvailability } from './order-availability';
 import type { Order, OrderItem, OrderType } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
 import { siteDecisionStands } from '../../shared/sync-context';
@@ -237,11 +237,12 @@ router.get('/', (req, res) => {
   const rows = queryAll<Order>(
     `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name,
             jo.id AS job_order_id, jo.number AS job_order_number, jo.status AS job_order_status,
-            (${BACKORDER_SQL}) AS backordered
+            rs.number AS release_slip_number, (${BACKORDER_SQL}) AS backordered
      FROM orders o
      LEFT JOIN users u ON u.id = o.created_by
      LEFT JOIN suppliers s ON s.id = o.supplier_id
      LEFT JOIN job_orders jo ON jo.id = (SELECT id FROM job_orders WHERE order_id = o.id ORDER BY id DESC LIMIT 1)
+     LEFT JOIN release_slips rs ON rs.order_id = o.id
      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY o.id DESC`,
     ...params
@@ -291,6 +292,21 @@ router.get('/:id', (req, res) => {
 
 const RELEASE_STATES = new Set(['approved', 'released']);
 
+/** Once warehouse work or delivery has begun, completing a physical sale requires
+ * its warehouse-out record. This catches both status shortcuts and legacy delivery UI. */
+function physicalSaleNeedsSlip(orderId: number, next: string): boolean {
+  if (!['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(next)) return false;
+  return !!queryOne('SELECT 1 FROM order_items WHERE order_id = ? AND item_id IS NOT NULL LIMIT 1', orderId)
+    && (!!queryOne('SELECT 1 FROM orders WHERE id = ? AND warehouse_accepted_at IS NOT NULL', orderId)
+      || !!queryOne("SELECT 1 FROM deliveries WHERE order_id = ? AND status = 'delivered' LIMIT 1", orderId))
+    && !queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', orderId);
+}
+
+function shippedSaleCannotReopen(orderId: number, next: string): boolean {
+  return ['open', 'approved', 'released', 'cancelled'].includes(next)
+    && !!queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', orderId);
+}
+
 /** For one line: units of this product `reserved`/`sold` against this order + the line's
  *  own `released_qty` (bulk). "Covered" once that reaches the ordered quantity. */
 function lineCoverage(orderId: number, line: Pick<OrderItem, 'id' | 'item_id' | 'quantity' | 'released_qty'>): {
@@ -322,110 +338,8 @@ function orderWithLines(id: number): Order | null {
 
 /* --------------------------------------------- sale-order stock availability (ATP) --- */
 
-interface LineAvailability {
-  order_item_id: number;
-  item_id: number | null;
-  name: string;
-  ordered: number;
-  on_hand: number;
-  /** Reserved to other sale orders + bulk released_qty committed on other open sale orders. */
-  committed_elsewhere: number;
-  /** Already reserved / sold / bulk-released against THIS order. */
-  covered_here: number;
-  /** What this order can still draw on: free stock + its own reservations. */
-  available: number;
-  shortfall: number;
-  is_finished_product: boolean;
-  has_bom: boolean;
-  /** Finished products with a BOM: can the shortfall be built from components on hand now? */
-  buildable: boolean;
-  component_shortfalls: { component_item_id: number; name: string; need: number; have: number }[];
-  linked_job_orders: { id: number; number: string; status: string; remaining: number }[];
-}
-
-/** Per-line stock picture for a sale order — what's on hand, what's committed elsewhere,
- *  what this order still needs, and (for finished products) whether the shortfall can be
- *  built right now. Free-text lines are skipped (nothing to gate). */
-export function orderAvailability(orderId: number): {
-  ok: boolean; short_lines: number; lines: LineAvailability[];
-} {
-  const items = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', orderId);
-  const lines: LineAvailability[] = [];
-  for (const oi of items) {
-    if (oi.item_id == null) continue;
-    const inv = queryOne<{ quantity: number; is_finished_product: number }>(
-      'SELECT quantity, is_finished_product FROM inventory_items WHERE id = ?', oi.item_id
-    );
-    if (!inv) continue;
-
-    const reservedAll = queryOne<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM job_order_units WHERE product_item_id = ? AND status = 'reserved'", oi.item_id
-    )?.n ?? 0;
-    // Units this order can still draw on = its own `reserved` (still on hand). A `sold`
-    // unit has already left stock and is baked into `on_hand`, so it isn't added back.
-    const coveredUnits = queryOne<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM job_order_units WHERE product_item_id = ? AND order_id = ? AND status = 'reserved'",
-      oi.item_id, orderId
-    )?.n ?? 0;
-    // Demand from OTHER firm-ish (approved/released, not-yet-fulfilled) sale orders on
-    // this same product: the qty they've physically pulled (released_qty, still sitting in
-    // on_hand) + the remainder of their line they haven't reserved/pulled yet (a claim on
-    // free stock). This is what makes the gate hold across two orders raised close together.
-    const others = queryOne<{ released: number; committed: number }>(
-      `SELECT COALESCE(SUM(x.released_qty), 0) AS released,
-              COALESCE(SUM(MAX(0,
-                x.quantity - x.released_qty -
-                (SELECT COUNT(*) FROM job_order_units ju
-                  WHERE ju.order_id = x.order_id AND ju.product_item_id = x.item_id
-                    AND ju.status IN ('reserved', 'sold'))
-              )), 0) AS committed
-       FROM order_items x JOIN orders o ON o.id = x.order_id
-       WHERE x.item_id = ? AND x.order_id != ? AND o.type = 'sale'
-         AND o.fulfilled_at IS NULL AND LOWER(o.status) IN ('approved', 'released')`,
-      oi.item_id, orderId
-    );
-    const othersReleased = others?.released ?? 0;
-    const othersCommitted = others?.committed ?? 0;
-
-    const on_hand = inv.quantity;
-    // Parts held for open repair requests are spoken for too (manufacturing/stock-holds.ts).
-    const repairHeldAll = repairHeld(oi.item_id, null);
-    const committed_elsewhere = Math.max(0, reservedAll - coveredUnits) + othersReleased + othersCommitted + repairHeldAll;
-    // Free = on hand, minus every reserved unit, minus what other orders have pulled, minus
-    // their un-pulled promises. This order's own reserved units + bulk pulls are still in
-    // `free` (not subtracted), so `available` adds only its reserved units back explicitly.
-    const free = Math.max(0, on_hand - reservedAll - othersReleased - othersCommitted - repairHeldAll);
-    const covered_here = coveredUnits + (oi.released_qty || 0);
-    const available = free + coveredUnits;
-    const shortfall = Math.max(0, oi.quantity - available);
-
-    const bom = inv.is_finished_product
-      ? queryAll<{ component_item_id: number; name: string; per: number; have: number }>(
-          `SELECT b.component_item_id, i.name, b.quantity AS per, i.quantity AS have
-           FROM bom_components b JOIN inventory_items i ON i.id = b.component_item_id
-           WHERE b.product_item_id = ?`, oi.item_id
-        )
-      : [];
-    const component_shortfalls = shortfall > 0
-      ? bom.filter((c) => c.have < c.per * shortfall)
-           .map((c) => ({ component_item_id: c.component_item_id, name: c.name, need: c.per * shortfall, have: c.have }))
-      : [];
-    const linked_job_orders = queryAll<{ id: number; number: string; status: string; remaining: number }>(
-      `SELECT id, number, status, (qty_ordered - qty_done - qty_scrapped) AS remaining
-       FROM job_orders WHERE order_id = ? AND product_item_id = ? AND status NOT IN ('completed', 'cancelled')`,
-      orderId, oi.item_id
-    );
-
-    lines.push({
-      order_item_id: oi.id, item_id: oi.item_id, name: oi.name, ordered: oi.quantity,
-      on_hand, committed_elsewhere, covered_here, available, shortfall,
-      is_finished_product: !!inv.is_finished_product, has_bom: bom.length > 0,
-      buildable: shortfall > 0 && bom.length > 0 && component_shortfalls.length === 0,
-      component_shortfalls, linked_job_orders,
-    });
-  }
-  return { ok: lines.every((l) => l.shortfall <= 0), short_lines: lines.filter((l) => l.shortfall > 0).length, lines };
-}
+// Shared with approval gates and shortage planning; never treats drafts as received stock.
+export { orderAvailability } from './order-availability';
 
 /** Raise one draft purchase order per supplier for a list of items to buy. `item_id` is
  *  required on every entry (it's how they group by supplier). Unit price defaults to the
@@ -434,8 +348,9 @@ export function orderAvailability(orderId: number): {
 export function createDraftPurchaseOrders(
   wants: { item_id: number; quantity: number }[],
   note: string | null,
-  userId: number | null
-): { number: string; supplier_id: number | null; supplier_name: string | null; lines: number }[] {
+  userId: number | null,
+  sourceOrderId?: number
+): { id: number; number: string; supplier_id: number | null; supplier_name: string | null; lines: number }[] {
   const bySupplier = new Map<number | null, { item_id: number; name: string; sku: string | null; unit: string | null; quantity: number; unit_price: number }[]>();
   for (const w of wants) {
     if (!(w.quantity > 0)) continue;
@@ -447,10 +362,10 @@ export function createDraftPurchaseOrders(
     if (!bySupplier.has(key)) bySupplier.set(key, []);
     bySupplier.get(key)!.push({
       item_id: w.item_id, name: it.name, sku: it.sku, unit: it.unit,
-      quantity: Math.ceil(w.quantity), unit_price: it.unit_cost || 0,
+      quantity: Number(w.quantity.toPrecision(15)), unit_price: it.unit_cost || 0,
     });
   }
-  const created: { number: string; supplier_id: number | null; supplier_name: string | null; lines: number }[] = [];
+  const created: { id: number; number: string; supplier_id: number | null; supplier_name: string | null; lines: number }[] = [];
   for (const [supplierId, group] of bySupplier) {
     if (!group.length) continue;
     const sup = supplierId
@@ -459,7 +374,7 @@ export function createDraftPurchaseOrders(
         )
       : null;
     const { lines, subtotal, tax_amount, total } = computeTotals(group, 0);
-    db.exec('BEGIN');
+    db.exec('SAVEPOINT shortfall_purchase');
     try {
       const number = nextOrderNumber('purchase');
       const info = run(
@@ -470,10 +385,12 @@ export function createDraftPurchaseOrders(
         number, sup?.name ?? null, sup?.contact_person ?? sup?.phone ?? null,
         note, subtotal, tax_amount, total, userId, supplierId
       );
-      insertItems(Number(info.lastInsertRowid), lines);
-      db.exec('COMMIT');
-      created.push({ number, supplier_id: supplierId, supplier_name: sup?.name ?? null, lines: group.length });
-    } catch (e) { db.exec('ROLLBACK'); throw e; }
+      const id = Number(info.lastInsertRowid);
+      insertItems(id, lines);
+      if (sourceOrderId) run('INSERT INTO sale_shortfall_purchases (source_order_id, purchase_order_id) VALUES (?, ?)', sourceOrderId, id);
+      db.exec('RELEASE shortfall_purchase');
+      created.push({ id, number, supplier_id: supplierId, supplier_name: sup?.name ?? null, lines: group.length });
+    } catch (e) { db.exec('ROLLBACK TO shortfall_purchase'); db.exec('RELEASE shortfall_purchase'); throw e; }
   }
   return created;
 }
@@ -501,6 +418,10 @@ router.post('/:id/accept-release', releaseGate, syncClass('claim', orderSite), (
     res.status(409).json({ error: order.status === 'open'
       ? 'The sale order must be approved before the warehouse can accept it.'
       : `Cannot accept an order that is ${order.status}.` });
+    return;
+  }
+  if (!queryOne('SELECT 1 FROM order_items WHERE order_id = ? AND item_id IS NOT NULL LIMIT 1', id)) {
+    res.status(409).json({ error: 'This sale has no stock goods to release. Complete its service workflow without a warehouse release slip.' });
     return;
   }
   if (order.warehouse_accepted_at) { res.json({ ok: true, order: orderWithLines(id) }); return; }
@@ -574,8 +495,28 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
     return;
   }
 
+  // A staged allocation is not physical stock. An adjustment or another warehouse
+  // action may have changed the location after the scan; refuse the handoff before
+  // creating its numbered slip when the location can no longer cover the goods.
+  if (!stands && !overdrawAllowed()) {
+    const locationId = order.location_id ?? getDefaultLocationId();
+    const leaving = new Map<number, number>();
+    for (const line of queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', id)) {
+      if (line.item_id == null) continue;
+      const amount = partial ? Math.min(line.quantity, lineCoverage(id, line).units + lineCoverage(id, line).bulk) : line.quantity;
+      leaving.set(line.item_id, (leaving.get(line.item_id) ?? 0) + amount);
+    }
+    for (const [itemId, amount] of leaving) {
+      if (stockAt(itemId, locationId) + 1e-9 < amount) {
+        res.status(409).json({ error: `Stock at ${locationName(locationId)} changed after allocation. Reconcile the stock before issuing the release slip.`, blocked: 'stock_changed' });
+        return;
+      }
+    }
+  }
+
   let slipId: number;
   let backorder: { id: number; number: string } | null = null;
+  let stockMoved = false;
   db.exec('BEGIN');
   try {
     if (partial) backorder = splitUnreleased(id, auth!.issued_by ?? req.user!.id);
@@ -593,10 +534,11 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
         id, l.item_id
       ).map((u) => u.identifier).filter(Boolean);
       run(
-        `INSERT INTO release_slip_items (slip_id, order_item_id, item_id, name, sku, unit, quantity, unit_identifiers)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO release_slip_items (slip_id, order_item_id, item_id, name, sku, unit, quantity, unit_identifiers, unit_cost)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         slipId, l.id, l.item_id, l.name, l.sku ?? null, l.unit ?? null, l.quantity,
-        serials.length ? serials.join(', ') : null
+        serials.length ? serials.join(', ') : null,
+        queryOne<{ unit_cost: number }>('SELECT unit_cost FROM inventory_items WHERE id = ?', l.item_id)?.unit_cost ?? null
       );
     }
     run(
@@ -615,14 +557,15 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
       run(`UPDATE attachments SET kind = 'release', ref_id = ? WHERE id IN (${evidence.map(() => '?').join(',')})`, slipId, ...evidence);
     }
     run("UPDATE orders SET status = 'confirmed', updated_at = datetime('now') WHERE id = ?", id);
+    stockMoved = fulfillSaleStockInTransaction(id, req.user!.id);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
-  // Goods have left: post the sale and draw the stock down (COGS too when the ledger is on).
+  // Physical stock and its slip are committed together. Accounting follows that commit.
   maybeAutoPostSale(id, req.user!.id);
-  maybeFulfillSale(id, req.user!.id);
+  if (stockMoved) postFulfilledSaleCogs(id, req.user!.id);
   maybeAutoPush(id);
   res.status(201).json({ ok: true, id: slipId, order: orderWithLines(id), backorder });
 });
@@ -655,12 +598,18 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   const input = parseBody(releaseOrderSchema, req.body);
   const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', id);
   const lineByItem = new Map(lines.filter((l) => l.item_id != null).map((l) => [l.item_id!, l]));
+  // The release payload identifies a product, not a sale line. Updating by item would
+  // otherwise increment every duplicate line and count the same serial against each one.
+  if (lineByItem.size !== lines.filter((l) => l.item_id != null).length) {
+    res.status(409).json({ error: 'This order has the same stock item on multiple lines. Combine those lines before warehouse release.' });
+    return;
+  }
 
   // Resolve scanned codes → in-stock serialized units by identifier.
   const unitIds = new Set<number>(input.unit_ids ?? []);
   for (const code of input.codes ?? []) {
     const u = queryOne<{ id: number }>(
-      `SELECT id FROM job_order_units WHERE identifier = ? AND status IN (${stands ? "'in_stock', 'reserved'" : "'in_stock'"})
+      `SELECT id FROM job_order_units WHERE LOWER(TRIM(identifier)) = LOWER(?) AND status IN (${stands ? "'in_stock', 'reserved'" : "'in_stock'"})
        ORDER BY status = 'in_stock' DESC, id DESC LIMIT 1`,
       code.trim()
     );
@@ -669,8 +618,10 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   }
 
   const units = unitIds.size
-    ? queryAll<{ id: number; status: string; product_item_id: number | null; identifier: string | null }>(
-        `SELECT id, status, product_item_id, identifier FROM job_order_units WHERE id IN (${[...unitIds].map(() => '?').join(',')})`,
+    ? queryAll<{ id: number; status: string; product_item_id: number | null; identifier: string | null; location_id: number | null }>(
+        `SELECT u.id, u.status, u.product_item_id, u.identifier, COALESCE(u.location_id, j.output_location_id) AS location_id
+         FROM job_order_units u LEFT JOIN job_orders j ON j.id = u.job_order_id
+         WHERE u.id IN (${[...unitIds].map(() => '?').join(',')})`,
         ...unitIds
       )
     : [];
@@ -691,6 +642,10 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
       res.status(400).json({ error: `Unit ${u.identifier || '#' + u.id} is not for a product on this order.` });
       return;
     }
+    if (!stands && u.location_id !== (order.location_id ?? getDefaultLocationId())) {
+      res.status(409).json({ error: `Unit ${u.identifier || '#' + u.id} is at another location. Transfer it to this order's ship-from location first.` });
+      return;
+    }
     const line = lineByItem.get(u.product_item_id)!;
     const already = lineCoverage(id, line).units + lineCoverage(id, line).bulk;
     const pending = addPerItem.get(u.product_item_id) ?? 0;
@@ -700,14 +655,30 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
     addPerItem.set(u.product_item_id, pending + 1);
   }
 
-  // Validate bulk entries.
+  // Validate the whole request against the order's location-scoped ATP. Entries for
+  // one item are aggregated so repeats cannot bypass a per-entry cap. This also keeps
+  // other sales' commitments, serialized reservations, and kit/repair holds intact.
+  const requested = new Map<number, number>(addPerItem);
   for (const b of input.bulk ?? []) {
     const line = lineByItem.get(b.item_id);
     if (!line) { res.status(400).json({ error: `Item #${b.item_id} is not on this order.` }); return; }
+    if (queryOne('SELECT 1 FROM job_order_units WHERE product_item_id = ? LIMIT 1', b.item_id)) {
+      res.status(409).json({ error: `${line.name} has serialized units. Scan its unit labels instead of entering a bulk quantity.` });
+      return;
+    }
+    requested.set(b.item_id, (requested.get(b.item_id) ?? 0) + b.quantity);
+  }
+  const availability = orderAvailability(id);
+  for (const [itemId, amount] of requested) {
+    const line = lineByItem.get(itemId)!;
     const cov = lineCoverage(id, line);
-    if (cov.units + cov.bulk + b.quantity > line.quantity + 1e-9) {
+    if (cov.units + cov.bulk + amount > line.quantity + 1e-9) {
       if (refused(400, `That exceeds the ${line.quantity} ordered of ${line.name}.`)) return;
     }
+    const stockLine = availability.lines.find((l) => l.item_id === itemId);
+    const free = Math.max(0, (stockLine?.available ?? 0) - (stockLine?.covered_here ?? 0));
+    if (amount > free + 1e-9 && !overdrawAllowed() && refused(409,
+      `${line.name} has only ${free} uncommitted at ${availability.location_name || 'the ship-from location'}. Receive or transfer stock before allocating more.`)) return;
   }
 
   db.exec('BEGIN');
@@ -757,19 +728,48 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
     res.status(409).json({ error: 'These goods already left on a release slip.' });
     return;
   }
+  if (order.fulfilled_at || !RELEASE_STATES.has(String(order.status).toLowerCase())) {
+    res.status(409).json({ error: 'Only an unshipped approved sale can have its allocation undone.' });
+    return;
+  }
   const input = parseBody(unreserveOrderSchema, req.body);
+  const stands = siteDecisionStands();
+  const clashes: string[] = [];
+  const unitIds = input.unit_ids ?? [];
+  if (new Set(unitIds).size !== unitIds.length) {
+    res.status(400).json({ error: 'Each unit may be selected only once.' }); return;
+  }
+  if (unitIds.length) {
+    const held = queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM job_order_units WHERE order_id = ? AND status = 'reserved'
+       AND id IN (${unitIds.map(() => '?').join(',')})`, id, ...unitIds
+    )?.n ?? 0;
+    if (held !== unitIds.length) {
+      if (!stands) { res.status(409).json({ error: 'One or more units are no longer allocated to this order. Refresh before undoing.' }); return; }
+      clashes.push(`Some units were no longer allocated to ${order.number} when the site's undo arrived.`);
+    }
+  }
+  const bulkToUndo = new Map<number, number>();
+  for (const b of input.bulk ?? []) bulkToUndo.set(b.item_id, (bulkToUndo.get(b.item_id) ?? 0) + b.quantity);
+  for (const [itemId, amount] of bulkToUndo) {
+    const line = queryOne<{ released_qty: number }>('SELECT released_qty FROM order_items WHERE order_id = ? AND item_id = ?', id, itemId);
+    if (!line || amount > line.released_qty + 1e-9) {
+      if (!stands) { res.status(409).json({ error: 'That quantity is no longer allocated to this order. Refresh before undoing.' }); return; }
+      clashes.push(`Bulk item #${itemId} had less allocated on the cloud when the site's undo arrived.`);
+    }
+  }
 
   db.exec('BEGIN');
   try {
-    if (input.unit_ids?.length) {
+    if (unitIds.length) {
       run(
         `UPDATE job_order_units SET status = 'in_stock', order_id = NULL, updated_at = datetime('now')
-         WHERE order_id = ? AND status = 'reserved' AND id IN (${input.unit_ids.map(() => '?').join(',')})`,
-        id, ...input.unit_ids
+         WHERE order_id = ? AND status = 'reserved' AND id IN (${unitIds.map(() => '?').join(',')})`,
+        id, ...unitIds
       );
     }
-    for (const b of input.bulk ?? []) {
-      run('UPDATE order_items SET released_qty = MAX(0, released_qty - ?) WHERE order_id = ? AND item_id = ?', b.quantity, id, b.item_id);
+    for (const [itemId, amount] of bulkToUndo) {
+      run('UPDATE order_items SET released_qty = MAX(0, released_qty - ?) WHERE order_id = ? AND item_id = ?', amount, id, itemId);
     }
     // If it no longer fully covers, drop 'released' back to 'approved'.
     if (String(order.status).toLowerCase() === 'released') {
@@ -782,20 +782,41 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
     db.exec('ROLLBACK');
     throw e;
   }
+  for (const clash of clashes) recordSiteClash(req, clash);
   res.json({ ok: true, order: orderWithLines(id) });
 });
 
 // GET /api/orders/:id/availability — per-line stock picture for a sale order.
 router.get('/:id/availability', (req, res) => {
   const id = Number(req.params.id);
-  const order = queryOne<Order>('SELECT type FROM orders WHERE id = ?', id);
+  const order = queryOne<Order>('SELECT type, status FROM orders WHERE id = ?', id);
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
   if (!canOnOrder(req.user!, order.type, 'view')) {
     res.status(403).json({ error: 'Forbidden: insufficient permissions' }); return;
   }
   if (order.type !== 'sale') { res.json({ ok: true, short_lines: 0, lines: [] }); return; }
-  res.json(orderAvailability(id));
+  res.json({ ...orderAvailability(id), revision: orderRevision(id), order_status: order.status });
 });
+
+/** Optional for legacy/mobile callers; desktop reviews use it for all decisions. */
+function checkReviewRevision(req: Request, res: Response, order: Order, revision?: string): (() => void) | null {
+  if (!revision || revision === orderRevision(order.id)) return () => {};
+  if (siteDecisionStands()) {
+    // Record replay-only audit rows after planned business inserts, preserving their IDs.
+    return () => recordSiteClash(req, `Order ${order.number} changed after a revision-checked site decision; the owning site's decision stands.`);
+  }
+  res.status(409).json({ error: 'This order changed since your review. Refresh stock and review the latest order.', code: 'stale_order' });
+  return null;
+}
+
+/** Closed demand must not create new supply. Approval is optional: planning starts in open. */
+function canPlanShortfall(order: Order, res: Response): boolean {
+  if (order.fulfilled_at || !['open', 'approved', 'released'].includes(String(order.status).toLowerCase())) {
+    res.status(409).json({ error: 'Shortfall planning is available only for open, approved or released unfulfilled sales.' });
+    return false;
+  }
+  return true;
+}
 
 // POST /api/orders/:id/produce-shortfall — for each finished-product line that's short,
 // raise a draft job order (linked to this sale order) for the missing quantity. Reports
@@ -805,6 +826,10 @@ router.post('/:id/produce-shortfall', requireModule('manufacturing'), requirePer
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
 
+  if (!canPlanShortfall(order, res)) return;
+  const review = parseBody(shortfallActionSchema, req.body ?? {});
+  const recordReview = checkReviewRevision(req, res, order, review.expected_revision);
+  if (!recordReview) return;
   let defLoc: number;
   try { defLoc = getDefaultLocationId(); }
   catch { res.status(409).json({ error: 'Create a stock location first (Inventory → Locations).' }); return; }
@@ -813,55 +838,52 @@ router.post('/:id/produce-shortfall', requireModule('manufacturing'), requirePer
   const created: { line: string; job_order_id: number; number: string; qty: number; buildable: boolean; component_shortfalls: unknown[] }[] = [];
   const skipped: { line: string; reason: string }[] = [];
 
-  for (const l of av.lines) {
-    if (l.shortfall <= 0) continue;
-    if (!l.is_finished_product) { skipped.push({ line: l.name, reason: 'not a finished product — adjust the line or restock' }); continue; }
-    if (!l.has_bom) { skipped.push({ line: l.name, reason: 'no bill of materials — define its BOM first' }); continue; }
-    const alreadyCovered = l.linked_job_orders.reduce((s, jo) => s + Math.max(0, jo.remaining), 0);
-    const need = Math.max(0, Math.ceil(l.shortfall) - alreadyCovered);
-    if (need <= 0) { skipped.push({ line: l.name, reason: `already covered by ${l.linked_job_orders.map((j) => j.number).join(', ')}` }); continue; }
-    const jo = createDraftJobOrder({
-      productId: l.item_id!, productName: l.name, qty: need, orderId: id,
-      sourceLocationId: order.location_id ?? defLoc, outputLocationId: order.location_id ?? defLoc,
-      notes: `Backorder for ${order.number}`, userId: req.user!.id,
-    });
-    created.push({
-      line: l.name, job_order_id: jo.id, number: jo.number, qty: need,
-      buildable: l.buildable, component_shortfalls: l.component_shortfalls,
-    });
-  }
+  db.exec('BEGIN');
+  try {
+    for (const l of av.lines) {
+      if (l.shortfall <= 0) continue;
+      if (!l.is_finished_product) { skipped.push({ line: l.name, reason: 'not a finished product — adjust the line or restock' }); continue; }
+      const alreadyCovered = l.linked_job_orders.reduce((s, jo) => s + Math.max(0, jo.remaining), 0);
+      const need = Math.max(0, Math.ceil(l.shortfall) - alreadyCovered);
+      if (need <= 0) { skipped.push({ line: l.name, reason: `already covered by ${l.linked_job_orders.map((j) => j.number).join(', ')}` }); continue; }
+      if (!l.has_bom) { skipped.push({ line: l.name, reason: 'no bill of materials — define its BOM first' }); continue; }
+      const jo = createDraftJobOrder({
+        productId: l.item_id!, productName: l.name, qty: need, orderId: id,
+        sourceLocationId: order.location_id ?? defLoc, outputLocationId: order.location_id ?? defLoc,
+        notes: `Backorder for ${order.number}`, userId: req.user!.id,
+      });
+      created.push({
+        line: l.name, job_order_id: jo.id, number: jo.number, qty: need,
+        buildable: l.buildable, component_shortfalls: l.component_shortfalls,
+      });
+    }
 
+    recordReview();
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
   res.json({ created, skipped, availability: orderAvailability(id) });
 });
 
-// POST /api/orders/:id/purchase-shortfall — draft purchase order(s) for what has to be
-// bought: short lines that aren't made here, plus the short BOM components of finished-
-// product lines. Grouped by each item's preferred supplier.
+// Draft only the purchase demand not already covered by a live linked PO. Source links
+// survive PO line edits; received quantities and cancellations release their planning cover.
 router.post('/:id/purchase-shortfall', requireModule('purchasing'), requirePermission('purchasing.manage'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
-
-  const av = orderAvailability(id);
-  const wants = new Map<number, number>();
-  const bump = (itemId: number, qty: number) => wants.set(itemId, (wants.get(itemId) ?? 0) + qty);
-
-  for (const l of av.lines) {
-    if (l.shortfall <= 0) continue;
-    if (!l.is_finished_product) { bump(l.item_id!, l.shortfall); continue; }      // buy the finished item itself
-    for (const c of l.component_shortfalls) bump(c.component_item_id, c.need - c.have); // buy the missing components
-  }
-
-  if (!wants.size) {
-    res.json({ created: [], note: 'Nothing to purchase — the shortfalls are buildable from stock or are serialized units.' });
-    return;
-  }
-  const created = createDraftPurchaseOrders(
-    [...wants.entries()].map(([item_id, quantity]) => ({ item_id, quantity })),
-    `Shortfall for ${order.number}`,
-    req.user!.id
-  );
-  res.json({ created });
+  if (!canPlanShortfall(order, res)) return;
+  const review = parseBody(shortfallActionSchema, req.body ?? {});
+  const recordReview = checkReviewRevision(req, res, order, review.expected_revision);
+  if (!recordReview) return;
+  db.exec('BEGIN');
+  try {
+    const av = orderAvailability(id);
+    const wants = av.purchase_requirements.filter((w) => w.to_purchase > 0)
+      .map((w) => ({ item_id: w.item_id, quantity: w.to_purchase }));
+    const created = createDraftPurchaseOrders(wants, `Shortfall for ${order.number}`, req.user!.id, id);
+    recordReview();
+    db.exec('COMMIT');
+    res.json({ created, note: created.length ? undefined : 'Nothing to purchase — current requirements are on hand or covered by linked purchase orders.', availability: orderAvailability(id) });
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
 // POST /api/orders — create with auto number + computed totals
@@ -939,10 +961,20 @@ router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', 
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
-  const { status, force } = parseBody(orderStatusSchema, req.body);
+  const { status, force, expected_revision } = parseBody(orderStatusSchema, req.body);
+  const recordReview = checkReviewRevision(req, res, order, expected_revision);
+  if (!recordReview) return;
   const cur = String(order.status || '').toLowerCase();
   const next = saleStatus(status, cur);
-  if (next === cur) { res.json({ ok: true, status: order.status }); return; }
+  if (next === cur) { recordReview(); res.json({ ok: true, status: order.status }); return; }
+  if (shippedSaleCannotReopen(id, next)) {
+    res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of reopening or cancelling the physical handoff.', code: 'already_shipped' });
+    return;
+  }
+  if (physicalSaleNeedsSlip(id, next) && !siteDecisionStands()) {
+    res.status(409).json({ error: 'This sale has entered warehouse or delivery work, but the goods have no release slip. Complete the warehouse handoff first.', code: 'release_required' });
+    return;
+  }
 
   const goingFirm = ['approved', 'confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(next)
     && !['released', 'confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(cur);
@@ -961,6 +993,7 @@ router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', 
       }
     }
     run("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?", next, id);
+    recordReview();
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -1001,6 +1034,14 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
     return;
   }
   if (order.type === 'sale') input.status = saleStatus(input.status, cur);
+  if (order.type === 'sale' && shippedSaleCannotReopen(id, String(input.status || '').toLowerCase())) {
+    res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of reopening or cancelling the physical handoff.', code: 'already_shipped' });
+    return;
+  }
+  if (order.type === 'sale' && physicalSaleNeedsSlip(id, String(input.status || '').toLowerCase()) && !siteDecisionStands()) {
+    res.status(409).json({ error: 'This sale has entered warehouse or delivery work, but the goods have no release slip. Complete the warehouse handoff first.', code: 'release_required' });
+    return;
+  }
   if (lockLines) {
     input.tax_percent = order.tax_percent;
     input.tax_code_id = order.tax_code_id;
@@ -1089,6 +1130,10 @@ router.delete('/:id', requireAnyPermission(['orders.delete', 'purchasing.manage'
   const kind = queryOne<{ type: string }>('SELECT type FROM orders WHERE id = ?', id);
   if (kind && !canOnOrder(req.user!, kind.type, 'delete')) {
     res.status(403).json({ error: 'Forbidden: insufficient permissions' });
+    return;
+  }
+  if (kind?.type === 'sale' && queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', id)) {
+    res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of deleting its physical handoff.', code: 'already_shipped' });
     return;
   }
   // If this sale was posted to the ledger / drew down stock, reverse both before the row

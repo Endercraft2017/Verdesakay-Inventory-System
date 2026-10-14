@@ -1620,6 +1620,32 @@ textarea { resize: vertical; min-height: 84px; }
 
 .tpl-library .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
+/* Sales stock review: the approval decision remains readable at phone widths. */
+#modal-root:has(.order-review) { position: relative; z-index: 130; }
+.order-review-summary, .order-stock-line > div:first-child { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.order-review-summary p { margin:6px 0; }
+.order-review-lines { display:grid; gap:12px; margin:16px 0; }
+.order-stock-line { border:1px solid var(--border); border-radius:10px; padding:14px; }
+.order-stock-line dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:14px 0 0; }
+.order-stock-line dt { color:var(--text-muted); font-size:12px; }
+.order-stock-line dd { margin:4px 0 0; font-weight:600; }
+.order-stock-line p { margin:10px 0 0; font-size:13px; overflow-wrap:anywhere; }
+.order-review-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+#stock-review-result:not(:empty) { padding:10px 0; overflow-wrap:anywhere; }
+@media(max-width:600px) { .order-stock-line dl { grid-template-columns:repeat(2,minmax(0,1fr)); } .order-review-actions .btn { width:100%; } }
+
+.order-review .btn.secondary.danger { background:var(--danger-weak); color:var(--danger); border-color:var(--danger); }
+.order-review .btn.secondary.danger:hover { filter:none; background:var(--danger-weak); }
+
+/* Release queue and order details remain usable in the desktop shell on a narrow screen. */
+#rl-accept, #rl-picking, #rs-table, #rl-body { max-width:100%; overflow-x:auto; }
+.release-allocated-serials { display:grid; gap:6px; }
+.release-allocated-serials > div { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+.release-allocated-serials .mono { overflow-wrap:anywhere; }
+@media(max-width:700px) {
+  #rl-accept table, #rl-picking table, #rs-table table { min-width:670px; }
+  #rl-body table { min-width:520px; }
+}
 .tpl-library-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:600px){.tpl-library-header{flex-wrap:wrap}.tpl-library-actions{justify-content:flex-start}.tpl-library-header h2{font-size:22px}}
 .guide-feedback { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }

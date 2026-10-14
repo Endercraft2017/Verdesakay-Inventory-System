@@ -51,7 +51,8 @@ same network open it in a browser — no installation needed on the other machin
    ```
    npm install
    ```
-3. Start the server — either run `start.cmd` (double-click) or:
+3. Set `ADMIN_PASSWORD` to a strong initial password in the host environment, then start the
+   server — either run `start.cmd` (double-click) or:
    ```
    npm start
    ```
@@ -68,11 +69,11 @@ same network open it in a browser — no installation needed on the other machin
 A default administrator is created on first run:
 
 - **Username:** `admin`
-- **Password:** `admin123`
+- **Password:** Set `ADMIN_PASSWORD` in the deployment environment before the first start.
 
 > Sign in and change this immediately under **My Account → Change password**.
-> You can set a different initial password by starting with `ADMIN_PASSWORD` set, e.g.
-> `set ADMIN_PASSWORD=YourStrongPass && npm start`.
+> The server requires `ADMIN_PASSWORD` when creating the default admin account. Keep it in
+> environment configuration (Railway Variables for a Railway deployment), not in source.
 
 ## Letting other office PCs connect
 

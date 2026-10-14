@@ -12,6 +12,9 @@
    slip as kind 'release' (both apps must send one — the server refuses the slip without). filter.tab = 'queue' | 'slips' */
 App.register('releasing', async (view, filter) => {
   const canRelease = App.hasPermission('inventory.adjust') || App.hasPermission('orders.release');
+  const canInspectReturn = App.hasPermission('inventory.adjust');
+  const canRepairReturn = canInspectReturn || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa');
+  const canLinkCredit = App.hasPermission('accounting.manage');
   const tab = filter && filter.tab === 'slips' ? 'slips' : 'queue';
   const LABEL = 'margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)';
 
@@ -42,11 +45,12 @@ App.register('releasing', async (view, filter) => {
     const acceptEl = view.querySelector('#rl-accept');
     acceptEl.innerHTML = q.to_accept.length ? `
       <table>
-        <thead><tr><th>Sale order</th><th>Customer</th><th>Expected</th><th class="right">Qty</th><th></th></tr></thead>
+        <thead><tr><th>Sale order</th><th>Customer</th><th>Ship from</th><th>Expected</th><th class="right">Qty</th><th></th></tr></thead>
         <tbody>${q.to_accept.map((o) => `
           <tr>
             <td><strong>${UI.esc(o.number)}</strong></td>
             <td>${UI.esc(o.customer_name || 'Walk-in')}</td>
+            <td>${UI.esc(o.location_name || 'Choose location')}</td>
             <td class="muted">${UI.esc(o.expected_date || '—')}</td>
             <td class="right">${o.qty_ordered}</td>
             <td class="actions">${canRelease ? `<button class="btn small" data-accept="${o.id}">Accept for release</button>` : ''}</td>
@@ -58,7 +62,7 @@ App.register('releasing', async (view, filter) => {
       b.disabled = true;
       try {
         await API.post('/orders/' + b.dataset.accept + '/accept-release');
-        UI.toast('Accepted — ready to release');
+        UI.toast('Accepted — allocation can begin');
         await renderQueue();
         openRelease(Number(b.dataset.accept));
       } catch (e) { UI.toast(e.message, 'error'); b.disabled = false; }
@@ -67,17 +71,21 @@ App.register('releasing', async (view, filter) => {
     const pickEl = view.querySelector('#rl-picking');
     pickEl.innerHTML = q.releasing.length ? `
       <table>
-        <thead><tr><th>Sale order</th><th>Customer</th><th>Accepted by</th><th>Expected</th><th class="right">Released</th><th></th></tr></thead>
+        <thead><tr><th>Sale order</th><th>Customer</th><th>Ship from</th><th>Accepted by</th><th>Expected</th><th class="right">Allocated</th><th></th></tr></thead>
         <tbody>${q.releasing.map((o) => {
           const done = o.qty_ordered > 0 && o.qty_released >= o.qty_ordered;
           return `
           <tr class="${canRelease ? 'clickable' : ''}" data-open="${o.id}">
             <td><strong>${UI.esc(o.number)}</strong></td>
             <td>${UI.esc(o.customer_name || 'Walk-in')}</td>
+            <td>${UI.esc(o.location_name || '—')}</td>
             <td class="muted">${UI.esc(o.warehouse_accepted_by_name || '—')}</td>
             <td class="muted">${UI.esc(o.expected_date || '—')}</td>
             <td class="right">${o.qty_released} / ${o.qty_ordered}</td>
             <td>${done ? '<span class="badge-pill ok">Ready for slip</span>' : ''}
+              ${o.open_reports ? `<span class="badge-pill warn">${o.open_reports} open report${o.open_reports === 1 ? '' : 's'}</span>` : ''}
+              ${o.authorization && o.authorization.required && o.authorization.state !== 'valid'
+                ? `<span class="badge-pill warn">Authorization ${UI.esc(o.authorization.state === 'none' ? 'missing' : o.authorization.state)}</span>` : ''}
               ${o.authorization && o.authorization.override && o.authorization.override.status === 'requested'
                 ? '<span class="badge-pill warn" title="' + UI.esc(o.authorization.override.reason) + '">Token override requested</span>' : ''}</td>
           </tr>`;
@@ -89,7 +97,7 @@ App.register('releasing', async (view, filter) => {
   }
 
   /* --------------------------------------------------- 2. pick / release an order --- */
-  const covered = (l) => Math.max(Number(l.allocated_qty || 0) + Number(l.reserved_qty || 0), Number(l.released_qty || 0));
+  const covered = (l) => Number(l.allocated_qty || 0) + Number(l.reserved_qty || 0) + Number(l.released_qty || 0);
 
   async function openRelease(orderId) {
     let order, rc = null;
@@ -111,17 +119,34 @@ App.register('releasing', async (view, filter) => {
     });
     const body = m.overlay.querySelector('#rl-body');
 
+    const refresh = async () => {
+      [order, rc] = await Promise.all([
+        API.get('/orders/' + order.id),
+        API.get('/release-slips/orders/' + order.id + '/context'),
+      ]);
+      draw();
+    };
+
     const post = async (payload) => {
       try {
         const r = await API.post('/orders/' + order.id + '/release', payload);
-        order = await API.get('/orders/' + order.id);
-        draw();
+        await refresh();
         return r;
       } catch (e) { UI.toast(e.message, 'error'); return null; }
     };
 
+    const undo = async (payload) => {
+      try {
+        await API.post('/orders/' + order.id + '/release/unreserve', payload);
+        await refresh();
+        UI.toast('Allocation undone; stock is available for another order');
+      } catch (e) { UI.toast(e.message, 'error'); }
+    };
+
     function draw() {
       const items = order.items || [];
+      const stock = new Map((rc && rc.availability || []).map((l) => [Number(l.item_id), l]));
+      const serialized = new Set((rc && rc.lines || []).filter((l) => l.serialized).map((l) => Number(l.item_id)));
       const fullyOut = String(order.status).toLowerCase() === 'released';
       // Partial release: only with Sales' authorization that allows it, and once something is out.
       const auth = (rc && rc.authorization) || {};
@@ -132,31 +157,43 @@ App.register('releasing', async (view, filter) => {
           <div><span class="muted">Status</span><div><span class="badge-pill status-${UI.esc(order.status)}">${UI.esc(order.status)}</span></div></div>
           <div><span class="muted">Accepted by</span><div>${UI.esc(order.warehouse_accepted_by_name || '—')}</div></div>
           <div><span class="muted">Expected</span><div>${UI.esc(order.expected_date || '—')}</div></div>
+          <div><span class="muted">Ship from</span><div>${UI.esc(rc && rc.order && rc.order.location_name || 'No warehouse selected')}</div></div>
         </div>
         ${fullyOut ? '' : `
           <h4 style="${LABEL}">Scan unit labels</h4>
           <div class="search-box">${UI.icon('search', 16)}<input id="rl-scan" autocomplete="off" placeholder="Scan or type a unit label, then Enter" /></div>`}
         <h4 style="${LABEL}">Lines</h4>
         <table>
-          <thead><tr><th>Item</th><th class="right">Released</th><th style="width:210px"></th></tr></thead>
+          <thead><tr><th>Item</th><th class="right">Allocated</th><th style="width:210px"></th></tr></thead>
           <tbody>${items.map((l, i) => {
             if (!l.item_id) return `<tr><td>${UI.esc(l.name)}</td><td class="right muted" colspan="2">service / free-text — nothing to release</td></tr>`;
             const got = covered(l), need = Number(l.quantity) || 0;
+            const free = Math.max(0, Number(stock.get(Number(l.item_id))?.free_to_allocate || 0));
+            const bulk = !serialized.has(Number(l.item_id));
             return `<tr>
-              <td>${UI.esc(l.name)}${l.sku ? `<div class="muted mono">${UI.esc(l.sku)}</div>` : ''}</td>
+              <td>${UI.esc(l.name)}${l.sku ? `<div class="muted mono">${UI.esc(l.sku)}</div>` : ''}
+                <div class="muted">${bulk ? `${free} uncommitted at ship-from` : 'Scan each serial label'}</div></td>
               <td class="right">${got} / ${need} ${UI.esc(l.unit || '')}${got >= need ? ' ✓' : ''}</td>
-              <td>${got < need ? `<div style="display:flex;gap:6px;justify-content:flex-end">
-                <input type="number" min="1" max="${need - got}" value="${need - got}" data-qty="${i}" style="width:80px" />
-                <button class="btn secondary small" data-bulk="${i}">Release qty</button></div>` : ''}</td>
+              <td>${got < need && bulk && free > 0 ? `<div style="display:flex;gap:6px;justify-content:flex-end">
+                <input type="number" min="0.001" step="any" max="${Math.min(need - got, free)}" value="${Math.min(need - got, free)}" data-qty="${i}" style="width:80px" aria-label="Allocate quantity of ${UI.esc(l.name)}" />
+                <button class="btn secondary small" data-bulk="${i}">Allocate qty</button></div>` : got < need && bulk ? '<span class="muted">Awaiting stock</span>' : ''}
+                ${bulk && Number(l.released_qty || 0) > 0 ? `<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px">
+                  <input type="number" min="0.001" step="any" max="${l.released_qty}" value="${l.released_qty}" data-undo-qty="${i}" style="width:80px" aria-label="Undo allocated quantity of ${UI.esc(l.name)}" />
+                  <button type="button" class="btn secondary small" data-undo-bulk="${i}">Undo qty</button></div>` : ''}</td>
             </tr>`;
           }).join('')}</tbody>
         </table>
+        ${(rc && rc.units || []).some((u) => u.status === 'reserved') ? `
+          <h4 style="${LABEL}">Allocated serials</h4>
+          <div class="release-allocated-serials">${rc.units.filter((u) => u.status === 'reserved').map((u) => `
+            <div><span class="mono">${UI.esc(u.identifier || `Unit #${u.id}`)}</span>
+              <button type="button" class="btn secondary small" data-undo-unit="${u.id}" aria-label="Undo allocation of ${UI.esc(u.identifier || `unit ${u.id}`)}">Undo allocation</button></div>`).join('')}</div>` : ''}
         <div style="display:flex;align-items:center;gap:10px;margin-top:16px">
           <span class="muted" style="font-size:12px">${fullyOut
-            ? 'Every line is out. Issue the release slip as the goods leave — that is when stock is deducted.'
+            ? 'Every stock line is allocated. Issue the release slip as the goods leave — that is when stock is deducted.'
             : partialOk
               ? 'Sales allowed a partial release: the slip covers what is out now, and the rest moves to a new backorder sale order.'
-              : 'Release every line to issue the release slip.'}</span>
+              : 'Allocate every stock line before issuing the release slip.'}</span>
           <div class="grow"></div>
           <button class="btn" id="rl-slip" ${fullyOut || partialOk ? '' : 'disabled'}>${UI.icon('sheet')} ${partialOk ? 'Issue partial release slip' : 'Issue release slip'}</button>
         </div>`;
@@ -170,16 +207,38 @@ App.register('releasing', async (view, filter) => {
           const code = scan.value.trim();
           if (!code) return;
           scan.value = '';
-          if (await post({ codes: [code] })) UI.toast(code + ' released');
+          scan.disabled = true;
+          if (await post({ codes: [code] })) UI.toast(code + ' allocated');
+          else scan.disabled = false;
         });
       }
       body.querySelectorAll('[data-bulk]').forEach((b) => b.onclick = async () => {
         const l = items[Number(b.dataset.bulk)];
         const q = Number(body.querySelector(`[data-qty="${b.dataset.bulk}"]`).value);
-        if (!q || q <= 0) { UI.toast('Enter a quantity', 'error'); return; }
+        const free = Number(stock.get(Number(l.item_id))?.free_to_allocate || 0);
+        if (!Number.isFinite(q) || q <= 0 || q > free || q > Number(l.quantity) - covered(l)) {
+          UI.toast(`Enter a quantity up to ${Math.min(free, Number(l.quantity) - covered(l))}`, 'error'); return;
+        }
         b.disabled = true;
-        if (await post({ bulk: [{ item_id: l.item_id, quantity: q }] })) UI.toast(`${l.name} ×${q} released`);
+        if (await post({ bulk: [{ item_id: l.item_id, quantity: q }] })) UI.toast(`${l.name} ×${q} allocated`);
         else b.disabled = false;
+      });
+      body.querySelectorAll('[data-undo-bulk]').forEach((b) => b.onclick = async () => {
+        const l = items[Number(b.dataset.undoBulk)];
+        const q = Number(body.querySelector(`[data-undo-qty="${b.dataset.undoBulk}"]`).value);
+        if (!Number.isFinite(q) || q <= 0 || q > Number(l.released_qty || 0)) {
+          UI.toast(`Enter a quantity up to ${l.released_qty || 0}`, 'error'); return;
+        }
+        if (!(await UI.confirmDialog(`Undo ${q} allocated ${l.name}?`, 'Undo allocation'))) return;
+        b.disabled = true;
+        await undo({ bulk: [{ item_id: l.item_id, quantity: q }] });
+        if (b.isConnected) b.disabled = false;
+      });
+      body.querySelectorAll('[data-undo-unit]').forEach((b) => b.onclick = async () => {
+        if (!(await UI.confirmDialog('Return this serial to available stock?', 'Undo allocation'))) return;
+        b.disabled = true;
+        await undo({ unit_ids: [Number(b.dataset.undoUnit)] });
+        if (b.isConnected) b.disabled = false;
       });
       body.querySelector('#rl-slip').onclick = () => slipModal(order, () => { m.close(); if (tab === 'queue') renderQueue(); }, partialOk);
     }
@@ -343,12 +402,13 @@ App.register('releasing', async (view, filter) => {
 
   /* ------------------------------------------------------- 5. one slip: view / print --- */
   async function slipView(id) {
-    let slip, photos, company;
+    let slip, photos, company, returnsContext;
     try {
-      [slip, photos, company] = await Promise.all([
+      [slip, photos, company, returnsContext] = await Promise.all([
         API.get('/release-slips/' + id),
         API.get('/attachments?kind=release&ref_id=' + id).catch(() => []),
         API.get('/templates/company').catch(() => ({})),
+        API.get('/sales-returns/slips/' + id + '/context'),
       ]);
     } catch (e) { UI.toast(e.message, 'error'); return; }
     // Attachment images need the auth header, so load them as blob URLs.
@@ -408,6 +468,20 @@ App.register('releasing', async (view, filter) => {
             <td class="mono" style="font-size:12px">${UI.esc(it.unit_identifiers || '—')}</td>
             <td class="right">${it.quantity} ${UI.esc(it.unit || '')}</td></tr>`).join('')}</tbody>
         </table>
+        <div style="display:flex;align-items:center;gap:8px;margin:16px 0 6px;flex-wrap:wrap">
+          <h4 style="${LABEL};margin:0">Customer returns</h4><div class="grow"></div>
+          ${canRelease ? '<button type="button" class="btn secondary small" id="rs-return">Record goods received</button>' : ''}
+        </div>
+        <p class="muted" style="margin:0 0 8px">Receipt records physical arrival. Only inspected goods marked restock become available again; Finance handles the customer credit separately.</p>
+        ${returnsContext.returns.length ? `<div class="table-scroll"><table><thead><tr><th>Return</th><th>Item</th><th>Qty</th><th>Status</th><th>Credit</th><th></th></tr></thead><tbody>
+          ${returnsContext.returns.map((r) => `<tr><td>${UI.esc(r.number)}</td><td>${UI.esc(r.item_name)}<div class="muted">${UI.esc(r.reason)}</div></td><td>${r.quantity}</td><td>${UI.esc(r.disposition_state === 'repair' ? 'Repair in progress' : r.disposition_state === 'awaiting_inspection' ? 'Reinspect after repair' : r.disposition_state === 'completed' ? 'Repaired · restocked' : r.disposition_state === 'salvaged' ? 'Salvaged · damage stock' : r.disposition_state === 'disposed' ? 'Disposed' : r.status)}${r.condition_note ? `<div class="muted">${UI.esc(r.condition_note)}</div>` : ''}${r.decision_note ? `<div class="muted">${UI.esc(r.decision_note)}</div>` : ''}</td><td>${r.credit_note_status === 'issued' ? '#' + r.credit_note_id : r.credit_note_status === 'void' ? 'Voided · replace' : 'Pending Finance'}</td><td class="actions">
+            ${canInspectReturn && r.status === 'received' ? `<button type="button" class="btn secondary small" data-inspect="${r.id}">Inspect</button>` : ''}
+            ${canInspectReturn && r.status === 'rejected' && !r.disposition_state ? `<button type="button" class="btn secondary small" data-dispose="${r.id}">Decide next step</button>` : ''}
+            ${canRepairReturn && r.disposition_state === 'repair' ? `<button type="button" class="btn secondary small" data-rework="${r.id}">Repair work</button>` : ''}
+            ${canInspectReturn && r.disposition_state === 'awaiting_inspection' ? `<button type="button" class="btn secondary small" data-reinspect="${r.id}">Reinspect</button>` : ''}
+            ${r.disposition_state ? `<button type="button" class="btn secondary small" data-return-history="${r.id}">History</button>` : ''}
+            ${canLinkCredit && r.credit_note_status !== 'issued' ? `<button type="button" class="btn secondary small" data-credit="${r.id}">Link credit</button>` : ''}
+          </td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No returns recorded for this slip.</p>'}
         <div style="display:flex;align-items:center;margin:16px 0 6px">
           <h4 style="${LABEL};margin:0">Photos</h4><div class="grow"></div>
           ${canRelease ? `<button type="button" class="btn secondary small" id="rs-add-photo">${UI.icon('plus')} Add photo</button>
@@ -415,6 +489,13 @@ App.register('releasing', async (view, filter) => {
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px">${urls.some(Boolean) ? photoGrid('') : '<span class="muted">No photos.</span>'}</div>`,
       onOpen: (ov) => {
+        ov.querySelector('#rs-return')?.addEventListener('click', () => { m.close(); receiveReturn(slip, returnsContext); });
+        ov.querySelectorAll('[data-inspect]').forEach((b) => b.onclick = () => { m.close(); inspectReturn(id, Number(b.dataset.inspect)); });
+        ov.querySelectorAll('[data-dispose]').forEach((b) => b.onclick = () => { m.close(); decideReturn(id, Number(b.dataset.dispose)); });
+        ov.querySelectorAll('[data-rework]').forEach((b) => b.onclick = () => { m.close(); repairReturn(id, Number(b.dataset.rework)); });
+        ov.querySelectorAll('[data-reinspect]').forEach((b) => b.onclick = () => { m.close(); reinspectReturn(id, Number(b.dataset.reinspect)); });
+        ov.querySelectorAll('[data-return-history]').forEach((b) => b.onclick = () => { m.close(); returnHistory(id, Number(b.dataset.returnHistory)); });
+        ov.querySelectorAll('[data-credit]').forEach((b) => b.onclick = () => { m.close(); linkReturnCredit(id, Number(b.dataset.credit)); });
         const add = ov.querySelector('#rs-add-photo');
         if (!add) return;
         const input = ov.querySelector('#rs-photo-in');
@@ -447,6 +528,226 @@ App.register('releasing', async (view, filter) => {
           },
         });
         return false;
+      },
+    });
+  }
+
+  function receiveReturn(slip, context) {
+    const available = context.lines.filter((l) => l.item_id && l.quantity - l.returned_qty > 0);
+    if (!available.length) { UI.toast('Every shipped item is already accounted for in returns.', 'error'); slipView(slip.id); return; }
+    let photo = null;
+    let saveKey = 'sales-return:' + crypto.randomUUID();
+    const m = UI.modal({
+      title: 'Receive customer return · ' + slip.number, size: 'lg', confirmText: 'Record receipt',
+      bodyHTML: `<p class="order-notice">Recording receipt does not increase stock. Inspect the item before it can be restocked.</p>
+        <div class="form-grid">
+          <div class="form-field span2"><label>Shipped item</label><select id="sr-line">${available.map((l) => `<option value="${l.id}">${UI.esc(l.name)} · ${l.quantity - l.returned_qty} remaining</option>`).join('')}</select></div>
+          <div class="form-field"><label>Quantity received</label><input id="sr-qty" type="number" min="0.001" step="any" value="1" /></div>
+          <div class="form-field"><label>Serial, if applicable</label><select id="sr-unit"><option value="">Bulk item</option></select></div>
+          <div class="form-field span2"><label>Reason for return</label><textarea id="sr-reason" rows="2" placeholder="What did the customer report?"></textarea></div>
+          <div class="form-field span2"><label>Photo of goods received</label><input id="sr-photo" type="file" accept="image/*" capture="environment" /></div>
+        </div>`,
+      onOpen: (ov) => {
+        const line = ov.querySelector('#sr-line');
+        const unit = ov.querySelector('#sr-unit');
+        const qty = ov.querySelector('#sr-qty');
+        const refresh = () => {
+          const selected = available.find((l) => l.id === Number(line.value));
+          const units = context.units.filter((u) => u.item_id === selected.item_id);
+          unit.innerHTML = units.length ? units.map((u) => `<option value="${u.id}">${UI.esc(u.identifier || '#' + u.id)}</option>`).join('') : '<option value="">Bulk item</option>';
+          unit.disabled = !units.length;
+          qty.max = String(selected.quantity - selected.returned_qty);
+          if (units.length) { qty.value = '1'; qty.disabled = true; } else { qty.disabled = false; qty.value = String(Math.min(1, selected.quantity - selected.returned_qty)); }
+        };
+        line.onchange = refresh; refresh();
+      },
+      onConfirm: async (ov, showErr) => {
+        const line = available.find((l) => l.id === Number(ov.querySelector('#sr-line').value));
+        const quantity = Number(ov.querySelector('#sr-qty').value);
+        const reason = ov.querySelector('#sr-reason').value.trim();
+        const file = ov.querySelector('#sr-photo').files[0] || photo;
+        if (!Number.isFinite(quantity) || quantity <= 0 || quantity > line.quantity - line.returned_qty) { showErr('Enter a quantity no greater than the shipped remainder.'); return false; }
+        if (reason.length < 5) { showErr('Describe the reason for return.'); return false; }
+        if (!file) { showErr('Take or select a photo of the returned goods.'); return false; }
+        photo = file;
+        if (!file._returnAttachmentId) {
+          const fd = new FormData(); fd.append('kind', 'sales_return_proof'); fd.append('ref_id', String(slip.id)); fd.append('image', file);
+          try { file._returnAttachmentId = (await API.upload('/attachments', fd)).id; }
+          catch (e) { showErr('Photo upload failed: ' + e.message); return false; }
+        }
+        try {
+          const result = await API.post('/sales-returns', { slip_id: slip.id, slip_item_id: line.id, quantity,
+            unit_id: Number(ov.querySelector('#sr-unit').value) || null, reason, evidence_ids: [file._returnAttachmentId] },
+          { idempotencyKey: saveKey });
+          UI.toast(`${result.number} received — awaiting inspection`);
+          m.close(); slipView(slip.id); return true;
+        } catch (e) { if (e.status >= 400 && e.status < 500) saveKey = 'sales-return:' + crypto.randomUUID(); showErr(e.message); return false; }
+      },
+    });
+  }
+
+  async function inspectReturn(slipId, returnId) {
+    let locations, photos;
+    try { [locations, photos] = await Promise.all([API.get('/locations'), API.get(`/attachments?kind=sales_return&ref_id=${returnId}`)]); }
+    catch (e) { UI.toast(e.message, 'error'); return; }
+    const photoUrls = await Promise.all(photos.map((p) => API.blobUrl(p.url.replace(/^\/api/, '')).catch(() => '')));
+    const saveKey = 'sales-return-inspect:' + crypto.randomUUID();
+    const m = UI.modal({ title: 'Inspect returned goods', confirmText: 'Record inspection',
+      bodyHTML: `<p class="order-notice">Restock adds the received quantity to sellable inventory at the selected location. Reject keeps it out of stock. This decision is recorded once.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px">${photoUrls.filter(Boolean).map((url) => `<img src="${url}" alt="Returned goods evidence" style="width:150px;height:110px;object-fit:cover;border:1px solid var(--border);border-radius:6px" />`).join('')}</div>
+        <div class="form-grid"><div class="form-field"><label>Decision</label><select id="sr-decision"><option value="restock">Passed inspection — restock</option><option value="reject">Rejected — keep out of stock</option></select></div>
+        <div class="form-field"><label>Restock at</label><select id="sr-location">${locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('')}</select></div>
+        <div class="form-field span2"><label>Condition and inspection findings</label><textarea id="sr-condition" rows="3"></textarea></div></div>`,
+      onOpen: (ov) => { const toggle = () => { ov.querySelector('#sr-location').disabled = ov.querySelector('#sr-decision').value !== 'restock'; }; ov.querySelector('#sr-decision').onchange = toggle; toggle(); },
+      onConfirm: async (ov, showErr) => {
+        const decision = ov.querySelector('#sr-decision').value;
+        const condition_note = ov.querySelector('#sr-condition').value.trim();
+        if (condition_note.length < 5) { showErr('Record the inspection findings.'); return false; }
+        if (!(await UI.confirmDialog(decision === 'restock' ? 'Make these returned goods available at the selected location?' : 'Reject these goods and keep them out of stock?', 'Confirm inspection'))) return false;
+        try {
+          const result = await API.post(`/sales-returns/${returnId}/inspect`, { decision, condition_note,
+            location_id: decision === 'restock' ? Number(ov.querySelector('#sr-location').value) : null },
+          { idempotencyKey: saveKey });
+          UI.toast(result.accounting?.error || result.accounting?.skipped === 'cost_missing'
+            ? 'Inspection saved; Finance must reconcile the return cost.' : 'Inspection saved.');
+          m.close(); slipView(slipId); return true;
+        } catch (e) { showErr(e.message); return false; }
+      },
+    });
+  }
+
+  async function decideReturn(slipId, returnId) {
+    let row, locations;
+    try { [row, locations] = await Promise.all([API.get(`/sales-returns/${returnId}`), API.get('/locations')]); }
+    catch (e) { UI.toast(e.message, 'error'); return; }
+    const m = UI.modal({ title: `Next step · ${row.number}`, confirmText: 'Record decision',
+      bodyHTML: `<p class="order-notice">These goods are outside sellable stock. Repair requires a tracked serial and a fresh inspection before restocking. Salvage records the quantity only in damage stock. Disposal records no stock.</p>
+        <div class="form-grid"><div class="form-field"><label>Disposition</label><select id="sr-disposition">
+          ${row.unit_id ? '<option value="repair">Repair serialized unit</option>' : ''}
+          <option value="salvage">Salvage to damage stock</option><option value="dispose">Dispose</option></select></div>
+          <div class="form-field"><label>Salvage location</label><select id="sr-salvage-loc">${locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('')}</select></div>
+          <div class="form-field span2"><label>Decision reason</label><textarea id="sr-disposition-note" rows="3"></textarea></div></div>`,
+      onOpen: (ov) => { const update = () => { ov.querySelector('#sr-salvage-loc').disabled = ov.querySelector('#sr-disposition').value !== 'salvage'; }; ov.querySelector('#sr-disposition').onchange = update; update(); },
+      onConfirm: async (ov, showErr) => {
+        const decision = ov.querySelector('#sr-disposition').value;
+        const note = ov.querySelector('#sr-disposition-note').value.trim();
+        if (note.length < 5) { showErr('Record why this disposition was chosen.'); return false; }
+        if (!(await UI.confirmDialog(`Confirm ${decision} for ${row.number}?`, 'Confirm disposition'))) return false;
+        try { await API.post(`/sales-returns/${returnId}/disposition`, { decision, note,
+          location_id: decision === 'salvage' ? Number(ov.querySelector('#sr-salvage-loc').value) : null },
+        { idempotencyKey: `sales-return-disposition:${returnId}:${decision}` });
+          UI.toast('Disposition recorded'); m.close(); slipView(slipId); return true;
+        } catch (e) { showErr(e.message); return false; }
+      },
+    });
+  }
+
+  async function returnHistory(slipId, returnId) {
+    let row, events;
+    try { [row, events] = await Promise.all([API.get(`/sales-returns/${returnId}`), API.get(`/sales-returns/${returnId}/events`)]); }
+    catch (e) { UI.toast(e.message, 'error'); return; }
+    const m = UI.modal({ title: `Return history · ${row.number}`, cancelText: 'Back to slip',
+      bodyHTML: `<p class="muted">Original inspection: ${UI.esc(row.condition_note || '—')}</p>
+        <div class="table-scroll"><table><thead><tr><th>When</th><th>Action</th><th>Finding</th></tr></thead><tbody>
+          ${events.map((e) => `<tr><td>${UI.esc(UI.fmtDate(e.created_at))}</td><td>${UI.esc(e.action.replaceAll('_', ' '))}</td><td>${UI.esc(e.note)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No disposition events.</td></tr>'}
+        </tbody></table></div>`,
+      onClose: () => { slipView(slipId); },
+    });
+    return m;
+  }
+
+  async function repairReturn(slipId, returnId) {
+    let row, requests;
+    try { row = await API.get(`/sales-returns/${returnId}`);
+      requests = await API.get(`/production/units/${row.unit_id}/repairs`); }
+    catch (e) { UI.toast(e.message, 'error'); return; }
+    const related = requests.filter((r) => r.sales_return_id === returnId);
+    const pending = related.filter((r) => r.status === 'requested');
+    const m = UI.modal({ title: `Repair · ${row.number}`, size: 'lg', confirmText: 'Complete repair',
+      bodyHTML: `<p class="order-notice">The unit remains out of sellable stock. Request needed parts below; the warehouse issues them in Production → Repairs & Parts Requests. Complete repair only after every request is resolved.</p>
+        <div class="table-scroll"><table><thead><tr><th>Request</th><th>Part</th><th>Qty</th><th>Status</th></tr></thead><tbody>
+        ${related.map((r) => `<tr><td>${UI.esc(r.number)}</td><td>${UI.esc(r.component_name)}</td><td>${r.quantity}</td><td>${UI.esc(r.status)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No parts requested.</td></tr>'}</tbody></table></div>
+        <div class="form-grid"><div class="form-field span2"><label>Find part by name or SKU</label><input id="sr-part-search" placeholder="Search inventory" /><select id="sr-part-results"><option value="">Search for a component</option></select></div>
+        <div class="form-field"><label>Request type</label><select id="sr-part-kind"><option value="replace">Replace fitted part</option><option value="add">Add missing part</option></select></div>
+        <div class="form-field"><label>Quantity</label><input id="sr-part-qty" type="number" min="1" step="1" value="1" /></div>
+        <div class="form-field span2"><label>Part request note</label><input id="sr-part-note" placeholder="Fault and part needed" /></div></div>
+        <button type="button" class="btn secondary small" id="sr-part-request">Request part</button>
+        <div class="form-field" style="margin-top:16px"><label>Repair completion note</label><textarea id="sr-repair-note" rows="3" placeholder="Work performed and outcome"></textarea></div>
+        ${pending.length ? `<p class="order-notice">${pending.length} parts request${pending.length === 1 ? '' : 's'} pending. Resolve before completing repair.</p>` : ''}`,
+      onOpen: (ov) => {
+        const search = ov.querySelector('#sr-part-search');
+        let timer;
+        search.oninput = () => { clearTimeout(timer); timer = setTimeout(async () => {
+          const q = search.value.trim();
+          const select = ov.querySelector('#sr-part-results');
+          if (q.length < 2) { select.innerHTML = '<option value="">Enter at least 2 characters</option>'; return; }
+          try { const items = await API.get('/inventory?q=' + encodeURIComponent(q));
+            select.innerHTML = '<option value="">Choose a part</option>' + items.slice(0, 50).map((i) => `<option value="${i.id}">${UI.esc(i.name)}${i.sku ? ' · ' + UI.esc(i.sku) : ''}</option>`).join(''); }
+          catch (e) { UI.toast(e.message, 'error'); }
+        }, 250); };
+        ov.querySelector('#sr-part-request').onclick = async () => {
+          const component_item_id = Number(ov.querySelector('#sr-part-results').value);
+          const quantity = Number(ov.querySelector('#sr-part-qty').value);
+          if (!component_item_id || !Number.isInteger(quantity) || quantity < 1) { UI.toast('Choose a part and whole quantity.', 'error'); return; }
+          try { await API.post(`/production/units/${row.unit_id}/repairs`, {
+            kind: ov.querySelector('#sr-part-kind').value, component_item_id, quantity,
+            notes: ov.querySelector('#sr-part-note').value.trim() || null });
+            UI.toast('Part requested'); m.close(); repairReturn(slipId, returnId);
+          } catch (e) { UI.toast(e.message, 'error'); }
+        };
+      },
+      onConfirm: async (ov, showErr) => {
+        const note = ov.querySelector('#sr-repair-note').value.trim();
+        if (note.length < 5) { showErr('Describe the repair work.'); return false; }
+        if (pending.length) { showErr('Resolve pending parts requests first.'); return false; }
+        try { await API.post(`/sales-returns/${returnId}/repair-complete`, { note });
+          UI.toast('Ready for fresh inspection'); m.close(); slipView(slipId); return true;
+        } catch (e) { showErr(e.message); return false; }
+      },
+    });
+  }
+
+  async function reinspectReturn(slipId, returnId) {
+    let row, locations;
+    try { [row, locations] = await Promise.all([API.get(`/sales-returns/${returnId}`), API.get('/locations')]); }
+    catch (e) { UI.toast(e.message, 'error'); return; }
+    const m = UI.modal({ title: `Reinspect repaired unit · ${row.number}`, confirmText: 'Record reinspection',
+      bodyHTML: `<p class="order-notice">Pass adds this unit once to sellable stock. Reject returns it to repair, without changing stock or the original production receipt.</p>
+        <p class="muted">Repair performed: ${UI.esc(row.repair_note || '—')}</p>
+        <div class="form-grid"><div class="form-field"><label>Decision</label><select id="sr-reinspect-decision"><option value="restock">Pass · restock</option><option value="reject">Reject · repair again</option></select></div>
+        <div class="form-field"><label>Restock at</label><select id="sr-reinspect-loc">${locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('')}</select></div>
+        <div class="form-field span2"><label>Fresh inspection findings</label><textarea id="sr-reinspect-note" rows="3"></textarea></div></div>`,
+      onOpen: (ov) => { const update = () => { ov.querySelector('#sr-reinspect-loc').disabled = ov.querySelector('#sr-reinspect-decision').value !== 'restock'; }; ov.querySelector('#sr-reinspect-decision').onchange = update; update(); },
+      onConfirm: async (ov, showErr) => {
+        const decision = ov.querySelector('#sr-reinspect-decision').value;
+        const condition_note = ov.querySelector('#sr-reinspect-note').value.trim();
+        if (condition_note.length < 5) { showErr('Record the fresh inspection findings.'); return false; }
+        try { const result = await API.post(`/sales-returns/${returnId}/reinspect`, { decision, condition_note,
+          location_id: decision === 'restock' ? Number(ov.querySelector('#sr-reinspect-loc').value) : null });
+          UI.toast(result.accounting?.error || result.accounting?.skipped === 'cost_missing'
+            ? 'Unit restocked; Finance must reconcile return cost.'
+            : decision === 'restock' ? 'Unit restocked after reinspection' : 'Unit returned to repair');
+          m.close(); slipView(slipId); return true;
+        } catch (e) { showErr(e.message); return false; }
+      },
+    });
+  }
+
+  async function linkReturnCredit(slipId, returnId) {
+    let notes;
+    try { notes = (await API.get('/accounting/credit-notes?kind=customer&status=issued')).filter((n) => n.source_doc_type === 'sale_order'); }
+    catch (e) { UI.toast(e.message, 'error'); return; }
+    const slip = await API.get('/release-slips/' + slipId);
+    notes = notes.filter((n) => n.source_doc_id === slip.order_id);
+    const m = UI.modal({ title: 'Link customer credit note', confirmText: 'Link note',
+      bodyHTML: `<p class="muted">Finance issues a customer credit note against sale ${UI.esc(slip.order_number)} in Accounting. Linking it records which physical return it covers; it does not issue a second credit.</p>
+        <div class="form-field"><label>Issued credit note</label><select id="sr-credit">${notes.map((n) => `<option value="${n.id}">${UI.esc(n.number)} · ${UI.money(n.total)}</option>`).join('')}</select></div>
+        ${notes.length ? '' : '<p class="order-notice">No issued credit note is linked to this sale yet.</p>'}`,
+      onConfirm: async (ov, showErr) => {
+        if (!ov.querySelector('#sr-credit').value) { showErr('Issue the linked credit note in Accounting first.'); return false; }
+        try { await API.post(`/sales-returns/${returnId}/link-credit`, { credit_note_id: Number(ov.querySelector('#sr-credit').value) });
+          UI.toast('Credit note linked'); m.close(); slipView(slipId); return true;
+        } catch (e) { showErr(e.message); return false; }
       },
     });
   }
