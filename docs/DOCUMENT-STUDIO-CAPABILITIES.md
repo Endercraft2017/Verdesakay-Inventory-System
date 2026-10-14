@@ -145,10 +145,12 @@ and margins, then scales uniformly into the cell. Fonts, text wrapping, table co
 floating-object proportions are preserved. Extra space stays blank; the design is never
 stretched to fill a differently shaped cell. Grid gaps and multipage restrictions still apply.
 
-The document name lives in the header beside Save. Settings opens document type/period;
-advanced source editing, Find and replace and the guide sit under Advanced. Edit and
+The document name lives in the header beside Save. Form links contains document type/period
+and form connections; File also offers Document details. More groups editor preferences,
+help and advanced source editing; Find and replace is under Home. Edit and
 Print preview are separate modes; Preview data remains the filled-record preview.
-The Text, Insert and Page & print tabs organize the ribbon. Less-used character effects
+The Home, Insert and Layout tabs organize the ribbon. Home separates Font, Paragraph,
+Styles and Editing. Insert groups ordinary document elements; Layout focuses on page setup. Less-used character effects
 are in More text formatting. Font/style/size readouts follow the selection and show Mixed
 when necessary; inspector sizes use points consistently.
 Header, tab and toolbar spacing is compact to reserve more height for the document.
@@ -165,8 +167,10 @@ searchable bank of available catalog/custom fields and fields already in the doc
 with category filters, Insert at the remembered caret, and Copy of the full {{token}}.
 Data blocks and preview tools remain available beneath the bank. Clipboard denial offers
 a selected readonly token for manual copy; locked content and review restrictions remain.
-A labelled rail opens Inspect, Pages, Layers, Outline, Styles, Variables, Library, Review,
-History and Shared on demand. The inspector starts closed and can be dismissed without
+A labeled sidebar groups Document, Design, Template and Review tools. Variables contains
+field/formula insertion and management, Form links connects layouts to forms, and Print grid
+contains row/column/copy/gap controls with a proportional preview. These controls also remain
+available in measured Print preview; zoom stays in the editing footer. The inspector starts closed and can be dismissed without
 losing selection. The page fits available width initially; footer Fit/zoom controls are
 always available while editing. Phone formatting wraps without horizontal overflow, and
 Save remains visible. Keyboard tab navigation and Escape dismiss menus without closing

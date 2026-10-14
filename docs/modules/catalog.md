@@ -1138,3 +1138,12 @@ Save validation releases the shared-sync pause; initializing Picture settings up
 preview directly and does not create a dirty dialog. Real picture edits retain discard protection.
 Transient promotion chrome dismisses when focus leaves the canvas, preserving its own
 action while preventing stale overlays after tool/viewport changes.
+
+The 14 October layout pass uses Wordcraft's actual Home/Insert/Layout grouping as a reference.
+Home separates Font, Paragraph, Styles and Editing; Insert groups ordinary document elements.
+Layout contains page setup and a route to printing. Labeled sidebar sections organize Document,
+Design, Template and Review tools. Variables/formulas/field management, Form links with template
+metadata, and Print grid are sidebar tools; grid controls remain available in measured preview.
+Zoom is in the footer, and More groups preferences/help/source editing. Live control nodes are
+moved rather than cloned, preserving selection handlers, undo, draft/shared and save state.
+The browser fixture sets an explicit test-only admin bootstrap for the current secure seed.

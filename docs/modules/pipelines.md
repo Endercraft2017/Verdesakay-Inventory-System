@@ -900,3 +900,12 @@ Pre-publication empty/page validation → shared failed/unpause → local editin
 Picture initialization → direct preview update; real input → preview plus modal dirty tracking.
 Canvas focus → transient promotion action; focus outside canvas → dismiss promotion chrome.
 Its own button remains inside the canvas; teardown removes the focus handler.
+
+Editor layout initialization → wire existing command/metadata/print controls → move live controls
+into persistent sidebar sections and footer. Panel navigation changes visibility only; dynamic
+inspector rendering cannot recreate/destroy the print, field-action or metadata controls.
+Print grid → change existing row/column/copy/gap controls → original preview/history/shared/save
+pipeline; measured preview keeps these controls visible and source design scaling unchanged.
+More-menu action → focus visible summary before opening dialog → modal returns focus to summary.
+The Sidebar Help action uses the same editor guide; new-template and guide wording follow the
+new tool locations. Existing authored template HTML is unchanged by navigation/layout changes.

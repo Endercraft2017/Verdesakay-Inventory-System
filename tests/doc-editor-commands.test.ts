@@ -200,8 +200,33 @@ describe('simplified editor workspace',()=>{
  });
  it('keeps settings and inspector out of the initial workspace, with direct panel navigation and close focus',()=>{
   const {doc,root}=setup('<p>Text</p>',true);const side=doc.querySelector('.doc-studio-side');expect(side.hidden).toBe(true);expect(doc.querySelector('.doc-tool-rail')).not.toBeNull();
-  const settings=doc.querySelector('[data-details]');settings.click();expect(doc.querySelector('[role=dialog]').getAttribute('aria-label')).toBe('Editor settings');expect(doc.querySelector('.doc-details').classList.contains('details-expanded')).toBe(false);doc.querySelector('.modal-overlay [data-close]').click();
+  const settings=doc.querySelector('[data-details]');settings.click();expect(doc.querySelector('[role=dialog]').getAttribute('aria-label')).toBe('Editor settings');expect(doc.querySelector('[data-sidebar-panel=Template]').hidden).toBe(true);expect(doc.querySelector('.doc-details').closest('.doc-studio-side')).not.toBeNull();doc.querySelector('.modal-overlay [data-close]').click();
   const pages=doc.querySelector('[data-studio-tab=Pages]');pages.click();expect(side.hidden).toBe(false);expect(side.querySelector('[data-inspector-title]').textContent).toBe('Pages');expect(pages.getAttribute('aria-pressed')).toBe('true');side.querySelector('[data-inspector-close]').click();expect(side.hidden).toBe(true);expect(doc.activeElement).toBe(pages);expect(root.textContent).toBe('Text');
+ });
+ it('groups familiar ribbon tools and keeps template automation in persistent sidebar controls',()=>{
+  const {doc,root}=setup('<p>Text</p>',true,{copiesPerRecord:2,recordsPerPage:2});
+  expect(doc.querySelector('[data-tab=home]').textContent).toBe('Home');expect(doc.querySelector('[data-tab=layout]').textContent).toBe('Layout');
+  expect([...doc.querySelectorAll('.doc-tool-rail [data-tool-group]')].map((el:any)=>el.dataset.toolGroup)).toEqual(['Document','Design','Template','Review']);
+  expect(doc.querySelector('[data-panel=home] [data-cmd=formatBlock]').closest('[aria-label=Styles]')).not.toBeNull();
+  expect(doc.querySelector('[data-panel=insert] [data-ins=variable]')).toBeNull();expect(doc.querySelector('[data-panel=layout] .doc-copies')).toBeNull();
+  expect(doc.querySelector('.doc-view-tools .doc-zoomsel')).not.toBeNull();expect(doc.querySelectorAll('.doc-copies')).toHaveLength(1);
+  const copies=doc.querySelector('.doc-copies');doc.querySelector('[data-open-panel=Print]').click();
+  expect(doc.querySelector('[data-sidebar-panel=Print]').hidden).toBe(false);expect(doc.querySelector('[data-grid-summary]').textContent).toContain('4 layouts per sheet');
+  doc.querySelector('[data-studio-tab=Data]').click();expect(doc.querySelector('[data-sidebar-panel=Data]').hidden).toBe(false);expect(doc.querySelector('[data-ins=variable]').closest('[data-sidebar-panel=Data]')).not.toBeNull();
+  doc.querySelector('[data-studio-tab=Template]').click();expect(doc.querySelector('.doc-fs-type-top').closest('[data-sidebar-panel=Template]')).not.toBeNull();
+  doc.querySelector('[data-studio-tab=Print]').click();expect(doc.querySelector('.doc-copies')).toBe(copies);
+  expect(doc.querySelector('.doc-save-status').textContent).toBe('No unsaved changes');expect(root.textContent).toBe('Text');
+ });
+ it('retains print settings through sidebar changes, undo and saving',async()=>{
+  const save=vi.fn((_value:any)=>true);const {doc,w,ed}=setup('<p>Text</p>',true,{copiesPerRecord:2,recordsPerPage:2,onSave:save});
+  doc.querySelector('[data-open-panel=Print]').click();const columns=doc.querySelector('.doc-records-per-page');columns.value='3';columns.dispatchEvent(new w.Event('change',{bubbles:true}));ed._history.flush();
+  expect(doc.querySelector('[data-grid-summary]').textContent).toContain('6 layouts per sheet');ed._history.undo();expect(columns.value).toBe('2');expect(doc.querySelector('[data-grid-summary]').textContent).toContain('4 layouts per sheet');
+  doc.querySelector('[data-save]').click();await new Promise(resolve=>setTimeout(resolve,0));expect(save.mock.calls[0]![0]).toMatchObject({copiesPerRecord:2,recordsPerPage:2,gapXmm:6,gapYmm:6});
+ });
+ it('opens the sidebar guide and returns More-menu settings focus to its visible launcher',()=>{
+  const {doc}=setup();const menu=doc.querySelector('.doc-more-menu');menu.open=true;doc.querySelector('[data-details]').click();expect(menu.open).toBe(false);
+  doc.querySelector('.modal-overlay .modal-foot [data-close]').click();expect(doc.activeElement).toBe(menu.querySelector('summary'));
+  doc.querySelector('.doc-tool-rail [data-help]').click();expect(doc.querySelector('[role=dialog]').getAttribute('aria-label')).toBe('Template editor — quick guide');
  });
  it('closes advanced formatting with Escape without closing the document and supports keyboard ribbon tabs',()=>{
   const {w,doc}=setup();const menu=doc.querySelector('.doc-format-extra');menu.open=true;menu.querySelector('summary').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));expect(menu.open).toBe(false);expect(doc.querySelector('.doc-fs')).not.toBeNull();
@@ -239,7 +264,7 @@ describe('editor preferences',()=>{
  });
  it('opens document details under File and applies metadata without revealing a workspace row',async()=>{
   const {doc,ed}=setup();doc.querySelector('[data-file]').click();doc.querySelector('[data-document-details]').click();const dialogs=doc.querySelectorAll('.modal-overlay');const dialog=dialogs[dialogs.length-1];expect(dialog.querySelector('[role=dialog]').getAttribute('aria-label')).toBe('Document details');dialog.querySelector('[data-detail-type]').value='generic';dialog.querySelector('[data-confirm]').click();await Promise.resolve();await Promise.resolve();
-  expect(doc.querySelector('.doc-fs-type-top').value).toBe('generic');expect(doc.querySelector('.doc-details').classList.contains('details-expanded')).toBe(false);
+  expect(doc.querySelector('.doc-fs-type-top').value).toBe('generic');expect(doc.querySelector('[data-sidebar-panel=Template]').hidden).toBe(true);expect(doc.querySelector('.doc-details').closest('.doc-studio-side')).not.toBeNull();
  });
 });
 

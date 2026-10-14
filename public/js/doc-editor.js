@@ -746,7 +746,7 @@ function ensureStyles() {
     .doc-format-extra{position:relative;flex-shrink:0}.doc-format-extra summary{cursor:pointer;list-style:none;font:12px var(--font,system-ui);padding:8px;color:var(--text-muted);border-radius:var(--radius-sm)}.doc-format-extra summary::-webkit-details-marker{display:none}.doc-format-extra[open] summary{background:var(--accent-weak);color:var(--accent)}.doc-format-popover{position:fixed;width:170px;z-index:20;background:var(--surface);padding:6px;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md)}.doc-format-popover button{display:flex;justify-content:flex-start;width:100%;padding:0 10px;font-size:12px}
     @media(max-width:760px){.doc-brand{min-width:0}.doc-statusbar .doc-shared-status{display:none}.doc-statusbar .doc-shared-status[data-state=error]{flex-basis:100%;max-width:none;white-space:normal}.doc-statusbar:has(.doc-shared-status[data-state=error]){flex-wrap:wrap}}
   `;
-  const viewCss=`.doc-fs[data-editor-mode=pages] .doc-tool-rail,.doc-fs[data-editor-mode=pages] .doc-studio-side,.doc-fs:not([data-editor-mode=visual]) .doc-view-tools{display:none!important}.doc-tool-rail>[data-help]{margin-top:auto}.doc-find{flex-shrink:0}@media(max-width:760px){.doc-find{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:6px;padding:8px}.doc-find input{width:100%;min-width:0;box-sizing:border-box}}.doc-view-tools{display:flex;align-items:center;gap:5px}.doc-view-tools button{border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);font:12px var(--font,system-ui);height:25px;min-width:25px;cursor:pointer}.doc-view-tools button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent)}.doc-view-tools button:hover{background:var(--surface-2);color:var(--text)}.doc-view-tools button:focus-visible{outline:2px solid var(--accent)}.doc-zoom-info{min-width:60px;text-align:center}.doc-panel[data-panel=home] .doc-group-row{flex-wrap:nowrap}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]) .doc-group-row{max-width:700px}@media(max-width:760px){.doc-panel[data-panel=home]{overflow:visible;flex-wrap:wrap;gap:4px;min-height:0}.doc-panel[data-panel=home] .doc-group{padding:2px 4px;gap:3px}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]){flex:1;min-width:0}.doc-panel[data-panel=home] .doc-group-row{justify-content:flex-start;gap:3px;flex-wrap:wrap}.doc-panel[data-panel=home] select[data-cmd=formatBlock]{width:85px}.doc-panel[data-panel=home] select[data-cmd=fontName]{width:102px}.doc-panel[data-panel=home] .doc-group-cap{display:none}.doc-panel[data-panel=home] .doc-group:has([data-find]){display:none}.doc-view-tools{gap:1px}.doc-view-tools button{min-width:20px;padding:0 3px}.doc-statusbar>.doc-word-count{display:none}}` ;
+  const viewCss=`.doc-fs:not([data-editor-mode=visual]) .doc-view-tools{display:none!important}.doc-tool-rail>[data-help]{margin-top:auto}.doc-find{flex-shrink:0}@media(max-width:760px){.doc-find{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:6px;padding:8px}.doc-find input{width:100%;min-width:0;box-sizing:border-box}}.doc-view-tools{display:flex;align-items:center;gap:5px}.doc-view-tools button{border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);font:12px var(--font,system-ui);height:25px;min-width:25px;cursor:pointer}.doc-view-tools button[aria-pressed=true]{background:var(--accent-weak);color:var(--accent)}.doc-view-tools button:hover{background:var(--surface-2);color:var(--text)}.doc-view-tools button:focus-visible{outline:2px solid var(--accent)}.doc-zoom-info{min-width:60px;text-align:center}.doc-panel[data-panel=home] .doc-group-row{flex-wrap:nowrap}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]) .doc-group-row{max-width:700px}@media(max-width:760px){.doc-panel[data-panel=home]{overflow:visible;flex-wrap:wrap;gap:4px;min-height:0}.doc-panel[data-panel=home] .doc-group{padding:2px 4px;gap:3px}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]){flex:1;min-width:0}.doc-panel[data-panel=home] .doc-group-row{justify-content:flex-start;gap:3px;flex-wrap:wrap}.doc-panel[data-panel=home] select[data-cmd=formatBlock]{width:85px}.doc-panel[data-panel=home] select[data-cmd=fontName]{width:102px}.doc-panel[data-panel=home] .doc-group-cap{display:none}.doc-panel[data-panel=home] .doc-group:has([data-find]){display:none}.doc-view-tools{gap:1px}.doc-view-tools button{min-width:20px;padding:0 3px}.doc-statusbar>.doc-word-count{display:none}}` ;
   const compactCss = `
     body:has(.doc-fs) .ai-fab{display:none}
     @media(max-width:760px){.doc-fs-bar{gap:4px}.doc-more-menu summary{font-size:11px;padding:0 6px}.doc-fs-bar [data-guide-open]{order:4;width:30px;height:32px;padding:0;font-size:0;gap:0}.doc-modes button{font-size:11px;padding:4px 8px}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]){flex:1 0 100%;box-sizing:border-box}.doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]) .doc-group-row{width:100%;max-width:100%;min-width:0}.doc-panel[data-panel=home] .doc-group-row{max-width:100%;min-width:0}}
@@ -782,6 +782,67 @@ function ensureStyles() {
       .doc-panel{max-height:min(220px,28vh);overflow:auto!important;scrollbar-width:thin;align-content:flex-start}.doc-panel[data-panel=insert] .doc-group{padding:2px 4px}.doc-panel[data-panel=insert] .doc-group-row{gap:3px}.doc-panel[data-panel=insert] .doc-tile{min-width:52px;font-size:11px;padding:4px;gap:4px}.doc-panel[data-panel=layout] .doc-group{flex:0 1 auto}.doc-panel[data-panel=layout] .doc-group-row{gap:6px}.doc-panel[data-panel=layout] .doc-tile-lbl{font-size:10px}
     }
   `;
+  el.textContent += `
+    /* Familiar ribbon groups; template automation lives in the labeled sidebar. */
+    .doc-panel .doc-group{gap:5px;border-right:1px solid var(--border);padding:2px 12px}
+    .doc-panel .doc-group:last-child{border-right:0}.doc-panel .doc-group::before{display:none}
+    .doc-panel .doc-group-cap{display:block;font-size:10px;line-height:1.2;color:var(--text-muted);text-align:left;font-weight:500}
+    .doc-panel[data-panel=home] .doc-group-row{gap:4px}
+    .doc-panel[data-panel=home] [data-cmd=formatBlock]{width:125px}
+    .doc-panel[data-panel=home] [data-open-panel=Styles]{white-space:nowrap;padding:4px 7px}
+    .doc-panel[data-panel=layout] .doc-group-row{gap:8px}
+    .doc-panel [data-open-panel=Print]{display:flex;align-items:center;gap:6px;padding:6px 10px;height:32px;white-space:nowrap}
+    .doc-fs .doc-tool-rail{width:136px;padding:6px;gap:4px;flex-shrink:0}
+    .doc-fs .doc-tool-rail button{width:100%;min-height:34px;flex-direction:row;justify-content:flex-start;gap:8px;padding:6px 8px;font-size:12px;text-align:left}
+    .doc-fs .doc-tool-rail button svg{width:17px;height:17px;flex-shrink:0}
+    .doc-fs .doc-tool-rail [data-rail-toggle]{min-height:30px;border-bottom:0;margin:0;border-radius:var(--radius-sm)}
+    .doc-rail-section{display:flex;flex-direction:column;gap:2px;border-bottom:1px solid var(--border);padding-bottom:7px;margin-bottom:3px}
+    .doc-rail-caption{padding:4px 8px;color:var(--text-muted);font-size:10px;font-weight:600;letter-spacing:.035em;text-transform:uppercase}
+    .doc-fs .doc-workspace.rail-collapsed .doc-tool-rail{width:44px;padding:4px}
+    .doc-fs .doc-workspace.rail-collapsed .doc-tool-rail button{justify-content:center;min-height:34px;padding:5px}
+    .doc-workspace.rail-collapsed .doc-rail-caption{display:none}
+    .doc-fs .doc-studio-side{width:300px}
+    .doc-sidebar-description{padding:10px 14px;margin:0;font-size:12px;line-height:1.5;color:var(--text-muted);border-bottom:1px solid var(--border)}
+    .doc-studio-side [data-sidebar-panel][hidden],.doc-studio-side .doc-studio-body[hidden]{display:none!important}
+    .doc-fs .doc-sidebar-controls{padding-bottom:0}
+    .doc-fs .doc-sidebar-controls hr{width:100%;border:0;border-top:1px solid var(--border);margin:4px 0}
+    .doc-fs .doc-sidebar-controls .doc-group{margin:0 0 12px;border:0;padding:0;align-items:stretch}.doc-fs .doc-sidebar-controls .doc-group::before{display:none}
+    .doc-fs .doc-sidebar-controls .doc-group-cap{display:none}
+    .doc-fs .doc-sidebar-controls .doc-group-row{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .doc-fs .doc-sidebar-controls .doc-tile-select{display:flex;flex-direction:column;align-items:stretch;gap:5px;padding:0;min-width:0}
+    .doc-fs .doc-sidebar-controls .doc-tile-lbl{font-size:12px;font-weight:600;color:var(--text)}
+    .doc-fs .doc-sidebar-controls .doc-tile-select input,.doc-fs .doc-sidebar-controls .doc-tile-select select{width:100%;height:34px;font-size:12px}
+    .doc-fs .doc-sidebar-controls .doc-grid-toggle{grid-column:1/-1;white-space:normal;align-self:auto;padding:0;min-height:30px}
+    .doc-fs .doc-sidebar-controls button{display:flex;align-items:center;justify-content:center;gap:6px}
+    .doc-fs [data-template-actions] .doc-group-row{grid-template-columns:1fr 1fr;gap:6px}
+    .doc-fs [data-template-actions] button{font:12px var(--font,system-ui);min-height:34px;padding:7px 8px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);border-radius:var(--radius-sm)}
+    .doc-fs [data-template-actions] [data-managevars]{grid-column:1/-1}
+    .doc-fs [data-template-actions] .doc-tile-ic svg{width:16px;height:16px}
+    .doc-fs [data-template-actions] .doc-tile-lbl{font-size:11px;font-weight:600}
+    .doc-fs .doc-sidebar-controls .doc-details{display:flex;flex-direction:column;align-items:stretch;padding:0;gap:12px;border:0;background:transparent}
+    .doc-fs .doc-sidebar-controls .doc-details label,.doc-fs .doc-sidebar-controls .doc-details select,.doc-fs .doc-sidebar-controls .doc-details input{width:100%;min-width:0}
+    .doc-menu-caption{font-size:10px;font-weight:600;color:var(--text-muted);padding:6px 10px;text-transform:uppercase;letter-spacing:.03em}
+    .doc-fs .doc-more-popover button{order:0!important;font-size:12px!important}.doc-fs .doc-more-popover button span{display:inline!important}
+    .doc-more-popover [data-help]::after{content:none}
+    .doc-more-popover p{border-top:1px solid var(--border);padding-top:10px;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--text-muted)}
+    .doc-fs .doc-view-tools select{width:100px;height:28px;padding:3px 7px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);font:11px var(--font,system-ui)}
+    .doc-fs[data-editor-mode=pages] .doc-rail-section:not([data-tool-group=Template]),.doc-fs[data-editor-mode=pages] [data-studio-tab=Data]{display:none}
+    .doc-fs .doc-tool-rail>[data-help]{margin-top:auto}
+    @media(max-width:1200px){.doc-fs .doc-tool-rail{width:122px}.doc-panel .doc-group{padding:3px 8px}}
+    @media(max-width:760px){
+      .doc-fs .doc-tool-rail{width:64px;padding:4px;gap:3px}
+      .doc-fs .doc-tool-rail button{flex-direction:column;justify-content:center;gap:3px;padding:5px 2px;font-size:9px;min-height:43px;text-align:center}
+      .doc-fs .doc-tool-rail [data-rail-toggle]{min-height:30px}
+      .doc-rail-caption{display:none}.doc-rail-section{padding-bottom:4px;margin-bottom:2px}
+      .doc-fs .doc-workspace.rail-collapsed .doc-tool-rail{width:40px}
+      .doc-fs .doc-studio-side{width:min(296px,calc(100% - 70px))!important}
+      .doc-fs .doc-panel .doc-group-cap{display:block;font-size:9px}
+      .doc-fs .doc-panel[data-panel=home] .doc-group:has([data-cmd=fontName]) .doc-group-row{flex-wrap:wrap}
+      .doc-fs .doc-panel[data-panel=home] .doc-group:has([data-find]){display:none}
+      .doc-fs .doc-panel .doc-group{border-bottom:1px solid var(--border);padding:5px 6px}
+      .doc-fs .doc-view-tools select{width:90px}.doc-view-tools .doc-zoom-info{display:none}
+    }
+`;
   document.head.appendChild(el);
 }
 
@@ -790,22 +851,20 @@ const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72];
 
 /** One labeled ribbon group: a row of controls + a caption underneath (Word-style). */
 function groupHTML(caption, innerHtml) {
-  return `<div class="doc-group"><div class="doc-group-row">${innerHtml}</div><span class="doc-group-cap">${caption}</span></div>`;
+  return `<div class="doc-group" role="group" aria-label="${caption}"><div class="doc-group-row">${innerHtml}</div><span class="doc-group-cap">${caption}</span></div>`;
 }
 
 function tabsHTML() {
   return `
-    <button type="button" class="doc-tab active" data-tab="home">Text</button>
+    <button type="button" class="doc-tab active" data-tab="home">Home</button>
     <button type="button" class="doc-tab" data-tab="insert">Insert</button>
-    <button type="button" class="doc-tab" data-tab="layout">Page & print</button>
+    <button type="button" class="doc-tab" data-tab="layout">Layout</button>
     <button type="button" class="doc-tab" data-tab="table" style="display:none">Table</button>`;
 }
 
 function homePanelHTML() {
   const font = groupHTML('Font', `
-    <select data-cmd="formatBlock" title="Paragraph style">
-      <option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="h4">Heading 4</option><option value="h5">Heading 5</option><option value="h6">Heading 6</option>
-    </select>
+
     <select data-cmd="fontName" title="Font">${FONTS.map((f) => `<option value="${f}">${f}</option>`).join('')}</select>
     <select data-fontsize title="Font size (pt)">${SIZES.map((s) => `<option value="${s}" ${s === 12 ? 'selected' : ''}>${s}</option>`).join('')}</select>
     <span class="tb-sep"></span>
@@ -828,9 +887,12 @@ function homePanelHTML() {
     <button type="button" data-ex="outdent" title="Decrease indent">⇤</button>
     <button type="button" data-ex="indent" title="Increase indent">⇥</button>
     <button type="button" data-paragraph title="Paragraph spacing and indentation">Spacing</button>`);
+  const styles = groupHTML('Styles', `    <select data-cmd="formatBlock" title="Paragraph style">
+      <option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="h4">Heading 4</option><option value="h5">Heading 5</option><option value="h6">Heading 6</option>
+    </select><button type="button" data-open-panel="Styles" title="Apply or customize named paragraph styles">Manage styles</button>`);
   const editing = groupHTML('Editing', `
     <button type="button" class="doc-tile" data-find title="Find &amp; replace (Ctrl+F)"><span class="doc-tile-ic">${docIcon('search')}</span><span class="doc-tile-lbl">Find</span></button>`);
-  return font + paragraph + editing;
+  return font + paragraph + styles + editing;
 }
 
 function tile(kind, value, icon, label, extraClass) {
@@ -839,15 +901,14 @@ function tile(kind, value, icon, label, extraClass) {
 }
 
 function insertPanelHTML() {
-  const illustrations = groupHTML('Illustrations', tile('ins', 'image', '🖼', 'Picture'));
-  const shapes = groupHTML('Shapes', tile('ins', 'shape-rect', '▭', 'Rectangle') + tile('ins', 'shape-oval', '⬭', 'Oval') + tile('ins', 'shape-line', '—', 'Line'));
   const tables = groupHTML('Tables', tile('ins', 'table', '▦', 'Table'));
-  const links = groupHTML('Links', tile('ins', 'link', '🔗', 'Link'));
-  const text = groupHTML('Text', tile('ins', 'checkbox', '☐', 'Checkbox') + tile('ins', 'hr', '―', 'Line')
-    + tile('ins', 'pagebreak', '⤓', 'Page Break') + tile('ins', 'textbox', '▭', 'Text Box') + tile('ins', 'signature', '✒', 'Signature Line'));
-  const symbols = groupHTML('Symbols', tile('ins', 'symbol', 'Ω', 'Symbol'));
-  const template = groupHTML('Template', tile('ins', 'variable', '{ }', 'Field', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Formula', 'btn-fx') + `<button type="button" data-managevars title="Create, rename or remove template fields">${docIcon('variable')}Manage fields</button>`);
-  return illustrations + shapes + tables + links + text + symbols + template;
+  const illustrations = groupHTML('Illustrations', tile('ins', 'image', '🖼', 'Picture') + tile('ins', 'shape-rect', '▭', 'Rectangle') + tile('ins', 'shape-oval', '⬭', 'Oval') + tile('ins', 'shape-line', '—', 'Line shape'));
+  const text = groupHTML('Text & links', tile('ins', 'textbox', '▭', 'Text box') + tile('ins', 'signature', '✒', 'Signature line') + tile('ins', 'link', '🔗', 'Link'));
+  const symbols = groupHTML('Symbols & breaks', tile('ins', 'symbol', 'Ω', 'Symbol') + tile('ins', 'checkbox', '☐', 'Checkbox') + tile('ins', 'hr', '―', 'Horizontal rule') + tile('ins', 'pagebreak', '⤓', 'Page break'));
+  // These are mounted in the Variables sidebar after the existing command listeners
+  // are wired. Moving their live nodes preserves selection and avoids duplicate commands.
+  const template = `<div data-template-actions hidden>${groupHTML('Template fields', tile('ins', 'variable', '{ }', 'Insert variable', 'btn-variable') + tile('ins', 'formula', 'ƒx', 'Insert formula', 'btn-fx') + `<button type="button" data-managevars title="Create, rename or remove template fields">${docIcon('variable')}Manage fields</button>`)}</div>`;
+  return tables + illustrations + text + symbols + template;
 }
 
 function layoutPanelHTML() {
@@ -900,6 +961,7 @@ function layoutPanelHTML() {
     <button type="button" data-zoom="out" title="Zoom out (Ctrl -)">−</button>
     <select class="doc-fs-type doc-zoomsel" title="Zoom level">
       <option value="fit">Fit width</option>
+      <option value="0.25">25%</option>
       <option value="0.5">50%</option>
       <option value="0.67">67%</option>
       <option value="0.75">75%</option>
@@ -908,9 +970,10 @@ function layoutPanelHTML() {
       <option value="1.5">150%</option>
       <option value="2">200%</option>
       <option value="3">300%</option>
+      <option value="4">400%</option>
     </select>
     <button type="button" data-zoom="in" title="Zoom in (Ctrl +)">+</button>`);
-  return pageSetup + copies + spacing + zoom;
+  return pageSetup + groupHTML('Printing', `<button type="button" data-open-panel="Print" title="Configure a proportional print grid in the sidebar">${docIcon('table')}Print grid…</button>`) + `<div data-print-tools hidden>${copies}${spacing}</div><div data-zoom-tools hidden>${zoom}</div>`;
 }
 
 function tablePanelHTML() {
@@ -1114,17 +1177,17 @@ function docEditorHelpDialog() {
 
   const PANES = {
     basics: lead('It behaves like a normal document — type, format, and drop in tables or pictures.')
-      + bullet('Use <b>Edit</b> to work on the document and <b>Print preview</b> to check measured sheets. Advanced source editing is under <b>Source → Edit HTML / CSS</b>.', SHOT_MODES)
+      + bullet('Use <b>Edit</b> to work on the document and <b>Print preview</b> to check measured sheets. Advanced source editing is under <b>More → Edit HTML / CSS</b>.', SHOT_MODES)
       + bullet(`By default, ${kbd('Ctrl')} / ${kbd('⌘')}+${kbd('S')} saves. Customize Save, Find and Preview shortcuts in <b>Settings</b>. ${kbd('Ctrl')} / ${kbd('⌘')}+${kbd('Z')} undoes document edits.`)
-      + bullet('<b>Preview data</b> in the top bar opens a movable preview filled with realistic sample data.')
-      + bullet('Open <b>Fields</b> on the left for template data. <b>Guide in the top bar</b> opens this guide.')
+      + bullet('<b>Preview data</b> in the Print grid sidebar opens a movable preview filled with realistic sample data.')
+      + bullet('Open <b>Variables</b> in the sidebar for template data. <b>Help</b> opens this guide.')
       + note('Nothing on the page is “live” — variables and formulas only turn into real values when the document is printed.'),
 
     variables: lead('A variable is a blank the system fills in at print time — a name, a number, a date.')
-      + step(1, 'Open <b>Insert</b> → <b>Field</b> — or just type <code>{{ }}</code> right on the page.')
+      + step(1, 'Open <b>Variables</b> → <b>Insert variable</b> — or just type <code>{{ }}</code> right on the page.')
       + step(2, "Pick a field: company name, order number, customer, today's date…")
       + step(3, 'It drops in as a blue pill. On the printed page it becomes the real value.', SHOT_VARFLOW)
-      + bullet('Want your own? <b>Insert → Manage fields</b> — a fixed value, a bound field, or a saved formula.')
+      + bullet('Want your own? <b>Variables → Manage fields</b> — a fixed value, a bound field, or a saved formula.')
       + bullet('Hide a block when its value is empty: <code>{{#if order.notes}} … {{/if}}</code> (HTML&nbsp;/&nbsp;CSS mode).'),
 
     repeat: lead('One table row can print once for every line item — 3 of them, or 300.')
@@ -1137,13 +1200,14 @@ function docEditorHelpDialog() {
       + bullet('Inside an item row: <code>quantity * unit_price</code> — worked out for each row.', SHOT_FXBTN)
       + bullet('A grand total, anywhere: <code>sum(items.line_total)</code>, <code>count(items)</code> — correct at any row count.')
       + bullet('The order’s own figures are ready to use: <code>{{order.subtotal}}</code>, <code>{{order.tax_amount}}</code>, <code>{{order.total}}</code>.')
-      + bullet('Add one via <b>Insert → ƒx Formula</b>, or on a table cell via <b>Table</b> tab → <b>= ƒx</b>.'),
+      + bullet('Add one via <b>Variables → Insert formula</b>, or on a table cell via <b>Table</b> tab → <b>= ƒx</b>.'),
 
     layout: lead('The <b>Layout</b> tab controls the paper and how a long document breaks across pages.')
       + bullet('Paper <b>size</b>, <b>orientation</b>, and <b>margins</b>.', SHOT_LAYOUT)
-      + bullet(`<b>Zoom</b> — the −/+/Fit control, ${kbd('Ctrl')}+scroll, or ${kbd('Ctrl')}+${kbd('+')} / ${kbd('-')} / ${kbd('0')}.`)
+      + bullet(`<b>Zoom</b> in the footer — the −/+/Fit control, ${kbd('Ctrl')}+scroll, or ${kbd('Ctrl')}+${kbd('+')} / ${kbd('-')} / ${kbd('0')}.`)
       + bullet('Long tables split across pages on their own; a real header row reprints on each page.')
-      + bullet('Force a new page: <b>Insert → Page Break</b>.'),
+      + bullet('Force a new page: <b>Insert → Page Break</b>.')
+      + bullet('Open <b>Print grid</b> in the sidebar for rows, columns, copies and gaps. Designs scale proportionally; multipage designs print as pages.'),
 
     move: lead('Shapes, text boxes, pictures and tables can float — dragged and resized freely.')
       + step(1, 'Click a picture, table, or block → <b>⛶ Make … movable</b> on the small bar that appears.')
@@ -1833,7 +1897,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
     if(!chip || chip.closest('[data-doc-locked="true"],del[data-doc-change]'))return;
     if(trackingText()){UI.toast('Turn tracking off to change a field token','error');return;}
     const token=chip.dataset.token;
-    if(/^[#/]/.test(token)){UI.modal({title:'Template control',cancelText:'Close',bodyHTML:`<p>This token controls repeated rows or conditional content: <code>${escAttr(token)}</code>.</p><p>Edit matching opening and closing controls together in Source → Edit HTML / CSS.</p>`});return;}
+    if(/^[#/]/.test(token)){UI.modal({title:'Template control',cancelText:'Close',bodyHTML:`<p>This token controls repeated rows or conditional content: <code>${escAttr(token)}</code>.</p><p>Edit matching opening and closing controls together in More → Edit HTML / CSS.</p>`});return;}
     const range=document.createRange();range.selectNode(chip);surface.focus();const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);saveSel();
     const replace=html=>commands.run('edit.replaceField',{target:chip,html});
     if(token.startsWith('='))formulaDialog(replace,saveSel,getVariables,token.replace(/^=\s*/,''),sampleContext,editorModal);
@@ -2754,28 +2818,52 @@ function mountStudio(fs, surface, opts, api) {
   const desk = document.createElement('div'); desk.className = 'doc-workspace';
   const canvas = fs.querySelector('.doc-canvas'); canvas.before(desk); desk.append(canvas);
   const side = document.createElement('aside'); side.className = 'doc-studio-side'; side.setAttribute('aria-label', 'Document tools'); desk.append(side);
-  const toolNames={Properties:'Inspect',Layers:'Layers',Outline:'Outline',Data:'Variables',Pages:'Pages',Styles:'Styles',Review:'Review',Library:'Library',History:'History',Shared:'Shared'};
-  const toolDescriptions={Properties:'Edit the selected text or object’s size, colors, spacing and alignment.',Pages:'Add, duplicate and reorder design pages; manage headers, footers and page breaks.',Layers:'Select objects and manage their visibility, locking and stacking order.',Outline:'Navigate document headings and insert a table of contents.',Styles:'Apply and customize paragraph styles for headings and body text.',Data:'Search, copy and insert live variables; configure data blocks and preview values.',Library:'Save and reuse styles and objects on this device.',Review:'Track text changes, review edits and manage comments.',History:'Recover drafts and restore saved versions of this document.',Shared:'Manage shared editing, server drafts and document revisions.'};
-  const toolIcons={Properties:'settings',Layers:'layers',Outline:'justifyLeft',Data:'variable',Pages:'document',Styles:'styles',Review:'signature',Library:'image',History:'undo',Shared:'shared'};
+  const toolNames={Print:'Print grid',Template:'Form links',Properties:'Inspect',Layers:'Layers',Outline:'Outline',Data:'Variables',Pages:'Pages',Styles:'Styles',Review:'Review',Library:'Library',History:'History',Shared:'Shared'};
+  const toolDescriptions={Print:'Scale this design into a print grid, set copies and gaps, and preview the printed sheets.',Template:'Set template details, connect forms and choose their default print layouts.',Properties:'Edit the selected text or object’s size, colors, spacing and alignment.',Pages:'Add, duplicate and reorder design pages; manage headers, footers and page breaks.',Layers:'Select objects and manage their visibility, locking and stacking order.',Outline:'Navigate document headings and insert a table of contents.',Styles:'Apply and customize paragraph styles for headings and body text.',Data:'Search, copy and insert live variables; configure data blocks and preview values.',Library:'Save and reuse styles and objects on this device.',Review:'Track text changes, review edits and manage comments.',History:'Recover drafts and restore saved versions of this document.',Shared:'Manage shared editing, server drafts and document revisions.'};
+  const toolIcons={Print:'table',Template:'link',Properties:'settings',Layers:'layers',Outline:'justifyLeft',Data:'variable',Pages:'document',Styles:'styles',Review:'signature',Library:'image',History:'undo',Shared:'shared'};
   const rail=document.createElement('nav');rail.className='doc-tool-rail';rail.setAttribute('aria-label','Document tools');desk.prepend(rail);
-  rail.innerHTML=['Properties','Pages','Layers','Outline','Styles','Data','Library','Review','History',...(opts.sharedStudio?['Shared']:[])].map(x=>`<button type="button" data-studio-tab="${x}" aria-pressed="false" title="${toolNames[x]}" aria-label="Open ${toolNames[x].toLowerCase()} panel">${docIcon(toolIcons[x])}<span>${toolNames[x]}</span></button>`).join('');
+  const toolGroups=[['Document',['Pages','Outline','Styles']],['Design',['Properties','Layers','Library']],['Template',['Data','Template','Print']],['Review',['Review','History',...(opts.sharedStudio?['Shared']:[])]]];
+  rail.innerHTML=toolGroups.map(([name,tools])=>`<div class="doc-rail-section" data-tool-group="${name}" role="group" aria-label="${name} tools"><span class="doc-rail-caption">${name}</span>${tools.map(x=>`<button type="button" data-studio-tab="${x}" aria-pressed="false" title="${toolNames[x]}" aria-label="Open ${toolNames[x].toLowerCase()} panel">${docIcon(toolIcons[x])}<span>${toolNames[x]}</span></button>`).join('')}</div>`).join('');
   const assistantFab=document.getElementById('ai-fab');
   if(assistantFab&&!assistantFab.classList.contains('hidden')){
     rail.insertAdjacentHTML('beforeend','<button type="button" data-editor-assistant aria-label="Open assistant">'+UI.icon('sparkles',18)+'<span>Assistant</span></button>');
     rail.querySelector('[data-editor-assistant]').addEventListener('click',()=>assistantFab.click());
   }
   rail.insertAdjacentHTML('beforeend','<button type="button" data-help title="Editor guide" aria-label="Editor guide">'+docIcon('help')+'<span>Help</span></button>');
+  rail.querySelector('[data-help]').addEventListener('click',docEditorHelpDialog);
   rail.insertAdjacentHTML('afterbegin','<button type="button" data-rail-toggle aria-expanded="true" aria-label="Collapse tool sidebar" title="Collapse tool sidebar">'+docIcon('justifyLeft')+'<span>Collapse</span></button>');
   function syncRailTooltips(){const collapsed=desk.classList.contains('rail-collapsed');rail.querySelectorAll('[data-studio-tab]').forEach(button=>{const key=button.dataset.studioTab;button.removeAttribute('title');button.dataset.tip=collapsed?toolNames[key]:toolDescriptions[key];});const help=rail.querySelector('[data-help]');help.removeAttribute('title');help.dataset.tip=collapsed?'Help':'Open the editor guide for editing, layout and printing instructions.';const assistant=rail.querySelector('[data-editor-assistant]');if(assistant)assistant.dataset.tip=collapsed?'Assistant':'Open the assistant without covering the canvas with its launcher.';const toggle=rail.querySelector('[data-rail-toggle]');toggle.removeAttribute('title');toggle.dataset.tip=collapsed?'Expand':'Hide tool names to give the document more space.';}
   syncRailTooltips();
   rail.querySelector('[data-rail-toggle]').addEventListener('click',e=>{const collapsed=desk.classList.toggle('rail-collapsed');const button=e.currentTarget;button.setAttribute('aria-expanded',String(!collapsed));button.setAttribute('aria-label',collapsed?'Expand tool sidebar':'Collapse tool sidebar');button.querySelector('span').textContent=collapsed?'Expand':'Collapse';syncRailTooltips();api.layout();});
-  side.innerHTML='<header class="doc-inspector-head"><strong data-inspector-title>Inspect</strong><button type="button" data-inspector-close aria-label="Collapse inspector">'+docIcon('close')+'<span>Collapse</span></button></header><div class="doc-studio-body"></div><p class="doc-studio-note" role="status"></p>';
+  side.innerHTML='<header class="doc-inspector-head"><strong data-inspector-title>Inspect</strong><button type="button" data-inspector-close aria-label="Collapse inspector">'+docIcon('close')+'<span>Collapse</span></button></header><p class="doc-sidebar-description" data-sidebar-description></p><div data-sidebar-static></div><div class="doc-studio-body"></div><p class="doc-studio-note" role="status"></p>';
   const toggle = fs.querySelector('[data-tools]');
   side.hidden=true;
   function showInspector(open){side.hidden=!open;toggle.setAttribute('aria-expanded',String(open));rail.querySelectorAll('[data-studio-tab]').forEach(b=>b.setAttribute('aria-pressed',String(open&&b.dataset.studioTab===tab)));api.layout();}
   toggle.addEventListener('click',()=>showInspector(side.hidden));
   side.querySelector('[data-inspector-close]').addEventListener('click',()=>{showInspector(false);rail.querySelector(`[data-studio-tab="${tab}"]`)?.focus();});
   const panel = side.querySelector('.doc-studio-body'), note = side.querySelector('.doc-studio-note'); let tab = 'Properties';
+  const staticPanels={};
+  function staticPanel(name,markup){const block=document.createElement('section');block.className='doc-studio-body doc-sidebar-controls';block.dataset.sidebarPanel=name;block.hidden=true;block.innerHTML=markup;side.querySelector('[data-sidebar-static]').append(block);staticPanels[name]=block;return block;}
+  const variablesPanel=staticPanel('Data','');
+  const templateActions=fs.querySelector('[data-template-actions]');templateActions.hidden=false;variablesPanel.append(templateActions);
+  const formsPanel=staticPanel('Template','<h3>Template details</h3><div data-template-details></div><hr><h3>Form connections</h3><p>Use this layout for forms you manage. Each form can have several layouts and one default.</p>');
+  const details=fs.querySelector('.doc-details');details.hidden=false;details.classList.add('details-expanded');details.querySelector('.doc-settings-caption')?.remove();formsPanel.querySelector('[data-template-details]').append(details);
+  const formButton=fs.querySelector('[data-linked-forms]');formsPanel.append(formButton);
+  if(formButton.hidden) formsPanel.insertAdjacentHTML('beforeend','<p class="muted">Form linking is unavailable for this template or your current permissions.</p>');
+  const printPanel=staticPanel('Print','<h3>Sheet arrangement</h3><p data-grid-summary role="status"></p><div data-print-settings></div><p class="muted" data-print-flow></p><hr><h3>Preview</h3><p>Check the fitted sheets or inspect the values used in the preview.</p><button type="button" data-print-preview>Print preview</button>');
+  const printTools=fs.querySelector('[data-print-tools]');printTools.hidden=false;printPanel.querySelector('[data-print-settings]').append(printTools);
+  printPanel.append(fs.querySelector('[data-preview]'));
+  printPanel.querySelector('[data-print-preview]').addEventListener('click',()=>api.pageView());
+  printTools.querySelector('.doc-repeat-wrap .doc-tile-lbl').textContent='Copies per record';
+  const flow=printTools.querySelector('.doc-grid-toggle');flow.lastChild.textContent=' Fill records continuously';
+  printTools.querySelectorAll('.doc-tile-select').forEach((field,index)=>{const label=field.querySelector('.doc-tile-lbl'),control=field.querySelector('input,select');if(label&&control){control.id='doc-grid-control-'+index;control.setAttribute('aria-label',label.textContent);}});
+  function printSummary(){const state=api.snapshot(),rows=state.copiesPerRecord||1,columns=state.recordsPerPage||1;printPanel.querySelector('[data-grid-summary]').textContent=`${rows} row${rows===1?'':'s'} × ${columns} column${columns===1?'':'s'} · ${rows*columns} layout${rows*columns===1?'':'s'} per sheet`;printPanel.querySelector('[data-print-flow]').textContent=state.continuous?'Records fill cells in order. Copies per record are set above.':'Each column prints one record; rows repeat that record.';}
+  printTools.addEventListener('change',printSummary);
+  const utility=fs.querySelector('[data-tools]');utility.hidden=true;utility.style.display='none';
+  function openPanel(name){if(!toolNames[name])return;remember();tab=name;render();showInspector(true);}
+  const onOpenPanel=e=>{const button=e.target.closest('[data-open-panel]');if(button)openPanel(button.dataset.openPanel);};
+  fs.addEventListener('click',onOpenPanel);
+
   const style = document.createElement('style'); style.textContent = `.doc-workspace{display:flex;flex:1;min-height:0;overflow:hidden}.doc-workspace>.doc-canvas{min-width:0;flex:1}.doc-studio-side{width:280px;flex-shrink:0;background:var(--surface,#fff);border-left:1px solid var(--border,#ddd);overflow:auto;font-size:12px;color:var(--text,#222)}.doc-studio-side nav{display:grid;grid-template-columns:repeat(3,1fr);padding:8px;gap:4px;position:sticky;top:0;background:var(--surface,#fff);z-index:2}.doc-studio-side button{font:inherit;cursor:pointer;border:1px solid var(--border,#ddd);background:var(--surface,#fff);color:inherit;border-radius:var(--radius-sm,8px);padding:8px}.doc-studio-side button[aria-pressed=true]{background:var(--accent-weak,#edf3fc);color:var(--accent,#2765aa)}.doc-studio-body{padding:14px;display:flex;flex-direction:column;gap:10px}.doc-studio-body h3{font-size:14px;margin:4px 0}.doc-studio-body p{margin:0;line-height:1.6}.doc-studio-body label{display:flex;flex-direction:column;gap:5px;margin:0}.doc-studio-body input,.doc-studio-body textarea{font-weight:400!important}.doc-studio-body input,.doc-studio-body select,.doc-studio-body textarea{box-sizing:border-box;width:100%;padding:7px;border:1px solid var(--border,#ddd);border-radius:var(--radius-sm,8px);color:inherit;background:var(--surface,#fff);font:inherit}.doc-studio-body textarea{min-height:130px}.doc-prop-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.doc-layer{display:flex;gap:4px;align-items:center}.doc-layer>button{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis}.doc-layer input{width:auto}.doc-studio-note{padding:12px;margin:0;font-size:11px;color:var(--text-muted,#666)}.doc-page [data-doc-locked=true]{cursor:default}.doc-page-guide{position:absolute;left:0;right:0;border-top:1px dashed #91a4bb;pointer-events:none;z-index:1002;font:11px system-ui;color:#60718a}.doc-page .doc-pagebreak{border-top:1px dashed #91a4bb;height:20px;margin:12px 0}.doc-page .doc-pagebreak:after{content:'Page break';font:11px system-ui;color:#60718a}.doc-page [data-doc-hidden=true]{display:none!important}@media(max-width:1000px){.doc-studio-side{width:230px}}@media(max-width:760px){.doc-workspace{flex-direction:column}.doc-studio-side{width:100%;max-height:220px;border-left:0;border-top:1px solid var(--border,#ddd)}.doc-studio-side nav{grid-template-columns:repeat(6,1fr)}.doc-studio-body{padding:10px}.doc-studio-body .doc-prop-grid{grid-template-columns:repeat(4,1fr)}}`;
   fs.append(style);
   const esc = (x) => escAttr(String(x ?? ''));
@@ -2805,10 +2893,16 @@ function mountStudio(fs, surface, opts, api) {
   panel.addEventListener('input',e=>{if(e.target.hasAttribute('data-variable-search')){variableSearch=e.target.value;renderVariableBank();}});
   function render() {
     rail.querySelectorAll('[data-studio-tab]').forEach(b=>b.setAttribute('aria-pressed',String(!side.hidden&&b.dataset.studioTab===tab)));side.querySelector('[data-inspector-title]').textContent=toolNames[tab] || tab;
+    side.querySelector('[data-sidebar-description]').textContent=toolDescriptions[tab] || '';
+    Object.entries(staticPanels).forEach(([name,block])=>block.hidden=name!==tab);
+    panel.hidden=tab==='Print'||tab==='Template';
+    if(tab==='Print'){printSummary();return;}
+    if(tab==='Template')return;
+
     if(advanced.render(tab,panel))return;
     const el = target();
     if (tab === 'Properties') {
-      panel.innerHTML = `<h3>${el ? ({P:'Paragraph',H1:'Heading',H2:'Heading',H3:'Heading',TD:'Table cell',TH:'Table heading',IMG:'Image',LI:'List item'}[el.tagName] || el.dataset.floatKind || 'Text settings') : 'Select text or an object'}</h3><p>Settings for the selected text or object. Use the top toolbar to format a text selection.</p>`;
+      panel.innerHTML = `<h3>${el ? ({P:'Paragraph',H1:'Heading',H2:'Heading',H3:'Heading',TD:'Table cell',TH:'Table heading',IMG:'Image',LI:'List item'}[el.tagName] || el.dataset.floatKind || 'Text settings') : 'Select text or an object'}</h3>`;
       if (!el) return;
       const css = getComputedStyle(el), isFloat = el.classList.contains('doc-float');
       const font = ['Segoe UI','Arial','Georgia','Times New Roman','Courier New'].find(f=>css.fontFamily.includes(f));
@@ -2823,7 +2917,7 @@ function mountStudio(fs, surface, opts, api) {
       panel.querySelector('[data-scenario]').value = api.scenario();
       panel.innerHTML='<details class="doc-data-tools"><summary>Data blocks & preview</summary>'+panel.innerHTML+'</details>';
       const categories=[...new Set(bankVariables().map(v=>v.category))];
-      panel.insertAdjacentHTML('afterbegin',`<h3>Variable bank</h3>${opts.onManageVars ? '<button type="button" data-do="manage-fields">Manage fields</button>' : ''}<p>Click a variable in the document and press Delete to remove it. Insert uses your last editing position; Copy copies the full token.</p><label>Search variables<input type="search" data-variable-search placeholder="Search name, token or category" value="${esc(variableSearch)}"></label><label>Category<select data-variable-category><option value="">All categories</option>${categories.map(c=>`<option value="${esc(c)}" ${c===variableCategory?'selected':''}>${esc(c)}</option>`).join('')}</select></label><span data-variable-count role="status"></span><div class="doc-variable-list" data-variable-list></div>`);
+      panel.insertAdjacentHTML('afterbegin',`<h3>Variable bank</h3><p>Find a field, then insert it at the cursor or copy its token.</p><label>Search variables<input type="search" data-variable-search placeholder="Search name, token or category" value="${esc(variableSearch)}"></label><label>Category<select data-variable-category><option value="">All categories</option>${categories.map(c=>`<option value="${esc(c)}" ${c===variableCategory?'selected':''}>${esc(c)}</option>`).join('')}</select></label><span data-variable-count role="status"></span><div class="doc-variable-list" data-variable-list></div>`);
       panel.querySelector('[data-scenario]').value=api.scenario();renderVariableBank();
     } else if (tab === 'Pages') {
       panel.innerHTML = '<h3>Page layout</h3><p>Dashed guides estimate paper boundaries. Preview checks actual printed flow. Table headers repeat across printed pages.</p><button data-do="pageview">Open measured page view</button><button data-do="pagebreak">Insert page break</button><button data-do="header">Insert repeating header</button><button data-do="footer">Insert repeating footer</button><button data-do="pagenumber">Insert page number</button><button data-do="overflow">Check overflow</button><div data-issues role="status"></div>';
@@ -2922,7 +3016,7 @@ function mountStudio(fs, surface, opts, api) {
   const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(guides):null;observer?.observe(surface);
   if (opts.body && store.versions.at(-1)?.body.replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim() !== api.body().replace(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>[\s\S]*?<\/style>/i,'').trim()) checkpoint('Opened template');
   render();guides();if(store.draft){note.textContent='An unsaved draft is available in History.';tab='History';render();showInspector(true);}
-  return { change(){clearTimeout(timer);timer=setTimeout(()=>{if(disposed)return;store.draft={...api.snapshot(),at:Date.now()};if(write(key,store))note.textContent='Draft saved on this browser · '+new Date().toLocaleTimeString();guides();},700);}, saved(value,unchanged){checkpoint('Saved template',value);if(unchanged){clearTimeout(timer);delete store.draft;}const oldKey=key;key=prefix+(opts.getDocumentKey?.() || opts.documentKey || opts.name || 'new');if(write(key,store)&&oldKey!==key){try{localStorage.removeItem(oldKey);}catch{/* the migrated checkpoint is already stored */}}}, close(){advanced.close();disposed=true;clearTimeout(timer);surface.removeEventListener('focusout',remember);if(api.dirty()){store.draft={...api.snapshot(),at:Date.now()};write(key,store);}observer?.disconnect();document.removeEventListener('selectionchange',onSelect);}, render, guides };
+  return { openPanel, change(){if(tab==='Print')printSummary();clearTimeout(timer);timer=setTimeout(()=>{if(disposed)return;store.draft={...api.snapshot(),at:Date.now()};if(write(key,store))note.textContent='Draft saved on this browser · '+new Date().toLocaleTimeString();guides();},700);}, saved(value,unchanged){checkpoint('Saved template',value);if(unchanged){clearTimeout(timer);delete store.draft;}const oldKey=key;key=prefix+(opts.getDocumentKey?.() || opts.documentKey || opts.name || 'new');if(write(key,store)&&oldKey!==key){try{localStorage.removeItem(oldKey);}catch{/* the migrated checkpoint is already stored */}}}, close(){fs.removeEventListener('click',onOpenPanel);advanced.close();disposed=true;clearTimeout(timer);surface.removeEventListener('focusout',remember);if(api.dirty()){store.draft={...api.snapshot(),at:Date.now()};write(key,store);}observer?.disconnect();document.removeEventListener('selectionchange',onSelect);}, render, guides };
 }
 
 function open(opts = {}) {
@@ -2941,7 +3035,7 @@ function open(opts = {}) {
         <button type="button" class="btn secondary" data-preview title="Preview document">${docIcon('preview')}<span>Preview data</span></button>
         <button type="button" class="btn secondary" data-details title="Editor preferences and keyboard shortcuts" aria-haspopup="dialog">${docIcon('settings')}<span>Settings</span></button>
         <button type="button" class="btn secondary" data-tools aria-expanded="false">Inspector</button>
-        <details class="doc-more-menu"><summary title="Edit template HTML and CSS" aria-label="Template source tools">Source ${docIcon('document')}</summary><div class="doc-more-popover"><p class="muted" style="margin:6px 10px;line-height:1.5">Edit the template markup and styles directly. Changes also appear in Edit mode.</p><button type="button" data-mode="code">${docIcon('document')}Edit HTML / CSS</button></div></details><button type="button" class="btn secondary" data-help title="Editing, fields, layout and printing instructions">${docIcon('help')}<span>Guide</span></button><button type="button" class="btn" data-save>${docIcon('save')}<span>Save template</span></button>
+        <details class="doc-more-menu"><summary title="Editor settings, help and advanced source editing" aria-label="More editor tools">More ${docIcon('settings')}</summary><div class="doc-more-popover"><p class="muted" style="margin:6px 10px;line-height:1.5">Advanced editing</p><button type="button" data-mode="code">${docIcon('document')}Edit HTML / CSS</button></div></details><button type="button" class="btn secondary" data-help title="Editing, fields, layout and printing instructions">${docIcon('help')}<span>Guide</span></button><button type="button" class="btn" data-save>${docIcon('save')}<span>Save template</span></button>
         <button type="button" class="btn secondary doc-icon-button" data-close title="Close editor (Esc)" aria-label="Close editor">${docIcon('close')}</button>
       </div>
     </header>
@@ -2961,7 +3055,18 @@ function open(opts = {}) {
     <footer class="doc-statusbar"><span>${docIcon('document')}<span class="doc-page-info"></span></span><span class="doc-word-count" role="status" aria-live="off" aria-label="Document word count"></span><span class="doc-workspace-hint">Select an object to move or resize · Ctrl / ⌘ S to save</span><div class="doc-view-tools"><button type="button" data-zoom="out" title="Zoom out">−</button><button type="button" data-zoom="fit" title="Fit page to available width">Fit width</button><span class="doc-zoom-info">100%</span><button type="button" data-zoom="in" title="Zoom in">+</button></div></footer>`;
   fs.querySelectorAll('button[title],select[title],input[title]').forEach((el) => { if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', el.title); });
   document.body.appendChild(fs);
+  fs.querySelector('.doc-view-tools [data-zoom=fit]').replaceWith(fs.querySelector('.doc-zoomsel'));
+  fs.querySelector('[data-zoom-tools]').remove();
+  const utilityMenu=fs.querySelector('.doc-more-popover');
+  utilityMenu.insertAdjacentHTML('afterbegin','<span class="doc-menu-caption">Workspace</span>');
+  utilityMenu.insertBefore(fs.querySelector('[data-details]'),utilityMenu.querySelector('p'));
+  utilityMenu.querySelector('[data-details]').className='';
+  utilityMenu.insertBefore(fs.querySelector('.doc-fs-bar-actions [data-help]'),utilityMenu.querySelector('p'));
+  utilityMenu.querySelector('[data-help]').className='';
 
+
+  fs.querySelector('.doc-more-menu').addEventListener('toggle',e=>{const menu=e.currentTarget;if(!menu.open)return;const rect=menu.querySelector('summary').getBoundingClientRect(),popover=menu.querySelector('.doc-more-popover'),width=popover.getBoundingClientRect().width||230;popover.style.position='fixed';popover.style.left=Math.max(8,Math.min(rect.right-width,window.innerWidth-width-8))+'px';popover.style.right='auto';popover.style.top=rect.bottom+6+'px';});
+  fs.addEventListener('click',e=>{const button=e.target.closest('.doc-more-menu button');if(button){const menu=button.closest('.doc-more-menu');menu.open=false;menu.querySelector('summary').focus();}},true);
   fs.querySelector('.doc-format-extra').addEventListener('toggle',e=>{if(!e.target.open)return;const rect=e.target.getBoundingClientRect(),popover=e.target.querySelector('.doc-format-popover');popover.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-190))+'px';popover.style.top=rect.bottom+6+'px';});
   fs.addEventListener('pointerdown',e=>{if(!e.target.closest('.doc-more-menu,.doc-format-extra'))fs.querySelectorAll('.doc-more-menu[open],.doc-format-extra[open]').forEach(menu=>menu.open=false);});
   fs.addEventListener('click',e=>{const menu=e.target.closest('.doc-more-menu,.doc-format-extra');if(menu&&e.target.closest('button'))menu.open=false;});
@@ -3020,7 +3125,7 @@ function open(opts = {}) {
     fs.querySelector('.doc-workspace-hint').textContent = 'Select an object to move or resize · Save: '+shortcutLabel(preferences.save);
   }
   function shortcutLabel(value) { return value==='off'?'Button only':'Ctrl / ⌘ + '+value.split('+').map(k=>k==='shift'?'Shift':k.toUpperCase()).join(' + '); }
-  function openDocumentDetails() { UI.modal({title:'Document details',confirmText:'Apply',bodyHTML:`<label>Document type<select data-detail-type>${typeOptions.map(t=>`<option value="${escAttr(t)}" ${typeSel.value===t?'selected':''}>${escAttr(t.charAt(0).toUpperCase()+t.slice(1))}</option>`).join('')}</select></label>${periodInp?`<label>${escAttr(opts.periodLabel)}<input data-detail-period value="${escAttr(periodInp.value)}"></label>`:''}<p class="muted">These values are saved with this template. Page size, margins and print layout are in the Layout tab.</p>`,onConfirm:ov=>{typeSel.value=ov.querySelector('[data-detail-type]').value;typeSel.dispatchEvent(new Event('change',{bubbles:true}));if(periodInp){periodInp.value=ov.querySelector('[data-detail-period]').value;periodInp.dispatchEvent(new Event('input',{bubbles:true}));}}}); }
+  function openDocumentDetails() { UI.modal({title:'Document details',confirmText:'Apply',bodyHTML:`<label>Document type<select data-detail-type>${typeOptions.map(t=>`<option value="${escAttr(t)}" ${typeSel.value===t?'selected':''}>${escAttr(t.charAt(0).toUpperCase()+t.slice(1))}</option>`).join('')}</select></label>${periodInp?`<label>${escAttr(opts.periodLabel)}<input data-detail-period value="${escAttr(periodInp.value)}"></label>`:''}<p class="muted">These values are saved with this template. Page size and margins are in Layout; print grids are in the Print grid sidebar.</p>`,onConfirm:ov=>{typeSel.value=ov.querySelector('[data-detail-type]').value;typeSel.dispatchEvent(new Event('change',{bubbles:true}));if(periodInp){periodInp.value=ov.querySelector('[data-detail-period]').value;periodInp.dispatchEvent(new Event('input',{bubbles:true}));}}}); }
   document.addEventListener('click', onDocumentDetails);
   function onDocumentDetails(e) { if(fs.isConnected && e.target.closest('[data-document-details]')) openDocumentDetails(); }
   fs.querySelector('[data-details]').addEventListener('click',()=>{
@@ -3123,7 +3228,7 @@ function open(opts = {}) {
       const linked=forms.filter(form=>form.layouts.some(t=>Number(t.id)===Number(templateId)));
       linkedFormVariables=linked.flatMap(form=>(form.fields||[]).map(field=>({category:'Form: '+form.name,label:field.label||field.key,token:'{{'+field.key+'}}'})));
       const unlinked=forms.filter(form=>!linked.includes(form));
-      container.innerHTML=`<p>Link this template to forms you manage. Each form can have several print layouts and one default.</p><p class="muted">Links apply immediately. Save template edits to update the printed content for every linked form. Use Insert → Field to insert fields from linked forms. Match field keys before printing; linking does not rewrite existing fields.</p>${unlinked.length?`<label>Find a form<input type="search" data-link-search placeholder="Search name or section…"></label><label>Form<select data-link-form><option value="">Choose a form…</option>${unlinked.map(f=>`<option value="${f.id}">${escAttr(f.name)} (${escAttr(f.scope||'General')})</option>`).join('')}</select></label><label class="doc-check"><input type="checkbox" data-link-default> Use as this form's default print layout</label><button type="button" class="btn" data-link-form-action>Link form</button>`:''}<h3>Currently linked</h3>${linked.length?`<table><thead><tr><th>Form</th><th>Print layout</th><th>Actions</th></tr></thead><tbody>${linked.map(f=>{const current=f.layouts.find(t=>Number(t.id)===Number(templateId));return `<tr><td>${escAttr(f.name)}<div class="muted">${escAttr(f.scope||'General')}</div></td><td>${current.is_default?'Default':'Alternative'}</td><td>${current.is_default?'':`<button type="button" class="btn secondary small" data-link-make-default="${f.id}">Make default</button>`}<button type="button" class="btn secondary small" data-link-unlink="${f.id}">Unlink</button></td></tr>`;}).join('')}</tbody></table>`:'<p>This template is not linked to any forms you manage.</p>'}${!forms.length?'<p>No forms are available with your current form-management permissions.</p>':''}<div data-links-error role="alert" class="form-error hidden"></div>`;
+      container.innerHTML=`<p>Link this template to forms you manage. Each form can have several print layouts and one default.</p><p class="muted">Links apply immediately. Save template edits to update the printed content for every linked form. Use the Variables sidebar to insert fields from linked forms. Match field keys before printing; linking does not rewrite existing fields.</p>${unlinked.length?`<label>Find a form<input type="search" data-link-search placeholder="Search name or section…"></label><label>Form<select data-link-form><option value="">Choose a form…</option>${unlinked.map(f=>`<option value="${f.id}">${escAttr(f.name)} (${escAttr(f.scope||'General')})</option>`).join('')}</select></label><label class="doc-check"><input type="checkbox" data-link-default> Use as this form's default print layout</label><button type="button" class="btn" data-link-form-action>Link form</button>`:''}<h3>Currently linked</h3>${linked.length?`<table><thead><tr><th>Form</th><th>Print layout</th><th>Actions</th></tr></thead><tbody>${linked.map(f=>{const current=f.layouts.find(t=>Number(t.id)===Number(templateId));return `<tr><td>${escAttr(f.name)}<div class="muted">${escAttr(f.scope||'General')}</div></td><td>${current.is_default?'Default':'Alternative'}</td><td>${current.is_default?'':`<button type="button" class="btn secondary small" data-link-make-default="${f.id}">Make default</button>`}<button type="button" class="btn secondary small" data-link-unlink="${f.id}">Unlink</button></td></tr>`;}).join('')}</tbody></table>`:'<p>This template is not linked to any forms you manage.</p>'}${!forms.length?'<p>No forms are available with your current form-management permissions.</p>':''}<div data-links-error role="alert" class="form-error hidden"></div>`;
     }
     container.addEventListener('input',e=>{
       if(!e.target.matches('[data-link-search]'))return;
@@ -3158,7 +3263,7 @@ function open(opts = {}) {
     const identity=()=>opts.getDocumentKey?.()||opts.documentKey||'new-template:export';
     const endpoint=suffix=>'/templates/studio/documents/'+encodeURIComponent(identity())+'/'+suffix;
     UI.modal({title:'Import and export',size:'lg',cancelText:'Close',confirmText:'Apply import',bodyHTML:`
-      <button type="button" class="btn secondary" data-document-details>Document details</button><p class="muted">Set document type and accounting period. Page size and print layout are in Layout.</p><hr><h3>Export current document</h3><p class="muted">Exports include unsaved content. Word exports document content; print-grid settings remain in this template.</p><label>Export content<select data-export-content><option value="template">Editable template fields</option><option value="preview">Current preview data</option></select></label>
+      <button type="button" class="btn secondary" data-document-details>Document details</button><p class="muted">Set document type and accounting period. Page size is in Layout; print grids are in the Print grid sidebar.</p><hr><h3>Export current document</h3><p class="muted">Exports include unsaved content. Word exports document content; print-grid settings remain in this template.</p><label>Export content<select data-export-content><option value="template">Editable template fields</option><option value="preview">Current preview data</option></select></label>
       <div class="field-row"><button type="button" class="btn secondary" data-export-word>Word (.docx)</button><button type="button" class="btn secondary" data-export-html>HTML document</button><button type="button" class="btn secondary" data-export-pdf>Print / PDF preview</button></div>
       <div data-export-result role="status"></div><hr><h3>Import a Word document</h3><label>DOCX file (up to 8 MB)<input data-import-file type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label>
       <label>Import mode<select data-import-mode><option value="append">Append to this document</option><option value="replace">Replace document content</option></select></label>
@@ -3620,7 +3725,7 @@ function open(opts = {}) {
     if(next==='pages'){
       if(mode==='code')setMode('visual');
       if(!pageView){pageView=document.createElement('div');pageView.className='doc-pageview';pageView.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column';pageView.innerHTML='<div style="padding:10px;background:var(--surface,#fff);font-size:12px" data-pages-status>Measuring pages…</div><iframe title="Measured document pages" sandbox="allow-same-origin allow-modals" style="flex:1;width:100%;border:0;background:#eef0f3"></iframe>';canvas.after(pageView);}
-      pageView.style.display='flex';canvas.parentElement.style.display='';canvas.style.display='none';tabsEl.style.display='none';Object.values(panels).forEach(p=>p.style.display='none');mode='pages';fs.dataset.editorMode='pages';fs.querySelector('[data-find]').disabled=true;fs.querySelectorAll('[data-mode]').forEach(b=>{b.classList.toggle('active',b.dataset.mode===next);if(b.closest('.doc-modes'))b.setAttribute('aria-pressed',String(b.dataset.mode===next));});refreshPreview();return;
+      pageView.style.display='flex';canvas.parentElement.style.display='';canvas.style.display='none';tabsEl.style.display='none';Object.values(panels).forEach(p=>p.style.display='none');mode='pages';fs.dataset.editorMode='pages';fs.querySelector('[data-find]').disabled=true;fs.querySelectorAll('[data-mode]').forEach(b=>{b.classList.toggle('active',b.dataset.mode===next);if(b.closest('.doc-modes'))b.setAttribute('aria-pressed',String(b.dataset.mode===next));});studio?.openPanel('Print');refreshPreview();return;
     }
     if(pageView){pageView.remove();pageView=null;}
 

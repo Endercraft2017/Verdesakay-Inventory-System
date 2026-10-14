@@ -31,6 +31,7 @@ async function api(method, resource, body) {
 async function scan(name, selector = '.doc-fs') {
   if (filter && !name.includes(filter)) return;
   await page.waitForTimeout(180); // wait for modal transition, not an application/network timeout
+  if(name.endsWith('-more'))for(const action of ['data-details','data-help']){const label=page.locator('.doc-more-popover ['+action+'] span'),box=await label.boundingBox();assert(box&&box.width>20&&box.height>=10,action+' must have a visible menu label');}
   const result = await new AxeBuilder({ page }).include(selector)
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   const map = item => ({ id: item.id, impact: item.impact, description: item.description, helpUrl: item.helpUrl,
@@ -79,8 +80,9 @@ try {
       await page.locator(`[data-tab="${tab}"]`).click();
       await scan('desktop-' + theme + '-' + tab);
     }
+    await page.locator('.doc-more-menu summary').click();await scan('desktop-'+theme+'-more');await page.locator('.doc-more-menu summary').click();
     await page.locator('[data-tab=home]').click();
-    for (const tab of ['Properties','Pages','Layers','Outline','Styles','Data','Library','Review','History','Shared']) {
+    for (const tab of ['Properties','Pages','Layers','Outline','Styles','Data','Library','Review','History','Shared','Template','Print']) {
       await page.locator(`[data-studio-tab="${tab}"]`).click();
       await scan('desktop-' + theme + '-' + tab);
       await page.locator('[data-inspector-close]').click();
@@ -89,7 +91,7 @@ try {
   await check('Save and Close remain visible across responsive widths', async () => {
     for (const width of [1440,1024,768,390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
-      for (const selector of ['[data-save]','[data-close]','[data-linked-forms]']) {
+      for (const selector of ['[data-save]','[data-close]']) {
         const box = await page.locator('.doc-fs ' + selector).boundingBox();
         assert(box && box.x >= 0 && box.x + box.width <= width + 1, selector + ' clipped at ' + width);
       }
@@ -100,6 +102,8 @@ try {
     for (const tab of ['home','insert','layout']) {
       await page.locator(`[data-tab="${tab}"]`).click(); await scan('phone-' + theme + '-' + tab);
     }
+    for(const panel of ['Template','Print']){await editorButton('data-studio-tab='+panel).click();await scan('phone-'+theme+'-'+panel);await editorButton('data-inspector-close').click();}
+    await page.locator('.doc-more-menu summary').click();await scan('phone-'+theme+'-more');await page.locator('.doc-more-menu summary').click();
   }
   await check('Assistant launcher does not cover the canvas and remains available', async () => {
     const button=editorButton('data-editor-assistant');
@@ -108,11 +112,18 @@ try {
       await button.click();await page.locator('#ai-widget').waitFor();await page.locator('#ai-widget-close').click();
     }
   });
-  await check('Compact ribbon exposes its remaining controls', async () => {
-    await editorButton('data-ribbon-more').waitFor({ state: 'visible' });
-    await editorButton('data-ribbon-more').click();
-    await page.locator('.doc-gap-x').fill('0'); await page.locator('.doc-gap-x').press('Tab');
-    assert(await page.locator('[data-panel=layout]').evaluate(element => element.scrollTop > 0));
+  await check('Layout leads to a separate print-grid sidebar without changing document content', async () => {
+    const before = (await api('GET', `/templates/${template.id}`)).body;
+    const layout=page.locator('[data-panel=layout]');
+    assert.equal(await layout.locator('.doc-copies,.doc-gap-x,.doc-zoomsel').count(),0);
+    if(await editorButton('data-ribbon-more').isVisible()) await editorButton('data-ribbon-more').click();
+    await editorButton('data-open-panel=Print').click();
+    assert(await page.locator('.doc-gap-x').isVisible());
+    assert(await page.locator('.doc-copies').isVisible());
+    assert.equal(await page.locator('.doc-studio-side [data-inspector-title]').textContent(),'Print grid');
+    await editorButton('data-inspector-close').click();
+    assert.equal((await api('GET', `/templates/${template.id}`)).body,before);
+    assert.equal(await page.locator('.doc-fs-bar .doc-save-status').textContent(),'No unsaved changes');
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await check('Variable bank copies complete tokens and field management returns to the editor', async () => {
@@ -120,13 +131,14 @@ try {
     await page.locator('[data-variable-search]').fill('company.name');
     await page.locator('[data-variable-copy]').first().click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '{{company.name}}');
-    await page.locator('[data-do=manage-fields]').click();
+    await editorButton('data-managevars').click();
     await scan('dialog-variable-manager', '[role=dialog]');
     await closeDialog('Template variables');
     assert(await page.locator('[data-variable-insert]').first().isVisible());
     await page.locator('[data-inspector-close]').click();
   });
   await check('Settings opens by keyboard, traps focus, and returns to its invoker', async () => {
+    await page.locator('.doc-more-menu summary').focus();await page.keyboard.press('Enter');
     await editorButton('data-details').focus();await page.keyboard.press('Enter');
     const dialog=page.getByRole('dialog',{name:'Editor settings',exact:true});await dialog.waitFor();
     await scan('dialog-settings','[role=dialog]');
@@ -135,9 +147,10 @@ try {
     assert(await dialog.locator('[data-confirm]').evaluate(element=>element!==document.activeElement));
     await page.keyboard.press('Shift+Tab');assert(await dialog.locator('[data-confirm]').evaluate(element=>element===document.activeElement));
     await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
-    assert(await editorButton('data-details').evaluate(element=>element===document.activeElement));
+    assert(await page.locator('.doc-more-menu summary').evaluate(element=>element===document.activeElement));
   });
   await editorButton('data-file').click(); await scan('dialog-file', '[role=dialog]'); await closeDialog('Import and export');
+  await editorButton('data-studio-tab=Template').click();
   await editorButton('data-linked-forms').click(); await page.locator('[data-link-form]').waitFor();
   await scan('dialog-linked-forms', '[role=dialog]');
   await check('A payslip layout can be linked and made default without removing other layouts', async () => {
@@ -154,7 +167,7 @@ try {
     assert(layouts.find(item => item.id === template.id)?.is_default);
     if (oldDefault) assert(layouts.some(item => item.id === oldDefault));
   });
-  await closeDialog('Linked forms');
+  await closeDialog('Linked forms'); await editorButton('data-inspector-close').click();
   await page.locator('[data-tab=insert]').click(); await editorButton('data-ins=table').click();
   await scan('dialog-insert-table', '[role=dialog]');
   await page.getByRole('dialog', { name: 'Insert table', exact: true }).locator('[data-confirm]').click();
@@ -170,8 +183,9 @@ try {
     await page.setViewportSize({width,height:width===390?844:1000});
     await page.locator('[data-tab=insert]').click();
     for(const [action,title] of [['image','Insert image'],['link','Insert link'],['symbol','Insert symbol'],['variable','Insert variable'],['formula','Insert a formula']]){
+      if(['variable','formula'].includes(action)) await editorButton('data-studio-tab=Data').click();
       await editorButton('data-ins='+action).click();await page.getByRole('dialog',{name:title,exact:true}).waitFor();
-      await scan('dialog-'+action+'-'+theme+'-'+width,'[role=dialog]');await closeDialog(title);
+      await scan('dialog-'+action+'-'+theme+'-'+width,'[role=dialog]');await closeDialog(title);if(['variable','formula'].includes(action)) await editorButton('data-inspector-close').click();
     }
     await page.locator('.doc-surface img').click(); await editorButton('data-studio-tab=Properties').click();
     await editorButton('data-do=picture').click(); await scan('dialog-picture-'+theme+'-'+width,'[role=dialog]'); await closeDialog('Picture settings'); await editorButton('data-inspector-close').click();
@@ -199,6 +213,19 @@ try {
     await page.mouse.move(bounds.x+bounds.width/2+96/25.4*10*.5,bounds.y+bounds.height/2+96/25.4*10*.5,{steps:5});await page.mouse.up();
     assert.equal(await page.locator('.doc-custom-w').inputValue(),'190');assert.equal(await page.locator('.doc-custom-h').inputValue(),'260');
     await editorButton('data-ex=undo').click();assert.equal(await page.locator('.doc-custom-w').inputValue(),'180');assert.equal(await page.locator('.doc-custom-h').inputValue(),'250');
+  });
+  await check('Print-grid controls remain usable beside the measured preview and preserve proportional scaling', async () => {
+    await editorButton('data-studio-tab=Print').click();
+    for(const [selector,value] of [['.doc-copies','2'],['.doc-records-per-page','2'],['.doc-gap-x','0']]){await page.locator(selector).fill(value);await page.locator(selector).press('Tab');}
+    await editorButton('data-print-preview').click();
+    await page.waitForFunction(()=>document.querySelector('.doc-pageview iframe')?.contentDocument?.querySelectorAll('.tiled-cell-inner').length===4);
+    assert(await page.locator('.doc-copies').isVisible()); assert(await page.locator('.doc-gap-x').isVisible());
+    await scan('print-preview-sidebar','.doc-studio-side');
+    await page.locator('.doc-gap-x').fill('3');await page.locator('.doc-gap-x').press('Tab');
+    await page.waitForFunction(()=>{const doc=document.querySelector('.doc-pageview iframe')?.contentDocument,grid=doc?.querySelector('.tiled-grid');return grid&&Math.abs(parseFloat(doc.defaultView.getComputedStyle(grid).columnGap)-3*96/25.4)<.1;});
+    const scales=await page.locator('.doc-pageview iframe').evaluate(frame=>[...frame.contentDocument.querySelectorAll('.tiled-cell-inner')].map(el=>({w:el.getBoundingClientRect().width/el.offsetWidth,h:el.getBoundingClientRect().height/el.offsetHeight})));
+    assert.equal(scales.length,4);for(const scale of scales)assert(Math.abs(scale.w-scale.h)<.002);
+    await editorButton('data-mode=visual').click(); await editorButton('data-inspector-close').click();
   });
   await check('Repeated saves with delayed shared polling persist text and reopen cleanly', async () => {
     await page.route('**/api/templates/studio/documents/**/room', async route => {

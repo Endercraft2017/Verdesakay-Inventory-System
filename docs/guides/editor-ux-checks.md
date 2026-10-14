@@ -20,12 +20,15 @@ actual app on loopback with an ephemeral port, and authenticates only to that lo
 It never writes production data or sends a message to an external AI model. The assistant
 check opens/closes the existing UI and reads local conversation state.
 
-The complete run scans editor Text/Insert/Page & print, ten panels in both desktop themes,
-phone ribbons in both themes, modal dialogs and the contextual table toolbar. Task checks
-cover reachable Save/Close, assistant access, ribbon overflow, variable copy/field management,
+The complete run scans editor Home/Insert/Layout, twelve panels in both desktop themes,
+phone ribbons and Form links/Print grid in both themes, More menus, modal dialogs and the
+contextual table toolbar. Task checks cover reachable Save/Close, assistant access,
+Layout-to-print-sidebar discovery, variable copy/field management,
 keyboard dialog focus/Escape return, Payroll/default layout preservation, page size swap,
 real dragging/undo, repeated saves with delayed shared polling and clean reopen, and
-multipage grid restrictions. Advanced image/link/symbol/variable/formula, picture, paragraph,
+multipage grid restrictions. Print-grid settings stay editable beside measured preview; the
+runner verifies a changed physical gap and uniform design scaling there. Advanced
+image/link/symbol/variable/formula, picture, paragraph,
 named-style and section dialogs plus Find are scanned at desktop/phone widths in both themes.
 
 The default command fails for any automated WCAG A/AA violation, failed task, or runtime

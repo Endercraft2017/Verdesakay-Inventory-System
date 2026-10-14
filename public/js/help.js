@@ -43,7 +43,7 @@
     },
     {
       id: 'global-variables', title: 'Template variables', group: 'Documents', routes: [],
-      html: `<p>Use <b>Documents → Templates → Variables</b> for global template variables, or the editor's variable manager for variables local to one template.</p><ol><li>Click <b>New variable</b> and give it a key, label and category.</li><li>Choose a fixed value, bound data field or formula, complete its settings, and save.</li><li>Insert it with <b>Insert → { } Variable</b> or its <code>{{key}}</code> token.</li><li>Check a preview and a real printed record; a field may be empty if that record has no value.</li></ol><p>Changing a global variable affects every template using it. Editing variables requires <i>templates.edit</i>.</p>`,
+      html: `<p>Use <b>Documents → Templates → Variables</b> for global template variables, or the editor's variable manager for variables local to one template.</p><ol><li>Click <b>New variable</b> and give it a key, label and category.</li><li>Choose a fixed value, bound data field or formula, complete its settings, and save.</li><li>Insert it with <b>Variables → Insert variable</b> or its <code>{{key}}</code> token.</li><li>Check a preview and a real printed record; a field may be empty if that record has no value.</li></ol><p>Changing a global variable affects every template using it. Editing variables requires <i>templates.edit</i>.</p>`,
     },
     {
       id: 'company-profile', title: 'Company profile', group: 'Documents', routes: [],
@@ -694,7 +694,7 @@
         Viewing needs <i>templates.view</i>; editing needs <i>templates.edit</i>.</p>
         <ol><li>Click <b>New template</b> and choose a starting layout, or open a template to edit it.</li>
         <li>Use <b>Visual</b> to type and format, or <b>HTML / CSS</b> to edit the source.</li>
-        <li>Use <b>Insert → { } Variable</b> for record fields and <code>{{company.*}}</code> details.
+        <li>Use <b>Variables → Insert variable</b> for record fields and <code>{{company.*}}</code> details.
         Repeating item rows and formulas have their own sections in the editor's <b>?</b> guide.</li>
         <li>Check <b>Layout → Preview</b> with sample data, then <b>Save</b>. Print a real record to check its actual values.</li></ol>
         <p><b>Company profile</b> updates shared company details (needs <i>templates.company</i>).

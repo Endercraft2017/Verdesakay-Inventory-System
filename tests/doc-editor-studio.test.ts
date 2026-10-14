@@ -47,7 +47,7 @@ describe('document studio workflows',()=>{
   it('opens existing field management from the variable bank',()=>{
     let vars=[{label:'Customer',token:'{{order.customer_name}}'}];
     const manage=vi.fn(({refresh})=>{vars=[...vars,{label:'New field',token:'{{new_field}}'}];refresh();});
-    const {doc,tab,click}=setup({onManageVars:manage,getVariables:()=>vars});tab('Data');click('manage-fields');
+    const {doc,tab,click}=setup({onManageVars:manage,getVariables:()=>vars});tab('Data');doc.querySelector('[data-managevars]').click();
     expect(manage).toHaveBeenCalledOnce();expect(doc.querySelector('[data-variable-insert="new_field"]')).not.toBeNull();
   });
   it('searches the variable bank, filters categories and copies or inserts complete tokens',async()=>{

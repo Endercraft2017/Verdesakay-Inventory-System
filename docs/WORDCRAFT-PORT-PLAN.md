@@ -349,3 +349,14 @@ layout, on-demand inspector, settings, native-menu Escape, actual CodeMirror sou
 repaired Find, footer zoom, visible Save/common formatting and measured preview navigation.
 Existing editing/IME/field/shared-save and measured multipage/grid/section/mobile-print
 checks pass. UI visibility/navigation remain separate from saved document content.
+
+### Wordcraft layout familiarization — 14 October 2026
+
+Reviewed Wordcraft's current hero screenshot and ribbon source at
+`159b84f54c74e9e82fb3109b758ae7dd6f4e3ab0`. Adapted its familiar Home/Insert/Layout hierarchy,
+with distinct Font/Paragraph/Styles/Editing groups, rather than importing Rust/egui code or
+changing our design tokens. Document/design tools and template automation have labeled
+sidebar groups; fields/formulas, form links and print grids no longer compete with normal
+writing controls in the header/ribbon. Grid settings remain usable in measured preview.
+This is UI organization; the engine's next step remains phase 2 slice 5. See the layout
+review under `docs/reviews/editor-layout-wordcraft-2026-10-14.md` for validation and limits.
