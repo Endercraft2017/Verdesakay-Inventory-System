@@ -1647,6 +1647,12 @@ export const payrollPolicySchema = z.object({
 // statutory deductions apply to ONE payslip record. All optional; an omitted key keeps whatever
 // that deduction's current applied state already is (not reset to on).
 export const payrollDeductionTogglesSchema = z.object({
+  statutory_overrides: z.object({
+    sss: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+    philhealth: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+    pagibig: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+    withholding_tax: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+  }).optional(),
   sss_applied: boolish.optional(),
   philhealth_applied: boolish.optional(),
   pagibig_applied: boolish.optional(),

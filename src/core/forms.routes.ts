@@ -8,10 +8,12 @@ import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir } from '../shared/db';
 import { enforceQuota } from '../platform/quota';
 import { requireAuth, requirePermission } from '../shared/auth';
-import type { AuthUser, FormRow } from '../shared/types';
+import type { FormRow } from '../shared/types';
 import { syncClass } from '../sync';
 import { syncUpload } from '../sync/files';
 import { sideEffectsSuppressed } from '../shared/sync-context';
+import { visibilityClause } from './file-visibility';
+export { visibilityClause } from './file-visibility';
 
 const router = Router();
 router.use(requireAuth);
@@ -25,15 +27,6 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage, limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
-
-/** Forms visible to a user: shared (no dept) + own dept. users.manage sees all. */
-export function visibilityClause(user: AuthUser): { sql: string; params: unknown[] } {
-  if (user.permissions.includes('users.manage')) return { sql: '', params: [] };
-  return {
-    sql: ' WHERE (f.department_id IS NULL OR f.department_id = ?)',
-    params: [user.department_id],
-  };
-}
 
 // GET /api/forms — list forms the user can see
 router.get('/', requirePermission('forms.view'), (req, res) => {

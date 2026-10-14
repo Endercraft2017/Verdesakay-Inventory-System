@@ -2100,6 +2100,41 @@ describe('payroll detail — per-payslip statutory deduction toggles (preview + 
     return records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Toggle Test ' + label);
   }
 
+  it('previews, saves and restores per-payslip overrides, preserving them on regeneration', async () => {
+    const rec = await genToggleEmployee('Manual Overrides Cutoff', '2026-08-06');
+    const overrides = { sss: 0, philhealth: 111.25, pagibig: 222, withholding_tax: 333.5 };
+    const preview = await ctx.api.post(`/api/hr/payroll/${rec.id}/preview-deductions`).set(hdr()).send({ statutory_overrides: overrides });
+    expect(preview.status).toBe(200);
+    expect(preview.body.sss).toBe(0);
+    expect(preview.body.philhealth).toBe(111.25);
+    expect(preview.body.pagibig).toBe(222);
+    expect(preview.body.withholding_tax).toBe(333.5);
+    expect(preview.body.total_deductions).toBe(666.75);
+    expect(preview.body.net_pay).toBe(rec.data.total_earnings - 666.75);
+    expect((await ctx.api.get(`/api/form-records/${rec.id}`).set(hdr())).body.data.statutory_overrides).toEqual(rec.data.statutory_overrides ?? {});
+    const saved = await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ statutory_overrides: overrides });
+    expect(saved.status).toBe(200);
+    const period = await ctx.api.get('/api/hr/periods').set(hdr());
+    const cutoff = period.body.find((p: { label: string }) => p.label === 'Manual Overrides Cutoff');
+    await ctx.api.post(`/api/hr/periods/${cutoff.id}/generate-payslips`).set(hdr()).send({ payroll_period: cutoff.label });
+    const regenerated = (await ctx.api.get(`/api/form-records/${rec.id}`).set(hdr())).body;
+    expect(regenerated.data.statutory_overrides).toEqual(overrides);
+    expect(regenerated.data.sss).toBe(0);
+    expect(regenerated.data.withholding_tax).toBe(333.5);
+    const restored = await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ statutory_overrides: { sss: null } });
+    expect(restored.body.sss).toBe(rec.data.sss);
+    expect(restored.body.philhealth).toBe(111.25);
+    const disabled = await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ pagibig_applied: false });
+    expect(disabled.body.pagibig).toBe(0);
+    await ctx.api.post(`/api/hr/payroll/${rec.id}/mark-paid`).set(hdr()).send({});
+    expect((await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ statutory_overrides: { sss: 9 } })).status).toBe(400);
+  });
+
+  it.each([-1, 'invalid', 10_000_001, 1.234])('rejects invalid payslip override %s', async amount => {
+    const rec = await genToggleEmployee('Invalid Override ' + amount, '2026-08-06');
+    expect((await ctx.api.post(`/api/hr/payroll/${rec.id}/preview-deductions`).set(hdr()).send({ statutory_overrides: { sss: amount } })).status).toBe(400);
+  });
+
   it('preview-deductions recomputes without saving — turning SSS off zeroes it and lowers total_deductions, but the stored record is untouched', async () => {
     const rec = await genToggleEmployee('Preview Cutoff', '2026-08-06');
     expect(rec.data.sss).toBeGreaterThan(0);

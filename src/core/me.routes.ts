@@ -1,4 +1,3 @@
-import { REQUEST_SLUGS } from '../modules/hr/request-policy';
 /** Employee self-service — everything scoped to the caller's own linked employee
  *  record. Mounted at /api/me. Any logged-in user; endpoints 403 if the account
  *  isn't linked to an `employees` row. */
@@ -20,6 +19,10 @@ import { recordSiteClash, syncClass } from '../sync';
 import { approverDepartmentIds, cutoffIsPaid, notifyApprovers } from '../modules/hr/workflow';
 import { normalizeRequest, leaveDates, scheduledLeaveDates, overlappingLeave, leaveWarnings, attachLeave, leavePreview, requestEmployeeJoin } from '../modules/hr/request-data';
 import { now, reRunOfRecordedCommand, siteDecisionStands } from '../shared/sync-context';
+
+import { REQUEST_SLUGS } from './data-forms/request-types';
+// Compatibility export for callers of the self-service API.
+export { REQUEST_SLUGS } from './data-forms/request-types';
 
 const router = Router();
 router.use(requireAuth);
@@ -244,7 +247,6 @@ router.get('/schedule', (req, res) => {
 });
 
 /** Slugs an employee may self-file from mobile. */
-export { REQUEST_SLUGS } from '../modules/hr/request-policy';
 
 // GET /api/me/request-types — the HR request forms available to file
 router.get('/request-types', (_req, res) => {
@@ -280,16 +282,16 @@ router.post('/leave-preview', (req, res) => {
   res.json(leavePreview(employee.id, req.body));
 });
 router.get('/requests', (req, res) => {
-  const rows = queryAll<FormRecord & { form_name: string; slug: string }>(
+  const rows = queryAll<FormRecord & { form_name: string; slug: string; fields: string }>(
     `SELECT fr.id, fr.number, fr.status, fr.data, fr.created_at, fr.updated_at,
-            fd.name AS form_name, fd.slug
+            fd.name AS form_name, fd.slug, fd.fields
      FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
      LEFT JOIN employees e ON ${requestEmployeeJoin}
      WHERE (fr.created_by = ? OR e.user_id = ?) AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
      ORDER BY fr.id DESC LIMIT 100`,
     req.user!.id, req.user!.id, ...REQUEST_SLUGS
   );
-  res.json(rows.map((r) => { const data = parse(r.data); return { ...r, data, display_data: requestDisplayData(r.slug, data) }; }));
+  res.json(rows.map((r) => { const data = parse(r.data); return { ...r, data, fields: parse(r.fields), display_data: requestDisplayData(r.slug, data) }; }));
 });
 
 // POST /api/me/requests/:id/cancel — withdraw your own still-pending request

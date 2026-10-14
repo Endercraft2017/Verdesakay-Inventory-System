@@ -20,7 +20,9 @@ const FILE_REASONS: Record<string, string> = {
   'src/core/push.routes.ts': "the caller's own push subscriptions",
   'src/core/auth.routes.ts': 'sign-in / sign-out / own sessions, profile and password',
   'src/core/attachments.routes.ts': 'checks the photo kind\'s read / write permissions inside (READ_PERMS / WRITE_PERMS)',
-  'src/core/form-builder.routes.ts': 'checks forms.manage.<scope> / payroll.view|manage per form inside',
+  'src/core/data-forms/definitions.routes.ts': 'checks forms.manage.<scope> / payroll.view|manage per form inside',
+  'src/core/data-forms/records.routes.ts': 'checks forms.manage.<scope> / payroll.view|manage and request ownership per record inside',
+  'src/core/data-forms/variables.routes.ts': 'shared variable reads require authentication; writes check forms.manage permissions',
   'src/core/identified-reports.routes.ts': 'each list is scoped to reporter, recipient and assignee; detail, evidence and mutations check case membership and handler authority inside',
 };
 /** Single routes: `file:method path` → why it has no gate in its definition. */

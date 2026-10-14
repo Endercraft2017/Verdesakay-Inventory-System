@@ -45,6 +45,9 @@ const emp = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe('buildSlipContext', () => {
+  it('formats the withholding-tax amount for payslip templates', () => {
+    expect(buildSlipContext(emp({ withholding_tax: 333.5 })).withholding_tax).toBe('333.50');
+  });
   it('formats money fields and computes net pay', () => {
     const ctx = buildSlipContext(emp());
     expect(ctx.daily_rate).toBe('600.00');

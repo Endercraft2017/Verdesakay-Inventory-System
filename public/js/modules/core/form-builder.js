@@ -2,10 +2,10 @@
    entry (HR/Inventory/Admin/Accounting → Form Builder) opens this same route scoped to its own
    section via filter.scope — forms.manage.<scope> gates which sections a given user can reach.
    Route: form-builder. Tab driven: Forms | Global Variables. */
-const FORM_SCOPE_LABELS = { hr: 'HR', inventory: 'Inventory', admin: 'Admin', accounting: 'Accounting' };
+const FORM_SCOPE_LABELS = DataForms.labels;
 App.register('form-builder', async (view, filter) => {
   const scope = filter && filter.scope;
-  if (!scope || !App.hasPermission('forms.manage.' + scope)) {
+  if (!scope || !DataForms.canManage(scope === 'general' ? null : scope)) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
@@ -236,14 +236,14 @@ App.register('form-builder', async (view, filter) => {
         <p class="muted" style="margin-top:0">Pick a starting point — you'll still review and confirm the fields before it's created.</p>
         <div class="form-card-grid">${FORM_TEMPLATES.map((t) => {
           const already = usedSlugs.has(t.slug);
-          return `<div class="form-card ${already ? '' : 'clickable'}" data-tpl="${t.key}" style="${already ? 'opacity:.5' : ''}">
+          return `<button type="button" ${already ? 'disabled' : ''} class="form-card ${already ? '' : 'clickable'}" data-tpl="${t.key}" style="${already ? 'opacity:.5' : ''}">
             <div class="form-card-icon">${UI.icon(t.icon, 32)}</div>
             <div class="form-card-info">
               <div class="form-card-name">${UI.esc(t.label)}</div>
               <div class="form-card-meta">${t.fields.length} fields</div>
               ${already ? `<div class="muted" style="font-size:12px">Slug already taken</div>` : ''}
             </div>
-          </div>`;
+          </button>`;
         }).join('')}</div>`,
       cancelText: 'Close',
       onOpen: (ov) => {
@@ -259,13 +259,16 @@ App.register('form-builder', async (view, filter) => {
   view.innerHTML = `
     <div class="topbar">
       <h2>Form Builder — ${UI.esc(FORM_SCOPE_LABELS[scope])}</h2>
+      <div class="grow"></div>
+      <button class="btn secondary" id="fb-open-records">${UI.icon('file')} Data Forms</button>
     </div>
     <div class="subnav-tabs" id="fb-tabs">
       <button class="subtab active" data-tab="forms">Form Definitions</button>
-      <button class="subtab" data-tab="globals">Global Variables</button>
+      <button class="subtab" data-tab="globals">Shared Template Values</button>
     </div>
     <div id="fb-content"></div>`;
 
+  view.querySelector('#fb-open-records').onclick = () => App.navigate('form-records', { scope });
   const content = view.querySelector('#fb-content');
 
   view.querySelectorAll('#fb-tabs .subtab').forEach((btn) =>
@@ -282,12 +285,12 @@ App.register('form-builder', async (view, filter) => {
     content.innerHTML = `
       <div class="topbar" style="padding:12px 20px">
         <span class="grow"></span>
-        <button class="btn secondary" id="fb-quick-add">${UI.icon('calendar', 14)} Quick Add (Common HR Forms)</button>
+        ${scope === 'hr' ? `<button class="btn secondary" id="fb-quick-add">${UI.icon('calendar', 14)} Quick Add (Common HR Forms)</button>` : ''}
         <button class="btn" id="fb-new-form">${UI.icon('plus')} New Form</button>
       </div>
       <div class="panel"><div id="fb-forms-table"></div></div>`;
     content.querySelector('#fb-new-form').onclick = () => formModal(null);
-    content.querySelector('#fb-quick-add').onclick = () => quickAddModal();
+    if (content.querySelector('#fb-quick-add')) content.querySelector('#fb-quick-add').onclick = () => quickAddModal();
     await loadForms();
   }
 
@@ -295,7 +298,7 @@ App.register('form-builder', async (view, filter) => {
     const el = content.querySelector('#fb-forms-table');
     if (!el) return;
     el.innerHTML = '<div class="empty">Loading…</div>';
-    const forms = (await API.get('/form-definitions')).filter((f) => f.scope === scope);
+    const forms = (await API.get('/form-definitions')).filter((f) => f.scope === (scope === 'general' ? null : scope));
     if (!forms.length) {
       el.innerHTML = UI.emptyState({
         icon: 'file',
@@ -522,7 +525,8 @@ App.register('form-builder', async (view, filter) => {
     const fields = seed ? JSON.parse(JSON.stringify(seed.fields)) : [];
     const actions = seed && seed.actions ? JSON.parse(JSON.stringify(seed.actions)) : [];
 
-    UI.modal({
+    const builderModal = UI.modal({
+      protectChanges: true,
       title: editing ? `Edit: ${existing.name}` : 'New Form',
       helpTopic: 'form-builder',
       size: 'lg',
@@ -575,6 +579,43 @@ App.register('form-builder', async (view, filter) => {
           renderActions(ov, actions);
         };
         renderActions(ov, actions);
+        const body = ov.querySelector('.modal-body');
+        const editor = document.createElement('div');
+        editor.className = 'fb-workspace';
+        const originalEditor = body.querySelector(':scope > .fb-editor');
+        const sections = { details: originalEditor.querySelector('.fb-basics'), fields: originalEditor.querySelector('#fb-fields-list').closest('.fb-section'), automation: originalEditor.querySelector('.fb-actions') };
+        editor.innerHTML = `<div class="fb-editor"><div role="tablist" aria-label="Form setup" class="subnav-tabs">${['Details','Fields','Printing','Automation'].map((name, index) => `<button type="button" role="tab" id="fb-tab-${name.toLowerCase()}" aria-controls="fb-panel-${name.toLowerCase()}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}" data-setup-tab="${name.toLowerCase()}" class="subtab ${index === 0 ? 'active' : ''}">${name}</button>`).join('')}</div>${['details','fields','printing','automation'].map((name,index) => `<section id="fb-panel-${name}" role="tabpanel" aria-labelledby="fb-tab-${name}" ${index ? 'hidden' : ''}></section>`).join('')}</div><aside class="fb-preview"><h4>Live form preview</h4><p class="muted">Example only; changes here are not submissions.</p><div id="fb-live-preview"></div></aside>`;
+        body.appendChild(editor);
+        Object.entries(sections).forEach(([name, section]) => editor.querySelector(`#fb-panel-${name}`).appendChild(section));
+        sections.automation.open = true;
+        originalEditor.remove();
+        const printing = editor.querySelector('#fb-panel-printing');
+        printing.innerHTML = `<p>Records print through a linked document template. Field keys become template variables.</p><label><input type="checkbox" data-f="create_template" ${prefill ? 'checked' : ''} ${existing?.template_id ? 'disabled checked' : ''}> ${existing?.template_id ? 'Print template linked' : 'Create a starter print template when saving'}</label>${existing?.template_id ? '<button class="btn secondary" type="button" id="fb-design-print">Edit print template</button><p class="muted">The template editor uses saved fields. Save field changes first.</p>' : '<p class="muted">You can design the layout from the form list after saving.</p>'}`;
+        printing.querySelector('#fb-design-print')?.addEventListener('click', () => openFormTemplate(existing));
+        function switchSetup(name) {
+          editor.querySelectorAll('[data-setup-tab]').forEach(tab => { const selected = tab.dataset.setupTab === name; tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1; tab.classList.toggle('active', selected); });
+          editor.querySelectorAll('[role=tabpanel]').forEach(panel => { panel.hidden = panel.id !== `fb-panel-${name}`; });
+        }
+        editor.querySelectorAll('[data-setup-tab]').forEach(tab => tab.onclick = () => switchSetup(tab.dataset.setupTab));
+        editor.querySelector('[role=tablist]').addEventListener('keydown', event => {
+          if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+          const tabs = [...editor.querySelectorAll('[data-setup-tab]')]; const index = tabs.indexOf(document.activeElement);
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+          event.preventDefault(); switchSetup(tabs[next].dataset.setupTab); tabs[next].focus();
+        });
+        function preview() {
+          const previewFields = fields.map(field => {
+            let control;
+            if (field.type === 'select' || field.type === 'employee') control = `<select disabled><option>${field.type === 'employee' ? 'Choose employee' : 'Choose an option'}</option>${(field.options || []).map(option => `<option>${UI.esc(option)}</option>`).join('')}</select>`;
+            else if (field.type === 'textarea') control = '<textarea disabled rows="2"></textarea>';
+            else control = `<input disabled type="${['number','date','time','checkbox'].includes(field.type) ? field.type : 'text'}" value="${UI.esc(field.default || '')}">`;
+            return `<label class="fb-preview-field"><span>${UI.esc(field.label || 'Untitled field')}${field.required ? ' *' : ''}</span>${control}</label>`;
+          }).join('');
+          const missingEmployee = actions.some(action => ['notify_employee','email_employee','save_to_201'].includes(action.type)) && !fields.some(field => field.type === 'employee' || field.key === 'employee_name');
+          editor.querySelector('#fb-live-preview').innerHTML = `<h4>${UI.esc(nameEl.value || 'New form')}</h4>${previewFields || '<p class="muted">Add fields to preview the form.</p>'}<p class="muted">${actions.length} automated action(s)</p>${missingEmployee ? '<p class="form-error">Employee actions need an Employee field or employee_name field.</p>' : ''}`;
+        }
+        ov.addEventListener('input', preview); ov.addEventListener('change', preview);
+        ov.addEventListener('click', () => queueMicrotask(preview)); preview();
       },
       onConfirm: async (ov, showErr) => {
         const f = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
@@ -595,13 +636,20 @@ App.register('form-builder', async (view, filter) => {
         const body = {
           name: f('name'), slug: f('slug'),
           number_prefix: f('number_prefix'), icon: f('icon') || 'file',
-          fields, actions, scope,
+          fields, actions, scope: scope === 'general' ? null : scope,
         };
+        let savedId = existing?.id;
         if (editing) {
           await API.put('/form-definitions/' + existing.id, body);
         } else {
           const created = await API.post('/form-definitions', body);
-
+          savedId = created.id;
+          // Quick Add forms come with a ready-made print template already, not just field
+          // defaults — no separate "Design template" click required before it's printable.
+        }
+        if (ov.querySelector('[data-f="create_template"]').checked && !existing?.template_id) {
+          try { await API.put(`/form-definitions/${savedId}/template-body`, { name: `${body.name} Template`, type: 'generic', body: defaultFormTemplateBody(body) }); }
+          catch (error) { UI.toast('Form saved, but print template setup failed: ' + error.message, 'error'); }
         }
         UI.toast(editing ? 'Form saved' : 'Form created');
         loadForms();
@@ -633,13 +681,18 @@ App.register('form-builder', async (view, filter) => {
             ? `<span class="muted" style="font-size:12px">Live employee list — no options needed</span>`
             : `<input data-k="default" value="${UI.esc(f.default || '')}" placeholder="default value" />`}
         </td>
-        <td><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
+        <td><button type="button" class="icon-btn" data-move-field="${i}" data-direction="-1" title="Move field up" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="icon-btn" data-move-field="${i}" data-direction="1" title="Move field down" ${i === fields.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
       </tr>`).join('')}
     </tbody></table>`;
 
     el.querySelectorAll('input[data-k], select[data-k]').forEach((inp) => {
       inp.addEventListener('change', () => syncField(inp, fields));
       if (inp.type !== 'checkbox') inp.addEventListener('input', () => syncField(inp, fields));
+    });
+    el.querySelectorAll('[data-move-field]').forEach(button => button.onclick = () => {
+      const index = Number(button.dataset.moveField), next = index + Number(button.dataset.direction);
+      if (next < 0 || next >= fields.length) return;
+      const [field] = fields.splice(index, 1); fields.splice(next, 0, field); renderFields(ov, fields);
     });
     el.querySelectorAll('[data-rm]').forEach((b) =>
       b.onclick = () => { fields.splice(Number(b.dataset.rm), 1); renderFields(ov, fields); });
@@ -733,7 +786,7 @@ App.register('form-builder', async (view, filter) => {
     content.innerHTML = `
       <div class="topbar" style="padding:12px 20px">
         <div>
-          <div>Variables usable in <em>any</em> template as <span class="mono">{{global.key}}</span></div>
+          <div>Shared across every section: changes affect <em>all</em> templates using this value as <span class="mono">{{global.key}}</span></div>
         </div>
         <span class="grow"></span>
         <button class="btn" id="fb-new-var">${UI.icon('plus')} New Variable</button>
@@ -786,6 +839,7 @@ App.register('form-builder', async (view, filter) => {
   function varModal(existing) {
     const editing = !!existing;
     UI.modal({
+      protectChanges: true,
       title: editing ? `Edit: ${existing.key}` : 'New Global Variable',
       bodyHTML: `
         <label>Key <span class="muted">(used in templates as <span class="mono">{{global.key}}</span>)</span></label>

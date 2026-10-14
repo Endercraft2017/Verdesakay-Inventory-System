@@ -2159,7 +2159,8 @@ function computeEmployeeStatutory(
   policy: PayrollPolicy,
   statTables: ReturnType<typeof effectiveTables>,
   thisSlot: DeductionSlot,
-  slotDivisor: (key: keyof DeductionSlot) => number
+  slotDivisor: (key: keyof DeductionSlot) => number,
+  overrides: Partial<Record<'sss' | 'philhealth' | 'pagibig' | 'withholding_tax', number | null>> = {}
 ): { sss: number; philhealth: number; pagibig: number; withholding_tax: number; statutory_basis: StatutoryBasis;
      employer_contributions: { sss_er: number; sss_ec: number; philhealth_er: number; pagibig_er: number } } {
   const restDays = (() => {
@@ -2199,11 +2200,11 @@ function computeEmployeeStatutory(
   // across this month's deduction slots — e.g. a semi-monthly schedule still halves an
   // overridden SSS amount across both cutoffs. Never affects the employer-side share below,
   // which stays whatever the table says regardless of any employee-side arrangement.
-  const sss = !sssOn ? 0 : emp.sss_override != null
+  const sss = applied.sss && overrides.sss != null ? round2(overrides.sss) : !sssOn ? 0 : emp.sss_override != null
     ? round2(emp.sss_override / slotDivisor('sss'))
     : portion('sss', sssDue.employee, sumEarlier((s) => Number(s.sss) || 0));
-  const philhealth = philhealthOn ? round2((emp.philhealth_override ?? philhealthDue.employee) / slotDivisor('philhealth')) : 0;
-  const pagibig = !pagibigOn ? 0 : emp.pagibig_override != null
+  const philhealth = applied.philhealth && overrides.philhealth != null ? round2(overrides.philhealth) : philhealthOn ? round2((emp.philhealth_override ?? philhealthDue.employee) / slotDivisor('philhealth')) : 0;
+  const pagibig = applied.pagibig && overrides.pagibig != null ? round2(overrides.pagibig) : !pagibigOn ? 0 : emp.pagibig_override != null
     ? round2(emp.pagibig_override / slotDivisor('pagibig'))
     : portion('pagibig', pagibigDue.employee, sumEarlier((s) => Number(s.pagibig) || 0));
   const totalEarnings = Number(thisSlip.total_earnings) || 0;
@@ -2216,7 +2217,7 @@ function computeEmployeeStatutory(
   // already accounts for pay_frequency, and the override is meant to stand in for exactly
   // that per-cutoff figure). Still fully gated by the same exempt/schedule/applied checks —
   // an exempt employee is never charged this regardless of any override amount on file.
-  const withholding_tax = !!emp.deduct_withholding_tax && thisSlot.withholding_tax && applied.withholding_tax
+  const withholding_tax = applied.withholding_tax && overrides.withholding_tax != null ? round2(overrides.withholding_tax) : !!emp.deduct_withholding_tax && thisSlot.withholding_tax && applied.withholding_tax
     ? (emp.withholding_tax_override != null ? emp.withholding_tax_override : withholdingTax(taxable, policy.pay_frequency, statTables.rwt))
     : 0;
   return {
@@ -2348,6 +2349,7 @@ function payslipData(
     // survives a regenerate" treatment as cash_advance itself.
     other_deductions: Array.isArray(prev.other_deductions) ? prev.other_deductions : [],
     pay_date: prev.pay_date,
+    statutory_overrides: readSlipOverrides(prev),
   };
   const otherDeductionsTotal = round2(
     ((prevManual.other_deductions as Array<{ amount: unknown }>) || []).reduce((sum, d) => sum + (Number(d.amount) || 0), 0)
@@ -2389,7 +2391,7 @@ function payslipData(
       overtime_pay: round2(computed.overtime_pay), night_diff_pay: round2(computed.night_diff_pay),
       special_holiday_30: round2(computed.special_holiday_30), rest_day_ot: round2(computed.rest_day_ot),
     }, { earlier: runCtx.earlierInMonth.get(emp.employee_id) ?? [], monthComplete: runCtx.monthComplete, laterSlots: runCtx.laterSlots },
-    prevApplied, policy, statTables, thisSlot, slotDivisor);
+    prevApplied, policy, statTables, thisSlot, slotDivisor, readSlipOverrides(prev));
     sss = statutory.sss; philhealth = statutory.philhealth; pagibig = statutory.pagibig;
     withholding_tax = statutory.withholding_tax;
     employerContributions = statutory.employer_contributions;
@@ -2433,6 +2435,7 @@ function payslipData(
     basic_salary: round2(basicSalary),
     total_earnings: totalEarnings,
     sss, philhealth, pagibig, withholding_tax,
+    statutory_overrides: prevManual.statutory_overrides,
     other_deductions: prevManual.other_deductions,
     other_deductions_total: otherDeductionsTotal,
     // Persisted so the payroll detail view's deduction toggles (and this same regenerate
@@ -2798,12 +2801,18 @@ type OtherDeductionLine = { label: string; amount: number };
  *  given set of applied-deduction toggles and ad-hoc "other deductions" lines (Cash Advance,
  *  uniform, misc, …) — the shared math behind both preview and save. `otherDeductions` omitted
  *  keeps whatever is already stored on the record (not reset to none). */
+function readSlipOverrides(data: Record<string, unknown>) {
+  const parsed = payrollDeductionTogglesSchema.shape.statutory_overrides.safeParse(data.statutory_overrides ?? {});
+  return parsed.success ? (parsed.data ?? {}) : {};
+}
+
 function recomputeDeductionsFor(
   data: Record<string, unknown>,
   emp: Parameters<typeof computeEmployeeStatutory>[0] & { id: number },
   applied: StatutoryApplied,
   period: AttendancePeriod,
-  otherDeductions?: OtherDeductionLine[]
+  otherDeductions?: OtherDeductionLine[],
+  overrides = readSlipOverrides(data)
 ) {
   const policy = currentPolicy();
   const periodsPerMonth = PERIODS_PER_MONTH[policy.pay_frequency];
@@ -2817,7 +2826,7 @@ function recomputeDeductionsFor(
     monthComplete: isLastCutoffOfMonth(period, policy.pay_frequency),
     laterSlots: schedule.slice(slotIndexFor(period, policy.pay_frequency) + 1),
   };
-  const statutory = computeEmployeeStatutory(emp, data, month, applied, policy, statTables, thisSlot, slotDivisor);
+  const statutory = computeEmployeeStatutory(emp, data, month, applied, policy, statTables, thisSlot, slotDivisor, overrides);
   const cashAdvance = Number(data.cash_advance) || 0;
   const lateDeduction = Number(data.late_absences) || 0;
   const lines = otherDeductions ?? ((Array.isArray(data.other_deductions) ? data.other_deductions : []) as OtherDeductionLine[]);
@@ -2827,7 +2836,7 @@ function recomputeDeductionsFor(
     + lateDeduction + cashAdvance + otherDeductionsTotal
   );
   const netPay = round2(totalEarnings - totalDeductions);
-  return { ...statutory, other_deductions: lines, other_deductions_total: otherDeductionsTotal, total_deductions: totalDeductions, net_pay: netPay };
+  return { ...statutory, statutory_overrides: overrides, other_deductions: lines, other_deductions_total: otherDeductionsTotal, total_deductions: totalDeductions, net_pay: netPay };
 }
 
 // POST /api/hr/payroll/:recordId/preview-deductions — recompute (without saving) what SSS/
@@ -2848,7 +2857,7 @@ router.post('/payroll/:recordId/preview-deductions', requirePermission('payroll.
     pagibig: input.pagibig_applied ?? current.pagibig,
     withholding_tax: input.withholding_tax_applied ?? current.withholding_tax,
   };
-  res.json(recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period, input.other_deductions));
+  res.json(recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period, input.other_deductions, { ...readSlipOverrides(ctx.data), ...input.statutory_overrides }));
 });
 
 // PUT /api/hr/payroll/:recordId/deductions — same recompute, persisted into the record. Locked
@@ -2869,7 +2878,7 @@ router.put('/payroll/:recordId/deductions', requirePermission('payroll.manage'),
     pagibig: input.pagibig_applied ?? current.pagibig,
     withholding_tax: input.withholding_tax_applied ?? current.withholding_tax,
   };
-  const result = recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period, input.other_deductions);
+  const result = recomputeDeductionsFor(ctx.data, ctx.emp, applied, ctx.period, input.other_deductions, { ...readSlipOverrides(ctx.data), ...input.statutory_overrides });
   const newData = {
     ...ctx.data,
     sss: result.sss, philhealth: result.philhealth, pagibig: result.pagibig, withholding_tax: result.withholding_tax,
@@ -2877,6 +2886,7 @@ router.put('/payroll/:recordId/deductions', requirePermission('payroll.manage'),
     pagibig_applied: applied.pagibig, withholding_tax_applied: applied.withholding_tax,
     other_deductions: result.other_deductions, other_deductions_total: result.other_deductions_total,
     total_deductions: result.total_deductions, net_pay: result.net_pay,
+    statutory_overrides: result.statutory_overrides,
     employer_contributions: result.employer_contributions,
     statutory_basis: result.statutory_basis,
   };

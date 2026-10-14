@@ -114,6 +114,7 @@ export interface PayrollSlip {
   sss: number;
   philhealth: number;
   pagibig: number;
+  withholding_tax: number;
   cash_advance: number;
   late_absences: number;
   total_deductions: number;
@@ -220,6 +221,7 @@ export function parsePayrollSummaryCsv(text: string, opts: ParsePayrollSummaryOp
       sss,
       philhealth,
       pagibig,
+      withholding_tax: tax,
       cash_advance: 0,
       late_absences: lateAbsences,
       total_deductions: totalDeductions,

@@ -1,8 +1,9 @@
 # `src/core/form-builder.routes.ts`
 
 ## Purpose
-Implements three related API surfaces under one router: `/api/form-definitions` (admin-managed custom form types with JSON field definitions), `/api/form-records` (per-form-definition record CRUD, auto-numbered), and `/api/global-variables` (admin-managed key-value pairs injectable into any document template as `{{global.key}}`). Also owns the HR Payroll CSV bulk-import endpoint, which delegates parsing to `../hr-payroll-import`.
+Composes three authenticated routers from `src/core/data-forms/`: `definitions.routes.ts` (definitions, linked print templates, payroll CSV import), `records.routes.ts` (record CRUD, self-filing and action triggers), and `variables.routes.ts` (shared print-template values). `policy.ts` owns scope access, JSON parsing and record numbering; `request-types.ts` owns the self-service whitelist. The import parser lives in `src/modules/payroll/hr-payroll-import.ts`.
 
+Section access uses `forms.manage.<scope>`; General forms require all four section permissions. Definitions remain readable by any signed-in user for self-service consumers. Record browsing and mutations require the form's section permission, except whitelisted self-filed requests, which are forced to Pending.
 ## Routes / Exports
 
 Mounted with `app.use('/api', formBuilderRoutes)` (note: **not** prefixed `/form-builder` — the router's own paths already start with `/form-definitions`, `/form-records`, `/global-variables`). `router.use(requireAuth)` applies to everything.

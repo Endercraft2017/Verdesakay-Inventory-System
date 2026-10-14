@@ -300,7 +300,9 @@ login, user/department admin, documents & templates, forms engine, real-time 1:1
 messaging (conversations, reply, edit, reactions, sender-only soft delete, link/file
 previews — see `messages.routes.ts` below and `shared/ws.ts`), attachments, bug reports,
 personal notes/tasks, announcements, activity log, analytics, push-reminder routes.
-**Owned files:** `doc-catalog.ts`, `form-actions.ts`, routes: `auth.routes.ts`,
+**Owned files:** `doc-catalog.ts`, `form-actions.ts`, `file-visibility.ts`,
+`data-forms/` (definition, record, and global-variable routers plus shared scope policy
+and self-service request types; composed by `form-builder.routes.ts`), routes: `auth.routes.ts`,
 `users.routes.ts`, `attachments.routes.ts`, `bug-reports.routes.ts`, `forms.routes.ts`,
 `form-builder.routes.ts`, `messages.routes.ts`, `personal.routes.ts`,
 `templates.routes.ts`, `doc-studio.routes.ts`, `doc-template-version.ts`,
@@ -919,7 +921,7 @@ report/docx generation, FTS5 RAG over documents, HR-form proposals, sending mail
 `ai-rag.ts`, `ai-reporting.ts`, `ai-tools.ts`, `rag.ts`, `reporting.ts` (generic
 markdown/docx rendering, used only by `ai-reporting.ts` today), routes: `ai.routes.ts`.
 **Dependencies:** `shared/`, `modules/inventory` (`ai-tools.ts` calls stock-mutation
-functions directly), `core/` (the `visibilityClause` wart noted above).
+functions directly), `core/` (`file-visibility.ts`).
 **Confirm before run:** data-changing / sending tools (`CONFIRM_TOOLS` in `ai.routes.ts`) become
 `ai_pending_actions` rows shown as Confirm / Cancel cards; `POST /ai/actions/:id/confirm` runs one once,
 as the person, with their current permissions (prompt-injection guard).

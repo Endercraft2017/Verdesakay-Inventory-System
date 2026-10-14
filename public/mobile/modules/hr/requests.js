@@ -218,7 +218,7 @@
       var input = formEl.querySelector('[data-k="' + field.key + '"]');
       if (!input) return;
       var value = input.type === 'checkbox' ? (input.checked ? 'Yes' : 'No') : String(input.value || '').trim();
-      if (field.required && !value) missing = missing || field.label;
+      if (field.required && (input.type === 'checkbox' ? !input.checked : !value)) missing = missing || field.label;
       if (value) data[field.key] = value;
     });
     return { data: data, missing: missing };
