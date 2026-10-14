@@ -1,20 +1,33 @@
 /* Full-screen, read-only viewer for authenticated photo attachments. */
 (function () {
+  function loadingHTML(label) {
+    return '<div class="attachment-media-loading" role="status"><span class="attachment-media-tile" aria-hidden="true">◇</span><span>' + label + '</span></div>';
+  }
   function open(source, name) {
     var overlay = document.createElement('div');
     overlay.className = 'attachment-photo-viewer';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', name || 'Photo');
-    overlay.innerHTML = '<div class="attachment-photo-viewer-bar"><span></span><button type="button" aria-label="Close photo">×</button></div><img alt="" /><p class="attachment-photo-viewer-error" hidden>Photo unavailable. Ask the sender to resend it.</p>';
+    overlay.innerHTML = '<div class="attachment-photo-viewer-bar"><span></span><button type="button" aria-label="Close photo">×</button></div><img alt="" hidden /><p class="attachment-photo-viewer-error" hidden>Photo unavailable. Ask the sender to resend it.</p>';
+    overlay.insertAdjacentHTML('beforeend', loadingHTML('Preparing photo…'));
+    var loading = overlay.querySelector('.attachment-media-loading');
+    overlay.setAttribute('aria-busy', 'true');
     overlay.querySelector('span').textContent = name || 'Photo';
     var image = overlay.querySelector('img');
     image.alt = name || 'Photo';
     function unavailable() {
+      loading.hidden = true;
+      overlay.setAttribute('aria-busy', 'false');
       image.hidden = true;
       overlay.querySelector('.attachment-photo-viewer-error').hidden = false;
     }
     image.onerror = unavailable;
+    image.onload = function () {
+      loading.hidden = true;
+      overlay.setAttribute('aria-busy', 'false');
+      image.hidden = false;
+    };
     var ownedUrl = null;
     var previousFocus = document.activeElement;
     function close() {
@@ -40,7 +53,7 @@
 
   function openAttachment(source, name, mime) {
     var ext = (name || '').split('.').pop().toLowerCase();
-    var kind = ext === 'pdf' ? 'pdf' : /^(mp4|webm|mov|m4v)$/i.test(ext) ? 'video'
+    var kind = ext === 'pdf' ? 'pdf' : (mime || '').startsWith('video/') || /^(mp4|webm|mov|m4v)$/i.test(ext) ? 'video'
       : /^(mp3|m4a|wav|ogg)$/i.test(ext) ? 'audio'
       : /^(docx|xlsx|txt|log|md|csv|tsv|json)$/i.test(ext) ? 'text' : 'unsupported';
     var overlay = document.createElement('div');
@@ -48,9 +61,10 @@
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', 'Preview ' + (name || 'attachment'));
-    overlay.innerHTML = '<div class="attachment-document-panel"><header><strong></strong><div><button type="button" data-download>Download</button><button type="button" data-close aria-label="Close preview">×</button></div></header><div class="attachment-document-body">Loading preview…</div></div>';
+    overlay.innerHTML = '<div class="attachment-document-panel"><header><strong></strong><div><button type="button" data-download>Download</button><button type="button" data-close aria-label="Close preview">×</button></div></header><div class="attachment-document-body"></div></div>';
     overlay.querySelector('strong').textContent = name || 'Attachment';
     var body = overlay.querySelector('.attachment-document-body');
+    body.innerHTML = loadingHTML('Preparing preview…');
     var ownedUrl = null;
     var previousFocus = document.activeElement;
     function close() {
@@ -63,7 +77,13 @@
     overlay.onclick = function (event) { if (event.target === overlay) close(); };
     overlay.querySelector('[data-close]').onclick = close;
     overlay.querySelector('[data-download]').onclick = function () {
-      API.download(source, name).catch(function () { body.textContent = 'Download failed. Please try again.'; });
+      API.download(source, name).catch(function (error) {
+        if (overlay.isConnected) {
+          var notice = overlay.querySelector('.attachment-download-error');
+          if (!notice) { notice = document.createElement('p'); notice.className = 'attachment-download-error'; notice.setAttribute('role', 'alert'); body.before(notice); }
+          notice.textContent = error.message || 'Download failed. Please try again.';
+        }
+      });
     };
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
@@ -94,9 +114,18 @@
       if (kind === 'pdf') media.title = name || 'PDF preview';
       else { media.controls = true; media.playsInline = true; }
       media.onerror = function () { body.textContent = 'Preview unavailable. Download the file to view it.'; };
-      body.replaceChildren(media);
-    }).catch(function () {
-      if (overlay.isConnected) body.textContent = 'File unavailable. Ask the sender to resend it.';
+      if (kind === 'video' || kind === 'audio') {
+        media.hidden = true;
+        media.preload = 'auto';
+        media.onloadeddata = function () {
+          var loading = body.querySelector('.attachment-media-loading');
+          if (loading) loading.remove();
+          media.hidden = false;
+        };
+        body.appendChild(media);
+      } else body.replaceChildren(media);
+    }).catch(function (error) {
+      if (overlay.isConnected) body.textContent = error.message || 'File unavailable. Ask the sender to resend it.';
     });
   }
   window.AttachmentViewer = { open: openAttachment };

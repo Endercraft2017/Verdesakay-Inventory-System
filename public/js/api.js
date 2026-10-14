@@ -89,7 +89,7 @@ const API = (() => {
 
     let res;
     try {
-      res = await fetch(base() + '/api' + path, { method, headers, body: payload });
+      res = await fetch(base() + (path.startsWith('/api/') ? path : '/api' + path), { method, headers, body: payload });
     } catch (e) {
       // fetch only throws on a genuine network failure (offline, DNS, connection reset).
       const err = new Error('Network unavailable');
@@ -141,13 +141,16 @@ const API = (() => {
     const token = getToken();
     const headers = { 'X-Device-Id': deviceId() };
     if (token) headers.Authorization = 'Bearer ' + token;
-    const res = await fetch(base() + '/api' + path, { headers });
+    const res = await fetch(base() + (path.startsWith('/api/') ? path : '/api' + path), { headers });
     if (res.status === 401) {
       clearToken();
       if (window.App) window.App.showLogin();
       throw new Error('Session expired. Please sign in again.');
     }
-    if (!res.ok) throw new Error('Request failed (' + res.status + ')');
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+    }
     const blob = await res.blob();
     return URL.createObjectURL(mimeOverride ? new Blob([blob], { type: mimeOverride }) : blob);
   }
@@ -158,8 +161,10 @@ const API = (() => {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename || 'download';
+    document.body.appendChild(a);
     a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   return {

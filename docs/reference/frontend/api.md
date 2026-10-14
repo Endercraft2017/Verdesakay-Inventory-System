@@ -66,3 +66,8 @@ closures that use `API` on the editor's behalf).
 - Because 401 handling calls `window.App.showLogin()` directly, any code that calls `API.*`
   before `App` is defined (unlikely in practice, since `api.js` loads first but `App.boot()`
   runs on `DOMContentLoaded`) would silently skip that redirect.
+
+Binary attachments use `blobUrl(path)` with bearer authentication; paths may be
+API-relative or already prefixed with `/api/`. Server error messages are preserved.
+`download(path, filename)` clicks an attached save link and keeps its blob URL alive
+for 60 seconds so the browser has time to start saving.

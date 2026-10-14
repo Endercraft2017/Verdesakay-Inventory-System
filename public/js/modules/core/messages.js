@@ -168,8 +168,15 @@ App.register('messages', async (view, filter) => {
 
   function attachmentHTML(a) {
     const isImage = (a.mime_type || '').startsWith('image/');
-    if (isImage) {
-      return `<button type="button" class="chat-attach-img-wrap" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" data-photo="1" aria-label="Enlarge ${UI.esc(a.name)}"><img class="chat-attach-img" alt="" /><span class="chat-photo-error" hidden>Photo unavailable. Ask the sender to resend it.</span></button>`;
+    const isVideo = (a.mime_type || '').startsWith('video/') || /\.(mp4|webm|mov|m4v)$/i.test(a.name || '');
+    if (isImage || isVideo) {
+      return `<div class="chat-media" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" data-media-kind="${isVideo ? 'video' : 'image'}" data-media-type="${UI.esc(isVideo ? ({ mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime' }[ (a.name || '').split('.').pop().toLowerCase() ] || a.mime_type || 'video/mp4') : a.mime_type || '')}">
+        <div class="chat-media-stage is-loading" aria-busy="true">
+          <div class="chat-media-loading" role="status"><span class="chat-media-glyph">${isVideo ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg>' : UI.icon('image', 28)}</span><span>Preparing ${isVideo ? 'video' : 'photo'}…</span></div>
+          ${isVideo ? '<video controls playsinline preload="metadata" hidden></video>' : `<img class="chat-attach-img" alt="${UI.esc(a.name)}" hidden />`}
+        </div>
+        <button class="btn secondary small" data-media-download>Download</button>
+      </div>`;
     }
     return `<button type="button" class="msg-attach" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" aria-label="Preview ${UI.esc(a.name)}">
       <span class="msg-attach-icon">${UI.icon(UI.fileIconName(a.name), 16)}</span>
@@ -227,16 +234,40 @@ App.register('messages', async (view, filter) => {
   function hydrateBubbleExtras(m) {
     const row = threadEl.querySelector(`.chat-row[data-id="${m.id}"]`);
     if (!row) return;
-    row.querySelectorAll('.chat-attach-img-wrap img').forEach((img) => {
-      const wrap = img.closest('.chat-attach-img-wrap');
-      const unavailable = () => {
-        img.hidden = true;
-        wrap.querySelector('.chat-photo-error').hidden = false;
-        wrap.dataset.unavailable = '1';
-        wrap.setAttribute('aria-label', 'Photo unavailable. Ask the sender to resend it.');
+    row.querySelectorAll('.chat-media').forEach((wrap) => {
+      if (wrap.dataset.hydrated) return;
+      wrap.dataset.hydrated = 'true';
+      const stage = wrap.querySelector('.chat-media-stage');
+      const media = wrap.querySelector('img, video');
+      const status = wrap.querySelector('.chat-media-loading');
+      const fail = (message) => {
+        media.hidden = true;
+        stage.classList.remove('is-loading');
+        stage.setAttribute('aria-busy', 'false');
+        status.textContent = message;
+        status.hidden = false;
       };
-      img.onerror = unavailable;
-      API.blobUrl(wrap.dataset.attUrl).then((u) => { img.src = u; }).catch(unavailable);
+      media.addEventListener(media.tagName === 'VIDEO' ? 'loadeddata' : 'load', () => {
+        stage.classList.remove('is-loading');
+        stage.setAttribute('aria-busy', 'false');
+        status.hidden = true;
+        media.hidden = false;
+      }, { once: true });
+      media.addEventListener('error', () => fail('Preview unavailable. You can still download this file.'), { once: true });
+      API.blobUrl(wrap.dataset.attUrl, wrap.dataset.mediaKind === 'video' ? wrap.dataset.mediaType : undefined).then((url) => {
+        if (!wrap.isConnected) { URL.revokeObjectURL(url); return; }
+        media.src = url;
+        if (media.tagName === 'VIDEO') media.preload = 'auto';
+        // Reclaim the authenticated blob when its bubble or view is removed.
+        const observer = new MutationObserver(() => {
+          if (wrap.isConnected) return;
+          if (media.tagName === 'VIDEO') media.pause();
+          media.removeAttribute('src');
+          URL.revokeObjectURL(url);
+          observer.disconnect();
+        });
+        observer.observe(view.parentNode || document.body, { childList: true, subtree: true });
+      }).catch((err) => fail(err.message || 'Unable to load attachment.'));
     });
     if (m.deleted_at || !m.body) return;
     const match = m.body.match(URL_RE);
@@ -396,10 +427,13 @@ App.register('messages', async (view, filter) => {
       }
       const att = e.target.closest('[data-att-url]');
       if (att) {
-        e.stopPropagation();
-        if (att.dataset.unavailable) return;
-        if (att.dataset.photo) PhotoViewer.open(att.dataset.attUrl, att.dataset.attName);
-        else AttachmentViewer.open(att.dataset.attUrl, att.dataset.attName);
+        if (e.target.closest('[data-media-download]')) {
+          API.download(att.dataset.attUrl, att.dataset.attName).catch((err) => UI.toast(err.message, 'error'));
+        } else if (att.dataset.mediaKind === 'image') {
+          PhotoViewer.open(att.dataset.attUrl, att.dataset.attName);
+        } else if (!att.dataset.mediaKind) {
+          AttachmentViewer.open(att.dataset.attUrl, att.dataset.attName);
+        }
         return;
       }
       const chip = e.target.closest('.chat-reaction');

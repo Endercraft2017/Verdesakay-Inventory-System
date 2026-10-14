@@ -28,8 +28,9 @@ load; otherwise the view opens on the conversation list with no thread selected.
   (click scrolls to the original), attachments (reusing `.msg-attach*` styling), a link-
   preview card slot, an "Edited" label, and — for a soft-deleted message — just the
   "Message was removed" placeholder with nothing else (no body/attachments/reactions).
-- **`hydrateBubbleExtras(m)`** — post-render: loads authenticated image thumbnails via
-  `API.blobUrl`, and for the first URL found in the message body, fetches
+- **`hydrateBubbleExtras(m)`** — post-render: loads authenticated photo and video previews via
+  `API.blobUrl`, keeps media hidden behind a shimmer until decoded, shows attachment
+  errors, and revokes blob URLs when bubbles are removed, and for the first URL found in the message body, fetches
   `GET /messages/link-preview?url=` (cached client-side in `linkPreviewCache` too) and
   injects a card on success; silently no-ops on failure.
 - **Hover actions** (`.chat-hover-actions`, shown on `:hover` per bubble) — React (opens a
@@ -94,3 +95,11 @@ image attachments, same as the old compose flow).
 - **No group chat** — this view, like the API it calls, is strictly 1:1.
 - `activeOtherId`/`messages` are plain closure variables reset on every `openConversation`
   call, not a persisted client-side cache — switching conversations always re-fetches.
+
+Photo and video attachments include a separate Download button. Videos use native
+inline playback controls; unsupported formats offer a download fallback. Loading
+animations respect reduced-motion preferences.
+
+Full-screen `PhotoViewer` and `AttachmentViewer` also keep media hidden until load
+completion and use a light-sweep loading tile. Download errors appear separately
+without replacing an existing preview.

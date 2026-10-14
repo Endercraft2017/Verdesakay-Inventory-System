@@ -16,3 +16,12 @@
 .attachment-document-body video{width:100%;max-height:100%;background:#000}
 .attachment-document-body audio{width:100%}
 .attachment-document-body pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
+
+.attachment-media-loading { position:relative; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; width:min(320px,100%); min-height:220px; margin:auto; border:1px solid rgba(170,155,255,.15); border-radius:20px; background:rgba(145,125,255,.06); color:#c9c3e8; cursor:default; }
+.attachment-media-loading::after { content:''; position:absolute; inset:0; background:linear-gradient(110deg,transparent 25%,rgba(170,155,255,.18) 50%,transparent 75%); transform:translateX(-100%); animation:attachment-shimmer 2s ease-in-out infinite; }
+.attachment-media-tile { font-size:48px; line-height:1; color:#b5a8ff; animation:attachment-float 2s ease-in-out infinite; }
+.attachment-media-loading[hidden], .attachment-document-body video[hidden], .attachment-document-body audio[hidden] { display:none; }
+.attachment-download-error { padding:12px 16px; margin:0; color:#ffb9c3; }
+@keyframes attachment-shimmer { to { transform:translateX(100%); } }
+@keyframes attachment-float { 50% { transform:translateY(-6px); opacity:.5; } }
+@media (prefers-reduced-motion:reduce) { .attachment-media-loading::after,.attachment-media-tile { animation:none; } }
