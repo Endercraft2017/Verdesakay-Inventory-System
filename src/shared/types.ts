@@ -258,6 +258,9 @@ export interface CreditNote {
 export interface LocationRow {
   id: number;
   name: string;
+  parent_id: number | null;
+  path?: string;
+  depth?: number;
   type: string;
   address: string | null;
   notes: string | null;

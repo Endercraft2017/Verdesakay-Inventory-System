@@ -596,7 +596,7 @@ App.register('releasing', async (view, filter) => {
       bodyHTML: `<p class="order-notice">Restock adds the received quantity to sellable inventory at the selected location. Reject keeps it out of stock. This decision is recorded once.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px">${photoUrls.filter(Boolean).map((url) => `<img src="${url}" alt="Returned goods evidence" style="width:150px;height:110px;object-fit:cover;border:1px solid var(--border);border-radius:6px" />`).join('')}</div>
         <div class="form-grid"><div class="form-field"><label>Decision</label><select id="sr-decision"><option value="restock">Passed inspection — restock</option><option value="reject">Rejected — keep out of stock</option></select></div>
-        <div class="form-field"><label>Restock at</label><select id="sr-location">${locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('')}</select></div>
+        <div class="form-field"><label>Restock at</label><select id="sr-location">${locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.path || l.name)}</option>`).join('')}</select></div>
         <div class="form-field span2"><label>Condition and inspection findings</label><textarea id="sr-condition" rows="3"></textarea></div></div>`,
       onOpen: (ov) => { const toggle = () => { ov.querySelector('#sr-location').disabled = ov.querySelector('#sr-decision').value !== 'restock'; }; ov.querySelector('#sr-decision').onchange = toggle; toggle(); },
       onConfirm: async (ov, showErr) => {
@@ -625,7 +625,7 @@ App.register('releasing', async (view, filter) => {
         <div class="form-grid"><div class="form-field"><label>Disposition</label><select id="sr-disposition">
           ${row.unit_id ? '<option value="repair">Repair serialized unit</option>' : ''}
           <option value="salvage">Salvage to damage stock</option><option value="dispose">Dispose</option></select></div>
-          <div class="form-field"><label>Salvage location</label><select id="sr-salvage-loc">${locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('')}</select></div>
+          <div class="form-field"><label>Salvage location</label><select id="sr-salvage-loc">${locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.path || l.name)}</option>`).join('')}</select></div>
           <div class="form-field span2"><label>Decision reason</label><textarea id="sr-disposition-note" rows="3"></textarea></div></div>`,
       onOpen: (ov) => { const update = () => { ov.querySelector('#sr-salvage-loc').disabled = ov.querySelector('#sr-disposition').value !== 'salvage'; }; ov.querySelector('#sr-disposition').onchange = update; update(); },
       onConfirm: async (ov, showErr) => {
@@ -715,7 +715,7 @@ App.register('releasing', async (view, filter) => {
       bodyHTML: `<p class="order-notice">Pass adds this unit once to sellable stock. Reject returns it to repair, without changing stock or the original production receipt.</p>
         <p class="muted">Repair performed: ${UI.esc(row.repair_note || '—')}</p>
         <div class="form-grid"><div class="form-field"><label>Decision</label><select id="sr-reinspect-decision"><option value="restock">Pass · restock</option><option value="reject">Reject · repair again</option></select></div>
-        <div class="form-field"><label>Restock at</label><select id="sr-reinspect-loc">${locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('')}</select></div>
+        <div class="form-field"><label>Restock at</label><select id="sr-reinspect-loc">${locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.path || l.name)}</option>`).join('')}</select></div>
         <div class="form-field span2"><label>Fresh inspection findings</label><textarea id="sr-reinspect-note" rows="3"></textarea></div></div>`,
       onOpen: (ov) => { const update = () => { ov.querySelector('#sr-reinspect-loc').disabled = ov.querySelector('#sr-reinspect-decision').value !== 'restock'; }; ov.querySelector('#sr-reinspect-decision').onchange = update; update(); },
       onConfirm: async (ov, showErr) => {

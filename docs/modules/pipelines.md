@@ -220,6 +220,11 @@ raised by the sales-order shortfall flow.
       For a sale-linked job, the sale's stock review owns aggregate component purchasing;
       the job supply review links there and job-level PO drafting returns
       `409 sale_supply_owner` to prevent two purchase plans for the same parts.
+      Stock locations can be nested up to five levels. Each level after the first is
+      optional, and stock remains attached to the exact selected location ID; a parent
+      does not automatically own its children's stock. The desktop New Item form reveals
+      child selectors one at a time with **+ Add level** and posts starting stock at the
+      last selected location. Mobile picker updates are tracked in the handoff.
    3. **Release = parts release slip** — `POST /:id/release {received_by?, notes?}`
       needs approved + accepted + prepared. It issues the numbered slip `PRS-#####`
       (`parts_release_slips` / `_items` store a copy of the lines), deducts the components

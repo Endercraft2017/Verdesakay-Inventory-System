@@ -271,6 +271,7 @@ export const updateCustomerSchema = createCustomerSchema.partial().extend({
 const locationType = z.enum(['warehouse', 'branch', 'store', 'truck', 'other']);
 export const createLocationSchema = z.object({
   name: trimmed.min(1, 'Location name is required').max(120),
+  parent_id: optionalId,
   type: locationType.default('warehouse'),
   address: trimmed.max(500).optional().nullable(),
   notes: optionalText,

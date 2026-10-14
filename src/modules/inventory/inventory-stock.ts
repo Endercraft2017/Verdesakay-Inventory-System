@@ -24,7 +24,19 @@ export function getDefaultLocationId(): number {
 }
 
 export function locationName(id: number): string {
-  return queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', id)?.name ?? `#${id}`;
+  const names: string[] = [];
+  const seen = new Set<number>();
+  let current: number | null = id;
+  while (current != null && !seen.has(current)) {
+    seen.add(current);
+    const row: { name: string; parent_id: number | null } | null | undefined = queryOne<{ name: string; parent_id: number | null }>(
+      'SELECT name, parent_id FROM locations WHERE id = ?', current
+    );
+    if (!row) break;
+    names.unshift(row.name);
+    current = row.parent_id;
+  }
+  return names.join(' / ') || `#${id}`;
 }
 
 /** Current quantity of an item at one location (0 if there's no row). */
@@ -42,7 +54,9 @@ export function stockAt(itemId: number, locationId: number): number {
 export function stockBreakdown(itemId: number): Array<{
   location_id: number; location_name: string; location_type: string; is_default: number; quantity: number;
 }> {
-  return queryAll(
+  const rows = queryAll<{
+    location_id: number; location_name: string; location_type: string; is_default: number; quantity: number;
+  }>(
     `SELECT l.id AS location_id, l.name AS location_name, l.type AS location_type, l.is_default,
             COALESCE(s.quantity, 0) AS quantity
        FROM locations l
@@ -50,6 +64,7 @@ export function stockBreakdown(itemId: number): Array<{
       ORDER BY l.name COLLATE NOCASE`,
     itemId
   );
+  return rows.map((row) => ({ ...row, location_name: locationName(row.location_id) }));
 }
 
 interface ChangeOpts {

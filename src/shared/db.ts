@@ -63,6 +63,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 72: optional five-level inventory location hierarchy.
 // 71: link job-order component-shortage purchase drafts so retries and partial receipts
 //     create only remaining procurement demand.
 // 70: bind JSON idempotency keys to the original request payload.
@@ -73,7 +74,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 71; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 72; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -524,6 +525,7 @@ function createSchema(): void {
     CREATE TABLE IF NOT EXISTS locations (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT NOT NULL,
+      parent_id   INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
       type        TEXT NOT NULL DEFAULT 'warehouse',
       address     TEXT,
       notes       TEXT,
@@ -1951,6 +1953,10 @@ function createSchema(): void {
 
 /** Idempotent schema upgrades for databases created before a column existed. */
 function migrate(): void {
+  // 72: optional location hierarchy; existing locations remain top-level.
+  const hierarchyCols = db.prepare('PRAGMA table_info(locations)').all() as { name: string }[];
+  if (!hierarchyCols.some((c) => c.name === 'parent_id')) db.exec('ALTER TABLE locations ADD COLUMN parent_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_locations_parent ON locations(parent_id)');
   const itemCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
   if (!itemCols.some((c) => c.name === 'attributes')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN attributes TEXT');

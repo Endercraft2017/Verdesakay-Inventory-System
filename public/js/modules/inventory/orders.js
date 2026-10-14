@@ -264,7 +264,7 @@ App.register('orders', async (view, filter) => {
     if (!products.length) { UI.toast('Define a finished product with a BOM first (Production → Finished Products)', 'error'); return; }
     // Prefill from a line item that maps to a finished product, if any.
     const match = (order.items || []).find((li) => products.some((p) => p.id === li.item_id));
-    const locOpts = locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('');
+    const locOpts = locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.path || l.name)}</option>`).join('');
     UI.modal({
       title: `Start production — ${order.number}`,
       bodyHTML: `<div class="form-grid">
@@ -333,7 +333,7 @@ App.register('orders', async (view, filter) => {
             ${preservedOption(get('tax_code_id', null), taxCodes, 'Existing tax code')}
             ${taxCodes.map((t) => `<option value="${t.id}" ${String(get('tax_code_id', '')) === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)} — ${UI.esc(t.name)}</option>`).join('')}</select></div>` : ''}
           ${locations.length ? `<div><label>Ship from</label><select data-f="location_id"><option value="">— default —</option>
-            ${locations.map((l) => `<option value="${l.id}" ${String(get('location_id', '')) === String(l.id) ? 'selected' : ''}>${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('')}</select></div>` : ''}
+            ${locations.map((l) => `<option value="${l.id}" ${String(get('location_id', '')) === String(l.id) ? 'selected' : ''}>${UI.esc(l.path || l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('')}</select></div>` : ''}
         </div>` : ''}
         <div class="field-row">
           <div><label>${partyLabel} name</label><input data-f="customer_name" value="${UI.esc(get('customer_name', ''))}" placeholder="${type === 'sale' ? 'auto-filled from the customer if left blank' : ''}" /></div>

@@ -149,7 +149,7 @@ const ITEM_FORM_DEFAULTS = [
   { key: 'std_oe_cost', label: 'Standard O/E Cost', tab: 'cost', section: 'standard-costing', type: 'money', default: '0.00', visible: false, required: false, help: 'Standard outsourcing / external cost per unit.' },
 
   // ---------------- Additional Information ----------------
-  { key: 'location', label: 'Location', tab: 'additional', section: 'stock', type: 'text', core: true, visible: true, required: false, placeholder: 'Location', help: 'Where the item is stored (shelf, bin, or warehouse).' },
+  { key: 'location', label: 'Legacy location note', tab: 'additional', section: 'stock', type: 'text', core: true, visible: true, required: false, placeholder: 'Old shelf or bin note', help: 'Descriptive note only. Use Starting-stock location and stock moves for counted warehouse, room, shelf or bin quantities.' },
   { key: 'manufacturer', label: 'Manufacturer', tab: 'additional', section: 'purchasing', type: 'text', visible: true, required: false, placeholder: 'Manufacturer', help: 'Company that makes this item.' },
   { key: 'model_no', label: 'Model No.', tab: 'additional', section: 'purchasing', type: 'text', visible: true, required: false, placeholder: 'Model No.', help: 'Manufacturer model or part number.' },
   { key: 'warranty_months', label: 'Warranty (months)', tab: 'additional', section: 'purchasing', type: 'number', visible: false, required: false, help: 'Warranty length in months.' },

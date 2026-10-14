@@ -44,6 +44,29 @@ describe('locations', () => {
     expect((await mkLoc({ name: 'Bad Type', type: 'spaceship' })).status).toBe(400);
   });
 
+  it('supports optional sublocations through level five and stocks the selected level', async () => {
+    const root = (await mkLoc({ name: 'Hierarchy Warehouse' })).body.id;
+    const room = (await mkLoc({ name: 'Room A', parent_id: root })).body.id;
+    expect((await mkLoc({ name: 'room a', parent_id: root })).status).toBe(409);
+    const section = (await mkLoc({ name: 'Section B', parent_id: room })).body.id;
+    const shelf = (await mkLoc({ name: 'Shelf 4', parent_id: section })).body.id;
+    const bin = (await mkLoc({ name: 'Bin 3', parent_id: shelf })).body.id;
+    const six = await mkLoc({ name: 'Too Deep', parent_id: bin });
+    expect(six.status).toBe(400);
+    const list = (await ctx.api.get('/api/locations').set(authHdr())).body;
+    expect(list.find((l: { id: number }) => l.id === bin)).toMatchObject({
+      parent_id: shelf, depth: 5, path: 'Hierarchy Warehouse / Room A / Section B / Shelf 4 / Bin 3',
+    });
+    const item = await ctx.api.post('/api/inventory').set(authHdr()).send({ name: 'Hierarchy Part', quantity: 7, location_id: bin });
+    expect(item.status).toBe(201);
+    const stock = (await ctx.api.get(`/api/inventory/${item.body.id}/stock`).set(authHdr())).body;
+    expect(stock.find((s: { location_id: number }) => s.location_id === bin).quantity).toBe(7);
+    expect((await ctx.api.delete(`/api/locations/${shelf}`).set(authHdr())).status).toBe(409);
+    expect((await ctx.api.put(`/api/locations/${root}`).set(authHdr()).send({ parent_id: bin })).status).toBe(400);
+    expect((await ctx.api.put(`/api/locations/${room}`).set(authHdr()).send({ parent_id: null })).status).toBe(200);
+    expect((await ctx.api.get(`/api/locations/${bin}`).set(authHdr())).body.path).toBe('Room A / Section B / Shelf 4 / Bin 3');
+  });
+
   it('set-as-default endpoint moves the flag', async () => {
     const a = await mkLoc({ name: 'Default Test A' });
     const set = await ctx.api.post(`/api/locations/${a.body.id}/default`).set(authHdr());
