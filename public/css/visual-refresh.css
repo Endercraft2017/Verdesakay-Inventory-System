@@ -260,6 +260,12 @@
 .modal-overlay[data-section='hr'] .myhr-payslip-lines > div { display: flex; justify-content: space-between; gap: 16px; padding: 9px 2px; border-bottom: 1px solid var(--border); }
 .modal-overlay[data-section='hr'] .myhr-payslip-lines span { text-transform: capitalize; }
 .modal-overlay[data-section='hr'] [data-myhr-time-content] { margin-top: 20px; }
+.modal-overlay[data-section='hr'] .tk-linked-form { display: inline-flex; align-items: stretch; max-width: 100%; margin: 2px 3px 2px 0; border-radius: 999px; background: var(--surface-3); vertical-align: middle; }
+.modal-overlay[data-section='hr'] .tk-linked-form-view { max-width: 100%; margin: 0; border: 0; border-radius: 999px 0 0 999px; background: transparent; color: var(--text); cursor: pointer; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.modal-overlay[data-section='hr'] .tk-linked-form-view:only-child { border-radius: 999px; }
+.modal-overlay[data-section='hr'] .tk-linked-form-remove { min-width: 30px; padding: 2px 8px; border: 0; border-left: 1px solid var(--border); border-radius: 0 999px 999px 0; background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; }
+.modal-overlay[data-section='hr'] .tk-linked-form-remove:hover { color: var(--danger); background: var(--danger-weak); }
+.modal-overlay[data-section='hr'] .tk-linked-form :is(button:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Personal tools: spacious, themed panels with stationary actions. */
 .drawer-catch { background: rgb(10 18 35 / .28); backdrop-filter: blur(2px); }

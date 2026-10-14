@@ -2411,7 +2411,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
               <td><select data-k="rest_day" title="Override this one day/employee — leave at Default to inherit the weekly rest-day pattern. Use for a rest day that moves week to week.">${restDayOptions(d.rest_day)}</select></td>
               <td><input data-k="notes" value="${UI.esc(d.notes || '')}" placeholder="optional" /></td>
               <td>
-                ${(d._links || []).map((l, li) => `<span class="badge-pill" data-unlink="${i}" data-unlink-idx="${li}" title="Click to unlink" style="cursor:pointer;margin:1px 2px 1px 0;display:inline-block">${UI.esc(l.label)}${l.slug !== 'reported_absence' && !isApprovedLink(l) ? ` · ${UI.esc(l.status || 'pending')}` : ''} ✕</span>`).join('')}
+                ${(d._links || []).map((l, li) => `<span class="tk-linked-form"><button type="button" class="badge-pill tk-linked-form-view" data-view-form="${i}" data-view-form-idx="${li}" title="View form details" aria-label="View ${UI.esc(l.label)} details">${UI.esc(l.label)}${l.slug !== 'reported_absence' && !isApprovedLink(l) ? ` · ${UI.esc(l.status || 'pending')}` : ''}</button>${canManage ? `<button type="button" class="tk-linked-form-remove" data-unlink="${i}" data-unlink-idx="${li}" title="Unlink from this day (Shift-click skips confirmation)" aria-label="Unlink ${UI.esc(l.label)} from ${UI.esc(d.work_date)}">×</button>` : ''}</span>`).join('')}
                 <button type="button" class="icon-btn" data-link="${i}" title="Link or create an OT/Half Day/Leave/Undertime/Offset/Reported/Rest Day form — a day can have more than one">${UI.icon('plus', 14)}</button>
               </td>
             </tr>`;
@@ -2419,15 +2419,28 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           body.querySelectorAll('[data-photo-url]').forEach((b) => b.addEventListener('click', () => openPunchPhoto(b.dataset.photoUrl)));
           if (!canManage) {
             body.querySelectorAll('input, select, textarea').forEach((field) => { field.disabled = true; });
-            body.querySelectorAll('button:not([data-photo-url])').forEach((button) => { button.hidden = true; });
-            body.querySelectorAll('[data-unlink]').forEach((badge) => {
-              badge.removeAttribute('data-unlink');
-              badge.removeAttribute('title');
-              badge.style.cursor = 'default';
-              badge.textContent = badge.textContent.replace(/ ×$/, '');
-            });
-            return; // Do not attach mutation handlers; photo inspection remains available.
+            body.querySelectorAll('button:not([data-photo-url]):not([data-view-form])').forEach((button) => { button.hidden = true; });
           }
+          body.querySelectorAll('[data-view-form]').forEach((b) => b.onclick = async () => {
+            const day = days[Number(b.dataset.viewForm)];
+            const link = day?._links[Number(b.dataset.viewFormIdx)];
+            if (!link) return;
+            let record;
+            try { record = await API.get('/form-records/' + link.id); }
+            catch (error) {
+              if (!link.data) { UI.toast('Couldn’t load form details: ' + error.message, 'error'); return; }
+              record = { number: link.label, status: link.status, data: link.data, form_slug: link.slug };
+            }
+            const form = holidayForms.find((f) => f.slug === (record.form_slug || link.slug));
+            const labels = new Map((form?.fields || []).map((field) => [field.key, field.label]));
+            const fields = Object.entries(record.data || {}).filter(([key, value]) =>
+              !['employee_id', 'charged_dates', 'decided_by', '_calculation_snapshot'].includes(key) && value != null && value !== '');
+            UI.modal({ title: link.label, cancelText: 'Close', bodyHTML:
+              `<p><strong>Status:</strong> ${UI.esc(record.status || link.status || 'Unknown')}</p><p><strong>Linked date:</strong> ${UI.esc(day.work_date)}</p>` +
+              (fields.length ? `<dl>${fields.map(([key, value]) => `<dt style="font-weight:600;margin-top:10px">${UI.esc(labels.get(key) || key.replaceAll('_', ' '))}</dt><dd style="margin:3px 0;white-space:pre-wrap;overflow-wrap:anywhere">${UI.esc(String(value))}</dd>`).join('')}</dl>` : '<p class="muted">No additional form details are recorded.</p>'),
+            });
+          });
+          if (!canManage) return; // Read-only HR can inspect forms, but cannot change links.
           body.querySelectorAll('input[data-k], select[data-k]').forEach((inp) => {
             if (TIME_KEYS.includes(inp.dataset.k)) { wireTimeInput(inp); return; }
             const evt = inp.tagName === 'SELECT' ? 'change' : 'input';
@@ -2448,11 +2461,15 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           body.querySelectorAll('[data-halfday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.halfdayFlag)));
           body.querySelectorAll('[data-restday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.restdayFlag)));
           body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.link)));
-          body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = () => {
+          body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = async (event) => {
             const i = Number(b.dataset.unlink);
             const li = Number(b.dataset.unlinkIdx);
+            const link = days[i]?._links[li];
+            if (!link) return;
+            if (!event.shiftKey && !await UI.confirmDialog(`Unlink ${link.label} from ${days[i].work_date}? The form record will remain available. Save Daily Time to keep this change.`, 'Unlink form')) return;
             days[i]._links.splice(li, 1);
             days[i]._formIds = days[i]._links.map((l) => l.id);
+            ov.__markDirty?.();
             renderRows();
           });
         }
