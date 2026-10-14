@@ -207,7 +207,7 @@ describe('simplified editor workspace',()=>{
   const {doc,root}=setup('<p>Text</p>',true,{copiesPerRecord:2,recordsPerPage:2});
   expect(doc.querySelector('[data-tab=home]').textContent).toBe('Home');expect(doc.querySelector('[data-tab=layout]').textContent).toBe('Layout');
   expect([...doc.querySelectorAll('.doc-tool-rail [data-tool-group]')].map((el:any)=>el.dataset.toolGroup)).toEqual(['Document','Design','Template','Review']);
-  expect(doc.querySelector('[data-panel=home] [data-cmd=formatBlock]').closest('[aria-label=Styles]')).not.toBeNull();
+  expect(doc.querySelector('[data-panel=home] [data-cmd=formatBlock]').closest('[aria-label="Text styles"]')).not.toBeNull();
   expect(doc.querySelector('[data-panel=insert] [data-ins=variable]')).toBeNull();expect(doc.querySelector('[data-panel=layout] .doc-copies')).toBeNull();
   expect(doc.querySelector('.doc-view-tools .doc-zoomsel')).not.toBeNull();expect(doc.querySelectorAll('.doc-copies')).toHaveLength(1);
   const copies=doc.querySelector('.doc-copies');doc.querySelector('[data-open-panel=Print]').click();

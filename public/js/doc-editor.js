@@ -452,6 +452,12 @@ function splitTableCell(cell) {
 /** Consistent stroke icons, independent of emoji fonts and operating system. */
 function docIcon(name) {
   const paths = {
+    copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',
+    cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8 8 13 13M8 16 21 3"/>',
+    paste: '<rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="2" width="6" height="5" rx="1"/>',
+    plainPaste: '<rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="2" width="6" height="5" rx="1"/><path d="M8 11h8m-4 0v7"/>',
+    replace: '<path d="M3 5h12m-3-3 3 3-3 3M21 19H9m3-3-3 3 3 3M5 11h5m-5 3h8M17 9h4"/>',
+    selectAll: '<rect x="3" y="3" width="18" height="18" rx="1" stroke-dasharray="3 3"/><path d="M7 8h10M7 12h10M7 16h10"/>',
     swap: '<path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/>',
     document: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
     image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/>',
@@ -850,10 +856,24 @@ function ensureStyles() {
     .doc-paragraph-controls{display:grid;grid-template-columns:repeat(5,auto);gap:3px;align-items:center}
     .doc-panel[data-panel=home] .doc-group[aria-label=Styles] .doc-group-row,.doc-panel[data-panel=home] .doc-group[aria-label=Editing] .doc-group-row{flex-direction:column;gap:3px}
     .doc-panel[data-panel=home] select[data-fontsize]{width:80px}
-    .doc-fs select,.doc-fs .doc-view-tools select,.modal-overlay select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' fill='none' stroke='%235d6b84' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:27px!important}
-    [data-theme=dark] .doc-fs select,[data-theme=dark] .doc-fs .doc-view-tools select,[data-theme=dark] .modal-overlay select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' fill='none' stroke='%23b8b5cc' stroke-width='1.5'/%3E%3C/svg%3E")}
+    .doc-fs select,.doc-fs .doc-view-tools select,.modal-overlay select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' fill='none' stroke='%235d6b84' stroke-width='1.5'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 8px center!important;background-size:12px 12px!important;padding-right:27px!important}
+    [data-theme=dark] .doc-fs select,[data-theme=dark] .doc-fs .doc-view-tools select,[data-theme=dark] .modal-overlay select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' fill='none' stroke='%23b8b5cc' stroke-width='1.5'/%3E%3C/svg%3E")!important}
     .doc-fs select:hover,.modal-overlay select:hover{background-color:var(--surface-2);border-color:var(--accent)}
     @media(max-width:760px){.doc-panel[data-panel=home] .doc-group[aria-label=Font]{flex:1 1 100%}.doc-font-controls{width:100%}.doc-font-pickers,.doc-font-effects{flex-wrap:wrap}.doc-paragraph-controls{grid-template-columns:repeat(5,auto)}}
+`;
+  el.textContent += `
+    /* Toolbar swatches should not inherit form-label margins. */
+    .doc-fs .doc-panel .tb-color{margin:0}
+    /* Use desktop width for a single command row; retain bounded wrapping on smaller screens. */
+    @media(min-width:1200px){
+      .doc-fs .doc-panel[data-panel=home]{flex-wrap:nowrap;min-height:0;padding:5px 10px;overflow-x:auto}
+      .doc-fs .doc-panel[data-panel=home] .doc-group{flex:0 0 auto;padding:2px 8px;gap:4px;justify-content:center}
+      .doc-fs .doc-panel[data-panel=home] .doc-group .doc-group-row{flex-direction:row;flex-wrap:nowrap;max-width:none}
+      .doc-font-controls{flex-direction:row;align-items:center;gap:6px}
+      .doc-clipboard-controls,.doc-paragraph-controls{display:flex;align-items:center;gap:3px}
+      .doc-font-pickers,.doc-font-effects{flex-wrap:nowrap}
+      .doc-fs .doc-panel[data-panel=home] .doc-group-cap{font-size:9px}
+    }
 `;
   document.head.appendChild(el);
 }
@@ -875,7 +895,7 @@ function tabsHTML() {
 }
 
 function homePanelHTML() {
-  const clipboard = groupHTML('Clipboard', `<div class="doc-clipboard-controls"><button type="button" data-clipboard="paste" title="Paste from clipboard (Ctrl+V)">Paste</button><button type="button" data-clipboard="cut" title="Cut selected content (Ctrl+X)">Cut</button><button type="button" data-clipboard="copy" title="Copy selected content (Ctrl+C)">Copy</button><button type="button" data-clipboard="plain" title="Paste text without formatting">Paste text</button></div>`);
+  const clipboard = groupHTML('Clipboard', `<div class="doc-clipboard-controls"><button type="button" data-clipboard="paste" title="Paste from clipboard (Ctrl+V)" aria-label="Paste">${docIcon('paste')}</button><button type="button" data-clipboard="cut" title="Cut selected content (Ctrl+X)" aria-label="Cut">${docIcon('cut')}</button><button type="button" data-clipboard="copy" title="Copy selected content (Ctrl+C)" aria-label="Copy">${docIcon('copy')}</button><button type="button" data-clipboard="plain" title="Paste text without formatting" aria-label="Paste text without formatting">${docIcon('plainPaste')}</button></div>`);
   const font = groupHTML('Font', `<div class="doc-font-controls"><div class="doc-font-pickers">
 
     <select data-cmd="fontName" title="Font">${FONTS.map((f) => `<option value="${f}">${f}</option>`).join('')}</select>
@@ -901,11 +921,11 @@ function homePanelHTML() {
     <button type="button" data-ex="outdent" title="Decrease indent">⇤</button>
     <button type="button" data-ex="indent" title="Increase indent">⇥</button>
     <button type="button" data-paragraph title="Paragraph spacing and indentation">Spacing</button></div>`);
-  const styles = groupHTML('Styles', `    <select data-cmd="formatBlock" title="Paragraph style">
+  const styles = groupHTML('Text styles', `    <select data-cmd="formatBlock" title="Paragraph type: Normal for body text; Heading 1 for main sections; Heading 2 for subsections" aria-label="Paragraph type">
       <option value="p">Normal</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option><option value="h4">Heading 4</option><option value="h5">Heading 5</option><option value="h6">Heading 6</option>
-    </select><button type="button" data-open-panel="Styles" title="Apply or customize named paragraph styles">Manage styles</button>`);
+    </select><button type="button" data-open-panel="Styles" title="Text styles: apply consistent formatting to headings and body text" aria-label="Manage text styles">${docIcon('styles')}</button>`);
   const editing = groupHTML('Editing', `
-    <button type="button" class="doc-tile" data-find title="Find &amp; replace (Ctrl+F)"><span class="doc-tile-ic">${docIcon('search')}</span><span class="doc-tile-lbl">Find</span></button><button type="button" data-replace title="Find and replace text">Replace</button><button type="button" data-select-all title="Select all document content (Ctrl+A)">Select all</button>`);
+    <button type="button" data-find title="Find text (Ctrl+F)" aria-label="Find text">${docIcon('search')}</button><button type="button" data-replace title="Find and replace text" aria-label="Replace text">${docIcon('replace')}</button><button type="button" data-select-all title="Select all document content (Ctrl+A)" aria-label="Select all document content">${docIcon('selectAll')}</button>`);
   return clipboard + font + paragraph + styles + editing;
 }
 
@@ -2724,7 +2744,7 @@ const DocAdvanced = (() => {
             const cfg = settings(root).value;
             if (tab === 'Styles') {
                 const styles = { ...defaults, ...cfg.styles };
-                panel.innerHTML = '<h3>Document styles</h3><p>Apply a named style, then edit it to update matching paragraphs together.</p>' + Object.entries(styles).map(([key, s]) => `<div class="doc-prop-grid"><button data-adv="style-apply" data-style-key="${key}">${esc(s.name)}</button><button data-adv="style-edit" data-style-key="${key}">Edit</button></div>`).join('') + '<h3>Numbering</h3><p>Use numbered lists and Indent / Outdent for nested levels.</p><button data-adv="multilevel">Hierarchical numbering</button>';
+                panel.innerHTML = '<h3>Document styles</h3><p>Choose a style to format the current paragraph. Normal is body text; Heading 1 is a main section; Heading 2 is a subsection. Edit a style to update every paragraph using it.</p>' + Object.entries(styles).map(([key, s]) => `<div class="doc-prop-grid"><button data-adv="style-apply" data-style-key="${key}">${esc(s.name)}</button><button data-adv="style-edit" data-style-key="${key}">Edit</button></div>`).join('') + '<h3>Numbering</h3><p>Use numbered lists and Indent / Outdent for nested levels.</p><button data-adv="multilevel">Hierarchical numbering</button>';
                 return true;
             }
             if (tab === 'Review') {
@@ -2879,7 +2899,7 @@ function mountStudio(fs, surface, opts, api) {
   const canvas = fs.querySelector('.doc-canvas'); canvas.before(desk); desk.append(canvas);
   const side = document.createElement('aside'); side.className = 'doc-studio-side'; side.setAttribute('aria-label', 'Document tools'); desk.append(side);
   const toolNames={Print:'Print grid',Template:'Form links',Properties:'Inspect',Layers:'Layers',Outline:'Outline',Data:'Variables',Pages:'Pages',Styles:'Styles',Review:'Review',Library:'Library',History:'History',Shared:'Shared'};
-  const toolDescriptions={Print:'Scale this design into a print grid, set copies and gaps, and preview the printed sheets.',Template:'Set template details, connect forms and choose their default print layouts.',Properties:'Edit the selected text or object’s size, colors, spacing and alignment.',Pages:'Add, duplicate and reorder design pages; manage headers, footers and page breaks.',Layers:'Select objects and manage their visibility, locking and stacking order.',Outline:'Navigate document headings and insert a table of contents.',Styles:'Apply and customize paragraph styles for headings and body text.',Data:'Search, copy and insert live variables; configure data blocks and preview values.',Library:'Save and reuse styles and objects on this device.',Review:'Track text changes, review edits and manage comments.',History:'Recover drafts and restore saved versions of this document.',Shared:'Manage shared editing, server drafts and document revisions.'};
+  const toolDescriptions={Print:'Scale this design into a print grid, set copies and gaps, and preview the printed sheets.',Template:'Set template details, connect forms and choose their default print layouts.',Properties:'Edit the selected text or object’s size, colors, spacing and alignment.',Pages:'Add, duplicate and reorder design pages; manage headers, footers and page breaks.',Layers:'Select objects and manage their visibility, locking and stacking order.',Outline:'Navigate document headings and insert a table of contents.',Styles:'Normal is body text. Heading 1 marks main sections; Heading 2 marks subsections. Named styles keep their font, size, color and spacing consistent.',Data:'Search, copy and insert live variables; configure data blocks and preview values.',Library:'Save and reuse styles and objects on this device.',Review:'Track text changes, review edits and manage comments.',History:'Recover drafts and restore saved versions of this document.',Shared:'Manage shared editing, server drafts and document revisions.'};
   const toolIcons={Print:'table',Template:'link',Properties:'settings',Layers:'layers',Outline:'justifyLeft',Data:'variable',Pages:'document',Styles:'styles',Review:'signature',Library:'image',History:'undo',Shared:'shared'};
   const rail=document.createElement('nav');rail.className='doc-tool-rail';rail.setAttribute('aria-label','Document tools');desk.prepend(rail);
   const toolGroups=[['Document',['Pages','Outline','Styles']],['Design',['Properties','Layers','Library']],['Template',['Data','Template','Print']],['Review',['Review','History',...(opts.sharedStudio?['Shared']:[])]]];

@@ -24,3 +24,15 @@ themed select hover, linking/defaults, proportional print grids and delayed save
 The browser gate passed 92 state scans with zero axe A/AA violations, 12 task checks and
 zero runtime errors in both themes at desktop/phone sizes; manual
 visual review supplements automated rules. Full Word feature parity is not claimed.
+
+## Follow-up from the live UI screenshots
+
+The sidebar background shorthand reset arrow repeat/position even though the dark arrow
+image remained. Protect the arrow longhands, including the image in both themes, so
+Empty cells, zoom and other editor/dialog selects show one arrow at the right edge.
+Wide desktop Home now has one horizontal command row, with labeled group separators and
+accessible stroke icons for clipboard and editing actions. Swatches no longer inherit
+form-label margins. Text styles and sidebar guidance explain body text, heading levels
+and updating paragraphs that share a named style. Smaller screens retain bounded wrapping.
+Validation includes 95 command/studio tests and an actual Empty cells hover check, plus a
+wide desktop ribbon height limit of 76px in the full Playwright gate.

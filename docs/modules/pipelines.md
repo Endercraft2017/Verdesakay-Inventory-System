@@ -921,3 +921,5 @@ Font-size steps → selected size/readout → existing format.size command and h
 placeholder selection becomes a caret for pending formatting rather than a fabricated edit.
 Insert header/footer/page number → Pages panel's existing action → append/prepend missing
 running element without replacing the selected body → existing history/save/print pipeline.
+
+Editor select theme → fixed single-arrow image, no-repeat, right placement and size longhands → survive mounted sidebar background shorthand. Wide desktop media rule → horizontal command wrappers → unchanged command listeners and selection/history. Smaller screens retain bounded wrapping and keyboard access.

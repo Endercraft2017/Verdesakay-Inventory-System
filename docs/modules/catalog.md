@@ -1157,3 +1157,5 @@ Clipboard text/HTML passes through existing canonical field serialization and sa
 Denied access leaves content intact and offers keyboard fallback; delayed Cut/Paste aborts if
 the document or selection changes. Ribbon Cut is disabled while tracking text changes.
 Header/footer creation preserves selected body text, reuses existing elements and is undoable.
+
+Wide desktop Home now uses one command row with stroke icons for Clipboard and Editing, keeping labeled group dividers. The paragraph selector is labeled Paragraph type; Text styles explains body text, heading levels and shared formatting. Editor select arrow image/repeat/position/size are protected from later background shorthands, including sidebar Empty cells.

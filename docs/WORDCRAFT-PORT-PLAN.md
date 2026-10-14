@@ -370,3 +370,7 @@ selection changes preserve content. Header/footer insertion no longer replaces s
 Compact groups and themed custom select arrows retain the app design convention.
 This is a ribbon usability slice; phase 2 slice 5 and broader Word feature parity remain pending.
 See `docs/reviews/editor-common-ribbon-2026-10-14.md` for checks and browser clipboard limits.
+
+
+### Ribbon density correction — 14 October 2026
+Wide desktop Home uses one horizontal command row with accessible clipboard/editing icons. Sidebar dropdown arrows survive later background resets; Text styles and heading descriptions explain their purpose. This remains UI refinement; engine phase 2 slice 5 is unchanged.

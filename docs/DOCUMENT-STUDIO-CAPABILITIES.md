@@ -183,3 +183,5 @@ image paste continues through Ctrl/Command+V. Ribbon Cut requires tracking to be
 Insert exposes Header, Footer and Page number; these preserve selected writing, select/reuse
 existing running elements and can be undone. They use the existing repeating print elements.
 Themed select arrows avoid native white hover patches, including editor dialogs and zoom.
+
+Wide desktop Home places its controls horizontally to reserve canvas height. Clipboard and Editing buttons use icons with names/tooltips. Normal means body text; Heading 1 marks a main section and Heading 2 a subsection. Text styles applies consistent paragraph formatting; editing a named style updates paragraphs using it.
