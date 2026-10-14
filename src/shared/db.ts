@@ -63,6 +63,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 73: remember an item's preferred storage location even when it has no stock.
 // 72: optional five-level inventory location hierarchy.
 // 71: link job-order component-shortage purchase drafts so retries and partial receipts
 //     create only remaining procurement demand.
@@ -74,7 +75,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 72; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 73; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -545,6 +546,7 @@ function createSchema(): void {
       unit          TEXT DEFAULT 'pcs',
       min_quantity  INTEGER NOT NULL DEFAULT 0,
       location      TEXT,
+      preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       notes         TEXT,
       attributes    TEXT,
       image_path    TEXT,
@@ -1953,6 +1955,9 @@ function createSchema(): void {
 
 /** Idempotent schema upgrades for databases created before a column existed. */
 function migrate(): void {
+  // 73: item placement preference is separate from stock held at any one location.
+  const preferredLocCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (!preferredLocCols.some((c) => c.name === 'preferred_location_id')) db.exec('ALTER TABLE inventory_items ADD COLUMN preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL');
   // 72: optional location hierarchy; existing locations remain top-level.
   const hierarchyCols = db.prepare('PRAGMA table_info(locations)').all() as { name: string }[];
   if (!hierarchyCols.some((c) => c.name === 'parent_id')) db.exec('ALTER TABLE locations ADD COLUMN parent_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT');

@@ -158,7 +158,8 @@ export const createItemSchema = z.object({
   department_id: optionalId,
   supplier_id: optionalId,
   location_id: optionalId, // where the starting stock lands (default: the default location)
-  quantity: intCoerce.default(0),
+  new_location_levels: z.array(trimmed.min(1).max(120)).max(4).optional(), // optional children beneath location_id
+  quantity: intCoerce.min(0).default(0),
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).default(0),
   unit_cost: z.coerce.number().min(0).default(0), // standard cost — values raw materials / finished goods in the GL
@@ -177,6 +178,7 @@ export const updateItemSchema = z.object({
   category: optionalText,
   department_id: optionalId,
   supplier_id: optionalId,
+  preferred_location_id: optionalId.optional(),
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).optional(),
   unit_cost: z.coerce.number().min(0).optional(),

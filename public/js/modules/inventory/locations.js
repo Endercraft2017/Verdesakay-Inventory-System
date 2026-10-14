@@ -38,7 +38,7 @@ App.register('locations', async (view) => {
       <table>
         <thead><tr>
           <th>Location</th><th>Type</th><th>Address</th>
-          <th class="right">Units here</th><th class="right">Capacity here</th><th class="right">Items here</th><th></th>
+          <th class="right">Units here</th><th class="right">All levels</th><th class="right">Capacity here</th><th class="right">Items here</th><th></th>
         </tr></thead>
         <tbody>${all.map((l) => `
           <tr class="clickable" data-open="${l.id}">
@@ -46,6 +46,7 @@ App.register('locations', async (view) => {
             <td style="text-transform:capitalize">${UI.esc(l.type)}</td>
             <td>${UI.esc(l.address || '—')}</td>
             <td class="right">${l.total_units || 0}</td>
+            <td class="right">${l.subtree_units ?? l.total_units ?? 0}</td>
             <td class="right">${l.capacity ? `<span class="${(l.total_units || 0) >= l.capacity ? 'danger' : 'muted'}">${l.capacity}${(l.total_units || 0) >= l.capacity ? ' · full' : ''}</span>` : '<span class="muted">—</span>'}</td>
             <td class="right">${l.item_count || 0}</td>
             <td class="actions">
@@ -138,7 +139,9 @@ App.register('locations', async (view) => {
           <div><span class="muted">Type</span><div style="text-transform:capitalize">${UI.esc(l.type)}</div></div>
           <div><span class="muted">Address</span><div>${UI.esc(l.address || '—')}</div></div>
           <div><span class="muted">Units here</span><div>${l.total_units || 0}</div></div>
+          <div><span class="muted">Units at all levels</span><div>${l.subtree_units ?? l.total_units ?? 0}</div></div>
           <div><span class="muted">Items here</span><div>${l.item_count || 0}</div></div>
+          <div><span class="muted">Distinct items at all levels</span><div>${l.subtree_item_count ?? l.item_count ?? 0}</div></div>
         </div>
         ${l.notes ? `<h4 style="margin:14px 0 4px">Notes</h4><p style="white-space:pre-wrap;margin:0">${UI.esc(l.notes)}</p>` : ''}
         <h4 style="margin:16px 0 4px">Stock here (${items.length})</h4>

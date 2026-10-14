@@ -12,11 +12,29 @@ const router = Router();
 router.use(requireAuth);
 
 const LIST_SQL = `
+  WITH RECURSIVE descendants(root_id, id) AS (
+    SELECT id, id FROM locations
+    UNION ALL
+    SELECT d.root_id, child.id FROM descendants d JOIN locations child ON child.parent_id = d.id
+  ), direct AS (
+    SELECT location_id, SUM(quantity) AS units, SUM(quantity <> 0) AS items
+    FROM inventory_stock GROUP BY location_id
+  ), rollup AS (
+    SELECT d.root_id, SUM(s.quantity) AS units,
+           COUNT(DISTINCT CASE WHEN s.quantity <> 0 THEN s.item_id END) AS items
+    FROM descendants d JOIN inventory_stock s ON s.location_id = d.id
+    GROUP BY d.root_id
+  )
   SELECT l.*,
-         (SELECT COALESCE(SUM(s.quantity), 0) FROM inventory_stock s WHERE s.location_id = l.id) AS total_units,
-         (SELECT COUNT(*) FROM inventory_stock s WHERE s.location_id = l.id AND s.quantity <> 0) AS item_count,
+         COALESCE(direct.units, 0) AS total_units,
+         COALESCE(direct.items, 0) AS item_count,
+         COALESCE(rollup.units, 0) AS subtree_units,
+         COALESCE(rollup.items, 0) AS subtree_item_count,
+         (SELECT COUNT(*) FROM locations child WHERE child.parent_id = l.id) AS child_count,
          (SELECT c.max_units FROM location_capacities c WHERE c.location_id = l.id) AS capacity
   FROM locations l
+  LEFT JOIN direct ON direct.location_id = l.id
+  LEFT JOIN rollup ON rollup.root_id = l.id
 `;
 
 /** Names are local to each node; paths give operators an unambiguous pick target. */
@@ -89,15 +107,9 @@ function setSoleDefault(id: number): void {
 // The list also opens to the RTS desk, which picks where ready-to-sell stock goes (shared/desk-access.ts).
 router.get('/', requireAnyPermission(['inventory.view', ...LOCATION_PICKER]), (req, res) => {
   const { q } = req.query;
-  let sql = LIST_SQL;
-  const params: unknown[] = [];
-  if (typeof q === 'string' && q.trim()) {
-    sql += ' WHERE (l.name LIKE ? OR l.address LIKE ? OR l.type LIKE ?)';
-    const like = `%${q.trim()}%`;
-    params.push(like, like, like);
-  }
-  sql += ' ORDER BY l.is_default DESC, l.name COLLATE NOCASE';
-  res.json(withPaths(queryAll<LocationRow>(sql, ...params)));
+  const rows = withPaths(queryAll<LocationRow>(LIST_SQL + ' ORDER BY l.is_default DESC, l.name COLLATE NOCASE'));
+  const term = typeof q === 'string' ? q.trim().toLocaleLowerCase() : '';
+  res.json(term ? rows.filter((l) => [l.path, l.address, l.type].some((value) => value?.toLocaleLowerCase().includes(term))) : rows);
 });
 
 // GET /api/locations/:id — one location + the items it currently holds

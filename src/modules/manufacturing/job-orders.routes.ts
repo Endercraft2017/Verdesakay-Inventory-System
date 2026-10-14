@@ -30,7 +30,7 @@ import { notifyAnyPermission, notifyUser } from '../../shared/push';
 import { imageUpload, saveAttachment, unlink } from '../../core/attachments.routes';
 import { enforceQuota } from '../../platform/quota';
 import { pickListHtml } from './parts-slip-print';
-import { applyStockChange, stockAt, getDefaultLocationId, overdrawAllowed } from '../inventory/inventory-stock';
+import { applyStockChange, stockAt, getDefaultLocationId, locationName, overdrawAllowed } from '../inventory/inventory-stock';
 import { postJobOrderMovement, jobOrderWipBalance } from '../accounting/accounting-autopost';
 import { createDraftPurchaseOrders } from '../inventory/orders.routes';
 import { checklistForProduct } from './qc.routes';
@@ -198,6 +198,8 @@ function loadJobOrder(id: number): JobOrder | null {
     id
   );
   if (!jo) return null;
+  if (jo.source_location_id) jo.source_location_name = locationName(jo.source_location_id);
+  if (jo.output_location_id) jo.output_location_name = locationName(jo.output_location_id);
   jo.components = queryAll<JobOrderComponent>(
     `SELECT c.*, i.quantity AS component_on_hand
      FROM job_order_components c
