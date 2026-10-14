@@ -154,6 +154,39 @@ router.get('/payslips', (req, res) => {
   }));
 });
 
+// The payroll calculation is frozen in each generated slip. A paid slip exposes only its
+// owner's saved day breakdown; older paid slips without a snapshot get raw cutoff punches.
+router.get('/payslips/:id/timekeeping', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  const rec = myPayslips(emp, Number(req.params.id))[0];
+  if (!rec || !isFinalPayslip(rec.status)) { res.status(404).json({ error: 'Payslip not found' }); return; }
+  const data = parse(rec.data);
+  const cutoffId = Number(data.cutoff_id);
+  const cutoff = Number.isSafeInteger(cutoffId) && cutoffId > 0
+    ? queryOne<{ id: number; label: string; start_date: string; end_date: string }>('SELECT id, label, start_date, end_date FROM attendance_periods WHERE id = ?', cutoffId)
+    : queryOne<{ id: number; label: string; start_date: string; end_date: string }>('SELECT id, label, start_date, end_date FROM attendance_periods WHERE label = ?', rec.period);
+  if (!cutoff) { res.json({ days: [], notice: 'Timekeeping detail is unavailable for this older payslip.' }); return; }
+  let calculated: Array<Record<string, unknown>> = [];
+  try {
+    const snapshot = JSON.parse(String(data._calculation_snapshot || ''));
+    if (snapshot.version === 1 && Array.isArray(snapshot.days)) calculated = snapshot.days;
+  } catch { /* Older payroll records did not save calculations. */ }
+  const punches = queryAll<{ work_date: string; time_in: string | null; lunch_out: string | null; lunch_in: string | null; time_out: string | null }>(
+    'SELECT work_date, time_in, lunch_out, lunch_in, time_out FROM attendance_records WHERE period_id = ? AND employee_id = ? ORDER BY work_date',
+    cutoff.id, emp.id
+  );
+  const byDate = new Map(punches.map((p) => [p.work_date, p]));
+  const days = calculated.length ? calculated.map((day) => ({
+    ...day, lunch_out: byDate.get(String(day.work_date))?.lunch_out ?? null,
+    lunch_in: byDate.get(String(day.work_date))?.lunch_in ?? null,
+  })) : punches;
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ period_label: cutoff.label, start_date: cutoff.start_date, end_date: cutoff.end_date,
+    days, source: calculated.length ? 'saved_calculation' : 'attendance_record',
+    notice: calculated.length ? null : 'This older payslip has no saved payroll calculation. These are the recorded punches; later corrections may differ from what payroll used.' });
+});
+
 // GET /api/me/payslips/:id/pdf — download one of YOUR finalized payslips. Ownership and
 // finalization are re-checked here at download time; every successful download is logged.
 router.get('/payslips/:id/pdf', (req, res) => {

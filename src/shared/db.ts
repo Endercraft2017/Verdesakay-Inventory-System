@@ -998,6 +998,45 @@ function createSchema(): void {
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Identified employee reports have a case lifecycle separate from personal messages and
+    -- from identity-free anonymous reports. Only reporter, selected recipient and assignee read.
+    CREATE TABLE IF NOT EXISTS identified_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number TEXT UNIQUE,
+      reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      category TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      description TEXT NOT NULL,
+      incident_date TEXT,
+      incident_time TEXT,
+      location TEXT,
+      status TEXT NOT NULL DEFAULT 'new',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_identified_reports_reporter ON identified_reports(reporter_id, id);
+    CREATE INDEX IF NOT EXISTS idx_identified_reports_recipient ON identified_reports(recipient_id, status);
+    CREATE INDEX IF NOT EXISTS idx_identified_reports_assignee ON identified_reports(assignee_id, status);
+    CREATE TABLE IF NOT EXISTS identified_report_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL REFERENCES identified_reports(id) ON DELETE CASCADE,
+      actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      kind TEXT NOT NULL,
+      body TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_identified_report_events_report ON identified_report_events(report_id, id);
+    CREATE TABLE IF NOT EXISTS identified_report_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL REFERENCES identified_reports(id) ON DELETE CASCADE,
+      stored_name TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL
+    );
+
     -- Files/images/documents attached to a message. Counted against the sender's
     -- per-user storage cap (see MESSAGE_STORAGE_CAP in messages.routes.ts); freed
     -- automatically when the parent message is deleted (ON DELETE CASCADE).

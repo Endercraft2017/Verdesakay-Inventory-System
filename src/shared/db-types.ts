@@ -597,6 +597,41 @@ export interface IdempotencyKeys {
   created_at: Generated<string>;
 }
 
+export interface IdentifiedReportAttachments {
+  id: Generated<number>;
+  report_id: number;
+  stored_name: string;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+}
+
+export interface IdentifiedReportEvents {
+  id: Generated<number>;
+  report_id: number;
+  actor_id: number | null;
+  kind: string;
+  body: string | null;
+  created_at: Generated<string>;
+}
+
+export interface IdentifiedReports {
+  id: Generated<number>;
+  number: string | null;
+  reporter_id: number;
+  recipient_id: number;
+  assignee_id: number | null;
+  category: string;
+  subject: string;
+  description: string;
+  incident_date: string | null;
+  incident_time: string | null;
+  location: string | null;
+  status: Generated<string>;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface InventoryItems {
   id: Generated<number>;
   name: string;
@@ -1620,6 +1655,9 @@ export interface DB {
   goods_receipt_items: GoodsReceiptItems;
   goods_receipts: GoodsReceipts;
   idempotency_keys: IdempotencyKeys;
+  identified_report_attachments: IdentifiedReportAttachments;
+  identified_report_events: IdentifiedReportEvents;
+  identified_reports: IdentifiedReports;
   inventory_items: InventoryItems;
   inventory_stock: InventoryStock;
   inventory_transactions: InventoryTransactions;

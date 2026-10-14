@@ -376,7 +376,7 @@ describe('mobile bootstrap', () => {
     expect(source).toContain("shell(view, '46:721'");
     expect(source).toContain("shell(view, '46:750'");
     expect(source).toContain("shell(view, '46:779'");
-    expect(source).toContain("API.upload('/messages'");
+    expect(source).toContain("API.upload('/identified-reports'");
     expect(source).toContain("MApp.route('anonymous-report'");
     // Anonymous path: identity-free transport — a bare fetch with no Authorization header or
     // cookies, never the token-adding API client / offline queue, never Messages or Bug Reports.

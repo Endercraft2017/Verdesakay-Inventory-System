@@ -159,7 +159,7 @@ The V2 board contains 17 screens:
 | Inbox | `#/inbox`, `modules/core/inbox.js` | messages/conversations/read/reaction APIs |
 | Payslip viewing | `#/payslips`, `modules/hr/payslips.js` | `/api/me/payslips` |
 | Settings | `#/settings`, `modules/core/settings.js` | theme, push, password, logout |
-| Identified operational report | `#/report-problem` | currently sends `/api/messages` to selected staff |
+| Identified operational report | `#/report-problem` | `/api/identified-reports`: private numbered cases, status, history, evidence and follow-up |
 | Approvals | `#/approvals`, `modules/hr/approvals.js` | `/api/me/approvals` and decision endpoints |
 
 ### Shared gaps that require implementation
@@ -170,7 +170,7 @@ The V2 board contains 17 screens:
 | Dedicated notifications screen | Add a mobile route and UI that consumes existing push/event data or a new scoped notifications endpoint. Inbox remains conversations/broadcasts. Deep-link each event. |
 | Movable Quick Orbit | Add drag, snap-to-edge, safe docking, per-user/device persistence, keyboard collapse, focused-form suppression, labeled arc expansion, and role action prioritization. |
 | Reporting Hub | Separate identified reporting from anonymous reporting. Do not implement anonymity as a checkbox. |
-| Identified case tracking | Current implementation is only an internal message. Add reference/status/history/evidence behavior if no general case endpoint exists. Preserve offline drafts/queue where policy permits. |
+| Identified case tracking | Implemented as private numbered cases with reporter/recipient/assignee access, status, history, evidence and follow-up on mobile and web. Mobile keeps the unfinished report draft. Validate the complete handoff on a real phone and desktop. |
 | Anonymous reporting | New isolated backend model and endpoints are required. Do not store `reported_by`; minimize request metadata; use separate numbering, queues, filters, management view, rate limits, and optional confidential code/passphrase. Warn that attachments can identify the reporter. |
 | Profile editing | Current Settings has theme, notifications, password, and logout but no controlled profile editor. Add permitted direct-edit fields and a separate information-change request for authoritative fields. |
 | Payslip finalization/download | `/api/me/payslips` currently returns payroll form records without enforcing a finalized-only download contract, and the mobile detail has no download action. Add explicit release/finalization state and an authenticated file endpoint. Never infer finalization from mere record existence. Log downloads. |

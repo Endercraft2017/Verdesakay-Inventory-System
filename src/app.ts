@@ -33,6 +33,7 @@ import releaseSlipsRoutes from './modules/inventory/release-slips.routes';
 import salesReturnsRoutes from './modules/inventory/sales-returns.routes';
 import formsRoutes from './core/forms.routes';
 import messagesRoutes from './core/messages.routes';
+import identifiedReportRoutes from './core/identified-reports.routes';
 import personalRoutes from './core/personal.routes';
 import ordersRoutes from './modules/inventory/orders.routes';
 import purchasingRoutes from './modules/purchasing/purchasing.routes';
@@ -370,6 +371,7 @@ export function createApp() {
   // The desktop app's installer download (work in progress: nothing published yet).
   app.use('/api/desktop', desktopRoutes);
   app.use('/api/confidential-reports', confidentialReportRoutes);
+  app.use('/api/identified-reports', identifiedReportRoutes);
   app.use('/site/inquiry', inquiryRoutes); // website "Talk to us" form (public site host only)
   app.use('/api/signup', signupRoutes); // self-serve tenant sign-up (gated by SIGNUPS_OPEN)
   app.use('/api/support', supportRoutes);

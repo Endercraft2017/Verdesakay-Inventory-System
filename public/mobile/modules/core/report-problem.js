@@ -1,5 +1,5 @@
 /* Employee reporting — Figma V2 nodes 46:721, 46:750 and 46:779.
-   Identified reports use the existing scoped messages API. Anonymous reports use the
+   Identified reports use private tracked cases. Anonymous reports use the
    separate identity-free /api/anonymous-reports channel (src/core/confidential-reports.ts)
    — never authenticated messages or software bug reports, and never the offline queue. */
 (function () {
@@ -13,6 +13,8 @@
   ];
   var DRAFT_KEY = 'vds_identified_report_draft';
   var ANON_DRAFT_KEY = 'vds_anonymous_report_draft';
+  function draftKey(key) { return key === DRAFT_KEY ? key + ':' + String((MApp.getMe() || {}).id || 'guest') : key; }
+  function draftStore() { return API.isSharedSession() ? sessionStorage : localStorage; }
 
   function shell(view, node, heading, subheading, back) {
     view.setAttribute('data-figma-node', node);
@@ -24,13 +26,13 @@
   }
 
   function saveDraft(key, data) {
-    try { localStorage.setItem(key, JSON.stringify(data)); } catch (e) {}
+    try { draftStore().setItem(draftKey(key), JSON.stringify(data)); } catch (e) {}
   }
   function loadDraft(key) {
-    try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { return {}; }
+    try { return JSON.parse(draftStore().getItem(draftKey(key)) || '{}'); } catch (e) { return {}; }
   }
   function clearDraft(key) {
-    try { localStorage.removeItem(key); } catch (e) {}
+    try { draftStore().removeItem(draftKey(key)); } catch (e) {}
   }
 
   function hub(view) {
@@ -43,16 +45,18 @@
       '<article class="m-report-choice anonymous"><h2>Anonymous report</h2>' +
         '<p>A separate protected channel. Your signed-in identity must never be attached to this report.</p>' +
         '<button class="m-v2-secondary" id="m-report-anon" type="button">Continue privately</button></article>' +
-      '<button class="m-report-row" id="m-report-mine" type="button"><span><b>My identified reports</b><small>Review reports and continue follow-up in Inbox</small></span><i aria-hidden="true">›</i></button>' +
+      '<button class="m-report-row" id="m-report-mine" type="button"><span><b>My identified reports</b><small>Track status and follow up</small></span><i aria-hidden="true">›</i></button>' +
+      '<button class="m-report-row" id="m-report-assigned" type="button"><span><b>Reports to handle</b><small>Cases sent or assigned to you</small></span><i aria-hidden="true">›</i></button>' +
       '<button class="m-report-row" id="m-report-guide" type="button"><span><b>Reporting guidance</b><small>Emergencies require immediate procedures</small></span><i aria-hidden="true">›</i></button>' +
       '<div id="m-report-sent"></div>';
     host.querySelector('#m-report-known').onclick = function () { identified(view); };
     host.querySelector('#m-report-anon').onclick = function () { anonymous(view); };
     host.querySelector('#m-report-mine').onclick = function () { identifiedList(view); };
+    host.querySelector('#m-report-assigned').onclick = function () { identifiedList(view, true); };
     host.querySelector('#m-report-guide').onclick = function () { guidance(view); };
 
-    API.get('/messages?box=sent').then(function (rows) {
-      var reports = (rows || []).filter(function (row) { return String(row.subject || '').indexOf('[EMPLOYEE REPORT]') === 0; });
+    API.get('/identified-reports').then(function (rows) {
+      var reports = (rows || []).filter(function (row) { return row.reporter_id === (MApp.getMe() || {}).id; });
       var target = host.querySelector('#m-report-sent');
       if (target && reports.length) target.innerHTML = '<p class="m-report-count">' + reports.length + ' identified report' + (reports.length === 1 ? '' : 's') + ' sent</p>';
     }).catch(function () {});
@@ -80,7 +84,7 @@
         '<div class="m-report-context-grid"><label><span>Incident date</span><input data-field="date" type="date" value="' + mEsc(draft.date || '') + '"></label>' +
         '<label><span>Time</span><input data-field="time" type="time" value="' + mEsc(draft.time || '') + '"></label></div>' +
         '<label><span>Location</span><input data-field="location" maxlength="160" value="' + mEsc(draft.location || '') + '" placeholder="Optional work location"></label>' +
-        '<label class="m-report-files"><span>Evidence</span><input data-files type="file" multiple accept="image/*,.pdf,.doc,.docx"><small>Up to 10 files. Remove personal details you do not want shared.</small></label>' +
+        '<label class="m-report-files"><span>Evidence</span><input data-files type="file" multiple accept="image/jpeg,image/png,image/webp,.pdf,.doc,.docx"><small>Up to 4 files, 5 MB each. Remove personal details you do not want shared.' + (draft.files && draft.files.length ? ' ' + draft.files.length + ' file(s) retained from review; choosing new files replaces them.' : '') + '</small></label>' +
         '<button class="m-v2-primary" type="submit">Review report</button></form>';
     var form = host.querySelector('form');
     var recipient = form.querySelector('[data-field="recipient"]');
@@ -120,7 +124,8 @@
       if (!data.recipient_id) { mToast('Choose who should receive the report', 'err'); recipient.focus(); return; }
       if (!data.subject) { mToast('Enter a subject', 'err'); form.querySelector('[data-field="subject"]').focus(); return; }
       if (!data.description) { mToast('Describe the concern', 'err'); form.querySelector('[data-field="description"]').focus(); return; }
-      data.files = form.querySelector('[data-files]').files;
+      data.files = form.querySelector('[data-files]').files.length ? form.querySelector('[data-files]').files : (draft.files || []);
+      if (data.files.length > 4) { mToast('Use up to 4 evidence files', 'err'); return; }
       reviewIdentified(view, data, function () { identified(view, data); });
     };
   }
@@ -137,33 +142,31 @@
         '<div><span>Description</span><b>' + mEsc(data.description) + '</b></div>' +
         '<div><span>Incident context</span><b>' + mEsc([data.date, data.time, data.location].filter(Boolean).join(' · ') || 'Not provided') + '</b></div>' +
         '<div><span>Evidence</span><b>' + ((data.files && data.files.length) || 0) + ' file(s)</b></div>' +
-      '</section><aside class="m-report-notice">Your name and account are included so the recipient can follow up. This sends as an internal report message.</aside>' +
+      '</section><aside class="m-report-notice">Your name is visible to the recipient and assigned handler. You can track this case in My identified reports.</aside>' +
       '<button class="m-v2-primary" id="m-report-send" type="button">Send identified report</button>';
     host.querySelector('#m-report-send').onclick = function () {
       var button = this;
       button.disabled = true;
       button.textContent = 'Sending…';
-      var body = data.description;
-      var context = [data.date && 'Date: ' + data.date, data.time && 'Time: ' + data.time, data.location && 'Location: ' + data.location].filter(Boolean);
-      if (context.length) body += '\n\nIncident context\n' + context.join('\n');
-      body += '\n\nCategory: ' + data.category + '\n— identified employee report';
       var formData = new FormData();
       formData.append('recipient_id', data.recipient_id);
-      formData.append('subject', '[EMPLOYEE REPORT] ' + data.category + ' — ' + data.subject);
-      formData.append('body', body);
+      ['category', 'subject', 'description', 'location'].forEach(function (key) { formData.append(key, data[key] || ''); });
+      formData.append('incident_date', data.date || '');
+      formData.append('incident_time', data.time || '');
       var selected = Array.prototype.slice.call(data.files || []);
       Promise.all(selected.map(function (file) {
         return window.ImageCompress ? ImageCompress.maybeCompress(file, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 }) : file;
       })).then(function (files) {
+        if (files.some(function (file) { return file.size > 5 * 1024 * 1024; })) throw new Error('Each file must be 5 MB or less after image compression');
         files.forEach(function (file) { formData.append('files', file, file.name); });
-        return API.upload('/messages', formData);
-      }).then(function () {
+        return API.upload('/identified-reports', formData);
+      }).then(function (created) {
         clearDraft(DRAFT_KEY);
         mSuccess(view, {
-          title: 'Report sent',
-          lines: ['Your identity was included for follow-up.', 'Open Inbox to view replies and continue the conversation.'],
+          title: 'Report ' + created.number + ' sent',
+          lines: ['Your identity was included for follow-up.', 'Track the status and replies in My identified reports.'],
           actions: [
-            { label: 'Open Inbox', onClick: function () { MApp.go('inbox'); } },
+            { label: 'Open report', onClick: function () { identifiedDetail(view, created.id); } },
             { label: 'Reporting hub', secondary: true, onClick: function () { hub(view); } }
           ]
         });
@@ -428,22 +431,55 @@
     };
   }
 
-  function identifiedList(view) {
-    MApp.setTitle('My identified reports');
-    var host = shell(view, '46:721', 'My identified reports', 'Reports sent with your identity', function () { hub(view); });
+  function identifiedList(view, assigned) {
+    MApp.setTitle(assigned ? 'Reports to handle' : 'My identified reports');
+    var host = shell(view, '46:721', assigned ? 'Reports to handle' : 'My identified reports', assigned ? 'Cases sent or assigned to you' : 'Reports sent with your identity', function () { hub(view); });
     host.innerHTML = '<div class="m-hint">Loading…</div>';
-    API.get('/messages?box=sent').then(function (rows) {
-      var reports = (rows || []).filter(function (row) { return String(row.subject || '').indexOf('[EMPLOYEE REPORT]') === 0; });
-      if (!reports.length) { host.innerHTML = '<div class="m-empty">You have not sent an identified report yet.</div>'; return; }
+    API.get('/identified-reports').then(function (rows) {
+      var myId = (MApp.getMe() || {}).id;
+      var reports = (rows || []).filter(function (row) { return assigned ? row.reporter_id !== myId : row.reporter_id === myId; });
+      if (!reports.length) { host.innerHTML = '<div class="m-empty">No reports here yet.</div>'; return; }
       host.innerHTML = reports.map(function (row) {
-        return '<button class="m-report-row" type="button" data-user="' + row.other_id + '"><span><b>' +
-          mEsc(String(row.subject).replace('[EMPLOYEE REPORT] ', '')) + '</b><small>Sent ' + mEsc(String(row.created_at || '').slice(0, 16)) +
-          ' · ' + mEsc(row.other_name || 'Recipient') + '</small></span><i aria-hidden="true">›</i></button>';
+        return '<button class="m-report-row" type="button" data-report="' + row.id + '"><span><b>' + mEsc(row.number + ' · ' + row.subject) + '</b><small>' +
+          mEsc(row.status + ' · ' + (assigned ? row.reporter_name : row.recipient_name)) + '</small></span><i aria-hidden="true">›</i></button>';
       }).join('');
-      Array.prototype.forEach.call(host.querySelectorAll('[data-user]'), function (button) {
-        button.onclick = function () { MApp.go('inbox', { user: this.getAttribute('data-user') }); };
+      Array.prototype.forEach.call(host.querySelectorAll('[data-report]'), function (button) {
+        button.onclick = function () { identifiedDetail(view, this.getAttribute('data-report')); };
       });
     }).catch(function (error) { host.innerHTML = '<div class="m-error">' + mEsc(error.message) + '</div>'; });
+  }
+
+  function identifiedDetail(view, id) {
+    MApp.setTitle('Identified report');
+    var host = shell(view, '46:721', 'Identified report', 'Status and follow-up', function () { identifiedList(view); });
+    host.innerHTML = '<div class="m-hint">Loading…</div>';
+    API.get('/identified-reports/' + id).then(function (r) {
+      var canHandle = r.can_handle === true;
+      host.innerHTML = '<section class="m-report-review"><div><span>Reference</span><b>' + mEsc(r.number) + '</b></div>' +
+        '<div><span>Status</span><b>' + mEsc(r.status) + '</b></div><div><span>Subject</span><b>' + mEsc(r.subject) + '</b></div>' +
+        '<div><span>Category</span><b>' + mEsc(r.category) + '</b></div><div><span>Description</span><b>' + mEsc(r.description) + '</b></div>' +
+        '<div><span>Incident</span><b>' + mEsc([r.incident_date, r.incident_time, r.location].filter(Boolean).join(' · ') || 'Not provided') + '</b></div>' +
+        '<div><span>Handler</span><b>' + mEsc(r.assignee_name || r.recipient_name) + '</b></div></section>' +
+        '<div class="m-report-evidence">' + (r.attachments || []).map(function (a) { return '<button class="m-v2-secondary" type="button" data-evidence="' + a.id + '">' + mEsc(a.original_name) + '</button>'; }).join('') + '</div>' +
+        '<h2 class="m-report-section-title">History</h2><div class="m-report-timeline">' + (r.events || []).map(function (event) {
+          return '<article><small>' + mEsc(event.created_at + ' · ' + (event.actor_name || 'Former staff') + ' · ' + event.kind) + '</small><p>' + mEsc(event.body || '') + '</p></article>';
+        }).join('') + '</div>' +
+        (canHandle ? '<form class="m-report-form" id="m-ir-status"><label><span>Status</span><select>' + ['new', 'triaged', 'investigating', 'resolved', 'closed'].map(function (s) { return '<option value="' + s + '"' + (s === r.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></label><button class="m-v2-secondary" type="submit">Update status</button></form>' +
+          '<form class="m-report-form" id="m-ir-assign"><label><span>Assign handler</span><select><option value="">Loading staff…</option></select></label><button class="m-v2-secondary" type="submit">Assign</button></form>' : '') +
+        (r.status !== 'closed' ? '<form class="m-report-form" id="m-ir-reply"><label><span>Follow-up message</span><textarea rows="3" maxlength="3000" required></textarea></label><button class="m-v2-primary" type="submit">Send reply</button></form>' : '');
+      Array.prototype.forEach.call(host.querySelectorAll('[data-evidence]'), function (button) {
+        button.onclick = function () { var a = (r.attachments || []).filter(function (item) { return String(item.id) === button.getAttribute('data-evidence'); })[0]; if (!a) return; if (String(a.mime_type).indexOf('image/') === 0) mPhoto.view(a.url); else API.download(a.url, a.original_name).catch(function (e) { mToast(e.message, 'err'); }); };
+      });
+      var status = host.querySelector('#m-ir-status');
+      if (status) status.onsubmit = function (event) { event.preventDefault(); API.post('/identified-reports/' + id + '/status', { status: status.querySelector('select').value }).then(function () { identifiedDetail(view, id); }).catch(function (e) { mToast(e.message, 'err'); }); };
+      var assign = host.querySelector('#m-ir-assign');
+      if (assign) {
+        mUsers.load().then(function () { assign.querySelector('select').innerHTML = mUsers.ranked().filter(function (user) { return user.id !== r.reporter_id; }).map(function (user) { return '<option value="' + user.id + '"' + (user.id === r.assignee_id ? ' selected' : '') + '>' + mEsc(user.full_name) + '</option>'; }).join(''); }).catch(function () { assign.querySelector('select').innerHTML = '<option value="">Directory unavailable</option>'; });
+        assign.onsubmit = function (event) { event.preventDefault(); var userId = assign.querySelector('select').value; if (!userId) return; API.post('/identified-reports/' + id + '/assign', { user_id: Number(userId) }).then(function () { identifiedDetail(view, id); }).catch(function (e) { mToast(e.message, 'err'); }); };
+      }
+      var reply = host.querySelector('#m-ir-reply');
+      if (reply) reply.onsubmit = function (event) { event.preventDefault(); var body = reply.querySelector('textarea').value.trim(); if (!body) return; API.post('/identified-reports/' + id + '/reply', { body: body }).then(function () { identifiedDetail(view, id); }).catch(function (e) { mToast(e.message, 'err'); }); };
+    }).catch(function (e) { host.innerHTML = '<div class="m-error">' + mEsc(e.message) + '</div>'; });
   }
 
   function guidance(view) {
@@ -451,11 +487,12 @@
     var host = shell(view, '46:721', 'Reporting guidance', 'Choose the safest response for the situation', function () { hub(view); });
     host.innerHTML =
       '<article class="m-report-guide"><h2>Immediate danger or emergency</h2><p>Move to safety and contact the designated on-site responder or emergency services first. Do not wait for an in-app report.</p></article>' +
-      '<article class="m-report-guide"><h2>Need a reply or formal follow-up</h2><p>Use an identified report. The recipient can ask questions, provide updates, and continue the conversation in Inbox.</p></article>' +
+      '<article class="m-report-guide"><h2>Need a reply or formal follow-up</h2><p>Use an identified report. Track its status and replies under My identified reports.</p></article>' +
       '<article class="m-report-guide"><h2>Identity-sensitive concern</h2><p>Use the anonymous channel. You get a report number and a one-time access code to read replies; nothing about your account is stored with it.</p></article>';
   }
 
   MApp.route('report-problem', function (view, params) {
+    if (params && params.id) { identifiedDetail(view, params.id); return; }
     if (params && params.mode === 'identified') { identified(view, params.about ? { subject: params.about } : null); return; }
     if (params && params.mode === 'anonymous') { anonymous(view); return; }
     hub(view);

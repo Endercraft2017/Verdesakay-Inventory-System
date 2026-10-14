@@ -27,6 +27,7 @@ App.register('messages', async (view, filter) => {
       <div class="chat-sidebar">
         <div class="chat-sidebar-head">
           <h2>Messages</h2>
+          <button class="btn secondary small" id="chat-reports">Reports</button>
           <button class="btn small" id="chat-new">${UI.icon('edit', 15)} New</button>
         </div>
         <div id="chat-convo-list" class="msg-list">${UI.emptyState({ icon: 'inbox', title: 'Loading…' })}</div>
@@ -40,6 +41,7 @@ App.register('messages', async (view, filter) => {
   const threadEl = view.querySelector('#chat-thread');
 
   view.querySelector('#chat-new').addEventListener('click', newMessageModal);
+  view.querySelector('#chat-reports').addEventListener('click', () => App.navigate('identified-reports'));
 
   async function loadConversations() {
     try {

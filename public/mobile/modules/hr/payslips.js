@@ -5,6 +5,7 @@
   var HIDE = {
     employee_name: 1, dept_position: 1, name: 1, department: 1, position: 1,
     period: 1, payroll_period: 1, finalized: 1, finalized_at: 1, download_url: 1, employee_id: 1,
+    _calculation_snapshot: 1, cutoff_id: 1,
     // generate-payslips bookkeeping (which statutory deductions were applied), not pay lines
     sss_applied: 1, philhealth_applied: 1, pagibig_applied: 1, withholding_tax_applied: 1
   };
@@ -121,6 +122,7 @@
         var shown = !numeric ? String(row.value) : isCount(row.key) ? String(Number(row.value)) : amount(row.value);
         return '<div><span>' + mEsc(titleCase(row.key)) + '</span><b>' + mEsc(shown) + '</b></div>';
       }).join('') + '</div>' +
+      '<button class="m-v2-secondary m-payslip-time-button" type="button">View timekeeping records</button>' +
       '<div id="m-payslip-ot-alert"></div>' +
       (downloadable
         ? '<button class="m-v2-primary m-payslip-download" id="m-pay-download" type="button">↓ Download PDF</button>' +
@@ -142,6 +144,7 @@
         });
     };
     host.querySelector('.m-payslip-request').onclick = function () { MApp.go('requests'); };
+    host.querySelector('.m-payslip-time-button').onclick = function () { openTimekeeping(record); };
 
     var slipPeriod = String(record.period || data.payroll_period || data.period || '').trim().toLowerCase();
     API.get('/me/unrecorded-ot').then(function (allDays) {
@@ -157,6 +160,31 @@
         MApp.go('requests', { type: 'overtime_request', date: mine[0].work_date });
       };
     }).catch(function () {});
+  }
+
+  function openTimekeeping(record) {
+    var shade = mEl('<div class="m-payslip-time-shade"><aside class="m-payslip-time-panel" role="dialog" aria-modal="true" aria-label="Timekeeping records"><header><div><h2>Timekeeping records</h2><small>' + mEsc(periodText(record)) + '</small></div><button type="button" aria-label="Close timekeeping records">×</button></header><div class="m-payslip-time-content"><p class="m-hint">Loading…</p></div></aside></div>');
+    document.body.appendChild(shade);
+    var close = function () { shade.remove(); document.removeEventListener('keydown', onKey); window.removeEventListener('hashchange', close); };
+    var onKey = function (event) { if (event.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('hashchange', close);
+    shade.onclick = function (event) { if (event.target === shade) close(); };
+    shade.querySelector('header button').onclick = close;
+    shade.querySelector('header button').focus();
+    var content = shade.querySelector('.m-payslip-time-content');
+    API.get('/me/payslips/' + record.id + '/timekeeping').then(function (result) {
+      if (!shade.isConnected) return;
+      var days = result.days || [];
+      content.innerHTML = (result.notice ? '<p class="m-payslip-time-notice">' + mEsc(result.notice) + '</p>' : '') +
+        (days.length ? days.map(function (day) {
+          var fields = [['Time in', day.time_in], ['Lunch out', day.lunch_out], ['Lunch in', day.lunch_in], ['Time out', day.time_out]];
+          var figures = [['Late', day.late_minutes, 'min'], ['Undertime', day.undertime_minutes, 'min'], ['OT', day.ot_hours, 'hr']].filter(function (row) { return Number(row[1]) > 0; });
+          return '<article class="m-payslip-time-day"><h3>' + mEsc(dateText(day.work_date)) + '</h3><div class="m-payslip-time-grid">' + fields.map(function (field) {
+            return '<div><small>' + field[0] + '</small><b>' + mEsc(field[1] || '—') + '</b></div>';
+          }).join('') + '</div>' + (figures.length ? '<p>' + figures.map(function (row) { return mEsc(row[0] + ': ' + row[1] + ' ' + row[2]); }).join(' · ') + '</p>' : '') + '</article>';
+        }).join('') : '<div class="m-empty">No timekeeping rows are available for this cutoff.</div>');
+    }).catch(function (error) { if (shade.isConnected) content.innerHTML = '<div class="m-error">' + mEsc(error.message || 'Could not load timekeeping records') + '</div>'; });
   }
 
   MApp.route('payslips', function (view) { list(view); });

@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 import { fakeS3, listen } from './fake-s3';
 
 const DAY = 86_400_000;
@@ -53,6 +53,21 @@ async function itemWithImage(): Promise<{ id: number; file: string }> {
 }
 
 describe('file bucket', () => {
+  it('keeps identified report evidence in the bucket and restores it only for case participants', async () => {
+    const reporter = await createEmployee(ctx.api, token);
+    const created = await ctx.api.post('/api/identified-reports').set({ Authorization: `Bearer ${reporter.token}` })
+      .field('recipient_id', '1').field('category', 'Safety risk').field('subject', 'Warehouse hazard')
+      .field('description', 'Evidence attached').attach('files', PNG, { filename: 'evidence.png', contentType: 'image/png' });
+    expect(created.status).toBe(201);
+    const { queryOne } = await import('../src/shared/db');
+    const name = queryOne<{ stored_name: string }>('SELECT stored_name FROM identified_report_attachments WHERE report_id = ?', created.body.id)!.stored_name;
+    expect(queryOne('SELECT 1 FROM durable_uploads WHERE name = ?', name)).toBeUndefined();
+    expect(await waitFor(() => fake.objects.has(`files/${name}`))).toBe(true);
+    fs.unlinkSync(path.join(up, name));
+    const response = await ctx.api.get(`/api/identified-reports/${created.body.id}/attachments/${created.body.attachments[0].id}`).set({ Authorization: `Bearer ${reporter.token}` });
+    expect(response.status).toBe(200);
+    expect(Buffer.from(response.body).equals(PNG)).toBe(true);
+  });
   it('copies an upload to the bucket, drops the unused disk copy, and fetches it back when asked for', async () => {
     const { id, file } = await itemWithImage();
     const r = await sweepAt(60_000);

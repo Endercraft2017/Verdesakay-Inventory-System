@@ -57,6 +57,13 @@ beforeAll(async () => {
   }
   draftId = slip('Pay Tester', 'Sep 16-30, 2026', 'draft', 'PAY-T-2');
   paidId = slip('Pay Tester', 'Sep 1-15, 2026', 'draft', 'PAY-T-1');
+  const employeeId = queryOne<{ id: number }>('SELECT id FROM employees WHERE user_id = ?', mine.id)!.id;
+  const cutoffId = Number(run("INSERT INTO attendance_periods (label, start_date, end_date) VALUES ('Sep 1-15, 2026', '2026-09-01', '2026-09-15')").lastInsertRowid);
+  run("INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, lunch_out, lunch_in, time_out) VALUES (?, ?, '2026-09-03', '08:02', '12:00', '13:00', '17:05')", cutoffId, employeeId);
+  const saved = JSON.parse(queryOne<{ data: string }>('SELECT data FROM form_records WHERE id = ?', paidId)!.data);
+  saved.cutoff_id = cutoffId;
+  saved._calculation_snapshot = JSON.stringify({ version: 1, days: [{ work_date: '2026-09-03', time_in: '08:02', time_out: '17:05', late_minutes: 2, ot_hours: 0 }] });
+  run('UPDATE form_records SET data = ? WHERE id = ?', JSON.stringify(saved), paidId);
   // Finalize through the real HR action, not a direct status write.
   expect((await ctx.api.post(`/api/hr/payroll/${paidId}/mark-paid`).set(bearer(adminToken))).status).toBe(200);
   othersPaidId = slip('Other Person', 'Sep 1-15, 2026', 'paid', 'PAY-O-1');
@@ -76,6 +83,14 @@ describe('payslip list contract', () => {
 });
 
 describe('payslip PDF download', () => {
+  it('shows only the owner’s saved timekeeping for a paid payslip', async () => {
+    const mineDetail = await ctx.api.get(`/api/me/payslips/${paidId}/timekeeping`).set(bearer(mine.token));
+    expect(mineDetail.status).toBe(200);
+    expect(mineDetail.body.source).toBe('saved_calculation');
+    expect(mineDetail.body.days).toMatchObject([{ work_date: '2026-09-03', time_in: '08:02', lunch_out: '12:00', lunch_in: '13:00', late_minutes: 2 }]);
+    expect((await ctx.api.get(`/api/me/payslips/${draftId}/timekeeping`).set(bearer(mine.token))).status).toBe(404);
+    expect((await ctx.api.get(`/api/me/payslips/${othersPaidId}/timekeeping`).set(bearer(mine.token))).status).toBe(404);
+  });
   it('serves a well-formed PDF of your finalized payslip and logs the download', async () => {
     const r = await getPdf(`/api/me/payslips/${paidId}/pdf`, mine.token);
     expect(r.status).toBe(200);
