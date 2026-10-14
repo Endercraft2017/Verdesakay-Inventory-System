@@ -12,6 +12,7 @@ let qa: { id: number; token: string };
 let qa2: { id: number; token: string };
 let pm: { id: number; token: string };
 let jo: number;
+let product: number;
 let units: number[];
 let __sentPush: typeof import('../src/shared/push').__sentPush;
 const PNG = Buffer.from('fake-png-bytes');
@@ -31,9 +32,13 @@ beforeAll(async () => {
     .send({ endpoint: 'https://push.example.com/sub/pm-hold', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
   await ctx.api.post('/api/push/subscribe').set(bearer(qa.token))
     .send({ endpoint: 'https://push.example.com/sub/qa-hold', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
-  const product = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'E-Bike HOLD', quantity: 0 })).body.id;
+  product = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'E-Bike HOLD', quantity: 0 })).body.id;
   const part = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Frame HOLD', quantity: 100 })).body.id;
   await ctx.api.put(`/api/finished-products/${product}`).set(H()).send({ components: [{ component_item_id: part, quantity: 1 }] });
+  const qaList = (await ctx.api.post('/api/qc/checklists').set(H()).send({ name: 'Hold QA', stage: 2, items: [
+    { label: 'Finish clean', required: true }, { label: 'Voltage', required: true, measure: 'V' },
+  ] })).body.id;
+  await ctx.api.patch(`/api/finished-products/${product}/checklist`).set(H()).send({ stage: 2, checklist_id: qaList });
   jo = (await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 5, qc_stages: 2 })).body.id;
   await ctx.api.post(`/api/job-orders/${jo}/approve`).set(H());
   await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [jo] });
@@ -104,16 +109,36 @@ describe('QA hold for review', () => {
     // A QC inspector can't decide it; the Production Manager (production.qa_review) can.
     expect((await decide(qc.token, u, { outcome: 'pass', remarks: 'ok' })).status).toBe(403);
     expect((await decide(pm.token, u, { outcome: 'pass', remarks: 'x' })).status).toBe(400); // reason too short
+    const incomplete = await decide(pm.token, u, { outcome: 'pass', remarks: 'Within the colour tolerance' });
+    expect(incomplete.status).toBe(400);
+    expect(incomplete.body.blocked).toBe('checklist');
+    expect((await unit(u)).status).toBe('hold');
+    const failedRequired = await decide(pm.token, u, { outcome: 'pass', remarks: 'Within the colour tolerance', checklist: [
+      { label: 'Finish clean', ok: false, status: 'issue' }, { label: 'Voltage', ok: true, status: 'pass', value: '24.2' },
+    ] });
+    expect(failedRequired.status).toBe(400);
+    expect((await unit(u)).status).toBe('hold');
+    const noReading = await decide(pm.token, u, { outcome: 'pass', remarks: 'Within the colour tolerance', checklist: [
+      { label: 'Finish clean', ok: true, status: 'pass' }, { label: 'Voltage', ok: true, status: 'pass' },
+    ] });
+    expect(noReading.status).toBe(400);
+    expect((await unit(u)).status).toBe('hold');
     __sentPush.length = 0;
     const decisionKey = `qa-hold-${u}-decision`;
     const ok = await ctx.api.post(`/api/job-orders/${jo}/units/${u}/hold-decision`).set(bearer(pm.token)).set('Idempotency-Key', decisionKey)
-      .send({ outcome: 'pass', remarks: 'Within the colour tolerance' });
+      .send({ outcome: 'pass', remarks: 'Within the colour tolerance', checklist: [
+        { label: 'Finish clean', ok: true, status: 'pass' }, { label: 'Voltage', ok: true, status: 'pass', value: '24.2' },
+      ] });
     expect(ok.status).toBe(200);
     const changed = await ctx.api.post(`/api/job-orders/${jo}/units/${u}/hold-decision`).set(bearer(pm.token)).set('Idempotency-Key', decisionKey)
       .send({ outcome: 'fail', remarks: 'Changed after saving', disposition: 'scrap' });
     expect(changed.status).toBe(409);
     expect(changed.body.error).toMatch(/different request body/i);
     expect((await unit(u)).status).toBe('passed');
+    const passRecord = (await ctx.api.get(`/api/job-orders/${jo}/qc`).set(H())).body.find((r: { unit_id: number; result: string; stage: number }) => r.unit_id === u && r.result === 'pass' && r.stage === 2);
+    expect(passRecord.checklist).toMatchObject([{ label: 'Finish clean', status: 'pass' }, { label: 'Voltage', value: '24.2' }]);
+    const receivable = await ctx.api.get(`/api/job-orders/${jo}/receivable`).set(H());
+    expect(receivable.body.units.some((row: { id: number }) => row.id === u)).toBe(true);
     expect(__sentPush.some((p) => p.userId === qa.id && /^QA hold decided/.test(p.payload.title))).toBe(true);
     expect((await decide(pm.token, u, { outcome: 'pass', remarks: 'again' })).status).toBe(409);
   });

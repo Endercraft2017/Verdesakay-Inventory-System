@@ -1789,10 +1789,41 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
   const u = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ? AND job_order_id = ?', Number(req.params.unitId), id);
   if (!u) { res.status(404).json({ error: 'Unit not found on this job order' }); return; }
   if (u.status !== 'hold') { res.status(409).json({ error: `This unit isn't on hold (it is ${u.status}).` }); return; }
-  const { outcome, disposition, remarks, repair } = parseBody(holdDecisionSchema, req.body);
+  const { outcome, disposition, remarks, repair, checklist } = parseBody(holdDecisionSchema, req.body);
   const held = queryOne<{ id: number; inspector_id: number | null; checklist: string | null }>(
     "SELECT id, inspector_id, checklist FROM qc_records WHERE unit_id = ? AND result = 'hold' ORDER BY id DESC LIMIT 1", u.id
   );
+  let heldChecklist: NonNullable<typeof checklist> = [];
+  try { const parsed = held?.checklist ? JSON.parse(held.checklist) : []; heldChecklist = Array.isArray(parsed) ? parsed : []; }
+  catch { /* corrupt historical answer cannot satisfy a pass */ }
+  const decisionChecklist = checklist ?? heldChecklist;
+  if (outcome === 'pass') {
+    const required = [
+      ...(jo.qc_stages <= 1 ? jo.qc_checklist_qc?.items ?? [] : []),
+      ...(jo.qc_checklist_qa?.items ?? []),
+    ];
+    const labels = new Set<string>();
+    for (const item of required) {
+      const key = item.label.trim().toLocaleLowerCase();
+      if (labels.has(key)) { res.status(409).json({ error: `Checklist label "${item.label}" appears more than once on this pass.`, blocked: 'checklist' }); return; }
+      labels.add(key);
+    }
+    const answers = new Map<string, (typeof decisionChecklist)[number]>();
+    for (const answer of decisionChecklist) {
+      const key = answer.label.trim().toLocaleLowerCase();
+      if (answers.has(key)) { res.status(400).json({ error: `Checklist answer "${answer.label}" was submitted twice.` }); return; }
+      answers.set(key, answer);
+    }
+    const missing = required.filter((item) => item.required && !(answers.get(item.label.trim().toLocaleLowerCase())?.status
+      ? answers.get(item.label.trim().toLocaleLowerCase())?.status === 'pass'
+      : answers.get(item.label.trim().toLocaleLowerCase())?.ok === true)).map((item) => item.label);
+    if (missing.length) { res.status(400).json({ error: `Complete the required QA checks before passing: ${missing.join(', ')}`, blocked: 'checklist' }); return; }
+    const noReading = required.filter((item) => {
+      const answer = answers.get(item.label.trim().toLocaleLowerCase());
+      return item.measure && answer && (answer.status ? answer.status === 'pass' : answer.ok === true) && !answer.value?.trim();
+    }).map((item) => item.label);
+    if (noReading.length) { res.status(400).json({ error: `Record a reading for: ${noReading.join(', ')}`, blocked: 'checklist' }); return; }
+  }
   const stage = u.stage + 1;
   const note = `Hold decision: ${remarks}`;
   db.exec('BEGIN');
@@ -1802,7 +1833,7 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       id, u.id, stage, outcome === 'pass' ? 'pass' : 'fail',
       outcome === 'pass' ? null : outcome === 'rectify' ? 'repair' : (disposition ?? 'scrap'),
-      note, held?.checklist ?? null, req.user!.id
+      note, outcome === 'pass' && checklist ? JSON.stringify(decisionChecklist) : held?.checklist ?? null, req.user!.id
     ).lastInsertRowid);
     if (outcome === 'pass') {
       run(

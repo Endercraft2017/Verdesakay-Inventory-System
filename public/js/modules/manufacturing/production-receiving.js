@@ -19,7 +19,13 @@ App.register('production-receiving', async (view, filter) => {
       </div>
       <div class="panel"><div id="pi-table"><div class="empty">Loading…</div></div></div>`;
     const tableEl = view.querySelector('#pi-table');
-    const rows = await API.get('/job-orders').catch(() => []);
+    let rows;
+    try { rows = await API.get('/job-orders'); }
+    catch (e) {
+      tableEl.innerHTML = `<div class="empty"><strong>Unable to load Products In</strong><p>${UI.esc(e.message || 'Please try again.')}</p><button class="btn" id="pi-retry">Retry</button></div>`;
+      tableEl.querySelector('#pi-retry').onclick = renderQueue;
+      return;
+    }
     const need = (rows || []).filter((j) => ((j.units_passed || 0) > 0 || (j.batches_receivable || 0) > 0) && j.status !== 'cancelled');
 
     if (!need.length) {
@@ -54,7 +60,9 @@ App.register('production-receiving', async (view, filter) => {
     try { rec = await API.get('/job-orders/' + joId + '/receivable'); }
     catch (e) { UI.toast(e.message, 'error'); return; }
     if (!rec.units.length && !rec.batches.length) { UI.toast('Nothing left to receive on this job order', 'error'); return; }
-    const locations = await API.get('/locations').catch(() => []);
+    let locations;
+    try { locations = await API.get('/locations'); }
+    catch (e) { UI.toast(e.message || 'Unable to load storage locations', 'error'); return; }
     const def = locations.find((l) => String(l.id) === String(rec.output_location_id)) || locations.find((l) => l.is_default) || locations[0];
 
     const m = UI.modal({
@@ -125,7 +133,13 @@ App.register('production-receiving', async (view, filter) => {
       </div>
       <div class="panel"><div id="pi-hist"></div></div>`;
     const tableEl = view.querySelector('#pi-hist');
-    const rows = await API.get('/job-orders/production-receipts').catch(() => []);
+    let rows;
+    try { rows = await API.get('/job-orders/production-receipts'); }
+    catch (e) {
+      tableEl.innerHTML = `<div class="empty"><strong>Unable to load receipt history</strong><p>${UI.esc(e.message || 'Please try again.')}</p><button class="btn" id="pi-history-retry">Retry</button></div>`;
+      tableEl.querySelector('#pi-history-retry').onclick = renderHistory;
+      return;
+    }
     if (!rows.length) {
       tableEl.innerHTML = UI.emptyState({ icon: 'sheet', title: 'No receipts yet', hint: 'Post a Products In receipt and it shows up here.' });
       return;

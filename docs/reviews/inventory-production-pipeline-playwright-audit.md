@@ -6,6 +6,8 @@ Environment: disposable local database and uploads, local app server, Chromium v
 
 ## Result
 
+**Remediation verified 2026-10-14:** The five confirmed gaps below have been fixed on this branch. A second Playwright run used the desktop QA form to create the hold, confirmed an incomplete hold could not pass, then submitted its required QA answer and received the unit. Products In now shows a load error instead of an empty queue when its request fails. The repair-parts issue dialog also requires a scanned/entered part code and counted quantity. The observations below describe the original audit run and are retained as regression context.
+
 The main purchasing → component stock → job order → parts kit → production → QC/QA → Products In → sales shortage planning → warehouse release → release slip → return path completed in the desktop browser. The stock and status checks below passed. **The QA hold path contains a release-to-sellable-stock bypass**: a hold decision can pass a unit without any required QA checklist answers. This needs a server-side gate before relying on hold decisions for product release.
 
 | Stage | Browser action and observed result |

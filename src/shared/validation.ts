@@ -530,6 +530,7 @@ export const inspectUnitsSchema = z
 /** POST /job-orders/:id/units/:unitId/hold-decision — release a unit QA held for review. */
 export const holdDecisionSchema = z.object({
   outcome: z.enum(['pass', 'rectify', 'fail']),
+  checklist: z.array(checklistResultSchema).max(60).optional(),
   disposition: z.enum(['scrap', 'dispose', 'recycle']).optional(),
   remarks: trimmed.min(3, 'Give the reason for the decision').max(2000),
   repair: z.object({

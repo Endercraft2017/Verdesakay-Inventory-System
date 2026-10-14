@@ -4,6 +4,8 @@
 
 ## QC/QA: mobile handoff (recorded unit → inspection → hold or final pass)
 
+**2026-10-14 QA hold checklist contract:** The server now rejects `hold-decision { outcome: 'pass' }` if any required check on the job order's frozen final-pass checklist is missing or not Pass, or if a passed measured check has no reading (`400 blocked: 'checklist'`). A complete checklist already on the hold record remains usable. Otherwise, send `checklist: [{ label, ok, status, value?, note? }]` with the pass decision. `GET /api/qc/holds` now includes the held record's parsed `checklist` answers for prefill. The phone's current hold decision screen only sends outcome/reason and will fail on an incomplete hold; add checklist review and answer entry before enabling Pass. Keep the same idempotency key only when retrying an identical decision body. Rectify and Fail are unaffected. The backend/desktop changes do not edit `public/mobile/`.
+
 **Owner:** mobile developer. **Checked against code:** 2026-10-14. **Status:** open; no `public/mobile/` source was edited. See `docs/reviews/qc-qa-stage-audit.md` for the backend/desktop audit. A final QA pass leaves a unit awaiting Products In; it does not add sellable stock. New job orders freeze their QC/QA checklist contents at kit release; editing a product checklist later does not change an active job. Legacy released jobs lack a historical snapshot.
 
 | Priority | Mobile evidence | Handoff to mobile owner |

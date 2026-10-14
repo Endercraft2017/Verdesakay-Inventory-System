@@ -196,7 +196,7 @@ App.register('orders', async (view, filter) => {
         <div class="order-review-summary"><div><strong>${UI.esc(order.number)}</strong> · ${UI.esc(status)}
           <p>Ship from <strong>${UI.esc(av.location_name || 'No stock location')}</strong>${av.uses_default_location ? ' (default)' : ''}</p></div>
           <span class="badge-pill ${av.ok ? 'ok' : 'low'}">${av.ok ? 'Stock covers this order' : av.short_lines + ' stock line(s) short'}</span></div>
-        <p class="muted">Stock at other locations needs a transfer. Production and purchase drafts are planning only; they become available after receipt. ${av.non_stock_lines || 0} non-stock line(s) have no stock requirement.</p>
+        <p class="muted">${av.lines.some((l) => l.elsewhere_on_hand > 0) ? 'Stock at other locations needs a transfer. ' : ''}Production and purchase drafts are planning only; they become available after receipt. ${av.non_stock_lines || 0} non-stock line(s) have no stock requirement.</p>
         <div class="order-review-lines">${av.lines.map((l) => `<article class="order-stock-line">
           <div><strong>${UI.esc(l.name)}</strong><span class="badge-pill ${l.shortfall > 0 ? 'low' : 'ok'}">${l.shortfall > 0 ? 'Short ' + l.shortfall : 'Covered'}</span></div>
           <dl><div><dt>Ordered</dt><dd>${l.ordered}</dd></div><div><dt>On hand here</dt><dd>${l.on_hand}</dd></div><div><dt>Other orders</dt><dd>${l.committed_orders ?? l.committed_elsewhere}</dd></div><div><dt>Kit / repair holds</dt><dd>${l.kit_held || 0} / ${l.repair_held || 0}</dd></div><div><dt>Picked / shipped here</dt><dd>${l.covered_here}</dd></div><div><dt>Available to order</dt><dd>${l.available}</dd></div></dl>

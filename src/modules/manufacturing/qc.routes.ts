@@ -203,7 +203,7 @@ router.get('/holds', requireAnyPermission(['inventory.adjust', 'production.inspe
   res.json(rows.map((r) => {
     let items: Array<{ label: string; status?: string; note?: string | null }> = [];
     try { items = r.checklist ? JSON.parse(r.checklist) : []; } catch { items = []; }
-    return { ...r, checklist: undefined, issues: items.filter((i) => i.status === 'issue').map((i) => ({ label: i.label, note: i.note ?? null })) };
+    return { ...r, checklist: items, issues: items.filter((i) => i.status === 'issue').map((i) => ({ label: i.label, note: i.note ?? null })) };
   }));
 });
 
