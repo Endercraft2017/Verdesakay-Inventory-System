@@ -37,7 +37,8 @@ const bomRows = (productId: number) =>
 // as standard_cost / purchase_price). Surface them as plain numbers on responses.
 const STD_COST_COLS = `
   COALESCE(CAST(json_extract(i.attributes, '$.std_labor_cost')    AS REAL), 0) AS std_labor_cost,
-  COALESCE(CAST(json_extract(i.attributes, '$.std_overhead_cost') AS REAL), 0) AS std_overhead_cost
+  COALESCE(CAST(json_extract(i.attributes, '$.std_overhead_cost') AS REAL), 0) AS std_overhead_cost,
+  CAST(json_extract(i.attributes, '$.selling_markup_percent') AS REAL) AS selling_markup_percent
 `;
 
 // GET /api/finished-products — every item flagged as a finished product
@@ -118,6 +119,34 @@ router.get('/:id/cost', requirePermission('production.view'), (req, res) => {
   res.json(rollupCost(id, dbBomResolvers()));
 });
 
+// Sales may see the suggested price, but not the internal BOM cost breakdown.
+router.get('/:id/price-suggestion', catalogRead, (req, res) => {
+  const id = Number(req.params.id);
+  const item = queryOne<{ is_finished_product: number; attributes: string | null }>(
+    'SELECT is_finished_product, attributes FROM inventory_items WHERE id = ?', id);
+  if (!item) { res.status(404).json({ error: 'Item not found' }); return; }
+  let attrs: Record<string, unknown> = {};
+  try { attrs = item.attributes ? JSON.parse(item.attributes) : {}; } catch { /* no pricing configuration */ }
+  const markup = attrs.selling_markup_percent;
+  if (!item.is_finished_product || typeof markup !== 'number' || !Number.isFinite(markup) || markup < 0 || markup > 10000) {
+    res.json({ available: false, reason: 'No product markup configured' }); return;
+  }
+  const resolvers = dbBomResolvers();
+  const exploded = explode(id, 1, resolvers);
+  const cost = rollupCost(id, resolvers);
+  if (!exploded.materials.length || exploded.had_cycle || cost.had_cycle ||
+      exploded.materials.some((line) => !Number.isFinite(line.unit_cost) || line.unit_cost <= 0) ||
+      !Number.isFinite(cost.unit_total_cost) || cost.unit_total_cost <= 0) {
+    res.json({ available: false, reason: 'BOM or component standard costs need review' }); return;
+  }
+  const suggested = Math.round((cost.unit_total_cost * (1 + markup / 100) + Number.EPSILON) * 100) / 100;
+  if (!Number.isFinite(suggested) || suggested > 1e12) {
+    res.json({ available: false, reason: 'Calculated price is out of range' }); return;
+  }
+  res.json({ available: true, suggested_unit_price: suggested, markup_percent: markup,
+    currency: String(attrs.currency || 'PHP').toUpperCase() });
+});
+
 // GET /api/finished-products/:id/where-used — products whose BOM consumes this item
 // (directly or through a sub-assembly).
 router.get('/:id/where-used', requirePermission('production.view'), (req, res) => {
@@ -146,7 +175,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  const { components, qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost } = parseBody(saveBomSchema, req.body);
+  const { components, qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost, selling_markup_percent } = parseBody(saveBomSchema, req.body);
 
   for (const [label, stage, checklistId] of [['QC', 1, qc_checklist_qc_id], ['QA', 2, qc_checklist_qa_id]] as const) {
     if (checklistId === undefined || checklistId === null) continue;
@@ -181,7 +210,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     if (qc_checklist_qc_id !== undefined) {
       run('UPDATE inventory_items SET qc_checklist_qc_id = ? WHERE id = ?', qc_checklist_qc_id, id);
     }
-    if (std_labor_cost !== undefined || std_overhead_cost !== undefined) {
+    if (std_labor_cost !== undefined || std_overhead_cost !== undefined || selling_markup_percent !== undefined) {
       const row = queryOne<{ attributes: string | null }>('SELECT attributes FROM inventory_items WHERE id = ?', id);
       let attrs: Record<string, unknown> = {};
       try { attrs = row?.attributes ? (JSON.parse(row.attributes) as Record<string, unknown>) : {}; } catch { attrs = {}; }
@@ -192,6 +221,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
       };
       setOrClear('std_labor_cost', std_labor_cost);
       setOrClear('std_overhead_cost', std_overhead_cost);
+      setOrClear('selling_markup_percent', selling_markup_percent);
       run("UPDATE inventory_items SET attributes = ?, updated_at = datetime('now') WHERE id = ?", JSON.stringify(attrs), id);
     }
     run('DELETE FROM bom_components WHERE product_item_id = ?', id);

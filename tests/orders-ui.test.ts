@@ -47,6 +47,23 @@ async function setup(permissions = ['orders.create', 'orders.edit', 'orders.dele
 afterEach(() => { windows.splice(0).forEach((dom) => dom.window.close()); });
 
 describe('sales order intake UI', () => {
+  it('offers a cost-based suggestion only on request and preserves negotiated edits', async () => {
+    const order = { id: 1, number: 'SO-00001', status: 'open', currency: 'PHP',
+      items: [{ id: 2, item_id: 8, name: 'Motor', quantity: 2, unit_price: 75 }] };
+    const suggestion = { available: true, suggested_unit_price: 100, markup_percent: 25, currency: 'PHP' };
+    const { doc, api, click, input } = await setup(undefined, order,
+      { '/finished-products/8/price-suggestion': suggestion });
+    await flush();
+    expect((doc.querySelector('[data-k="unit_price"]') as HTMLInputElement).value).toBe('75');
+    expect(doc.querySelector('[data-price-suggestion]')?.textContent).toContain('100');
+    click('[data-price-suggestion] button');
+    expect((doc.querySelector('[data-k="unit_price"]') as HTMLInputElement).value).toBe('100');
+    input('[data-k="unit_price"]', '90');
+    click('[data-confirm]'); await flush();
+    expect(api.put).toHaveBeenCalledWith('/orders/1', expect.objectContaining({
+      items: [expect.objectContaining({ unit_price: 90 })],
+    }), expect.anything());
+  });
   it('retains purchase entry controls for purchasing.manage without orders permissions', async () => {
     const { doc, click } = await setup(['purchasing.manage'], undefined, {}, 'purchase');
     expect(doc.querySelector('#ord-new')).not.toBeNull();

@@ -366,6 +366,7 @@ App.register('orders', async (view, filter) => {
     });
     const lines = editing ? (order.items || []).filter((it) => !it.parent_order_item_id)
       .map((it) => ({ ...it, ckd_parts: partsByParent.get(it.id) || [] })) : [];
+    const priceSuggestions = new Map();
     const get = (k, d) => (editing && order[k] != null ? order[k] : d);
     let initialized = false;
     let saveAttempt;
@@ -415,7 +416,7 @@ App.register('orders', async (view, filter) => {
           <div><label>Currency</label><input data-f="currency" maxlength="3" placeholder="PHP" value="${UI.esc(get('currency', 'PHP'))}" /></div>
         </div>
         </section><section class="order-section"><h4>Items to supply</h4>
-        ${lockLines ? `<p class="order-notice">${readOnly ? 'Line items are read-only.' : shipped ? 'Line items and tax are locked after shipment. Use a separate return or correction for goods already handed off.' : 'Line items and tax are locked after approval. Reopen the order before changing them; reopening clears warehouse reservations.'}</p>` : `<p class="muted">Choose inventory for goods to supply. ${type === 'sale' ? 'The catalog selling price is a starting value; sales can set this order’s unit price higher or lower. BOM material, labor and overhead are production costs, not a locked selling price. Add shipping, admin or other fees as non-stock charges.' : 'Use a non-stock line for services or charges.'} Non-stock lines do not reserve, produce or deduct stock.</p>`}
+        ${lockLines ? `<p class="order-notice">${readOnly ? 'Line items are read-only.' : shipped ? 'Line items and tax are locked after shipment. Use a separate return or correction for goods already handed off.' : 'Line items and tax are locked after approval. Reopen the order before changing them; reopening clears warehouse reservations.'}</p>` : `<p class="muted">Choose inventory for goods to supply. ${type === 'sale' ? 'The catalog price starts the line. A configured BOM markup can suggest another price; choose Use suggestion to apply it, or enter any negotiated unit price. Tax and fees are separate.' : 'Use a non-stock line for services or charges.'} Non-stock lines do not reserve, produce or deduct stock.</p>`}
         <div class="line-items"><table class="line-table"><thead><tr>
           <th>Item</th><th>SKU</th><th class="right">Qty</th><th>Unit</th><th class="right">Unit Price</th>${taxCodes.length ? '<th>Tax code</th>' : ''}<th class="right">Total</th><th></th>
         </tr></thead><tbody id="ord-lines"></tbody></table></div>
@@ -518,11 +519,41 @@ App.register('orders', async (view, filter) => {
               <td data-label="SKU"><input data-k="sku" value="${UI.esc(l.sku || '')}" style="width:90px" /></td>
               <td data-label="Quantity"><input data-k="quantity" type="number" min="0" step="any" inputmode="decimal" value="${UI.esc(String(l.quantity ?? 1))}" class="right" style="width:70px" /></td>
               <td data-label="Unit"><input data-k="unit" value="${UI.esc(l.unit || '')}" maxlength="40" style="width:60px" /></td>
-              <td data-label="Unit price"><input data-k="unit_price" type="number" min="0" step="0.01" inputmode="decimal" value="${UI.esc(String(l.unit_price ?? 0))}" class="right" style="width:90px" /></td>
+              <td data-label="Unit price"><input data-k="unit_price" type="number" min="0" step="0.01" inputmode="decimal" value="${UI.esc(String(l.unit_price ?? 0))}" class="right" style="width:90px" />${type === 'sale' && l.item_id && !lockLines ? `<div data-price-suggestion="${i}" class="muted" style="font-size:11px;margin-top:4px">Checking suggested price…</div>` : ''}</td>
               ${taxCell(l)}
               <td data-label="Line total" class="right" data-total="${i}">0.00</td>
               <td>${!lockLines ? `<button type="button" class="icon-btn danger" data-rm="${i}" title="Remove line ${i + 1}" aria-label="Remove line ${i + 1}">${UI.icon('trash', 15)}</button>` : ''}</td>
             </tr>`).join('');
+          if (type === 'sale' && !lockLines) lines.forEach((line, i) => {
+            if (!line.item_id) return;
+            const holder = body.querySelector(`[data-price-suggestion="${i}"]`);
+            const productId = Number(line.item_id);
+            if (!priceSuggestions.has(productId)) priceSuggestions.set(productId,
+              API.get('/finished-products/' + productId + '/price-suggestion').catch(() => ({ available: false, reason: 'Suggestion unavailable' })));
+            priceSuggestions.get(productId).then((suggestion) => {
+              if (!body.contains(holder) || Number(lines[i]?.item_id) !== productId) return;
+              const orderCurrency = String(ov.querySelector('[data-f="currency"]').value || 'PHP').toUpperCase();
+              if (!suggestion.available || suggestion.currency !== orderCurrency) {
+                holder.textContent = suggestion.available ? `Suggestion uses ${suggestion.currency}; order uses ${orderCurrency}` : suggestion.reason;
+                return;
+              }
+              holder.textContent = `${money(suggestion.suggested_unit_price)} suggested (${suggestion.markup_percent}% markup) `;
+              const apply = document.createElement('button');
+              apply.type = 'button'; apply.className = 'order-link-btn'; apply.textContent = 'Use suggestion';
+              apply.setAttribute('aria-label', `Use suggested unit price for line ${i + 1}`);
+              apply.onclick = () => {
+                const input = body.querySelector(`[data-row="${i}"] [data-k="unit_price"]`);
+                if (!input || Number(lines[i]?.item_id) !== productId) return;
+                if (String(ov.querySelector('[data-f="currency"]').value || 'PHP').toUpperCase() !== suggestion.currency) {
+                  UI.toast('Order currency changed. Review the suggestion again.', 'error'); return;
+                }
+                input.value = String(suggestion.suggested_unit_price);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.focus();
+              };
+              holder.appendChild(apply);
+            });
+          });
           function showCkdParts(i) {
             const target = body.querySelector(`[data-ckd-preview="${i}"]`);
             if (!target) return;
@@ -588,6 +619,7 @@ App.register('orders', async (view, filter) => {
         }
 
         taxEl.addEventListener('input', recompute);
+        if (type === 'sale') ov.querySelector('[data-f="currency"]').addEventListener('change', renderLines);
         const addBlank = ov.querySelector('#ord-add-blank');
         if (addBlank) addBlank.onclick = () => {
           lines.push({ name: '', sku: '', quantity: 1, unit: '', unit_price: 0 });

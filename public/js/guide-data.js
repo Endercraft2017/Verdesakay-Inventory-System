@@ -43,7 +43,7 @@ const GUIDE_PIPELINES = [
         role: 'Inventory · inventory.edit',
         to: { route: 'finished-products', label: 'Production → Product Setup' },
         spot: '.tree-leaf[data-route="finished-products"]',
-        body: `Open Product Setup and create or edit the finished product. Add each component and the quantity needed for one unit to its bill of materials (BOM). Review optional labor and overhead costs before saving. Components that have their own BOM are expanded as sub-assemblies.`,
+        body: `Open Product Setup and create or edit the finished product. Add each component and the quantity needed for one unit to its bill of materials (BOM). Review optional labor and overhead costs before saving. Components that have their own BOM are expanded as sub-assemblies. An optional selling markup suggests a price from the full standard unit cost; sales must choose to apply it on an order.`,
         tip: `A product can be saved with <b>no BOM</b> — it still builds, it just reserves and
           consumes nothing until you add components.`,
       },

@@ -17,6 +17,35 @@ TypeScript, 172 focused tests, all 13 real-backend virtual-camera Playwright che
 and all 2,747 full-suite tests across 264 files passed. PWA cache v101. Preserved
 upstream finishing-conversion/company-login work through `ee4beb6`.
 
+## BOM markup and sales price suggestion (2026-10-16)
+
+**Backend/desktop contract:** Product setup now stores optional
+`attributes.selling_markup_percent` (0–10,000%; blank disables). The suggestion is
+the current rolled-up BOM material, labor and overhead cost multiplied by
+`1 + markup / 100`, rounded to two decimals. It excludes tax, freight and order
+fees. `GET /api/finished-products/:id/price-suggestion` is readable with
+`inventory.view` or `production.view` and returns `available`,
+`suggested_unit_price`, `markup_percent` and `currency` without the cost breakdown.
+It returns `available:false` when no markup is set, the BOM is empty/cyclic, or a
+leaf component has no positive standard/purchase cost. The suggestion is calculated
+at lookup time as component costs change; it is not written to the catalog sale
+price or an existing order. Sales orders still start from `attributes.sale_price`.
+On desktop, a sales user must explicitly press **Use suggestion** on a draft line;
+they can then type a higher or lower negotiated price. Currency mismatch hides
+the action. Approved lines stay locked.
+
+**Mobile owner action:** If mobile creates or edits sale orders, show the suggested
+unit price and markup next to the editable unit price, with an explicit apply
+action. Never silently replace an entered price or reprice an existing order when
+component costs change. Refresh after product selection or when reopening a draft;
+show an unavailable reason and hide apply on currency mismatch. Keep shipping,
+admin and other fees separate as non-stock lines. Mobile code was not changed here.
+
+**Acceptance cases:** A cost of 80 with 25% markup offers 100; an existing 75
+line stays 75 until apply; sales can then negotiate 90; zero/missing component
+cost cannot produce a suggestion; clearing the markup disables it; a different
+order currency cannot apply it; approved orders cannot reprice.
+
 ## QR stickers → RTS → exact sales allocation (2026-10-15)
 
 User-confirmed workflow: attach the printed unit/batch QR sticker, scan it before RTS

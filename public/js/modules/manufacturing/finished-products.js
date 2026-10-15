@@ -118,6 +118,7 @@ App.register('finished-products', async (view, filter) => {
     let currentChecklistQcId = '';
     let currentLabor = '';
     let currentOverhead = '';
+    let currentMarkup = '';
     if (existing) {
       const full = await API.get('/finished-products/' + existing.id).catch(() => null);
       bom = (full && full.bom) || [];
@@ -125,6 +126,7 @@ App.register('finished-products', async (view, filter) => {
       currentChecklistQcId = (full && full.qc_checklist_qc_id) || '';
       if (full && Number(full.std_labor_cost)) currentLabor = full.std_labor_cost;
       if (full && Number(full.std_overhead_cost)) currentOverhead = full.std_overhead_cost;
+      if (full && full.selling_markup_percent != null) currentMarkup = full.selling_markup_percent;
     }
     // What must leave with each unit (release-auth.ts): one item per line, "*" = required.
     const pkgItems = existing ? await API.get('/finished-products/' + existing.id + '/package').catch(() => []) : [];
@@ -170,6 +172,12 @@ App.register('finished-products', async (view, filter) => {
         </div>
         <p class="muted" style="font-size:11px;margin:4px 0 0">Added on top of the rolled-up material cost when set — used for the standard unit cost and to value finished units into stock.</p>
       </div>`;
+    const pricingHTML = `
+      <div class="form-field span2" style="margin-top:12px"><div class="field-label"><label for="fp-markup">Suggested selling price (optional)</label></div>
+        <div class="field-row"><div><label class="muted" for="fp-markup" style="font-size:12px">Markup on standard unit cost %</label>
+          <input id="fp-markup" data-f="markup" type="number" min="0" max="10000" step="0.01" value="${UI.esc(String(currentMarkup))}" placeholder="e.g. 25" /></div></div>
+        <p class="muted" style="font-size:11px;margin:4px 0 0">Suggestion = (BOM materials + labor + overhead) × (1 + markup ÷ 100). It excludes tax and order fees. Leave blank to disable; sales chooses whether to use it on each order.</p>
+      </div>`;
 
     // Shared by onOpen (wires the pickers) and onConfirm (reads them).
     const rowCombos = new Map(); // .bom-row element → UI.combo handle
@@ -186,6 +194,7 @@ App.register('finished-products', async (view, filter) => {
         <div id="bom-rows">${(bom.length ? bom : [null]).map((c) => compRow(c)).join('')}</div>
         <button type="button" class="btn secondary small" id="bom-add" style="margin-top:8px">${UI.icon('plus')} Add component</button>
         ${costHTML}
+        ${pricingHTML}
         ${checklistHTML}`,
       confirmText: existing ? 'Save BOM' : 'Create',
       onOpen: (ov) => {
@@ -290,10 +299,12 @@ App.register('finished-products', async (view, filter) => {
         const qc_checklist_qc_id = ov.querySelector('[data-f="checklist-qc"]').value || null;
         const laborRaw = ov.querySelector('[data-f="labor"]').value.trim();
         const overheadRaw = ov.querySelector('[data-f="overhead"]').value.trim();
+        const markupRaw = ov.querySelector('[data-f="markup"]').value.trim();
         await API.put('/finished-products/' + pid, {
           components, qc_checklist_qa_id, qc_checklist_qc_id,
           std_labor_cost: laborRaw === '' ? null : Number(laborRaw),
           std_overhead_cost: overheadRaw === '' ? null : Number(overheadRaw),
+          selling_markup_percent: markupRaw === '' ? null : Number(markupRaw),
         });
         const pkgLines = ov.querySelector('[data-f="package"]').value.split('\n').map((l) => l.trim()).filter(Boolean);
         if (pkgLines.length || pkgItems.length) {
@@ -328,11 +339,12 @@ App.register('finished-products', async (view, filter) => {
   }
 
   async function detailModal(id) {
-    const [p, units, explodeRes, costRes] = await Promise.all([
+    const [p, units, explodeRes, costRes, priceRes] = await Promise.all([
       API.get('/finished-products/' + id),
       API.get('/finished-products/' + id + '/units?status=in_stock').catch(() => []),
       API.get('/finished-products/' + id + '/explode?qty=1').catch(() => null),
       API.get('/finished-products/' + id + '/cost').catch(() => null),
+      API.get('/finished-products/' + id + '/price-suggestion').catch(() => null),
     ]);
     const bom = p.bom || [];
     const subIds = new Set((explodeRes && explodeRes.subassemblies || []).map((s) => s.item_id));
@@ -371,6 +383,8 @@ App.register('finished-products', async (view, filter) => {
           ${Number(cost.unit_labor_cost) ? `<div><span class="muted">Std. labor / unit</span><div>${UI.money(cost.unit_labor_cost)}</div></div>` : ''}
           ${Number(cost.unit_overhead_cost) ? `<div><span class="muted">Std. overhead / unit</span><div>${UI.money(cost.unit_overhead_cost)}</div></div>` : ''}
           <div><span class="muted">Std. unit cost</span><div><strong>${stdTotal != null ? UI.money(stdTotal) : '—'}</strong></div></div>
+          <div><span class="muted">Selling markup</span><div>${p.selling_markup_percent != null ? UI.esc(String(p.selling_markup_percent)) + '%' : 'Not configured'}</div></div>
+          <div><span class="muted">Suggested selling price</span><div>${priceRes?.available ? UI.money(priceRes.suggested_unit_price) : UI.esc(priceRes?.reason || 'Unavailable')}</div></div>
           <div><span class="muted">QC checklist</span><div>${p.qc_checklist_qc_name ? UI.esc(p.qc_checklist_qc_name) : 'Default'}</div></div>
           <div><span class="muted">QA checklist</span><div>${p.qc_checklist_qa_name ? UI.esc(p.qc_checklist_qa_name) : 'Default'}</div></div>
         </div>

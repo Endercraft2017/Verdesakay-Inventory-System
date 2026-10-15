@@ -315,6 +315,8 @@ export const saveBomSchema = z.object({
   // Absent = leave unchanged; null = clear.
   std_labor_cost: z.coerce.number().min(0).max(1e12).optional().nullable(),
   std_overhead_cost: z.coerce.number().min(0).max(1e12).optional().nullable(),
+  // Percentage on top of the fully loaded standard cost; a suggestion only.
+  selling_markup_percent: z.coerce.number().min(0).max(10000).optional().nullable(),
 });
 
 /** PATCH /api/finished-products/:id/checklist — assign (or clear, via null) one stage's
