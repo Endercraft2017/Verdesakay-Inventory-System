@@ -1328,5 +1328,11 @@ to cascade offline ID allocation without losing snapshots. Template and layout d
 are suppressed during changeset application because their authoritative effects are captured.
 Employee self-service request schemas reject unsupported connected types; staff forms support
 all new types. Print catalogs expose nested references and repeating product rows.
+Connected item validation joins ordinary required fields in one linked summary, including
+all invalid row controls; correcting or removing rows refreshes that group without clearing
+unrelated errors. Print frames have descriptive titles. Shared document interpolation prints
+boolean values as Yes/No without changing stored data, conditions or numeric formulas.
+New generated layouts use neutral Issued by / Received by signatures; saved layouts remain
+versioned and are not overwritten automatically.
 
 Guide: `docs/guides/connected-data-forms.md`. Browser gate: `npm run test:forms:connected:ux`.

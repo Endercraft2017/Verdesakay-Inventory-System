@@ -3981,7 +3981,7 @@ export function memoTemplateBody(title: string, fields: Array<{ key: string; lab
 ${rows}
   <div class="sig">
     <div>Issued by</div>
-    <div>Received by (Employee)</div>
+    <div>Received by</div>
   </div>
 </div>`;
 }

@@ -67,7 +67,7 @@ it('keeps custom fields named company distinct from the system company in genera
  const saved=(await ctx.api.get('/api/form-records/'+record).set(auth())).body;
  const definition=(await ctx.api.get('/api/form-definitions/'+form).set(auth())).body;
  const template=(await ctx.api.get('/api/templates/'+definition.template_id).set(auth())).body;
- expect(template.body).toContain('{{fields.company}}');
+ expect(template.body).toContain('{{fields.company}}');expect(template.body).toContain('<div>Received by</div>');expect(template.body).not.toContain('Received by (Employee)');
  const {renderDocument}=await import('../src/shared/doc-render');
  const output=renderDocument(template.body,{...saved.data,fields:{...saved.data,company:'Captured form company'},company:{name:'Current system company'}},definition.template_id);
  expect(output).toContain('Captured form company');expect(output).toContain('Current system company');expect(output).not.toContain('[object Object]');

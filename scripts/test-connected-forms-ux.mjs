@@ -53,11 +53,11 @@ try {
   await check('Build connected customer, item rows, tax calculations and sales workflow through the UI',async()=>{
     await page.evaluate(()=>App.navigate('form-builder',{scope:'inventory'}));await page.locator('#fb-new-form').click();
     await page.locator('[data-f=name]').fill('Connected invoice UX');await page.locator('[data-setup-tab=fields]').click();
-    const definitions=[['customer','Customer','reference:customer'],['items','Products','line_items'],['subtotal','Subtotal','calculated'],['tax_rate','Tax percentage','number'],['tax','Tax amount','calculated'],['total','Final total','calculated'],['prepared_by','Prepared by','system:user']];
+    const definitions=[['customer','Customer','reference:customer'],['items','Products','line_items'],['subtotal','Subtotal','calculated'],['tax_rate','Tax percentage','number'],['tax','Tax amount','calculated'],['total','Final total','calculated'],['prepared_by','Prepared by','system:user'],['consent','Confirm reviewed values','checkbox']];
     for(const [index,[key,label,type]]of definitions.entries()){
       await page.locator('#fb-add-field').click();const row=page.locator(`[data-fi="${index}"]`);
       await row.locator('[data-k=key]').fill(key);await row.locator('[data-k=label]').fill(label);await row.locator('[data-k=type]').selectOption(type);
-      if(['customer','items'].includes(key))await row.locator('[data-k=required]').check();
+      if(['customer','items','consent'].includes(key))await row.locator('[data-k=required]').check();
       if(key==='tax_rate')await row.locator('[data-k=default]').fill('12');
       if(type==='calculated'){
         await row.locator('[data-configure-math]').click();
@@ -74,6 +74,9 @@ try {
   });
   await check('Lookup failure can retry without losing the current form and customer selection',async()=>{
     await page.evaluate(id=>App.navigate('form-records',{form_id:id}),form.id);await page.locator('#fr-new').click();
+    await confirm();await page.locator('[data-modal-error] .validation-error-link').first().waitFor();assert.equal(await page.locator('[data-modal-error] .validation-error-link').count(),3);
+    assert.equal(await page.locator('[data-add-item]').getAttribute('aria-invalid'),'true');assert.equal(await page.locator('[data-field=customer]').getAttribute('aria-invalid'),'true');assert.equal(await page.locator('[data-field=consent]').getAttribute('aria-invalid'),'true');
+    await scan('connected-empty-required-summary');
     await page.locator('[data-field=customer] option').filter({hasText:'Connected UX Customer'}).waitFor({state:'attached'});await page.locator('[data-field=customer]').selectOption(String(customer.id));
     let fail=true;await page.route('**/api/data-forms/sources/product?*',route=>{if(fail){fail=false;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Temporary product outage'})});}return route.continue();});
     await page.locator('[data-add-item]').click();await page.locator('[data-lookup-retry]:not([hidden])').click();
@@ -85,12 +88,14 @@ try {
     await page.locator('[data-item-discount]').fill('0');
     await page.waitForFunction(()=>document.querySelector('[data-field=total]').value==='221.76');
     await page.locator('[data-add-item]').click();assert.equal(await page.locator('[data-item-price]').first().inputValue(),'99');await page.locator('[data-remove-item]').last().click();assert.equal(await page.locator('[data-item-price]').inputValue(),'99');
-    assert.equal(await page.locator('[data-lookup-retry]:visible').count(),0);await scan('connected-record');
+    await page.locator('[data-field=consent]').check();assert.equal(await page.locator('[data-lookup-retry]:visible').count(),0);await scan('connected-record');
   });
   await check('Invalid quantities are blocked and corrections retain the rest of the draft',async()=>{
-    await page.locator('[data-item-quantity]').fill('0');await confirm();
+    await page.locator('[data-item-quantity]').fill('0');await page.locator('[data-item-price]').fill('-1');await page.locator('[data-item-discount]').fill('101');await page.locator('[data-field=consent]').uncheck();await confirm();
     await page.locator('[data-modal-error]').filter({hasText:'greater than zero'}).waitFor();
-    assert.equal(await page.locator('[data-item-price]').inputValue(),'99');await page.locator('[data-item-quantity]').fill('2');
+    assert.equal(await page.locator('[data-modal-error] .validation-error-link').count(),4);await scan('connected-all-row-errors');
+    await page.locator('[data-modal-error] .validation-error-link').first().click();assert.equal(await page.locator('[data-item-quantity]').evaluate(el=>el===document.activeElement),true);
+    await page.locator('[data-item-quantity]').fill('2');await page.locator('[data-item-price]').fill('99');await page.locator('[data-item-discount]').fill('0');await page.locator('[data-field=consent]').check();assert.equal(await page.locator('[aria-invalid=true]').count(),0);
   });
   await check('Connected invoice editor remains usable across themes and widths',async()=>{
     for(const width of [1440,1024,768,390]){
@@ -110,13 +115,15 @@ try {
     assert.equal(await page.locator('[data-item-row] [readonly]').first().inputValue(),'box');await close();await page.waitForSelector('.modal-overlay',{state:'detached'});
     const tpl=await api('GET','/templates/'+form.template_id);
     const printed=await page.evaluate(({body,data})=>renderTemplate(body,{...data,company:{name:'Example company'}}),{body:tpl.body,data:record.data});
-    assert(printed.includes('Connected UX Product'));assert(printed.includes('221.76'));assert(!printed.includes('[object Object]'));
+    assert(printed.includes('Connected UX Product'));assert(printed.includes('221.76'));assert(!printed.includes('[object Object]'));assert(printed.includes('Yes'));assert(!printed.includes('Received by (Employee)'));
+    await page.locator(`[data-print-tpl="${record.id}"]`).click();await page.locator('#fr-tpl-preview-frame').waitFor();const frame=page.frameLocator('#fr-tpl-preview-frame');await frame.locator('body').getByText('221.76',{exact:false}).first().waitFor();
+    assert((await page.locator('#fr-tpl-preview-frame').getAttribute('title')).includes(form.name));assert((await frame.locator('body').innerText()).includes('Yes'));await scan('connected-real-print-preview');await close();await page.waitForSelector('.modal-overlay',{state:'detached'});
   });
   await check('A committed submission with a lost response retries the same request without a duplicate order',async()=>{
     await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>document.documentElement.dataset.theme='light');
     await page.locator('#fr-new').click();await page.locator('[data-field=customer] option').filter({hasText:'Connected UX Customer'}).waitFor({state:'attached'});
     await page.locator('[data-field=customer]').selectOption(String(customer.id));await page.locator('[data-add-item]').click();
-    await page.locator('[data-item-row] select option').filter({hasText:'Renamed UX Product'}).waitFor({state:'attached'});await page.locator('[data-item-row] select').selectOption(String(product.id));await page.locator('#fr-record-status').selectOption('submitted');
+    await page.locator('[data-item-row] select option').filter({hasText:'Renamed UX Product'}).waitFor({state:'attached'});await page.locator('[data-item-row] select').selectOption(String(product.id));await page.locator('#fr-record-status').selectOption('submitted');await page.locator('[data-field=consent]').check();
     const before=(await api('GET',`/form-definitions/${form.id}/records`)).length;let lose=true;const keys=[];
     await page.route('**/api/form-records',async route=>{keys.push(route.request().headers()['idempotency-key']);const response=await route.fetch();if(lose){lose=false;await route.abort('failed');}else await route.fulfill({response});});
     await confirm();await page.locator('[data-modal-error]').filter({hasText:'Retry Save'}).waitFor();

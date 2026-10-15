@@ -49,11 +49,20 @@ window.FormValidation = (() => {
       state = { container, errors: [], summary };
       states.set(container, state);
       const update = event => {
-        if (!state.errors.some(error => error.control === event.target)) return;
-        const remaining = state.errors.filter(error => error.control !== event.target || !(error.isValid ? error.isValid() : error.control.validity.valid && (error.control.type === 'checkbox' ? error.control.checked : error.control.value.trim())));
+        const group = event.detail?.validationGroup;
+        if (group && state.errors.some(error => error.group === group)) {
+          state.errors = [...state.errors.filter(error => error.group !== group), ...event.detail.validate()];
+          render(state);
+          return;
+        }
+        const refreshAll = event.type === 'validationchange';
+        if (!refreshAll && !state.errors.some(error => error.control === event.target)) return;
+        const remaining = state.errors.filter(error => error.control.isConnected &&
+          (!refreshAll && error.control !== event.target || !(error.isValid ? error.isValid() : error.control.validity.valid && (error.control.type === 'checkbox' ? error.control.checked : error.control.value.trim()))));
         if (remaining.length !== state.errors.length) { state.errors = remaining; render(state); }
       };
       container.addEventListener('input', update); container.addEventListener('change', update);
+      container.addEventListener('validationchange', update);
     }
     state.summary = summary; state.errors = errors;
     render(state);

@@ -1,6 +1,6 @@
 /* Repeating product rows; server repeats all validation and arithmetic before saving. */
 window.FormItems = (() => {
-  function render(field){return `<fieldset class="form-items" data-items="${field.key}"><legend>${UI.esc(field.label)}${field.required?' *':''}</legend><p class="muted">Select products, review their prices, and enter quantities. Up to 50 rows.</p><div data-item-rows></div><button type="button" class="btn secondary small" data-add-item>Add product row</button><p data-items-error role="status"></p><p>Subtotal: <strong data-items-total>0.00</strong></p></fieldset>`;}
+  function render(field){return `<fieldset data-validation-field class="form-items" data-items="${field.key}"><legend>${UI.esc(field.label)}${field.required?' *':''}</legend><p class="muted">Select products, review their prices, and enter quantities. Up to 50 rows.</p><div data-item-rows></div><button type="button" class="btn secondary small" data-add-item>Add product row</button><p data-items-error role="status"></p><p>Subtotal: <strong data-items-total>0.00</strong></p></fieldset>`;}
   function mount(overlay,fields,data,onChange) {
     for(const field of fields.filter(f=>f.type==='line_items')){
       const root=overlay.querySelector(`[data-items="${field.key}"]`),list=root.querySelector('[data-item-rows]'),add=root.querySelector('[data-add-item]');
@@ -11,13 +11,13 @@ window.FormItems = (() => {
       });}
       function totals(){let sum=0;root.querySelector('[data-items-error]').textContent='';
         for(const element of list.querySelectorAll('[data-item-row]'))try{const total=FormMath.line(element.querySelector('[data-item-quantity]').value,element.querySelector('[data-item-price]').value,element.querySelector('[data-item-discount]').value);element.querySelector('[data-line-total]').textContent=UI.money(total);sum+=total;}catch(error){element.querySelector('[data-line-total]').textContent='—';root.querySelector('[data-items-error]').textContent=error.message;}
-        root.querySelector('[data-items-total]').textContent=UI.money(FormMath.round(sum));onChange?.();
+        root.querySelector('[data-items-total]').textContent=UI.money(FormMath.round(sum));onChange?.();root.dispatchEvent(new CustomEvent('validationchange',{bubbles:true,detail:{validationGroup:root,validate:()=>validate(overlay,field)}}));
       }
       function draw(){
         list.innerHTML=rows.map((row,index)=>{
           const prefix=field.key+'_'+row.row_id;
           const product={key:prefix+'_product',label:'Product '+(index+1),type:'reference',source:'product',required:true};
-          return `<section class="form-item-row" data-item-row="${row.row_id}" aria-label="${UI.esc(field.label)} row ${index+1}">${FormConnections.render(product,row.product_id?{id:row.product_id,name:row.name,sku:row.sku,unit:row.unit,sale_price:row.sale_price}:null)}<div class="form-item-values"><label>Quantity<input type="number" min="0.000001" step="any" data-item-quantity value="${UI.esc(String(row.quantity??1))}" aria-required="true"></label><label>Unit<input data-field="${prefix}_unit" readonly value="${UI.esc(row.unit||'')}"></label><label>Unit price<input data-item-price data-field="${prefix}_price" type="number" min="0" step="any" value="${UI.esc(String(row.unit_price??''))}" ${field.price_editable===false?'readonly':''} aria-required="true"></label><label>Discount %<input type="number" data-item-discount min="0" max="100" step="any" value="${UI.esc(String(row.discount_percent??0))}"></label><span>Line total: <strong data-line-total>—</strong></span></div><button type="button" class="btn secondary small" data-remove-item="${row.row_id}">Remove row ${index+1}</button></section>`;
+          return `<section class="form-item-row" data-item-row="${row.row_id}" aria-label="${UI.esc(field.label)} row ${index+1}">${FormConnections.render(product,row.product_id?{id:row.product_id,name:row.name,sku:row.sku,unit:row.unit,sale_price:row.sale_price}:null)}<div class="form-item-values"><label data-validation-field>Quantity<input type="number" min="0.000001" step="any" data-item-quantity value="${UI.esc(String(row.quantity??1))}" aria-required="true"></label><label>Unit<input data-field="${prefix}_unit" readonly value="${UI.esc(row.unit||'')}"></label><label data-validation-field>Unit price<input data-item-price data-field="${prefix}_price" type="number" min="0" step="any" value="${UI.esc(String(row.unit_price??''))}" ${field.price_editable===false?'readonly':''} aria-required="true"></label><label data-validation-field>Discount %<input type="number" data-item-discount min="0" max="100" step="any" value="${UI.esc(String(row.discount_percent??0))}"></label><span>Line total: <strong data-line-total>—</strong></span></div><button type="button" class="btn secondary small" data-remove-item="${row.row_id}">Remove row ${index+1}</button></section>`;
         }).join('');
         for(const [index,row] of rows.entries()){
           const prefix=field.key+'_'+row.row_id,element=list.querySelector(`[data-item-row="${row.row_id}"]`);
@@ -33,5 +33,29 @@ window.FormItems = (() => {
     }
   }
   function collect(overlay,field){const root=overlay.querySelector(`[data-items="${field.key}"]`);const rows=root.__collect();if(field.required&&!rows.length)throw new Error(field.label+': add at least one product');if(rows.some(row=>!row.product_id))throw new Error(field.label+': select a product on every row');return rows;}
-  return {render,mount,collect};
+  // Return every actionable error so other fields can join the same summary.
+  function validate(overlay,field){
+    const root=overlay.querySelector(`[data-items="${field.key}"]`),elements=[...root.querySelectorAll('[data-item-row]')],errors=[];
+    const addError=(control,message,isValid)=>errors.push({control,message,isValid,group:root});
+    if(field.required&&!elements.length)addError(root.querySelector('[data-add-item]'),field.label+': add at least one product',()=>!!root.querySelector('[data-item-row]'));
+    elements.forEach((element,index)=>{
+      const prefix=field.label+' row '+(index+1)+': ',product=element.querySelector('select[data-field]');
+      if(!product.value)addError(product,prefix+'select a product',()=>!!product.value);
+      for(const [selector,label,valid,message] of [
+        ['[data-item-quantity]','Quantity',value=>value>0,'Quantity must be greater than zero'],
+        ['[data-item-price]','Unit price',value=>value>=0,'Unit price cannot be negative'],
+        ['[data-item-discount]','Discount percentage',value=>value>=0&&value<=100,'Discount must be between 0 and 100 percent']
+      ]){
+        const control=element.querySelector(selector);
+        const problem=()=>{try{const value=FormMath.number(control.value,label);return valid(value)?'':message;}catch(error){return error.message;}};
+        const error=problem();if(error)addError(control,prefix+error,()=>!problem());
+      }
+    });
+    if(!errors.length)try{collect(overlay,field);}catch(error){
+      const control=elements[0]?.querySelector('[data-item-quantity]')||root.querySelector('[data-add-item]');
+      addError(control,field.label+': '+error.message,()=>{try{collect(overlay,field);return true;}catch{return false;}});
+    }
+    return errors;
+  }
+  return {render,mount,collect,validate};
 })();

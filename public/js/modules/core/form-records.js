@@ -982,7 +982,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       size: 'lg',
       bodyHTML: `
         ${canAttach ? `<div style="margin-bottom:8px"><button type="button" class="btn secondary small" id="fr-attach-pdf">${UI.icon('upload', 14)} Attach saved PDF to Files</button></div>` : ''}
-        <iframe id="fr-tpl-preview-frame" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+        <iframe id="fr-tpl-preview-frame" title="${UI.esc(title)} print preview" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
       cancelText: 'Close',
       confirmText: 'Print…',
       onOpen: (ov) => {
@@ -1568,7 +1568,12 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         const collected = { ...data };
         const errors = [];
         for (const field of recordDefinition.fields) {
-          if(field.type==='line_items'){try{collected[field.key]=FormItems.collect(ov,field);}catch(error){showErr(error.message);return false;}continue;}
+          if(field.type==='line_items'){
+            const itemErrors=FormItems.validate(ov,field);
+            errors.push(...itemErrors);
+            if(!itemErrors.length)collected[field.key]=FormItems.collect(ov,field);
+            continue;
+          }
           const inp = ov.querySelector(`[data-field="${field.key}"]`);
           if (!inp) continue;
           if (field.type === 'checkbox') {
@@ -1582,10 +1587,10 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             errors.push({ control: inp, message: `${field.label}: ${inp.validationMessage}` });
           }
         }
-        try{Object.assign(collected,FormMath.calculate(recordDefinition.fields,collected));}catch(error){showErr(error.message);return false;}
         const reason = ov.querySelector('#fr-change-reason')?.value.trim();
         if (editing && formDef.archived_at && !reason) errors.push({control:ov.querySelector('#fr-change-reason'),message:'A reason is required for this archived record correction.'});
         if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
+        try{Object.assign(collected,FormMath.calculate(recordDefinition.fields,collected));}catch(error){showErr(error.message);return false;}
         // For payroll forms, also capture the net_pay value.
         if (isPayroll) {
           const netPayInp = ov.querySelector('[data-field="net_pay"]');

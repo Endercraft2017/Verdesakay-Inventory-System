@@ -1152,4 +1152,7 @@ happen on the sales order. Source records never silently refresh saved names/pri
 current-user fields are captured on creation. Offline form records use the existing merge class;
 form-definition changes retain the existing main-site claim rules. Captured template/link/history
 effects are applied once without rerunning their derived triggers. See the connected forms guide
-for field types, calculation limits, print tokens and acceptance tasks.
+for field types, calculation limits, print tokens and acceptance tasks. Before saving, collect
+all ordinary and product-row validation errors into the linked summary; calculate only after
+those fields pass. Printing keeps boolean values in context and formats their direct output
+as Yes/No, retaining conditional and formula behavior.

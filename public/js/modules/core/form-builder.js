@@ -428,8 +428,8 @@ App.register('form-builder', async (view, filter) => {
   </div>
   <div class="ff-fields">${rows}</div>
   <div class="ff-sig">
-    <div>Requested By</div>
-    <div>Approved By</div>
+    <div>Issued by</div>
+    <div>Received by</div>
   </div>
 </div>`;
   }

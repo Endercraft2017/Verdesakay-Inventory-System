@@ -41,7 +41,9 @@ Choose Calculated number → Configure calculation. Supported operations are sum
 multiply, subtract and percent. Select existing numeric fields or item totals; item
 columns support sum. Subtraction and percentage follow the displayed field order.
 Cycles and unknown/non-numeric dependencies are rejected. Amounts round to two decimals;
-the server recomputes all calculated values before saving.
+the server recomputes all calculated values before saving. Missing ordinary fields and invalid
+product rows appear together in a summary with links to each field and inline error messages.
+Correcting a value or removing a row updates its errors without discarding the rest of the form.
 
 A typical invoice has:
 
@@ -65,7 +67,10 @@ Product rows use a repeating section, for example:
 
 The automatically generated layout already contains an item table. The variable bank also
 offers Repeating table to insert a complete table; copying that entry copies its template markup. Custom properties
-appear in the template editor's linked-form variable category.
+appear in the template editor's linked-form variable category. Checkbox values print as Yes
+or No while remaining boolean values for calculations and conditions. New generated layouts
+use Issued by / Received by signatures. Existing saved designs keep their content; edit their
+signature wording through Print templates when needed.
 
 ## Stage 3: create the sales draft
 

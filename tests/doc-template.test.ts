@@ -27,6 +27,12 @@ function loadRenderer(): {
 const { renderTemplate, ORDER_VARIABLES } = loadRenderer();
 
 describe('renderTemplate', () => {
+  it('prints boolean values as Yes/No while preserving condition and formula semantics', () => {
+    expect(renderTemplate('{{checked}} / {{unchecked}} / {{text}}', {checked:true,unchecked:false,text:'false'})).toBe('Yes / No / false');
+    expect(renderTemplate('{{#if checked}}Confirmed{{/if}}{{#if unchecked}}Wrong{{/if}}', {checked:true,unchecked:false})).toBe('Confirmed');
+    expect(renderTemplate('{{= checked + unchecked}}', {checked:true,unchecked:false})).toBe('1');
+  });
+
   it('interpolates dotted paths', () => {
     expect(renderTemplate('No: {{order.no}}', { order: { no: 'SO-1' } })).toBe('No: SO-1');
   });
