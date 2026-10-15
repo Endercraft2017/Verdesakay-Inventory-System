@@ -17,7 +17,7 @@ import { enforceQuota } from '../platform/quota';
 import type { Permission } from '../shared/types';
 import { syncClass } from '../sync';
 import { syncUpload } from '../sync/files';
-import { sideEffectsSuppressed } from '../shared/sync-context';
+import { sideEffectsSuppressed, siteDecisionStands } from '../shared/sync-context';
 
 const router = Router();
 router.use(requireAuth);
@@ -71,6 +71,13 @@ function issuePhotoReadable(req: Request, refId: number): boolean {
   const issue = queryOne<{ unit_id: number | null; reported_by: number | null }>('SELECT unit_id, reported_by FROM production_issues WHERE id = ?', refId);
   return !!issue && (issue.unit_id != null || issue.reported_by === req.user!.id || p.some(x => ['inventory.adjust', 'production.approve', 'production.manage'].includes(x)));
 }
+function deliveryEvidenceAccess(req: Request, refId: number): { found: boolean; allowed: boolean; status: string | null } {
+  const delivery = queryOne<{ assigned_to: number | null; status: string }>(
+    'SELECT assigned_to, status FROM deliveries WHERE id = ?', refId);
+  return { found: !!delivery, allowed: !!delivery && (req.user!.permissions.includes('delivery.manage') || delivery.assigned_to === req.user!.id),
+    status: delivery?.status ?? null };
+}
+const deliveryEvidence = (kind: string): boolean => kind === 'delivery' || kind === 'signature';
 
 export const imageUpload = multer({
   storage: multer.diskStorage({
@@ -103,6 +110,11 @@ router.get('/', (req, res) => {
     return;
   }
   if (!allows(req, READ_PERMS[kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (deliveryEvidence(kind)) {
+    const access = deliveryEvidenceAccess(req, refId);
+    if (!access.found) { res.status(404).json({ error: 'Delivery not found' }); return; }
+    if (!access.allowed) { res.status(403).json({ error: 'Not your delivery' }); return; }
+  }
   if (kind === 'production_issue' && !issuePhotoReadable(req, refId)) { res.status(403).json({ error: 'Open a unit-linked report to view its photos.' }); return; }
   const rows = queryAll<Row>(
     `SELECT a.id, a.kind, a.ref_id, a.caption, a.created_at, a.uploaded_by, u.full_name AS uploaded_by_name
@@ -119,6 +131,9 @@ router.get('/:id/image', async (req, res) => {
   const row = queryOne<Row>('SELECT kind, ref_id, image_path FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
   if (!allows(req, READ_PERMS[row.kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (deliveryEvidence(row.kind) && !deliveryEvidenceAccess(req, row.ref_id).allowed) {
+    res.status(403).json({ error: 'Not your delivery' }); return;
+  }
   if (row.kind === 'production_issue' && !issuePhotoReadable(req, row.ref_id)) { res.status(403).json({ error: 'This desk reads unit-linked report photos only.' }); return; }
   const file = await resolveDurableUploadAsync(row.image_path);
   if (!file) { res.status(410).json({ error: 'File is no longer available' }); return; }
@@ -140,6 +155,15 @@ router.post('/', syncClass('physical'), syncUpload(imageUpload.single('image')),
     if (req.file) unlink(req.file.filename);
     res.status(403).json({ error: 'Forbidden' });
     return;
+  }
+  if (deliveryEvidence(kind)) {
+    const access = deliveryEvidenceAccess(req, refId);
+    // An offline owning-site delivery may arrive after a cloud cancellation; keep
+    // its already-captured proof so the later physical decision can be reconciled.
+    if (!access.found || !access.allowed || (!['pending', 'out_for_delivery', 'cancelled'].includes(access.status || '') && !siteDecisionStands())) {
+      if (req.file) unlink(req.file.filename);
+      res.status(!access.found ? 404 : !access.allowed ? 403 : 409).json({ error: !access.found ? 'Delivery not found' : !access.allowed ? 'Not your delivery' : 'Completed delivery evidence is locked.' }); return;
+    }
   }
   if (kind === 'production_issue') {
     const issue = queryOne<{ reported_by: number | null; status: string }>('SELECT reported_by, status FROM production_issues WHERE id = ?', refId);
@@ -180,6 +204,16 @@ router.delete('/:id', syncClass('claim'), (req, res) => {
   const row = queryOne<Row>('SELECT kind, ref_id, image_path FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
   if (!allows(req, WRITE_PERMS[row.kind] ?? ['inventory.adjust'])) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (deliveryEvidence(row.kind)) {
+    const access = deliveryEvidenceAccess(req, row.ref_id);
+    if (!access.allowed) { res.status(403).json({ error: 'Not your delivery' }); return; }
+    if (!['pending', 'out_for_delivery'].includes(access.status || '')) {
+      res.status(409).json({ error: 'Completed delivery evidence is locked.' }); return;
+    }
+  }
+  if (row.kind === 'release') {
+    res.status(409).json({ error: 'Issued release-slip evidence is locked.' }); return;
+  }
   if (row.kind === 'production_issue') {
     const issue = queryOne<{ reported_by: number | null; status: string }>('SELECT reported_by, status FROM production_issues WHERE id = ?', row.ref_id);
     const p = req.user!.permissions;

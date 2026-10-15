@@ -1,5 +1,37 @@
 # Inventory and production: mobile integration gaps
 
+## Release slip → delivery proof follow-up (2026-10-16)
+
+See `docs/reviews/release-delivery-playwright-audit.md` for the real-backend
+desktop and phone browser audit. A physical sale now needs its warehouse release
+slip before it can reach a completed commercial status, leave as
+`out_for_delivery`, or be marked delivered. Delivery planning may happen before
+the slip. `POST /api/deliveries/:id/status` and `/:id/complete` return
+`409 code:'release_required'` when the physical handoff is missing. A successful
+delivery of physical sale goods requires a named recipient and an uploaded
+`delivery` photo or linked `signature`; the server returns `proof_required` or
+`recipient_required` without changing the delivery status. Delivery evidence is
+restricted to the assigned driver or delivery manager, and completed evidence is
+locked. Failed delivery still requires a reason.
+
+**Mobile owner action:** In `public/mobile/modules/inventory/deliveries.js`, guide a
+driver who receives `release_required` back to the canonical release slip. Persist
+the pending delivery-completion payload and idempotency key across restart. Keep
+proof/signature upload identity stable, then reconcile `GET /deliveries/:id`
+after a timeout before offering a retry. Distinguish saved locally, authority
+confirmed and confirmation unknown. Keep the recipient, photos and signature
+recoverable where practical; if a draft is unavailable after restart, say that
+recapture is required. Avoid treating a `proof_required` refusal as delivered.
+No `public/mobile/` files were edited in this step.
+
+**Acceptance cases:** A booked delivery cannot depart before its sale's release
+slip; a committed slip lost in transit does not deduct twice; the assigned driver
+can upload proof while another driver cannot view it; delivery without proof or
+recipient remains open; a lost completion response resolves to the existing
+delivered record; completed proof cannot be deleted; failed delivery records a
+reason without stock movement; an offline owning-site proof reconciles with a
+conflicting cloud cancellation.
+
 ## Follow-up QR acceptance audit
 
 See `docs/reviews/mobile-qr-playwright-audit.md` and repeat with

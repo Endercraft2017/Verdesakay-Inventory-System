@@ -50,6 +50,25 @@ function mayTouch(req: Request, d: Delivery): boolean {
   return canManage(req) || d.assigned_to === req.user!.id;
 }
 
+/** A driver cannot take or deliver stock that has no warehouse-out record. Planning
+ * the trip is allowed earlier, but the numbered slip is the physical handoff. */
+function missingSaleSlip(d: Delivery): boolean {
+  if (!d.order_id) return false;
+  const row = queryOne<{ required: number; issued: number }>(
+    `SELECT EXISTS(SELECT 1 FROM order_items oi WHERE oi.order_id = o.id
+       AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd') AS required,
+       EXISTS(SELECT 1 FROM release_slips rs WHERE rs.order_id = o.id) AS issued
+     FROM orders o WHERE o.id = ? AND o.type = 'sale'`, d.order_id);
+  return !!row?.required && !row.issued;
+}
+
+function isPhysicalSale(d: Delivery): boolean {
+  return !!d.order_id && !!queryOne(
+    `SELECT 1 FROM orders o JOIN order_items oi ON oi.order_id = o.id
+     WHERE o.id = ? AND o.type = 'sale' AND oi.item_id IS NOT NULL
+       AND oi.fulfillment_mode != 'ckd' LIMIT 1`, d.order_id);
+}
+
 // GET /api/deliveries — manage: all (filters); run-only: mine
 router.get('/', requirePermission('delivery.run'), (req, res) => {
   const where: string[] = [];
@@ -162,6 +181,9 @@ router.post('/:id/status', requirePermission('delivery.run'), syncClass('physica
   if (status === 'cancelled' && !canManage(req)) {
     res.status(403).json({ error: 'Only a delivery manager can cancel' }); return;
   }
+  if (status === 'out_for_delivery' && missingSaleSlip(d)) {
+    res.status(409).json({ error: 'Issue the warehouse release slip before taking this sale out for delivery.', code: 'release_required' }); return;
+  }
   if (d.status === 'delivered' || d.status === 'cancelled') {
     // Clash-check (D6): finished on the cloud meanwhile — the cloud's outcome is kept, flagged.
     if (siteDecisionStands()) {
@@ -180,6 +202,9 @@ router.post('/:id/complete', requirePermission('delivery.run'), syncClass('physi
   const d = load(Number(req.params.id));
   if (!d) { res.status(404).json({ error: 'Delivery not found' }); return; }
   if (!mayTouch(req, d)) { res.status(403).json({ error: 'Not your delivery' }); return; }
+  if (missingSaleSlip(d)) {
+    res.status(409).json({ error: 'This sale has no warehouse release slip. Complete the stock handoff before recording delivery.', code: 'release_required' }); return;
+  }
   if (d.status === 'delivered' || d.status === 'cancelled') {
     // Clash-check (D6): the driver's proof of delivery stands over a cancellation made on the
     // cloud meanwhile; delivered on both sides keeps the first proof. Both are flagged.
@@ -195,6 +220,15 @@ router.post('/:id/complete', requirePermission('delivery.run'), syncClass('physi
     && !queryOne("SELECT id FROM attachments WHERE id = ? AND kind = 'signature' AND ref_id = ?",
       input.signature_attachment_id, d.id)) {
     res.status(400).json({ error: 'Signature attachment not found for this delivery' }); return;
+  }
+  if (input.outcome === 'delivered' && isPhysicalSale(d)) {
+    if (!input.recipient?.trim()) {
+      res.status(409).json({ error: 'Name the person who received the goods.', code: 'recipient_required' }); return;
+    }
+    if (input.signature_attachment_id == null && !queryOne(
+      "SELECT 1 FROM attachments WHERE kind = 'delivery' AND ref_id = ? LIMIT 1", d.id)) {
+      res.status(409).json({ error: 'Capture a delivery photo or recipient signature before confirming delivery.', code: 'proof_required' }); return;
+    }
   }
   run(
     `UPDATE deliveries SET

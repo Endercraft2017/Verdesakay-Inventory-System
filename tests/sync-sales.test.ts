@@ -115,6 +115,8 @@ describe('a sale while the internet is down', () => {
     delivery = (await ok(api().post('/api/deliveries').set(T.hostHdr()).send({ order_id: order.id }), 201)).body;
     expect(delivery.number).toMatch(/^DEL-\d{5}$/);
     await ok(api().post(`/api/deliveries/${delivery.id}/status`).set(T.hostHdr()).send({ status: 'out_for_delivery' }));
+    await ok(api().post('/api/attachments').set(T.hostHdr()).field('kind', 'delivery').field('ref_id', String(delivery.id))
+      .attach('image', Buffer.from('delivery-proof'), 'drop.png'), 201);
     await ok(api().post(`/api/deliveries/${delivery.id}/complete`).set(T.hostHdr()).send({ outcome: 'delivered', recipient: 'Ms. Reyes' }));
   });
 
@@ -199,6 +201,9 @@ describe('the cloud changed meanwhile (D6) and goods left beyond stock (D1)', ()
     const d = (await ok(api().post('/api/deliveries').set(T.cloudHdr()).send({ order_id: o.id }), 201)).body as { id: number; number: string };
     await T.hostRound();
     T.cutOff('host');
+    await shipOut(T.hostHdr(), o.id, 1);
+    await ok(api().post('/api/attachments').set(T.hostHdr()).field('kind', 'delivery').field('ref_id', String(d.id))
+      .attach('image', Buffer.from('proof-after-clash'), 'drop.png'), 201);
     await ok(api().post(`/api/deliveries/${d.id}/complete`).set(T.hostHdr()).send({ outcome: 'delivered', recipient: 'Guard on duty' }));
     await ok(api().post(`/api/deliveries/${d.id}/status`).set(T.cloudHdr()).send({ status: 'cancelled' }));
     T.reconnect('host');

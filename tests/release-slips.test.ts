@@ -107,15 +107,19 @@ describe('warehouse acceptance', () => {
 });
 
 describe('release slip', () => {
-  it('blocks post-delivery order completion until physical goods have a release slip', async () => {
+  it('blocks dispatch, delivery and sale completion until physical goods have a release slip', async () => {
     const raw = await mkItem({ name: 'Delivery release guard', quantity: 2 });
     const so = await saleOrder([{ name: 'Delivery release guard', item_id: raw, quantity: 2, unit_price: 20 }]);
     const rel = await createEmployee(ctx.api, token, { role: 'releasing' });
     const delivery = (await ctx.api.post('/api/deliveries').set(H())
       .send({ order_id: so, assigned_to: rel.id })).body.id;
-    await ctx.api.post(`/api/deliveries/${delivery}/status`).set(bearer(rel.token)).send({ status: 'out_for_delivery' });
-    expect((await ctx.api.post(`/api/deliveries/${delivery}/complete`).set(bearer(rel.token))
-      .send({ outcome: 'delivered', recipient: 'Customer' })).status).toBe(200);
+    const earlyDispatch = await ctx.api.post(`/api/deliveries/${delivery}/status`).set(bearer(rel.token)).send({ status: 'out_for_delivery' });
+    expect(earlyDispatch.status).toBe(409);
+    expect(earlyDispatch.body.code).toBe('release_required');
+    const earlyProof = await ctx.api.post(`/api/deliveries/${delivery}/complete`).set(bearer(rel.token))
+      .send({ outcome: 'delivered', recipient: 'Customer' });
+    expect(earlyProof.status).toBe(409);
+    expect(earlyProof.body.code).toBe('release_required');
     for (const body of [{ status: 'completed' }, { status: 'completed', force: true }]) {
       const blocked = await ctx.api.post(`/api/orders/${so}/status`).set(H()).send(body);
       expect(blocked.status).toBe(409);
@@ -129,9 +133,39 @@ describe('release slip', () => {
     await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ bulk: [{ item_id: raw, quantity: 2 }] });
     expect((await ctx.api.post(`/api/orders/${so}/release-slip`).set(H())
       .send({ collected_by: 'Customer' })).status).toBe(201);
+    expect((await ctx.api.post(`/api/deliveries/${delivery}/status`).set(bearer(rel.token))
+      .send({ status: 'out_for_delivery' })).status).toBe(200);
+    const missingProof = await ctx.api.post(`/api/deliveries/${delivery}/complete`).set(bearer(rel.token))
+      .send({ outcome: 'delivered', recipient: 'Customer' });
+    expect(missingProof.status).toBe(409);
+    expect(missingProof.body.code).toBe('proof_required');
+    expect((await ctx.api.post('/api/attachments').set(bearer(rel.token))
+      .field('kind', 'delivery').field('ref_id', String(delivery)).attach('image', PNG, 'delivered.png')).status).toBe(201);
+    expect((await ctx.api.post(`/api/deliveries/${delivery}/complete`).set(bearer(rel.token))
+      .send({ outcome: 'delivered' })).body.code).toBe('recipient_required');
+    expect((await ctx.api.post(`/api/deliveries/${delivery}/complete`).set(bearer(rel.token))
+      .send({ outcome: 'delivered', recipient: 'Customer' })).status).toBe(200);
     expect((await ctx.api.post(`/api/orders/${so}/status`).set(H())
       .send({ status: 'completed' })).status).toBe(200);
     expect(await onHand(raw)).toBe(0);
+  });
+
+  it('replays a lost slip response without another stock movement', async () => {
+    const raw = await mkItem({ name: 'Slip response loss stock', quantity: 1 });
+    const so = await saleOrder([{ name: 'Slip response loss stock', item_id: raw, quantity: 1, unit_price: 20 }]);
+    await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
+    await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ bulk: [{ item_id: raw, quantity: 1 }] });
+    const request = () => ctx.api.post(`/api/orders/${so}/release-slip`).set(H())
+      .set('Idempotency-Key', `slip-response-loss-${so}`).send({ collected_by: 'Driver' });
+    const first = await request();
+    const retry = await request();
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(201);
+    expect(retry.headers['idempotency-replayed']).toBe('true');
+    expect(retry.body.id).toBe(first.body.id);
+    expect(await onHand(raw)).toBe(0);
+    const context = await ctx.api.get(`/api/release-slips/orders/${so}/context`).set(H());
+    expect(context.body.slip.id).toBe(first.body.id);
   });
 
   it('rolls back the slip, order and stock together when stock posting fails', async () => {
@@ -245,10 +279,12 @@ describe('release slip', () => {
     expect(await onHand(raw)).toBe(6);
   });
 
-  it('a confirmed sale with no slip still leaves stock alone while the ledger is off', async () => {
+  it('refuses direct confirmation of physical stock without a slip', async () => {
     const raw = await mkItem({ name: 'S4 Widget', quantity: 10 });
     const so = await saleOrder([{ name: 'S4 Widget', item_id: raw, quantity: 3, unit_price: 10 }]);
-    await ctx.api.post(`/api/orders/${so}/status`).set(H()).send({ status: 'confirmed' });
+    const blocked = await ctx.api.post(`/api/orders/${so}/status`).set(H()).send({ status: 'confirmed' });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('release_required');
     expect(await onHand(raw)).toBe(10);
   });
 });
@@ -271,5 +307,6 @@ describe('releasing_clerk on the slip flow', () => {
     const photos = (await ctx.api.get(`/api/attachments?kind=release&ref_id=${slip.body.id}`).set(H())).body;
     expect(photos).toHaveLength(1);
     expect((await ctx.api.get(`/api/release-slips/${slip.body.id}`).set(C)).body.photo_count).toBe(1);
+    expect((await ctx.api.delete(`/api/attachments/${up.body.id}`).set(C)).status).toBe(409);
   });
 });

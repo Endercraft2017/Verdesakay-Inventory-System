@@ -326,14 +326,11 @@ router.get('/:id', (req, res) => {
 
 const RELEASE_STATES = new Set(['approved', 'released']);
 
-/** Once warehouse work or delivery has begun, completing a physical sale requires
- * its warehouse-out record. This catches both status shortcuts and legacy delivery UI. */
+/** Every physical sale must leave through the warehouse-out record, even when
+ * warehouse acceptance or delivery work has not started yet. */
 function physicalSaleNeedsSlip(orderId: number, next: string): boolean {
   if (!['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(next)) return false;
   return !!queryOne('SELECT 1 FROM order_items WHERE order_id = ? AND item_id IS NOT NULL LIMIT 1', orderId)
-    && (!!queryOne("SELECT 1 FROM order_items WHERE order_id = ? AND fulfillment_mode = 'ckd' LIMIT 1", orderId)
-      || !!queryOne('SELECT 1 FROM orders WHERE id = ? AND warehouse_accepted_at IS NOT NULL', orderId)
-      || !!queryOne("SELECT 1 FROM deliveries WHERE order_id = ? AND status = 'delivered' LIMIT 1", orderId))
     && !queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', orderId);
 }
 
@@ -970,9 +967,9 @@ router.post('/:id/purchase-shortfall', requireModule('purchasing'), requirePermi
 // POST /api/orders — create with auto number + computed totals
 router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), createAccess, idempotency, syncClass('merge'), (req, res) => {
   const input = parseBody(createOrderSchema, req.body);
-  if (input.type === 'sale' && input.items.some((line) => line.fulfillment_mode === 'ckd')
+  if (input.type === 'sale' && input.items.some((line) => line.item_id != null)
       && !['open', 'approved'].includes(String(input.status || 'open').toLowerCase())) {
-    res.status(409).json({ error: 'CKD goods must go through warehouse allocation and a release slip.', code: 'release_required' }); return;
+    res.status(409).json({ error: 'Physical goods must go through warehouse allocation and a release slip.', code: 'release_required' }); return;
   }
   if (!canOnOrder(req.user!, input.type, 'create')) {
     res.status(403).json({ error: 'Forbidden: insufficient permissions' });
@@ -1056,8 +1053,8 @@ router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', 
     res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of reopening or cancelling the physical handoff.', code: 'already_shipped' });
     return;
   }
-  if (physicalSaleNeedsSlip(id, next) && !siteDecisionStands()) {
-    res.status(409).json({ error: 'This sale has entered warehouse or delivery work, but the goods have no release slip. Complete the warehouse handoff first.', code: 'release_required' });
+  if (physicalSaleNeedsSlip(id, next)) {
+    res.status(409).json({ error: 'Physical goods need a warehouse release slip before this sale can be completed.', code: 'release_required' });
     return;
   }
 
@@ -1123,8 +1120,8 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
     res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of reopening or cancelling the physical handoff.', code: 'already_shipped' });
     return;
   }
-  if (order.type === 'sale' && physicalSaleNeedsSlip(id, String(input.status || '').toLowerCase()) && !siteDecisionStands()) {
-    res.status(409).json({ error: 'This sale has entered warehouse or delivery work, but the goods have no release slip. Complete the warehouse handoff first.', code: 'release_required' });
+  if (order.type === 'sale' && physicalSaleNeedsSlip(id, String(input.status || '').toLowerCase())) {
+    res.status(409).json({ error: 'Physical goods need a warehouse release slip before this sale can be completed.', code: 'release_required' });
     return;
   }
   if (lockLines) {

@@ -249,6 +249,8 @@ App.register('releasing', async (view, filter) => {
   /* ------------------------------------------------------ 3. issue the release slip --- */
   async function slipModal(order, onDone, partial) {
     const photos = []; // File[]
+    let slipAttempt = null;
+    const newKey = (prefix) => prefix + ':' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
     // Warehouse-out rules (release-auth.ts): the recipient's token when Sales issued an
     // authorization, and every required package item. The server re-checks both.
     let rc = { authorization: { state: 'none' }, package: [] };
@@ -342,14 +344,28 @@ App.register('releasing', async (view, filter) => {
           fd.append('ref_id', String(order.id));
           fd.append('caption', 'Goods going out');
           fd.append('image', f);
-          try { f._attId = (await API.upload('/attachments', fd)).id; }
-          catch (e) { showErr('A photo failed to upload — nothing was released. ' + e.message); return false; }
+          f._uploadKey = f._uploadKey || newKey('release-photo');
+          try { f._attId = (await API.upload('/attachments', fd, { idempotencyKey: f._uploadKey })).id; }
+          catch (e) { showErr('Photo confirmation is unknown. Retry this upload with the same photo; warehouse-out has not been submitted. ' + e.message); return false; }
         }
-        const r = await API.post('/orders/' + order.id + '/release-slip', {
+        const payload = {
           collected_by: val('collected_by'), vehicle_plate: val('vehicle_plate') || null, notes: val('notes') || null,
           authorization_token: overriding ? null : (val('authorization_token').toUpperCase() || null), seal_tag: val('seal_tag') || null, package: pkg,
           evidence_ids: photos.map((f) => f._attId),
-        });
+        };
+        const signature = JSON.stringify(payload);
+        if (!slipAttempt || slipAttempt.signature !== signature) slipAttempt = { signature, key: newKey('release-slip') };
+        let r;
+        try { r = await API.post('/orders/' + order.id + '/release-slip', payload, { idempotencyKey: slipAttempt.key }); }
+        catch (e) {
+          // A lost HTTP response can follow a committed stock movement. Reconcile the
+          // numbered slip before showing an error or allowing another decision.
+          const current = await API.get('/release-slips/orders/' + order.id + '/context').catch(() => null);
+          if (current?.slip) r = { id: current.slip.id,
+            backorder: current.slip.backorder_number ? { number: current.slip.backorder_number } : null };
+          else { showErr(e.status && e.status < 500 ? e.message
+            : 'Release confirmation is unknown. Keep this form open and retry; the same request key will be used. ' + e.message); return false; }
+        }
         UI.toast(r.backorder ? `Release slip issued — the rest is on backorder ${r.backorder.number}` : 'Release slip issued — stock deducted');
         if (onDone) onDone();
         slipView(r.id);

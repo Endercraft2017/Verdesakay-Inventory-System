@@ -54,8 +54,19 @@ describe('deliveries', () => {
 
   it('start → complete captures the POD', async () => {
     const d1 = await driver();
+    const d2 = await driver();
     const del = (await ctx.api.post('/api/deliveries').set(A())
       .send({ customer_name: 'Bravo Ltd', assigned_to: d1.id })).body.id;
+
+    const image = await ctx.api.post('/api/attachments').set(bearer(d1.token))
+      .field('kind', 'delivery').field('ref_id', String(del))
+      .attach('image', Buffer.from('proof-by-assigned-driver'), 'proof.png');
+    expect(image.status).toBe(201);
+    expect((await ctx.api.get(`/api/attachments?kind=delivery&ref_id=${del}`).set(bearer(d2.token))).status).toBe(403);
+    expect((await ctx.api.get(`/api/attachments/${image.body.id}/image`).set(bearer(d2.token))).status).toBe(403);
+    expect((await ctx.api.post('/api/attachments').set(bearer(d2.token))
+      .field('kind', 'delivery').field('ref_id', String(del))
+      .attach('image', Buffer.from('other-driver'), 'other.png')).status).toBe(403);
 
     expect((await ctx.api.post(`/api/deliveries/${del}/status`).set(bearer(d1.token))
       .send({ status: 'out_for_delivery' })).status).toBe(200);
@@ -68,6 +79,10 @@ describe('deliveries', () => {
     const got = await ctx.api.get('/api/deliveries/' + del).set(bearer(d1.token));
     expect(got.body).toMatchObject({ status: 'delivered', pod_recipient: 'J. Cruz', pod_lat: 14.55 });
     expect(got.body.delivered_by_name).toBeTruthy();
+    expect((await ctx.api.delete(`/api/attachments/${image.body.id}`).set(bearer(d1.token))).status).toBe(409);
+    expect((await ctx.api.post('/api/attachments').set(bearer(d1.token))
+      .field('kind', 'signature').field('ref_id', String(del))
+      .attach('image', Buffer.from('late-signature'), 'late.png')).status).toBe(409);
 
     // already delivered → can't re-complete
     expect((await ctx.api.post(`/api/deliveries/${del}/complete`).set(bearer(d1.token))
