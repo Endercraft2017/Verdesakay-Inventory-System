@@ -37,7 +37,7 @@ router.use(requireAuth);
 
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-import { parseFields, parseActions, parseData, nextRecordNumber, canManageScope, canAccessRecords, FORM_SCOPES, ANY_FORMS_MANAGE, validateRequiredCheckboxes } from './policy';
+import { parseFields, parseActions, parseData, nextRecordNumber, canManageScope, canAccessRecords, FORM_SCOPES, ANY_FORMS_MANAGE, validateRequiredCheckboxes, canEnterForm, hasFormScopeAccess } from './policy';
 // ─── Form Records ────────────────────────────────────────────────────────────
 
 // GET /api/form-definitions/:id/records — list records for a form (?q=, ?status=). Same
@@ -46,7 +46,7 @@ import { parseFields, parseActions, parseData, nextRecordNumber, canManageScope,
 // are visible through the separate, self-scoped GET /me/requests instead.
 router.get('/form-definitions/:id/records', (req, res) => {
   const formId = Number(req.params.id);
-  const form = queryOne<{ scope: FormScope | null; slug: string }>('SELECT scope, slug FROM form_definitions WHERE id = ?', formId);
+  const form = queryOne<{ id:number;scope: FormScope | null; slug: string }>('SELECT id, scope, slug FROM form_definitions WHERE id = ?', formId);
   if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
   if (!canAccessRecords(req, res, form, false)) return;
   const { q, status, period } = req.query;
@@ -87,7 +87,7 @@ router.get('/form-records/:id', (req, res) => {
     Number(req.params.id)
   );
   if (!row) { res.status(404).json({ error: 'Record not found' }); return; }
-  if (!canAccessRecords(req, res, { scope: row.scope, slug: row.form_slug }, false)) return;
+  if (!canAccessRecords(req, res, { form_def_id:row.form_def_id,scope: row.scope, slug: row.form_slug }, false)) return;
   res.json({...recordResponse(row),sales_order:salesLink(row.id)||null});
 });
 
@@ -132,10 +132,11 @@ router.post('/form-records', createRecordAccess, idempotency, syncClass('merge')
   // staff who could otherwise create any record in their section.
   const infoChange = form.slug === INFO_CHANGE_SLUG;
   const selfFile = infoChange || (!canManage && REQUEST_SLUGS.includes(form.slug));
-  if (!canManage && !selfFile) {
+  if (!canManage && !selfFile && !canEnterForm(req,form)) {
     res.status(403).json({ error: 'Forbidden: insufficient permissions' });
     return;
   }
+  if(!canManage&&!selfFile&&!['draft','submitted'].includes(input.status)){res.status(403).json({error:'Form entry permits draft and submitted records only.'});return;}
   const status = REQUEST_SLUGS.includes(form.slug) ? 'pending' : input.status;
   if (infoChange) input.data = prepareInfoChange(req.user!.id, input.data as Record<string, unknown>);
   else if (REQUEST_SLUGS.includes(form.slug)) {
@@ -232,6 +233,10 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
   if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
   if (!canAccessRecords(req, res, existing, true)) return;
   const input = parseBody(updateFormRecordSchema, req.body);
+  if(existing.scope==='inventory'&&!hasFormScopeAccess(req.user!.permissions,existing.scope)){
+    if(existing.status!=='draft'||(input.status&&!['draft','submitted'].includes(input.status))){res.status(403).json({error:'Form entry users may edit and submit drafts only.'});return;}
+    if(queryOne<{archived_at:string|null}>('SELECT archived_at FROM form_definitions WHERE id=?',existing.form_def_id)?.archived_at){res.status(403).json({error:'Archived records require a form manager to correct them.'});return;}
+  }
   // A payslip marked Paid (src/routes/hr.routes.ts's mark-paid) is locked against the generic
   // edit path — unmark it first. Also block setting status to 'paid' through here directly;
   // the dedicated mark-paid route is the only allowed entry point for that transition.
@@ -324,6 +329,7 @@ router.delete('/form-records/:id', syncClass('claim'), (req, res) => {
     id
   );
   if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
+  if(existing.scope==='inventory'&&!canManageScope(req,res,existing.scope))return;
   if (!canAccessRecords(req, res, existing, true)) return;
   if(queryOne<{archived_at:string|null}>('SELECT archived_at FROM form_definitions WHERE id=?',existing.form_def_id)?.archived_at){res.status(409).json({error:'Archived records must be preserved. Restore the form before deleting records.'});return;}
 

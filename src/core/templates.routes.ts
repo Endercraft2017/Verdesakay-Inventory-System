@@ -1,6 +1,9 @@
 /** Document templates (admin-managed) + the company profile used by template variables.
     Reading is open to any logged-in user; editing is admin-only. */
 import { z } from 'zod';
+import {canEnterForm} from './data-forms/policy';
+import type {FormDefinition} from '../shared/types';
+import type {Request,Response,NextFunction} from 'express';
 import { BUILTIN_DOCUMENTS } from '../shared/document-defaults';
 import { Router } from 'express';
 import studioRoutes from './doc-studio.routes';
@@ -18,7 +21,12 @@ router.use('/studio', studioRoutes);
 
 // Document templates are read by whoever prints documents from them: the template editors, orders,
 // purchasing, accounting and form records. The company header (/company) stays readable by all.
-const docRead = requireAnyPermission(['templates.view', 'orders.view', 'purchasing.view', 'accounting.view', 'forms.view']);
+const broadDocRead = requireAnyPermission(['templates.view', 'orders.view', 'purchasing.view', 'accounting.view', 'forms.view']);
+function docRead(req:Request,res:Response,next:NextFunction){
+  const id=Number(req.params.id||req.query.template_id);
+  if(['/variables','/:id'].includes(req.route?.path)&&Number.isSafeInteger(id)&&id>0&&queryAll<FormDefinition>('SELECT fd.* FROM form_definitions fd JOIN form_template_links l ON l.form_id=fd.id WHERE l.template_id=?',id).some(form=>canEnterForm(req,form))){next();return;}
+  broadDocRead(req,res,next);
+}
 
 const COMPANY_KEY = 'company_profile';
 const EMPTY_COMPANY: CompanyProfile = {

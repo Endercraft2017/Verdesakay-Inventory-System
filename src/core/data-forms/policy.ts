@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { nextFormRecordNumber } from '../../shared/db';
+import { queryOne, nextFormRecordNumber } from '../../shared/db';
 import type { FieldDef, FormScope, Permission } from '../../shared/types';
 import { PAYROLL_FORM_SLUG } from '../../modules/payroll/pay-access';
 import { ValidationError } from '../../shared/validation';
@@ -23,17 +23,8 @@ export function nextRecordNumber(prefix: string, _formId: number): string {
 export const FORM_SCOPES: FormScope[] = ['hr', 'inventory', 'admin', 'accounting'];
 export const ANY_FORMS_MANAGE: Permission[] = FORM_SCOPES.map((s) => `forms.manage.${s}` as Permission);
 
-/** A form's required permission depends on its own `scope`, not just the route — so this is a
-    plain check called inline rather than a static requirePermission(...) middleware. General
-    (null-scope) forms require *all four* forms.manage.* — deliberately stricter than any single
-    section, so a form nobody explicitly sectioned doesn't become manageable by whichever role
-    happens to hold just one scope. In practice only admin holds all four by default, making
-    General effectively admin-managed, the right default for an unowned bucket. Writes the 403
-    itself and returns whether the caller may proceed. Also the read gate for form_definitions/
-    records and form_records/:id (there's no separate forms.view.<scope> tier for this system —
-    manage is the only permission level, so browsing a section's records requires the same
-    permission as managing them; a self-filer's own submissions stay visible via the separate,
-    ownership-scoped GET /me/requests instead). */
+/** Definition management remains scoped to its owning section. General forms require
+ * all four management permissions; record entry is checked separately below. */
 export function canManageScope(req: Request, res: Response, scope: FormScope | null): boolean {
   const ok = scope
     ? req.user!.permissions.includes(`forms.manage.${scope}` as Permission)
@@ -42,16 +33,23 @@ export function canManageScope(req: Request, res: Response, scope: FormScope | n
   return ok;
 }
 
-/** Read/write gate for one form's RECORDS. Payslips (the hr_payroll form) are pay data, so they
-    take payroll.view to read and payroll.manage to write instead of the HR section's
-    forms.manage.hr (modules/payroll/pay-access.ts); every other form uses canManageScope. Writes
-    the 403 itself and returns whether the caller may proceed. */
-export function canAccessRecords(req: Request, res: Response, form: { scope: FormScope | null; slug: string }, write: boolean): boolean {
+/** Entry requires both the account capability and a grant on this particular form.
+ * Always load current grants: revocations also apply to sync replay and direct record URLs. */
+export function canEnterForm(req:Request, form:{id?:number;form_def_id?:number;scope:FormScope|null}):boolean {
+  if(form.scope!=='inventory'||!req.user!.permissions.includes('forms.fill.inventory'))return false;
+  const row=queryOne<{entry_access:string}>('SELECT entry_access FROM form_definitions WHERE id=?',form.form_def_id??form.id??0);
+  try {const access=JSON.parse(row?.entry_access||'{}');return Array.isArray(access.roles)&&access.roles.includes(req.user!.role)||Array.isArray(access.users)&&access.users.includes(req.user!.id);}catch{return false;}
+}
+
+/** Payslips use their independent payroll permissions. Inventory entry is restricted to
+ * assigned forms; callers additionally enforce draft-only writes and manager-only deletes. */
+export function canAccessRecords(req: Request, res: Response, form: { id?:number;form_def_id?:number;scope: FormScope | null; slug: string }, write: boolean): boolean {
   if (form.slug === PAYROLL_FORM_SLUG) {
     const ok = req.user!.permissions.includes(write ? 'payroll.manage' : 'payroll.view');
     if (!ok) res.status(403).json({ error: 'Forbidden: payslips need the payroll permission' });
     return ok;
   }
+  if(canEnterForm(req,form))return true;
   return canManageScope(req, res, form.scope);
 }
 

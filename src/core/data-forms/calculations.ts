@@ -30,7 +30,7 @@ export function calculateRecord(fields:FieldDef[],input:Record<string,unknown>,u
       });
     }
     // Connected invoices validate required inputs on the server as well as in the browser.
-    if(fields.some(field=>['reference','system','line_items','calculated'].includes(field.type)))for(const field of fields) {
+    if(fields.some(field=>(['reference','system','line_items','calculated'].includes(field.type)||field.format==='currency')))for(const field of fields) {
       if(field.type==='number' && data[field.key]!=null && data[field.key]!=='')data[field.key]=math.number(data[field.key],field.label);
       if(field.required&&!['calculated','line_items'].includes(field.type)&&(data[field.key]==null||data[field.key]===''||(field.type==='checkbox'&&data[field.key]!==true&&data[field.key]!=='Yes')))throw new Error(field.label+' is required');
     }

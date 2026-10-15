@@ -1201,3 +1201,5 @@ version → retained product/customer/system values survive concurrent master-da
 record/order/link synchronizes. Permission revocation is rejected, not silently bypassed.
 Record numbering uses a global series per prefix, including across different form definitions.
 Automated cloud/site/LAN tests simulate separate nodes; physical-device acceptance is still manual.
+
+Inventory form entry uses forms.fill.inventory plus per-form role/account grants (form_definitions.entry_access, access_revision; schema 82). Entry users read all assigned-form records and create/edit/submit active drafts; design, delete and approvals retain their existing manager gates. Current grants are rechecked during sync replay. See tests/form-entry-access.test.ts and the invoice Playwright gate.

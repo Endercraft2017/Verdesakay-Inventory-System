@@ -96,7 +96,7 @@ async function renderIndex(view, onlyScope, initialQuery, initialView = 'all') {
   let forms;
   try {
     forms = (await API.get('/form-definitions')).filter((form) =>
-      (form.slug === 'hr_payroll' ? App.hasPermission('payroll.view') : DataForms.canManage(form.scope)));
+      (form.slug === 'hr_payroll' ? App.hasPermission('payroll.view') : (form.records_allowed ?? DataForms.canManage(form.scope))));
   } catch (error) {
     if (formRecordViews.get(view) !== owner) return;
     el.innerHTML = UI.emptyState({ icon: 'alert', title: 'Could not load forms', hint: error.message || 'Please try again.', action: '<button class="btn secondary" type="button" id="fr-index-retry">Retry</button>' });
@@ -170,16 +170,10 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   if (formRecordViews.get(view) !== owner) return;
   if (window.Help) Help.rememberForm(formDef);
 
-  // Browsing a section's records needs the same forms.manage.<scope> permission as managing
-  // them — there's no separate view-only tier for this system (mirrors the server-side gate in
-  // form-builder.routes.ts's canManageScope). Checked client-side too so a user without access
-  // gets a clean message instead of a raw 403 from the records fetch below.
-  // Payslips are pay data: payroll.view instead of forms.manage.hr (server: canAccessRecords).
-  const canBrowse = formDef.slug === 'hr_payroll'
-    ? App.hasPermission('payroll.view')
-    : formDef.scope
-      ? App.hasPermission('forms.manage.' + formDef.scope)
-      : ['hr', 'inventory', 'admin', 'accounting'].every((s) => App.hasPermission('forms.manage.' + s));
+  // The server supplies the current form-specific entry decision. Payroll keeps its
+  // independent permission; management rights alone continue to cover the owning section.
+  const entryOnly = formDef.scope === 'inventory' && !DataForms.canManage('inventory');
+  const canBrowse = formDef.records_allowed ?? (formDef.slug === 'hr_payroll' ? App.hasPermission('payroll.view') : DataForms.canManage(formDef.scope));
   if (!canBrowse) {
     view.innerHTML = `<div class="topbar">
         <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} Data Forms</button>
@@ -216,7 +210,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
 
   // Payslip writes need payroll.manage server-side (form-builder.routes.ts canAccessRecords); a
   // payroll.view-only reader browses, prints and exports. Every other form reaches this point
-  // only with its manage permission, so canWrite is always true for them.
+  // with management or assigned entry access; entry-only writes are limited to active drafts.
   const canWrite = !isPayroll || canManagePayroll;
   const statusOptions = `
         <option value="" ${state.status ? '' : 'selected'}>All statuses</option>
@@ -273,7 +267,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       </select>
       ${canBulkPrint ? `<button class="btn secondary" id="fr-print-all-tpl" style="margin-left:8px">${UI.icon('printer')} Print visible</button>` : ''}
       <button class="btn secondary" id="fr-download-csv" style="margin-left:8px" title="Download the currently filtered records as a CSV file">${UI.icon('download')} Download CSV</button>
-      ${HR_REQUEST_SLUGS.includes(formDef.slug) ? '<button class="btn secondary" id="fr-open-approvals">Open Approvals</button>' : `<button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete visible</button>`}
+      ${entryOnly ? '' : HR_REQUEST_SLUGS.includes(formDef.slug) ? '<button class="btn secondary" id="fr-open-approvals">Open Approvals</button>' : `<button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete visible</button>`}
       <button class="btn" id="fr-new" style="margin-left:8px">${UI.icon('plus')} New Record</button>
     </div>`;
 
@@ -287,7 +281,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       ${isPayroll && canManagePayroll ? `
         <button class="btn secondary small" id="fr-bulk-mark-paid">${UI.icon('check')} Mark paid</button>
         <button class="btn secondary small" id="fr-bulk-unmark-paid">${UI.icon('reply', 15)} Unmark paid</button>` : ''}
-      ${canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>` : ''}
+      ${canWrite && !entryOnly && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>` : ''}
       <button class="btn secondary small" id="fr-bulk-clear">${UI.icon('close', 12)} Clear</button>
     </div>
     <div class="panel"><div id="fr-table"></div></div>`;
@@ -432,7 +426,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   function batchPlan(targets, operation, nextStatus) {
     return targets.map((record) => {
       let reason = '';
-      if(record.sales_order_id && ['delete','status'].includes(operation)) reason='Linked to a sales order; review it there';
+      if(entryOnly&&(operation==='delete'||record.status!=='draft'||formDef.archived_at)) reason='Form entry permits changes to active drafts only';
+      else if(record.sales_order_id && ['delete','status'].includes(operation)) reason='Linked to a sales order; review it there';
       else if (formDef.archived_at && operation === 'delete') reason = 'Archived records must be retained';
       else if (operation === 'paid' && record.status === 'paid') reason = 'Already paid';
       else if (operation === 'unpaid' && record.status !== 'paid') reason = 'Not marked paid';
@@ -449,7 +444,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     return new Promise((resolve) => {
       const modal = UI.modal({
         title: `${verb} — review ${targets.length} record${targets.length === 1 ? '' : 's'}`,
-        bodyHTML: `${operation === 'status' ? `<label for="fr-batch-status">New status</label><select id="fr-batch-status"><option value="">Choose a status…</option>${((formDef.actions||[]).some(action=>action.type==='create_sales_draft')?['draft','submitted']:['draft', 'pending', 'submitted', 'approved', 'rejected', 'completed']).map(status => `<option value="${status}">${status}</option>`).join('')}</select>` : ''}
+        bodyHTML: `${operation === 'status' ? `<label for="fr-batch-status">New status</label><select id="fr-batch-status"><option value="">Choose a status…</option>${(entryOnly||(formDef.actions||[]).some(action=>action.type==='create_sales_draft')?['draft','submitted']:['draft', 'pending', 'submitted', 'approved', 'rejected', 'completed']).map(status => `<option value="${status}">${status}</option>`).join('')}</select>` : ''}
           <p class="muted">${UI.esc(formDef.name)}${state.period ? ' · Period: ' + UI.esc(state.period) : ''}${state.status ? ' · Status: ' + UI.esc(state.status) : ''}${state.q ? ' · Search: ' + UI.esc(state.q) : ''}</p>
           <p>${deleting ? 'Deletion cannot be undone.' : 'Only the eligible records below will change.'}</p>
           <p id="fr-batch-count" aria-live="polite"></p>
@@ -1222,8 +1217,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             ${isPayroll && canManagePayroll ? (r.status === 'paid'
               ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)" aria-label="Unmark payslip ${UI.esc(r.number)} as paid">${UI.icon('reply', 15)}</button>`
               : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)" aria-label="Mark payslip ${UI.esc(r.number)} as paid">${UI.icon('check')}</button>`) : ''}
-            ${r.status !== 'paid' && canWrite ? `<button class="icon-btn" data-edit="${r.id}" title="Edit"${isPayroll ? ` aria-label="Edit payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('edit')}</button>` : ''}
-            ${!formDef.archived_at && r.status !== 'paid' && canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete"${isPayroll ? ` aria-label="Delete payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('trash')}</button>` : ''}
+            ${r.status !== 'paid' && canWrite && (!entryOnly || (r.status==='draft'&&!formDef.archived_at)) ? `<button class="icon-btn" data-edit="${r.id}" title="Edit"${isPayroll ? ` aria-label="Edit payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('edit')}</button>` : ''}
+            ${!entryOnly && !formDef.archived_at && r.status !== 'paid' && canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete"${isPayroll ? ` aria-label="Delete payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('trash')}</button>` : ''}
           </td>
         </tr>`).join('')}
       </tbody></table>`;
@@ -1493,6 +1488,9 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     }
     if (!existing && formDef.archived_at) { UI.toast('Restore this form before creating records.', 'error'); return; }
     const editing = !!existing;
+    if(entryOnly&&existing&&(existing.status!=='draft'||formDef.archived_at)){
+      UI.modal({title:existing.number,cancelText:'Close',bodyHTML:`<p>Status: ${UI.esc(existing.status)}. Entry users can edit active drafts only.</p>${(existing.schema?.fields||formDef.fields).map(field=>`<p><strong>${UI.esc(field.label)}</strong>: ${UI.esc(DataForms.displayValue(existing.data[field.key],field))}</p>`).join('')}`});return;
+    }
     const linkedOrder=existing?.sales_order_id||existing?.sales_order?.order_id;
     if(linkedOrder){UI.modal({title:'Submitted '+existing.number,cancelText:'Close',bodyHTML:`<p>This record created sales order ${UI.esc(existing.sales_order_number||existing.sales_order?.order_number||'')}. Its submitted values are retained. Review and correct the draft through Sales Orders.</p>${App.hasPermission('orders.view')?'<button type="button" class="btn" data-open-linked-order>Review sales order</button>':''}`,onOpen:overlay=>{overlay.querySelector('[data-open-linked-order]')?.addEventListener('click',()=>App.navigate('orders',{type:'sale',id:linkedOrder}));}});return;}
     let saveKey=FormConnections.key(),pendingSave=null;
@@ -1503,7 +1501,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       return;
     }
     const data = editing ? { ...existing.data } : { ...(prefill || {}) };
-    const statusOpts = (request ? ['pending'] : (recordDefinition.actions||[]).some(action=>action.type==='create_sales_draft')?['draft','submitted']:['draft', 'submitted', 'approved', 'rejected', 'completed'])
+    const statusOpts = (request ? ['pending'] : entryOnly||(recordDefinition.actions||[]).some(action=>action.type==='create_sales_draft')?['draft','submitted']:['draft', 'submitted', 'approved', 'rejected', 'completed'])
       .map((s) => `<option value="${s}" ${(existing ? existing.status : 'draft') === s ? 'selected' : ''}>${s}</option>`)
       .join('');
     const employees = recordDefinition.fields.some((f) => f.type === 'employee') ? await getEmployees() : [];
@@ -1522,7 +1520,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       title: editing ? `Edit ${existing.number}` : `New ${formDef.name}`,
       size: recordDefinition.fields.length > 6 ? 'lg' : undefined,
       bodyHTML: `
-        ${(recordDefinition.actions||[]).some(action=>action.type==='create_sales_draft')?'<p class="panel">Save as Draft to continue editing. Submitting creates an open sales order for review and preserves these submitted values. Stock and accounting follow the sales order workflow.</p>':''}
+        ${entryOnly||(recordDefinition.actions||[]).some(action=>action.type==='create_sales_draft')?'<p class="panel">Save as Draft to continue editing. Submitting creates an open sales order for review and preserves these submitted values. Stock and accounting follow the sales order workflow.</p>':''}
         <div style="margin-bottom:14px">
           ${editing
             ? `<span class="muted">Status: ${UI.esc(existing.status)}. To change it, select the record and choose Change status.</span>`

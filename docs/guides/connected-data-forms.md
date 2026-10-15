@@ -6,6 +6,22 @@ Builder. Existing employee self-service requests retain their supported field ty
 connected staff forms are currently entered through desktop Data Forms, including its
 responsive narrow-screen layout.
 
+## Choose who can enter an Inventory form
+
+An account administrator grants **Enter Inventory forms** (`forms.fill.inventory`) to a role
+or individual account under Accounts. A form designer then opens **Form Builder → Access**
+on the particular Inventory form and selects allowed roles and/or employee accounts.
+Both the account permission and a form grant are required; leaving both lists empty keeps
+records accessible only to existing form managers. Existing roles are not automatically widened.
+
+Allowed users can view all records on that form, including records created by colleagues,
+and create, edit or submit active drafts. Submitted records are read-only to entry users.
+They cannot approve, delete, archive, change the form definition, change access, or edit print
+layouts. Archived records require a manager for corrections. Managers retain their existing
+access. Product/customer read permissions and sales-order creation permissions still apply.
+HR, employee self-service and payroll access remain unchanged. Access changes have a separate
+revision check; stale saves are rejected, and current grants are checked again on offline replay.
+
 ## Stage 1: choose data instead of retyping it
 
 Add a field, then select a connected type: Product, Customer, Employee, Sales order,

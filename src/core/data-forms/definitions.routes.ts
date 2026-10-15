@@ -33,15 +33,15 @@ router.use(requireAuth);
 
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-import { parseFields, parseActions, parseData, nextRecordNumber, canManageScope, canAccessRecords, FORM_SCOPES, ANY_FORMS_MANAGE, validateRequiredCheckboxes, hasFormScopeAccess } from './policy';
+import { parseFields, parseActions, parseData, nextRecordNumber, canManageScope, canAccessRecords, FORM_SCOPES, ANY_FORMS_MANAGE, validateRequiredCheckboxes, hasFormScopeAccess, canEnterForm } from './policy';
 function validateRequestSurface(slug:string,fields:import('../../shared/types').FieldDef[],actions:import('../../shared/types').FormAction[]) {
   if(REQUEST_SLUGS.includes(slug)&&(fields.some(field=>['reference','system','line_items','calculated'].includes(field.type)||field.binding)||actions.some(action=>action.run_on==='submitted')))
     throw new ValidationError('Employee self-service requests use their supported request fields and create/approved actions. Use a separate staff Data Form for connected fields and sales workflows.');
 }
 function visibleDefinition(req:Request,row:FormDefinition) {
-  const result={...row} as FormDefinition & {version_reason?:string;updated_by?:number;archived_by?:number};
+  const result={...row,records_allowed:row.slug===PAYROLL_FORM_SLUG?req.user!.permissions.includes('payroll.view'):hasFormScopeAccess(req.user!.permissions,row.scope)||canEnterForm(req,row)} as FormDefinition & {version_reason?:string;updated_by?:number;archived_by?:number};
   const allowed=row.slug===PAYROLL_FORM_SLUG?req.user!.permissions.includes('payroll.view'):hasFormScopeAccess(req.user!.permissions,row.scope);
-  if(!allowed){delete result.version_reason;delete result.archive_reason;delete result.updated_by;delete result.archived_by;}
+  if(!allowed){delete result.entry_access;delete result.version_reason;delete result.archive_reason;delete result.updated_by;delete result.archived_by;}
   return result;
 }
 // ─── Form Definitions ────────────────────────────────────────────────────────
@@ -81,6 +81,26 @@ router.put('/form-definitions/:id/archive', syncClass('claim'), (req, res) => {
   const input=parseBody(z.object({archived:z.boolean(),reason:z.string().trim().max(1000).optional()}),req.body);
   run('UPDATE form_definitions SET archived_at=?,archived_by=?,archive_reason=?,updated_at=? WHERE id=?',input.archived?now().toISOString():null,input.archived?req.user!.id:null,input.archived?input.reason||null:null,now().toISOString(),form.id);
   res.json({ok:true,archived:input.archived});
+});
+
+// Per-form entry grants do not alter role bundles or HR/payroll authorization.
+router.get('/form-definitions/:id/access',(req,res)=>{
+  const form=queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id=?',Number(req.params.id));
+  if(!form){res.status(404).json({error:'Form not found'});return;}
+  if(!canManageScope(req,res,form.scope))return;
+  if(form.scope!=='inventory'){res.status(400).json({error:'Entry grants are available for Inventory forms only.'});return;}
+  res.json({access:parseData(form.entry_access as string),revision:form.access_revision,roles:queryAll('SELECT key,label FROM roles ORDER BY label'),users:queryAll('SELECT id,full_name,username,role FROM users WHERE active=1 ORDER BY full_name')});
+});
+router.put('/form-definitions/:id/access',syncClass('claim'),(req,res)=>{
+  const form=queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id=?',Number(req.params.id));
+  if(!form){res.status(404).json({error:'Form not found'});return;}
+  if(!canManageScope(req,res,form.scope))return;
+  if(form.scope!=='inventory'){res.status(400).json({error:'Entry grants are available for Inventory forms only.'});return;}
+  const input=parseBody(z.object({expected_revision:z.number().int().positive(),roles:z.array(z.string().min(1).max(100)).max(200),users:z.array(z.number().int().positive()).max(1000)}),req.body);
+  if(input.expected_revision!==form.access_revision){res.status(409).json({error:'Form access changed. Reload before saving.'});return;}
+  if(input.roles.some(key=>!queryOne('SELECT 1 FROM roles WHERE key=?',key))||input.users.some(id=>!queryOne('SELECT 1 FROM users WHERE id=? AND active=1',id)))throw new ValidationError('Choose existing roles and active employee accounts.');
+  run('UPDATE form_definitions SET entry_access=?,access_revision=access_revision+1,updated_at=?,updated_by=? WHERE id=?',JSON.stringify({roles:[...new Set(input.roles)],users:[...new Set(input.users)]}),now().toISOString(),req.user!.id,form.id);
+  res.json({ok:true,revision:(form.access_revision||1)+1});
 });
 
 // POST /api/form-definitions — create (forms.manage.<scope>)
@@ -148,7 +168,7 @@ router.put('/form-definitions/:id', syncClass('claim'), (req, res) => {
 router.get('/form-definitions/:id/templates',(req,res)=>{
  const form=queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id=?',Number(req.params.id));
  if(!form){res.status(404).json({error:'Form not found'});return;}
- if(!canManageScope(req,res,form.scope))return;
+ if(form.scope==='inventory' ? !canAccessRecords(req,res,form,false) : !canManageScope(req,res,form.scope))return;
  res.json(queryAll('SELECT t.id,t.name,t.type,t.updated_at,(t.id=?) AS is_default,(SELECT COUNT(*) FROM form_template_links WHERE template_id=t.id) AS linked_forms FROM form_template_links l JOIN doc_templates t ON t.id=l.template_id WHERE l.form_id=? ORDER BY is_default DESC,t.name',form.template_id,form.id));
 });
 router.post('/form-definitions/:id/templates',syncClass('claim'),(req,res)=>{

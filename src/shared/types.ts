@@ -17,6 +17,7 @@ export type Permission =
   // Purchase orders, goods receipts and vendor bills (split from orders.*; inventory/order-access.ts).
   | 'purchasing.view' | 'purchasing.manage'
   | 'forms.view' | 'forms.upload' | 'forms.delete'
+  | 'forms.fill.inventory'
   | 'forms.manage.hr' | 'forms.manage.inventory' | 'forms.manage.admin' | 'forms.manage.accounting'
   | 'messages.view' | 'messages.send'
   | 'templates.view' | 'templates.edit' | 'templates.company'
@@ -1565,6 +1566,9 @@ export interface FormAction {
 
 /** A custom form type created by an admin. */
 export interface FormDefinition {
+  entry_access?: string | {roles:string[];users:number[]};
+  access_revision?:number;
+  records_allowed?:boolean;
   version?: number;
   archived_at?: string | null;
   archive_reason?: string | null;

@@ -325,6 +325,7 @@ App.register('form-builder', async (view, filter) => {
             <button class="btn secondary small" data-records="${f.id}" title="View Records">${UI.icon('forms', 14)} Records</button>
             <button class="btn secondary small" data-tpl="${f.id}" title="Manage print templates">${UI.icon('file', 14)} Templates</button>
             <button class="icon-btn" data-edit="${f.id}" title="Edit">${UI.icon('edit')}</button>
+            ${scope==='inventory'?`<button class="btn secondary small" data-access="${f.id}">Access</button>`:''}
             <button class="btn secondary small" data-versions="${f.id}">Versions</button><button class="btn secondary small" data-del="${f.id}" title="${f.archived_at ? 'Restore' : 'Archive'} form">${f.archived_at ? 'Restore' : 'Archive'}</button>
           </td>
         </tr>`).join('')}
@@ -332,6 +333,7 @@ App.register('form-builder', async (view, filter) => {
 
     el.querySelectorAll('[data-edit]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); openForm(b.dataset.edit, forms); });
+    el.querySelectorAll('[data-access]').forEach(button=>button.onclick=event=>{event.stopPropagation();formAccess(button.dataset.access).catch(error=>UI.toast(error.message,'error'));});
     el.querySelectorAll('[data-versions]').forEach(button => button.onclick = event => { event.stopPropagation(); DataForms.definitionHistory(forms.find(form => String(form.id) === button.dataset.versions)).catch(error => UI.toast(error.message, 'error')); });
     el.querySelectorAll('[data-del]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); delForm(b.dataset.del, forms); });
@@ -344,6 +346,13 @@ App.register('form-builder', async (view, filter) => {
         if (e.target.closest('.actions')) return;
         openForm(tr.dataset.open, forms);
       });
+  }
+
+  async function formAccess(id) {
+    const settings=await API.get('/form-definitions/'+id+'/access');
+    UI.modal({title:'Form access',protectChanges:true,size:'lg',confirmText:'Save access',bodyHTML:`<p>Allowed roles and employee accounts can view all records on this form, create drafts, and edit or submit active drafts. Form managers retain their existing access.</p><p class="muted">These accounts also need Enter Inventory forms in account permissions. Product, customer and sales-order permissions still apply. No selection means managers only.</p><label for="fb-access-search">Find a role or employee</label><input id="fb-access-search" type="search"><fieldset><legend>Allowed roles</legend>${settings.roles.map(role=>`<label class="form-column-choice" data-access-choice><input type="checkbox" data-access-role="${UI.esc(role.key)}" ${settings.access.roles?.includes(role.key)?'checked':''}> ${UI.esc(role.label)}</label>`).join('')}</fieldset><fieldset><legend>Allowed employee accounts</legend>${settings.users.map(user=>`<label class="form-column-choice" data-access-choice><input type="checkbox" data-access-user="${user.id}" ${settings.access.users?.includes(user.id)?'checked':''}> ${UI.esc(user.full_name)} (${UI.esc(user.username)})</label>`).join('')}</fieldset>`,onOpen:overlay=>{overlay.querySelector('#fb-access-search').oninput=event=>{const query=event.target.value.toLowerCase();overlay.querySelectorAll('[data-access-choice]').forEach(label=>label.hidden=!label.textContent.toLowerCase().includes(query));};},onConfirm:async(overlay,showError)=>{
+      try{await API.put('/form-definitions/'+id+'/access',{expected_revision:settings.revision,roles:[...overlay.querySelectorAll('[data-access-role]:checked')].map(input=>input.dataset.accessRole),users:[...overlay.querySelectorAll('[data-access-user]:checked')].map(input=>Number(input.dataset.accessUser))});UI.toast('Form access saved');return true;}catch(error){showError(error.message);return false;}
+    }});
   }
 
   function openForm(id, forms) {

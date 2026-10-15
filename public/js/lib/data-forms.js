@@ -8,7 +8,7 @@ window.DataForms = (() => {
       : scopes.every((s) => App.hasPermission('forms.manage.' + s));
   }
   function canBrowseScope(scope) {
-    return canManage(scope) || (scope === 'hr' && App.hasPermission('payroll.view'));
+    return canManage(scope) || (scope === 'inventory' && App.hasPermission('forms.fill.inventory')) || (scope === 'hr' && App.hasPermission('payroll.view'));
   }
   const emptyPreferences = () => ({ favorites: [], recent: [], views: {} });
   async function preferences() {

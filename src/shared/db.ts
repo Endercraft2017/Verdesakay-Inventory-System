@@ -90,7 +90,8 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 81; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 82; // 82: per-form Inventory entry grants and access revision.
+// 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -2020,7 +2021,7 @@ function createSchema(): void {
 /** Idempotent schema upgrades for databases created before a column existed. */
 function migrate(): void {
   const formCols = new Set((db.prepare('PRAGMA table_info(form_definitions)').all() as {name:string}[]).map(c=>c.name));
-  for (const [name, type] of Object.entries({version:'INTEGER NOT NULL DEFAULT 1',updated_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',version_reason:'TEXT',archived_at:'TEXT',archived_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',archive_reason:'TEXT'})) {
+  for (const [name, type] of Object.entries({entry_access:"TEXT NOT NULL DEFAULT '{\"roles\":[],\"users\":[]}'",access_revision:'INTEGER NOT NULL DEFAULT 1',version:'INTEGER NOT NULL DEFAULT 1',updated_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',version_reason:'TEXT',archived_at:'TEXT',archived_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',archive_reason:'TEXT'})) {
     if (!formCols.has(name)) db.exec(`ALTER TABLE form_definitions ADD COLUMN ${name} ${type}`);
   }
   const recordCols = new Set((db.prepare('PRAGMA table_info(form_records)').all() as {name:string}[]).map(c=>c.name));

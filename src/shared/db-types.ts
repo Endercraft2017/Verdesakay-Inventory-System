@@ -523,6 +523,8 @@ export interface FormDefinitions {
   created_by: number | null;
   created_at: Generated<string>;
   updated_at: string | null;
+  entry_access: Generated<string>;
+  access_revision: Generated<number>;
   version: Generated<number>;
   updated_by: number | null;
   version_reason: string | null;

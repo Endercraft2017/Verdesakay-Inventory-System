@@ -1380,3 +1380,4 @@ The old order list, per-line negative adjustments and false batch-success result
 are removed. Commercial order IDs are never reused as manufacturing job IDs.
 Purchase-order receiving and intentional stock-adjustment tools remain available.
 Old bookmarks perform no stock action; canonical queues retain their own gates.
+Inventory form entry uses forms.fill.inventory plus per-form role/account grants (form_definitions.entry_access, access_revision; schema 82). Entry users read all assigned-form records and create/edit/submit active drafts; design, delete and approvals retain their existing manager gates. Current grants are rechecked during sync replay. See tests/form-entry-access.test.ts and the invoice Playwright gate.
