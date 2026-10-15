@@ -18,6 +18,7 @@ session.
 
 | Guide | For | What it covers |
 |---|---|---|
+| [Capturing a sales order](sales-order-intake.md) | Sales / CSR / order entry | Record customer details, choose explicit inventory or non-stock lines, correct validation errors, and save an open order before approval |
 | [Bulk import & export (CSV)](csv-import-export.md) | Inventory / HR staff | Load or update many items, suppliers, or employees from a spreadsheet; export data back out. Fill-in [templates/](templates/) included. |
 | [SOP — Production, end to end](production-sop.md) | Production / shop floor / QA/QC / warehouse | The full flow: BOM → job order + team + schedule → release → accept kit → progress → QC/QA → repair/rework → Products In → batch → finished stock → labels/QR/dossier → sale-order allocation. Mirrors Home → Help / SOP. |
 | [SOP — Parts release to delivery (shop-floor roles)](shop-floor-to-delivery-sop.md) | Warehouse, production leads, QC, QA, product clerks, releasing clerks, drivers | Role-by-role steps from releasing parts to a job order through recording units (serial + photo), QC → QA, repair parts requests, Products In / RTS, SO release by QR scan, and delivery with proof of delivery. Includes a photos/scans checklist. |

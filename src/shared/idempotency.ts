@@ -10,6 +10,7 @@
  */
 import type { Request, Response, NextFunction } from 'express';
 import { db } from './db';
+import { userFromToken, getToken } from './auth';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const KEY_RE = /^[A-Za-z0-9._:-]{8,200}$/;
@@ -18,6 +19,9 @@ const DONT_STORE = new Set([401, 403, 429]); // retryable without changing the r
 interface StoredRow {
   status_code: number;
   response: string;
+  user_id: number | null;
+  method: string;
+  path: string;
 }
 
 export function idempotency(req: Request, res: Response, next: NextFunction): void {
@@ -27,11 +31,20 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
     res.status(400).json({ error: 'Malformed Idempotency-Key' });
     return;
   }
+  const user = req.user ?? userFromToken(getToken(req));
+  // Never serve cached private responses before authentication. Public endpoints
+  // proceed normally; they do not use authenticated request deduplication.
+  if (!user) return next();
+  const path = req.originalUrl.split('?')[0]!;
 
   const existing = db
-    .prepare('SELECT status_code, response FROM idempotency_keys WHERE key = ?')
+    .prepare('SELECT status_code, response, user_id, method, path FROM idempotency_keys WHERE key = ?')
     .get(key) as StoredRow | undefined;
   if (existing) {
+    if (existing.user_id !== user.id || existing.method !== req.method || (existing.path !== path && existing.path !== req.path)) {
+      res.status(409).json({ error: 'This save key belongs to a different request. Start a new save attempt.' });
+      return;
+    }
     res.set('Idempotency-Replayed', 'true');
     res.status(existing.status_code).type('application/json').send(existing.response);
     return;
@@ -45,7 +58,7 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
         db.prepare(
           `INSERT OR IGNORE INTO idempotency_keys (key, user_id, method, path, status_code, response)
            VALUES (?, ?, ?, ?, ?, ?)`
-        ).run(key, req.user?.id ?? null, req.method, req.path, res.statusCode, JSON.stringify(body));
+        ).run(key, user.id, req.method, path, res.statusCode, JSON.stringify(body));
       } catch {
         /* never let bookkeeping break the response */
       }

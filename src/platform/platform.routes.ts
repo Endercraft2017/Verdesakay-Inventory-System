@@ -126,7 +126,7 @@ router.post('/tenants/:slug/mail/test', async (req, res, next) => {
       const verified = await verifyMailSettings();
       if (!verified.ok) return { ok: false, error: `Connection failed: ${verified.error}` };
       // Operators are not tenant users: don't attach their ID to a tenant foreign key.
-      return sendMail({ to, subject: 'Verdesakay — test email', text: 'This is a test message from your Verdesakay system. Email is working.' });
+      return sendMail({ to, subject: 'Otom — test email', text: 'This is a test message from your Otom system. Email is working.' });
     });
     const by = (req as PlatformAuthedRequest).platformUser!.username;
     logProvisioning(req.params.slug, 'email-test', `${by}: ${result.ok ? 'sent' : 'failed'}`);

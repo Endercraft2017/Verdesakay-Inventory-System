@@ -626,7 +626,7 @@ async function fetchLinkPreview(startUrl: string): Promise<LinkPreviewData | nul
       resp = await fetch(parsed, {
         redirect: 'manual',
         signal: controller.signal,
-        headers: { 'User-Agent': 'VerdesakayLinkPreview/1.0' },
+        headers: { 'User-Agent': 'OtomLinkPreview/1.0' },
       });
     } catch {
       clearTimeout(timer);

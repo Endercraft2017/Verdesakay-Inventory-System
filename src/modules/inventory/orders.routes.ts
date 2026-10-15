@@ -1,10 +1,12 @@
 /** Job & Sale Orders: stored records with line items, auto numbers, server-computed
     totals. One router serves both types (?type=sale|job). */
 import { Router } from 'express';
+import { createHash } from 'node:crypto';
+import { idempotency } from '../../shared/idempotency';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
-  parseBody, createOrderSchema, updateOrderSchema, orderStatusSchema,
+  parseBody, ValidationError, createOrderSchema, updateOrderSchema, orderStatusSchema,
   releaseOrderSchema, unreserveOrderSchema,
 } from '../../shared/validation';
 import { getQboStatus, pushOrder } from '../quickbooks/quickbooks';
@@ -48,7 +50,65 @@ function computeTotals(items: LineInput[], taxPercent: number) {
   const subtotal = round2(lines.reduce((s, l) => s + l.line_total, 0));
   const tax_amount = round2((subtotal * (taxPercent || 0)) / 100);
   const total = round2(subtotal + tax_amount);
+  if (![subtotal, tax_amount, total, ...lines.map((l) => l.line_total)].every((n) => Number.isFinite(n) && n <= Number.MAX_SAFE_INTEGER / 100)) {
+    throw new ValidationError('Order amounts are too large to calculate accurately. Reduce the quantity or price.');
+  }
   return { lines, subtotal, tax_amount, total };
+}
+
+/** Content-based edit token detects changes even within SQLite's one-second timestamps. */
+function orderRevision(id: number): string {
+  const header = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
+  const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
+  const units = queryAll<{ id: number; status: string }>('SELECT id, status FROM job_order_units WHERE order_id = ? ORDER BY id', id);
+  return createHash('sha256').update(JSON.stringify([header, lines, units])).digest('hex');
+}
+
+function saleStatus(status: string | null | undefined, current?: string): string {
+  const next = (status || 'open').toLowerCase();
+  if (next === current?.toLowerCase()) return next;
+  if (!['open', 'approved', 'released', 'confirmed', 'completed', 'cancelled'].includes(next)) {
+    throw new ValidationError('Choose a valid sale order status.');
+  }
+  if (next === 'released') {
+    throw new ValidationError('Warehouse picking sets released status automatically. Approve the order, then release its goods.');
+  }
+  return next;
+}
+
+/** Reject broken stock links before writing an order. Repeated stock items must use
+ * one line: release and availability track coverage by item, not by price/name. */
+function validateOrderLinks(type: OrderType, input: {
+  items: LineInput[]; customer_id?: number | null; location_id?: number | null;
+  supplier_id?: number | null; tax_code_id?: number | null;
+}): void {
+  const seen = new Set<number>();
+  for (const [i, line] of input.items.entries()) {
+    if (!Number.isFinite(line.quantity) || line.quantity <= 0) throw new ValidationError(`Line ${i + 1}: quantity must be greater than zero`);
+    if (line.item_id != null) {
+      if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', line.item_id)) {
+        throw new ValidationError(`Line ${i + 1}: inventory item no longer exists. Choose another item or use a non-stock line.`);
+      }
+      if (type === 'sale' && seen.has(line.item_id)) {
+        throw new ValidationError(`Line ${i + 1}: this inventory item is already on the order. Combine its quantity into one line.`);
+      }
+      seen.add(line.item_id);
+    }
+    if (line.tax_code_id != null && !queryOne('SELECT id FROM tax_codes WHERE id = ?', line.tax_code_id)) {
+      throw new ValidationError(`Line ${i + 1}: tax code not found`);
+    }
+  }
+  const links = [
+    [type === 'sale' ? input.customer_id : null, 'customers', 'Customer'],
+    [type === 'sale' ? input.location_id : null, 'locations', 'Ship-from location'],
+    [type === 'purchase' ? input.supplier_id : null, 'suppliers', 'Supplier'],
+    [input.tax_code_id, 'tax_codes', 'Tax code'],
+  ] as const;
+  for (const [id, table, label] of links) {
+    if (id != null && !queryOne(`SELECT id FROM ${table} WHERE id = ?`, id)) {
+      throw new ValidationError(`${label} not found. Refresh the order and choose again.`);
+    }
+  }
 }
 
 /** Resolve the customer link for a sale order — pull name/contact from the customers row
@@ -70,8 +130,8 @@ function resolveCustomer(
   );
   return {
     customer_id: c ? input.customer_id : null,
-    customer_name: input.customer_name ?? c?.name ?? null,
-    customer_contact: input.customer_contact ?? c?.contact_person ?? c?.phone ?? null,
+    customer_name: input.customer_name?.trim() || c?.name || null,
+    customer_contact: input.customer_contact?.trim() || c?.contact_person || c?.phone || null,
   };
 }
 
@@ -114,7 +174,7 @@ const BACKORDER_SQL = `
   )`;
 
 // GET /api/orders?type=&q=&backorder=1
-router.get('/', (req, res) => {
+router.get('/', requirePermission('orders.view'), (req, res) => {
   const { type, q } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
@@ -141,7 +201,7 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/orders/:id — order + line items
-router.get('/:id', (req, res) => {
+router.get('/:id', requirePermission('orders.view'), (req, res) => {
   const order = queryOne<Order>(
     `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name,
             jo.id AS job_order_id, jo.number AS job_order_number, jo.status AS job_order_status
@@ -167,7 +227,7 @@ router.get('/:id', (req, res) => {
     order.id,
     order.id
   );
-  res.json(order);
+  res.json({ ...order, revision: orderRevision(order.id) });
 });
 
 /* ---------------------------------------------------- sale-order release / pick --- */
@@ -511,7 +571,7 @@ router.post('/:id/release/unreserve', releaseGate, (req, res) => {
 });
 
 // GET /api/orders/:id/availability — per-line stock picture for a sale order.
-router.get('/:id/availability', (req, res) => {
+router.get('/:id/availability', requirePermission('orders.view'), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT type FROM orders WHERE id = ?', id);
   if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
@@ -587,8 +647,10 @@ router.post('/:id/purchase-shortfall', requirePermission('orders.create'), (req,
 });
 
 // POST /api/orders — create with auto number + computed totals
-router.post('/', requirePermission('orders.create'), (req, res) => {
+router.post('/', requirePermission('orders.create'), idempotency, (req, res) => {
   const input = parseBody(createOrderSchema, req.body);
+  if (input.type === 'sale') input.status = saleStatus(input.status);
+  validateOrderLinks(input.type, input);
   const { lines, subtotal, tax_amount, total } = computeTotals(input.items, input.tax_percent);
 
   const cust = resolveCustomer(input.type, input);
@@ -657,7 +719,7 @@ router.post('/:id/status', requirePermission('orders.edit'), (req, res) => {
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
   const { status, force } = parseBody(orderStatusSchema, req.body);
   const cur = String(order.status || '').toLowerCase();
-  const next = status.toLowerCase();
+  const next = saleStatus(status, cur);
   if (next === cur) { res.json({ ok: true, status: order.status }); return; }
 
   const goingFirm = ['approved', 'confirmed', 'completed'].includes(next)
@@ -676,7 +738,7 @@ router.post('/:id/status', requirePermission('orders.edit'), (req, res) => {
         return;
       }
     }
-    run("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?", status, id);
+    run("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?", next, id);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -688,31 +750,41 @@ router.post('/:id/status', requirePermission('orders.edit'), (req, res) => {
   if ((next === 'cancelled' || next === 'open') && cur !== 'cancelled' && cur !== 'open') {
     releaseTeardown(id);
   }
-  res.json({ ok: true, status });
+  res.json({ ok: true, status: next });
   maybeAutoPush(id);
 });
 
 // PUT /api/orders/:id — replace header + items, recompute totals (type/number unchanged)
-router.put('/:id', requirePermission('orders.edit'), (req, res) => {
+router.put('/:id', requirePermission('orders.edit'), idempotency, (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order) {
     res.status(404).json({ error: 'Order not found' });
     return;
   }
-  const input = parseBody(updateOrderSchema, req.body);
-  const cust = resolveCustomer(order.type, input);
-
   // A sale order's LINE ITEMS lock once it's past `open` (goods may already be
   // released / reserved against them). Header fields — customer, status, notes,
   // dates — stay editable; totals are recomputed from the existing lines.
   const cur = String(order.status || '').toLowerCase();
   const lockLines = order.type === 'sale' && cur !== 'open' && cur !== 'cancelled';
-  const sourceItems = lockLines
-    ? queryAll<{ item_id: number | null; name: string; sku: string | null; description: string | null; quantity: number; unit: string | null; unit_price: number; tax_code_id: number | null }>(
-        'SELECT item_id, name, sku, description, quantity, unit, unit_price, tax_code_id FROM order_items WHERE order_id = ? ORDER BY sort, id', id
-      )
-    : input.items;
+  const input = parseBody(updateOrderSchema, { ...order, ...req.body, ...(lockLines ? { items: undefined } : {}) });
+  if (input.expected_revision && input.expected_revision !== orderRevision(id)) {
+    res.status(409).json({ error: 'This order changed after you opened it. Review the latest order before saving; your edits have been kept on screen.', code: 'stale_order' });
+    return;
+  }
+  if (order.type === 'sale') input.status = saleStatus(input.status, cur);
+  if (lockLines) {
+    input.tax_percent = order.tax_percent;
+    input.tax_code_id = order.tax_code_id;
+    input.currency = order.currency;
+  }
+  if (order.type === 'sale' && (order.released_at || order.fulfilled_at)) input.location_id = order.location_id;
+  const cust = resolveCustomer(order.type, input);
+  const storedItems = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
+  const sourceItems = lockLines ? storedItems : input.items ?? storedItems;
+  // Validate effective lines: a locked order retains its original stock links.
+  // Legacy repeated lines can still have their header saved without rewriting them.
+  validateOrderLinks(order.type, { ...input, items: lockLines ? [] : sourceItems });
   const taxPct = lockLines ? order.tax_percent : input.tax_percent;
   const { lines, subtotal, tax_amount, total } = computeTotals(sourceItems, taxPct);
 
@@ -726,7 +798,7 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
       cust.customer_name,
       cust.customer_contact,
       cust.customer_id,
-      order.type === 'sale' ? (input.location_id ?? order.location_id ?? null) : null,
+      order.type === 'sale' ? (input.location_id ?? null) : null,
       input.tax_code_id ?? null,
       input.order_date ?? null,
       input.status || 'open',
@@ -740,7 +812,7 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
       order.type === 'purchase' ? (input.expected_date ?? null) : null,
       id
     );
-    if (!lockLines) {
+    if (!lockLines && input.items) {
       run('DELETE FROM order_items WHERE order_id = ?', id);
       insertItems(id, lines);
     }

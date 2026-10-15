@@ -667,7 +667,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 ✅ done · 🟡 partial (exists in another form) · ⬜ to build · ➖ out of scope.
 
 ### Accounting core
-| Frappe Books | Verdesakay | Status |
+| Frappe Books | Otom | Status |
 |---|---|---|
 | `Account` (tree chart of accounts) | `accounts` | ✅ **Phase 0** — seeded PH SMB COA, tree CRUD |
 | `AccountingLedgerEntry` (immutable GL lines) | `journal_lines` (posted) | ✅ **Phase 0** |
@@ -677,7 +677,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | `Defaults` (default account per doc type) | `settings.accounting_posting_rules` (`GET`/`PUT /ledger/posting-rules`) | ✅ **Phase 1a** — 6 legs: AR / Sales / Output VAT / AP / Purchases / Input VAT |
 
 ### Parties, items, pricing
-| Frappe Books | Verdesakay | Status |
+| Frappe Books | Otom | Status |
 |---|---|---|
 | `Party` (customer/supplier) + `Address` | `suppliers` + **`customers`** (Phase 1b) + `orders.customer_id` | ✅ — both sides are first-class; AR/AP aging + party statement net against them |
 | `Item` + `ItemGroup` + `UOM` + `UOMConversionItem` | `inventory_items` (category, unit) | 🟡 |
@@ -686,7 +686,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | `Lead` / `ItemEnquiry` (light CRM) | — | ➖ |
 
 ### Sales & purchase
-| Frappe Books | Verdesakay | Status |
+| Frappe Books | Otom | Status |
 |---|---|---|
 | `SalesInvoice` + `SalesInvoiceItem` | `orders` type `sale` | 🟡 — **Phase 1a** auto-posts a *confirmed* sale to the sales journal (DR AR / CR Sales / CR Output VAT); reverses on re-open |
 | `PurchaseInvoice` + `PurchaseInvoiceItem` | `vendor_bills` | 🟡 — **Phase 1a** auto-posts an *approved* bill to the purchase journal (DR Purchases / DR Input VAT / CR AP); reverses on dispute |
@@ -696,7 +696,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | `AppliedCouponCodes` / `CouponCode` / `PricingRule` | — | ➖ |
 
 ### Inventory (`schemas/app/inventory`)
-| Frappe Books | Verdesakay | Status |
+| Frappe Books | Otom | Status |
 |---|---|---|
 | `Location` (warehouse) | `locations` | ✅ |
 | `StockLedgerEntry` | `inventory_transactions` + `inventory_stock` (+ `inventory_items.unit_cost`, weighted moving average — Phase 3b) | ✅ — job orders post WIP, goods receipts post DR Inventory / CR GRNI, firm sales post DR COGS / CR Inventory; `unit_cost` rolls to the moving average on every costed stock-in (Phase 3b) |
@@ -707,12 +707,12 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | `InventorySettings` | inventory form-config | 🟡 |
 
 ### POS (`schemas/app/inventory/Point of Sale`)
-| Frappe Books | Verdesakay | Status |
+| Frappe Books | Otom | Status |
 |---|---|---|
 | `POSProfile`, POS mode, `PaymentMethod`, `LoyaltyProgram` + `LoyaltyPointEntry`, `CollectionRulesItems` | — | ➖ (separate product decision; not an SMB-manufacturer need) |
 
 ### Reports
-| Frappe Books | Verdesakay | Status |
+| Frappe Books | Otom | Status |
 |---|---|---|
 | General Ledger | `GET /accounting/ledger/reports/general-ledger` | ✅ **Phase 0** |
 | Trial Balance | `.../reports/trial-balance` | ✅ **Phase 0** |
@@ -724,7 +724,7 @@ Every Frappe Books data model (`schemas/app/**`), and where it lands here. Legen
 | GST reports | BIR sales/purchase journals + **2550M/2550Q (journal-sourced) / 0619-E** + **EWT register / 2307 / 1601-EQ + QAP / 1604-E / SLSP `.DAT`** (Phase 2) | ✅ |
 
 ### Cross-cutting
-| Frappe Books | Verdesakay | Status |
+| Frappe Books | Otom | Status |
 |---|---|---|
 | `PrintTemplate` + `PrintSettings` | `doc_templates` + `renderTemplate` | ✅ |
 | `Currency` + multi-currency w/ fx | `currency` field + `currencies.js`, no fx | 🟡 → Phase 5 |

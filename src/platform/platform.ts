@@ -15,7 +15,7 @@ import { DEFAULT_TENANT } from '../shared/db';
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
 export const PLATFORM_DB_PATH = process.env.PLATFORM_DB_PATH || path.join(ROOT, 'db', 'platform.db');
-/** Root domain for tenant subdomains, e.g. `verdesakay.app`. Empty ⇒ single-tenant. */
+/** Root domain for tenant subdomains, e.g. `app.afkcube.com`. Empty ⇒ single-tenant. */
 export const APP_DOMAIN = (process.env.APP_DOMAIN || '').toLowerCase().trim();
 /** Self-serve `POST /api/signup` is only live when this is exactly "true". */
 export const SIGNUPS_OPEN = process.env.SIGNUPS_OPEN === 'true';

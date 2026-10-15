@@ -20,7 +20,7 @@ is sent until an admin fills this in, and the SMTP password is encrypted at rest
 | Field | What to put |
 |---|---|
 | **Transport** | `SMTP` to turn email on; `Off` to disable all sending. |
-| **From name** | Display name recipients see, e.g. `Verdesakay Office`. Optional. |
+| **From name** | Display name recipients see, e.g. `Otom`. Optional. |
 | **From email** | The address mail is sent *as*, e.g. `office@yourcompany.com`. Usually the same as the SMTP username. |
 | **Reply-to** | Where replies should go if different from *From*. Optional. |
 | **SMTP host** | Your provider's outgoing server (see table below). |
@@ -52,7 +52,7 @@ credentials, and sends one test message to an address you choose. Every send
 
 1. The Google account needs **2-Step Verification** turned on
    (`myaccount.google.com` → Security).
-2. Go to `myaccount.google.com/apppasswords`, create one named "Verdesakay",
+2. Go to `myaccount.google.com/apppasswords`, create one named "Otom",
    and copy the 16-character code.
 3. In Email → Settings: host `smtp.gmail.com`, port `587`, secure **off**,
    username = the Gmail address, password = that 16-character code (spaces optional).

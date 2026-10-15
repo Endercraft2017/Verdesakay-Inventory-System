@@ -39,7 +39,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { NAV, ROU
 Current top-level sections (`NAV` ids): `home` (Dashboard), `inventory` (Items / Stock
 Movements), `docs` (Files / Orders / Data Forms / Templates), `hr` (Overview / Employees /
 Time Keeping), `messages` (Inbox / Sent), `admin` (Accounts / Form Setup — gated on
-`users.manage`), `account` (My Account).
+`users.manage`). My Account remains a registered route outside `NAV`, opened by
+the top-right profile button in `index.html`.
 
 ## Internal structure
 Pure static data — no functions, no logic beyond the dual export guard. The three-level

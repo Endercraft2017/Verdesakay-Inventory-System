@@ -59,6 +59,8 @@ const App = (() => {
 
   function showLogin() {
     me = null;
+    document.getElementById('tenant-name').textContent = 'Workspace';
+    document.title = 'Otom';
     if (window.ChatWS) ChatWS.disconnect();
     appScreen().classList.add('hidden');
     loginScreen().classList.remove('hidden');
@@ -80,7 +82,7 @@ const App = (() => {
     // The AI Assistant bubble is a per-tenant feature module.
     const aiFab = document.getElementById('ai-fab');
     if (aiFab) aiFab.classList.toggle('hidden', !hasModule('ai'));
-    showWorkspaceBanner();
+    await showWorkspaceBanner();
 
     refreshUnread();
     if (App._unreadTimer) clearInterval(App._unreadTimer);
@@ -103,6 +105,9 @@ const App = (() => {
   async function showWorkspaceBanner() {
     let t;
     try { t = await API.get('/tenant'); } catch { return; }
+    const tenantName = t.name || 'Workspace';
+    document.getElementById('tenant-name').textContent = tenantName;
+    document.title = `${tenantName} · Otom`;
     document.getElementById('ws-banner')?.remove();
     let msg = '', tone = 'warn';
     if (t.read_only) { msg = `${t.name} is past due — the workspace is read-only until billing is resolved.`; tone = 'danger'; }
@@ -287,6 +292,9 @@ const App = (() => {
     if (loc) {
       activePrimaryId = loc.primary.id;
       activeSubtabId = loc.subtab.id;
+    } else {
+      activePrimaryId = null;
+      activeSubtabId = null;
     }
 
     // Reflect in the URL without triggering a re-navigation.
@@ -303,6 +311,7 @@ const App = (() => {
 
     // Render the view.
     const view = document.getElementById('view');
+    view.dataset.route = name;
     view.innerHTML = '<div class="empty">Loading…</div>';
     Promise.resolve(routes[name](view, filter)).catch((e) => {
       view.innerHTML = `<div class="empty">Failed to load: ${UI.esc(e.message)}</div>`;
@@ -476,9 +485,8 @@ const App = (() => {
     const railMsg = document.getElementById('rail-messages');
     railMsg.insertAdjacentHTML('afterbegin', UI.icon('messages'));
     railMsg.addEventListener('click', () => navigate('messages'));
-    const railAcct = document.getElementById('rail-account');
-    railAcct.innerHTML = UI.icon('user'); // default profile image icon
-    railAcct.addEventListener('click', () => navigate('account'));
+    // The header profile is the entry point for My Account.
+    document.getElementById('account-btn').addEventListener('click', () => navigate('account'));
     const logoutBtn = document.getElementById('logout-btn');
     logoutBtn.innerHTML = UI.icon('logout');
     logoutBtn.addEventListener('click', logout);

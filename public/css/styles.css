@@ -1,5 +1,5 @@
 /* ============================================================================
-   Verdesakay Office System — theme tokens + components
+   Otom — theme tokens + components
    Light (white + light blue) and dark (purple-black + gray) themes, switched
    via [data-theme] on <html>. Components reference tokens only.
    ============================================================================ */
@@ -16,10 +16,10 @@
   --border-strong: #c6d4e6;
   --text: #16243d;
   --text-muted: #5d6b84;
-  --text-faint: #8a97ad;
+  --text-faint: #697a94;
 
-  --accent: #2b7fff;
-  --accent-hover: #1e6ef0;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
   --accent-weak: #e7f1ff;
   --accent-contrast: #ffffff;
 
@@ -33,8 +33,8 @@
   --shadow-sm: 0 1px 2px rgba(20, 40, 80, 0.06), 0 1px 3px rgba(20, 40, 80, 0.05);
   --shadow-md: 0 4px 16px rgba(20, 40, 80, 0.08);
   --shadow-lg: 0 18px 48px rgba(20, 40, 80, 0.22);
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 16px;
+  --radius-sm: 10px;
 }
 
 [data-theme='dark'] {
@@ -48,7 +48,7 @@
   --border-strong: #423c5c;
   --text: #ece9f6;
   --text-muted: #a39ec0;
-  --text-faint: #777194;
+  --text-faint: #a09ab8;
 
   --accent: #8aa0ff;
   --accent-hover: #9fb1ff;
@@ -215,10 +215,16 @@ a { color: var(--accent); }
 .primary-item.active { color: var(--accent); border-bottom-color: var(--accent); }
 .primary-item.active .ic { color: var(--accent); }
 
-.topnav-user { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.topnav-user {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  border: none; background: none; padding: 0; color: var(--text); font: inherit;
+  border-radius: 9px; cursor: pointer;
+}
+.topnav-user:hover .name { color: var(--accent); }
+.topnav-user:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .topnav-user .who { text-align: right; line-height: 1.25; }
-.topnav-user .name { font-weight: 600; font-size: 13px; }
-.topnav-user .role { color: var(--text-faint); font-size: 11px; text-transform: capitalize; }
+.topnav-user .name { display: block; font-weight: 600; font-size: 13px; }
+.topnav-user .role { display: block; color: var(--text-faint); font-size: 11px; text-transform: capitalize; }
 .topnav-user .avatar {
   width: 36px; height: 36px; border-radius: 50%;
   background: var(--accent-weak); color: var(--accent);
@@ -302,11 +308,6 @@ a { color: var(--accent); }
   background: var(--danger); color: #fff; border-radius: 999px;
   font-size: 10px; font-weight: 700; display: grid; place-items: center;
 }
-.rail-avatar {
-  border: 1px solid var(--border-strong); border-radius: 50%;
-  background: var(--accent-weak); color: var(--accent);
-}
-.rail-avatar:hover { background: var(--accent-weak); color: var(--accent-hover); }
 .acc-avatar {
   width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
   background: var(--accent-weak); color: var(--accent);
@@ -359,7 +360,7 @@ a { color: var(--accent); }
    compact anchored footprint instead of a full-height sidebar. */
 .ai-fab {
   /* right offset clears the --rail-w icon rail (52px) so the bubble doesn't sit on top of
-     its bottom buttons (theme/logout/account) — the rail only occupies this edge above the
+     its bottom buttons (theme/logout) — the rail only occupies this edge above the
      900px breakpoint, where the mobile override below resets it to a plain 14px. */
   position: fixed; right: calc(var(--rail-w) + 22px); bottom: 22px; z-index: 120;
   width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
@@ -445,6 +446,42 @@ a { color: var(--accent); }
 .order-totals .row { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; }
 .order-totals .row.grand { border-top: 2px solid var(--border-strong); margin-top: 4px; padding-top: 6px; font-size: 16px; }
 .order-totals .row.grand strong { color: var(--accent); }
+
+/* Intake editor: explicit stock links, visible validation, and compact-screen cards. */
+#modal-root:has(.order-editor) { position: relative; z-index: 130; }
+.order-editor-intro { padding: 14px 16px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.order-editor-intro p { margin: 5px 0 0; color: var(--text-muted); }
+.order-section { margin-top: 20px; }
+.order-section h4 { margin: 0 0 12px; font-size: 14px; }
+.order-section > .muted { font-size: 13px; }
+.order-notice { padding: 12px; background: var(--surface-2); border-left: 3px solid var(--accent); }
+.order-editor .line-actions { flex-wrap: wrap; }
+.order-link-hint { margin-top: 5px; font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+.order-link-btn { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 6px 0; font: inherit; font-size: 12px; }
+.order-field-error { color: var(--danger); font-size: 12px; margin-top: 4px; }
+.order-editor [aria-invalid="true"] { border-color: var(--danger); }
+.order-editor [data-modal-error] .btn { display: block; margin-top: 8px; }
+.order-editor :disabled { opacity: 1; background: var(--surface-2); color: var(--text-muted); cursor: default; }
+.order-editor #ord-line-summary { margin-top: 10px; font-size: 12px; }
+.order-editor .modal-foot { position: sticky; bottom: 0; background: var(--surface); z-index: 1; }
+.order-editor .modal-head { position: sticky; top: 0; background: var(--surface); z-index: 2; }
+.order-pick-row { width: 100%; font: inherit; color: var(--text); background: var(--surface); text-align: left; gap: 12px; }
+.order-pick-row > span:last-child { flex-shrink: 0; font-size: 12px; }
+.order-pick-row:focus-visible, .order-link-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 680px) {
+  .order-editor .modal-body { padding: 14px; }
+  .order-editor .line-items { border: 0; overflow: visible; }
+  .order-editor .line-table, .order-editor .line-table tbody { display: block; }
+  .order-editor .line-table thead { display: none; }
+  .order-editor .line-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; margin-bottom: 12px; gap: 10px; }
+  .order-editor .line-table td { display: block; padding: 0; border: 0; min-width: 0; text-align: left; }
+  .order-editor .line-table td:first-child { grid-column: 1 / -1; min-width: 0; }
+  .order-editor .line-table td[data-label]::before { content: attr(data-label); display: block; color: var(--text-muted); font-size: 12px; margin-bottom: 4px; }
+  .order-editor .line-table input, .order-editor .line-table select { width: 100% !important; min-height: 40px; }
+  .order-editor .order-totals { width: 100%; }
+  .order-editor .line-actions .btn { min-height: 40px; }
+  .order-pick-row { flex-wrap: wrap; }
+}
 
 .pick-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 6px; cursor: pointer; }
 .pick-row:hover { background: var(--surface-2); border-color: var(--accent); }

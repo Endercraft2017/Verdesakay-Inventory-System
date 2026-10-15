@@ -402,11 +402,22 @@
       id: 'orders', title: 'Sale Orders', group: 'Orders',
       routes: ['orders'], workflow: 'sales', html: `
         <p><b>Inventory → Orders → Sale Orders</b> stores customer orders, numbered SO-….</p>
-        <ol><li>Click <b>New Sale Order</b>, choose Customer (on file) or enter walk-in details,
-        set Ship from, and add the line items, quantities and prices.</li><li>Save the order, then open its status control to approve it.
-        A stock shortfall offers trim, production/purchase drafts or backorder approval.</li>
-        <li>Use the phone's <b>Work → Release SOs</b> to reserve the goods; the office confirms/completes
-        the order after delivery to post stock out.</li></ol>
+        <h4>Capture the order</h4>
+        <p>New sale orders use <b>Save open order</b>. Choose a customer on file to fill
+        their name/contact, or enter walk-in details. Use <b>Add inventory item</b> for
+        goods and <b>Add non-stock line</b> for services or charges. A typed name never
+        links to stock automatically; use <b>Link inventory item</b> to make that choice.
+        Each stock item appears once per sale order — update its quantity instead of
+        adding a second line. Quantities must be positive; zero-priced lines are allowed.
+        The picker shows <b>on-hand</b> stock; availability is checked at approval.</p>
+        <p>After approval, lines, tax, and currency are visibly locked. Save the order as
+        <b>open</b> first if you need to change them; this clears warehouse reservations.
+        View-only users can inspect the order without save/delete controls. On smaller
+        screens the editor displays line items as cards.</p>
+        <p>If someone else edits the order, your save is blocked and your changes stay
+        visible. <b>Review latest order</b> loads their version after asking whether to
+        discard yours. Closing also asks before discarding unsaved changes. Warehouse
+        picking sets <b>released</b> automatically; it is not a manual intake status.</p>
         <h4>Sale-order release</h4>
         <p>A sale order runs <b>open → approved → released → confirmed/completed</b>.
         <b>Approving is blocked if a line can't be met from stock</b> — you're prompted to
